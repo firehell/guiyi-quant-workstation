@@ -29,15 +29,17 @@ fail-closed
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+import hashlib
+import json
 from typing import Protocol
 
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.market_data.aggregation import AggregationError, aggregate_from_1m
-from app.market_data.catalog import MarketCatalog
+from app.market_data.catalog import ContractFact, MarketCatalog
 from app.market_data.domain import (
     INTRADAY_DERIVED_FREQUENCIES,
     PROVIDER_FETCH_FREQUENCIES,
@@ -49,6 +51,7 @@ from app.market_data.domain import (
     SeriesQuery,
 )
 from app.market_data.product_retirement import assert_products_not_retired
+from app.market_data.operational_universe import load_active_products
 from app.market_data.session_clock import SHANGHAI
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import (
@@ -80,6 +83,20 @@ class CoverageSource(Protocol):
         self,
         key: DatasetKey,
         trading_days: tuple[date, ...],
+    ) -> tuple[datetime, ...]: ...
+    def contract_trading_days(
+        self,
+        fact: ContractFact,
+        start: date,
+        end: date,
+    ) -> tuple[date, ...]: ...
+    def contract_expected_bar_ends(
+        self,
+        key: DatasetKey,
+        fact: ContractFact,
+        year: int,
+        month: int,
+        through: date,
     ) -> tuple[datetime, ...]: ...
     def sessions(
         self,
@@ -158,6 +175,44 @@ class AuditRequest:
 
     products: tuple[str, ...]
     through: date | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ContractWarmupRequest:
+    symbol: str
+    contract: str
+    through: date
+    expected_plan_sha256: str | None = None
+    apply: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ContractWarmupPlan:
+    symbol: str
+    contract: str
+    provider: str
+    listed_date: date
+    expired_date: date
+    requested_through: date
+    effective_through: date
+    target_windows: tuple[Mapping[str, object], ...]
+    direct_target_count: int
+    derived_target_count: int
+    expected_bar_count: int
+    provider_request_count: int
+    plan_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class ContractWarmupResult:
+    status: str
+    readonly: bool
+    plan: ContractWarmupPlan
+    applied: int
+    blocked: int
+    failed: int
+    provider_requests: int
+    failures: tuple[Mapping[str, object], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,6 +311,16 @@ class _Target:
     expected: tuple[datetime, ...]
     missing: tuple[datetime, ...]
     existing: tuple[CanonicalBar, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ContractPartitionClassification:
+    """Mapped required 与 lifecycle-valid persisted 的单一分区分类结果。"""
+
+    expected: tuple[datetime, ...]
+    refresh_expected: tuple[datetime, ...]
+    missing_mapped: tuple[datetime, ...]
+    outside_lifecycle: bool
 
 
 # 规划顺序：先日/周再 1m，使日内派生能在同族 1m 补齐后尽快触发。
@@ -426,6 +491,210 @@ class HistoricalDataManager:
         )
         return self._execute("refresh", targets, request.through, apply=request.apply)
 
+    def contract_warmup(
+        self,
+        request: ContractWarmupRequest,
+        *,
+        before_apply: Callable[[], None] | None = None,
+    ) -> ContractWarmupResult:
+        """规划或执行单一真实合约上市有效期内的七周期 warm-up。"""
+        plan, _targets = self._contract_warmup_plan(request)
+        if not request.apply:
+            return ContractWarmupResult(
+                status="planned",
+                readonly=True,
+                plan=plan,
+                applied=0,
+                blocked=0,
+                failed=0,
+                provider_requests=0,
+            )
+        expected_hash = request.expected_plan_sha256
+        if expected_hash is None:
+            raise ValueError("CONTRACT_WARMUP_PLAN_HASH_REQUIRED")
+        if not isinstance(expected_hash, str) or len(expected_hash) != 64 or any(
+            character not in "0123456789abcdef" for character in expected_hash
+        ):
+            raise ValueError("CONTRACT_WARMUP_PLAN_HASH_INVALID")
+        lease = self.catalog.acquire_maintenance_lock()
+        if lease is None:
+            return ContractWarmupResult(
+                status="blocked",
+                readonly=False,
+                plan=plan,
+                applied=0,
+                blocked=1,
+                failed=0,
+                provider_requests=0,
+                failures=({"reason_code": "maintenance_locked"},),
+            )
+        try:
+            locked_plan, locked_targets = self._contract_warmup_plan(request)
+            if locked_plan.plan_sha256 != expected_hash:
+                raise ValueError("CONTRACT_WARMUP_PLAN_CHANGED")
+            if before_apply is not None:
+                before_apply()
+            maintenance = self._execute_apply(
+                "contract_warmup",
+                tuple(
+                    target
+                    for target in locked_targets
+                    if target.key.frequency in PROVIDER_FETCH_FREQUENCIES
+                ),
+                tuple(
+                    target
+                    for target in locked_targets
+                    if target.key.frequency in INTRADAY_DERIVED_FREQUENCIES
+                ),
+                request.through,
+                weekly_daily_companions=False,
+            )
+            return ContractWarmupResult(
+                status=maintenance.status,
+                readonly=False,
+                plan=locked_plan,
+                applied=maintenance.applied,
+                blocked=maintenance.blocked,
+                failed=maintenance.failed,
+                provider_requests=maintenance.provider_requests,
+                failures=maintenance.failures,
+            )
+        finally:
+            lease.release()
+
+    def _contract_warmup_plan(
+        self,
+        request: ContractWarmupRequest,
+    ) -> tuple[ContractWarmupPlan, tuple[_Target, ...]]:
+        """只读构建 exact physical-contract 目标及稳定 plan identity。"""
+        symbol = request.symbol.strip().lower()
+        contract = request.contract.strip().upper()
+        assert_products_not_retired((symbol,))
+        if symbol not in load_active_products():
+            raise ValueError("CONTRACT_WARMUP_SYMBOL_INACTIVE")
+        fact = self.catalog.contract_fact(symbol, contract)
+        latest_complete = self.coverage.latest_complete_day((symbol,))
+        if request.through > latest_complete:
+            raise ValueError("CONTRACT_WARMUP_THROUGH_INCOMPLETE")
+        effective_through = min(
+            request.through,
+            fact.expired_date - timedelta(days=1),
+        )
+        if fact.listed_date > effective_through:
+            raise ValueError("CONTRACT_ACTIVE_WINDOW_MISSING")
+
+        targets: list[_Target] = []
+        for frequency in _FREQUENCY_ORDER:
+            key = DatasetKey(
+                DatasetKind.CONTRACT,
+                symbol,
+                contract,
+                frequency,
+            )
+            for year, month in _months(fact.listed_date, effective_through):
+                expected = tuple(
+                    item.astimezone(UTC)
+                    for item in self.coverage.contract_expected_bar_ends(
+                        key,
+                        fact,
+                        year,
+                        month,
+                        effective_through,
+                    )
+                )
+                if not expected:
+                    continue
+                existing, physical_reason = self._existing_partition(key, year, month)
+                if physical_reason is not None:
+                    targets.append(_Target(key, year, month, expected, expected, ()))
+                    continue
+                classification = self._classify_contract_partition(
+                    key,
+                    year,
+                    month,
+                    expected,
+                    existing,
+                    effective_through,
+                )
+                if classification.outside_lifecycle:
+                    targets.append(
+                        _Target(
+                            key,
+                            year,
+                            month,
+                            classification.expected,
+                            classification.expected,
+                            (),
+                        )
+                    )
+                elif classification.missing_mapped:
+                    targets.append(
+                        _Target(
+                            key,
+                            year,
+                            month,
+                            classification.expected,
+                            classification.missing_mapped,
+                            existing,
+                        )
+                    )
+
+        targets = self._with_contract_weekly_daily_context(
+            targets,
+            fact,
+            effective_through,
+        )
+        target_windows = tuple(_contract_warmup_target_payload(item) for item in targets)
+        plan_identity: Mapping[str, object] = {
+            "schema_version": 2,
+            "command": "data.contract-warmup",
+            "symbol": symbol,
+            "contract": contract,
+            "provider": fact.provider,
+            "listed_date": fact.listed_date.isoformat(),
+            "expired_date": fact.expired_date.isoformat(),
+            "requested_window": {
+                "start": fact.listed_date.isoformat(),
+                "through": request.through.isoformat(),
+            },
+            "effective_window": {
+                "start": fact.listed_date.isoformat(),
+                "through": effective_through.isoformat(),
+            },
+            "targets": tuple(
+                _contract_warmup_hash_target_payload(target) for target in targets
+            ),
+        }
+        plan_sha256 = hashlib.sha256(
+            json.dumps(
+                plan_identity,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        direct_target_count = sum(
+            target.key.frequency in PROVIDER_FETCH_FREQUENCIES for target in targets
+        )
+        return (
+            ContractWarmupPlan(
+                symbol=symbol,
+                contract=contract,
+                provider=fact.provider,
+                listed_date=fact.listed_date,
+                expired_date=fact.expired_date,
+                requested_through=request.through,
+                effective_through=effective_through,
+                target_windows=target_windows,
+                direct_target_count=direct_target_count,
+                derived_target_count=len(targets) - direct_target_count,
+                expected_bar_count=sum(len(target.expected) for target in targets),
+                provider_request_count=direct_target_count,
+                plan_sha256=plan_sha256,
+            ),
+            tuple(targets),
+        )
+
     def audit(
         self,
         request: AuditRequest,
@@ -465,8 +734,10 @@ class HistoricalDataManager:
                             first.month,
                         )
                     )
-                for key, year, month, expected in self._desired_months((symbol,), through):
-                    if not expected:
+                for key, year, month, expected, _mapped_days in self._desired_months(
+                    (symbol,), through
+                ):
+                    if not expected and key.kind is not DatasetKind.CONTRACT:
                         continue
                     existing, physical_reason = self._existing_partition(key, year, month)
                     if physical_reason is not None:
@@ -479,6 +750,36 @@ class HistoricalDataManager:
                                 month,
                             )
                         )
+                        continue
+                    if key.kind is DatasetKind.CONTRACT:
+                        classification = self._classify_contract_partition(
+                            key,
+                            year,
+                            month,
+                            expected,
+                            existing,
+                            through,
+                        )
+                        if classification.outside_lifecycle:
+                            findings.append(
+                                AuditFinding(
+                                    "CONTRACT_PARTITION_OUTSIDE_LIFECYCLE",
+                                    "partition",
+                                    key.as_tuple(),
+                                    year,
+                                    month,
+                                )
+                            )
+                        if classification.missing_mapped:
+                            findings.append(
+                                AuditFinding(
+                                    "EXPECTED_PARTITION_MISSING",
+                                    "partition",
+                                    key.as_tuple(),
+                                    year,
+                                    month,
+                                )
+                            )
                         continue
                     if tuple(bar.bar_end for bar in existing) != expected:
                         findings.append(
@@ -543,24 +844,90 @@ class HistoricalDataManager:
     ):
         """遍历应处理的月分区；force 时 missing=整段 expected（refresh 重写语义）。"""
         latest_complete_by_symbol: dict[str, date] = {}
-        for key, year, month, expected in self._desired_months(
+        for key, year, month, expected, mapped_days in self._desired_months(
             products,
             through,
             frequencies=frequencies,
         ):
-            if not expected:
+            if not expected and key.kind is not DatasetKind.CONTRACT:
                 continue
             existing, physical_reason = self._existing_partition(key, year, month)
             if physical_reason is not None:
+                if not expected:
+                    continue
                 # 分区元数据损坏：按整月 expected 重拉，避免在残缺文件上增量合并。
                 yield _Target(key, year, month, expected, expected, ())
+                continue
+            existing_by_end = {bar.bar_end: bar for bar in existing}
+            present = set(existing_by_end)
+            if key.kind is DatasetKind.CONTRACT:
+                classification = self._classify_contract_partition(
+                    key,
+                    year,
+                    month,
+                    expected,
+                    existing,
+                    through,
+                )
+                eligible_mapped = classification.missing_mapped
+                if since is not None:
+                    required_since = {
+                        item.astimezone(UTC)
+                        for item in self.coverage.expected_bar_ends_for_trading_days(
+                            key,
+                            tuple(day for day in mapped_days if day >= since),
+                        )
+                    }
+                    eligible_mapped = tuple(
+                        item
+                        for item in classification.missing_mapped
+                        if item in required_since
+                    )
+                missing = eligible_mapped
+                if force:
+                    if classification.refresh_expected and (
+                        since is None
+                        or (year, month) >= (since.year, since.month)
+                    ):
+                        refresh_set = set(classification.refresh_expected)
+                        publish_set = set(classification.expected)
+                        retained = tuple(
+                            bar
+                            for bar in existing
+                            if bar.bar_end.astimezone(UTC) in publish_set
+                            and bar.bar_end.astimezone(UTC) not in refresh_set
+                        )
+                        yield _Target(
+                            key,
+                            year,
+                            month,
+                            classification.expected,
+                            classification.refresh_expected,
+                            retained,
+                        )
+                elif classification.outside_lifecycle:
+                    yield _Target(
+                        key,
+                        year,
+                        month,
+                        classification.expected,
+                        classification.expected,
+                        (),
+                    )
+                elif missing:
+                    yield _Target(
+                        key,
+                        year,
+                        month,
+                        classification.expected,
+                        missing,
+                        existing,
+                    )
                 continue
             latest_complete = latest_complete_by_symbol.get(key.symbol)
             if latest_complete is None:
                 latest_complete = self.coverage.latest_complete_day((key.symbol,))
                 latest_complete_by_symbol[key.symbol] = latest_complete
-            existing_by_end = {bar.bar_end: bar for bar in existing}
-            present = set(existing_by_end)
             missing = tuple(
                 item
                 for item in expected
@@ -581,6 +948,51 @@ class HistoricalDataManager:
                 # Canonical bar 当作异常并在重写时丢弃。
                 publish_expected = tuple(sorted(set(expected).union(present)))
                 yield _Target(key, year, month, publish_expected, missing, existing)
+
+    def _classify_contract_partition(
+        self,
+        key: DatasetKey,
+        year: int,
+        month: int,
+        required_mapped: tuple[datetime, ...],
+        existing: tuple[CanonicalBar, ...],
+        through: date,
+    ) -> _ContractPartitionClassification:
+        """应用 mapped ⊆ persisted ⊆ lifecycle-valid 的唯一 contract 判定。"""
+        fact = self.catalog.contract_fact(key.symbol, key.series_or_contract)
+        lifecycle_valid = (
+            {
+                item.astimezone(UTC)
+                for item in self.coverage.contract_expected_bar_ends(
+                    key,
+                    fact,
+                    year,
+                    month,
+                    max(bar.trading_day for bar in existing),
+                )
+            }
+            if existing
+            else set()
+        )
+        required = {item.astimezone(UTC) for item in required_mapped}
+        persisted = tuple(bar.bar_end.astimezone(UTC) for bar in existing)
+        persisted_set = set(persisted)
+        valid_persisted = persisted_set.intersection(lifecycle_valid)
+        refresh_persisted = {
+            bar.bar_end.astimezone(UTC)
+            for bar in existing
+            if bar.trading_day <= through
+            and bar.bar_end.astimezone(UTC) in lifecycle_valid
+        }
+        return _ContractPartitionClassification(
+            expected=tuple(sorted(required.union(valid_persisted))),
+            refresh_expected=tuple(sorted(required.union(refresh_persisted))),
+            missing_mapped=tuple(sorted(required - persisted_set)),
+            outside_lifecycle=(
+                len(persisted) != len(persisted_set)
+                or not persisted_set.issubset(lifecycle_valid)
+            ),
+        )
 
     def _desired_months(
         self,
@@ -615,34 +1027,76 @@ class HistoricalDataManager:
                                 key, year, month, start, through
                             )
                         ),
+                        (),
                     )
-            # contract 序列按主力映射日分组：只在映射到的交易日生成该合约的 expected。
+            # contract 序列的 required 仍仅来自主力映射日；已存在的 Catalog
+            # 分区也必须参与 lifecycle 分类，以覆盖没有 rank1 日的纯 warm-up 月。
             mapping = self.catalog.main_map(symbol, product_start, through)
             days_by_contract_month: dict[tuple[str, int, int], list[date]] = {}
             for fact in mapping:
                 days_by_contract_month.setdefault(
                     (fact.contract, fact.trade_date.year, fact.trade_date.month), []
                 ).append(fact.trade_date)
-            for (contract, year, month), mapped_days in days_by_contract_month.items():
-                for frequency in selected_frequencies:
-                    key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
-                    dataset_start = (
-                        self.coverage.dataset_start(key)
-                        if hasattr(self.coverage, "dataset_start")
-                        else product_start
-                    )
-                    expected = self.coverage.expected_bar_ends_for_trading_days(
-                        key,
-                        tuple(day for day in mapped_days if day >= dataset_start),
-                    )
-                    if not expected:
-                        continue
-                    yield (
-                        key,
-                        year,
-                        month,
-                        tuple(item.astimezone(UTC) for item in expected),
-                    )
+            desired_contract_partitions: dict[
+                tuple[str, int, int, BarFrequency], tuple[date, ...]
+            ] = {
+                (contract, year, month, frequency): tuple(mapped_days)
+                for (contract, year, month), mapped_days in days_by_contract_month.items()
+                for frequency in selected_frequencies
+            }
+            through_month = (through.year, through.month)
+            for frequency in selected_frequencies:
+                for partition in self.catalog.contract_partitions_before(
+                    symbol,
+                    frequency,
+                    None,
+                ):
+                    if (partition.year, partition.month) <= through_month:
+                        identity = (
+                            partition.dataset.series_or_contract,
+                            partition.year,
+                            partition.month,
+                            frequency,
+                        )
+                        desired_contract_partitions.setdefault(identity, ())
+            frequency_index = {
+                frequency: index
+                for index, frequency in enumerate(selected_frequencies)
+            }
+            for (
+                contract,
+                year,
+                month,
+                frequency,
+            ), mapped_days in sorted(
+                desired_contract_partitions.items(),
+                key=lambda item: (
+                    item[0][1],
+                    item[0][2],
+                    item[0][0],
+                    frequency_index[item[0][3]],
+                ),
+            ):
+                key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
+                dataset_start = (
+                    self.coverage.dataset_start(key)
+                    if hasattr(self.coverage, "dataset_start")
+                    else product_start
+                )
+                active_mapped_days = tuple(
+                    day for day in mapped_days if day >= dataset_start
+                )
+                expected = self.coverage.expected_bar_ends_for_trading_days(
+                    key,
+                    active_mapped_days,
+                )
+                yield (
+                    key,
+                    year,
+                    month,
+                    tuple(item.astimezone(UTC) for item in expected),
+                    active_mapped_days,
+                )
 
     def _execute(
         self,
@@ -680,6 +1134,7 @@ class HistoricalDataManager:
             fetched,
             intraday_derived,
             through,
+            weekly_daily_companions=True,
         )
 
     def _execute_streaming(
@@ -705,6 +1160,7 @@ class HistoricalDataManager:
                 frequencies=INTRADAY_DERIVED_FREQUENCIES,
             ),
             through,
+            weekly_daily_companions=True,
         )
 
     def _execute_apply(
@@ -713,6 +1169,8 @@ class HistoricalDataManager:
         fetched,
         intraday_derived,
         through: date | None,
+        *,
+        weekly_daily_companions: bool,
     ) -> MaintenanceResult:
         """apply 核心循环：先聚合已有 1m，再 fetch，最后扫剩余日内派生目标。"""
         remaining_derived = list(intraday_derived)
@@ -740,7 +1198,22 @@ class HistoricalDataManager:
                 remaining_derived.remove(target)
                 planned += 1
                 applied += 1
-        for target in fetched:
+        fetched_targets = tuple(fetched)
+        fetch_groups: Iterable[tuple[_Target, ...]]
+        if weekly_daily_companions:
+            fetch_groups = (
+                (
+                    (*self._weekly_daily_companions(target, through), target)
+                    if target.key.frequency is BarFrequency.W1
+                    and through is not None
+                    else (target,)
+                )
+                for target in fetched_targets
+            )
+        else:
+            fetch_groups = _contract_warmup_fetch_groups(fetched_targets)
+        for fetch_targets in fetch_groups:
+            target = fetch_targets[-1]
             if (
                 target.key.frequency is BarFrequency.W1
                 and _family(target.key) in failed_families
@@ -748,12 +1221,8 @@ class HistoricalDataManager:
                 planned += 1
                 blocked += 1
                 continue
+            failure_target = target
             try:
-                fetch_targets = (
-                    (*self._weekly_daily_companions(target, through), target)
-                    if target.key.frequency is BarFrequency.W1 and through is not None
-                    else (target,)
-                )
                 planned += len(fetch_targets)
                 provider_requests += len(fetch_targets)
                 batches = self.provider.fetch_many(tuple(
@@ -764,11 +1233,13 @@ class HistoricalDataManager:
                     raise StorageError("PROVIDER_BATCH_COUNT_MISMATCH")
                 paired = tuple(zip(fetch_targets, batches, strict=True))
                 for fetch_target, batch in paired:
+                    failure_target = fetch_target
                     self._merged_fetched_bars(
                         fetch_target,
                         (batch,),
                     )
                 for fetch_target, batch in paired:
+                    failure_target = fetch_target
                     self._publish_fetched(fetch_target, (batch,))
                     applied += 1
                 # 日内派生触发点：同族同月 1m 发布成功后立即聚合 5m/15m/30m/60m。
@@ -781,6 +1252,7 @@ class HistoricalDataManager:
                         and item.month == target.month
                     ]
                     for item in ready:
+                        failure_target = item
                         remaining_derived.remove(item)
                         planned += 1
                         self._publish_derived(item)
@@ -802,8 +1274,8 @@ class HistoricalDataManager:
                     )
                 if _is_global_failure(exc):
                     raise
-                failed_families.add(_family(target.key))
-                failures.append(_failure(target, exc))
+                failed_families.add(_family(failure_target.key))
+                failures.append(_failure(failure_target, exc))
                 self.catalog.session.rollback()
             if planned == 1 or planned % 100 == 0:
                 print(
@@ -832,8 +1304,14 @@ class HistoricalDataManager:
                 )
         if planned == 0:
             status = "noop"
+        elif failures or blocked:
+            status = (
+                "partial"
+                if action == "contract_warmup" and applied
+                else "failed"
+            )
         else:
-            status = "failed" if failures or blocked else "passed"
+            status = "passed"
         return MaintenanceResult(
             action,
             status,
@@ -844,6 +1322,86 @@ class HistoricalDataManager:
             len(failures),
             provider_requests,
             failures=tuple(failures),
+        )
+
+    def _with_contract_weekly_daily_context(
+        self,
+        targets: list[_Target],
+        fact: ContractFact,
+        through: date,
+    ) -> list[_Target]:
+        """将缺失周线需要的 exact-lifecycle 日线刷新并入 warm-up 计划。"""
+        refresh_by_partition: dict[
+            tuple[DatasetKey, int, int], set[datetime]
+        ] = {}
+        for weekly in tuple(targets):
+            if weekly.key.frequency is not BarFrequency.W1:
+                continue
+            daily_key = DatasetKey(
+                DatasetKind.CONTRACT,
+                weekly.key.symbol,
+                weekly.key.series_or_contract,
+                BarFrequency.D1,
+            )
+            for weekly_end in weekly.missing:
+                trading_day = weekly_end.astimezone(SHANGHAI).date()
+                monday = trading_day - timedelta(days=trading_day.isoweekday() - 1)
+                sunday = min(monday + timedelta(days=6), through)
+                trading_days = self.coverage.contract_trading_days(
+                    fact,
+                    monday,
+                    sunday,
+                )
+                for item in self.coverage.expected_bar_ends_for_trading_days(
+                    daily_key,
+                    trading_days,
+                ):
+                    bar_end = item.astimezone(UTC)
+                    local_day = bar_end.astimezone(SHANGHAI).date()
+                    refresh_by_partition.setdefault(
+                        (daily_key, local_day.year, local_day.month), set()
+                    ).add(bar_end)
+
+        by_partition = {
+            (target.key, target.year, target.month): target for target in targets
+        }
+        for (key, year, month), refresh in refresh_by_partition.items():
+            target = by_partition.get((key, year, month))
+            if target is None:
+                existing, physical_reason = self._existing_partition(key, year, month)
+                if physical_reason is not None:
+                    expected = tuple(sorted(refresh))
+                    target = _Target(key, year, month, expected, expected, ())
+                else:
+                    present = {bar.bar_end.astimezone(UTC) for bar in existing}
+                    target = _Target(
+                        key,
+                        year,
+                        month,
+                        tuple(sorted(present.union(refresh))),
+                        tuple(sorted(refresh)),
+                        existing,
+                    )
+            else:
+                target = _Target(
+                    key,
+                    year,
+                    month,
+                    tuple(sorted(set(target.expected).union(refresh))),
+                    tuple(sorted(set(target.missing).union(refresh))),
+                    target.existing,
+                )
+            by_partition[(key, year, month)] = target
+        frequency_order = {
+            frequency: index for index, frequency in enumerate(_FREQUENCY_ORDER)
+        }
+        return sorted(
+            by_partition.values(),
+            key=lambda target: (
+                frequency_order[target.key.frequency],
+                target.year,
+                target.month,
+            ),
         )
 
     def _weekly_daily_companions(
@@ -1100,6 +1658,87 @@ def _target_payload(target: _Target) -> Mapping[str, object]:
         "window_end": target.missing[-1].isoformat(),
         "missing_bar_count": len(target.missing),
     }
+
+
+def _contract_warmup_target_payload(target: _Target) -> Mapping[str, object]:
+    """稳定描述 warm-up 月目标的完整 expected 与实际 missing 边界。"""
+    return {
+        "dataset": target.key.as_tuple(),
+        "year": target.year,
+        "month": target.month,
+        "expected_start": target.expected[0].isoformat(),
+        "expected_end": target.expected[-1].isoformat(),
+        "expected_bar_count": len(target.expected),
+        "missing_start": target.missing[0].isoformat(),
+        "missing_end": target.missing[-1].isoformat(),
+        "missing_bar_count": len(target.missing),
+    }
+
+
+def _contract_warmup_hash_target_payload(target: _Target) -> Mapping[str, object]:
+    """Plan identity additionally locks every sorted expected/missing timestamp."""
+    return {
+        **_contract_warmup_target_payload(target),
+        "expected_bar_ends": tuple(
+            item.isoformat() for item in sorted(target.expected)
+        ),
+        "missing_bar_ends": tuple(
+            item.isoformat() for item in sorted(target.missing)
+        ),
+    }
+
+
+def _contract_warmup_fetch_groups(
+    targets: tuple[_Target, ...],
+) -> tuple[tuple[_Target, ...], ...]:
+    """Batch only D1/W1 targets connected by an affected ISO week."""
+    parent = list(range(len(targets)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    daily = tuple(
+        index
+        for index, target in enumerate(targets)
+        if target.key.frequency is BarFrequency.D1
+    )
+    weekly = tuple(
+        index
+        for index, target in enumerate(targets)
+        if target.key.frequency is BarFrequency.W1
+    )
+    weeks = {
+        index: {
+            value.astimezone(SHANGHAI).date().isocalendar()[:2]
+            for value in targets[index].missing
+        }
+        for index in (*daily, *weekly)
+    }
+    for daily_index in daily:
+        for weekly_index in weekly:
+            if (
+                _family(targets[daily_index].key)
+                == _family(targets[weekly_index].key)
+                and weeks[daily_index].intersection(weeks[weekly_index])
+            ):
+                union(daily_index, weekly_index)
+
+    grouped: dict[int, list[tuple[int, _Target]]] = {}
+    for index, target in enumerate(targets):
+        grouped.setdefault(find(index), []).append((index, target))
+    return tuple(
+        tuple(target for _index, target in sorted(group))
+        for group in sorted(grouped.values(), key=lambda group: min(group)[0])
+    )
 
 
 def _is_global_failure(exc: Exception) -> bool:

@@ -1,0 +1,355 @@
+import type {
+  DetailViewModel,
+  MarketDetailDisclosureRow,
+  MarketDetailDisclosureSection,
+  MarketDetailFact,
+  MarketDetailHeaderModel,
+  MarketDetailHistoryItem,
+  MarketDetailIdentity,
+} from '../types/marketDetail.ts'
+import type {
+  NewowCupHandle,
+  NewowCupState,
+  NewowEscapeMarkerType,
+  NewowMarker,
+  NewowTrendDetailResponse,
+} from '../types/newow.ts'
+import type { ProductResearchResponse } from '../types/market.ts'
+
+export interface NewowDetailViewModelInput {
+  identity: MarketDetailIdentity
+  header: MarketDetailHeaderModel
+  data: NewowTrendDetailResponse | null
+  weeklyContext?: Pick<ProductResearchResponse, 'symbol' | 'series_kind' | 'contract' | 'as_of' | 'weekly_trend'> | null
+}
+
+const D_PRIORITY: Readonly<Record<NewowEscapeMarkerType, number>> = {
+  NEWOW_ESCAPE_D1: 0,
+  NEWOW_ESCAPE_D2: 1,
+  NEWOW_ESCAPE_D3: 2,
+}
+
+const SAME_FAMILY_MARKER_ORDER: Readonly<Record<string, number>> = {
+  NEWOW_ESCAPE_D1: 0,
+  NEWOW_ESCAPE_D2: 1,
+  NEWOW_ESCAPE_D3: 2,
+  CUP_HANDLE_READY: 0,
+  CUP_HANDLE_BREAKOUT: 1,
+  CUP_HANDLE_WEAKENED: 2,
+  CUP_HANDLE_INVALIDATED: 3,
+  CUP_HANDLE_EXPIRED: 4,
+}
+
+const CUP_STATE_LABEL: Readonly<Record<NewowCupState, string>> = {
+  FORMING: '形成',
+  READY: '就绪',
+  BREAKOUT: '突破',
+  WEAKENED: '走弱',
+  INVALIDATED: '失效',
+  EXPIRED: '过期',
+}
+
+/** Projects normalized, completed-only API facts without recreating Newow calculations. */
+export function buildNewowDetailViewModel(input: NewowDetailViewModelInput): DetailViewModel {
+  const data = snapshotForIdentity(input.data, input.identity)
+  const facts = currentFacts(data, weeklyFact(input))
+  return {
+    view: 'trend',
+    identity: input.identity,
+    asOf: data?.bars.at(-1)?.bar_end ?? null,
+    semanticBanner: {
+      text: '建仓、持有、清仓、空仓为趋势引擎状态，不代表实际账户持仓。',
+      tone: 'warning',
+    },
+    facts,
+    disclosureSections: disclosures(data, input.header, facts),
+    history: data === null ? [] : newowMarkerHistory(data),
+    dataStatus: data === null
+      ? 'unavailable'
+      : input.header.freshness === 'fresh' ? 'ready'
+        : input.header.freshness === 'stale' ? 'stale' : 'unavailable',
+  }
+}
+
+/** Combines API marker families only; these entries are not AlertEvent or delivery facts. */
+export function newowMarkerHistory(data: NewowTrendDetailResponse): MarketDetailHistoryItem[] {
+  const contractByBarEnd = new Map(data.bars.map((bar) => [bar.bar_end, bar.physical_contract]))
+  const entries: HistoryProjection[] = [
+    ...data.trend_markers.map((marker) => historyProjection(marker, 0, contractByBarEnd)),
+    ...data.escape_markers.map((marker) => historyProjection(marker, 1, contractByBarEnd)),
+    ...data.cup_markers.map((marker) => historyProjection(marker, 2, contractByBarEnd)),
+  ]
+  entries.sort((left, right) => {
+    const timeOrder = Date.parse(right.item.occurredAt) - Date.parse(left.item.occurredAt)
+    if (timeOrder !== 0) return timeOrder
+    if (left.familyOrder !== right.familyOrder) return left.familyOrder - right.familyOrder
+    const typeOrder = markerTypeOrder(left.item.markerType) - markerTypeOrder(right.item.markerType)
+    return typeOrder !== 0 ? typeOrder : lexical(left.item.id, right.item.id)
+  })
+  return entries.map(({ item }) => item)
+}
+
+interface HistoryProjection {
+  familyOrder: number
+  item: MarketDetailHistoryItem
+}
+
+function historyProjection(
+  marker: NewowMarker,
+  familyOrder: number,
+  contractByBarEnd: ReadonlyMap<string, string>,
+): HistoryProjection {
+  return {
+    familyOrder,
+    item: {
+      id: `newow-marker:${marker.marker_id}`,
+      label: marker.label,
+      occurredAt: marker.bar_end,
+      source: 'newow',
+      barEnd: marker.bar_end,
+      contract: contractByBarEnd.get(marker.bar_end),
+      markerType: marker.marker_type,
+      formulaVersion: marker.formula_version,
+    },
+  }
+}
+
+function weeklyFact(input: NewowDetailViewModelInput): MarketDetailFact {
+  const context = input.weeklyContext
+  const valid = context?.symbol === input.identity.symbol
+    && context.series_kind === 'actual_dominant' && context.contract === null
+    && Number.isFinite(Date.parse(context.as_of))
+  const state = valid ? context.weekly_trend : 'unavailable'
+  return { id: 'weekly-context', label: '周线背景', source: 'market',
+    value: state === 'up' ? '上行' : state === 'down' ? '下行' : state === 'neutral' ? '中性' : '不可用',
+    tone: state === 'unavailable' ? 'unavailable' : 'default' }
+}
+
+function currentFacts(data: NewowTrendDetailResponse | null, weekly: MarketDetailFact): DetailViewModel['facts'] {
+  if (data === null) return [weekly,
+    fact('trend-state', '日线趋势', '不可用', 'unavailable'),
+    fact('d-risk', '当前风险', '不可用', 'unavailable')]
+  const latestBar = data.bars.at(-1)
+  const latestBand = data.trend_band.at(-1)
+
+  const trendUnavailable = latestBar === undefined
+    || latestBand === undefined
+    || data.warnings.includes('NEWOW_TREND_WARMUP_INSUFFICIENT')
+  const trendValue = trendUnavailable ? '不可用'
+    : latestBand.transition === 'BUILD' ? '建仓'
+      : latestBand.transition === 'CLEAR' ? '清仓'
+        : latestBand.state === 'YELLOW' ? '持有'
+          : latestBand.state === 'BLUE' ? '空仓' : '不可用'
+
+  const escapeUnavailable = latestBar === undefined
+    || data.warnings.includes('NEWOW_D123_WARMUP_INSUFFICIENT')
+  const latestEscape = escapeUnavailable ? undefined : data.escape_markers
+    .filter((marker) => marker.bar_end === latestBar.bar_end)
+    .sort((left, right) => D_PRIORITY[left.marker_type] - D_PRIORITY[right.marker_type])[0]
+  const escapeValue = escapeUnavailable
+    ? '不可用'
+    : latestEscape?.marker_type.replace('NEWOW_ESCAPE_', '') ?? '暂无 D1/D2/D3'
+
+  return [
+    weekly,
+    fact('trend-state', '日线趋势', trendValue, trendUnavailable ? 'unavailable' : trendTone(trendValue)),
+    fact('d-risk', '当前风险', escapeValue, escapeUnavailable ? 'unavailable' : latestEscape ? 'warning' : 'default'),
+  ]
+}
+
+function fact(
+  id: string,
+  label: string,
+  value: string,
+  tone: MarketDetailFact['tone'],
+): MarketDetailFact {
+  return { id, label, value, tone, source: 'newow' }
+}
+
+function latestCurrentCup(data: NewowTrendDetailResponse): NewowCupHandle | undefined {
+  const latest = data.bars.at(-1)
+  if (latest === undefined) return undefined
+  const owners = new Map(data.bars.map((bar) => [bar.bar_end, bar]))
+  return data.cup_handles.filter((cup) => {
+    const owner = owners.get(cup.state_changed_at)
+    return owner?.segment_id === latest.segment_id && owner.physical_contract === latest.physical_contract
+  }).sort((left, right) => {
+    const timeOrder = Date.parse(right.state_changed_at) - Date.parse(left.state_changed_at)
+    return timeOrder !== 0 ? timeOrder : lexical(left.candidate_id, right.candidate_id)
+  })[0]
+}
+
+function disclosures(
+  data: NewowTrendDetailResponse | null,
+  header: MarketDetailHeaderModel,
+  facts: DetailViewModel['facts'],
+): readonly MarketDetailDisclosureSection[] {
+  if (data === null) {
+    return [{
+      id: 'newow-unavailable', title: '趋势判断', summary: '趋势策略数据不可用',
+      updatedAt: null, tone: 'unavailable',
+      rows: [{ label: '当前状态', value: '不可用', source: 'newow' }],
+    }]
+  }
+  const latestBar = data.bars.at(-1)
+  const latestBand = data.trend_band.at(-1)
+  const latestTransition = latestTrendTransition(data)
+  const escapeUnavailable = data.warnings.includes('NEWOW_D123_WARMUP_INSUFFICIENT')
+  const currentEscapeMarkers = latestBar === undefined || escapeUnavailable
+    ? []
+    : data.escape_markers
+      .filter((marker) => marker.bar_end === latestBar.bar_end)
+      .sort((left, right) => D_PRIORITY[left.marker_type] - D_PRIORITY[right.marker_type])
+  const historicalEscape = latestEscapeMarker(data.escape_markers)
+  const cupUnavailable = data.warnings.includes('NEWOW_CUP_WARMUP_INSUFFICIENT')
+  const cup = cupUnavailable
+    ? undefined : latestCurrentCup(data)
+  const latestRollover = data.rollover_seams.at(-1)
+  return [
+    {
+      id: 'newow-trend', title: '趋势判断', summary: facts[1].value,
+      updatedAt: latestBar?.bar_end ?? null,
+      tone: facts[1].tone === 'unavailable' ? 'unavailable' : 'default',
+      rows: [
+        { label: '当前策略状态', value: facts[1].value, source: 'newow' },
+        { label: '当前趋势带', value: latestBand?.state ?? '不可用', source: 'newow' },
+        { label: '最近转换', value: latestTransition?.transition ?? '无', source: 'newow' },
+        { label: '转换时间', value: latestTransition?.bar_end ?? '无', source: 'newow' },
+        { label: '当前物理合约', value: latestBar?.physical_contract ?? '不可用', source: 'newow' },
+        { label: '分析截至 completed D1', value: latestBar?.bar_end ?? '不可用', source: 'newow' },
+      ],
+    },
+    {
+      id: 'newow-risk-shape', title: '风险与形态', summary: `${facts[2].value} · ${cupUnavailable ? '不可用' : cup ? CUP_STATE_LABEL[cup.state] : '无'}`,
+      updatedAt: latestBar?.bar_end ?? null,
+      tone: facts[2].tone === 'unavailable' || cupUnavailable ? 'unavailable' : 'default',
+      rows: [
+        ...escapeDisclosureRows(escapeUnavailable, currentEscapeMarkers, historicalEscape, latestBar?.bar_end),
+        ...cupDisclosureRows(cupUnavailable, cup),
+      ],
+    },
+    {
+      id: 'newow-data', title: '主力与数据', summary: latestBar?.physical_contract ?? '不可用',
+      updatedAt: latestBar?.bar_end ?? null,
+      tone: latestBar ? 'default' : 'unavailable',
+      rows: [
+        { label: '序列', value: '真实主力', source: 'newow' },
+        { label: '当前合约', value: latestBar?.physical_contract ?? '不可用', source: 'newow' },
+        { label: '当前 Segment', value: latestBar?.segment_id ?? '不可用', source: 'newow' },
+        { label: '最近换月', value: latestRollover ? jsonText(latestRollover) : '无', source: 'newow' },
+        { label: 'warnings', value: jsonText(data.warnings), source: 'newow' },
+        { label: '数据覆盖', value: data.bars.length > 0 ? `${data.bars[0]!.trading_day} 至 ${data.bars.at(-1)!.trading_day}` : '不可用', source: 'newow' },
+        { label: '共享行情状态', value: header.freshness === 'fresh' ? '正常' : header.freshness === 'stale' ? '旧快照' : '不可用', source: 'market' },
+      ],
+    },
+  ]
+}
+
+function latestTrendTransition(data: NewowTrendDetailResponse) {
+  for (let index = data.trend_band.length - 1; index >= 0; index -= 1) {
+    const point = data.trend_band[index]!
+    if (point.transition !== null) return point
+  }
+  return undefined
+}
+
+function latestEscapeMarker(markers: NewowTrendDetailResponse['escape_markers']) {
+  return [...markers].sort((left, right) => {
+    const timeOrder = Date.parse(right.bar_end) - Date.parse(left.bar_end)
+    if (timeOrder !== 0) return timeOrder
+    const typeOrder = D_PRIORITY[left.marker_type] - D_PRIORITY[right.marker_type]
+    return typeOrder !== 0 ? typeOrder : lexical(left.marker_id, right.marker_id)
+  })[0]
+}
+
+function escapeDisclosureRows(
+  unavailable: boolean,
+  current: NewowTrendDetailResponse['escape_markers'],
+  historical: NewowTrendDetailResponse['escape_markers'][number] | undefined,
+  latestBarEnd: string | undefined,
+): MarketDetailDisclosureRow[] {
+  return [
+    {
+      label: '当前 Bar D Markers',
+      value: unavailable ? '不可用' : current.length > 0 ? current.map((marker) => marker.marker_type).join(' / ') : '无',
+      source: 'newow',
+    },
+    { label: '当前 D Bar', value: unavailable ? '不可用' : latestBarEnd ?? '不可用', source: 'newow' },
+    { label: '最近历史 D Marker', value: historical?.marker_type ?? '无', source: 'newow' },
+    { label: '最近历史 D Bar', value: historical?.bar_end ?? '无', source: 'newow' },
+  ]
+}
+
+function cupDisclosureRows(
+  unavailable: boolean,
+  cup: NewowCupHandle | undefined,
+): MarketDetailDisclosureRow[] {
+  if (unavailable) return cupUnavailableRows()
+  if (cup === undefined) return cupEmptyRows()
+  return [
+    { label: '杯柄 Candidate', value: cup.candidate_id, source: 'newow' },
+    { label: '杯柄方向', value: cup.direction, source: 'newow' },
+    { label: '杯柄当前状态', value: `${cup.state} · ${CUP_STATE_LABEL[cup.state]}`, source: 'newow' },
+    { label: 'L 左杯沿', value: jsonText(cup.left_rim), source: 'newow' },
+    { label: 'B 杯底', value: jsonText(cup.bottom), source: 'newow' },
+    { label: 'R 右杯沿', value: jsonText(cup.right_rim), source: 'newow' },
+    { label: 'H 柄起点', value: cup.handle_start_at, source: 'newow' },
+    { label: 'H 柄极值', value: cup.handle_extreme ? jsonText(cup.handle_extreme) : '无', source: 'newow' },
+    {
+      label: 'P 枢轴',
+      value: cup.pivot_price === null || cup.pivot_frozen_at === null
+        ? '无' : jsonText({ pivot_frozen_at: cup.pivot_frozen_at, price: cup.pivot_price }),
+      source: 'newow',
+    },
+    { label: 'confirmed_at', value: cup.confirmed_at, source: 'newow' },
+    { label: 'first_seen_at', value: cup.first_seen_at, source: 'newow' },
+    { label: 'state_changed_at', value: cup.state_changed_at, source: 'newow' },
+    { label: 'score', value: String(cup.score), source: 'newow' },
+    { label: 'score_breakdown', value: jsonText(cup.score_breakdown), source: 'newow' },
+    { label: 'volume_facts', value: jsonText(cup.volume_facts), source: 'newow' },
+  ]
+}
+
+const CUP_DISCLOSURE_LABELS = [
+  '杯柄 Candidate', '杯柄方向', '杯柄当前状态', 'L 左杯沿', 'B 杯底', 'R 右杯沿',
+  'H 柄起点', 'H 柄极值', 'P 枢轴', 'confirmed_at', 'first_seen_at', 'state_changed_at',
+  'score', 'score_breakdown', 'volume_facts',
+] as const
+
+function cupUnavailableRows(): MarketDetailDisclosureRow[] {
+  return CUP_DISCLOSURE_LABELS.map((label) => ({ label, value: '不可用', source: 'newow' }))
+}
+
+function cupEmptyRows(): MarketDetailDisclosureRow[] {
+  return CUP_DISCLOSURE_LABELS.map((label) => ({ label, value: '无', source: 'newow' }))
+}
+
+function jsonText(value: object): string {
+  return JSON.stringify(value)
+}
+
+function snapshotForIdentity(
+  data: NewowTrendDetailResponse | null,
+  identity: MarketDetailIdentity,
+): NewowTrendDetailResponse | null {
+  return data !== null
+    && identity.view === 'trend'
+    && identity.seriesKind === 'actual_dominant'
+    && identity.frequency === '1d'
+    && identity.symbol === data.instrument.product
+    ? data : null
+}
+
+function markerTypeOrder(value: string | undefined): number {
+  return value === undefined ? 0 : SAME_FAMILY_MARKER_ORDER[value] ?? 0
+}
+
+function lexical(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function trendTone(value: string): MarketDetailFact['tone'] {
+  if (value === '建仓' || value === '持有') return 'up'
+  if (value === '清仓') return 'warning'
+  return 'default'
+}

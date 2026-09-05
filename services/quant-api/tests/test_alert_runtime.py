@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +12,8 @@ from app.alerts.notification import (
     AlertNotificationPolicy,
 )
 from app.alerts.registry import HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE
+from app.alerts.evaluators import AlertEvaluationError
+from app.alerts.models import AlertRule
 from app.alerts.runtime import (
     AlertRuntime,
     AlertNotificationAcknowledgeError,
@@ -20,6 +23,8 @@ from app.alerts.runtime import (
     empty_alert_runtime_status,
     validate_alert_runtime_status,
 )
+from app.market_data.domain import CanonicalBar
+from app.market_data.market_read_service import MarketReadWindow
 
 
 def test_startup_composition_requires_exact_registry_evaluator_and_policy_coverage() -> None:
@@ -215,3 +220,108 @@ def test_canonical_trigger_is_exact_and_date_canonical() -> None:
         "market:state",
         {"reason": "other", "trading_day": "2026-08-15"},
     ) is None
+
+
+def test_unrelated_live_frequency_does_not_clear_subing_rule_failure() -> None:
+    first_bar_at = datetime(2026, 9, 4, 1, 0, tzinfo=UTC)
+    now = iter(
+        first_bar_at + timedelta(minutes=offset) for offset in (1, 2, 3)
+    )
+    rule = AlertRule(
+        rule_code=SUBING_THS_ALERT_RULE_CODE,
+        enabled=True,
+        scope_product_frequencies={"rb": ["15m"]},
+    )
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def scalars(self, _statement):
+            return SimpleNamespace(all=lambda: [rule])
+
+        @staticmethod
+        def in_transaction() -> bool:
+            return False
+
+    class MarketRead:
+        def bars_until(self, _query, *, trading_day, end, limit):
+            del limit
+            bar = CanonicalBar(
+                bar_end=end,
+                trading_day=trading_day,
+                open=1,
+                high=1,
+                low=1,
+                close=1,
+                volume=1,
+                turnover=None,
+                open_interest=None,
+            )
+            return MarketReadWindow(
+                symbol="rb",
+                series_kind="actual_dominant",
+                frequency="15m",
+                trading_day=trading_day,
+                contract="RB2610",
+                cutoff=end,
+                bars=(bar,),
+                bar_contracts=("RB2610",),
+            )
+
+    class Evaluator:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def evaluate_candidates(self, _market_read, _window):
+            self.calls += 1
+            if self.calls == 1:
+                raise AlertEvaluationError("ALERT_EVALUATION_FAILED")
+            return ()
+
+    evaluator = Evaluator()
+    runtime = AlertRuntime(
+        session_factory=Session,
+        market_read_factory=lambda _session: MarketRead(),
+        evaluators={SUBING_THS_ALERT_RULE_CODE: evaluator},
+        sender=object(),  # type: ignore[arg-type]
+        operational_products=("rb",),
+        taxonomy={},
+        clock=lambda: next(now),
+    )
+    payload = {
+        "bar_end": first_bar_at.isoformat(),
+        "trading_day": first_bar_at.date().isoformat(),
+        "open": "1",
+        "high": "1",
+        "low": "1",
+        "close": "1",
+        "volume": "1",
+        "turnover": None,
+        "open_interest": None,
+    }
+
+    runtime.process_message("live:bar:rb:15m", payload)
+    failed = runtime._current_runtime_status()["rule_status"][
+        SUBING_THS_ALERT_RULE_CODE
+    ]
+    assert failed["error_type"] == "evaluation_failed"
+    assert failed["last_failure_at"] == "2026-09-04T01:01:00+00:00"
+    assert failed["last_evaluated_bar_at"] is None
+
+    runtime.process_message("live:bar:rb:1m", payload)
+    assert runtime._current_runtime_status()["rule_status"][
+        SUBING_THS_ALERT_RULE_CODE
+    ] == failed
+
+    runtime.process_message("live:bar:rb:15m", payload)
+    recovered = runtime._current_runtime_status()["rule_status"][
+        SUBING_THS_ALERT_RULE_CODE
+    ]
+    assert recovered["error_type"] is None
+    assert recovered["last_evaluated_bar_at"] == first_bar_at.isoformat()
+    assert recovered["last_failure_at"] == failed["last_failure_at"]
+    assert evaluator.calls == 2

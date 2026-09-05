@@ -1,0 +1,128 @@
+{
+  "case_count": 27,
+  "core_source_tree": {
+    "path": "packages/quant-core/guiyi_quant/newow/*.py",
+    "sha256": "8e68555295d653e755378814dab99f18a6e7eaeac2a991d3d0f0c8f086f87045"
+  },
+  "feature_counts": {
+    "ai_copy": {
+      "compared": 0,
+      "matched": 0,
+      "mismatched": 0,
+      "unavailable": 27
+    },
+    "certainty_direction": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "certainty_oscillation": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "certainty_total": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "certainty_trend": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "channel_absorb": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "channel_target": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "composite_decision": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "composite_direction": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "composite_position": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "diagnostic_tokens": {
+      "compared": 0,
+      "matched": 0,
+      "mismatched": 0,
+      "unavailable": 27
+    },
+    "display_absorb": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "display_target": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "first_action_level": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "first_action_rule": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "five_window_ranking": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "volatility": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    },
+    "volatility_level": {
+      "compared": 27,
+      "matched": 27,
+      "mismatched": 0,
+      "unavailable": 0
+    }
+  },
+  "input": {
+    "path": "analysis/core-parity-inputs.json",
+    "sha256": "94077b143bfb702742083ad46827e9dea32045e9bc2367cc19f302a4c689a2d9"
+  },
+  "mismatch_count": 0,
+  "mismatches": [],
+  "schema_version": "newow-v3.2.82-core-page-parity-results-v2",
+  "unavailable_reasons": {
+    "ai_copy": "page AI prose is a private/template output and is hash-preserved, not promoted as a formula oracle",
+    "diagnostic_tokens": "page exposes prose but no stable machine-readable diagnostic token contract; clean-room only"
+  }
+}

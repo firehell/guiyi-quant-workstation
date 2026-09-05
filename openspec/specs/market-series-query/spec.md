@@ -26,6 +26,16 @@ actual_dominant 的 1w SHALL 只返回完整 ISO 周，并以该周最后交易�
 成功响应 SHALL 返回规范化请求、bars、实际 coverage 与 resolved contract segments；不得返回
 profile、binding、quality report、content digest、access-mode 或 legacy selector 字段。
 
+`resolved contract segments` SHALL 仅表达该周期实际返回 Bar 的 owner 事实。需要跨周期研究和
+query-invariant segment identity 的消费者 SHALL 另由 `MarketDataService.actual_dominant_segments`
+读取与请求交易日窗口相交的完整 rank1 MainContractMap 分段。不同周期的 owner 子集 MAY 不相等；
+每根返回 Bar MUST 同时被唯一的响应 owner 和全局权威 owner 覆盖，且 contract 一致。消费者不得以
+D1 owner 推断 W1/60m，也不得把各周期 owner 子集的并集冒充全局 MainContractMap。
+
 #### Scenario: 多月连续查询
 - **WHEN** 所有相交月完整且可读
 - **THEN** 服务按时间有序合并并去重返回窗口 bars
+
+#### Scenario: 短主力段没有完整周线 Bar
+- **WHEN** 一个 rank1 分段短于完整 ISO 周且该段没有 W1 Bar，但 D1/60m 存在 Bar
+- **THEN** 全局权威分段仍包含该段，W1 响应 owner 子集可以省略它，逐 Bar owner 校验通过

@@ -200,5 +200,5 @@ def build_session_anchor_repair_service(session: Session) -> SessionAnchorRepair
         runtime_stopped=local_runtime_stopped,
         migration_runner=run_session_anchor_migration,
         current_trading_day=current_trading_day,
-        live_cleanup=live_store.cleanup_trading_day,
+        live_cleanup=live_store.cleanup_bars_for_trading_day,
     )

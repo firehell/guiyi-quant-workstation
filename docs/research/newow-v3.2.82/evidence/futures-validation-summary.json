@@ -1,0 +1,1479 @@
+{
+  "captured_at": "2026-09-04T04:26:01.167551+00:00",
+  "cost_oos_gate": {
+    "catalog_contract_rows": 39,
+    "catalog_multiplier_rows": 39,
+    "contract_metadata": {
+      "M2305": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "M2309": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "M2401": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "M2405": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "M2409": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "M2501": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "M2505": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "RB2305": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "RB2310": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "RB2401": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "RB2405": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "RB2410": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "RB2501": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "RB2505": {
+        "contract_multiplier": 10,
+        "provider": "rqdata"
+      },
+      "SC2302": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2303": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2304": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2305": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2306": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2307": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2308": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2309": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2310": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2311": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2312": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2401": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2402": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2403": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2404": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2405": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2406": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2407": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2408": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2409": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2410": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2411": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2412": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2501": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      },
+      "SC2502": {
+        "contract_multiplier": 1000,
+        "provider": "rqdata"
+      }
+    },
+    "missing_required_sourced_facts": [
+      "historical commission_rate or commission_per_contract",
+      "historical price_tick with effective interval",
+      "per-bar limit_up and limit_down",
+      "source identity and captured_at for every cost/limit snapshot"
+    ],
+    "oos_attempts": {
+      "m:1d": {
+        "main_rise": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "oscillation": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "trend": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        }
+      },
+      "m:1w": {
+        "main_rise": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "oscillation": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "trend": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        }
+      },
+      "m:60m": {
+        "main_rise": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "oscillation": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "trend": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        }
+      },
+      "rb:1d": {
+        "main_rise": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "oscillation": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "trend": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        }
+      },
+      "rb:1w": {
+        "main_rise": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "oscillation": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "trend": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        }
+      },
+      "rb:60m": {
+        "main_rise": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "oscillation": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "trend": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        }
+      },
+      "sc:1d": {
+        "main_rise": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "oscillation": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "trend": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        }
+      },
+      "sc:1w": {
+        "main_rise": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "oscillation": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "trend": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        }
+      },
+      "sc:60m": {
+        "main_rise": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "oscillation": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        },
+        "trend": {
+          "error": "NEWOW_BACKTEST_COST_SNAPSHOT_MISSING",
+          "error_type": "ValueError",
+          "status": "blocked"
+        }
+      }
+    },
+    "status": "blocked"
+  },
+  "git_head": "e4802e11fa876ffb5879d6efe89a96538e49b6ec",
+  "mode": "read_only_catalog_canonical",
+  "products": {
+    "m": {
+      "authoritative_segment_count": 7,
+      "authoritative_segments": [
+        {
+          "contract": "M2305",
+          "end": "2023-04-10",
+          "start": "2023-01-03"
+        },
+        {
+          "contract": "M2309",
+          "end": "2023-08-11",
+          "start": "2023-04-11"
+        },
+        {
+          "contract": "M2401",
+          "end": "2023-12-08",
+          "start": "2023-08-14"
+        },
+        {
+          "contract": "M2405",
+          "end": "2024-04-01",
+          "start": "2023-12-11"
+        },
+        {
+          "contract": "M2409",
+          "end": "2024-08-13",
+          "start": "2024-04-02"
+        },
+        {
+          "contract": "M2501",
+          "end": "2024-11-14",
+          "start": "2024-08-14"
+        },
+        {
+          "contract": "M2505",
+          "end": "2025-04-03",
+          "start": "2024-11-15"
+        }
+      ],
+      "economic_group": "agriculture",
+      "frequencies": {
+        "1d": {
+          "authoritative_segment_bar_counts": [
+            {
+              "bar_count": 64,
+              "contract": "M2305",
+              "end": "2023-04-10",
+              "start": "2023-01-03"
+            },
+            {
+              "bar_count": 84,
+              "contract": "M2309",
+              "end": "2023-08-11",
+              "start": "2023-04-11"
+            },
+            {
+              "bar_count": 79,
+              "contract": "M2401",
+              "end": "2023-12-08",
+              "start": "2023-08-14"
+            },
+            {
+              "bar_count": 74,
+              "contract": "M2405",
+              "end": "2024-04-01",
+              "start": "2023-12-11"
+            },
+            {
+              "bar_count": 90,
+              "contract": "M2409",
+              "end": "2024-08-13",
+              "start": "2024-04-02"
+            },
+            {
+              "bar_count": 60,
+              "contract": "M2501",
+              "end": "2024-11-14",
+              "start": "2024-08-14"
+            },
+            {
+              "bar_count": 33,
+              "contract": "M2505",
+              "end": "2025-04-03",
+              "start": "2024-11-15"
+            }
+          ],
+          "bar_count": 484,
+          "first_bar_end": "2023-01-03T07:00:00+00:00",
+          "last_bar_end": "2024-12-31T07:00:00+00:00",
+          "observed_contract_counts": {
+            "M2305": 64,
+            "M2309": 84,
+            "M2401": 79,
+            "M2405": 74,
+            "M2409": 90,
+            "M2501": 60,
+            "M2505": 33
+          },
+          "observed_owner_segment_count": 7,
+          "status": "passed"
+        },
+        "1w": {
+          "authoritative_segment_bar_counts": [
+            {
+              "bar_count": 13,
+              "contract": "M2305",
+              "end": "2023-04-10",
+              "start": "2023-01-03"
+            },
+            {
+              "bar_count": 18,
+              "contract": "M2309",
+              "end": "2023-08-11",
+              "start": "2023-04-11"
+            },
+            {
+              "bar_count": 16,
+              "contract": "M2401",
+              "end": "2023-12-08",
+              "start": "2023-08-14"
+            },
+            {
+              "bar_count": 15,
+              "contract": "M2405",
+              "end": "2024-04-01",
+              "start": "2023-12-11"
+            },
+            {
+              "bar_count": 19,
+              "contract": "M2409",
+              "end": "2024-08-13",
+              "start": "2024-04-02"
+            },
+            {
+              "bar_count": 13,
+              "contract": "M2501",
+              "end": "2024-11-14",
+              "start": "2024-08-14"
+            },
+            {
+              "bar_count": 7,
+              "contract": "M2505",
+              "end": "2025-04-03",
+              "start": "2024-11-15"
+            }
+          ],
+          "bar_count": 101,
+          "first_bar_end": "2023-01-06T07:00:00+00:00",
+          "last_bar_end": "2024-12-27T07:00:00+00:00",
+          "observed_contract_counts": {
+            "M2305": 13,
+            "M2309": 18,
+            "M2401": 16,
+            "M2405": 15,
+            "M2409": 19,
+            "M2501": 13,
+            "M2505": 7
+          },
+          "observed_owner_segment_count": 7,
+          "status": "passed"
+        },
+        "60m": {
+          "authoritative_segment_bar_counts": [
+            {
+              "bar_count": 442,
+              "contract": "M2305",
+              "end": "2023-04-10",
+              "start": "2023-01-03"
+            },
+            {
+              "bar_count": 584,
+              "contract": "M2309",
+              "end": "2023-08-11",
+              "start": "2023-04-11"
+            },
+            {
+              "bar_count": 551,
+              "contract": "M2401",
+              "end": "2023-12-08",
+              "start": "2023-08-14"
+            },
+            {
+              "bar_count": 514,
+              "contract": "M2405",
+              "end": "2024-04-01",
+              "start": "2023-12-11"
+            },
+            {
+              "bar_count": 624,
+              "contract": "M2409",
+              "end": "2024-08-13",
+              "start": "2024-04-02"
+            },
+            {
+              "bar_count": 416,
+              "contract": "M2501",
+              "end": "2024-11-14",
+              "start": "2024-08-14"
+            },
+            {
+              "bar_count": 231,
+              "contract": "M2505",
+              "end": "2025-04-03",
+              "start": "2024-11-15"
+            }
+          ],
+          "bar_count": 3362,
+          "first_bar_end": "2023-01-03T02:00:00+00:00",
+          "last_bar_end": "2024-12-31T07:00:00+00:00",
+          "observed_contract_counts": {
+            "M2305": 442,
+            "M2309": 584,
+            "M2401": 551,
+            "M2405": 514,
+            "M2409": 624,
+            "M2501": 416,
+            "M2505": 231
+          },
+          "observed_owner_segment_count": 7,
+          "status": "passed"
+        }
+      },
+      "rollover_count": 6,
+      "status": "passed"
+    },
+    "rb": {
+      "authoritative_segment_count": 7,
+      "authoritative_segments": [
+        {
+          "contract": "RB2305",
+          "end": "2023-04-04",
+          "start": "2023-01-03"
+        },
+        {
+          "contract": "RB2310",
+          "end": "2023-09-04",
+          "start": "2023-04-06"
+        },
+        {
+          "contract": "RB2401",
+          "end": "2023-12-06",
+          "start": "2023-09-05"
+        },
+        {
+          "contract": "RB2405",
+          "end": "2024-04-02",
+          "start": "2023-12-07"
+        },
+        {
+          "contract": "RB2410",
+          "end": "2024-09-02",
+          "start": "2024-04-03"
+        },
+        {
+          "contract": "RB2501",
+          "end": "2024-12-05",
+          "start": "2024-09-03"
+        },
+        {
+          "contract": "RB2505",
+          "end": "2025-04-07",
+          "start": "2024-12-06"
+        }
+      ],
+      "economic_group": "black",
+      "frequencies": {
+        "1d": {
+          "authoritative_segment_bar_counts": [
+            {
+              "bar_count": 61,
+              "contract": "RB2305",
+              "end": "2023-04-04",
+              "start": "2023-01-03"
+            },
+            {
+              "bar_count": 103,
+              "contract": "RB2310",
+              "end": "2023-09-04",
+              "start": "2023-04-06"
+            },
+            {
+              "bar_count": 61,
+              "contract": "RB2401",
+              "end": "2023-12-06",
+              "start": "2023-09-05"
+            },
+            {
+              "bar_count": 77,
+              "contract": "RB2405",
+              "end": "2024-04-02",
+              "start": "2023-12-07"
+            },
+            {
+              "bar_count": 103,
+              "contract": "RB2410",
+              "end": "2024-09-02",
+              "start": "2024-04-03"
+            },
+            {
+              "bar_count": 61,
+              "contract": "RB2501",
+              "end": "2024-12-05",
+              "start": "2024-09-03"
+            },
+            {
+              "bar_count": 18,
+              "contract": "RB2505",
+              "end": "2025-04-07",
+              "start": "2024-12-06"
+            }
+          ],
+          "bar_count": 484,
+          "first_bar_end": "2023-01-03T07:00:00+00:00",
+          "last_bar_end": "2024-12-31T07:00:00+00:00",
+          "observed_contract_counts": {
+            "RB2305": 61,
+            "RB2310": 103,
+            "RB2401": 61,
+            "RB2405": 77,
+            "RB2410": 103,
+            "RB2501": 61,
+            "RB2505": 18
+          },
+          "observed_owner_segment_count": 7,
+          "status": "passed"
+        },
+        "1w": {
+          "authoritative_segment_bar_counts": [
+            {
+              "bar_count": 12,
+              "contract": "RB2305",
+              "end": "2023-04-04",
+              "start": "2023-01-03"
+            },
+            {
+              "bar_count": 22,
+              "contract": "RB2310",
+              "end": "2023-09-04",
+              "start": "2023-04-06"
+            },
+            {
+              "bar_count": 12,
+              "contract": "RB2401",
+              "end": "2023-12-06",
+              "start": "2023-09-05"
+            },
+            {
+              "bar_count": 16,
+              "contract": "RB2405",
+              "end": "2024-04-02",
+              "start": "2023-12-07"
+            },
+            {
+              "bar_count": 22,
+              "contract": "RB2410",
+              "end": "2024-09-02",
+              "start": "2024-04-03"
+            },
+            {
+              "bar_count": 13,
+              "contract": "RB2501",
+              "end": "2024-12-05",
+              "start": "2024-09-03"
+            },
+            {
+              "bar_count": 4,
+              "contract": "RB2505",
+              "end": "2025-04-07",
+              "start": "2024-12-06"
+            }
+          ],
+          "bar_count": 101,
+          "first_bar_end": "2023-01-06T07:00:00+00:00",
+          "last_bar_end": "2024-12-27T07:00:00+00:00",
+          "observed_contract_counts": {
+            "RB2305": 12,
+            "RB2310": 22,
+            "RB2401": 12,
+            "RB2405": 16,
+            "RB2410": 22,
+            "RB2501": 13,
+            "RB2505": 4
+          },
+          "observed_owner_segment_count": 7,
+          "status": "passed"
+        },
+        "60m": {
+          "authoritative_segment_bar_counts": [
+            {
+              "bar_count": 423,
+              "contract": "RB2305",
+              "end": "2023-04-04",
+              "start": "2023-01-03"
+            },
+            {
+              "bar_count": 715,
+              "contract": "RB2310",
+              "end": "2023-09-04",
+              "start": "2023-04-06"
+            },
+            {
+              "bar_count": 425,
+              "contract": "RB2401",
+              "end": "2023-12-06",
+              "start": "2023-09-05"
+            },
+            {
+              "bar_count": 535,
+              "contract": "RB2405",
+              "end": "2024-04-02",
+              "start": "2023-12-07"
+            },
+            {
+              "bar_count": 715,
+              "contract": "RB2410",
+              "end": "2024-09-02",
+              "start": "2024-04-03"
+            },
+            {
+              "bar_count": 423,
+              "contract": "RB2501",
+              "end": "2024-12-05",
+              "start": "2024-09-03"
+            },
+            {
+              "bar_count": 126,
+              "contract": "RB2505",
+              "end": "2025-04-07",
+              "start": "2024-12-06"
+            }
+          ],
+          "bar_count": 3362,
+          "first_bar_end": "2023-01-03T02:00:00+00:00",
+          "last_bar_end": "2024-12-31T07:00:00+00:00",
+          "observed_contract_counts": {
+            "RB2305": 423,
+            "RB2310": 715,
+            "RB2401": 425,
+            "RB2405": 535,
+            "RB2410": 715,
+            "RB2501": 423,
+            "RB2505": 126
+          },
+          "observed_owner_segment_count": 7,
+          "status": "passed"
+        }
+      },
+      "rollover_count": 6,
+      "status": "passed"
+    },
+    "sc": {
+      "authoritative_segment_count": 25,
+      "authoritative_segments": [
+        {
+          "contract": "SC2302",
+          "end": "2023-01-04",
+          "start": "2023-01-03"
+        },
+        {
+          "contract": "SC2303",
+          "end": "2023-02-13",
+          "start": "2023-01-05"
+        },
+        {
+          "contract": "SC2304",
+          "end": "2023-03-17",
+          "start": "2023-02-14"
+        },
+        {
+          "contract": "SC2305",
+          "end": "2023-04-17",
+          "start": "2023-03-20"
+        },
+        {
+          "contract": "SC2306",
+          "end": "2023-05-17",
+          "start": "2023-04-18"
+        },
+        {
+          "contract": "SC2307",
+          "end": "2023-06-15",
+          "start": "2023-05-18"
+        },
+        {
+          "contract": "SC2308",
+          "end": "2023-07-17",
+          "start": "2023-06-16"
+        },
+        {
+          "contract": "SC2309",
+          "end": "2023-08-17",
+          "start": "2023-07-18"
+        },
+        {
+          "contract": "SC2310",
+          "end": "2023-09-18",
+          "start": "2023-08-18"
+        },
+        {
+          "contract": "SC2311",
+          "end": "2023-10-18",
+          "start": "2023-09-19"
+        },
+        {
+          "contract": "SC2312",
+          "end": "2023-11-17",
+          "start": "2023-10-19"
+        },
+        {
+          "contract": "SC2401",
+          "end": "2023-12-15",
+          "start": "2023-11-20"
+        },
+        {
+          "contract": "SC2402",
+          "end": "2024-01-18",
+          "start": "2023-12-18"
+        },
+        {
+          "contract": "SC2403",
+          "end": "2024-02-19",
+          "start": "2024-01-19"
+        },
+        {
+          "contract": "SC2404",
+          "end": "2024-03-19",
+          "start": "2024-02-20"
+        },
+        {
+          "contract": "SC2405",
+          "end": "2024-04-16",
+          "start": "2024-03-20"
+        },
+        {
+          "contract": "SC2406",
+          "end": "2024-05-17",
+          "start": "2024-04-17"
+        },
+        {
+          "contract": "SC2407",
+          "end": "2024-06-18",
+          "start": "2024-05-20"
+        },
+        {
+          "contract": "SC2408",
+          "end": "2024-07-17",
+          "start": "2024-06-19"
+        },
+        {
+          "contract": "SC2409",
+          "end": "2024-08-19",
+          "start": "2024-07-18"
+        },
+        {
+          "contract": "SC2410",
+          "end": "2024-09-18",
+          "start": "2024-08-20"
+        },
+        {
+          "contract": "SC2411",
+          "end": "2024-10-17",
+          "start": "2024-09-19"
+        },
+        {
+          "contract": "SC2412",
+          "end": "2024-11-18",
+          "start": "2024-10-18"
+        },
+        {
+          "contract": "SC2501",
+          "end": "2024-12-17",
+          "start": "2024-11-19"
+        },
+        {
+          "contract": "SC2502",
+          "end": "2025-01-14",
+          "start": "2024-12-18"
+        }
+      ],
+      "economic_group": "energy",
+      "frequencies": {
+        "1d": {
+          "authoritative_segment_bar_counts": [
+            {
+              "bar_count": 2,
+              "contract": "SC2302",
+              "end": "2023-01-04",
+              "start": "2023-01-03"
+            },
+            {
+              "bar_count": 23,
+              "contract": "SC2303",
+              "end": "2023-02-13",
+              "start": "2023-01-05"
+            },
+            {
+              "bar_count": 24,
+              "contract": "SC2304",
+              "end": "2023-03-17",
+              "start": "2023-02-14"
+            },
+            {
+              "bar_count": 20,
+              "contract": "SC2305",
+              "end": "2023-04-17",
+              "start": "2023-03-20"
+            },
+            {
+              "bar_count": 19,
+              "contract": "SC2306",
+              "end": "2023-05-17",
+              "start": "2023-04-18"
+            },
+            {
+              "bar_count": 21,
+              "contract": "SC2307",
+              "end": "2023-06-15",
+              "start": "2023-05-18"
+            },
+            {
+              "bar_count": 20,
+              "contract": "SC2308",
+              "end": "2023-07-17",
+              "start": "2023-06-16"
+            },
+            {
+              "bar_count": 23,
+              "contract": "SC2309",
+              "end": "2023-08-17",
+              "start": "2023-07-18"
+            },
+            {
+              "bar_count": 22,
+              "contract": "SC2310",
+              "end": "2023-09-18",
+              "start": "2023-08-18"
+            },
+            {
+              "bar_count": 16,
+              "contract": "SC2311",
+              "end": "2023-10-18",
+              "start": "2023-09-19"
+            },
+            {
+              "bar_count": 22,
+              "contract": "SC2312",
+              "end": "2023-11-17",
+              "start": "2023-10-19"
+            },
+            {
+              "bar_count": 20,
+              "contract": "SC2401",
+              "end": "2023-12-15",
+              "start": "2023-11-20"
+            },
+            {
+              "bar_count": 23,
+              "contract": "SC2402",
+              "end": "2024-01-18",
+              "start": "2023-12-18"
+            },
+            {
+              "bar_count": 16,
+              "contract": "SC2403",
+              "end": "2024-02-19",
+              "start": "2024-01-19"
+            },
+            {
+              "bar_count": 21,
+              "contract": "SC2404",
+              "end": "2024-03-19",
+              "start": "2024-02-20"
+            },
+            {
+              "bar_count": 18,
+              "contract": "SC2405",
+              "end": "2024-04-16",
+              "start": "2024-03-20"
+            },
+            {
+              "bar_count": 20,
+              "contract": "SC2406",
+              "end": "2024-05-17",
+              "start": "2024-04-17"
+            },
+            {
+              "bar_count": 21,
+              "contract": "SC2407",
+              "end": "2024-06-18",
+              "start": "2024-05-20"
+            },
+            {
+              "bar_count": 21,
+              "contract": "SC2408",
+              "end": "2024-07-17",
+              "start": "2024-06-19"
+            },
+            {
+              "bar_count": 23,
+              "contract": "SC2409",
+              "end": "2024-08-19",
+              "start": "2024-07-18"
+            },
+            {
+              "bar_count": 20,
+              "contract": "SC2410",
+              "end": "2024-09-18",
+              "start": "2024-08-20"
+            },
+            {
+              "bar_count": 16,
+              "contract": "SC2411",
+              "end": "2024-10-17",
+              "start": "2024-09-19"
+            },
+            {
+              "bar_count": 22,
+              "contract": "SC2412",
+              "end": "2024-11-18",
+              "start": "2024-10-18"
+            },
+            {
+              "bar_count": 21,
+              "contract": "SC2501",
+              "end": "2024-12-17",
+              "start": "2024-11-19"
+            },
+            {
+              "bar_count": 10,
+              "contract": "SC2502",
+              "end": "2025-01-14",
+              "start": "2024-12-18"
+            }
+          ],
+          "bar_count": 484,
+          "first_bar_end": "2023-01-03T07:00:00+00:00",
+          "last_bar_end": "2024-12-31T07:00:00+00:00",
+          "observed_contract_counts": {
+            "SC2302": 2,
+            "SC2303": 23,
+            "SC2304": 24,
+            "SC2305": 20,
+            "SC2306": 19,
+            "SC2307": 21,
+            "SC2308": 20,
+            "SC2309": 23,
+            "SC2310": 22,
+            "SC2311": 16,
+            "SC2312": 22,
+            "SC2401": 20,
+            "SC2402": 23,
+            "SC2403": 16,
+            "SC2404": 21,
+            "SC2405": 18,
+            "SC2406": 20,
+            "SC2407": 21,
+            "SC2408": 21,
+            "SC2409": 23,
+            "SC2410": 20,
+            "SC2411": 16,
+            "SC2412": 22,
+            "SC2501": 21,
+            "SC2502": 10
+          },
+          "observed_owner_segment_count": 25,
+          "status": "passed"
+        },
+        "1w": {
+          "authoritative_segment_bar_counts": [
+            {
+              "bar_count": 0,
+              "contract": "SC2302",
+              "end": "2023-01-04",
+              "start": "2023-01-03"
+            },
+            {
+              "bar_count": 5,
+              "contract": "SC2303",
+              "end": "2023-02-13",
+              "start": "2023-01-05"
+            },
+            {
+              "bar_count": 5,
+              "contract": "SC2304",
+              "end": "2023-03-17",
+              "start": "2023-02-14"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2305",
+              "end": "2023-04-17",
+              "start": "2023-03-20"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2306",
+              "end": "2023-05-17",
+              "start": "2023-04-18"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2307",
+              "end": "2023-06-15",
+              "start": "2023-05-18"
+            },
+            {
+              "bar_count": 5,
+              "contract": "SC2308",
+              "end": "2023-07-17",
+              "start": "2023-06-16"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2309",
+              "end": "2023-08-17",
+              "start": "2023-07-18"
+            },
+            {
+              "bar_count": 5,
+              "contract": "SC2310",
+              "end": "2023-09-18",
+              "start": "2023-08-18"
+            },
+            {
+              "bar_count": 3,
+              "contract": "SC2311",
+              "end": "2023-10-18",
+              "start": "2023-09-19"
+            },
+            {
+              "bar_count": 5,
+              "contract": "SC2312",
+              "end": "2023-11-17",
+              "start": "2023-10-19"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2401",
+              "end": "2023-12-15",
+              "start": "2023-11-20"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2402",
+              "end": "2024-01-18",
+              "start": "2023-12-18"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2403",
+              "end": "2024-02-19",
+              "start": "2024-01-19"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2404",
+              "end": "2024-03-19",
+              "start": "2024-02-20"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2405",
+              "end": "2024-04-16",
+              "start": "2024-03-20"
+            },
+            {
+              "bar_count": 5,
+              "contract": "SC2406",
+              "end": "2024-05-17",
+              "start": "2024-04-17"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2407",
+              "end": "2024-06-18",
+              "start": "2024-05-20"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2408",
+              "end": "2024-07-17",
+              "start": "2024-06-19"
+            },
+            {
+              "bar_count": 5,
+              "contract": "SC2409",
+              "end": "2024-08-19",
+              "start": "2024-07-18"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2410",
+              "end": "2024-09-18",
+              "start": "2024-08-20"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2411",
+              "end": "2024-10-17",
+              "start": "2024-09-19"
+            },
+            {
+              "bar_count": 5,
+              "contract": "SC2412",
+              "end": "2024-11-18",
+              "start": "2024-10-18"
+            },
+            {
+              "bar_count": 4,
+              "contract": "SC2501",
+              "end": "2024-12-17",
+              "start": "2024-11-19"
+            },
+            {
+              "bar_count": 2,
+              "contract": "SC2502",
+              "end": "2025-01-14",
+              "start": "2024-12-18"
+            }
+          ],
+          "bar_count": 101,
+          "first_bar_end": "2023-01-06T07:00:00+00:00",
+          "last_bar_end": "2024-12-27T07:00:00+00:00",
+          "observed_contract_counts": {
+            "SC2303": 5,
+            "SC2304": 5,
+            "SC2305": 4,
+            "SC2306": 4,
+            "SC2307": 4,
+            "SC2308": 5,
+            "SC2309": 4,
+            "SC2310": 5,
+            "SC2311": 3,
+            "SC2312": 5,
+            "SC2401": 4,
+            "SC2402": 4,
+            "SC2403": 4,
+            "SC2404": 4,
+            "SC2405": 4,
+            "SC2406": 5,
+            "SC2407": 4,
+            "SC2408": 4,
+            "SC2409": 5,
+            "SC2410": 4,
+            "SC2411": 4,
+            "SC2412": 5,
+            "SC2501": 4,
+            "SC2502": 2
+          },
+          "observed_owner_segment_count": 24,
+          "status": "passed"
+        },
+        "60m": {
+          "authoritative_segment_bar_counts": [
+            {
+              "bar_count": 16,
+              "contract": "SC2302",
+              "end": "2023-01-04",
+              "start": "2023-01-03"
+            },
+            {
+              "bar_count": 247,
+              "contract": "SC2303",
+              "end": "2023-02-13",
+              "start": "2023-01-05"
+            },
+            {
+              "bar_count": 264,
+              "contract": "SC2304",
+              "end": "2023-03-17",
+              "start": "2023-02-14"
+            },
+            {
+              "bar_count": 214,
+              "contract": "SC2305",
+              "end": "2023-04-17",
+              "start": "2023-03-20"
+            },
+            {
+              "bar_count": 203,
+              "contract": "SC2306",
+              "end": "2023-05-17",
+              "start": "2023-04-18"
+            },
+            {
+              "bar_count": 231,
+              "contract": "SC2307",
+              "end": "2023-06-15",
+              "start": "2023-05-18"
+            },
+            {
+              "bar_count": 214,
+              "contract": "SC2308",
+              "end": "2023-07-17",
+              "start": "2023-06-16"
+            },
+            {
+              "bar_count": 253,
+              "contract": "SC2309",
+              "end": "2023-08-17",
+              "start": "2023-07-18"
+            },
+            {
+              "bar_count": 242,
+              "contract": "SC2310",
+              "end": "2023-09-18",
+              "start": "2023-08-18"
+            },
+            {
+              "bar_count": 170,
+              "contract": "SC2311",
+              "end": "2023-10-18",
+              "start": "2023-09-19"
+            },
+            {
+              "bar_count": 242,
+              "contract": "SC2312",
+              "end": "2023-11-17",
+              "start": "2023-10-19"
+            },
+            {
+              "bar_count": 220,
+              "contract": "SC2401",
+              "end": "2023-12-15",
+              "start": "2023-11-20"
+            },
+            {
+              "bar_count": 247,
+              "contract": "SC2402",
+              "end": "2024-01-18",
+              "start": "2023-12-18"
+            },
+            {
+              "bar_count": 170,
+              "contract": "SC2403",
+              "end": "2024-02-19",
+              "start": "2024-01-19"
+            },
+            {
+              "bar_count": 231,
+              "contract": "SC2404",
+              "end": "2024-03-19",
+              "start": "2024-02-20"
+            },
+            {
+              "bar_count": 192,
+              "contract": "SC2405",
+              "end": "2024-04-16",
+              "start": "2024-03-20"
+            },
+            {
+              "bar_count": 214,
+              "contract": "SC2406",
+              "end": "2024-05-17",
+              "start": "2024-04-17"
+            },
+            {
+              "bar_count": 225,
+              "contract": "SC2407",
+              "end": "2024-06-18",
+              "start": "2024-05-20"
+            },
+            {
+              "bar_count": 231,
+              "contract": "SC2408",
+              "end": "2024-07-17",
+              "start": "2024-06-19"
+            },
+            {
+              "bar_count": 253,
+              "contract": "SC2409",
+              "end": "2024-08-19",
+              "start": "2024-07-18"
+            },
+            {
+              "bar_count": 214,
+              "contract": "SC2410",
+              "end": "2024-09-18",
+              "start": "2024-08-20"
+            },
+            {
+              "bar_count": 170,
+              "contract": "SC2411",
+              "end": "2024-10-17",
+              "start": "2024-09-19"
+            },
+            {
+              "bar_count": 242,
+              "contract": "SC2412",
+              "end": "2024-11-18",
+              "start": "2024-10-18"
+            },
+            {
+              "bar_count": 231,
+              "contract": "SC2501",
+              "end": "2024-12-17",
+              "start": "2024-11-19"
+            },
+            {
+              "bar_count": 110,
+              "contract": "SC2502",
+              "end": "2025-01-14",
+              "start": "2024-12-18"
+            }
+          ],
+          "bar_count": 5246,
+          "first_bar_end": "2023-01-03T02:00:00+00:00",
+          "last_bar_end": "2024-12-31T07:00:00+00:00",
+          "observed_contract_counts": {
+            "SC2302": 16,
+            "SC2303": 247,
+            "SC2304": 264,
+            "SC2305": 214,
+            "SC2306": 203,
+            "SC2307": 231,
+            "SC2308": 214,
+            "SC2309": 253,
+            "SC2310": 242,
+            "SC2311": 170,
+            "SC2312": 242,
+            "SC2401": 220,
+            "SC2402": 247,
+            "SC2403": 170,
+            "SC2404": 231,
+            "SC2405": 192,
+            "SC2406": 214,
+            "SC2407": 225,
+            "SC2408": 231,
+            "SC2409": 253,
+            "SC2410": 214,
+            "SC2411": 170,
+            "SC2412": 242,
+            "SC2501": 231,
+            "SC2502": 110
+          },
+          "observed_owner_segment_count": 25,
+          "status": "passed"
+        }
+      },
+      "rollover_count": 24,
+      "status": "passed"
+    }
+  },
+  "rqdata_called": false,
+  "schema_version": 1,
+  "window": {
+    "since": "2023-01-03",
+    "through": "2024-12-31"
+  }
+}

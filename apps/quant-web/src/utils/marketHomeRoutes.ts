@@ -1,5 +1,5 @@
 import type { AlertEvent } from '../types/market.ts'
-import { isHtdyAlertEvent } from './alertRules.ts'
+import { isHtdyAlertEvent, isSubingThsAlertEvent } from './alertRules.ts'
 import { marketDetailEventIdentity, serializeMarketDetailIdentity } from './marketDetailRoute.ts'
 
 export function marketHomeProductChartQuery(symbol: string) {
@@ -7,15 +7,11 @@ export function marketHomeProductChartQuery(symbol: string) {
 }
 
 export function marketHomeEventChartQuery(event: AlertEvent) {
+  if (isSubingThsAlertEvent(event)) return marketHomeUnifiedEventChartQuery(event)
   if (isHtdyAlertEvent(event)) {
     return { symbol: event.symbol, series_kind: 'actual_dominant', frequency: event.frequency, overlay: 'htdy' as const }
   }
-  return {
-    symbol: event.symbol,
-    series_kind: 'actual_dominant',
-    frequency: '15m' as const,
-    focus_bar_end: event.bar_end,
-  }
+  throw new Error('unsupported AlertEvent identity')
 }
 
 export function marketHomeUnifiedProductChartQuery(symbol: string) {

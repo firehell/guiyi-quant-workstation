@@ -68,9 +68,7 @@ def _initial_state() -> NewowTrendD1EngineState:
     )
 
 
-def _identity_is_valid(
-    physical_contract: str | None, segment_id: str | None
-) -> bool:
+def _identity_is_valid(physical_contract: str | None, segment_id: str | None) -> bool:
     return (physical_contract is None and segment_id is None) or (
         isinstance(physical_contract, str)
         and bool(physical_contract)

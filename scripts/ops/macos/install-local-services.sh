@@ -99,6 +99,11 @@ elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
   load_labels=("${alert_runtime_labels[@]}")
 fi
 
+if [[ "$MODE" == "--confirm-market-runtime" ]]; then
+  env -u GUIYI_AFTER_MARKET_STATUS_PATH \
+    "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" market-runtime-preflight
+fi
+
 if [[ "$PROJECT_ROOT" == /Volumes/* && "${GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD:-0}" != "1" ]]; then
   printf '[install-local-services] ERROR: 项目位于外接卷；请先授予后台进程访问外接卷权限，再显式设置 GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD=1。\n' >&2
   exit 3

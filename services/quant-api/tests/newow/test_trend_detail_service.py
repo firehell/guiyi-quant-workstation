@@ -5,6 +5,8 @@ from decimal import Decimal
 
 import pytest
 
+from guiyi_quant.newow.models import TrendBandState
+
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     BarFrequency,
@@ -73,8 +75,25 @@ class _FakeMarketData:
             for bar in self.actual
             if request.since <= bar.trading_day <= request.through
         )
+        resolved = tuple(
+            ResolvedContractSegment(
+                segment.contract,
+                min(bar.trading_day for bar in owned),
+                max(bar.trading_day for bar in owned),
+            )
+            for segment in self.segments
+            if (
+                owned := tuple(
+                    bar
+                    for bar in bars
+                    if segment.start_trading_day
+                    <= bar.trading_day
+                    <= segment.end_trading_day
+                )
+            )
+        )
         return MarketSeriesResult(
-            {}, bars, None, self.segments, (request.since, request.through)
+            {}, bars, None, resolved, (request.since, request.through)
         )
 
     def dominant_segment_for_day(
@@ -90,6 +109,19 @@ class _FakeMarketData:
             segment.contract,
             segment.start_trading_day,
             segment.end_trading_day,
+        )
+
+    def actual_dominant_segments(
+        self,
+        symbol: str,
+        since: date,
+        through: date,
+    ) -> tuple[ResolvedContractSegment, ...]:
+        return tuple(
+            segment
+            for segment in self.segments
+            if segment.end_trading_day >= since
+            and segment.start_trading_day <= through
         )
 
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
@@ -158,10 +190,18 @@ def test_detail_uses_only_d1_actual_dominant_and_same_contract_prefix() -> None:
     assert result.instrument.product == "rb"
     assert result.instrument.frequency == "1d"
     assert result.instrument.series_kind == "actual_dominant"
+    assert result.instrument.profile_id == "newow_trend_d1_page_v2"
+    assert result.instrument.formula_versions[0] == "newow_trend_band_page_v2"
+    assert "newow_trend_d1_page_v2" in result.calculation_identity
+    assert "newow_trend_band_page_v2" in result.calculation_identity
     assert [bar.trading_day for bar in result.bars] == [
         _START + timedelta(days=index) for index in range(3, 8)
     ]
     assert all(frame.bar.observation_eligible for frame in result.frames)
+    assert all(
+        frame.trend_band.state in {TrendBandState.YELLOW, TrendBandState.BLUE}
+        for frame in result.frames
+    )
     assert market_data.actual_requests[0].frequency is BarFrequency.D1
     assert market_data.page_requests == [
         SeriesPageQuery(
@@ -298,11 +338,7 @@ def test_detail_is_overlap_invariant_and_returns_immutable_stable_tuples() -> No
         )
         == (tuple,) * 6
     )
-    assert wide.warnings == (
-        "NEWOW_TREND_WARMUP_INSUFFICIENT",
-        "NEWOW_D123_WARMUP_INSUFFICIENT",
-        "NEWOW_CUP_WARMUP_INSUFFICIENT",
-    )
+    assert wide.warnings == ("NEWOW_CUP_WARMUP_INSUFFICIENT",)
     assert wide == service.query(
         NewowTrendDetailQuery(
             "rb", _START + timedelta(days=3), _START + timedelta(days=7)
@@ -379,20 +415,27 @@ def _single_segment_result(*, count: int, eligible_start: int = 0):
     segment = ResolvedContractSegment("RB2605", days[eligible_start], days[-1])
     actual = physical[eligible_start:]
     return NewowTrendDetailService(
-        _FakeMarketData(actual=actual, segments=(segment,), physical={"RB2605": physical})
+        _FakeMarketData(
+            actual=actual, segments=(segment,), physical={"RB2605": physical}
+        )
     ).query(NewowTrendDetailQuery("rb", days[eligible_start], days[-1]))
 
 
-def test_warmup_acceptance_a_all_kernels_unavailable() -> None:
-    assert set(_single_segment_result(count=5).warnings) == {
-        "NEWOW_TREND_WARMUP_INSUFFICIENT",
+def test_warmup_acceptance_a_page_d123_needs_three_bars_for_peak_turn() -> None:
+    assert set(_single_segment_result(count=2).warnings) == {
         "NEWOW_D123_WARMUP_INSUFFICIENT",
         "NEWOW_CUP_WARMUP_INSUFFICIENT",
     }
 
 
-def test_warmup_acceptance_b_only_d123_is_unavailable_after_trend_and_cup_ready() -> None:
-    assert _single_segment_result(count=40).warnings == ("NEWOW_D123_WARMUP_INSUFFICIENT",)
+def test_warmup_acceptance_b_page_primitives_are_ready_before_cup() -> None:
+    assert _single_segment_result(count=5).warnings == (
+        "NEWOW_CUP_WARMUP_INSUFFICIENT",
+    )
+
+
+def test_warmup_acceptance_c_page_d123_and_cup_are_ready() -> None:
+    assert _single_segment_result(count=40).warnings == ()
 
 
 def test_warmup_acceptance_d_early_history_does_not_leave_current_warning() -> None:

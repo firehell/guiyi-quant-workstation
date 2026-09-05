@@ -15,6 +15,23 @@
 - **WHEN** 输入 actual_dominant、未支持周期或 kind/series 不匹配
 - **THEN** 系统在创建路径或 Catalog 身份前拒绝输入
 
+### Requirement: Contract partition preserves valid lifecycle warm-up
+对 `contract` Dataset，所有 rank1 映射所需的 Bar end MUST 被持久化 Bar end 包含；每一条已持久化 Bar 又
+MUST 被 Contract 的 active lifecycle、TradingCalendar 与 TradingSession 共同证明合法。非 rank1 的同物理
+合约 warm-up Bar 因此可被保留，但不得改变 `actual_dominant` 的 rank1 owner 解析。`continuous` Dataset
+继续要求 persisted 与 expected 精确相等，不采用此 superset 合同。refresh 覆盖含合法 warm-up 的 contract
+分区时 MUST 将这些 timestamps 纳入 provider 重拉目标，不得静默删除。
+
+#### Scenario: A valid pre-rank1 contract prefix exists
+
+- **WHEN** contract partition 同时含 rank1 required Bar 与其上市有效期内的真实 pre-rank1 Bar
+- **THEN** 分区通过校验，且 actual_dominant 仍只返回 rank1 有效日对应的 owner
+
+#### Scenario: A persisted contract Bar is outside its lifecycle
+
+- **WHEN** contract partition 含有超出 Contract active lifecycle、Calendar 或 Session 的 Bar
+- **THEN** 该分区 fail closed；合法 warm-up 规则不得放宽越界 Bar
+
 ### Requirement: 最小行 schema 和发布校验
 Parquet 行 SHALL 只包含 `bar_end`、`trading_day`、`open`、`high`、`low`、`close`、`volume`、
 `turnover`、`open_interest`；价格与金额使用 Decimal，`bar_end` 为 UTC timestamp。发布前 MUST 验证

@@ -1,4 +1,8 @@
 import request from './request'
+import type { RuntimeAlertProjection } from '../utils/runtimeHealthTypes'
+
+export { normalizeRuntimeAlertProjection } from '../utils/runtimeHealthTypes'
+export type { RuntimeAlertProjection, RuntimeAlertRuleErrorType, RuntimeAlertRuleStatus } from '../utils/runtimeHealthTypes'
 
 export interface RuntimeComponentHealth {
   status: string
@@ -83,6 +87,7 @@ export interface RuntimeAlertHealth {
   notification_error_type: string | null
   consecutive_notification_failures: number
   error_type: string | null
+  rule_status?: RuntimeAlertProjection['rule_status']
 }
 
 export interface RuntimeHealthResponse {

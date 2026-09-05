@@ -1,0 +1,112 @@
+{
+  "schema_version": "newow-evidence-diff-v1",
+  "baseline": {
+    "relative_root": "../trend-ma7-ma10-parity",
+    "manifest_schema_version": "2.0",
+    "home_version": "v3.2.80",
+    "detail_version": "v3.2.63"
+  },
+  "current": {
+    "manifest_schema_version": "newow-evidence-manifest-v1",
+    "home_version": "v3.2.82",
+    "detail_static_identity": "v3.2.63",
+    "captured_at": "2026-09-04T13:57:43+08:00"
+  },
+  "changes": {
+    "resource_hashes": [
+      {
+        "identity": "stock_detail.html",
+        "status": "unchanged",
+        "baseline_sha256": "cd962170085dc2145fbaebf28a47ce6764b9f519e6032b54a896e37f0c9d0cf9",
+        "current_sha256": "cd962170085dc2145fbaebf28a47ce6764b9f519e6032b54a896e37f0c9d0cf9"
+      },
+      {
+        "identity": "strategy-calc.js",
+        "status": "unchanged",
+        "baseline_sha256": "80dcfa39afe5511b073ec66858e697243a3e4e994cd610a00568e602610a6192",
+        "current_sha256": "80dcfa39afe5511b073ec66858e697243a3e4e994cd610a00568e602610a6192"
+      },
+      {
+        "identity": "index.html",
+        "status": "added",
+        "baseline_sha256": null,
+        "current_sha256": "23e4d02d65828bfacf86867891c121a967a58d9ada7618dbc9a7e4265ad23713"
+      },
+      {
+        "identity": "screener.html",
+        "status": "added",
+        "baseline_sha256": null,
+        "current_sha256": "ccbccc7e02c47f0dc475686d348394980f3b9a5aaa52bc8bf7f949bc10728e72"
+      }
+    ],
+    "symbols": {
+      "status": "unchanged",
+      "baseline_count": 9,
+      "current_count": 9,
+      "values": [
+        "000001.SH",
+        "399001.SZ",
+        "399006.SZ",
+        "601233.SH",
+        "600519.SH",
+        "600036.SH",
+        "002594.SZ",
+        "300750.SZ",
+        "000651.SZ"
+      ]
+    },
+    "periods": {
+      "status": "unchanged",
+      "baseline": ["week", "day", "60min"],
+      "current": ["week", "day", "60min"]
+    },
+    "record_field_sets": {
+      "status": "changed",
+      "baseline_top_level": ["bars", "code", "key", "kind", "name", "ok", "page", "requestUrl", "requestedStart", "source"],
+      "current_top_level": ["captured_at", "code", "kind", "name", "network_responses", "page_facts", "page_url", "period", "screenshot"],
+      "current_page_facts": ["bars", "computed", "dom", "ready_state", "resolved_period", "resolved_strategy", "strategy_tf_signals", "title", "visibility"]
+    },
+    "formula_branch_keys": {
+      "status": "added",
+      "baseline": [],
+      "current": [
+        "bullish-bullish",
+        "bullish-bearish",
+        "bullish-neutral",
+        "bearish-bullish",
+        "bearish-bearish",
+        "bearish-neutral",
+        "cautious-bullish",
+        "cautious-bearish",
+        "cautious-neutral",
+        "warning-bullish",
+        "warning-bearish",
+        "warning-neutral",
+        "neutral-neutral"
+      ]
+    },
+    "matched_mismatched_counts": {
+      "status": "changed",
+      "baseline": {
+        "trend_stock_markers": 240,
+        "d123_markers": 148,
+        "magic11_markers": 516,
+        "magic11_count_lines": 3240,
+        "main_rise_band_signals": 175,
+        "main_rise_reduce_signals": 415,
+        "main_rise_d1_d6_signals": 287,
+        "oscillation_signals": 461,
+        "repo_checks_exact": true
+      },
+      "current": {
+        "display_target_matches": 27,
+        "display_target_mismatches": 0,
+        "display_absorption_matches": 27,
+        "display_absorption_mismatches": 0,
+        "composite_non_placeholder_cases": 27,
+        "ai_non_placeholder_cases": 27,
+        "formula_repo_parity": "not_evaluated_in_slice_a"
+      }
+    }
+  }
+}

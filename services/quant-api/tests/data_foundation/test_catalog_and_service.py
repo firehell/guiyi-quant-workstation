@@ -9,12 +9,13 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
-from app.market_data.catalog import MarketCatalog
+from app.market_data.catalog import CatalogError, ContractFact, MarketCatalog
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
     CanonicalBar,
     ContractTradingDayQuery,
     DatasetKey,
+    ResolvedContractSegment,
     SeriesQuery,
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
@@ -111,6 +112,85 @@ def test_catalog_registers_minimal_month_partition(session, tmp_path) -> None:
     assert not hasattr(row, "manifest_path")
 
 
+def test_catalog_contract_fact_normalizes_exact_identity(session, tmp_path) -> None:
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 2),
+            expired_date=date(2025, 9, 25),
+            provider="rqdata",
+        )
+    )
+    session.commit()
+    catalog = MarketCatalog(session, tmp_path)
+
+    expected = ContractFact(
+        symbol="jm",
+        contract="JM2509",
+        exchange="DCE",
+        provider="rqdata",
+        listed_date=date(2025, 1, 2),
+        expired_date=date(2025, 9, 25),
+    )
+    assert catalog.contract_fact("jm", "JM2509") == expected
+    assert catalog.contract_fact(" JM ", " jm2509 ") == expected
+
+
+def test_catalog_contract_fact_rejects_unknown_contract(session, tmp_path) -> None:
+    with pytest.raises(CatalogError, match="CONTRACT_NOT_FOUND"):
+        MarketCatalog(session, tmp_path).contract_fact("jm", "JM2509")
+
+
+@pytest.mark.parametrize(
+    ("symbol", "provider", "listed_date", "expired_date", "error_code"),
+    [
+        ("rb", "rqdata", date(2025, 1, 2), date(2025, 9, 25), "CONTRACT_SYMBOL_MISMATCH"),
+        ("jm", "other", date(2025, 1, 2), date(2025, 9, 25), "CONTRACT_PROVIDER_UNSUPPORTED"),
+        ("jm", "rqdata", None, date(2025, 9, 25), "CONTRACT_METADATA_MISSING"),
+        ("jm", "rqdata", date(2025, 1, 2), None, "CONTRACT_METADATA_MISSING"),
+        (
+            "jm",
+            "rqdata",
+            date(2025, 9, 25),
+            date(2025, 9, 25),
+            "CONTRACT_ACTIVE_WINDOW_MISSING",
+        ),
+        (
+            "jm",
+            "rqdata",
+            date(2025, 9, 26),
+            date(2025, 9, 25),
+            "CONTRACT_ACTIVE_WINDOW_MISSING",
+        ),
+    ],
+)
+def test_catalog_contract_fact_fails_closed_for_invalid_metadata(
+    session,
+    tmp_path,
+    symbol,
+    provider,
+    listed_date,
+    expired_date,
+    error_code,
+) -> None:
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=listed_date,
+            expired_date=expired_date,
+            provider=provider,
+        )
+    )
+    session.commit()
+
+    with pytest.raises(CatalogError, match=error_code):
+        MarketCatalog(session, tmp_path).contract_fact(symbol, "jm2509")
+
+
 def test_latest_dominants_uses_repository_display_name_instead_of_provider_code(
     session, tmp_path
 ) -> None:
@@ -179,6 +259,76 @@ def test_latest_dominant_segment_fails_closed_for_missing_map_after_known_contra
         ).latest_dominant_segment("jm")
 
 
+def test_actual_dominant_segments_returns_full_boundaries_for_intersecting_window(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    trading_days = {2, 3, 6, 7, 8, 9, 10}
+    for day in range(1, 11):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=day in trading_days,
+            )
+        )
+    catalog.upsert_main_contracts(
+        tuple(
+            (
+                "jm",
+                date(2025, 1, day),
+                "JM2505" if day <= 7 else "JM2509",
+            )
+            for day in sorted(trading_days)
+        )
+    )
+    session.commit()
+
+    segments = MarketDataService(
+        catalog, CanonicalMonthlyStore(tmp_path)
+    ).actual_dominant_segments(
+        "jm",
+        date(2025, 1, 3),
+        date(2025, 1, 8),
+    )
+
+    assert segments == (
+        ResolvedContractSegment(
+            "JM2505", date(2025, 1, 2), date(2025, 1, 7)
+        ),
+        ResolvedContractSegment(
+            "JM2509", date(2025, 1, 8), date(2025, 1, 10)
+        ),
+    )
+
+
+def test_actual_dominant_segments_fails_closed_for_missing_natural_calendar_day(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    for day in (2, 4):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2025, 1, day),
+                is_trading_day=True,
+            )
+        )
+        catalog.upsert_main_contracts(
+            (("jm", date(2025, 1, day), "JM2505"),)
+        )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^TRADING_CALENDAR_MISSING$"):
+        MarketDataService(
+            catalog, CanonicalMonthlyStore(tmp_path)
+        ).actual_dominant_segments(
+            "jm",
+            date(2025, 1, 2),
+            date(2025, 1, 4),
+        )
+
+
 def test_dominant_segment_for_day_returns_historical_containing_segment(
     session, tmp_path
 ) -> None:
@@ -212,6 +362,29 @@ def test_dominant_segment_for_day_returns_historical_containing_segment(
     assert historical.start_trading_day == date(2025, 1, 2)
     assert historical.end_trading_day == date(2025, 1, 3)
     assert latest.contract == "JM2509"
+
+
+def test_dominant_segment_for_day_preserves_normalized_symbol_identity(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    session.add(
+        TradingCalendar(
+            exchange_code="DCE",
+            trade_date=date(2025, 1, 2),
+            is_trading_day=True,
+        )
+    )
+    catalog.upsert_main_contracts(
+        (("jm", date(2025, 1, 2), "JM2505"),)
+    )
+    session.commit()
+
+    segment = MarketDataService(
+        catalog, CanonicalMonthlyStore(tmp_path)
+    ).dominant_segment_for_day(" JM ", date(2025, 1, 2))
+
+    assert segment.symbol == "jm"
 
 
 def test_dominant_segment_for_day_fails_closed_for_calendar_gap(
@@ -862,6 +1035,54 @@ def test_contract_trading_day_query_requires_expiry_metadata(session, tmp_path) 
 
     with pytest.raises(MarketDataError, match="^CONTRACT_METADATA_MISSING$"):
         MarketDataService(catalog, store).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "1d",
+                date(2025, 1, 6),
+                date(2025, 1, 6),
+            )
+        )
+
+
+def test_contract_trading_day_query_preserves_missing_contract_error(
+    session, tmp_path
+) -> None:
+    with pytest.raises(MarketDataError, match="^CONTRACT_METADATA_MISSING$"):
+        MarketDataService(
+            MarketCatalog(session, tmp_path),
+            CanonicalMonthlyStore(tmp_path),
+        ).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "jm",
+                "JM2509",
+                "1d",
+                date(2025, 1, 6),
+                date(2025, 1, 6),
+            )
+        )
+
+
+def test_contract_trading_day_query_rejects_non_rqdata_contract(
+    session, tmp_path
+) -> None:
+    session.add(
+        Contract(
+            contract_code="JM2509",
+            instrument_symbol="jm",
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 6),
+            expired_date=date(2025, 9, 25),
+            provider="other",
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="^CONTRACT_PROVIDER_UNSUPPORTED$"):
+        MarketDataService(
+            MarketCatalog(session, tmp_path),
+            CanonicalMonthlyStore(tmp_path),
+        ).query_contract_trading_days(
             ContractTradingDayQuery(
                 "jm",
                 "JM2509",

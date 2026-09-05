@@ -30,7 +30,7 @@ const seriesLabels: Record<SeriesKind, string> = { actual_dominant: '真实主�
 const showSeriesControls = computed(() => props.identity.view === 'htdy' || props.identity.view === 'free')
 const showFrequencyControls = computed(() => showSeriesControls.value)
 const availableSeriesKinds = computed(() => props.seriesKinds.filter((kind) => kind !== 'contract'))
-const allowsContract = computed(() => props.identity.view === 'free' && props.seriesKinds.includes('contract'))
+const allowsContract = computed(() => (props.identity.view === 'free' || props.identity.view === 'htdy') && props.seriesKinds.includes('contract'))
 const symbol = ref(props.identity.symbol)
 const contract = ref(props.identity.contract ?? '')
 

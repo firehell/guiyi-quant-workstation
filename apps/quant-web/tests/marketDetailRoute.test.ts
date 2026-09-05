@@ -30,6 +30,12 @@ test('trend and subing inject only their omitted fixed identities', () => {
   })
 })
 
+test('roundtrips a completed D1 Trend focus through the typed generic route', () => {
+  const identity = { view: 'trend' as const, symbol: 'rb', seriesKind: 'actual_dominant' as const,
+    frequency: '1d' as const, focusBarEnd: '2026-09-02T07:00:00Z' }
+  assert.deepEqual(parseMarketDetailRoute(serializeMarketDetailIdentity(identity)), { kind: 'valid', identity })
+})
+
 test('rejects explicit fixed-view identity conflicts without correcting the URL', () => {
   assert.deepEqual(parseMarketDetailRoute({
     view: 'trend', symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m',
@@ -65,7 +71,7 @@ test('fails closed for unknown values and malformed route fields', () => {
     { view: 'free', symbol: 'jm', series_kind: 'invalid', frequency: '1d' },
     { view: 'free', symbol: 'jm', series_kind: 'actual_dominant', frequency: '2h' },
     { view: 'htdy', symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', focus_bar_end: '2026-02-30T02:45:00Z' },
-    { view: 'trend', symbol: 'jm', focus_bar_end: '2026-09-02T02:45:00Z' },
+    { view: 'trend', symbol: 'jm', focus_bar_end: 'not-an-instant' },
     { view: 'free', symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', focus_bar_end: '2026-09-02T02:45:00Z' },
   ]) assert.equal(parseMarketDetailRoute(query).kind, 'invalid')
 })

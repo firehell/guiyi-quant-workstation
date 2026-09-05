@@ -6,12 +6,16 @@ import MarketDetailQuoteHeader from '@/components/market/detail/MarketDetailQuot
 import MarketDetailTopBar from '@/components/market/detail/MarketDetailTopBar.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 import MarketDetailViewNav from '@/components/market/detail/MarketDetailViewNav.vue'
+import TrendDetailWorkspace from '@/components/market/detail/TrendDetailWorkspace.vue'
 import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
+import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
+import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import {
   loadMarketDetailPreferences,
   replaceFreeDetailPreferences,
+  replaceHtdyDetailPreferences,
   saveMarketDetailPreferences,
   type FlexibleDetailPreferences,
 } from '@/utils/marketDetailPreferences'
@@ -24,8 +28,14 @@ const moreOpen = ref(false)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
-const isFreePreview = computed(() => explicitIdentity.value?.view === 'free')
-const shellReady = computed(() => isFreePreview.value && controller.state.value.header !== null && !controller.state.value.loading)
+const isWorkspacePreview = computed(() => ['free', 'htdy', 'trend', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
+const shellReady = computed(() => isWorkspacePreview.value && controller.state.value.header !== null && !controller.state.value.loading)
+const htdyWorkspace = ref<InstanceType<typeof HtdyDetailWorkspace> | null>(null)
+const trendWorkspace = ref<InstanceType<typeof TrendDetailWorkspace> | null>(null)
+const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(null)
+const hasHtdyHistory = ref(false)
+const hasTrendHistory = ref(false)
+const hasSubingHistory = ref(false)
 const header = computed(() => controller.state.value.header)
 const identityWarning = ref(
   typeof window !== 'undefined' && window.history.state?.contractCleared === true
@@ -40,8 +50,11 @@ const identityKey = computed(() => {
 })
 async function activateRoute() {
   moreOpen.value = false
+  hasHtdyHistory.value = false
+  hasTrendHistory.value = false
+  hasSubingHistory.value = false
   const result = routeResult.value
-  if (result.kind !== 'valid' || result.identity.view !== 'free') return
+  if (result.kind !== 'valid' || !['free', 'htdy', 'trend', 'subing'].includes(result.identity.view)) return
   await controller.switchIdentity(result.identity)
 }
 
@@ -97,6 +110,25 @@ function updateFreePreferences(free: FlexibleDetailPreferences) {
   saveMarketDetailPreferences(preferences.value)
 }
 
+function updateHtdyPreferences(htdy: FlexibleDetailPreferences) {
+  preferences.value = replaceHtdyDetailPreferences(preferences.value, htdy)
+  saveMarketDetailPreferences(preferences.value)
+}
+
+function resolveFocus(focusBarEnd: string) {
+  const identity = explicitIdentity.value
+  if ((identity?.view !== 'htdy' && identity?.view !== 'subing' && identity?.view !== 'trend') || identity.focusBarEnd !== focusBarEnd) return
+  const { focusBarEnd: _focus, ...next } = identity
+  void router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(next) })
+}
+
+function openHistory() {
+  const view = explicitIdentity.value?.view
+  if (view === 'trend') trendWorkspace.value?.openHistory()
+  else if (view === 'htdy') htdyWorkspace.value?.openHistory()
+  else if (view === 'subing') subingWorkspace.value?.openHistory()
+}
+
 function goBack() {
   void router.push('/market')
 }
@@ -118,24 +150,16 @@ onBeforeUnmount(controller.dispose)
       />
     </template>
 
-    <template v-else-if="routeResult.kind === 'valid' && routeResult.identity.view !== 'free'">
-      <MarketDetailUnavailable
-        title="当前视角尚未接入统一详情页"
-        message="Slice A 仅开放自由看盘的 Shell 预览入口；该 Workspace 将在对应后续 Slice 中接入。"
-        :can-return-legacy="true"
-        @return-legacy="returnLegacy"
-      />
-    </template>
-
     <template v-else-if="routeResult.kind === 'valid'">
       <MarketDetailTopBar
         :product-name="header?.productName ?? routeResult.identity.symbol.toUpperCase()"
         :symbol="routeResult.identity.symbol"
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"
-        :actions="{ canOpenHistory: false, canManageAlert: false }"
+        :actions="{ canOpenHistory: routeResult.identity.view === 'trend' ? hasTrendHistory : routeResult.identity.view === 'htdy' ? hasHtdyHistory : routeResult.identity.view === 'subing' ? hasSubingHistory : false, canManageAlert: false }"
         @back="goBack"
         @select-symbol="returnLegacy"
         @open-more="moreOpen = !moreOpen"
+        @open-history="openHistory"
       />
       <div v-if="moreOpen" class="market-detail-page__more" role="menu" aria-label="更多操作">
         <button type="button" role="menuitem" @click="returnLegacy">返回旧版详情</button>
@@ -159,6 +183,7 @@ onBeforeUnmount(controller.dispose)
         />
         <section class="market-detail-page__workspace" data-detail-section="workspace-slot">
           <FreeChartWorkspace
+            v-if="routeResult.identity.view === 'free'"
             :identity="routeResult.identity"
             :header="header"
             :bars="controller.bars.value"
@@ -172,6 +197,53 @@ onBeforeUnmount(controller.dispose)
             :load-earlier="controller.loadMoreBefore"
             :identity-warning="identityWarning"
             @update-preferences="updateFreePreferences"
+          />
+          <HtdyDetailWorkspace
+            v-else-if="routeResult.identity.view === 'htdy'"
+            ref="htdyWorkspace"
+            :identity="routeResult.identity"
+            :header="header"
+            :bars="controller.bars.value"
+            :mutation="controller.mutation.value"
+            :loading="controller.state.value.loading"
+            :error="controller.state.value.error"
+            :preferences="preferences.htdy"
+            :has-more-before="controller.hasMoreBefore.value"
+            :load-earlier="controller.loadMoreBefore"
+            :identity-warning="identityWarning"
+            @update-preferences="updateHtdyPreferences"
+            @history-availability="hasHtdyHistory = $event"
+            @focus-resolved="resolveFocus"
+          />
+          <TrendDetailWorkspace
+            v-else-if="routeResult.identity.view === 'trend'"
+            ref="trendWorkspace"
+            :identity="routeResult.identity"
+            :header="header"
+            :bars="controller.bars.value"
+            :research="controller.research.value"
+            @history-availability="hasTrendHistory = $event"
+            :mutation="controller.mutation.value"
+            :loading="controller.state.value.loading"
+            :has-more-before="controller.hasMoreBefore.value"
+            :load-earlier="controller.loadMoreBefore"
+            @focus-resolved="resolveFocus"
+          />
+          <SubingDetailWorkspace
+            v-else-if="routeResult.identity.view === 'subing'"
+            ref="subingWorkspace"
+            :identity="routeResult.identity"
+            :focus-bar-end="routeResult.identity.focusBarEnd"
+            :header="header"
+            :bars="controller.bars.value"
+            :mutation="controller.mutation.value"
+            :loading="controller.state.value.loading"
+            :error="controller.state.value.error"
+            :has-more-before="controller.hasMoreBefore.value"
+            :load-earlier="controller.loadMoreBefore"
+            :identity-warning="identityWarning"
+            @history-availability="hasSubingHistory = $event"
+            @focus-resolved="resolveFocus"
           />
         </section>
       </template>

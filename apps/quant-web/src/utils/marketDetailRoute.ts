@@ -180,6 +180,7 @@ function hasFocus(query: Record<string, unknown>): boolean {
 function allowsFocus(view: MarketDetailView, seriesKind: SeriesKind, frequency: MarketFrequency): boolean {
   return (view === 'htdy' && seriesKind === 'actual_dominant')
     || (view === 'subing' && seriesKind === 'actual_dominant' && frequency === '15m')
+    || (view === 'trend' && seriesKind === 'actual_dominant' && frequency === '1d')
 }
 
 function isIsoInstant(value: string | undefined): value is string {

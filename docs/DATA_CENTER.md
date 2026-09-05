@@ -1,6 +1,6 @@
 # Canonical 数据基础
 
-更新时间：2026-09-03
+更新时间：2026-09-04
 
 ## 1. 唯一 active 数据语言
 
@@ -43,6 +43,10 @@ canonical/
 发布前必须完成 schema、主键单调唯一、OHLCV、交易日/session/frequency、coverage 和物理可读性
 校验。发布成功的月通过 Catalog 的 `coverage_start`、`coverage_end`、`row_count` 与可读
 `file_uri` 表示；没有旁路的内容摘要、发布清单或缺口状态。
+
+`contract` partition 必须包含全部 rank1 required Bar，同时其中每一条 Bar 都必须在该 Contract 的 active
+lifecycle、TradingCalendar 与 TradingSession 内。这个 superset 合同允许保留同物理合约、上市有效期内的真实
+warm-up prefix，但不改变 `actual_dominant` 的 rank1 owner；`continuous` 继续使用 exact expected equality。
 
 ## 3. 八表 Catalog
 
@@ -99,6 +103,13 @@ snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d �
 contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四个日内派生周期。它不接受 repair plan，
 也不产生额外进度或证据文件。
 
+`contract-warmup` 只维护一个已验证 identity 的 physical contract：请求窗口从 `listed_date` 到不晚于最近完整
+交易日的 `requested_window.through`；计划的 `effective_window.through` 再按 `expired_date - 1 day` 截断，获取该
+contract 的 `1m/1d` 基础事实。CLI schema v2 必须同时公开两个窗口，不使用含义不明的单一 `through`；两者也进入
+plan hash identity。`1w` 只由同一交易所完整日行情聚合，四个日内派生周期只由同 contract `1m` 生成。dry-run
+只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
+MainContractMap、Redis Live、Rule、Scope、Event 或 notification。分区失败可明确部分成功，不能自动重试。
+
 ### 盘后 Runtime 状态合同
 
 `.run/after-market-status.json` 写 schema v2；读取兼容旧 schema v1。schema v2 在受监督自然盘后运行开始、任何
@@ -139,6 +150,13 @@ coverage 缺失时 fail-closed。`actual_dominant` 按与 `(start, end]` 相交�
 夜盘 bar 的身份始终是其 `trading_day`，而不是发生时刻所在的前一自然日。响应只返回请求、bars、
 coverage 和 resolved contract segments。
 
+响应中的 `resolved contract segments` 只描述该周期实际返回 Bar 的 owner 子集，不是全窗口
+MainContractMap 的替代物。跨周期研究使用 `MarketDataService.actual_dominant_segments(symbol, since,
+through)` 读取与窗口相交、按 MainContractMap 已知完整边界展开的全局 rank1 分段，再逐 Bar 验证响应
+owner 与全局 owner 的 contract 一致。短主力段可能有 D1/60m Bar 而没有完整 W1 Bar，因此各周期 owner
+子集无需相等；不得使用 D1、周期并集或任一观察结果反推全局主力分段。完整分段边界只用于 lineage、
+segment identity 与换月状态隔离，不得根据未来 `end_trading_day` 提前产生信号。
+
 按 `since/through` 交易日表达窗口的研究消费者使用
 `ActualDominantTradingDayQuery` 或 `ContractTradingDayQuery`；`MarketDataService` 先要求目标自然日期区间内
 每一天都有权威 TradingCalendar 行，再从其中的 `is_trading_day=True` 行解析首末 TradingSession，最后进入
@@ -155,13 +173,14 @@ coverage 和 resolved contract segments。
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
+guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe active) [--through DATE] [--progress]
 guiyi data session-anchor-repair --phase plan
 guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply
 ```
 
-无 `--apply` 的 update/refresh 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
+无 `--apply` 的 update/refresh/contract-warmup 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
 始终只读。audit 对每个请求品种独立返回结构化 finding（`code`、`category`、dataset、year、month）：已知
 Session、Calendar 与产品窗口元数据缺口分别归为 `metadata_session`、`metadata_calendar`、
 `metadata_window`，但不会中断其余品种；主力映射、预期分区缺失与物理一致性问题分别归为
@@ -177,14 +196,48 @@ write/flush 失败，立即禁用后续进度输出，审计异常和最终 stdo
 必须为 NOOP。真实 `--apply`、生产 schema migration 与正式数据删除/重建仍各自需要范围明确的
 单次意图。
 
+`contract-warmup --apply` 还必须提供 dry-run 输出的全小写 SHA-256 plan hash；锁内重算的 identity、
+lifecycle、Calendar/Session 或 target 漂移都会在第一次 provider 请求和写入前阻断。dry-run 或测试不构成
+真实 apply 授权，真实执行后如需重试亦须新的单次意图。
+
 `session-anchor-repair` 是 0044→0045 的一次性 forward-only seam。`plan` 只读扫描全部日内
 Dataset/partition、预计缺失首分钟与稳定 scope hash，不调用 RQData。`prepare --apply` 需要独立真实数据授权，
 只把完整 Canonical 复制到外部 shadow root，再用 RQData 真实缺失 1m 重建 `1m/5m/15m/30m/60m`；不得合成，
 且 D1/W1 hash 必须不变。manifest 必须位于 active/shadow root 之外。`publish --apply` 需要新的维护授权，
 只在五项 Runtime 均停止且 revision、Catalog、active/shadow 文件 hash 与 scope 全部未漂移时切换 root、更新
-coverage/row_count、执行精确 0045，再清理 publish 执行时由 operational phase authority 唯一解析的当前交易日旧锚点 Redis Bar。0045 成功后失败只能
-保持维护状态继续 forward recovery，不能恢复错误 session。修复继续使用唯一 Canonical V2，不创建并行
-data-version。
+coverage/row_count、执行精确 0045，再清理 publish 执行时由 operational phase authority 唯一解析的当前交易日旧锚点 Redis Live Bar。该 repair cleanup 只删除
+`live:bars:<trading-day>:*`，必须保留同日不可变 rank1 subscription snapshot；它不清理其他交易日，且不得把
+snapshot 改写为 Canonical 或合成的事实。0045 成功后失败只能保持维护状态继续 forward recovery，不能恢复错误
+session。修复继续使用唯一 Canonical V2，不创建并行 data-version。
+
+自然 after-market 是与 repair 分离的严格边界：Canonical 更新后必须用既有 immutable subscription snapshot 对
+formal rank1 做 strict reconciliation。snapshot 缺失、格式错误、不完整或 identity 不匹配均失败关闭，不能以 repair、
+重新查询、合成 snapshot 或其他回退替代；只有 reconciliation 完成后，才一次原子 full cleanup 删除该交易日全部
+Live Bars 与 subscription snapshot。repair-only cleanup 不改变这条自然 after-market 语义。
+
+### Market Runtime promotion preflight
+
+`run-local-service.sh market-runtime-preflight` 是只读、bounded-JSON 的 promotion preflight。它只读取既有
+operational universe、Calendar/Session phase authority、当前交易日 immutable Live subscription snapshot 与公开
+after-market status；不连接 RQData，不写 Catalog、Redis 或状态文件。
+
+跨 checkout promotion 时，after-market status 的 authority 来自当前 supervised 的、已加载 after-market
+launchd root，并与已安装 plist 声明的 root 交叉校验；candidate checkout 不能自行取得 status authority。只有
+launchd domain 可读、after-market label 明确为 not-found、且不存在 installed plist 的 first-install 条件下，才可
+使用 candidate root。domain/permission/label 命令错误、root 缺失、畸形或彼此不一致一律为
+`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。preflight 的受控 status path 不受 runtime env 覆盖。
+
+只有以下四种窗口可通过：有效 snapshot 与 operational symbols/contract identities 精确对应的
+`snapshot_ready`；所有 operational 产品尚未到权威 Session 的真正最早 start 的 `before_first_session`；同一
+trading day 的 after-market 已完成且 products 精确保持 operational 顺序的 `after_market_complete`；以及没有
+当前 trading day、没有 active Session 的 clean `non_trading_interval`。任何 post-start 缺失 snapshot、无效或
+部分 snapshot、UNKNOWN/分歧 phase、缺失或歧义 Session authority、running/corrupt/unreadable after-market
+status，或不可能的 status chronology 都必须阻断；其稳定公开原因仅为
+`MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED`、`MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_INVALID` 或
+`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。
+
+这个 preflight 没有 override、repair、synthetic snapshot、retry、replay 或 fallback；它不把预检通过表述为
+release、Runtime ready、formal rank1 reconciliation 或生产验证。
 
 active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
 `data/universe/retired_products.txt`，与 active 互斥。

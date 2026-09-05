@@ -13,7 +13,8 @@ import pandas as pd  # type: ignore[import-untyped]
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.env import load_project_env
+from app.core.env import PROJECT_ROOT, load_project_env
+from app.market_data.catalog import CatalogError, MarketCatalog
 from app.market_data.coverage_source import (
     _calendar_context_start,
     _iso_week_end,
@@ -24,7 +25,7 @@ from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import BarBatch, BarFetchRequest
 from app.market_data.metadata import MetadataSnapshot
 from app.market_data.session_clock import SHANGHAI
-from app.models import Contract, Instrument, MainContractMap, TradingCalendar
+from app.models import Instrument, MainContractMap, TradingCalendar
 
 
 _SESSION = re.compile(r"(?P<start>\d{1,2}:\d{2})\s*[-~]\s*(?P<end>\d{1,2}:\d{2})")
@@ -35,6 +36,7 @@ class RQDataMarketAdapter:
 
     def __init__(self, *, session: Session, client: Any | None = None) -> None:
         self.session = session
+        self.catalog = MarketCatalog(session, PROJECT_ROOT)
         self._client = client
 
     @property
@@ -234,11 +236,19 @@ class RQDataMarketAdapter:
         self, key: DatasetKey, start: date, end: date
     ) -> tuple[date, ...]:
         """周线聚合的交易日集合，真实合约仅纳入挂牌且未到期区间。"""
-        exchange = self.session.scalar(
-            select(Instrument.exchange_code).where(Instrument.symbol == key.symbol)
-        )
-        if exchange is None:
-            raise InfrastructureError("INSTRUMENT_EXCHANGE_MISSING")
+        try:
+            fact = (
+                self.catalog.contract_fact(key.symbol, key.series_or_contract)
+                if key.kind is DatasetKind.CONTRACT
+                else None
+            )
+            exchange = (
+                fact.exchange
+                if fact is not None
+                else self.catalog.exchange_for_symbol(key.symbol)
+            )
+        except CatalogError as exc:
+            raise InfrastructureError(exc.code) from exc
         statement = select(TradingCalendar.trade_date).where(
             TradingCalendar.exchange_code == exchange,
             TradingCalendar.trade_date >= start,
@@ -246,21 +256,11 @@ class RQDataMarketAdapter:
             TradingCalendar.is_trading_day.is_(True),
         )
         days = tuple(self.session.scalars(statement.order_by(TradingCalendar.trade_date)))
-        if key.kind is DatasetKind.CONTRACT:
-            contract = self.session.scalar(select(Contract).where(
-                Contract.contract_code == key.series_or_contract,
-                Contract.instrument_symbol == key.symbol,
-            ))
-            if (
-                contract is None
-                or contract.listed_date is None
-                or contract.expired_date is None
-            ):
-                return ()
+        if fact is not None:
             return tuple(
                 day
                 for day in days
-                if contract.listed_date <= day < contract.expired_date
+                if fact.listed_date <= day < fact.expired_date
             )
         return days
 

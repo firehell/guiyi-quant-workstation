@@ -141,6 +141,27 @@ RETIRED_MODULE_ATTRIBUTES = {
 }
 ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_ths_alert_15m_v1"})
 SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v3"
+ACTIVE_MARKET_ROUTE_OWNERS = {
+    ("GET", "/api/v1/market/bars/page", "app.api.market:canonical_market_bars_page"),
+    ("GET", "/api/v1/market/dominants", "app.api.market:market_dominants"),
+    (
+        "GET",
+        "/api/v1/market/newow/trend-detail",
+        "app.api.market_newow:newow_trend_detail",
+    ),
+    (
+        "GET",
+        "/api/v1/market/research/home-overview",
+        "app.api.market:market_home_overview",
+    ),
+    (
+        "GET",
+        "/api/v1/market/research/product",
+        "app.api.market:product_research",
+    ),
+    ("GET", "/api/v1/market/state", "app.api.market_live:market_state"),
+    ("WEBSOCKET", "/api/v1/market/ws", "app.api.market_live:market_websocket"),
+}
 BACKEND_ALERT_RULE_LITERAL_EXPECTED = {
     "htdy_original_15m": {
         "services/quant-api/app/alerts/registry.py": 2,
@@ -193,6 +214,26 @@ ALERT_CANONICAL_REQUIREMENTS = {
         "G9",
     ),
 }
+
+
+def _mounted_routes(app: object) -> tuple[tuple[str, object], ...]:
+    mounted: list[tuple[str, object]] = []
+
+    def visit(routes: object, prefix: str = "") -> None:
+        for route in routes:
+            included_router = getattr(route, "original_router", None)
+            if included_router is not None:
+                context = getattr(route, "include_context", None)
+                included_prefix = getattr(context, "prefix", "")
+                assert isinstance(included_prefix, str)
+                visit(included_router.routes, f"{prefix}{included_prefix}")
+                continue
+            path = getattr(route, "path", None)
+            if isinstance(path, str):
+                mounted.append((f"{prefix}{path}", route))
+
+    visit(getattr(app, "routes", ()))
+    return tuple(mounted)
 
 
 def _assert_backend_alert_rule_literal_ownership(
@@ -250,15 +291,36 @@ def test_public_entrypoints_are_exact() -> None:
 
 def test_retired_http_surfaces_return_404_and_are_not_mounted() -> None:
     main_module = importlib.import_module("app.main")
-    route_paths = {
-        route.path for route in main_module.app.routes if hasattr(route, "path")
-    }
+    route_paths = {path for path, _route in _mounted_routes(main_module.app)}
     client = TestClient(main_module.app)
 
     for path in RETIRED_HTTP_404_PATHS:
         assert path not in route_paths, path
         assert client.get(path).status_code == 404, path
     assert "/ws/signals" not in route_paths
+
+
+def test_active_market_route_inventory_is_exact_and_uniquely_owned() -> None:
+    main_module = importlib.import_module("app.main")
+    mounted = _mounted_routes(main_module.app)
+    actual = [
+        (
+            method,
+            path,
+            f"{route.endpoint.__module__}:{route.endpoint.__name__}",
+        )
+        for path, route in mounted
+        if path.startswith("/api/v1/market")
+        for method in (
+            tuple(sorted(route.methods))
+            if isinstance(getattr(route, "methods", None), (set, frozenset))
+            else ("WEBSOCKET",)
+        )
+    ]
+
+    assert len(actual) == len(ACTIVE_MARKET_ROUTE_OWNERS), actual
+    assert len({(kind, path) for kind, path, _owner in actual}) == len(actual), actual
+    assert set(actual) == ACTIVE_MARKET_ROUTE_OWNERS
 
 
 def test_active_public_sources_do_not_name_retired_backtesting() -> None:
@@ -373,7 +435,7 @@ def test_release_versions_are_consistent() -> None:
         web["version"],
         *lock_versions,
         *app_versions,
-    } == {"1.9.14"}
+    } == {"1.9.15"}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
 

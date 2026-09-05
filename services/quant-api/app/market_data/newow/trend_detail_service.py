@@ -7,6 +7,7 @@ import re
 
 from guiyi_quant.newow.engine import NewowTrendD1Engine, NewowTrendD1EngineState
 from guiyi_quant.newow.cup_handle import cup_evaluation_ready
+from guiyi_quant.newow.escape_d123 import escape_evaluation_ready
 from guiyi_quant.newow.models import (
     NewowCupHandleOverlay,
     NewowDailyBar,
@@ -14,7 +15,7 @@ from guiyi_quant.newow.models import (
     NewowTrendFrame,
     TrendBandState,
 )
-from guiyi_quant.newow.profile import NEWOW_TREND_D1_V1
+from guiyi_quant.newow.profile import NEWOW_TREND_D1_PAGE_V2
 
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
@@ -36,6 +37,7 @@ from .trend_detail_query import MAX_VISIBLE_TRADING_DAYS, NewowTrendDetailQuery
 _PREFIX_LIMIT = 2000
 _CANONICAL_AUTHORITY = "market_data_service:canonical_v2"
 _RANK1_MAPPING_AUTHORITY = "main_contract_map:rank1:canonical_v1"
+_PROFILE = NEWOW_TREND_D1_PAGE_V2
 
 
 class NewowTrendDetailError(ValueError):
@@ -89,7 +91,12 @@ class _SegmentReplay:
 class NewowTrendDetailService:
     """Stateless request-scoped actual-dominant D1 replay."""
 
-    def __init__(self, market_data: MarketDataService, *, taxonomy: Mapping[str, ProductTaxonomyEntry] | None = None) -> None:
+    def __init__(
+        self,
+        market_data: MarketDataService,
+        *,
+        taxonomy: Mapping[str, ProductTaxonomyEntry] | None = None,
+    ) -> None:
         self._market_data = market_data
         self._taxonomy = taxonomy
 
@@ -122,7 +129,7 @@ class NewowTrendDetailService:
         final_state: NewowTrendD1EngineState | None = None
         all_seams: list[NewowRolloverSeam] = []
         previous: tuple[NewowDailyBar, ResolvedContractSegment] | None = None
-        for segment in loaded.segments:
+        for segment in loaded.authoritative_segments:
             rank_bars = tuple(
                 bar
                 for bar in actual
@@ -175,7 +182,7 @@ class NewowTrendDetailService:
             frames[-1].bar.physical_contract if frames else None,
             "1d",
             "actual_dominant",
-            NEWOW_TREND_D1_V1.profile_id,
+            _PROFILE.profile_id,
             _formula_versions(),
         )
         return NewowTrendDetailResult(
@@ -251,7 +258,7 @@ class NewowTrendDetailService:
         expected: Mapping[tuple[date, datetime], CanonicalBar] = {
             (bar.trading_day, bar.bar_end): bar for bar in rank_bars
         }
-        engine = NewowTrendD1Engine.initial()
+        engine = NewowTrendD1Engine.initial(profile=_PROFILE)
         frames: list[NewowTrendFrame] = []
         matched = 0
         for bar in physical:
@@ -328,9 +335,9 @@ def _to_newow_bar(
 
 def _formula_versions() -> tuple[str, ...]:
     return (
-        NEWOW_TREND_D1_V1.trend_band_formula,
-        NEWOW_TREND_D1_V1.escape_formula,
-        NEWOW_TREND_D1_V1.cup_handle_formula,
+        _PROFILE.trend_band_formula,
+        _PROFILE.escape_formula,
+        _PROFILE.cup_handle_formula,
     )
 
 
@@ -343,7 +350,7 @@ def _calculation_identity(product: str) -> str:
             product,
             "actual_dominant",
             "1d",
-            NEWOW_TREND_D1_V1.profile_id,
+            _PROFILE.profile_id,
             *_formula_versions(),
         )
     )
@@ -386,17 +393,16 @@ def _warnings(
 ) -> tuple[str, ...]:
     """Top-level availability is the latest visible bar only, never history."""
     if latest is None or state is None:
-        return ("NEWOW_TREND_WARMUP_INSUFFICIENT", "NEWOW_D123_WARMUP_INSUFFICIENT", "NEWOW_CUP_WARMUP_INSUFFICIENT")
+        return (
+            "NEWOW_TREND_WARMUP_INSUFFICIENT",
+            "NEWOW_D123_WARMUP_INSUFFICIENT",
+            "NEWOW_CUP_WARMUP_INSUFFICIENT",
+        )
     warnings: list[str] = []
     if latest.trend_band.state is TrendBandState.UNAVAILABLE:
         warnings.append("NEWOW_TREND_WARMUP_INSUFFICIENT")
-    escape = state.escape_state
-    if not (
-        escape.history_count >= NEWOW_TREND_D1_V1.ma120_period
-        and len(escape.ma120_values) >= NEWOW_TREND_D1_V1.ma120_slope_window
-        and escape.previous_var4 is not None
-    ):
+    if not escape_evaluation_ready(state.escape_state, profile=_PROFILE):
         warnings.append("NEWOW_D123_WARMUP_INSUFFICIENT")
-    if not cup_evaluation_ready(state.cup_handle_state, profile=NEWOW_TREND_D1_V1):
+    if not cup_evaluation_ready(state.cup_handle_state, profile=_PROFILE):
         warnings.append("NEWOW_CUP_WARMUP_INSUFFICIENT")
     return tuple(warnings)

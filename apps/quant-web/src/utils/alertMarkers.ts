@@ -69,7 +69,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
       return [{
         id: `alert:${alertEventIdentityKey(event)}`,
         time: event.bar_end,
-        label,
+        label: `${label} · 首次识别`,
         tooltip: [
           '实时首次识别',
           '持久 AlertEvent',
@@ -110,7 +110,10 @@ function markerTone(
   observations: AlertEvent['result_codes'],
 ): KlineMarker['tone'] {
   const registeredTone = alertEventMarkerTone(event)
-  if (registeredTone === 'htdy') return registeredTone
+  if (registeredTone === 'htdy') {
+    if ((observations as readonly string[]).includes('buy')) return 'up'
+    if ((observations as readonly string[]).includes('sell')) return 'down'
+  }
   const direction = alertEventDirectionalTone(
     event,
     observations.filter((item): item is 'buy' | 'sell' => item === 'buy' || item === 'sell'),

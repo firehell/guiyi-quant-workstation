@@ -30,6 +30,7 @@ from app.market_data.session_clock import (
 )
 from app.market_data.storage import PublishedPartition
 from app.models import (
+    Contract,
     Instrument,
     MainContractMap,
     MarketDataset,
@@ -105,6 +106,18 @@ class MainMapFact:
     contract: str
 
 
+@dataclass(frozen=True, slots=True)
+class ContractFact:
+    """具体合约的只读身份与有效生命周期事实。"""
+
+    symbol: str
+    contract: str
+    exchange: str
+    provider: str
+    listed_date: date
+    expired_date: date
+
+
 class MarketCatalog:
     """市场数据 Catalog 门面：数据集注册、分区索引、主力映射与交易日查询。"""
 
@@ -162,6 +175,33 @@ class MarketCatalog:
             self.session.add(row)
             self.session.flush()
         return row
+
+    def contract_fact(self, symbol: str, contract: str) -> ContractFact:
+        """解析唯一具体合约身份与 ``[listed_date, expired_date)`` 生命周期。"""
+        normalized_symbol = symbol.strip().lower()
+        normalized_contract = contract.strip().upper()
+        row = self.session.scalar(
+            select(Contract).where(Contract.contract_code == normalized_contract)
+        )
+        if row is None:
+            raise CatalogError("CONTRACT_NOT_FOUND")
+        if row.instrument_symbol.strip().lower() != normalized_symbol:
+            raise CatalogError("CONTRACT_SYMBOL_MISMATCH")
+        provider = (row.provider or "").strip().lower()
+        if provider != "rqdata":
+            raise CatalogError("CONTRACT_PROVIDER_UNSUPPORTED")
+        if row.listed_date is None or row.expired_date is None:
+            raise CatalogError("CONTRACT_METADATA_MISSING")
+        if row.listed_date >= row.expired_date:
+            raise CatalogError("CONTRACT_ACTIVE_WINDOW_MISSING")
+        return ContractFact(
+            symbol=normalized_symbol,
+            contract=normalized_contract,
+            exchange=row.exchange_code,
+            provider=provider,
+            listed_date=row.listed_date,
+            expired_date=row.expired_date,
+        )
 
     def register_partition(self, partition: PublishedPartition) -> None:
         """将一次成功发布的月分区写入/更新 ``MarketPartition``（coverage、URI、行数）。"""

@@ -50,6 +50,9 @@ logs/
 .workbuddy/
 .worktrees/
 
+# local browser capture artifacts
+.playwright-cli/
+
 # local rollback copies produced by controlled data-repair runs
 data/reports/source_interval_provenance_repair_apply_*/backups/
 

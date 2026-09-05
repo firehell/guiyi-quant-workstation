@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from typing import Any, NoReturn
 
 
@@ -34,6 +35,15 @@ class JsonArgumentParser(argparse.ArgumentParser):
                 not has_all_paths or not result.apply
             ):
                 self.error("prepare/publish require paths and --apply")
+        if getattr(result, "data_command", None) == "contract-warmup":
+            expected_hash = result.expected_plan_sha256
+            if not result.apply and expected_hash is not None:
+                self.error("dry-run does not accept an expected plan hash")
+            if result.apply and (
+                not isinstance(expected_hash, str)
+                or re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None
+            ):
+                self.error("apply requires a lowercase SHA-256 plan hash")
         return result
 
 
@@ -54,6 +64,13 @@ def add_data_commands(
     refresh.add_argument("--since", required=True)
     refresh.add_argument("--through", required=True)
     refresh.add_argument("--apply", action="store_true")
+
+    contract_warmup = commands.add_parser("contract-warmup", allow_abbrev=False)
+    contract_warmup.add_argument("--symbol", required=True)
+    contract_warmup.add_argument("--contract", required=True)
+    contract_warmup.add_argument("--through", required=True)
+    contract_warmup.add_argument("--expected-plan-sha256")
+    contract_warmup.add_argument("--apply", action="store_true")
 
     audit = commands.add_parser("audit")
     selector = audit.add_mutually_exclusive_group(required=True)

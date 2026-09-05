@@ -1,0 +1,1204 @@
+{
+  "schema_version": "newow-evidence-manifest-v2",
+  "source_registry_captured_at": "2026-09-04T13:57:43+08:00",
+  "product_version": "v3.2.82",
+  "files": [
+    {
+      "relative_path": "analysis/ai-template-evidence.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 3357,
+      "sha256": "3a759abad84e1f7f03d8a4343872d2f4d9758ac746d3e9dd033bcd95106e606f"
+    },
+    {
+      "relative_path": "analysis/build_evidence_manifest.py",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 3915,
+      "sha256": "46be3390579503abee46f544771dde9e1cbf53f326e73cd7f79a80c8ea1cf6f3"
+    },
+    {
+      "relative_path": "analysis/build_page_optimizer_oracle.mjs",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 5664,
+      "sha256": "a4491db837d710d3eda3b3d7b82ceae93b08d4b6418ae814c9649e0ef2ef23e0"
+    },
+    {
+      "relative_path": "analysis/collect_core_parity_inputs.mjs",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 6303,
+      "sha256": "fbb9535e03421a704e722bde89cfc0c6101888ecb15707a78d788acd504235f5"
+    },
+    {
+      "relative_path": "analysis/collect_exact_page_cases.mjs",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 9719,
+      "sha256": "dcbf1b834a18695dced2cbf1646115f73197f1a2440fddfe911f71ca2248f68a"
+    },
+    {
+      "relative_path": "analysis/collect_kline_evidence.py",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 6050,
+      "sha256": "2486a4e1ebac8f02daecdaca0c644bd28a6512fe87a8de27523616f1e18bdc46"
+    },
+    {
+      "relative_path": "analysis/collect_multi_period_page_facts.mjs",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 10551,
+      "sha256": "38b067ac392af64af70a0e65a19353ce09618c300733ed830879b110db55fd4e"
+    },
+    {
+      "relative_path": "analysis/collect_public_evidence.py",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 8071,
+      "sha256": "a41b5f2a5d17dae5d52b3e460c466b7ddae0da2878512c5031b8cd3a1b80a059"
+    },
+    {
+      "relative_path": "analysis/composite-reachability.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 6813,
+      "sha256": "48888a4b3f1a2634d7e4664200aed07c0ef4ce9426fb62840baa8e88e0e68d5c"
+    },
+    {
+      "relative_path": "analysis/core-page-parity-results.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 2932,
+      "sha256": "163337b4b425241189ae348814610c29b3ff3b24a3c4b03a95da10864efbab3e"
+    },
+    {
+      "relative_path": "analysis/core-parity-inputs.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 6026184,
+      "sha256": "94077b143bfb702742083ad46827e9dea32045e9bc2367cc19f302a4c689a2d9"
+    },
+    {
+      "relative_path": "analysis/extract_ai_template_evidence.py",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 3602,
+      "sha256": "7491e9ea4a049ab3e16fe4de86be640fa550b25e3ce6146f3d26d9b0bd711133"
+    },
+    {
+      "relative_path": "analysis/kline-source-index.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 21801,
+      "sha256": "4ee1b19ee6151c1f5eb2a73a5b31c381f5bc575ae2b3db0f16b5ba88b0a971fb"
+    },
+    {
+      "relative_path": "analysis/multi-period-page-facts.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 2696715,
+      "sha256": "2dc79a126cea64b3f4966ad22cb7d1d9b81e0f26b2986e52591b19f9618b38dc"
+    },
+    {
+      "relative_path": "analysis/page-optimizer-oracle.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 97934,
+      "sha256": "ec353dd6608da2ed99d6a2cc582d4fc629aa5704c88e558d87aed7b23772b3bb"
+    },
+    {
+      "relative_path": "analysis/screener-cup_handle-snapshot.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 2724,
+      "sha256": "4d50f91ecdd6d3f290d4e5b51e8ff7d47d38888953b5e49f28aefef94427772f"
+    },
+    {
+      "relative_path": "analysis/screener-daily_buy-snapshot.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 2616,
+      "sha256": "b142fab981cbd0204b8ea1617c15912677a734610835786908a27d95c3c1e29e"
+    },
+    {
+      "relative_path": "analysis/screener-mainrise_build-snapshot.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 1458,
+      "sha256": "e5a3e7f7de064805784c2f1f914f3d5eea57db77337ad9e99ede6d75c465ed0e"
+    },
+    {
+      "relative_path": "analysis/screener-oscillation_build-snapshot.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 1393,
+      "sha256": "8aac7a463facc5a60aad66afe968e2a7b6cf36039130270ba5c721e0f45117c0"
+    },
+    {
+      "relative_path": "analysis/screener-trend_build-snapshot.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 2951,
+      "sha256": "4cf681ab53578e8280f0a97ce67de43c0278a0fd069fd57989f8977452d3b791"
+    },
+    {
+      "relative_path": "analysis/screener-weekly_buy-snapshot.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 2621,
+      "sha256": "127f959f8ec651bf4610a5cd1b9b3f9f6d7efef3bebf060e16c40ebb93fcaf0a"
+    },
+    {
+      "relative_path": "analysis/source-registry.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 63230,
+      "sha256": "0b9e841c9d6af50acfc9adb924f90d4eb161e127db641198301b74a45c1e7dab"
+    },
+    {
+      "relative_path": "analysis/v3.2.82-vs-2026-09-03.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 3596,
+      "sha256": "19e834c1005c8d82f9f6d5c3bb3f75736e334017927e581a98d4ef9d7951fbcf"
+    },
+    {
+      "relative_path": "analysis/verify_composite_reachability.py",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 4992,
+      "sha256": "f42b4c508e4dfdd1f0eedc4033792ecd71c9de050cd48d057da5ed6b21a11e63"
+    },
+    {
+      "relative_path": "analysis/verify_core_page_parity.py",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 16078,
+      "sha256": "6c065f139d28417996ba14961b087d8aa1266ab8be1e0b0a7c603a45d23cdb52"
+    },
+    {
+      "relative_path": "analysis/verify_exact_page_cases.py",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 2620,
+      "sha256": "6a99acf63e3deca7ec9bfdd40da3791eca02fac559411a37d7c08a652abfa523"
+    },
+    {
+      "relative_path": "futures/newow-futures-evidence-20260904.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 39790,
+      "sha256": "33240ce9ae4e304ecfdc8542d8dfe4a9a8cd39310ae1103036960376dbadfcd3"
+    },
+    {
+      "relative_path": "futures/newow-futures-evidence-20260904.json.sha256",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 103,
+      "sha256": "a4e0e6ea489ca5966db3b9dcfa608183952a3b576dedc191d10ae1b21569a665"
+    },
+    {
+      "relative_path": "futures/normalized-research-snapshot.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 6944102,
+      "sha256": "57039d12392c636b3bd762b8cf12686ea7ea388ef54929cfd32b8d090cbc10f0"
+    },
+    {
+      "relative_path": "futures/oos-cost-stress-matrix.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 102097,
+      "sha256": "757f6d70c37c88ec03a9da76a42b47eedb96ce53362a228c6bed94da6ad25eff"
+    },
+    {
+      "relative_path": "futures/rqdata-raw-cost-limit-snapshot.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 4828933,
+      "sha256": "8f5964e038d310656c6bbbeb6cad261046ca230b541e6e4d01650404f3ff959d"
+    },
+    {
+      "relative_path": "futures/rqdata-raw-cost-limit-snapshot.json.sha256",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 102,
+      "sha256": "b22df5f1048363d0eab5c4c832bc594e4a69ae5a9d8ac2a88b5906467f8f226c"
+    },
+    {
+      "relative_path": "futures/sha256-manifest.json",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 659,
+      "sha256": "767b3aecec0d3095dab0a4f53f7c89ceedf0b88da249b5849f668405a2b6d77f"
+    },
+    {
+      "relative_path": "home-anonymous.png",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 79809,
+      "sha256": "8347b3b259e436945641a66dcef4a41f2b6159993a9c0bb8ad62880e83c4e33e"
+    },
+    {
+      "relative_path": "report-source.md",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 21937,
+      "sha256": "d63278004a343dde5b5e33ef218ddfa102ffe5f3b8f62e6442a5835701d253fe"
+    },
+    {
+      "relative_path": "report.md",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 10604,
+      "sha256": "828028702e57803ddea43deeffb47072bceacf3c8dc3bcf19a7bdda601ca7725"
+    },
+    {
+      "relative_path": "screenshots/000001-SH-60min-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=000001.SH&name=%E4%B8%8A%E8%AF%81%E6%8C%87%E6%95%B0&period=60min&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 177239,
+      "sha256": "167d4aaa6d9824c81edc42d4cf55fcf52b2ad14f358f7fc219ce0e0a46f92c89"
+    },
+    {
+      "relative_path": "screenshots/000001-SH-day-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=000001.SH&name=%E4%B8%8A%E8%AF%81%E6%8C%87%E6%95%B0&period=day&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 173547,
+      "sha256": "7b62da013c15a7638cc9aed0565587923027cd2546118d20b27803d45f8dad18"
+    },
+    {
+      "relative_path": "screenshots/000001-SH-week-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=000001.SH&name=%E4%B8%8A%E8%AF%81%E6%8C%87%E6%95%B0&period=week&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 165744,
+      "sha256": "cab8420267fb2c64bac3ebc9c12bb3d2c352cb9052597d35b207c159ee1ea4ab"
+    },
+    {
+      "relative_path": "screenshots/000651-SZ-60min-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=000651.SZ&name=%E6%A0%BC%E5%8A%9B%E7%94%B5%E5%99%A8&period=60min&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 162327,
+      "sha256": "1266e0a7320894c11ac72c8a9aadbd176966fe6ef64cf24c6778cbfe69d83191"
+    },
+    {
+      "relative_path": "screenshots/000651-SZ-day-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=000651.SZ&name=%E6%A0%BC%E5%8A%9B%E7%94%B5%E5%99%A8&period=day&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 148377,
+      "sha256": "1aa5167cd0976d3220f6a993a05e717c3cffc8f8d34d7f3148ed0baf1de2b272"
+    },
+    {
+      "relative_path": "screenshots/000651-SZ-week-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=000651.SZ&name=%E6%A0%BC%E5%8A%9B%E7%94%B5%E5%99%A8&period=week&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 160301,
+      "sha256": "46606c29696a7c015d4a79dbacda4b04e6f5e4ea560a161d320e6de65978fb04"
+    },
+    {
+      "relative_path": "screenshots/002594-SZ-60min-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=002594.SZ&name=%E6%AF%94%E4%BA%9A%E8%BF%AA&period=60min&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 165618,
+      "sha256": "2dd5bcd429a2ecbcf665b932967121d53e92c944801d5847c2e59f63465e2aad"
+    },
+    {
+      "relative_path": "screenshots/002594-SZ-day-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=002594.SZ&name=%E6%AF%94%E4%BA%9A%E8%BF%AA&period=day&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 149794,
+      "sha256": "b6a00eb3165c6e6a921ee8ea7be9594274cd5427595a79fcd694d9b2ab57ca88"
+    },
+    {
+      "relative_path": "screenshots/002594-SZ-week-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=002594.SZ&name=%E6%AF%94%E4%BA%9A%E8%BF%AA&period=week&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 173584,
+      "sha256": "4e7a0ee935f37e13f34c9c4d57c97c31ea10c2c932716aef7ae43d4072dcf578"
+    },
+    {
+      "relative_path": "screenshots/300750-SZ-60min-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=300750.SZ&name=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3&period=60min&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 158099,
+      "sha256": "13f9b1a6b8f9e599a70761850c560562dd76add214f73a843cb5aa2618d08543"
+    },
+    {
+      "relative_path": "screenshots/300750-SZ-day-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=300750.SZ&name=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3&period=day&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 177243,
+      "sha256": "43024f5e9f55885a53ae29a40927dea3aac79aa3f228cb682061fe44152ae074"
+    },
+    {
+      "relative_path": "screenshots/300750-SZ-week-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=300750.SZ&name=%E5%AE%81%E5%BE%B7%E6%97%B6%E4%BB%A3&period=week&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 177924,
+      "sha256": "f55573ede695a21015e56708a2948c0b5f2d292e9a5d8852176abe8ca69c40aa"
+    },
+    {
+      "relative_path": "screenshots/399001-SZ-60min-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=399001.SZ&name=%E6%B7%B1%E8%AF%81%E6%88%90%E6%8C%87&period=60min&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 183911,
+      "sha256": "3d65bf2b2356909cb905ca2995a6cb61e6c85d6a80eac5f6cc0f8e7f3625bcb4"
+    },
+    {
+      "relative_path": "screenshots/399001-SZ-day-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=399001.SZ&name=%E6%B7%B1%E8%AF%81%E6%88%90%E6%8C%87&period=day&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 164620,
+      "sha256": "665c7005074ef21d1cbe1311556ca744d9868f25227019a7db66771f01c201d3"
+    },
+    {
+      "relative_path": "screenshots/399001-SZ-week-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=399001.SZ&name=%E6%B7%B1%E8%AF%81%E6%88%90%E6%8C%87&period=week&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 172661,
+      "sha256": "5a7443770dbed8c053568c3988cbddb4979717328559c73a535241954cc85ccc"
+    },
+    {
+      "relative_path": "screenshots/399006-SZ-60min-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=399006.SZ&name=%E5%88%9B%E4%B8%9A%E6%9D%BF%E6%8C%87&period=60min&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 185618,
+      "sha256": "ad17a09c69297db5f0c47adabdcbb29cd053d99e1884d0027a8d1dd737824a68"
+    },
+    {
+      "relative_path": "screenshots/399006-SZ-day-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=399006.SZ&name=%E5%88%9B%E4%B8%9A%E6%9D%BF%E6%8C%87&period=day&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 163155,
+      "sha256": "7f13e20ab02c54e00a689b6c9d83f5ba750771be84ce190eb20ed79481261668"
+    },
+    {
+      "relative_path": "screenshots/399006-SZ-week-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=399006.SZ&name=%E5%88%9B%E4%B8%9A%E6%9D%BF%E6%8C%87&period=week&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 178071,
+      "sha256": "99dcacfc4aae00278ae6b63f84a44f1784d6de73244405adbc9219857d593e8c"
+    },
+    {
+      "relative_path": "screenshots/600036-SH-60min-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=600036.SH&name=%E6%8B%9B%E5%95%86%E9%93%B6%E8%A1%8C&period=60min&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 143190,
+      "sha256": "4be404908f9615f6aa4a04324b4fb698aa91aea6dac013ee9dbc1a75c7603c65"
+    },
+    {
+      "relative_path": "screenshots/600036-SH-day-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=600036.SH&name=%E6%8B%9B%E5%95%86%E9%93%B6%E8%A1%8C&period=day&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 141604,
+      "sha256": "1ba20b7aff1077caaa99d0528553fc7d87050a960fd69b49ea681b2cc3f7c44d"
+    },
+    {
+      "relative_path": "screenshots/600036-SH-week-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=600036.SH&name=%E6%8B%9B%E5%95%86%E9%93%B6%E8%A1%8C&period=week&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 164812,
+      "sha256": "5252b31078e4b856af37ff269c870d2c8c56486265de0e34ef144fc6371873d3"
+    },
+    {
+      "relative_path": "screenshots/600519-SH-60min-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=600519.SH&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&period=60min&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 178871,
+      "sha256": "03881f7991c30184e90ef1851fdbd9be9f1758135cc0de767e3e87c547dfe5e5"
+    },
+    {
+      "relative_path": "screenshots/600519-SH-day-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=600519.SH&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&period=day&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 171970,
+      "sha256": "c208a44ae8078cb4662d8f81af3cbeea1e406a7010f03cc5c86c026b3cb94f80"
+    },
+    {
+      "relative_path": "screenshots/600519-SH-week-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=600519.SH&name=%E8%B4%B5%E5%B7%9E%E8%8C%85%E5%8F%B0&period=week&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 189204,
+      "sha256": "19bebe25d1759d022efb0752694455414a01c49b1a4e4fb2d709e98aa441841c"
+    },
+    {
+      "relative_path": "screenshots/601233-SH-60min-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=601233.SH&name=%E6%A1%90%E6%98%86%E8%82%A1%E4%BB%BD&period=60min&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 157523,
+      "sha256": "c50999d62801887ae3aadc02a919ae4054dd70a1f52f9fa7f369b60aeca51ab6"
+    },
+    {
+      "relative_path": "screenshots/601233-SH-day-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=601233.SH&name=%E6%A1%90%E6%98%86%E8%82%A1%E4%BB%BD&period=day&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 181312,
+      "sha256": "0ecf9fe628b85ce6ef4b32810127851446a1b48dff4ee55faebb097a0490d05d"
+    },
+    {
+      "relative_path": "screenshots/601233-SH-week-trend.png",
+      "source_url": "http://118.24.52.32/stock_detail.html?code=601233.SH&name=%E6%A1%90%E6%98%86%E8%82%A1%E4%BB%BD&period=week&strategy=huanglantai",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:01:32.298Z",
+      "byte_count": 159173,
+      "sha256": "72b704bd9669af93c0b1b9f9d2d3483dac050ea872efbfc4c3bfba5ec2cb973f"
+    },
+    {
+      "relative_path": "sources/index-v3.2.82.html",
+      "source_url": "http://118.24.52.32/index.html",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 1242189,
+      "sha256": "23e4d02d65828bfacf86867891c121a967a58d9ada7618dbc9a7e4265ad23713"
+    },
+    {
+      "relative_path": "sources/kline/000001-SH/60min.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 82942,
+      "sha256": "db85f14e2c24aec61db0e42812bd04453a487130e376267a64f38cef672eb766"
+    },
+    {
+      "relative_path": "sources/kline/000001-SH/day.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 276291,
+      "sha256": "e2f22e612d57287a246bf7caee09408021505e4a07b409ac53f2c49773ec53c7"
+    },
+    {
+      "relative_path": "sources/kline/000001-SH/week.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 55948,
+      "sha256": "126cedb8baec1c74c1b5c176faf9f324b69727711454bf333ee4f1527caf44f2"
+    },
+    {
+      "relative_path": "sources/kline/000651-SZ/60min.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 76165,
+      "sha256": "a1cb5ae8c92bb13f4e117299b845c838f8b5958c51f3561997afcc6fb56149d9"
+    },
+    {
+      "relative_path": "sources/kline/000651-SZ/day.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 39536,
+      "sha256": "49d1c9fa2e98bc8258492278a0e6c835171c023df8532b4122bc8cb6f84eeaac"
+    },
+    {
+      "relative_path": "sources/kline/000651-SZ/week.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 19677,
+      "sha256": "a19466280b6c2c9b98443affd44da66db1e1b00f4038c6724ce314afa464dd2a"
+    },
+    {
+      "relative_path": "sources/kline/002594-SZ/60min.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 76467,
+      "sha256": "4266654cbc30d7951ee6db4e68c667c592aec47cf1f7fcb0ee4500e25bb4960c"
+    },
+    {
+      "relative_path": "sources/kline/002594-SZ/day.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 40455,
+      "sha256": "e6ac2ca1023683bbfbd2072be8a85f83b3983e4838a6ba8ab91b4564cb410cfc"
+    },
+    {
+      "relative_path": "sources/kline/002594-SZ/week.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 19759,
+      "sha256": "0ce48cb7e6f960a075eb277f55c2a981f07463ad9fe3bbb3b91ef890b4e51810"
+    },
+    {
+      "relative_path": "sources/kline/300750-SZ/60min.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 78382,
+      "sha256": "155b6c927bbaf2d226e36f89623708d2e5f176e61ed2c14f1f5fc177e0b44d71"
+    },
+    {
+      "relative_path": "sources/kline/300750-SZ/day.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 41479,
+      "sha256": "87e6295861ddeadb8df9a6d4f3031341a1cd94cbc2552d49b13dca1e705ae43b"
+    },
+    {
+      "relative_path": "sources/kline/300750-SZ/week.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 19893,
+      "sha256": "98e7fdde7cc248323584c3bcc04e688da71e87cda28ac32e8eef270173d65dee"
+    },
+    {
+      "relative_path": "sources/kline/399001-SZ/60min.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 85074,
+      "sha256": "c690d6e05438500ca79dd5115e3354ad17bd6dd0b456ca32c7c3a05281290c4a"
+    },
+    {
+      "relative_path": "sources/kline/399001-SZ/day.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 280566,
+      "sha256": "066822c08add7d998a39cd56ef3125ab4ca42039ceed5ffa2b6020a1381697d7"
+    },
+    {
+      "relative_path": "sources/kline/399001-SZ/week.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 57534,
+      "sha256": "954ad8bd802b248fcdbfde0e323d990e6d528b62db2f94edcf38e83ffbbc3c70"
+    },
+    {
+      "relative_path": "sources/kline/399006-SZ/60min.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 83040,
+      "sha256": "5ecbf77dfbd74ff20394ddec538916d0637dc85f1f5781435db1cbe016288997"
+    },
+    {
+      "relative_path": "sources/kline/399006-SZ/day.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 271665,
+      "sha256": "dceb1461aa87dfc4982300579b50f13251709d3da81d99b5b26018c139676cc8"
+    },
+    {
+      "relative_path": "sources/kline/399006-SZ/week.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 55714,
+      "sha256": "47b66abfb42245a9c00501cd1a487a2053c4619f7ac0a17f0b37e8a7d0e9e5e2"
+    },
+    {
+      "relative_path": "sources/kline/600036-SH/60min.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 76809,
+      "sha256": "2117c943423465017e4684122c9c9eb429839a71270df71ac614f29685ee6881"
+    },
+    {
+      "relative_path": "sources/kline/600036-SH/day.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 39926,
+      "sha256": "fa56f274dc43a718995421e0e990aaf9fcfb69f98eea6f7b5af58515c819ef11"
+    },
+    {
+      "relative_path": "sources/kline/600036-SH/week.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 19286,
+      "sha256": "503398c5c2fa66b24e57108f80f7e60e7a722b37e2003e66aa41ca5cfd6859cb"
+    },
+    {
+      "relative_path": "sources/kline/600519-SH/60min.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 78503,
+      "sha256": "856ee69259e727addf01917f5d0a01f29b4175ddfc6688d9ed800216c9bd2dc0"
+    },
+    {
+      "relative_path": "sources/kline/600519-SH/day.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 100185,
+      "sha256": "628d401a98a9f4a15d07c5aab69cae523721cc6bdc7129db7ed2e06a1491dcb9"
+    },
+    {
+      "relative_path": "sources/kline/600519-SH/week.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 20390,
+      "sha256": "e8984d0f286f9ca405a42746adf4fd636bc22986fbf98fab581977b240b04ab3"
+    },
+    {
+      "relative_path": "sources/kline/601233-SH/60min.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 76700,
+      "sha256": "4d6139e444328e48bb12f1537c3705eb8441051e886487673b5fd5598b3a7538"
+    },
+    {
+      "relative_path": "sources/kline/601233-SH/day.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 94667,
+      "sha256": "c17fd792d6c6f809a3beaff564ca154a6dce7ac0ae528921b76f074a0db73651"
+    },
+    {
+      "relative_path": "sources/kline/601233-SH/week.json",
+      "source_url": "http://118.24.52.32/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T14:05:40+08:00",
+      "byte_count": 18830,
+      "sha256": "926ee8a79a791358a5c85919c5b991f083d8f12f33b7dae10cc7aea9e12f6903"
+    },
+    {
+      "relative_path": "sources/page-cases/000001-SH/60min.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 95454,
+      "sha256": "57b42a8bf9e1f168f344d20869f447299e2371fccb06640c0b09db03ddcacd8b"
+    },
+    {
+      "relative_path": "sources/page-cases/000001-SH/day.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 308943,
+      "sha256": "8b1e2fd26b5a45442344004778a4cfee117a74670ea8ac49698e5c3d126a714d"
+    },
+    {
+      "relative_path": "sources/page-cases/000001-SH/week.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 66655,
+      "sha256": "db398bc2a79258934a1350ae259977a2e11f56f3250bc5a4820c7a6a75bc9407"
+    },
+    {
+      "relative_path": "sources/page-cases/000651-SZ/60min.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 88596,
+      "sha256": "e4cb95229180ba67daad50d22e52abb66e0b65b1ecdbaf9bae711d9fd9f52b4c"
+    },
+    {
+      "relative_path": "sources/page-cases/000651-SZ/day.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 48701,
+      "sha256": "be59027a0b998bb2d20f58752b23efd3859788bd7b74d20987bcef1147a030fc"
+    },
+    {
+      "relative_path": "sources/page-cases/000651-SZ/week.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 26629,
+      "sha256": "9296742311880df4f0f4682494484bd642db175985b0ffe61d022c3a26d90958"
+    },
+    {
+      "relative_path": "sources/page-cases/002594-SZ/60min.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 88880,
+      "sha256": "222bc7ae0e06749438aca591a63540605f6af6fe969d2424eea5a21120a8d452"
+    },
+    {
+      "relative_path": "sources/page-cases/002594-SZ/day.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 49566,
+      "sha256": "266153d966b2a333cdbb8ca357be7c62f731ccfce25acb2d81cf4d3927ff1443"
+    },
+    {
+      "relative_path": "sources/page-cases/002594-SZ/week.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 26672,
+      "sha256": "80eb793fac9d5059a50bd6ea9cc1b769981cfecc0e52427d328d300c7e17606e"
+    },
+    {
+      "relative_path": "sources/page-cases/300750-SZ/60min.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 90938,
+      "sha256": "5b266bcc29bcc80e1dfc1a35d1e7656426d13fd44626dedada339cbeccb8c6b2"
+    },
+    {
+      "relative_path": "sources/page-cases/300750-SZ/day.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 50680,
+      "sha256": "68b94db8e4399ebd7f7de32770cf87cfc43267f410a30e2adc8fde9b0b924f20"
+    },
+    {
+      "relative_path": "sources/page-cases/300750-SZ/week.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 26664,
+      "sha256": "5645044c03f28c4aeda352173f9d9446d954870ed2acc8b4aafc83fe16db5ce7"
+    },
+    {
+      "relative_path": "sources/page-cases/399001-SZ/60min.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 97759,
+      "sha256": "dd799cc9e4d52681cd8a2ffac44f4bcba61f7fa218b51cc1f60809b4524cac6a"
+    },
+    {
+      "relative_path": "sources/page-cases/399001-SZ/day.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 312732,
+      "sha256": "80fb9b70482055817079ab9b37b4d50855d87369295fee0d6f212240a9aa82e1"
+    },
+    {
+      "relative_path": "sources/page-cases/399001-SZ/week.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 68132,
+      "sha256": "4469fb99f2f5376617f49ef39c561d9f5b120fc0fe57b402a22bde9da60ab27b"
+    },
+    {
+      "relative_path": "sources/page-cases/399006-SZ/60min.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 95465,
+      "sha256": "2201ee760d8fc0700e7802393b9199b33fffc5f597f14def92e8363cb7674834"
+    },
+    {
+      "relative_path": "sources/page-cases/399006-SZ/day.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 303800,
+      "sha256": "6c7e8176ad9f58a0569a23b2c3b3720b670e48dd19271a55f7b038782b7640ed"
+    },
+    {
+      "relative_path": "sources/page-cases/399006-SZ/week.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 66402,
+      "sha256": "46c58aa5a127bb77985c38caf7990cb70442fa5ed2bb04584ea8e1d921e5d542"
+    },
+    {
+      "relative_path": "sources/page-cases/600036-SH/60min.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 89258,
+      "sha256": "2bb91cbf8e5c22301eeacdc75bffbad92156f4c323c1232de59f112a418fe3b1"
+    },
+    {
+      "relative_path": "sources/page-cases/600036-SH/day.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 49030,
+      "sha256": "23d776b8056651d05c964176afe09cd702b6b9d5409a2b4db21e88bcfd7ad4ca"
+    },
+    {
+      "relative_path": "sources/page-cases/600036-SH/week.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 25964,
+      "sha256": "94fe2a01a887c5b35fe5dbf783d6eb25e719555d3e245cd287cf163773e53eca"
+    },
+    {
+      "relative_path": "sources/page-cases/600519-SH/60min.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 91011,
+      "sha256": "ea2ecab585cc4b5b5188eb7cef324e16d467dfc1516bfa5a2d360f2cd75575b9"
+    },
+    {
+      "relative_path": "sources/page-cases/600519-SH/day.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:41:43.911Z",
+      "byte_count": 115402,
+      "sha256": "15473f0ebe577081eabdd24b663ce13374f8caf1a53997321f38b6af17424bb4"
+    },
+    {
+      "relative_path": "sources/page-cases/600519-SH/week.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 26756,
+      "sha256": "bb4010964a496f590bded28793347604293a9f666810bf92b8c7f36ac9d83fd0"
+    },
+    {
+      "relative_path": "sources/page-cases/601233-SH/60min.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 89176,
+      "sha256": "30bef5ffb868db9ec47bee2ce6183bafd660fbc1e4a4c4621ceda21387321c60"
+    },
+    {
+      "relative_path": "sources/page-cases/601233-SH/day.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 46818,
+      "sha256": "6d33ef6fa4c4c220b511eb811e88495f355928da294d2342998ed7719a8c7866"
+    },
+    {
+      "relative_path": "sources/page-cases/601233-SH/week.json",
+      "source_url": "https://www.v8848.cn/api/kline",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T06:40:37.796Z",
+      "byte_count": 25076,
+      "sha256": "cdb4761d1f1fbd9725cbd3a8cb439f365752aad389b12271441acc487e357a5b"
+    },
+    {
+      "relative_path": "sources/page-cases/batch-signals-2026-09-04.json",
+      "source_url": "http://118.24.52.32/api/batch?codes=601233.SH%2C600519.SH%2C600036.SH%2C002594.SZ%2C300750.SZ%2C000651.SZ",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T16:12:44+08:00",
+      "byte_count": 6953,
+      "sha256": "fde6c439cc343ee316a71df68919483a897dbe133da3a9e5832317eb2a8720aa"
+    },
+    {
+      "relative_path": "sources/screener-v3.2.82.html",
+      "source_url": "http://118.24.52.32/screener.html",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 156732,
+      "sha256": "ccbccc7e02c47f0dc475686d348394980f3b9a5aaa52bc8bf7f949bc10728e72"
+    },
+    {
+      "relative_path": "sources/screener/cup_handle/page-001.json",
+      "source_url": "http://118.24.52.32/api/screener",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 8002,
+      "sha256": "51b939e6cdb77b830930bd8f072c63d4875048a5b92d3d80356502c63fb4f822"
+    },
+    {
+      "relative_path": "sources/screener/cup_handle/page-002.json",
+      "source_url": "http://118.24.52.32/api/screener",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 2921,
+      "sha256": "897cd758990afcb6504663f25c9dfa301fa04cd3fbfa6894d66627237dd3a28e"
+    },
+    {
+      "relative_path": "sources/screener/daily_buy/page-001.json",
+      "source_url": "http://118.24.52.32/api/screener",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 9061,
+      "sha256": "98ffc0572f544d536506e6a5d58718eeb82f395e2394d6e335bae3f5f29b1a7d"
+    },
+    {
+      "relative_path": "sources/screener/daily_buy/page-002.json",
+      "source_url": "http://118.24.52.32/api/screener",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 739,
+      "sha256": "b38e796c168f294e92aade340c5a677b79a686943ee9fbd413f103c6fd13c401"
+    },
+    {
+      "relative_path": "sources/screener/mainrise_build/page-001.json",
+      "source_url": "http://118.24.52.32/api/screener",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 1458,
+      "sha256": "bead38b47ef8a1f81acde67041b1a68159b93beed4fca596f5afd1255c6d4596"
+    },
+    {
+      "relative_path": "sources/screener/oscillation_build/page-001.json",
+      "source_url": "http://118.24.52.32/api/screener",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 659,
+      "sha256": "d3d462eb2bbc89c5dcd2233fcb2af3872e28ec8f740da6a3c669c2af17d2c5af"
+    },
+    {
+      "relative_path": "sources/screener/trend_build/page-001.json",
+      "source_url": "http://118.24.52.32/api/screener",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 9069,
+      "sha256": "6c1259106b6dac2a427ae64fbf688ca98a5cce151bc65ba1573de39a3f4ef216"
+    },
+    {
+      "relative_path": "sources/screener/trend_build/page-002.json",
+      "source_url": "http://118.24.52.32/api/screener",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 9080,
+      "sha256": "6d764394ea4696e52dd3735f7aede1e958cc1cc84fbfec299ae2d422d008e2fc"
+    },
+    {
+      "relative_path": "sources/screener/weekly_buy/page-001.json",
+      "source_url": "http://118.24.52.32/api/screener",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 9084,
+      "sha256": "f111e57d890699cb1e5a51d92d01178dce0374ad5498aaf7d027af0ca575b733"
+    },
+    {
+      "relative_path": "sources/screener/weekly_buy/page-002.json",
+      "source_url": "http://118.24.52.32/api/screener",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 735,
+      "sha256": "cf54f3f35df88f50a151152895568c9472a142b6f92c300dfe8212ccff638611"
+    },
+    {
+      "relative_path": "sources/stock-detail-v3.2.82.html",
+      "source_url": "http://118.24.52.32/stock_detail.html",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 867788,
+      "sha256": "cd962170085dc2145fbaebf28a47ce6764b9f519e6032b54a896e37f0c9d0cf9"
+    },
+    {
+      "relative_path": "sources/strategy-calc-v3.2.82.js",
+      "source_url": "http://118.24.52.32/strategy-calc.js?v=3.2.82",
+      "provenance_kind": "captured",
+      "product_version": "v3.2.82",
+      "captured_at": "2026-09-04T13:57:43+08:00",
+      "byte_count": 14097,
+      "sha256": "80dcfa39afe5511b073ec66858e697243a3e4e994cd610a00568e602610a6192"
+    },
+    {
+      "relative_path": "stock-601233-trend-day.png",
+      "source_url": "derived://newow-v3.2.82-gap-closure",
+      "provenance_kind": "derived",
+      "product_version": "v3.2.82",
+      "captured_at": null,
+      "byte_count": 157341,
+      "sha256": "2d720e079bba1038de6931424ec058e8900ba9b50c5faa9b8020472dfb5a31d5"
+    }
+  ]
+}
