@@ -89,11 +89,20 @@ let paginationArmed = false
 let followLatest = true
 const hoverContext = ref<HoverKlineContext | null>(null)
 const macdLabelTop = ref<number | null>(null)
+const chartViewportReady = ref(false)
 let derivedData = buildKlineDerivedData([], [])
 let renderedMarkerById = new Map<string, KlineMarker>()
+let viewportStabilityFrame: number | null = null
+let viewportStabilityTarget: ChartViewportRange | null = null
+let viewportStableFrames = 0
+let viewportStabilityAttempts = 0
 
 type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
+type ChartViewportRange = { from: number; to: number }
 const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
+const REQUIRED_VIEWPORT_STABLE_FRAMES = 3
+const MAX_VIEWPORT_STABILITY_ATTEMPTS = 12
+const LOGICAL_RANGE_EPSILON = 0.001
 
 onMounted(async () => {
   await nextTick()
@@ -167,6 +176,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (viewportStabilityFrame !== null) cancelAnimationFrame(viewportStabilityFrame)
   chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart?.unsubscribeCrosshairMove(onCrosshairMove)
   chart?.unsubscribeClick(onClick)
@@ -222,18 +232,51 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   paginationArmed = false
   renderAllSeries()
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
-  if (visibleRange) chart.timeScale().setVisibleLogicalRange(visibleRange)
-  else {
-    const initialRange = initialChartLogicalRange(renderedBars.length)
-    if (initialRange) chart.timeScale().setVisibleLogicalRange(initialRange)
-    else chart.timeScale().fitContent()
-  }
+  const targetRange = visibleRange ?? initialChartLogicalRange(renderedBars.length)
+  if (targetRange) chart.timeScale().setVisibleLogicalRange(targetRange)
+  else chart.timeScale().fitContent()
+  beginViewportStabilityCheck(targetRange)
   requestAnimationFrame(() => {
     const range = chart?.timeScale().getVisibleLogicalRange()
     isNearLeftBoundary = !!range && range.from <= 20
     paginationArmed = true
     syncMacdLabelTop()
   })
+}
+
+function beginViewportStabilityCheck(target: ChartViewportRange | null): void {
+  if (viewportStabilityFrame !== null) cancelAnimationFrame(viewportStabilityFrame)
+  viewportStabilityTarget = target
+  viewportStableFrames = 0
+  viewportStabilityAttempts = 0
+  chartViewportReady.value = false
+  if (target) viewportStabilityFrame = requestAnimationFrame(checkViewportStability)
+}
+
+function checkViewportStability(): void {
+  viewportStabilityFrame = null
+  if (!chart || !viewportStabilityTarget) return
+  viewportStabilityAttempts += 1
+  const actual = chart.timeScale().getVisibleLogicalRange()
+  if (sameLogicalRange(actual, viewportStabilityTarget)) viewportStableFrames += 1
+  else {
+    viewportStableFrames = 0
+    chart.timeScale().setVisibleLogicalRange(viewportStabilityTarget)
+  }
+  if (viewportStableFrames >= REQUIRED_VIEWPORT_STABLE_FRAMES) {
+    chartViewportReady.value = true
+    viewportStabilityTarget = null
+    return
+  }
+  if (viewportStabilityAttempts < MAX_VIEWPORT_STABILITY_ATTEMPTS) {
+    viewportStabilityFrame = requestAnimationFrame(checkViewportStability)
+  }
+}
+
+function sameLogicalRange(left: LogicalRange | null, right: ChartViewportRange): boolean {
+  return left !== null
+    && Math.abs(left.from - right.from) <= LOGICAL_RANGE_EPSILON
+    && Math.abs(left.to - right.to) <= LOGICAL_RANGE_EPSILON
 }
 
 function prependBars(bars: BarData[]): void {
@@ -473,6 +516,10 @@ function syncMacdLabelTop() {
 function resize() {
   if (!container.value || !chart) return
   chart.resize(container.value.clientWidth, container.value.clientHeight)
+  if (viewportStabilityTarget) {
+    viewportStableFrames = 0
+    chart.timeScale().setVisibleLogicalRange(viewportStabilityTarget)
+  }
   requestAnimationFrame(syncMacdLabelTop)
 }
 
@@ -496,6 +543,7 @@ defineExpose({
     :data-research-marker-ids="researchMarkers.map((marker) => marker.id).join(',')"
     :data-research-marker-times="researchMarkers.map((marker) => marker.time).join(',')"
     :data-range-detector-range-count="derivedData.rangeDetector?.ranges.length ?? 0"
+    :data-chart-viewport-ready="chartViewportReady"
   >
     <div ref="container" class="chart" />
     <KlineHoverLegend
