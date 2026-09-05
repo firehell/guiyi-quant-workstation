@@ -225,6 +225,7 @@ def test_inclusive_page_reads_newest_coverage_but_keeps_real_overshoot_rejection
 
     assert result.bars == (latest,)
     assert result.request_identity["before"] == latest.bar_end.isoformat()
+    assert result.cursor_mode.value == "inclusive"
 
 
 def test_query_page_rejects_adjacent_partition_coverage_gap(session, tmp_path) -> None:

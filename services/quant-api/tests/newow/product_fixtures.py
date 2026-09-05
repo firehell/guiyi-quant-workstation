@@ -14,6 +14,7 @@ from app.market_data.domain import (
     MarketSeriesResult,
     ResolvedContractSegment,
     SeriesKind,
+    SeriesPageCursorMode,
     SeriesPageQuery,
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
@@ -412,14 +413,28 @@ class _PagedMarketData:
 
     def query_page(self, request: SeriesPageQuery):
         self.physical_page_requests.append(request)
-        return self._physical_page(request, inclusive_before=False)
+        return self._physical_page(
+            request,
+            inclusive_before=False,
+            cursor_mode=SeriesPageCursorMode.EXCLUSIVE,
+        )
 
     def query_page_inclusive(self, request: SeriesPageQuery):
         self.inclusive_page_requests.append(request)
         self.physical_page_requests.append(request)
-        return self._physical_page(request, inclusive_before=True)
+        return self._physical_page(
+            request,
+            inclusive_before=True,
+            cursor_mode=SeriesPageCursorMode.INCLUSIVE,
+        )
 
-    def _physical_page(self, request: SeriesPageQuery, *, inclusive_before: bool):
+    def _physical_page(
+        self,
+        request: SeriesPageQuery,
+        *,
+        inclusive_before: bool,
+        cursor_mode: SeriesPageCursorMode,
+    ):
         self._fail("physical")
         assert request.series_kind is SeriesKind.CONTRACT
         assert request.contract is not None
@@ -449,6 +464,7 @@ class _PagedMarketData:
                 len(values) > limit,
                 page[0].bar_end if len(values) > limit else None,
                 (),
+                cursor_mode,
             ),
         )
 

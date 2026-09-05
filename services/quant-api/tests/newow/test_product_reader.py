@@ -10,7 +10,12 @@ from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
 )
 from app.market_data.aggregation import SessionWindow
-from app.market_data.domain import BarFrequency, ResolvedContractSegment, SeriesKind
+from app.market_data.domain import (
+    BarFrequency,
+    ResolvedContractSegment,
+    SeriesKind,
+    SeriesPageCursorMode,
+)
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.newow.product_query import NewowProductQuery
 from app.market_data.newow.product_reader import (
@@ -230,6 +235,30 @@ def test_prefix_at_newest_completed_bar_uses_mds_inclusive_page(product_cases):
     assert len(result.replay_bars) == 4
     assert [request.before for request in fake.inclusive_page_requests] == [cutoff]
     assert fake.physical_page_requests[0].before == cutoff
+
+
+@pytest.mark.parametrize(
+    ("page_number", "mode"),
+    [
+        (1, SeriesPageCursorMode.EXCLUSIVE),
+        (1, None),
+        (2, SeriesPageCursorMode.INCLUSIVE),
+    ],
+)
+def test_reader_rejects_corrupt_prefix_cursor_mode_identity(
+    product_cases, page_number, mode
+):
+    """The initial page is inclusive and every continuation is exclusive."""
+    reader, query, fake = product_cases.paged_reader(prefix_bars=4, page_size=2)
+
+    def corrupt(_request, page):
+        if len(fake.physical_page_requests) == page_number:
+            return replace(page, cursor_mode=mode)
+        return page
+
+    fake.page_transform = corrupt
+    with pytest.raises(NewowProductReadError, match="NEWOW_PREFIX_PAGINATION_INVALID"):
+        reader.load(query, fake.as_of)
 
 
 def test_default_performance_window_resolves_coverage_not_viewport(product_cases):

@@ -159,7 +159,9 @@ class ActualDominantResearchSegmentLoader:
                 "rank1 frequency identity is duplicated"
             )
         allowed_empty = frozenset(allow_empty_frequencies)
-        if not allowed_empty <= set(requested_frequencies):
+        if not allowed_empty <= {BarFrequency.W1} or not allowed_empty <= set(
+            requested_frequencies
+        ):
             raise ActualDominantResearchSegmentIdentityError(
                 "rank1 empty-frequency identity is invalid"
             )

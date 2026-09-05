@@ -39,6 +39,7 @@ from app.market_data.domain import (
     MarketSeriesResult,
     ResolvedContractSegment,
     SeriesKind,
+    SeriesPageCursorMode,
     SeriesPageQuery,
     SeriesQuery,
 )
@@ -377,6 +378,7 @@ class MarketDataService:
                 inclusive_before=True,
             ),
             (),
+            cursor_mode=SeriesPageCursorMode.INCLUSIVE,
         )
 
     def _physical_page_bars(
@@ -1161,6 +1163,8 @@ class MarketDataService:
         request: SeriesPageQuery,
         selected_descending: list[CanonicalBar],
         segments: tuple[ResolvedContractSegment, ...],
+        *,
+        cursor_mode: SeriesPageCursorMode = SeriesPageCursorMode.EXCLUSIVE,
     ) -> MarketSeriesPageResult:
         """将 newest-first 候选转换为稳定的 ascending 页面响应。"""
         has_more = len(selected_descending) > request.limit
@@ -1180,6 +1184,7 @@ class MarketDataService:
             has_more_before=has_more,
             next_before=page[0].bar_end if has_more else None,
             resolved_contract_segments=segments,
+            cursor_mode=cursor_mode,
         )
 
 

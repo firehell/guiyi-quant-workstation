@@ -29,6 +29,7 @@ from app.market_data.domain import (
     MarketSeriesResult,
     ResolvedContractSegment,
     SeriesKind,
+    SeriesPageCursorMode,
     SeriesPageQuery,
     normalize_contract_for_symbol,
 )
@@ -408,8 +409,14 @@ class NewowProductReader:
                 else self._market_data.query_page(request)
             )
             self._check_cancelled()
+            expected_cursor_mode = (
+                SeriesPageCursorMode.INCLUSIVE
+                if inclusive
+                else SeriesPageCursorMode.EXCLUSIVE
+            )
             if (
-                type(page.has_more_before) is not bool
+                page.cursor_mode is not expected_cursor_mode
+                or type(page.has_more_before) is not bool
                 or not page.bars
                 or len(page.bars) > _PAGE_SIZE
                 or page.bars[-1].bar_end > before

@@ -58,6 +58,13 @@ class SeriesKind(StrEnum):
     CONTRACT = "contract"
 
 
+class SeriesPageCursorMode(StrEnum):
+    """Stable pagination cursor semantics for a physical Canonical page."""
+
+    EXCLUSIVE = "exclusive"
+    INCLUSIVE = "inclusive"
+
+
 class BarFrequency(StrEnum):
     """K 线频率枚举，与 canonical 分区目录及 Catalog 字段一致。"""
 
@@ -546,3 +553,4 @@ class MarketSeriesPageResult:
     has_more_before: bool
     next_before: datetime | None
     resolved_contract_segments: tuple[ResolvedContractSegment, ...]
+    cursor_mode: SeriesPageCursorMode = SeriesPageCursorMode.EXCLUSIVE
