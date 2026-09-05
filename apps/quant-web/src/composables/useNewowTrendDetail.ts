@@ -1,4 +1,4 @@
-import { readonly, ref, watch, type Ref } from 'vue'
+import { computed, readonly, ref, watch, type Ref } from 'vue'
 
 import {
   getNewowTrendDetail,
@@ -12,6 +12,7 @@ import type { NewowTrendDetailResponse } from '../types/newow.ts'
 
 export type NewowTrendDetailErrorCode =
   | 'NEWOW_WINDOW_INVALID'
+  | 'NEWOW_DATA_IDENTITY_INVALID'
   | NewowTrendDetailRequestErrorCode
 
 export interface UseNewowTrendDetailOptions {
@@ -49,7 +50,8 @@ export function useNewowTrendDetail(options: UseNewowTrendDetailOptions) {
 
     const identity = options.identity.value
     if (!isNewowTrendIdentity(identity)) return
-    const window = deriveNewowTrendWindow(options.bars.value)
+    const genericSnapshot = options.bars.value.map((bar) => ({ ...bar }))
+    const window = deriveNewowTrendWindow(genericSnapshot)
     if (window === null) {
       error.value = 'NEWOW_WINDOW_INVALID'
       return
@@ -65,6 +67,10 @@ export function useNewowTrendDetail(options: UseNewowTrendDetailOptions) {
         through: window.through,
       }, controller.signal)
       if (!isCurrent(requestGeneration, controller)) return
+      if (!sameMarketBars(response, genericSnapshot) || !sameMarketBars(response, options.bars.value)) {
+        error.value = 'NEWOW_DATA_IDENTITY_INVALID'
+        return
+      }
       data.value = response
     } catch (caught) {
       if (!isCurrent(requestGeneration, controller)) return
@@ -87,10 +93,15 @@ export function useNewowTrendDetail(options: UseNewowTrendDetailOptions) {
       && !controller.signal.aborted
   }
 
+  const requestIdentity = computed(() => {
+    const identity = options.identity.value
+    return identity === null ? '' : [identity.view, identity.symbol, identity.seriesKind,
+      identity.frequency, identity.contract ?? ''].join(':')
+  })
   const stopWatch = watch(
-    [() => options.identity.value, () => options.bars.value],
+    [requestIdentity, () => options.bars.value],
     () => { void replace() },
-    { immediate: true },
+    { immediate: true, deep: true, flush: 'sync' },
   )
 
   function dispose(): void {
@@ -111,6 +122,18 @@ export function useNewowTrendDetail(options: UseNewowTrendDetailOptions) {
     error: readonly(error),
     dispose,
   }
+}
+
+function sameMarketBars(response: NewowTrendDetailResponse, generic: readonly BarData[]): boolean {
+  return response.bars.length === generic.length && response.bars.every((bar, index) => {
+    const other = generic[index]!
+    return Date.parse(bar.bar_end) === Date.parse(other.time)
+      && bar.trading_day === other.trading_day
+      && bar.physical_contract === other.physicalContract
+      && bar.open === other.open && bar.high === other.high && bar.low === other.low
+      && bar.close === other.close && bar.volume === other.volume
+      && bar.open_interest === (other.openInterest ?? null)
+  })
 }
 
 function isNewowTrendIdentity(identity: MarketDetailIdentity | null): identity is MarketDetailIdentity {

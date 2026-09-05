@@ -1,10 +1,10 @@
 # Market 统一详情页 V1 剩余部分 Design Spec
 
-日期：2026-09-03  
-状态：`DESIGN_REVIEWED / READY_FOR_IMPLEMENTATION`  
-文档类型：V1 剩余产品与工程设计权威  
-规划基线：`develop@1cc757e4519dabe06240635304cdccfe644cedc5`  
-进行中依赖：PR `#327`，`feature/market-detail-free@3f0ccab8b415d15faf25f6baf27c37506d7ff629`  
+日期：2026-09-03
+状态：`DESIGN_REVIEWED / READY_FOR_IMPLEMENTATION`
+文档类型：V1 剩余产品与工程设计权威
+规划基线：`develop@1cc757e4519dabe06240635304cdccfe644cedc5`
+进行中依赖：PR `#327`，`feature/market-detail-free@3f0ccab8b415d15faf25f6baf27c37506d7ff629`
 任务车道：Lane 2（只读 Market Web；不修改策略公式、生产状态或真实写入）
 
 > 本文替代并删除：

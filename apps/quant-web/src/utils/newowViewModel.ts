@@ -14,11 +14,13 @@ import type {
   NewowMarker,
   NewowTrendDetailResponse,
 } from '../types/newow.ts'
+import type { ProductResearchResponse } from '../types/market.ts'
 
 export interface NewowDetailViewModelInput {
   identity: MarketDetailIdentity
   header: MarketDetailHeaderModel
   data: NewowTrendDetailResponse | null
+  weeklyContext?: Pick<ProductResearchResponse, 'symbol' | 'series_kind' | 'contract' | 'as_of' | 'weekly_trend'> | null
 }
 
 const D_PRIORITY: Readonly<Record<NewowEscapeMarkerType, number>> = {
@@ -50,7 +52,7 @@ const CUP_STATE_LABEL: Readonly<Record<NewowCupState, string>> = {
 /** Projects normalized, completed-only API facts without recreating Newow calculations. */
 export function buildNewowDetailViewModel(input: NewowDetailViewModelInput): DetailViewModel {
   const data = snapshotForIdentity(input.data, input.identity)
-  const facts = currentFacts(data)
+  const facts = currentFacts(data, weeklyFact(input))
   return {
     view: 'trend',
     identity: input.identity,
@@ -112,8 +114,21 @@ function historyProjection(
   }
 }
 
-function currentFacts(data: NewowTrendDetailResponse | null): DetailViewModel['facts'] {
-  if (data === null) return unavailableFacts()
+function weeklyFact(input: NewowDetailViewModelInput): MarketDetailFact {
+  const context = input.weeklyContext
+  const valid = context?.symbol === input.identity.symbol
+    && context.series_kind === 'actual_dominant' && context.contract === null
+    && Number.isFinite(Date.parse(context.as_of))
+  const state = valid ? context.weekly_trend : 'unavailable'
+  return { id: 'weekly-context', label: '周线背景', source: 'market',
+    value: state === 'up' ? '上行' : state === 'down' ? '下行' : state === 'neutral' ? '中性' : '不可用',
+    tone: state === 'unavailable' ? 'unavailable' : 'default' }
+}
+
+function currentFacts(data: NewowTrendDetailResponse | null, weekly: MarketDetailFact): DetailViewModel['facts'] {
+  if (data === null) return [weekly,
+    fact('trend-state', '日线趋势', '不可用', 'unavailable'),
+    fact('d-risk', '当前风险', '不可用', 'unavailable')]
   const latestBar = data.bars.at(-1)
   const latestBand = data.trend_band.at(-1)
 
@@ -133,25 +148,12 @@ function currentFacts(data: NewowTrendDetailResponse | null): DetailViewModel['f
     .sort((left, right) => D_PRIORITY[left.marker_type] - D_PRIORITY[right.marker_type])[0]
   const escapeValue = escapeUnavailable
     ? '不可用'
-    : latestEscape?.marker_type.replace('NEWOW_ESCAPE_', '') ?? '无'
-
-  const cupUnavailable = latestBar === undefined
-    || data.warnings.includes('NEWOW_CUP_WARMUP_INSUFFICIENT')
-  const currentCup = cupUnavailable ? undefined : latestCup(data.cup_handles)
-  const cupValue = cupUnavailable ? '不可用' : currentCup ? CUP_STATE_LABEL[currentCup.state] : '无'
+    : latestEscape?.marker_type.replace('NEWOW_ESCAPE_', '') ?? '暂无 D1/D2/D3'
 
   return [
-    fact('trend-state', '当前趋势状态', trendValue, trendUnavailable ? 'unavailable' : trendTone(trendValue)),
-    fact('d-risk', '当前 D1/D2/D3 风险', escapeValue, escapeUnavailable ? 'unavailable' : latestEscape ? 'warning' : 'default'),
-    fact('cup-state', '当前杯柄状态', cupValue, cupUnavailable ? 'unavailable' : cupTone(currentCup)),
-  ]
-}
-
-function unavailableFacts(): DetailViewModel['facts'] {
-  return [
-    fact('trend-state', '当前趋势状态', '不可用', 'unavailable'),
-    fact('d-risk', '当前 D1/D2/D3 风险', '不可用', 'unavailable'),
-    fact('cup-state', '当前杯柄状态', '不可用', 'unavailable'),
+    weekly,
+    fact('trend-state', '日线趋势', trendValue, trendUnavailable ? 'unavailable' : trendTone(trendValue)),
+    fact('d-risk', '当前风险', escapeValue, escapeUnavailable ? 'unavailable' : latestEscape ? 'warning' : 'default'),
   ]
 }
 
@@ -164,8 +166,14 @@ function fact(
   return { id, label, value, tone, source: 'newow' }
 }
 
-function latestCup(handles: readonly NewowCupHandle[]): NewowCupHandle | undefined {
-  return [...handles].sort((left, right) => {
+function latestCurrentCup(data: NewowTrendDetailResponse): NewowCupHandle | undefined {
+  const latest = data.bars.at(-1)
+  if (latest === undefined) return undefined
+  const owners = new Map(data.bars.map((bar) => [bar.bar_end, bar]))
+  return data.cup_handles.filter((cup) => {
+    const owner = owners.get(cup.state_changed_at)
+    return owner?.segment_id === latest.segment_id && owner.physical_contract === latest.physical_contract
+  }).sort((left, right) => {
     const timeOrder = Date.parse(right.state_changed_at) - Date.parse(left.state_changed_at)
     return timeOrder !== 0 ? timeOrder : lexical(left.candidate_id, right.candidate_id)
   })[0]
@@ -195,15 +203,15 @@ function disclosures(
   const historicalEscape = latestEscapeMarker(data.escape_markers)
   const cupUnavailable = data.warnings.includes('NEWOW_CUP_WARMUP_INSUFFICIENT')
   const cup = cupUnavailable
-    ? undefined : latestCup(data.cup_handles)
+    ? undefined : latestCurrentCup(data)
   const latestRollover = data.rollover_seams.at(-1)
   return [
     {
-      id: 'newow-trend', title: '趋势判断', summary: facts[0].value,
+      id: 'newow-trend', title: '趋势判断', summary: facts[1].value,
       updatedAt: latestBar?.bar_end ?? null,
-      tone: facts[0].tone === 'unavailable' ? 'unavailable' : 'default',
+      tone: facts[1].tone === 'unavailable' ? 'unavailable' : 'default',
       rows: [
-        { label: '当前策略状态', value: facts[0].value, source: 'newow' },
+        { label: '当前策略状态', value: facts[1].value, source: 'newow' },
         { label: '当前趋势带', value: latestBand?.state ?? '不可用', source: 'newow' },
         { label: '最近转换', value: latestTransition?.transition ?? '无', source: 'newow' },
         { label: '转换时间', value: latestTransition?.bar_end ?? '无', source: 'newow' },
@@ -212,9 +220,9 @@ function disclosures(
       ],
     },
     {
-      id: 'newow-risk-shape', title: '风险与形态', summary: `${facts[1].value} · ${facts[2].value}`,
+      id: 'newow-risk-shape', title: '风险与形态', summary: `${facts[2].value} · ${cupUnavailable ? '不可用' : cup ? CUP_STATE_LABEL[cup.state] : '无'}`,
       updatedAt: latestBar?.bar_end ?? null,
-      tone: facts[1].tone === 'unavailable' || facts[2].tone === 'unavailable' ? 'unavailable' : 'default',
+      tone: facts[2].tone === 'unavailable' || cupUnavailable ? 'unavailable' : 'default',
       rows: [
         ...escapeDisclosureRows(escapeUnavailable, currentEscapeMarkers, historicalEscape, latestBar?.bar_end),
         ...cupDisclosureRows(cupUnavailable, cup),
@@ -343,12 +351,5 @@ function lexical(left: string, right: string): number {
 function trendTone(value: string): MarketDetailFact['tone'] {
   if (value === '建仓' || value === '持有') return 'up'
   if (value === '清仓') return 'warning'
-  return 'default'
-}
-
-function cupTone(cup: NewowCupHandle | undefined): MarketDetailFact['tone'] {
-  if (cup === undefined) return 'default'
-  if (cup.state === 'BREAKOUT') return cup.direction === 'BULLISH' ? 'up' : 'down'
-  if (cup.state === 'WEAKENED' || cup.state === 'INVALIDATED' || cup.state === 'EXPIRED') return 'warning'
   return 'default'
 }

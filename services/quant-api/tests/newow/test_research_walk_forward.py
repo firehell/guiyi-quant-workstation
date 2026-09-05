@@ -173,6 +173,72 @@ def test_walk_forward_uses_training_only_as_warmup_and_scores_test_intents() -> 
     assert all(fill.signal_bar_end >= bars[2].bar_end for fill in evaluated.backtest.fills)
 
 
+def _dual_action_bars() -> tuple[NewowResearchBar, ...]:
+    rows = [(95, 100, 90, 95)] * 9 + [
+        (90, 95, 80, 85),
+        (90, 110, 70, 90),
+        (90, 95, 85, 90),
+    ]
+    return tuple(
+        replace(
+            bar, open=Decimal(o), high=Decimal(h), low=Decimal(low), close=Decimal(c)
+        )
+        for bar, (o, h, low, c) in zip(_bars((95,) * len(rows)), rows, strict=True)
+    )
+
+
+def test_replay_preserves_same_bar_clear_then_build() -> None:
+    intents, _ = build_strategy_intents_from_replay_segments(
+        _replay(_dual_action_bars()),
+        ResearchStrategy.OSCILLATION,
+    )
+    assert [(intent.action, intent.signal_bar_end.day) for intent in intents] == [
+        ("BUILD", 10),
+        ("CLEAR", 11),
+        ("BUILD", 11),
+    ]
+
+
+def test_replay_still_rejects_overlapping_physical_owners() -> None:
+    bars = _dual_action_bars()
+    other = tuple(
+        replace(bar, physical_contract="RB2701", segment_id="rb:RB2701") for bar in bars
+    )
+    with pytest.raises(ValueError, match="NEWOW_STRATEGY_REPLAY_IDENTITY_CONFLICT"):
+        build_strategy_intents_from_replay_segments(
+            (*_replay(bars), *_replay(other)),
+            ResearchStrategy.OSCILLATION,
+        )
+
+
+def test_walk_forward_executes_same_bar_clear_then_build_at_next_open() -> None:
+    bars = _dual_action_bars()
+    result = run_fixed_formula_walk_forward(
+        bars,
+        (
+            WalkForwardFold(
+                name="dual",
+                train_since=_START,
+                train_through=_START + timedelta(days=8),
+                test_since=_START + timedelta(days=9),
+                test_through=_START + timedelta(days=11),
+            ),
+        ),
+        strategy=ResearchStrategy.OSCILLATION,
+        strategy_replay_segments=_replay(bars),
+        cost_snapshots=_costs(),
+        execution_constraints=_constraints(bars),
+    )
+    assert [
+        (fill.action, fill.signal_bar_end.day, fill.fill_bar_end.day)
+        for fill in result.folds[0].backtest.fills
+    ] == [
+        ("BUILD", 10, 11),
+        ("CLEAR", 11, 12),
+        ("BUILD", 11, 12),
+    ]
+
+
 def test_walk_forward_starts_flat_and_excludes_open_test_end_position() -> None:
     bars = _bars((100, 80, 120, 130))
     result = run_fixed_formula_walk_forward(

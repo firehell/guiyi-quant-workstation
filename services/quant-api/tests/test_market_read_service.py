@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -26,6 +26,7 @@ from app.market_data.market_read_service import (
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
+from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
 
 
 DAY_1 = date(2026, 8, 30)
@@ -64,6 +65,126 @@ def _bar_with_close(bar_end: datetime, trading_day: date, close: str) -> Canonic
     )
 
 
+def _add_replay_metadata(session: Session, days: tuple[date, ...]) -> None:
+    session.add_all(
+        [
+            Exchange(code="SHFE", name="SHFE"),
+            Instrument(symbol="rb", name="RB", exchange_code="SHFE", is_active=True),
+            Contract(
+                contract_code="RB2610",
+                instrument_symbol="rb",
+                exchange_code="SHFE",
+                listed_date=days[0],
+                expired_date=date(2027, 1, 1),
+            ),
+            *(
+                TradingCalendar(
+                    exchange_code="SHFE",
+                    trade_date=day,
+                    is_trading_day=True,
+                    provider="rqdata",
+                )
+                for day in days
+            ),
+            *(
+                TradingSession(
+                    exchange_code="SHFE",
+                    instrument_symbol="rb",
+                    session_name="day",
+                    start_time=time(9, 30),
+                    end_time=time(10),
+                    effective_from=day,
+                    effective_to=day,
+                    is_active=True,
+                    provider="rqdata",
+                )
+                for day in days
+            ),
+        ]
+    )
+    session.commit()
+
+
+@pytest.mark.parametrize(
+    "gap",
+    [
+        "metadata",
+        "listing",
+        "canonical_tail",
+        "live_middle",
+        "prior_day_live_fill",
+        "none",
+    ],
+)
+@pytest.mark.parametrize("restart", [False, True])
+def test_contract_replay_rejects_unproven_lifecycle_or_missing_intervals(
+    tmp_path, gap: str, restart: bool
+) -> None:
+    days = (DAY_1 - timedelta(days=1), DAY_1, DAY_2)
+    complete = tuple(
+        _bar(datetime(day.year, day.month, day.day, hour, minute, tzinfo=UTC), day)
+        for day in days
+        for hour, minute in ((1, 45), (2, 0))
+    )
+    canonical = complete[:4]
+    live = complete[4:]
+    if gap == "listing":
+        canonical = canonical[1:]
+    elif gap == "canonical_tail":
+        canonical = canonical[:-1]
+    elif gap == "live_middle":
+        live = live[1:]
+    elif gap == "prior_day_live_fill":
+        live = (canonical[-1], *live)
+        canonical = canonical[:-1]
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        if gap != "metadata":
+            _add_replay_metadata(session, days)
+        catalog = MarketCatalog(session, tmp_path)
+        store = CanonicalMonthlyStore(tmp_path)
+        catalog.register_partition(
+            store.publish(
+                PublishRequest(
+                    DatasetKey("contract", "rb", "RB2610", "15m"),
+                    2026,
+                    8,
+                    canonical,
+                    tuple(bar.bar_end for bar in canonical),
+                )
+            )
+        )
+        session.commit()
+        service = MarketReadService(
+            market_data=MarketDataService(catalog, store),
+            phase_resolver=_ForbiddenPhaseReader(),
+            operational_products=("rb",),
+            live_store=_ContractReplayLiveStore(live),
+        )
+        # Restart always reconstructs from the lifecycle floor; incremental mode
+        # still must prove all intervals after its already validated cursor.
+        after = complete[0].bar_end - timedelta(minutes=1) if not restart else None
+        if gap == "none":
+            replay = service.current_contract_replay_window(
+                _replay_window(), after=after
+            )
+            assert replay.bars == complete
+            incremental = service.current_contract_replay_window(
+                _replay_window(), after=canonical[-1].bar_end
+            )
+            assert incremental.bars == live
+        else:
+            code = (
+                "MARKET_READ_LIVE_UNAVAILABLE"
+                if gap == "prior_day_live_fill"
+                else "MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE"
+            )
+            with pytest.raises(MarketReadWindowError, match=code):
+                service.current_contract_replay_window(_replay_window(), after=after)
+    engine.dispose()
+
+
 class _RecordingMarketDataService:
     """Keeps the production historical reader real while freezing its cursor boundary."""
 
@@ -74,6 +195,9 @@ class _RecordingMarketDataService:
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         self.requests.append(request)
         return self._delegate.query_page(request)
+
+    def validate_contract_replay_coverage(self, **kwargs) -> None:
+        self._delegate.validate_contract_replay_coverage(**kwargs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +221,15 @@ def production_contract_replay_fixture(tmp_path) -> _ProductionContractReplayFix
     )
     cutoff = _bar(LIVE_END, DAY_2)
     with Session(engine) as session:
+        _add_replay_metadata(session, (DAY_1, DAY_2))
+        from sqlalchemy import select
+
+        day_two_session = session.scalar(
+            select(TradingSession).where(TradingSession.effective_from == DAY_2)
+        )
+        assert day_two_session is not None
+        day_two_session.start_time = time(9, 45)
+        session.commit()
         catalog = MarketCatalog(session, tmp_path)
         store = CanonicalMonthlyStore(tmp_path)
         key = DatasetKey("contract", "rb", "RB2610", "15m")
@@ -680,6 +813,12 @@ class _ContractReplayPageReader:
         self._bars = bars
         self._stalled = stalled
         self.requests: list[SeriesPageQuery] = []
+
+    def validate_contract_replay_coverage(self, **kwargs) -> None:
+        # Paging/merge unit fixtures use an explicit successful metadata boundary.
+        # Coverage rejection itself is exercised above with real Catalog/Parquet.
+        assert kwargs["symbol"] == "rb"
+        assert kwargs["contract"] == "RB2610"
 
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         assert request.series_kind.value == "contract"

@@ -15,6 +15,39 @@ is_safe_absolute_path() {
     [[ "$component" != ".." ]] || return 1
   done
 }
+market_runtime_status_path() {
+  local plist="$HOME/Library/LaunchAgents/com.guiyi.quant-after-market.plist"
+  local configured_root="" loaded_root="" launch_output="" root domain_output=""
+  local label_absent=false
+  domain_output="$(launchctl print "gui/$UID" 2>&1)" || return 1
+  if [[ -e "$plist" || -L "$plist" ]]; then
+    [[ -f "$plist" && ! -L "$plist" ]] || return 1
+    configured_root="$(plutil -extract EnvironmentVariables.GUIYI_PROJECT_ROOT raw -o - "$plist" 2>/dev/null)" || return 1
+    is_safe_absolute_path "$configured_root" && [[ -d "$configured_root" && ! -L "$configured_root" ]] || return 1
+  fi
+  if launch_output="$(launchctl print "gui/$UID/com.guiyi.quant-after-market" 2>&1)"; then
+    loaded_root="$(printf '%s\n' "$launch_output" | sed -n 's/^[[:space:]]*GUIYI_PROJECT_ROOT => //p' | head -1)"
+    is_safe_absolute_path "$loaded_root" && [[ -d "$loaded_root" && ! -L "$loaded_root" ]] || return 1
+  elif [[ "$launch_output" == *"Could not find service"* ]]; then
+    label_absent=true
+  else
+    return 1
+  fi
+  if [[ "$label_absent" == true && -n "$configured_root" ]]; then
+    return 1
+  fi
+  if [[ -n "$configured_root" && -n "$loaded_root" && "$configured_root" != "$loaded_root" ]]; then
+    return 1
+  fi
+  root="${loaded_root:-$configured_root}"
+  if [[ -z "$root" ]]; then
+    # Only domain-readable, label-absent, no-installed-plist first installation.
+    [[ "$label_absent" == true ]] || return 1
+    root="$PROJECT_ROOT"
+  fi
+  is_safe_absolute_path "$root" && [[ -d "$root" && ! -L "$root" ]] || return 1
+  printf '%s/.run/after-market-status.json\n' "$root"
+}
 is_passed_preflight_payload() {
   local payload="$1"
   local pattern='^\{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"passed","reason":"(snapshot_ready|before_first_session|after_market_complete|non_trading_interval)","trading_day":(null|"[0-9]{4}-[0-9]{2}-[0-9]{2}"),"operational_count":[0-9]+,"snapshot_count":[0-9]+\}$'
@@ -45,6 +78,12 @@ if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
   fi
   preflight_env=""
   controlled_status_path="${GUIYI_AFTER_MARKET_STATUS_PATH:-}"
+  if [[ -z "$controlled_status_path" ]]; then
+    if ! controlled_status_path="$(market_runtime_status_path)"; then
+      preflight_unavailable
+      exit 1
+    fi
+  fi
   if [[ -n "$controlled_status_path" ]] && { ! is_safe_absolute_path "$controlled_status_path" || [[ "${controlled_status_path##*/}" != "after-market-status.json" ]]; }; then
     preflight_unavailable
     exit 1

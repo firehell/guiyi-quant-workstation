@@ -8,12 +8,72 @@ import os
 import plistlib
 import shutil
 import subprocess
+import sys
 
 import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NOTIFICATION_CONFIG_ENV = "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"
+
+
+def test_standalone_preflight_resolves_supervised_path_with_real_parser(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "candidate")
+    supervised = tmp_path / "supervised"
+    supervised.mkdir()
+    home = tmp_path / "home"
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    with (agents / "com.guiyi.quant-after-market.plist").open("wb") as handle:
+        plistlib.dump(
+            {"EnvironmentVariables": {"GUIYI_PROJECT_ROOT": str(supervised)}}, handle
+        )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        '#!/bin/sh\n[ "$1" = print ] || exit 91\n'
+        f'echo "GUIYI_PROJECT_ROOT => {supervised}"\n',
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        f"#!{sys.executable}\n"
+        "from app.market_data.runtime_promotion import _status_path_from_environment\n"
+        f"assert str(_status_path_from_environment()) == {str(supervised / '.run/after-market-status.json')!r}\n"
+        'print(\'{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"passed","reason":"non_trading_interval","trading_day":null,"operational_count":0,"snapshot_count":0}\')\n',
+        encoding="utf-8",
+    )
+    python.chmod(0o755)
+    environment = {
+        **os.environ,
+        "HOME": str(home),
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "GUIYI_PROJECT_ROOT": str(repo),
+        "GUIYI_RUNTIME_ENV": str(tmp_path / "missing"),
+        "POSTGRES_PASSWORD": "fixture",
+        "PYTHONPATH": f"{REPO_ROOT}/services/quant-api:{REPO_ROOT}/packages/quant-core",
+    }
+    environment.pop("GUIYI_AFTER_MARKET_STATUS_PATH", None)
+    result = subprocess.run(
+        [
+            str(repo / "scripts/ops/macos/run-local-service.sh"),
+            "market-runtime-preflight",
+        ],
+        cwd=repo,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["reason"] == "non_trading_interval"
+    assert result.stderr == ""
+    assert not (repo / ".run/market-runtime-enabled").exists()
 
 
 def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tmp_path: Path) -> None:

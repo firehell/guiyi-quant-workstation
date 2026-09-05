@@ -8,6 +8,26 @@ import type { NewowTrendDetailResponse } from '../src/types/newow.ts'
 import { normalizeNewowTrendDetailResponse } from '../src/utils/newowTypes.ts'
 import type { BarData } from '../src/types/market.ts'
 import type { MarketDetailIdentity } from '../src/types/marketDetail.ts'
+import { newowTrendDetailFixture } from '../e2e/market-detail.helpers.mjs'
+
+for (const field of ['physicalContract', 'open', 'high', 'low', 'close', 'volume', 'openInterest', 'missing', 'extra']) {
+  test(`rejects Newow/generic per-Bar parity mismatch: ${field}`, async () => {
+    const wire = newowTrendDetailFixture({ product: 'jm' })
+    const data = normalizeNewowTrendDetailResponse(wire, { symbol: 'jm', from: wire.bars[0].trading_day, through: wire.bars.at(-1).trading_day })
+    const generic: BarData[] = data.bars.map((bar) => ({ time: bar.bar_end, trading_day: bar.trading_day,
+      physicalContract: bar.physical_contract, open: bar.open, high: bar.high, low: bar.low,
+      close: bar.close, volume: bar.volume, openInterest: bar.open_interest ?? undefined }))
+    if (field === 'missing') generic.splice(1, 1)
+    else if (field === 'extra') generic.splice(1, 0, { ...generic[0]!, time: '2026-08-22T07:00:00Z', trading_day: '2026-08-22' })
+    else if (field === 'physicalContract') generic.at(-1)!.physicalContract = 'JM9999'
+    else (generic.at(-1)! as unknown as Record<string, unknown>)[field] = 999
+    const state = useNewowTrendDetail({ identity: ref(trendIdentity('jm')), bars: ref(generic), fetchDetail: async () => data })
+    await flush()
+    assert.equal(state.data.value, null)
+    assert.equal(state.error.value, 'NEWOW_DATA_IDENTITY_INVALID')
+    state.dispose()
+  })
+}
 
 test('derives the request window only from ordered generic D1 trading days', async () => {
   const calls: Array<{ product: string; from: string; through: string; signal: AbortSignal }> = []
@@ -28,6 +48,28 @@ test('derives the request window only from ordered generic D1 trading days', asy
   assert.equal(state.loading.value, false)
   assert.equal(state.error.value, null)
   assert.equal(state.data.value?.instrument.product, 'jm')
+  state.dispose()
+})
+
+test('clears layers synchronously on in-place generic revision and rejects an old generation', async () => {
+  const generic = ref(bars('2026-08-14'))
+  const pending: Array<(value: NewowTrendDetailResponse) => void> = []
+  const state = useNewowTrendDetail({ identity: ref(trendIdentity('jm')), bars: generic,
+    fetchDetail: () => new Promise((resolve) => pending.push(resolve)) })
+  pending[0]!(normalizedEmpty('jm', '2026-08-14', '2026-08-14'))
+  await flush()
+  assert.notEqual(state.data.value, null)
+  generic.value[0]!.volume += 1
+  assert.equal(state.data.value, null)
+  assert.equal(state.loading.value, true)
+  generic.value = bars('2026-08-13', '2026-08-14')
+  pending[1]!(normalizedEmpty('jm', '2026-08-14', '2026-08-14'))
+  await flush()
+  assert.equal(state.data.value, null)
+  pending[2]!(normalizedEmpty('jm', '2026-08-13', '2026-08-14'))
+  await flush()
+  assert.equal(state.error.value, null)
+  assert.deepEqual(state.data.value!.bars.map((bar) => bar.trading_day), ['2026-08-13', '2026-08-14'])
   state.dispose()
 })
 
@@ -58,6 +100,19 @@ test('rejects empty, malformed, duplicate, and unordered generic windows without
   }
 })
 
+test('consuming a Trend focus route does not replace the current data generation', async () => {
+  const identity = ref<MarketDetailIdentity>({ ...trendIdentity('jm'), focusBarEnd: '2026-08-14T07:00:00Z' })
+  let calls = 0
+  const state = useNewowTrendDetail({ identity, bars: ref(bars('2026-08-14')),
+    fetchDetail: async () => { calls += 1; return normalizedEmpty('jm', '2026-08-14', '2026-08-14') } })
+  await flush()
+  identity.value = trendIdentity('jm')
+  await flush()
+  assert.equal(calls, 1)
+  assert.notEqual(state.data.value, null)
+  state.dispose()
+})
+
 test('aborts a replaced generation, clears prior data, and accepts only the latest valid response', async () => {
   const identity = ref<MarketDetailIdentity | null>(trendIdentity('jm'))
   const genericBars = ref(bars('2026-08-14', '2026-08-15'))
@@ -84,7 +139,7 @@ test('aborts a replaced generation, clears prior data, and accepts only the late
   assert.equal(state.loading.value, true)
 
   identity.value = trendIdentity('ag')
-  genericBars.value = bars('2026-08-18', '2026-08-19')
+  genericBars.value = bars('2026-08-18', '2026-08-19').map((bar) => ({ ...bar, physicalContract: 'AG2601' }))
   await nextTick()
   assert.equal(pending[1]!.signal.aborted, true)
   assert.equal(state.data.value, null)
@@ -163,6 +218,7 @@ function bar(tradingDay: string): BarData {
     low: 99,
     close: 100,
     volume: 1,
+    physicalContract: 'JM2601',
   }
 }
 
@@ -184,10 +240,16 @@ function normalizedEmpty(product: string, from: string, through: string): NewowT
       series_kind: 'actual_dominant', calculation_identity: calculation, data_revision_identity: null,
       request_identity: `${calculation}:${from}:${through}`,
     },
-    instrument: { product, display_name: null, last_visible_physical_contract: null },
-    bars: [],
+    instrument: { product, display_name: null, last_visible_physical_contract: `${product.toUpperCase()}2601` },
+    bars: [...new Set([from, through])].map((day) => ({
+      bar_end: `${day}T07:00:00Z`, trading_day: day, open: '100', high: '101', low: '99', close: '100',
+      volume: 1, open_interest: null, physical_contract: `${product.toUpperCase()}2601`,
+      segment_id: 'test-segment', source_identity: calculation,
+    })),
     bar_policy: 'completed_only',
-    trend_band: [], trend_markers: [], escape_markers: [], cup_markers: [], cup_handles: [], rollover_seams: [],
+    trend_band: [...new Set([from, through])].map((day) => ({
+      bar_end: `${day}T07:00:00Z`, b_value: null, c_value: null, state: 'UNAVAILABLE', state_before: null, transition: null,
+    })), trend_markers: [], escape_markers: [], cup_markers: [], cup_handles: [], rollover_seams: [],
     legend: { BUILD: 'trend build', CLEAR: 'trend clear', D1: 'escape D1', D2: 'escape D2', D3: 'escape D3' },
     formula_descriptions: {
       trend_band: 'newow_trend_band_page_v2', escape: 'newow_escape_d123_page_v2', cup_handle: 'newow_cup_handle_v1',

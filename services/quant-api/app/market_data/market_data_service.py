@@ -16,6 +16,9 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
+from app.core.env import PROJECT_ROOT
+from app.market_data.coverage_source import DatabaseCoverageSource
+from app.market_data.errors import InfrastructureError
 
 from app.market_data.catalog import (
     CatalogError,
@@ -240,6 +243,47 @@ class MarketDataService:
             ),
             requested_trading_day_window=(since, through),
         )
+
+    def validate_contract_replay_coverage(
+        self,
+        *,
+        symbol: str,
+        contract: str,
+        frequency: BarFrequency,
+        trading_day: date,
+        cutoff: datetime,
+        after: datetime | None,
+        bars: tuple[CanonicalBar, ...],
+    ) -> None:
+        """Prove a physical replay against the same lifecycle/session coverage authority.
+
+        Live can complete today's suffix, but cannot supply missing prior-day history.
+        The caller has already checked overlap and physical provenance.
+        """
+        try:
+            fact = self.catalog.contract_fact(symbol, contract)
+            if not fact.listed_date <= trading_day < fact.expired_date:
+                raise MarketDataError("CONTRACT_ACTIVE_WINDOW_MISSING")
+            coverage = DatabaseCoverageSource(
+                self.catalog.session,
+                PROJECT_ROOT / "data/universe/product_window_starts.csv",
+            )
+            days = coverage.contract_trading_days(fact, fact.listed_date, trading_day)
+            key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
+            expected = tuple(
+                (bar_end, day)
+                for day in days
+                for bar_end in coverage.expected_bar_ends_for_trading_days(key, (day,))
+                if bar_end <= cutoff and (after is None or bar_end > after)
+            )
+        except (CatalogError, InfrastructureError) as exc:
+            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE") from exc
+        if (
+            not expected
+            or expected[-1] != (cutoff, trading_day)
+            or tuple((bar.bar_end, bar.trading_day) for bar in bars) != expected
+        ):
+            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
 
     def _trading_day_window(
         self,

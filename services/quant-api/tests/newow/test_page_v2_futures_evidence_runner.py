@@ -473,6 +473,57 @@ def test_runner_help_is_available_without_opening_a_database_session() -> None:
     assert "discover" in result.stdout
 
 
+@pytest.mark.parametrize(
+    "failure", ["arguments", "import", "preflight", "bootstrap", "db", "unknown"]
+)
+def test_runner_contains_process_failures_without_sensitive_output(
+    tmp_path: Path, failure: str
+) -> None:
+    root = Path(__file__).resolve().parents[4]
+    output = tmp_path / "no-artifacts"
+    program = """
+import builtins, runpy, sys
+failure, output = sys.argv[1:]
+sentinel = 'PRIVATE_SENTINEL /private/internal SELECT secret FROM credentials'
+if failure == 'import':
+    original_import = builtins.__import__
+    def guarded(name, *args, **kwargs):
+        if name == 'app.market_data.newow.futures_evidence_discovery':
+            raise ImportError(sentinel)
+        return original_import(name, *args, **kwargs)
+    builtins.__import__ = guarded
+elif failure != 'arguments':
+    from app.market_data.newow import futures_evidence_discovery as module
+    from sqlalchemy.exc import SQLAlchemyError
+    error = {'preflight': module.ReadOnlyDiscoveryError, 'bootstrap': ImportError,
+             'db': SQLAlchemyError, 'unknown': RuntimeError}[failure]
+    def fail(**kwargs):
+        raise error(sentinel)
+    module.run_discovery = fail
+sys.argv = ['scripts/newow_page_v2_futures_evidence.py', 'discover', '--base-sha', 'a'*40,
+            '--owner-approved-run-id', 'test', '--frequencies', '1d', '1w', '60m',
+            '--minimum-rollovers', '2', '--output', output]
+if failure == 'arguments':
+    sys.argv[sys.argv.index('--minimum-rollovers') + 1] = sentinel
+runpy.run_path(sys.argv[0], run_name='__main__')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program, failure, str(output)],
+        cwd=root,
+        env={
+            **os.environ,
+            "PYTHONPATH": f"{root / 'services/quant-api'}:{root / 'packages/quant-core'}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert result.stdout == '{"error_code":"NEWOW_FUTURES_EVIDENCE_UNAVAILABLE"}\n'
+    assert result.stderr == ""
+    assert not output.exists()
+
+
 class _MarketData:
     def __init__(
         self,

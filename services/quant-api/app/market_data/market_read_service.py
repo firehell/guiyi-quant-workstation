@@ -30,6 +30,18 @@ from app.market_data.live_market import LiveBarObservation
 class MarketPageReader(Protocol):
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult: ...
 
+    def validate_contract_replay_coverage(
+        self,
+        *,
+        symbol: str,
+        contract: str,
+        frequency: BarFrequency,
+        trading_day: date,
+        cutoff: datetime,
+        after: datetime | None,
+        bars: tuple[CanonicalBar, ...],
+    ) -> None: ...
+
 
 class PhaseReader(Protocol):
     def resolve(self, symbol: str, now: datetime) -> ProductMarketPhase: ...
@@ -308,7 +320,9 @@ class MarketReadService:
                 expected_contract=contract,
             )
             if any(
-                type(item) is not LiveBarObservation or item.contract != contract
+                type(item) is not LiveBarObservation
+                or item.contract != contract
+                or item.bar.trading_day != decision_window.trading_day
                 for item in observations
             ):
                 raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
@@ -329,6 +343,20 @@ class MarketReadService:
         bars = tuple(merged[bar_end] for bar_end in sorted(merged))
         if not bars or bars[-1].bar_end != cutoff:
             raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
+        try:
+            self._market_data.validate_contract_replay_coverage(
+                symbol=decision_window.symbol,
+                contract=contract,
+                frequency=frequency,
+                trading_day=decision_window.trading_day,
+                cutoff=cutoff,
+                after=normalized_after,
+                bars=bars,
+            )
+        except MarketDataError as exc:
+            raise MarketReadWindowError(
+                "MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE"
+            ) from exc
         return CurrentContractReplayWindow(
             symbol=decision_window.symbol,
             frequency=frequency.value,
