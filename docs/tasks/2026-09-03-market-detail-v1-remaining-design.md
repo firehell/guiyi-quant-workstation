@@ -34,6 +34,11 @@
 
 ### 1.2 与 Newow 专用文档的关系
 
+`openspec/specs/newow-product-reference-trading/spec.md` 自 2026-09-05 起接管 Newow 新产品能力。
+本节下列固定 Trend D1 条款只约束既有 `view=trend` 与
+`GET /api/v1/market/newow/trend-detail` 兼容入口，不再限制 `view=newow` 的三策略 × 三周期、
+ReferenceTrade、Hint、解释和明确统计窗口。两类入口必须复用同一公式 authority，不能形成第二套算法。
+
 以下 Newow 专用合同继续有效，并且仍由 Newow 文档、Kernel、Engine、只读 API 与测试负责：
 
 ```text
@@ -59,7 +64,7 @@ CurrentDetailView / NewowTrendDetailView 双外壳
 独立 Newow 详情 route 或第二套详情 Shell
 ```
 
-Newow Web 必须作为统一 `/market/chart` 下的 `TrendDetailWorkspace` 交付，不得在浏览器复制或改写 Newow 公式。
+Newow Web 必须作为统一 `/market/chart` 下的 Workspace 交付，不得在浏览器复制或改写 Newow 公式。
 
 ### 1.3 本文不重新定义的内容
 
@@ -101,10 +106,14 @@ Market 首页发现值得复核的品种或 Event
 ```text
 应该开几手
 应该做多或做空
-目标价和止损价是多少
+可成交目标价、系统止损价或账户应执行的目标/吸筹动作是什么
 多个策略投票后的综合结论
 账户应当持有什么仓位
 ```
+
+这项禁止只约束交易建议、系统止损、订单、成交和账户语义，不禁止 Newow accepted contract 在
+来源周期、来源 `bar_end` 与 `as_of` 可证明时展示只读目标/吸筹参考；该展示不得冒充可成交价格、
+真实机构行为或账户动作。
 
 ---
 
@@ -115,11 +124,11 @@ Market 首页发现值得复核的品种或 Event
 ```text
 现有 Market 首页
 统一 /market/chart Shell
-Trend / HTDY / SuBing / Free 四个只读 Workspace
+Newow / HTDY / SuBing / Free 四个只读 Workspace，另保留 `view=trend` D1 兼容入口
 普通品种入口与 Event 精确深链
 共享行情头、单一身份控制、渐进式披露和详情抽屉
 四视角 Marker、历史、数据和错误边界隔离
-最终默认 Trend
+最终默认 Newow 趋势日线
 旧详情页与 active legacy reference 删除
 桌面、移动端、键盘、无障碍与视觉验收
 active OpenSpec 与稳定产品文档更新
@@ -147,16 +156,12 @@ G9 已获得独立授权并完成
 
 若单用户日常不需要频繁调整 Scope，则长期保留 CLI/专用 activation seam，不做 Web 写控制。
 
-### 3.3 V2 候选
+### 3.3 后续候选与 Newow 合同接管
 
-V2 必须分别使用新身份、新合同和独立 Spec，不得恢复退役实现：
-
-1. Event/Newow Marker 的人工复盘、结果标签和统计；
-2. 期货化震荡观察策略；
-3. 多周期 context 与共振研究；
-4. 价格、成交量、OI、主力迁移的持仓结构观察；
-5. 4/7/11、J、“小心”等趋势风险 Marker 研究；
-6. 候选版本、OOS、Walk-forward、Shadow 和人工批准晋升。
+原列为 V2 候选的 Newow Marker 复盘/统计、期货化震荡、多周期解释、4/7/11 与 J 等提示，
+已由 `newow-product-reference-trading` OpenSpec 以新身份接管，不再受本文旧 V1 禁止条款约束。
+这些能力仍是只读策略与参考交易，不得恢复退役实现。候选版本、OOS、Walk-forward、Shadow、
+风险/组合/账户、执行和人工批准晋升继续属于后续独立合同。
 
 现有 `Range Detector` 不能改名或升级为正式震荡策略；单纯 OI 变化不能称为“主力吸筹、洗盘、控盘或出货”。
 
@@ -218,7 +223,8 @@ B1 owner visual review
     │   └── MarketFactsDisclosure
     ├── MarketDetailViewNav
     ├── MarketDetailViewHost
-    │   ├── TrendDetailWorkspace
+    │   ├── NewowDetailWorkspace
+    │   ├── TrendDetailWorkspace（D1 兼容入口）
     │   ├── HtdyDetailWorkspace
     │   ├── SubingDetailWorkspace
     │   └── FreeChartWorkspace
@@ -267,7 +273,7 @@ B1 owner visual review
 
 ```text
 symbol
-view = trend | htdy | subing | free
+view = newow | trend | htdy | subing | free
 series_kind = actual_dominant | continuous | contract
 contract
 frequency = 1m | 5m | 15m | 30m | 60m | 1d | 1w
@@ -278,7 +284,8 @@ focus_bar_end
 
 | View | 序列 | 周期 | 正式 Marker | 身份可改 |
 |---|---|---|---|---|
-| Trend | `actual_dominant` | `1d` | Newow typed Marker | 否 |
+| Newow | `actual_dominant` | `1w / 1d / 60m` | 当前策略 typed BUILD/CLEAR 与 Hint | 策略、周期可改 |
+| Trend 兼容 | `actual_dominant` | `1d` | Newow 趋势 typed Marker | 否 |
 | HTDY | `actual_dominant / continuous / contract` | 七周期 | raw HTDY；仅 `actual_dominant` 可叠加 HTDY Event | 是 |
 | SuBing | `actual_dominant` | `15m` | 仅 SuBing `AlertEvent` | 否 |
 | Free | `actual_dominant / continuous / contract` | 七周期 | 无策略/Event Marker | 是 |
@@ -288,10 +295,13 @@ focus_bar_end
 普通品种入口：
 
 ```text
-view=trend
+view=newow
 series_kind=actual_dominant
 frequency=1d
+strategy=trend
 ```
+
+既有 `view=trend` 深链继续解析为固定 `actual_dominant + 1d + trend` 兼容入口。
 
 HTDY Event 入口：
 
@@ -313,7 +323,8 @@ focus_bar_end=event.bar_end
 
 视角切换：
 
-- Trend 强制 `actual_dominant + 1d`；
+- Newow 固定 `actual_dominant`，允许 `trend | oscillation | main_rise` 与 `1w | 1d | 60m`；
+- Trend 兼容入口强制 `actual_dominant + 1d + trend`；
 - SuBing 强制 `actual_dominant + 15m`；
 - HTDY 与 Free 恢复各自最近一次安全的 `actual_dominant | continuous + frequency`；`contract` 仅存在于当前 route，不写入持久偏好；
 - `contract` 只在当前品种内有效，切换品种必须清除并回到 `actual_dominant`；
@@ -325,6 +336,8 @@ focus_bar_end=event.bar_end
 
 ```text
 view=trend&frequency=15m
+view=newow&series_kind=continuous
+view=newow&frequency=15m
 view=subing&series_kind=continuous
 series_kind=contract 但 contract 缺失
 未知 view/series/frequency
@@ -350,11 +363,12 @@ series_kind=contract 但 contract 缺失
 
 固定 View：
 
-- Trend 只显示“固定日K”；
+- Trend 兼容入口只显示“固定日K”；
 - SuBing 只显示“固定15m”。
 
 灵活 View：
 
+- Newow 使用共享品种/周期 identity 控制，并增加唯一策略选择；Workspace 不得再复制一套品种或周期控件；
 - HTDY 与 Free 显示同一套序列/周期控件；
 - contract 输入和按钮必须由共享 ViewNav 承担；
 - Workspace 只显示本视角指标、解释和数据。
@@ -489,7 +503,12 @@ HTDY View 必须排除 SuBing Event 与 Newow Marker。
 - Runtime degraded：保留既有事实并明确提示；
 - 无 Event：显示“暂无已保存事件”，不能显示“中性”或“运行正常”。
 
-### 9.3 Trend
+### 9.3 Newow 与 Trend 兼容入口
+
+本节以下固定 D1 读取、三事实、图层和降级合同只描述既有 `view=trend` 兼容入口。
+`view=newow` 的三策略 × 三周期、Action/Hint、ReferenceTrade、乐观摘要、as-of、证据与重绘隔离，
+以 `openspec/specs/newow-product-reference-trading/spec.md` 为准。兼容入口可由薄适配复用新服务，
+但其公开 D1 请求与响应语义不得被删除或静默放宽。
 
 #### 数据权威
 
@@ -682,6 +701,10 @@ HTDY
 Trend
   Newow typed markers only
 
+Newow
+  当前策略 typed BUILD / CLEAR
+  + 当前策略 Hint（与主动作分型）
+
 SuBing
   SuBing AlertEvent markers only
 ```
@@ -772,7 +795,7 @@ Slice E 只有在 B2、D、C 全部进入 `develop` 后启动。
 
 必须完成：
 
-1. 普通首页品种入口默认进入 Trend；
+1. 普通首页品种入口默认进入 Newow 趋势日线；既有 `view=trend` 深链继续进入 D1 兼容入口；
 2. HTDY/SuBing Event 深链进入对应 View 和 Bar；
 3. 品种选择不再返回 Legacy；
 4. 删除 `LegacyMarketChart.vue` 及 active references；
@@ -790,9 +813,9 @@ Slice E 只有在 B2、D、C 全部进入 `develop` 后启动。
 V1 剩余实现禁止：
 
 - 自动交易、订单、账户、持仓、保证金或 PnL；
-- 综合分、胜率、置信度、策略投票；
-- 建议仓位、目标价、吸筹价或系统止损价；
-- 震荡策略、主升浪、主力照妖镜或 AI 分析假入口；
+- 模糊的全历史策略效果、账户收益、复利净值、年化、组合收益或将 ReferenceTrade 称为成交/持仓；
+- 在 Newow accepted contract 之外新增综合分、胜率、置信度、策略投票、建议仓位、目标价、吸筹价或系统止损价；
+- 在 Newow accepted contract 之外恢复震荡策略、主升浪、主力照妖镜或 AI 分析假入口；
 - 将 OI 解释为主力身份；
 - 将蓝色趋势带解释为期货空单；
 - 新增 Newow Alert/Runtime；
@@ -810,20 +833,21 @@ V1 剩余实现禁止：
 
 V1 `CODE_COMPLETE` 至少要求：
 
-1. Free、HTDY、Trend、SuBing 四个 Workspace 全部真实挂载；
+1. Free、HTDY、Newow、SuBing 四个 Workspace 全部真实挂载，`view=trend` D1 兼容入口仍可用；
 2. 只有一套 identity 控制；
 3. Free Marker 恒为 0；
 4. HTDY raw 与 immutable Event 并列且同源历史；
-5. Trend 只消费 Newow API，strict parity 失败时不绘制；
-6. SuBing Marker 只来自 Event；
-7. Rule、Scope、Runtime、Event 空状态分别呈现；
-8. Event 深链定位准确并一次性消费；
-9. contract 不跨品种延续；
-10. Workspace 切换不串 Marker、viewport、history 或 disclosure；
-11. Legacy 与 active references 删除；
-12. unit、Playwright、build、OpenSpec、canonical consistency、secret scan 和 diff check 通过；
-13. exact-head 独立 Review 无 Critical/Important finding；
-14. 用户完成关键桌面与移动端视觉审查。
+5. `view=trend` 固定 D1 兼容入口继续只消费 Newow API，strict parity 失败时不绘制；
+6. `view=newow` 的三策略 × 三周期只消费 typed Newow API，Action、Hint、ReferenceTrade、统计与证据状态不串身份；
+7. SuBing Marker 只来自 Event；
+8. Rule、Scope、Runtime、Event 空状态分别呈现；
+9. Event 深链定位准确并一次性消费；
+10. contract 不跨品种延续；
+11. Workspace 切换不串 Marker、viewport、history 或 disclosure；
+12. Legacy 与 active references 删除；
+13. unit、Playwright、build、OpenSpec、canonical consistency、secret scan 和 diff check 通过；
+14. exact-head 独立 Review 无 Critical/Important finding；
+15. 用户完成关键桌面与移动端视觉审查。
 
 必须分别声明：
 
@@ -844,7 +868,8 @@ RUNTIME_READY
 ```text
 V1 顺序 = B1 → B2 → D → C → E
 B3 Alert Scope Control 不属于 V1
-Trend 先于 SuBing，因为 Newow API 已就绪且完全只读
+Trend 兼容入口先于 SuBing，因为既有 Newow D1 API 已就绪且完全只读
+Newow 新产品由 accepted OpenSpec 接管三策略 × 三周期、参考交易与解释
 四视角共享 Shell，但不共享公式权威
 周线背景只作 Trend context，不成为隐藏 Gate
 杯柄不占 Trend 首屏三事实
