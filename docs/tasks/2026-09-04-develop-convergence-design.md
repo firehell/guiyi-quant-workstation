@@ -1,14 +1,14 @@
 # 全分支合并后 `develop` 收敛 Design Spec
 
-日期：2026-09-04  
-状态：`DESIGN_APPROVED / READY_FOR_IMPLEMENTATION_PLAN`  
-文档类型：仓库集成基线收敛设计权威  
-规划基线：`develop@f476835b332b428d645edd09e7531cafa57ebb35`  
-设计分支：`docs/develop-convergence-design`  
-目标集成分支：`develop`  
+日期：2026-09-04
+状态：`DESIGN_APPROVED / READY_FOR_IMPLEMENTATION_PLAN`
+文档类型：仓库集成基线收敛设计权威
+规划基线：`develop@f476835b332b428d645edd09e7531cafa57ebb35`
+设计分支：`docs/develop-convergence-design`
+目标集成分支：`develop`
 任务车道：Lane 2（仓库治理、文档与普通工程修复；不触及生产写入、发布或 Runtime）
 
-> 本文只定义“全分支内容已经进入 `develop` 之后，如何形成唯一、可验证、可继续开发的集成基线”。  
+> 本文只定义“全分支内容已经进入 `develop` 之后，如何形成唯一、可验证、可继续开发的集成基线”。
 > 它不授权立即执行清理、关闭 Issue、删除远端 branch、修改 Release PR、合入 `main`、创建 tag、发布 Release、写生产数据、切换 Runtime 或发送通知。实施须按配套 Implementation Plan 分阶段执行并保留 fail-closed Gate。
 
 ## 0. Owner 决策
@@ -382,7 +382,7 @@ NON_CANONICAL_REVIEW_REQUIRED
 
 ### Slice 0：冻结与完整 inventory
 
-输入：实施开始时最新 clean `develop`。  
+输入：实施开始时最新 clean `develop`。
 输出：exact-head inventory，至少包含：
 
 ```text

@@ -257,16 +257,16 @@ BASELINE_SHA="$(git rev-parse HEAD)"
 cat > docs/tasks/2026-09-04-develop-convergence-result.md <<EOF
 # \`develop\` 收敛实施结果
 
-日期：2026-09-04  
-状态：\`IN_PROGRESS\`  
-实施 baseline：\`${BASELINE_SHA}\`  
-任务分支：\`chore/develop-convergence\`  
-设计：\`docs/tasks/2026-09-04-develop-convergence-design.md\`  
+日期：2026-09-04
+状态：\`IN_PROGRESS\`
+实施 baseline：\`${BASELINE_SHA}\`
+任务分支：\`chore/develop-convergence\`
+设计：\`docs/tasks/2026-09-04-develop-convergence-design.md\`
 计划：\`docs/tasks/2026-09-04-develop-convergence-implementation-plan.md\`
 
 ## Owner 分发决定
 
-\`NEWOW_SCREENSHOT_POLICY=RETAIN\`  
+\`NEWOW_SCREENSHOT_POLICY=RETAIN\`
 \`DISTRIBUTION_STATUS=DISTRIBUTION_APPROVED_BY_OWNER\`
 
 该状态只覆盖 \`docs/research/newow-v3.2.82/screenshots/**\`，不覆盖原始页面响应、逐 Bar 股票数据或 RQData/Canonical 原文。
