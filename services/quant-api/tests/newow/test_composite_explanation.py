@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import asdict, replace
+from dataclasses import FrozenInstanceError, asdict, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -33,6 +33,8 @@ def _api():
         "CompositeBias",
         "CompositeStatusFact",
         "CompositeStatusState",
+        "CompositeSourceBars",
+        "CompositeSourceUsage",
         "FirstActionTokenOwner",
         "VerifiedCompositeEvidence",
         "calculate_composite_explanation",
@@ -898,6 +900,129 @@ def test_ready_result_keeps_named_evidence_gaps_null_and_separate() -> None:
     )
 
 
+def test_ready_result_audits_current_facts_and_consumed_volatility_prefix() -> None:
+    module = _api()
+    context, daily_bars = _context(daily_count=25)
+
+    result = module.calculate_composite_explanation(
+        context, _evidence(module, context, daily_bars)
+    )
+
+    assert result.value is not None
+    assert len(result.source_bars) == 4
+    sources = {(item.usage, item.frequency): item for item in result.source_bars}
+    expected_current = {
+        ProductFrequency.WEEKLY: (
+            context.weekly,
+            ("trend_weekly", "oscillation_weekly"),
+        ),
+        ProductFrequency.DAILY: (
+            context.daily,
+            ("trend_daily", "oscillation_daily"),
+        ),
+        ProductFrequency.HOURLY: (
+            context.hourly,
+            ("trend_hourly", "oscillation_hourly"),
+        ),
+    }
+    for frequency, (slot, fact_names) in expected_current.items():
+        assert slot.frame is not None
+        source = sources[(module.CompositeSourceUsage.CURRENT_FACT, frequency)]
+        assert source.fact_names == fact_names
+        assert source.count == 1
+        assert source.first_bar_end == source.last_bar_end == slot.bar_end
+        assert (
+            source.first_trading_day
+            == source.last_trading_day
+            == slot.frame.bar.bar.trading_day
+        )
+        assert source.physical_contract == slot.physical_contract
+        assert source.segment_id == slot.segment_id
+        assert source.source_identities == (slot.source_identity,)
+        assert source.as_of == context.as_of
+        assert source.in_sample is False
+        assert source.repainting is False
+        assert source.input_status.status == "ready"
+        assert source.input_status.evidence_status == "ACTIVE_CODE_VERIFIED"
+        assert source.repaint_status.status == "ready"
+        assert source.repaint_status.evidence_status == "RESEARCH_EVIDENCE_ONLY"
+
+    consumed = daily_bars[-21:]
+    volatility = sources[
+        (module.CompositeSourceUsage.VOLATILITY_PREFIX, ProductFrequency.DAILY)
+    ]
+    assert volatility.fact_names == ("volatility",)
+    assert volatility.count == 21
+    assert volatility.first_bar_end == consumed[0].bar.bar_end
+    assert volatility.last_bar_end == consumed[-1].bar.bar_end
+    assert volatility.first_trading_day == consumed[0].bar.trading_day
+    assert volatility.last_trading_day == consumed[-1].bar.trading_day
+    assert volatility.physical_contract == consumed[0].bar.physical_contract
+    assert volatility.segment_id == consumed[0].bar.segment_id
+    assert volatility.source_identities == tuple(
+        item.bar.source_identity for item in consumed
+    )
+    assert volatility.as_of == context.as_of
+    assert volatility.input_status.status == "ready"
+
+
+@pytest.mark.parametrize("daily_count", [0, 5])
+def test_warming_volatility_source_range_is_explicit(daily_count: int) -> None:
+    module = _api()
+    context, daily_bars = _context(daily_count=max(daily_count, 1))
+    prefix = daily_bars if daily_count else ()
+
+    result = module.calculate_composite_explanation(
+        context, _evidence(module, context, prefix)
+    )
+
+    volatility = next(
+        item
+        for item in result.source_bars
+        if item.usage is module.CompositeSourceUsage.VOLATILITY_PREFIX
+    )
+    assert volatility.count == daily_count
+    assert volatility.input_status.status == "warming"
+    assert volatility.input_status.reason_code == "NEWOW_COMPOSITE_VOLATILITY_WARMING"
+    if daily_count == 0:
+        assert volatility.physical_contract is None
+        assert volatility.segment_id is None
+        assert volatility.source_identities == ()
+        assert volatility.first_bar_end is None
+        assert volatility.last_bar_end is None
+        assert volatility.first_trading_day is None
+        assert volatility.last_trading_day is None
+    else:
+        assert volatility.physical_contract == prefix[0].bar.physical_contract
+        assert volatility.segment_id == prefix[0].bar.segment_id
+        assert volatility.first_bar_end == prefix[0].bar.bar_end
+        assert volatility.last_bar_end == prefix[-1].bar.bar_end
+
+
+def test_composite_source_metadata_is_immutable_and_fail_closed() -> None:
+    module = _api()
+    context, daily_bars = _context()
+    result = module.calculate_composite_explanation(
+        context, _evidence(module, context, daily_bars)
+    )
+    volatility = next(
+        item
+        for item in result.source_bars
+        if item.usage is module.CompositeSourceUsage.VOLATILITY_PREFIX
+    )
+
+    with pytest.raises(FrozenInstanceError):
+        volatility.count = 0
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_SOURCE_BARS"):
+        replace(volatility, count=22)
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_SOURCE_BARS"):
+        replace(volatility, source_identities=())
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_SOURCE_BARS"):
+        replace(result, source_bars=result.source_bars[:-1])
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_SOURCE_BARS"):
+        replace(result, source_bars=(*result.source_bars[:-1], result.source_bars[0]))
+
+
 def test_short_daily_prefix_does_not_coerce_volatility_to_zero() -> None:
     module = _api()
     context, daily_bars = _context(daily_count=5)
@@ -911,6 +1036,13 @@ def test_short_daily_prefix_does_not_coerce_volatility_to_zero() -> None:
     volatility = {item.name: item for item in result.value.subfeatures}["volatility"]
     assert volatility.status.status == "warming"
     assert volatility.value is None
+    source = next(
+        item
+        for item in result.source_bars
+        if item.usage is module.CompositeSourceUsage.VOLATILITY_PREFIX
+    )
+    assert source.count == 5
+    assert source.input_status.status == "warming"
 
 
 def test_missing_period_is_unavailable_not_neutral() -> None:
@@ -923,6 +1055,7 @@ def test_missing_period_is_unavailable_not_neutral() -> None:
     assert result.status == "unavailable"
     assert result.reason_code == "NEWOW_COMPOSITE_MISSING_PERIOD"
     assert result.value is None
+    assert result.source_bars == ()
 
 
 @pytest.mark.parametrize("pollution", ["owner", "future", "frequency"])

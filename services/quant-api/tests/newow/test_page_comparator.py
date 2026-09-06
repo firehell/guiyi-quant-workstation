@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -343,8 +343,10 @@ def test_owner_segments_are_listed_reset_and_default_to_latest() -> None:
         )
         for row in result.value.segments[1].results
     )
-    assert result.value.cross_segment_ranking is None
-    assert result.value.account_aggregation is None
+    forbidden = {"cross_segment_ranking", "account_aggregation"}
+    assert not forbidden & {field.name for field in fields(result.value)}
+    for name in forbidden:
+        assert not hasattr(result.value, name)
 
 
 def test_guiyi_adapter_requires_authoritative_owner_segments() -> None:
@@ -687,6 +689,7 @@ def test_frozen_601_bar_source_oracle_matches_all_rows_and_rank() -> None:
     root_value = os.environ.get("GUIYI_NEWOW_TASK13_EVIDENCE_ROOT")
     if root_value is None:
         pytest.skip("set GUIYI_NEWOW_TASK13_EVIDENCE_ROOT for frozen local evidence")
+    assert root_value is not None
     module = _api()
     bars = _frozen_evidence_bars(Path(root_value))
 

@@ -126,14 +126,6 @@ class AuxiliaryResult:
             raise ValueError("NEWOW_AUXILIARY_MIRROR_AUTHORITY")
         object.__setattr__(self, "retrospective_layers", retrospective_layers)
 
-    @property
-    def actions(self) -> tuple[()]:
-        return ()
-
-    @property
-    def hints(self) -> tuple[()]:
-        return ()
-
 
 @dataclass(frozen=True, slots=True)
 class _OwnerSegment:

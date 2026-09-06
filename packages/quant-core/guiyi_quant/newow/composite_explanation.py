@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from math import floor, isfinite
@@ -73,6 +73,11 @@ class VolatilityLevel(StrEnum):
     LOW = "low"
     MID = "mid"
     HIGH = "high"
+
+
+class CompositeSourceUsage(StrEnum):
+    CURRENT_FACT = "current_fact"
+    VOLATILITY_PREFIX = "volatility_prefix"
 
 
 def _text(value: object) -> None:
@@ -258,6 +263,130 @@ class CompositeSubfeature:
 
 
 @dataclass(frozen=True, slots=True)
+class CompositeSourceBars:
+    """Auditable current-fact or owner-local volatility input range."""
+
+    usage: CompositeSourceUsage
+    fact_names: tuple[str, ...]
+    frequency: ProductFrequency
+    physical_contract: str | None
+    segment_id: str | None
+    source_identities: tuple[str, ...]
+    count: int
+    first_bar_end: datetime | None
+    last_bar_end: datetime | None
+    first_trading_day: date | None
+    last_trading_day: date | None
+    as_of: datetime
+    in_sample: bool
+    repainting: bool
+    repaint_status: FeatureStatus
+    input_status: FeatureStatus
+
+    def __post_init__(self) -> None:
+        try:
+            usage = CompositeSourceUsage(self.usage)
+            frequency = ProductFrequency(self.frequency)
+            as_of = utc_timestamp(self.as_of)
+        except (TypeError, ValueError) as error:
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS") from error
+        fact_names = tuple(self.fact_names)
+        sources = tuple(self.source_identities)
+        if (
+            not fact_names
+            or len(set(fact_names)) != len(fact_names)
+            or any(not isinstance(name, str) or not name for name in fact_names)
+            or len(set(sources)) != len(sources)
+            or any(not isinstance(source, str) or not source for source in sources)
+            or type(self.count) is not int
+            or self.count < 0
+            or type(self.in_sample) is not bool
+            or type(self.repainting) is not bool
+            or self.in_sample is not False
+            or self.repainting is not False
+            or not isinstance(self.repaint_status, FeatureStatus)
+            or not isinstance(self.input_status, FeatureStatus)
+            or self.repaint_status.status is not FeatureRuntimeStatus.READY
+            or self.repaint_status.evidence_status
+            is not EvidenceStatus.RESEARCH_EVIDENCE_ONLY
+            or self.input_status.evidence_status
+            is not EvidenceStatus.ACTIVE_CODE_VERIFIED
+        ):
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+
+        current_names = {
+            ProductFrequency.WEEKLY: ("trend_weekly", "oscillation_weekly"),
+            ProductFrequency.DAILY: ("trend_daily", "oscillation_daily"),
+            ProductFrequency.HOURLY: ("trend_hourly", "oscillation_hourly"),
+        }
+        if usage is CompositeSourceUsage.CURRENT_FACT:
+            valid_usage = (
+                fact_names == current_names.get(frequency)
+                and self.count == 1
+                and self.input_status.status is FeatureRuntimeStatus.READY
+            )
+        else:
+            valid_usage = (
+                frequency is ProductFrequency.DAILY
+                and fact_names == ("volatility",)
+                and self.count <= 21
+                and self.input_status.status
+                is (
+                    FeatureRuntimeStatus.READY
+                    if self.count >= 6
+                    else FeatureRuntimeStatus.WARMING
+                )
+            )
+        if not valid_usage:
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+
+        bounds = (
+            self.first_bar_end,
+            self.last_bar_end,
+            self.first_trading_day,
+            self.last_trading_day,
+        )
+        if self.count == 0:
+            if (
+                usage is not CompositeSourceUsage.VOLATILITY_PREFIX
+                or any(bound is not None for bound in bounds)
+                or self.physical_contract is not None
+                or self.segment_id is not None
+                or sources
+            ):
+                raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+        else:
+            if (
+                any(bound is None for bound in bounds)
+                or not isinstance(self.physical_contract, str)
+                or not self.physical_contract
+                or not isinstance(self.segment_id, str)
+                or not self.segment_id
+                or not sources
+            ):
+                raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+            assert self.first_bar_end is not None
+            assert self.last_bar_end is not None
+            assert self.first_trading_day is not None
+            assert self.last_trading_day is not None
+            first_end = utc_timestamp(self.first_bar_end)
+            last_end = utc_timestamp(self.last_bar_end)
+            if (
+                first_end > last_end
+                or last_end > as_of
+                or self.first_trading_day > self.last_trading_day
+            ):
+                raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+            object.__setattr__(self, "first_bar_end", first_end)
+            object.__setattr__(self, "last_bar_end", last_end)
+        object.__setattr__(self, "usage", usage)
+        object.__setattr__(self, "fact_names", fact_names)
+        object.__setattr__(self, "frequency", frequency)
+        object.__setattr__(self, "source_identities", sources)
+        object.__setattr__(self, "as_of", as_of)
+
+
+@dataclass(frozen=True, slots=True)
 class CompositeExplanationValue:
     decision: CompositeDecision
     direction: CompositeDirection
@@ -292,6 +421,7 @@ class CompositeExplanationResult:
     reason_code: str | None
     as_of: datetime
     formula_versions: tuple[str, ...] = ()
+    source_bars: tuple[CompositeSourceBars, ...] = ()
     value: CompositeExplanationValue | None = None
 
     def __post_init__(self) -> None:
@@ -304,6 +434,26 @@ class CompositeExplanationResult:
         for formula in formulas:
             _text(formula)
         object.__setattr__(self, "formula_versions", formulas)
+        sources = tuple(self.source_bars)
+        if any(not isinstance(source, CompositeSourceBars) for source in sources):
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+        if self.value is None and sources:
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+        expected_sources = {
+            (CompositeSourceUsage.CURRENT_FACT, ProductFrequency.WEEKLY),
+            (CompositeSourceUsage.CURRENT_FACT, ProductFrequency.DAILY),
+            (CompositeSourceUsage.CURRENT_FACT, ProductFrequency.HOURLY),
+            (CompositeSourceUsage.VOLATILITY_PREFIX, ProductFrequency.DAILY),
+        }
+        if (
+            self.value is not None
+            and {(source.usage, source.frequency) for source in sources}
+            != expected_sources
+        ):
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+        if self.value is not None and len(sources) != len(expected_sources):
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+        object.__setattr__(self, "source_bars", sources)
         if self.status is not FeatureRuntimeStatus.READY:
             _text(self.reason_code)
 
@@ -757,6 +907,131 @@ def _daily_prefix_matches_context(
     )
 
 
+def _source_status(count: int) -> FeatureStatus:
+    if count >= 6:
+        return FeatureStatus(
+            FeatureRuntimeStatus.READY,
+            EvidenceStatus.ACTIVE_CODE_VERIFIED,
+        )
+    return FeatureStatus(
+        FeatureRuntimeStatus.WARMING,
+        EvidenceStatus.ACTIVE_CODE_VERIFIED,
+        "NEWOW_COMPOSITE_VOLATILITY_WARMING",
+    )
+
+
+def _repaint_status() -> FeatureStatus:
+    return FeatureStatus(
+        FeatureRuntimeStatus.READY,
+        EvidenceStatus.RESEARCH_EVIDENCE_ONLY,
+    )
+
+
+def _current_fact_source(
+    slot: ContextSlot, fact_names: tuple[str, str], as_of: datetime
+) -> CompositeSourceBars:
+    if (
+        slot.frame is None
+        or slot.bar_end is None
+        or slot.source_identity is None
+        or slot.physical_contract is None
+        or slot.segment_id is None
+    ):
+        raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+    bar = slot.frame.bar.bar
+    return CompositeSourceBars(
+        usage=CompositeSourceUsage.CURRENT_FACT,
+        fact_names=fact_names,
+        frequency=slot.frequency,
+        physical_contract=slot.physical_contract,
+        segment_id=slot.segment_id,
+        source_identities=(slot.source_identity,),
+        count=1,
+        first_bar_end=slot.bar_end,
+        last_bar_end=slot.bar_end,
+        first_trading_day=bar.trading_day,
+        last_trading_day=bar.trading_day,
+        as_of=as_of,
+        in_sample=False,
+        repainting=False,
+        repaint_status=_repaint_status(),
+        input_status=FeatureStatus(
+            FeatureRuntimeStatus.READY,
+            EvidenceStatus.ACTIVE_CODE_VERIFIED,
+        ),
+    )
+
+
+def _volatility_source(
+    bars: tuple[ProductBar, ...], as_of: datetime
+) -> CompositeSourceBars:
+    consumed = bars[-21:]
+    if not consumed:
+        return CompositeSourceBars(
+            usage=CompositeSourceUsage.VOLATILITY_PREFIX,
+            fact_names=("volatility",),
+            frequency=ProductFrequency.DAILY,
+            physical_contract=None,
+            segment_id=None,
+            source_identities=(),
+            count=0,
+            first_bar_end=None,
+            last_bar_end=None,
+            first_trading_day=None,
+            last_trading_day=None,
+            as_of=as_of,
+            in_sample=False,
+            repainting=False,
+            repaint_status=_repaint_status(),
+            input_status=_source_status(0),
+        )
+    first = consumed[0].bar
+    last = consumed[-1].bar
+    return CompositeSourceBars(
+        usage=CompositeSourceUsage.VOLATILITY_PREFIX,
+        fact_names=("volatility",),
+        frequency=ProductFrequency.DAILY,
+        physical_contract=first.physical_contract,
+        segment_id=first.segment_id,
+        source_identities=tuple(
+            dict.fromkeys(item.bar.source_identity for item in consumed)
+        ),
+        count=len(consumed),
+        first_bar_end=first.bar_end,
+        last_bar_end=last.bar_end,
+        first_trading_day=first.trading_day,
+        last_trading_day=last.trading_day,
+        as_of=as_of,
+        in_sample=False,
+        repainting=False,
+        repaint_status=_repaint_status(),
+        input_status=_source_status(len(consumed)),
+    )
+
+
+def _source_bars(
+    context: ContextSnapshot, daily_bars: tuple[ProductBar, ...]
+) -> tuple[CompositeSourceBars, ...]:
+    return (
+        _current_fact_source(
+            context.weekly,
+            ("trend_weekly", "oscillation_weekly"),
+            context.as_of,
+        ),
+        _current_fact_source(
+            context.daily,
+            ("trend_daily", "oscillation_daily"),
+            context.as_of,
+        ),
+        _current_fact_source(
+            context.hourly,
+            ("trend_hourly", "oscillation_hourly"),
+            context.as_of,
+        ),
+        _volatility_source(daily_bars, context.as_of),
+    )
+
+
 def _subfeatures(
     volatility: CompositeVolatility | None,
 ) -> tuple[CompositeSubfeature, ...]:
@@ -914,5 +1189,6 @@ def calculate_composite_explanation(
         None,
         context.as_of,
         FORMULA_VERSIONS,
+        _source_bars(context, evidence.daily_bars),
         value,
     )

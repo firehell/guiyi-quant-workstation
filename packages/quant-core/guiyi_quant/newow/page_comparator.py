@@ -345,8 +345,6 @@ class PageComparatorValue:
     executable: bool
     input_mode: str
     subfeatures: tuple[ComparatorSubfeature, ...]
-    cross_segment_ranking: None = None
-    account_aggregation: None = None
 
     def __post_init__(self) -> None:
         segments = tuple(self.segments)

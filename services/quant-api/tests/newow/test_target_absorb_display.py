@@ -7,6 +7,7 @@ from decimal import Decimal
 
 import pytest
 
+from guiyi_quant.newow import oscillation_channel
 from guiyi_quant.newow.context_alignment import align_completed_context
 from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_contracts import (
@@ -644,7 +645,7 @@ def test_result_binds_surface_as_of_lineage_and_has_no_trading_dto_fields() -> N
         "newow_target_absorb_display_selection_page_v2",
         "newow_price_guard_page_v3_1_6",
         "guiyi_newow_target_absorb_segment_adapter_v1",
-        "newow_hhv_llv_channel_page_v1",
+        oscillation_channel.CHANNEL_FORMULA_VERSION,
     )
     assert not {"actions", "hints", "reference_trades"} & {
         field.name for field in fields(result)
@@ -655,6 +656,33 @@ def test_result_binds_surface_as_of_lineage_and_has_no_trading_dto_fields() -> N
         result.reason_code = "mutated"
     with pytest.raises(FrozenInstanceError):
         evidence.period = module.PageSelectionPeriod.DAY
+
+
+def test_weekly_channel_lineage_reads_the_oscillation_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _target_api()
+    context, latest_weekly = _context()
+    evidence = module.VerifiedTargetAbsorbEvidence(
+        period=module.PageSelectionPeriod.WEEK,
+        view_frequency=ProductFrequency.WEEKLY,
+        display_surface=module.PageDisplaySurface.STATUS_CARD,
+        inputs=_inputs(module, context, view_frequency=ProductFrequency.WEEKLY),
+        weekly_channel_bars=_authoritative_weekly_channel_bars(latest_weekly, 10),
+    )
+    authority_probe = "newow_hhv_llv_channel_authority_probe"
+    monkeypatch.setattr(
+        oscillation_channel,
+        "CHANNEL_FORMULA_VERSION",
+        authority_probe,
+    )
+
+    result = module.calculate_target_absorb(context, evidence)
+
+    assert result.formula_versions[-1] == authority_probe
+    subfeatures = {item.name: item for item in result.value.subfeatures}
+    assert subfeatures["weekly_status_card_override"].value == authority_probe
+    assert not hasattr(module, "WEEKLY_CHANNEL_FORMULA_VERSION")
 
 
 def test_shared_weekly_function_does_not_apply_status_card_override() -> None:

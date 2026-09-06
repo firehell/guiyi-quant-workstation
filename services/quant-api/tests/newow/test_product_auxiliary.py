@@ -80,8 +80,9 @@ def test_three_subplots_match_original_primitives_per_exact_owner_segment(
     )
     assert mirror.repainting is True
     assert mirror.formal_signal_eligible is False
-    assert result.actions == ()
-    assert result.hints == ()
+    assert not {"actions", "hints"} & {field.name for field in fields(result)}
+    assert not hasattr(result, "actions")
+    assert not hasattr(result, "hints")
 
 
 def test_mirror_is_stored_only_in_the_retrospective_dataclass_field(
@@ -220,8 +221,9 @@ def test_auxiliary_does_not_duplicate_main_rise_hints_or_filter_flat_history(
     auxiliary = calculate_product_auxiliary(case.identity, case.bars)
     after = replay_strategy(case.identity, case.bars)
 
-    assert auxiliary.actions == ()
-    assert auxiliary.hints == ()
+    assert not {"actions", "hints"} & {field.name for field in fields(auxiliary)}
+    assert not hasattr(auxiliary, "actions")
+    assert not hasattr(auxiliary, "hints")
     assert after == before
     assert (
         tuple(

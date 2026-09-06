@@ -10,7 +10,7 @@ from math import isfinite
 from typing import TypeGuard
 
 from .context_alignment import ContextSlot, ContextSnapshot
-from .oscillation_channel import calculate_channel_series
+from . import oscillation_channel
 from .product_contracts import (
     EvidenceStatus,
     FeatureRuntimeStatus,
@@ -24,7 +24,6 @@ from .product_identity import utc_timestamp
 PAGE_SELECTION_FORMULA_VERSION = "newow_target_absorb_display_selection_page_v2"
 PRICE_GUARD_FORMULA_VERSION = "newow_price_guard_page_v3_1_6"
 FUTURES_ADAPTER_VERSION = "guiyi_newow_target_absorb_segment_adapter_v1"
-WEEKLY_CHANNEL_FORMULA_VERSION = "newow_hhv_llv_channel_page_v1"
 EVIDENCE_MANIFEST_SHA256 = (
     "279aa0c3a88b6e6c5413387a57085dfe4c4d23a34befa751d95ced4c03be962f"
 )
@@ -611,7 +610,7 @@ def _formulas(evidence: VerifiedTargetAbsorbEvidence) -> tuple[str, ...]:
         evidence.display_surface is PageDisplaySurface.STATUS_CARD
         and evidence.period is PageSelectionPeriod.WEEK
     ):
-        return (*_BASE_FORMULAS, WEEKLY_CHANNEL_FORMULA_VERSION)
+        return (*_BASE_FORMULAS, oscillation_channel.CHANNEL_FORMULA_VERSION)
     return _BASE_FORMULAS
 
 
@@ -684,7 +683,9 @@ def _weekly_override(
             "NEWOW_TARGET_ABSORB_SOURCE_CONTEXT_MISMATCH",
             formulas,
         )
-    channel = calculate_channel_series(tuple(bar.bar for bar in bars), period=10)[-1]
+    channel = oscillation_channel.calculate_channel_series(
+        tuple(bar.bar for bar in bars), period=10
+    )[-1]
     target_fact = PagePriceFact(
         channel.upper,
         slot.frequency,
@@ -744,7 +745,7 @@ def _subfeatures(
         TargetAbsorbSubfeature(
             "weekly_status_card_override",
             research_ready,
-            WEEKLY_CHANNEL_FORMULA_VERSION,
+            oscillation_channel.CHANNEL_FORMULA_VERSION,
         )
         if (
             period is PageSelectionPeriod.WEEK
