@@ -350,27 +350,31 @@ def test_open_trade_preserves_negative_current_reference_float(product_cases):
     assert trade.reference_return_pct is None
 
 
-def test_open_trade_without_a_later_eligible_mark_is_explicitly_unavailable(
-    product_cases,
-):
+def test_open_trade_uses_completed_build_bar_close_at_the_exact_as_of(product_cases):
     case = product_cases.open()
+    entry = replace(
+        case.entry,
+        reference_price=Decimal("80"),
+        anchor_price=Decimal("80"),
+    )
     replay = product_cases.replay(
         case.identity,
         case.bars[:1],
-        (case.entry,),
+        (entry,),
         ("BUILD",),
     )
 
-    result = ReferenceTradeProjector().project(replay, (), case.as_of)
+    result = ReferenceTradeProjector().project(replay, (), entry.bar_end)
     trade = result.trades[0]
 
     assert trade.status == "OPEN"
-    assert trade.mark_bar_end is None
-    assert trade.mark_reference_price is None
-    assert trade.mark_change_pct is None
+    assert trade.entry_reference_price == Decimal("80")
+    assert trade.mark_bar_end == entry.bar_end
+    assert trade.mark_reference_price == Decimal("100")
+    assert trade.mark_change_pct == Decimal("25")
     assert trade.exit_signal_id is None
     assert trade.reference_return_pct is None
-    assert result.diagnostics == ("OPEN_MARK_UNAVAILABLE",)
+    assert result.diagnostics == ()
 
 
 def test_ordered_hints_attach_only_inside_one_trade_and_do_not_change_authority(

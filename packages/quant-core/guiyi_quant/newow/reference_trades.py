@@ -321,8 +321,6 @@ def _latest_owner_mark(
     entry: StrategyAction,
     through: datetime,
     as_of: datetime,
-    *,
-    include_entry: bool,
 ) -> tuple[datetime, Decimal, int] | None:
     result: tuple[datetime, Decimal, int] | None = None
     position = 0
@@ -338,12 +336,7 @@ def _latest_owner_mark(
             or bar.completed is not True
         ):
             continue
-        after_entry = (
-            entry.bar_end <= bar.bar_end
-            if include_entry
-            else entry.bar_end < bar.bar_end
-        )
-        if after_entry and bar.bar_end <= through:
+        if entry.bar_end <= bar.bar_end <= through:
             _price(bar.close)
             result = (bar.bar_end, bar.close, position)
         position += 1
@@ -571,7 +564,6 @@ class ReferenceTradeProjector:
                     _entry,
                     as_of,
                     as_of,
-                    include_entry=False,
                 )
                 changes: dict[str, object] = {
                     "holding_bars": last_index - entry_index
@@ -596,7 +588,6 @@ class ReferenceTradeProjector:
                 _entry,
                 boundary.effective_at,
                 as_of,
-                include_entry=True,
             )
             if mark is None:
                 trades[trade_position] = replace(
