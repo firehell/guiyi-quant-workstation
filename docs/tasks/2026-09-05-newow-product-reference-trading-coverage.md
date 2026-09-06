@@ -83,4 +83,6 @@ P4 当前候选已实现并定向验证 `product_service.py`、`product_reader.p
 
 P4 候选的局部实现提交为 `098a6b15c`（section 编排）、`7ba332325`（typed read-only API）、`c96430dc0`（缓存/资源/来源初版）、`22b121fc1`（首轮 Review 合同修复）、`44687e475`（扩展性能入口）和 `907179231`（剩余 scoped Review finding 修复）。`907179231` 回退了没有独立等价证据的 `_attach_hints` 索引改动；本包不以未证明优化改变冻结 Core。当前有效的影响范围证据为：P2/P3/P4/旧 D1 相关 pytest `506 passed, 1 skipped`，修改源定向 mypy clean，修改文件 ruff clean。`907179231a091f75398fc95037c493d5786ec7a8` 上隔离 fake MDS 的 nearest-rank P95 为：4001根60m冷请求30次 `171.381ms`、逐事实重验后缓存命中30次 `73.734ms`、8001根压力30次 `322.930ms`；601根阶段样本的读取+验证 `5.551ms`、replay `14.052ms`、ReferenceProjection `0.103ms`、reference总计 `21.510ms`、comparator总计 `25.856ms`，90根历史修订重验30次 `8.753ms`、序列化30次 `3.102ms`，响应 `289172 bytes`、RSS high-water `223641600 bytes`。排队、取消、最后消费者语义使用确定性并发测试而非时间P95。该性能证据只覆盖后端 fake-MDS 阶段，不是浏览器、真实 MDS 或真实工作站验收；最终候选若相关源码/fixture变化必须使相应证据失效并补跑。
 
+独立 Sol/high reviewer 在 exact head `d2322c246ef5d9cc2507f7caea38fc3df6c9b322` 完成 Spec 与 Standards/Quality scoped 复审，两轴均为 PASS、P1/P2/P3 finding 均为 none；审阅复用了上述 exact source tree 的有效测试/性能证据并另行确认 `git diff --check` clean，结论为 `REVIEW_COMPLETE / 允许集成 develop`。该结论只覆盖 P4 包，不扩大到 P5/P6、完整 page parity、OOS、发布或 Runtime。
+
 P4 集成不授权 P5 Web、P6 全项目验收、真实工作站性能、RQData/Canonical/DB/Redis 写入、Runtime、通知、main/tag/release 或交易操作。

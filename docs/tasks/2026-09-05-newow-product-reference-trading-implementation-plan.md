@@ -678,7 +678,7 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 
 **Interfaces / 依赖:** P1/P2/P3接口 → `NewowProductService.query(query) -> NewowProductResult`；通过P4 request wrapper扩展工程参数，不改变P2/P3公有函数签名。此前 Tasks 0–13 历史不重做。
 
-- [ ] **先写串联RED：** 覆盖晚CLEAR/延长cutoff、夜盘trading_day、as_of早于窗口、晚换月、viewport/chart cursor/history_limit独立；默认chart对reference/auxiliary/explanation/comparator spy均零调用。
+- [x] **先写串联RED：** 覆盖晚CLEAR/延长cutoff、夜盘trading_day、as_of早于窗口、晚换月、viewport/chart cursor/history_limit独立；默认chart对reference/auxiliary/explanation/comparator spy均零调用。
 
 ```python
 def test_viewport_does_not_change_statistics(product_cases):
@@ -691,21 +691,21 @@ def test_viewport_does_not_change_statistics(product_cases):
     assert a.meta.reference_input_sha256 == b.meta.reference_input_sha256
 ```
 
-- [ ] **窗口解析：** 增加应用层resolver，使用MDS Calendar/Session和trading_day解析requested/effective performance through与reference cutoff；projection和summary使用同cutoff。非交易日、节假日、夜盘和未完成W1显式状态，不用午夜/now/任意Bar代替；定向测试覆盖`fact_time == cutoff`、`cutoff == as_of`、Z与`+08:00`同instant、`as_of == now`合法以及未来一微秒422。
-- [ ] **section编排：** chart只replay当前组合并先验证后裁剪；auxiliary只算一个component；reference读取完整统计输入；explanation只装配趋势/震荡三周期必要事实和D1前缀；comparator显式运行。chart读取不因默认performance扩大为研究全历史。
-- [ ] **P3 source-facts builder：** 服务端构造role/source-category/formula-adapter/frequency/bar_end/owner/as_of/dependency绑定；当前数值逐字段来自受控replay/Bar。无法证明的target/composite输入精确降级，previous_close guard保持未激活。HTTP不接收evidence/signal/hash。
-- [ ] **一致性和分页：** section指纹基于实际Bar/owner/Calendar-Session/确认事实/版本；reference指纹不含viewport/history limit。历史按`(entry_bar_end, entry_sequence, id)`稳定逆序；cursor只解析版本/查询身份/指纹/last-key并校验长度，不作为路径/SQL/对象反序列化入口。
-- [ ] **Snapshot/cache：** 有界进程内token绑定共同依赖；entry namespace绑定规范化查询身份，entry保存可扩充的逐Bar事实证明，跨section要求至少一项共同事实且重叠事实逐值一致；section result/dedup key另含实际输入指纹、component、requested window、cursor/page identity和limit，不同专属参数绝不碰撞。LRU最多32条/128MiB/单entry累计32MiB，超限section bypass，关闭缓存结果等价；TTL仅淘汰；只有成功验证且缓存的结果返回token，超大/关闭/失败时为null。数据修订、旧cursor/token和共同事实冲突分类409。
-- [ ] **取消/重型资源：** 分页和阶段边界检查取消；共享计算按消费者引用计数，最后消费者取消才停止。reference/comparator进程内并发1、等待2，队列满分类资源错误；阻塞计算不直接占满event loop，不跨线程共享Session。
+- [x] **窗口解析：** 增加应用层resolver，使用MDS Calendar/Session和trading_day解析requested/effective performance through与reference cutoff；projection和summary使用同cutoff。非交易日、节假日、夜盘和未完成W1显式状态，不用午夜/now/任意Bar代替；定向测试覆盖`fact_time == cutoff`、`cutoff == as_of`、Z与`+08:00`同instant、`as_of == now`合法以及未来一微秒422。
+- [x] **section编排：** chart只replay当前组合并先验证后裁剪；auxiliary只算一个component；reference读取完整统计输入；explanation只装配趋势/震荡三周期必要事实和D1前缀；comparator显式运行。chart读取不因默认performance扩大为研究全历史。
+- [x] **P3 source-facts builder：** 服务端构造role/source-category/formula-adapter/frequency/bar_end/owner/as_of/dependency绑定；当前数值逐字段来自受控replay/Bar。无法证明的target/composite输入精确降级，previous_close guard保持未激活。HTTP不接收evidence/signal/hash。
+- [x] **一致性和分页：** section指纹基于实际Bar/owner/Calendar-Session/确认事实/版本；reference指纹不含viewport/history limit。历史按`(entry_bar_end, entry_sequence, id)`稳定逆序；cursor只解析版本/查询身份/指纹/last-key并校验长度，不作为路径/SQL/对象反序列化入口。
+- [x] **Snapshot/cache：** 有界进程内token绑定共同依赖；entry namespace绑定规范化查询身份，entry保存可扩充的逐Bar事实证明，跨section要求至少一项共同事实且重叠事实逐值一致；section result/dedup key另含实际输入指纹、component、requested window、cursor/page identity和limit，不同专属参数绝不碰撞。LRU最多32条/128MiB/单entry累计32MiB，超限section bypass，关闭缓存结果等价；TTL仅淘汰；只有成功验证且缓存的结果返回token，超大/关闭/失败时为null。数据修订、旧cursor/token和共同事实冲突分类409。
+- [x] **取消/重型资源：** 分页和阶段边界检查取消；共享计算按消费者引用计数，最后消费者取消才停止。reference/comparator进程内并发1、等待2，队列满分类资源错误；阻塞计算不直接占满event loop，不跨线程共享Session。
 
-- [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
+- [x] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests/newow/test_product_service.py
 ```
 
-- [ ] **性能与正确性fixture：** 九组合、普通D1、长60m、4001分页、更大压力、多换月、W1零Bar、冷/热/修订、未请求零调用、取消/队列/cache淘汰/超大bypass。正式P95同一代表场景至少30次，冻结环境/HEAD/输入指纹/Bar与owner/窗口/cache状态并分解阶段。
-- [ ] **提交与Review：** 只stage Task14源码/测试，提交 `feat(newow): compose sectioned product snapshots`；按影响验证后独立Spec/quality审阅。
+- [x] **性能与正确性fixture：** 九组合、普通D1、长60m、4001分页、更大压力、多换月、W1零Bar、冷/热/修订、未请求零调用、取消/队列/cache淘汰/超大bypass。正式P95同一代表场景至少30次，冻结环境/HEAD/输入指纹/Bar与owner/窗口/cache状态并分解阶段。
+- [x] **提交与Review：** 只stage Task14源码/测试，提交 `feat(newow): compose sectioned product snapshots`；按影响验证后独立Spec/quality审阅。
 
 ---
 
@@ -718,7 +718,7 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 
 **Interfaces / 依赖:** Task14 → §2.1新API，旧endpoint不扩参、不改变错误语义。
 
-- [ ] **TestClient + dependency override：** fake service/get_db，不连接production。合法九组合/五section；非法section专属参数、strategy=mirror、frequency=15m、series=continuous、contract/evidence/signal/hash、naive/future as_of、坏游标422；`as_of==now`合法、未来一微秒422、Z与`+08:00`同instant；身份/数据世代409；资源满429。
+- [x] **TestClient + dependency override：** fake service/get_db，不连接production。合法九组合/五section；非法section专属参数、strategy=mirror、frequency=15m、series=continuous、contract/evidence/signal/hash、naive/future as_of、坏游标422；`as_of==now`合法、未来一微秒422、Z与`+08:00`同instant；身份/数据世代409；资源满429。
 
 ```python
 def test_reference_numbers_are_decimal_strings(product_api_client):
@@ -734,17 +734,17 @@ def test_reference_numbers_are_decimal_strings(product_api_client):
 ```
 
 本Task的product_api_client fixture返回自有closed case；不能沿用真实DB session。
-- [ ] **Schema：** 独立`market_newow_product.py`；status/strategy/frequency/section/delivery为Literal/enum，Decimal显式十进制string serializer、UTC ISO、清晰null；共同身份、section指纹、读取时间、组件source/evidence/applicability/repaint/formal eligibility/allowed uses/parity difference、分页与reference cutoff完整。禁止宽泛任意交易对象。
-- [ ] **数据归属：** API只调用service并序列化，不计算收益、均线或拼动作。旧`trend-detail`继续原D1 schema/profile/marker/calculation；新路线禁止复用旧schema加一堆可选字段。
-- [ ] **状态传递：** 没请求、warming、evidence required、not applicable、成功无动作、合法零CLOSED、输入冲突/失败分别表达。未请求section为null+not_requested，Core不新增该枚举；顶层ready不掩盖子功能缺口。杯柄clean-room来源与照妖镜retrospective语义完整。
+- [x] **Schema：** 独立`market_newow_product.py`；status/strategy/frequency/section/delivery为Literal/enum，Decimal显式十进制string serializer、UTC ISO、清晰null；共同身份、section指纹、读取时间、组件source/evidence/applicability/repaint/formal eligibility/allowed uses/parity difference、分页与reference cutoff完整。禁止宽泛任意交易对象。
+- [x] **数据归属：** API只调用service并序列化，不计算收益、均线或拼动作。旧`trend-detail`继续原D1 schema/profile/marker/calculation；新路线禁止复用旧schema加一堆可选字段。
+- [x] **状态传递：** 没请求、warming、evidence required、not applicable、成功无动作、合法零CLOSED、输入冲突/失败分别表达。未请求section为null+not_requested，Core不新增该枚举；顶层ready不掩盖子功能缺口。杯柄clean-room来源与照妖镜retrospective语义完整。
 
-- [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
+- [x] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests/newow/test_market_newow_product_api.py
 ```
 
-- [ ] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(api): add read-only Newow product detail`；独立review给出Spec和quality结论，修复后重新验证。
+- [x] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(api): add read-only Newow product detail`；独立review给出Spec和quality结论，修复后重新验证。
 
 ---
 
@@ -758,8 +758,8 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 
 **Interfaces / 依赖:** Task14/15 → P4交付Gate；不通过替换旧API实现来省测试。
 
-- [ ] **旧响应回归：** 现有D1 route、参数限制、profile和marker合同测试全部继续通过；view对应接口错误仍一致。新服务复用primitive不等于必须重写旧服务，薄适配只在全部旧合同可证明保留时才允许。
-- [ ] **零副作用spy：** 依赖层RQData/network/通知/maintenance/DB commit/Redis写调用都注入“被调用即失败”的fake；一次新GET只走只读MDS路径。
+- [x] **旧响应回归：** 现有D1 route、参数限制、profile和marker合同测试全部继续通过；view对应接口错误仍一致。新服务复用primitive不等于必须重写旧服务，薄适配只在全部旧合同可证明保留时才允许。
+- [x] **零副作用spy：** 依赖层RQData/network/通知/maintenance/DB commit/Redis写调用都注入“被调用即失败”的fake；一次新GET只走只读MDS路径。
 
 ```python
 def test_new_get_does_not_mutate(product_api_client, forbidden_writes):
@@ -771,20 +771,20 @@ def test_new_get_does_not_mutate(product_api_client, forbidden_writes):
     assert forbidden_writes.calls == []
 ```
 
-- [ ] **负载与只读合同：** fake行为证明无RQData、网络、通知、commit、Redis、Runtime；无60品种×九组合扇出；4001前缀与更大压力不截断；未请求reference/comparator零调用；旧cursor+新指纹409。
-- [ ] **热点先测后改：** 测 `_attach_hints`、`_latest_owner_mark`、多auxiliary和P4重复读取/replay/serialize。只有占比或增长显著才按owner/有序区间建局部索引；用同BarCLEAR→BUILD、无序Hint、中断和Decimal逐字段差分证明等价，不建第二套投影。
-- [ ] **性能报告：** 冷/验证后热/修订后重算各至少30次代表场景，记录排队/读取/校验/replay/projection/explanation-comparator/serialize/bytes/RSS。浏览器≤2s/500ms/300ms/100ms和完整统计≤5s仅保留P5/P6端到端目标，不冒充本轮实测。
-- [ ] **Task 16.1 条件优化：** Task16主体只测量。若 `_attach_hints`/`_latest_owner_mark` 占比或增长显著，才在独立commit精确修改 `packages/quant-core/guiyi_quant/newow/reference_trades.py` 与 `services/quant-api/tests/newow/test_reference_trades.py`、`test_reference_interruptions.py`；若多auxiliary显著，才修改 `product_auxiliary.py` 与 `test_product_auxiliary.py`。逐字段差分通过后才能保留优化；否则记录无需优化，不改冻结Core。
-- [ ] **P4 package Gate：** 在候选head逐条核对AC21–28；执行新P4测试、本轮实际修改的P2/P3保护测试、旧D1兼容、只读保护、相关Ruff/Mypy、OpenSpec/secret/diff和性能代表样本。已在相同相关tree通过且输入未变的证据可复用；不跑P5/P6或全仓库。
-- [ ] **交付：** 只在实现与命令真实存在后更新TESTING.md。P4只读代码验收不等于P5 Web、完整page parity、OOS、发布或Runtime。
+- [x] **负载与只读合同：** fake行为证明无RQData、网络、通知、commit、Redis、Runtime；无60品种×九组合扇出；4001前缀与更大压力不截断；未请求reference/comparator零调用；旧cursor+新指纹409。
+- [x] **热点先测后改：** 测 `_attach_hints`、`_latest_owner_mark`、多auxiliary和P4重复读取/replay/serialize。只有占比或增长显著才按owner/有序区间建局部索引；用同BarCLEAR→BUILD、无序Hint、中断和Decimal逐字段差分证明等价，不建第二套投影。
+- [x] **性能报告：** 冷/验证后热/修订后重算各至少30次代表场景，记录排队/读取/校验/replay/projection/explanation-comparator/serialize/bytes/RSS。浏览器≤2s/500ms/300ms/100ms和完整统计≤5s仅保留P5/P6端到端目标，不冒充本轮实测。
+- [x] **Task 16.1 条件优化：** Task16主体只测量。若 `_attach_hints`/`_latest_owner_mark` 占比或增长显著，才在独立commit精确修改 `packages/quant-core/guiyi_quant/newow/reference_trades.py` 与 `services/quant-api/tests/newow/test_reference_trades.py`、`test_reference_interruptions.py`；若多auxiliary显著，才修改 `product_auxiliary.py` 与 `test_product_auxiliary.py`。逐字段差分通过后才能保留优化；否则记录无需优化，不改冻结Core。
+- [x] **P4 package Gate：** 在候选head逐条核对AC21–28；执行新P4测试、本轮实际修改的P2/P3保护测试、旧D1兼容、只读保护、相关Ruff/Mypy、OpenSpec/secret/diff和性能代表样本。已在相同相关tree通过且输入未变的证据可复用；不跑P5/P6或全仓库。
+- [x] **交付：** 只在实现与命令真实存在后更新TESTING.md。P4只读代码验收不等于P5 Web、完整page parity、OOS、发布或Runtime。
 
-- [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
+- [x] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests/newow
 ```
 
-- [ ] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `test(api): protect legacy detail and read-only boundaries`；独立review给出Spec和quality结论，修复后重新验证。
+- [x] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `test(api): protect legacy detail and read-only boundaries`；独立review给出Spec和quality结论，修复后重新验证。
 
 ---
 
