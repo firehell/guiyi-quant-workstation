@@ -1,8 +1,8 @@
 # SuBing Knowledge Foundation · Stage 1 Spec
 
-日期：2026-09-06  
-状态：`SPEC_INTERNAL_REVIEW_PASSED / IMPLEMENTATION_NOT_STARTED`  
-规划基线：`develop@5844958b4075b393000522e2d3597c29d065077d`  
+日期：2026-09-06
+状态：`SPEC_INTERNAL_REVIEW_PASSED / IMPLEMENTATION_NOT_STARTED`
+规划基线：`develop@5844958b4075b393000522e2d3597c29d065077d`
 任务来源：2026-09-06 已完成的苏冰课程资料只读盘点，以及 Owner 已确认的“共用知识基础数据独立建设、其他应用单独开发、当前归一量化不受影响”原则。
 
 > 本文只定义 Stage 1：`SuBing Knowledge Foundation`。它是后续课程知识助手、行情研究助手、案例/评测系统与可选专家化模型共同消费的私有研究数据底座，不是归一量化当前稳定产品面的扩展。Stage 1 不修改现有 SuBing Alert、Market、Newow、HTDY、Canonical、Runtime、AlertEvent 或任何交易合同。
