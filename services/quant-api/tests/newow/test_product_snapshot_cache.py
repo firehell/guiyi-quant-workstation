@@ -10,6 +10,15 @@ def test_section_parameter_key_prevents_cross_component_or_cursor_hits():
     assert cache.get("facts", ("reference", "cursor-a", 50)) is None
 
 
+def test_verified_sections_expand_one_common_fact_entry():
+    cache = SnapshotCache(max_entries=1, max_bytes=1024, max_entry_bytes=512)
+    token = cache.put("facts", ("chart", 500), "chart", 64)
+    expanded = cache.put("facts", ("auxiliary", "cup_handle"), "cup", 64)
+    assert token == expanded
+    assert cache.get_by_token(token, "facts", ("chart", 500)) == "chart"
+    assert cache.get_by_token(token, "facts", ("auxiliary", "cup_handle")) == "cup"
+
+
 def test_lru_eviction_and_oversized_bypass_return_nullable_token():
     cache = SnapshotCache(max_entries=2, max_bytes=128, max_entry_bytes=80)
     first = cache.put("one", ("chart",), 1, 50)

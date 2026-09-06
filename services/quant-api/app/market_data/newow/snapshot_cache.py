@@ -13,11 +13,10 @@ from time import monotonic
 @dataclass(slots=True)
 class _Entry:
     fact_key: str
-    section_key: tuple[object, ...]
-    value: object
-    size: int
     token: str
     expires_at: float
+    values: dict[tuple[object, ...], object]
+    sizes: dict[tuple[object, ...], int]
 
 
 class SnapshotCache:
@@ -39,24 +38,22 @@ class SnapshotCache:
         self._ttl = ttl_seconds
         self._enabled = enabled
         self._now = now
-        self._entries: OrderedDict[tuple[str, tuple[object, ...]], _Entry] = (
-            OrderedDict()
-        )
-        self._tokens: dict[str, tuple[str, tuple[object, ...]]] = {}
+        self._entries: OrderedDict[str, _Entry] = OrderedDict()
+        self._tokens: dict[str, str] = {}
         self._bytes = 0
         self._lock = RLock()
 
-    def _drop(self, key: tuple[str, tuple[object, ...]]) -> None:
-        entry = self._entries.pop(key, None)
+    def _drop(self, fact_key: str) -> None:
+        entry = self._entries.pop(fact_key, None)
         if entry is not None:
             self._tokens.pop(entry.token, None)
-            self._bytes -= entry.size
+            self._bytes -= sum(entry.sizes.values())
 
     def _expire(self) -> None:
         current = self._now()
-        for key, entry in tuple(self._entries.items()):
+        for fact_key, entry in tuple(self._entries.items()):
             if entry.expires_at <= current:
-                self._drop(key)
+                self._drop(fact_key)
 
     def put(
         self,
@@ -77,37 +74,44 @@ class SnapshotCache:
             or retained_size > self._max_bytes
         ):
             return None
-        key = (fact_key, tuple(section_key))
+        normalized_section = tuple(section_key)
         with self._lock:
             self._expire()
-            self._drop(key)
-            token = token or token_urlsafe(24)
-            entry = _Entry(
-                fact_key,
-                key[1],
-                value,
-                retained_size,
-                token,
-                self._now() + self._ttl,
-            )
-            self._entries[key] = entry
-            self._tokens[token] = key
+            entry = self._entries.get(fact_key)
+            if entry is None:
+                token = token or token_urlsafe(24)
+                entry = _Entry(
+                    fact_key,
+                    token,
+                    self._now() + self._ttl,
+                    {},
+                    {},
+                )
+                self._entries[fact_key] = entry
+                self._tokens[token] = fact_key
+            elif token is not None and token != entry.token:
+                return None
+            previous_size = entry.sizes.get(normalized_section, 0)
+            entry.values[normalized_section] = value
+            entry.sizes[normalized_section] = retained_size
+            entry.expires_at = self._now() + self._ttl
+            self._entries.move_to_end(fact_key)
+            self._bytes -= previous_size
             self._bytes += retained_size
             while (
                 len(self._entries) > self._max_entries or self._bytes > self._max_bytes
             ):
                 self._drop(next(iter(self._entries)))
-            return token if key in self._entries else None
+            return entry.token if fact_key in self._entries else None
 
     def get(self, fact_key: str, section_key: tuple[object, ...]) -> object | None:
-        key = (fact_key, tuple(section_key))
         with self._lock:
             self._expire()
-            entry = self._entries.get(key)
+            entry = self._entries.get(fact_key)
             if entry is None:
                 return None
-            self._entries.move_to_end(key)
-            return entry.value
+            self._entries.move_to_end(fact_key)
+            return entry.values.get(tuple(section_key))
 
     def get_by_token(
         self,
@@ -117,14 +121,12 @@ class SnapshotCache:
     ) -> object | None:
         with self._lock:
             self._expire()
-            key = self._tokens.get(token)
-            expected = (fact_key, tuple(section_key))
-            if key != expected:
+            bound_fact_key = self._tokens.get(token)
+            if bound_fact_key != fact_key:
                 return None
             return self.get(fact_key, section_key)
 
     def fact_key_for_token(self, token: str) -> str | None:
         with self._lock:
             self._expire()
-            key = self._tokens.get(token)
-            return None if key is None else key[0]
+            return self._tokens.get(token)

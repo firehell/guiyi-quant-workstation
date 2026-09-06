@@ -169,6 +169,7 @@ class SourceFactOut(_Out):
     role: str
     source_category: str
     adapter_version: str
+    formula_versions: list[str]
     frequency: str | None
     bar_end: datetime | None
     physical_contract: str | None

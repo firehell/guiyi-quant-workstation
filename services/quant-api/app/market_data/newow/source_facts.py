@@ -31,6 +31,7 @@ class SourceFact:
     role: str
     source_category: str
     adapter_version: str
+    formula_versions: tuple[str, ...]
     frequency: ProductFrequency | None
     bar_end: datetime | None
     physical_contract: str | None
@@ -103,6 +104,7 @@ def _source(
             role,
             "strategy_replay",
             SOURCE_FACT_ADAPTER_VERSION,
+            replay.identity.formula_versions,
             replay.identity.frequency,
             None,
             None,
@@ -117,6 +119,7 @@ def _source(
         role,
         "strategy_replay",
         SOURCE_FACT_ADAPTER_VERSION,
+        replay.identity.formula_versions,
         replay.identity.frequency,
         bar.bar_end,
         bar.physical_contract,
@@ -221,6 +224,7 @@ def target_absorb_gap_sources(as_of: datetime) -> tuple[SourceFact, ...]:
             role,
             "evidence_gap",
             SOURCE_FACT_ADAPTER_VERSION,
+            (),
             None,
             None,
             None,
@@ -232,3 +236,75 @@ def target_absorb_gap_sources(as_of: datetime) -> tuple[SourceFact, ...]:
         )
         for role in roles
     )
+
+
+def target_absorb_available_sources(
+    context: ContextSnapshot, view_frequency: ProductFrequency
+) -> tuple[SourceFact, ...]:
+    """Report current page inputs that are tied directly to server facts."""
+
+    slots = {
+        ProductFrequency.WEEKLY: context.weekly,
+        ProductFrequency.DAILY: context.daily,
+        ProductFrequency.HOURLY: context.hourly,
+    }
+    requested = (
+        ("signal_daily", slots[ProductFrequency.DAILY], "strategy_replay"),
+        ("signal_weekly", slots[ProductFrequency.WEEKLY], "strategy_replay"),
+        (
+            "current_price",
+            slots[ProductFrequency(view_frequency)],
+            "canonical_bar_close",
+        ),
+    )
+    output: list[SourceFact] = []
+    for role, slot, category in requested:
+        if slot.frame is None or slot.identity is None:
+            output.append(
+                SourceFact(
+                    role,
+                    category,
+                    SOURCE_FACT_ADAPTER_VERSION,
+                    slot.formula_versions,
+                    slot.frequency,
+                    None,
+                    None,
+                    None,
+                    context.as_of,
+                    None,
+                    "unavailable",
+                    "NEWOW_SOURCE_FACT_FRAME_UNAVAILABLE",
+                )
+            )
+            continue
+        frame = slot.frame
+        bar = frame.bar.bar
+        payload = "|".join(
+            (
+                role,
+                category,
+                slot.identity.profile_id,
+                *slot.formula_versions,
+                bar.source_identity,
+                bar.physical_contract,
+                bar.segment_id,
+                bar.bar_end.isoformat(),
+                str(bar.close),
+            )
+        )
+        output.append(
+            SourceFact(
+                role,
+                category,
+                SOURCE_FACT_ADAPTER_VERSION,
+                slot.formula_versions,
+                slot.frequency,
+                bar.bar_end,
+                bar.physical_contract,
+                bar.segment_id,
+                context.as_of,
+                sha256(payload.encode()).hexdigest(),
+                "ready",
+            )
+        )
+    return tuple(output)

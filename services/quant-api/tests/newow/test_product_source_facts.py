@@ -5,6 +5,7 @@ from guiyi_quant.newow.product_contracts import MainState, ProductFrequency
 
 from app.market_data.newow.source_facts import (
     build_composite_inputs,
+    target_absorb_available_sources,
     target_absorb_gap_sources,
 )
 
@@ -77,3 +78,18 @@ def test_unproven_target_roles_remain_explicit_evidence_gaps(product_cases):
         "target_daily",
     }
     assert all(source.status == "evidence_required" for source in sources)
+
+
+def test_current_price_source_is_bound_to_the_authoritative_view_close(product_cases):
+    trend = _replays(product_cases, "trend")
+    oscillation = _replays(product_cases, "oscillation")
+    as_of = min(replay.frames[-1].bar.bar.bar_end for replay in trend.values())
+    inputs = build_composite_inputs(trend, oscillation, as_of)
+
+    sources = target_absorb_available_sources(inputs.context, ProductFrequency.DAILY)
+
+    current = next(source for source in sources if source.role == "current_price")
+    assert current.source_category == "canonical_bar_close"
+    assert current.bar_end == inputs.context.daily.bar_end
+    assert current.physical_contract == inputs.context.daily.physical_contract
+    assert current.dependency_sha256 is not None

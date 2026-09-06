@@ -17,6 +17,31 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
+Newow P4 分区编排、typed API、统计截止、来源事实、快照/资源边界、旧 D1 兼容与只读保护：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/newow/test_product_service.py \
+  services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/newow/test_product_source_facts.py \
+  services/quant-api/tests/newow/test_product_snapshot_cache.py \
+  services/quant-api/tests/newow/test_product_resource_gate.py \
+  services/quant-api/tests/newow/test_market_newow_product_api.py \
+  services/quant-api/tests/newow/test_product_readonly_compatibility.py \
+  services/quant-api/tests/newow/test_market_newow_api.py
+```
+
+隔离 fake MDS 的 P4 后端冷/热/长前缀复测入口（不代表浏览器或真实工作站验收）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -s \
+  services/quant-api/tests/newow/test_product_performance.py
+```
+
+以上 Newow 命令只使用内存 fixture/fake MDS，不连接 RQData、production PostgreSQL/Redis、Runtime 或通知服务。
+
 Market Home derived projection、API fallback 与 apply invalidation：
 
 ```bash

@@ -225,6 +225,10 @@ def newow_strategy_detail(
         ) from exc
     except ValueError as exc:
         code = str(exc)
+        if not code.startswith("NEWOW_"):
+            raise HTTPException(
+                status_code=500, detail={"code": "NEWOW_INTERNAL_ERROR"}
+            ) from exc
         status = (
             422
             if code.startswith("NEWOW_INVALID_")

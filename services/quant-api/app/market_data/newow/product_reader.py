@@ -193,6 +193,7 @@ class NewowProductReader:
             raise NewowProductReadError("NEWOW_INVALID_AS_OF")
         if product not in self._active_products:
             raise NewowProductReadError("NEWOW_INVALID_PRODUCT")
+        self._check_cancelled()
         since = performance_since or self._coverage.product_start(product)
         latest = self._coverage.latest_complete_day((product,))
         requested_through = performance_through or latest
@@ -204,21 +205,27 @@ class NewowProductReader:
         days = self._market_data.trading_days_overlapping_window(
             symbol=product, start=start, end=cutoff + _MICROSECOND
         )
+        if not days or any(
+            current <= previous for previous, current in zip(days, days[1:])
+        ):
+            raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
         if latest <= cutoff.astimezone(_SHANGHAI).date() and latest not in days:
             raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
-        complete = tuple(
-            day
-            for day in days
-            if day <= requested_through
-            and day <= latest
-            and max(
-                window.end
-                for window in self._market_data.session_windows(
-                    symbol=product, trading_day=day
+        complete = []
+        for day in days:
+            self._check_cancelled()
+            if (
+                day <= requested_through
+                and day <= latest
+                and max(
+                    window.end
+                    for window in self._market_data.session_windows(
+                        symbol=product, trading_day=day
+                    )
                 )
-            )
-            <= cutoff
-        )
+                <= cutoff
+            ):
+                complete.append(day)
         if not complete or complete[-1] < since:
             raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
         actual_through = complete[-1]
@@ -242,24 +249,35 @@ class NewowProductReader:
         """Choose a bounded authoritative trading-day viewport for recent Bars."""
 
         cutoff = utc_timestamp(as_of)
+        if cutoff > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+        if product not in self._active_products:
+            raise NewowProductReadError("NEWOW_INVALID_PRODUCT")
+        if type(limit) is not int or limit <= 0:
+            raise NewowProductReadError("NEWOW_INVALID_CHART_LIMIT")
+        self._check_cancelled()
         start_day = self._coverage.product_start(product)
         latest = self._coverage.latest_complete_day((product,))
         start = datetime.combine(start_day, time.min, _SHANGHAI)
-        days = tuple(
-            day
-            for day in self._market_data.trading_days_overlapping_window(
-                symbol=product, start=start, end=cutoff + _MICROSECOND
-            )
-            if day <= latest
-            and max(
-                window.end
-                for window in self._market_data.session_windows(
-                    symbol=product, trading_day=day
+        days = []
+        for day in self._market_data.trading_days_overlapping_window(
+            symbol=product, start=start, end=cutoff + _MICROSECOND
+        ):
+            self._check_cancelled()
+            if (
+                day <= latest
+                and max(
+                    window.end
+                    for window in self._market_data.session_windows(
+                        symbol=product, trading_day=day
+                    )
                 )
-            )
-            <= cutoff
-        )
-        if not days:
+                <= cutoff
+            ):
+                days.append(day)
+        if not days or any(
+            current <= previous for previous, current in zip(days, days[1:])
+        ):
             raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
         bars_per_day = (
             4 if ProductFrequency(frequency) is ProductFrequency.HOURLY else 1

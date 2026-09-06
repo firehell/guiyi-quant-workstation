@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
 from hashlib import sha256
@@ -55,7 +55,12 @@ from .product_reader import (
 )
 from .resource_gate import HeavyResourceGate
 from .snapshot_cache import SnapshotCache
-from .source_facts import SourceFact, build_composite_inputs, target_absorb_gap_sources
+from .source_facts import (
+    SourceFact,
+    build_composite_inputs,
+    target_absorb_available_sources,
+    target_absorb_gap_sources,
+)
 
 
 SCHEMA_VERSION = "newow_product_detail_v1"
@@ -132,10 +137,22 @@ class ProductServiceQuery:
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         if self.section is not ProductSection.CHART and self.chart_before is not None:
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
+        if self.section is not ProductSection.CHART and self.chart_limit != 500:
+            raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         if self.section is not ProductSection.REFERENCE and (
             self.performance_since is not None
             or self.history_before is not None
             or self.history_limit != 50
+        ):
+            raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
+        if (
+            self.section
+            in {
+                ProductSection.REFERENCE,
+                ProductSection.EXPLANATION,
+                ProductSection.COMPARATOR,
+            }
+            and self.since is not None
         ):
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
 
@@ -399,7 +416,9 @@ class NewowProductService:
                 raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
         cached = self._cache.get(fact_key, section_key)
         if isinstance(cached, NewowProductResult):
-            return cached
+            return replace(
+                cached, meta=replace(cached.meta, read_at=utc_timestamp(self._now()))
+            )
         result = self._calculate(
             request, read, identity, fact_key, section_key, resolved
         )
@@ -598,16 +617,14 @@ class NewowProductService:
         )
         if request.history_before is not None:
             marker = _decode_cursor(request.history_before, "reference", fact_key)
-            all_items = tuple(
-                item for item in all_items if item.reference_trade_id != marker
-            )
-            positions = [
+            positions = tuple(
                 index
                 for index, item in enumerate(all_items)
                 if item.reference_trade_id == marker
-            ]
-            if positions:
-                all_items = all_items[positions[0] + 1 :]
+            )
+            if len(positions) != 1:
+                raise NewowProductServiceError("NEWOW_CURSOR_GENERATION_CONFLICT")
+            all_items = all_items[positions[0] + 1 :]
         items = all_items[: request.history_limit]
         next_before = (
             _cursor(
@@ -657,7 +674,11 @@ class NewowProductService:
         inputs = build_composite_inputs(trend, oscillation, read.as_of)
         composite = calculate_composite_explanation(inputs.context, inputs.evidence)
         target = calculate_target_absorb(inputs.context, None)
-        sources = (*inputs.sources, *target_absorb_gap_sources(read.as_of))
+        sources = (
+            *inputs.sources,
+            *target_absorb_available_sources(inputs.context, identity.frequency),
+            *target_absorb_gap_sources(read.as_of),
+        )
         status = FeatureStatus(
             composite.status, composite.evidence_status, composite.reason_code
         )
