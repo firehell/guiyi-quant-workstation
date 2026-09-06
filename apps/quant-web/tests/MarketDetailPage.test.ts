@@ -15,7 +15,7 @@ function page() {
   return { source, template: parsed.descriptor.template.content }
 }
 
-test('activates generic facts for Newow and legacy views without mounting a future Newow workspace', () => {
+test('activates generic facts and mounts the isolated Newow product workspace', () => {
   const { source, template } = page()
 
   assert.match(source, /import TrendDetailWorkspace/)
@@ -28,7 +28,9 @@ test('activates generic facts for Newow and legacy views without mounting a futu
   assert.match(template, /:bars="controller\.bars\.value"/)
   assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy'"/)
   assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing'"/)
-  assert.doesNotMatch(template, /<NewowProductWorkspace/)
+  assert.match(source, /import NewowProductWorkspace/)
+  assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow'"/)
+  assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free'"/)
   assert.doesNotMatch(template, /<HtdyDetailWorkspace\s+v-else(?:\s|>)/)
 })
 
@@ -49,7 +51,8 @@ test('gives SuBing and Trend history, while alert management remains unavailable
 test('keeps Free and HTDY as separate explicit workspaces', () => {
   const { template } = page()
 
-  assert.match(template, /<FreeChartWorkspace\s+v-if="routeResult\.identity\.view === 'free'"/)
+  assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow'"/)
+  assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free'"/)
   assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy'"/)
   assert.match(template, /<TrendDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'trend'"/)
   assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing'"/)

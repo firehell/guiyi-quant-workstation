@@ -10,6 +10,7 @@ import TrendDetailWorkspace from '@/components/market/detail/TrendDetailWorkspac
 import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
+import NewowProductWorkspace from '@/components/market/detail/newow/NewowProductWorkspace.vue'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import {
@@ -126,7 +127,7 @@ function updateHtdyPreferences(htdy: FlexibleDetailPreferences) {
 
 function resolveFocus(focusBarEnd: string) {
   const identity = explicitIdentity.value
-  if ((identity?.view !== 'htdy' && identity?.view !== 'subing' && identity?.view !== 'trend') || identity.focusBarEnd !== focusBarEnd) return
+  if ((identity?.view !== 'newow' && identity?.view !== 'htdy' && identity?.view !== 'subing' && identity?.view !== 'trend') || identity.focusBarEnd !== focusBarEnd) return
   const { focusBarEnd: _focus, ...next } = identity
   void router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(next) })
 }
@@ -191,8 +192,13 @@ onBeforeUnmount(controller.dispose)
           @contract-cleared="selectContractCleared"
         />
         <section class="market-detail-page__workspace" data-detail-section="workspace-slot">
+          <NewowProductWorkspace
+            v-if="routeResult.identity.view === 'newow'"
+            :identity="routeResult.identity"
+            @focus-resolved="resolveFocus"
+          />
           <FreeChartWorkspace
-            v-if="routeResult.identity.view === 'free'"
+            v-else-if="routeResult.identity.view === 'free'"
             :identity="routeResult.identity"
             :header="header"
             :bars="controller.bars.value"
