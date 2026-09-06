@@ -1,11 +1,15 @@
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
+from guiyi_quant.newow.product_contracts import ProductFrequency
 
 from app.api import market_newow
 from app.db.session import get_db
 from app.main import app
-from app.market_data.newow.product_service import ProductServiceQuery
+from app.market_data.newow.product_service import (
+    NewowProductService,
+    ProductServiceQuery,
+)
 
 
 def _service_result(product_cases):
@@ -25,7 +29,9 @@ def test_strategy_detail_returns_only_requested_typed_section(
     monkeypatch.setattr(
         market_newow,
         "_build_product_service",
-        lambda _session: type("Fake", (), {"query": lambda _self, _query: result})(),
+        lambda _session, _cancelled=None: type(
+            "Fake", (), {"query": lambda _self, _query: result}
+        )(),
         raising=False,
     )
     app.dependency_overrides[get_db] = lambda: object()
@@ -52,6 +58,10 @@ def test_strategy_detail_returns_only_requested_typed_section(
     }
     assert isinstance(body["chart"]["value"]["bars"][0]["close"], str)
     assert body["chart"]["value"]["formal_signal_eligible"] is True
+    assert all(
+        isinstance(action["sequence"], int)
+        for action in body["chart"]["value"]["actions"]
+    )
 
 
 def test_strategy_detail_rejects_unknown_or_cross_section_inputs(monkeypatch):
@@ -124,7 +134,9 @@ def test_reference_uses_decimal_strings_and_null_empty_closed_metrics(
     monkeypatch.setattr(
         market_newow,
         "_build_product_service",
-        lambda _session: type("Fake", (), {"query": lambda _self, _query: result})(),
+        lambda _session, _cancelled=None: type(
+            "Fake", (), {"query": lambda _self, _query: result}
+        )(),
     )
     app.dependency_overrides[get_db] = lambda: object()
     with TestClient(app) as client:
@@ -156,7 +168,10 @@ def test_strategy_detail_maps_future_as_of_and_safe_internal_errors(monkeypatch)
             raise RuntimeError("password token SQL /private/path")
 
     monkeypatch.setattr(
-        market_newow, "_build_product_service", lambda _session: Fake(), raising=False
+        market_newow,
+        "_build_product_service",
+        lambda _session, _cancelled=None: Fake(),
+        raising=False,
     )
     app.dependency_overrides[get_db] = lambda: object()
     with TestClient(app, raise_server_exceptions=False) as client:
@@ -178,3 +193,65 @@ def test_strategy_detail_maps_future_as_of_and_safe_internal_errors(monkeypatch)
     assert internal.status_code == 500
     assert internal.json() == {"detail": {"code": "NEWOW_INTERNAL_ERROR"}}
     assert "password" not in internal.text
+
+
+def test_all_research_sections_validate_against_explicit_wire_models(product_cases):
+    from newow.test_product_service import _MultiReader
+
+    bars = {
+        frequency: product_cases.primitive_input("trend", frequency).bars
+        for frequency in ProductFrequency
+    }
+    as_of = min(items[-1].bar.bar_end for items in bars.values())
+    multi = NewowProductService(
+        lambda _context, _cancelled: _MultiReader(bars), now=lambda: as_of
+    )
+    explanation = market_newow._product_response(
+        multi.query(
+            ProductServiceQuery("rb", "trend", "1d", section="explanation", as_of=as_of)
+        )
+    )
+    assert explanation.explanation.value is not None
+
+    daily = product_cases.primitive_input("oscillation", "1d")
+    single = NewowProductService(
+        lambda _context, _cancelled: _MultiReader({ProductFrequency.DAILY: daily.bars}),
+        now=lambda: daily.bars[-1].bar.bar_end,
+    )
+    comparator = market_newow._product_response(
+        single.query(
+            ProductServiceQuery(
+                "rb",
+                "oscillation",
+                "1d",
+                section="comparator",
+                as_of=daily.bars[-1].bar.bar_end,
+            )
+        )
+    )
+    assert comparator.comparator.value is not None
+
+    trend = product_cases.primitive_input("trend", "1d")
+    auxiliary_service = NewowProductService(
+        lambda _context, _cancelled: _MultiReader({ProductFrequency.DAILY: trend.bars}),
+        now=lambda: trend.bars[-1].bar.bar_end,
+    )
+    for component in (
+        "main_force_control",
+        "up_down_energy",
+        "zhaoyao_mirror",
+        "cup_handle",
+    ):
+        response = market_newow._product_response(
+            auxiliary_service.query(
+                ProductServiceQuery(
+                    "rb",
+                    "trend",
+                    "1d",
+                    section="auxiliary",
+                    component=component,
+                    as_of=trend.bars[-1].bar.bar_end,
+                )
+            )
+        )
+        assert response.auxiliary.value is not None

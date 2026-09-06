@@ -49,10 +49,12 @@ from guiyi_quant.newow.target_absorb_display import calculate_target_absorb
 
 from .product_query import NewowProductQuery, ProductReadWindow
 from .product_reader import (
+    NewowProductReadCancelled,
     NewowProductReader,
     ProductReadSet,
     ResolvedPerformanceWindow,
 )
+from .inflight import InFlightCoordinator
 from .resource_gate import HeavyResourceGate
 from .snapshot_cache import SnapshotCache
 from .source_facts import (
@@ -304,7 +306,9 @@ def _cursor(payload: Mapping[str, object]) -> str:
     return urlsafe_b64encode(raw).decode().rstrip("=")
 
 
-def _decode_cursor(value: str, expected_kind: str, fingerprint: str) -> str:
+def _decode_cursor(
+    value: str, expected_kind: str, fingerprint: str, page_identity: str
+) -> str:
     if not isinstance(value, str) or not 1 <= len(value) <= 2048:
         raise NewowProductServiceError("NEWOW_CURSOR_INVALID")
     try:
@@ -317,10 +321,57 @@ def _decode_cursor(value: str, expected_kind: str, fingerprint: str) -> str:
         or payload.get("v") != 1
         or payload.get("kind") != expected_kind
         or payload.get("fingerprint") != fingerprint
+        or payload.get("page_identity") != page_identity
         or not isinstance(payload.get("before"), str)
     ):
         raise NewowProductServiceError("NEWOW_CURSOR_GENERATION_CONFLICT")
     return payload["before"]
+
+
+def _snapshot_namespace(identity: ProductIdentity, as_of: datetime) -> str:
+    payload = {
+        "identity": (
+            identity.product,
+            identity.strategy.value,
+            identity.frequency.value,
+            identity.profile_id,
+            identity.formula_versions,
+        ),
+        "as_of": as_of.isoformat(),
+    }
+    return sha256(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+
+
+def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
+    proof: dict[str, str] = {}
+    for frequency in sorted(read.bars_by_frequency, key=str):
+        for item in read.bars_by_frequency[frequency]:
+            bar = item.bar
+            key = "|".join(
+                (
+                    frequency.value,
+                    bar.physical_contract,
+                    bar.segment_id,
+                    bar.bar_end.isoformat(),
+                )
+            )
+            value = "|".join(
+                (
+                    bar.trading_day.isoformat(),
+                    str(bar.open),
+                    str(bar.high),
+                    str(bar.low),
+                    str(bar.close),
+                    str(bar.volume),
+                    str(bar.open_interest),
+                    bar.source_identity,
+                    str(bar.observation_eligible),
+                )
+            )
+            proof[key] = sha256(value.encode()).hexdigest()
+    return proof
 
 
 def _retained_size(value: object, seen: set[int] | None = None) -> int:
@@ -351,12 +402,14 @@ class NewowProductService:
         *,
         cache: SnapshotCache | None = None,
         heavy_gate: HeavyResourceGate | None = None,
+        inflight: InFlightCoordinator | None = None,
         now: Callable[[], datetime] | None = None,
         cancelled: Callable[[], bool] | None = None,
     ) -> None:
         self._reader_factory = reader_factory
         self._cache = cache or SnapshotCache()
         self._gate = heavy_gate or HeavyResourceGate()
+        self._inflight = inflight or InFlightCoordinator()
         self._now = now or (lambda: datetime.now(UTC))
         self._cancelled = cancelled
 
@@ -366,16 +419,31 @@ class NewowProductService:
         as_of = utc_timestamp(request.as_of or self._now())
         if as_of > utc_timestamp(self._now()):
             raise NewowProductServiceError("NEWOW_INVALID_AS_OF")
+        key = (request, as_of)
+        return self._inflight.execute(
+            key,
+            lambda shared_cancelled: self._query(request, as_of, shared_cancelled),
+            self._cancelled,
+        )
+
+    def _query(
+        self,
+        request: ProductServiceQuery,
+        as_of: datetime,
+        cancelled: Callable[[], bool],
+    ) -> NewowProductResult:
+        self._check_cancelled(cancelled)
         context = (
             tuple(ProductFrequency)
             if request.section is ProductSection.EXPLANATION
             else ()
         )
-        reader = self._reader_factory(context, self._cancelled)
+        reader = self._reader_factory(context, cancelled)
         resolved: ResolvedPerformanceWindow | None = None
         if request.section is ProductSection.REFERENCE:
             resolved = reader.resolve_performance_window(
                 request.product,
+                request.frequency,
                 request.performance_since,
                 request.performance_through,
                 as_of,
@@ -405,24 +473,68 @@ class NewowProductService:
             history_before=request.history_before,
         )
         read = reader.load(low_query, read_as_of)
+        self._check_cancelled(cancelled)
+        if resolved is not None and request.frequency is ProductFrequency.WEEKLY:
+            completed = tuple(
+                item.bar
+                for item in read.replay_bars
+                if item.bar.observation_eligible
+                and item.bar.bar_end <= resolved.cutoff
+                and item.bar.trading_day <= resolved.requested_through
+            )
+            if not completed:
+                raise NewowProductServiceError("NEWOW_COMPLETE_PERIOD_MISSING")
+            last_week = completed[-1]
+            weekly_complete = last_week.trading_day == resolved.actual_through
+            resolved = replace(
+                resolved,
+                actual_through=last_week.trading_day,
+                cutoff=last_week.bar_end,
+                complete=weekly_complete,
+                reason_code=(
+                    None if weekly_complete else "NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL"
+                ),
+            )
         identity = build_product_identity(
             request.product, request.strategy, request.frequency
         )
         fact_key = _fingerprint(read, identity)
-        section_key = self._section_key(request, window, resolved)
+        common_key = _snapshot_namespace(identity, as_of)
+        proof = _dependency_proof(read)
+        page_identity = self._page_identity(request, window, resolved, as_of)
+        section_key = self._section_key(
+            request, window, resolved, fact_key, page_identity
+        )
         if request.snapshot_token is not None:
-            bound = self._cache.fact_key_for_token(request.snapshot_token)
-            if bound is None or bound != fact_key:
+            if not self._cache.token_is_compatible(
+                request.snapshot_token, common_key, proof
+            ):
                 raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
-        cached = self._cache.get(fact_key, section_key)
+        cached = self._cache.get(common_key, section_key)
         if isinstance(cached, NewowProductResult):
             return replace(
                 cached, meta=replace(cached.meta, read_at=utc_timestamp(self._now()))
             )
         result = self._calculate(
-            request, read, identity, fact_key, section_key, resolved
+            request,
+            read,
+            identity,
+            fact_key,
+            page_identity,
+            resolved,
+            cancelled,
+            as_of,
         )
-        token = self._cache.put(fact_key, section_key, result, _retained_size(result))
+        token = None
+        if self._cacheable(result):
+            token = self._cache.put(
+                common_key,
+                section_key,
+                result,
+                _retained_size(result),
+                token=request.snapshot_token,
+                proof=proof,
+            )
         if token is not None:
             result = NewowProductResult(
                 ProductResultMeta(
@@ -442,21 +554,31 @@ class NewowProductService:
                 result.comparator,
             )
             self._cache.put(
-                fact_key,
+                common_key,
                 section_key,
                 result,
                 _retained_size(result),
                 token=token,
+                proof=proof,
             )
         return result
+
+    @staticmethod
+    def _check_cancelled(cancelled: Callable[[], bool]) -> None:
+        if cancelled():
+            raise NewowProductReadCancelled("NEWOW_READ_CANCELLED")
 
     def _section_key(
         self,
         request: ProductServiceQuery,
         window: ProductReadWindow,
         resolved: ResolvedPerformanceWindow | None,
+        fact_key: str,
+        page_identity: str,
     ) -> tuple[object, ...]:
         return (
+            fact_key,
+            page_identity,
             request.section.value,
             request.component.value if request.component else None,
             window.since.isoformat(),
@@ -468,41 +590,80 @@ class NewowProductService:
             request.history_before,
         )
 
+    def _page_identity(
+        self,
+        request: ProductServiceQuery,
+        window: ProductReadWindow,
+        resolved: ResolvedPerformanceWindow | None,
+        as_of: datetime,
+    ) -> str:
+        payload = (
+            request.product,
+            request.strategy.value,
+            request.frequency.value,
+            request.section.value,
+            request.component.value if request.component else None,
+            window.since.isoformat(),
+            window.through.isoformat(),
+            resolved.requested_since.isoformat() if resolved else None,
+            resolved.requested_through.isoformat() if resolved else None,
+            as_of.isoformat(),
+            request.chart_limit,
+            request.history_limit,
+        )
+        return sha256(repr(payload).encode()).hexdigest()
+
+    @staticmethod
+    def _cacheable(result: NewowProductResult) -> bool:
+        delivery = getattr(result, result.section.value)
+        return (
+            delivery.delivery == "delivered"
+            and delivery.status is not None
+            and delivery.status.status is FeatureRuntimeStatus.READY
+        )
+
     def _calculate(
         self,
         request: ProductServiceQuery,
         read: ProductReadSet,
         identity: ProductIdentity,
         fact_key: str,
-        section_key: tuple[object, ...],
+        page_identity: str,
         resolved: ResolvedPerformanceWindow | None,
+        cancelled: Callable[[], bool],
+        request_as_of: datetime,
     ) -> NewowProductResult:
+        self._check_cancelled(cancelled)
         deliveries = {section: _not_requested() for section in ProductSection}
         if request.section is ProductSection.CHART:
-            deliveries[request.section] = self._chart(request, read, identity, fact_key)
+            deliveries[request.section] = self._chart(
+                request, read, identity, fact_key, page_identity
+            )
         elif request.section is ProductSection.AUXILIARY:
             assert request.component is not None
             layer = calculate_auxiliary_component(
                 identity, read.replay_bars, request.component.value, as_of=read.as_of
             )
+            self._check_cancelled(cancelled)
             deliveries[request.section] = SectionDelivery(
                 "delivered", layer.availability, layer
             )
         elif request.section is ProductSection.REFERENCE:
             assert resolved is not None
-            with self._gate.acquire(self._cancelled):
+            with self._gate.acquire(cancelled):
                 deliveries[request.section] = self._reference(
-                    request, read, identity, fact_key, resolved
+                    request, read, identity, fact_key, page_identity, resolved
                 )
         elif request.section is ProductSection.EXPLANATION:
             deliveries[request.section] = self._explanation(read, identity)
         else:
-            with self._gate.acquire(self._cancelled):
+            with self._gate.acquire(cancelled):
                 deliveries[request.section] = self._comparator(read, identity)
+        self._check_cancelled(cancelled)
         meta = ProductResultMeta(
             SCHEMA_VERSION,
             identity,
-            read.as_of,
+            request_as_of,
             utc_timestamp(self._now()),
             fact_key,
             None,
@@ -524,6 +685,7 @@ class NewowProductService:
         read: ProductReadSet,
         identity: ProductIdentity,
         fact_key: str,
+        page_identity: str,
     ) -> SectionDelivery:
         replay = replay_strategy(identity, read.replay_bars)
         frames = tuple(
@@ -536,9 +698,9 @@ class NewowProductService:
         )
         if request.chart_before is not None:
             before = datetime.fromisoformat(
-                _decode_cursor(request.chart_before, "chart", fact_key).replace(
-                    "Z", "+00:00"
-                )
+                _decode_cursor(
+                    request.chart_before, "chart", fact_key, page_identity
+                ).replace("Z", "+00:00")
             )
             frames = tuple(frame for frame in frames if frame.bar.bar.bar_end < before)
         selected = frames[-request.chart_limit :]
@@ -549,6 +711,7 @@ class NewowProductService:
                     "v": 1,
                     "kind": "chart",
                     "fingerprint": fact_key,
+                    "page_identity": page_identity,
                     "before": selected[0].bar.bar.bar_end.isoformat(),
                 }
             )
@@ -591,6 +754,7 @@ class NewowProductService:
         read: ProductReadSet,
         identity: ProductIdentity,
         fact_key: str,
+        page_identity: str,
         resolved: ResolvedPerformanceWindow,
     ) -> SectionDelivery:
         replay = replay_strategy(identity, read.replay_bars)
@@ -616,7 +780,9 @@ class NewowProductService:
             )
         )
         if request.history_before is not None:
-            marker = _decode_cursor(request.history_before, "reference", fact_key)
+            marker = _decode_cursor(
+                request.history_before, "reference", fact_key, page_identity
+            )
             positions = tuple(
                 index
                 for index, item in enumerate(all_items)
@@ -632,6 +798,7 @@ class NewowProductService:
                     "v": 1,
                     "kind": "reference",
                     "fingerprint": fact_key,
+                    "page_identity": page_identity,
                     "before": items[-1].reference_trade_id,
                 }
             )
@@ -648,7 +815,16 @@ class NewowProductService:
             resolved.cutoff,
             fact_key,
         )
-        return SectionDelivery("delivered", _ready(), value)
+        status = (
+            _ready()
+            if resolved.complete
+            else FeatureStatus(
+                FeatureRuntimeStatus.WARMING,
+                EvidenceStatus.ACTIVE_CODE_VERIFIED,
+                resolved.reason_code or "NEWOW_REFERENCE_WINDOW_PARTIAL",
+            )
+        )
+        return SectionDelivery("delivered", status, value)
 
     def _explanation(
         self, read: ProductReadSet, identity: ProductIdentity
@@ -679,9 +855,16 @@ class NewowProductService:
             *target_absorb_available_sources(inputs.context, identity.frequency),
             *target_absorb_gap_sources(read.as_of),
         )
-        status = FeatureStatus(
-            composite.status, composite.evidence_status, composite.reason_code
-        )
+        if target.status is FeatureRuntimeStatus.EVIDENCE_REQUIRED:
+            status = FeatureStatus(
+                FeatureRuntimeStatus.EVIDENCE_REQUIRED,
+                EvidenceStatus.EVIDENCE_REQUIRED,
+                target.reason_code or "NEWOW_EXPLANATION_EVIDENCE_REQUIRED",
+            )
+        else:
+            status = FeatureStatus(
+                composite.status, composite.evidence_status, composite.reason_code
+            )
         return SectionDelivery(
             "delivered",
             status,
@@ -698,13 +881,18 @@ class NewowProductService:
                 "NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE",
             )
             return SectionDelivery("delivered", status, None)
+        eligible_bars = tuple(
+            item
+            for item in read.replay_bars
+            if item.bar.observation_eligible and item.bar.bar_end <= read.as_of
+        )
         owners = tuple(
             ComparatorOwnerSegment(
                 identity.product,
                 owner.contract,
                 next(
                     bar.bar.segment_id
-                    for bar in read.replay_bars
+                    for bar in eligible_bars
                     if bar.bar.physical_contract == owner.contract
                     and owner.start_trading_day
                     <= bar.bar.trading_day
@@ -719,12 +907,12 @@ class NewowProductService:
                 and owner.start_trading_day
                 <= bar.bar.trading_day
                 <= owner.end_trading_day
-                for bar in read.replay_bars
+                for bar in eligible_bars
             )
         )
         result: PageComparatorResult = compare_page_windows(
             identity,
-            read.replay_bars,
+            eligible_bars,
             VerifiedPageComparatorEvidence(),
             authoritative_segments=owners,
             as_of=read.as_of,

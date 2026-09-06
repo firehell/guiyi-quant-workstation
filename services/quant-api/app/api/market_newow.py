@@ -9,8 +9,9 @@ from enum import Enum
 from fractions import Fraction
 from math import isfinite
 from typing import Literal
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
+from anyio import from_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from guiyi_quant.newow.models import CupPivot, NewowCupHandleOverlay, NewowMainMarker
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
@@ -22,8 +23,13 @@ from app.market_data.composition import (
     build_market_data_service,
 )
 from app.market_data.newow.product_reader import (
+    NewowProductReadCancelled,
     NewowProductReadError,
     NewowProductReader,
+)
+from app.market_data.newow.inflight import (
+    InFlightCoordinator,
+    NewowComputationCancelled,
 )
 from app.market_data.newow.product_service import (
     NewowProductResult,
@@ -77,6 +83,7 @@ _CUP_MARKERS = frozenset(
 )
 _PRODUCT_CACHE = SnapshotCache()
 _PRODUCT_GATE = HeavyResourceGate()
+_PRODUCT_INFLIGHT = InFlightCoordinator()
 _PRODUCT_QUERY_FIELDS = frozenset(
     {
         "product",
@@ -130,7 +137,9 @@ def newow_trend_detail(
         raise HTTPException(status_code=422, detail={"code": code}) from exc
 
 
-def _build_product_service(session: Session) -> NewowProductService:
+def _build_product_service(
+    session: Session, cancelled: Callable[[], bool] | None = None
+) -> NewowProductService:
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(session)
     active = load_active_products()
@@ -148,6 +157,8 @@ def _build_product_service(session: Session) -> NewowProductService:
         reader_factory,
         cache=_PRODUCT_CACHE,
         heavy_gate=_PRODUCT_GATE,
+        inflight=_PRODUCT_INFLIGHT,
+        cancelled=cancelled,
     )
 
 
@@ -191,6 +202,13 @@ def newow_strategy_detail(
     ):
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
     try:
+
+        def cancelled() -> bool:
+            try:
+                return from_thread.run(request.is_disconnected)
+            except RuntimeError:
+                return False
+
         product_query = ProductServiceQuery(
             product=product,
             strategy=ProductStrategy(strategy),
@@ -209,10 +227,14 @@ def newow_strategy_detail(
             history_before=history_before,
             snapshot_token=snapshot_token,
         )
-        result = _build_product_service(session).query(product_query)
+        result = _build_product_service(session, cancelled).query(product_query)
         return _product_response(result)
     except NewowResourceBusy as exc:
         raise HTTPException(status_code=429, detail={"code": exc.code}) from exc
+    except (NewowComputationCancelled, NewowProductReadCancelled) as exc:
+        raise HTTPException(
+            status_code=429, detail={"code": "NEWOW_REQUEST_CANCELLED"}
+        ) from exc
     except NewowProductServiceError as exc:
         status = 409 if "CONFLICT" in exc.code else 422
         raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
@@ -378,6 +400,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                     "segment_id": item.segment_id,
                     "related_build_id": item.related_build_id,
                     "trade_eligibility": item.trade_eligibility.value,
+                    "sequence": item.sequence,
                 }
                 for item in value.replay.actions
             ],
@@ -392,6 +415,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                     "segment_id": item.segment_id,
                     "retrospective": False,
                     "quantity_effect": "none",
+                    "sequence": item.sequence,
                 }
                 for item in value.replay.hints
             ],
@@ -459,7 +483,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
     explanation = _delivery(
         result.explanation,
         lambda value: {
-            "context": _json_value(value.context),
+            "context": _context_value(value.context),
             "composite": _json_value(value.composite),
             "target_absorb": _json_value(value.target_absorb),
             "sources": [_json_value(source) for source in value.sources],
@@ -504,6 +528,43 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
         "comparator": comparator,
     }
     return NewowProductResponse.model_validate(payload)
+
+
+def _context_value(context) -> dict[str, object]:
+    def slot(value) -> dict[str, object]:
+        identity = value.identity
+        return {
+            "frequency": value.frequency.value,
+            "as_of": value.as_of,
+            "availability": _status(value.availability),
+            "confirmation_status": _status(value.confirmation_status),
+            "identity": None
+            if identity is None
+            else {
+                "product": identity.product,
+                "strategy": identity.strategy.value,
+                "frequency": identity.frequency.value,
+                "series_kind": identity.series_kind,
+                "profile_id": identity.profile_id,
+                "formula_versions": list(identity.formula_versions),
+            },
+            "bar_end": value.bar_end,
+            "source_identity": value.source_identity,
+            "physical_contract": value.physical_contract,
+            "segment_id": value.segment_id,
+            "formula_versions": list(value.formula_versions),
+            "main_state": None if value.frame is None else value.frame.main_state.value,
+        }
+
+    return {
+        "as_of": context.as_of,
+        "weekly": slot(context.weekly),
+        "daily": slot(context.daily),
+        "hourly": slot(context.hourly),
+        "missing_frequencies": [value.value for value in context.missing_frequencies],
+        "recompute_mode": context.recompute_mode,
+        "historical_database_knowledge_reconstructed": context.historical_database_knowledge_reconstructed,
+    }
 
 
 def _response(result: NewowTrendDetailResult) -> NewowTrendDetailResponse:

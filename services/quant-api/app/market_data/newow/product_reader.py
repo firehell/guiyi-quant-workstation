@@ -76,6 +76,8 @@ class ResolvedPerformanceWindow:
     requested_through: date
     actual_through: date
     cutoff: datetime
+    complete: bool = True
+    reason_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +184,7 @@ class NewowProductReader:
     def resolve_performance_window(
         self,
         product: str,
+        frequency: ProductFrequency,
         performance_since: date | None,
         performance_through: date | None,
         as_of: datetime,
@@ -189,6 +192,7 @@ class NewowProductReader:
         """Resolve the last authoritative completed trading day at the request instant."""
 
         cutoff = utc_timestamp(as_of)
+        frequency = ProductFrequency(frequency)
         if cutoff > utc_timestamp(self._now()):
             raise NewowProductReadError("NEWOW_INVALID_AS_OF")
         if product not in self._active_products:
@@ -211,7 +215,7 @@ class NewowProductReader:
             raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
         if latest <= cutoff.astimezone(_SHANGHAI).date() and latest not in days:
             raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
-        complete = []
+        complete_days = []
         for day in days:
             self._check_cancelled()
             if (
@@ -225,18 +229,33 @@ class NewowProductReader:
                 )
                 <= cutoff
             ):
-                complete.append(day)
-        if not complete or complete[-1] < since:
+                complete_days.append(day)
+        if not complete_days or complete_days[-1] < since:
             raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
-        actual_through = complete[-1]
+        actual_through = complete_days[-1]
         resolved_cutoff = max(
             window.end
             for window in self._market_data.session_windows(
                 symbol=product, trading_day=actual_through
             )
         )
+        missing_completed_days = any(
+            actual_through < day <= requested_through for day in days
+        )
+        complete = not missing_completed_days
+        reason = None if complete else "NEWOW_REFERENCE_WINDOW_PARTIAL"
+        # W1 completion can only be established after the owned W1 bars are read;
+        # the service performs that final alignment instead of guessing by weekday.
+        if frequency is ProductFrequency.WEEKLY:
+            complete = False
+            reason = "NEWOW_REFERENCE_WEEKLY_COMPLETION_PENDING"
         return ResolvedPerformanceWindow(
-            since, requested_through, actual_through, utc_timestamp(resolved_cutoff)
+            since,
+            requested_through,
+            actual_through,
+            utc_timestamp(resolved_cutoff),
+            complete,
+            reason,
         )
 
     def resolve_chart_window(

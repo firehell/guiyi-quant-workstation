@@ -19,6 +19,33 @@ def test_verified_sections_expand_one_common_fact_entry():
     assert cache.get_by_token(token, "facts", ("auxiliary", "cup_handle")) == "cup"
 
 
+def test_single_entry_budget_counts_all_retained_sections():
+    cache = SnapshotCache(max_entries=4, max_bytes=1000, max_entry_bytes=100)
+    token = cache.put("facts", ("chart",), "chart", 60)
+    assert token is not None
+
+    assert cache.put("facts", ("reference",), "reference", 60) is None
+    assert cache.get("facts", ("chart",)) == "chart"
+    assert cache.get("facts", ("reference",)) is None
+
+
+def test_token_requires_equal_values_for_overlapping_dependency_facts():
+    cache = SnapshotCache(max_entries=4, max_bytes=1024, max_entry_bytes=512)
+    token = cache.put(
+        "identity", ("chart",), "chart", 10, proof={"bar-a": "value-1"}
+    )
+    assert token is not None
+    assert cache.token_is_compatible(
+        token, "identity", {"bar-a": "value-1", "bar-b": "value-2"}
+    )
+    assert not cache.token_is_compatible(
+        token, "identity", {"bar-a": "revised"}
+    )
+    assert not cache.token_is_compatible(
+        token, "identity", {"unrelated": "value"}
+    )
+
+
 def test_lru_eviction_and_oversized_bypass_return_nullable_token():
     cache = SnapshotCache(max_entries=2, max_bytes=128, max_entry_bytes=80)
     first = cache.put("one", ("chart",), 1, 50)

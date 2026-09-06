@@ -17,6 +17,7 @@ class _Entry:
     expires_at: float
     values: dict[tuple[object, ...], object]
     sizes: dict[tuple[object, ...], int]
+    proof: dict[str, str]
 
 
 class SnapshotCache:
@@ -63,6 +64,7 @@ class SnapshotCache:
         retained_size: int,
         *,
         token: str | None = None,
+        proof: dict[str, str] | None = None,
     ) -> str | None:
         if (
             not self._enabled
@@ -78,6 +80,14 @@ class SnapshotCache:
         with self._lock:
             self._expire()
             entry = self._entries.get(fact_key)
+            normalized_proof = dict(proof or {})
+            if entry is not None and not self._proofs_compatible(
+                entry.proof, normalized_proof
+            ):
+                if token is not None:
+                    return None
+                self._drop(fact_key)
+                entry = None
             if entry is None:
                 token = token or token_urlsafe(24)
                 entry = _Entry(
@@ -86,12 +96,18 @@ class SnapshotCache:
                     self._now() + self._ttl,
                     {},
                     {},
+                    normalized_proof,
                 )
                 self._entries[fact_key] = entry
                 self._tokens[token] = fact_key
             elif token is not None and token != entry.token:
                 return None
+            else:
+                entry.proof.update(normalized_proof)
             previous_size = entry.sizes.get(normalized_section, 0)
+            retained_total = sum(entry.sizes.values()) - previous_size + retained_size
+            if retained_total > self._max_entry_bytes:
+                return None
             entry.values[normalized_section] = value
             entry.sizes[normalized_section] = retained_size
             entry.expires_at = self._now() + self._ttl
@@ -130,3 +146,20 @@ class SnapshotCache:
         with self._lock:
             self._expire()
             return self._tokens.get(token)
+
+    def token_is_compatible(
+        self, token: str, fact_key: str, proof: dict[str, str]
+    ) -> bool:
+        with self._lock:
+            self._expire()
+            if self._tokens.get(token) != fact_key:
+                return False
+            entry = self._entries.get(fact_key)
+            return entry is not None and self._proofs_compatible(entry.proof, proof)
+
+    @staticmethod
+    def _proofs_compatible(left: dict[str, str], right: dict[str, str]) -> bool:
+        if not left and not right:
+            return True
+        shared = left.keys() & right.keys()
+        return bool(shared) and all(left[key] == right[key] for key in shared)

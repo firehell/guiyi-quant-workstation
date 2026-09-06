@@ -34,10 +34,50 @@ def test_server_constructs_each_composite_role_from_its_own_replay(product_cases
         "oscillation_weekly",
         "oscillation_daily",
         "oscillation_hourly",
+        "volatility_daily_prefix",
     ]
-    assert all(source.source_category == "strategy_replay" for source in result.sources)
+    assert all(
+        source.source_category == "strategy_replay" for source in result.sources[:6]
+    )
+    assert result.sources[-1].source_category == "canonical_bar_prefix"
     assert all(source.dependency_sha256 for source in result.sources)
     assert result.evidence.oscillation_daily is not None
+
+
+def test_daily_source_digest_covers_the_consumed_volatility_prefix(product_cases):
+    trend = _replays(product_cases, "trend")
+    oscillation = _replays(product_cases, "oscillation")
+    as_of = min(replay.frames[-1].bar.bar.bar_end for replay in trend.values())
+    first = build_composite_inputs(trend, oscillation, as_of)
+    daily = trend[ProductFrequency.DAILY]
+    cutoff_source = next(
+        item for item in first.sources if item.role == "volatility_daily_prefix"
+    )
+    selected = next(
+        index
+        for index, frame in enumerate(daily.frames)
+        if frame.bar.bar.segment_id == cutoff_source.segment_id
+        and frame.bar.bar.bar_end <= cutoff_source.bar_end
+    )
+    changed_bar = replace(
+        daily.frames[selected].bar.bar,
+        volume=daily.frames[selected].bar.bar.volume + 1,
+    )
+    changed_product_bar = replace(daily.frames[selected].bar, bar=changed_bar)
+    changed_frame = replace(daily.frames[selected], bar=changed_product_bar)
+    frames = list(daily.frames)
+    frames[selected] = changed_frame
+    trend[ProductFrequency.DAILY] = replace(daily, frames=tuple(frames))
+
+    second = build_composite_inputs(trend, oscillation, as_of)
+    before = next(
+        item for item in first.sources if item.role == "volatility_daily_prefix"
+    )
+    after = next(
+        item for item in second.sources if item.role == "volatility_daily_prefix"
+    )
+
+    assert before.dependency_sha256 != after.dependency_sha256
 
 
 def test_unavailable_frame_does_not_become_a_verified_current_fact(product_cases):

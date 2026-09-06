@@ -6,6 +6,8 @@ from decimal import Decimal
 
 import pytest
 
+from guiyi_quant.newow.product_contracts import ProductFrequency
+
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
 )
@@ -293,7 +295,7 @@ def test_reference_window_uses_authoritative_session_cutoff_not_request_time(
     request_as_of = datetime(2023, 1, 6, 3, tzinfo=UTC)
 
     resolved = reader.resolve_performance_window(
-        "rb", date(2023, 1, 2), date(2023, 1, 6), request_as_of
+        "rb", ProductFrequency.DAILY, date(2023, 1, 2), date(2023, 1, 6), request_as_of
     )
 
     assert resolved.requested_through == date(2023, 1, 6)
@@ -310,10 +312,10 @@ def test_reference_window_includes_exact_session_end_and_normalizes_same_instant
     shanghai_end = datetime.fromisoformat("2023-01-06T15:00:00+08:00")
 
     first = reader.resolve_performance_window(
-        "rb", date(2023, 1, 2), date(2023, 1, 6), utc_end
+        "rb", ProductFrequency.DAILY, date(2023, 1, 2), date(2023, 1, 6), utc_end
     )
     second = reader.resolve_performance_window(
-        "rb", date(2023, 1, 2), date(2023, 1, 6), shanghai_end
+        "rb", ProductFrequency.DAILY, date(2023, 1, 2), date(2023, 1, 6), shanghai_end
     )
 
     assert first == second

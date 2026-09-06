@@ -1,4 +1,7 @@
 from dataclasses import replace
+from datetime import timedelta
+from threading import Event, Thread
+from time import sleep
 
 import pytest
 
@@ -32,7 +35,7 @@ class _Reader:
             self.bars[0].bar.trading_day, self.bars[-1].bar.trading_day
         )
 
-    def resolve_performance_window(self, _product, since, through, _as_of):
+    def resolve_performance_window(self, _product, _frequency, since, through, _as_of):
         assert since is not None and through is not None
         cutoff = (
             self.boundary_cutoff
@@ -96,6 +99,7 @@ def test_reference_cutoff_keeps_later_clear_open_until_user_extends_window(
     assert first.reference.value.summary.open_count == 1
     assert first.reference.value.summary.closed_count == 0
     assert first.reference.value.reference_cutoff == build.bar_end
+    assert first.meta.as_of == clear.bar_end
     assert extended.reference.value.summary.open_count == 0
     assert extended.reference.value.summary.closed_count == 1
     assert extended.reference.value.reference_cutoff == clear.bar_end
@@ -126,6 +130,37 @@ def test_chart_does_not_call_reference_or_auxiliary(monkeypatch, product_cases):
     assert result.chart.delivery == "delivered"
     assert result.reference.delivery == "not_requested"
     assert reader.loads[-1].performance_since == reader.loads[-1].since
+
+
+def test_identical_service_misses_share_reader_and_calculation(product_cases):
+    service, reader, _build, clear = _service(product_cases)
+    original = reader.load
+    entered = Event()
+    release = Event()
+    calls = []
+    results = []
+
+    def slow_load(query, as_of):
+        calls.append(query)
+        entered.set()
+        release.wait(1)
+        return original(query, as_of)
+
+    reader.load = slow_load
+    request = ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end)
+    first = Thread(target=lambda: results.append(service.query(request)))
+    second = Thread(target=lambda: results.append(service.query(request)))
+    first.start()
+    assert entered.wait(1)
+    second.start()
+    sleep(0.02)
+    release.set()
+    first.join(1)
+    second.join(1)
+
+    assert len(calls) == 1
+    assert len(results) == 2
+    assert results[0].meta.input_content_sha256 == results[1].meta.input_content_sha256
 
 
 def test_history_limit_and_viewport_do_not_change_reference_summary_or_identity(
@@ -194,6 +229,81 @@ def test_reference_cursor_moves_strictly_left_without_repeating_trade(product_ca
         == 3
     )
 
+    with pytest.raises(
+        NewowProductServiceError, match="NEWOW_CURSOR_GENERATION_CONFLICT"
+    ):
+        service.query(replace(request, history_before=cursor, history_limit=2))
+
+
+def test_incomplete_requested_reference_window_is_warming_and_not_cached(
+    product_cases,
+):
+    service, reader, build, clear = _service(product_cases)
+    reader.resolve_performance_window = lambda *_args: ResolvedPerformanceWindow(
+        build.trading_day,
+        clear.trading_day,
+        build.trading_day,
+        build.bar_end,
+        False,
+        "NEWOW_REFERENCE_WINDOW_PARTIAL",
+    )
+
+    result = service.query(
+        ProductServiceQuery(
+            "rb",
+            "trend",
+            "1d",
+            section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+        )
+    )
+
+    assert result.reference.status.status == "warming"
+    assert result.reference.status.reason_code == "NEWOW_REFERENCE_WINDOW_PARTIAL"
+    assert result.meta.snapshot_token is None
+
+
+def test_weekly_reference_uses_last_completed_w1_bar_not_midweek_session(
+    product_cases,
+):
+    case = product_cases.primitive_input("trend", "1w")
+    last = case.bars[-1].bar
+    midweek_day = last.trading_day + timedelta(days=2)
+    midweek_as_of = last.bar_end + timedelta(days=2)
+    reader = _Reader(case.bars, last.bar_end, midweek_as_of)
+    reader.resolve_performance_window = lambda *_args: ResolvedPerformanceWindow(
+        case.bars[0].bar.trading_day,
+        midweek_day,
+        midweek_day,
+        midweek_as_of,
+        False,
+        "NEWOW_REFERENCE_WEEKLY_COMPLETION_PENDING",
+    )
+    service = NewowProductService(
+        lambda _context, _cancelled: reader, now=lambda: midweek_as_of
+    )
+
+    result = service.query(
+        ProductServiceQuery(
+            "rb",
+            "trend",
+            "1w",
+            section="reference",
+            performance_since=case.bars[0].bar.trading_day,
+            performance_through=midweek_day,
+            as_of=midweek_as_of,
+        )
+    )
+
+    assert result.reference.value.actual_available_through == last.trading_day
+    assert result.reference.value.reference_cutoff == last.bar_end
+    assert result.reference.status.status == "warming"
+    assert (
+        result.reference.status.reason_code == "NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL"
+    )
+
 
 def test_query_rejects_section_specific_parameter_leakage():
     try:
@@ -213,16 +323,56 @@ def test_snapshot_token_rejects_a_revised_common_bar(product_cases):
     )
     first = service.query(request)
     assert first.meta.snapshot_token is not None
-    last = reader.bars[-1]
-    reader.bars = (
-        *reader.bars[:-1],
-        replace(last, bar=replace(last.bar, close=last.bar.close + 1)),
+    changed = list(reader.bars)
+    anchor_index = max(
+        index for index, item in enumerate(changed) if item.bar.bar_end <= clear.bar_end
     )
+    anchor = changed[anchor_index]
+    changed[anchor_index] = replace(
+        anchor, bar=replace(anchor.bar, close=anchor.bar.close + 1)
+    )
+    reader.bars = tuple(changed)
 
     with pytest.raises(
         NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"
     ):
         service.query(replace(request, snapshot_token=first.meta.snapshot_token))
+
+
+def test_snapshot_token_allows_reference_with_compatible_common_facts(product_cases):
+    service, reader, build, clear = _service(product_cases)
+    original_load = reader.load
+
+    def load_with_smaller_chart(query, as_of):
+        loaded = original_load(query, as_of)
+        if len(reader.loads) == 1:
+            selected = tuple(
+                item for item in loaded.replay_bars if item.bar.bar_end <= as_of
+            )[-10:]
+            return replace(
+                loaded,
+                bars_by_frequency={loaded.frequency: selected},
+            )
+        return loaded
+
+    reader.load = load_with_smaller_chart
+    chart = service.query(ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end))
+
+    reference = service.query(
+        ProductServiceQuery(
+            "rb",
+            "trend",
+            "1d",
+            section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+            snapshot_token=chart.meta.snapshot_token,
+        )
+    )
+
+    assert reference.meta.snapshot_token == chart.meta.snapshot_token
+    assert reference.meta.input_content_sha256 != chart.meta.input_content_sha256
 
 
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
@@ -339,8 +489,11 @@ def test_explanation_builds_six_owned_sources_and_keeps_target_gap(product_cases
     assert {source.role for source in value.sources} >= {
         "trend_weekly",
         "oscillation_hourly",
+        "volatility_daily_prefix",
         "previous_close",
     }
+    assert result.explanation.status.status == "evidence_required"
+    assert result.meta.snapshot_token is None
 
 
 def test_comparator_is_explicit_and_never_becomes_reference_trade(product_cases):

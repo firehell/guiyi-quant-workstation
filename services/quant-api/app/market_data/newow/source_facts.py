@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
+import json
 
 from guiyi_quant.newow.composite_explanation import (
     CompositeStatusFact,
@@ -73,24 +74,51 @@ def _last_frame(replay: StrategyReplay, as_of: datetime) -> StrategyFrame | None
 
 
 def _dependency(frame: StrategyFrame, replay: StrategyReplay) -> str:
-    bar = frame.bar.bar
-    payload = "|".join(
-        (
-            replay.identity.profile_id,
-            *replay.identity.formula_versions,
-            bar.source_identity,
-            bar.physical_contract,
-            bar.segment_id,
-            bar.bar_end.isoformat(),
-            str(bar.open),
-            str(bar.high),
-            str(bar.low),
-            str(bar.close),
-            str(bar.volume),
-            str(bar.open_interest),
-        )
+    owner = (frame.bar.bar.physical_contract, frame.bar.bar.segment_id)
+    prefix = tuple(
+        item
+        for item in replay.frames
+        if (item.bar.bar.physical_contract, item.bar.bar.segment_id) == owner
+        and item.bar.bar.bar_end <= frame.bar.bar.bar_end
     )
-    return sha256(payload.encode()).hexdigest()
+    return _frames_dependency(replay, prefix)
+
+
+def _frames_dependency(
+    replay: StrategyReplay, frames: tuple[StrategyFrame, ...]
+) -> str:
+    payload = {
+        "profile_id": replay.identity.profile_id,
+        "formula_versions": replay.identity.formula_versions,
+        "frames": [
+            {
+                "source_identity": item.bar.bar.source_identity,
+                "physical_contract": item.bar.bar.physical_contract,
+                "segment_id": item.bar.bar.segment_id,
+                "trading_day": item.bar.bar.trading_day.isoformat(),
+                "bar_end": item.bar.bar.bar_end.isoformat(),
+                "ohlcv": (
+                    str(item.bar.bar.open),
+                    str(item.bar.bar.high),
+                    str(item.bar.bar.low),
+                    str(item.bar.bar.close),
+                    item.bar.bar.volume,
+                    item.bar.bar.open_interest,
+                ),
+                "main_state": item.main_state.value,
+                "main_values": tuple(
+                    (key, None if value is None else str(value))
+                    for key, value in item.main_values
+                ),
+                "actions": tuple(action.signal_id for action in item.actions),
+                "hints": tuple(hint.hint_id for hint in item.hints),
+            }
+            for item in frames
+        ],
+    }
+    return sha256(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
 
 
 def _source(
@@ -187,11 +215,12 @@ def build_composite_inputs(
     assert osc_weekly is not None and osc_daily is not None and osc_hourly is not None
     daily_owner = daily.bar.bar.segment_id
     daily_prefix = tuple(
-        frame.bar
+        frame
         for frame in trend_replays[ProductFrequency.DAILY].frames
         if frame.bar.bar.segment_id == daily_owner
         and frame.bar.bar.bar_end <= daily.bar.bar.bar_end
     )
+    daily_prefix_bars = tuple(frame.bar for frame in daily_prefix)
     evidence = VerifiedCompositeEvidence(
         trend_weekly=_page_fact(weekly, ProductFrequency.WEEKLY),
         trend_daily=_page_fact(daily, ProductFrequency.DAILY),
@@ -199,9 +228,22 @@ def build_composite_inputs(
         oscillation_weekly=_status_fact(osc_weekly, ProductFrequency.WEEKLY),
         oscillation_daily=_status_fact(osc_daily, ProductFrequency.DAILY),
         oscillation_hourly=_status_fact(osc_hourly, ProductFrequency.HOURLY),
-        daily_bars=daily_prefix,
+        daily_bars=daily_prefix_bars,
     )
-    return CompositeInputs(context, evidence, sources)
+    volatility_source = SourceFact(
+        "volatility_daily_prefix",
+        "canonical_bar_prefix",
+        SOURCE_FACT_ADAPTER_VERSION,
+        trend_replays[ProductFrequency.DAILY].identity.formula_versions,
+        ProductFrequency.DAILY,
+        daily.bar.bar.bar_end,
+        daily.bar.bar.physical_contract,
+        daily.bar.bar.segment_id,
+        cutoff,
+        _frames_dependency(trend_replays[ProductFrequency.DAILY], daily_prefix),
+        "ready",
+    )
+    return CompositeInputs(context, evidence, (*sources, volatility_source))
 
 
 def target_absorb_gap_sources(as_of: datetime) -> tuple[SourceFact, ...]:
