@@ -335,6 +335,13 @@ def _weekly_channel_bars(last: ProductBar, count: int) -> tuple[ProductBar, ...]
     return tuple(bars)
 
 
+def _authoritative_weekly_channel_bars(
+    last: ProductBar, count: int
+) -> tuple[ProductBar, ...]:
+    generated = _weekly_channel_bars(last, count)
+    return generated[:-1] + (last,)
+
+
 def test_weekly_status_card_override_reuses_full_hhv_llv10_channel() -> None:
     module = _target_api()
     context, latest_weekly = _context()
@@ -343,7 +350,7 @@ def test_weekly_status_card_override_reuses_full_hhv_llv10_channel() -> None:
         view_frequency=ProductFrequency.WEEKLY,
         display_surface=module.PageDisplaySurface.STATUS_CARD,
         inputs=_inputs(module, context, view_frequency=ProductFrequency.WEEKLY),
-        weekly_channel_bars=_weekly_channel_bars(latest_weekly, 10),
+        weekly_channel_bars=_authoritative_weekly_channel_bars(latest_weekly, 10),
     )
     input_fingerprint = (repr(context), repr(evidence))
 
@@ -351,9 +358,9 @@ def test_weekly_status_card_override_reuses_full_hhv_llv10_channel() -> None:
 
     assert (repr(context), repr(evidence)) == input_fingerprint
     assert result.value is not None
-    assert result.value.target.raw_value == Decimal("119")
+    assert result.value.target.raw_value == Decimal("118")
     assert result.value.target.branch == "weekly_channel_override"
-    assert result.value.absorb.raw_value == Decimal("81")
+    assert result.value.absorb.raw_value == Decimal("82")
     assert result.value.absorb.branch == "weekly_channel_override"
     assert result.value.target.source_frequency == ProductFrequency.WEEKLY
     assert result.value.target.bar_end == context.weekly.bar_end
@@ -510,7 +517,7 @@ def test_page_price_guard_rejects_binary_conversion_outside_safe_page_domain() -
 def test_weekly_override_rejects_non_owner_local_completed_prefixes() -> None:
     module = _target_api()
     context, latest_weekly = _context()
-    ordered = _weekly_channel_bars(latest_weekly, 10)
+    ordered = _authoritative_weekly_channel_bars(latest_weekly, 10)
     wrong_owner = replace(
         ordered[4],
         bar=replace(
@@ -548,6 +555,74 @@ def test_weekly_override_rejects_non_owner_local_completed_prefixes() -> None:
         assert result.reason_code == "NEWOW_TARGET_ABSORB_SOURCE_CONTEXT_MISMATCH"
 
 
+def test_weekly_override_rejects_trading_day_rollback() -> None:
+    module = _target_api()
+    context, latest_weekly = _context()
+    authoritative = _authoritative_weekly_channel_bars(latest_weekly, 10)
+    rollback = replace(
+        authoritative[8],
+        bar=replace(
+            authoritative[8].bar,
+            trading_day=authoritative[7].bar.trading_day - timedelta(days=1),
+        ),
+    )
+    evidence = module.VerifiedTargetAbsorbEvidence(
+        period=module.PageSelectionPeriod.WEEK,
+        view_frequency=ProductFrequency.WEEKLY,
+        display_surface=module.PageDisplaySurface.STATUS_CARD,
+        inputs=_inputs(module, context, view_frequency=ProductFrequency.WEEKLY),
+        weekly_channel_bars=authoritative[:8] + (rollback,) + authoritative[9:],
+    )
+
+    result = module.calculate_target_absorb(context, evidence)
+
+    assert result.status == "unavailable"
+    assert result.reason_code == "NEWOW_TARGET_ABSORB_SOURCE_CONTEXT_MISMATCH"
+
+
+@pytest.mark.parametrize(
+    "conflict_kind",
+    ["ohlcv", "trading_day", "completed", "observation_eligible"],
+)
+def test_weekly_override_rejects_conflicting_latest_authoritative_fact(
+    conflict_kind: str,
+) -> None:
+    module = _target_api()
+    context, latest_weekly = _context()
+    changes = {
+        "ohlcv": {"high": Decimal("106")},
+        "trading_day": {
+            "trading_day": latest_weekly.bar.trading_day - timedelta(days=1)
+        },
+        "completed": {"completed": False},
+        "observation_eligible": {"observation_eligible": False},
+    }[conflict_kind]
+    if conflict_kind == "completed":
+        with pytest.raises(ValueError, match="NEWOW_BAR_NOT_COMPLETED"):
+            replace(latest_weekly.bar, **changes)
+        return
+    conflicting_latest = replace(
+        latest_weekly, bar=replace(latest_weekly.bar, **changes)
+    )
+    conflicting = _authoritative_weekly_channel_bars(latest_weekly, 10)[:-1] + (
+        conflicting_latest,
+    )
+    assert conflicting_latest.bar.bar_end == context.weekly.frame.bar.bar.bar_end
+    assert conflicting_latest != context.weekly.frame.bar
+    evidence = module.VerifiedTargetAbsorbEvidence(
+        period=module.PageSelectionPeriod.WEEK,
+        view_frequency=ProductFrequency.WEEKLY,
+        display_surface=module.PageDisplaySurface.STATUS_CARD,
+        inputs=_inputs(module, context, view_frequency=ProductFrequency.WEEKLY),
+        weekly_channel_bars=conflicting,
+    )
+
+    result = module.calculate_target_absorb(context, evidence)
+
+    assert result.status == "unavailable"
+    assert result.reason_code == "NEWOW_TARGET_ABSORB_SOURCE_CONTEXT_MISMATCH"
+
+
 def test_result_binds_surface_as_of_lineage_and_has_no_trading_dto_fields() -> None:
     module = _target_api()
     context, latest_weekly = _context()
@@ -556,7 +631,7 @@ def test_result_binds_surface_as_of_lineage_and_has_no_trading_dto_fields() -> N
         view_frequency=ProductFrequency.WEEKLY,
         display_surface=module.PageDisplaySurface.STATUS_CARD,
         inputs=_inputs(module, context, view_frequency=ProductFrequency.WEEKLY),
-        weekly_channel_bars=_weekly_channel_bars(latest_weekly, 10),
+        weekly_channel_bars=_authoritative_weekly_channel_bars(latest_weekly, 10),
     )
 
     result = module.calculate_target_absorb(context, evidence)
@@ -893,3 +968,31 @@ def test_best_available_shared_wrapper_is_bound_to_hourly_view_context() -> None
     assert result.value.target.raw_value == Decimal("140")
     assert result.value.absorb.branch == "absorb_daily_hold"
     assert result.value.absorb.raw_value == Decimal("90.125")
+
+
+def test_full_wrapper_preserves_positive_raw_that_page_rounds_to_zero() -> None:
+    module = _target_api()
+    context, _ = _context()
+    inputs = _inputs(
+        module,
+        context,
+        target_daily=_fact(module, context.daily, "0.001"),
+        target_weekly=None,
+        cost_daily=_fact(module, context.daily, "0.001"),
+        cost_weekly=None,
+    )
+    evidence = module.VerifiedTargetAbsorbEvidence(
+        period=module.PageSelectionPeriod.DAY,
+        view_frequency=ProductFrequency.DAILY,
+        display_surface=module.PageDisplaySurface.SHARED_FUNCTION,
+        inputs=inputs,
+    )
+
+    result = module.calculate_target_absorb(context, evidence)
+
+    assert result.status == "ready"
+    assert result.value is not None
+    assert result.value.target.raw_value == Decimal("0.001")
+    assert result.value.target.display_value == Decimal("0.00")
+    assert result.value.absorb.raw_value == Decimal("0.001")
+    assert result.value.absorb.display_value == Decimal("0.00")

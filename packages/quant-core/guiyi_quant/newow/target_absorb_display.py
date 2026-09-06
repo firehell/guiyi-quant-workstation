@@ -71,6 +71,10 @@ def _positive(value: Decimal | None) -> TypeGuard[Decimal]:
     return isinstance(value, Decimal) and value.is_finite() and value > _ZERO
 
 
+def _nonnegative(value: Decimal | None) -> TypeGuard[Decimal]:
+    return isinstance(value, Decimal) and value.is_finite() and value >= _ZERO
+
+
 def _finite_js_number(value: Decimal | None) -> float | None:
     if value is None:
         return None
@@ -444,7 +448,7 @@ class TargetAbsorbDisplayPrice:
     segment_id: str
 
     def __post_init__(self) -> None:
-        if not _positive(self.raw_value) or not _positive(self.display_value):
+        if not _positive(self.raw_value) or not _nonnegative(self.display_value):
             raise ValueError("NEWOW_TARGET_ABSORB_INVALID_DISPLAY")
         _text(self.branch)
         _text(self.physical_contract)
@@ -638,6 +642,7 @@ def _weekly_override(
         )
     if (
         slot.identity is None
+        or slot.frame is None
         or slot.bar_end is None
         or slot.physical_contract is None
         or slot.segment_id is None
@@ -651,6 +656,7 @@ def _weekly_override(
             formulas,
         )
     bar_ends = tuple(bar.bar.bar_end for bar in bars)
+    trading_days = tuple(bar.bar.trading_day for bar in bars)
     if (
         any(
             bar.frequency is not ProductFrequency.WEEKLY
@@ -663,7 +669,12 @@ def _weekly_override(
             for bar in bars
         )
         or any(current <= previous for previous, current in zip(bar_ends, bar_ends[1:]))
+        or any(
+            current < previous
+            for previous, current in zip(trading_days, trading_days[1:])
+        )
         or bars[-1].bar.bar_end != slot.bar_end
+        or bars[-1] != slot.frame.bar
     ):
         return _result(
             context,
