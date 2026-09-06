@@ -6,7 +6,9 @@ import type { MarketDetailIdentity } from '@/types/marketDetail'
 import type {
   NewowAuxiliaryComponent,
   NewowProductSectionResponse,
+  NewowReferenceTrade,
 } from '@/types/newowProduct'
+import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
 import {
   buildNewowAuxiliaryChartModel,
   buildNewowAuxiliaryDisclosure,
@@ -16,6 +18,8 @@ import {
   type NewowAuxiliaryChartPoint,
 } from './newowProductChartPrimitives'
 import NewowProductChartStage from './NewowProductChartStage.vue'
+import NewowExplanationPanel from './NewowExplanationPanel.vue'
+import NewowReferencePanel from './NewowReferencePanel.vue'
 
 const props = defineProps<{ identity: MarketDetailIdentity }>()
 const emit = defineEmits<{ 'focus-resolved': [barEnd: string] }>()
@@ -24,6 +28,8 @@ const identity = computed(() => props.identity)
 const loader = useNewowProduct({ identity })
 const selectedSignalId = ref<string | null>(null)
 const selectedAuxiliary = ref<NewowAuxiliaryComponent | null>(null)
+const researchTab = ref<'reference' | 'explanation'>('reference')
+const locateMessage = ref<string | null>(null)
 const chartResponse = computed(() => (
   loader.sections.chart.data.value?.section === 'chart'
     ? loader.sections.chart.data.value as NewowProductSectionResponse<'chart'>
@@ -31,6 +37,21 @@ const chartResponse = computed(() => (
 ))
 const chartModel = computed(() => chartResponse.value === null ? null : buildNewowProductChartModel(chartResponse.value))
 const selectedAction = computed(() => chartModel.value?.actions.find((action) => action.id === selectedSignalId.value) ?? null)
+const referenceResponse = computed(() => (
+  loader.sections.reference.data.value?.section === 'reference'
+    ? loader.sections.reference.data.value as NewowProductSectionResponse<'reference'>
+    : null
+))
+const explanationResponse = computed(() => (
+  loader.sections.explanation.data.value?.section === 'explanation'
+    ? loader.sections.explanation.data.value as NewowProductSectionResponse<'explanation'>
+    : null
+))
+const comparatorResponse = computed(() => (
+  loader.sections.comparator.data.value?.section === 'comparator'
+    ? loader.sections.comparator.data.value as NewowProductSectionResponse<'comparator'>
+    : null
+))
 const auxiliaryResponse = computed(() => (
   loader.sections.auxiliary.data.value?.section === 'auxiliary'
     ? loader.sections.auxiliary.data.value as NewowProductSectionResponse<'auxiliary'>
@@ -102,6 +123,33 @@ function selectSignal(signalId: string): void {
   selectedSignalId.value = signalId
 }
 
+async function activateResearchTab(tab: 'reference' | 'explanation'): Promise<void> {
+  researchTab.value = tab
+  if (tab === 'reference') {
+    if (loader.sections.reference.state.value === 'not_requested') await loader.loadReference()
+    return
+  }
+  await Promise.all([
+    loader.sections.explanation.state.value === 'not_requested' ? loader.loadExplanation() : Promise.resolve(),
+    loader.sections.comparator.state.value === 'not_requested' ? loader.loadComparator() : Promise.resolve(),
+  ])
+}
+
+async function locateReferenceTrade(trade: NewowReferenceTrade): Promise<void> {
+  locateMessage.value = null
+  let target = resolveNewowReferenceLocate(trade, chartResponse.value)
+  if (target.kind === 'request_display_window') {
+    await loader.loadChart(target.displayWindow)
+    target = resolveNewowReferenceLocate(trade, chartResponse.value)
+  }
+  if (target.kind !== 'loaded') {
+    locateMessage.value = `无法按精确信号 ${target.signalId} / ${target.barEnd} 定位；没有跳转到邻近日期。`
+    return
+  }
+  selectSignal(target.signalId)
+  locateMessage.value = `已按精确信号 ${target.signalId} / ${target.barEnd} 定位。`
+}
+
 function resolveSignalFocus(signalId: string): void {
   const action = chartModel.value?.actions.find((item) => item.id === signalId)
   if (action !== undefined && props.identity.focusBarEnd === action.barEnd) emit('focus-resolved', action.barEnd)
@@ -110,10 +158,16 @@ function resolveSignalFocus(signalId: string): void {
 watch(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency].join(':'), () => {
   selectedSignalId.value = null
   selectedAuxiliary.value = null
+  researchTab.value = 'reference'
+  locateMessage.value = null
 }, { flush: 'sync' })
 watch([chartModel, () => props.identity.focusBarEnd], ([model, focusBarEnd]) => {
   if (!focusBarEnd || model === null || selectedSignalId.value !== null) return
   selectedSignalId.value = model.actions.find((action) => action.barEnd === focusBarEnd)?.id ?? null
+}, { immediate: true })
+watch(chartResponse, (response) => {
+  if (response === null || researchTab.value !== 'reference' || loader.sections.reference.state.value !== 'not_requested') return
+  void loader.loadReference()
 }, { immediate: true })
 
 onBeforeUnmount(loader.dispose)
@@ -225,6 +279,65 @@ onBeforeUnmount(loader.dispose)
         </template>
       </article>
     </section>
+
+    <section class="newow-product-workspace__research" aria-label="Newow 参考与解释">
+      <div class="newow-product-workspace__research-tabs" role="tablist" aria-label="Newow 研究面板">
+        <button
+          id="newow-reference-tab"
+          type="button"
+          role="tab"
+          :aria-selected="researchTab === 'reference'"
+          aria-controls="newow-reference-tabpanel"
+          @click="activateResearchTab('reference')"
+        >
+          参考历史与统计
+        </button>
+        <button
+          id="newow-explanation-tab"
+          type="button"
+          role="tab"
+          :aria-selected="researchTab === 'explanation'"
+          aria-controls="newow-explanation-tabpanel"
+          @click="activateResearchTab('explanation')"
+        >
+          解释与独立比较器
+        </button>
+      </div>
+      <div
+        v-if="researchTab === 'reference'"
+        id="newow-reference-tabpanel"
+        role="tabpanel"
+        aria-labelledby="newow-reference-tab"
+      >
+        <NewowReferencePanel
+          :response="referenceResponse"
+          :chart-response="chartResponse"
+          :lifecycle="loader.sections.reference.state.value"
+          :error="loader.sections.reference.error.value"
+          :selected-signal-id="selectedSignalId"
+          :locate-message="locateMessage"
+          :loading-page="loader.sections.reference.state.value === 'loading'"
+          @reload="loader.loadReference"
+          @load-more="loader.loadNextReferencePage"
+          @locate="locateReferenceTrade"
+        />
+      </div>
+      <div
+        v-else
+        id="newow-explanation-tabpanel"
+        role="tabpanel"
+        aria-labelledby="newow-explanation-tab"
+      >
+        <NewowExplanationPanel
+          :response="explanationResponse"
+          :lifecycle="loader.sections.explanation.state.value"
+          :error="loader.sections.explanation.error.value"
+          :comparator-response="comparatorResponse"
+          :comparator-lifecycle="loader.sections.comparator.state.value"
+          :comparator-error="loader.sections.comparator.error.value"
+        />
+      </div>
+    </section>
   </section>
 </template>
 
@@ -236,6 +349,10 @@ onBeforeUnmount(loader.dispose)
 .newow-product-workspace__notice, .newow-product-workspace__selection, .newow-product-workspace__auxiliary-state { margin: 0; padding: var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); }
 .newow-product-workspace__notice { color: var(--gy-status-warning); }
 .newow-product-workspace__auxiliary { display: grid; gap: var(--gy-space-3); }
+.newow-product-workspace__research { display: grid; gap: var(--gy-space-3); }
+.newow-product-workspace__research-tabs { display: flex; flex-wrap: wrap; gap: var(--gy-space-2); }
+.newow-product-workspace__research-tabs button { min-height: 44px; padding: 0 var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-primary); background: var(--gy-bg-panel); cursor: pointer; }
+.newow-product-workspace__research-tabs button[aria-selected="true"] { border-color: var(--gy-border-focus); color: var(--gy-accent); }
 .newow-product-workspace__auxiliary-controls { display: flex; flex-wrap: wrap; gap: var(--gy-space-2); }
 .newow-product-workspace__auxiliary-controls button { min-height: 44px; padding: 0 var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-primary); background: var(--gy-bg-panel); cursor: pointer; }
 .newow-product-workspace__auxiliary-controls button[aria-pressed="true"] { border-color: var(--gy-border-focus); color: var(--gy-accent); }
