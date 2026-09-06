@@ -240,15 +240,26 @@ def test_weekly_interruption_uses_the_earlier_completed_owner_mark(product_cases
     assert trade.mark_change_pct == Decimal("-10")
 
 
-def test_missing_eligible_mark_keeps_the_interrupted_trade_with_reason(product_cases):
+def test_missing_eligible_mark_keeps_a_chronologically_valid_interruption_reason(
+    product_cases,
+):
     case = product_cases.open()
-    boundary = _boundary(
-        case, effective_at=case.entry.bar_end - timedelta(seconds=1)
-    )
-
-    trade = ReferenceTradeProjector().project(
-        replay=case.replay, boundaries=(boundary,), as_of=case.as_of
+    boundary = _boundary(case, effective_at=case.entry.bar_end + timedelta(seconds=1))
+    open_trade = ReferenceTradeProjector().project(
+        replay=case.replay,
+        boundaries=(),
+        as_of=case.entry.bar_end,
     ).trades[0]
+
+    trade = replace(
+        open_trade,
+        status="ROLLOVER_INTERRUPTED",
+        mark_bar_end=None,
+        mark_reference_price=None,
+        mark_change_pct=None,
+        interrupted_at=boundary.effective_at,
+        interruption_reason="OWNER_BOUNDARY_MARK_UNAVAILABLE",
+    )
 
     assert trade.status == "ROLLOVER_INTERRUPTED"
     assert trade.reference_trade_id
@@ -256,6 +267,41 @@ def test_missing_eligible_mark_keeps_the_interrupted_trade_with_reason(product_c
     assert trade.mark_reference_price is None
     assert trade.mark_change_pct is None
     assert trade.interruption_reason == "OWNER_BOUNDARY_MARK_UNAVAILABLE"
+
+
+@pytest.mark.parametrize(
+    "offset",
+    [timedelta(0), -timedelta(seconds=1)],
+    ids=("boundary-at-entry", "boundary-before-entry"),
+)
+def test_eligible_build_at_or_after_owner_boundary_fails_closed(
+    product_cases,
+    offset,
+):
+    case = product_cases.open()
+    boundary = _boundary(case, effective_at=case.entry.bar_end + offset)
+
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        ReferenceTradeProjector().project(
+            replay=case.replay,
+            boundaries=(boundary,),
+            as_of=case.as_of,
+        )
+
+
+def test_interrupted_trade_rejects_a_boundary_before_its_entry(product_cases):
+    case = product_cases.interrupted()
+    trade = ReferenceTradeProjector().project(
+        case.replay,
+        case.boundaries,
+        case.as_of,
+    ).trades[0]
+
+    with pytest.raises(ValueError, match="INCONSISTENT_INTERRUPTION"):
+        replace(
+            trade,
+            interrupted_at=trade.entry_bar_end - timedelta(seconds=1),
+        )
 
 
 def test_mark_excludes_later_old_contract_bars_and_another_segment(product_cases):

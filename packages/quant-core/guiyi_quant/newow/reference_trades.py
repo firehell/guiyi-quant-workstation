@@ -144,9 +144,10 @@ class ReferenceTrade:
         if self.status is ReferenceTradeStatus.ROLLOVER_INTERRUPTED:
             if self.interrupted_at is None or self.interruption_reason is None:
                 raise ValueError("NEWOW_REFERENCE_INCONSISTENT_INTERRUPTION")
-            object.__setattr__(
-                self, "interrupted_at", utc_timestamp(self.interrupted_at)
-            )
+            interrupted_at = utc_timestamp(self.interrupted_at)
+            if interrupted_at < self.entry_bar_end:
+                raise ValueError("NEWOW_REFERENCE_INCONSISTENT_INTERRUPTION")
+            object.__setattr__(self, "interrupted_at", interrupted_at)
             _text(self.interruption_reason)
         elif self.interrupted_at is not None or self.interruption_reason is not None:
             raise ValueError("NEWOW_REFERENCE_INCONSISTENT_INTERRUPTION")
@@ -525,7 +526,14 @@ class ReferenceTradeProjector:
                 raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
 
             if action.kind is ActionKind.BUILD:
-                if action.related_build_id is not None or owner in open_by_owner:
+                if (
+                    action.related_build_id is not None
+                    or owner in open_by_owner
+                    or (
+                        boundary is not None
+                        and action.bar_end >= boundary.effective_at
+                    )
+                ):
                     raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
                 trade = _open_trade(action)
                 trades.append(trade)
