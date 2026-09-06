@@ -219,7 +219,7 @@ def build_composite_inputs(
         for frame in trend_replays[ProductFrequency.DAILY].frames
         if frame.bar.bar.segment_id == daily_owner
         and frame.bar.bar.bar_end <= daily.bar.bar.bar_end
-    )
+    )[-21:]
     daily_prefix_bars = tuple(frame.bar for frame in daily_prefix)
     evidence = VerifiedCompositeEvidence(
         trend_weekly=_page_fact(weekly, ProductFrequency.WEEKLY),

@@ -53,12 +53,14 @@ def test_daily_source_digest_covers_the_consumed_volatility_prefix(product_cases
     cutoff_source = next(
         item for item in first.sources if item.role == "volatility_daily_prefix"
     )
-    selected = next(
+    eligible = [
         index
         for index, frame in enumerate(daily.frames)
         if frame.bar.bar.segment_id == cutoff_source.segment_id
         and frame.bar.bar.bar_end <= cutoff_source.bar_end
-    )
+    ]
+    assert len(eligible) >= 21
+    selected = eligible[-21]
     changed_bar = replace(
         daily.frames[selected].bar.bar,
         volume=daily.frames[selected].bar.bar.volume + 1,
@@ -78,6 +80,47 @@ def test_daily_source_digest_covers_the_consumed_volatility_prefix(product_cases
     )
 
     assert before.dependency_sha256 != after.dependency_sha256
+
+
+def test_volatility_source_excludes_same_owner_bars_before_consumed_21_bar_prefix(
+    product_cases,
+):
+    trend = _replays(product_cases, "trend")
+    oscillation = _replays(product_cases, "oscillation")
+    as_of = min(replay.frames[-1].bar.bar.bar_end for replay in trend.values())
+    first = build_composite_inputs(trend, oscillation, as_of)
+    daily = trend[ProductFrequency.DAILY]
+    cutoff_source = next(
+        item for item in first.sources if item.role == "volatility_daily_prefix"
+    )
+    eligible = [
+        index
+        for index, frame in enumerate(daily.frames)
+        if frame.bar.bar.segment_id == cutoff_source.segment_id
+        and frame.bar.bar.bar_end <= cutoff_source.bar_end
+    ]
+    assert len(eligible) >= 22
+    selected = eligible[-22]
+    changed_bar = replace(
+        daily.frames[selected].bar.bar,
+        volume=daily.frames[selected].bar.bar.volume + 1,
+    )
+    frames = list(daily.frames)
+    frames[selected] = replace(
+        daily.frames[selected],
+        bar=replace(daily.frames[selected].bar, bar=changed_bar),
+    )
+    trend[ProductFrequency.DAILY] = replace(daily, frames=tuple(frames))
+
+    second = build_composite_inputs(trend, oscillation, as_of)
+    before = next(
+        item for item in first.sources if item.role == "volatility_daily_prefix"
+    )
+    after = next(
+        item for item in second.sources if item.role == "volatility_daily_prefix"
+    )
+
+    assert before.dependency_sha256 == after.dependency_sha256
 
 
 def test_unavailable_frame_does_not_become_a_verified_current_fact(product_cases):

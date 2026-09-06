@@ -8,27 +8,34 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 
+ProductFrequencyValue = Literal["1w", "1d", "60m"]
+ProductStrategyValue = Literal["trend", "oscillation", "main_rise"]
+RuntimeStatusValue = Literal[
+    "ready", "warming", "unavailable", "not_applicable", "evidence_required"
+]
+EvidenceStatusValue = Literal[
+    "ACTIVE_CODE_VERIFIED",
+    "RESEARCH_EVIDENCE_ONLY",
+    "EVIDENCE_REQUIRED",
+    "OUT_OF_SCOPE",
+]
+MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
+
+
 class _Out(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
 class ProductFeatureStatusOut(_Out):
-    status: Literal[
-        "ready", "warming", "unavailable", "not_applicable", "evidence_required"
-    ]
-    evidence_status: Literal[
-        "ACTIVE_CODE_VERIFIED",
-        "RESEARCH_EVIDENCE_ONLY",
-        "EVIDENCE_REQUIRED",
-        "OUT_OF_SCOPE",
-    ]
+    status: RuntimeStatusValue
+    evidence_status: EvidenceStatusValue
     reason_code: str | None
 
 
 class ProductIdentityOut(_Out):
     product: str
-    strategy: Literal["trend", "oscillation", "main_rise"]
-    frequency: Literal["1w", "1d", "60m"]
+    strategy: ProductStrategyValue
+    frequency: ProductFrequencyValue
     series_kind: Literal["actual_dominant"]
     profile_id: str
     formula_versions: list[str]
@@ -71,7 +78,7 @@ class ProductActionOut(_Out):
     physical_contract: str
     segment_id: str
     related_build_id: str | None
-    trade_eligibility: str
+    trade_eligibility: Literal["ELIGIBLE", "WARMUP_ONLY", "NO_ELIGIBLE_ENTRY"]
     sequence: int
 
 
@@ -90,7 +97,7 @@ class ProductHintOut(_Out):
 
 class ProductFrameOut(_Out):
     bar_end: datetime
-    main_state: str
+    main_state: MainStateValue
     main_values: dict[str, str | None]
     status: ProductFeatureStatusOut
     action_ids: list[str]
@@ -98,6 +105,9 @@ class ProductFrameOut(_Out):
 
 
 class ChartValueOut(_Out):
+    chart_from: date
+    chart_through: date
+    page_identity: str
     bars: list[ProductBarOut]
     frames: list[ProductFrameOut]
     actions: list[ProductActionOut]
@@ -112,14 +122,15 @@ class ChartValueOut(_Out):
 class ReferenceTradeOut(_Out):
     reference_trade_id: str
     product: str
-    strategy_code: str
-    frequency: str
+    strategy_code: ProductStrategyValue
+    frequency: ProductFrequencyValue
     physical_contract: str
     segment_id: str
     formula_versions: list[str]
     reference_model_version: str
     futures_adaptation_version: str
     entry_signal_id: str
+    entry_sequence: int
     entry_bar_end: datetime
     entry_trading_day: date
     entry_reference_price: str
@@ -127,7 +138,7 @@ class ReferenceTradeOut(_Out):
     exit_bar_end: datetime | None
     exit_trading_day: date | None
     exit_reference_price: str | None
-    status: str
+    status: Literal["OPEN", "CLOSED", "ROLLOVER_INTERRUPTED"]
     holding_bars: int
     reference_return_pct: str | None
     mark_bar_end: datetime | None
@@ -172,13 +183,13 @@ class SourceFactOut(_Out):
     source_category: str
     adapter_version: str
     formula_versions: list[str]
-    frequency: str | None
+    frequency: ProductFrequencyValue | None
     bar_end: datetime | None
     physical_contract: str | None
     segment_id: str | None
     as_of: datetime
     dependency_sha256: str | None
-    status: str
+    status: Literal["ready", "unavailable", "evidence_required"]
     reason_code: str | None
 
 
@@ -273,7 +284,7 @@ class AuxiliaryValueOut(_Out):
 
 
 class ContextSlotOut(_Out):
-    frequency: Literal["1w", "1d", "60m"]
+    frequency: ProductFrequencyValue
     as_of: datetime
     availability: ProductFeatureStatusOut
     confirmation_status: ProductFeatureStatusOut
@@ -283,7 +294,7 @@ class ContextSlotOut(_Out):
     physical_contract: str | None
     segment_id: str | None
     formula_versions: list[str]
-    main_state: str | None
+    main_state: MainStateValue | None
 
 
 class ContextSnapshotOut(_Out):
@@ -291,7 +302,7 @@ class ContextSnapshotOut(_Out):
     weekly: ContextSlotOut
     daily: ContextSlotOut
     hourly: ContextSlotOut
-    missing_frequencies: list[str]
+    missing_frequencies: list[ProductFrequencyValue]
     recompute_mode: str
     historical_database_knowledge_reconstructed: Literal[False]
 
@@ -299,7 +310,7 @@ class ContextSnapshotOut(_Out):
 class SourceBarsOut(_Out):
     usage: str
     fact_names: list[str]
-    frequency: str
+    frequency: ProductFrequencyValue
     physical_contract: str | None
     segment_id: str | None
     source_identities: list[str]
@@ -318,7 +329,7 @@ class SourceBarsOut(_Out):
 class CompositeInputFactOut(_Out):
     role: str
     value: str
-    frequency: str
+    frequency: ProductFrequencyValue
     bar_end: datetime
     physical_contract: str
     segment_id: str
@@ -418,8 +429,8 @@ class CompositeValueOut(_Out):
 
 
 class CompositeResultOut(_Out):
-    status: str
-    evidence_status: str
+    status: RuntimeStatusValue
+    evidence_status: EvidenceStatusValue
     reason_code: str | None
     as_of: datetime
     formula_versions: list[str]
@@ -429,7 +440,7 @@ class CompositeResultOut(_Out):
 
 class PageFactOut(_Out):
     value: str | bool
-    frequency: str
+    frequency: ProductFrequencyValue
     bar_end: datetime
     physical_contract: str
     segment_id: str
@@ -439,7 +450,7 @@ class TargetDisplayPriceOut(_Out):
     raw_value: str
     display_value: str
     branch: str
-    source_frequency: str
+    source_frequency: ProductFrequencyValue
     bar_end: datetime
     physical_contract: str
     segment_id: str
@@ -462,8 +473,8 @@ class TargetAbsorbValueOut(_Out):
 
 
 class TargetAbsorbResultOut(_Out):
-    status: str
-    evidence_status: str
+    status: RuntimeStatusValue
+    evidence_status: EvidenceStatusValue
     reason_code: str | None
     as_of: datetime
     display_surface: str | None
@@ -526,7 +537,7 @@ class ComparatorSourceBarsOut(_Out):
 class ComparatorSegmentOut(_Out):
     physical_contract: str
     segment_id: str
-    frequency: str
+    frequency: ProductFrequencyValue
     authoritative_start_trading_day: date
     authoritative_end_trading_day: date
     source_bars: ComparatorSourceBarsOut
@@ -556,8 +567,8 @@ class ComparatorProductValueOut(_Out):
 
 class ComparatorResultOut(_Out):
     identity: ProductIdentityOut
-    status: str
-    evidence_status: str
+    status: RuntimeStatusValue
+    evidence_status: EvidenceStatusValue
     reason_code: str | None
     as_of: datetime
     formula_versions: list[str]

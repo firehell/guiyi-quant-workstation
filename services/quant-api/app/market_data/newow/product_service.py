@@ -43,6 +43,7 @@ from guiyi_quant.newow.reference_statistics import (
 )
 from guiyi_quant.newow.reference_trades import (
     ReferenceProjection,
+    ReferenceTrade,
     ReferenceTradeProjector,
 )
 from guiyi_quant.newow.target_absorb_display import calculate_target_absorb
@@ -58,6 +59,7 @@ from .inflight import InFlightCoordinator
 from .resource_gate import HeavyResourceGate
 from .snapshot_cache import SnapshotCache
 from .source_facts import (
+    SOURCE_FACT_ADAPTER_VERSION,
     SourceFact,
     build_composite_inputs,
     target_absorb_available_sources,
@@ -165,18 +167,21 @@ class ChartSectionValue:
     replay: StrategyReplay
     next_before: str | None
     diagnostics: tuple[str, ...]
+    actual_window: ProductReadWindow
+    page_identity: str
 
 
 @dataclass(frozen=True, slots=True)
 class ReferenceSectionValue:
     projection: ReferenceProjection
     summary: ReferenceSummary
-    items: tuple[object, ...]
+    items: tuple[ReferenceTrade, ...]
     next_before: str | None
     requested_window: ProductReadWindow
     actual_available_through: date
     reference_cutoff: datetime
     reference_input_sha256: str
+    entry_sequences: tuple[tuple[str, int], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +333,13 @@ def _decode_cursor(
     return payload["before"]
 
 
+def _reference_cursor_marker(item: ReferenceTrade, entry_sequence: int) -> str:
+    return json.dumps(
+        [item.entry_bar_end.isoformat(), entry_sequence, item.reference_trade_id],
+        separators=(",", ":"),
+    )
+
+
 def _snapshot_namespace(identity: ProductIdentity, as_of: datetime) -> str:
     payload = {
         "identity": (
@@ -351,11 +363,32 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
             bar = item.bar
             key = "|".join(
                 (
+                    "bar",
                     frequency.value,
                     bar.physical_contract,
                     bar.segment_id,
                     bar.bar_end.isoformat(),
                 )
+            )
+            owner = next(
+                (
+                    candidate
+                    for candidate in read.owners
+                    if candidate.contract == bar.physical_contract
+                    and candidate.start_trading_day
+                    <= bar.trading_day
+                    <= candidate.end_trading_day
+                ),
+                None,
+            )
+            boundary = next(
+                (
+                    candidate
+                    for candidate in reversed(read.boundaries)
+                    if candidate.new_contract == bar.physical_contract
+                    and candidate.effective_trading_day <= bar.trading_day
+                ),
+                None,
             )
             value = "|".join(
                 (
@@ -368,9 +401,62 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                     str(bar.open_interest),
                     bar.source_identity,
                     str(bar.observation_eligible),
+                    "" if owner is None else owner.start_trading_day.isoformat(),
+                    "" if owner is None else owner.end_trading_day.isoformat(),
+                    "" if boundary is None else boundary.old_segment_id,
+                    "" if boundary is None else boundary.new_segment_id,
+                    ""
+                    if boundary is None
+                    else boundary.effective_trading_day.isoformat(),
+                    "" if boundary is None else boundary.effective_at.isoformat(),
+                    "" if boundary is None else boundary.source_identity,
                 )
             )
             proof[key] = sha256(value.encode()).hexdigest()
+    for boundary in read.boundaries:
+        key = "|".join(
+            (
+                "boundary",
+                boundary.effective_at.isoformat(),
+                boundary.old_contract,
+                boundary.new_contract,
+            )
+        )
+        value = "|".join(
+            (
+                boundary.old_segment_id,
+                boundary.new_segment_id,
+                boundary.effective_trading_day.isoformat(),
+                boundary.source_identity,
+            )
+        )
+        proof[key] = sha256(value.encode()).hexdigest()
+    for frequency, source in read.sources.items():
+        key = "|".join(
+            (
+                "source",
+                frequency.value,
+                "" if source.bar_end is None else source.bar_end.isoformat(),
+            )
+        )
+        value = "|".join(
+            (
+                source.source_identity,
+                "" if source.bar_end is None else source.bar_end.isoformat(),
+            )
+        )
+        proof[key] = sha256(value.encode()).hexdigest()
+    proof["version|product"] = sha256(
+        "|".join(
+            (
+                FUTURES_ADAPTATION_VERSION,
+                REFERENCE_MODEL_VERSION,
+                SOURCE_FACT_ADAPTER_VERSION,
+                "main_contract_map:rank1:calendar_session_v1",
+                "newow_product_dependency_proof_v2",
+            )
+        ).encode()
+    ).hexdigest()
     return proof
 
 
@@ -433,6 +519,17 @@ class NewowProductService:
         cancelled: Callable[[], bool],
     ) -> NewowProductResult:
         self._check_cancelled(cancelled)
+        if request.section in {ProductSection.REFERENCE, ProductSection.COMPARATOR}:
+            with self._gate.acquire(cancelled):
+                return self._query_admitted(request, as_of, cancelled)
+        return self._query_admitted(request, as_of, cancelled)
+
+    def _query_admitted(
+        self,
+        request: ProductServiceQuery,
+        as_of: datetime,
+        cancelled: Callable[[], bool],
+    ) -> NewowProductResult:
         context = (
             tuple(ProductFrequency)
             if request.section is ProductSection.EXPLANATION
@@ -650,15 +747,13 @@ class NewowProductService:
             )
         elif request.section is ProductSection.REFERENCE:
             assert resolved is not None
-            with self._gate.acquire(cancelled):
-                deliveries[request.section] = self._reference(
-                    request, read, identity, fact_key, page_identity, resolved
-                )
+            deliveries[request.section] = self._reference(
+                request, read, identity, fact_key, page_identity, resolved
+            )
         elif request.section is ProductSection.EXPLANATION:
             deliveries[request.section] = self._explanation(read, identity)
         else:
-            with self._gate.acquire(cancelled):
-                deliveries[request.section] = self._comparator(read, identity)
+            deliveries[request.section] = self._comparator(read, identity)
         self._check_cancelled(cancelled)
         meta = ProductResultMeta(
             SCHEMA_VERSION,
@@ -745,6 +840,8 @@ class NewowProductService:
                 visible,
                 next_before,
                 replay.diagnostics,
+                read.display_window,
+                page_identity,
             ),
         )
 
@@ -767,6 +864,9 @@ class NewowProductService:
                 resolved.requested_since, resolved.requested_through, resolved.cutoff
             ),
         )
+        entry_sequences = {
+            action.signal_id: action.sequence for action in replay.actions
+        }
         all_items = tuple(
             sorted(
                 (
@@ -775,7 +875,11 @@ class NewowProductService:
                     *summary.interrupted_trades,
                     *summary.initial_trades,
                 ),
-                key=lambda trade: (trade.entry_bar_end, trade.reference_trade_id),
+                key=lambda trade: (
+                    trade.entry_bar_end,
+                    entry_sequences[trade.entry_signal_id],
+                    trade.reference_trade_id,
+                ),
                 reverse=True,
             )
         )
@@ -786,7 +890,10 @@ class NewowProductService:
             positions = tuple(
                 index
                 for index, item in enumerate(all_items)
-                if item.reference_trade_id == marker
+                if _reference_cursor_marker(
+                    item, entry_sequences[item.entry_signal_id]
+                )
+                == marker
             )
             if len(positions) != 1:
                 raise NewowProductServiceError("NEWOW_CURSOR_GENERATION_CONFLICT")
@@ -799,7 +906,9 @@ class NewowProductService:
                     "kind": "reference",
                     "fingerprint": fact_key,
                     "page_identity": page_identity,
-                    "before": items[-1].reference_trade_id,
+                    "before": _reference_cursor_marker(
+                        items[-1], entry_sequences[items[-1].entry_signal_id]
+                    ),
                 }
             )
             if len(all_items) > len(items) and items
@@ -814,6 +923,7 @@ class NewowProductService:
             resolved.actual_through,
             resolved.cutoff,
             fact_key,
+            tuple(sorted(entry_sequences.items())),
         )
         status = (
             _ready()

@@ -57,6 +57,8 @@ def test_strategy_detail_returns_only_requested_typed_section(
         "value": None,
     }
     assert isinstance(body["chart"]["value"]["bars"][0]["close"], str)
+    assert body["chart"]["value"]["chart_from"] <= body["chart"]["value"]["chart_through"]
+    assert len(body["chart"]["value"]["page_identity"]) == 64
     assert body["chart"]["value"]["formal_signal_eligible"] is True
     assert all(
         isinstance(action["sequence"], int)
@@ -158,6 +160,7 @@ def test_reference_uses_decimal_strings_and_null_empty_closed_metrics(
     assert value["summary"]["closed_count"] == 0
     assert value["summary"]["win_rate_pct"] is None
     assert isinstance(value["items"][0]["entry_reference_price"], str)
+    assert isinstance(value["items"][0]["entry_sequence"], int)
     assert value["executable"] is False
     assert value["auto_order"] is False
 

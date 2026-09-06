@@ -15,6 +15,7 @@ from app.market_data.newow.product_reader import (
     ProductReadSet,
     ResolvedPerformanceWindow,
 )
+from app.market_data.newow.resource_gate import HeavyResourceGate, NewowResourceBusy
 from app.market_data.newow.product_service import (
     NewowProductService,
     NewowProductServiceError,
@@ -161,6 +162,95 @@ def test_identical_service_misses_share_reader_and_calculation(product_cases):
     assert len(calls) == 1
     assert len(results) == 2
     assert results[0].meta.input_content_sha256 == results[1].meta.input_content_sha256
+
+
+def test_heavy_admission_happens_before_reader_resolution_or_load(product_cases):
+    _service_instance, reader, build, clear = _service(product_cases)
+    gate = HeavyResourceGate(max_running=1, max_waiting=0, wait_timeout=0.01)
+    lease = gate.acquire()
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        heavy_gate=gate,
+        now=lambda: clear.bar_end,
+    )
+
+    with pytest.raises(NewowResourceBusy, match="NEWOW_RESOURCE_BUSY"):
+        service.query(
+            ProductServiceQuery(
+                "rb",
+                "trend",
+                "1d",
+                section="reference",
+                performance_since=build.trading_day,
+                performance_through=clear.trading_day,
+                as_of=clear.bar_end,
+            )
+        )
+    lease.release()
+
+    assert reader.loads == []
+
+
+def test_different_heavy_queries_share_the_same_single_reader_admission(product_cases):
+    _service_instance, reader, build, clear = _service(product_cases)
+    original = reader.load
+    first_entered = Event()
+    release_first = Event()
+    active = 0
+    maximum_active = 0
+    calls = 0
+
+    def slow_load(query, as_of):
+        nonlocal active, maximum_active, calls
+        calls += 1
+        active += 1
+        maximum_active = max(maximum_active, active)
+        try:
+            if calls == 1:
+                first_entered.set()
+                release_first.wait(1)
+            return original(query, as_of)
+        finally:
+            active -= 1
+
+    reader.load = slow_load
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        heavy_gate=HeavyResourceGate(max_running=1, max_waiting=2),
+        now=lambda: clear.bar_end,
+    )
+    common = dict(
+        product="rb",
+        strategy="trend",
+        frequency="1d",
+        section="reference",
+        performance_since=build.trading_day,
+        performance_through=clear.trading_day,
+        as_of=clear.bar_end,
+    )
+    results = []
+    first = Thread(
+        target=lambda: results.append(
+            service.query(ProductServiceQuery(**common, history_limit=1))
+        )
+    )
+    second = Thread(
+        target=lambda: results.append(
+            service.query(ProductServiceQuery(**common, history_limit=2))
+        )
+    )
+    first.start()
+    assert first_entered.wait(1)
+    second.start()
+    sleep(0.02)
+    assert calls == 1
+    release_first.set()
+    first.join(1)
+    second.join(1)
+
+    assert len(results) == 2
+    assert calls == 2
+    assert maximum_active == 1
 
 
 def test_history_limit_and_viewport_do_not_change_reference_summary_or_identity(

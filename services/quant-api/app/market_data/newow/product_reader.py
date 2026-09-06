@@ -206,8 +206,11 @@ class NewowProductReader:
         start = datetime.combine(
             min(since, cutoff.astimezone(_SHANGHAI).date()), time.min, _SHANGHAI
         )
+        requested_end = datetime.combine(
+            requested_through, time.max, _SHANGHAI
+        )
         days = self._market_data.trading_days_overlapping_window(
-            symbol=product, start=start, end=cutoff + _MICROSECOND
+            symbol=product, start=start, end=max(cutoff + _MICROSECOND, requested_end)
         )
         if not days or any(
             current <= previous for previous, current in zip(days, days[1:])
@@ -239,10 +242,8 @@ class NewowProductReader:
                 symbol=product, trading_day=actual_through
             )
         )
-        missing_completed_days = any(
-            actual_through < day <= requested_through for day in days
-        )
-        complete = not missing_completed_days
+        requested_days = tuple(day for day in days if since <= day <= requested_through)
+        complete = bool(requested_days) and actual_through == requested_days[-1]
         reason = None if complete else "NEWOW_REFERENCE_WINDOW_PARTIAL"
         # W1 completion can only be established after the owned W1 bars are read;
         # the service performs that final alignment instead of guessing by weekday.

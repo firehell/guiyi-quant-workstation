@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from bisect import bisect_left
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_EVEN, localcontext
@@ -391,13 +390,6 @@ def _attach_hints(
     attached: list[list[str]] = [[] for _ in trades]
     bar_level: list[StrategyHint] = []
     unassigned: list[StrategyHint] = []
-    trades_by_owner: dict[tuple[str, str], list[tuple[tuple[datetime, int], int]]] = {}
-    for index, trade in enumerate(trades):
-        entry = actions_by_id[trade.entry_signal_id]
-        trades_by_owner.setdefault(
-            (trade.physical_contract, trade.segment_id), []
-        ).append(((entry.bar_end, entry.sequence), index))
-
     for hint in hints:
         hint_bar = (hint.physical_contract, hint.segment_id, hint.bar_end)
         if (hint.sequence is None and hint_bar in action_bars) or (
@@ -406,33 +398,40 @@ def _attach_hints(
             bar_level.append(hint)
             continue
 
-        candidates = trades_by_owner.get((hint.physical_contract, hint.segment_id), [])
-        key = (hint.bar_end, -1 if hint.sequence is None else hint.sequence)
-        position = bisect_left(candidates, (key, -1)) - 1
-        if position < 0:
-            unassigned.append(hint)
-            continue
-        index = candidates[position][1]
-        trade = trades[index]
-        matches = True
-        if trade.status is ReferenceTradeStatus.CLOSED:
-            if trade.exit_signal_id is None:
-                raise ValueError("NEWOW_REFERENCE_INCONSISTENT_STATUS")
-            exit_action = actions_by_id[trade.exit_signal_id]
-            matches = (
-                hint.bar_end < exit_action.bar_end
-                if hint.sequence is None
-                else (hint.bar_end, hint.sequence)
-                < (exit_action.bar_end, exit_action.sequence)
-            )
-        elif trade.status is ReferenceTradeStatus.ROLLOVER_INTERRUPTED:
-            if trade.interrupted_at is None:
-                raise ValueError("NEWOW_REFERENCE_INCONSISTENT_INTERRUPTION")
-            matches = hint.bar_end <= trade.interrupted_at
-        else:
-            matches = hint.bar_end <= as_of
-        if matches:
-            attached[index].append(hint.hint_id)
+        owners = (hint.physical_contract, hint.segment_id)
+        matches: list[int] = []
+        for index, trade in enumerate(trades):
+            if owners != (trade.physical_contract, trade.segment_id):
+                continue
+            entry = actions_by_id[trade.entry_signal_id]
+            if hint.sequence is None:
+                if hint.bar_end <= entry.bar_end:
+                    continue
+            elif (hint.bar_end, hint.sequence) <= (entry.bar_end, entry.sequence):
+                continue
+            if trade.status is ReferenceTradeStatus.CLOSED:
+                if trade.exit_signal_id is None:
+                    raise ValueError("NEWOW_REFERENCE_INCONSISTENT_STATUS")
+                exit_action = actions_by_id[trade.exit_signal_id]
+                if hint.sequence is None:
+                    if hint.bar_end >= exit_action.bar_end:
+                        continue
+                elif (hint.bar_end, hint.sequence) >= (
+                    exit_action.bar_end,
+                    exit_action.sequence,
+                ):
+                    continue
+            elif trade.status is ReferenceTradeStatus.ROLLOVER_INTERRUPTED:
+                if trade.interrupted_at is None:
+                    raise ValueError("NEWOW_REFERENCE_INCONSISTENT_INTERRUPTION")
+                if hint.bar_end > trade.interrupted_at:
+                    continue
+            elif hint.bar_end > as_of:
+                continue
+            matches.append(index)
+
+        if len(matches) == 1:
+            attached[matches[0]].append(hint.hint_id)
         else:
             unassigned.append(hint)
 

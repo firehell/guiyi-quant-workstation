@@ -323,6 +323,23 @@ def test_reference_window_includes_exact_session_end_and_normalizes_same_instant
     assert first.cutoff == utc_end
 
 
+def test_reference_window_does_not_call_future_requested_days_complete(product_cases):
+    reader, _query, _fake = product_cases.paged_reader(prefix_bars=5, frequency="1d")
+
+    resolved = reader.resolve_performance_window(
+        "rb",
+        ProductFrequency.DAILY,
+        date(2023, 1, 2),
+        date(2023, 1, 6),
+        datetime(2023, 1, 4, 7, tzinfo=UTC),
+    )
+
+    assert resolved.actual_through == date(2023, 1, 4)
+    assert resolved.cutoff == datetime(2023, 1, 4, 7, tzinfo=UTC)
+    assert resolved.complete is False
+    assert resolved.reason_code == "NEWOW_REFERENCE_WINDOW_PARTIAL"
+
+
 @pytest.mark.parametrize(
     "field, value",
     [

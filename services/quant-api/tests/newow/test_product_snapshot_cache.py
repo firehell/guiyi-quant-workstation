@@ -31,18 +31,34 @@ def test_single_entry_budget_counts_all_retained_sections():
 
 def test_token_requires_equal_values_for_overlapping_dependency_facts():
     cache = SnapshotCache(max_entries=4, max_bytes=1024, max_entry_bytes=512)
-    token = cache.put(
-        "identity", ("chart",), "chart", 10, proof={"bar-a": "value-1"}
-    )
+    token = cache.put("identity", ("chart",), "chart", 10, proof={"bar|a": "value-1"})
     assert token is not None
     assert cache.token_is_compatible(
-        token, "identity", {"bar-a": "value-1", "bar-b": "value-2"}
+        token, "identity", {"bar|a": "value-1", "bar|b": "value-2"}
+    )
+    assert not cache.token_is_compatible(token, "identity", {"bar|a": "revised"})
+    assert not cache.token_is_compatible(token, "identity", {"unrelated": "value"})
+
+
+def test_token_rejects_owner_boundary_or_adapter_revision():
+    cache = SnapshotCache(max_entries=4, max_bytes=1024, max_entry_bytes=512)
+    proof = {
+        "bar|a": "same-bar",
+        "boundary|switch": "owner-v1",
+        "version|product": "adapter-v1",
+    }
+    token = cache.put("identity", ("chart",), "chart", 10, proof=proof)
+    assert token is not None
+
+    assert not cache.token_is_compatible(
+        token,
+        "identity",
+        {**proof, "boundary|switch": "owner-v2"},
     )
     assert not cache.token_is_compatible(
-        token, "identity", {"bar-a": "revised"}
-    )
-    assert not cache.token_is_compatible(
-        token, "identity", {"unrelated": "value"}
+        token,
+        "identity",
+        {**proof, "version|product": "adapter-v2"},
     )
 
 

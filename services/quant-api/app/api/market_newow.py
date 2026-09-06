@@ -331,8 +331,8 @@ def _bar(item) -> dict[str, object]:
     }
 
 
-def _trade(item) -> dict[str, object]:
-    return {
+def _trade(item, entry_sequence: int) -> dict[str, object]:
+    payload = {
         field.name: (
             _decimal(value)
             if isinstance(value, Decimal)
@@ -359,6 +359,8 @@ def _trade(item) -> dict[str, object]:
             "statistics_membership",
         }
     }
+    payload["entry_sequence"] = entry_sequence
+    return payload
 
 
 def _delivery(value, serializer) -> dict[str, object]:
@@ -375,6 +377,9 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
     chart = _delivery(
         result.chart,
         lambda value: {
+            "chart_from": value.actual_window.since,
+            "chart_through": value.actual_window.through,
+            "page_identity": value.page_identity,
             "bars": [_bar(item) for item in value.bars],
             "frames": [
                 {
@@ -449,7 +454,10 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                 "interrupted_count": value.summary.interrupted_count,
                 "initial_count": value.summary.initial_count,
             },
-            "items": [_trade(item) for item in value.items],
+            "items": [
+                _trade(item, dict(value.entry_sequences)[item.entry_signal_id])
+                for item in value.items
+            ],
             "next_before": value.next_before,
             "executable": False,
             "auto_order": False,
