@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, fields, replace
 from datetime import timedelta
 
 import pytest
@@ -21,6 +21,12 @@ from guiyi_quant.newow.subplots import (
     calculate_zhaoyao_mirror,
 )
 from tests.newow.fixtures import bullish_true_cup_handle
+
+
+def _mirror(result):
+    (mirror,) = result.retrospective_layers
+    assert mirror.name == "zhaoyao_mirror"
+    return mirror
 
 
 def _two_owner_segments(bars: tuple[ProductBar, ...]) -> tuple[ProductBar, ...]:
@@ -67,15 +73,35 @@ def test_three_subplots_match_original_primitives_per_exact_owner_segment(
         calculate_up_down_energy(raw_segments[0]),
         calculate_up_down_energy(raw_segments[1]),
     )
-    assert tuple(segment.value for segment in result.mirror.segments) == (
+    mirror = _mirror(result)
+    assert tuple(segment.value for segment in mirror.segments) == (
         calculate_zhaoyao_mirror(raw_segments[0]),
         calculate_zhaoyao_mirror(raw_segments[1]),
     )
-    assert result.retrospective_layers == (result.mirror,)
-    assert result.mirror.repainting is True
-    assert result.mirror.formal_signal_eligible is False
+    assert mirror.repainting is True
+    assert mirror.formal_signal_eligible is False
     assert result.actions == ()
     assert result.hints == ()
+
+
+def test_mirror_is_stored_only_in_the_retrospective_dataclass_field(
+    product_cases,
+) -> None:
+    case = product_cases.primitive_input("trend", "60m")
+
+    result = calculate_product_auxiliary(case.identity, case.bars[:20])
+
+    field_names = tuple(field.name for field in fields(result))
+    serialized = asdict(result)
+    assert "retrospective_layers" in field_names
+    assert "retrospective_layers" in serialized
+    assert "mirror" not in field_names
+    assert "mirror" not in serialized
+    assert not hasattr(result, "mirror")
+    mirror = _mirror(result)
+    assert serialized["retrospective_layers"][0]["name"] == mirror.name
+    assert mirror.repainting is True
+    assert mirror.formal_signal_eligible is False
 
 
 @pytest.mark.parametrize(
@@ -100,7 +126,7 @@ def test_each_subplot_keeps_its_own_short_prefix_warming(
 
     assert result.main_force_control.status == control
     assert result.up_down_energy.status == energy
-    assert result.mirror.status == mirror
+    assert _mirror(result).status == mirror
 
 
 def test_cup_handle_is_trend_daily_only_and_honours_confirmation_cutoff(
@@ -162,8 +188,8 @@ def test_mirror_can_repaint_without_changing_prefix_actions_or_reference_trades(
     future_auxiliary = calculate_product_auxiliary(
         case.identity, case.bars, as_of=case.bars[-1].bar.bar_end
     )
-    prefix_mirror = prefix_auxiliary.mirror.segments[0].value
-    future_mirror = future_auxiliary.mirror.segments[0].value
+    prefix_mirror = _mirror(prefix_auxiliary).segments[0].value
+    future_mirror = _mirror(future_auxiliary).segments[0].value
     assert prefix_mirror is not None and future_mirror is not None
     assert prefix_mirror.peaks != future_mirror.peaks[:prefix_length]
 

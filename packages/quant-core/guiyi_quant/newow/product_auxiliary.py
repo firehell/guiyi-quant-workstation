@@ -108,24 +108,23 @@ class AuxiliaryResult:
     as_of: datetime
     main_force_control: AuxiliaryLayer[MainForceControlResult]
     up_down_energy: AuxiliaryLayer[UpDownEnergyResult]
-    mirror: AuxiliaryLayer[ZhaoyaoMirrorResult]
+    retrospective_layers: tuple[AuxiliaryLayer[ZhaoyaoMirrorResult], ...]
     cup_handle: AuxiliaryLayer[tuple[CupReadyWitness, ...]]
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, ProductIdentity):
             raise ValueError("NEWOW_AUXILIARY_INVALID_IDENTITY")
         object.__setattr__(self, "as_of", utc_timestamp(self.as_of))
+        retrospective_layers = tuple(self.retrospective_layers)
         if (
-            self.mirror.repainting is not True
-            or self.mirror.formal_signal_eligible is not False
+            len(retrospective_layers) != 1
+            or not isinstance(retrospective_layers[0], AuxiliaryLayer)
+            or retrospective_layers[0].name != "zhaoyao_mirror"
+            or retrospective_layers[0].repainting is not True
+            or retrospective_layers[0].formal_signal_eligible is not False
         ):
             raise ValueError("NEWOW_AUXILIARY_MIRROR_AUTHORITY")
-
-    @property
-    def retrospective_layers(
-        self,
-    ) -> tuple[AuxiliaryLayer[ZhaoyaoMirrorResult], ...]:
-        return (self.mirror,)
+        object.__setattr__(self, "retrospective_layers", retrospective_layers)
 
     @property
     def actions(self) -> tuple[()]:
@@ -371,6 +370,6 @@ def calculate_product_auxiliary(
         as_of=cutoff,
         main_force_control=control,
         up_down_energy=energy,
-        mirror=mirror,
+        retrospective_layers=(mirror,),
         cup_handle=_cup_layer(identity, owners),
     )
