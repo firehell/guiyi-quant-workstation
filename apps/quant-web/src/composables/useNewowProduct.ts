@@ -61,6 +61,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       .map((section) => [section, createResource()]),
   ) as Record<NewowProductSection, SectionResource>
   const controllers = new Map<NewowProductSection, AbortController>()
+  const inFlightSnapshotTokens = new Map<NewowProductSection, string | undefined>()
   const sectionGenerations = new Map<NewowProductSection, number>()
   let generation = 0
   let disposed = false
@@ -177,6 +178,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     let rebuilt = false
     try {
       while (true) {
+        inFlightSnapshotTokens.set(section, request.snapshotToken)
         try {
           const response = await fetchSection(request, controller.signal)
           if (!isCurrent(section, requestGeneration, sectionGeneration, controller)) return
@@ -187,7 +189,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
           if (!rebuilt && isRebuildable(error)) {
             rebuilt = true
             const rejectedToken = request.snapshotToken ?? resource.data.value?.meta.snapshot_token ?? undefined
-            invalidateTokenDependents(rejectedToken)
+            invalidateTokenDependents(rejectedToken, section)
             if (section === 'reference' || section === 'chart') {
               clearResource(section)
               resetPagination(section)
@@ -200,7 +202,10 @@ export function useNewowProduct(options: UseNewowProductOptions) {
         }
       }
     } finally {
-      if (isCurrent(section, requestGeneration, sectionGeneration, controller)) controllers.delete(section)
+      if (isCurrent(section, requestGeneration, sectionGeneration, controller)) {
+        controllers.delete(section)
+        inFlightSnapshotTokens.delete(section)
+      }
     }
   }
 
@@ -345,10 +350,18 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     return null
   }
 
-  function invalidateTokenDependents(token: string | undefined): void {
+  function invalidateTokenDependents(token: string | undefined, currentSection: NewowProductSection): void {
     if (token === undefined) return
     for (const section of ['chart', 'reference', 'explanation', 'auxiliary', 'comparator'] as const) {
-      if (resources[section].data.value?.meta.snapshot_token !== token) continue
+      const inFlightMatches = section !== currentSection && inFlightSnapshotTokens.get(section) === token
+      const loadedMatches = resources[section].data.value?.meta.snapshot_token === token
+      if (!inFlightMatches && !loadedMatches) continue
+      if (inFlightMatches) {
+        controllers.get(section)?.abort()
+        sectionGenerations.set(section, (sectionGenerations.get(section) ?? 0) + 1)
+        controllers.delete(section)
+        inFlightSnapshotTokens.delete(section)
+      }
       clearResource(section)
       if (section === 'chart' || section === 'reference') resetPagination(section)
     }
@@ -397,7 +410,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     loadChart, loadNextChartPage, loadAuxiliary, loadReference, loadNextReferencePage, loadExplanation, loadComparator, dispose,
   }
 
-  function abortAll(): void { for (const controller of controllers.values()) controller.abort(); controllers.clear() }
+  function abortAll(): void { for (const controller of controllers.values()) controller.abort(); controllers.clear(); inFlightSnapshotTokens.clear() }
   function resetAll(): void { for (const section of ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const) clearResource(section); chartWindow = null; chartFingerprint = null; chartPageLimit = null; referenceWindow = null; referenceFingerprint = null; referencePageLimit = null }
   function clearResource(section: NewowProductSection): void { resources[section].data.value = null; resources[section].state.value = 'not_requested'; resources[section].error.value = null }
 }

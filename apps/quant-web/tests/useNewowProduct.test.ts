@@ -312,6 +312,42 @@ test('a cursor 409 falls back to the retained reference token and clears a late 
   state.dispose()
 })
 
+test('a cursor 409 aborts a pending old-token explanation before its late response can be accepted', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: null }))
+  await flush()
+
+  const firstReference = state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  pending[1]!.resolve(normalizedReference(pending[1]!.request, { token: 'old-token', nextBefore: 'old-cursor' }))
+  await firstReference
+
+  const page = state.loadNextReferencePage()
+  assert.equal(pending[2]!.request.snapshotToken, undefined)
+  const explanation = state.loadExplanation()
+  assert.equal(pending[3]!.request.snapshotToken, 'old-token')
+  assert.equal(pending[3]!.signal.aborted, false)
+
+  pending[2]!.reject(new NewowProductRequestError('NEWOW_CURSOR_GENERATION_CONFLICT', 'conflict'))
+  await flush()
+  assert.equal(pending.length, 5)
+  assert.equal(pending[3]!.signal.aborted, true)
+  assert.equal(pending[4]!.signal.aborted, false)
+  assert.equal(state.sections.reference.data.value, null)
+  assert.equal(state.sections.explanation.data.value, null)
+
+  pending[3]!.resolve(normalizedStatus(pending[3]!.request, 'old-token'))
+  await explanation
+  assert.equal(state.sections.explanation.data.value, null)
+
+  pending[4]!.resolve(normalizedReference(pending[4]!.request, { token: 'new-token', nextBefore: null }))
+  await page
+  assert.equal(state.sections.reference.data.value?.meta.snapshot_token, 'new-token')
+  assert.equal(state.sections.explanation.data.value, null)
+  state.dispose()
+})
+
 test('merges an older chart cursor page atomically without changing the fixed reference window', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
