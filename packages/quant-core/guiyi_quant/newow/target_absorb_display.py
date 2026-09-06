@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, localcontext
 from enum import StrEnum
+from math import isfinite
 from typing import TypeGuard
 
 from .context_alignment import ContextSlot, ContextSnapshot
@@ -23,6 +24,7 @@ from .product_identity import utc_timestamp
 PAGE_SELECTION_FORMULA_VERSION = "newow_target_absorb_display_selection_page_v2"
 PRICE_GUARD_FORMULA_VERSION = "newow_price_guard_page_v3_1_6"
 FUTURES_ADAPTER_VERSION = "guiyi_newow_target_absorb_segment_adapter_v1"
+WEEKLY_CHANNEL_FORMULA_VERSION = "newow_hhv_llv_channel_page_v1"
 EVIDENCE_MANIFEST_SHA256 = (
     "279aa0c3a88b6e6c5413387a57085dfe4c4d23a34befa751d95ced4c03be962f"
 )
@@ -32,19 +34,32 @@ STRATEGY_CALC_SHA256 = (
 FROZEN_RESULTS_SHA256 = (
     "163337b4b425241189ae348814610c29b3ff3b24a3c4b03a95da10864efbab3e"
 )
-_FORMULAS = (
+_BASE_FORMULAS = (
     PAGE_SELECTION_FORMULA_VERSION,
     PRICE_GUARD_FORMULA_VERSION,
     FUTURES_ADAPTER_VERSION,
 )
 _ZERO = Decimal("0")
 _DISPLAY_QUANTUM = Decimal("0.01")
+_JS_TO_FIXED_ABS_LIMIT = 1e21
 
 
 class PageSelectionPeriod(StrEnum):
     DAY = "day"
     WEEK = "week"
     BEST_AVAILABLE = "best_available"
+
+
+class PageDisplaySurface(StrEnum):
+    SHARED_FUNCTION = "shared_function"
+    STATUS_CARD = "status_card"
+
+
+class PageSignalState(StrEnum):
+    WAIT = "wait"
+    SELL = "sell"
+    BUY = "buy"
+    HOLD = "hold"
 
 
 def _text(value: object) -> None:
@@ -56,20 +71,41 @@ def _positive(value: Decimal | None) -> TypeGuard[Decimal]:
     return isinstance(value, Decimal) and value.is_finite() and value > _ZERO
 
 
-def guard_page_price(value: Decimal | None, previous_close: Decimal | None) -> Decimal:
-    """Reproduce the named page guard without resolving previous-close origin."""
+def _finite_js_number(value: Decimal | None) -> float | None:
+    if value is None:
+        return None
+    if not isinstance(value, Decimal):
+        raise ValueError("NEWOW_TARGET_ABSORB_INVALID_PAGE_NUMBER")
+    if not value.is_finite():
+        return None
+    number = float(value)
+    if not isfinite(number):
+        return None
+    if abs(number) >= _JS_TO_FIXED_ABS_LIMIT:
+        raise ValueError("NEWOW_TARGET_ABSORB_PAGE_NUMBER_OUT_OF_SAFE_DOMAIN")
+    return number
 
-    if not _positive(value):
-        return _ZERO
-    assert isinstance(value, Decimal)
-    baseline = previous_close if _positive(previous_close) else None
-    guarded = value
-    if baseline is not None:
-        guarded = min(max(value, baseline * Decimal("0.5")), baseline * Decimal("2"))
+
+def _js_number_to_fixed_2(number: float) -> Decimal:
+    """Round the binary Number value with the page's toFixed tie direction."""
+
     with localcontext() as context:
-        context.prec = 28
+        context.prec = 64
         context.rounding = ROUND_HALF_UP
-        return guarded.quantize(_DISPLAY_QUANTUM)
+        return Decimal.from_float(number).quantize(_DISPLAY_QUANTUM)
+
+
+def guard_page_price(value: Decimal | None, previous_close: Decimal | None) -> Decimal:
+    """Page-only JS Number/toFixed guard; previous-close provenance stays unresolved."""
+
+    number = _finite_js_number(value)
+    if number is None:
+        return _ZERO
+    baseline = _finite_js_number(previous_close)
+    if baseline is None or baseline <= 0:
+        return _js_number_to_fixed_2(number) if number > 0 else _ZERO
+    guarded = min(max(number, baseline * 0.5), baseline * 2.0)
+    return _js_number_to_fixed_2(guarded)
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +132,54 @@ class PagePriceFact:
         object.__setattr__(self, "bar_end", bar_end)
 
 
+@dataclass(frozen=True, slots=True)
+class PageSignalFact:
+    """One closed page signal bound to the matching Guiyi context source."""
+
+    value: PageSignalState
+    frequency: ProductFrequency
+    bar_end: datetime
+    physical_contract: str
+    segment_id: str
+
+    def __post_init__(self) -> None:
+        try:
+            value = PageSignalState(self.value)
+            frequency = ProductFrequency(self.frequency)
+            bar_end = utc_timestamp(self.bar_end)
+        except (TypeError, ValueError) as error:
+            raise ValueError("NEWOW_TARGET_ABSORB_INVALID_SIGNAL") from error
+        _text(self.physical_contract)
+        _text(self.segment_id)
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "frequency", frequency)
+        object.__setattr__(self, "bar_end", bar_end)
+
+
+@dataclass(frozen=True, slots=True)
+class PageCrossFact:
+    """One weekly cross flag bound to the matching Guiyi context source."""
+
+    value: bool
+    frequency: ProductFrequency
+    bar_end: datetime
+    physical_contract: str
+    segment_id: str
+
+    def __post_init__(self) -> None:
+        if type(self.value) is not bool:
+            raise ValueError("NEWOW_TARGET_ABSORB_INVALID_CROSS_FACT")
+        try:
+            frequency = ProductFrequency(self.frequency)
+            bar_end = utc_timestamp(self.bar_end)
+        except (TypeError, ValueError) as error:
+            raise ValueError("NEWOW_TARGET_ABSORB_INVALID_CROSS_FACT") from error
+        _text(self.physical_contract)
+        _text(self.segment_id)
+        object.__setattr__(self, "frequency", frequency)
+        object.__setattr__(self, "bar_end", bar_end)
+
+
 def _usable(fact: PagePriceFact | None) -> TypeGuard[PagePriceFact]:
     return fact is not None and _positive(fact.value)
 
@@ -110,10 +194,10 @@ def _fact_value(fact: PagePriceFact | None) -> Decimal:
 class PageSelectionInputs:
     """Frozen page fields; no field is inferred from current-period bars."""
 
-    signal_daily: str = "wait"
-    signal_weekly: str = "wait"
-    cross_weekly_buy: bool = False
-    current_price: Decimal | None = None
+    signal_daily: PageSignalFact
+    signal_weekly: PageSignalFact
+    cross_weekly_buy: PageCrossFact
+    current_price: PagePriceFact
     target_daily: PagePriceFact | None = None
     target_weekly: PagePriceFact | None = None
     target: PagePriceFact | None = None
@@ -123,13 +207,13 @@ class PageSelectionInputs:
     cost: PagePriceFact | None = None
 
     def __post_init__(self) -> None:
-        for signal in (self.signal_daily, self.signal_weekly):
-            _text(signal)
-        if type(self.cross_weekly_buy) is not bool:
-            raise ValueError("NEWOW_TARGET_ABSORB_INVALID_SELECTION_INPUT")
-        if self.current_price is not None and not isinstance(
-            self.current_price, Decimal
+        if not isinstance(self.signal_daily, PageSignalFact) or not isinstance(
+            self.signal_weekly, PageSignalFact
         ):
+            raise ValueError("NEWOW_TARGET_ABSORB_INVALID_SELECTION_INPUT")
+        if not isinstance(self.cross_weekly_buy, PageCrossFact):
+            raise ValueError("NEWOW_TARGET_ABSORB_INVALID_SELECTION_INPUT")
+        if not isinstance(self.current_price, PagePriceFact):
             raise ValueError("NEWOW_TARGET_ABSORB_INVALID_SELECTION_INPUT")
         for value in (
             self.target_daily,
@@ -142,8 +226,6 @@ class PageSelectionInputs:
         ):
             if value is not None and not isinstance(value, PagePriceFact):
                 raise ValueError("NEWOW_TARGET_ABSORB_INVALID_SELECTION_INPUT")
-        object.__setattr__(self, "signal_daily", self.signal_daily.lower())
-        object.__setattr__(self, "signal_weekly", self.signal_weekly.lower())
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +251,7 @@ class VerifiedTargetAbsorbEvidence:
 
     period: PageSelectionPeriod
     view_frequency: ProductFrequency
+    display_surface: PageDisplaySurface
     inputs: PageSelectionInputs
     weekly_channel_bars: tuple[ProductBar, ...] = ()
     manifest_sha256: str = EVIDENCE_MANIFEST_SHA256
@@ -179,6 +262,7 @@ class VerifiedTargetAbsorbEvidence:
         try:
             period = PageSelectionPeriod(self.period)
             frequency = ProductFrequency(self.view_frequency)
+            display_surface = PageDisplaySurface(self.display_surface)
         except (TypeError, ValueError) as error:
             raise ValueError("NEWOW_TARGET_ABSORB_INVALID_EVIDENCE") from error
         if not isinstance(self.inputs, PageSelectionInputs):
@@ -200,6 +284,7 @@ class VerifiedTargetAbsorbEvidence:
             raise ValueError("NEWOW_TARGET_ABSORB_INVALID_EVIDENCE")
         object.__setattr__(self, "period", period)
         object.__setattr__(self, "view_frequency", frequency)
+        object.__setattr__(self, "display_surface", display_surface)
         object.__setattr__(self, "weekly_channel_bars", bars)
 
 
@@ -215,19 +300,30 @@ def _select_target(
     generic = inputs.target
     has_day = _usable(day)
     has_week = _usable(week)
-    day_above = inputs.signal_daily not in {"wait", "sell"}
-    week_above = inputs.signal_weekly not in {"wait", "sell"} or inputs.cross_weekly_buy
-    price = inputs.current_price
+    daily_signal = inputs.signal_daily.value
+    weekly_signal = inputs.signal_weekly.value
+    day_above = daily_signal not in {PageSignalState.WAIT, PageSignalState.SELL}
+    week_above = (
+        weekly_signal
+        not in {
+            PageSignalState.WAIT,
+            PageSignalState.SELL,
+        }
+        or inputs.cross_weekly_buy.value
+    )
+    price = (
+        inputs.current_price.value if _positive(inputs.current_price.value) else None
+    )
 
     if has_day or has_week:
         if day_above and week_above:
             if period is PageSelectionPeriod.WEEK and has_week:
                 return _selected(week, "target_week_view")
-            if inputs.signal_daily == "buy" and has_day:
+            if daily_signal is PageSignalState.BUY and has_day:
                 if has_week and _positive(price) and price >= _fact_value(day):
                     return _selected(week, "target_daily_breakout_weekly")
                 return _selected(day, "target_daily_buy")
-            if inputs.signal_weekly == "buy" and has_week:
+            if weekly_signal is PageSignalState.BUY and has_week:
                 return _selected(week, "target_weekly_buy")
             if period is PageSelectionPeriod.DAY:
                 return _selected(day, "target_daily_hold") or _selected(
@@ -257,10 +353,7 @@ def _select_target(
             and _positive(price)
             and price >= _fact_value(day)
         ):
-            return _selected(
-                week if week_above else day,
-                "target_weekly_breakout" if week_above else "target_daily_breakout",
-            )
+            return _selected(day, "target_daily_breakout")
         if has_day:
             return _selected(day, "target_daily_flat")
         if period is not PageSelectionPeriod.DAY and has_week:
@@ -277,16 +370,21 @@ def _select_absorb(
 ) -> SelectedPagePrice | None:
     day = inputs.cost_daily
     week = inputs.cost_weekly
-    day_above = inputs.signal_daily not in {"wait", "sell"}
-    week_above = inputs.signal_weekly not in {"wait", "sell"}
+    daily_signal = inputs.signal_daily.value
+    weekly_signal = inputs.signal_weekly.value
+    day_above = daily_signal not in {PageSignalState.WAIT, PageSignalState.SELL}
+    week_above = weekly_signal not in {
+        PageSignalState.WAIT,
+        PageSignalState.SELL,
+    }
     allow_week = period is not PageSelectionPeriod.DAY
 
     if day_above and week_above:
         if period is PageSelectionPeriod.WEEK and _usable(week):
             return _selected(week, "absorb_week_view")
-        if inputs.signal_daily == "buy" and _usable(day):
+        if daily_signal is PageSignalState.BUY and _usable(day):
             return _selected(day, "absorb_daily_buy")
-        if inputs.signal_weekly == "buy" and _usable(week):
+        if weekly_signal is PageSignalState.BUY and _usable(week):
             return _selected(week, "absorb_weekly_buy")
         return _selected(day, "absorb_daily_hold") or (
             _selected(week, "absorb_weekly_fallback") if allow_week else None
@@ -362,6 +460,7 @@ class TargetAbsorbValue:
     target: TargetAbsorbDisplayPrice
     absorb: TargetAbsorbDisplayPrice
     previous_close: None
+    display_surface: PageDisplaySurface
     subfeatures: tuple[TargetAbsorbSubfeature, ...]
     evidence_manifest_sha256: str = EVIDENCE_MANIFEST_SHA256
     inherited_frozen_results_sha256: str = FROZEN_RESULTS_SHA256
@@ -371,6 +470,9 @@ class TargetAbsorbValue:
             self.absorb, TargetAbsorbDisplayPrice
         ):
             raise ValueError("NEWOW_TARGET_ABSORB_INVALID_VALUE")
+        object.__setattr__(
+            self, "display_surface", PageDisplaySurface(self.display_surface)
+        )
         features = tuple(self.subfeatures)
         if len({feature.name for feature in features}) != len(features):
             raise ValueError("NEWOW_TARGET_ABSORB_INVALID_VALUE")
@@ -382,8 +484,11 @@ class TargetAbsorbResult:
     status: FeatureRuntimeStatus
     evidence_status: EvidenceStatus
     reason_code: str | None
+    as_of: datetime
+    display_surface: PageDisplaySurface | None
     formula_versions: tuple[str, ...] = ()
     source_bars: tuple[PagePriceFact, ...] = ()
+    decision_facts: tuple[PagePriceFact | PageSignalFact | PageCrossFact, ...] = ()
     value: TargetAbsorbValue | None = None
 
     def __post_init__(self) -> None:
@@ -391,22 +496,18 @@ class TargetAbsorbResult:
         object.__setattr__(
             self, "evidence_status", EvidenceStatus(self.evidence_status)
         )
+        object.__setattr__(self, "as_of", utc_timestamp(self.as_of))
+        if self.display_surface is not None:
+            object.__setattr__(
+                self,
+                "display_surface",
+                PageDisplaySurface(self.display_surface),
+            )
         if self.status is not FeatureRuntimeStatus.READY:
             _text(self.reason_code)
         object.__setattr__(self, "formula_versions", tuple(self.formula_versions))
         object.__setattr__(self, "source_bars", tuple(self.source_bars))
-
-    @property
-    def actions(self) -> tuple[()]:
-        return ()
-
-    @property
-    def hints(self) -> tuple[()]:
-        return ()
-
-    @property
-    def reference_trades(self) -> tuple[()]:
-        return ()
+        object.__setattr__(self, "decision_facts", tuple(self.decision_facts))
 
 
 def _status(
@@ -418,11 +519,21 @@ def _status(
 
 
 def _result(
+    context: ContextSnapshot,
+    display_surface: PageDisplaySurface,
     runtime: FeatureRuntimeStatus,
     evidence: EvidenceStatus,
     reason: str,
+    formula_versions: tuple[str, ...],
 ) -> TargetAbsorbResult:
-    return TargetAbsorbResult(runtime, evidence, reason, _FORMULAS)
+    return TargetAbsorbResult(
+        runtime,
+        evidence,
+        reason,
+        context.as_of,
+        display_surface,
+        formula_versions,
+    )
 
 
 def _slot(context: ContextSnapshot, frequency: ProductFrequency) -> ContextSlot:
@@ -433,7 +544,10 @@ def _slot(context: ContextSnapshot, frequency: ProductFrequency) -> ContextSlot:
     }[frequency]
 
 
-def _fact_matches_slot(fact: PagePriceFact, slot: ContextSlot) -> bool:
+ContextBoundFact = PagePriceFact | PageSignalFact | PageCrossFact
+
+
+def _fact_matches_slot(fact: ContextBoundFact, slot: ContextSlot) -> bool:
     return (
         slot.status is FeatureRuntimeStatus.READY
         and slot.bar_end == fact.bar_end
@@ -443,15 +557,22 @@ def _fact_matches_slot(fact: PagePriceFact, slot: ContextSlot) -> bool:
     )
 
 
-def _same_owner(fact: PagePriceFact, slot: ContextSlot) -> bool:
+def _same_owner(fact: ContextBoundFact, slot: ContextSlot) -> bool:
     return (
         slot.physical_contract == fact.physical_contract
         and slot.segment_id == fact.segment_id
     )
 
 
-def _named_input_frequencies_are_valid(inputs: PageSelectionInputs) -> bool:
+def _named_input_frequencies_are_valid(
+    inputs: PageSelectionInputs,
+    view_frequency: ProductFrequency,
+) -> bool:
     expected = (
+        (inputs.signal_daily, ProductFrequency.DAILY),
+        (inputs.signal_weekly, ProductFrequency.WEEKLY),
+        (inputs.cross_weekly_buy, ProductFrequency.WEEKLY),
+        (inputs.current_price, view_frequency),
         (inputs.target_daily, ProductFrequency.DAILY),
         (inputs.cost_daily, ProductFrequency.DAILY),
         (inputs.target_weekly, ProductFrequency.WEEKLY),
@@ -462,30 +583,74 @@ def _named_input_frequencies_are_valid(inputs: PageSelectionInputs) -> bool:
     )
 
 
+def _input_facts(inputs: PageSelectionInputs) -> tuple[ContextBoundFact, ...]:
+    prices = (
+        inputs.current_price,
+        inputs.target_daily,
+        inputs.target_weekly,
+        inputs.target,
+        inputs.high,
+        inputs.cost_daily,
+        inputs.cost_weekly,
+        inputs.cost,
+    )
+    return (
+        inputs.signal_daily,
+        inputs.signal_weekly,
+        inputs.cross_weekly_buy,
+        *(price for price in prices if price is not None),
+    )
+
+
+def _formulas(evidence: VerifiedTargetAbsorbEvidence) -> tuple[str, ...]:
+    if (
+        evidence.display_surface is PageDisplaySurface.STATUS_CARD
+        and evidence.period is PageSelectionPeriod.WEEK
+    ):
+        return (*_BASE_FORMULAS, WEEKLY_CHANNEL_FORMULA_VERSION)
+    return _BASE_FORMULAS
+
+
 def _weekly_override(
     context: ContextSnapshot,
     evidence: VerifiedTargetAbsorbEvidence,
 ) -> PagePriceSelection | TargetAbsorbResult:
     bars = evidence.weekly_channel_bars
+    formulas = _formulas(evidence)
     if len(bars) < 10:
         return _result(
+            context,
+            evidence.display_surface,
             FeatureRuntimeStatus.EVIDENCE_REQUIRED,
             EvidenceStatus.EVIDENCE_REQUIRED,
             "NEWOW_TARGET_ABSORB_WEEKLY_WARMUP_EVIDENCE_REQUIRED",
+            formulas,
         )
     slot = context.weekly
     if slot.status is not FeatureRuntimeStatus.READY:
         return _result(
+            context,
+            evidence.display_surface,
             FeatureRuntimeStatus.UNAVAILABLE,
             EvidenceStatus.RESEARCH_EVIDENCE_ONLY,
             "NEWOW_TARGET_ABSORB_VIEW_CONTEXT_UNAVAILABLE",
+            formulas,
         )
-    if slot.identity is None or slot.bar_end is None:
+    if (
+        slot.identity is None
+        or slot.bar_end is None
+        or slot.physical_contract is None
+        or slot.segment_id is None
+    ):
         return _result(
+            context,
+            evidence.display_surface,
             FeatureRuntimeStatus.UNAVAILABLE,
             EvidenceStatus.RESEARCH_EVIDENCE_ONLY,
             "NEWOW_TARGET_ABSORB_VIEW_CONTEXT_UNAVAILABLE",
+            formulas,
         )
+    bar_ends = tuple(bar.bar.bar_end for bar in bars)
     if (
         any(
             bar.frequency is not ProductFrequency.WEEKLY
@@ -494,14 +659,19 @@ def _weekly_override(
             or bar.bar.physical_contract != slot.physical_contract
             or bar.bar.segment_id != slot.segment_id
             or bar.bar.bar_end > slot.bar_end
+            or bar.bar.bar_end > context.as_of
             for bar in bars
         )
+        or any(current <= previous for previous, current in zip(bar_ends, bar_ends[1:]))
         or bars[-1].bar.bar_end != slot.bar_end
     ):
         return _result(
+            context,
+            evidence.display_surface,
             FeatureRuntimeStatus.UNAVAILABLE,
             EvidenceStatus.RESEARCH_EVIDENCE_ONLY,
             "NEWOW_TARGET_ABSORB_SOURCE_CONTEXT_MISMATCH",
+            formulas,
         )
     channel = calculate_channel_series(tuple(bar.bar for bar in bars), period=10)[-1]
     target_fact = PagePriceFact(
@@ -537,7 +707,10 @@ def _display(selection: SelectedPagePrice) -> TargetAbsorbDisplayPrice:
     )
 
 
-def _subfeatures(period: PageSelectionPeriod) -> tuple[TargetAbsorbSubfeature, ...]:
+def _subfeatures(
+    period: PageSelectionPeriod,
+    display_surface: PageDisplaySurface,
+) -> tuple[TargetAbsorbSubfeature, ...]:
     research_ready = _status(
         FeatureRuntimeStatus.READY, EvidenceStatus.RESEARCH_EVIDENCE_ONLY
     )
@@ -557,8 +730,15 @@ def _subfeatures(period: PageSelectionPeriod) -> tuple[TargetAbsorbSubfeature, .
         ),
     )
     weekly = (
-        TargetAbsorbSubfeature("weekly_status_card_override", research_ready, True)
-        if period is PageSelectionPeriod.WEEK
+        TargetAbsorbSubfeature(
+            "weekly_status_card_override",
+            research_ready,
+            WEEKLY_CHANNEL_FORMULA_VERSION,
+        )
+        if (
+            period is PageSelectionPeriod.WEEK
+            and display_surface is PageDisplaySurface.STATUS_CARD
+        )
         else TargetAbsorbSubfeature(
             "weekly_status_card_override",
             _status(
@@ -573,6 +753,7 @@ def _subfeatures(period: PageSelectionPeriod) -> tuple[TargetAbsorbSubfeature, .
         TargetAbsorbSubfeature(
             "page_selection", research_ready, PAGE_SELECTION_FORMULA_VERSION
         ),
+        TargetAbsorbSubfeature("display_surface", research_ready, display_surface),
         weekly,
         TargetAbsorbSubfeature(
             "price_guard_algorithm", research_ready, PRICE_GUARD_FORMULA_VERSION
@@ -607,26 +788,52 @@ def calculate_target_absorb(
             status=FeatureRuntimeStatus.EVIDENCE_REQUIRED,
             evidence_status=EvidenceStatus.EVIDENCE_REQUIRED,
             reason_code="NEWOW_TARGET_ABSORB_EVIDENCE_REQUIRED",
+            as_of=context.as_of,
+            display_surface=None,
             value=None,
         )
     if not isinstance(evidence, VerifiedTargetAbsorbEvidence):
         raise ValueError("NEWOW_TARGET_ABSORB_INVALID_EVIDENCE")
-    if not _named_input_frequencies_are_valid(evidence.inputs):
+    formulas = _formulas(evidence)
+    if not _named_input_frequencies_are_valid(evidence.inputs, evidence.view_frequency):
         return _result(
+            context,
+            evidence.display_surface,
             FeatureRuntimeStatus.UNAVAILABLE,
             EvidenceStatus.RESEARCH_EVIDENCE_ONLY,
             "NEWOW_TARGET_ABSORB_SOURCE_FREQUENCY_MISMATCH",
+            formulas,
         )
 
     view_slot = _slot(context, evidence.view_frequency)
     if view_slot.status is not FeatureRuntimeStatus.READY:
         return _result(
+            context,
+            evidence.display_surface,
             FeatureRuntimeStatus.UNAVAILABLE,
             EvidenceStatus.RESEARCH_EVIDENCE_ONLY,
             "NEWOW_TARGET_ABSORB_VIEW_CONTEXT_UNAVAILABLE",
+            formulas,
+        )
+    if any(
+        fact.bar_end > context.as_of
+        or not _fact_matches_slot(fact, _slot(context, fact.frequency))
+        or not _same_owner(fact, view_slot)
+        for fact in _input_facts(evidence.inputs)
+    ):
+        return _result(
+            context,
+            evidence.display_surface,
+            FeatureRuntimeStatus.UNAVAILABLE,
+            EvidenceStatus.RESEARCH_EVIDENCE_ONLY,
+            "NEWOW_TARGET_ABSORB_SOURCE_CONTEXT_MISMATCH",
+            formulas,
         )
     selected: PagePriceSelection | TargetAbsorbResult
-    if evidence.period is PageSelectionPeriod.WEEK:
+    if (
+        evidence.period is PageSelectionPeriod.WEEK
+        and evidence.display_surface is PageDisplaySurface.STATUS_CARD
+    ):
         selected = _weekly_override(context, evidence)
     else:
         selected = select_page_prices(evidence.inputs, evidence.period)
@@ -634,9 +841,12 @@ def calculate_target_absorb(
         return selected
     if selected.target is None or selected.absorb is None:
         return _result(
+            context,
+            evidence.display_surface,
             FeatureRuntimeStatus.UNAVAILABLE,
             EvidenceStatus.RESEARCH_EVIDENCE_ONLY,
             "NEWOW_TARGET_ABSORB_PRICE_UNAVAILABLE",
+            formulas,
         )
 
     facts = (selected.target.fact, selected.absorb.fact)
@@ -646,22 +856,29 @@ def calculate_target_absorb(
         for fact in facts
     ):
         return _result(
+            context,
+            evidence.display_surface,
             FeatureRuntimeStatus.UNAVAILABLE,
             EvidenceStatus.RESEARCH_EVIDENCE_ONLY,
             "NEWOW_TARGET_ABSORB_SOURCE_CONTEXT_MISMATCH",
+            formulas,
         )
     source_bars = tuple(dict.fromkeys(facts))
     value = TargetAbsorbValue(
         target=_display(selected.target),
         absorb=_display(selected.absorb),
         previous_close=None,
-        subfeatures=_subfeatures(evidence.period),
+        display_surface=evidence.display_surface,
+        subfeatures=_subfeatures(evidence.period, evidence.display_surface),
     )
     return TargetAbsorbResult(
         status=FeatureRuntimeStatus.READY,
         evidence_status=EvidenceStatus.RESEARCH_EVIDENCE_ONLY,
         reason_code=None,
-        formula_versions=_FORMULAS,
+        as_of=context.as_of,
+        display_surface=evidence.display_surface,
+        formula_versions=formulas,
         source_bars=source_bars,
+        decision_facts=_input_facts(evidence.inputs),
         value=value,
     )
