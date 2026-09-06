@@ -239,7 +239,12 @@ def _effective_bar_positions(
     counts: dict[tuple[str, str], int] = {}
     for frame in replay.frames:
         bar = frame.bar.bar
-        if bar.bar_end > as_of or not bar.observation_eligible:
+        if (
+            frame.bar.frequency != replay.identity.frequency
+            or bar.bar_end > as_of
+            or not bar.observation_eligible
+            or bar.completed is not True
+        ):
             continue
         owner = (bar.physical_contract, bar.segment_id)
         index = counts.get(owner, 0)
@@ -295,6 +300,135 @@ def _open_trade(entry: StrategyAction, holding_bars: int = 0) -> ReferenceTrade:
     )
 
 
+def _effective_boundaries(
+    boundaries: tuple[OwnerBoundary, ...], as_of: datetime
+) -> dict[tuple[str, str], OwnerBoundary]:
+    effective: dict[tuple[str, str], OwnerBoundary] = {}
+    for boundary in boundaries:
+        if boundary.effective_at > as_of:
+            continue
+        owner = (boundary.old_contract, boundary.old_segment_id)
+        previous = effective.get(owner)
+        if previous is not None and previous != boundary:
+            raise ValueError("NEWOW_REFERENCE_INVALID_BOUNDARIES")
+        effective[owner] = boundary
+    return effective
+
+
+def _interruption_mark(
+    replay: StrategyReplay,
+    owner: tuple[str, str],
+    boundary: OwnerBoundary,
+    entry: StrategyAction,
+    as_of: datetime,
+) -> tuple[datetime, Decimal, int] | None:
+    result: tuple[datetime, Decimal, int] | None = None
+    position = 0
+    for frame in replay.frames:
+        product_bar = frame.bar
+        bar = product_bar.bar
+        if (
+            product_bar.frequency != replay.identity.frequency
+            or bar.physical_contract != owner[0]
+            or bar.segment_id != owner[1]
+            or bar.bar_end > as_of
+            or not bar.observation_eligible
+            or bar.completed is not True
+        ):
+            continue
+        if entry.bar_end <= bar.bar_end <= boundary.effective_at:
+            _price(bar.close)
+            result = (bar.bar_end, bar.close, position)
+        position += 1
+    return result
+
+
+def _visible_hints(
+    replay: StrategyReplay, as_of: datetime
+) -> tuple[StrategyHint, ...]:
+    visible: list[StrategyHint] = []
+    for hint in replay.hints:
+        if not isinstance(hint, StrategyHint):
+            raise ValueError("NEWOW_REFERENCE_INVALID_HINT")
+        if hint.identity != replay.identity:
+            raise ValueError("NEWOW_REFERENCE_INVALID_HINT")
+        if hint.retrospective or hint.kind.casefold() in {
+            "control_mirror",
+            "zhaoyaojing",
+        }:
+            raise ValueError("NEWOW_REFERENCE_RETROSPECTIVE_HINT")
+        if hint.sequence is not None and type(hint.sequence) is not int:
+            raise ValueError("NEWOW_REFERENCE_INVALID_HINT")
+        if hint.known_at <= as_of:
+            visible.append(hint)
+    return tuple(visible)
+
+
+def _attach_hints(
+    trades: list[ReferenceTrade],
+    actions: tuple[StrategyAction, ...],
+    hints: tuple[StrategyHint, ...],
+    as_of: datetime,
+) -> tuple[list[ReferenceTrade], tuple[StrategyHint, ...], tuple[StrategyHint, ...]]:
+    actions_by_id = {action.signal_id: action for action in actions}
+    action_positions = {
+        (
+            action.physical_contract,
+            action.segment_id,
+            action.bar_end,
+            action.sequence,
+        )
+        for action in actions
+    }
+    attached: list[list[str]] = [[] for _ in trades]
+    bar_level: list[StrategyHint] = []
+    unassigned: list[StrategyHint] = []
+
+    for hint in hints:
+        if hint.sequence is None or (
+            hint.physical_contract,
+            hint.segment_id,
+            hint.bar_end,
+            hint.sequence,
+        ) in action_positions:
+            bar_level.append(hint)
+            continue
+
+        hint_position = (hint.bar_end, hint.sequence)
+        owners = (hint.physical_contract, hint.segment_id)
+        matches: list[int] = []
+        for index, trade in enumerate(trades):
+            if owners != (trade.physical_contract, trade.segment_id):
+                continue
+            entry = actions_by_id[trade.entry_signal_id]
+            if hint_position <= (entry.bar_end, entry.sequence):
+                continue
+            if trade.status is ReferenceTradeStatus.CLOSED:
+                exit_action = actions_by_id[trade.exit_signal_id]
+                if hint_position >= (exit_action.bar_end, exit_action.sequence):
+                    continue
+            elif trade.status is ReferenceTradeStatus.ROLLOVER_INTERRUPTED:
+                if hint.bar_end > trade.interrupted_at:
+                    continue
+            elif hint.bar_end > as_of:
+                continue
+            matches.append(index)
+
+        if len(matches) == 1:
+            attached[matches[0]].append(hint.hint_id)
+        else:
+            unassigned.append(hint)
+
+    return (
+        [
+            replace(trade, hint_ids=tuple(attached[index]))
+            for index, trade in enumerate(trades)
+        ],
+        tuple(bar_level),
+        tuple(unassigned),
+    )
+
+
 class ReferenceTradeProjector:
     """Pair normalized main actions without IO, nearest-marker guesses or exits."""
 
@@ -316,6 +450,7 @@ class ReferenceTradeProjector:
                 raise ValueError("NEWOW_REFERENCE_INVALID_BOUNDARIES")
             if boundary.product != replay.identity.product:
                 raise ValueError("NEWOW_REFERENCE_INVALID_BOUNDARIES")
+        effective_boundaries = _effective_boundaries(boundaries, as_of)
 
         actions = _dedupe_actions(tuple(replay.actions))
         _validate_segment_local_order(actions)
@@ -332,6 +467,16 @@ class ReferenceTradeProjector:
         for action in actions:
             if action.bar_end > as_of:
                 _validate_action(replay, action, positions, require_position=False)
+                continue
+            boundary = effective_boundaries.get(
+                (action.physical_contract, action.segment_id)
+            )
+            if (
+                boundary is not None
+                and action.kind is ActionKind.CLEAR
+                and action.bar_end >= boundary.effective_at
+            ):
+                _validate_action(replay, action, positions)
                 continue
             action_index = _validate_action(replay, action, positions)
             owner = (action.physical_contract, action.segment_id)
@@ -394,16 +539,38 @@ class ReferenceTradeProjector:
             del open_by_owner[owner]
 
         for owner, (trade_position, _entry, entry_index) in open_by_owner.items():
-            last_index = last_positions.get(owner, entry_index)
+            boundary = effective_boundaries.get(owner)
+            if boundary is None:
+                last_index = last_positions.get(owner, entry_index)
+                trades[trade_position] = replace(
+                    trades[trade_position], holding_bars=last_index - entry_index
+                )
+                continue
+            mark = _interruption_mark(replay, owner, boundary, _entry, as_of)
+            if mark is None:
+                trades[trade_position] = replace(
+                    trades[trade_position],
+                    status=ReferenceTradeStatus.ROLLOVER_INTERRUPTED,
+                    interrupted_at=boundary.effective_at,
+                    interruption_reason="OWNER_BOUNDARY_MARK_UNAVAILABLE",
+                )
+                continue
+            mark_bar_end, mark_price, mark_index = mark
             trades[trade_position] = replace(
-                trades[trade_position], holding_bars=last_index - entry_index
+                trades[trade_position],
+                status=ReferenceTradeStatus.ROLLOVER_INTERRUPTED,
+                holding_bars=mark_index - entry_index,
+                mark_bar_end=mark_bar_end,
+                mark_reference_price=mark_price,
+                mark_change_pct=_reference_return(_entry.reference_price, mark_price),
+                interrupted_at=boundary.effective_at,
+                interruption_reason="OWNER_BOUNDARY",
             )
 
-        if not all(isinstance(hint, StrategyHint) for hint in replay.hints):
-            raise ValueError("NEWOW_REFERENCE_INVALID_HINT")
-        visible_hints = tuple(hint for hint in replay.hints if hint.known_at <= as_of)
-        bar_level_hints = tuple(hint for hint in visible_hints if hint.sequence is None)
-        unassigned_hints = tuple(hint for hint in visible_hints if hint.sequence is not None)
+        visible_hints = _visible_hints(replay, as_of)
+        trades, bar_level_hints, unassigned_hints = _attach_hints(
+            trades, actions, visible_hints, as_of
+        )
         return ReferenceProjection(
             trades=tuple(trades),
             bar_level_hints=bar_level_hints,
