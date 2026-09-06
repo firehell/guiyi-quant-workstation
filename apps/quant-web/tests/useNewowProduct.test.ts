@@ -275,6 +275,43 @@ test('a rejected reference cursor clears every old-token section before one unbo
   state.dispose()
 })
 
+test('a cursor 409 falls back to the retained reference token and clears a late same-token explanation', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: null }))
+  await flush()
+
+  const firstReference = state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  assert.equal(pending[1]!.request.snapshotToken, undefined)
+  pending[1]!.resolve(normalizedReference(pending[1]!.request, { token: 'old-token', nextBefore: 'old-cursor' }))
+  await firstReference
+
+  const page = state.loadNextReferencePage()
+  assert.equal(pending[2]!.request.section === 'reference' && pending[2]!.request.historyBefore, 'old-cursor')
+  assert.equal(pending[2]!.request.snapshotToken, undefined)
+
+  const explanation = state.loadExplanation()
+  assert.equal(pending[3]!.request.snapshotToken, 'old-token')
+  pending[3]!.resolve(normalizedStatus(pending[3]!.request, 'old-token'))
+  await explanation
+  assert.equal(state.sections.explanation.data.value?.meta.snapshot_token, 'old-token')
+
+  pending[2]!.reject(new NewowProductRequestError('NEWOW_CURSOR_GENERATION_CONFLICT', 'conflict'))
+  await flush()
+  assert.equal(pending.length, 5)
+  assert.equal(pending[4]!.request.section === 'reference' && pending[4]!.request.historyBefore, undefined)
+  assert.equal(pending[4]!.request.snapshotToken, undefined)
+  assert.equal(state.sections.reference.data.value, null)
+  assert.equal(state.sections.explanation.data.value, null)
+
+  pending[4]!.resolve(normalizedReference(pending[4]!.request, { token: 'new-token', nextBefore: null }))
+  await page
+  assert.equal(state.sections.reference.data.value?.meta.snapshot_token, 'new-token')
+  assert.equal(state.sections.explanation.data.value, null)
+  state.dispose()
+})
+
 test('merges an older chart cursor page atomically without changing the fixed reference window', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })

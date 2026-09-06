@@ -186,7 +186,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
           if (!isCurrent(section, requestGeneration, sectionGeneration, controller)) return
           if (!rebuilt && isRebuildable(error)) {
             rebuilt = true
-            invalidateTokenDependents(request.snapshotToken)
+            const rejectedToken = request.snapshotToken ?? resource.data.value?.meta.snapshot_token ?? undefined
+            invalidateTokenDependents(rejectedToken)
             if (section === 'reference' || section === 'chart') {
               clearResource(section)
               resetPagination(section)
