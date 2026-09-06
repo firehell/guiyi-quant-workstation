@@ -11,6 +11,10 @@ if TYPE_CHECKING:
     from .product_contracts import ProductIdentity, StrategyAction
 
 
+REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v1"
+FUTURES_ADAPTATION_VERSION = "newow_futures_segment_interrupt_v1"
+
+
 def utc_timestamp(value: datetime) -> datetime:
     if (
         not isinstance(value, datetime)
@@ -103,7 +107,7 @@ def build_reference_trade_id(entry: StrategyAction) -> str:
     return _digest(
         {
             "entry_signal_id": entry.signal_id,
-            "reference_model_version": "newow_marker_reference_zero_cost_v1",
-            "futures_adaptation_version": "newow_futures_segment_interrupt_v1",
+            "reference_model_version": REFERENCE_MODEL_VERSION,
+            "futures_adaptation_version": FUTURES_ADAPTATION_VERSION,
         }
     )
