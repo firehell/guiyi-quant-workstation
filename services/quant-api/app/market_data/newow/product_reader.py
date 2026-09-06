@@ -71,6 +71,14 @@ class ProductReadSource:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedPerformanceWindow:
+    requested_since: date
+    requested_through: date
+    actual_through: date
+    cutoff: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class ProductReadSet:
     frequency: ProductFrequency
     bars_by_frequency: Mapping[ProductFrequency, tuple[ProductBar, ...]]
@@ -170,6 +178,96 @@ class NewowProductReader:
         )
         self._now = now or (lambda: datetime.now(UTC))
         self._cancelled = cancelled
+
+    def resolve_performance_window(
+        self,
+        product: str,
+        performance_since: date | None,
+        performance_through: date | None,
+        as_of: datetime,
+    ) -> ResolvedPerformanceWindow:
+        """Resolve the last authoritative completed trading day at the request instant."""
+
+        cutoff = utc_timestamp(as_of)
+        if cutoff > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+        if product not in self._active_products:
+            raise NewowProductReadError("NEWOW_INVALID_PRODUCT")
+        since = performance_since or self._coverage.product_start(product)
+        latest = self._coverage.latest_complete_day((product,))
+        requested_through = performance_through or latest
+        if since > requested_through:
+            raise NewowProductReadError("NEWOW_INVALID_PERFORMANCE_WINDOW")
+        start = datetime.combine(
+            min(since, cutoff.astimezone(_SHANGHAI).date()), time.min, _SHANGHAI
+        )
+        days = self._market_data.trading_days_overlapping_window(
+            symbol=product, start=start, end=cutoff + _MICROSECOND
+        )
+        if latest <= cutoff.astimezone(_SHANGHAI).date() and latest not in days:
+            raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+        complete = tuple(
+            day
+            for day in days
+            if day <= requested_through
+            and day <= latest
+            and max(
+                window.end
+                for window in self._market_data.session_windows(
+                    symbol=product, trading_day=day
+                )
+            )
+            <= cutoff
+        )
+        if not complete or complete[-1] < since:
+            raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
+        actual_through = complete[-1]
+        resolved_cutoff = max(
+            window.end
+            for window in self._market_data.session_windows(
+                symbol=product, trading_day=actual_through
+            )
+        )
+        return ResolvedPerformanceWindow(
+            since, requested_through, actual_through, utc_timestamp(resolved_cutoff)
+        )
+
+    def resolve_chart_window(
+        self,
+        product: str,
+        frequency: ProductFrequency,
+        limit: int,
+        as_of: datetime,
+    ) -> ProductReadWindow:
+        """Choose a bounded authoritative trading-day viewport for recent Bars."""
+
+        cutoff = utc_timestamp(as_of)
+        start_day = self._coverage.product_start(product)
+        latest = self._coverage.latest_complete_day((product,))
+        start = datetime.combine(start_day, time.min, _SHANGHAI)
+        days = tuple(
+            day
+            for day in self._market_data.trading_days_overlapping_window(
+                symbol=product, start=start, end=cutoff + _MICROSECOND
+            )
+            if day <= latest
+            and max(
+                window.end
+                for window in self._market_data.session_windows(
+                    symbol=product, trading_day=day
+                )
+            )
+            <= cutoff
+        )
+        if not days:
+            raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
+        bars_per_day = (
+            4 if ProductFrequency(frequency) is ProductFrequency.HOURLY else 1
+        )
+        day_count = (limit + bars_per_day - 1) // bars_per_day
+        if ProductFrequency(frequency) is ProductFrequency.WEEKLY:
+            day_count *= 7
+        return ProductReadWindow(days[max(0, len(days) - day_count)], days[-1])
 
     def load(self, query: NewowProductQuery, as_of: datetime) -> ProductReadSet:
         """Freeze one read; context periods are optional and never frequency fallbacks."""

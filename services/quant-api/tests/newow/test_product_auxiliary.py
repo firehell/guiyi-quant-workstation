@@ -234,3 +234,35 @@ def test_auxiliary_does_not_duplicate_main_rise_hints_or_filter_flat_history(
         )
         == flat_hints
     )
+
+
+def test_single_component_does_not_calculate_unrequested_layers(
+    product_cases, monkeypatch
+) -> None:
+    from guiyi_quant.newow import product_auxiliary as module
+
+    case = product_cases.primitive_input("trend", "1d")
+    calls: list[str] = []
+    original = module.calculate_main_force_control
+    monkeypatch.setattr(
+        module,
+        "calculate_main_force_control",
+        lambda bars: (calls.append("main_force_control"), original(bars))[1],
+    )
+    monkeypatch.setattr(
+        module,
+        "calculate_up_down_energy",
+        lambda _bars: (_ for _ in ()).throw(AssertionError("unrequested energy")),
+    )
+    monkeypatch.setattr(
+        module,
+        "calculate_zhaoyao_mirror",
+        lambda _bars: (_ for _ in ()).throw(AssertionError("unrequested mirror")),
+    )
+
+    layer = module.calculate_auxiliary_component(
+        case.identity, case.bars, "main_force_control", as_of=case.bars[-1].bar.bar_end
+    )
+
+    assert layer.name == "main_force_control"
+    assert calls

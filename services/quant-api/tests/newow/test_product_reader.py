@@ -286,6 +286,41 @@ def test_default_window_respects_last_complete_day_at_historical_as_of(product_c
     assert all(bar.bar.bar_end <= result.as_of for bar in result.replay_bars)
 
 
+def test_reference_window_uses_authoritative_session_cutoff_not_request_time(
+    product_cases,
+):
+    reader, _query, fake = product_cases.paged_reader(prefix_bars=5, frequency="1d")
+    request_as_of = datetime(2023, 1, 6, 3, tzinfo=UTC)
+
+    resolved = reader.resolve_performance_window(
+        "rb", date(2023, 1, 2), date(2023, 1, 6), request_as_of
+    )
+
+    assert resolved.requested_through == date(2023, 1, 6)
+    assert resolved.actual_through == date(2023, 1, 5)
+    assert resolved.cutoff == datetime(2023, 1, 5, 7, tzinfo=UTC)
+    assert resolved.cutoff < request_as_of
+
+
+def test_reference_window_includes_exact_session_end_and_normalizes_same_instant(
+    product_cases,
+):
+    reader, _query, _fake = product_cases.paged_reader(prefix_bars=5, frequency="1d")
+    utc_end = datetime(2023, 1, 6, 7, tzinfo=UTC)
+    shanghai_end = datetime.fromisoformat("2023-01-06T15:00:00+08:00")
+
+    first = reader.resolve_performance_window(
+        "rb", date(2023, 1, 2), date(2023, 1, 6), utc_end
+    )
+    second = reader.resolve_performance_window(
+        "rb", date(2023, 1, 2), date(2023, 1, 6), shanghai_end
+    )
+
+    assert first == second
+    assert first.actual_through == date(2023, 1, 6)
+    assert first.cutoff == utc_end
+
+
 @pytest.mark.parametrize(
     "field, value",
     [
