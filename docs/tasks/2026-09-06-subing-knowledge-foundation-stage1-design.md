@@ -1,8 +1,8 @@
 # SuBing Knowledge Foundation · Stage 1 Spec
 
 日期：2026-09-06
-状态：`SPEC_INTERNAL_REVIEW_PASSED / IMPLEMENTATION_NOT_STARTED`
-规划基线：`develop@5844958b4075b393000522e2d3597c29d065077d`
+状态：`SPEC_REVISED / S1.1_IMPLEMENTATION_COMPLETE / GATE_POLICY_V2_APPROVED / S1.2_NOT_STARTED`
+修订基线：`develop@b9a4a3a763d4b096dfadb96a12c14e69ec49277e`
 任务来源：2026-09-06 已完成的苏冰课程资料只读盘点，以及 Owner 已确认的“共用知识基础数据独立建设、其他应用单独开发、当前归一量化不受影响”原则。
 
 > 本文只定义 Stage 1：`SuBing Knowledge Foundation`。它是后续课程知识助手、行情研究助手、案例/评测系统与可选专家化模型共同消费的私有研究数据底座，不是归一量化当前稳定产品面的扩展。Stage 1 不修改现有 SuBing Alert、Market、Newow、HTDY、Canonical、Runtime、AlertEvent 或任何交易合同。
@@ -100,7 +100,10 @@ Stage 1 后续实现代码也使用独立本地 workspace / 独立 Git repositor
 
 ```text
 本设计文档
+Stage 1 Implementation Plan
 ```
+
+上述两份文件仅承担规范与协调职责；Stage 1 实现代码、schema、测试、私有数据与 Foundation snapshot 仍必须位于独立 Foundation workspace/repository。
 
 Stage 1 的 schema、processing tooling、validation tests 与私有数据都进入独立 Foundation workspace/repository；在未来 Guiyi Adapter 获得单独设计和批准前，不向当前归一源码树增加 Stage 1 运行依赖。
 
@@ -278,6 +281,7 @@ content_hash
 byte_size
 source_role
 provenance_status
+authority_disposition
 created_from_asset_id | null
 content_scope
 ```
@@ -306,7 +310,17 @@ derived_ai
 unknown
 ```
 
-如果 `note` 或 `learning-note` 的来源性质不能证明，必须保持 `unknown`，不能因文本质量较高就提升 authority。
+`authority_disposition` 固定区分：
+
+```text
+PRIMARY_AUTHORITY
+VERIFIED_TEXT_PROXY
+AUXILIARY
+DERIVED_NON_AUTHORITATIVE
+EXCLUDED_UNKNOWN
+```
+
+`provenance_status=UNKNOWN` 不等于整个 Stage 1 必须阻塞。来源性质不能证明时必须保持 `unknown`，且只有显式标记为 `EXCLUDED_UNKNOWN`、不进入 authoritative knowledge path、不作为 `teacher_explicit/slide_explicit` 证据、也不成为普通语义抽取的必需输入时，才允许非阻塞保留。不能因文本质量较高就提升 authority。
 
 ### 7.3 Source Segment
 
@@ -590,7 +604,7 @@ Stage 1 不冻结“video > ppt > transcript > note”这样的无条件总排�
 - 老师口头表述以原始音视频为主要仲裁源；
 - 屏幕或原始课件上明确出现、但口头未完整复述的内容，应由原始画面/课件承担证据；
 - transcript / Word 字幕只是文字代理，必须经过抽样校准后才能承担批量检索；
-- PDF 笔记、extracted note、learning-notes 必须先证明 provenance，再决定是否属于 human-derived、AI-derived 或 unknown。
+- PDF 笔记、extracted note、learning-notes 必须先证明 provenance，再决定是否属于 human-derived、AI-derived 或 unknown；无法证明且非 authoritative path 必需的资产可以显式 `EXCLUDED_UNKNOWN`，但不得作为独立佐证或默认语义输入。
 
 ### 8.2 冲突处理
 
@@ -622,6 +636,47 @@ Stage 1 不冻结“video > ppt > transcript > note”这样的无条件总排�
 ```
 
 只要发现会系统性改变交易语义的错误模式，就不得直接全量扩展。
+
+### 8.4 Authority Eligibility 与非阻塞 Unknown
+
+S1.1 Gate 只要求**进入 authoritative knowledge path 的来源**拥有可辨别 provenance；它不要求所有辅助资产都必须证明作者或派生链。
+
+Gate Policy v2 的准入原则：
+
+```text
+PRIMARY_AUTHORITY        -> 可以承担对应能力的事实仲裁
+VERIFIED_TEXT_PROXY      -> 可以承担批量文字代理，但不能覆盖冲突 primary
+AUXILIARY                -> 可以辅助定位/对照，不构成独立佐证
+DERIVED_NON_AUTHORITATIVE-> 可以保留 lineage/导航，不承担老师原话事实
+EXCLUDED_UNKNOWN         -> 只登记资产事实，默认不进入语义抽取与普通检索
+```
+
+未知 provenance 只有在以下任一情况发生时才阻塞 Gate：
+
+1. 该来源被标记为 `PRIMARY_AUTHORITY` 或 `VERIFIED_TEXT_PROXY`；
+2. 某个 mandatory / KEY_RULE 只能依赖该未知来源才能成立；
+3. 该来源被用于 `teacher_explicit` / `slide_explicit` attribution；
+4. `EXCLUDED_UNKNOWN` 内容泄漏进入 authoritative extraction、normal retrieval 或后续 approved Evidence。
+
+如果 primary source 与 accepted text proxy 已经形成可回溯证据链，则 learning-note、image-only PPTX 等未知辅助资产可以永久保持 `EXCLUDED_UNKNOWN`，本身不阻塞 Foundation 继续建设。
+
+### 8.5 S1.1 既有实证与 Gate lineage
+
+2026-09-06 独立 Foundation repo 已完成 S1.1 Tasks 1–4，结果必须作为历史事实保留：
+
+```text
+Foundation repo develop = cb44126354df8654ad76c0b94184b9a96598dca7
+45 assets / 48 mandatory samples / 25 findings
+unresolved_critical_count = 0
+transcript_proxy_status = ACCEPTED
+subtitle_proxy_status = AUXILIARY_ONLY
+PDF / extracted note = AI_DERIVED
+learning-note = UNKNOWN
+PPTX = image-only + provenance UNKNOWN
+Gate Policy v1 result = SOURCE_CALIBRATION_BLOCKED
+```
+
+原 `SOURCE_CALIBRATION_BLOCKED` 不得被改写或删除。Gate Policy v2 只允许在**复用同一份已校准 evidence 且不改变原始 finding**的前提下产生一次新的 re-evaluation 结果。若 evidence 本身发生变化，应重新进入相应 Calibration/Review，而不能标记为单纯 Gate policy re-evaluation。
 
 ---
 
@@ -815,13 +870,32 @@ learning-note usability assessment
 content differences
 ```
 
-Gate：
+Gate Policy v2：
+
+`READY_FOR_SEMANTIC_EXTRACTION` 必须同时满足：
+
+1. 5 节 Pilot 每节都有可用的 `PRIMARY_AUTHORITY`（当前为原始 course-video）；
+2. 5 节 Pilot 每节都有经过校准的主要文字代理，且 `transcript_proxy_status=ACCEPTED`；
+3. mandatory sample 完整，KEY_RULE 拥有可重现 locator，并能回到 primary source 做必要仲裁；
+4. `unresolved_critical_count = 0`，不存在未解决的方向性/否定/条件合并等 critical semantic error；
+5. 所有进入 authoritative knowledge path 的来源 provenance 可辨别；
+6. provenance 不明的非必要来源全部显式 `EXCLUDED_UNKNOWN`，且没有参与 authoritative extraction / normal retrieval / teacher attribution。
+
+`SOURCE_CALIBRATION_BLOCKED` 只在以下情况输出：
 
 ```text
-READY_FOR_SEMANTIC_EXTRACTION
-or
-SOURCE_CALIBRATION_BLOCKED
+mandatory primary source 不可用
+没有可接受的 text proxy
+mandatory sample / KEY_RULE locator 无法重现
+存在 unresolved CRITICAL_SEMANTIC
+UNKNOWN provenance source 被要求进入 authoritative path
+EXCLUDED_UNKNOWN source 泄漏进 authoritative extraction / normal retrieval / attribution
+某关键规则必须依赖未知来源且 primary 无法仲裁
 ```
+
+未知的 learning-note / PPTX provenance **本身不再构成 blocker**；它们只能以 `EXCLUDED_UNKNOWN` 留在 registry。
+
+Gate lineage：原 `gate.json` / v1 `SOURCE_CALIBRATION_BLOCKED` 保持不可变；v2 re-evaluation 写独立结果，不覆盖旧事实。
 
 ---
 
@@ -999,14 +1073,17 @@ RUNTIME_READY
 1. 文件名匹配但内容无法证明对应；
 2. transcript 出现影响方向或交易语义的系统性错词；
 3. derived note 与 primary source 冲突；
-4. 来源归属无法证明；
+4. 欲进入 `PRIMARY_AUTHORITY / VERIFIED_TEXT_PROXY` 的来源归属或 provenance 无法证明；
 5. statement 找不到可重现 locator；
 6. 规则用途无法判断是入场、加仓、止盈还是止损；
 7. 模糊参数缺少明确口径；
 8. 同主题 primary source 真实冲突；
 9. Case Card 无法把 decision snapshot 与 outcome 分离；
 10. holdout 派生物可能进入普通检索；
-11. Foundation snapshot hash 或引用完整性不一致。
+11. Foundation snapshot hash 或引用完整性不一致；
+12. `EXCLUDED_UNKNOWN` 被用于 authoritative extraction、normal retrieval、`teacher_explicit/slide_explicit` 或 approved Rule/Evidence。
+
+仅仅存在 `provenance_status=UNKNOWN` 的非必要辅助资产不属于全局 blocker；正确处理是 `EXCLUDED_UNKNOWN` + 保留 lineage。
 
 Fail-closed 的正确输出是：
 
@@ -1056,13 +1133,16 @@ Stage 1 只有同时满足以下条件，才允许声明 `SUBING_KNOWLEDGE_FOUND
 - 已知资产全部拥有 stable source identity 或明确 excluded/unknown 状态；
 - 5 节样本完成 source calibration；
 - transcript 是否可作为文字代理已有证据结论；
+- 每个进入 authoritative path 的 SourceAsset 都有明确 `authority_disposition` 与可解释 provenance；
+- provenance 不明但非必要的资产明确为 `EXCLUDED_UNKNOWN`，不会阻塞其他可信证据链；
 - 未确认的缓存文件、非核心资料没有被偷偷纳入 authority。
 
 ### 17.2 Provenance
 
 - 每个 `APPROVED` Evidence Card 至少拥有一个可重现 source locator；
 - 高风险 Rule Candidate 不能只依赖 `DERIVED_ONLY`；
-- AI 派生、人工派生与老师原始表述可被机器区分；
+- AI 派生、人工派生、未知排除资产与老师原始表述可被机器区分；
+- `EXCLUDED_UNKNOWN` 不得被当成老师原话、原始课件或独立佐证；
 - 真实 primary conflict 没有被静默覆盖。
 
 ### 17.3 Semantics
@@ -1172,7 +1252,7 @@ S1.7 Immutable Snapshot Publish
 - Canonical / Derived 是否分离；
 - Source / Evidence / Rule / Ambiguity / Conflict / Case 是否职责单一；
 - provenance 是否能回到真实资料；
-- authority 是否避免粗暴全局排序；
+- authority 是否避免粗暴全局排序，并允许非必要 UNKNOWN 资产显式 `EXCLUDED_UNKNOWN` 而不阻塞可信证据链；
 - ambiguity/conflict 是否 fail-closed；
 - case 是否从一开始保护 causality；
 - Evaluation Holdout 是否与普通检索隔离；
@@ -1194,6 +1274,20 @@ Important        = 0
 Minor            = 0
 ```
 
-Review 中发现并已修正一个设计风险：最初 Case Card 将事后 `outcome` 与 decision-time 数据放在同一记录中，存在未来普通检索误读 Outcome 的风险；最终设计已拆分为 `case_cards.jsonl` 与 `case_outcomes.jsonl`，并要求 Holdout Outcome 进入 Evaluation Quarantine。
+Review 中发现并已修正的设计风险：
 
-本 Review 只批准 Stage 1 设计进入后续独立实现规划，不批准 Stage 2、行情接入、归一 Adapter、正式策略、真实通知、Runtime 或任何交易能力。
+1. 最初 Case Card 将事后 `outcome` 与 decision-time 数据放在同一记录中，存在未来普通检索误读 Outcome 的风险；最终设计已拆分为 `case_cards.jsonl` 与 `case_outcomes.jsonl`，并要求 Holdout Outcome 进入 Evaluation Quarantine。
+2. S1.1 Gate Policy v1 将“所有 mandatory source provenance 可辨别”作为全局前置，导致 `learning-note` 与 image-only PPTX 这类**非必要辅助资产**的 provenance unknown 阻塞已经由原视频 + ACCEPTED transcript 建立的可信证据链。Gate Policy v2 改为 authority-path scoped：UNKNOWN 非必要资产必须 `EXCLUDED_UNKNOWN`，但不再单独阻塞 Stage 1。
+3. 原 v1 `SOURCE_CALIBRATION_BLOCKED` 作为真实历史 evidence 保留；v2 只能追加 re-evaluation，不覆盖旧 Gate。
+
+2026-09-06 Gate Policy v2 修订完成内部双轴 Review：
+
+```text
+Standards Review = PASSED
+Spec Review      = PASSED
+Critical         = 0
+Important        = 0
+Minor            = 0
+```
+
+本 Review 只批准使用既有 S1.1 evidence 执行一次 Gate Policy v2 收尾与 re-evaluation；不批准直接开始 S1.2，更不批准 Stage 2、行情接入、归一 Adapter、正式策略、真实通知、Runtime 或任何交易能力。

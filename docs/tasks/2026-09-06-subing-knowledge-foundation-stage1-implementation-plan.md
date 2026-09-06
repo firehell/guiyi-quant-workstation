@@ -1,8 +1,8 @@
 # SuBing Knowledge Foundation · Stage 1 Implementation Plan
 
 日期：2026-09-06
-状态：`PLAN_REVIEWED / IMPLEMENTATION_NOT_STARTED`
-规划基线：`develop@6f6020f2cdd7280cddab69db89353069cff8e5fd`
+状态：`PLAN_REVISED / S1.1_TASKS_1_4_COMPLETE / GATE_POLICY_V2_CLOSEOUT_READY / S1.2_NOT_STARTED`
+修订基线：`develop@b9a4a3a763d4b096dfadb96a12c14e69ec49277e`
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans`. Every code task uses TDD, fresh verification and review before integration.
 
@@ -14,7 +14,7 @@
 
 **Spec:** `docs/tasks/2026-09-06-subing-knowledge-foundation-stage1-design.md`
 
-**Owner planning exception:** Stage 1 Spec §3.2 原先只允许 Guiyi 仓库保存设计文档；Owner 本轮明确要求 Implementation Plan 提交 `develop`，因此本计划是额外允许的一份协调文档。该例外不授权把 Stage 1 实现代码、schema、测试、私有数据、课程内容、Adapter 或 Runtime 依赖写入 `guiyi-quant-workstation`。
+**Repository boundary:** 修订后的 Stage 1 Spec §3.2 明确允许 Guiyi 仓库保存 Stage 1 Design Spec 与本 Implementation Plan 两份协调文档；Stage 1 实现代码、schema、测试、私有数据、课程内容、Adapter 或 Runtime 依赖仍不得写入 `guiyi-quant-workstation`。
 
 ---
 
@@ -29,7 +29,7 @@
 - 未经 Owner 对内容级外发单独批准，不把课程正文/视频/课件/截图/长段笔记发给外部模型/API。Stage 1 默认 `network_mode=disabled`，不实现模型网络调用。
 - holdout outcome、隐藏答案和同案例派生答案必须进入 `Evaluation Quarantine`，不得进入普通 Foundation snapshot 或普通检索候选。
 - Snapshot 发布后不可原地修改；修正必须产生新 `snapshot_id`。
-- S1.1–S1.7 Gate 严格顺序执行，前置 Gate 未通过即停止。
+- S1.1–S1.7 Gate 严格顺序执行。唯一例外是本次 **S1.1 Gate Policy v2 re-evaluation**：它只复用已经完成并通过 Review 的 S1.1 Tasks 1–4 evidence，不重做内容校准；v2 结果通过前仍不得开始 S1.2。
 
 实现期路径合同：
 
@@ -49,7 +49,7 @@
 
 **Pilot courses:** `002 / 003 / 004 / 012 / 016`
 
-**Gate:** `READY_FOR_SEMANTIC_EXTRACTION` 或 `SOURCE_CALIBRATION_BLOCKED`
+**Gate:** `READY_FOR_SEMANTIC_EXTRACTION` 或 `SOURCE_CALIBRATION_BLOCKED`。Gate evaluator 必须记录 `gate_policy_version`；历史 v1 结果不可覆盖。
 
 ## Task 1 — Bootstrap independent repo and safety rails
 
@@ -141,7 +141,9 @@ Finding types：`DIRECTIONAL_TERM_ERROR / NEGATION_LOSS / CONDITION_MERGE / OMIS
 
 每课必须有 `OPENING/MIDDLE/ENDING` 样本，所有识别出的核心交易规则增加 `KEY_RULE`，来源冲突增加 `CONFLICT`。以下语义差异测试必须为 `CRITICAL_SEMANTIC`：多↔空、金叉↔死叉、上破↔下破、有↔无、必须↔可以、开仓↔止盈/止损、否定词增删、多个条件错误合并。
 
-`SOURCE_CALIBRATION_BLOCKED` 条件：任一 mandatory sample 缺失、KEY_RULE 无可重现 locator、任何 CRITICAL_SEMANTIC 未解决、mandatory locator failure、primary/derived provenance 无法辨别。其余全部通过才输出 `READY_FOR_SEMANTIC_EXTRACTION`。
+Gate Policy v2：`SOURCE_CALIBRATION_BLOCKED` 只在以下情况成立：mandatory primary source 不可用；没有 accepted text proxy；mandatory sample / KEY_RULE locator 无法重现；存在 unresolved `CRITICAL_SEMANTIC`；UNKNOWN provenance source 被要求进入 `PRIMARY_AUTHORITY / VERIFIED_TEXT_PROXY`；`EXCLUDED_UNKNOWN` 泄漏进入 authoritative extraction / normal retrieval / teacher attribution；或关键规则只能依赖未知来源且 primary 无法仲裁。
+
+非必要资产的 provenance unknown **不再单独阻塞**：必须把它们显式标记为 `EXCLUDED_UNKNOWN`，不作为独立佐证、不参与默认语义抽取。
 
 报告写入：
 
@@ -150,7 +152,9 @@ $SUBING_FOUNDATION_DATA_ROOT/working/calibration/s1.1/
   source-calibration.json
   source-calibration.md
   content-differences.jsonl
-  gate.json
+  gate.json        # v1 historical result, immutable
+  gate-v2.json     # Gate Policy v2 re-evaluation
+  gate-reevaluation.md
 ```
 
 ## Task 4 — Execute five-course calibration
@@ -174,6 +178,79 @@ uv run subing-foundation calibration gate
 ```
 
 S1.1 结果不是 `READY_FOR_SEMANTIC_EXTRACTION` 时停止，不进入 S1.2。
+
+## Task 4A — Gate Policy v2 close-out（本轮唯一待执行 Task）
+
+**Existing evidence baseline:**
+
+```text
+Foundation repo      = independent SUBING_FOUNDATION_CODE_ROOT
+Foundation develop   = cb44126354df8654ad76c0b94184b9a96598dca7
+assets               = 45
+mandatory samples    = 48
+findings              = 25
+unresolved critical  = 0
+transcript            = ACCEPTED
+Word subtitle         = AUXILIARY_ONLY (与 transcript 规范化文本一致，同源非独立佐证)
+PDF / extracted note = AI_DERIVED
+learning-note         = UNKNOWN
+PPTX                  = image-only / provenance UNKNOWN
+Gate Policy v1       = SOURCE_CALIBRATION_BLOCKED
+```
+
+**Files in independent Foundation repo:** inspect current implementation first; expected affected area is only the existing calibration gate/model/report tests and code created by Tasks 2–3. Do not redesign unrelated modules.
+
+**Required contract:** add/derive `AuthorityDisposition` with exact values:
+
+```text
+PRIMARY_AUTHORITY
+VERIFIED_TEXT_PROXY
+AUXILIARY
+DERIVED_NON_AUTHORITATIVE
+EXCLUDED_UNKNOWN
+```
+
+For the existing S1.1 evidence, the expected disposition is:
+
+```text
+course-video       -> PRIMARY_AUTHORITY
+transcript         -> VERIFIED_TEXT_PROXY
+Word subtitle      -> AUXILIARY
+PDF/extracted note -> DERIVED_NON_AUTHORITATIVE
+learning-note      -> EXCLUDED_UNKNOWN
+PPTX               -> EXCLUDED_UNKNOWN
+```
+
+Do not infer new provenance to achieve these values: `EXCLUDED_UNKNOWN` explicitly means provenance remains unknown and the asset is excluded from authority.
+
+**TDD requirements:** first add failing tests proving:
+
+1. UNKNOWN + `EXCLUDED_UNKNOWN` alone does not block;
+2. UNKNOWN + `PRIMARY_AUTHORITY` or `VERIFIED_TEXT_PROXY` blocks;
+3. missing primary video blocks;
+4. no accepted transcript/text proxy blocks;
+5. unresolved critical semantic finding blocks;
+6. mandatory KEY_RULE locator failure blocks;
+7. excluded unknown cannot be used as teacher/slide attribution or authoritative input;
+8. v1 `gate.json` is not overwritten; v2 writes `gate-v2.json` with `gate_policy_version=s1.1-v2`;
+9. re-evaluation does not mutate `source-calibration.json`, `source-calibration.md`, `content-differences.jsonl` or original course assets.
+
+**Re-evaluation:** reuse the existing evidence only. Do not repeat the 45-asset content calibration and do not create new findings merely to make the Gate pass. Before and after re-evaluation, record SHA-256 for the three calibration evidence files and require them unchanged。
+
+`gate-v2.json` must include at least:
+
+```text
+gate_policy_version = s1.1-v2
+supersedes_evaluation = gate.json
+evidence_reused = true
+result
+blocking_reasons[]
+authority_disposition_summary
+excluded_unknown_count
+unresolved_critical_count
+```
+
+Run the existing full S1.1 test/quality suite plus the v2 Gate command. If v2 returns `READY_FOR_SEMANTIC_EXTRACTION`, integrate only this close-out change into independent Foundation `develop`, verify clean exact HEAD, then stop. **Do not start S1.2 in this task.**
 
 ---
 
@@ -202,6 +279,7 @@ Enums：
 SourceCalibrationStatus = UNVERIFIED / CALIBRATING / CALIBRATED / BLOCKED
 SourceRole = primary_audio_video / primary_slide / text_proxy / derived_human / derived_ai / unknown
 ProvenanceStatus = CONFIRMED / PARTIAL / UNKNOWN / REJECTED
+AuthorityDisposition = PRIMARY_AUTHORITY / VERIFIED_TEXT_PROXY / AUXILIARY / DERIVED_NON_AUTHORITATIVE / EXCLUDED_UNKNOWN
 RuleKind = HARD / PARAMETERIZED / JUDGMENT
 FormalizationStatus = EXACT_CANDIDATE / PARTIAL / BLOCKED_AMBIGUITY / JUDGMENT_ONLY
 KnowledgeReviewStatus = EXTRACTED_CANDIDATE / REVIEW_REQUIRED / APPROVED / REJECTED / UNRESOLVED
@@ -239,7 +317,7 @@ Authority 不做全局 score/ranking：teacher oral wording 由 primary audio/vi
 
 Segment rules：transcript 保留 line ranges；超长单行只按句末标点确定性拆分；docx 保留 paragraph/table order；legacy doc 使用 converted line range；PPT slide locator；PDF page locator；derived notes 保留 derived provenance；video 不做 bulk text segment。Stage 1 Canonical 不增加 token overlap。
 
-Registry validator 拒绝 duplicate ID、orphan/self derivation、越界 source path、symlink、无 locator segment、S1.1 已拒绝代理被标 authoritative、cache/non-core file 静默晋升。
+Registry validator 拒绝 duplicate ID、orphan/self derivation、越界 source path、symlink、无 locator segment、S1.1 已拒绝代理被标 authoritative、cache/non-core file 静默晋升，以及 `EXCLUDED_UNKNOWN` 被用于 authoritative extraction / normal retrieval / teacher attribution。Registry 可以登记 unknown source，但其 `authority_disposition` 必须保持 `EXCLUDED_UNKNOWN`，除非后续有新的 provenance evidence + ReviewRecord。
 
 Run:
 
@@ -530,8 +608,8 @@ Critical/Important finding 阻塞集成。Stage 1 Gate 不更新 Guiyi `STATUS.m
 | Area | Acceptance |
 |---|---|
 | Source | 001–020 CourseUnit 均存在；known asset 全部 stable-id 或 explicit excluded/unknown |
-| Calibration | 5 课完成校准；transcript proxy 有 evidence-backed ACCEPTED/REJECTED |
-| Provenance | approved evidence 有 reproducible locator；human/AI/teacher role 可机器区分 |
+| Calibration | 5 课完成校准；transcript proxy 有 evidence-backed ACCEPTED/REJECTED；S1.1 Gate 有 versioned lineage |
+| Provenance | approved evidence 有 reproducible locator；human/AI/teacher/EXCLUDED_UNKNOWN 可机器区分；未知非必要资产不进入 authority |
 | Semantics | HARD/PARAMETERIZED/JUDGMENT 保留；未解决阈值进入 Ambiguity |
 | Conflict | primary conflict 保留，除非 human ReviewRecord 显式决议 |
 | Review | model-assisted 不能自批；ReviewRecord append-only |
@@ -563,6 +641,19 @@ Review 中发现并在提交前修正：
 4. 将 schema generation 与 S1.4 human Gate 后的正式 freeze 分离。
 5. 补齐 Source Calibration、provenance、case partition 等保守 enum；unknown/unresolved 默认 fail-closed。
 6. 增加独立 CLI entrypoint、`uv.lock` 和 locked environment 要求。
-7. 明确 Owner 本轮只额外授权本 Plan 进入 Guiyi `develop`，没有扩大 Stage 1 实现边界。
+7. 明确 Guiyi 仓库只保存 Stage 1 Spec + Plan 两份协调文档，没有扩大 Stage 1 实现边界。
+8. 根据 S1.1 真实 evidence 修正 Gate Policy：unknown 非必要辅助资产必须 `EXCLUDED_UNKNOWN`，但不再阻塞已经由 primary + accepted transcript 建立的 authoritative path。
+9. 保留 Gate Policy v1 的 `SOURCE_CALIBRATION_BLOCKED` 历史事实，新增 v2 re-evaluation，不允许覆盖旧 gate。
+10. 将本次实施范围收敛为 Task 4A close-out；S1.2 仍保持未启动。
 
-Review 结论：本 Plan 覆盖 Stage 1 Spec 的 S1.1–S1.7、Canonical/Derived、provenance、authority、review state、causality/quarantine、immutable snapshot、隐私隔离与归一零影响边界；允许进入后续独立实现，但本次不授权实际开始 Stage 1、外部模型内容发送、Stage 2、行情接入、Guiyi Adapter、正式策略、真实通知、Runtime 或任何交易能力。
+2026-09-06 Gate Policy v2 修订再次完成双轴 Review：
+
+```text
+Standards / Safety Review = PASSED
+Spec / Plan Review        = PASSED
+Critical                  = 0
+Important                 = 0
+Minor                     = 0
+```
+
+Review 结论：本 Plan 与修订后 Spec 对齐。当前只允许在独立 Foundation repo 中执行 Task 4A：用既有 S1.1 evidence 实现 versioned Gate Policy v2 并重新评估；通过后停止。它不授权直接开始 S1.2、外部模型内容发送、Stage 2、行情接入、Guiyi Adapter、正式策略、真实通知、Runtime 或任何交易能力。
