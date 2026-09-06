@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_EVEN, localcontext
 from enum import StrEnum
 
@@ -17,11 +17,12 @@ from .product_contracts import (
     StrategyReplay,
     TradeEligibility,
 )
-from .product_identity import build_reference_trade_id, utc_timestamp
-
-
-REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v1"
-FUTURES_ADAPTATION_VERSION = "newow_futures_segment_interrupt_v1"
+from .product_identity import (
+    FUTURES_ADAPTATION_VERSION,
+    REFERENCE_MODEL_VERSION,
+    build_reference_trade_id,
+    utc_timestamp,
+)
 
 
 class ReferenceTradeStatus(StrEnum):
@@ -49,6 +50,11 @@ def _metric(value: object) -> None:
         raise ValueError("NEWOW_REFERENCE_INVALID_METRIC")
 
 
+def _day(value: object) -> None:
+    if type(value) is not date:
+        raise ValueError("NEWOW_REFERENCE_INVALID_TRADING_DAY")
+
+
 @dataclass(frozen=True, slots=True)
 class ReferenceTrade:
     reference_trade_id: str
@@ -62,9 +68,11 @@ class ReferenceTrade:
     futures_adaptation_version: str
     entry_signal_id: str
     entry_bar_end: datetime
+    entry_trading_day: date
     entry_reference_price: Decimal
     exit_signal_id: str | None
     exit_bar_end: datetime | None
+    exit_trading_day: date | None
     exit_reference_price: Decimal | None
     status: ReferenceTradeStatus
     holding_bars: int
@@ -98,6 +106,7 @@ class ReferenceTrade:
             _text(formula)
         object.__setattr__(self, "formula_versions", formulas)
         object.__setattr__(self, "entry_bar_end", utc_timestamp(self.entry_bar_end))
+        _day(self.entry_trading_day)
         _price(self.entry_reference_price)
         if type(self.holding_bars) is not int or self.holding_bars < 0:
             raise ValueError("NEWOW_REFERENCE_INVALID_HOLDING_BARS")
@@ -105,6 +114,7 @@ class ReferenceTrade:
         exit_values = (
             self.exit_signal_id,
             self.exit_bar_end,
+            self.exit_trading_day,
             self.exit_reference_price,
             self.reference_return_pct,
         )
@@ -113,6 +123,7 @@ class ReferenceTrade:
                 raise ValueError("NEWOW_REFERENCE_INCONSISTENT_STATUS")
             _text(self.exit_signal_id)
             object.__setattr__(self, "exit_bar_end", utc_timestamp(self.exit_bar_end))
+            _day(self.exit_trading_day)
             _price(self.exit_reference_price)
             _metric(self.reference_return_pct)
         elif any(value is not None for value in exit_values):
@@ -272,9 +283,11 @@ def _open_trade(entry: StrategyAction, holding_bars: int = 0) -> ReferenceTrade:
         futures_adaptation_version=FUTURES_ADAPTATION_VERSION,
         entry_signal_id=entry.signal_id,
         entry_bar_end=entry.bar_end,
+        entry_trading_day=entry.trading_day,
         entry_reference_price=entry.reference_price,
         exit_signal_id=None,
         exit_bar_end=None,
+        exit_trading_day=None,
         exit_reference_price=None,
         status=ReferenceTradeStatus.OPEN,
         holding_bars=holding_bars,
@@ -307,7 +320,11 @@ class ReferenceTradeProjector:
         actions = _dedupe_actions(tuple(replay.actions))
         _validate_segment_local_order(actions)
         positions, last_positions = _effective_bar_positions(replay, as_of)
-        diagnostics = list(dict.fromkeys(replay.diagnostics))
+        diagnostics = [
+            diagnostic
+            for diagnostic in dict.fromkeys(replay.diagnostics)
+            if diagnostic != "NO_ELIGIBLE_ENTRY"
+        ]
         trades: list[ReferenceTrade] = []
         open_by_owner: dict[tuple[str, str], tuple[int, StrategyAction, int]] = {}
         warmup_witnesses: dict[str, StrategyAction] = {}
@@ -320,7 +337,10 @@ class ReferenceTradeProjector:
             owner = (action.physical_contract, action.segment_id)
 
             if action.trade_eligibility is TradeEligibility.WARMUP_ONLY:
-                if action.kind is not ActionKind.BUILD:
+                if (
+                    action.kind is not ActionKind.BUILD
+                    or action.related_build_id is not None
+                ):
                     raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
                 warmup_witnesses[action.signal_id] = action
                 continue
@@ -363,6 +383,7 @@ class ReferenceTradeProjector:
                 trades[trade_position],
                 exit_signal_id=action.signal_id,
                 exit_bar_end=action.bar_end,
+                exit_trading_day=action.trading_day,
                 exit_reference_price=action.reference_price,
                 status=ReferenceTradeStatus.CLOSED,
                 holding_bars=action_index - entry_index,

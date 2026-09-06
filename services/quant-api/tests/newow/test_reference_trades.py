@@ -110,6 +110,67 @@ def test_holding_bars_counts_effective_frequency_intervals_not_calendar_days(
     assert trade.holding_bars == 1
 
 
+def test_trade_preserves_authoritative_night_session_trading_days(product_cases):
+    case = product_cases.closed(frequency="60m")
+    entry_end = datetime(2026, 1, 4, 13, tzinfo=UTC)
+    exit_end = datetime(2026, 1, 5, 13, tzinfo=UTC)
+    entry_bar = replace(
+        case.bars[0],
+        bar=replace(
+            case.bars[0].bar,
+            trading_day=date(2026, 1, 5),
+            bar_end=entry_end,
+            source_identity="owned:night-session-entry",
+        ),
+    )
+    exit_bar = replace(
+        case.bars[1],
+        bar=replace(
+            case.bars[1].bar,
+            trading_day=date(2026, 1, 6),
+            bar_end=exit_end,
+            source_identity="owned:night-session-exit",
+        ),
+    )
+    entry = product_cases.action(case.identity, entry_bar, "BUILD", "100")
+    clear = product_cases.action(
+        case.identity,
+        exit_bar,
+        "CLEAR",
+        "110",
+        related_build_id=entry.signal_id,
+    )
+    closed_replay = product_cases.replay(
+        case.identity,
+        (entry_bar, exit_bar),
+        (entry, clear),
+        ("BUILD", "CLEAR"),
+    )
+
+    trade = ReferenceTradeProjector().project(
+        closed_replay, (), datetime(2026, 1, 6, 16, tzinfo=UTC)
+    ).trades[0]
+
+    assert trade.entry_bar_end.date() == date(2026, 1, 4)
+    assert trade.entry_trading_day == date(2026, 1, 5)
+    assert trade.exit_bar_end.date() == date(2026, 1, 5)
+    assert trade.exit_trading_day == date(2026, 1, 6)
+    with pytest.raises(ValueError, match="INCONSISTENT_STATUS"):
+        replace(trade, exit_trading_day=None)
+
+    open_replay = product_cases.replay(
+        case.identity,
+        (entry_bar, exit_bar),
+        (entry,),
+        ("BUILD", "HOLD"),
+    )
+    open_trade = ReferenceTradeProjector().project(
+        open_replay, (), datetime(2026, 1, 6, 16, tzinfo=UTC)
+    ).trades[0]
+    assert open_trade.entry_trading_day == date(2026, 1, 5)
+    assert open_trade.exit_trading_day is None
+
+
 def test_pairing_closes_then_rebuilds_on_the_same_bar(product_cases):
     case = product_cases.same_bar_rebuild()
 
@@ -161,6 +222,20 @@ def test_warmup_build_witnesses_do_not_fabricate_a_trade(product_cases):
     assert result.diagnostics == ("NO_ELIGIBLE_ENTRY",)
 
 
+def test_stray_upstream_no_entry_diagnostic_needs_validated_pairing_evidence(
+    product_cases,
+):
+    case = product_cases.open()
+    replay = replace(
+        case.replay,
+        diagnostics=("UPSTREAM_FORMULA_DIAGNOSTIC", "NO_ELIGIBLE_ENTRY"),
+    )
+
+    result = ReferenceTradeProjector().project(replay, (), case.as_of)
+
+    assert result.diagnostics == ("UPSTREAM_FORMULA_DIAGNOSTIC",)
+
+
 def test_no_eligible_entry_requires_the_exact_same_segment_warmup_witness(
     product_cases,
 ):
@@ -171,6 +246,23 @@ def test_no_eligible_entry_requires_the_exact_same_segment_warmup_witness(
         case.bars,
         (case.entry, damaged),
         ("BUILD", "CLEAR"),
+    )
+
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        ReferenceTradeProjector().project(replay, (), case.as_of)
+
+
+def test_warmup_build_with_a_related_build_id_fails_closed(product_cases):
+    case = product_cases.warmup_only_build()
+    damaged = replace(case.entry, related_build_id="damaged-build-reference")
+    frames = (
+        replace(case.replay.frames[0], actions=(damaged,)),
+        case.replay.frames[1],
+    )
+    replay = replace(
+        case.replay,
+        frames=frames,
+        actions=(damaged, case.exit),
     )
 
     with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
