@@ -44,13 +44,6 @@ const referenceResponse = computed(() => (
     ? loader.sections.reference.data.value as NewowProductSectionResponse<'reference'>
     : null
 ))
-const referenceChartCompatible = computed(() => {
-  const chart = chartResponse.value
-  const reference = referenceResponse.value
-  if (!loader.jointSnapshot.value || chart === null || reference === null) return false
-  const token = chart.meta.snapshot_token
-  return token !== null && reference.meta.snapshot_token === token
-})
 const explanationResponse = computed(() => (
   loader.sections.explanation.data.value?.section === 'explanation'
     ? loader.sections.explanation.data.value as NewowProductSectionResponse<'explanation'>
@@ -152,10 +145,10 @@ async function moveResearchTab(tab: 'reference' | 'explanation'): Promise<void> 
 
 async function locateReferenceTrade(trade: NewowReferenceTrade): Promise<void> {
   locateMessage.value = null
-  let target = resolveNewowReferenceLocate(trade, chartResponse.value, referenceChartCompatible.value)
+  let target = resolveNewowReferenceLocate(trade, chartResponse.value, loader.referenceChartCompatible.value)
   if (target.kind === 'request_display_window') {
     await loader.loadChart(target.displayWindow)
-    target = resolveNewowReferenceLocate(trade, chartResponse.value, referenceChartCompatible.value)
+    target = resolveNewowReferenceLocate(trade, chartResponse.value, loader.referenceChartCompatible.value)
   }
   if (target.kind !== 'loaded') {
     locateMessage.value = `无法按精确信号 ${target.signalId} / ${target.barEnd} 定位；没有跳转到邻近日期。`
@@ -335,7 +328,7 @@ onBeforeUnmount(loader.dispose)
         <NewowReferencePanel
           :response="referenceResponse"
           :chart-response="chartResponse"
-          :cross-section-compatible="referenceChartCompatible"
+          :cross-section-compatible="loader.referenceChartCompatible.value"
           :lifecycle="loader.sections.reference.state.value"
           :error="loader.sections.reference.error.value"
           :selected-signal-id="selectedSignalId"

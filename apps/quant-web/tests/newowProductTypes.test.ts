@@ -6,6 +6,14 @@ import {
   NewowProductRequestError,
 } from '../src/api/newowProduct.ts'
 import {
+  NEWOW_FREQUENCIES,
+  NEWOW_STRATEGIES,
+} from '../src/types/marketDetail.ts'
+import {
+  NEWOW_PRODUCT_FREQUENCIES,
+  NEWOW_PRODUCT_STRATEGIES,
+} from '../src/types/newowProduct.ts'
+import {
   chartCoordinate,
   normalizeNewowProductResponse,
 } from '../src/utils/newowProductTypes.ts'
@@ -80,6 +88,68 @@ test('rejects non-finite Decimal text and wrong contract, frequency, formula, so
     action('build-1', 'BUILD', 1, '2026-08-14T07:00:00Z'),
   ]
   assert.throws(() => normalizeNewowProductResponse(order, expected), /order/)
+})
+
+test('shares one Newow strategy and frequency allowlist authority across route and product contracts', () => {
+  assert.equal(NEWOW_PRODUCT_STRATEGIES, NEWOW_STRATEGIES)
+  assert.equal(NEWOW_PRODUCT_FREQUENCIES, NEWOW_FREQUENCIES)
+})
+
+test('rejects chart facts later than the fixed snapshot as_of', () => {
+  const bar = chartWire()
+  bar.chart.value!.bars[0]!.bar_end = '2026-08-15T07:00:01Z'
+  assert.throws(() => normalizeNewowProductResponse(bar, expected), /bars\[0\].bar_end.*as_of/)
+
+  const actionFact = chartWire()
+  actionFact.chart.value!.actions[0]!.bar_end = '2026-08-15T07:00:01Z'
+  assert.throws(() => normalizeNewowProductResponse(actionFact, expected), /actions\[0\].bar_end.*as_of/)
+
+  const hintBar = chartWire()
+  hintBar.chart.value!.hints = [{
+    hint_id: 'future-hint', kind: 'D4', bar_end: '2026-08-15T07:00:01Z', known_at: AS_OF,
+    anchor_price: null, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+    retrospective: false, quantity_effect: 'none', sequence: null,
+  }]
+  assert.throws(() => normalizeNewowProductResponse(hintBar, expected), /hints\[0\].bar_end.*as_of/)
+
+  const knownAt = chartWire()
+  knownAt.chart.value!.hints = [{
+    hint_id: 'future-known', kind: 'D4', bar_end: '2026-08-14T07:00:00Z', known_at: '2026-08-15T07:00:01Z',
+    anchor_price: null, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+    retrospective: false, quantity_effect: 'none', sequence: null,
+  }]
+  knownAt.chart.value!.frames[0]!.hint_ids = ['future-known']
+  assert.throws(() => normalizeNewowProductResponse(knownAt, expected), /hints\[0\].known_at.*as_of/)
+})
+
+test('rejects reference cutoff overflow and trade facts outside or against its causal order', () => {
+  const cutoff = referenceWire()
+  cutoff.reference.value!.reference_cutoff = '2026-08-15T07:00:01Z'
+  assert.throws(() => normalizeNewowProductResponse(cutoff, { ...expected, section: 'reference' }), /reference_cutoff.*as_of/)
+
+  const lateFields = [
+    ['entry_bar_end', '2026-08-15T07:00:01Z'],
+    ['exit_bar_end', '2026-08-15T07:00:01Z'],
+    ['mark_bar_end', '2026-08-15T07:00:01Z'],
+    ['interrupted_at', '2026-08-15T07:00:01Z'],
+  ] as const
+  for (const [field, value] of lateFields) {
+    const raw = referenceWire()
+    ;(raw.reference.value!.items[0]! as Record<string, unknown>)[field] = value
+    assert.throws(
+      () => normalizeNewowProductResponse(raw, { ...expected, section: 'reference' }),
+      new RegExp(`${field}.*reference_cutoff`),
+    )
+  }
+
+  for (const field of ['exit_bar_end', 'mark_bar_end', 'interrupted_at'] as const) {
+    const raw = referenceWire()
+    ;(raw.reference.value!.items[0]! as Record<string, unknown>)[field] = '2026-08-13T07:00:00Z'
+    assert.throws(
+      () => normalizeNewowProductResponse(raw, { ...expected, section: 'reference' }),
+      new RegExp(`${field}.*order`),
+    )
+  }
 })
 
 test('binds frames, actions, and hints to the exact returned Bar owner identities', () => {

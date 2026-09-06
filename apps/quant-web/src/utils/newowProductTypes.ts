@@ -1,3 +1,7 @@
+import {
+  NEWOW_PRODUCT_FREQUENCIES,
+  NEWOW_PRODUCT_STRATEGIES,
+} from '../types/newowProduct.ts'
 import type {
   NewowAuxiliaryValue,
   NewowChartValue,
@@ -52,8 +56,8 @@ import type {
 } from '../types/newowProduct.ts'
 
 const SECTIONS = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const
-const STRATEGIES = ['trend', 'oscillation', 'main_rise'] as const
-const FREQUENCIES = ['1w', '1d', '60m'] as const
+const STRATEGIES = NEWOW_PRODUCT_STRATEGIES
+const FREQUENCIES = NEWOW_PRODUCT_FREQUENCIES
 const RUNTIME_STATUSES = ['ready', 'warming', 'unavailable', 'not_applicable', 'evidence_required'] as const
 const EVIDENCE_STATUSES = ['ACTIVE_CODE_VERIFIED', 'RESEARCH_EVIDENCE_ONLY', 'EVIDENCE_REQUIRED', 'OUT_OF_SCOPE'] as const
 const EXPECTED_FORMULAS: Record<NewowProductStrategy, readonly string[]> = {
@@ -194,14 +198,14 @@ function normalizeStatus(payload: unknown, field: string): NewowFeatureStatus {
 }
 
 function normalizeSectionValue(section: NewowProductSection, payload: unknown, meta: NewowProductMeta, expected: NormalizedExpected) {
-  if (section === 'chart') return normalizeChart(payload)
+  if (section === 'chart') return normalizeChart(payload, meta)
   if (section === 'reference') return normalizeReference(payload, meta, expected)
   if (section === 'auxiliary') return normalizeAuxiliary(payload, expected.component)
   if (section === 'explanation') return normalizeExplanation(payload, meta)
   return normalizeComparator(payload, meta)
 }
 
-function normalizeChart(payload: unknown): NewowChartValue {
+function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartValue {
   const value = exactRecord(payload, 'chart.value', [
     'chart_from', 'chart_through', 'page_identity', 'bars', 'frames', 'actions', 'hints',
     'diagnostics', 'next_before', 'repainting', 'formal_signal_eligible', 'allowed_uses',
@@ -209,14 +213,14 @@ function normalizeChart(payload: unknown): NewowChartValue {
   const chartFrom = day(value.chart_from, 'chart_from')
   const chartThrough = day(value.chart_through, 'chart_through')
   if (chartFrom > chartThrough) throw new Error('chart window is invalid')
-  const bars = array(value.bars, 'bars').map(normalizeBar)
+  const bars = array(value.bars, 'bars').map((bar, index) => normalizeBar(bar, index, meta.as_of))
   requireOrderedUnique(bars, (bar) => bar.bar_end, 'bars')
   const barEnds = new Set(bars.map((bar) => bar.bar_end))
-  const frames = array(value.frames, 'frames').map((frame, index) => normalizeFrame(frame, index, barEnds))
+  const frames = array(value.frames, 'frames').map((frame, index) => normalizeFrame(frame, index, barEnds, meta.as_of))
   requireOrderedUnique(frames, (frame) => frame.bar_end, 'frames')
-  const actions = array(value.actions, 'actions').map((action, index) => normalizeAction(action, index, barEnds))
+  const actions = array(value.actions, 'actions').map((action, index) => normalizeAction(action, index, barEnds, meta.as_of))
   requireSequenceOrder(actions, 'actions')
-  const hints = array(value.hints, 'hints').map((hint, index) => normalizeHint(hint, index, barEnds))
+  const hints = array(value.hints, 'hints').map((hint, index) => normalizeHint(hint, index, barEnds, meta.as_of))
   requireTimelineOrder(hints, 'hints')
   validateChartRelationships(bars, frames, actions, hints)
   requireExact(value.repainting, false, 'chart.repainting')
@@ -255,7 +259,7 @@ function validateChartRelationships(
   }
 }
 
-function normalizeBar(payload: unknown, index: number): NewowProductBar {
+function normalizeBar(payload: unknown, index: number, asOf: string): NewowProductBar {
   const field = `bars[${index}]`
   const value = exactRecord(payload, field, [
     'bar_end', 'trading_day', 'open', 'high', 'low', 'close', 'volume', 'open_interest',
@@ -269,8 +273,10 @@ function normalizeBar(payload: unknown, index: number): NewowProductBar {
     throw new Error(`${field} has invalid OHLC order`)
   }
   requireExact(value.completed, true, `${field}.completed`)
+  const barEnd = instant(value.bar_end, `${field}.bar_end`)
+  requireNotAfter(barEnd, asOf, `${field}.bar_end`, 'meta.as_of')
   return {
-    bar_end: instant(value.bar_end, `${field}.bar_end`), trading_day: day(value.trading_day, `${field}.trading_day`),
+    bar_end: barEnd, trading_day: day(value.trading_day, `${field}.trading_day`),
     open, high, low, close, volume: count(value.volume, `${field}.volume`),
     open_interest: value.open_interest === null ? null : count(value.open_interest, `${field}.open_interest`),
     physical_contract: contract(value.physical_contract, `${field}.physical_contract`),
@@ -279,10 +285,11 @@ function normalizeBar(payload: unknown, index: number): NewowProductBar {
   }
 }
 
-function normalizeFrame(payload: unknown, index: number, barEnds: Set<string>): NewowProductFrame {
+function normalizeFrame(payload: unknown, index: number, barEnds: Set<string>, asOf: string): NewowProductFrame {
   const field = `frames[${index}]`
   const value = exactRecord(payload, field, ['bar_end', 'main_state', 'main_values', 'status', 'action_ids', 'hint_ids'])
   const barEnd = instant(value.bar_end, `${field}.bar_end`)
+  requireNotAfter(barEnd, asOf, `${field}.bar_end`, 'meta.as_of')
   if (!barEnds.has(barEnd)) throw new Error(`${field} does not reference a chart bar`)
   const rawValues = record(value.main_values, `${field}.main_values`)
   const mainValues: Record<string, string | null> = {}
@@ -294,10 +301,11 @@ function normalizeFrame(payload: unknown, index: number, barEnds: Set<string>): 
   }
 }
 
-function normalizeAction(payload: unknown, index: number, barEnds: Set<string>): NewowProductAction {
+function normalizeAction(payload: unknown, index: number, barEnds: Set<string>, asOf: string): NewowProductAction {
   const field = `actions[${index}]`
   const value = exactRecord(payload, field, ['signal_id', 'kind', 'bar_end', 'trading_day', 'reference_price', 'physical_contract', 'segment_id', 'related_build_id', 'trade_eligibility', 'sequence'])
   const barEnd = instant(value.bar_end, `${field}.bar_end`)
+  requireNotAfter(barEnd, asOf, `${field}.bar_end`, 'meta.as_of')
   if (!barEnds.has(barEnd)) throw new Error(`${field} does not reference a chart bar`)
   return {
     signal_id: text(value.signal_id, `${field}.signal_id`), kind: literal(value.kind, ['BUILD', 'CLEAR'], `${field}.kind`),
@@ -309,16 +317,19 @@ function normalizeAction(payload: unknown, index: number, barEnds: Set<string>):
   }
 }
 
-function normalizeHint(payload: unknown, index: number, barEnds: Set<string>): NewowProductHint {
+function normalizeHint(payload: unknown, index: number, barEnds: Set<string>, asOf: string): NewowProductHint {
   const field = `hints[${index}]`
   const value = exactRecord(payload, field, ['hint_id', 'kind', 'bar_end', 'known_at', 'anchor_price', 'physical_contract', 'segment_id', 'retrospective', 'quantity_effect', 'sequence'])
   const barEnd = instant(value.bar_end, `${field}.bar_end`)
+  requireNotAfter(barEnd, asOf, `${field}.bar_end`, 'meta.as_of')
   if (!barEnds.has(barEnd)) throw new Error(`${field} does not reference a chart bar`)
   requireExact(value.retrospective, false, `${field}.retrospective`)
   requireExact(value.quantity_effect, 'none', `${field}.quantity_effect`)
+  const knownAt = instant(value.known_at, `${field}.known_at`)
+  requireNotAfter(knownAt, asOf, `${field}.known_at`, 'meta.as_of')
   return {
     hint_id: text(value.hint_id, `${field}.hint_id`), kind: text(value.kind, `${field}.kind`), bar_end: barEnd,
-    known_at: instant(value.known_at, `${field}.known_at`), anchor_price: value.anchor_price === null ? null : decimal(value.anchor_price, `${field}.anchor_price`),
+    known_at: knownAt, anchor_price: value.anchor_price === null ? null : decimal(value.anchor_price, `${field}.anchor_price`),
     physical_contract: contract(value.physical_contract, `${field}.physical_contract`), segment_id: text(value.segment_id, `${field}.segment_id`),
     retrospective: false, quantity_effect: 'none', sequence: value.sequence === null ? null : count(value.sequence, `${field}.sequence`),
   }
@@ -334,8 +345,10 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
   if (performanceSince > performanceThrough) throw new Error('reference performance window is invalid')
   if (expected.performanceSince !== undefined) requireExact(performanceSince, day(expected.performanceSince, 'expected.performance_since'), 'reference.performance_since')
   if (expected.performanceThrough !== undefined) requireExact(performanceThrough, day(expected.performanceThrough, 'expected.performance_through'), 'reference.performance_through')
+  const referenceCutoff = instant(value.reference_cutoff, 'reference.reference_cutoff')
+  requireNotAfter(referenceCutoff, meta.as_of, 'reference.reference_cutoff', 'meta.as_of')
   const summary = normalizeSummary(value.summary)
-  const items = array(value.items, 'reference.items').map((item, index) => normalizeTrade(item, index, meta))
+  const items = array(value.items, 'reference.items').map((item, index) => normalizeTrade(item, index, meta, referenceCutoff))
   requireReferenceOrder(items)
   if (new Set(items.map((item) => item.reference_trade_id)).size !== items.length) throw new Error('reference.items contains duplicate IDs')
   requireExact(value.executable, false, 'reference.executable')
@@ -343,7 +356,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
   return {
     performance_since: performanceSince, performance_through: performanceThrough,
     actual_available_through: day(value.actual_available_through, 'reference.actual_available_through'),
-    reference_cutoff: instant(value.reference_cutoff, 'reference.reference_cutoff'),
+    reference_cutoff: referenceCutoff,
     reference_input_sha256: sha256(value.reference_input_sha256, 'reference.reference_input_sha256'),
     summary, items, next_before: nullableText(value.next_before, 'reference.next_before'), executable: false, auto_order: false,
     allowed_uses: exactStringArray(value.allowed_uses, ['page_parity_reference', 'research_display'] as const, 'reference.allowed_uses'),
@@ -371,7 +384,7 @@ function normalizeSummary(payload: unknown): NewowReferenceSummary {
   return result
 }
 
-function normalizeTrade(payload: unknown, index: number, meta: NewowProductMeta): NewowReferenceTrade {
+function normalizeTrade(payload: unknown, index: number, meta: NewowProductMeta, referenceCutoff: string): NewowReferenceTrade {
   const field = `reference.items[${index}]`
   const value = exactRecord(payload, field, [
     'reference_trade_id', 'product', 'strategy_code', 'frequency', 'physical_contract', 'segment_id', 'formula_versions',
@@ -392,20 +405,30 @@ function normalizeTrade(payload: unknown, index: number, meta: NewowProductMeta)
   const exitDay = nullableDay(value.exit_trading_day, `${field}.exit_trading_day`)
   const exitPrice = nullableDecimal(value.exit_reference_price, `${field}.exit_reference_price`)
   const referenceReturn = nullableDecimal(value.reference_return_pct, `${field}.reference_return_pct`)
+  const entryBar = instant(value.entry_bar_end, `${field}.entry_bar_end`)
+  const markBar = nullableInstant(value.mark_bar_end, `${field}.mark_bar_end`)
+  const interruptedAt = nullableInstant(value.interrupted_at, `${field}.interrupted_at`)
   if (status === 'CLOSED' && [exitSignal, exitBar, exitDay, exitPrice, referenceReturn].some((item) => item === null)) throw new Error(`${field} CLOSED facts are incomplete`)
   if (status !== 'CLOSED' && [exitSignal, exitBar, exitDay, exitPrice, referenceReturn].some((item) => item !== null)) throw new Error(`${field} non-CLOSED facts expose an exit`)
+  requireNotAfter(entryBar, referenceCutoff, `${field}.entry_bar_end`, 'reference.reference_cutoff')
+  for (const [name, timestamp] of [['exit_bar_end', exitBar], ['mark_bar_end', markBar], ['interrupted_at', interruptedAt]] as const) {
+    if (timestamp === null) continue
+    requireNotAfter(timestamp, referenceCutoff, `${field}.${name}`, 'reference.reference_cutoff')
+    if (Date.parse(timestamp) < Date.parse(entryBar)) throw new Error(`${field}.${name} order is invalid`)
+  }
+  if (markBar !== null && interruptedAt !== null && Date.parse(interruptedAt) < Date.parse(markBar)) throw new Error(`${field}.interrupted_at order is invalid`)
   return {
     reference_trade_id: text(value.reference_trade_id, `${field}.reference_trade_id`), product: meta.identity.product,
     strategy_code: meta.identity.strategy, frequency: meta.identity.frequency, physical_contract: contract(value.physical_contract, `${field}.physical_contract`),
     segment_id: text(value.segment_id, `${field}.segment_id`), formula_versions: meta.identity.formula_versions,
     reference_model_version: meta.reference_model_version, futures_adaptation_version: meta.futures_adaptation_version,
     entry_signal_id: text(value.entry_signal_id, `${field}.entry_signal_id`), entry_sequence: count(value.entry_sequence, `${field}.entry_sequence`),
-    entry_bar_end: instant(value.entry_bar_end, `${field}.entry_bar_end`), entry_trading_day: day(value.entry_trading_day, `${field}.entry_trading_day`),
+    entry_bar_end: entryBar, entry_trading_day: day(value.entry_trading_day, `${field}.entry_trading_day`),
     entry_reference_price: decimal(value.entry_reference_price, `${field}.entry_reference_price`), exit_signal_id: exitSignal,
     exit_bar_end: exitBar, exit_trading_day: exitDay, exit_reference_price: exitPrice, status,
     holding_bars: count(value.holding_bars, `${field}.holding_bars`), reference_return_pct: referenceReturn,
-    mark_bar_end: nullableInstant(value.mark_bar_end, `${field}.mark_bar_end`), mark_reference_price: nullableDecimal(value.mark_reference_price, `${field}.mark_reference_price`),
-    mark_change_pct: nullableDecimal(value.mark_change_pct, `${field}.mark_change_pct`), interrupted_at: nullableInstant(value.interrupted_at, `${field}.interrupted_at`),
+    mark_bar_end: markBar, mark_reference_price: nullableDecimal(value.mark_reference_price, `${field}.mark_reference_price`),
+    mark_change_pct: nullableDecimal(value.mark_change_pct, `${field}.mark_change_pct`), interrupted_at: interruptedAt,
     interruption_reason: nullableText(value.interruption_reason, `${field}.interruption_reason`), statistics_membership: nullableText(value.statistics_membership, `${field}.statistics_membership`),
     hint_ids: uniqueStrings(value.hint_ids, `${field}.hint_ids`),
   }
@@ -658,6 +681,7 @@ function requireOrderedUnique<T>(items: readonly T[], key: (item: T) => string, 
 function requireTimelineOrder<T extends { bar_end: string }>(items: readonly T[], field: string): void { for (let index = 1; index < items.length; index += 1) if (Date.parse(items[index]!.bar_end) < Date.parse(items[index - 1]!.bar_end)) throw new Error(`${field} order is invalid`) }
 function requireSequenceOrder<T extends { bar_end: string; sequence: number }>(items: readonly T[], field: string): void { for (let index = 1; index < items.length; index += 1) { const current = items[index]!; const previous = items[index - 1]!; const currentTime = Date.parse(current.bar_end); const previousTime = Date.parse(previous.bar_end); if (currentTime < previousTime || (currentTime === previousTime && current.sequence <= previous.sequence)) throw new Error(`${field} order is invalid`) } }
 function requireReferenceOrder(items: readonly NewowReferenceTrade[]): void { for (let index = 1; index < items.length; index += 1) { const previous = items[index - 1]!; const current = items[index]!; const priorKey = [previous.entry_bar_end, String(previous.entry_sequence).padStart(12, '0'), previous.reference_trade_id].join('|'); const currentKey = [current.entry_bar_end, String(current.entry_sequence).padStart(12, '0'), current.reference_trade_id].join('|'); if (currentKey >= priorKey) throw new Error('reference.items order must be strictly descending') } }
+function requireNotAfter(value: string, upperBound: string, field: string, upperBoundField: string): void { if (Date.parse(value) > Date.parse(upperBound)) throw new Error(`${field} must not be later than ${upperBoundField}`) }
 
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {

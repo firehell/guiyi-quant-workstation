@@ -7,6 +7,7 @@ import { useNewowProduct } from '../src/composables/useNewowProduct.ts'
 import type { MarketDetailIdentity } from '../src/types/marketDetail.ts'
 import type { NewowProductRequest, NewowProductSectionResponse } from '../src/types/newowProduct.ts'
 import { normalizeNewowProductResponse } from '../src/utils/newowProductTypes.ts'
+import { resolveNewowPanelRenderState } from '../src/utils/newowProductViewModel.ts'
 
 const AS_OF = '2026-08-15T07:00:00.000Z'
 
@@ -36,7 +37,7 @@ test('late response never replaces a different strategy and the new identity cle
   state.dispose()
 })
 
-test('pins one as_of per identity generation and composes sections only with a shared non-null compatibility token', async () => {
+test('pins one as_of and keeps chart-reference compatibility independent from an explanation null token', async () => {
   const identity = ref<MarketDetailIdentity | null>(newowIdentity('trend', '1d'))
   const pending: Pending[] = []
   let clock = 0
@@ -53,14 +54,15 @@ test('pins one as_of per identity generation and composes sections only with a s
   assert.equal(pending[1]!.request.snapshotToken, 'shared-token')
   pending[1]!.resolve(normalizedReference(pending[1]!.request, { token: 'shared-token' }))
   await referencePromise
-  assert.equal(state.jointSnapshot.value, true)
+  assert.equal(state.referenceChartCompatible.value, true)
 
   const explanationPromise = state.loadExplanation()
   assert.equal(pending[2]!.request.asOf, AS_OF)
   pending[2]!.resolve(normalizedStatus(pending[2]!.request, null))
   await explanationPromise
   assert.equal(state.sections.explanation.data.value?.meta.snapshot_token, null)
-  assert.equal(state.jointSnapshot.value, false)
+  assert.equal(state.referenceChartCompatible.value, true)
+  assert.equal('jointSnapshot' in state, false)
   state.dispose()
 })
 
@@ -128,6 +130,42 @@ test('same-identity failure keeps only the last success as stale while an obsole
   assert.equal(state.sections.chart.state.value, 'stale')
   assert.equal(state.sections.chart.error.value, 'NEWOW_API_UNAVAILABLE')
   state.dispose()
+})
+
+test('same-identity busy and cancelled refreshes retain the last success as stale with visible reason and time', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request))
+  await flush()
+
+  for (const [classification, code] of [
+    ['busy', 'NEWOW_RESOURCE_BUSY'],
+    ['cancelled', 'NEWOW_REQUEST_CANCELLED'],
+  ] as const) {
+    const refresh = state.loadChart()
+    pending.at(-1)!.reject(new NewowProductRequestError(code, classification))
+    await refresh
+    const retained = state.sections.chart.data.value
+    assert.notEqual(retained, null)
+    assert.equal(state.sections.chart.state.value, 'stale')
+    assert.equal(state.sections.chart.error.value, code)
+    assert.deepEqual(resolveNewowPanelRenderState(state.sections.chart.state.value, retained, state.sections.chart.error.value), {
+      showValue: true,
+      message: `刷新失败（${code}）；以下为同一身份上次成功的 stale 数值。`,
+      staleAt: '2026-08-15T07:00:01Z',
+    })
+  }
+  state.dispose()
+
+  const firstCancelled = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF),
+    fetchSection: async () => { throw new NewowProductRequestError('NEWOW_REQUEST_CANCELLED', 'cancelled') },
+  })
+  await flush()
+  assert.equal(firstCancelled.sections.chart.data.value, null)
+  assert.equal(firstCancelled.sections.chart.state.value, 'cancelled')
+  firstCancelled.dispose()
 })
 
 test('reference pages merge only under one fingerprint and reject duplicate IDs with changed facts', async () => {
@@ -202,29 +240,37 @@ test('rebuilds a 409 snapshot or cursor conflict at most once and never loops a 
   busy.dispose()
 })
 
-test('a rejected reference cursor restarts only reference page one and keeps a compatible chart', async () => {
+test('a rejected reference cursor clears every old-token section before one unbound page-one rebuild', async () => {
   const calls: NewowProductRequest[] = []
   let referenceCalls = 0
-  const state = useNewowProduct({
+  let state!: ReturnType<typeof useNewowProduct>
+  state = useNewowProduct({
     identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF),
     fetchSection: async (request) => {
       calls.push(request)
       if (request.section === 'chart') return normalizedChart(request, { token: 'shared-token' })
+      if (request.section === 'explanation') return normalizedStatus(request, 'shared-token')
       referenceCalls += 1
       if (referenceCalls === 1) return normalizedReference(request, { token: 'shared-token', nextBefore: 'old-cursor' })
       if (referenceCalls === 2) throw new NewowProductRequestError('NEWOW_CURSOR_GENERATION_CONFLICT', 'conflict')
+      assert.equal(state.sections.chart.data.value, null)
+      assert.equal(state.sections.reference.data.value, null)
+      assert.equal(state.sections.explanation.data.value, null)
       return normalizedReference(request, { token: 'compatible-b', nextBefore: null })
     },
   })
   await flush()
   await state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  await state.loadExplanation()
   await state.loadNextReferencePage()
 
   const referenceRequests = calls.filter((request) => request.section === 'reference')
   assert.equal(referenceRequests.length, 3)
   assert.equal(referenceRequests[1]!.section === 'reference' && referenceRequests[1]!.historyBefore, 'old-cursor')
   assert.equal(referenceRequests[2]!.section === 'reference' && referenceRequests[2]!.historyBefore, undefined)
-  assert.notEqual(state.sections.chart.data.value, null)
+  assert.equal(referenceRequests[2]!.snapshotToken, undefined)
+  assert.equal(state.sections.chart.data.value, null)
+  assert.equal(state.sections.explanation.data.value, null)
   assert.equal(state.sections.reference.data.value?.meta.snapshot_token, 'compatible-b')
   state.dispose()
 })

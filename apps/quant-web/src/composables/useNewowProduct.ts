@@ -2,6 +2,10 @@ import { computed, readonly, shallowRef, watch, type Ref, type ShallowRef } from
 
 import { getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
 import type { MarketDetailIdentity } from '../types/marketDetail.ts'
+import {
+  NEWOW_PRODUCT_FREQUENCIES,
+  NEWOW_PRODUCT_STRATEGIES,
+} from '../types/newowProduct.ts'
 import type {
   NewowAuxiliaryComponent,
   NewowChartValue,
@@ -18,6 +22,8 @@ type FetchSection = (request: NewowProductRequest, signal: AbortSignal) => Promi
 
 const MAX_ACCUMULATED_CHART_ROWS = 3000
 const MAX_ACCUMULATED_REFERENCE_TRADES = 300
+const NEWOW_STRATEGY_SET = new Set<string>(NEWOW_PRODUCT_STRATEGIES)
+const NEWOW_FREQUENCY_SET = new Set<string>(NEWOW_PRODUCT_FREQUENCIES)
 
 export interface UseNewowProductOptions {
   readonly identity: Readonly<Ref<MarketDetailIdentity | null>>
@@ -180,15 +186,12 @@ export function useNewowProduct(options: UseNewowProductOptions) {
           if (!isCurrent(section, requestGeneration, sectionGeneration, controller)) return
           if (!rebuilt && isRebuildable(error)) {
             rebuilt = true
-            const cursorConflict = error instanceof NewowProductRequestError && error.code.includes('CURSOR')
-            if (cursorConflict && (section === 'reference' || section === 'chart')) {
+            invalidateTokenDependents(request.snapshotToken)
+            if (section === 'reference' || section === 'chart') {
               clearResource(section)
-              if (section === 'reference') referenceFingerprint = null
-              else chartFingerprint = null
-            } else {
-              invalidateTokenDependents(request.snapshotToken)
+              resetPagination(section)
             }
-            request = withoutGenerationBindings(request, cursorConflict)
+            request = withoutGenerationBindings(request)
             continue
           }
           fail(section, error)
@@ -313,7 +316,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     resource.error.value = requestError.code
     if (requestError.classification === 'conflict') { failConflict(section, requestError.code); return }
     if (requestError.classification === 'busy' || requestError.classification === 'cancelled') {
-      resource.state.value = requestError.classification
+      resource.state.value = resource.data.value === null ? requestError.classification : 'stale'
       return
     }
     resource.state.value = resource.data.value === null ? 'unavailable' : 'stale'
@@ -344,8 +347,22 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   function invalidateTokenDependents(token: string | undefined): void {
     if (token === undefined) return
     for (const section of ['chart', 'reference', 'explanation', 'auxiliary', 'comparator'] as const) {
-      if (resources[section].data.value?.meta.snapshot_token === token) clearResource(section)
+      if (resources[section].data.value?.meta.snapshot_token !== token) continue
+      clearResource(section)
+      if (section === 'chart' || section === 'reference') resetPagination(section)
     }
+  }
+
+  function resetPagination(section: 'chart' | 'reference'): void {
+    if (section === 'chart') {
+      chartWindow = null
+      chartFingerprint = null
+      chartPageLimit = null
+      return
+    }
+    referenceWindow = null
+    referenceFingerprint = null
+    referencePageLimit = null
   }
 
   function isCurrent(section: NewowProductSection, requestGeneration: number, sectionGeneration: number, controller: AbortController): boolean {
@@ -363,20 +380,19 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     asOf.value = null
   }
 
-  const jointSnapshot = computed(() => {
-    const participants = (['chart', 'reference', 'explanation'] as const)
-      .map((section) => resources[section].data.value)
-      .filter((response): response is NewowProductSectionResponse => response !== null)
-    if (participants.length < 2) return false
-    const first = participants[0]!.meta.snapshot_token
-    return first !== null && participants.every((response) => response.meta.snapshot_token === first)
+  const referenceChartCompatible = computed(() => {
+    const chart = resources.chart.data.value
+    const reference = resources.reference.data.value
+    const token = chart?.meta.snapshot_token
+    return chart !== null && reference !== null && token !== null && token !== undefined
+      && reference.meta.snapshot_token === token
   })
 
   return {
     identity: readonly(currentIdentity),
     asOf: readonly(asOf),
     sections: resources,
-    jointSnapshot: readonly(jointSnapshot),
+    referenceChartCompatible: readonly(referenceChartCompatible),
     loadChart, loadNextChartPage, loadAuxiliary, loadReference, loadNextReferencePage, loadExplanation, loadComparator, dispose,
   }
 
@@ -390,7 +406,7 @@ function createResource(): SectionResource {
 }
 
 function validatedIdentity(identity: MarketDetailIdentity | null): NewowProductIdentity | null {
-  if (identity === null || identity.view !== 'newow' || !/^[a-z]+$/.test(identity.symbol) || identity.seriesKind !== 'actual_dominant' || identity.contract !== undefined || identity.strategy === undefined || !['trend', 'oscillation', 'main_rise'].includes(identity.strategy) || !['1w', '1d', '60m'].includes(identity.frequency)) return null
+  if (identity === null || identity.view !== 'newow' || !/^[a-z]+$/.test(identity.symbol) || identity.seriesKind !== 'actual_dominant' || identity.contract !== undefined || identity.strategy === undefined || !NEWOW_STRATEGY_SET.has(identity.strategy) || !NEWOW_FREQUENCY_SET.has(identity.frequency)) return null
   return { product: identity.symbol, strategy: identity.strategy, frequency: identity.frequency as NewowProductIdentity['frequency'], seriesKind: 'actual_dominant' }
 }
 
@@ -405,10 +421,11 @@ function isRebuildable(error: unknown): boolean {
     && (error.code.includes('SNAPSHOT_GENERATION') || error.code.includes('CURSOR'))
 }
 
-function withoutGenerationBindings(request: NewowProductRequest, removeCursor: boolean): NewowProductRequest {
+function withoutGenerationBindings(request: NewowProductRequest): NewowProductRequest {
   const copy = { ...request } as Record<string, unknown>
   delete copy.snapshotToken
-  if (removeCursor) { delete copy.historyBefore; delete copy.chartBefore }
+  delete copy.historyBefore
+  delete copy.chartBefore
   return copy as unknown as NewowProductRequest
 }
 

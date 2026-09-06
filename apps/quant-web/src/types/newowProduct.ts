@@ -1,8 +1,11 @@
-export const NEWOW_PRODUCT_STRATEGIES = ['trend', 'oscillation', 'main_rise'] as const
-export type NewowProductStrategy = (typeof NEWOW_PRODUCT_STRATEGIES)[number]
+import type { NewowFrequency, NewowStrategy } from './marketDetail.ts'
 
-export const NEWOW_PRODUCT_FREQUENCIES = ['1w', '1d', '60m'] as const
-export type NewowProductFrequency = (typeof NEWOW_PRODUCT_FREQUENCIES)[number]
+export {
+  NEWOW_FREQUENCIES as NEWOW_PRODUCT_FREQUENCIES,
+  NEWOW_STRATEGIES as NEWOW_PRODUCT_STRATEGIES,
+} from './marketDetail.ts'
+export type NewowProductStrategy = NewowStrategy
+export type NewowProductFrequency = NewowFrequency
 
 export const NEWOW_PRODUCT_SECTIONS = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const
 export type NewowProductSection = (typeof NEWOW_PRODUCT_SECTIONS)[number]
