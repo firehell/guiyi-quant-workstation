@@ -1,7 +1,7 @@
 # Newow 产品与乐观参考交易 P0 覆盖与证据 Gate
 
 日期：2026-09-05
-状态：`P0_TASK_0_SCOPE_AND_EVIDENCE_MAPPED`
+状态：`P4_AMENDMENT_EVIDENCE_MAP`（阶段事实仍只以 `STATUS.md` 为准）
 边界：只记录批准范围、当前源码/测试入口和本地证据可用性；不修改公式，不重跑历史页面一致性，不授权集成、发布、生产数据、Runtime、通知或订单操作。
 
 ## 1. Plan execution identity
@@ -50,13 +50,13 @@
 
 | feature | applicable strategy-frequency | formula_version | retained source | test | local evidence manifest entry | evidence status | blocker |
 |---|---|---|---|---|---|---|---|
-| 趋势主策略 | `trend × 1w/1d/60m` | `newow_trend_band_page_v2` | `packages/quant-core/guiyi_quant/newow/trend_band.py`、`profile.py` | `services/quant-api/tests/newow/test_trend_band_page_v2.py`；D1 product 回归见 `test_trend_detail_service.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P1 尚需显式 frequency envelope、物理区段前缀和三周期 adapter；不阻塞 P1/P2 开始 |
-| 震荡主策略 | `oscillation × 1w/1d/60m` | `newow_oscillation_hhv_llv10_page_v1` + `newow_hhv_llv_channel_page_v1` | `packages/quant-core/guiyi_quant/newow/oscillation_channel.py` | `services/quant-api/tests/newow/test_oscillation_channel.py`、`test_research_backtest.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P1 尚需三周期 product adapter；P2 须保留同 Bar `CLEAR → BUILD`，不阻塞 P1/P2 开始 |
-| 主升浪主策略 | `main_rise × 1w/1d/60m` | `newow_main_rise_ma35_ma45_page_v1` | `packages/quant-core/guiyi_quant/newow/main_rise.py` | `services/quant-api/tests/newow/test_main_rise_page_v1.py`、`test_research_backtest.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P1 尚需三周期 product adapter；主动作价格须保持 MA45，不阻塞 P1/P2 开始 |
-| S 跑 / D1–D3 | `trend/main_rise × 1w/1d/60m`；Hint only | `newow_escape_d123_page_v2` | `packages/quant-core/guiyi_quant/newow/escape_d123.py`；trend profile 与 main-rise bundle 均保留该身份 | `services/quant-api/tests/newow/test_escape_d123_page_v2.py`、`test_main_rise_page_v1.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P1/P3 需包装为 `quantity_effect=none` 的 Hint；不得改变 BUILD/CLEAR |
+| 趋势主策略 | `trend × 1w/1d/60m` | `newow_trend_band_page_v2` | `packages/quant-core/guiyi_quant/newow/trend_band.py`、`profile.py`、`product_adapters.py` | `services/quant-api/tests/newow/test_trend_band_page_v2.py`、`test_product_adapters.py`、`test_product_replay_invariants.py`；D1兼容见`test_trend_detail_service.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P1 已提供三周期frequency envelope、物理区段前缀与adapter；P4只消费，不改公式 |
+| 震荡主策略 | `oscillation × 1w/1d/60m` | `newow_oscillation_hhv_llv10_page_v1` + `newow_hhv_llv_channel_page_v1` | `packages/quant-core/guiyi_quant/newow/oscillation_channel.py`、`product_adapters.py` | `services/quant-api/tests/newow/test_oscillation_channel.py`、`test_product_adapters.py`、`test_reference_trades.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P1/P2已冻结三周期adapter与同Bar`CLEAR → BUILD`；P4不得反转 |
+| 主升浪主策略 | `main_rise × 1w/1d/60m` | `newow_main_rise_ma35_ma45_page_v1` | `packages/quant-core/guiyi_quant/newow/main_rise.py`、`product_adapters.py` | `services/quant-api/tests/newow/test_main_rise_page_v1.py`、`test_product_adapters.py`、`test_research_backtest.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P1已提供三周期adapter；主动作价格保持MA45 |
+| S 跑 / D1–D3 | `trend/main_rise × 1w/1d/60m`；Hint only | `newow_escape_d123_page_v2` | `packages/quant-core/guiyi_quant/newow/escape_d123.py`、`product_adapters.py`；trend profile 与 main-rise bundle 均保留该身份 | `services/quant-api/tests/newow/test_escape_d123_page_v2.py`、`test_product_adapters.py`、`test_reference_trades.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | 已包装为`quantity_effect=none` Hint；不得改变BUILD/CLEAR |
 | D4–D6 | `main_rise × 1w/1d/60m`；Hint only | `newow_buy_d456_page_v1` | `packages/quant-core/guiyi_quant/newow/main_rise.py` | `services/quant-api/tests/newow/test_main_rise_page_v1.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | `Low×0.99` 仅为 Hint/绘图参考，不得替代 MA45 主动作价或产生加仓 |
 | J 风险 | `main_rise × 1w/1d/60m`；Hint only | `newow_main_rise_j_reduce_page_v1` | `packages/quant-core/guiyi_quant/newow/main_rise.py` | `services/quant-api/tests/newow/test_main_rise_page_v1.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | 只作风险 Hint，不得推导减仓比例或改变参考持有 |
-| 4/7/11 | `main_rise × 1w/1d/60m`；结构 Hint | `newow_magic11_page_v1` | `packages/quant-core/guiyi_quant/newow/magic11.py`；main-rise bundle | `services/quant-api/tests/newow/test_magic11.py`、`test_main_rise_page_v1.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P3 需按物理区段重置并保留为结构解释；不产生独立交易动作 |
+| 4/7/11 | `main_rise × 1w/1d/60m`；结构 Hint | `newow_magic11_page_v1` | `packages/quant-core/guiyi_quant/newow/magic11.py`、`product_adapters.py`；main-rise bundle | `services/quant-api/tests/newow/test_magic11.py`、`test_product_adapters.py`、`test_main_rise_page_v1.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | 已按物理区段重置并保留为结构Hint；不产生独立交易动作 |
 | 主力控盘副图 | 三策略 × `1w/1d/60m`；共享解释层 | `newow_main_force_control_page_v1` | `packages/quant-core/guiyi_quant/newow/subplots.py`；P3 wrapper `product_auxiliary.py` | `services/quant-api/tests/newow/test_subplots_page_v1.py`、`test_product_auxiliary.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P3 Task 9 已按物理 owner 分段包装并保留独立 warming；“主力”不等于持仓/席位事实，也不产生 Action/Hint |
 | 主力照妖镜副图 | 三策略 × `1w/1d/60m`；retrospective only | `newow_zhaoyao_mirror_repainting_page_v1` | `packages/quant-core/guiyi_quant/newow/subplots.py`；P3 wrapper `product_auxiliary.py` | `services/quant-api/tests/newow/test_subplots_page_v1.py`、`test_product_auxiliary.py`；禁止进入 causal signal 见 `test_research_backtest.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P3 Task 9 已将其只存于 `retrospective_layers`，保持 `repainting=true / formal_signal_eligible=false`；不进入 Hint/ReferenceTrade/收益 |
 | 涨跌动能副图 | 三策略 × `1w/1d/60m`；共享解释层 | `newow_up_down_energy_page_v1` | `packages/quant-core/guiyi_quant/newow/subplots.py`；P3 wrapper `product_auxiliary.py` | `services/quant-api/tests/newow/test_subplots_page_v1.py`、`test_product_auxiliary.py` | `M-SOURCE`、`M-CORE`、`M-REPLAY` | `ACTIVE_CODE_VERIFIED` | P3 Task 9 已按物理 owner 分段包装；短区段显式 warming，不跨合约借值，也不产生 Action/Hint |
@@ -77,4 +77,8 @@
 - 页面诊断 token / 六组合评分映射保持 `EVIDENCE_REQUIRED`；AI prose、历史 A–E 月线模板和六种私有服务端选股不进入本阶段 exact 实现。
 - 133/133 哈希一致不是新的 `27/27 matched` 测试，不支持盈利、OOS、Paper、Shadow、Runtime 或真实交易结论。
 
-当前最小下一 Gate 是对 exact P3 package fix head 进行独立 Spec/Standards/Evidence re-review；只有 Gate 无 P1/P2 后才可单独决定是否集成 P3。该 Gate 不开始 P4/API/Web，不授权 `develop` 集成、发布、Runtime、数据、通知或交易操作。
+P3 已通过 PR #349 集成到 `develop@c9d297b8318c1d4bdcfbfc1b4e2e46b55956e26c`；P2 为 PR #348。当前 P4 消费入口为 `product_query.py`、`product_reader.py`、`product_adapters.py`、`reference_trades.py`、`reference_statistics.py`、`product_auxiliary.py`、`context_alignment.py`、`target_absorb_display.py`、`composite_explanation.py`、`page_comparator.py`。
+
+P4 新增待验证入口为 `product_service.py`、`source_facts.py`、`snapshot_cache.py`、独立产品 schema 和同一路由 `/strategy-detail`。目标/吸筹的昨收来源/调用时机、原页面期货 owner parity、browser-final K线/DOM/tie golden、AI copy、稳定诊断 token 与六组合 oracle 仍是具体外部证据缺口；它们阻塞对应精确子功能或 P6 完整复刻声明，不阻塞 P4 对缺口的准确降级。
+
+P4 集成不授权 P5 Web、P6 全项目验收、真实工作站性能、RQData/Canonical/DB/Redis 写入、Runtime、通知、main/tag/release 或交易操作。

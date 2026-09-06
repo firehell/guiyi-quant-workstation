@@ -10,9 +10,11 @@
 
 **Spec:** `docs/tasks/2026-09-05-newow-product-reference-trading-design.md`
 
-**规划日期 / 状态:** 2026-09-05 / `IMPLEMENTATION_PLAN_DRAFT / OWNER_DESIGN_APPROVED_FOR_PLANNING / IMPLEMENTATION_NOT_STARTED`。
+**规划日期 / 状态:** 2026-09-05；P4 Amendment 2026-09-06 / `OWNER_APPROVED_P4_AMENDMENT`。阶段事实仍只以 `STATUS.md` 为准。
 
-**核对基线:** `develop@4f4754ed6df67a1d828e35b82fe2269d7f020469`；文档分支 `docs/newow-product-reference-trading-v1@c7dc8fb41e5bd4cc3d2fa6ad4722e6a97eb96d86`。Spec blob 为 `dd65db8582962be202623437ac52d3a2b2735f7a`。Owner 在审阅整体草案后明确请求“进入 Implementation Plan”；这批准编写计划，不表示本计划已经执行，也不授权发布或生产操作。原 Design 的 draft 状态文字是上一轮历史元数据，P0 同步审阅状态，不改变已批准语义。
+**原计划历史基线:** `develop@4f4754ed6df67a1d828e35b82fe2269d7f020469`；文档分支 `docs/newow-product-reference-trading-v1@c7dc8fb41e5bd4cc3d2fa6ad4722e6a97eb96d86`。该段保留 Tasks 0–13 的历史身份。
+
+**P4 Amendment 执行基线:** `origin/develop@c9d297b8318c1d4bdcfbfc1b4e2e46b55956e26c`，包含 PR #348/#349；任务分支 `feature/newow-product-reference-trading-p4`。Owner 本轮明确授权 P2/P3 收尾与 P4 后端实现、Review 和普通 develop 集成，不授权 P5/P6、生产或 release/Runtime 操作。
 
 ## Global Constraints
 
@@ -54,7 +56,7 @@ P3 缺证据项只阻塞自身；P4/P5 可以展示明确的 evidence-required s
 
 SDD 的 ledger/brief/report 只放本 Plan 专属、已忽略的临时工作目录，不成为第二个产品状态文件。不得因通用 skill 的清理步骤删除生产 root、他人 worktree 或原始证据。恢复执行时用 ledger + Git identity 核对，已完成且内容未变的任务不重做。
 
-本轮只编写 Plan。实施时每个 Task 的共同结束动作：定向 RED → 最小改动 → GREEN → 适用 lint/typecheck → 自审 → exact scoped commit → 独立 Review → 记录证据；下文 code block 是计划中的测试/实现要点，不是已执行代码。
+2026-09-05 当时本轮只编写 Plan，该记录仅解释 Tasks 0–13 历史。当前实施唯一入口是 Tasks 14–16；共同结束动作为定向 RED → 最小改动 → GREEN → 适用 lint/typecheck → 自审 → exact scoped commit → 独立 Review → 记录证据。
 
 ## 1. 文件与职责地图
 
@@ -88,17 +90,42 @@ SDD 的 ledger/brief/report 只放本 Plan 专属、已忽略的临时工作目�
 | strategy | 必填，`trend / oscillation / main_rise` |
 | frequency | 必填，`1w / 1d / 60m` |
 | series_kind | 仅 `actual_dominant`，省略时取该值；contract参数不接受 |
-| from / through | 必填，ISO日期，控制图表交易日窗口；from≤through |
-| performance_since / performance_through | 必须成对；省略时只读解析既有研究起点与最新可用完整交易日，响应明确返回；缺数据不能暗中缩短 |
+| section | `chart / auxiliary / reference / explanation / comparator`；默认只计算`chart`，不接受`all` |
+| from / through | `chart/auxiliary`可选且必须成对，ISO交易日窗口；from≤through |
+| performance_since / performance_through | 仅`reference`，必须成对；省略时只读解析既有研究起点与最新可用完整交易日 |
 | as_of | 可选、带时区时间；省略时冻结请求开始时间；不能晚于服务端now；筛掉所有晚于as_of的Bar/确认/换月事实 |
-| history_limit | 整数1–200，默认50 |
-| history_before | 可选、不透明游标；绑定查询身份和reference输入指纹；坏游标422，数据世代改变409，不自动拼接旧页 |
+| chart_limit / chart_before | 仅`chart`；默认500、范围1–2000；cursor严格向左且绑定section输入世代 |
+| component | 仅`auxiliary`且必填：`main_force_control / up_down_energy / zhaoyao_mirror / cup_handle` |
+| history_limit / history_before | 仅`reference`；默认50、范围1–200；cursor绑定查询身份和reference输入指纹 |
+| snapshot_token | 可选不透明进程内关联；不是权限凭证，失效或共同事实冲突返回409 |
 
-响应是一个版本化 envelope：`meta / chart / main_state / actions / hints / retrospective_layers / reference / explanation / comparator / feature_status`。chart只含可见范围；reference summary针对整个明确统计窗口、history可分页；两者复用同请求内主策略输入。辅助区域失败不抹去主策略；主策略身份/配对失败时不返回成功交易统计。
+响应是版本化 envelope：`meta / section / chart / auxiliary / reference / explanation / comparator`。五个section字段各自为`{delivery,status,value}` wrapper；请求项`delivery=delivered`并携带真实运行/证据状态，四个未请求项固定`delivery=not_requested,status=null,value=null`。`not_requested`不进入Core FeatureStatus。服务不得先计算整包再删除字段，section专属参数出现在其他section时返回422。
 
-`meta` 至少返回 schema版本、product/strategy/frequency/series、profile与公式集合、三个参考政策身份、display/performance窗口、as_of、来源/可用性、`data_revision_identity`（可null）、`input_content_sha256`。另提供稳定于viewport的 `reference_input_sha256`，用于分页和参考区世代隔离；这不是新Canonical revision。
+`meta` 至少返回schema版本、product/strategy/frequency/series、profile与公式集合、三个参考政策身份、requested/actual窗口、as_of、实际读取时间、来源/可用性、`data_revision_identity`（无可靠全局revision时为null）、section真实`input_content_sha256`与可空snapshot token。只有成功验证并实际缓存的结果签发token；超大bypass、缓存关闭、失败/不完整结果为null。reference另返回requested performance window、actual available through、`reference_cutoff`和viewport无关的`reference_input_sha256`；`ReferenceProjection.as_of == PerformanceWindow.cutoff`。
 
 不同窗口整包hash不同是合法的。共同Bar需逐字段一致；参考分页只在相同reference指纹下拼接。数据更新引起指纹变化时清掉旧参考页并整体重取，而不是保留旧收益搭配新K线。
+
+HTTP不接受evidence、signal、hash、contract、公式参数或客户端当前数值。非法参数422；身份/数据/token/cursor世代冲突409；重型并发或等待队列满429。未预期异常固定返回`500 {"detail":{"code":"NEWOW_INTERNAL_ERROR"}}`，测试注入含SQL/path/token/stack字样的异常并证明不回显。
+
+时间比较统一转UTC instant：`fact_time <= reference_cutoff <= request_as_of`可见；严格晚于cutoff不可见。`as_of == server_now`合法，只有晚于now为422。若as_of早于所选through对应权威session完成时点，响应保留requested window并返回更早的actual available through/cutoff及降级availability。
+
+P3服务端来源白名单：
+
+| role | 允许source category | 构造来源/依赖 | mismatch |
+|---|---|---|---|
+| trend_weekly/daily | `strategy_replay` | 对应周期trend末端eligible frame；`BUILD→buy,HOLD→hold,CLEAR→sell,FLAT→wait`；`UNAVAILABLE`不构造fact | 缺失→unavailable；值/owner/version/time冲突→409 |
+| trend_hourly | `strategy_replay` | 60m trend末端eligible frame；`BUILD/HOLD→holding,CLEAR→cleared,FLAT→idle`；`UNAVAILABLE`不构造fact | 同上 |
+| oscillation_weekly/daily/hourly | `strategy_replay` | 对应周期oscillation末端eligible frame；`BUILD/HOLD→holding,CLEAR→cleared,FLAT→idle`；`UNAVAILABLE`不构造fact | 同上；不得用所选主策略替代 |
+| volatility_daily_prefix | `canonical_bar_prefix` | D1同owner最多21根completed Bar及source identities | 短前缀→warming；owner/time/value冲突→409 |
+| signal_daily/signal_weekly | `strategy_replay` | 按上述trend映射构造PageSignalFact | 末端不可用则target/absorb unavailable |
+| cross_weekly_buy | 当前无获准来源 | 不从Action或颜色推断 | evidence_required |
+| target_daily/target_weekly/target/high | 当前无已证明命名main-value映射 | 不构造PagePriceFact | 逐role evidence_required |
+| cost_daily/cost_weekly/cost | 当前无已证明命名main-value映射 | 不构造PagePriceFact | 逐role evidence_required |
+| current_price | `canonical_bar_close` | view slot最后completed close，值必须等于权威Bar.close | 不等→409 |
+| previous_close | 当前无获准来源 | 不构造，guard_active=false并保留raw/display | evidence_required；不得用上一根当前周期Close |
+| frozen rule hashes | `frozen_source_identity` | 仅证明page/AI/optimizer规则来源版本 | 不能证明当前值；不一致→evidence_required |
+
+每项source fact输出role/source category/formula或adapter version/frequency/bar_end/physical contract/segment/as_of/dependency fingerprint。unknown role/source、missing value、owner/version/as_of不一致均有独立负测。
 
 ### 2.2 Core与应用的公有符号
 
@@ -644,25 +671,32 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 
 **Files:**
 - Create: `services/quant-api/app/market_data/newow/product_service.py`。
+- Create: `services/quant-api/app/market_data/newow/source_facts.py`、`snapshot_cache.py`、`resource_gate.py`。
 - Create: `services/quant-api/tests/newow/test_product_service.py`。
+- Create: `services/quant-api/tests/newow/test_product_source_facts.py`、`test_product_snapshot_cache.py`、`test_product_resource_gate.py`。
 - Modify as needed within scope: `services/quant-api/app/market_data/newow/product_query.py`、`services/quant-api/app/market_data/newow/product_reader.py`。
 
-**Interfaces / 依赖:** P1/P2/P3接口 → NewowProductService.query / NewowProductResult；新GET唯一编排。
+**Interfaces / 依赖:** P1/P2/P3接口 → `NewowProductService.query(query) -> NewowProductResult`；通过P4 request wrapper扩展工程参数，不改变P2/P3公有函数签名。此前 Tasks 0–13 历史不重做。
 
-- [ ] **服务测试：** 同次read set用于图表、完整参考快照及统计；chart window变化不改变reference指纹和summary；辅助EVIDENCE_REQUIRED不抹去已验证主策略。
+- [ ] **先写串联RED：** 覆盖晚CLEAR/延长cutoff、夜盘trading_day、as_of早于窗口、晚换月、viewport/chart cursor/history_limit独立；默认chart对reference/auxiliary/explanation/comparator spy均零调用。
 
 ```python
 def test_viewport_does_not_change_statistics(product_cases):
-    service, q1, q2 = product_cases.same_performance_different_viewports()
-    a, b = service.query(q1), service.query(q2)
-    assert a.reference.summary == b.reference.summary
+    service, chart_q1, chart_q2, reference_q = product_cases.same_performance_different_viewports()
+    first_chart = service.query(chart_q1)
+    a = service.query(reference_q.with_snapshot(first_chart.meta.snapshot_token))
+    second_chart = service.query(chart_q2)
+    b = service.query(reference_q.with_snapshot(second_chart.meta.snapshot_token))
+    assert a.reference.value.summary == b.reference.value.summary
     assert a.meta.reference_input_sha256 == b.meta.reference_input_sha256
 ```
 
-- [ ] **读序：** 先固定as_of及performance窗口；读取覆盖display/performance/所需上下文的真实facts；每个相同key仅请求内复用。对参考统计在performance_through对应截止快照投影，不拿chart更晚CLEAR关闭早期OPEN；更晚图表主动作可另显示，时间标签必须分开。
-- [ ] **一致性：** 根据真实有序Bar、owner、使用前缀与政策计算input_content_sha256；reference_input只绑定reference实际消费集合，不含viewport。global data_revision没有则null，不能冒充快照版本。不同资源共同Bar冲突时整个主策略/参考返回409；辅助独立错误仅降级辅助。
-- [ ] **历史分页：** 对完整统计集合按(entry_bar_end, entry_sequence, id)稳定逆序，history_limit不改变summary；cursor编码version/identity/reference指纹/last-key，不含秘密。收到篡改或不匹配cursor显式拒绝，不把它作为文件或SQL输入。
-- [ ] **performance初值：** 首次服务返回明确解析的起止和as-of，Web后续viewport请求显式复用它们。只有用户修改统计范围或主动刷新截止才变化。未完成周不强造W1 Bar；缺真实历史不要暗中退到最近一页。
+- [ ] **窗口解析：** 增加应用层resolver，使用MDS Calendar/Session和trading_day解析requested/effective performance through与reference cutoff；projection和summary使用同cutoff。非交易日、节假日、夜盘和未完成W1显式状态，不用午夜/now/任意Bar代替；定向测试覆盖`fact_time == cutoff`、`cutoff == as_of`、Z与`+08:00`同instant、`as_of == now`合法以及未来一微秒422。
+- [ ] **section编排：** chart只replay当前组合并先验证后裁剪；auxiliary只算一个component；reference读取完整统计输入；explanation只装配趋势/震荡三周期必要事实和D1前缀；comparator显式运行。chart读取不因默认performance扩大为研究全历史。
+- [ ] **P3 source-facts builder：** 服务端构造role/source-category/formula-adapter/frequency/bar_end/owner/as_of/dependency绑定；当前数值逐字段来自受控replay/Bar。无法证明的target/composite输入精确降级，previous_close guard保持未激活。HTTP不接收evidence/signal/hash。
+- [ ] **一致性和分页：** section指纹基于实际Bar/owner/Calendar-Session/确认事实/版本；reference指纹不含viewport/history limit。历史按`(entry_bar_end, entry_sequence, id)`稳定逆序；cursor只解析版本/查询身份/指纹/last-key并校验长度，不作为路径/SQL/对象反序列化入口。
+- [ ] **Snapshot/cache：** 有界进程内token绑定共同依赖；entry key保存共同事实，section result/dedup key另含component、requested window、cursor/page identity和limit，不同专属参数绝不碰撞。LRU最多32条/128MiB/单条32MiB，超大bypass，关闭缓存结果等价；TTL仅淘汰；只有成功验证且缓存的结果返回token，超大/关闭/失败时为null。数据修订、旧cursor/token和共同事实冲突分类409。
+- [ ] **取消/重型资源：** 分页和阶段边界检查取消；共享计算按消费者引用计数，最后消费者取消才停止。reference/comparator进程内并发1、等待2，队列满分类资源错误；阻塞计算不直接占满event loop，不跨线程共享Session。
 
 - [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
 
@@ -670,7 +704,8 @@ def test_viewport_does_not_change_statistics(product_cases):
 PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q services/quant-api/tests/newow/test_product_service.py
 ```
 
-- [ ] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(newow): compose consistent product snapshots`；独立review给出Spec和quality结论，修复后重新验证。
+- [ ] **性能与正确性fixture：** 九组合、普通D1、长60m、4001分页、更大压力、多换月、W1零Bar、冷/热/修订、未请求零调用、取消/队列/cache淘汰/超大bypass。正式P95同一代表场景至少30次，冻结环境/HEAD/输入指纹/Bar与owner/窗口/cache状态并分解阶段。
+- [ ] **提交与Review：** 只stage Task14源码/测试，提交 `feat(newow): compose sectioned product snapshots`；按影响验证后独立Spec/quality审阅。
 
 ---
 
@@ -683,24 +718,25 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 
 **Interfaces / 依赖:** Task14 → §2.1新API，旧endpoint不扩参、不改变错误语义。
 
-- [ ] **TestClient + dependency override：** fake service/get_db，不连接production。合法九组合200；strategy=mirror、frequency=15m、series=continuous、独立contract、naive/future as_of、坏游标422；主身份冲突409。
+- [ ] **TestClient + dependency override：** fake service/get_db，不连接production。合法九组合/五section；非法section专属参数、strategy=mirror、frequency=15m、series=continuous、contract/evidence/signal/hash、naive/future as_of、坏游标422；`as_of==now`合法、未来一微秒422、Z与`+08:00`同instant；身份/数据世代409；资源满429。
 
 ```python
 def test_reference_numbers_are_decimal_strings(product_api_client):
     response = product_api_client.get("/api/v1/market/newow/strategy-detail", params={
         "product": "rb", "strategy": "trend", "frequency": "1d",
-        "from": "2026-01-05", "through": "2026-01-06",
+        "section": "reference",
+        "performance_since": "2026-01-05", "performance_through": "2026-01-06",
     })
     assert response.status_code == 200
-    item = response.json()["reference"]["items"][0]
+    item = response.json()["reference"]["value"]["items"][0]
     assert isinstance(item["entry_reference_price"], str)
     assert isinstance(item["reference_return_pct"], str)
 ```
 
 本Task的product_api_client fixture返回自有closed case；不能沿用真实DB session。
-- [ ] **Schema：** 所有status/strategy/frequency Literal，Decimal字符串、UTC ISO时间、清晰null；可用结果与reason一致；不返回stack、SQL、路径或凭据。应拒绝多余风险/订单字段，而不是宽泛dict承载任意交易语义。
+- [ ] **Schema：** 独立`market_newow_product.py`；status/strategy/frequency/section/delivery为Literal/enum，Decimal显式十进制string serializer、UTC ISO、清晰null；共同身份、section指纹、读取时间、组件source/evidence/applicability/repaint/formal eligibility/allowed uses/parity difference、分页与reference cutoff完整。禁止宽泛任意交易对象。
 - [ ] **数据归属：** API只调用service并序列化，不计算收益、均线或拼动作。旧`trend-detail`继续原D1 schema/profile/marker/calculation；新路线禁止复用旧schema加一堆可选字段。
-- [ ] **辅助失败可见：** 200响应中对应section为evidence_required/unavailable且value=null；不是整个九组合伪装ready。主计算失败不会保留成功summary数值。
+- [ ] **状态传递：** 没请求、warming、evidence required、not applicable、成功无动作、合法零CLOSED、输入冲突/失败分别表达。未请求section为null+not_requested，Core不新增该枚举；顶层ready不掩盖子功能缺口。杯柄clean-room来源与照妖镜retrospective语义完整。
 
 - [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
 
@@ -716,7 +752,9 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 
 **Files:**
 - Create: `services/quant-api/tests/newow/test_product_readonly_compatibility.py`。
+- Create: `services/quant-api/tests/newow/test_product_performance.py`。
 - Test existing: `test_market_newow_api.py`、`test_trend_detail_service.py`、`test_research_backtest.py`。
+- Conditional Modify (only Task 16.1 after measured significance): `packages/quant-core/guiyi_quant/newow/reference_trades.py`、`product_auxiliary.py`、以及其定向测试。
 
 **Interfaces / 依赖:** Task14/15 → P4交付Gate；不通过替换旧API实现来省测试。
 
@@ -733,8 +771,12 @@ def test_new_get_does_not_mutate(product_api_client, forbidden_writes):
     assert forbidden_writes.calls == []
 ```
 
-- [ ] **负载合同：** 用fake调用计数证明单品种请求不读取60品种×九组合；4001前缀完整分页、同请求相同输入不重复取；旧cursor+新reference指纹409。没有实际测时证据不承诺延迟指标，不通过截断前缀满足时长。
-- [ ] **交付：** 更新TESTING.md追加上述真实存在的新测试入口；新API只读代码验收不等于真实期货OOS已复算，后者原Gate保留。
+- [ ] **负载与只读合同：** fake行为证明无RQData、网络、通知、commit、Redis、Runtime；无60品种×九组合扇出；4001前缀与更大压力不截断；未请求reference/comparator零调用；旧cursor+新指纹409。
+- [ ] **热点先测后改：** 测 `_attach_hints`、`_latest_owner_mark`、多auxiliary和P4重复读取/replay/serialize。只有占比或增长显著才按owner/有序区间建局部索引；用同BarCLEAR→BUILD、无序Hint、中断和Decimal逐字段差分证明等价，不建第二套投影。
+- [ ] **性能报告：** 冷/验证后热/修订后重算各至少30次代表场景，记录排队/读取/校验/replay/projection/explanation-comparator/serialize/bytes/RSS。浏览器≤2s/500ms/300ms/100ms和完整统计≤5s仅保留P5/P6端到端目标，不冒充本轮实测。
+- [ ] **Task 16.1 条件优化：** Task16主体只测量。若 `_attach_hints`/`_latest_owner_mark` 占比或增长显著，才在独立commit精确修改 `packages/quant-core/guiyi_quant/newow/reference_trades.py` 与 `services/quant-api/tests/newow/test_reference_trades.py`、`test_reference_interruptions.py`；若多auxiliary显著，才修改 `product_auxiliary.py` 与 `test_product_auxiliary.py`。逐字段差分通过后才能保留优化；否则记录无需优化，不改冻结Core。
+- [ ] **P4 package Gate：** 在候选head逐条核对AC21–28；执行新P4测试、本轮实际修改的P2/P3保护测试、旧D1兼容、只读保护、相关Ruff/Mypy、OpenSpec/secret/diff和性能代表样本。已在相同相关tree通过且输入未变的证据可复用；不跑P5/P6或全仓库。
+- [ ] **交付：** 只在实现与命令真实存在后更新TESTING.md。P4只读代码验收不等于P5 Web、完整page parity、OOS、发布或Runtime。
 
 - [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
 
@@ -808,8 +850,8 @@ test('late response never replaces a different strategy', async () => {
 ```
 
 本Task在test文件内实现无网络harness，使用可控promise和自有typed fixture；不靠sleep制造竞态。
-- [ ] **前端验证：** product schema解析器逐字段校验值、顺序、identity与来源；金额/收益保持字符串，只格式化，不把字符串转number再重新求和。图表坐标转换单独finite检查。
-- [ ] **请求生命周期：** AbortController/现有generation模式；新identity开始即清上一组合所有数值。相同identity失败可保留最后成功整个snapshot并标stale，不能新图+旧summary混合。每次服务器同包图表/统计/解释原子接收。
+- [ ] **前端验证：** product schema解析器逐字段校验值、顺序、identity与来源；先确认requested section是`delivery=delivered`且其他四项为`not_requested/status=null/value=null`，才可unwrap请求项的`value`。金额/收益保持字符串，只格式化，不把字符串转number再重新求和。图表坐标转换单独finite检查。
+- [ ] **请求生命周期：** AbortController/现有generation模式；新identity开始即清上一组合所有数值。相同identity失败只可预览最后成功、明确标stale；chart/reference/explanation按section分别请求，并仅在snapshot共同事实验证兼容后拼接，不能假设服务器同包返回或新图+旧summary混合。
 - [ ] **分页/viewport：** performance/as_of固定回传；reference指纹变化清空旧页，cursor拒绝后重新第一页。旧页相同ID异内容不静默覆盖。reference稳定但总input变化且共同Bar一致可更新图表，不能误判。
 
 - [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
@@ -960,7 +1002,7 @@ git status --short --branch
 ```
 
 - [ ] **证据清单：** 已保留公式逐值回归与新政策fixture分开，local golden真正重放才记录PASS；18个旧OOS结果与9个W1执行阻塞保持历史状态，不能因本产品通过改成OOS_PASSED。无新migration则isolated PostgreSQL不适用，不连接production。
-- [ ] **逐条核对AC01–20：** 见下表；P3任何范围内适用能力仍EVIDENCE_REQUIRED，阶段只能 `PARTIAL_PRODUCT / EVIDENCE_REQUIRED`，已验证纵向切片可以独立进入开发集成。
+- [ ] **逐条核对AC01–28：** 见下表；P3任何范围内适用能力仍EVIDENCE_REQUIRED，阶段只能 `PARTIAL_PRODUCT / EVIDENCE_REQUIRED`，已验证纵向切片可以独立进入开发集成。
 - [ ] **最终Review：** 同exact head独立Standards与Spec，无P1/P2；P3建议完整记录。任何修复后重跑受影响验证、读回新的head并复审；reviewer不能只信实现者结论。没有GitHub checks时记NO_CHECKS_REPORTED。
 - [ ] **事实收口：** 仅全部能力与AC通过才能记 `NEWOW_PRODUCT_AND_REFERENCE_TRADING_COMPLETE / RELEASE_GATE_PENDING`。生产仍是当前真实tag，苏冰状态按其真实事实保留；没有用户新授权不main/tag/release、不Runtime promotion。
 
@@ -990,6 +1032,14 @@ git status --short --branch
 | AC18 | 1、16、22 | 不新增外部副作用和交易域 |
 | AC19 | 19–21 | 桌面移动键盘/历史图表联动 |
 | AC20 | 22及每包 | exact-head完整适用验证+双轴Review |
+| AC21 | 14–16 | section级计算边界与未请求零调用 |
+| AC22 | 14–16 | 权威cutoff、夜盘、晚CLEAR/Hint/owner边界 |
+| AC23 | 14–16 | 服务端P3来源白名单、值/owner/version/as-of负测 |
+| AC24 | 14–16 | snapshot/cursor/修订/共同事实409 |
+| AC25 | 14、16 | 32条/128MiB/32MiB/300秒LRU与bypass |
+| AC26 | 14、16 | 共享重型并发1、FIFO等待2、5秒超时和取消释放 |
+| AC27 | 15–16 | typed wire、错误脱敏、旧D1兼容 |
+| AC28 | 16 | 后端30次冷热/修订/压力测量；P5/P6仍未测 |
 
 ## 5. 主要失败与恢复路径
 
@@ -1007,14 +1057,14 @@ git status --short --branch
 
 ## 6. 实施授权与交付
 
-本Plan批准后，最小执行单元为P0；不是一次自动完成所有生产步骤。普通commit/push/PR/合入develop遵守执行时Owner请求与AGENTS；源码分包Review、外部操作授权互不替代。此前v1.9.15任务的授权不继承到本项目。
+2026-09-05 初始 Plan 的最小执行单元为 P0，该句仅保留历史。P0–P3已集成后，当前唯一实施范围为 P4 Tasks 14–16。普通commit/push/PR/合入develop遵守执行时Owner请求与AGENTS；源码分包Review、外部操作授权互不替代。此前v1.9.15任务的授权不继承到本项目。
 
 每包交付只需：base/head/tree、改动文件、实际测试命令/结果、Review结论、coverage变化、剩余Gate、下一个独立工作包。只读/文档Task没有业务commit也要给出对应diff和审查结果，不伪造test count。
 
-设计与Plan的提交不意味着任何Task已完成。本轮完成物为本文件；业务实现、真实golden重放、完整仓库OpenSpec/secret scan、独立Review与产品验收均在实际执行时逐项获得证据。
+2026-09-05 的设计与 Plan 提交当时不意味任何业务 Task 已完成；该记录不得用于把当前实施重置到 P0。当前 P4 必须用 Tasks 14–16 的真实源码、测试和独立 Review 获得完成证据。
 
 ## 7. 来源与计划自审记录
 
 本Plan基于批准Spec及 exact develop 核对的：`TESTING.md`、Web `package.json`、`marketDetail.ts`、`marketDetailRoute.ts`、`marketDetailPreferences.ts`、`actual_dominant_research.py`、`research_backtest.py`、`test_trend_detail_service.py`、newow `conftest.py`，并沿用Design已核对的primitive/API和资料来源。未使用外部通用策略知识补充未证公式。
 
-自审需确认：23个Task完整覆盖P0–P6与AC01–20；参考交易与比较器无共享退出逻辑；新API参数/模型在本Plan唯一冻结；全部测试factory在对应Task明确新增，不冒称现有fixture；所有未来测试结果使用Expected而非既成事实；无收益真实性或生产运行完成承诺。
+自审需确认：原23个Task历史编号不改写，P4 Amendment由Tasks14–16覆盖AC21–28；参考交易与比较器无共享退出逻辑；新API参数/模型在本Plan唯一冻结；全部测试factory在对应Task明确新增，不冒称现有fixture；所有未来测试结果使用Expected而非既成事实；无收益真实性或生产运行完成承诺。
