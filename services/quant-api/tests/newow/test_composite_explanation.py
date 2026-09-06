@@ -437,6 +437,38 @@ def test_explicit_neutral_neutral_cell_is_reachable_without_fallback() -> None:
 
 
 @pytest.mark.parametrize(
+    ("oscillation_status", "expected_source_key", "expected_fallback"),
+    [
+        ("idle", "neutral-neutral", False),
+        ("holding", "neutral-bullish", True),
+        ("cleared", "neutral-bearish", True),
+    ],
+)
+def test_absent_page_signals_reach_neutral_classifier_then_selector(
+    oscillation_status: str,
+    expected_source_key: str,
+    expected_fallback: bool,
+) -> None:
+    module = _api()
+
+    biases = module.classify_composite_biases(
+        None,
+        None,
+        module.CompositeStatusState.IDLE,
+        module.CompositeStatusState(oscillation_status),
+        module.CompositeStatusState(oscillation_status),
+        module.CompositeStatusState(oscillation_status),
+    )
+    decision = module.select_composite_decision(biases.trend, biases.oscillation)
+
+    assert decision.source_key == expected_source_key
+    assert decision.selected_key == "neutral-neutral"
+    assert decision.label == "等待信号"
+    assert decision.position_range == "--"
+    assert decision.fallback_used is expected_fallback
+
+
+@pytest.mark.parametrize(
     (
         "weekly",
         "daily",
@@ -571,6 +603,67 @@ def test_volatility_uses_up_to_twenty_simple_true_ranges_and_page_tiers(
         assert result.is_wilder_atr is False
 
 
+def test_volatility_uses_javascript_number_before_true_range_arithmetic() -> None:
+    module = _api()
+    _, bars = _context(daily_count=6, true_range="1.95")
+
+    result = module.calculate_composite_volatility(bars)
+
+    assert result.value_pct == Decimal("1.9")
+    assert result.level == "low"
+
+
+def test_large_finite_decimal_volatility_never_leaks_invalid_operation() -> None:
+    module = _api()
+    _, bars = _context(daily_count=6)
+    first = replace(
+        bars[0],
+        bar=replace(
+            bars[0].bar,
+            open=Decimal("1"),
+            high=Decimal("1"),
+            low=Decimal("1"),
+            close=Decimal("1"),
+        ),
+    )
+    large = tuple(
+        replace(
+            bar,
+            bar=replace(
+                bar.bar,
+                open=Decimal("1"),
+                high=Decimal("1E100"),
+                low=Decimal("0.5"),
+                close=Decimal("1"),
+            ),
+        )
+        for bar in bars[1:]
+    )
+
+    result = module.calculate_composite_volatility((first, *large))
+
+    assert result.value_pct == Decimal("1E102")
+    assert result.level == "high"
+
+
+def test_decimal_outside_page_number_domain_raises_stable_value_error() -> None:
+    module = _api()
+    _, bars = _context(daily_count=6)
+    outside_number_domain = tuple(
+        replace(
+            bar,
+            bar=replace(
+                bar.bar,
+                high=Decimal("1E1000"),
+            ),
+        )
+        for bar in bars
+    )
+
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_PAGE_NUMBER_OUT_OF_RANGE"):
+        module.calculate_composite_volatility(outside_number_domain)
+
+
 @pytest.mark.parametrize(
     (
         "weekly",
@@ -580,8 +673,8 @@ def test_volatility_uses_up_to_twenty_simple_true_ranges_and_page_tiers(
         "osc_hourly",
         "expected_token",
         "expected_level",
-        "expected_title_prefix",
-        "expected_detail_phrase",
+        "expected_title",
+        "expected_detail",
     ),
     [
         (
@@ -592,8 +685,9 @@ def test_volatility_uses_up_to_twenty_simple_true_ranges_and_page_tiers(
             "holding",
             "weekly_daily_bearish_hard_flat",
             "violate",
-            "第一行动原则：趋势周线空仓·日线清仓",
-            "周线与日线同时出现清仓信号",
+            "第一行动原则：趋势周线空仓·日线清仓（蓝色带），必须空仓观望！",
+            "周线与日线同时出现清仓信号，大级别空头确立，无条件空仓等待反转；"
+            "震荡短暂持有不改趋势，逢高减仓。同步确认大盘趋势状态，大盘蓝色带则整体空仓。",
         ),
         (
             "wait",
@@ -603,8 +697,10 @@ def test_volatility_uses_up_to_twenty_simple_true_ranges_and_page_tiers(
             "holding",
             "weekly_bearish_daily_bullish_rebound_risk",
             "warn",
-            "风险提示：周线空仓",
-            "周线仍处空头",
+            "风险提示：周线空仓（蓝色带）· 日线持股（黄色带）——下跌中的反弹",
+            "周线仍处空头，日线反弹多为下跌中继的背离走势（易二次探底）。若参与建议仓位"
+            " ≤30%，设好止损、不追涨；日线转弱或周线未反转前不加仓；震荡短暂持有不改趋势。"
+            "同步确认大盘趋势状态。",
         ),
         (
             "hold",
@@ -614,8 +710,9 @@ def test_volatility_uses_up_to_twenty_simple_true_ranges_and_page_tiers(
             "holding",
             "weekly_bullish_daily_bearish_wait_for_daily_stability",
             "warn",
-            "提示：日线空仓",
-            "周线趋势仍向上",
+            "提示：日线空仓（蓝色带）· 周线持股（黄色带）——等待日线企稳",
+            "周线趋势仍向上，日线进入回调/清仓阶段。已持仓者按日线信号减仓；未持仓者等日线"
+            "重新出现建仓信号（黄色带）再介入，勿急于抄底。",
         ),
         (
             "wait",
@@ -625,8 +722,9 @@ def test_volatility_uses_up_to_twenty_simple_true_ranges_and_page_tiers(
             "holding",
             "single_bearish_unknown_counterpart_hard_flat",
             "violate",
-            "第一行动原则：趋势周线空仓",
-            "「趋势策略」出现清仓信号",
+            "第一行动原则：趋势周线空仓（蓝色带），必须空仓观望！",
+            "「趋势策略」出现清仓信号即无条件空仓，勿因 60min/日线反弹而逆势操作；"
+            "震荡短暂持有不改趋势，逢高减仓。同步确认大盘趋势状态，大盘蓝色带则整体空仓。",
         ),
         (
             "hold",
@@ -636,8 +734,9 @@ def test_volatility_uses_up_to_twenty_simple_true_ranges_and_page_tiers(
             "cleared",
             "sixty_minute_oscillation_cleared",
             "warn",
-            "看大做小：日/周线建仓",
-            "小周期服从大周期",
+            "看大做小：日/周线建仓 · 60分钟已清仓",
+            "小周期服从大周期：60min 回踩吸筹（参考吸筹价）确认后再跟随「震荡策略」建仓；"
+            "日线仓位不因 60min 清仓而清出。",
         ),
         (
             "hold",
@@ -647,8 +746,8 @@ def test_volatility_uses_up_to_twenty_simple_true_ranges_and_page_tiers(
             "holding",
             "daily_oscillation_cleared",
             "warn",
-            "震荡日线已清仓",
-            "趋势（黄带）向上但震荡日线已清仓",
+            "震荡日线已清仓 · 趋势建仓",
+            "趋势（黄带）向上但震荡日线已清仓，等待震荡吸筹回补信号，勿急于加仓。",
         ),
         (
             "hold",
@@ -658,8 +757,8 @@ def test_volatility_uses_up_to_twenty_simple_true_ranges_and_page_tiers(
             "holding",
             "weekly_oscillation_cleared",
             "warn",
-            "震荡周线已清仓",
-            "趋势（黄带）向上但震荡周线已清仓",
+            "震荡周线已清仓 · 趋势建仓",
+            "趋势（黄带）向上但震荡周线已清仓，大级别震荡转弱，控制仓位等待回补。",
         ),
         (
             "hold",
@@ -669,8 +768,9 @@ def test_volatility_uses_up_to_twenty_simple_true_ranges_and_page_tiers(
             "holding",
             "normal_observation",
             "ok",
-            "遵守：趋势周/日线均建仓",
-            "处于趋势建仓区间",
+            "遵守：趋势周/日线均建仓（黄色波段）",
+            "处于趋势建仓区间，可操作。严格执行「震荡策略」建仓/清仓信号，节奏不乱；"
+            "大盘建仓期可顺势操作，仓位按建议执行。",
         ),
     ],
 )
@@ -682,8 +782,8 @@ def test_first_action_priority_has_eight_guiyi_owned_typed_tokens(
     osc_hourly: str,
     expected_token: str,
     expected_level: str,
-    expected_title_prefix: str,
-    expected_detail_phrase: str,
+    expected_title: str,
+    expected_detail: str,
 ) -> None:
     module = _api()
 
@@ -697,8 +797,8 @@ def test_first_action_priority_has_eight_guiyi_owned_typed_tokens(
 
     assert result.rule_token == expected_token
     assert result.level == expected_level
-    assert result.page_title.startswith(expected_title_prefix)
-    assert expected_detail_phrase in result.page_detail
+    assert result.page_title == expected_title
+    assert result.page_detail == expected_detail
     assert result.token_owner == module.FirstActionTokenOwner.GUIYI_CLEAN_ROOM
     assert result.page_formula_version == "newow_first_action_principle_page_v3_2_63"
     assert result.token_is_page_native is False
@@ -895,6 +995,23 @@ def test_observation_ineligible_daily_prefix_fact_fails_closed() -> None:
 
     result = module.calculate_composite_explanation(
         context, _evidence(module, context, invalid_prefix)
+    )
+
+    assert result.status == "unavailable"
+    assert result.reason_code == "NEWOW_COMPOSITE_DAILY_PREFIX_INVALID"
+
+
+def test_multiple_daily_bars_on_one_trading_day_fail_closed() -> None:
+    module = _api()
+    context, daily_bars = _context()
+    trading_day = daily_bars[-1].bar.trading_day
+    same_day_prefix = tuple(
+        replace(bar, bar=replace(bar.bar, trading_day=trading_day))
+        for bar in daily_bars
+    )
+
+    result = module.calculate_composite_explanation(
+        context, _evidence(module, context, same_day_prefix)
     )
 
     assert result.status == "unavailable"

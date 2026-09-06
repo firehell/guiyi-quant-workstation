@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal, localcontext
+from decimal import Decimal
 from enum import StrEnum
 from math import floor, isfinite
 
@@ -334,8 +334,8 @@ def _trend_bearish(value: PageSignalState | None) -> bool:
 
 
 def classify_composite_biases(
-    weekly: PageSignalState,
-    daily: PageSignalState,
+    weekly: PageSignalState | None,
+    daily: PageSignalState | None,
     trend_hourly: CompositeStatusState,
     oscillation_weekly: CompositeStatusState,
     oscillation_daily: CompositeStatusState,
@@ -343,8 +343,8 @@ def classify_composite_biases(
 ) -> CompositeBiasPair:
     """Execute the pinned page branch order, including unreachable warning."""
 
-    weekly = PageSignalState(weekly)
-    daily = PageSignalState(daily)
+    weekly = None if weekly is None else PageSignalState(weekly)
+    daily = None if daily is None else PageSignalState(daily)
     trend_hourly = CompositeStatusState(trend_hourly)
     oscillation_weekly = CompositeStatusState(oscillation_weekly)
     oscillation_daily = CompositeStatusState(oscillation_daily)
@@ -493,7 +493,7 @@ def _certainty(
 def _daily_bars_are_ordered(bars: tuple[ProductBar, ...]) -> bool:
     return all(
         current.bar.bar_end > previous.bar.bar_end
-        and current.bar.trading_day >= previous.bar.trading_day
+        and current.bar.trading_day > previous.bar.trading_day
         for previous, current in zip(bars, bars[1:])
     )
 
@@ -512,6 +512,16 @@ def _daily_bars_share_owner(bars: tuple[ProductBar, ...]) -> bool:
         and bar.bar.segment_id == first.bar.segment_id
         for bar in bars
     )
+
+
+def _finite_page_number(value: Decimal | float) -> float:
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as error:
+        raise ValueError("NEWOW_COMPOSITE_PAGE_NUMBER_OUT_OF_RANGE") from error
+    if not isfinite(number):
+        raise ValueError("NEWOW_COMPOSITE_PAGE_NUMBER_OUT_OF_RANGE")
+    return number
 
 
 def calculate_composite_volatility(
@@ -533,27 +543,38 @@ def calculate_composite_volatility(
         return None
     count = min(20, len(daily_bars) - 1)
     start = len(daily_bars) - count
-    true_ranges: list[Decimal] = []
+    true_ranges: list[float] = []
     for index in range(start, len(daily_bars)):
         current = daily_bars[index].bar
-        previous_close = daily_bars[index - 1].bar.close
-        true_ranges.append(
-            max(
-                current.high - current.low,
-                abs(current.high - previous_close),
-                abs(current.low - previous_close),
+        numbers = tuple(
+            _finite_page_number(value)
+            for value in (
+                current.open,
+                current.high,
+                current.low,
+                current.close,
+                daily_bars[index - 1].bar.close,
             )
         )
+        _, high, low, _, previous_close = numbers
+        true_range = _finite_page_number(
+            max(
+                high - low,
+                abs(high - previous_close),
+                abs(low - previous_close),
+            )
+        )
+        true_ranges.append(true_range)
     if len(true_ranges) < 5:
         return None
-    with localcontext() as context:
-        context.prec = 28
-        mean = sum(true_ranges, Decimal("0")) / Decimal(len(true_ranges))
-        ratio = mean / daily_bars[-1].bar.close
-    page_number = float(ratio) * 1000.0
-    if not isfinite(page_number):
-        return None
-    value = Decimal(str(floor(page_number + 0.5) / 10)).quantize(Decimal("0.1"))
+    total = 0.0
+    for true_range in true_ranges:
+        total = _finite_page_number(total + true_range)
+    last_close = _finite_page_number(daily_bars[-1].bar.close)
+    if last_close <= 0:
+        raise ValueError("NEWOW_COMPOSITE_PAGE_NUMBER_OUT_OF_RANGE")
+    page_number = _finite_page_number(total / len(true_ranges) / last_close * 1000.0)
+    value = Decimal(str(floor(page_number + 0.5) / 10))
     level = (
         VolatilityLevel.LOW
         if value < Decimal("2")
@@ -589,6 +610,7 @@ def calculate_first_action_principle(
     oscillation_suffix = (
         "；震荡短暂持有不改趋势，逢高减仓" if oscillation_holding else ""
     )
+    rebound_oscillation_suffix = "；震荡短暂持有不改趋势" if oscillation_holding else ""
     if _trend_bearish(weekly) and _trend_bearish(daily):
         return FirstActionPrinciple(
             "weekly_daily_bearish_hard_flat",
@@ -605,7 +627,7 @@ def calculate_first_action_principle(
             "——下跌中的反弹",
             "周线仍处空头，日线反弹多为下跌中继的背离走势（易二次探底）。若参与建议仓位"
             " ≤30%，设好止损、不追涨；日线转弱或周线未反转前不加仓"
-            f"{oscillation_suffix}。同步确认大盘趋势状态。",
+            f"{rebound_oscillation_suffix}。同步确认大盘趋势状态。",
         )
     if _trend_bullish(weekly) and _trend_bearish(daily):
         return FirstActionPrinciple(
