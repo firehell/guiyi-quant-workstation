@@ -397,6 +397,28 @@ def test_feature_status_requires_reason_without_conflating_evidence(status):
         FeatureStatus("ready", "UNKNOWN")
 
 
+@pytest.mark.parametrize("status", ["ready", "warming"])
+@pytest.mark.parametrize(
+    "reason_code",
+    [0, {}, [], "", "   ", ["owned:mutable-reason"]],
+)
+def test_feature_status_rejects_non_text_or_empty_reasons(status, reason_code):
+    with pytest.raises(ValueError):
+        FeatureStatus(status, "ACTIVE_CODE_VERIFIED", reason_code)
+
+
+def test_feature_status_allows_ready_none_and_nonempty_reasons():
+    assert FeatureStatus("ready", "ACTIVE_CODE_VERIFIED").reason_code is None
+    assert (
+        FeatureStatus("ready", "ACTIVE_CODE_VERIFIED", "owned:ready").reason_code
+        == "owned:ready"
+    )
+    assert (
+        FeatureStatus("warming", "ACTIVE_CODE_VERIFIED", "owned:warming").reason_code
+        == "owned:warming"
+    )
+
+
 def test_factories_have_explicit_actions_and_completed_owned_bars(product_cases):
     case = product_cases.closed()
     assert [bar.bar.trading_day.isoformat() for bar in case.bars] == [

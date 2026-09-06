@@ -196,6 +196,8 @@ class FeatureStatus:
         object.__setattr__(
             self, "evidence_status", EvidenceStatus(self.evidence_status)
         )
+        if self.reason_code is not None:
+            _text(self.reason_code)
         if self.status != FeatureRuntimeStatus.READY:
             _text(self.reason_code)
 
