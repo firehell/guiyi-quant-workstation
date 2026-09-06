@@ -315,16 +315,34 @@ def _unique(events: tuple[_Event, ...], expected: type[_Event]) -> tuple[_Event,
 
 
 def _ordered_actions(actions: tuple[StrategyAction, ...]) -> None:
-    keys = [(action.bar_end, action.sequence) for action in actions]
-    if any(left >= right for left, right in zip(keys, keys[1:])):
-        raise ValueError("NEWOW_PRODUCT_ACTION_ORDER")
-    for left, right in zip(actions, actions[1:]):
+    seen_segments: set[str] = set()
+    current_segment: str | None = None
+    current_contract: str | None = None
+    previous: StrategyAction | None = None
+    for action in actions:
+        if action.segment_id != current_segment:
+            if action.segment_id in seen_segments:
+                raise ValueError("NEWOW_PRODUCT_ACTION_ORDER")
+            if current_segment is not None:
+                seen_segments.add(current_segment)
+            current_segment = action.segment_id
+            current_contract = action.physical_contract
+            previous = None
+        elif action.physical_contract != current_contract:
+            raise ValueError("NEWOW_PRODUCT_ACTION_ORDER")
+        if previous is not None and (
+            previous.bar_end,
+            previous.sequence,
+        ) >= (action.bar_end, action.sequence):
+            raise ValueError("NEWOW_PRODUCT_ACTION_ORDER")
         if (
-            left.bar_end == right.bar_end
-            and left.identity.strategy == ProductStrategy.OSCILLATION
-            and (left.kind, right.kind) != (ActionKind.CLEAR, ActionKind.BUILD)
+            previous is not None
+            and previous.bar_end == action.bar_end
+            and previous.identity.strategy == ProductStrategy.OSCILLATION
+            and (previous.kind, action.kind) != (ActionKind.CLEAR, ActionKind.BUILD)
         ):
             raise ValueError("NEWOW_PRODUCT_OSCILLATION_SAME_BAR_ORDER")
+        previous = action
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,17 +406,32 @@ class StrategyReplay:
         object.__setattr__(self, "actions", _unique(self.actions, StrategyAction))
         object.__setattr__(self, "hints", _unique(self.hints, StrategyHint))
         object.__setattr__(self, "diagnostics", _strings(self.diagnostics))
-        previous = None
+        seen_segments: set[str] = set()
+        current_segment: str | None = None
+        current_contract: str | None = None
+        previous: datetime | None = None
         for frame in self.frames:
             if not isinstance(frame, StrategyFrame):
                 raise ValueError("NEWOW_PRODUCT_INVALID_FRAME")
+            bar = frame.bar.bar
             if (
-                frame.bar.bar.product != self.identity.product
+                bar.product != self.identity.product
                 or frame.bar.frequency != self.identity.frequency
-                or (previous is not None and frame.bar.bar.bar_end <= previous)
             ):
                 raise ValueError("NEWOW_PRODUCT_FRAME_ORDER_OR_IDENTITY")
-            previous = frame.bar.bar.bar_end
+            if bar.segment_id != current_segment:
+                if bar.segment_id in seen_segments:
+                    raise ValueError("NEWOW_PRODUCT_FRAME_ORDER_OR_IDENTITY")
+                if current_segment is not None:
+                    seen_segments.add(current_segment)
+                current_segment = bar.segment_id
+                current_contract = bar.physical_contract
+                previous = None
+            elif bar.physical_contract != current_contract:
+                raise ValueError("NEWOW_PRODUCT_FRAME_ORDER_OR_IDENTITY")
+            if previous is not None and bar.bar_end <= previous:
+                raise ValueError("NEWOW_PRODUCT_FRAME_ORDER_OR_IDENTITY")
+            previous = bar.bar_end
         frame_actions = tuple(
             action for frame in self.frames for action in frame.actions
         )

@@ -20,16 +20,33 @@ from app.market_data.domain import (
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 
 from guiyi_quant.newow.models import NewowDailyBar
+from guiyi_quant.newow.escape_d123 import initial_escape_state, step_escape_d123
+from guiyi_quant.newow.main_rise import (
+    MAIN_RISE_PAGE_V1,
+    initial_main_rise_state,
+    step_main_rise,
+)
+from guiyi_quant.newow.oscillation_channel import (
+    OscillationAction,
+    OscillationState,
+    step_oscillation,
+)
 from guiyi_quant.newow.product_contracts import (
+    ActionKind,
     FeatureStatus,
+    MainState,
     OwnerBoundary,
     ProductBar,
+    ProductFrequency,
     ProductIdentity,
+    ProductStrategy,
     StrategyAction,
     StrategyFrame,
     StrategyReplay,
 )
 from guiyi_quant.newow.product_identity import build_segment_id
+from guiyi_quant.newow.profile import NEWOW_TREND_D1_PAGE_V2
+from guiyi_quant.newow.trend_band import initial_trend_band_state, step_trend_band
 
 
 @dataclass(frozen=True)
@@ -52,7 +69,313 @@ class ProductCase:
     window: CaseWindow
 
 
+@dataclass(frozen=True)
+class PrimitiveOracle:
+    main_values: tuple
+    hint_facts: tuple[tuple[datetime, str, Decimal], ...]
+
+
+@dataclass(frozen=True)
+class PrimitiveInput:
+    identity: ProductIdentity
+    bars: tuple[ProductBar, ...]
+
+    def run_original_primitive(self) -> PrimitiveOracle:
+        """Map direct primitive outputs without importing the product adapter."""
+        if self.identity.strategy == "trend":
+            return _trend_oracle(self.identity, self.bars)
+        if self.identity.strategy == "oscillation":
+            return _oscillation_oracle(self.identity, self.bars)
+        return _main_rise_oracle(self.identity, self.bars)
+
+
+def _decimal(value: float | None) -> Decimal | None:
+    return None if value is None else Decimal(str(value))
+
+
+def _action(
+    identity: ProductIdentity,
+    bar: ProductBar,
+    kind: str,
+    price: Decimal,
+    sequence: int,
+    *,
+    related_build_id: str | None = None,
+    source_marker_id: str | None = None,
+    source_related_marker_ids: tuple[str, ...] = (),
+) -> StrategyAction:
+    return StrategyAction(
+        identity=identity,
+        physical_contract=bar.bar.physical_contract,
+        segment_id=bar.bar.segment_id,
+        bar_end=bar.bar.bar_end,
+        trading_day=bar.bar.trading_day,
+        kind=ActionKind(kind),
+        reference_price=price,
+        anchor_price=price,
+        sequence=sequence,
+        related_build_id=related_build_id,
+        source_marker_id=source_marker_id,
+        source_related_marker_ids=source_related_marker_ids,
+    )
+
+
+def _trend_oracle(
+    identity: ProductIdentity, bars: tuple[ProductBar, ...]
+) -> PrimitiveOracle:
+    trend_state = initial_trend_band_state()
+    escape_state = initial_escape_state()
+    source_builds: dict[str, StrategyAction] = {}
+    rows = []
+    hints: list[tuple[datetime, str, Decimal]] = []
+    for product_bar in bars:
+        result = step_trend_band(
+            trend_state, product_bar.bar, profile=NEWOW_TREND_D1_PAGE_V2
+        )
+        trend_state = result.state
+        escape = step_escape_d123(
+            escape_state, product_bar.bar, profile=NEWOW_TREND_D1_PAGE_V2
+        )
+        escape_state = escape.state
+        actions: tuple[StrategyAction, ...] = ()
+        if result.marker is not None:
+            marker = result.marker
+            related = None
+            if marker.marker_type == "CLEAR":
+                assert len(marker.related_marker_ids) == 1
+                related = source_builds[marker.related_marker_ids[0]].signal_id
+            action = _action(
+                identity,
+                product_bar,
+                marker.marker_type,
+                marker.price,
+                0,
+                related_build_id=related,
+                source_marker_id=marker.marker_id,
+                source_related_marker_ids=marker.related_marker_ids,
+            )
+            if action.kind is ActionKind.BUILD:
+                source_builds[marker.marker_id] = action
+            actions = (action,)
+        point = result.point
+        state = (
+            MainState.BUILD
+            if actions and actions[-1].kind is ActionKind.BUILD
+            else MainState.CLEAR
+            if actions
+            else MainState.HOLD
+            if point.state == "YELLOW"
+            else MainState.FLAT
+            if point.state == "BLUE"
+            else MainState.UNAVAILABLE
+        )
+        rows.append(
+            (
+                product_bar.bar.bar_end,
+                state,
+                (("a", _decimal(point.b_value)), ("b", _decimal(point.c_value))),
+                actions,
+            )
+        )
+        hints.extend(
+            (product_bar.bar.bar_end, marker.marker_type.value, marker.price)
+            for marker in escape.markers
+        )
+    return PrimitiveOracle(tuple(rows), tuple(hints))
+
+
+def _oscillation_oracle(
+    identity: ProductIdentity, bars: tuple[ProductBar, ...]
+) -> PrimitiveOracle:
+    state = OscillationState()
+    open_build: StrategyAction | None = None
+    rows = []
+    for product_bar in bars:
+        result = step_oscillation(state, product_bar.bar)
+        state = result.state
+        actions = []
+        for sequence, signal in enumerate(result.signals):
+            related = None
+            if signal.action is OscillationAction.CLEAR:
+                assert open_build is not None
+                related = open_build.signal_id
+            action = _action(
+                identity,
+                product_bar,
+                signal.action,
+                signal.price,
+                sequence,
+                related_build_id=related,
+            )
+            open_build = action if action.kind is ActionKind.BUILD else None
+            actions.append(action)
+        channel = result.channel
+        values = (
+            (
+                ("upper", None),
+                ("lower", None),
+                ("width", None),
+                ("close_position", None),
+            )
+            if channel is None
+            else (
+                ("upper", channel.upper),
+                ("lower", channel.lower),
+                ("width", channel.width),
+                ("close_position", channel.close_position),
+            )
+        )
+        main_state = (
+            MainState.BUILD
+            if actions and actions[-1].kind is ActionKind.BUILD
+            else MainState.CLEAR
+            if actions
+            else MainState.HOLD
+            if result.state.holding
+            else MainState.FLAT
+        )
+        rows.append((product_bar.bar.bar_end, main_state, values, tuple(actions)))
+    return PrimitiveOracle(tuple(rows), ())
+
+
+def _main_rise_oracle(
+    identity: ProductIdentity, bars: tuple[ProductBar, ...]
+) -> PrimitiveOracle:
+    state = initial_main_rise_state()
+    open_build: StrategyAction | None = None
+    rows = []
+    hints: list[tuple[datetime, str, Decimal]] = []
+    for product_bar in bars:
+        result = step_main_rise(state, product_bar.bar, formulas=MAIN_RISE_PAGE_V1)
+        state = result.state
+        actions: tuple[StrategyAction, ...] = ()
+        if result.band_signal is not None:
+            signal = result.band_signal
+            related = None
+            if signal.action == "CLEAR":
+                assert open_build is not None
+                related = open_build.signal_id
+            action = _action(
+                identity,
+                product_bar,
+                signal.action,
+                signal.price,
+                0,
+                related_build_id=related,
+            )
+            open_build = action if action.kind is ActionKind.BUILD else None
+            actions = (action,)
+        main_state = (
+            MainState.BUILD
+            if actions and actions[-1].kind is ActionKind.BUILD
+            else MainState.CLEAR
+            if actions
+            else MainState.HOLD
+            if result.band_state == "YELLOW"
+            else MainState.FLAT
+            if result.band_state == "BLUE"
+            else MainState.UNAVAILABLE
+        )
+        rows.append(
+            (
+                product_bar.bar.bar_end,
+                main_state,
+                (("ma35", _decimal(result.ma35)), ("ma45", _decimal(result.ma45))),
+                actions,
+            )
+        )
+        hints.extend(
+            (product_bar.bar.bar_end, marker.marker_type.value, marker.price)
+            for marker in result.escape_markers
+        )
+        if result.reduce_signal is not None:
+            hints.append((product_bar.bar.bar_end, "J", result.reduce_signal.price))
+        hints.extend(
+            (product_bar.bar.bar_end, marker.kind.value, marker.price)
+            for marker in result.buy_markers
+        )
+        if result.magic11.marker is not None:
+            hints.append(
+                (
+                    product_bar.bar.bar_end,
+                    f"MAGIC11:{result.magic11.marker.label.value}",
+                    result.magic11.marker.price,
+                )
+            )
+    return PrimitiveOracle(tuple(rows), tuple(hints))
+
+
 class ProductCases:
+    def primitive_input(self, strategy: str, frequency: str) -> PrimitiveInput:
+        """Owned synthetic OHLC with enough turns to exercise every active wrapper."""
+        formulas = {
+            "trend": (
+                "newow_trend_band_page_v2",
+                "newow_escape_d123_page_v2",
+            ),
+            "oscillation": (
+                "newow_oscillation_hhv_llv10_page_v1",
+                "newow_hhv_llv_channel_page_v1",
+            ),
+            "main_rise": tuple(
+                getattr(MAIN_RISE_PAGE_V1, name)
+                for name in (
+                    "band_formula",
+                    "j_reduce_formula",
+                    "escape_formula",
+                    "buy_formula",
+                    "magic11_formula",
+                )
+            ),
+        }
+        identity = ProductIdentity(
+            "rb",
+            ProductStrategy(strategy),
+            ProductFrequency(frequency),
+            formulas[strategy],
+        )
+        segment = build_segment_id("rb", "RB2710", datetime(2026, 1, 1, tzinfo=UTC))
+        bars = []
+        for index in range(90):
+            phase = index % 24
+            center = Decimal(
+                100 + (phase if phase < 12 else 24 - phase) * 3 + (index // 24) * 2
+            )
+            if frequency == "60m":
+                trading_day = date(2026, 1, 1) + timedelta(days=index // 4)
+                bar_end = datetime.combine(
+                    trading_day, datetime.min.time(), UTC
+                ) + timedelta(hours=2 + index % 4)
+            else:
+                step_days = 7 if frequency == "1w" else 1
+                trading_day = date(2026, 1, 1) + timedelta(days=index * step_days)
+                bar_end = datetime.combine(
+                    trading_day, datetime.min.time(), UTC
+                ) + timedelta(hours=7)
+            eligible = strategy != "main_rise" or index >= 50
+            bars.append(
+                ProductBar(
+                    NewowDailyBar(
+                        product="rb",
+                        physical_contract="RB2710",
+                        segment_id=segment,
+                        trading_day=trading_day,
+                        bar_end=bar_end,
+                        open=center,
+                        high=center + Decimal("2"),
+                        low=center - Decimal("2"),
+                        close=center,
+                        volume=600 if index % 13 == 0 else 100,
+                        open_interest=200,
+                        source_identity=f"owned:primitive:{strategy}:{frequency}:{index}",
+                        observation_eligible=eligible,
+                        completed=True,
+                    ),
+                    ProductFrequency(frequency),
+                )
+            )
+        return PrimitiveInput(identity, tuple(bars))
+
     def paged_reader(
         self, prefix_bars=4001, page_size=2000, frequency="60m", context_frequencies=()
     ):

@@ -471,6 +471,83 @@ def test_replay_and_frames_are_immutable_and_validate_input(product_cases):
         replace(case.replay, frames=tuple(reversed(case.replay.frames)))
 
 
+def test_replay_order_resets_at_each_contiguous_owner_segment(product_cases):
+    case = product_cases.closed()
+    first = case.replay.frames[0]
+    second_segment = build_segment_id("rb", "RB2605", datetime(2026, 1, 8, tzinfo=UTC))
+    second_bar = replace(
+        first.bar,
+        bar=replace(
+            first.bar.bar,
+            segment_id=second_segment,
+            source_identity="owned:second-owner-prefix",
+        ),
+    )
+    second_action = replace(first.actions[0], segment_id=second_segment)
+    second = replace(first, bar=second_bar, actions=(second_action,))
+
+    replay = replace(
+        case.replay,
+        frames=(first, second),
+        actions=(first.actions[0], second_action),
+    )
+
+    assert [frame.bar.bar.segment_id for frame in replay.frames] == [
+        first.bar.bar.segment_id,
+        second_segment,
+    ]
+    assert replay.frames[0].bar.bar.bar_end == replay.frames[1].bar.bar.bar_end
+    assert [action.segment_id for action in replay.actions] == [
+        first.bar.bar.segment_id,
+        second_segment,
+    ]
+
+
+def test_replay_rejects_disorder_contract_drift_and_segment_reentry(product_cases):
+    case = product_cases.closed()
+    first, second = case.replay.frames
+    other_segment = build_segment_id("rb", "RB2610", datetime(2026, 1, 8, tzinfo=UTC))
+    other_bar = replace(
+        first.bar,
+        bar=replace(
+            first.bar.bar,
+            physical_contract="RB2610",
+            segment_id=other_segment,
+            source_identity="owned:other-owner-prefix",
+        ),
+    )
+    other = replace(first, bar=other_bar, actions=())
+
+    with pytest.raises(ValueError, match="FRAME_ORDER_OR_IDENTITY"):
+        replace(case.replay, frames=(second, first), actions=())
+    with pytest.raises(ValueError, match="FRAME_ORDER_OR_IDENTITY"):
+        replace(
+            case.replay,
+            frames=(
+                first,
+                replace(
+                    second,
+                    bar=replace(
+                        second.bar,
+                        bar=replace(
+                            second.bar.bar,
+                            physical_contract="RB2610",
+                            source_identity="owned:contract-drift",
+                        ),
+                    ),
+                    actions=(),
+                ),
+            ),
+            actions=(first.actions[0],),
+        )
+    with pytest.raises(ValueError, match="FRAME_ORDER_OR_IDENTITY"):
+        replace(
+            case.replay,
+            frames=(first, other, replace(second, actions=())),
+            actions=(first.actions[0],),
+        )
+
+
 def test_owner_boundary_requires_authoritative_source_and_aware_time(product_cases):
     boundary = product_cases.interrupted().boundaries[0]
     for changes in (
