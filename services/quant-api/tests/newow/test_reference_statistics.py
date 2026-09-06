@@ -179,6 +179,7 @@ def test_entry_trading_day_window_boundaries_are_inclusive(
         entry_signal_id=f"owned:boundary-build:{entry_day.isoformat()}",
         exit_signal_id=f"owned:boundary-clear:{entry_day.isoformat()}",
         entry_trading_day=entry_day,
+        exit_trading_day=max(trade.exit_trading_day, entry_day),
     )
     projection = ReferenceProjection(
         trades=(shifted,),
@@ -247,6 +248,39 @@ def test_later_projection_and_exit_after_projection_cutoff_fail_closed(product_c
         summarize_reference(damaged, _window(cutoff=earlier_cutoff))
 
 
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"exit_bar_end": datetime(2026, 1, 4, 7, tzinfo=UTC)},
+        {"exit_trading_day": date(2026, 1, 4)},
+    ],
+    ids=("bar-time", "trading-day"),
+)
+def test_closed_exit_cannot_precede_its_entry(product_cases, changes):
+    projection = _project(product_cases.closed())
+    damaged = replace(
+        projection,
+        trades=(replace(projection.trades[0], **changes),),
+    )
+
+    with pytest.raises(ValueError, match="NEWOW_STATISTICS_INVALID_PROJECTION"):
+        summarize_reference(damaged, _window())
+
+
+def test_older_projection_before_clear_cannot_label_a_later_cutoff(product_cases):
+    case = product_cases.closed()
+    older_projection = ReferenceTradeProjector().project(
+        case.replay,
+        case.boundaries,
+        case.entry.bar_end,
+    )
+
+    assert older_projection.trades[0].status == "OPEN"
+    assert case.entry.bar_end < case.exit.bar_end < case.as_of
+    with pytest.raises(ValueError, match="NEWOW_STATISTICS_EARLIER_PROJECTION"):
+        summarize_reference(older_projection, _window(cutoff=case.as_of))
+
+
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
 @pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
 def test_each_strategy_frequency_identity_is_summarized_independently(
@@ -272,6 +306,38 @@ def test_cross_identity_or_duplicate_trade_aggregation_fails_closed(product_case
     duplicated = replace(trend, trades=(trend.trades[0], trend.trades[0]))
     with pytest.raises(ValueError, match="NEWOW_STATISTICS_DUPLICATE_TRADE"):
         summarize_reference(duplicated, _window())
+
+
+def test_same_entry_with_a_changed_trade_id_fails_closed(product_cases):
+    projection = _project(product_cases.closed())
+    duplicate_entry = replace(
+        projection.trades[0],
+        reference_trade_id="owned:forged-reference-trade-id",
+        exit_signal_id="owned:distinct-exit",
+    )
+    damaged = replace(
+        projection,
+        trades=(projection.trades[0], duplicate_entry),
+    )
+
+    with pytest.raises(ValueError, match="NEWOW_STATISTICS_DUPLICATE_ENTRY"):
+        summarize_reference(damaged, _window())
+
+
+def test_different_entries_cannot_share_one_exit_identity(product_cases):
+    projection = _project(product_cases.closed())
+    shared_exit = replace(
+        projection.trades[0],
+        reference_trade_id="owned:distinct-reference-trade-id",
+        entry_signal_id="owned:distinct-entry",
+    )
+    damaged = replace(
+        projection,
+        trades=(projection.trades[0], shared_exit),
+    )
+
+    with pytest.raises(ValueError, match="NEWOW_STATISTICS_DUPLICATE_EXIT"):
+        summarize_reference(damaged, _window())
 
 
 def test_display_window_cannot_change_summary_trade_id_or_close_state(product_cases):

@@ -95,15 +95,26 @@ def _validate_projection(projection: ReferenceProjection, window: PerformanceWin
         raise ValueError("NEWOW_STATISTICS_INVALID_PROJECTION")
     if projection.as_of > window.cutoff:
         raise ValueError("NEWOW_STATISTICS_LATER_PROJECTION")
+    if projection.as_of < window.cutoff:
+        raise ValueError("NEWOW_STATISTICS_EARLIER_PROJECTION")
 
     identity: tuple[object, ...] | None = None
     trade_ids: set[str] = set()
+    entry_ids: set[str] = set()
+    exit_ids: set[str] = set()
     for trade in projection.trades:
         if not isinstance(trade, ReferenceTrade):
             raise ValueError("NEWOW_STATISTICS_INVALID_PROJECTION")
         if trade.reference_trade_id in trade_ids:
             raise ValueError("NEWOW_STATISTICS_DUPLICATE_TRADE")
         trade_ids.add(trade.reference_trade_id)
+        if trade.entry_signal_id in entry_ids:
+            raise ValueError("NEWOW_STATISTICS_DUPLICATE_ENTRY")
+        entry_ids.add(trade.entry_signal_id)
+        if trade.exit_signal_id is not None:
+            if trade.exit_signal_id in exit_ids:
+                raise ValueError("NEWOW_STATISTICS_DUPLICATE_EXIT")
+            exit_ids.add(trade.exit_signal_id)
         current_identity = _identity(trade)
         if identity is None:
             identity = current_identity
@@ -117,6 +128,14 @@ def _validate_projection(projection: ReferenceProjection, window: PerformanceWin
         )
         if any(value is not None and value > projection.as_of for value in timestamps):
             raise ValueError("NEWOW_STATISTICS_INVALID_PROJECTION")
+        if trade.status is ReferenceTradeStatus.CLOSED:
+            if trade.exit_bar_end is None or trade.exit_trading_day is None:
+                raise ValueError("NEWOW_STATISTICS_INVALID_PROJECTION")
+            if (
+                trade.exit_bar_end < trade.entry_bar_end
+                or trade.exit_trading_day < trade.entry_trading_day
+            ):
+                raise ValueError("NEWOW_STATISTICS_INVALID_PROJECTION")
 
 
 def _closed_metrics(
