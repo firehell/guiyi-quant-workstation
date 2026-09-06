@@ -31,6 +31,8 @@ def _api():
     module = importlib.import_module("guiyi_quant.newow.composite_explanation")
     required = (
         "CompositeBias",
+        "CompositeDecisionInputFact",
+        "CompositeInputRole",
         "CompositeStatusFact",
         "CompositeStatusState",
         "CompositeSourceBars",
@@ -910,6 +912,14 @@ def test_ready_result_audits_current_facts_and_consumed_volatility_prefix() -> N
 
     assert result.value is not None
     assert len(result.source_bars) == 4
+    assert tuple(fact.role for fact in result.value.input_facts) == (
+        "trend_weekly",
+        "trend_daily",
+        "trend_hourly",
+        "oscillation_weekly",
+        "oscillation_daily",
+        "oscillation_hourly",
+    )
     sources = {(item.usage, item.frequency): item for item in result.source_bars}
     expected_current = {
         ProductFrequency.WEEKLY: (
@@ -1116,6 +1126,47 @@ def test_composite_result_rejects_named_input_fact_mismatch() -> None:
 
     with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_SOURCE_BARS"):
         replace(result, value=mismatched_value)
+
+
+def test_composite_result_rejects_distinct_hourly_fact_role_swap() -> None:
+    module = _api()
+    context, daily_bars = _context()
+    result = module.calculate_composite_explanation(
+        context,
+        _evidence(
+            module,
+            context,
+            daily_bars,
+            trend_hourly="cleared",
+            oscillation_hourly="holding",
+        ),
+    )
+    assert result.value is not None
+    assert result.value.input_facts[2].value == "cleared"
+    assert result.value.input_facts[5].value == "holding"
+    swapped = list(result.value.input_facts)
+    swapped[2], swapped[5] = swapped[5], swapped[2]
+
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_VALUE"):
+        mismatched_value = replace(result.value, input_facts=tuple(swapped))
+        replace(result, value=mismatched_value)
+
+
+def test_composite_result_rejects_duplicate_hourly_fact_role() -> None:
+    module = _api()
+    context, daily_bars = _context()
+    result = module.calculate_composite_explanation(
+        context, _evidence(module, context, daily_bars)
+    )
+    assert result.value is not None
+    duplicated = list(result.value.input_facts)
+    duplicated[5] = duplicated[2]
+
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_VALUE"):
+        mismatched_value = replace(result.value, input_facts=tuple(duplicated))
+        replace(result, value=mismatched_value)
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_VALUE"):
+        replace(result.value, input_facts=result.value.input_facts[:-1])
 
 
 @pytest.mark.parametrize(

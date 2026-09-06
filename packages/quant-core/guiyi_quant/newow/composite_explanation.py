@@ -65,6 +65,15 @@ class CompositeStatusState(StrEnum):
     IDLE = "idle"
 
 
+class CompositeInputRole(StrEnum):
+    TREND_WEEKLY = "trend_weekly"
+    TREND_DAILY = "trend_daily"
+    TREND_HOURLY = "trend_hourly"
+    OSCILLATION_WEEKLY = "oscillation_weekly"
+    OSCILLATION_DAILY = "oscillation_daily"
+    OSCILLATION_HOURLY = "oscillation_hourly"
+
+
 class FirstActionTokenOwner(StrEnum):
     GUIYI_CLEAN_ROOM = "GUIYI_CLEAN_ROOM"
 
@@ -128,6 +137,51 @@ class CompositeStatusFact:
             _text(self.segment_id)
         except ValueError as error:
             raise ValueError("NEWOW_COMPOSITE_INVALID_STATUS_FACT") from error
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "frequency", frequency)
+        object.__setattr__(self, "bar_end", bar_end)
+
+
+@dataclass(frozen=True, slots=True)
+class CompositeDecisionInputFact:
+    """One decision input with its stable semantic role bound to its value."""
+
+    role: CompositeInputRole
+    value: PageSignalState | CompositeStatusState
+    frequency: ProductFrequency
+    bar_end: datetime
+    physical_contract: str
+    segment_id: str
+
+    def __post_init__(self) -> None:
+        try:
+            role = CompositeInputRole(self.role)
+            frequency = ProductFrequency(self.frequency)
+            bar_end = utc_timestamp(self.bar_end)
+            value = (
+                PageSignalState(self.value)
+                if role
+                in (CompositeInputRole.TREND_WEEKLY, CompositeInputRole.TREND_DAILY)
+                else CompositeStatusState(self.value)
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError("NEWOW_COMPOSITE_INVALID_INPUT_FACT") from error
+        expected_frequency = {
+            CompositeInputRole.TREND_WEEKLY: ProductFrequency.WEEKLY,
+            CompositeInputRole.TREND_DAILY: ProductFrequency.DAILY,
+            CompositeInputRole.TREND_HOURLY: ProductFrequency.HOURLY,
+            CompositeInputRole.OSCILLATION_WEEKLY: ProductFrequency.WEEKLY,
+            CompositeInputRole.OSCILLATION_DAILY: ProductFrequency.DAILY,
+            CompositeInputRole.OSCILLATION_HOURLY: ProductFrequency.HOURLY,
+        }[role]
+        if frequency is not expected_frequency:
+            raise ValueError("NEWOW_COMPOSITE_INVALID_INPUT_FACT")
+        try:
+            _text(self.physical_contract)
+            _text(self.segment_id)
+        except ValueError as error:
+            raise ValueError("NEWOW_COMPOSITE_INVALID_INPUT_FACT") from error
+        object.__setattr__(self, "role", role)
         object.__setattr__(self, "value", value)
         object.__setattr__(self, "frequency", frequency)
         object.__setattr__(self, "bar_end", bar_end)
@@ -395,7 +449,7 @@ class CompositeExplanationValue:
     first_action: FirstActionPrinciple
     week_day_matrix: WeekDayMatrixEntry
     subfeatures: tuple[CompositeSubfeature, ...]
-    input_facts: tuple[PageSignalFact | CompositeStatusFact, ...]
+    input_facts: tuple[CompositeDecisionInputFact, ...]
     warning_branches_unreachable: bool = True
     diagnostic_tokens: None = None
     ai_copy: None = None
@@ -408,10 +462,15 @@ class CompositeExplanationValue:
 
     def __post_init__(self) -> None:
         features = tuple(self.subfeatures)
+        facts = tuple(self.input_facts)
         if len({feature.name for feature in features}) != len(features):
             raise ValueError("NEWOW_COMPOSITE_INVALID_VALUE")
+        if any(
+            not isinstance(fact, CompositeDecisionInputFact) for fact in facts
+        ) or tuple(fact.role for fact in facts) != tuple(CompositeInputRole):
+            raise ValueError("NEWOW_COMPOSITE_INVALID_VALUE")
         object.__setattr__(self, "subfeatures", features)
-        object.__setattr__(self, "input_facts", tuple(self.input_facts))
+        object.__setattr__(self, "input_facts", facts)
 
 
 def _validate_source_relationships(
@@ -420,24 +479,11 @@ def _validate_source_relationships(
     value: CompositeExplanationValue,
 ) -> None:
     facts = value.input_facts
-    fact_specs = (
-        ("trend_weekly", PageSignalFact, ProductFrequency.WEEKLY),
-        ("trend_daily", PageSignalFact, ProductFrequency.DAILY),
-        ("trend_hourly", CompositeStatusFact, ProductFrequency.HOURLY),
-        ("oscillation_weekly", CompositeStatusFact, ProductFrequency.WEEKLY),
-        ("oscillation_daily", CompositeStatusFact, ProductFrequency.DAILY),
-        ("oscillation_hourly", CompositeStatusFact, ProductFrequency.HOURLY),
-    )
-    if len(facts) != len(fact_specs) or any(
+    if tuple(fact.role for fact in facts) != tuple(CompositeInputRole) or any(
         source.as_of != as_of for source in sources
     ):
         raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
-
-    named_facts: dict[str, PageSignalFact | CompositeStatusFact] = {}
-    for fact, (name, fact_type, frequency) in zip(facts, fact_specs, strict=True):
-        if not isinstance(fact, fact_type) or fact.frequency is not frequency:
-            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
-        named_facts[name] = fact
+    named_facts = {fact.role.value: fact for fact in facts}
 
     current_sources: dict[ProductFrequency, CompositeSourceBars] = {}
     volatility_source: CompositeSourceBars | None = None
@@ -1191,7 +1237,7 @@ def calculate_composite_explanation(
     assert oscillation_weekly is not None
     assert oscillation_daily is not None
     assert oscillation_hourly is not None
-    typed_facts: tuple[PageSignalFact | CompositeStatusFact, ...] = (
+    evidence_facts: tuple[PageSignalFact | CompositeStatusFact, ...] = (
         weekly,
         daily,
         trend_hourly,
@@ -1210,7 +1256,7 @@ def calculate_composite_explanation(
     if any(
         fact.frequency is not frequency
         or not _matches_slot(fact, _slot(context, frequency))
-        for fact, frequency in zip(typed_facts, expected_frequencies, strict=True)
+        for fact, frequency in zip(evidence_facts, expected_frequencies, strict=True)
     ):
         return _unavailable(context, "NEWOW_COMPOSITE_SOURCE_CONTEXT_MISMATCH")
     if not _daily_prefix_matches_context(evidence.daily_bars, context):
@@ -1245,6 +1291,25 @@ def calculate_composite_explanation(
         oscillation_hourly.value,
     )
     matrix = select_week_day_matrix(weekly.value, daily.value)
+    named_input_facts = (
+        (CompositeInputRole.TREND_WEEKLY, weekly),
+        (CompositeInputRole.TREND_DAILY, daily),
+        (CompositeInputRole.TREND_HOURLY, trend_hourly),
+        (CompositeInputRole.OSCILLATION_WEEKLY, oscillation_weekly),
+        (CompositeInputRole.OSCILLATION_DAILY, oscillation_daily),
+        (CompositeInputRole.OSCILLATION_HOURLY, oscillation_hourly),
+    )
+    input_facts = tuple(
+        CompositeDecisionInputFact(
+            role,
+            fact.value,
+            fact.frequency,
+            fact.bar_end,
+            fact.physical_contract,
+            fact.segment_id,
+        )
+        for role, fact in named_input_facts
+    )
     value = CompositeExplanationValue(
         decision,
         direction,
@@ -1253,7 +1318,7 @@ def calculate_composite_explanation(
         first_action,
         matrix,
         _subfeatures(volatility),
-        typed_facts,
+        input_facts,
     )
     return CompositeExplanationResult(
         FeatureRuntimeStatus.READY,
