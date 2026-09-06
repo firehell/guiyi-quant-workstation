@@ -9,6 +9,7 @@ import pytest
 
 from guiyi_quant.newow.context_alignment import align_completed_context
 from guiyi_quant.newow.models import NewowDailyBar
+from guiyi_quant.newow.product_adapters import replay_strategy
 from guiyi_quant.newow.product_contracts import (
     EvidenceStatus,
     FeatureRuntimeStatus,
@@ -22,6 +23,7 @@ from guiyi_quant.newow.product_contracts import (
     StrategyHint,
     StrategyReplay,
 )
+from tests.newow.test_product_reader import _weekly_reader  # type: ignore[import-untyped]
 
 
 def _identity(
@@ -320,6 +322,33 @@ def test_observation_ineligible_frame_is_not_selected_as_current_context() -> No
 
     assert result.hourly.bar_end == eligible.bar.bar.bar_end
     assert result.hourly.source_identity == "canonical:hourly:eligible"
+
+
+def test_reader_owner_prefix_overlap_selects_latest_eligible_new_owner(
+    product_cases,
+) -> None:
+    reader, query, fake = _weekly_reader(product_cases)
+    read_set = reader.load(query, fake.as_of)
+    identity = product_cases.primitive_input("trend", "1w").identity
+    replay = replay_strategy(identity, read_set.replay_bars)
+
+    result = align_completed_context({"1w": replay}, fake.as_of)
+
+    assert [
+        (
+            frame.bar.bar.physical_contract,
+            frame.bar.bar.bar_end,
+            frame.bar.bar.observation_eligible,
+        )
+        for frame in replay.frames
+    ] == [
+        ("RB2605", datetime(2023, 1, 6, 7, tzinfo=UTC), True),
+        ("RB2610", datetime(2023, 1, 6, 7, tzinfo=UTC), False),
+        ("RB2610", datetime(2023, 1, 13, 7, tzinfo=UTC), True),
+    ]
+    assert result.weekly.physical_contract == "RB2610"
+    assert result.weekly.segment_id == "rb:RB2610:2023-01-11T01:00:00+00:00"
+    assert result.weekly.bar_end == datetime(2023, 1, 13, 7, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(

@@ -200,7 +200,7 @@ def _validate_replay(
         raise ValueError("NEWOW_CONTEXT_INVALID_REPLAY") from error
 
     seen_segments: set[str] = set()
-    seen_bar_ends: dict[datetime, StrategyFrame] = {}
+    seen_facts: dict[tuple[str, str, datetime], StrategyFrame] = {}
     current_segment: str | None = None
     current_contract: str | None = None
     previous_bar_end: datetime | None = None
@@ -226,12 +226,13 @@ def _validate_replay(
         ):
             raise ValueError("NEWOW_CONTEXT_IDENTITY_MISMATCH")
 
-        duplicate = seen_bar_ends.get(bar_end)
+        fact_identity = (bar.physical_contract, bar.segment_id, bar_end)
+        duplicate = seen_facts.get(fact_identity)
         if duplicate is not None:
             if duplicate == frame:
                 raise ValueError("NEWOW_CONTEXT_DUPLICATE_FACT")
             raise ValueError("NEWOW_CONTEXT_CONFLICTING_FACT")
-        seen_bar_ends[bar_end] = frame
+        seen_facts[fact_identity] = frame
 
         if bar.segment_id != current_segment:
             if bar.segment_id in seen_segments:
