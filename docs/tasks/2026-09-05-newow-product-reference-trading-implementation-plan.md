@@ -695,7 +695,7 @@ def test_viewport_does_not_change_statistics(product_cases):
 - [ ] **section编排：** chart只replay当前组合并先验证后裁剪；auxiliary只算一个component；reference读取完整统计输入；explanation只装配趋势/震荡三周期必要事实和D1前缀；comparator显式运行。chart读取不因默认performance扩大为研究全历史。
 - [ ] **P3 source-facts builder：** 服务端构造role/source-category/formula-adapter/frequency/bar_end/owner/as_of/dependency绑定；当前数值逐字段来自受控replay/Bar。无法证明的target/composite输入精确降级，previous_close guard保持未激活。HTTP不接收evidence/signal/hash。
 - [ ] **一致性和分页：** section指纹基于实际Bar/owner/Calendar-Session/确认事实/版本；reference指纹不含viewport/history limit。历史按`(entry_bar_end, entry_sequence, id)`稳定逆序；cursor只解析版本/查询身份/指纹/last-key并校验长度，不作为路径/SQL/对象反序列化入口。
-- [ ] **Snapshot/cache：** 有界进程内token绑定共同依赖；entry key保存共同事实，section result/dedup key另含component、requested window、cursor/page identity和limit，不同专属参数绝不碰撞。LRU最多32条/128MiB/单条32MiB，超大bypass，关闭缓存结果等价；TTL仅淘汰；只有成功验证且缓存的结果返回token，超大/关闭/失败时为null。数据修订、旧cursor/token和共同事实冲突分类409。
+- [ ] **Snapshot/cache：** 有界进程内token绑定共同依赖；entry namespace绑定规范化查询身份，entry保存可扩充的逐Bar事实证明，跨section要求至少一项共同事实且重叠事实逐值一致；section result/dedup key另含实际输入指纹、component、requested window、cursor/page identity和limit，不同专属参数绝不碰撞。LRU最多32条/128MiB/单entry累计32MiB，超限section bypass，关闭缓存结果等价；TTL仅淘汰；只有成功验证且缓存的结果返回token，超大/关闭/失败时为null。数据修订、旧cursor/token和共同事实冲突分类409。
 - [ ] **取消/重型资源：** 分页和阶段边界检查取消；共享计算按消费者引用计数，最后消费者取消才停止。reference/comparator进程内并发1、等待2，队列满分类资源错误；阻塞计算不直接占满event loop，不跨线程共享Session。
 
 - [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。

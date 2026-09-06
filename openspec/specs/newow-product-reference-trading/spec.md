@@ -284,8 +284,10 @@ API、clean-room 与归一期货适配 SHALL 分开标识；页面 API 与前端
 历史 PIT 快照。跨 section 拼接只能在共同依赖逐字段一致且相关来源版本兼容时发生。
 
 客户端可省略 snapshot token；服务端 snapshot/cache 机制仍是 P4 必做。token MUST 是有界、进程内、不透明
-且非权限凭证，绑定 product/strategy/frequency/series/as-of、共同 owner/Bar 指纹和来源版本；entry key 为
-该共同事实指纹。section result/dedup key MUST 另含规范化 section 参数：chart 的
+且非权限凭证，绑定 product/strategy/frequency/series/as-of、共同 owner/Bar 逐事实证明和来源版本；entry namespace
+只使用规范化查询身份，entry 内保存并扩充已验证的共同事实集合。跨 section 时 MUST 至少存在共同事实，且相同
+frequency/contract/segment/bar_end 的 OHLCV/OI、trading_day、source identity 与 eligibility 必须逐值相等；无共同事实或
+任一重叠事实冲突均拒绝。section result/dedup key MUST 另含实际 section 输入指纹与规范化参数：chart 的
 from/through/cursor/page identity、auxiliary component、reference performance window 与 history cursor/page identity。
 summary 可在同 reference 指纹下共享，页结果不得跨 cursor/limit 复用。TTL 固定 300 秒且只负责淘汰，不能证明新鲜度。
 最多保留 32 条、总计 128 MiB、单条超过 32 MiB 不缓存，按 LRU 淘汰。旧 cursor、失效 token、数据修订或共同事实冲突 MUST 返回

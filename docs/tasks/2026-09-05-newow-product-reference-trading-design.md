@@ -376,7 +376,7 @@ P2/P3 已分别经 PR #348/#349 集成到 `develop@c9d297b8318c1d4bdcfbfc1b4e2e4
 
 P4 可签发不透明进程内 snapshot token 关联分区请求。token 绑定共同 owner/Bar 事实、查询身份、来源版本和已验证 section，不是权限凭证或 PIT/revision。成功验证且实际进入缓存的结果返回token；超大bypass、缓存关闭、失败或不完整结果的token为null，但响应仍携带真实输入指纹。数据修订、旧 cursor、失效 token 或共同事实冲突返回 409 并要求重建。
 
-复用顺序为请求内优先、跨请求重新验证后再用。客户端 token 可省略，但服务端机制是 P4 必做。entry key 为 product/strategy/frequency/series/as-of + 共同owner/Bar事实指纹 + 来源版本；section result/dedup key另加component、requested window、cursor/page identity和limit。reference summary只按稳定reference指纹复用，页结果不跨cursor/limit复用。TTL固定300秒。初始 LRU 预算最多32条、总128MiB、单条32MiB以上 bypass；失败/不完整/未验证结果不缓存。reference/comparator共享重型并发1、FIFO等待2、5秒等待超时；第三个等待者或超时返回429。取消移除排队者并在安全边界释放名额；主图不等待研究。
+复用顺序为请求内优先、跨请求重新验证后再用。客户端 token 可省略，但服务端机制是 P4 必做。entry namespace 为 product/strategy/frequency/series/as-of + profile/formula版本；entry 内保存已验证的逐Bar事实证明，跨section必须存在重叠事实且相同frequency/contract/segment/bar_end的OHLCV/OI、trading_day、source identity与eligibility逐值相等，再扩充该事实集合。section result/dedup key另加实际section输入指纹、component、requested window、cursor/page identity和limit。reference summary只按稳定reference指纹复用，页结果不跨cursor/limit复用。TTL固定300秒。初始 LRU 预算最多32条、总128MiB、单entry累计超过32MiB则新section bypass；失败/不完整/未验证结果不缓存。reference/comparator共享重型并发1、FIFO等待2、5秒等待超时；第三个等待者或超时返回429。取消移除排队者并在安全边界释放名额；主图不等待研究。
 
 P4 性能报告冻结机器/解释器/code head/输入指纹/Bar与owner数量/窗口/cache状态，冷热分开至少30次，并分解排队、读取、校验、replay、projection、解释/比较、序列化、响应字节与RSS。本包只交付后端测量，不冒充P5浏览器体验成绩。
 
