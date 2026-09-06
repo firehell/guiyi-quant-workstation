@@ -26,9 +26,9 @@ test('uses only actual-dominant chart route intents for products and immutable H
   })
 })
 
-test('adds unified detail route helpers without changing the active Home entry helpers', () => {
+test('sends the ordinary unified product entry to Newow while preserving Event identity', () => {
   assert.deepEqual(marketHomeUnifiedProductChartQuery('ag'), {
-    view: 'trend', symbol: 'ag', series_kind: 'actual_dominant', contract: undefined,
+    view: 'newow', symbol: 'ag', strategy: 'trend', series_kind: 'actual_dominant', contract: undefined,
     frequency: '1d', focus_bar_end: undefined,
   })
   assert.deepEqual(marketHomeUnifiedEventChartQuery({

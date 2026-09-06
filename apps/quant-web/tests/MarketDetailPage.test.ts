@@ -15,18 +15,20 @@ function page() {
   return { source, template: parsed.descriptor.template.content }
 }
 
-test('activates generic D1 facts and mounts each workspace only for its explicit route', () => {
+test('activates generic facts for Newow and legacy views without mounting a future Newow workspace', () => {
   const { source, template } = page()
 
   assert.match(source, /import TrendDetailWorkspace/)
-  assert.match(source, /\['free',\s*'htdy',\s*'trend',\s*'subing'\]\.includes\(explicitIdentity\.value\?\.view/)
-  assert.match(source, /\['free',\s*'htdy',\s*'trend',\s*'subing'\]\.includes\(result\.identity\.view/)
+  assert.match(source, /\['newow',\s*'free',\s*'htdy',\s*'trend',\s*'subing'\]\.includes\(explicitIdentity\.value\?\.view/)
+  assert.match(source, /\['newow',\s*'free',\s*'htdy',\s*'trend',\s*'subing'\]\.includes\(result\.identity\.view/)
+  assert.match(source, /identity\.strategy \?\? ''/)
   assert.match(template, /<TrendDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'trend'"/)
   assert.match(template, /:identity="routeResult\.identity"/)
   assert.match(template, /:header="header"/)
   assert.match(template, /:bars="controller\.bars\.value"/)
   assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy'"/)
   assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing'"/)
+  assert.doesNotMatch(template, /<NewowProductWorkspace/)
   assert.doesNotMatch(template, /<HtdyDetailWorkspace\s+v-else(?:\s|>)/)
 })
 

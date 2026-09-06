@@ -1,7 +1,10 @@
 import { MARKET_FREQUENCIES, type AlertEvent, type MarketFrequency, type SeriesKind } from '../types/market.ts'
 import {
   MARKET_DETAIL_VIEWS,
+  NEWOW_FREQUENCIES,
+  NEWOW_STRATEGIES,
   type MarketDetailIdentity,
+  type NewowStrategy,
   type MarketDetailRouteErrorCode,
   type MarketDetailRouteResult,
   type MarketDetailView,
@@ -11,6 +14,8 @@ import { isHtdyAlertEvent } from './alertRules.ts'
 
 const SERIES_KINDS = new Set<SeriesKind>(['continuous', 'actual_dominant', 'contract'])
 const FREQUENCIES = new Set<MarketFrequency>(MARKET_FREQUENCIES)
+const NEWOW_FREQUENCY_SET = new Set<MarketFrequency>(NEWOW_FREQUENCIES)
+const NEWOW_STRATEGY_SET = new Set<string>(NEWOW_STRATEGIES)
 const FIXED_IDENTITIES: Record<Extract<MarketDetailView, 'trend' | 'subing'>, Pick<MarketDetailIdentity, 'seriesKind' | 'frequency'>> = {
   trend: { seriesKind: 'actual_dominant', frequency: '1d' },
   subing: { seriesKind: 'actual_dominant', frequency: '15m' },
@@ -23,13 +28,21 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
   if (!isView(viewValue)) return invalid('DETAIL_VIEW_UNKNOWN', symbol, null)
   if (!symbol) return invalid('DETAIL_SYMBOL_INVALID', null, null)
 
+  const isNewow = viewValue === 'newow'
+  const strategy = isNewow
+    ? query.strategy === undefined ? 'trend' : parseNewowStrategy(query.strategy)
+    : undefined
+  if ((isNewow && !strategy) || (!isNewow && query.strategy !== undefined)) {
+    return invalid('DETAIL_STRATEGY_INVALID', symbol, recoveryFor(viewValue, symbol))
+  }
+
   const fixed = viewValue === 'trend' || viewValue === 'subing' ? FIXED_IDENTITIES[viewValue] : null
-  const seriesKind = query.series_kind === undefined && fixed
-    ? fixed.seriesKind
+  const seriesKind = query.series_kind === undefined && (fixed || isNewow)
+    ? fixed?.seriesKind ?? 'actual_dominant'
     : parseSeriesKind(query.series_kind)
   if (!seriesKind) return invalid('DETAIL_SERIES_KIND_INVALID', symbol, recoveryFor(viewValue, symbol))
-  const frequency = query.frequency === undefined && fixed
-    ? fixed.frequency
+  const frequency = query.frequency === undefined && (fixed || isNewow)
+    ? fixed?.frequency ?? '1d'
     : parseFrequency(query.frequency)
   if (!frequency) return invalid('DETAIL_FREQUENCY_INVALID', symbol, recoveryFor(viewValue, symbol))
 
@@ -39,17 +52,24 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     })
   }
 
+  if (isNewow && (seriesKind !== 'actual_dominant' || !NEWOW_FREQUENCY_SET.has(frequency))) {
+    return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
+  }
+
   const rawContract = scalar(query.contract)
+  if (isNewow && query.contract !== undefined) {
+    return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
+  }
   if (seriesKind === 'contract') {
     const contract = normalizeContract(rawContract)
     if (!contract) return invalid('DETAIL_CONTRACT_REQUIRED', symbol, recoveryFor(viewValue, symbol))
     if (hasFocus(query) && !allowsFocus(viewValue, seriesKind, frequency)) {
       return invalid('DETAIL_FOCUS_INVALID', symbol, recoveryFor(viewValue, symbol))
     }
-    return valid(viewValue, symbol, seriesKind, frequency, contract, query.focus_bar_end)
+    return valid(viewValue, symbol, seriesKind, frequency, contract, query.focus_bar_end, strategy ?? undefined)
   }
   if (rawContract !== undefined) return invalid('DETAIL_SERIES_KIND_INVALID', symbol, recoveryFor(viewValue, symbol))
-  return valid(viewValue, symbol, seriesKind, frequency, undefined, query.focus_bar_end)
+  return valid(viewValue, symbol, seriesKind, frequency, undefined, query.focus_bar_end, strategy ?? undefined)
 }
 
 export function serializeMarketDetailIdentity(identity: MarketDetailIdentity): Record<string, string | undefined> {
@@ -60,6 +80,7 @@ export function serializeMarketDetailIdentity(identity: MarketDetailIdentity): R
   return {
     view: identity.view,
     symbol: identity.symbol,
+    ...(identity.view === 'newow' ? { strategy: identity.strategy } : {}),
     series_kind: identity.seriesKind,
     contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
     frequency: identity.frequency,
@@ -73,6 +94,19 @@ export function resolveViewSwitchIdentity(
   previous: MarketDetailIdentity | null,
   restore: MarketDetailViewRestore,
 ): MarketDetailIdentity {
+  if (view === 'newow') {
+    if (previous?.view === 'newow' && sameSymbol(previous.symbol, symbol) && previous.strategy
+      && NEWOW_STRATEGY_SET.has(previous.strategy) && NEWOW_FREQUENCY_SET.has(previous.frequency)) {
+      return {
+        view, symbol, strategy: previous.strategy,
+        seriesKind: 'actual_dominant', frequency: previous.frequency,
+      }
+    }
+    return {
+      view, symbol, strategy: restore.newow.strategy,
+      seriesKind: 'actual_dominant', frequency: restore.newow.frequency,
+    }
+  }
   if (view === 'trend' || view === 'subing') return { view, symbol, ...FIXED_IDENTITIES[view] }
   if (previous?.view === view && sameSymbol(previous.symbol, symbol)) {
     if (previous.seriesKind !== 'contract' || previous.contract) {
@@ -108,6 +142,7 @@ function valid(
   frequency: MarketFrequency,
   contract: string | undefined,
   focus: unknown,
+  strategy?: NewowStrategy,
 ): MarketDetailRouteResult {
   if (focus !== undefined) {
     const focusBarEnd = scalar(focus)
@@ -118,13 +153,14 @@ function valid(
       kind: 'valid',
       identity: {
         view, symbol, seriesKind, frequency, focusBarEnd,
+        ...(strategy ? { strategy } : {}),
         ...(contract ? { contract } : {}),
       },
     }
   }
   return {
     kind: 'valid',
-    identity: { view, symbol, seriesKind, frequency, ...(contract ? { contract } : {}) },
+    identity: { view, symbol, seriesKind, frequency, ...(strategy ? { strategy } : {}), ...(contract ? { contract } : {}) },
   }
 }
 
@@ -137,6 +173,9 @@ function invalid(
 }
 
 function recoveryFor(view: MarketDetailView, symbol: string): MarketDetailIdentity {
+  if (view === 'newow') {
+    return { view, symbol, strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' }
+  }
   if (view === 'trend' || view === 'subing') return { view, symbol, ...FIXED_IDENTITIES[view] }
   return { view, symbol, seriesKind: 'actual_dominant', frequency: '15m' }
 }
@@ -157,6 +196,11 @@ function parseSeriesKind(value: unknown): SeriesKind | null {
 function parseFrequency(value: unknown): MarketFrequency | null {
   const candidate = scalar(value)
   return candidate && FREQUENCIES.has(candidate as MarketFrequency) ? candidate as MarketFrequency : null
+}
+
+function parseNewowStrategy(value: unknown): NewowStrategy | null {
+  const candidate = scalar(value)
+  return candidate && NEWOW_STRATEGY_SET.has(candidate) ? candidate as NewowStrategy : null
 }
 
 function normalizeSymbol(value: unknown): string | null {
