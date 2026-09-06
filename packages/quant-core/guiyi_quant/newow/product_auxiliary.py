@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
 from .cup_handle import (
     CupReadyWitness,
@@ -365,3 +365,70 @@ def calculate_product_auxiliary(
         retrospective_layers=(mirror,),
         cup_handle=_cup_layer(identity, owners),
     )
+
+
+def calculate_auxiliary_component(
+    identity: ProductIdentity,
+    bars: tuple[ProductBar, ...],
+    component: str,
+    *,
+    as_of: datetime | None = None,
+) -> AuxiliaryLayer[object]:
+    """Calculate exactly one requested display layer over validated owner prefixes."""
+
+    try:
+        inputs = tuple(bars)
+    except TypeError as error:
+        raise ValueError("NEWOW_AUXILIARY_INVALID_INPUT") from error
+    if not isinstance(identity, ProductIdentity) or not all(
+        isinstance(item, ProductBar) for item in inputs
+    ):
+        raise ValueError("NEWOW_AUXILIARY_INVALID_INPUT")
+    cutoff = (
+        utc_timestamp(as_of)
+        if as_of is not None
+        else max(
+            (item.bar.bar_end for item in inputs),
+            default=datetime.min.replace(tzinfo=UTC),
+        )
+    )
+    owners = _validated_segments(identity, inputs, cutoff)
+    if component == "main_force_control":
+        return cast(
+            AuxiliaryLayer[object],
+            _subplot_layer(
+                name=component,
+                formula_version=MAIN_FORCE_CONTROL_FORMULA_VERSION,
+                owners=owners,
+                calculator=calculate_main_force_control,
+                warming_code="NEWOW_MAIN_FORCE_CONTROL_WARMING",
+                repainting=False,
+            ),
+        )
+    if component == "up_down_energy":
+        return cast(
+            AuxiliaryLayer[object],
+            _subplot_layer(
+                name=component,
+                formula_version=UP_DOWN_ENERGY_FORMULA_VERSION,
+                owners=owners,
+                calculator=calculate_up_down_energy,
+                warming_code="NEWOW_UP_DOWN_ENERGY_WARMING",
+                repainting=False,
+            ),
+        )
+    if component == "zhaoyao_mirror":
+        return cast(
+            AuxiliaryLayer[object],
+            _subplot_layer(
+                name=component,
+                formula_version=ZHAOYAO_MIRROR_FORMULA_VERSION,
+                owners=owners,
+                calculator=calculate_zhaoyao_mirror,
+                warming_code="NEWOW_ZHAOYAO_MIRROR_WARMING",
+                repainting=True,
+            ),
+        )
+    if component == "cup_handle":
+        return cast(AuxiliaryLayer[object], _cup_layer(identity, owners))
+    raise ValueError("NEWOW_AUXILIARY_INVALID_COMPONENT")

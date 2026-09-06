@@ -204,3 +204,128 @@ identity 与确认时间语义；`pivot_at` 不得冒充首次可知时间，其
 - **GIVEN** 照妖镜随新增 Bar 重绘历史图形
 - **WHEN** 刷新页面
 - **THEN** 只更新标明回看的图层，不改 ReferenceTrade 的 BUILD/CLEAR 与收益，也不把回绘点写为当时的交易原因
+
+### Requirement: Sectioned product delivery is computation-bounded
+
+新的 `GET /api/v1/market/newow/strategy-detail` MUST 使用单一路由和显式
+`section = chart | auxiliary | reference | explanation | comparator`；省略时仅为 `chart`，MUST NOT
+提供隐式 `all`。每次请求只读取和计算该 section 的必要依赖，不能先计算整包再删掉未请求字段。
+
+`chart` SHALL 只装配当前组合的 completed Bar、主图值、状态、有序 BUILD/CLEAR、适用 Hint 与诊断；
+`auxiliary` SHALL 只计算显式选择的一个副图或杯柄；`reference` SHALL 使用完整统计输入并分页投影；
+`explanation` SHALL 只读取趋势/震荡在 `1w/1d/60m` 的必要事实和 D1 波动前缀；`comparator`
+SHALL 只在显式请求时运行。图表默认 500 根、单页最多 2000 根并使用严格向左时间游标；这些响应限制
+MUST NOT 截断 warm-up、owner 验证、参考统计或比较器的必要计算输入。
+
+所有 section SHALL 返回共同查询身份、实际读取身份和该 section 的真实输入指纹。响应中的五个 section
+字段各自使用 `{delivery, status, value}` wrapper：请求项 `delivery=delivered` 并保留真实运行/证据状态，
+四个未请求项 `delivery=not_requested, status=null, value=null`。`not_requested` 不是 Core `FeatureStatus`，
+客户端 loading 也不是业务运行状态。
+
+#### Scenario: Chart is requested before research panels
+
+- **GIVEN** 客户端只请求默认 `chart`
+- **WHEN** 服务装配响应
+- **THEN** 不调用 ReferenceTrade 统计、三副图、多周期解释或比较器，主图不等待未请求研究
+
+### Requirement: Reference cutoff is authoritative and independent of chart data
+
+`performance_since / performance_through` SHALL 表示用户明确选择的统计 membership 窗口，并必须成对。
+Reference 的实际估值/状态截止 MUST 由所选 `performance_through`、权威 Calendar/Session 与请求 `as_of`
+共同解析，且不得晚于 `as_of`。服务 MUST 返回请求统计窗口、实际 `reference_cutoff`、实际可用 through
+及其 availability；数据不完整、节假日、非交易日、夜盘跨自然日和未完成 W1 不得用自然日午夜、服务端
+当前时间或任意一根 Bar 静默替代。
+
+投影 MUST 以 `reference_cutoff` 重放，且 `ReferenceProjection.as_of == PerformanceWindow.cutoff`。
+所有时间比较按同一 UTC instant 进行，`fact_time <= reference_cutoff <= request_as_of` 的事实可见，严格晚于
+cutoff 的事实不可见；`as_of == server_now` 合法，只有 `as_of > server_now` 为 422。若 `as_of` 早于所选
+through 的权威 session 完成时点，服务返回实际更早的 available through/cutoff 与降级 availability，
+不得读未来或伪称完整窗口。
+统计截止之后发生的 CLEAR、Hint 或 owner 边界不得进入早期快照；图表即使展示更晚行情也不得关闭早期
+ReferenceTrade。显式延长统计截止后可以形成新的 CLOSED，但 reference trade identity 仍只由 entry 与
+固定政策决定。viewport、chart cursor 与 `history_limit` MUST NOT 改变同一统计窗口的 summary、trade id
+或 reference 指纹。
+
+#### Scenario: A later CLEAR is visible only on the chart
+
+- **GIVEN** BUILD 位于统计窗口内，CLEAR 晚于已解析的 reference cutoff，但图表窗口已经包含该 CLEAR
+- **WHEN** 同一查询身份请求 `reference`
+- **THEN** 截止时 ReferenceTrade 仍为 OPEN 且 closed_count 不增加；只有用户显式延长截止后才变为 CLOSED
+
+#### Scenario: Night session belongs to the authoritative trading day
+
+- **GIVEN** 夜盘 Bar 的自然日与 trading_day 不同
+- **WHEN** 解析统计 membership 与 cutoff
+- **THEN** 使用权威 trading_day 和 Session，不使用 `bar_end.date()`
+
+### Requirement: Explanation inputs are server constructed and source bound
+
+HTTP 客户端 MUST NOT 提交 evidence 对象、任意 signal 值、原件 hash 或公式参数来获得 verified 状态。
+应用层 SHALL 从 ProductReader 的 completed Bar、受控 strategy replay 与 owner 上下文构造 P3 输入；每项
+输入 MUST 携带 role、来源类别、公式/适配版本、周期、`bar_end`、physical contract、segment、`as_of`
+和实际依赖。固定原件 hash 只证明规则来源身份，不证明当前数值来源。
+
+可直接核验的价格 MUST 与读取的权威 Bar 值逐字段一致；不得仅以相同时间证明相同数值。页面前端、页面
+API、clean-room 与归一期货适配 SHALL 分开标识；页面 API 与前端的已知冲突不得机械统一。不能从现有原件
+证明来源或时机的字段 MUST 只使对应子功能 `evidence_required`/`unavailable`，并列出缺失项；不能用当前
+选择的主策略状态替代综合解释的全部趋势/震荡输入。`previous_close=None` 时价格 guard SHALL 明示未激活，
+并保留 raw/display 值，不能把上一根当前周期 Close 擅自称为页面昨收。
+
+#### Scenario: Client supplies a forged evidence hash
+
+- **GIVEN** 客户端尝试提交 evidence、signal 或 hash 参数
+- **WHEN** 请求新 GET
+- **THEN** 以 422 拒绝，不能因此产生 verified P3 输出
+
+### Requirement: Snapshot reuse and bounded resources never replace validation
+
+应用层 SHALL 分开查询身份、输入事实身份和实际读取时间。若无可靠全局 revision，
+`data_revision_identity` MUST 为 null；`input_content_sha256` 仅为真实输入指纹，不是 Canonical revision 或
+历史 PIT 快照。跨 section 拼接只能在共同依赖逐字段一致且相关来源版本兼容时发生。
+
+客户端可省略 snapshot token；服务端 snapshot/cache 机制仍是 P4 必做。token MUST 是有界、进程内、不透明
+且非权限凭证，绑定 product/strategy/frequency/series/as-of、共同 owner/Bar 逐事实证明和来源版本；entry namespace
+只使用规范化查询身份，entry 内保存并扩充已验证的共同事实集合。跨 section 时 MUST 至少存在共同事实，且相同
+frequency/contract/segment/bar_end 的 OHLCV/OI、trading_day、source identity 与 eligibility 必须逐值相等；无共同事实或
+任一重叠事实冲突均拒绝。section result/dedup key MUST 另含实际 section 输入指纹与规范化参数：chart 的
+from/through/cursor/page identity、auxiliary component、reference performance window 与 history cursor/page identity。
+summary 可在同 reference 指纹下共享，页结果不得跨 cursor/limit 复用。TTL 固定 300 秒且只负责淘汰，不能证明新鲜度。
+最多保留 32 条、总计 128 MiB、单条超过 32 MiB 不缓存，按 LRU 淘汰。旧 cursor、失效 token、数据修订或共同事实冲突 MUST 返回
+可分类 409，要求客户端清除相关旧结果并重建快照；不得无限自动重试或继续旧 cursor。
+
+失败、不完整读取和未验证结果不得缓存。关闭缓存时结果、身份和错误语义 MUST 不变。reference/comparator
+共享同一个重型预算：运行并发 1、FIFO 等待队列最多 2、等待 5 秒超时；第三个等待者或超时返回429。
+排队取消必须移除 waiter 并释放名额，运行阶段在安全边界释放 permit，不新增常驻 worker。取消 MUST
+传至分页和安全计算边界；共享计算以相同 entry key+section result key 去重且只有最后消费者取消才停止。对不可抢占原语不得承诺
+浏览器 abort 即瞬时停止，也不得跨线程共享不安全数据库 Session。
+
+#### Scenario: A data revision invalidates a cursor
+
+- **GIVEN** 客户端持有旧 reference cursor 或 snapshot token
+- **WHEN** 服务重新验证发现共同输入事实已变化
+- **THEN** 返回 409 数据世代冲突，不把旧 summary 与新图表拼接
+
+#### Scenario: Same facts with different section parameters do not collide
+
+- **GIVEN** 两个请求共用相同事实指纹但 component、requested window 或 cursor 不同
+- **WHEN** 服务查找已验证结果
+- **THEN** 不得命中另一组专属参数的 section 结果
+
+### Requirement: Typed API keeps availability and legacy semantics explicit
+
+新 GET MUST 只接受 active product、三策略、`1w/1d/60m`、`actual_dominant`、合法 section 及其专属参数；
+日期有序、performance 成对、`as_of` 带时区且不晚于服务器当前时间。非法参数为 422；身份、数据、token
+或 cursor 世代冲突为 409；资源队列满为明确 429。opaque cursor 不得作为路径、SQL 或对象反序列化入口。
+
+wire 模型 MUST 完整传递 delivery、运行/证据/子功能状态、reason、来源、known parity difference、
+repainting、formal-signal eligibility、允许用途、实际图表/统计窗口、reference cutoff、分页身份和输入
+指纹。Decimal 价格与收益 MUST 序列化为十进制字符串或 null；合法零 CLOSED 的聚合指标保持 null。
+顶层 ready 不得掩盖子功能 `evidence_required`，也不得把参考交易资格表达成真实下单授权。
+旧 `/trend-detail` 的参数、profile、marker 和响应语义 MUST 保持不变。未预期内部错误使用固定
+`500 {"detail":{"code":"NEWOW_INTERNAL_ERROR"}}`，不得返回异常文本、SQL、内部路径、stack 或凭据。
+
+#### Scenario: A requested explanation has an evidence gap
+
+- **GIVEN** 主策略事实可用，但某解释输入来源无法证明
+- **WHEN** 请求 `section=explanation`
+- **THEN** 仅对应子功能返回准确 evidence status/reason/source，不能用 0、空数组、neutral 或“暂无信号”掩盖

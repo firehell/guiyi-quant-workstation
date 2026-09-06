@@ -28,6 +28,7 @@ from .product_contracts import (
     FeatureStatus,
     MainState,
     ProductBar,
+    ProductFrequency,
     ProductIdentity,
     ProductStrategy,
     StrategyAction,
@@ -75,6 +76,22 @@ class _PairingState:
     eligible_build: StrategyAction | None = None
     prewarm_build: StrategyAction | None = None
     source_builds: dict[str, StrategyAction] = field(default_factory=dict)
+
+
+def build_product_identity(
+    product: str,
+    strategy: ProductStrategy | str,
+    frequency: ProductFrequency | str,
+) -> ProductIdentity:
+    """Build the one active adapter identity without duplicating formula sets."""
+
+    normalized = ProductStrategy(strategy)
+    return ProductIdentity(
+        product,
+        normalized,
+        ProductFrequency(frequency),
+        tuple(_EXPECTED_FORMULAS[normalized]),
+    )
 
 
 def _metric(value: float | None) -> Decimal | None:

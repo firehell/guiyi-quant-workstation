@@ -106,6 +106,18 @@ def build_market_data_service(session: Session) -> MarketDataService:
     return MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root))
 
 
+def build_database_coverage_source(session: Session):
+    """Compose the shared read-only coverage authority for product queries."""
+
+    from app.market_data.coverage_source import DatabaseCoverageSource
+
+    return DatabaseCoverageSource(
+        session,
+        _PRODUCT_STARTS,
+        history_floor_path=_HISTORY_FLOOR,
+    )
+
+
 def build_market_research_service(session: Session) -> MarketResearchService:
     return MarketResearchService(build_market_data_service(session))
 

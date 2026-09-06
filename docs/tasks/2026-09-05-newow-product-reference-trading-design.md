@@ -347,6 +347,39 @@ UI 固定说明：`牛哇式乐观参考：按策略参考价计算，未计手�
 
 保持首页既有bulk读取，不增加逐品种的九组合请求。详情按当前品种和必要上下文加载；长历史通过有界分页、取消过期请求和请求内复用控制成本，不以静默截断、背景生产写入或新常驻服务解决性能。
 
+### 14.1 P3→P4 交接修正
+
+P2/P3 已分别经 PR #348/#349 集成到 `develop@c9d297b8318c1d4bdcfbfc1b4e2e46b55956e26c`；Tasks 0–13 的历史正文和已接受语义不改写。P4 在消费这些接口前补下列产品合同：
+
+- `performance_since/performance_through` 是用户选择的 membership 窗口；Reference 实际截止另由权威 Calendar/Session 与 `as_of` 解析并返回 `reference_cutoff`，投影与统计使用完全相同 cutoff。
+- 图表可展示 cutoff 之后的 Bar/Action，但 Reference 不得读取之后 CLEAR、Hint 或 owner 边界；夜盘以 trading_day 为准，未完成交易日/W1、节假日和缺口显式降级。
+- P3 的固定 evidence hash 只证明规则原件身份。当前输入必须由服务端从受控 reader/replay 构造并带 role/source/version/frequency/bar/owner/as-of/dependency；HTTP 不接受 evidence、signal、hash 或任意公式值。
+- `previous_close=None` 保持 guard 未激活；不把当前周期上一根 Close 擅自定义为页面昨收。已有 page JS Number/toFixed/Math.round 与 P2 Decimal 合同各自保持。
+- 顶层状态、evidence 状态、子功能状态、reason、来源和 parity difference 分别传递；`not_requested` 只属于 delivery，合法零 CLOSED 不等于 unavailable。
+
+### 14.2 主图优先的 section 编排
+
+新路由 `GET /api/v1/market/newow/strategy-detail` 使用
+`chart | auxiliary | reference | explanation | comparator`，默认 `chart` 且不提供隐式 all：
+
+| section | 实际计算 | 禁止隐式计算 |
+|---|---|---|
+| chart | 当前组合主图、状态、Action、适用 Hint、diagnostic；默认最近500、最多2000、严格向左游标 | Reference、三个副图、额外周期解释、比较器 |
+| auxiliary | 明确选择的单个副图或杯柄，先完整计算/验证再裁剪展示 | 其他 auxiliary、Reference、解释、比较器 |
+| reference | 完整统计输入、cutoff 投影、summary 与 1–200 条历史分页 | viewport 驱动的统计缩短、比较器理论退出 |
+| explanation | 趋势/震荡三周期的必要末端事实、D1波动前缀、目标/吸筹与综合解释；子功能隔离 | 九组合全量重放、用当前主策略替代全部输入 |
+| comparator | 明确请求的五窗口、物理区段与 synthetic terminal 语义 | ReferenceTrade、参数自动修改 |
+
+分区响应共享 product/strategy/frequency/series/profile/formula/adaptation/evidence/as-of 查询身份，但分别报告真实输入指纹和读取时间。不同 chart 窗口整包 hash 不同是正常现象；reference 指纹不受 viewport/history limit 影响。
+
+### 14.3 Snapshot、缓存、取消和资源预算
+
+P4 可签发不透明进程内 snapshot token 关联分区请求。token 绑定共同 owner/Bar 事实、查询身份、来源版本和已验证 section，不是权限凭证或 PIT/revision。成功验证且实际进入缓存的结果返回token；超大bypass、缓存关闭、失败或不完整结果的token为null，但响应仍携带真实输入指纹。数据修订、旧 cursor、失效 token 或共同事实冲突返回 409 并要求重建。
+
+复用顺序为请求内优先、跨请求重新验证后再用。客户端 token 可省略，但服务端机制是 P4 必做。entry namespace 为 product/strategy/frequency/series/as-of + profile/formula版本；entry 内保存已验证的逐Bar事实证明，跨section必须存在重叠事实且相同frequency/contract/segment/bar_end的OHLCV/OI、trading_day、source identity与eligibility逐值相等，再扩充该事实集合。section result/dedup key另加实际section输入指纹、component、requested window、cursor/page identity和limit。reference summary只按稳定reference指纹复用，页结果不跨cursor/limit复用。TTL固定300秒。初始 LRU 预算最多32条、总128MiB、单entry累计超过32MiB则新section bypass；失败/不完整/未验证结果不缓存。reference/comparator共享重型并发1、FIFO等待2、5秒等待超时；第三个等待者或超时返回429。取消移除排队者并在安全边界释放名额；主图不等待研究。
+
+P4 性能报告冻结机器/解释器/code head/输入指纹/Bar与owner数量/窗口/cache状态，冷热分开至少30次，并分解排队、读取、校验、replay、projection、解释/比较、序列化、响应字节与RSS。本包只交付后端测量，不冒充P5浏览器体验成绩。
+
 ## 15. Canonical修改提案
 
 本次仅新增设计文件，不修改以下active文档。实现前的首个工作包须提交精确修改并审阅：
@@ -404,6 +437,14 @@ P3的缺证据项可独立阻塞自身，不允许用占位功能把“完整产
 | AC18 | 不新增RQData请求、Canonical/交易DB写入、Rule、Runtime、通知或订单路径 |
 | AC19 | Web桌面/移动/键盘操作可用，历史选中与图表Marker一致 |
 | AC20 | 同exact head定向及全量适用验证通过，Standards/Spec独立Review无P1/P2 |
+| AC21 | 默认chart不调用Reference、auxiliary、explanation或comparator；每次只计算显式section |
+| AC22 | 统计cutoff使用Calendar/Session/trading_day/as_of；晚CLEAR/Hint/换月不污染早期快照 |
+| AC23 | P3当前输入由服务端受控来源构造，evidence hash不替代数值来源；缺项精确降级 |
+| AC24 | 分区共同身份、输入指纹、snapshot/cursor世代冲突和409重建行为可验证 |
+| AC25 | 缓存32条/128MiB/32MiB单条、LRU、bypass、重验证和关闭缓存等价可验证 |
+| AC26 | reference/comparator并发1、等待2、取消边界及资源错误可验证且不阻塞chart |
+| AC27 | 新typed API严格参数/Decimal/null/状态/source合同通过，旧D1合同不变 |
+| AC28 | 后端冷热/修订/分页/压力性能有可复测入口；P5/P6浏览器与全项目验收仍明确未测 |
 
 测试必须分别证明公式、参考政策、应用数据和UI投影；不能只凭截图或数字看起来合理验收。完整收益离线复算包、周线执行日limit修复、OOS/Walk-forward扩展与Shadow盈利判断不作为本阶段新增实现，但其未完成状态必须保留。
 
@@ -411,7 +452,7 @@ P3的缺证据项可独立阻塞自身，不允许用占位功能把“完整产
 
 本阶段实现完成的目标是 `NEWOW_PRODUCT_AND_REFERENCE_TRADING_COMPLETE`，不等于 `PAPER_ACCOUNT_READY`、`RUNTIME_READY`、`OOS_PASSED` 或盈利策略。参考交易计算无误不证明可执行，也不保证乐观口径总高于因果结果。
 
-当前只写成Design草案。已确认的是第1节的Owner决定，尚未批准的是整体架构、统计摘要/样本口径、页面组织及实施分包。Design审阅通过后再写Implementation Plan，不在本次执行代码或改生产。
+本段是 2026-09-05 Design 审批前的历史记录：当时只写草案、未执行代码。2026-09-06 P4 Amendment 的唯一执行身份与授权见 Implementation Plan 顶部；它不改写此前 Tasks 0–13 历史，也不授权 P5/P6、生产或 release/Runtime。
 
 审阅重点：是否接受独立参考投影、九组合与辅助能力矩阵、仅CLOSED的简单相加摘要及期初记录单列、原D1深链兼容、证据不足不伪装完成。
 
