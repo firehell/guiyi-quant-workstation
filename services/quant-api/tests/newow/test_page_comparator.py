@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from app.market_data.newow.product_reader import NewowProductReader
 from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_contracts import (
     ProductBar,
@@ -24,6 +25,7 @@ def _api():
     module = importlib.import_module("guiyi_quant.newow.page_comparator")
     required = (
         "ComparatorOwnerSegment",
+        "PageComparatorSourceBars",
         "VerifiedPageComparatorEvidence",
         "compare_page_windows",
     )
@@ -129,6 +131,7 @@ def test_comparator_without_evidence_returns_an_explicit_gap(product_cases) -> N
         case.identity,
         case.bars,
         evidence=None,
+        authoritative_segments=(_owner(module, case.bars),),
         as_of=datetime(2026, 12, 31, tzinfo=UTC),
     )
 
@@ -172,6 +175,7 @@ def test_inclusive_extrema_clear_then_reenter_and_zero_is_a_loss() -> None:
         _identity(),
         bars,
         module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(_owner(module, bars),),
         as_of=bars[-1].bar.bar_end,
     )
 
@@ -187,9 +191,9 @@ def test_inclusive_extrema_clear_then_reenter_and_zero_is_a_loss() -> None:
     assert window10.trades[0].exit_bar_end == bars[10].bar.bar_end
     assert window10.trades[1].entry_bar_end == bars[10].bar.bar_end
     assert window10.trades[0].won is False
-    assert window10.trades[0].return_pct == 0.0
+    assert window10.trades[0].return_pct == Decimal("0.0")
     assert window10.loss_count == window10.trade_count
-    assert window10.max_drawdown_pct == 0.0
+    assert window10.max_drawdown_pct == Decimal("0.0")
     assert not hasattr(result.value, "actions")
     assert not hasattr(result.value, "reference_trades")
 
@@ -206,12 +210,13 @@ def test_unrealized_open_percentage_participates_in_page_drawdown() -> None:
         _identity(),
         bars,
         module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(_owner(module, bars),),
         as_of=bars[-1].bar.bar_end,
     )
     window10 = {row.window: row for row in result.value.segments[0].results}[10]
 
-    assert window10.cumulative_return_pct == pytest.approx(-10.0)
-    assert window10.max_drawdown_pct == pytest.approx(10.0)
+    assert window10.cumulative_return_pct == Decimal("-10.0")
+    assert window10.max_drawdown_pct == Decimal("10.0")
 
 
 def test_twenty_bar_input_keeps_larger_page_windows_as_zero_trade_rows() -> None:
@@ -222,6 +227,7 @@ def test_twenty_bar_input_keeps_larger_page_windows_as_zero_trade_rows() -> None
         _identity(),
         bars,
         module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(_owner(module, bars),),
         as_of=bars[-1].bar.bar_end,
     )
     rows = {row.window: row for row in result.value.segments[0].results}
@@ -229,7 +235,7 @@ def test_twenty_bar_input_keeps_larger_page_windows_as_zero_trade_rows() -> None
     assert rows[20].trade_count == 1
     for window in (24, 30, 52):
         assert rows[window].trade_count == 0
-        assert rows[window].win_rate_pct == 0.0
+        assert rows[window].win_rate_pct == Decimal("0.0")
         assert rows[window].page_display.win_rate_pct == "0"
 
 
@@ -241,11 +247,12 @@ def test_source_comparator_ties_preserve_candidate_order_explicitly() -> None:
         _identity(),
         bars,
         module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(_owner(module, bars),),
         as_of=bars[-1].bar.bar_end,
     )
     segment = result.value.segments[0]
 
-    assert {row.score for row in segment.results} == {0.0}
+    assert {row.score for row in segment.results} == {Decimal("0.0")}
     assert segment.ranked_windows == (10, 20, 24, 30, 52)
     tie_gap = next(
         feature
@@ -265,6 +272,7 @@ def test_terminal_valuation_is_synthetic_and_remains_comparator_only() -> None:
         _identity(),
         bars,
         module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(_owner(module, bars),),
         as_of=bars[-1].bar.bar_end,
     )
     window20 = {row.window: row for row in result.value.segments[0].results}[20]
@@ -339,6 +347,180 @@ def test_owner_segments_are_listed_reset_and_default_to_latest() -> None:
     assert result.value.account_aggregation is None
 
 
+def test_guiyi_adapter_requires_authoritative_owner_segments() -> None:
+    module = _api()
+    bars = _constant_bars(20)
+
+    with pytest.raises(TypeError, match="authoritative_segments"):
+        module.compare_page_windows(
+            _identity(),
+            bars,
+            module.VerifiedPageComparatorEvidence(),
+            as_of=bars[-1].bar.bar_end,
+        )
+
+
+def test_real_product_reader_dataset_identity_flows_into_comparator(
+    product_cases,
+) -> None:
+    module = _api()
+    reader, query, fake = product_cases.paged_reader(
+        prefix_bars=22,
+        frequency="1d",
+    )
+    read_set = reader.load(replace(query, strategy="oscillation"), fake.as_of)
+    bars = tuple(bar for bar in read_set.replay_bars if bar.bar.observation_eligible)
+    owner = read_set.owners[0]
+    authoritative = module.ComparatorOwnerSegment(
+        product=query.product,
+        physical_contract=owner.contract,
+        segment_id=bars[0].bar.segment_id,
+        start_trading_day=owner.start_trading_day,
+        end_trading_day=owner.end_trading_day,
+    )
+
+    assert isinstance(reader, NewowProductReader)
+    assert len(bars) == 20
+    assert len({bar.bar.source_identity for bar in bars}) == 1
+    result = module.compare_page_windows(
+        _identity(),
+        bars,
+        module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(authoritative,),
+        as_of=read_set.as_of,
+    )
+
+    assert result.status == "ready"
+    assert result.value.segments[0].source_bars.source_identities == (
+        bars[0].bar.source_identity,
+    )
+
+
+@pytest.mark.parametrize(
+    "conflicting, reason",
+    [
+        (False, "NEWOW_PAGE_COMPARATOR_DUPLICATE_FACT"),
+        (True, "NEWOW_PAGE_COMPARATOR_CONFLICTING_FACT"),
+    ],
+)
+def test_bar_fact_identity_distinguishes_duplicate_from_conflict(
+    conflicting: bool,
+    reason: str,
+) -> None:
+    module = _api()
+    bars = _constant_bars(20)
+    repeated = bars[9]
+    if conflicting:
+        repeated = replace(
+            repeated,
+            bar=replace(
+                repeated.bar,
+                open=Decimal("99"),
+                high=Decimal("110"),
+                low=Decimal("90"),
+                close=Decimal("99"),
+            ),
+        )
+    duplicated = bars[:10] + (repeated,) + bars[10:]
+
+    with pytest.raises(ValueError, match=reason):
+        module.compare_page_windows(
+            _identity(),
+            duplicated,
+            module.VerifiedPageComparatorEvidence(),
+            authoritative_segments=(_owner(module, bars),),
+            as_of=bars[-1].bar.bar_end,
+        )
+
+
+def test_segment_carries_actual_source_range_separate_from_owner_authority() -> None:
+    module = _api()
+    bars = _constant_bars(20)
+    owner = replace(
+        _owner(module, bars),
+        end_trading_day=bars[-1].bar.trading_day + timedelta(days=5),
+    )
+    as_of = bars[-1].bar.bar_end + timedelta(days=5)
+
+    result = module.compare_page_windows(
+        _identity(),
+        bars,
+        module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(owner,),
+        as_of=as_of,
+    )
+    segment = result.value.segments[0]
+
+    assert segment.authoritative_start_trading_day == owner.start_trading_day
+    assert segment.authoritative_end_trading_day == owner.end_trading_day
+    assert segment.source_bars.count == 20
+    assert segment.source_bars.first_trading_day == bars[0].bar.trading_day
+    assert segment.source_bars.last_trading_day == bars[-1].bar.trading_day
+    assert segment.source_bars.first_bar_end == bars[0].bar.bar_end
+    assert segment.source_bars.last_bar_end == bars[-1].bar.bar_end
+    assert segment.source_bars.source_identities == tuple(
+        bar.bar.source_identity for bar in bars
+    )
+    assert segment.as_of == as_of
+    assert segment.in_sample is True
+    assert segment.repainting is False
+    assert segment.repaint_status.status == "ready"
+    assert segment.repaint_status.evidence_status == "RESEARCH_EVIDENCE_ONLY"
+    assert segment.input_snapshot_status.status == "ready"
+    assert segment.input_snapshot_status.evidence_status == "ACTIVE_CODE_VERIFIED"
+    assert result.source_bars == (segment.source_bars,)
+
+
+def test_segment_rejects_source_range_outside_owner_and_as_of() -> None:
+    module = _api()
+    bars = _constant_bars(20)
+    owner = _owner(module, bars)
+    result = module.compare_page_windows(
+        _identity(),
+        bars,
+        module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(owner,),
+        as_of=bars[-1].bar.bar_end,
+    )
+    segment = result.value.segments[0]
+    invalid_source = replace(
+        segment.source_bars,
+        last_trading_day=owner.end_trading_day + timedelta(days=1),
+        last_bar_end=segment.as_of + timedelta(days=1),
+    )
+
+    with pytest.raises(
+        ValueError, match="NEWOW_PAGE_COMPARATOR_INVALID_SEGMENT_RESULT"
+    ):
+        replace(segment, source_bars=invalid_source)
+
+
+def test_public_price_return_and_score_facts_are_decimal() -> None:
+    module = _api()
+    bars = _constant_bars(20)
+
+    result = module.compare_page_windows(
+        _identity(),
+        bars,
+        module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(_owner(module, bars),),
+        as_of=bars[-1].bar.bar_end,
+    )
+
+    for row in result.value.segments[0].results:
+        for value in (
+            row.cumulative_return_pct,
+            row.max_drawdown_pct,
+            row.win_rate_pct,
+            row.score,
+        ):
+            assert isinstance(value, Decimal)
+        for trade in row.trades:
+            assert isinstance(trade.entry_price, Decimal)
+            assert isinstance(trade.exit_price, Decimal)
+            assert isinstance(trade.return_pct, Decimal)
+
+
 def test_latest_authoritative_segment_without_bars_never_falls_back() -> None:
     module = _api()
     old = _constant_bars(20)
@@ -363,6 +545,10 @@ def test_latest_authoritative_segment_without_bars_never_falls_back() -> None:
     assert result.value.default_segment_id == latest.segment_id
     assert result.value.segments[-1].status.status == "unavailable"
     assert result.value.segments[-1].results == ()
+    assert result.value.segments[-1].source_bars.count == 0
+    assert result.value.segments[-1].source_bars.first_bar_end is None
+    assert result.value.segments[-1].source_bars.last_bar_end is None
+    assert result.value.segments[-1].input_snapshot_status.status == "unavailable"
 
 
 @pytest.mark.parametrize(
@@ -462,6 +648,7 @@ def test_non_product_bar_input_fails_closed_with_comparator_reason() -> None:
             _identity(),
             (object(),),
             module.VerifiedPageComparatorEvidence(),
+            authoritative_segments=(),
             as_of=datetime(2026, 1, 1, tzinfo=UTC),
         )
 
@@ -507,53 +694,54 @@ def test_frozen_601_bar_source_oracle_matches_all_rows_and_rank() -> None:
         _identity(),
         bars,
         module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(_owner(module, bars),),
         as_of=bars[-1].bar.bar_end,
     )
     segment = result.value.segments[0]
     expected = {
         10: (
-            -9.663846482296469,
-            23.99066878401761,
+            Decimal("-9.663846482296469"),
+            Decimal("23.99066878401761"),
             20,
-            60.0,
+            Decimal("60.0"),
             False,
-            0.40184958751414296,
+            Decimal("0.40184958751414296"),
             ("-9.66", "23.99", "60.0"),
         ),
         20: (
-            2.114659740773029,
-            20.986247212469504,
+            Decimal("2.114659740773029"),
+            Decimal("20.986247212469504"),
             10,
-            60.0,
+            Decimal("60.0"),
             True,
-            0.8902002112871927,
+            Decimal("0.8902002112871927"),
             ("2.11", "20.99", "60.0"),
         ),
         24: (
-            2.667480521315004,
-            17.2293463440191,
+            Decimal("2.667480521315004"),
+            Decimal("17.2293463440191"),
             8,
-            50.0,
+            Decimal("50.0"),
             True,
-            1.0873125368652388,
+            Decimal("1.0873125368652388"),
             ("2.67", "17.23", "50.0"),
         ),
         30: (
-            -10.395065701222599,
-            24.00742566198754,
+            Decimal("-10.395065701222599"),
+            Decimal("24.00742566198754"),
             5,
-            40.0,
+            Decimal("40.0"),
             False,
-            0.377413892720182,
+            Decimal("0.377413892720182"),
             ("-10.40", "24.01", "40.0"),
         ),
         52: (
-            19.155879410269073,
-            22.04303356386306,
+            Decimal("19.155879410269073"),
+            Decimal("22.04303356386306"),
             5,
-            100.0,
+            Decimal("100.0"),
             False,
-            1.4086374942737225,
+            Decimal("1.4086374942737225"),
             ("19.16", "22.04", "100.0"),
         ),
     }
@@ -563,12 +751,12 @@ def test_frozen_601_bar_source_oracle_matches_all_rows_and_rank() -> None:
         cumulative, drawdown, trades, win_rate, forced, score, display = expected[
             row.window
         ]
-        assert row.cumulative_return_pct == pytest.approx(cumulative, abs=1e-12)
-        assert row.max_drawdown_pct == pytest.approx(drawdown, abs=1e-12)
+        assert row.cumulative_return_pct == cumulative
+        assert row.max_drawdown_pct == drawdown
         assert row.trade_count == trades
         assert row.win_rate_pct == win_rate
         assert row.force_closed_at_end is forced
-        assert row.score == pytest.approx(score, abs=1e-12)
+        assert row.score == score
         assert (
             row.page_display.cumulative_return_pct,
             row.page_display.max_drawdown_pct,
@@ -588,6 +776,7 @@ def test_comparator_terminal_valuation_does_not_close_reference(product_cases) -
         _identity(),
         bars,
         module.VerifiedPageComparatorEvidence(),
+        authoritative_segments=(_owner(module, bars),),
         as_of=bars[-1].bar.bar_end,
     )
     after = projector.project(case.replay, case.boundaries, case.as_of)

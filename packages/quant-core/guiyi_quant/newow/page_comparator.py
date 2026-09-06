@@ -59,6 +59,12 @@ def _to_fixed(number: float, digits: int) -> str:
     return f"{rounded:.{digits}f}"
 
 
+def _public_decimal(number: float) -> Decimal:
+    if not isfinite(number):
+        raise ValueError("NEWOW_PAGE_COMPARATOR_PAGE_NUMBER_OUT_OF_RANGE")
+    return Decimal(str(number))
+
+
 @dataclass(frozen=True, slots=True)
 class VerifiedPageComparatorEvidence:
     """Exact offline-source evidence; it does not certify browser rendering."""
@@ -112,10 +118,10 @@ class PageComparatorTrade:
     """One comparator-only close-to-close outcome, never a StrategyAction."""
 
     entry_bar_end: datetime
-    entry_price: float
+    entry_price: Decimal
     exit_bar_end: datetime
-    exit_price: float
-    return_pct: float
+    exit_price: Decimal
+    return_pct: Decimal
     won: bool
     synthetic_terminal: bool
 
@@ -124,7 +130,7 @@ class PageComparatorTrade:
         object.__setattr__(self, "exit_bar_end", utc_timestamp(self.exit_bar_end))
         if (
             not all(
-                isfinite(value)
+                isinstance(value, Decimal) and value.is_finite()
                 for value in (self.entry_price, self.exit_price, self.return_pct)
             )
             or self.entry_price <= 0
@@ -145,14 +151,14 @@ class PageComparatorDisplay:
 @dataclass(frozen=True, slots=True)
 class PageWindowComparison:
     window: int
-    cumulative_return_pct: float
-    max_drawdown_pct: float
+    cumulative_return_pct: Decimal
+    max_drawdown_pct: Decimal
     trade_count: int
     win_count: int
     loss_count: int
-    win_rate_pct: float
+    win_rate_pct: Decimal
     force_closed_at_end: bool
-    score: float
+    score: Decimal
     page_display: PageComparatorDisplay
     trades: tuple[PageComparatorTrade, ...]
 
@@ -164,7 +170,7 @@ class PageWindowComparison:
             or self.win_count < 0
             or self.loss_count < 0
             or not all(
-                isfinite(value)
+                isinstance(value, Decimal) and value.is_finite()
                 for value in (
                     self.cumulative_return_pct,
                     self.max_drawdown_pct,
@@ -181,23 +187,137 @@ class PageWindowComparison:
 
 
 @dataclass(frozen=True, slots=True)
+class PageComparatorSourceBars:
+    """Actual owner-local source range, separate from owner authority."""
+
+    count: int
+    first_trading_day: date | None
+    last_trading_day: date | None
+    first_bar_end: datetime | None
+    last_bar_end: datetime | None
+    source_identities: tuple[str, ...]
+    snapshot_kind: str = "guiyi_completed_owner_segment"
+    fact_identity_fields: tuple[str, ...] = (
+        "product",
+        "physical_contract",
+        "segment_id",
+        "frequency",
+        "bar_end",
+    )
+
+    def __post_init__(self) -> None:
+        sources = tuple(self.source_identities)
+        fields = tuple(self.fact_identity_fields)
+        if (
+            type(self.count) is not int
+            or self.count < 0
+            or len(set(sources)) != len(sources)
+            or self.snapshot_kind != "guiyi_completed_owner_segment"
+            or fields
+            != (
+                "product",
+                "physical_contract",
+                "segment_id",
+                "frequency",
+                "bar_end",
+            )
+        ):
+            raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_SOURCE_BARS")
+        for source in sources:
+            _text(source)
+        bounds = (
+            self.first_trading_day,
+            self.last_trading_day,
+            self.first_bar_end,
+            self.last_bar_end,
+        )
+        if self.count == 0:
+            if any(value is not None for value in bounds) or sources:
+                raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_SOURCE_BARS")
+        else:
+            if (
+                self.first_trading_day is None
+                or self.last_trading_day is None
+                or self.first_bar_end is None
+                or self.last_bar_end is None
+                or not sources
+            ):
+                raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_SOURCE_BARS")
+            _day(self.first_trading_day)
+            _day(self.last_trading_day)
+            first_end = utc_timestamp(self.first_bar_end)
+            last_end = utc_timestamp(self.last_bar_end)
+            if self.first_trading_day > self.last_trading_day or first_end > last_end:
+                raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_SOURCE_BARS")
+            object.__setattr__(self, "first_bar_end", first_end)
+            object.__setattr__(self, "last_bar_end", last_end)
+        object.__setattr__(self, "source_identities", sources)
+        object.__setattr__(self, "fact_identity_fields", fields)
+
+
+@dataclass(frozen=True, slots=True)
 class PageComparatorSegmentResult:
     physical_contract: str
     segment_id: str
     frequency: ProductFrequency
-    start_trading_day: date
-    end_trading_day: date
-    bar_count: int
+    authoritative_start_trading_day: date
+    authoritative_end_trading_day: date
+    source_bars: PageComparatorSourceBars
+    as_of: datetime
+    in_sample: bool
+    repainting: bool
+    repaint_status: FeatureStatus
+    input_snapshot_status: FeatureStatus
     status: FeatureStatus
     results: tuple[PageWindowComparison, ...]
     ranked_windows: tuple[int, ...]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.status, FeatureStatus) or self.bar_count < 0:
+        for value in (self.physical_contract, self.segment_id):
+            _text(value)
+        _day(self.authoritative_start_trading_day)
+        _day(self.authoritative_end_trading_day)
+        cutoff = utc_timestamp(self.as_of)
+        source = self.source_bars
+        if not isinstance(source, PageComparatorSourceBars):
+            raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_SEGMENT_RESULT")
+        source_outside_authority = source.count > 0 and (
+            source.first_trading_day is None
+            or source.last_trading_day is None
+            or source.last_bar_end is None
+            or source.first_trading_day < self.authoritative_start_trading_day
+            or source.last_trading_day > self.authoritative_end_trading_day
+            or source.last_bar_end > cutoff
+        )
+        expected_input_status = (
+            FeatureRuntimeStatus.READY
+            if source.count
+            else FeatureRuntimeStatus.UNAVAILABLE
+        )
+        if (
+            self.physical_contract != self.physical_contract.upper()
+            or self.authoritative_start_trading_day > self.authoritative_end_trading_day
+            or source_outside_authority
+            or self.in_sample is not True
+            or self.repainting is not False
+            or not isinstance(self.repaint_status, FeatureStatus)
+            or not isinstance(self.input_snapshot_status, FeatureStatus)
+            or not isinstance(self.status, FeatureStatus)
+            or self.repaint_status.status is not FeatureRuntimeStatus.READY
+            or self.repaint_status.evidence_status is not _RESEARCH
+            or self.input_snapshot_status.status is not expected_input_status
+            or self.input_snapshot_status.evidence_status
+            is not EvidenceStatus.ACTIVE_CODE_VERIFIED
+        ):
             raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_SEGMENT_RESULT")
         object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
+        object.__setattr__(self, "as_of", cutoff)
         object.__setattr__(self, "results", tuple(self.results))
         object.__setattr__(self, "ranked_windows", tuple(self.ranked_windows))
+
+    @property
+    def bar_count(self) -> int:
+        return self.source_bars.count
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +377,7 @@ class PageComparatorResult:
     reason_code: str | None
     as_of: datetime
     formula_versions: tuple[str, ...] = ()
+    source_bars: tuple[PageComparatorSourceBars, ...] = ()
     value: PageComparatorValue | None = None
 
     def __post_init__(self) -> None:
@@ -268,6 +389,15 @@ class PageComparatorResult:
         )
         object.__setattr__(self, "as_of", utc_timestamp(self.as_of))
         object.__setattr__(self, "formula_versions", tuple(self.formula_versions))
+        sources = tuple(self.source_bars)
+        if any(not isinstance(source, PageComparatorSourceBars) for source in sources):
+            raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_SOURCE_BARS")
+        if self.value is None:
+            if sources:
+                raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_SOURCE_BARS")
+        elif sources != tuple(segment.source_bars for segment in self.value.segments):
+            raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_SOURCE_BARS")
+        object.__setattr__(self, "source_bars", sources)
         if self.status is not FeatureRuntimeStatus.READY:
             _text(self.reason_code)
 
@@ -312,10 +442,10 @@ def _calculate_window(bars: tuple[ProductBar, ...], window: int) -> _CalculatedW
             trades.append(
                 PageComparatorTrade(
                     entry_bar_end=entry_bar_end,
-                    entry_price=entry_price,
+                    entry_price=_public_decimal(entry_price),
                     exit_bar_end=raw[index].bar_end,
-                    exit_price=closes[index],
-                    return_pct=value,
+                    exit_price=_public_decimal(closes[index]),
+                    return_pct=_public_decimal(value),
                     won=won,
                     synthetic_terminal=False,
                 )
@@ -347,10 +477,10 @@ def _calculate_window(bars: tuple[ProductBar, ...], window: int) -> _CalculatedW
         trades.append(
             PageComparatorTrade(
                 entry_bar_end=entry_bar_end,
-                entry_price=entry_price,
+                entry_price=_public_decimal(entry_price),
                 exit_bar_end=raw[-1].bar_end,
-                exit_price=closes[-1],
-                return_pct=value,
+                exit_price=_public_decimal(closes[-1]),
+                return_pct=_public_decimal(value),
                 won=won,
                 synthetic_terminal=True,
             )
@@ -373,23 +503,25 @@ def _score_windows(
     min_return = min(item.cumulative for item in calculated)
     min_drawdown = min(item.max_drawdown for item in calculated)
     results = []
+    scores: dict[int, float] = {}
     for item in calculated:
         trade_count = item.wins + item.losses
         win_rate = item.wins / trade_count * 100 if trade_count else 0.0
         score = (item.cumulative - min(0, max_return)) / max(
             1, max_return - min_return + 1
         ) + min_drawdown / max(1, item.max_drawdown or 1)
+        scores[item.window] = score
         results.append(
             PageWindowComparison(
                 window=item.window,
-                cumulative_return_pct=item.cumulative,
-                max_drawdown_pct=item.max_drawdown,
+                cumulative_return_pct=_public_decimal(item.cumulative),
+                max_drawdown_pct=_public_decimal(item.max_drawdown),
                 trade_count=trade_count,
                 win_count=item.wins,
                 loss_count=item.losses,
-                win_rate_pct=win_rate,
+                win_rate_pct=_public_decimal(win_rate),
                 force_closed_at_end=item.forced,
-                score=score,
+                score=_public_decimal(score),
                 page_display=PageComparatorDisplay(
                     cumulative_return_pct=_to_fixed(item.cumulative, 2),
                     max_drawdown_pct=_to_fixed(item.max_drawdown, 2),
@@ -403,37 +535,10 @@ def _score_windows(
         item.window
         for item in sorted(
             results,
-            key=lambda item: (-item.score, by_index[item.window]),
+            key=lambda item: (-scores[item.window], by_index[item.window]),
         )
     )
     return tuple(results), ranked
-
-
-def _infer_owners(bars: tuple[ProductBar, ...]) -> tuple[ComparatorOwnerSegment, ...]:
-    grouped: list[list[ProductBar]] = []
-    current: tuple[str, str] | None = None
-    seen: set[tuple[str, str]] = set()
-    for item in bars:
-        if not isinstance(item, ProductBar):
-            raise ValueError("NEWOW_PAGE_COMPARATOR_INPUT_IDENTITY_INVALID")
-        owner = (item.bar.physical_contract, item.bar.segment_id)
-        if owner != current:
-            if owner in seen:
-                raise ValueError("NEWOW_PAGE_COMPARATOR_INPUT_ORDER")
-            seen.add(owner)
-            grouped.append([])
-            current = owner
-        grouped[-1].append(item)
-    return tuple(
-        ComparatorOwnerSegment(
-            product=items[0].bar.product,
-            physical_contract=items[0].bar.physical_contract,
-            segment_id=items[0].bar.segment_id,
-            start_trading_day=items[0].bar.trading_day,
-            end_trading_day=items[-1].bar.trading_day,
-        )
-        for items in grouped
-    )
 
 
 def _validate_owners(
@@ -470,19 +575,35 @@ def _group_bars(
     grouped: list[list[ProductBar]] = [[] for _ in owners]
     prior_owner_index = -1
     previous_by_owner: dict[int, ProductBar] = {}
-    sources: set[str] = set()
+    facts: dict[tuple[str, str, str, ProductFrequency, datetime], ProductBar] = {}
     for item in bars:
+        if not isinstance(item, ProductBar):
+            raise ValueError("NEWOW_PAGE_COMPARATOR_INPUT_IDENTITY_INVALID")
         if (
-            not isinstance(item, ProductBar)
-            or item.bar.product != identity.product
+            item.bar.product != identity.product
             or item.frequency != identity.frequency
             or item.series_kind != identity.series_kind
             or item.bar.observation_eligible is not True
             or item.bar.completed is not True
             or item.bar.bar_end > as_of
-            or item.bar.source_identity in sources
         ):
             raise ValueError("NEWOW_PAGE_COMPARATOR_INPUT_IDENTITY_INVALID")
+        fact_identity = (
+            item.bar.product,
+            item.bar.physical_contract,
+            item.bar.segment_id,
+            item.frequency,
+            item.bar.bar_end,
+        )
+        prior_fact = facts.get(fact_identity)
+        if prior_fact is not None:
+            reason = (
+                "NEWOW_PAGE_COMPARATOR_DUPLICATE_FACT"
+                if prior_fact == item
+                else "NEWOW_PAGE_COMPARATOR_CONFLICTING_FACT"
+            )
+            raise ValueError(reason)
+        facts[fact_identity] = item
         key = (item.bar.physical_contract, item.bar.segment_id)
         owner_index = owner_indexes.get(key)
         if owner_index is None or owner_index < prior_owner_index:
@@ -512,7 +633,6 @@ def _group_bars(
             _finite_number(value)
         if type(item.bar.volume) is not int or item.bar.volume < 0:
             raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_VOLUME")
-        sources.add(item.bar.source_identity)
         grouped[owner_index].append(item)
         previous_by_owner[owner_index] = item
         prior_owner_index = owner_index
@@ -562,12 +682,29 @@ def _subfeatures() -> tuple[ComparatorSubfeature, ...]:
     )
 
 
+def _source_bar_facts(bars: tuple[ProductBar, ...]) -> PageComparatorSourceBars:
+    if not bars:
+        return PageComparatorSourceBars(0, None, None, None, None, ())
+    first = bars[0].bar
+    last = bars[-1].bar
+    return PageComparatorSourceBars(
+        count=len(bars),
+        first_trading_day=first.trading_day,
+        last_trading_day=last.trading_day,
+        first_bar_end=first.bar_end,
+        last_bar_end=last.bar_end,
+        source_identities=tuple(
+            dict.fromkeys(item.bar.source_identity for item in bars)
+        ),
+    )
+
+
 def compare_page_windows(
     identity: ProductIdentity,
     bars: tuple[ProductBar, ...],
     evidence: object | None,
     *,
-    authoritative_segments: tuple[ComparatorOwnerSegment, ...] | None = None,
+    authoritative_segments: tuple[ComparatorOwnerSegment, ...],
     as_of: datetime | None = None,
 ) -> PageComparatorResult:
     """Compare fixed windows per owner segment without producing trade authority."""
@@ -600,34 +737,45 @@ def compare_page_windows(
     if not isinstance(evidence, VerifiedPageComparatorEvidence):
         raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_EVIDENCE")
 
-    if authoritative_segments is None:
-        owners = _infer_owners(inputs)
-    else:
-        try:
-            owners = tuple(authoritative_segments)
-        except TypeError as error:
-            raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_OWNER") from error
+    try:
+        owners = tuple(authoritative_segments)
+    except TypeError as error:
+        raise ValueError("NEWOW_PAGE_COMPARATOR_INVALID_OWNER") from error
     _validate_owners(identity, owners)
     grouped = _group_bars(identity, inputs, owners, cutoff)
 
     segment_results = []
     for owner, owner_bars in zip(owners, grouped, strict=True):
+        source_bars = _source_bar_facts(owner_bars)
+        repaint_status = FeatureStatus(FeatureRuntimeStatus.READY, _RESEARCH)
+        input_snapshot_status = FeatureStatus(
+            FeatureRuntimeStatus.READY
+            if source_bars.count
+            else FeatureRuntimeStatus.UNAVAILABLE,
+            EvidenceStatus.ACTIVE_CODE_VERIFIED,
+            None if source_bars.count else "NEWOW_PAGE_COMPARATOR_NO_SOURCE_BARS",
+        )
         if len(owner_bars) < 20:
             segment_results.append(
                 PageComparatorSegmentResult(
-                    owner.physical_contract,
-                    owner.segment_id,
-                    identity.frequency,
-                    owner.start_trading_day,
-                    owner.end_trading_day,
-                    len(owner_bars),
-                    FeatureStatus(
+                    physical_contract=owner.physical_contract,
+                    segment_id=owner.segment_id,
+                    frequency=identity.frequency,
+                    authoritative_start_trading_day=owner.start_trading_day,
+                    authoritative_end_trading_day=owner.end_trading_day,
+                    source_bars=source_bars,
+                    as_of=cutoff,
+                    in_sample=True,
+                    repainting=False,
+                    repaint_status=repaint_status,
+                    input_snapshot_status=input_snapshot_status,
+                    status=FeatureStatus(
                         FeatureRuntimeStatus.UNAVAILABLE,
                         _RESEARCH,
                         "NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS",
                     ),
-                    (),
-                    (),
+                    results=(),
+                    ranked_windows=(),
                 )
             )
             continue
@@ -636,15 +784,20 @@ def compare_page_windows(
         )
         segment_results.append(
             PageComparatorSegmentResult(
-                owner.physical_contract,
-                owner.segment_id,
-                identity.frequency,
-                owner.start_trading_day,
-                owner.end_trading_day,
-                len(owner_bars),
-                FeatureStatus(FeatureRuntimeStatus.READY, _RESEARCH),
-                results,
-                ranked,
+                physical_contract=owner.physical_contract,
+                segment_id=owner.segment_id,
+                frequency=identity.frequency,
+                authoritative_start_trading_day=owner.start_trading_day,
+                authoritative_end_trading_day=owner.end_trading_day,
+                source_bars=source_bars,
+                as_of=cutoff,
+                in_sample=True,
+                repainting=False,
+                repaint_status=repaint_status,
+                input_snapshot_status=input_snapshot_status,
+                status=FeatureStatus(FeatureRuntimeStatus.READY, _RESEARCH),
+                results=results,
+                ranked_windows=ranked,
             )
         )
 
@@ -685,5 +838,6 @@ def compare_page_windows(
             PAGE_COMPARATOR_FORMULA_VERSION,
             FUTURES_SEGMENT_ADAPTER_VERSION,
         ),
+        source_bars=tuple(segment.source_bars for segment in segments),
         value=value,
     )
