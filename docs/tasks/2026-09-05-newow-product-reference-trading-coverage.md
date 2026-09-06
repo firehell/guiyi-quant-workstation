@@ -79,6 +79,8 @@
 
 P3 已通过 PR #349 集成到 `develop@c9d297b8318c1d4bdcfbfc1b4e2e46b55956e26c`；P2 为 PR #348。当前 P4 消费入口为 `product_query.py`、`product_reader.py`、`product_adapters.py`、`reference_trades.py`、`reference_statistics.py`、`product_auxiliary.py`、`context_alignment.py`、`target_absorb_display.py`、`composite_explanation.py`、`page_comparator.py`。
 
-P4 新增待验证入口为 `product_service.py`、`source_facts.py`、`snapshot_cache.py`、独立产品 schema 和同一路由 `/strategy-detail`。目标/吸筹的昨收来源/调用时机、原页面期货 owner parity、browser-final K线/DOM/tie golden、AI copy、稳定诊断 token 与六组合 oracle 仍是具体外部证据缺口；它们阻塞对应精确子功能或 P6 完整复刻声明，不阻塞 P4 对缺口的准确降级。
+P4 当前候选已实现并定向验证 `product_service.py`、`product_reader.py`、`source_facts.py`、`snapshot_cache.py`、`resource_gate.py`、独立产品 schema 和同一路由 `/strategy-detail`：五个 section 按请求单独计算，reference 的权威 cutoff 与 viewport 分离，服务端只从已读 Bar/replay 构造来源事实，快照 token、游标、修订冲突和资源超限均有分类错误。目标/吸筹的昨收来源/调用时机、原页面期货 owner parity、browser-final K线/DOM/tie golden、AI copy、稳定诊断 token 与六组合 oracle 仍是具体外部证据缺口；它们阻塞对应精确子功能或 P6 完整复刻声明，不阻塞 P4 对缺口的准确降级。
+
+P4 候选的局部实现提交为 `098a6b15c`（section 编排）、`7ba332325`（typed read-only API）和 `c96430dc0`（缓存/资源/来源收口与已测 Hint 索引优化）。当前有效的影响范围证据为：P2/P3/P4/旧 D1 相关 pytest `474 passed, 1 skipped`，修改源定向 mypy clean，修改文件 ruff clean；隔离 fake MDS 的 4001 根 60m、30 次冷/30 次已验证热样本为 cold P95 `155.567ms`、validated-cache P95 `38.269ms`，8001 根单次 `287.740ms`、序列化响应 `288923 bytes`、RSS high-water `209125376 bytes`。该性能证据只覆盖后端 fake-MDS 阶段，不是浏览器、真实 MDS 或真实工作站验收；最终候选若相关源码/fixture变化必须使相应证据失效并补跑。
 
 P4 集成不授权 P5 Web、P6 全项目验收、真实工作站性能、RQData/Canonical/DB/Redis 写入、Runtime、通知、main/tag/release 或交易操作。
