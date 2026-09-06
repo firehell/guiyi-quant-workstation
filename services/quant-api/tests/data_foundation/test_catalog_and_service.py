@@ -143,6 +143,24 @@ def test_catalog_contract_fact_rejects_unknown_contract(session, tmp_path) -> No
         MarketCatalog(session, tmp_path).contract_fact("jm", "JM2509")
 
 
+def test_as_of_calendar_seam_maps_real_catalog_error_to_mds_contract(
+    session, tmp_path
+) -> None:
+    """A caller never needs to classify raw CatalogError at the as-of boundary."""
+    service = MarketDataService(
+        MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path)
+    )
+
+    with pytest.raises(MarketDataError) as raised:
+        service.trading_days_overlapping_window(
+            symbol="cu",
+            start=datetime(2025, 1, 2, tzinfo=UTC),
+            end=datetime(2025, 1, 3, tzinfo=UTC),
+        )
+
+    assert raised.value.code == "INSTRUMENT_EXCHANGE_MISSING"
+
+
 @pytest.mark.parametrize(
     ("symbol", "provider", "listed_date", "expired_date", "error_code"),
     [

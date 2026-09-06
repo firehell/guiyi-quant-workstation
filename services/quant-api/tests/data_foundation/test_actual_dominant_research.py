@@ -410,6 +410,33 @@ def test_loader_rejects_duplicate_frequencies_before_any_market_read() -> None:
     assert market_data.queries == []
 
 
+@pytest.mark.parametrize("frequency", (BarFrequency.D1, BarFrequency.H1))
+def test_loader_rejects_nonweekly_empty_exception_before_owner_or_market_read(
+    frequency: BarFrequency,
+) -> None:
+    """Only the documented W1 exception may be requested at this shared boundary."""
+    market_data = _WindowAwareMarketData(
+        probe={},
+        full={},
+        true_segments=(),
+    )
+
+    with pytest.raises(
+        ActualDominantResearchSegmentIdentityError,
+        match="rank1 empty-frequency identity is invalid",
+    ):
+        ActualDominantResearchSegmentLoader(market_data).load(
+            symbol="jm",
+            frequencies=(frequency,),
+            since=_DAY_ONE,
+            through=_DAY_TWO,
+            allow_empty_frequencies=(frequency,),
+        )
+
+    assert market_data.authoritative_requests == []
+    assert market_data.queries == []
+
+
 class _UnavailableMarketData:
     def actual_dominant_segments(
         self,
