@@ -165,6 +165,35 @@ pnpm -C apps/quant-web exec node --test \
 
 ## Web
 
+Newow P5 路由/偏好、typed section consumer、九组合图层、参考历史与解释面板定向回归：
+
+```bash
+pnpm -C apps/quant-web exec node --test \
+  tests/newowProductRoutes.test.ts \
+  tests/marketDetailRoute.test.ts \
+  tests/marketDetailPreferences.test.ts \
+  tests/marketHomeRoute.test.ts \
+  tests/marketHomePageRoute.test.ts \
+  tests/marketHomeResource.test.ts \
+  tests/MarketDetailPage.test.ts \
+  tests/newowProductTypes.test.ts \
+  tests/useNewowProduct.test.ts \
+  tests/NewowProductChartStage.test.ts \
+  tests/newowProductChartPrimitives.test.ts \
+  tests/newowReferencePanel.test.ts \
+  tests/newowExplanationPanel.test.ts \
+  tests/NewowTrendChartStage.test.ts \
+  tests/marketDetailController.test.ts \
+  tests/marketDetailMarkers.test.ts \
+  tests/marketChartEntry.test.ts \
+  tests/marketDetailShellComponents.test.ts
+pnpm --dir apps/quant-web run check:alert-rules
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web build
+```
+
+P5 浏览器 smoke 使用临时 route-intercept fixture 和 Playwright CLI，逐项检查九个 strategy×frequency 组合、409 单次恢复、429 不循环重试、参考分页/精确信号定位、解释 evidence-required，以及桌面和 `390×844` 移动视口。该手工 smoke 不创建 P6 `apps/quant-web/e2e/newow-product*.mjs`，不替代 P6、真实 MDS、真实工作站性能或页面原站 parity 验收。
+
 SuBing Alert Rule/API/Event-backed `S↑/S↓` 与 Market Home 定向检查：
 
 ```bash
