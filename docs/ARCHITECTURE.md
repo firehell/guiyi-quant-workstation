@@ -18,14 +18,15 @@ flowchart LR
   ACTIVE --> DCLI[data CLI<br/>update / refresh / contract warmup]
   MDS --> MARKET
   MDS --> IND[generic EMA / MACD / ATR / Range]
-  MDS -. accepted, implementation pending .-> NREAD[Newow completed multi-period reader<br/>actual_dominant owner segments]
-  NREAD -.-> NADAPT[Trend / Oscillation / Main-rise adapters<br/>Action + Hint]
-  NREAD -.-> NEXPLAIN[Newow explanation<br/>as-of + evidence state]
-  NADAPT -.-> NREF[ReferenceTradeProjector<br/>pure Decimal projection]
-  NADAPT -.-> NAPI[read-only Newow API]
-  NEXPLAIN -.-> NAPI
-  NREF -.-> NAPI
-  NAPI -.-> WEB
+  MDS --> NREAD[Newow completed multi-period reader<br/>actual_dominant owner segments]
+  NREAD --> NADAPT[Trend / Oscillation / Main-rise adapters<br/>Action + Hint]
+  NREAD --> NEXPLAIN[Newow explanation<br/>as-of + evidence state]
+  NADAPT --> NREF[ReferenceTradeProjector<br/>pure Decimal projection]
+  NADAPT --> NSVC[sectioned Newow product service<br/>snapshot + bounded heavy gate]
+  NEXPLAIN --> NSVC
+  NREF --> NSVC
+  NSVC --> NAPI[read-only Newow strategy-detail API]
+  NAPI -. P5 consumer pending .-> WEB
   MDS --> HOME[MarketHomeOverviewService]
   HOME --> PROJ[Market Home derived projection<br/>Canonical root/.derived]
   PROJ --> MARKET
@@ -60,7 +61,7 @@ flowchart LR
 
 - `MarketDataService` 是唯一 Historical Bar reader；`actual_dominant` 只通过 `MainContractMap rank=1` 解析，identity、coverage 或物理可读性异常 fail-closed。
 - Web 只消费 typed Market/Alert API，不计算策略、建仓或清仓。
-- Newow 已接受、尚待实现的依赖路径在图中以虚线表示；它不声明当前代码、Release 或 Runtime 已具备该能力。实现 MUST 在 `MarketDataService` 之后以独立 completed `1w/1d/60m` reader 取得物理 owner 区段和同合约 warm-up，再由趋势、震荡、主升浪 typed adapter 输出主状态、`BUILD/CLEAR` Action 与 `quantity_effect=none` Hint；不得在浏览器聚合、猜 owner、继承跨合约递归状态或复制公式。
+- Newow P1–P4 active 后端路径在图中以实线表示：`MarketDataService` 后的 completed `1w/1d/60m` reader 取得物理 owner 区段和同合约 warm-up，typed adapter 输出主状态、`BUILD/CLEAR` Action 与 `quantity_effect=none` Hint，sectioned product service 负责统计截止、来源事实、snapshot/cursor 验证、有限进程内复用和有界重型执行，`GET /api/v1/market/newow/strategy-detail` 只做 typed 序列化。到 Newow Web 的虚线仍表示 P5 消费尚未实现；这些代码事实不等于 Release、Runtime、OOS 或真实工作站验收。
 - `ReferenceTradeProjector` 是无网络、无 DB、无 Redis 的纯 Decimal 投影，只按同策略、周期、物理合约、区段及版本精确配对主动作。它输出 OPEN/CLOSED/ROLLOVER_INTERRUPTED、明确统计窗口和乐观摘要，不创建或代表 Position、Order、Account、Execution、Fill、AlertEvent、PnL 或 Ledger。
 - Newow 解释层显式携带各输入周期 `bar_end`、请求 `as_of`、规则身份和证据状态；解释与 Hint 不得反向改变主动作。照妖镜重绘图层、五窗口页面比较器及其样本末理论平仓与 ReferenceTrade authority 隔离。
 - `/market/chart?view=newow` 提供趋势、震荡、主升浪 × `1w/1d/60m`；既有 `view=trend` 与 `GET /api/v1/market/newow/trend-detail` 保持固定 `actual_dominant + 1d` 兼容语义，并可经薄适配复用同一趋势公式，不保留第二套算法。HTDY、SuBing 与 Free 的读取和 Marker authority 不变。
