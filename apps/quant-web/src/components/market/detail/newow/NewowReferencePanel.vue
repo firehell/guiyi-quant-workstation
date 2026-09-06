@@ -72,7 +72,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
     <header class="newow-reference__header">
       <div>
         <h3 id="newow-reference-title">单品种乐观参考历史</h3>
-        <p>固定乐观口径：只表达 long/flat；建仓与清仓采用同 Bar Close 或 API 参考价；零手续费、零滑点。不推断手数、不推断空单、不推断账户净值或真实收益；非因果回测、非模拟账户、非真实成交。</p>
+        <p>Reference 固定乐观口径：只表达 long/flat；使用趋势 B、震荡 Low/High、主升浪 MA45 的 API reference_price；零手续费、零滑点；不计资金占用与真实成交限制；不推断手数、不推断空单、不推断账户净值、不推断真实收益。Reference 非因果回测、非模拟账户、非真实成交，不使用同 Bar Close；同 Bar Close 仅属于独立 comparator。</p>
       </div>
       <form class="newow-reference__window" @submit.prevent="reload">
         <label>统计起点 <input :value="performanceSince" type="date" @input="updateSince" /></label>

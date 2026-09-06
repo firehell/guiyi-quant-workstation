@@ -169,9 +169,11 @@ test('reference panel keeps the server summary while native controls filter, exp
   assert.match(nodeText(summary), /胜率\s*—/)
   assert.match(nodeText(summary), /简单相加/)
   const fullText = nodeText(root)
-  for (const phrase of ['long/flat', '同 Bar Close', 'API 参考价', '零手续费', '零滑点', '不推断手数', '不推断空单', '不推断账户净值', '非因果回测', '非模拟账户', '非真实成交']) {
+  for (const phrase of ['long/flat', '趋势 B', '震荡 Low/High', '主升浪 MA45', 'API reference_price', '零手续费', '零滑点', '不计资金占用与真实成交限制', '不推断手数', '不推断空单', '不推断账户净值', '不推断真实收益', '非因果回测', '非模拟账户', '非真实成交']) {
     assert.match(fullText, new RegExp(phrase))
   }
+  assert.match(fullText, /同 Bar Close 仅属于独立 comparator/)
+  assert.doesNotMatch(fullText, /Reference[^。]*采用同 Bar Close/)
   const expand = findNode(root, (node) => node.props['aria-label'] === '展开参考记录 open')!
   assert.equal(expand.type, 'button')
   assert.equal(expand.props['aria-expanded'], false)
