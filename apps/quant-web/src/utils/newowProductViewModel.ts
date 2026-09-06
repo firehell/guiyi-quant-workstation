@@ -33,7 +33,8 @@ export function buildNewowProductSectionViewModel(input: {
   }
 }
 
-export type NewowReferenceCategory = 'closed' | 'open' | 'interrupted' | 'initial'
+export type NewowReferenceCategory = 'closed' | 'open' | 'interrupted'
+export type NewowReferenceFilter = 'all' | NewowReferenceCategory | 'initial'
 
 export interface NewowReferenceHintViewModel {
   readonly id: string
@@ -46,6 +47,8 @@ export interface NewowReferenceRowViewModel {
   readonly id: string
   readonly trade: NewowReferenceTrade
   readonly category: NewowReferenceCategory
+  readonly initial: boolean
+  readonly lifecycle: NewowReferenceTrade['status']
   readonly statusText: string
   readonly returnText: string
   readonly valuationText: string
@@ -79,16 +82,17 @@ export interface NewowReferencePanelViewModel {
 export function buildNewowReferencePanelViewModel(
   response: NewowProductSectionResponse<'reference'>,
   chart: NewowProductSectionResponse<'chart'> | null,
+  crossSectionCompatible = false,
 ): NewowReferencePanelViewModel {
   if (response.value === null) throw new Error('Newow reference value is unavailable')
   const value = response.value
-  const loadedHints = new Map((chart?.value?.hints ?? []).map((hint) => [hint.hint_id, hint]))
+  const loadedHints = new Map((crossSectionCompatible ? chart?.value?.hints ?? [] : []).map((hint) => [hint.hint_id, hint]))
   return {
     summary: {
       closedCount: value.summary.closed_count,
       winRateText: percentageText(value.summary.win_rate_pct),
       meanText: percentageText(value.summary.mean_return_pct),
-      sumText: percentageText(value.summary.sum_return_percentage_points),
+      sumText: formatDecimalString(value.summary.sum_return_percentage_points),
       sumUnit: '百分点（简单相加）',
     },
     counts: {
@@ -102,17 +106,17 @@ export function buildNewowReferencePanelViewModel(
       cutoff: value.reference_cutoff,
     },
     actualAvailableThrough: value.actual_available_through,
-    rows: value.items.map((trade) => referenceRow(trade, loadedHints)),
+    rows: value.items.map((trade) => referenceRow(trade, loadedHints, crossSectionCompatible)),
     nextBefore: value.next_before,
   }
 }
 
 export function filterNewowReferenceRows(
   model: NewowReferencePanelViewModel,
-  filter: 'all' | NewowReferenceCategory | string,
+  filter: NewowReferenceFilter,
 ): NewowReferencePanelViewModel {
   if (filter === 'all') return model
-  return { ...model, rows: model.rows.filter((row) => row.category === filter) }
+  return { ...model, rows: model.rows.filter((row) => filter === 'initial' ? row.initial : row.category === filter) }
 }
 
 export type NewowReferenceLocate =
@@ -124,9 +128,11 @@ export type NewowReferenceLocate =
 export function resolveNewowReferenceLocate(
   trade: NewowReferenceTrade,
   chart: NewowProductSectionResponse<'chart'> | null,
+  crossSectionCompatible = false,
 ): NewowReferenceLocate {
   const signalId = trade.entry_signal_id
   const barEnd = trade.entry_bar_end
+  if (!crossSectionCompatible) return { kind: 'unavailable', signalId, barEnd }
   const exact = chart?.value?.actions.some((action) => action.signal_id === signalId && action.bar_end === barEnd) ?? false
   if (exact) return { kind: 'loaded', signalId, barEnd }
   const targetBarLoaded = chart?.value?.bars.some((bar) => bar.bar_end === barEnd) ?? false
@@ -164,6 +170,11 @@ export interface NewowExplanationPanelViewModel {
     readonly evidenceReason: string
   }
   readonly targetReason: string
+  readonly evidenceGaps: ReadonlyArray<{
+    readonly area: 'composite' | 'target_absorb'
+    readonly name: string
+    readonly reason: string
+  }>
 }
 
 /** Projects source-bound explanation facts and keeps unavailable evidence explicit. */
@@ -173,6 +184,39 @@ export function buildNewowExplanationPanelViewModel(
   if (response.value === null) throw new Error('Newow explanation value is unavailable')
   const value = response.value
   const composite = value.composite.value
+  const evidenceGaps: NewowExplanationPanelViewModel['evidenceGaps'][number][] = []
+  if (value.composite.status !== 'ready' || value.composite.reason_code !== null) {
+    evidenceGaps.push({
+      area: 'composite',
+      name: 'composite',
+      reason: value.composite.reason_code ?? 'EVIDENCE_UNAVAILABLE',
+    })
+  }
+  for (const subfeature of composite?.subfeatures ?? []) {
+    if (subfeature.status.status !== 'ready' || subfeature.status.reason_code !== null) {
+      evidenceGaps.push({
+        area: 'composite',
+        name: subfeature.name,
+        reason: subfeature.status.reason_code ?? 'EVIDENCE_UNAVAILABLE',
+      })
+    }
+  }
+  if (value.target_absorb.status !== 'ready' || value.target_absorb.reason_code !== null) {
+    evidenceGaps.push({
+      area: 'target_absorb',
+      name: 'target_absorb',
+      reason: value.target_absorb.reason_code ?? 'EVIDENCE_UNAVAILABLE',
+    })
+  }
+  for (const subfeature of value.target_absorb.value?.subfeatures ?? []) {
+    if (subfeature.status.status !== 'ready' || subfeature.status.reason_code !== null) {
+      evidenceGaps.push({
+        area: 'target_absorb',
+        name: subfeature.name,
+        reason: subfeature.status.reason_code ?? 'EVIDENCE_UNAVAILABLE',
+      })
+    }
+  }
   return {
     contextAsOf: value.context.as_of,
     contextRows: [value.context.weekly, value.context.daily, value.context.hourly].map((slot) => ({
@@ -199,14 +243,17 @@ export function buildNewowExplanationPanelViewModel(
         : `${formatDecimalString(composite.volatility.value_pct)}% · ${composite.volatility.level} · ${composite.volatility.is_wilder_atr ? 'Wilder ATR' : '非 Wilder ATR'}`,
       firstActionToken: composite?.first_action.rule_token ?? '—',
       firstActionDetail: composite?.first_action.page_detail ?? '—',
-      evidenceReason: composite === null ? value.composite.reason_code ?? 'EVIDENCE_UNAVAILABLE' : '—',
+      evidenceReason: value.composite.reason_code ?? (composite === null ? 'EVIDENCE_UNAVAILABLE' : '—'),
     },
-    targetReason: value.target_absorb.value === null ? value.target_absorb.reason_code ?? 'EVIDENCE_UNAVAILABLE' : '—',
+    targetReason: value.target_absorb.reason_code ?? (value.target_absorb.value === null ? 'EVIDENCE_UNAVAILABLE' : '—'),
+    evidenceGaps,
   }
 }
 
 export interface NewowComparatorPanelViewModel {
   readonly label: '五窗口页面比较器（独立理论结果）'
+  readonly physicalContract: string
+  readonly segmentId: string
   readonly windows: ReadonlyArray<{
     readonly window: number
     readonly returnText: string
@@ -225,10 +272,19 @@ export function buildNewowComparatorPanelViewModel(
 ): NewowComparatorPanelViewModel {
   const result = response.value?.result ?? null
   const value = result?.value ?? null
-  const byWindow = new Map(value?.segments.flatMap((segment) => segment.results).map((item) => [item.window, item]) ?? [])
+  const selectedSegments = value === null || value.default_segment_id === null
+    ? []
+    : value.segments.filter((segment) => segment.segment_id === value.default_segment_id)
+  if (value !== null && (selectedSegments.length !== 1 || selectedSegments[0]!.physical_contract.trim() === '')) {
+    throw new Error('NEWOW_COMPARATOR_DEFAULT_SEGMENT_CONFLICT')
+  }
+  const selectedSegment = selectedSegments[0] ?? null
+  const byWindow = new Map(selectedSegment?.results.map((item) => [item.window, item]) ?? [])
   const candidateWindows = value?.candidate_windows ?? []
   return {
     label: '五窗口页面比较器（独立理论结果）',
+    physicalContract: selectedSegment?.physical_contract ?? '—',
+    segmentId: selectedSegment?.segment_id ?? '—',
     windows: candidateWindows.map((window) => {
       const item = byWindow.get(window)
       return {
@@ -252,73 +308,108 @@ export interface NewowPanelRenderState {
 }
 
 export function resolveNewowPanelRenderState(
-  lifecycle: NewowResourceLifecycle | string,
-  response: Pick<NewowProductSectionResponse, 'meta'> | null,
+  lifecycle: NewowResourceLifecycle,
+  response: Pick<NewowProductSectionResponse, 'meta' | 'status'> | Pick<NewowProductSectionResponse, 'meta'> | null,
   error: string | null,
 ): NewowPanelRenderState {
-  if (lifecycle === 'stale' && response !== null) return {
-    showValue: true,
-    message: `刷新失败${error === null ? '' : `（${error}）`}；以下为同一身份上次成功的 stale 数值。`,
-    staleAt: response.meta.read_at,
-  }
-  if (lifecycle === 'loading') return {
-    showValue: response !== null,
-    message: response === null ? '正在加载…' : '正在刷新；以下为同一身份上次成功的数值。',
-    staleAt: null,
-  }
-  if (lifecycle === 'ready' || lifecycle === 'warming' || lifecycle === 'evidence_required') return {
-    showValue: response !== null,
-    message: lifecycle === 'ready' ? '' : `当前资源状态：${lifecycle}。`,
-    staleAt: null,
-  }
-  if (lifecycle === 'not_requested') return { showValue: false, message: '尚未请求。', staleAt: null }
-  if (lifecycle === 'input_conflict') return {
-    showValue: false,
-    message: `DATA_CONFLICT${error === null ? '' : `（${error}）`}：冲突事实已清空，不能继续展示旧数值。`,
-    staleAt: null,
-  }
-  return {
-    showValue: false,
-    message: `加载失败${error === null ? '' : `（${error}）`}，没有可显示的已验证数值。`,
-    staleAt: null,
+  const responseReason = response !== null && 'status' in response ? response.status.reason_code : null
+  const reason = error ?? responseReason
+  switch (lifecycle) {
+    case 'stale':
+      return response === null
+        ? failedPanelState(reason)
+        : {
+            showValue: true,
+            message: `刷新失败${reason === null ? '' : `（${reason}）`}；以下为同一身份上次成功的 stale 数值。`,
+            staleAt: response.meta.read_at,
+          }
+    case 'loading':
+      return {
+        showValue: response !== null,
+        message: response === null ? '正在加载…' : '正在刷新；以下为同一身份上次成功的数值。',
+        staleAt: null,
+      }
+    case 'ready':
+    case 'warming':
+    case 'evidence_required':
+      return {
+        showValue: response !== null,
+        message: lifecycle === 'ready' ? '' : `当前资源状态：${lifecycle}${reason === null ? '' : `（${reason}）`}。`,
+        staleAt: null,
+      }
+    case 'not_requested':
+      return { showValue: false, message: '尚未请求。', staleAt: null }
+    case 'input_conflict':
+      return {
+        showValue: false,
+        message: `DATA_CONFLICT${reason === null ? '' : `（${reason}）`}：冲突事实已清空，不能继续展示旧数值。`,
+        staleAt: null,
+      }
+    case 'not_applicable':
+      return {
+        showValue: false,
+        message: `当前功能不适用${reason === null ? '' : `（${reason}）`}。`,
+        staleAt: null,
+      }
+    case 'unavailable':
+    case 'busy':
+    case 'cancelled':
+      return failedPanelState(reason)
+    default:
+      return assertNever(lifecycle)
   }
 }
 
 function referenceRow(
   trade: NewowReferenceTrade,
   loadedHints: ReadonlyMap<string, NewowProductHint>,
+  crossSectionCompatible: boolean,
 ): NewowReferenceRowViewModel {
   const initial = trade.statistics_membership === 'initial_before_window'
-  const category: NewowReferenceCategory = initial
-    ? 'initial'
-    : trade.status === 'CLOSED'
+  const category: NewowReferenceCategory = trade.status === 'CLOSED'
       ? 'closed'
       : trade.status === 'OPEN'
         ? 'open'
         : 'interrupted'
-  const percentage = initial
-    ? percentageText(trade.reference_return_pct, '（期初已有，不计入窗口统计）')
-    : trade.status === 'CLOSED'
-      ? percentageText(trade.reference_return_pct)
+  const initialSuffix = initial ? '；期初已有，不计入窗口统计' : ''
+  const percentage = trade.status === 'CLOSED'
+      ? percentageText(trade.reference_return_pct, initial ? '（期初已有，不计入窗口统计）' : '')
       : trade.status === 'ROLLOVER_INTERRUPTED'
-        ? percentageText(trade.mark_change_pct, '（中断浮动）')
-        : percentageText(trade.mark_change_pct, '（当前浮动）')
+        ? percentageText(trade.mark_change_pct, `（中断浮动${initialSuffix}）`)
+        : percentageText(trade.mark_change_pct, `（当前浮动${initialSuffix}）`)
   return {
     id: trade.reference_trade_id,
     trade,
     category,
-    statusText: initial ? '期初已有' : trade.status,
+    initial,
+    lifecycle: trade.status,
+    statusText: `${trade.status}${initial ? ' · 期初已有' : ''}`,
     returnText: percentage,
     valuationText: trade.mark_bar_end === null || trade.mark_reference_price === null
       ? `不可用${trade.interruption_reason === null ? '' : `（${trade.interruption_reason}）`}`
       : `${trade.mark_bar_end} · ${trade.mark_reference_price}`,
     hints: trade.hint_ids.map((id) => {
       const fact = loadedHints.get(id) ?? null
+      if (!crossSectionCompatible) {
+        return { id, availability: 'unavailable' as const, text: 'Reference 与 Chart 没有共同快照证明，不能跨区关联 Hint。', fact: null }
+      }
       return fact === null
         ? { id, availability: 'unavailable', text: '未在已加载图表事实中找到，不能按邻近日期或当前上下文推断。', fact }
-        : { id, availability: 'loaded', text: `${fact.kind} · ${fact.bar_end} · 同 Bar 提示（顺序未推断）`, fact }
+        : { id, availability: 'loaded', text: `${fact.kind} · ${fact.bar_end} · 关联 Hint（不推断与主动作的同 Bar 顺序）`, fact }
     }),
   }
+}
+
+function failedPanelState(reason: string | null): NewowPanelRenderState {
+  return {
+    showValue: false,
+    message: `加载失败${reason === null ? '' : `（${reason}）`}，没有可显示的已验证数值。`,
+    staleAt: null,
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected Newow resource lifecycle: ${String(value)}`)
 }
 
 function percentageText(value: string | null, suffix = ''): string {

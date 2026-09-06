@@ -16,6 +16,7 @@ import {
 const props = defineProps<{
   response: NewowProductSectionResponse<'reference'> | null
   chartResponse: NewowProductSectionResponse<'chart'> | null
+  crossSectionCompatible: boolean
   lifecycle: NewowResourceLifecycle
   error: string | null
   selectedSignalId: string | null
@@ -28,20 +29,24 @@ const emit = defineEmits<{
   locate: [trade: NewowReferenceTrade]
 }>()
 
-const filter = ref<'all' | NewowReferenceCategory>('all')
+const filter = ref<'all' | NewowReferenceCategory | 'initial'>('all')
 const expanded = ref<readonly string[]>([])
 const performanceSince = ref('')
 const performanceThrough = ref('')
 const presentation = computed(() => resolveNewowPanelRenderState(props.lifecycle, props.response, props.error))
 const model = computed(() => (
   presentation.value.showValue && props.response?.value
-    ? buildNewowReferencePanelViewModel(props.response, props.chartResponse)
+    ? buildNewowReferencePanelViewModel(props.response, props.chartResponse, props.crossSectionCompatible)
     : null
 ))
 const visibleModel = computed(() => model.value === null ? null : filterNewowReferenceRows(model.value, filter.value))
 
 watch(() => props.response?.value, (value) => {
-  if (value === null || value === undefined) return
+  if (value === null || value === undefined) {
+    performanceSince.value = ''
+    performanceThrough.value = ''
+    return
+  }
   performanceSince.value = value.performance_since
   performanceThrough.value = value.performance_through
 }, { immediate: true })
@@ -67,7 +72,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
     <header class="newow-reference__header">
       <div>
         <h3 id="newow-reference-title">单品种乐观参考历史</h3>
-        <p>牛哇式乐观参考：按策略参考价计算，未计手续费、滑点、资金占用与真实成交限制；非模拟账户或实盘收益。</p>
+        <p>固定乐观口径：只表达 long/flat；建仓与清仓采用同 Bar Close 或 API 参考价；零手续费、零滑点。不推断手数、不推断空单、不推断账户净值或真实收益；非因果回测、非模拟账户、非真实成交。</p>
       </div>
       <form class="newow-reference__window" @submit.prevent="reload">
         <label>统计起点 <input :value="performanceSince" type="date" @input="updateSince" /></label>
@@ -118,7 +123,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
           </thead>
           <tbody>
             <template v-for="row in visibleModel?.rows ?? []" :key="row.id">
-              <tr :data-reference-category="row.category" :data-selected="selectedSignalId === row.trade.entry_signal_id">
+              <tr :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id">
                 <td><code>{{ row.id }}</code></td>
                 <td>{{ row.trade.strategy_code }} / {{ row.trade.frequency }}<br /><small>{{ row.trade.formula_versions.join(' / ') }}</small></td>
                 <td>{{ row.trade.physical_contract }}<br /><small>{{ row.trade.segment_id }}</small></td>

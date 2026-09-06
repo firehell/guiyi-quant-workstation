@@ -37,9 +37,12 @@ interface ExplanationModel {
     readonly firstActionDetail: string
     readonly evidenceReason: string
   }
+  readonly evidenceGaps: readonly Array<{ readonly area: string; readonly name: string; readonly reason: string }>
 }
 interface ComparatorModel {
   readonly label: string
+  readonly physicalContract: string
+  readonly segmentId: string
   readonly windows: readonly Array<{ readonly window: number; readonly returnText: string; readonly syntheticTerminal: boolean }>
   readonly syntheticTerminalIsReferenceExit: false
   readonly disclosure: string
@@ -62,6 +65,10 @@ test('explanation projects rule, source time, exposure, scores, ATR and first ac
     positionRange: '30%-50%', direction: 'LONG_BIAS', directionPoints: '2', certainty: '7',
     volatility: '1.2500% · medium · 非 Wilder ATR', firstActionToken: 'WAIT_CONFIRM', firstActionDetail: '等待已完成周期确认', evidenceReason: '—',
   })
+  assert.deepEqual(model.evidenceGaps, [
+    { area: 'composite', name: 'private-score', reason: 'NEWOW_PRIVATE_SCORE_UNPROVEN' },
+    { area: 'target_absorb', name: 'target_absorb', reason: 'NEWOW_TARGET_SOURCE_UNPROVEN' },
+  ])
 })
 
 test('evidence gaps show exact reasons rather than zero or a current-state substitute', () => {
@@ -83,12 +90,30 @@ test('comparator remains a separately labelled theoretical five-window result', 
   const model = buildComparator(comparatorResponse())
 
   assert.equal(model.label, '五窗口页面比较器（独立理论结果）')
+  assert.equal(model.physicalContract, 'JM2601')
+  assert.equal(model.segmentId, 'segment-1')
   assert.deepEqual(model.windows.map((item) => item.window), [10, 20, 24, 30, 52])
   assert.deepEqual(model.windows.map((item) => item.returnText), ['1.0%', '2.0%', '2.4%', '3.0%', '5.2%'])
   assert.equal(model.windows.every((item) => item.syntheticTerminal), true)
   assert.equal(model.syntheticTerminalIsReferenceExit, false)
   assert.match(model.disclosure, /不改变 ReferenceTrade 的 OPEN\/CLEAR/)
   assert.match(model.disclosure, /不自动选择策略参数/)
+})
+
+test('comparator selects only the exact default segment and fails closed on ambiguous ownership', () => {
+  const response = comparatorResponse()
+  const second = structuredClone(response.value!.result!.value!.segments[0]!)
+  second.segment_id = 'segment-2'
+  second.physical_contract = 'JM2605'
+  second.results = second.results.map((item) => ({ ...item, page_display: { ...item.page_display, cumulative_return_pct: '99.0' } }))
+  response.value!.result!.value!.segments.push(second)
+
+  const model = buildComparator(response)
+  assert.equal(model.physicalContract, 'JM2601')
+  assert.deepEqual(model.windows.map((item) => item.returnText), ['1.0%', '2.0%', '2.4%', '3.0%', '5.2%'])
+
+  response.value!.result!.value!.default_segment_id = 'missing-segment'
+  assert.throws(() => buildComparator(response), /NEWOW_COMPARATOR_DEFAULT_SEGMENT_CONFLICT/)
 })
 
 test('first-load error clears values while retained same-identity failure exposes stale timestamp', () => {
@@ -101,6 +126,11 @@ test('first-load error clears values while retained same-identity failure expose
   assert.deepEqual(resolvePanelState('input_conflict', null, 'NEWOW_SHARED_BAR_CONFLICT'), {
     showValue: false, message: 'DATA_CONFLICT（NEWOW_SHARED_BAR_CONFLICT）：冲突事实已清空，不能继续展示旧数值。', staleAt: null,
   })
+  assert.deepEqual(resolvePanelState('not_applicable', {
+    meta: { read_at: '2026-08-15T07:00:01Z' },
+  }, 'NEWOW_COMPARATOR_NOT_APPLICABLE'), {
+    showValue: false, message: '当前功能不适用（NEWOW_COMPARATOR_NOT_APPLICABLE）。', staleAt: null,
+  })
 })
 
 test('explanation component renders evidence gaps and comparator in a separate theoretical panel', async () => {
@@ -108,7 +138,7 @@ test('explanation component renders evidence gaps and comparator in a separate t
   const explanation = explanationResponse()
   explanation.value!.composite = {
     ...explanation.value!.composite, status: 'evidence_required', evidence_status: 'EVIDENCE_REQUIRED',
-    reason_code: 'NEWOW_COMPOSITE_SOURCE_UNPROVEN', value: null,
+    reason_code: 'NEWOW_COMPOSITE_SOURCE_UNPROVEN',
   }
   const Host = defineComponent({ setup: () => () => h(Panel, {
     response: explanation, lifecycle: 'evidence_required', error: null,
@@ -125,6 +155,7 @@ test('explanation component renders evidence gaps and comparator in a separate t
   assert.ok(comparatorPanel)
   assert.match(nodeText(explanationPanel), /NEWOW_COMPOSITE_SOURCE_UNPROVEN/)
   assert.match(nodeText(explanationPanel), /NEWOW_WEEKLY_FACT_UNAVAILABLE/)
+  assert.match(nodeText(explanationPanel), /NEWOW_PRIVATE_SCORE_UNPROVEN/)
   assert.doesNotMatch(nodeText(explanationPanel), /当前策略.*开仓依据/)
   assert.match(nodeText(comparatorPanel), /独立理论结果/)
   assert.match(nodeText(comparatorPanel), /不改变 ReferenceTrade 的 OPEN\/CLEAR/)
@@ -137,6 +168,10 @@ test('workspace uses native tab buttons and keeps one selected signal authority 
   const source = readFileSync(workspaceUrl, 'utf8')
   assert.match(source, /role="tablist"/)
   assert.match(source, /role="tab"/)
+  assert.match(source, /:tabindex="researchTab === 'reference' \? 0 : -1"/)
+  assert.match(source, /:tabindex="researchTab === 'explanation' \? 0 : -1"/)
+  assert.match(source, /@keydown\.left/)
+  assert.match(source, /@keydown\.right/)
   assert.match(source, /<NewowReferencePanel/)
   assert.match(source, /<NewowExplanationPanel/)
   assert.match(source, /@locate="locateReferenceTrade"/)
@@ -166,7 +201,7 @@ function explanationResponse(): Mutable<NewowProductSectionResponse<'explanation
           volatility: { value_pct: '1.2500', level: 'medium', true_range_count: 20, method: 'ATR20_CLOSE', is_wilder_atr: false, formula_version: 'vol-v1' },
           first_action: { rule_token: 'WAIT_CONFIRM', level: 'notice', page_title: '等待', page_detail: '等待已完成周期确认', token_owner: 'guiyi', token_is_page_native: false, page_formula_version: 'action-v1' },
           week_day_matrix: { key: 'k', name: '组合', risk: '中', position: '30%-50%', formula_version: 'matrix-v1' },
-          subfeatures: [], input_facts: [], warning_branches_unreachable: true, diagnostic_tokens: null, ai_copy: null, six_combo_ranking: null,
+          subfeatures: [{ name: 'private-score', status: evidenceRequired('NEWOW_PRIVATE_SCORE_UNPROVEN'), value: null }], input_facts: [], warning_branches_unreachable: true, diagnostic_tokens: null, ai_copy: null, six_combo_ranking: null,
           evidence_manifest_sha256: 'd'.repeat(64), page_source_sha256: 'e'.repeat(64), reachability_sha256: 'f'.repeat(64), ai_template_evidence_sha256: '1'.repeat(64), frozen_results_sha256: '2'.repeat(64),
         },
       },

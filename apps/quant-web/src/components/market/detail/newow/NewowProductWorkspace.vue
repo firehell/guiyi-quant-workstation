@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { useNewowProduct } from '@/composables/useNewowProduct'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
@@ -29,6 +29,8 @@ const loader = useNewowProduct({ identity })
 const selectedSignalId = ref<string | null>(null)
 const selectedAuxiliary = ref<NewowAuxiliaryComponent | null>(null)
 const researchTab = ref<'reference' | 'explanation'>('reference')
+const referenceTabButton = ref<HTMLButtonElement | null>(null)
+const explanationTabButton = ref<HTMLButtonElement | null>(null)
 const locateMessage = ref<string | null>(null)
 const chartResponse = computed(() => (
   loader.sections.chart.data.value?.section === 'chart'
@@ -42,6 +44,13 @@ const referenceResponse = computed(() => (
     ? loader.sections.reference.data.value as NewowProductSectionResponse<'reference'>
     : null
 ))
+const referenceChartCompatible = computed(() => {
+  const chart = chartResponse.value
+  const reference = referenceResponse.value
+  if (!loader.jointSnapshot.value || chart === null || reference === null) return false
+  const token = chart.meta.snapshot_token
+  return token !== null && reference.meta.snapshot_token === token
+})
 const explanationResponse = computed(() => (
   loader.sections.explanation.data.value?.section === 'explanation'
     ? loader.sections.explanation.data.value as NewowProductSectionResponse<'explanation'>
@@ -135,12 +144,18 @@ async function activateResearchTab(tab: 'reference' | 'explanation'): Promise<vo
   ])
 }
 
+async function moveResearchTab(tab: 'reference' | 'explanation'): Promise<void> {
+  await activateResearchTab(tab)
+  await nextTick()
+  ;(tab === 'reference' ? referenceTabButton.value : explanationTabButton.value)?.focus()
+}
+
 async function locateReferenceTrade(trade: NewowReferenceTrade): Promise<void> {
   locateMessage.value = null
-  let target = resolveNewowReferenceLocate(trade, chartResponse.value)
+  let target = resolveNewowReferenceLocate(trade, chartResponse.value, referenceChartCompatible.value)
   if (target.kind === 'request_display_window') {
     await loader.loadChart(target.displayWindow)
-    target = resolveNewowReferenceLocate(trade, chartResponse.value)
+    target = resolveNewowReferenceLocate(trade, chartResponse.value, referenceChartCompatible.value)
   }
   if (target.kind !== 'loaded') {
     locateMessage.value = `无法按精确信号 ${target.signalId} / ${target.barEnd} 定位；没有跳转到邻近日期。`
@@ -283,22 +298,30 @@ onBeforeUnmount(loader.dispose)
     <section class="newow-product-workspace__research" aria-label="Newow 参考与解释">
       <div class="newow-product-workspace__research-tabs" role="tablist" aria-label="Newow 研究面板">
         <button
+          ref="referenceTabButton"
           id="newow-reference-tab"
           type="button"
           role="tab"
           :aria-selected="researchTab === 'reference'"
+          :tabindex="researchTab === 'reference' ? 0 : -1"
           aria-controls="newow-reference-tabpanel"
           @click="activateResearchTab('reference')"
+          @keydown.left.prevent="moveResearchTab('explanation')"
+          @keydown.right.prevent="moveResearchTab('explanation')"
         >
           参考历史与统计
         </button>
         <button
+          ref="explanationTabButton"
           id="newow-explanation-tab"
           type="button"
           role="tab"
           :aria-selected="researchTab === 'explanation'"
+          :tabindex="researchTab === 'explanation' ? 0 : -1"
           aria-controls="newow-explanation-tabpanel"
           @click="activateResearchTab('explanation')"
+          @keydown.left.prevent="moveResearchTab('reference')"
+          @keydown.right.prevent="moveResearchTab('reference')"
         >
           解释与独立比较器
         </button>
@@ -312,6 +335,7 @@ onBeforeUnmount(loader.dispose)
         <NewowReferencePanel
           :response="referenceResponse"
           :chart-response="chartResponse"
+          :cross-section-compatible="referenceChartCompatible"
           :lifecycle="loader.sections.reference.state.value"
           :error="loader.sections.reference.error.value"
           :selected-signal-id="selectedSignalId"

@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
-import { createRenderer, defineComponent, h, nextTick } from 'vue'
+import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
 
 import type {
   NewowProductSectionResponse,
@@ -18,6 +18,7 @@ const buildReference = (viewModels as unknown as {
   buildNewowReferencePanelViewModel: (
     response: NewowProductSectionResponse<'reference'>,
     chart: NewowProductSectionResponse<'chart'> | null,
+    crossSectionCompatible?: boolean,
   ) => ReferenceModel
 }).buildNewowReferencePanelViewModel
 const filterReference = (viewModels as unknown as {
@@ -27,6 +28,7 @@ const resolveLocate = (viewModels as unknown as {
   resolveNewowReferenceLocate: (
     trade: NewowReferenceTrade,
     chart: NewowProductSectionResponse<'chart'> | null,
+    crossSectionCompatible?: boolean,
   ) => { kind: string; signalId: string; barEnd: string; displayWindow?: { from: string; through: string } }
 }).resolveNewowReferenceLocate
 const componentUrl = new URL('../src/components/market/detail/newow/NewowReferencePanel.vue', import.meta.url)
@@ -44,6 +46,8 @@ interface ReferenceModel {
   readonly rows: readonly Array<{
     readonly id: string
     readonly category: string
+    readonly initial: boolean
+    readonly lifecycle: string
     readonly returnText: string
     readonly valuationText: string
     readonly hints: readonly Array<{ readonly id: string; readonly availability: string; readonly text: string }>
@@ -52,7 +56,7 @@ interface ReferenceModel {
 
 test('zero CLOSED stays unavailable while negative interruption and initial-position records remain separate', () => {
   const response = referenceResponse()
-  const model = buildReference(response, chartResponse())
+  const model = buildReference(response, chartResponse(), true)
 
   assert.deepEqual(model.summary, {
     closedCount: 0,
@@ -67,25 +71,32 @@ test('zero CLOSED stays unavailable while negative interruption and initial-posi
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.category, 'interrupted')
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.returnText, '-12.5000%（中断浮动）')
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.valuationText, '2026-04-30T07:00:00Z · 87.500')
-  assert.equal(model.rows.find((row) => row.id === 'initial')?.category, 'initial')
+  assert.equal(model.rows.find((row) => row.id === 'initial')?.category, 'closed')
+  assert.equal(model.rows.find((row) => row.id === 'initial')?.initial, true)
+  assert.equal(model.rows.find((row) => row.id === 'initial')?.lifecycle, 'CLOSED')
   assert.equal(model.rows.find((row) => row.id === 'initial')?.returnText, '3.1250%（期初已有，不计入窗口统计）')
+  assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.category, 'interrupted')
+  assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.initial, true)
+  assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.lifecycle, 'ROLLOVER_INTERRUPTED')
+  assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.returnText, '-20.0000%（中断浮动；期初已有，不计入窗口统计）')
 })
 
 test('table filtering keeps the exact server summary and performance window', () => {
-  const model = buildReference(referenceResponse(), chartResponse())
+  const model = buildReference(referenceResponse(), chartResponse(), true)
   const filtered = filterReference(model, 'interrupted')
 
   assert.equal(filtered.summary, model.summary)
   assert.equal(filtered.performanceWindow, model.performanceWindow)
-  assert.deepEqual(filtered.rows.map((row) => row.id), ['interrupted'])
+  assert.deepEqual(filtered.rows.map((row) => row.id), ['interrupted', 'initial-interrupted'])
+  assert.deepEqual(filterReference(model, 'initial').rows.map((row) => row.id), ['initial', 'initial-interrupted'])
 })
 
 test('historical Hints expose only exact IDs already loaded and never infer same-Bar ordering', () => {
-  const model = buildReference(referenceResponse(), chartResponse())
+  const model = buildReference(referenceResponse(), chartResponse(), true)
   const hints = model.rows.find((row) => row.id === 'open')!.hints
 
   assert.deepEqual(hints.map(({ fact: _fact, ...hint }) => hint), [
-    { id: 'hint-loaded', availability: 'loaded', text: 'D4 · 2026-08-14T07:00:00Z · 同 Bar 提示（顺序未推断）' },
+    { id: 'hint-loaded', availability: 'loaded', text: 'D4 · 2026-08-14T07:00:00Z · 关联 Hint（不推断与主动作的同 Bar 顺序）' },
     { id: 'hint-missing', availability: 'unavailable', text: '未在已加载图表事实中找到，不能按邻近日期或当前上下文推断。' },
   ])
   assert.equal(hints[0]!.fact?.known_at, '2026-08-14T07:00:00Z')
@@ -98,27 +109,54 @@ test('history locate requires exact signal ID plus bar_end and requests display 
   const open = response.value!.items.find((trade) => trade.reference_trade_id === 'open')!
   const initial = response.value!.items.find((trade) => trade.reference_trade_id === 'initial')!
 
-  assert.deepEqual(resolveLocate(open, chartResponse()), {
+  assert.deepEqual(resolveLocate(open, chartResponse(), true), {
     kind: 'loaded', signalId: 'entry-open', barEnd: '2026-08-14T07:00:00Z',
   })
-  assert.deepEqual(resolveLocate(initial, chartResponse()), {
+  assert.deepEqual(resolveLocate(initial, chartResponse(), true), {
     kind: 'request_display_window', signalId: 'entry-initial', barEnd: '2025-12-20T07:00:00Z',
     displayWindow: { from: '2025-12-20', through: '2025-12-20' },
   })
-  assert.equal('performanceSince' in resolveLocate(initial, chartResponse()), false)
+  assert.equal('performanceSince' in resolveLocate(initial, chartResponse(), true), false)
 
   const chartWithWrongId = chartResponse()
   chartWithWrongId.value!.bars = [{ ...chartWithWrongId.value!.bars[0]!, bar_end: initial.entry_bar_end, trading_day: initial.entry_trading_day }]
-  assert.deepEqual(resolveLocate(initial, chartWithWrongId), {
+  assert.deepEqual(resolveLocate(initial, chartWithWrongId, true), {
     kind: 'unavailable', signalId: 'entry-initial', barEnd: '2025-12-20T07:00:00Z',
   })
+})
+
+test('cross-section Hint and locate stay unavailable without a shared snapshot proof', () => {
+  const response = referenceResponse()
+  const chart = chartResponse()
+  const open = response.value!.items.find((trade) => trade.reference_trade_id === 'open')!
+  const model = buildReference(response, chart, false)
+
+  assert.equal(model.rows.find((row) => row.id === 'open')!.hints[0]!.availability, 'unavailable')
+  assert.match(model.rows.find((row) => row.id === 'open')!.hints[0]!.text, /共同快照/)
+  assert.deepEqual(resolveLocate(open, chart, false), {
+    kind: 'unavailable', signalId: 'entry-open', barEnd: '2026-08-14T07:00:00Z',
+  })
+})
+
+test('simple sum keeps percentage points separate and never appends a percent unit', () => {
+  const response = referenceResponse()
+  response.value!.summary.closed_count = 1
+  response.value!.summary.win_count = 1
+  response.value!.summary.win_rate_pct = '100.00'
+  response.value!.summary.mean_return_pct = '12.5000'
+  response.value!.summary.sum_return_percentage_points = '12.5000'
+  const model = buildReference(response, chartResponse(), true)
+
+  assert.equal(model.summary.sumText, '12.5000')
+  assert.equal(model.summary.sumUnit, '百分点（简单相加）')
+  assert.equal(model.summary.sumText.includes('%'), false)
 })
 
 test('reference panel keeps the server summary while native controls filter, expand and emit exact locate facts', async () => {
   const Panel = await loadComponent()
   const located: Array<{ reference_trade_id: string; entry_signal_id: string; entry_bar_end: string }> = []
   const Host = defineComponent({ setup: () => () => h(Panel, {
-    response: referenceResponse(), chartResponse: chartResponse(), lifecycle: 'ready', error: null,
+    response: referenceResponse(), chartResponse: chartResponse(), crossSectionCompatible: true, lifecycle: 'ready', error: null,
     selectedSignalId: null, locateMessage: null, loadingPage: false,
     onLocate: (trade: NewowReferenceTrade) => located.push(trade),
   }) })
@@ -130,12 +168,16 @@ test('reference panel keeps the server summary while native controls filter, exp
   const summary = findNode(root, (node) => node.props['data-testid'] === 'newow-reference-summary')!
   assert.match(nodeText(summary), /胜率\s*—/)
   assert.match(nodeText(summary), /简单相加/)
+  const fullText = nodeText(root)
+  for (const phrase of ['long/flat', '同 Bar Close', 'API 参考价', '零手续费', '零滑点', '不推断手数', '不推断空单', '不推断账户净值', '非因果回测', '非模拟账户', '非真实成交']) {
+    assert.match(fullText, new RegExp(phrase))
+  }
   const expand = findNode(root, (node) => node.props['aria-label'] === '展开参考记录 open')!
   assert.equal(expand.type, 'button')
   assert.equal(expand.props['aria-expanded'], false)
   ;(expand.props.onClick as () => void)()
   await nextTick()
-  assert.match(nodeText(root), /D4 · 2026-08-14T07:00:00Z · 同 Bar 提示（顺序未推断）/)
+  assert.match(nodeText(root), /D4 · 2026-08-14T07:00:00Z · 关联 Hint（不推断与主动作的同 Bar 顺序）/)
   assert.match(nodeText(root), /不能按邻近日期或当前上下文推断/)
 
   const locate = findNode(root, (node) => node.props['aria-label'] === '定位参考记录 open 的建仓信号')!
@@ -154,6 +196,26 @@ test('reference panel keeps the server summary while native controls filter, exp
   app.unmount()
 })
 
+test('reference date drafts clear when a new identity has no retained response', async () => {
+  const Panel = await loadComponent()
+  const response = ref<NewowProductSectionResponse<'reference'> | null>(referenceResponse())
+  const Host = defineComponent({ setup: () => () => h(Panel, {
+    response: response.value, chartResponse: null, crossSectionCompatible: false, lifecycle: response.value === null ? 'unavailable' : 'ready',
+    error: response.value === null ? 'NEWOW_API_UNAVAILABLE' : null, selectedSignalId: null, locateMessage: null, loadingPage: false,
+  }) })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  await nextTick()
+  assert.deepEqual(findNodes(root, (node) => node.type === 'input').map((node) => node.props.value), ['2026-01-01', '2026-08-15'])
+
+  response.value = null
+  await nextTick()
+  assert.deepEqual(findNodes(root, (node) => node.type === 'input').map((node) => node.props.value), ['', ''])
+  assert.doesNotMatch(nodeText(root), /stale/)
+  app.unmount()
+})
+
 function referenceResponse(): Mutable<NewowProductSectionResponse<'reference'>> {
   return {
     meta: meta(), section: 'reference', status: ready(), value: {
@@ -162,7 +224,7 @@ function referenceResponse(): Mutable<NewowProductSectionResponse<'reference'>> 
       summary: {
         membership_policy: 'entry_in_window_v1', closed_count: 0, win_count: 0, loss_count: 0, flat_count: 0,
         win_rate_pct: null, mean_return_pct: null, sum_return_percentage_points: null,
-        open_count: 1, interrupted_count: 1, initial_count: 1,
+        open_count: 1, interrupted_count: 1, initial_count: 2,
       },
       items: [
         trade('open', {
@@ -180,6 +242,12 @@ function referenceResponse(): Mutable<NewowProductSectionResponse<'reference'>> 
           entry_signal_id: 'entry-initial', entry_bar_end: '2025-12-20T07:00:00Z', entry_trading_day: '2025-12-20',
           exit_signal_id: 'exit-initial', exit_bar_end: '2026-01-03T07:00:00Z', exit_trading_day: '2026-01-03', exit_reference_price: '103.125',
           status: 'CLOSED', reference_return_pct: '3.1250', statistics_membership: 'initial_before_window',
+        }),
+        trade('initial-interrupted', {
+          entry_signal_id: 'entry-initial-interrupted', entry_bar_end: '2025-11-20T07:00:00Z', entry_trading_day: '2025-11-20',
+          status: 'ROLLOVER_INTERRUPTED', statistics_membership: 'initial_before_window',
+          mark_bar_end: '2025-12-20T07:00:00Z', mark_reference_price: '80.000', mark_change_pct: '-20.0000',
+          interrupted_at: '2025-12-21T00:00:00Z', interruption_reason: 'OWNER_BOUNDARY',
         }),
       ],
       next_before: 'opaque-history', executable: false, auto_order: false,
@@ -259,6 +327,9 @@ function findNode(node: TestNode, match: (candidate: TestNode) => boolean): Test
   if (match(node)) return node
   for (const child of node.children) { const found = findNode(child, match); if (found) return found }
   return undefined
+}
+function findNodes(node: TestNode, match: (candidate: TestNode) => boolean): TestNode[] {
+  return [match(node) ? node : null, ...node.children.flatMap((child) => findNodes(child, match))].filter((item): item is TestNode => item !== null)
 }
 function nodeText(node: TestNode): string { return [node.text, ...node.children.map(nodeText)].join(' ') }
 function nodeOperations() {

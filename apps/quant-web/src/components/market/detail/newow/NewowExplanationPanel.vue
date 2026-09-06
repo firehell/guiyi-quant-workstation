@@ -53,6 +53,14 @@ const comparator = computed(() => comparatorPresentation.value.showValue && prop
           <div><dt>综合解释 evidence</dt><dd>{{ model.composite.evidenceReason }}</dd></div>
           <div><dt>趋势目标 / 吸筹 evidence</dt><dd>{{ model.targetReason }}</dd></div>
         </dl>
+        <section v-if="model.evidenceGaps.length" aria-label="解释证据缺口">
+          <h4>Evidence gaps</h4>
+          <ul>
+            <li v-for="gap in model.evidenceGaps" :key="`${gap.area}:${gap.name}`">
+              {{ gap.area }} · {{ gap.name }} · {{ gap.reason }}
+            </li>
+          </ul>
+        </section>
         <table>
           <caption>规则与来源事实</caption>
           <thead><tr><th>Role</th><th>周期 / Bar</th><th>规则</th><th>证据</th><th>原因</th></tr></thead>
@@ -67,6 +75,7 @@ const comparator = computed(() => comparatorPresentation.value.showValue && prop
         {{ comparatorPresentation.message }} <span v-if="comparatorPresentation.staleAt">stale 读取时间 {{ comparatorPresentation.staleAt }}</span>
       </p>
       <template v-if="comparator">
+        <p>当前 Segment：{{ comparator.physicalContract }} / {{ comparator.segmentId }}</p>
         <p>{{ comparator.disclosure }}</p>
         <p v-if="comparator.reason !== '—'">Evidence {{ comparator.reason }}</p>
         <table>
