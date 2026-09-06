@@ -15,6 +15,7 @@ import {
 import type { NewowProductSectionResponse } from '../src/types/newowProduct.ts'
 
 const componentUrl = new URL('../src/components/market/detail/newow/NewowProductChartStage.vue', import.meta.url)
+const workspaceUrl = new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue', import.meta.url)
 const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url))
 
 test('emits stable signal selection and preserves an established viewport and focus when earlier data arrives', async () => {
@@ -106,9 +107,21 @@ test('renders action IDs, hint source and confirmation facts without owning a pr
   assert.equal(seriesData.some((items) => items.some((item) => (
     typeof item === 'object' && item !== null && 'value' in item && item.value === 88
   ))), true, 'the Hint marker series must use anchor_price instead of candle/reference price')
-  assert.ok(findNode(root, (node) => node.text.includes('JM2601 · segment-1')))
+  assert.ok(findNode(root, (node) => node.text.includes('来源 canonical:jm:JM2601:60m')))
+  assert.ok(findNode(root, (node) => node.text.includes('响应公式 newow_hhv_llv_channel_page_v1')))
+  assert.ok(findNode(root, (node) => node.text.includes('owner JM2601 · segment-1')))
   assert.ok(findNode(root, (node) => node.text.includes('2026-08-15 16:30')))
   app.unmount()
+})
+
+test('wires three visible auxiliary sequences and renders lifecycle before a retained preview', () => {
+  const source = readFileSync(workspaceUrl, 'utf8')
+  for (const label of ['主力控盘', '涨跌动能', '主力照妖镜']) assert.match(source, new RegExp(label))
+  assert.match(source, /<svg[\s\S]*<polyline[\s\S]*series\.points/)
+  const lifecycle = source.indexOf('v-if="auxiliaryPresentation.message"')
+  const retained = source.indexOf('v-if="auxiliaryPresentation.showRetainedValue')
+  assert.ok(lifecycle >= 0 && retained > lifecycle, 'loading/error/stale status must render before retained data')
+  assert.match(source, /selectedAuxiliary === 'cup_handle'/)
 })
 
 function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: string }>> = []): NewowProductChartAdapter {

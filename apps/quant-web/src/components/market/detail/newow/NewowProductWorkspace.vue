@@ -8,8 +8,12 @@ import type {
   NewowProductSectionResponse,
 } from '@/types/newowProduct'
 import {
+  buildNewowAuxiliaryChartModel,
   buildNewowAuxiliaryDisclosure,
   buildNewowProductChartModel,
+  resolveNewowAuxiliaryRenderState,
+  type NewowAuxiliaryChartModel,
+  type NewowAuxiliaryChartPoint,
 } from './newowProductChartPrimitives'
 import NewowProductChartStage from './NewowProductChartStage.vue'
 
@@ -32,6 +36,28 @@ const auxiliaryResponse = computed(() => (
     ? loader.sections.auxiliary.data.value as NewowProductSectionResponse<'auxiliary'>
     : null
 ))
+const currentAuxiliaryResponse = computed(() => (
+  auxiliaryResponse.value?.value?.component === selectedAuxiliary.value
+    ? auxiliaryResponse.value
+    : null
+))
+const auxiliaryPresentation = computed(() => resolveNewowAuxiliaryRenderState(
+  loader.sections.auxiliary.state.value,
+  currentAuxiliaryResponse.value?.value !== null && currentAuxiliaryResponse.value?.value !== undefined,
+  loader.sections.auxiliary.error.value,
+))
+const auxiliaryChart = computed((): NewowAuxiliaryChartModel | null => {
+  const value = currentAuxiliaryResponse.value?.value
+  if (!auxiliaryPresentation.value.showRetainedValue || value === null || value === undefined || value.component === 'cup_handle') return null
+  return buildNewowAuxiliaryChartModel(value)
+})
+const auxiliaryExtent = computed(() => {
+  const values = auxiliaryChart.value?.series.flatMap((series) => series.points.map((point) => point.value)) ?? []
+  if (values.length === 0) return { min: 0, max: 1 }
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  return min === max ? { min: min - 1, max: max + 1 } : { min, max }
+})
 const auxiliaryDisclosure = computed(() => selectedAuxiliary.value === null ? null : buildNewowAuxiliaryDisclosure(
   selectedAuxiliary.value,
   props.identity.frequency as '1w' | '1d' | '60m',
@@ -51,6 +77,24 @@ async function toggleAuxiliary(component: NewowAuxiliaryComponent): Promise<void
   selectedAuxiliary.value = component
   if (component === 'cup_handle' && props.identity.frequency !== '1d') return
   await loader.loadAuxiliary(component)
+}
+
+function auxiliaryPointX(point: NewowAuxiliaryChartPoint, model: NewowAuxiliaryChartModel): number {
+  return model.totalPoints <= 1 ? 500 : 12 + (point.index / (model.totalPoints - 1)) * 976
+}
+
+function auxiliaryPointY(point: NewowAuxiliaryChartPoint): number {
+  return 168 - ((point.value - auxiliaryExtent.value.min) / (auxiliaryExtent.value.max - auxiliaryExtent.value.min)) * 156
+}
+
+function auxiliaryPolyline(points: readonly NewowAuxiliaryChartPoint[], model: NewowAuxiliaryChartModel): string {
+  return points.map((point) => `${auxiliaryPointX(point, model)},${auxiliaryPointY(point)}`).join(' ')
+}
+
+function auxiliaryColor(key: string): string {
+  const keys = ['kongpan', 'var4', 'ma10', 'band_entry', 'rebound_entry', 'oversold_entry', 'var3', 'ma120', 'entry', 'wash', 'distribution', 'markup', 'exit', 'inducement', 'peaks', 'caution']
+  const colors = ['#2563EB', '#D97706', '#16A34A', '#7C3AED', '#DC2626', '#0891B2', '#9333EA', '#64748B']
+  return colors[Math.max(0, keys.indexOf(key)) % colors.length]!
 }
 
 function selectSignal(signalId: string): void {
@@ -132,19 +176,53 @@ onBeforeUnmount(loader.dispose)
       <article v-if="auxiliaryDisclosure" class="newow-product-workspace__auxiliary-state" :data-applicability="auxiliaryDisclosure.applicability">
         <strong>{{ auxiliaryDisclosure.title }}</strong>
         <p>{{ auxiliaryDisclosure.disclosure }}</p>
-        <template v-if="auxiliaryResponse?.value?.component === selectedAuxiliary">
-          <p>公式 {{ auxiliaryResponse.value.formula_version }} · 来源 {{ auxiliaryResponse.value.source_category }}</p>
-          <p>物理区段 {{ auxiliaryResponse.value.segments.length }} · {{ auxiliaryResponse.value.repainting ? '会重绘' : '非重绘' }}</p>
+        <p
+          v-if="auxiliaryPresentation.message"
+          class="newow-product-workspace__auxiliary-message"
+          :data-resource-state="auxiliaryPresentation.mode"
+          role="status"
+        >
+          {{ auxiliaryPresentation.message }}
+        </p>
+        <template v-if="auxiliaryPresentation.showRetainedValue && currentAuxiliaryResponse?.value">
+          <p>公式 {{ currentAuxiliaryResponse.value.formula_version }} · 来源类别 {{ currentAuxiliaryResponse.value.source_category }}</p>
+          <p>物理区段 {{ currentAuxiliaryResponse.value.segments.length }} · {{ currentAuxiliaryResponse.value.repainting ? '会重绘' : '非重绘' }}</p>
+          <div v-if="auxiliaryChart?.series.length" class="newow-product-workspace__auxiliary-chart">
+            <svg viewBox="0 0 1000 180" role="img" :aria-label="`${auxiliaryDisclosure.title}服务端序列`">
+              <g v-for="series in auxiliaryChart.series" :key="series.id">
+                <polyline
+                  :points="auxiliaryPolyline(series.points, auxiliaryChart)"
+                  :stroke="auxiliaryColor(series.key)"
+                  fill="none"
+                  vector-effect="non-scaling-stroke"
+                />
+                <circle
+                  v-for="point in series.points"
+                  :key="`${series.id}:${point.barEnd}`"
+                  :cx="auxiliaryPointX(point, auxiliaryChart)"
+                  :cy="auxiliaryPointY(point)"
+                  :fill="auxiliaryColor(series.key)"
+                  r="2.5"
+                >
+                  <title>{{ series.label }} · {{ point.value }} · {{ point.physicalContract }} · {{ point.barEnd }}</title>
+                </circle>
+              </g>
+            </svg>
+            <ul class="newow-product-workspace__auxiliary-legend">
+              <li v-for="series in auxiliaryChart.series" :key="series.id">
+                <i :style="{ background: auxiliaryColor(series.key) }" />
+                {{ series.label }} · {{ series.points[series.points.length - 1]?.value }}
+              </li>
+            </ul>
+          </div>
           <ul v-if="selectedAuxiliary === 'cup_handle'">
-            <template v-for="segment in auxiliaryResponse.value.segments" :key="segment.segment_id">
+            <template v-for="segment in currentAuxiliaryResponse.value.segments" :key="segment.segment_id">
               <li v-for="witness in Array.isArray(segment.data) ? segment.data : []" :key="witness.witness_id">
                 {{ witness.candidate_id }} · 确认 {{ witness.confirmed_at }}
               </li>
             </template>
           </ul>
         </template>
-        <p v-else-if="auxiliaryDisclosure.applicability === 'loading' || auxiliaryDisclosure.applicability === 'warming'">辅助资源独立准备中…</p>
-        <p v-else-if="loader.sections.auxiliary.error.value">{{ loader.sections.auxiliary.error.value }}</p>
       </article>
     </section>
   </section>
@@ -162,5 +240,12 @@ onBeforeUnmount(loader.dispose)
 .newow-product-workspace__auxiliary-controls button { min-height: 44px; padding: 0 var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-primary); background: var(--gy-bg-panel); cursor: pointer; }
 .newow-product-workspace__auxiliary-controls button[aria-pressed="true"] { border-color: var(--gy-border-focus); color: var(--gy-accent); }
 .newow-product-workspace__auxiliary-state { display: grid; gap: var(--gy-space-2); color: var(--gy-text-secondary); }
+.newow-product-workspace__auxiliary-message { color: var(--gy-status-warning); }
+.newow-product-workspace__auxiliary-chart { display: grid; gap: var(--gy-space-2); }
+.newow-product-workspace__auxiliary-chart svg { width: 100%; min-height: 180px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: var(--gy-bg-elevated); }
+.newow-product-workspace__auxiliary-chart polyline { stroke-width: 1.5; }
+.newow-product-workspace__auxiliary-legend { display: flex; flex-wrap: wrap; gap: var(--gy-space-2) var(--gy-space-3); margin: 0; padding: 0; list-style: none; }
+.newow-product-workspace__auxiliary-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.newow-product-workspace__auxiliary-legend i { width: 10px; height: 10px; border-radius: 50%; }
 @media (max-width: 640px) { .newow-product-workspace__header { align-items: flex-start; flex-direction: column; } }
 </style>

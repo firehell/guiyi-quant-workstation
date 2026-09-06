@@ -7,6 +7,8 @@ import type { InjectionKey } from 'vue'
 
 import type {
   NewowAuxiliaryComponent,
+  NewowAuxiliaryData,
+  NewowAuxiliaryValue,
   NewowProductFrequency,
   NewowProductSectionResponse,
   NewowResourceLifecycle,
@@ -23,6 +25,7 @@ export interface NewowProductChartBar {
   readonly volume: number
   readonly physicalContract: string
   readonly segmentId: string
+  readonly sourceIdentity: string
 }
 
 export interface NewowProductLinePoint {
@@ -59,7 +62,10 @@ export interface NewowProductHintMarker {
   readonly value: number | null
   readonly anchorPrice: string | null
   readonly confirmedAt: string
-  readonly source: string
+  readonly sourceIdentity: string | null
+  readonly formulaVersions: readonly string[]
+  readonly physicalContract: string
+  readonly segmentId: string
   readonly sequence: number | null
 }
 
@@ -107,6 +113,7 @@ export function buildNewowProductChartModel(
     volume: bar.volume,
     physicalContract: bar.physical_contract,
     segmentId: bar.segment_id,
+    sourceIdentity: bar.source_identity,
   }))
   const barByEnd = new Map(bars.map((bar) => [bar.barEnd, bar]))
   const mainLines: NewowProductMainLine[] = []
@@ -143,7 +150,10 @@ export function buildNewowProductChartModel(
     value: hint.anchor_price === null ? null : chartCoordinate(hint.anchor_price),
     anchorPrice: hint.anchor_price,
     confirmedAt: hint.known_at,
-    source: `${hint.physical_contract} · ${hint.segment_id}`,
+    sourceIdentity: barByEnd.get(hint.bar_end)?.sourceIdentity ?? null,
+    formulaVersions: response.meta.identity.formula_versions,
+    physicalContract: hint.physical_contract,
+    segmentId: hint.segment_id,
     sequence: hint.sequence,
   }))
   return {
@@ -153,6 +163,116 @@ export function buildNewowProductChartModel(
       frequency: response.meta.identity.frequency,
     },
     bars, mainLines, actions, hints, nextBefore: value.next_before,
+  }
+}
+
+export interface NewowAuxiliaryChartPoint {
+  readonly barEnd: string
+  readonly index: number
+  readonly value: number
+  readonly physicalContract: string
+  readonly segmentId: string
+}
+
+export interface NewowAuxiliaryChartSeries {
+  readonly id: string
+  readonly key: string
+  readonly label: string
+  readonly points: readonly NewowAuxiliaryChartPoint[]
+}
+
+export interface NewowAuxiliaryChartModel {
+  readonly component: NewowAuxiliaryComponent
+  readonly totalPoints: number
+  readonly series: readonly NewowAuxiliaryChartSeries[]
+}
+
+const AUXILIARY_SERIES_LABELS = {
+  main_force_control: [['kongpan', '主力控盘']],
+  up_down_energy: [
+    ['var4', 'VAR4'], ['ma10', 'MA10'], ['band_entry', '波段介入'],
+    ['rebound_entry', '反弹介入'], ['oversold_entry', '超跌介入'], ['var3', 'VAR3'], ['ma120', 'MA120'],
+  ],
+  zhaoyao_mirror: [
+    ['entry', '进场'], ['wash', '洗盘'], ['distribution', '派发'], ['markup', '拉升'],
+    ['exit', '离场'], ['inducement', '诱多'], ['peaks', '峰值'], ['caution', '风险'],
+  ],
+  cup_handle: [],
+} as const
+
+/** Maps aligned P4 arrays to visible series; it never derives an indicator. */
+export function buildNewowAuxiliaryChartModel(value: NewowAuxiliaryValue): NewowAuxiliaryChartModel {
+  const series: NewowAuxiliaryChartSeries[] = []
+  let offset = 0
+  for (const segment of value.segments) {
+    if (segment.data !== null && isAuxiliarySequenceData(segment.data)) {
+      for (const [key, label] of AUXILIARY_SERIES_LABELS[value.component]) {
+        const sequence = auxiliarySequence(segment.data, key)
+        if (sequence === null) continue
+        let points: NewowAuxiliaryChartPoint[] = []
+        let run = 0
+        const flush = () => {
+          if (points.length === 0) return
+          series.push({ id: `${key}:${segment.segment_id}:${run}`, key, label, points })
+          points = []
+          run += 1
+        }
+        for (let index = 0; index < sequence.length; index += 1) {
+          const item = sequence[index]
+          if (item === null) { flush(); continue }
+          points.push({
+            barEnd: segment.bar_ends[index]!, index: offset + index, value: item,
+            physicalContract: segment.physical_contract, segmentId: segment.segment_id,
+          })
+        }
+        flush()
+      }
+    }
+    offset += segment.bar_ends.length
+  }
+  return { component: value.component, totalPoints: offset, series }
+}
+
+function isAuxiliarySequenceData(data: NewowAuxiliaryData): data is Exclude<NewowAuxiliaryData, readonly unknown[]> {
+  return !Array.isArray(data)
+}
+
+function auxiliarySequence(data: Exclude<NewowAuxiliaryValue['segments'][number]['data'], null | readonly unknown[]>, key: string): readonly (number | null)[] | null {
+  if (!(key in data)) return null
+  const value = data[key as keyof typeof data]
+  if (!Array.isArray(value)) return null
+  return value as readonly (number | null)[]
+}
+
+export interface NewowAuxiliaryRenderState {
+  readonly mode: 'idle' | 'loading' | 'ready' | 'warming' | 'stale' | 'error'
+  readonly showRetainedValue: boolean
+  readonly message: string | null
+}
+
+/** Makes request lifecycle visible before any retained same-component payload. */
+export function resolveNewowAuxiliaryRenderState(
+  lifecycle: NewowResourceLifecycle,
+  hasRetainedValue: boolean,
+  error: string | null,
+): NewowAuxiliaryRenderState {
+  if (lifecycle === 'loading') return {
+    mode: 'loading', showRetainedValue: hasRetainedValue,
+    message: hasRetainedValue ? '正在刷新；以下为上次成功的预览。' : '正在加载辅助资源…',
+  }
+  if (lifecycle === 'stale') return {
+    mode: 'stale', showRetainedValue: hasRetainedValue,
+    message: `刷新失败${error === null ? '' : `（${error}）`}；以下为上次成功的 stale 预览。`,
+  }
+  if (lifecycle === 'ready') return { mode: 'ready', showRetainedValue: hasRetainedValue, message: null }
+  if (lifecycle === 'warming') return {
+    mode: 'warming', showRetainedValue: hasRetainedValue,
+    message: hasRetainedValue ? '辅助资源仍在 warming；显示已验证的部分序列。' : '辅助资源仍在 warming。',
+  }
+  if (lifecycle === 'not_requested') return { mode: 'idle', showRetainedValue: false, message: null }
+  return {
+    mode: 'error', showRetainedValue: hasRetainedValue,
+    message: `加载失败${error === null ? '' : `（${error}）`}。${hasRetainedValue ? '以下为上次成功的 stale 预览。' : ''}`,
   }
 }
 

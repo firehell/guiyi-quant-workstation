@@ -308,7 +308,10 @@ defineExpose({ revealSignal, scrollToLatest })
     </div>
     <ul v-if="model?.hints.length" class="newow-product-chart-stage__hints" aria-label="非重绘过程提示">
       <li v-for="hint in model.hints" :key="hint.id">
-        {{ hint.kind }} · {{ hint.source }} · 确认 {{ formatKnownAt(hint.confirmedAt) }}
+        {{ hint.kind }} · 来源 {{ hint.sourceIdentity ?? '未提供更细来源' }}
+        · 响应公式 {{ hint.formulaVersions.join(' / ') }}
+        · owner {{ hint.physicalContract }} · {{ hint.segmentId }}
+        · 确认 {{ formatKnownAt(hint.confirmedAt) }}
       </li>
     </ul>
     <p v-if="loading && response === null" class="newow-product-chart-stage__status" role="status">正在读取 Newow 主图…</p>

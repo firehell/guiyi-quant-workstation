@@ -2,11 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  buildNewowAuxiliaryChartModel,
   buildNewowAuxiliaryDisclosure,
   buildNewowProductChartModel,
   chartMarkerTime,
+  resolveNewowAuxiliaryRenderState,
 } from '../src/components/market/detail/newow/newowProductChartPrimitives.ts'
 import type {
+  NewowAuxiliaryValue,
   NewowProductFrequency,
   NewowProductSectionResponse,
   NewowProductStrategy,
@@ -58,8 +61,13 @@ test('preserves same-Bar CLEAR then BUILD identities and keeps hint anchor separ
   assert.deepEqual(model.actions.map(({ referencePrice, value }) => [referencePrice, value]), [
     ['109.25', 109.25], ['91.75', 91.75],
   ])
-  assert.deepEqual(model.hints.map(({ anchorPrice, value, confirmedAt, source }) => ({ anchorPrice, value, confirmedAt, source })), [{
-    anchorPrice: '88.125', value: 88.125, confirmedAt: '2026-08-15T08:30:00Z', source: 'JM2601 · segment-1',
+  assert.deepEqual(model.hints.map(({ anchorPrice, value, confirmedAt, sourceIdentity, formulaVersions, physicalContract, segmentId }) => ({
+    anchorPrice, value, confirmedAt, sourceIdentity, formulaVersions, physicalContract, segmentId,
+  })), [{
+    anchorPrice: '88.125', value: 88.125, confirmedAt: '2026-08-15T08:30:00Z',
+    sourceIdentity: 'canonical:jm:JM2601',
+    formulaVersions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1'],
+    physicalContract: 'JM2601', segmentId: 'segment-1',
   }])
   assert.notEqual(model.hints[0]!.value, model.actions[1]!.value)
 })
@@ -106,6 +114,69 @@ test('uses authoritative trading_day for daily and weekly chart coordinates', ()
   })
   assert.equal(chartMarkerTime('2026-08-14T23:00:00Z', '60m', '2026-08-15'), 1786748400)
 })
+
+test('projects each auxiliary server sequence without recomputing its values', () => {
+  const control = buildNewowAuxiliaryChartModel(auxiliaryValue('main_force_control', {
+    kongpan: [1.25, -2.5], status: ['control', 'weak'], current_status: 'weak',
+    formula_version: 'newow_main_force_control_page_v1',
+  }))
+  assert.deepEqual(control.series.map((series) => [series.key, series.label, series.points.map((point) => point.value)]), [
+    ['kongpan', '主力控盘', [1.25, -2.5]],
+  ])
+
+  const energy = buildNewowAuxiliaryChartModel(auxiliaryValue('up_down_energy', {
+    var4: [null, 3], ma10: [1, 2], band_entry: [0, 1], rebound_entry: [1, 0], oversold_entry: [0, 0],
+    var3: [5, 6], ma120: [4, 4], formula_version: 'newow_up_down_energy_page_v1',
+  }))
+  assert.deepEqual(energy.series.map((series) => series.key), [
+    'var4', 'ma10', 'band_entry', 'rebound_entry', 'oversold_entry', 'var3', 'ma120',
+  ])
+  assert.deepEqual(energy.series[0]!.points.map((point) => [point.barEnd, point.value]), [
+    ['2026-08-15T07:00:00Z', 3],
+  ])
+
+  const mirror = buildNewowAuxiliaryChartModel(auxiliaryValue('zhaoyao_mirror', {
+    entry: [1, 0], wash: [2, 0], distribution: [3, 0], markup: [4, 0], exit: [5, 0],
+    inducement: [6, 0], peaks: [7, 0], caution: [8, 0], repainting: true,
+    formal_signal_eligible: false, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1',
+  }))
+  assert.deepEqual(mirror.series.map((series) => series.key), [
+    'entry', 'wash', 'distribution', 'markup', 'exit', 'inducement', 'peaks', 'caution',
+  ])
+  assert.equal(mirror.series.every((series) => series.points[0]!.segmentId === 'segment-1'), true)
+})
+
+test('prioritizes refresh and stale/error state over a retained auxiliary value', () => {
+  assert.deepEqual(resolveNewowAuxiliaryRenderState('loading', true, null), {
+    mode: 'loading', showRetainedValue: true,
+    message: '正在刷新；以下为上次成功的预览。',
+  })
+  assert.deepEqual(resolveNewowAuxiliaryRenderState('stale', true, 'NEWOW_API_UNAVAILABLE'), {
+    mode: 'stale', showRetainedValue: true,
+    message: '刷新失败（NEWOW_API_UNAVAILABLE）；以下为上次成功的 stale 预览。',
+  })
+  assert.deepEqual(resolveNewowAuxiliaryRenderState('unavailable', false, 'NEWOW_API_UNAVAILABLE'), {
+    mode: 'error', showRetainedValue: false,
+    message: '加载失败（NEWOW_API_UNAVAILABLE）。',
+  })
+})
+
+function auxiliaryValue(
+  component: Exclude<NewowAuxiliaryValue['component'], 'cup_handle'>,
+  data: NewowAuxiliaryValue['segments'][number]['data'],
+): NewowAuxiliaryValue {
+  return {
+    component, formula_version: data !== null && !Array.isArray(data) ? data.formula_version : 'test',
+    segments: [{
+      physical_contract: 'JM2601', segment_id: 'segment-1',
+      bar_ends: ['2026-08-14T07:00:00Z', '2026-08-15T07:00:00Z'],
+      status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null }, data,
+    }],
+    repainting: component === 'zhaoyao_mirror', formal_signal_eligible: false,
+    page_parity: component !== 'cup_handle', source_category: 'guiyi_product_auxiliary_adapter',
+    allowed_uses: ['product_auxiliary'],
+  }
+}
 
 function chartResponse(
   strategy: NewowProductStrategy,
