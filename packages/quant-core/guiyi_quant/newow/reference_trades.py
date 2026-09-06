@@ -315,12 +315,14 @@ def _effective_boundaries(
     return effective
 
 
-def _interruption_mark(
+def _latest_owner_mark(
     replay: StrategyReplay,
     owner: tuple[str, str],
-    boundary: OwnerBoundary,
     entry: StrategyAction,
+    through: datetime,
     as_of: datetime,
+    *,
+    include_entry: bool,
 ) -> tuple[datetime, Decimal, int] | None:
     result: tuple[datetime, Decimal, int] | None = None
     position = 0
@@ -336,7 +338,12 @@ def _interruption_mark(
             or bar.completed is not True
         ):
             continue
-        if entry.bar_end <= bar.bar_end <= boundary.effective_at:
+        after_entry = (
+            entry.bar_end <= bar.bar_end
+            if include_entry
+            else entry.bar_end < bar.bar_end
+        )
+        if after_entry and bar.bar_end <= through:
             _price(bar.close)
             result = (bar.bar_end, bar.close, position)
         position += 1
@@ -380,32 +387,43 @@ def _attach_hints(
         )
         for action in actions
     }
+    action_bars = {
+        (action.physical_contract, action.segment_id, action.bar_end)
+        for action in actions
+    }
     attached: list[list[str]] = [[] for _ in trades]
     bar_level: list[StrategyHint] = []
     unassigned: list[StrategyHint] = []
 
     for hint in hints:
-        if hint.sequence is None or (
-            hint.physical_contract,
-            hint.segment_id,
-            hint.bar_end,
-            hint.sequence,
-        ) in action_positions:
+        hint_bar = (hint.physical_contract, hint.segment_id, hint.bar_end)
+        if (hint.sequence is None and hint_bar in action_bars) or (
+            hint.sequence is not None
+            and (*hint_bar, hint.sequence) in action_positions
+        ):
             bar_level.append(hint)
             continue
 
-        hint_position = (hint.bar_end, hint.sequence)
         owners = (hint.physical_contract, hint.segment_id)
         matches: list[int] = []
         for index, trade in enumerate(trades):
             if owners != (trade.physical_contract, trade.segment_id):
                 continue
             entry = actions_by_id[trade.entry_signal_id]
-            if hint_position <= (entry.bar_end, entry.sequence):
+            if hint.sequence is None:
+                if hint.bar_end <= entry.bar_end:
+                    continue
+            elif (hint.bar_end, hint.sequence) <= (entry.bar_end, entry.sequence):
                 continue
             if trade.status is ReferenceTradeStatus.CLOSED:
                 exit_action = actions_by_id[trade.exit_signal_id]
-                if hint_position >= (exit_action.bar_end, exit_action.sequence):
+                if hint.sequence is None:
+                    if hint.bar_end >= exit_action.bar_end:
+                        continue
+                elif (hint.bar_end, hint.sequence) >= (
+                    exit_action.bar_end,
+                    exit_action.sequence,
+                ):
                     continue
             elif trade.status is ReferenceTradeStatus.ROLLOVER_INTERRUPTED:
                 if hint.bar_end > trade.interrupted_at:
@@ -468,18 +486,23 @@ class ReferenceTradeProjector:
             if action.bar_end > as_of:
                 _validate_action(replay, action, positions, require_position=False)
                 continue
-            boundary = effective_boundaries.get(
-                (action.physical_contract, action.segment_id)
-            )
+            owner = (action.physical_contract, action.segment_id)
+            boundary = effective_boundaries.get(owner)
             if (
                 boundary is not None
                 and action.kind is ActionKind.CLEAR
                 and action.bar_end >= boundary.effective_at
             ):
                 _validate_action(replay, action, positions)
+                current = open_by_owner.get(owner)
+                if (
+                    action.trade_eligibility is not TradeEligibility.ELIGIBLE
+                    or current is None
+                    or action.related_build_id != current[1].signal_id
+                ):
+                    raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
                 continue
             action_index = _validate_action(replay, action, positions)
-            owner = (action.physical_contract, action.segment_id)
 
             if action.trade_eligibility is TradeEligibility.WARMUP_ONLY:
                 if (
@@ -542,11 +565,39 @@ class ReferenceTradeProjector:
             boundary = effective_boundaries.get(owner)
             if boundary is None:
                 last_index = last_positions.get(owner, entry_index)
-                trades[trade_position] = replace(
-                    trades[trade_position], holding_bars=last_index - entry_index
+                mark = _latest_owner_mark(
+                    replay,
+                    owner,
+                    _entry,
+                    as_of,
+                    as_of,
+                    include_entry=False,
                 )
+                changes: dict[str, object] = {
+                    "holding_bars": last_index - entry_index
+                }
+                if mark is None:
+                    if "OPEN_MARK_UNAVAILABLE" not in diagnostics:
+                        diagnostics.append("OPEN_MARK_UNAVAILABLE")
+                else:
+                    mark_bar_end, mark_price, _mark_index = mark
+                    changes.update(
+                        mark_bar_end=mark_bar_end,
+                        mark_reference_price=mark_price,
+                        mark_change_pct=_reference_return(
+                            _entry.reference_price, mark_price
+                        ),
+                    )
+                trades[trade_position] = replace(trades[trade_position], **changes)
                 continue
-            mark = _interruption_mark(replay, owner, boundary, _entry, as_of)
+            mark = _latest_owner_mark(
+                replay,
+                owner,
+                _entry,
+                boundary.effective_at,
+                as_of,
+                include_entry=True,
+            )
             if mark is None:
                 trades[trade_position] = replace(
                     trades[trade_position],

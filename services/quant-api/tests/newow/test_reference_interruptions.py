@@ -192,6 +192,34 @@ def test_related_clear_after_the_effective_boundary_cannot_close_the_trade(
     assert trade.mark_reference_price == Decimal("90")
 
 
+def test_clear_after_boundary_still_requires_the_exact_open_build_reference(
+    product_cases,
+):
+    case = product_cases.closed(entry="100", exit="90")
+    late_clear_bar = _bar_like(
+        case.bars[-1],
+        bar_end=datetime(2026, 1, 8, 7, tzinfo=UTC),
+        close="120",
+        source_identity="owned:damaged-late-clear",
+    )
+    damaged_clear = product_cases.action(
+        case.identity,
+        late_clear_bar,
+        "CLEAR",
+        "120",
+        related_build_id="damaged-related-build",
+    )
+    replay = product_cases.replay(
+        case.identity,
+        (*case.bars, late_clear_bar),
+        (case.entry, damaged_clear),
+        ("BUILD", "HOLD", "CLEAR"),
+    )
+
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        ReferenceTradeProjector().project(replay, (_boundary(case),), case.as_of)
+
+
 def test_weekly_interruption_uses_the_earlier_completed_owner_mark(product_cases):
     case = product_cases.closed(frequency="1w", entry="100", exit="90")
     replay = product_cases.replay(
@@ -282,6 +310,69 @@ def test_mark_excludes_a_forged_cross_frequency_frame(product_cases):
     assert trade.mark_reference_price == Decimal("90")
 
 
+def test_open_trade_has_positive_current_reference_float_without_an_exit(
+    product_cases,
+):
+    case = product_cases.open()
+
+    trade = ReferenceTradeProjector().project(case.replay, (), case.as_of).trades[0]
+
+    assert trade.status == "OPEN"
+    assert trade.mark_bar_end == case.bars[-1].bar.bar_end
+    assert trade.mark_reference_price == Decimal("110")
+    assert trade.mark_change_pct == Decimal("10")
+    assert trade.exit_signal_id is None
+    assert trade.reference_return_pct is None
+
+
+def test_open_trade_preserves_negative_current_reference_float(product_cases):
+    case = product_cases.open()
+    mark_bar = _bar_like(
+        case.bars[-1],
+        bar_end=case.bars[-1].bar.bar_end,
+        close="90",
+        source_identity="owned:negative-open-mark",
+    )
+    replay = product_cases.replay(
+        case.identity,
+        (case.bars[0], mark_bar),
+        (case.entry,),
+        ("BUILD", "HOLD"),
+    )
+
+    trade = ReferenceTradeProjector().project(replay, (), case.as_of).trades[0]
+
+    assert trade.status == "OPEN"
+    assert trade.mark_bar_end == mark_bar.bar.bar_end
+    assert trade.mark_reference_price == Decimal("90")
+    assert trade.mark_change_pct == Decimal("-10")
+    assert trade.exit_signal_id is None
+    assert trade.reference_return_pct is None
+
+
+def test_open_trade_without_a_later_eligible_mark_is_explicitly_unavailable(
+    product_cases,
+):
+    case = product_cases.open()
+    replay = product_cases.replay(
+        case.identity,
+        case.bars[:1],
+        (case.entry,),
+        ("BUILD",),
+    )
+
+    result = ReferenceTradeProjector().project(replay, (), case.as_of)
+    trade = result.trades[0]
+
+    assert trade.status == "OPEN"
+    assert trade.mark_bar_end is None
+    assert trade.mark_reference_price is None
+    assert trade.mark_change_pct is None
+    assert trade.exit_signal_id is None
+    assert trade.reference_return_pct is None
+    assert result.diagnostics == ("OPEN_MARK_UNAVAILABLE",)
+
+
 def test_ordered_hints_attach_only_inside_one_trade_and_do_not_change_authority(
     product_cases,
 ):
@@ -317,6 +408,66 @@ def test_ordered_hints_attach_only_inside_one_trade_and_do_not_change_authority(
     assert result.unassigned_hints == (after_clear,)
     assert result.bar_level_hints == (ambiguous,)
     assert replace(trade, hint_ids=()) == baseline
+
+
+def test_adapter_shaped_unsequenced_hint_on_an_interior_bar_attaches(product_cases):
+    case = product_cases.closed(entry="100", exit="110")
+    interior_bar = case.bars[-1]
+    clear_bar = _bar_like(
+        interior_bar,
+        bar_end=datetime(2026, 1, 7, 7, tzinfo=UTC),
+        close="110",
+        source_identity="owned:clear-after-interior-hint",
+    )
+    clear = product_cases.action(
+        case.identity,
+        clear_bar,
+        "CLEAR",
+        "110",
+        related_build_id=case.entry.signal_id,
+    )
+    replay = product_cases.replay(
+        case.identity,
+        (case.bars[0], interior_bar, clear_bar),
+        (case.entry, clear),
+        ("BUILD", "HOLD", "CLEAR"),
+    )
+    interior = _hint(case, interior_bar, "J", sequence=None)
+
+    result = ReferenceTradeProjector().project(
+        _replay_with_hints(replay, (interior,)), (), case.as_of
+    )
+
+    assert result.trades[0].hint_ids == (interior.hint_id,)
+    assert result.bar_level_hints == ()
+    assert result.unassigned_hints == ()
+
+
+def test_adapter_shaped_unsequenced_hint_on_a_flat_bar_stays_visible(
+    product_cases,
+):
+    case = product_cases.closed()
+    flat_bar = _bar_like(
+        case.bars[-1],
+        bar_end=datetime(2026, 1, 7, 7, tzinfo=UTC),
+        close="110",
+        source_identity="owned:flat-hint",
+    )
+    replay = product_cases.replay(
+        case.identity,
+        (*case.bars, flat_bar),
+        case.replay.actions,
+        ("BUILD", "CLEAR", "FLAT"),
+    )
+    flat = _hint(case, flat_bar, "D1", sequence=None)
+
+    result = ReferenceTradeProjector().project(
+        _replay_with_hints(replay, (flat,)), (), case.as_of
+    )
+
+    assert result.trades[0].hint_ids == ()
+    assert result.bar_level_hints == ()
+    assert result.unassigned_hints == (flat,)
 
 
 @pytest.mark.parametrize("kind", ["control_mirror", "zhaoyaojing"])
