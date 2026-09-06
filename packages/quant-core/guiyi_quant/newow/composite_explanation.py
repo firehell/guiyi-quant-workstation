@@ -414,6 +414,73 @@ class CompositeExplanationValue:
         object.__setattr__(self, "input_facts", tuple(self.input_facts))
 
 
+def _validate_source_relationships(
+    sources: tuple[CompositeSourceBars, ...],
+    as_of: datetime,
+    value: CompositeExplanationValue,
+) -> None:
+    facts = value.input_facts
+    fact_specs = (
+        ("trend_weekly", PageSignalFact, ProductFrequency.WEEKLY),
+        ("trend_daily", PageSignalFact, ProductFrequency.DAILY),
+        ("trend_hourly", CompositeStatusFact, ProductFrequency.HOURLY),
+        ("oscillation_weekly", CompositeStatusFact, ProductFrequency.WEEKLY),
+        ("oscillation_daily", CompositeStatusFact, ProductFrequency.DAILY),
+        ("oscillation_hourly", CompositeStatusFact, ProductFrequency.HOURLY),
+    )
+    if len(facts) != len(fact_specs) or any(
+        source.as_of != as_of for source in sources
+    ):
+        raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+
+    named_facts: dict[str, PageSignalFact | CompositeStatusFact] = {}
+    for fact, (name, fact_type, frequency) in zip(facts, fact_specs, strict=True):
+        if not isinstance(fact, fact_type) or fact.frequency is not frequency:
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+        named_facts[name] = fact
+
+    current_sources: dict[ProductFrequency, CompositeSourceBars] = {}
+    volatility_source: CompositeSourceBars | None = None
+    for source in sources:
+        if source.usage is CompositeSourceUsage.VOLATILITY_PREFIX:
+            volatility_source = source
+            continue
+        current_sources[source.frequency] = source
+        for name in source.fact_names:
+            named_fact = named_facts.get(name)
+            if (
+                named_fact is None
+                or named_fact.frequency is not source.frequency
+                or named_fact.physical_contract != source.physical_contract
+                or named_fact.segment_id != source.segment_id
+                or named_fact.bar_end != source.first_bar_end
+                or named_fact.bar_end != source.last_bar_end
+            ):
+                raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+        if (
+            source.count != 1
+            or source.first_bar_end != source.last_bar_end
+            or source.first_trading_day != source.last_trading_day
+        ):
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+
+    daily_source = current_sources[ProductFrequency.DAILY]
+    assert volatility_source is not None
+    if volatility_source.count:
+        if (
+            volatility_source.physical_contract != daily_source.physical_contract
+            or volatility_source.segment_id != daily_source.segment_id
+            or volatility_source.last_bar_end != daily_source.last_bar_end
+            or volatility_source.last_trading_day != daily_source.last_trading_day
+        ):
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+    if value.volatility is None:
+        if volatility_source.count > 5:
+            raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+    elif volatility_source.count != value.volatility.true_range_count + 1:
+        raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+
+
 @dataclass(frozen=True, slots=True)
 class CompositeExplanationResult:
     status: FeatureRuntimeStatus
@@ -429,7 +496,8 @@ class CompositeExplanationResult:
         object.__setattr__(
             self, "evidence_status", EvidenceStatus(self.evidence_status)
         )
-        object.__setattr__(self, "as_of", utc_timestamp(self.as_of))
+        as_of = utc_timestamp(self.as_of)
+        object.__setattr__(self, "as_of", as_of)
         formulas = tuple(self.formula_versions)
         for formula in formulas:
             _text(formula)
@@ -453,6 +521,10 @@ class CompositeExplanationResult:
             raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
         if self.value is not None and len(sources) != len(expected_sources):
             raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+        if self.value is not None:
+            if not isinstance(self.value, CompositeExplanationValue):
+                raise ValueError("NEWOW_COMPOSITE_INVALID_SOURCE_BARS")
+            _validate_source_relationships(sources, as_of, self.value)
         object.__setattr__(self, "source_bars", sources)
         if self.status is not FeatureRuntimeStatus.READY:
             _text(self.reason_code)

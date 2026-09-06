@@ -1023,6 +1023,137 @@ def test_composite_source_metadata_is_immutable_and_fail_closed() -> None:
         replace(result, source_bars=(*result.source_bars[:-1], result.source_bars[0]))
 
 
+def test_composite_result_rejects_source_as_of_mismatch() -> None:
+    module = _api()
+    context, daily_bars = _context()
+    result = module.calculate_composite_explanation(
+        context, _evidence(module, context, daily_bars)
+    )
+    weekly = next(
+        item
+        for item in result.source_bars
+        if item.usage is module.CompositeSourceUsage.CURRENT_FACT
+        and item.frequency is ProductFrequency.WEEKLY
+    )
+    mismatched = replace(weekly, as_of=result.as_of + timedelta(days=1))
+
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_SOURCE_BARS"):
+        replace(
+            result,
+            source_bars=tuple(
+                mismatched if item is weekly else item for item in result.source_bars
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("frequency", "changes"),
+    [
+        (ProductFrequency.WEEKLY, {"physical_contract": "RB9999"}),
+        (
+            ProductFrequency.WEEKLY,
+            {
+                "first_bar_end": datetime(2026, 3, 13, 6, 59, tzinfo=UTC),
+                "last_bar_end": datetime(2026, 3, 13, 6, 59, tzinfo=UTC),
+            },
+        ),
+        (ProductFrequency.DAILY, {"segment_id": "rb:RB9999:other"}),
+        (
+            ProductFrequency.DAILY,
+            {
+                "first_bar_end": datetime(2026, 3, 13, 5, 59, tzinfo=UTC),
+                "last_bar_end": datetime(2026, 3, 13, 6, 1, tzinfo=UTC),
+            },
+        ),
+        (ProductFrequency.HOURLY, {"physical_contract": "RB9999"}),
+        (
+            ProductFrequency.HOURLY,
+            {
+                "first_bar_end": datetime(2026, 3, 13, 4, 59, tzinfo=UTC),
+                "last_bar_end": datetime(2026, 3, 13, 5, 1, tzinfo=UTC),
+            },
+        ),
+    ],
+)
+def test_composite_result_rejects_current_source_fact_mismatch(
+    frequency: ProductFrequency, changes: dict[str, object]
+) -> None:
+    module = _api()
+    context, daily_bars = _context()
+    result = module.calculate_composite_explanation(
+        context, _evidence(module, context, daily_bars)
+    )
+    current = next(
+        item
+        for item in result.source_bars
+        if item.usage is module.CompositeSourceUsage.CURRENT_FACT
+        and item.frequency is frequency
+    )
+    mismatched = replace(current, **changes)
+
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_SOURCE_BARS"):
+        replace(
+            result,
+            source_bars=tuple(
+                mismatched if item is current else item for item in result.source_bars
+            ),
+        )
+
+
+def test_composite_result_rejects_named_input_fact_mismatch() -> None:
+    module = _api()
+    context, daily_bars = _context()
+    result = module.calculate_composite_explanation(
+        context, _evidence(module, context, daily_bars)
+    )
+    assert result.value is not None
+    facts = result.value.input_facts
+    mismatched_daily = replace(facts[1], physical_contract="RB9999")
+    mismatched_value = replace(
+        result.value,
+        input_facts=(facts[0], mismatched_daily, *facts[2:]),
+    )
+
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_SOURCE_BARS"):
+        replace(result, value=mismatched_value)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("physical_contract", "RB9999"),
+        ("segment_id", "rb:RB9999:other"),
+        ("last_bar_end", datetime(2026, 3, 13, 5, 59, tzinfo=UTC)),
+        ("last_bar_end", datetime(2026, 3, 13, 6, 1, tzinfo=UTC)),
+        ("last_trading_day", datetime(2026, 3, 12, tzinfo=UTC).date()),
+        ("count", 20),
+    ],
+)
+def test_composite_result_rejects_volatility_daily_fact_mismatch(
+    field: str, value: object
+) -> None:
+    module = _api()
+    context, daily_bars = _context()
+    result = module.calculate_composite_explanation(
+        context, _evidence(module, context, daily_bars)
+    )
+    volatility = next(
+        item
+        for item in result.source_bars
+        if item.usage is module.CompositeSourceUsage.VOLATILITY_PREFIX
+    )
+    mismatched = replace(volatility, **{field: value})
+
+    with pytest.raises(ValueError, match="NEWOW_COMPOSITE_INVALID_SOURCE_BARS"):
+        replace(
+            result,
+            source_bars=tuple(
+                mismatched if item is volatility else item
+                for item in result.source_bars
+            ),
+        )
+
+
 def test_short_daily_prefix_does_not_coerce_volatility_to_zero() -> None:
     module = _api()
     context, daily_bars = _context(daily_count=5)
