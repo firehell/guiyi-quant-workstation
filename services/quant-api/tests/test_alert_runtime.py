@@ -250,6 +250,9 @@ def test_unrelated_live_frequency_does_not_clear_rule_failure_or_health(rule_cod
             return False
 
     class MarketRead:
+        def assert_window_current(self, window):
+            return None
+
         def bars_until(self, _query, *, trading_day, end, limit):
             del limit
             bar = CanonicalBar(

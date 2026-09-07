@@ -73,6 +73,10 @@ flowchart LR
 - `active_products.txt` 是研究能力边界；`operational_products.txt` 是 Market/Alert Runtime 外层授权边界。
 - Alert 独立于 Market Catalog。一个 `single Alert Runtime` 按 Rule dispatch 到 HTDY `first_seen` 与 `SubingThs15mEvaluator` `exact`，不新增进程。SuBing 只使用同物理 rank1 合约的 completed `actual_dominant` 15m；首次/换月重建经 `MarketReadService -> MarketDataService` 取得同合约 lifecycle Canonical prefix，再严格合并当日 completed Live，缺 history 即 fail-closed；Event 持久化后最多尝试一次 transport。
 - Web 的 SuBing `S↑/S↓` 只来自 immutable Event，`no SuBing overlay`；API、Web 与 formatter 不复制公式。
+- 默认关闭的 Live recovery worker 属于既有 Market Runtime；复用 RQData adapter、Session 与聚合器，
+  只向 Redis Live 原子提交缺失 observation 和恢复水位。MarketReadService 将水位随 Alert window
+  传递；同 Runtime root 的 Live 最终提交与 Alert Event/send 通过品种级 OS 锁串行化。只读 readiness
+  CLI 复用这些读取与 coverage 入口，不组合 evaluator、downloader 或 transport。
 - 0044 只创建 disabled + empty-scope Rule；0045 只把 RQData 1m 首根标签规范化为 `(start, end]` 排他 start。通用 Scope writer 拒绝 disabled Rule，首次 operational × 15m activation 只在精确 0045 使用专用锁定、单 commit、readback seam。
 - EMA21 10K slope 是纯函数 primitive，不连接 Runtime、Alert 或周期级正式因子。
 

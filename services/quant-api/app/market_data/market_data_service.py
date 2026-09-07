@@ -301,6 +301,25 @@ class MarketDataService:
         Live can complete today's suffix, but cannot supply missing prior-day history.
         The caller has already checked overlap and physical provenance.
         """
+        expected = self.expected_contract_replay_endpoints(
+            symbol=symbol, contract=contract, frequency=frequency,
+            trading_day=trading_day, cutoff=cutoff, after=after,
+        )
+        if (
+            not expected
+            or expected[-1] != (cutoff, trading_day)
+            or tuple((bar.bar_end, bar.trading_day) for bar in bars) != expected
+        ):
+            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
+
+    def expected_contract_replay_endpoints(
+        self, *, symbol: str, contract: str, frequency: BarFrequency | str,
+        trading_day: date, cutoff: datetime, after: datetime | None = None,
+        since: date | None = None,
+    ) -> tuple[tuple[datetime, date], ...]:
+        """Shared lifecycle/session authority for validation and read-only diagnosis."""
+        if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+            raise MarketDataError("CONTRACT_REPLAY_CUTOFF_INVALID")
         try:
             fact = self.catalog.contract_fact(symbol, contract)
             if not fact.listed_date <= trading_day < fact.expired_date:
@@ -309,9 +328,9 @@ class MarketDataService:
                 self.catalog.session,
                 PROJECT_ROOT / "data/universe/product_window_starts.csv",
             )
-            days = coverage.contract_trading_days(fact, fact.listed_date, trading_day)
-            key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
-            expected = tuple(
+            days = coverage.contract_trading_days(fact, max(fact.listed_date, since or fact.listed_date), trading_day)
+            key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency(frequency))
+            return tuple(
                 (bar_end, day)
                 for day in days
                 for bar_end in coverage.expected_bar_ends_for_trading_days(key, (day,))
@@ -319,12 +338,6 @@ class MarketDataService:
             )
         except (CatalogError, InfrastructureError) as exc:
             raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE") from exc
-        if (
-            not expected
-            or expected[-1] != (cutoff, trading_day)
-            or tuple((bar.bar_end, bar.trading_day) for bar in bars) != expected
-        ):
-            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
 
     def _trading_day_window(
         self,

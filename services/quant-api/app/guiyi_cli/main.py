@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
+from datetime import UTC, date, datetime
 from pathlib import Path
 import sys
 from typing import Any, TextIO
@@ -20,6 +21,7 @@ from app.alerts.composition import (
     build_alert_runtime,
 )
 from app.alerts.notification import ALERT_AUDIENCES
+from app.alerts.readiness import build_subing_readiness
 from app.alerts.notification_composition import build_notification_sender_from_env
 from app.alerts.subing_scope_activation import (
     SubingScopeActivationResult,
@@ -64,7 +66,7 @@ SessionAnchorRepairFactory = Callable[[Any], SessionAnchorRepairService]
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "runtime":
-        if args.runtime_command == "status":
+        if args.runtime_command in {"status", "subing-readiness"}:
             return True
         if args.runtime_command == "subing-ths-scope":
             return not args.apply
@@ -96,6 +98,9 @@ def build_parser() -> argparse.ArgumentParser:
     runtime = domains.add_parser("runtime")
     runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
     runtime_commands.add_parser("status")
+    readiness = runtime_commands.add_parser("subing-readiness", allow_abbrev=False)
+    readiness.add_argument("--trading-day", type=date.fromisoformat, required=True)
+    readiness.add_argument("--as-of", required=True)
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
     subing_scope = runtime_commands.add_parser(
@@ -134,6 +139,7 @@ def main(
     operational_products_loader: OperationalProductsLoader = load_operational_products,
     session_anchor_repair_factory: SessionAnchorRepairFactory | None = None,
     runtime_health_builder=build_runtime_health,
+    subing_readiness_builder=build_subing_readiness,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
@@ -144,6 +150,10 @@ def main(
         args = build_parser().parse_args(raw)
         if args.domain == "data":
             build_request(args)
+        elif args.runtime_command == "subing-readiness":
+            args.as_of = datetime.fromisoformat(args.as_of.replace("Z", "+00:00"))
+            if args.as_of.tzinfo is None or args.as_of.utcoffset() is None or args.as_of > datetime.now(UTC):
+                raise ValueError("CLI_ARGUMENT_INVALID")
     except (CliUsageError, ValueError):
         # 参数/用法错误：固定 CLI_ARGUMENT_INVALID，不写 stack trace
         payload = argument_error_payload(command)
@@ -161,6 +171,9 @@ def main(
                 stderr,
                 session_anchor_repair_factory,
             )
+        elif args.runtime_command == "subing-readiness":
+            with session_factory() as session:
+                payload = subing_readiness_builder(session, trading_day=args.trading_day, as_of=args.as_of)
         elif args.runtime_command == "status":
             # runtime status：只读聚合健康，与 HTTP /api/runtime/health 同源
             with session_factory() as session:

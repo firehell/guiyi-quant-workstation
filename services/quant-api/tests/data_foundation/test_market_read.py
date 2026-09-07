@@ -75,6 +75,9 @@ class FakePhaseResolver:
 
 
 class FakeLiveStore:
+    def recovery_state(self, trading_day, symbol, expected_contract):
+        return None
+
     def __init__(self, bars: tuple[CanonicalBar, ...], *, available: bool = True) -> None:
         self.bars = bars
         self.available = available

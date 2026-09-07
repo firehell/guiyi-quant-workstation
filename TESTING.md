@@ -236,6 +236,27 @@ pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/mark
 
 ## 工程一致性与静态检查
 
+苏冰当日缺口、恢复水位、只读诊断及日志：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_live_recovery.py \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/test_alert_recovery_boundary.py \
+  services/quant-api/tests/test_live_recovery_guard.py \
+  services/quant-api/tests/test_subing_readiness.py \
+  services/quant-api/tests/test_runtime_logging.py
+```
+
+实际 Lua 测试仅接受显式 `GUIYI_TEST_REDIS_PORT` 指向一次性、无持久卷的隔离 Redis；不得填生产端口。
+未配置时该项明确 skip，其余测试使用内存 provider/Redis、临时 SQLite/Parquet 与进程锁。测试不运行
+现役 Runtime，不调用真实 RQData，不发送通知。
+
+逐品种诊断命令为 `guiyi runtime subing-readiness --trading-day YYYY-MM-DD --as-of OFFSET_DATETIME`；
+`as-of` 必须带时区且不晚于执行时刻。命令只读 PostgreSQL/Redis/Canonical，逐品种报告当前输入与 Scope，
+非全部 ready 时退出 1；参数错误退出 2。该结果不证明 provider acceptance 或实际收件，真实连接仍须
+位于用户明确授权的只读诊断范围。
+
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \

@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 import json
 from pathlib import Path
 from types import MappingProxyType
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -24,10 +24,14 @@ from app.market_data.domain import (
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.market_data.market_data_service import MarketDataError
-from app.market_data.live_market import LiveBarObservation
+from app.market_data.live_market import LiveBarObservation, LiveRecoveryState
 
 
 class MarketPageReader(Protocol):
+    def expected_contract_replay_endpoints(self, *, symbol: str, contract: str, frequency: BarFrequency | str,
+                                          trading_day: date, cutoff: datetime, after: datetime | None = None,
+                                          since: date | None = None) -> tuple[tuple[datetime, date], ...]: ...
+
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult: ...
 
     def validate_contract_replay_coverage(
@@ -48,6 +52,8 @@ class PhaseReader(Protocol):
 
 
 class LiveReadStore(Protocol):
+    def recovery_state(self, trading_day: date, symbol: str, expected_contract: str) -> LiveRecoveryState | None: ...
+
     def subscriptions(self, trading_day: date) -> Mapping[str, object] | None: ...
 
     def heartbeat(self) -> Mapping[str, object] | None: ...
@@ -131,6 +137,11 @@ class MarketReadWindow:
     cutoff: datetime
     bars: tuple[CanonicalBar, ...]
     bar_contracts: tuple[str, ...]
+    recovery_state: LiveRecoveryState | None = None
+
+    @property
+    def notification_eligible(self) -> bool:
+        return self.recovery_state is None or self.cutoff > self.recovery_state.recovered_through
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +224,8 @@ class MarketReadService:
         if contract is None:
             raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
 
+        recovery_state = self._read_recovery_state(trading_day, identity.symbol, contract)
+
         historical_page = self.history_page(
             replace(identity, before=cutoff + timedelta(microseconds=1), limit=limit)
         )
@@ -255,7 +268,7 @@ class MarketReadService:
             raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
         if len(bar_contracts) != len(bars) or bar_contracts[-1] != contract:
             raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
-        return MarketReadWindow(
+        window = MarketReadWindow(
             symbol=identity.symbol,
             series_kind=identity.series_kind.value,
             frequency=identity.frequency.value,
@@ -264,7 +277,32 @@ class MarketReadService:
             cutoff=cutoff,
             bars=bars,
             bar_contracts=bar_contracts,
+            recovery_state=recovery_state,
         )
+        self.assert_window_current(window)
+        return window
+
+    def _read_recovery_state(self, trading_day: date, symbol: str, contract: str) -> LiveRecoveryState | None:
+        try:
+            state = self._live_store.recovery_state(trading_day, symbol, contract)
+            if state is not None and (type(state) is not LiveRecoveryState or state.revision < 1
+                                      or state.recovered_through.tzinfo is None):
+                raise ValueError("LIVE_RECOVERY_STATE_INVALID")
+            return state
+        except Exception as exc:
+            raise MarketReadWindowError("MARKET_READ_RECOVERY_UNAVAILABLE") from exc
+
+    def assert_window_current(self, window: MarketReadWindow) -> None:
+        """Prove no recovery/physical-owner change since this Alert window was read."""
+        current = self._read_recovery_state(window.trading_day, window.symbol, window.contract)
+        if current != window.recovery_state:
+            raise MarketReadWindowError("MARKET_READ_RECOVERY_CHANGED")
+        try:
+            subscriptions = self._live_store.subscriptions(window.trading_day)
+            if subscriptions is None or subscriptions.get(window.symbol) != window.contract:
+                raise ValueError("LIVE_IDENTITY_CHANGED")
+        except Exception as exc:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE") from exc
 
     def current_contract_replay_window(
         self,
@@ -274,6 +312,7 @@ class MarketReadService:
     ) -> CurrentContractReplayWindow:
         """Read one current physical contract through a proved decision cutoff."""
 
+        self.assert_window_current(decision_window)
         frequency = _current_contract_replay_frequency(decision_window)
         cutoff = decision_window.cutoff.astimezone(UTC)
         contract = normalize_contract_for_symbol(
@@ -357,6 +396,7 @@ class MarketReadService:
             raise MarketReadWindowError(
                 "MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE"
             ) from exc
+        self.assert_window_current(decision_window)
         return CurrentContractReplayWindow(
             symbol=decision_window.symbol,
             frequency=frequency.value,
@@ -410,6 +450,82 @@ class MarketReadService:
                 break
             before = next_before
         return tuple(collected[bar_end] for bar_end in sorted(collected))
+
+    def contract_input_readiness(self, symbol: str, *, trading_day: date, as_of: datetime) -> dict[str, Any]:
+        """Diagnose independent input gaps using the same reads and coverage as replay.
+
+        No evaluator, Event, provider, mutation or replacement market resolver.
+        Unknown history remains unknown; Live never fills a prior-day gap.
+        """
+        if symbol not in self._operational_products or as_of.tzinfo is None or as_of.utcoffset() is None:
+            raise MarketReadWindowError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        subscriptions = self._live_store.subscriptions(trading_day)
+        contract = normalize_contract_for_symbol(symbol, subscriptions.get(symbol) if subscriptions else None)
+        if contract is None:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+        expected = self._market_data.expected_contract_replay_endpoints(
+            symbol=symbol, contract=contract, frequency=BarFrequency.M15,
+            trading_day=trading_day, cutoff=as_of,
+        )
+        today = tuple(item for item in expected if item[1] == trading_day)
+        row: dict[str, Any] = {"symbol": symbol, "contract": contract, "frequency": "15m", "error_codes": []}
+        if not today:
+            return {**row, "status": "blocked", "error_codes": ["NO_COMPLETED_15M"]}
+        cutoff = today[-1][0]
+        row["cutoff"] = cutoff.isoformat()
+
+        def gap(wanted: tuple[tuple[datetime, date], ...], bars: tuple[CanonicalBar, ...]) -> dict[str, Any]:
+            actual = {(bar.bar_end, bar.trading_day) for bar in bars}
+            missing = tuple(item[0] for item in wanted if item not in actual)
+            return {"count": len(missing), "first": missing[0].isoformat() if missing else None,
+                    "last": missing[-1].isoformat() if missing else None}
+
+        try:
+            history = self._current_contract_history(symbol=symbol, contract=contract,
+                                                     frequency=BarFrequency.M15, cutoff=cutoff, after=None)
+            row["historical_15m_gap"] = gap(tuple(item for item in expected if item[1] < trading_day), history)
+            if row["historical_15m_gap"]["count"]:
+                row["error_codes"].append("HISTORICAL_PREFIX_MISSING")
+        except MarketReadWindowError:
+            history = ()
+            row["historical_15m_gap"] = {"count": None, "first": None, "last": None}
+            row["error_codes"].append("HISTORICAL_INPUT_UNAVAILABLE")
+        for frequency in (BarFrequency.M1, BarFrequency.M15):
+            label = f"live_{frequency.value}_gap"
+            try:
+                observations = self._live_store.bar_observations(
+                    trading_day, symbol, frequency.value, None, cutoff,
+                    inclusive_after=False, expected_contract=contract,
+                )
+                if any(type(item) is not LiveBarObservation or item.contract != contract
+                       or item.bar.trading_day != trading_day for item in observations):
+                    raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+                wanted = self._market_data.expected_contract_replay_endpoints(
+                    symbol=symbol, contract=contract, frequency=frequency,
+                    trading_day=trading_day, cutoff=cutoff, since=trading_day,
+                )
+                bars = tuple(item.bar for item in observations)
+                row[label] = gap(wanted, bars)
+                if row[label]["count"]:
+                    row["error_codes"].append(f"LIVE_{frequency.value.upper()}_GAP")
+                if len({bar.bar_end for bar in bars}) != len(bars) or any(
+                    (bar.bar_end, bar.trading_day) not in set(wanted) for bar in bars
+                ):
+                    row["error_codes"].append("LIVE_INPUT_CONFLICT")
+            except Exception:
+                row[label] = {"count": None, "first": None, "last": None}
+                row["error_codes"].append("LIVE_INPUT_UNAVAILABLE")
+        if not row["error_codes"]:
+            try:
+                window = self.bars_until(SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, BarFrequency.M15),
+                                         trading_day=trading_day, end=cutoff, limit=64)
+                self.current_contract_replay_window(window, after=None)
+            except Exception:
+                row["error_codes"].append("CONTRACT_REPLAY_UNAVAILABLE")
+        if self._live_store.subscriptions(trading_day) != subscriptions:
+            row["error_codes"].append("LIVE_IDENTITY_CHANGED")
+        row["status"] = "blocked" if row["error_codes"] else "ready"
+        return row
 
     def latest_canonical_window(
         self,
