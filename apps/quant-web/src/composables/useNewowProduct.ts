@@ -63,7 +63,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const controllers = new Map<NewowProductSection, AbortController>()
   const inFlightSnapshotTokens = new Map<NewowProductSection, string | undefined>()
   const sectionGenerations = new Map<NewowProductSection, number>()
-  const auxiliaryCache = new Map<NewowAuxiliaryComponent, NewowProductSectionResponse<'auxiliary'>>()
+  const auxiliaryCache = new Map<string, NewowProductSectionResponse<'auxiliary'>>()
   let generation = 0
   let disposed = false
   let chartWindow: { from: string; through: string } | null = null
@@ -98,12 +98,13 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   async function loadAuxiliary(component: NewowAuxiliaryComponent, load: Pick<ChartLoadOptions, 'from' | 'through'> = {}): Promise<void> {
     const common = requestCommon('auxiliary')
     if (common === null) return
-    const cached = auxiliaryCache.get(component)
+    const request = { ...common, section: 'auxiliary' as const, component, ...load }
+    const cached = auxiliaryCache.get(auxiliaryCacheKey(request))
     if (cached !== undefined) {
       restoreCachedAuxiliary(cached)
       return
     }
-    await run({ ...common, section: 'auxiliary', component, ...load })
+    await run(request)
   }
 
   async function loadNextChartPage(): Promise<void> {
@@ -235,6 +236,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       const accepted = acceptChart(response, request)
       if (accepted === null) return
       resource.data.value = accepted
+      invalidateAuxiliaryCache()
     } else if (section === 'reference' && response.section === 'reference' && response.value !== null) {
       const accepted = acceptReference(response, request)
       if (accepted === null) return
@@ -244,8 +246,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
     resource.state.value = response.status.status
     resource.error.value = null
-    if (section === 'auxiliary' && response.section === 'auxiliary' && response.status.status === 'ready' && response.value !== null) {
-      cacheAuxiliary(response)
+    if (section === 'auxiliary' && request.section === 'auxiliary' && response.section === 'auxiliary' && response.status.status === 'ready' && response.value !== null) {
+      cacheAuxiliary(response, request)
     }
   }
 
@@ -443,14 +445,14 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   function abortAll(): void { for (const controller of controllers.values()) controller.abort(); controllers.clear(); inFlightSnapshotTokens.clear() }
   function resetAll(): void { for (const section of ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const) clearResource(section); invalidateAuxiliaryCache(); chartWindow = null; chartFingerprint = null; chartPageLimit = null; referenceWindow = null; referenceFingerprint = null; referencePageLimit = null }
   function clearResource(section: NewowProductSection): void { resources[section].data.value = null; resources[section].state.value = 'not_requested'; resources[section].error.value = null }
-  function cacheAuxiliary(response: NewowProductSectionResponse<'auxiliary'>): void {
-    const component = response.value?.component
-    if (component === undefined) return
-    if (!auxiliaryCache.has(component) && auxiliaryCache.size >= 4) {
+  function cacheAuxiliary(response: NewowProductSectionResponse<'auxiliary'>, request: Extract<NewowProductRequest, { section: 'auxiliary' }>): void {
+    if (response.value?.component === undefined) return
+    const key = auxiliaryCacheKey(request)
+    if (!auxiliaryCache.has(key) && auxiliaryCache.size >= 4) {
       const oldest = auxiliaryCache.keys().next().value
       if (oldest !== undefined) auxiliaryCache.delete(oldest)
     }
-    auxiliaryCache.set(component, response)
+    auxiliaryCache.set(key, response)
   }
   function restoreCachedAuxiliary(response: NewowProductSectionResponse<'auxiliary'>): void {
     const section = 'auxiliary' as const
@@ -463,6 +465,10 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     resources[section].error.value = null
   }
   function invalidateAuxiliaryCache(): void { auxiliaryCache.clear() }
+}
+
+function auxiliaryCacheKey(request: Extract<NewowProductRequest, { section: 'auxiliary' }>): string {
+  return JSON.stringify([request.component, request.from ?? null, request.through ?? null, request.snapshotToken ?? null])
 }
 
 function createResource(): SectionResource {

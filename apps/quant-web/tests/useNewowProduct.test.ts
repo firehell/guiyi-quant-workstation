@@ -485,6 +485,59 @@ test('reopening a validated auxiliary component reuses the current generation', 
   state.dispose()
 })
 
+test('does not reuse a validated auxiliary component across distinct explicit chart windows', async () => {
+  const calls: NewowProductRequest[] = []
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      calls.push(request)
+      return request.section === 'auxiliary' ? normalizedAuxiliary(request) : normalizedChart(request)
+    },
+  })
+  await flush()
+
+  await state.loadAuxiliary('main_force_control', { from: '2026-08-01', through: '2026-08-10' })
+  await state.loadAuxiliary('main_force_control', { from: '2026-08-11', through: '2026-08-15' })
+
+  assert.deepEqual(
+    calls.filter((request) => request.section === 'auxiliary').map((request) => [request.component, request.from, request.through]),
+    [
+      ['main_force_control', '2026-08-01', '2026-08-10'],
+      ['main_force_control', '2026-08-11', '2026-08-15'],
+    ],
+  )
+  state.dispose()
+})
+
+test('does not reuse an auxiliary response after a chart snapshot is successfully refreshed', async () => {
+  const calls: NewowProductRequest[] = []
+  let chartAttempts = 0
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      calls.push(request)
+      if (request.section === 'chart') {
+        chartAttempts += 1
+        return normalizedChart(request, { token: chartAttempts === 1 ? 'old-token' : 'new-token' })
+      }
+      return normalizedAuxiliary(request, request.snapshotToken ?? null)
+    },
+  })
+  await flush()
+
+  await state.loadAuxiliary('main_force_control')
+  await state.loadChart()
+  await state.loadAuxiliary('main_force_control')
+
+  assert.deepEqual(
+    calls.filter((request) => request.section === 'auxiliary').map((request) => request.snapshotToken),
+    ['old-token', 'new-token'],
+  )
+  state.dispose()
+})
+
 test('accepts an identity-valid auxiliary warming response without a partial value', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
