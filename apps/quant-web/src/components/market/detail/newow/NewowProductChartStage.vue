@@ -298,7 +298,7 @@ defineExpose({ revealSignal, scrollToLatest })
     :data-action-ids="model?.actions.map((action) => action.id).join(',') ?? ''"
   >
     <div class="newow-product-chart-stage__controls">
-      <button v-if="hasMoreBefore" type="button" :disabled="loading" @click="emit('loadEarlier')">加载更早</button>
+      <button v-if="hasMoreBefore" type="button" data-testid="newow-load-earlier" :disabled="loading" @click="emit('loadEarlier')">加载更早</button>
       <button v-if="!followLatest" type="button" @click="scrollToLatest">回到最新</button>
     </div>
     <div ref="container" class="newow-product-chart-stage__chart" />
