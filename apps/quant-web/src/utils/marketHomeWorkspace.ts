@@ -1,15 +1,26 @@
 import type { MarketHomeRow } from './marketHomeViewModel.ts'
 
 export type MarketHomeLocalFilter = 'all' | 'up' | 'down' | 'flat' | 'aligned' | 'daily-up' | 'daily-down' | 'daily-neutral' | 'daily-unavailable' | 'with-event'
-export type MarketHomeSort = 'default' | 'change' | 'volume' | 'oi' | 'event'
+export type MarketHomeSort = 'default' | 'close' | 'change' | 'volume' | 'oi' | 'event'
+export type MarketHomeSortDirection = 'asc' | 'desc'
 export type MarketHomeTrendFilter = 'all' | 'up' | 'down' | 'neutral' | 'unavailable'
 export type MarketHomeAlignmentFilter = 'all' | 'aligned-up' | 'aligned-down' | 'neutral' | 'mixed' | 'unavailable'
 export type MarketHomeEventFilter = 'all' | 'with-event' | 'without-event'
 export type MarketHomeDataFilter = 'all' | 'available' | 'unavailable'
 
+export function nextMarketHomeSort(
+  current: { sort: MarketHomeSort; sortDirection: MarketHomeSortDirection },
+  column: MarketHomeSort,
+): { sort: MarketHomeSort; sortDirection: MarketHomeSortDirection } {
+  if (column === 'default') return { sort: 'default', sortDirection: 'desc' }
+  if (current.sort !== column) return { sort: column, sortDirection: 'desc' }
+  if (current.sortDirection === 'desc') return { sort: column, sortDirection: 'asc' }
+  return { sort: 'default', sortDirection: 'desc' }
+}
+
 export function filterAndSortMarketHomeRows(
   rows: readonly MarketHomeRow[],
-  options: { query: string; sector: string; filter: MarketHomeLocalFilter; sort: MarketHomeSort; daily?: MarketHomeTrendFilter; weekly?: MarketHomeTrendFilter; alignment?: MarketHomeAlignmentFilter; event?: MarketHomeEventFilter; data?: MarketHomeDataFilter },
+  options: { query: string; sector: string; filter: MarketHomeLocalFilter; sort: MarketHomeSort; sortDirection?: MarketHomeSortDirection; daily?: MarketHomeTrendFilter; weekly?: MarketHomeTrendFilter; alignment?: MarketHomeAlignmentFilter; event?: MarketHomeEventFilter; data?: MarketHomeDataFilter },
 ): MarketHomeRow[] {
   const query = options.query.trim().toLowerCase()
   const filtered = rows.filter((row) => {
@@ -22,7 +33,9 @@ export function filterAndSortMarketHomeRows(
       && matchesEvent(row, options.event ?? 'all')
       && matchesData(row, options.data ?? 'all')
   })
-  return [...filtered].sort((left, right) => compareRows(left, right, options.sort))
+  const sort = options.sort
+  if (sort === 'default') return filtered
+  return [...filtered].sort((left, right) => compareRows(left, right, sort, options.sortDirection ?? 'desc'))
 }
 
 function matchesSummaryFilter(row: MarketHomeRow, filter: MarketHomeLocalFilter): boolean {
@@ -47,20 +60,40 @@ function matchesData(row: MarketHomeRow, filter: MarketHomeDataFilter): boolean 
   return filter === 'all' || (filter === 'available' ? available : !available)
 }
 
-function compareRows(left: MarketHomeRow, right: MarketHomeRow, sort: MarketHomeSort): number {
-  if (sort === 'change') return nullableNumber(right.price_change_1d) - nullableNumber(left.price_change_1d) || left.symbol.localeCompare(right.symbol)
-  if (sort === 'volume') return nullableNumber(right.volume_ratio20) - nullableNumber(left.volume_ratio20) || left.symbol.localeCompare(right.symbol)
-  if (sort === 'oi') return nullableNumber(right.oi_change_1d) - nullableNumber(left.oi_change_1d) || left.symbol.localeCompare(right.symbol)
+function compareRows(left: MarketHomeRow, right: MarketHomeRow, sort: Exclude<MarketHomeSort, 'default'>, direction: MarketHomeSortDirection): number {
   if (sort === 'event') {
     const presence = Number(Boolean(right.event)) - Number(Boolean(left.event))
     if (presence) return presence
     if (!left.event || !right.event) return left.symbol.localeCompare(right.symbol)
     return latestEventFirst(left, right) || left.symbol.localeCompare(right.symbol)
   }
-  return 0
+
+  const values: Record<Exclude<MarketHomeSort, 'default' | 'event'>, (row: MarketHomeRow) => number | null> = {
+    close: (row) => row.close,
+    change: (row) => row.price_change_1d,
+    volume: (row) => row.volume_ratio20,
+    oi: (row) => row.oi_change_1d,
+  }
+  return compareNumericRows(left, right, values[sort], direction)
 }
 
-function nullableNumber(value: number | null): number { return value ?? Number.NEGATIVE_INFINITY }
+function compareNumericRows(
+  left: MarketHomeRow,
+  right: MarketHomeRow,
+  valueFor: (row: MarketHomeRow) => number | null,
+  direction: MarketHomeSortDirection,
+): number {
+  const leftValue = valueFor(left)
+  const rightValue = valueFor(right)
+  const leftIsFinite = typeof leftValue === 'number' && Number.isFinite(leftValue)
+  const rightIsFinite = typeof rightValue === 'number' && Number.isFinite(rightValue)
+  if (!leftIsFinite && !rightIsFinite) return left.symbol.localeCompare(right.symbol)
+  if (!leftIsFinite) return 1
+  if (!rightIsFinite) return -1
+  if (leftValue === rightValue) return left.symbol.localeCompare(right.symbol)
+  if (direction === 'asc') return leftValue < rightValue ? -1 : 1
+  return leftValue > rightValue ? -1 : 1
+}
 
 function latestEventFirst(left: MarketHomeRow, right: MarketHomeRow): number {
   const detected = Date.parse(right.event!.detected_at) - Date.parse(left.event!.detected_at)
