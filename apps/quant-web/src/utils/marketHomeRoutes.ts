@@ -16,7 +16,7 @@ export function marketHomeEventChartQuery(event: AlertEvent) {
 
 export function marketHomeUnifiedProductChartQuery(symbol: string) {
   return serializeMarketDetailIdentity({
-    view: 'trend', symbol, seriesKind: 'actual_dominant', frequency: '1d',
+    view: 'newow', symbol, strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d',
   })
 }
 

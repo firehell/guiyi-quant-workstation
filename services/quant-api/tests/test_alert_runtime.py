@@ -25,6 +25,7 @@ from app.alerts.runtime import (
 )
 from app.market_data.domain import CanonicalBar
 from app.market_data.market_read_service import MarketReadWindow
+from app.services.runtime_health import _collect_alert_health
 
 
 def test_startup_composition_requires_exact_registry_evaluator_and_policy_coverage() -> None:
@@ -222,13 +223,14 @@ def test_canonical_trigger_is_exact_and_date_canonical() -> None:
     ) is None
 
 
-def test_unrelated_live_frequency_does_not_clear_subing_rule_failure() -> None:
+@pytest.mark.parametrize("rule_code", [HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE])
+def test_unrelated_live_frequency_does_not_clear_rule_failure_or_health(rule_code) -> None:
     first_bar_at = datetime(2026, 9, 4, 1, 0, tzinfo=UTC)
     now = iter(
         first_bar_at + timedelta(minutes=offset) for offset in (1, 2, 3)
     )
     rule = AlertRule(
-        rule_code=SUBING_THS_ALERT_RULE_CODE,
+        rule_code=rule_code,
         enabled=True,
         scope_product_frequencies={"rb": ["15m"]},
     )
@@ -248,6 +250,9 @@ def test_unrelated_live_frequency_does_not_clear_subing_rule_failure() -> None:
             return False
 
     class MarketRead:
+        def assert_window_current(self, window):
+            return None
+
         def bars_until(self, _query, *, trading_day, end, limit):
             del limit
             bar = CanonicalBar(
@@ -286,7 +291,7 @@ def test_unrelated_live_frequency_does_not_clear_subing_rule_failure() -> None:
     runtime = AlertRuntime(
         session_factory=Session,
         market_read_factory=lambda _session: MarketRead(),
-        evaluators={SUBING_THS_ALERT_RULE_CODE: evaluator},
+        evaluators={rule_code: evaluator},
         sender=object(),  # type: ignore[arg-type]
         operational_products=("rb",),
         taxonomy={},
@@ -304,24 +309,42 @@ def test_unrelated_live_frequency_does_not_clear_subing_rule_failure() -> None:
         "open_interest": None,
     }
 
+    def alert_health():
+        values = {
+            "alert:heartbeat": json.dumps({
+                "generated_at": first_bar_at.isoformat(), "available": True,
+                "enabled_rule_count": 1, "scope_product_count": 1,
+            }),
+            "alert:runtime-status": json.dumps(runtime._current_runtime_status()),
+        }
+        return _collect_alert_health(
+            SimpleNamespace(get=values.get), now=first_bar_at,
+            configured_enabled=True,
+            notification={"configured": True}, transport_error_type=None,
+            freshness_seconds=30,
+        )
+
     runtime.process_message("live:bar:rb:15m", payload)
     failed = runtime._current_runtime_status()["rule_status"][
-        SUBING_THS_ALERT_RULE_CODE
+        rule_code
     ]
     assert failed["error_type"] == "evaluation_failed"
     assert failed["last_failure_at"] == "2026-09-04T01:01:00+00:00"
     assert failed["last_evaluated_bar_at"] is None
+    assert alert_health()["status"] == "degraded"
 
     runtime.process_message("live:bar:rb:1m", payload)
     assert runtime._current_runtime_status()["rule_status"][
-        SUBING_THS_ALERT_RULE_CODE
+        rule_code
     ] == failed
+    assert alert_health()["status"] == "degraded"
 
     runtime.process_message("live:bar:rb:15m", payload)
     recovered = runtime._current_runtime_status()["rule_status"][
-        SUBING_THS_ALERT_RULE_CODE
+        rule_code
     ]
     assert recovered["error_type"] is None
     assert recovered["last_evaluated_bar_at"] == first_bar_at.isoformat()
     assert recovered["last_failure_at"] == failed["last_failure_at"]
     assert evaluator.calls == 2
+    assert alert_health()["status"] == "ok"

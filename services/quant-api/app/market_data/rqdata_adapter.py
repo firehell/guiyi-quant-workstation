@@ -910,3 +910,53 @@ def _is_rqdata_quota_error(exc: Exception) -> bool:
         return False
     text = str(exc).lower()
     return "quota" in text or "rate limit" in text or "daily download limit" in text
+
+
+class RQDataLiveRecoveryAdapter:
+    """Current-day public get_price adapter, instantiated only after a proven gap.
+
+    Query dates use exchange trading day (including its prior-calendar-day night
+    session). Session/Calendar-derived endpoints select the completed prefix.
+    """
+
+    def __init__(self, client: Any | None = None) -> None:
+        self._client = client
+
+    def __call__(self, request) -> tuple[CanonicalBar, ...]:
+        expected = set(request.endpoints())
+        try:
+            if self._client is None:
+                self._client = RQDataClient()
+            rows = _records(self._client.price(
+                request.contract, request.trading_day, request.trading_day, '1m',
+            ))
+        except Exception as exc:
+            if _is_rqdata_quota_error(exc):
+                raise InfrastructureError('PROVIDER_QUOTA_EXHAUSTED') from exc
+            text = str(exc).lower()
+            if any(term in text for term in ('denied', 'permission', 'not authorized', 'forbidden')):
+                raise InfrastructureError('PROVIDER_ACCESS_DENIED') from exc
+            raise InfrastructureError('PROVIDER_UNAVAILABLE') from exc
+        bars = []
+        for row in rows:
+            # Explicit contract identity is mandatory, never inferred from request.
+            if row.get('order_book_id') != request.contract:
+                raise InfrastructureError('LIVE_RECOVERY_CONTRACT_INVALID')
+            if _row_date(row) != request.trading_day:
+                raise InfrastructureError('LIVE_RECOVERY_TRADING_DAY_INVALID')
+            end = _row_datetime(row)
+            # Public day queries can contain the current unfinished minute. Only
+            # authoritative completed endpoints are admitted to the recovery batch.
+            if end in expected:
+                bars.append(_canonical_bar(row, end, request.trading_day))
+            elif end <= request.cutoff:
+                legal_unfinalized = (
+                    end + timedelta(seconds=2) > request.cutoff
+                    and end.second == 0 and end.microsecond == 0
+                    and any(window.start < end <= window.end
+                            and (end - window.start).total_seconds() % 60 == 0
+                            for window in request.sessions)
+                )
+                if not legal_unfinalized:
+                    raise InfrastructureError('LIVE_RECOVERY_SESSION_INVALID')
+        return tuple(sorted(bars, key=lambda item: item.bar_end))

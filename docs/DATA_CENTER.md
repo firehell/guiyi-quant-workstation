@@ -110,6 +110,32 @@ plan hash identity。`1w` 只由同一交易所完整日行情聚合，四个日
 只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
 MainContractMap、Redis Live、Rule、Scope、Event 或 notification。分区失败可明确部分成功，不能自动重试。
 
+### 当日 Live 缺口恢复
+
+`GUIYI_LIVE_RECOVERY_ENABLED` 默认关闭，只有精确值 `1` 才组合恢复 worker。启用必须单独确认同一
+approved Runtime root/version 下 Live 与 Alert 同时具备恢复水位及共享锁协议；已有订阅授权不自动包含
+补取数据或恢复 Redis 写入。关闭时不实例化恢复 adapter/worker；只读诊断不创建锁或调用 provider。
+
+恢复只处理 operational 品种、当日冻结 rank1 subscription snapshot 对应物理合约。Calendar/Session
+定义完整 completed 1m 前缀，保留正常 Live 的两秒确认延迟，夜盘请求使用交易日；通过既有 RQData
+公开 `get_price` 1m adapter 补取。身份、日期、重复、OHLCV、Session、coverage 或重叠事实冲突全部
+fail-closed，不跨合约、不插值、不缩短前缀。数据仅进入当日 Live observation，不发布 Canonical。
+
+一个后台 worker 合并待检查品种，调度间隔至少 60 秒；每品种每 Session 最多三次 provider 尝试，计数
+存入当日 Redis，重启不重置。初始化及查询阶段的权限/额度失败停止当日后续 provider 请求。已有完整
+1m 但派生周期缺失时，直接用原 1m 重建完整桶，不下载、不消耗 provider 次数。
+
+缺失 1m、完整的 5m/15m/30m/60m 桶及单调恢复水位通过一次 Lua CAS 提交；提交前核对冻结订阅、原
+series 与 recovery revision。已有相同内容幂等跳过，冲突拒绝，正常 completed 写入同样不得覆盖冲突。
+恢复不发布历史 Bar 消息。数据查询在锁外，最终 CAS 和提交时钟在同品种进程间锁内；Alert 的窗口读取、
+Event commit 与 one-shot send 持有同一锁，因此水位不能穿过 Event/send。锁由 OS 持有，无超时租约；
+进程退出自动释放。锁文件限于 Runtime `.run/live-recovery-guards/{symbol}.lock`，按品种有界复用，不在
+运行中删除。锁或身份不可证明时不继续提交。
+
+诊断复用 MarketReadService、MDS lifecycle/session coverage 与已有物理分页入口：历史使用 Catalog
+MainContractMap，盘中使用既有冻结 rank1 Live snapshot；当日 MainContractMap 尚未由盘后发布不构成
+新的隐藏 Gate。分别报告历史 15m、当日 1m/15m 缺口；不可读历史保持未知，不能假装缺失数为零。
+
 ### 盘后 Runtime 状态合同
 
 `.run/after-market-status.json` 写 schema v2；读取兼容旧 schema v1。schema v2 在受监督自然盘后运行开始、任何

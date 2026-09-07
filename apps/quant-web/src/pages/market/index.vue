@@ -18,7 +18,7 @@ import { useMarketHome } from '@/composables/useMarketHome'
 import type { AlertEvent } from '@/types/market'
 import { buildMarketHomeViewModel, type MarketHomeRow } from '@/utils/marketHomeViewModel'
 import { loadMarketHomePreferences, saveMarketHomePreferences } from '@/utils/marketHomePreferences'
-import { marketHomeEventChartQuery, marketHomeProductChartQuery } from '@/utils/marketHomeRoutes'
+import { marketHomeEventChartQuery, marketHomeUnifiedProductChartQuery } from '@/utils/marketHomeRoutes'
 import { filterAndSortMarketHomeRows, type MarketHomeAlignmentFilter, type MarketHomeDataFilter, type MarketHomeEventFilter, type MarketHomeLocalFilter, type MarketHomeSort, type MarketHomeTrendFilter } from '@/utils/marketHomeWorkspace'
 
 const router = useRouter()
@@ -48,7 +48,7 @@ async function refreshAll() {
 function openProduct(item: MarketHomeRow) {
   void router.push({
     name: 'market-chart',
-    query: { ...marketHomeProductChartQuery(item.symbol), frequency: initialPreferences.detailFrequency },
+    query: marketHomeUnifiedProductChartQuery(item.symbol),
   })
 }
 

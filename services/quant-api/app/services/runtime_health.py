@@ -18,7 +18,7 @@ import json
 import os
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, cast
 
 from redis import Redis
 from sqlalchemy import func, select, text
@@ -283,6 +283,12 @@ def _collect_alert_health(
         if (
             "failed"
             in {observation["processing_state"], observation["notification_state"]}
+            or any(
+                rule["error_type"] is not None
+                for rule in cast(
+                    Mapping[str, Mapping[str, object]], runtime_status["rule_status"]
+                ).values()
+            )
         )
         else RUNTIME_STATUS_OK
     )

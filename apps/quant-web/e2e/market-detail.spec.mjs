@@ -68,6 +68,30 @@ test('missing view keeps the complete legacy detail page', async ({ page }) => {
   await expect(page.locator('[data-detail-ready]')).toHaveCount(0)
 })
 
+test('Newow route mounts its chart before an unused generic series can settle', async ({ page }) => {
+  const requests = await mockMarketDetail(page)
+  const typedRequests = []
+  let genericRequests = 0
+  await page.route('**/api/v1/market/newow/strategy-detail**', async (route) => {
+    typedRequests.push(new URL(route.request().url()))
+    await new Promise(() => {})
+  })
+  await page.route('**/api/v1/market/bars/page**', async () => {
+    genericRequests += 1
+    await new Promise(() => {})
+  })
+
+  await page.goto('/market/chart?symbol=jm&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d')
+
+  await expect(page.locator('[data-detail-workspace="newow"]')).toBeVisible()
+  await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible()
+  await expect(page.getByText('正在读取 Newow 主图…', { exact: true })).toBeVisible()
+  await expect.poll(() => typedRequests.length).toBe(1)
+  expect(typedRequests.map((url) => url.searchParams.get('section'))).toEqual(['chart'])
+  expect(genericRequests).toBe(0)
+  expect(requests.filter((url) => url.pathname.endsWith('/research/product'))).toEqual([])
+})
+
 test('Free mounts its generic workspace without the legacy sidebar or strategy markers', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)
@@ -82,7 +106,7 @@ test('Free mounts its generic workspace without the legacy sidebar or strategy m
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-research-marker-count', '0')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-rendered-marker-count', '0')
   await expect(page.getByText('火天大有（原始观察）', { exact: true })).toHaveCount(0)
-  await expect(page.getByText(/SuBing|牛哇|Newow/, { exact: false })).toHaveCount(0)
+  await expect(shell.locator('[data-detail-workspace="free"]').getByText(/SuBing|牛哇|Newow/, { exact: false })).toHaveCount(0)
 
   const order = await shell.locator('[data-detail-section]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-detail-section')))
   expect(order.slice(0, 4)).toEqual(['topbar', 'quote', 'view-nav', 'workspace-slot'])

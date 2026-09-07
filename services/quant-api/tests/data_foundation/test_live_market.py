@@ -31,6 +31,44 @@ class FakeRedis:
         self.fail_live_bar_publish_at: int | None = None
         self.live_bar_publish_attempts = 0
 
+    def eval(self, script: str, numkeys: int, *args):
+        """Explicit test script adapter; real atomic semantics tested on isolated Redis."""
+        keys, argv = args[:numkeys], args[numkeys:]
+        if script.startswith('-- live-put-v1'):
+            key = keys[0]
+            score, payload, ttl = argv
+            old = self.zrangebyscore(key, score, score)
+            if old:
+                return 0 if old == [payload] else -1
+            self.zadd(key, {payload: score})
+            self.expire(key, ttl)
+            return 1
+        if script.startswith('-- live-recovery-attempt-v1'):
+            if self.get(keys[1]):
+                return 0
+            state = json.loads(self.get(keys[0]) or '{"count":0,"last_at":0}')
+            if state['count'] >= 3 or int(argv[0]) - state['last_at'] < 60000:
+                return 0
+            self.set(keys[0], json.dumps({'count': state['count'] + 1, 'last_at': int(argv[0])}), ex=argv[1])
+            return 1
+        if script.startswith('-- live-recovery-v1'):
+            snapshot, state, plan, cutoff, payload, ttl = argv
+            if self.get(keys[0]) != snapshot:
+                return -1
+            if (self.get(keys[1]) or '') != state:
+                return -2
+            parsed = json.loads(plan)
+            for key, series in zip(keys[2:], parsed, strict=True):
+                if self.zrangebyscore(key, '-inf', cutoff) != series['before']:
+                    return -3
+            for key, series in zip(keys[2:], parsed, strict=True):
+                for bar in series['add']:
+                    self.zadd(key, {bar['payload']: bar['score']})
+                self.expire(key, ttl)
+            self.set(keys[1], payload, ex=ttl)
+            return 1
+        raise AssertionError('Unknown test Redis script')
+
     def zadd(self, key: str, mapping: dict[str, int]) -> int:
         if self.fail_zadd:
             self.fail_zadd -= 1

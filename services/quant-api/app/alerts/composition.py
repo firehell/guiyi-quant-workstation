@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 import json
+import os
+from functools import partial
 from typing import Any
 
 from redis.exceptions import WatchError
@@ -173,7 +175,11 @@ def build_alert_runtime() -> AlertRuntime:
         raise RuntimeError("ALERT_RUNTIME_NOT_ENABLED")
     operational_products = load_operational_products()
     redis = get_redis_connection()
+    from app.market_data.live_recovery_guard import recovery_guard
+
     return AlertRuntime(
+        live_processing_guard=(partial(recovery_guard, wait=True)
+                               if os.getenv("GUIYI_LIVE_RECOVERY_ENABLED", "0") == "1" else None),
         session_factory=SessionLocal,
         market_read_factory=build_market_read_service,
         evaluators={

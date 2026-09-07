@@ -138,7 +138,21 @@ def main(
 
 
 def entrypoint() -> None:
-    raise SystemExit(main())
+    handler = None
+    if len(sys.argv) == 2 and sys.argv[1] in {"live", "alert"}:
+        from app.runtime_logging import install_runtime_diagnostics
+
+        try:
+            handler = install_runtime_diagnostics(sys.argv[1])
+        except Exception:
+            print("RUNTIME_LOG_UNAVAILABLE", file=sys.stderr)
+            raise SystemExit(1) from None
+    try:
+        raise SystemExit(main())
+    finally:
+        if handler is not None:
+            logging.getLogger("app").removeHandler(handler)
+            handler.close()
 
 
 if __name__ == "__main__":

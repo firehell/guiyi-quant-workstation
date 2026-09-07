@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -66,6 +68,14 @@ def resolved_session_windows_for_trading_day(
             TradingCalendar.is_trading_day.is_(True),
         )
     )
+    return _resolve_templates(templates, trading_day, prior)
+
+
+def _resolve_templates(
+    templates: Sequence[TradingSession], trading_day: date, prior: date | None
+) -> tuple[ResolvedSessionWindow, ...]:
+    if not templates:
+        raise SessionClockError("TRADING_SESSION_MISSING")
     windows: list[ResolvedSessionWindow] = []
     for template in templates:
         is_night = template.start_time >= time(18)
@@ -106,3 +116,70 @@ def session_windows_for_trading_day(
             trading_day=trading_day,
         )
     )
+
+
+class SessionWindowBatch:
+    """Request-local authoritative facts; resolving each day performs no SQL."""
+
+    def __init__(
+        self,
+        session: Session,
+        *,
+        exchange: str,
+        symbol: str,
+        trading_days: tuple[date, ...],
+    ) -> None:
+        self.templates: tuple[TradingSession, ...] = ()
+        self.calendar: tuple[date, ...] = ()
+        if not trading_days:
+            return
+        first, last = min(trading_days), max(trading_days)
+        self.templates = tuple(
+            session.scalars(
+                select(TradingSession)
+                .where(
+                    TradingSession.exchange_code == exchange,
+                    TradingSession.instrument_symbol == symbol.strip().lower(),
+                    TradingSession.is_active.is_(True),
+                    TradingSession.effective_from <= last,
+                    TradingSession.effective_to.is_(None)
+                    | (TradingSession.effective_to >= first),
+                )
+                .order_by(TradingSession.start_time)
+            )
+        )
+        prior = (
+            select(func.max(TradingCalendar.trade_date))
+            .where(
+                TradingCalendar.exchange_code == exchange,
+                TradingCalendar.trade_date < first,
+                TradingCalendar.is_trading_day.is_(True),
+            )
+            .scalar_subquery()
+        )
+        self.calendar = tuple(
+            session.scalars(
+                select(TradingCalendar.trade_date)
+                .where(
+                    TradingCalendar.exchange_code == exchange,
+                    TradingCalendar.is_trading_day.is_(True),
+                    TradingCalendar.trade_date <= last,
+                    (TradingCalendar.trade_date >= first)
+                    | (TradingCalendar.trade_date == prior),
+                )
+                .order_by(TradingCalendar.trade_date)
+            )
+        )
+
+    def windows(self, trading_day: date) -> tuple[SessionWindow, ...]:
+        templates = tuple(
+            t
+            for t in self.templates
+            if t.effective_from <= trading_day
+            and (t.effective_to is None or t.effective_to >= trading_day)
+        )
+        index = bisect_left(self.calendar, trading_day)
+        prior = self.calendar[index - 1] if index else None
+        return tuple(
+            item.window for item in _resolve_templates(templates, trading_day, prior)
+        )

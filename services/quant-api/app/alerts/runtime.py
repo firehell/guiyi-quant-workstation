@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, DecimalException
@@ -42,7 +42,7 @@ from app.market_data.domain import (
     SeriesPageQuery,
     normalize_contract_for_symbol,
 )
-from app.market_data.market_read_service import MarketReadService, MarketReadWindow
+from app.market_data.market_read_service import MarketReadService, MarketReadWindow, MarketReadWindowError
 from app.market_data.product_retirement import normalize_symbol
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
 
@@ -166,7 +166,9 @@ class AlertRuntime:
         runtime_status_store: AlertRuntimeStatusStore | None = None,
         clock: Callable[[], datetime] | None = None,
         stop_requested: Callable[[], bool] | None = None,
+        live_processing_guard: Callable[[str], AbstractContextManager] | None = None,
     ) -> None:
+        self._live_processing_guard = live_processing_guard or (lambda symbol: nullcontext())
         self._session_factory = session_factory
         self._market_read_factory = market_read_factory
         self._evaluators = dict(evaluators or {})
@@ -252,6 +254,16 @@ class AlertRuntime:
     def _process_live(self, trigger: _LiveBarTrigger) -> None:
         if trigger.symbol not in self._operational_products:
             return
+        try:
+            with self._live_processing_guard(trigger.symbol):
+                self._process_live_guarded(trigger)
+        except Exception:
+            _LOGGER.warning("ALERT_RECOVERY_GUARD_UNAVAILABLE")
+            self._record_processing_result(processing_now=self._aware_now(), bar_at=trigger.bar.bar_end, failed=True)
+
+    def _process_live_guarded(self, trigger: _LiveBarTrigger) -> None:
+        if trigger.symbol not in self._operational_products:
+            return
         processing_now = self._aware_now()
         messages: list[AlertNotificationMessage] = []
         event_count = 0
@@ -300,11 +312,15 @@ class AlertRuntime:
                             event_bar=trigger.bar,
                         ):
                             continue
+                        market_read.assert_window_current(window)
+                        if not window.notification_eligible:
+                            continue
                         candidates = _validated_candidates(
                             evaluator.evaluate_candidates(market_read, window),
                             window=window,
                             event_mode=definition.event_mode,
                         )
+                        market_read.assert_window_current(window)
                         rule_event_created = False
                         for candidate in candidates:
                             prepared = _persist_candidate_and_prepare_notification(
@@ -333,7 +349,7 @@ class AlertRuntime:
                             event_created=rule_event_created,
                             error_type=None,
                         )
-                    except AlertEvaluationError as exc:
+                    except (AlertEvaluationError, MarketReadWindowError) as exc:
                         if session.in_transaction():
                             session.rollback()
                         self._record_rule_result(
@@ -447,7 +463,7 @@ class AlertRuntime:
                                     event_created=rule_event_created,
                                     error_type=None,
                                 )
-                            except AlertEvaluationError as exc:
+                            except (AlertEvaluationError, MarketReadWindowError) as exc:
                                 if session.in_transaction():
                                     session.rollback()
                                 self._record_rule_result(

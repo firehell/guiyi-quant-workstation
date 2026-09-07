@@ -99,6 +99,33 @@ continuous 或前一合约替代。
 - **WHEN** 当前 rank1 physical contract 没有可证明的 lifecycle Canonical prefix
 - **THEN** evaluator 不创建 Event，且不以 Live-only 或跨合约 warm-up 降级
 
+### Requirement: Live recovery cannot create historical notifications
+
+当日受控 Live recovery MUST 默认关闭且只恢复已验证同物理合约的 completed observation，不发布历史
+completed-Bar 消息。恢复后的窗口 MUST 携带同一次读取的 recovery revision 与提交水位；水位与订阅
+身份在窗口读取、replay 后及 Event 准备前 MUST 一致。cutoff 不晚于恢复水位的旧/积压触发 MUST 不创建
+Event、不发送通知；只有之后新到达的 completed Bar 才可继续正常评估。中间 Bar 仅推进同合约状态，
+不改变公式或 Event identity。
+
+Live recovery 最终提交与 Alert 窗口读取至 Event commit/one-shot send MUST 使用同品种进程间互斥。
+该锁 MUST 随进程退出释放，不以可在 Event commit 中途到期的租约替代。启用恢复前 MUST 证明 Live、
+Alert 的 exact Runtime root/version 与恢复开关一致；发布或 Runtime promotion 不隐含恢复启用授权。
+
+#### Scenario: An old trigger remains queued when recovery completes
+
+- **WHEN** trigger cutoff 不晚于恢复提交水位，包含进程重启后的重复触发
+- **THEN** Event 和通知计数不增加，同 Rule 当前错误不能因跳过而被错误清除
+
+#### Scenario: A new completed Bar crosses after recovery
+
+- **WHEN** trigger cutoff 晚于恢复水位且同合约完整输入通过既有校验，公式产生当前 Candidate
+- **THEN** 先提交唯一 Event，再最多一次 transport；重复触发、重启和 provider 失败均不补发
+
+#### Scenario: Recovery races with an admitted Alert
+
+- **WHEN** Alert 正在读取窗口、提交 Event 或发送一次通知
+- **THEN** 同品种 recovery 不得提交新水位；反向顺序时 Alert 必须读到已提交水位并拒绝旧触发
+
 ### Requirement: Event modes and identity remain distinct
 
 HTDY Rule SHALL 保持 forward-only `first_seen`；SuBing Rule SHALL 使用 `exact`。SuBing Event identity SHALL
@@ -203,3 +230,16 @@ promotion、真实通知、provider acceptance 与微信实际送达均是彼此
 
 - **WHEN** implementation、full verification 与 independent review 完成
 - **THEN** 结论最多为允许进入 release candidate，不能声明 RELEASED、RUNTIME_READY、真实通知或业务闭环
+
+### Requirement: Runtime aggregate health preserves current rule errors
+
+聚合Alert health MUST 检查两条Rule当前error_type；任一Rule仍为evaluation_failed等当前错误时，
+不能因进程运行或aggregate旧字段为ok而显示整体健康。后续成功eval清空当前error_type后可以回绿，
+Rule的last_failure_at MUST 保留，现有全局失败事实继续按原合同保存；不新增Rule历史分类或计数字段。
+不得用历史失败永久阻止回绿，也不得把回绿宣称自然Event或通知已完成。
+
+#### Scenario: Successful evaluation follows a previous failure
+
+- **GIVEN** Rule保留last_failure_at，但成功eval已清空当前error_type
+- **WHEN** 计算聚合health
+- **THEN** 允许当前health为ok并继续呈现历史失败；若error_type仍存在则不能回绿

@@ -143,6 +143,24 @@ def test_catalog_contract_fact_rejects_unknown_contract(session, tmp_path) -> No
         MarketCatalog(session, tmp_path).contract_fact("jm", "JM2509")
 
 
+def test_as_of_calendar_seam_maps_real_catalog_error_to_mds_contract(
+    session, tmp_path
+) -> None:
+    """A caller never needs to classify raw CatalogError at the as-of boundary."""
+    service = MarketDataService(
+        MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path)
+    )
+
+    with pytest.raises(MarketDataError) as raised:
+        service.trading_days_overlapping_window(
+            symbol="cu",
+            start=datetime(2025, 1, 2, tzinfo=UTC),
+            end=datetime(2025, 1, 3, tzinfo=UTC),
+        )
+
+    assert raised.value.code == "INSTRUMENT_EXCHANGE_MISSING"
+
+
 @pytest.mark.parametrize(
     ("symbol", "provider", "listed_date", "expired_date", "error_code"),
     [
@@ -1415,3 +1433,156 @@ def test_query_hot_path_has_no_digest_manifest_or_gap_dependency() -> None:
     assert "sha256" not in source.lower()
     assert "manifest" not in source.lower()
     assert "data_gap" not in source.lower()
+
+
+@pytest.mark.parametrize("limit", [1, 500])
+@pytest.mark.parametrize("frequency", ["1d", "60m", "1w"])
+def test_newow_chart_window_uses_bounded_catalog_queries(session, tmp_path, limit, frequency):
+    from sqlalchemy import event
+    from guiyi_quant.newow.product_contracts import ProductFrequency
+    from app.market_data.newow.product_reader import NewowProductReader
+
+    start = date(2023, 1, 2)
+    days = tuple(
+        start + timedelta(days=i)
+        for i in range(1344)
+        if (start + timedelta(days=i)).weekday() < 5
+    )
+    session.execute(update(TradingSession).values(effective_from=start))
+    session.add_all(
+        TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True)
+        for day in days
+    )
+    session.commit()
+
+    class Coverage:
+        def product_start(self, symbol):
+            return start
+
+        def latest_complete_day(self, products):
+            return days[-1]
+
+    as_of = datetime.combine(days[-1], time(7), UTC)
+    mds = MarketDataService(
+        MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path)
+    )
+    reader = NewowProductReader(
+        mds, coverage=Coverage(), active_products=("jm",), now=lambda: as_of
+    )
+    selects = []
+
+    def count(_conn, _cursor, statement, _params, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT"):
+            selects.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        window = reader.resolve_chart_window("jm", ProductFrequency(frequency), limit, as_of)
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+    count_days = (limit + 3) // 4 if frequency == "60m" else limit
+    if frequency == "1w":
+        count_days *= 7
+    assert (window.since, window.through) == (days[max(0, len(days) - count_days)], days[-1])
+    print(f"{frequency=} {limit=} SELECTs={len(selects)}")
+    assert len(selects) <= 8, f"960 trading days issued {len(selects)} SELECTs"
+
+
+def test_completed_days_preserve_night_weekend_and_exact_close(session, tmp_path):
+    friday, monday = date(2025, 1, 3), date(2025, 1, 6)
+    session.add_all(
+        [
+            TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=trading)
+            for day, trading in [
+                (date(2025, 1, 2), True),
+                (friday, True),
+                (date(2025, 1, 4), False),
+                (monday, True),
+            ]
+        ]
+    )
+    session.add(
+        TradingSession(
+            exchange_code="DCE",
+            instrument_symbol="jm",
+            session_name="night",
+            start_time=time(21),
+            end_time=time(2),
+            crosses_midnight=True,
+            effective_from=date(2025, 1, 1),
+            is_active=True,
+        )
+    )
+    session.commit()
+    mds = MarketDataService(
+        MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path)
+    )
+    start = datetime(2025, 1, 3, 0, tzinfo=UTC)
+    friday_night = datetime(2025, 1, 3, 14, tzinfo=UTC)
+    assert mds.trading_days_overlapping_window(
+        symbol="jm", start=start, end=friday_night
+    ) == (friday, monday)
+    for cutoff, expected in [
+        (friday_night, (friday,)),
+        (datetime(2025, 1, 4, 4, tzinfo=UTC), (friday,)),
+        (datetime(2025, 1, 6, 6, 59, tzinfo=UTC), (friday,)),
+        (datetime(2025, 1, 6, 7, tzinfo=UTC), (friday, monday)),
+    ]:
+        assert (
+            mds.completed_trading_days(
+                symbol="jm", start=start, as_of=cutoff, latest=monday
+            )
+            == expected
+        )
+
+
+@pytest.mark.parametrize("fault", ["missing", "prior_missing", "expired"])
+def test_completed_days_fail_closed_on_session_facts(session, tmp_path, fault):
+    day = date(2025, 1, 3)
+    session.add(
+        TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True)
+    )
+    if fault == "missing":
+        session.execute(update(TradingSession).values(is_active=False))
+    elif fault == "expired":
+        session.execute(update(TradingSession).values(effective_to=date(2025, 1, 2)))
+    else:
+        session.execute(
+            update(TradingSession).values(start_time=time(21), end_time=time(23))
+        )
+    session.commit()
+    mds = MarketDataService(
+        MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path)
+    )
+    code = (
+        "PREVIOUS_TRADING_DAY_MISSING"
+        if fault == "prior_missing"
+        else "TRADING_SESSION_MISSING"
+    )
+    with pytest.raises(MarketDataError, match=code):
+        mds.completed_trading_days(
+            symbol="jm",
+            start=datetime(2025, 1, 3, tzinfo=UTC),
+            as_of=datetime(2025, 1, 3, 8, tzinfo=UTC),
+            latest=day,
+        )
+
+
+def test_session_batch_matches_authoritative_single_day_across_template_change(session):
+    from app.market_data.session_clock import SessionWindowBatch, session_windows_for_trading_day
+
+    days = (date(2025, 1, 3), date(2025, 1, 6))
+    session.add_all(TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True)
+                    for day in (date(2025, 1, 2), *days))
+    session.execute(update(TradingSession).values(effective_to=days[0]))
+    session.add(TradingSession(exchange_code="DCE", instrument_symbol="jm",
+        session_name="short_day", start_time=time(9), end_time=time(11),
+        effective_from=days[1], is_active=True))
+    session.commit()
+    batch = SessionWindowBatch(session, exchange="DCE", symbol="jm", trading_days=days)
+    for day in days:
+        assert batch.windows(day) == session_windows_for_trading_day(
+            session, exchange="DCE", symbol="jm", trading_day=day)
+    assert batch.windows(days[0])[-1].end == datetime(2025, 1, 3, 7, tzinfo=UTC)
+    assert batch.windows(days[1])[-1].end == datetime(2025, 1, 6, 3, tzinfo=UTC)

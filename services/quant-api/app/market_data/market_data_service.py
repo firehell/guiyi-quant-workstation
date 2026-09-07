@@ -39,6 +39,7 @@ from app.market_data.domain import (
     MarketSeriesResult,
     ResolvedContractSegment,
     SeriesKind,
+    SeriesPageCursorMode,
     SeriesPageQuery,
     SeriesQuery,
 )
@@ -147,6 +148,46 @@ class MarketDataService:
         if not windows:
             raise MarketDataError("TRADING_SESSION_MISSING")
         return windows
+
+    def trading_days_overlapping_window(
+        self,
+        *,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[date, ...]:
+        """Resolve as-of Calendar/Session overlap without leaking Catalog errors."""
+        try:
+            assert_not_retired(symbol)
+            return self.catalog.trading_days_overlapping_window(symbol, start, end)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+
+    def completed_trading_days(
+        self,
+        *,
+        symbol: str,
+        start: datetime,
+        as_of: datetime,
+        latest: date,
+    ) -> tuple[date, ...]:
+        """Resolve completed days using one batch of authoritative session facts."""
+        try:
+            assert_not_retired(symbol)
+            windows = self.catalog.session_windows_overlapping_window(
+                symbol, start, as_of + timedelta(microseconds=1)
+            )
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        return tuple(
+            day
+            for day, sessions in windows
+            if day <= latest and max(window.end for window in sessions) <= as_of
+        )
 
     def query_actual_dominant_trading_days(
         self,
@@ -260,6 +301,25 @@ class MarketDataService:
         Live can complete today's suffix, but cannot supply missing prior-day history.
         The caller has already checked overlap and physical provenance.
         """
+        expected = self.expected_contract_replay_endpoints(
+            symbol=symbol, contract=contract, frequency=frequency,
+            trading_day=trading_day, cutoff=cutoff, after=after,
+        )
+        if (
+            not expected
+            or expected[-1] != (cutoff, trading_day)
+            or tuple((bar.bar_end, bar.trading_day) for bar in bars) != expected
+        ):
+            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
+
+    def expected_contract_replay_endpoints(
+        self, *, symbol: str, contract: str, frequency: BarFrequency | str,
+        trading_day: date, cutoff: datetime, after: datetime | None = None,
+        since: date | None = None,
+    ) -> tuple[tuple[datetime, date], ...]:
+        """Shared lifecycle/session authority for validation and read-only diagnosis."""
+        if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+            raise MarketDataError("CONTRACT_REPLAY_CUTOFF_INVALID")
         try:
             fact = self.catalog.contract_fact(symbol, contract)
             if not fact.listed_date <= trading_day < fact.expired_date:
@@ -268,9 +328,9 @@ class MarketDataService:
                 self.catalog.session,
                 PROJECT_ROOT / "data/universe/product_window_starts.csv",
             )
-            days = coverage.contract_trading_days(fact, fact.listed_date, trading_day)
-            key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
-            expected = tuple(
+            days = coverage.contract_trading_days(fact, max(fact.listed_date, since or fact.listed_date), trading_day)
+            key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency(frequency))
+            return tuple(
                 (bar_end, day)
                 for day in days
                 for bar_end in coverage.expected_bar_ends_for_trading_days(key, (day,))
@@ -278,12 +338,6 @@ class MarketDataService:
             )
         except (CatalogError, InfrastructureError) as exc:
             raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE") from exc
-        if (
-            not expected
-            or expected[-1] != (cutoff, trading_day)
-            or tuple((bar.bar_end, bar.trading_day) for bar in bars) != expected
-        ):
-            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
 
     def _trading_day_window(
         self,
@@ -339,10 +393,37 @@ class MarketDataService:
             (),
         )
 
+    def query_page_inclusive(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        """Return one physical page including its exact completed-bar endpoint.
+
+        This narrow seam is for a replay prefix whose first cursor is an
+        observed completed Bar, not an artificial timestamp beyond Catalog
+        coverage. Later pages continue through the ordinary exclusive cursor.
+        """
+        try:
+            assert_not_retired(request.symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
+            raise MarketDataError("INCLUSIVE_PAGE_PHYSICAL_REQUIRED")
+        assert request.physical_key is not None
+        return self._page_result(
+            request,
+            self._physical_page_bars(
+                request.physical_key,
+                request,
+                inclusive_before=True,
+            ),
+            (),
+            cursor_mode=SeriesPageCursorMode.INCLUSIVE,
+        )
+
     def _physical_page_bars(
         self,
         key: DatasetKey,
         request: SeriesPageQuery,
+        *,
+        inclusive_before: bool = False,
     ) -> list[CanonicalBar]:
         partitions = self.catalog.partitions_before(key, request.before)
         if not partitions:
@@ -375,7 +456,10 @@ class MarketDataService:
                 )
             values = self._partition_bars(partition)
             for bar in reversed(values):
-                if request.before is not None and bar.bar_end >= request.before:
+                if request.before is not None and (
+                    bar.bar_end > request.before
+                    or (not inclusive_before and bar.bar_end == request.before)
+                ):
                     continue
                 if previous_end is not None and bar.bar_end >= previous_end:
                     raise MarketDataError("BAR_IDENTITY_CONFLICT")
@@ -1116,6 +1200,8 @@ class MarketDataService:
         request: SeriesPageQuery,
         selected_descending: list[CanonicalBar],
         segments: tuple[ResolvedContractSegment, ...],
+        *,
+        cursor_mode: SeriesPageCursorMode = SeriesPageCursorMode.EXCLUSIVE,
     ) -> MarketSeriesPageResult:
         """将 newest-first 候选转换为稳定的 ascending 页面响应。"""
         has_more = len(selected_descending) > request.limit
@@ -1135,6 +1221,7 @@ class MarketDataService:
             has_more_before=has_more,
             next_before=page[0].bar_end if has_more else None,
             resolved_contract_segments=segments,
+            cursor_mode=cursor_mode,
         )
 
 

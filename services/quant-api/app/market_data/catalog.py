@@ -23,10 +23,11 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
+from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import BarFrequency, DatasetKey, DatasetKind
 from app.market_data.session_clock import (
     SessionClockError,
-    session_windows_for_trading_day,
+    SessionWindowBatch,
 )
 from app.market_data.storage import PublishedPartition
 from app.models import (
@@ -442,6 +443,18 @@ class MarketCatalog:
         夜盘虽发生在前一自然日，但身份属于下一交易日；因此候选范围额外纳入
         ``end`` 自然日后的首个交易日，再以历史 Session 事实精确筛选。
         """
+        return tuple(
+            day
+            for day, _ in self.session_windows_overlapping_window(symbol, start, end)
+        )
+
+    def session_windows_overlapping_window(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[tuple[date, tuple[SessionWindow, ...]], ...]:
+        """Resolve Calendar/Session once and retain windows for completion checks."""
         exchange = self.exchange_for_symbol(symbol)
         start_day = start.astimezone(SHANGHAI).date()
         end_day = end.astimezone(SHANGHAI).date()
@@ -458,15 +471,14 @@ class MarketCatalog:
         )
         if next_day is not None:
             candidates.append(next_day)
-        result: list[date] = []
-        for trading_day in tuple(dict.fromkeys(candidates)):
+        candidate_days = tuple(dict.fromkeys(candidates))
+        batch = SessionWindowBatch(
+            self.session, exchange=exchange, symbol=symbol, trading_days=candidate_days
+        )
+        result: list[tuple[date, tuple[SessionWindow, ...]]] = []
+        for trading_day in candidate_days:
             try:
-                windows = session_windows_for_trading_day(
-                    self.session,
-                    exchange=exchange,
-                    symbol=symbol,
-                    trading_day=trading_day,
-                )
+                windows = batch.windows(trading_day)
             except SessionClockError as exc:
                 if (
                     trading_day > end_day
@@ -483,7 +495,7 @@ class MarketCatalog:
                     continue
                 raise CatalogError(exc.code) from exc
             if any(window.start < end and start < window.end for window in windows):
-                result.append(trading_day)
+                result.append((trading_day, windows))
         return tuple(result)
 
     def missing_main_map_days(

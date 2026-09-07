@@ -35,6 +35,10 @@
 - 只对 `operational_products.txt` 订阅当日 rank1 completed 1m；
 - 每日 18:05 及最多一次一小时后 retry，只对同一集合运行 `HistoricalDataManager.update`。
 
+默认关闭的当日 Live 缺口恢复不在上述持续授权内。首次启用需明确范围，并证明 Live/Alert 同一 exact
+Runtime root/version 与恢复开关一致。获准后也仅能执行 DATA_CENTER 合同内的当日物理合约补取、
+验证、受限次数与原子 observation 恢复；不授权 Canonical、历史信号补评、通知重试或 Scope 修改。
+
 该授权不覆盖其他生产数据/DB、main/tag/release、Runtime 版本切换、Alert transport、真实业务通知或订单。盘后状态和 health 只用于观察；只有受监督的自然盘后业务失败可向 owner 发起最多一次 PushPlus 运维通知，且不用 Alert Rule、Topic、`AlertEvent`、DB、retry 或 fallback；`missed/stuck` 只进入 health。
 
 ### Alert Runtime V2

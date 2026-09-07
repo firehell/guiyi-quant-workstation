@@ -147,6 +147,7 @@ class ActualDominantResearchSegmentLoader:
         frequencies: Sequence[BarFrequency],
         since: date,
         through: date,
+        allow_empty_frequencies: Sequence[BarFrequency] = (),
     ) -> ActualDominantResearchSeries:
         requested_frequencies = tuple(frequencies)
         if not requested_frequencies:
@@ -156,6 +157,13 @@ class ActualDominantResearchSegmentLoader:
         if len(set(requested_frequencies)) != len(requested_frequencies):
             raise ActualDominantResearchSegmentIdentityError(
                 "rank1 frequency identity is duplicated"
+            )
+        allowed_empty = frozenset(allow_empty_frequencies)
+        if not allowed_empty <= {BarFrequency.W1} or not allowed_empty <= set(
+            requested_frequencies
+        ):
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 empty-frequency identity is invalid"
             )
 
         authoritative_segments = self._market_data.actual_dominant_segments(
@@ -189,6 +197,7 @@ class ActualDominantResearchSegmentLoader:
                 result,
                 frequency=frequency,
                 authoritative_segments=authoritative_segments,
+                allow_empty=frequency in allowed_empty,
             )
         return ActualDominantResearchSeries(
             MappingProxyType(full),
@@ -236,10 +245,17 @@ class ActualDominantResearchSegmentLoader:
         *,
         frequency: BarFrequency,
         authoritative_segments: tuple[ResolvedContractSegment, ...],
+        allow_empty: bool,
     ) -> None:
         bars = result.bars
         raw_segments = result.resolved_contract_segments
-        if not bars or not raw_segments:
+        if not bars:
+            if allow_empty and not raw_segments:
+                return
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 segment identity is missing or inconsistent"
+            )
+        if not raw_segments:
             raise ActualDominantResearchSegmentIdentityError(
                 "rank1 segment identity is missing or inconsistent"
             )

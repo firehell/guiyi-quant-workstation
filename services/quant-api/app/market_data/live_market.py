@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from threading import Lock
-from typing import Any, Mapping, Protocol
+from typing import Any, ContextManager, Mapping, Protocol
 from zoneinfo import ZoneInfo
 
 from app.market_data.aggregation import SessionWindow, aggregate_from_1m, bucket_window_for_bar
@@ -35,7 +35,15 @@ class LiveBarObservation:
     contract: str
 
 
+@dataclass(frozen=True, slots=True)
+class LiveRecoveryState:
+    revision: int
+    recovered_through: datetime
+
+
 class RedisClient(Protocol):
+    def eval(self, script: str, numkeys: int, *args: Any) -> Any: ...
+
     def zadd(self, key: str, mapping: Mapping[str, int]) -> int: ...
 
     def zremrangebyscore(self, key: str, minimum: int, maximum: int) -> int: ...
@@ -75,13 +83,36 @@ class RedisLiveStore:
             raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
         key = self._bars_key(trading_day, symbol, frequency)
         score = _epoch_millis(bar.bar_end)
-        self._redis.zremrangebyscore(key, score, score)
-        self._redis.zadd(
-            key,
-            {_compact_json(_bar_payload(bar, contract=normalized_contract)): score},
+        from app.market_data.live_recovery_scripts import PUT_BAR
+
+        result = self._redis.eval(
+            PUT_BAR, 1, key, score,
+            _compact_json(_bar_payload(bar, contract=normalized_contract)),
+            _LIVE_TTL_SECONDS,
         )
-        if self._redis.expire(key, _LIVE_TTL_SECONDS) is not True:
+        if result == -1:
+            raise ValueError("LIVE_BAR_CONFLICT")
+        if result not in (0, 1):
             raise ConnectionError("LIVE_REDIS_UNAVAILABLE")
+
+    def recovery_state(
+        self, trading_day: date, symbol: str, expected_contract: str,
+    ) -> LiveRecoveryState | None:
+        raw = self._redis.get(self._recovery_key(trading_day, symbol, expected_contract))
+        if raw is None:
+            return None
+        payload = _decode_mapping(raw)
+        revision = payload.get("revision")
+        through = datetime.fromisoformat(payload["recovered_through"])
+        if type(revision) is not int or revision < 1 or through.tzinfo is None:
+            raise ValueError("LIVE_RECOVERY_STATE_INVALID")
+        return LiveRecoveryState(revision, through.astimezone(UTC))
+
+    @staticmethod
+    def _recovery_key(trading_day: date, symbol: str, contract: str) -> str:
+        if normalize_contract_for_symbol(symbol, contract) != contract:
+            raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+        return f"live:recovery:{trading_day.isoformat()}:{symbol}:{contract}"
 
     def bars_after(
         self,
@@ -473,6 +504,9 @@ class LiveMarketService:
         operational_products: tuple[str, ...],
         sleep: Callable[[float], None] | None = None,
         clock: Callable[[], datetime] | None = None,
+        recovery_fetch_factory: Callable | None = None,
+        recovery_sessions: Callable[[str, date], tuple[SessionWindow, ...]] | None = None,
+        recovery_guard_factory: Callable[[str], ContextManager] | None = None,
     ) -> None:
         self._provider_factory = provider_factory
         self._dominant_source = dominant_source
@@ -497,6 +531,13 @@ class LiveMarketService:
         self._provider_available = True
         self.next_provider_retry_at: datetime | None = None
         self.rejections: list[str] = []
+        self._recovery_sessions = recovery_sessions
+        self._recovery_worker = None
+        if recovery_fetch_factory is not None:
+            if recovery_sessions is None:
+                raise ValueError("LIVE_RECOVERY_AUTHORITY_REQUIRED")
+            from app.market_data.live_recovery import LiveRecoveryWorker
+            self._recovery_worker = LiveRecoveryWorker(store, recovery_fetch_factory, clock=self._clock, guard_factory=recovery_guard_factory)
 
     def reconcile(self, now: datetime) -> str | None:
         """按当前交易日一次性解析 rank1，并与 provider 订阅作差量同步。"""
@@ -568,7 +609,27 @@ class LiveMarketService:
         } | self._channels_in_session_grace(now)
         self._sync_provider_channels(desired, create_if_missing=True)
         self._publish_heartbeat(now, phases)
+        self._schedule_recovery(now, phases)
         return None
+
+    def _schedule_recovery(self, now: datetime, phases: Mapping[str, ProductMarketPhase]) -> None:
+        if self._recovery_worker is None or self._recovery_sessions is None or not self._recovery_worker.due(now):
+            return
+        from app.market_data.live_recovery import LiveRecoveryRequest
+        # All DB-bound authority calls stay on this foreground thread. Unknown
+        # or other-day products are excluded before any worker/provider activity.
+        requests = []
+        for symbol in self._products:
+            phase = phases[symbol]
+            if phase.trading_day != self._trading_day or phase.phase not in (MarketPhase.TRADING, MarketPhase.BREAK):
+                continue
+            if phase.trading_day is None or symbol not in self._contracts:
+                continue
+            requests.append(LiveRecoveryRequest(
+                phase.trading_day, symbol, self._contracts[symbol],
+                tuple(self._contracts.items()), self._recovery_sessions(symbol, phase.trading_day), now,
+            ))
+        self._recovery_worker.schedule(tuple(requests), now)
 
     def ingest(self, contract: str, bar: CanonicalBar, *, now: datetime) -> str | None:
         """保留最新未完成 payload；完成后不允许覆盖。"""

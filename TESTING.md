@@ -17,6 +17,32 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
+Newow P4 分区编排、typed API、统计截止、来源事实、快照/资源边界、旧 D1 兼容与只读保护：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/newow/test_product_service.py \
+  services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/newow/test_product_source_facts.py \
+  services/quant-api/tests/newow/test_product_snapshot_cache.py \
+  services/quant-api/tests/newow/test_product_resource_gate.py \
+  services/quant-api/tests/newow/test_product_inflight.py \
+  services/quant-api/tests/newow/test_market_newow_product_api.py \
+  services/quant-api/tests/newow/test_product_readonly_compatibility.py \
+  services/quant-api/tests/newow/test_market_newow_api.py
+```
+
+隔离 fake MDS 的 P4 后端冷/热/长前缀复测入口（不代表浏览器或真实工作站验收）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -s \
+  services/quant-api/tests/newow/test_product_performance.py
+```
+
+以上 Newow 命令只使用内存 fixture/fake MDS，不连接 RQData、production PostgreSQL/Redis、Runtime 或通知服务。
+
 Market Home derived projection、API fallback 与 apply invalidation：
 
 ```bash
@@ -139,6 +165,42 @@ pnpm -C apps/quant-web exec node --test \
 
 ## Web
 
+Newow P5 路由/偏好、typed section consumer、九组合图层、参考历史与解释面板定向回归：
+
+```bash
+pnpm -C apps/quant-web exec node --test \
+  tests/newowProductRoutes.test.ts \
+  tests/marketDetailRoute.test.ts \
+  tests/marketDetailPreferences.test.ts \
+  tests/marketHomeRoute.test.ts \
+  tests/marketHomePageRoute.test.ts \
+  tests/marketHomeResource.test.ts \
+  tests/MarketDetailPage.test.ts \
+  tests/newowProductTypes.test.ts \
+  tests/useNewowProduct.test.ts \
+  tests/NewowProductChartStage.test.ts \
+  tests/newowProductChartPrimitives.test.ts \
+  tests/newowReferencePanel.test.ts \
+  tests/newowExplanationPanel.test.ts \
+  tests/NewowTrendChartStage.test.ts \
+  tests/marketDetailController.test.ts \
+  tests/marketDetailMarkers.test.ts \
+  tests/marketChartEntry.test.ts \
+  tests/marketDetailShellComponents.test.ts
+pnpm --dir apps/quant-web run check:alert-rules
+pnpm --dir apps/quant-web test
+pnpm --dir apps/quant-web build
+```
+
+Newow P6 浏览器验收使用 tracked route-intercept fixture，覆盖九个 strategy×frequency 组合、409 单次恢复、429 不循环重试、参考分页/精确信号定位、解释 evidence-required、既有详情/Home 回归，以及桌面和 `390×844` 移动视口：
+
+```bash
+pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs \
+  e2e/newow-product.spec.mjs e2e/market-detail.spec.mjs e2e/market-home.spec.mjs
+```
+
+全量 `test:e2e` 同样包含这些用例。route-intercept timing 只证明浏览器交互，不替代真实 MDS、真实工作站性能或页面原站 parity 验收。
+
 SuBing Alert Rule/API/Event-backed `S↑/S↓` 与 Market Home 定向检查：
 
 ```bash
@@ -173,6 +235,27 @@ pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/mark
 ```
 
 ## 工程一致性与静态检查
+
+苏冰当日缺口、恢复水位、只读诊断及日志：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_live_recovery.py \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/test_alert_recovery_boundary.py \
+  services/quant-api/tests/test_live_recovery_guard.py \
+  services/quant-api/tests/test_subing_readiness.py \
+  services/quant-api/tests/test_runtime_logging.py
+```
+
+实际 Lua 测试仅接受显式 `GUIYI_TEST_REDIS_PORT` 指向一次性、无持久卷的隔离 Redis；不得填生产端口。
+未配置时该项明确 skip，其余测试使用内存 provider/Redis、临时 SQLite/Parquet 与进程锁。测试不运行
+现役 Runtime，不调用真实 RQData，不发送通知。
+
+逐品种诊断命令为 `guiyi runtime subing-readiness --trading-day YYYY-MM-DD --as-of OFFSET_DATETIME`；
+`as-of` 必须带时区且不晚于执行时刻。命令只读 PostgreSQL/Redis/Canonical，逐品种报告当前输入与 Scope，
+非全部 ready 时退出 1；参数错误退出 2。该结果不证明 provider acceptance 或实际收件，真实连接仍须
+位于用户明确授权的只读诊断范围。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \

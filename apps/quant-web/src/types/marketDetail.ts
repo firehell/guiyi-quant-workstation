@@ -1,8 +1,13 @@
 import type { AlertEvent, MarketFrequency, SeriesKind } from './market.ts'
 import type { MarketDetailIconName } from '../utils/marketDetailIcons.ts'
 
-export const MARKET_DETAIL_VIEWS = ['trend', 'htdy', 'subing', 'free'] as const
+export const MARKET_DETAIL_VIEWS = ['newow', 'trend', 'htdy', 'subing', 'free'] as const
 export type MarketDetailView = (typeof MARKET_DETAIL_VIEWS)[number]
+
+export const NEWOW_STRATEGIES = ['trend', 'oscillation', 'main_rise'] as const
+export type NewowStrategy = (typeof NEWOW_STRATEGIES)[number]
+export const NEWOW_FREQUENCIES = ['1w', '1d', '60m'] as const
+export type NewowFrequency = (typeof NEWOW_FREQUENCIES)[number]
 
 export interface FlexibleViewRestore {
   seriesKind: Extract<SeriesKind, 'actual_dominant' | 'continuous'>
@@ -10,6 +15,10 @@ export interface FlexibleViewRestore {
 }
 
 export interface MarketDetailViewRestore {
+  newow: {
+    strategy: NewowStrategy
+    frequency: NewowFrequency
+  }
   htdy: FlexibleViewRestore
   free: FlexibleViewRestore
 }
@@ -17,6 +26,7 @@ export interface MarketDetailViewRestore {
 export interface MarketDetailIdentity {
   view: MarketDetailView
   symbol: string
+  strategy?: NewowStrategy
   seriesKind: SeriesKind
   contract?: string
   frequency: MarketFrequency
@@ -26,6 +36,8 @@ export interface MarketDetailIdentity {
 export type MarketDetailRouteErrorCode =
   | 'DETAIL_VIEW_UNKNOWN'
   | 'DETAIL_SYMBOL_INVALID'
+  | 'DETAIL_NEWOW_IDENTITY_INVALID'
+  | 'DETAIL_STRATEGY_INVALID'
   | 'DETAIL_TREND_IDENTITY_INVALID'
   | 'DETAIL_SUBING_IDENTITY_INVALID'
   | 'DETAIL_SERIES_KIND_INVALID'

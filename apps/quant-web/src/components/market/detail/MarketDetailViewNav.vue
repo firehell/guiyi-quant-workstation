@@ -2,7 +2,14 @@
 import { computed, ref, watch } from 'vue'
 
 import { MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
-import type { MarketDetailIdentity, MarketDetailView, MarketDetailViewRestore } from '@/types/marketDetail'
+import {
+  NEWOW_FREQUENCIES,
+  NEWOW_STRATEGIES,
+  type MarketDetailIdentity,
+  type MarketDetailView,
+  type MarketDetailViewRestore,
+  type NewowStrategy,
+} from '@/types/marketDetail'
 import { resolveViewSwitchIdentity } from '@/utils/marketDetailRoute'
 
 const props = withDefaults(defineProps<{
@@ -21,14 +28,15 @@ const emit = defineEmits<{
 }>()
 
 const views: readonly { value: MarketDetailView; label: string }[] = [
-  { value: 'trend', label: '趋势策略' },
+  { value: 'newow', label: 'Newow' },
   { value: 'htdy', label: '火天大有' },
   { value: 'subing', label: '新苏冰' },
   { value: 'free', label: '自由看盘' },
 ]
 const seriesLabels: Record<SeriesKind, string> = { actual_dominant: '真实主力', continuous: '主连', contract: '指定合约' }
 const showSeriesControls = computed(() => props.identity.view === 'htdy' || props.identity.view === 'free')
-const showFrequencyControls = computed(() => showSeriesControls.value)
+const showFrequencyControls = computed(() => props.identity.view === 'newow' || showSeriesControls.value)
+const availableFrequencies = computed(() => props.identity.view === 'newow' ? NEWOW_FREQUENCIES : props.frequencies)
 const availableSeriesKinds = computed(() => props.seriesKinds.filter((kind) => kind !== 'contract'))
 const allowsContract = computed(() => (props.identity.view === 'free' || props.identity.view === 'htdy') && props.seriesKinds.includes('contract'))
 const symbol = ref(props.identity.symbol)
@@ -55,6 +63,13 @@ function chooseSeries(seriesKind: SeriesKind) {
 
 function chooseFrequency(frequency: MarketFrequency) {
   emit('select', { ...props.identity, frequency, focusBarEnd: undefined })
+}
+
+function chooseStrategy(strategy: NewowStrategy) {
+  emit('select', {
+    view: 'newow', symbol: props.identity.symbol, strategy,
+    seriesKind: 'actual_dominant', frequency: props.identity.frequency,
+  })
 }
 
 function chooseSymbol() {
@@ -95,6 +110,17 @@ function periodLabel(value: MarketFrequency) {
     <div class="detail-view-nav__controls">
       <span v-if="identity.view === 'trend'" class="detail-view-nav__fixed">固定日K</span>
       <span v-else-if="identity.view === 'subing'" class="detail-view-nav__fixed">固定15m</span>
+      <div v-if="identity.view === 'newow'" class="detail-view-nav__group" role="group" aria-label="Newow策略">
+        <input v-model="symbol" aria-label="品种代码" @change="chooseSymbol">
+        <button
+          v-for="strategy in NEWOW_STRATEGIES"
+          :key="strategy"
+          type="button"
+          :aria-pressed="identity.strategy === strategy"
+          :class="{ 'is-active': identity.strategy === strategy }"
+          @click="chooseStrategy(strategy)"
+        >{{ strategy === 'trend' ? '趋势' : strategy === 'oscillation' ? '震荡' : '主升浪' }}</button>
+      </div>
       <div v-if="showSeriesControls" class="detail-view-nav__group" role="group" aria-label="序列">
         <input v-model="symbol" aria-label="品种代码" @change="chooseSymbol">
         <button
@@ -117,7 +143,7 @@ function periodLabel(value: MarketFrequency) {
       </div>
       <div v-if="showFrequencyControls" class="detail-view-nav__group" role="group" aria-label="周期">
         <button
-          v-for="frequency in frequencies"
+          v-for="frequency in availableFrequencies"
           :key="frequency"
           type="button"
           :aria-pressed="identity.frequency === frequency"

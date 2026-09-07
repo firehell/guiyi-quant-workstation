@@ -10,12 +10,14 @@ import TrendDetailWorkspace from '@/components/market/detail/TrendDetailWorkspac
 import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
+import NewowProductWorkspace from '@/components/market/detail/newow/NewowProductWorkspace.vue'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import {
   loadMarketDetailPreferences,
   replaceFreeDetailPreferences,
   replaceHtdyDetailPreferences,
+  replaceNewowDetailPreferences,
   saveMarketDetailPreferences,
   type FlexibleDetailPreferences,
 } from '@/utils/marketDetailPreferences'
@@ -28,8 +30,11 @@ const moreOpen = ref(false)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
-const isWorkspacePreview = computed(() => ['free', 'htdy', 'trend', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
-const shellReady = computed(() => isWorkspacePreview.value && controller.state.value.header !== null && !controller.state.value.loading)
+const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'trend', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
+const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
+const shellReady = computed(() => isWorkspacePreview.value && (
+  isNewowView.value || (controller.state.value.header !== null && !controller.state.value.loading)
+))
 const htdyWorkspace = ref<InstanceType<typeof HtdyDetailWorkspace> | null>(null)
 const trendWorkspace = ref<InstanceType<typeof TrendDetailWorkspace> | null>(null)
 const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(null)
@@ -45,7 +50,7 @@ const identityWarning = ref(
 const identityKey = computed(() => {
   const identity = explicitIdentity.value
   return identity
-    ? [identity.view, identity.symbol, identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
+    ? [identity.view, identity.symbol, identity.strategy ?? '', identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
     : 'invalid'
 })
 async function activateRoute() {
@@ -54,7 +59,7 @@ async function activateRoute() {
   hasTrendHistory.value = false
   hasSubingHistory.value = false
   const result = routeResult.value
-  if (result.kind !== 'valid' || !['free', 'htdy', 'trend', 'subing'].includes(result.identity.view)) return
+  if (result.kind !== 'valid' || !['newow', 'free', 'htdy', 'trend', 'subing'].includes(result.identity.view)) return
   await controller.switchIdentity(result.identity)
 }
 
@@ -93,6 +98,14 @@ function recover() {
 }
 
 function selectIdentity(identity: MarketDetailIdentity) {
+  if (identity.view === 'newow') {
+    preferences.value = replaceNewowDetailPreferences(preferences.value, {
+      strategy: identity.strategy,
+      frequency: identity.frequency,
+    })
+  }
+  if (identity.view !== 'trend') preferences.value = { ...preferences.value, lastView: identity.view }
+  saveMarketDetailPreferences(preferences.value)
   void router.push({ path: '/market/chart', query: serializeMarketDetailIdentity(identity) })
 }
 
@@ -117,7 +130,7 @@ function updateHtdyPreferences(htdy: FlexibleDetailPreferences) {
 
 function resolveFocus(focusBarEnd: string) {
   const identity = explicitIdentity.value
-  if ((identity?.view !== 'htdy' && identity?.view !== 'subing' && identity?.view !== 'trend') || identity.focusBarEnd !== focusBarEnd) return
+  if ((identity?.view !== 'newow' && identity?.view !== 'htdy' && identity?.view !== 'subing' && identity?.view !== 'trend') || identity.focusBarEnd !== focusBarEnd) return
   const { focusBarEnd: _focus, ...next } = identity
   void router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(next) })
 }
@@ -165,25 +178,32 @@ onBeforeUnmount(controller.dispose)
         <button type="button" role="menuitem" @click="returnLegacy">返回旧版详情</button>
       </div>
 
-      <p v-if="controller.state.value.loading" class="market-detail-page__loading" role="status">正在加载行情事实…</p>
+      <p v-if="controller.state.value.loading" class="market-detail-page__loading" role="status">
+        {{ routeResult.identity.view === 'newow' ? '正在加载品种元数据…' : '正在加载行情事实…' }}
+      </p>
       <MarketDetailUnavailable
         v-else-if="controller.state.value.error || !header"
-        title="行情事实不可用"
+        :title="routeResult.identity.view === 'newow' ? '品种元数据不可用' : '行情事实不可用'"
         :message="controller.state.value.error || '当前身份没有可用的已完成 Bar。'"
         :can-return-legacy="true"
         @return-legacy="returnLegacy"
       />
-      <template v-else>
-        <MarketDetailQuoteHeader :header="header" :identity-key="identityKey" />
+      <template v-if="routeResult.identity.view === 'newow' || (!controller.state.value.loading && !controller.state.value.error && header)">
+        <MarketDetailQuoteHeader v-if="header" :header="header" :identity-key="identityKey" />
         <MarketDetailViewNav
           :identity="routeResult.identity"
-          :restore="{ htdy: preferences.htdy, free: preferences.free }"
+          :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
           @select="selectIdentity"
           @contract-cleared="selectContractCleared"
         />
         <section class="market-detail-page__workspace" data-detail-section="workspace-slot">
+          <NewowProductWorkspace
+            v-if="routeResult.identity.view === 'newow'"
+            :identity="routeResult.identity"
+            @focus-resolved="resolveFocus"
+          />
           <FreeChartWorkspace
-            v-if="routeResult.identity.view === 'free'"
+            v-else-if="routeResult.identity.view === 'free' && header"
             :identity="routeResult.identity"
             :header="header"
             :bars="controller.bars.value"
@@ -199,7 +219,7 @@ onBeforeUnmount(controller.dispose)
             @update-preferences="updateFreePreferences"
           />
           <HtdyDetailWorkspace
-            v-else-if="routeResult.identity.view === 'htdy'"
+            v-else-if="routeResult.identity.view === 'htdy' && header"
             ref="htdyWorkspace"
             :identity="routeResult.identity"
             :header="header"
@@ -216,7 +236,7 @@ onBeforeUnmount(controller.dispose)
             @focus-resolved="resolveFocus"
           />
           <TrendDetailWorkspace
-            v-else-if="routeResult.identity.view === 'trend'"
+            v-else-if="routeResult.identity.view === 'trend' && header"
             ref="trendWorkspace"
             :identity="routeResult.identity"
             :header="header"
@@ -230,7 +250,7 @@ onBeforeUnmount(controller.dispose)
             @focus-resolved="resolveFocus"
           />
           <SubingDetailWorkspace
-            v-else-if="routeResult.identity.view === 'subing'"
+            v-else-if="routeResult.identity.view === 'subing' && header"
             ref="subingWorkspace"
             :identity="routeResult.identity"
             :focus-bar-end="routeResult.identity.focusBarEnd"
