@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { nextTick, ref } from 'vue'
 
-import { NewowProductRequestError } from '../src/api/newowProduct.ts'
+import { getNewowProductSection, NewowProductRequestError } from '../src/api/newowProduct.ts'
 import { useNewowProduct } from '../src/composables/useNewowProduct.ts'
 import type { MarketDetailIdentity } from '../src/types/marketDetail.ts'
 import type { NewowProductRequest, NewowProductSectionResponse } from '../src/types/newowProduct.ts'
@@ -534,6 +534,74 @@ test('rejected snapshot generation invalidates validated auxiliary reuse', async
     calls.filter((request) => request.section === 'auxiliary').map((request) => request.snapshotToken),
     ['old-token', 'new-token'],
   )
+  state.dispose()
+})
+
+test('tokenless rejected generation clears loaded auxiliary and aborts its in-flight replacement', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: controlled(pending),
+  })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: null }))
+  await flush()
+
+  const firstAuxiliary = state.loadAuxiliary('main_force_control')
+  pending[1]!.resolve(normalizedAuxiliary(pending[1]!.request, null))
+  await firstAuxiliary
+  const replacement = state.loadAuxiliary('up_down_energy')
+  assert.equal(state.sections.auxiliary.data.value?.section === 'auxiliary' && state.sections.auxiliary.data.value.value?.component, 'main_force_control')
+
+  const reference = state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  pending[3]!.reject(new NewowProductRequestError('NEWOW_CURSOR_GENERATION_CONFLICT', 'conflict'))
+  await nextTick()
+
+  assert.equal(pending[2]!.signal.aborted, true)
+  assert.equal(state.sections.auxiliary.data.value, null)
+  assert.equal(state.sections.auxiliary.state.value, 'not_requested')
+
+  pending[2]!.reject(new DOMException('aborted', 'AbortError'))
+  pending[4]!.resolve(normalizedReference(pending[4]!.request, { token: null }))
+  await Promise.all([replacement, reference])
+  state.dispose()
+})
+
+test('transport-normalized auxiliary identity conflict invalidates ready reuse', async () => {
+  const auxiliaryCalls: string[] = []
+  let mismatchUpDownEnergy = true
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request, signal) => {
+      if (request.section === 'chart') return normalizedChart(request)
+      if (request.section !== 'auxiliary') throw new Error('unexpected section')
+      auxiliaryCalls.push(request.component)
+      return getNewowProductSection(request, {
+        signal,
+        request: async () => {
+          if (request.component === 'up_down_energy' && mismatchUpDownEnergy) {
+            mismatchUpDownEnergy = false
+            return auxiliaryWire({ ...request, component: 'main_force_control' }, request.snapshotToken ?? null)
+          }
+          return auxiliaryWire(request, request.snapshotToken ?? null)
+        },
+      })
+    },
+  })
+  await flush()
+
+  await state.loadAuxiliary('main_force_control')
+  await state.loadAuxiliary('up_down_energy')
+
+  assert.equal(state.sections.auxiliary.data.value, null)
+  assert.equal(state.sections.auxiliary.state.value, 'input_conflict')
+  assert.equal(state.sections.auxiliary.error.value, 'NEWOW_RESPONSE_INVALID')
+
+  await state.loadAuxiliary('main_force_control')
+  assert.deepEqual(auxiliaryCalls, ['main_force_control', 'up_down_energy', 'main_force_control'])
+  assert.equal(state.sections.auxiliary.data.value?.section === 'auxiliary' && state.sections.auxiliary.data.value.value?.component, 'main_force_control')
   state.dispose()
 })
 

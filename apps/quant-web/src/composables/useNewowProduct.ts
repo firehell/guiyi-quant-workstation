@@ -338,7 +338,10 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       ? error
       : new NewowProductRequestError('NEWOW_API_UNAVAILABLE', 'unavailable')
     resource.error.value = requestError.code
-    if (requestError.classification === 'conflict') { failConflict(section, requestError.code); return }
+    if (requestError.classification === 'conflict' || requestError.classification === 'response_invalid') {
+      failConflict(section, requestError.code)
+      return
+    }
     if (requestError.classification === 'busy' || requestError.classification === 'cancelled') {
       resource.state.value = resource.data.value === null ? requestError.classification : 'stale'
       return
@@ -370,8 +373,15 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   function invalidateTokenDependents(token: string | undefined, currentSection: NewowProductSection): void {
-    if (token === undefined) return
     invalidateAuxiliaryCache()
+    if (currentSection !== 'auxiliary') {
+      controllers.get('auxiliary')?.abort()
+      sectionGenerations.set('auxiliary', (sectionGenerations.get('auxiliary') ?? 0) + 1)
+      controllers.delete('auxiliary')
+      inFlightSnapshotTokens.delete('auxiliary')
+      clearResource('auxiliary')
+    }
+    if (token === undefined) return
     for (const section of ['chart', 'reference', 'explanation', 'auxiliary', 'comparator'] as const) {
       const inFlightMatches = section !== currentSection && inFlightSnapshotTokens.get(section) === token
       const loadedMatches = resources[section].data.value?.meta.snapshot_token === token
