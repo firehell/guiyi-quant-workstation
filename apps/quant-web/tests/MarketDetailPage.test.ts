@@ -15,18 +15,22 @@ function page() {
   return { source, template: parsed.descriptor.template.content }
 }
 
-test('activates generic D1 facts and mounts each workspace only for its explicit route', () => {
+test('activates generic facts and mounts the isolated Newow product workspace', () => {
   const { source, template } = page()
 
   assert.match(source, /import TrendDetailWorkspace/)
-  assert.match(source, /\['free',\s*'htdy',\s*'trend',\s*'subing'\]\.includes\(explicitIdentity\.value\?\.view/)
-  assert.match(source, /\['free',\s*'htdy',\s*'trend',\s*'subing'\]\.includes\(result\.identity\.view/)
+  assert.match(source, /\['newow',\s*'free',\s*'htdy',\s*'trend',\s*'subing'\]\.includes\(explicitIdentity\.value\?\.view/)
+  assert.match(source, /\['newow',\s*'free',\s*'htdy',\s*'trend',\s*'subing'\]\.includes\(result\.identity\.view/)
+  assert.match(source, /identity\.strategy \?\? ''/)
   assert.match(template, /<TrendDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'trend'"/)
   assert.match(template, /:identity="routeResult\.identity"/)
   assert.match(template, /:header="header"/)
   assert.match(template, /:bars="controller\.bars\.value"/)
   assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy'"/)
   assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing'"/)
+  assert.match(source, /import NewowProductWorkspace/)
+  assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow'"/)
+  assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free'"/)
   assert.doesNotMatch(template, /<HtdyDetailWorkspace\s+v-else(?:\s|>)/)
 })
 
@@ -47,7 +51,8 @@ test('gives SuBing and Trend history, while alert management remains unavailable
 test('keeps Free and HTDY as separate explicit workspaces', () => {
   const { template } = page()
 
-  assert.match(template, /<FreeChartWorkspace\s+v-if="routeResult\.identity\.view === 'free'"/)
+  assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow'"/)
+  assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free'"/)
   assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy'"/)
   assert.match(template, /<TrendDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'trend'"/)
   assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing'"/)

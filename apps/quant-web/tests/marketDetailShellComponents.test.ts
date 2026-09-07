@@ -51,10 +51,13 @@ test('top bar keeps text semantics and capability-gates alert actions', () => {
 
 test('view navigation retains the four business names and emits exact identities', () => {
   const { source, template } = parsedComponent('MarketDetailViewNav')
-  for (const label of ['趋势策略', '火天大有', '新苏冰', '自由看盘']) {
+  for (const label of ['Newow', '火天大有', '新苏冰', '自由看盘']) {
     assert.match(source, new RegExp(label))
   }
+  assert.match(source, /NEWOW_STRATEGIES/)
+  assert.match(source, /NEWOW_FREQUENCIES/)
   assert.match(source, /select:\s*\[identity:\s*MarketDetailIdentity\]/)
+  assert.match(template, /role="group" aria-label="Newow策略"/)
   assert.match(template, /v-if="showSeriesControls"/)
   assert.match(template, /v-if="showFrequencyControls"/)
   assert.match(template, /role="group" aria-label="序列"/)

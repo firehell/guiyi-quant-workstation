@@ -1,8 +1,8 @@
 # Newow 产品与乐观参考交易 P0 覆盖与证据 Gate
 
 日期：2026-09-05
-状态：`P4_AMENDMENT_EVIDENCE_MAP`（阶段事实仍只以 `STATUS.md` 为准）
-边界：只记录批准范围、当前源码/测试入口和本地证据可用性；不修改公式，不重跑历史页面一致性，不授权集成、发布、生产数据、Runtime、通知或订单操作。
+状态：`P5_WEB_CANDIDATE_EVIDENCE_MAP / P6_PENDING`（阶段事实仍只以 `STATUS.md` 为准）
+边界：只记录批准范围、当前源码/测试入口和本地证据可用性；不修改公式，不重跑历史页面一致性，不授权 develop/main 集成、发布、生产数据、Runtime、通知或订单操作。
 
 ## 1. Plan execution identity
 
@@ -85,4 +85,10 @@ P4 候选的局部实现提交为 `098a6b15c`（section 编排）、`7ba332325`�
 
 独立 Sol/high reviewer 在 exact head `d2322c246ef5d9cc2507f7caea38fc3df6c9b322` 完成 Spec 与 Standards/Quality scoped 复审，两轴均为 PASS、P1/P2/P3 finding 均为 none；审阅复用了上述 exact source tree 的有效测试/性能证据并另行确认 `git diff --check` clean，结论为 `REVIEW_COMPLETE / 允许集成 develop`。该结论只覆盖 P4 包，不扩大到 P5/P6、完整 page parity、OOS、发布或 Runtime。
 
-P4 集成不授权 P5 Web、P6 全项目验收、真实工作站性能、RQData/Canonical/DB/Redis 写入、Runtime、通知、main/tag/release 或交易操作。
+P4 集成本身不授权后续 P5 Web、P6 全项目验收、真实工作站性能、RQData/Canonical/DB/Redis 写入、Runtime、通知、main/tag/release 或交易操作；P5 的执行范围来自后续独立的 owner 授权。
+
+P5 Tasks 17–20 已在候选分支 `feature/newow-product-reference-trading-p5` 实现：`c731756f1` 完成新视角、路由/偏好 v2 与首页入口，`cb9c93cec` 完成 typed parser/client、section 请求隔离、有界分页与 409/429 生命周期，`9226df639` 完成九组合主图、同 Bar 动作、辅助序列与 Hint 来源，`09dde38ca` 完成参考历史/统计、精确信号定位、解释与独立比较器，`33ba9b7cb` 关闭包级 review 发现的 pair-specific snapshot、busy/cancelled stale、409 跨 section 失效、时间因果校验和白名单权威边界，`c70ce87c6` 补齐请求未携 token 时从当前 section 保留事实解析并失效被拒世代的确定性竞态，`32f6acf19` 进一步在可重建 409 后取消并推进同旧 token 的其他在途 section 世代，`3939e19de` 最终把未显式携 token 的请求绑定到 retained section generation，关闭其晚到污染重建事实的竞态。Task 级 finding 与最终包级 finding 均已修复并完成 scoped re-review；最终影响范围为 `114/114`、候选 Web 全量为 `412 passed, 1 skipped, 0 failed`，Alert Rule ownership、build/typecheck/topology、OpenSpec、secret 与 diff checks 通过。最终 Spec 与 Standards/Quality 均为 PASS，Critical/Important/Minor finding 均为 0；这只形成 P5 候选的 `REVIEW_COMPLETE`，不代表已合入 develop、P6、发布或 Runtime。
+
+P5 浏览器 smoke 使用本地 route-intercept fixture，以真实浏览器逐项切换九组合并检查 409 单次恢复、429 单次 busy、参考分页/定位、解释 evidence-required、桌面及 `390×844` 移动端布局。该证据只证明候选 UI 与错误呈现，不是 P6 新建 E2E、真实 MDS、真实工作站性能、页面原站 parity 或 production 验收；被刻意注入的 409/429 是预期控制台 error。P3 的目标/吸筹、原页面期货 owner、browser-final/tie golden、AI copy、稳定诊断 token 与六组合 oracle 缺口继续保留。
+
+P5 候选分支尚未合入 `develop`。P6 Tasks 21–22、全量浏览器/全项目矩阵、真实工作站性能、release、Runtime 与任何外部写入均未执行、未获授权。

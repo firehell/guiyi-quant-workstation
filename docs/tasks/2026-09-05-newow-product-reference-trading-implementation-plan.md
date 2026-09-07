@@ -16,6 +16,8 @@
 
 **P4 Amendment 执行基线:** `origin/develop@c9d297b8318c1d4bdcfbfc1b4e2e46b55956e26c`，包含 PR #348/#349；任务分支 `feature/newow-product-reference-trading-p4`。Owner 本轮明确授权 P2/P3 收尾与 P4 后端实现、Review 和普通 develop 集成，不授权 P5/P6、生产或 release/Runtime 操作。
 
+**P5 执行基线:** `origin/develop@b9a4a3a763d4b096dfadb96a12c14e69ec49277e`，包含 PR #350；任务分支 `feature/newow-product-reference-trading-p5`。Owner 明确授权 Tasks 17–20 的实现、测试、独立 Review、push 与 PR，不授权 P6、develop/main merge、生产、release 或 Runtime 操作。
+
 ## Global Constraints
 
 - 第一版只使用 `active_products.txt` 定义的研究品种和 completed Canonical `actual_dominant` 序列。
@@ -797,7 +799,7 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 
 **Interfaces / 依赖:** P4API → view=newow + strategy + 三周期；所有旧入口保持。
 
-- [ ] **路由测试先行：**
+- [x] **路由测试先行：**
 
 ```typescript
 import assert from 'node:assert/strict'
@@ -813,17 +815,17 @@ test('Newow accepts the independent 60m workspace', () => {
 })
 ```
 
-- [ ] **单一控制器：** view=newow通过共享ViewNav选择strategy/frequency，不在workspace复制品种控制。普通新入口默认newow/trend/1d；旧view=trend仍D1，保留focus_bar_end和非法参数错误，不能把旧frequency=15m静默变成新view。
-- [ ] **偏好：** 新增Newow偏好时升级现有schema到v2，读取v1/v9按原规则迁移HTDY/Free；Newow策略周期只能合法白名单，默认trend/1d；不得存contract、Event焦点或参考收益。旧URL仍可访问，无强制redirect丢参数。
-- [ ] **回归：** 原Event identity函数输出不变；切view/product/strategy/frequency清旧选择和generation；首页仍三个bulk资源，不增加九组合预取。
+- [x] **单一控制器：** view=newow通过共享ViewNav选择strategy/frequency，不在workspace复制品种控制。普通新入口默认newow/trend/1d；旧view=trend仍D1，保留focus_bar_end和非法参数错误，不能把旧frequency=15m静默变成新view。
+- [x] **偏好：** 新增Newow偏好时升级现有schema到v2，读取v1/v9按原规则迁移HTDY/Free；Newow策略周期只能合法白名单，默认trend/1d；不得存contract、Event焦点或参考收益。旧URL仍可访问，无强制redirect丢参数。
+- [x] **回归：** 原Event identity函数输出不变；切view/product/strategy/frequency清旧选择和generation；首页仍三个bulk资源，不增加九组合预取。
 
-- [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
+- [x] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
 
 ```bash
 pnpm -C apps/quant-web exec node --test tests/newowProductRoutes.test.ts
 ```
 
-- [ ] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(web): add Newow view with legacy route compatibility`；独立review给出Spec和quality结论，修复后重新验证。
+- [x] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(web): add Newow view with legacy route compatibility`；独立review给出Spec和quality结论，修复后重新验证。
 
 ---
 
@@ -835,7 +837,7 @@ pnpm -C apps/quant-web exec node --test tests/newowProductRoutes.test.ts
 
 **Interfaces / 依赖:** P4 envelope + Task17 identity → 可用、stale或错误的纯展示资源。
 
-- [ ] **类型/竞态测试：** schema字段缺失、Decimal NaN/Infinity、错误contract/frequency/formula、旧请求晚回、同identity数据修订、不同窗口hash均测试。不能把hash改变一律判错；共同Bar冲突才错误。
+- [x] **类型/竞态测试：** schema字段缺失、Decimal NaN/Infinity、错误contract/frequency/formula、旧请求晚回、同identity数据修订、不同窗口hash均测试。不能把hash改变一律判错；共同Bar冲突才错误。
 
 ```typescript
 test('late response never replaces a different strategy', async () => {
@@ -850,17 +852,17 @@ test('late response never replaces a different strategy', async () => {
 ```
 
 本Task在test文件内实现无网络harness，使用可控promise和自有typed fixture；不靠sleep制造竞态。
-- [ ] **前端验证：** product schema解析器逐字段校验值、顺序、identity与来源；先确认requested section是`delivery=delivered`且其他四项为`not_requested/status=null/value=null`，才可unwrap请求项的`value`。金额/收益保持字符串，只格式化，不把字符串转number再重新求和。图表坐标转换单独finite检查。
-- [ ] **请求生命周期：** AbortController/现有generation模式；新identity开始即清上一组合所有数值。相同identity失败只可预览最后成功、明确标stale；chart/reference/explanation按section分别请求，并仅在snapshot共同事实验证兼容后拼接，不能假设服务器同包返回或新图+旧summary混合。
-- [ ] **分页/viewport：** performance/as_of固定回传；reference指纹变化清空旧页，cursor拒绝后重新第一页。旧页相同ID异内容不静默覆盖。reference稳定但总input变化且共同Bar一致可更新图表，不能误判。
+- [x] **前端验证：** product schema解析器逐字段校验值、顺序、identity与来源；先确认requested section是`delivery=delivered`且其他四项为`not_requested/status=null/value=null`，才可unwrap请求项的`value`。金额/收益保持字符串，只格式化，不把字符串转number再重新求和。图表坐标转换单独finite检查。
+- [x] **请求生命周期：** AbortController/现有generation模式；新identity开始即清上一组合所有数值。相同identity失败只可预览最后成功、明确标stale；chart/reference/explanation按section分别请求，并仅在snapshot共同事实验证兼容后拼接，不能假设服务器同包返回或新图+旧summary混合。
+- [x] **分页/viewport：** performance/as_of固定回传；reference指纹变化清空旧页，cursor拒绝后重新第一页。旧页相同ID异内容不静默覆盖。reference稳定但总input变化且共同Bar一致可更新图表，不能误判。
 
-- [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
+- [x] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
 
 ```bash
 pnpm -C apps/quant-web exec node --test tests/newowProductTypes.test.ts tests/useNewowProduct.test.ts
 ```
 
-- [ ] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(web): consume atomic Newow product snapshots`；独立review给出Spec和quality结论，修复后重新验证。
+- [x] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(web): consume atomic Newow product snapshots`；独立review给出Spec和quality结论，修复后重新验证。
 
 ---
 
@@ -873,7 +875,7 @@ pnpm -C apps/quant-web exec node --test tests/newowProductTypes.test.ts tests/us
 
 **Interfaces / 依赖:** Task18 → 九组合可视主图；不复制公式/所有权。
 
-- [ ] **图层模型测试：** 趋势B/A、震荡通道、主升浪MA35/45分别投影；同Bar CLEAR/BUILD保存两个ID与顺序，anchor_price绘图但reference_price不被覆盖。测试直接读取typed fixture，不在Web算MA。
+- [x] **图层模型测试：** 趋势B/A、震荡通道、主升浪MA35/45分别投影；同Bar CLEAR/BUILD保存两个ID与顺序，anchor_price绘图但reference_price不被覆盖。测试直接读取typed fixture，不在Web算MA。
 
 ```typescript
 test('two oscillation actions survive the same timestamp', () => {
@@ -884,17 +886,17 @@ test('two oscillation actions survive the same timestamp', () => {
 ```
 
 新增 `buildNewowProductChartModel(response)` 在newowProductChartPrimitives.ts；fixture在本测试文件明确两个同时间有序动作。
-- [ ] **组件接口：** ChartStage输入已验证response和选中的signal_id，发出 `select-signal`，不持有独立品种/周期选择；接入现有可见范围/加载回调，保持初始viewport和focus不被后到数据重置。
-- [ ] **辅助层：** 三副图开关、warming/error独立；照妖镜明确“回看/会重绘”，杯柄仅D1并显示clean-room，60m/W1显示不适用而非暂无信号。全部非重绘hint可查看来源/确认时间。
-- [ ] **旧视角回归：** newow分支不能把图层塞进generic ResearchOverlayId；view=trend、SuBing/HTDY Event Map与Free沿原隔离合同工作。
+- [x] **组件接口：** ChartStage输入已验证response和选中的signal_id，发出 `select-signal`，不持有独立品种/周期选择；接入现有可见范围/加载回调，保持初始viewport和focus不被后到数据重置。
+- [x] **辅助层：** 三副图开关、warming/error独立；照妖镜明确“回看/会重绘”，杯柄仅D1并显示clean-room，60m/W1显示不适用而非暂无信号。全部非重绘hint可查看来源/确认时间。
+- [x] **旧视角回归：** newow分支不能把图层塞进generic ResearchOverlayId；view=trend、SuBing/HTDY Event Map与Free沿原隔离合同工作。
 
-- [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
+- [x] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
 
 ```bash
 pnpm -C apps/quant-web exec node --test tests/NewowProductChartStage.test.ts tests/newowProductChartPrimitives.test.ts
 ```
 
-- [ ] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(web): render nine Newow strategy-period combinations`；独立review给出Spec和quality结论，修复后重新验证。
+- [x] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(web): render nine Newow strategy-period combinations`；独立review给出Spec和quality结论，修复后重新验证。
 
 ---
 
@@ -907,7 +909,7 @@ pnpm -C apps/quant-web exec node --test tests/NewowProductChartStage.test.ts tes
 
 **Interfaces / 依赖:** Task18/19 → 完整单品种历史处理；全由API结果驱动。
 
-- [ ] **UI投影测试：** 0交易显示“—”、负中断浮动不消失、期初单列、同BarHint只Bar级、价offset不改变收益。参考与比较器使用不同panel/label。
+- [x] **UI投影测试：** 0交易显示“—”、负中断浮动不消失、期初单列、同BarHint只Bar级、价offset不改变收益。参考与比较器使用不同panel/label。
 
 ```typescript
 test('zero closed trades is not a zero-percent performance', () => {
@@ -919,18 +921,18 @@ test('zero closed trades is not a zero-percent performance', () => {
 ```
 
 `buildNewowProductViewModel`在Task18定义并此处完善；noClosedTradesFixture明确计数0、三统计null、一个OPEN。
-- [ ] **历史表：** 合约/策略/周期、entry/exit时间与参考价、状态、holding_bars、return、估值时点、提示展开；OPEN/CLOSED/中断/期初可筛但总统计不跟表格过滤悄悄变化。history分页仍保持固定样本summary。
-- [ ] **历史→图表：** 按精确信号ID和bar_end定位；不在已加载窗口时通过新GET改变display窗口，保持performance不变；主动作选中与行选中来自一个selection authority。不存在的目标明确报不可用，不定位最近日期替代。
-- [ ] **解释：** 展示规则/来源周期/时点、参考仓位、评分、ATR与第一行动token；无证据显示原因、不是0。五窗口期末“理论”结果单独显示，不出现额外CLEAR；历史点击不得用当前context冒充开仓依据。
-- [ ] **固定提示：** 使用Spec的完整乐观口径说明；数字只格式化，不在前端配对/求和。首次错误清空数值，同identitystale有显眼时间标签；键盘可展开、定位、切表。
+- [x] **历史表：** 合约/策略/周期、entry/exit时间与参考价、状态、holding_bars、return、估值时点、提示展开；OPEN/CLOSED/中断/期初可筛但总统计不跟表格过滤悄悄变化。history分页仍保持固定样本summary。
+- [x] **历史→图表：** 按精确信号ID和bar_end定位；不在已加载窗口时通过新GET改变display窗口，保持performance不变；主动作选中与行选中来自一个selection authority。不存在的目标明确报不可用，不定位最近日期替代。
+- [x] **解释：** 展示规则/来源周期/时点、参考仓位、评分、ATR与第一行动token；无证据显示原因、不是0。五窗口期末“理论”结果单独显示，不出现额外CLEAR；历史点击不得用当前context冒充开仓依据。
+- [x] **固定提示：** 使用Spec的完整乐观口径说明；数字只格式化，不在前端配对/求和。首次错误清空数值，同identitystale有显眼时间标签；键盘可展开、定位、切表。
 
-- [ ] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
+- [x] **验证与复验：** 新测试先RED；实现后同一命令GREEN。
 
 ```bash
 pnpm -C apps/quant-web exec node --test tests/newowReferencePanel.test.ts tests/newowExplanationPanel.test.ts
 ```
 
-- [ ] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(web): show reference histories and explicit explanations`；独立review给出Spec和quality结论，修复后重新验证。
+- [x] **提交与Review：** `git diff --check`，只stage上述本Task改动，提交 `feat(web): show reference histories and explicit explanations`；独立review给出Spec和quality结论，修复后重新验证。
 
 ---
 
