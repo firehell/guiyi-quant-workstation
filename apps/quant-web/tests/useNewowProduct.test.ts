@@ -510,7 +510,7 @@ test('does not reuse a validated auxiliary component across distinct explicit ch
   state.dispose()
 })
 
-test('does not reuse an auxiliary response after a chart snapshot is successfully refreshed', async () => {
+test('does not reuse an auxiliary response after a changed-token chart refresh', async () => {
   const calls: NewowProductRequest[] = []
   let chartAttempts = 0
   const state = useNewowProduct({
@@ -534,6 +534,142 @@ test('does not reuse an auxiliary response after a chart snapshot is successfull
   assert.deepEqual(
     calls.filter((request) => request.section === 'auxiliary').map((request) => request.snapshotToken),
     ['old-token', 'new-token'],
+  )
+  state.dispose()
+})
+
+test('keeps validated auxiliary reuse across same-generation chart pagination and refresh', async () => {
+  const calls: NewowProductRequest[] = []
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      calls.push(request)
+      if (request.section === 'auxiliary') return normalizedAuxiliary(request)
+      return request.chartBefore === undefined
+        ? normalizedChartPage(request, '2026-08-14', 'older-chart', 'revision-a')
+        : normalizedChartPage(request, '2026-08-13', null, 'revision-a')
+    },
+  })
+  await flush()
+
+  await state.loadAuxiliary('main_force_control')
+  await state.loadNextChartPage()
+  await state.loadAuxiliary('main_force_control')
+  await state.loadChart()
+  await state.loadAuxiliary('main_force_control')
+
+  assert.equal(calls.filter((request) => request.section === 'auxiliary').length, 1)
+  state.dispose()
+})
+
+test('a changed chart token clears loaded dependents and binds the next auxiliary request to the new token', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'old-token' }))
+  await flush()
+
+  const auxiliary = state.loadAuxiliary('main_force_control')
+  pending[1]!.resolve(normalizedAuxiliary(pending[1]!.request, 'old-token'))
+  await auxiliary
+  const reference = state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  pending[2]!.resolve(normalizedReference(pending[2]!.request, { token: 'old-token' }))
+  await reference
+  const explanation = state.loadExplanation()
+  pending[3]!.resolve(normalizedStatus(pending[3]!.request, 'old-token'))
+  await explanation
+  const comparator = state.loadComparator()
+  pending[4]!.resolve(normalizedStatus(pending[4]!.request, 'old-token'))
+  await comparator
+
+  const changed = state.loadChart()
+  pending[5]!.resolve(normalizedChart(pending[5]!.request, { token: 'new-token' }))
+  await changed
+
+  for (const section of ['auxiliary', 'reference', 'explanation', 'comparator'] as const) {
+    assert.equal(state.sections[section].data.value, null)
+    assert.equal(state.sections[section].state.value, 'not_requested')
+  }
+  const nextAuxiliary = state.loadAuxiliary('main_force_control')
+  assert.equal(pending[6]!.request.snapshotToken, 'new-token')
+  pending[6]!.resolve(normalizedAuxiliary(pending[6]!.request, 'new-token'))
+  await nextAuxiliary
+  state.dispose()
+})
+
+test('a changed chart token aborts all in-flight dependents and rejects their late old-generation responses', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'old-token' }))
+  await flush()
+
+  const dependents = [
+    state.loadAuxiliary('main_force_control'),
+    state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' }),
+    state.loadExplanation(),
+    state.loadComparator(),
+  ]
+  const changed = state.loadChart()
+  pending[5]!.resolve(normalizedChart(pending[5]!.request, { token: 'new-token' }))
+  await changed
+
+  for (const request of pending.slice(1, 5)) assert.equal(request.signal.aborted, true)
+  pending[1]!.resolve(normalizedAuxiliary(pending[1]!.request, 'old-token'))
+  pending[2]!.resolve(normalizedReference(pending[2]!.request, { token: 'old-token' }))
+  pending[3]!.resolve(normalizedStatus(pending[3]!.request, 'old-token'))
+  pending[4]!.resolve(normalizedStatus(pending[4]!.request, 'old-token'))
+  await Promise.all(dependents)
+
+  for (const section of ['auxiliary', 'reference', 'explanation', 'comparator'] as const) {
+    assert.equal(state.sections[section].data.value, null)
+  }
+  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'new-token')
+  state.dispose()
+})
+
+test('a tokenless chart revision change clears loaded dependents', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: null, revision: 'revision-a' }))
+  await flush()
+
+  const reference = state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  pending[1]!.resolve(normalizedReference(pending[1]!.request, { token: null, revision: 'revision-a' }))
+  await reference
+  const changed = state.loadChart()
+  pending[2]!.resolve(normalizedChart(pending[2]!.request, { token: null, revision: 'revision-b' }))
+  await changed
+
+  assert.equal(state.sections.reference.data.value, null)
+  assert.equal(state.sections.reference.state.value, 'not_requested')
+  state.dispose()
+})
+
+test('touches auxiliary LRU hits so the least recently used of five window keys is evicted', async () => {
+  const calls: NewowProductRequest[] = []
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      calls.push(request)
+      return request.section === 'chart' ? normalizedChart(request) : normalizedAuxiliary(request)
+    },
+  })
+  await flush()
+  const window = (day: string) => ({ from: `2026-08-${day}`, through: `2026-08-${day}` })
+
+  for (const day of ['01', '02', '03', '04']) await state.loadAuxiliary('main_force_control', window(day))
+  await state.loadAuxiliary('main_force_control', window('01'))
+  await state.loadAuxiliary('main_force_control', window('05'))
+  await state.loadAuxiliary('main_force_control', window('01'))
+  await state.loadAuxiliary('main_force_control', window('02'))
+
+  assert.deepEqual(
+    calls.filter((request) => request.section === 'auxiliary').map((request) => request.from),
+    ['2026-08-01', '2026-08-02', '2026-08-03', '2026-08-04', '2026-08-05', '2026-08-02'],
   )
   state.dispose()
 })
@@ -727,7 +863,7 @@ function newowIdentity(strategy: 'trend' | 'oscillation' | 'main_rise', frequenc
   return { view: 'newow', symbol: 'jm', strategy, seriesKind: 'actual_dominant', frequency }
 }
 
-function normalizedChart(request: NewowProductRequest, options: { token?: string | null; hash?: string; close?: string } = {}) {
+function normalizedChart(request: NewowProductRequest, options: { token?: string | null; hash?: string; close?: string; revision?: string | null } = {}) {
   return normalizeNewowProductResponse(chartWire({ strategy: request.identity.strategy, frequency: request.identity.frequency, ...options }), request)
 }
 

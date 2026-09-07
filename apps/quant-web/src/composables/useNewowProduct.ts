@@ -68,6 +68,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   let disposed = false
   let chartWindow: { from: string; through: string } | null = null
   let chartFingerprint: string | null = null
+  let acceptedChartGenerationSignature: string | null = null
   let chartPageLimit: number | null = null
   let referenceWindow: { since: string; through: string } | null = null
   let referenceFingerprint: string | null = null
@@ -99,8 +100,11 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     const common = requestCommon('auxiliary')
     if (common === null) return
     const request = { ...common, section: 'auxiliary' as const, component, ...load }
-    const cached = auxiliaryCache.get(auxiliaryCacheKey(request))
+    const cacheKey = auxiliaryCacheKey(request)
+    const cached = auxiliaryCache.get(cacheKey)
     if (cached !== undefined) {
+      auxiliaryCache.delete(cacheKey)
+      auxiliaryCache.set(cacheKey, cached)
       restoreCachedAuxiliary(cached)
       return
     }
@@ -235,8 +239,10 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     if (section === 'chart' && response.section === 'chart' && response.value !== null) {
       const accepted = acceptChart(response, request)
       if (accepted === null) return
+      const nextGeneration = chartGenerationSignature(response.meta)
+      if (acceptedChartGenerationSignature !== null && acceptedChartGenerationSignature !== nextGeneration) invalidateChartDependents()
       resource.data.value = accepted
-      invalidateAuxiliaryCache()
+      acceptedChartGenerationSignature = nextGeneration
     } else if (section === 'reference' && response.section === 'reference' && response.value !== null) {
       const accepted = acceptReference(response, request)
       if (accepted === null) return
@@ -399,10 +405,23 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
   }
 
+  function invalidateChartDependents(): void {
+    invalidateAuxiliaryCache()
+    for (const section of ['auxiliary', 'reference', 'explanation', 'comparator'] as const) {
+      controllers.get(section)?.abort()
+      sectionGenerations.set(section, (sectionGenerations.get(section) ?? 0) + 1)
+      controllers.delete(section)
+      inFlightSnapshotTokens.delete(section)
+      clearResource(section)
+    }
+    resetPagination('reference')
+  }
+
   function resetPagination(section: 'chart' | 'reference'): void {
     if (section === 'chart') {
       chartWindow = null
       chartFingerprint = null
+      acceptedChartGenerationSignature = null
       chartPageLimit = null
       return
     }
@@ -443,12 +462,13 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   function abortAll(): void { for (const controller of controllers.values()) controller.abort(); controllers.clear(); inFlightSnapshotTokens.clear() }
-  function resetAll(): void { for (const section of ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const) clearResource(section); invalidateAuxiliaryCache(); chartWindow = null; chartFingerprint = null; chartPageLimit = null; referenceWindow = null; referenceFingerprint = null; referencePageLimit = null }
+  function resetAll(): void { for (const section of ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const) clearResource(section); invalidateAuxiliaryCache(); chartWindow = null; chartFingerprint = null; acceptedChartGenerationSignature = null; chartPageLimit = null; referenceWindow = null; referenceFingerprint = null; referencePageLimit = null }
   function clearResource(section: NewowProductSection): void { resources[section].data.value = null; resources[section].state.value = 'not_requested'; resources[section].error.value = null }
   function cacheAuxiliary(response: NewowProductSectionResponse<'auxiliary'>, request: Extract<NewowProductRequest, { section: 'auxiliary' }>): void {
     if (response.value?.component === undefined) return
     const key = auxiliaryCacheKey(request)
-    if (!auxiliaryCache.has(key) && auxiliaryCache.size >= 4) {
+    auxiliaryCache.delete(key)
+    if (auxiliaryCache.size >= 4) {
       const oldest = auxiliaryCache.keys().next().value
       if (oldest !== undefined) auxiliaryCache.delete(oldest)
     }
@@ -504,6 +524,16 @@ function chartIdentity(meta: NewowProductSectionResponse['meta'], value: NewowCh
     meta.identity.product, meta.identity.strategy, meta.identity.frequency, meta.identity.series_kind,
     meta.identity.profile_id, meta.identity.formula_versions, meta.as_of, meta.input_content_sha256, meta.data_revision_identity,
     value.chart_from, value.chart_through, value.page_identity,
+  ])
+}
+
+function chartGenerationSignature(meta: NewowProductSectionResponse['meta']): string {
+  return JSON.stringify([
+    meta.schema_version, meta.snapshot_token,
+    meta.identity.product, meta.identity.strategy, meta.identity.frequency, meta.identity.series_kind,
+    meta.identity.profile_id, meta.identity.formula_versions,
+    meta.as_of, meta.input_content_sha256, meta.data_revision_identity,
+    meta.reference_model_version, meta.futures_adaptation_version,
   ])
 }
 
