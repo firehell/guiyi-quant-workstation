@@ -182,11 +182,34 @@ product dominants、发起 per-product 请求、WebSocket 或任何写请求。
 
 ### Requirement: Market Home uses frozen non-trading visual semantics
 
-图标色值 SHALL 为上行 `#E63935`、周期同向 `#FF9601`、下行 `#35C759`、中性 `#017AFF`、数据不足
-`#98A2B3`，对应尺寸为 Legend 40px、表格状态 28px、Trend/HTDY micro 24px。图标必须有中文可访问语义，
+共享图标默认色值 SHALL 为上行 `#E63935`、周期同向 `#FF9601`、下行 `#35C759`、中性 `#017AFF`、数据不足
+`#98A2B3`，默认尺寸为 Legend 40px、表格状态 28px、Trend/HTDY micro 24px。白色首页 SHALL 仅在自身根节点将上行设为 `#FF403A`、下行设为 `#22B95D`、中性蓝设为 `#365AF5`、Legend 压缩为28px，保留表格28px与方向 micro 24px；不得改变详情页或全局指标颜色。图标必须有中文可访问语义，
 业务文案只能使用上行、周期同向、下行、中性、数据不足；不得改写为买入、持股、卖出、空仓、建仓、清仓或订单语义。
 
 #### Scenario: A user reads a state icon without color
 
 - **WHEN** Market Home displays a frozen state icon
 - **THEN** it has the approved size, color and Chinese accessible label, while adjacent HTDY/SuBing Event copy remains an observation rather than a trading instruction
+
+
+### Requirement: Market Home uses an approved light full-width desktop layout
+
+`/market` SHALL 使用白色全宽布局、期货板块选择、紧凑图例与直接表头排序，不显示搜索、独立排序工具条、常驻观察侧栏或底部移动导航。研究观察默认收起但可键盘展开，保留已有合法偏好。板块与总数 SHALL 读取 overview authority；缺失品种不得在浏览器补造事实行。普通行进入 Newow 趋势 actual_dominant 1d；页头各视角菜单 SHALL 从当前可用品种显式选择，再委托既有 route serializer。
+
+#### Scenario: A user sorts or filters the available futures locally
+
+- **WHEN** 用户点击收盘、1d涨跌幅、量比或1d增仓率表头
+- **THEN** 当前列依次降序、升序、默认次序；切列从降序开始，空值与非有限值两个方向均末尾，同值按symbol排序，默认保持服务端次序
+- **AND** 表头具有button和aria-sort，Enter/Space可用，筛选排序不修改输入、不发网络请求；返回或刷新恢复有效偏好，失效板块回到全部
+
+#### Scenario: A target reference price has no authorized bulk source
+
+- **WHEN** 当前 overview 未提供同身份目标参考价
+- **THEN** 目标参考价列固定显示 `—`，解释“尚未接入同身份目标参考价”，不可排序，不补造字段或逐品种请求
+- **AND** `oi_change_1d` 以中性文字显示带符号百分比增仓率；涨跌幅使用红/绿浅色圆角背景，0与缺失仍可区分，量比展示两位小数
+
+#### Scenario: A full desktop viewport displays 60 fixture participants
+
+- **WHEN** 以受控60品种fixture在1280、1440、1920、2560宽度验收
+- **THEN** 表格撑满可用宽度、页面无横向溢出，所有行纵向可达且表头保持可见；390px保留可访问列表
+- **AND** 非实时日期、真实参与/总数、缺失及过期计数和独立Runtime/Event异常可见；fixture截图不代表生产或原站page parity验收

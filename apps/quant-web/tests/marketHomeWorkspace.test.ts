@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { filterAndSortMarketHomeRows } from '../src/utils/marketHomeWorkspace.ts'
+import { filterAndSortMarketHomeRows, nextMarketHomeSort } from '../src/utils/marketHomeWorkspace.ts'
 import type { MarketHomeRow } from '../src/utils/marketHomeViewModel.ts'
 
 const rows = [
@@ -20,12 +20,71 @@ test('filters and sorts Market Home rows locally without changing resource input
   assert.deepEqual(filterAndSortMarketHomeRows(rows, { query: '', sector: '', filter: 'with-event', sort: 'default' }).map((row) => row.symbol), ['jm'])
 })
 
-test('orders Event rows by the latest immutable detection time before symbol', () => {
+test('orders Event rows by direction while keeping missing Events last and time ties stable by symbol', () => {
   const eventRows = [
     { ...rows[0]!, symbol: 'ag', event: { id: 1, detected_at: '2026-09-02T01:00:00Z', bar_end: '2026-09-02T00:59:00Z' } },
     { ...rows[1]!, symbol: 'jm', event: { id: 2, detected_at: '2026-09-02T02:00:00Z', bar_end: '2026-09-02T01:59:00Z' } },
+    { ...rows[0]!, symbol: 'cu', event: { id: 99, detected_at: '2026-09-02T01:00:00Z', bar_end: '2026-09-02T00:59:00Z' } },
     { ...rows[0]!, symbol: 'au', event: null },
   ] as unknown as MarketHomeRow[]
 
-  assert.deepEqual(filterAndSortMarketHomeRows(eventRows, { query: '', sector: '', filter: 'all', sort: 'event' }).map((row) => row.symbol), ['jm', 'ag', 'au'])
+  assert.deepEqual(filterAndSortMarketHomeRows(eventRows, {
+    query: '', sector: '', filter: 'all', sort: 'event', sortDirection: 'desc',
+  }).map((row) => row.symbol), ['jm', 'ag', 'cu', 'au'])
+  assert.deepEqual(filterAndSortMarketHomeRows(eventRows, {
+    query: '', sector: '', filter: 'all', sort: 'event', sortDirection: 'asc',
+  }).map((row) => row.symbol), ['ag', 'cu', 'jm', 'au'])
+})
+
+test('cycles a sortable column through descending, ascending, and default order', () => {
+  assert.deepEqual(nextMarketHomeSort({ sort: 'default', sortDirection: 'desc' }, 'change'), { sort: 'change', sortDirection: 'desc' })
+  assert.deepEqual(nextMarketHomeSort({ sort: 'change', sortDirection: 'desc' }, 'change'), { sort: 'change', sortDirection: 'asc' })
+  assert.deepEqual(nextMarketHomeSort({ sort: 'change', sortDirection: 'asc' }, 'change'), { sort: 'default', sortDirection: 'desc' })
+  assert.deepEqual(nextMarketHomeSort({ sort: 'change', sortDirection: 'asc' }, 'close'), { sort: 'close', sortDirection: 'desc' })
+})
+
+test('sorts exact close values and uses symbol ascending for equal values', () => {
+  const closeRows = [
+    { ...rows[0]!, symbol: 'zn', close: 100.0000002 },
+    { ...rows[0]!, symbol: 'ag', close: 100.0000001 },
+    { ...rows[0]!, symbol: 'au', close: 100.0000002 },
+  ] as MarketHomeRow[]
+
+  assert.deepEqual(filterAndSortMarketHomeRows(closeRows, {
+    query: '', sector: '', filter: 'all', sort: 'close', sortDirection: 'asc',
+  }).map((row) => row.symbol), ['ag', 'au', 'zn'])
+  assert.deepEqual(filterAndSortMarketHomeRows(closeRows, {
+    query: '', sector: '', filter: 'all', sort: 'close', sortDirection: 'desc',
+  }).map((row) => row.symbol), ['au', 'zn', 'ag'])
+})
+
+test('keeps null and non-finite numeric values last in both directions', () => {
+  const numericRows = [
+    { ...rows[0]!, symbol: 'null', close: null },
+    { ...rows[0]!, symbol: 'nan', close: Number.NaN },
+    { ...rows[0]!, symbol: 'infinity', close: Number.POSITIVE_INFINITY },
+    { ...rows[0]!, symbol: 'negative', close: -1 },
+    { ...rows[0]!, symbol: 'positive', close: 2 },
+  ] as MarketHomeRow[]
+
+  assert.deepEqual(filterAndSortMarketHomeRows(numericRows, {
+    query: '', sector: '', filter: 'all', sort: 'close', sortDirection: 'asc',
+  }).map((row) => row.symbol), ['negative', 'positive', 'infinity', 'nan', 'null'])
+  assert.deepEqual(filterAndSortMarketHomeRows(numericRows, {
+    query: '', sector: '', filter: 'all', sort: 'close', sortDirection: 'desc',
+  }).map((row) => row.symbol), ['positive', 'negative', 'infinity', 'nan', 'null'])
+})
+
+test('sorts only filtered rows without changing the source array', () => {
+  const source = Object.freeze([
+    { ...rows[0]!, symbol: 'ag', sector: 'precious', price_change_1d: null },
+    { ...rows[1]!, symbol: 'jm', sector: 'black', price_change_1d: -0.01 },
+    { ...rows[0]!, symbol: 'au', sector: 'precious', price_change_1d: -0.01 },
+  ] as MarketHomeRow[])
+  const originalSymbols = source.map((row) => row.symbol)
+
+  assert.deepEqual(filterAndSortMarketHomeRows(source, {
+    query: '', sector: 'precious', filter: 'all', sort: 'change', sortDirection: 'asc',
+  }).map((row) => row.symbol), ['au', 'ag'])
+  assert.deepEqual(source.map((row) => row.symbol), originalSymbols)
 })

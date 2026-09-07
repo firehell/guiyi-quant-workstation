@@ -220,7 +220,7 @@ pnpm --dir apps/quant-web build
 pnpm --dir apps/quant-web test:e2e
 ```
 
-Market Home targeted contracts、四个截图视口与三资源请求约束：
+Market Home targeted contracts、1280/1440/1920/2560 桌面与390兼容截图、60品种本地排序及三资源请求约束（受控 fixture，不连接生产）。`newow-product` fixture 严格限制默认 origin `http://127.0.0.1:5182`，与其合跑时不覆盖端口；仅首页/详情可使用独立测试端口：
 
 ```bash
 pnpm -C apps/quant-web exec node --test \
@@ -230,6 +230,8 @@ pnpm -C apps/quant-web exec node --test \
   tests/marketHomeResource.test.ts \
   tests/marketHomeWorkspace.test.ts \
   tests/marketHomePreferences.test.ts \
+  tests/marketHomePresentation.test.ts \
+  tests/marketHomePageRoute.test.ts \
   tests/marketHomeRoute.test.ts
 pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-home.spec.mjs
 ```

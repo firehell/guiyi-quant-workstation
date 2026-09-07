@@ -35,6 +35,28 @@ test('ordinary Market Home product clicks use fixed Newow Trend D1 identity', as
   }
 })
 
+test('Home header choice enters selected view and symbol through the page handler', async () => {
+  const pushes: unknown[] = []
+  Object.assign(globalThis, { __marketHomeRoutePushes: pushes })
+  const Page = await loadPage()
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Page)
+  try {
+    app.mount(root)
+    await nextTick()
+    const trigger = findNode(root, (node) => node.type === 'button' && node.text === 'CHOOSE_SUBING_CU')
+    assert.ok(trigger, 'Home must connect explicit header selection to its route handler')
+    ;(trigger.props.onClick as () => void)()
+    assert.deepEqual(pushes, [{ name: 'market-chart', query: {
+      view: 'subing', symbol: 'cu', series_kind: 'actual_dominant', contract: undefined,
+      frequency: '15m', focus_bar_end: undefined,
+    } }])
+  } finally {
+    app.unmount()
+    Reflect.deleteProperty(globalThis, '__marketHomeRoutePushes')
+  }
+})
+
 async function loadPage() {
   const source = readFileSync(pageUrl, 'utf8')
   const { descriptor, errors } = parse(source, { filename: pageUrl.pathname })
@@ -50,6 +72,13 @@ async function loadPage() {
     export default defineComponent({
       emits: ['open'],
       setup(_props, { emit }) { return () => h('button', { onClick: () => emit('open', { symbol: 'ag' }) }, 'OPEN_AG') },
+    })
+  `)
+  const headerComponent = moduleUrl(`
+    import { defineComponent, h } from '${vueUrl}'
+    export default defineComponent({
+      emits: ['openView'],
+      setup(_props, { emit }) { return () => h('button', { onClick: () => emit('openView', 'subing', 'cu') }, 'CHOOSE_SUBING_CU') },
     })
   `)
   const routerModule = moduleUrl(`
@@ -78,20 +107,22 @@ async function loadPage() {
   `)
   const preferencesModule = moduleUrl(`
     export function loadMarketHomePreferences() {
-      return { sector: '', sort: 'default', compactDensity: false, detailFrequency: '15m', focusRailCollapsed: false }
+      return { sector: '', sort: 'default', sortDirection: 'desc', compactDensity: false, detailFrequency: '15m', focusRailCollapsed: false }
     }
     export function saveMarketHomePreferences() {}
   `)
-  const workspaceModule = moduleUrl('export function filterAndSortMarketHomeRows(rows) { return rows }')
+  const workspaceModule = new URL('../src/utils/marketHomeWorkspace.ts', import.meta.url).href
   const routesUrl = new URL('../src/utils/marketHomeRoutes.ts', import.meta.url).href
   const transpiled = ts.transpileModule(compiled.content, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText
+    .replace(/import ['"]@\/styles\/marketHome.css['"];?/g, '')
+    .replace(/from ['"]@\/utils\/productDirectory['"]/g, `from '${new URL('../src/utils/productDirectory.ts', import.meta.url).href}'`)
     .replace(/from ['"]vue['"]/g, `from '${vueUrl}'`)
     .replace(/from ['"]vue-router['"]/g, `from '${routerModule}'`)
     .replace(/from ['"]naive-ui['"]/g, `from '${naiveModule}'`)
     .replace(/from ['"]@\/components\/market\/([^'"]+\.vue)['"]/g, (_match, file: string) => (
-      `from '${file === 'MarketHomeTable.vue' || file === 'MarketHomeMobileList.vue' ? productComponent : plainComponent}'`
+      `from '${file === 'MarketHomeHeader.vue' ? headerComponent : file === 'MarketHomeTable.vue' || file === 'MarketHomeMobileList.vue' ? productComponent : plainComponent}'`
     ))
     .replace(/from ['"]@\/api\/(?:market|alerts|runtime)['"]/g, `from '${apiModule}'`)
     .replace(/from ['"]@\/composables\/useMarketHome['"]/g, `from '${homeModule}'`)

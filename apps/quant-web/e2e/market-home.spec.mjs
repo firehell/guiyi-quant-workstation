@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { mockMarketDetail, installDetailFakeWebSocket } from './market-detail.helpers.mjs'
+import { lightHomeOverview } from './fixtures/market-home-light.mjs'
 
 function overview() {
   return {
@@ -46,12 +48,18 @@ function mixedEvents() {
 }
 
 async function mockMarketHomeApi(page, requests, currentEvents = events(), currentOverview = overview(), currentRuntime = runtime()) {
+  requests.pageErrors = []
+  page.on('pageerror', error => requests.pageErrors.push(error.message))
+  await page.route(url => url.pathname.startsWith('/api/'), route => route.abort('blockedbyclient'))
+  await mockMarketDetail(page)
+  await installDetailFakeWebSocket(page)
   requests.all = []
   requests.unexpected = []
   page.on('request', (request) => requests.all.push({ method: request.method(), url: new URL(request.url()) }))
-  await page.route('**/api/**', async (route) => {
+  await page.route(url => url.pathname.startsWith('/api/'), async (route) => {
     const url = new URL(route.request().url())
-    if (!url.pathname.startsWith('/api/')) return route.continue()
+    if (route.request().method() !== 'GET') { requests.unexpected.push(route.request().method()); return route.abort('blockedbyclient') }
+    if (new URL(page.url()).pathname === '/market/chart') return route.fallback()
     const allowed = new Set(['/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events'])
     if (route.request().method() !== 'GET' || !allowed.has(url.pathname)) {
       requests.unexpected.push(`${route.request().method()} ${url.pathname}`)
@@ -64,203 +72,282 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
   })
 }
 
-async function expectFrozenIconContracts(page) {
-  for (const [state, color] of [['up', 'rgb(230, 57, 53)'], ['aligned', 'rgb(255, 150, 1)'], ['down', 'rgb(53, 199, 89)'], ['neutral', 'rgb(1, 122, 255)'], ['unavailable', 'rgb(152, 162, 179)']]) {
-    const icon = page.getByTestId(`market-state-icon-${state}-legend`).first()
-    await expect(icon).toHaveCSS('background-color', color)
-    await expect(icon).toHaveCSS('width', '40px')
-  }
-  await expect(page.getByTestId('market-state-icon-up-table').first()).toHaveCSS('width', '28px')
-  await expect(page.getByTestId('market-state-icon-up-micro').first()).toHaveCSS('width', '24px')
-  await expect(page.getByTestId('market-state-icon-down-micro').first().locator('svg > g')).toHaveAttribute('transform', 'translate(0 24) scale(1 -1)')
-  const legendGlyphWidth = await page.getByTestId('market-state-icon-up-legend').first().locator('path').evaluate((element) => element.getBoundingClientRect().width)
-  const tableGlyphWidth = await page.getByTestId('market-state-icon-up-table').first().locator('path').evaluate((element) => element.getBoundingClientRect().width)
-  expect(legendGlyphWidth).toBeGreaterThanOrEqual(14)
-  expect(legendGlyphWidth).toBeLessThanOrEqual(16)
-  expect(tableGlyphWidth).toBeGreaterThanOrEqual(11)
-  expect(tableGlyphWidth).toBeLessThanOrEqual(13)
+async function openObservations(page) {
+  const button = page.getByRole('button', { name: /研究观察/ }).first()
+  if (await button.getAttribute('aria-expanded') !== 'true') await button.click()
 }
 
-test('uses exactly three all-ready top-level reads and opens immutable HTDY actual-dominant chart', async ({ page }) => {
+function expectHomeReads(requests, count = 1) {
+  expect(requests.unexpected).toEqual([])
+  expect(requests.pageErrors).toEqual([])
+  expect(requests.filter(path => path.endsWith('/home-overview'))).toHaveLength(count)
+  expect(requests.filter(path => path === '/api/runtime/health')).toHaveLength(count)
+  expect(requests.filter(path => path === '/api/alerts/current-events')).toHaveLength(count)
+}
+
+test('white full-width home uses exactly three reads and keeps observations collapsed until opened', async ({ page }) => {
   const requests = []
   await mockMarketHomeApi(page, requests, events(), overview(), runtime('ready'))
   await page.goto('/market')
-
-  await expect(page.locator('.n-layout-sider')).toHaveCount(0)
-  await expect(page.locator('.n-layout-header')).toHaveCount(0)
-  await expect.poll(() => page.evaluate(() => ({ width: document.querySelector('.content')?.clientWidth, height: document.querySelector('.content')?.clientHeight, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight }))).toEqual({ width: 1440, height: 900, viewportWidth: 1440, viewportHeight: 900 })
-  await expect(page.getByText('非实时行情')).toBeVisible()
-  await expect(page.getByText('Runtime ready')).toBeVisible()
-  await expect(page.getByText('观察 Focus')).toBeVisible()
+  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await expect(page.locator('.market-dashboard-page')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+  await expect(page.locator('.n-layout-sider, .n-layout-header, input, .toolbar')).toHaveCount(0)
+  await expect(page.getByText(/非实时行情/).first()).toBeVisible()
+  await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).not.toBeVisible()
+  await openObservations(page)
   await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toBeVisible()
-  await expect(page.locator('.n-layout-sider__toggle')).toHaveCount(0)
-  await expectFrozenIconContracts(page)
-  await expect.poll(() => requests.filter((path) => path.endsWith('/home-overview')).length).toBe(1)
-  expect(requests.filter((path) => path === '/api/runtime/health')).toHaveLength(1)
-  expect(requests.filter((path) => path === '/api/alerts/current-events')).toHaveLength(1)
-  expect(requests.unexpected).toEqual([])
-  expect(requests.all.filter((request) => request.url.pathname.startsWith('/api/')).map((request) => request.url.pathname).sort()).toEqual([
-    '/api/alerts/current-events', '/api/runtime/health', '/api/v1/market/research/home-overview',
-  ])
-  expect(requests.all.filter((request) => request.url.pathname === '/api/v1/market/newow/strategy-detail')).toHaveLength(0)
-
+  expectHomeReads(requests)
   await page.getByText('AG · 火天大有 · 买观察 · 15m').click()
   await expect(page).toHaveURL(/symbol=ag.*series_kind=actual_dominant.*frequency=15m.*overlay=htdy/)
 })
 
-test('keeps mixed Rule Events in the single Focus Rail and deep-links SuBing without a new request', async ({ page }) => {
+test('mixed immutable Events preserve SuBing route and never request a second home source', async ({ page }) => {
   const requests = []
   await mockMarketHomeApi(page, requests, mixedEvents(), overview(), runtime('ready'))
   await page.goto('/market')
-
-  await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toBeVisible()
+  await openObservations(page)
   await expect(page.getByText('JM · 苏冰预警 · 空头预警 · 15m')).toBeVisible()
-  expect(requests.filter((path) => path.endsWith('/home-overview'))).toHaveLength(1)
-  expect(requests.filter((path) => path === '/api/runtime/health')).toHaveLength(1)
-  expect(requests.filter((path) => path === '/api/alerts/current-events')).toHaveLength(1)
-
+  expectHomeReads(requests)
   await page.getByText('JM · 苏冰预警 · 空头预警 · 15m').click()
   await expect(page).toHaveURL(/view=subing.*symbol=jm.*series_kind=actual_dominant.*frequency=15m.*focus_bar_end=2026-09-02T02:45:00Z/)
 })
 
-test('renders all five frozen table state icons at 28px', async ({ page }) => {
+test('distinguishes empty and unavailable observations even when panel starts collapsed', async ({ page }) => {
+  let current = { status: 'ready', trading_day: '2026-09-02', items: [] }
   const requests = []
-  await mockMarketHomeApi(page, requests, events(), allTableStatesOverview(), runtime('ready'))
+  await mockMarketHomeApi(page, requests, () => current)
   await page.goto('/market')
-  for (const [state, color] of [['up', 'rgb(230, 57, 53)'], ['aligned', 'rgb(255, 150, 1)'], ['down', 'rgb(53, 199, 89)'], ['neutral', 'rgb(1, 122, 255)'], ['unavailable', 'rgb(152, 162, 179)']]) {
-    const icon = page.getByTestId(`market-state-icon-${state}-table`).first()
-    await expect(icon).toHaveCSS('width', '28px')
-    await expect(icon).toHaveCSS('background-color', color)
-  }
-  await expect(page.locator('.table-wrap')).toHaveScreenshot('market-home-five-table-states.png', {
-    animations: 'disabled',
-    caret: 'hide',
-    maxDiffPixels: 400,
-  })
-})
-
-test('distinguishes an empty current Event projection from an unavailable projection', async ({ page }) => {
-  const emptyRequests = []
-  await mockMarketHomeApi(page, emptyRequests, { status: 'ready', trading_day: '2026-09-02', items: [] })
-  await page.goto('/market')
+  await openObservations(page)
   await expect(page.getByText('当前交易日暂无正式研究观察 Event')).toBeVisible()
-
-  const unavailableRequests = []
-  await mockMarketHomeApi(page, unavailableRequests, { status: 'unavailable', trading_day: null, items: [] })
-  await page.reload()
-  await expect(page.getByText('当前 Alert Event 暂不可用；不能据此判断本时段无研究观察。')).toBeVisible()
+  current = { status: 'unavailable', trading_day: null, items: [] }
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByText(/当前 Alert Event 暂不可用/)).toBeVisible()
+  await expect(page.getByText('当前交易日暂无正式研究观察 Event')).toHaveCount(0)
 })
 
-test('keeps each accepted viewport free of page-level horizontal overflow', async ({ page }) => {
+test('renders the five states and soft percentage badges without inventing targets', async ({ page }) => {
   const requests = []
-  await mockMarketHomeApi(page, requests)
-  for (const [name, width, height] of [['1920', 1920, 1080], ['1440', 1440, 900], ['1280', 1280, 800], ['390', 390, 844]]) {
-    await page.setViewportSize({ width, height })
-    await page.goto('/market')
-    await expect(page.getByText('非实时行情')).toBeVisible()
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await page.locator('.content').evaluate((element) => element.scrollTo(0, 0))
-    await expect(page).toHaveScreenshot(`market-home-${name}.png`, { fullPage: true, animations: 'disabled', caret: 'hide', maxDiffPixels: 400 })
-    if (name === '390') {
-      await page.getByLabel('移动端品种列表').scrollIntoViewIfNeeded()
-      await expect(page).toHaveScreenshot('market-home-390-list.png', { fullPage: true, animations: 'disabled', caret: 'hide', maxDiffPixels: 400 })
-    }
+  const value = allTableStatesOverview()
+  value.items[0].oi_change_1d = '0.0218'
+  await mockMarketHomeApi(page, requests, events(), value, runtime('ready'))
+  await page.goto('/market')
+  for (const state of ['up', 'down', 'neutral', 'aligned', 'unavailable']) {
+    await expect(page.getByTestId(`market-state-icon-${state}-table`).first()).toHaveCSS('width', '28px')
+    await expect(page.getByTestId(`market-state-icon-${state}-legend`).first()).toHaveCSS('width', '28px')
   }
+  await expect(page.getByTestId('market-state-icon-neutral-table').first()).toHaveCSS('background-color', 'rgb(54, 90, 245)')
+  await expect(page.getByTestId('market-state-icon-up-micro').first()).toHaveCSS('border-radius', '50%')
+  await expect(page.getByRole('columnheader', { name: /目标参考价/ })).not.toContainText('↕')
+  await expect(page.getByRole('columnheader', { name: /目标参考价/ }).getByRole('button')).toHaveCount(0)
+  const targets = page.locator('td.target-unavailable')
+  await expect(targets).toHaveCount(5)
+  expect(await targets.allTextContents()).toEqual(Array(5).fill('—'))
+  await expect(page.getByText('+2.18%', { exact: true })).toBeVisible()
+  const badge = page.locator('tbody tr').first().locator('.change-badge')
+  await expect(badge).toHaveCSS('border-radius', '7px')
+  await expect(badge).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  expectHomeReads(requests)
+  await expect(page.locator('.table-wrap')).toHaveScreenshot('market-home-five-table-states.png', { animations: 'disabled', maxDiffPixels: 400 })
 })
 
-test('keeps 60-product filtering local and supports keyboard chart review', async ({ page }) => {
-  const many = overview()
-  many.items = Array.from({ length: 60 }, (_, index) => item(`x${index}`, `测试品种${index}`, 'black', 'up', 'up'))
-  many.active_count = many.participant_count = 60
-  many.summary.price_up_count = many.summary.daily_up_count = many.summary.aligned_up_count = 60
-  many.summary.price_down_count = many.summary.price_flat_count = many.summary.daily_down_count = many.summary.daily_neutral_count = many.summary.daily_unavailable_count = many.summary.aligned_down_count = 0
-  many.sectors = [{ sector: 'black', active_count: 60, participant_count: 60, median_price_change_1d: '0.01' }]
+test('column headers sort 60 products in both directions then restore stable source order without requests', async ({ page }) => {
   const requests = []
-  await mockMarketHomeApi(page, requests, events(), many)
+  const value = lightHomeOverview()
+  await mockMarketHomeApi(page, requests, events(), value)
   await page.goto('/market')
-  await page.getByPlaceholder('搜索代码或中文名').fill('测试品种59')
-  await expect(page.getByRole('rowheader', { name: 'X59 测试品种59' })).toBeVisible()
-  await expect(page.getByText('X58 测试品种58')).toHaveCount(0)
-  expect(requests.filter((path) => path.endsWith('/home-overview'))).toHaveLength(1)
-  await page.locator('tbody tr').filter({ hasText: 'X59 测试品种59' }).press('Enter')
-  await expect(page).toHaveURL(/symbol=x59.*series_kind=actual_dominant/)
+  await expect(page.locator('tbody tr')).toHaveCount(60)
+  const symbols = () => page.locator('tbody tr').evaluateAll(rows => rows.map(row => row.dataset.symbol))
+  for (const [label, field] of [['最新收盘', 'close'], ['1d 涨跌幅', 'price_change_1d'], ['量比', 'volume_ratio20'], ['1d 增仓率', 'oi_change_1d']]) {
+    const header = page.getByRole('columnheader', { name: new RegExp(label) })
+    const button = header.getByRole('button')
+    await button.click()
+    await expect(header).toHaveAttribute('aria-sort', 'descending')
+    const sorted = direction => [...value.items].sort((a, b) => {
+      if (a[field] === null || b[field] === null) return a[field] === b[field] ? a.symbol.localeCompare(b.symbol) : a[field] === null ? 1 : -1
+      return (Number(a[field]) - Number(b[field])) * direction || a.symbol.localeCompare(b.symbol)
+    }).map(row => row.symbol)
+    expect(await symbols()).toEqual(sorted(-1))
+    await button.press('Space')
+    await expect(header).toHaveAttribute('aria-sort', 'ascending')
+    expect(await symbols()).toEqual(sorted(1))
+    await button.press('Enter')
+    await expect(header).toHaveAttribute('aria-sort', 'none')
+    expect(await symbols()).toEqual(value.items.map(row => row.symbol))
+    await expect(page).toHaveURL(/\/market$/)
+  }
+  expectHomeReads(requests)
 })
 
-test('keeps focus visible and narrows the Focus Rail to 280px at 1280px', async ({ page }) => {
+test('sector counts use authority and filtering toggles locally with keyboard row entry', async ({ page }) => {
   const requests = []
-  await mockMarketHomeApi(page, requests)
-  await page.setViewportSize({ width: 1280, height: 800 })
+  const value = lightHomeOverview()
+  await mockMarketHomeApi(page, requests, events(), value)
   await page.goto('/market')
-  const firstRow = page.locator('tbody tr').first()
-  await firstRow.focus()
-  await expect(firstRow).toHaveCSS('outline-style', 'solid')
-  await expect(page.locator('.market-dashboard-page__workspace aside')).toHaveCSS('width', '280px')
+  const precious = page.getByRole('button', { name: /贵金属\s*4/ })
+  await precious.click()
+  await expect(precious).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('tbody tr')).toHaveCount(4)
+  await page.getByRole('columnheader', { name: /最新收盘/ }).getByRole('button').click()
+  await precious.click()
+  await expect(page.locator('tbody tr')).toHaveCount(60)
+  expectHomeReads(requests)
+  await page.locator('tbody tr[data-symbol="ag"]').press('Enter')
+  await expect(page).toHaveURL(/view=newow.*symbol=ag.*strategy=trend.*series_kind=actual_dominant.*frequency=1d/)
 })
 
-test('retains a cached snapshot and surfaces overview and Runtime degradation', async ({ page }) => {
+test('sort and sector survive refresh and browser back while absent sector recovers to all', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests, events(), lightHomeOverview())
+  await page.goto('/market')
+  await page.getByRole('button', { name: /贵金属\s*4/ }).click()
+  await page.getByRole('columnheader', { name: /最新收盘/ }).getByRole('button').click()
+  await page.reload()
+  await expect(page.locator('tbody tr')).toHaveCount(4)
+  await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toHaveAttribute('aria-sort', 'descending')
+  expectHomeReads(requests, 2)
+  const detailDirectoryReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/market/dominants' && response.ok())
+  await page.locator('tbody tr[data-symbol="ag"]').click()
+  await expect(page).toHaveURL(/view=newow.*symbol=ag/)
+  await expect(page.locator('.market-dashboard-page')).toHaveCount(0)
+  await detailDirectoryReady
+  await expect(page.locator('[data-detail-workspace="newow"]')).toBeVisible()
+  requests.length = 0
+  await page.goBack()
+  await expect(page.locator('tbody tr')).toHaveCount(4)
+  await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toHaveAttribute('aria-sort', 'descending')
+  expectHomeReads(requests)
+  await page.evaluate(() => {
+    const key = 'guiyi.market-home.preferences.v1'
+    const value = JSON.parse(localStorage.getItem(key))
+    localStorage.setItem(key, JSON.stringify({ ...value, sector: 'removed-sector' }))
+  })
+  await page.reload()
+  await expect(page.locator('tbody tr')).toHaveCount(60)
+  await expect(page.getByRole('button', { name: /全部\s*60/ }).first()).toHaveAttribute('aria-pressed', 'true')
+  expect(requests.unexpected).toEqual([])
+})
+
+test('invalid and blocked preferences fall back safely without hiding available rows', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests, events(), overview())
+  await page.addInitScript(() => { try { localStorage.setItem('guiyi.market-home.preferences.v1', '{invalid') } catch {} })
+  await page.goto('/market')
+  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toHaveAttribute('aria-sort', 'none')
+  await page.addInitScript(() => {
+    const getItem = Storage.prototype.getItem
+    const setItem = Storage.prototype.setItem
+    Storage.prototype.getItem = function (key) {
+      if (key === 'guiyi.market-home.preferences.v1') throw new DOMException('blocked', 'SecurityError')
+      return getItem.call(this, key)
+    }
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'guiyi.market-home.preferences.v1') throw new DOMException('blocked', 'SecurityError')
+      return setItem.call(this, key, value)
+    }
+  })
+  await page.reload()
+  await expect(page.locator('tbody tr')).toHaveCount(2)
+  await page.getByRole('columnheader', { name: /最新收盘/ }).getByRole('button').click()
+  await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toHaveAttribute('aria-sort', 'descending')
+  expectHomeReads(requests, 2)
+})
+
+test('header view menus require an explicit available product and produce exact view routes', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests, events(), overview())
+  for (const [label, view, frequency] of [['牛哇', 'newow', '1d'], ['火天大有', 'htdy', '1d'], ['苏冰预警', 'subing', '15m'], ['更多', 'free', '1d']]) {
+    requests.length = 0
+    await page.goto('/market')
+    await expect(page.locator('tbody tr')).toHaveCount(2)
+    const menu = page.locator('.market-home-header details').filter({ has: page.locator('summary', { hasText: label }) })
+    await menu.locator('summary').click()
+    const choice = menu.getByRole('button', { name: /白银/ })
+    await expect(choice).toBeVisible()
+    expectHomeReads(requests)
+    await choice.click()
+    await expect(page).toHaveURL(/\/market\/chart\?/)
+    const url = new URL(page.url())
+    expect(url.pathname).toBe('/market/chart')
+    expect(url.searchParams.get('view')).toBe(view)
+    expect(url.searchParams.get('symbol')).toBe('ag')
+    expect(url.searchParams.get('frequency')).toBe(frequency)
+    expect(url.searchParams.get('series_kind')).toBe('actual_dominant')
+  }
+  expect(requests.unexpected).toEqual([])
+})
+
+test('cached and server stale overview facts stay gray and expose their own failure', async ({ page }) => {
   let attempts = 0
   const requests = []
-  await mockMarketHomeApi(page, requests, events(), () => { attempts += 1; if (attempts > 1) return null; return degradedStaleOverview() }, { ...runtime(), status: 'degraded' })
+  await mockMarketHomeApi(page, requests, events(), () => ++attempts === 1 ? degradedStaleOverview() : null)
   await page.goto('/market')
-  await expect(page.getByText('overview degraded')).toBeVisible()
-  await page.getByText('全部刷新').click()
-  await expect(page.getByText('overview cached stale')).toBeVisible()
-  await expect(page.getByText('Market Home overview 刷新失败；正在展示上一份成功快照。')).toBeVisible()
+  await expect(page.locator('tbody tr')).toHaveCount(1)
+  await expect(page.locator('tbody .market-state-icon--up')).toHaveCount(0)
+  await expect(page.getByText(/过期|stale/).first()).toBeVisible()
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByText(/刷新失败.*上一份成功快照/)).toBeVisible()
+  await expect(page.locator('tbody tr')).toHaveCount(1)
+  await expect(page.locator('tbody .market-state-icon--up')).toHaveCount(0)
 })
 
-test('does not invent participant counts when the initial overview request has no snapshot', async ({ page }) => {
+test('initial unavailable snapshot invents no counts and no target or product rows', async ({ page }) => {
   const requests = []
   await mockMarketHomeApi(page, requests, events(), null)
   await page.goto('/market')
-  await expect(page.getByText('overview request-failed')).toBeVisible()
-  await expect(page.getByText('— / — participant / active')).toBeVisible()
-  await expect(page.getByText('0 / 0 participant / active')).toHaveCount(0)
+  await expect(page.getByText(/没有可展示的上一份成功快照/)).toBeVisible()
+  await expect(page.locator('tbody tr')).toHaveCount(0)
+  await expect(page.getByText(/可用\s*—\s*\/\s*—/)).toBeVisible()
+  const menu = page.locator('.market-home-header details').filter({ has: page.locator('summary', { hasText: '牛哇' }) })
+  await menu.locator('summary').click()
+  await expect(menu.getByRole('button')).toHaveCount(0)
+  expectHomeReads(requests)
 })
 
-test('marks a cached Event snapshot unavailable instead of presenting it as a current observation', async ({ page }) => {
-  let attempts = 0
+test('an unavailable refreshed Event snapshot never leaves old observations clickable', async ({ page }) => {
+  let attempt = 0
   const requests = []
-  await mockMarketHomeApi(page, requests, () => {
-    attempts += 1
-    return attempts === 1 ? events() : { status: 'unavailable', trading_day: null, items: [] }
-  })
+  await mockMarketHomeApi(page, requests, () => ++attempt === 1 ? events() : { status: 'unavailable', trading_day: null, items: [] })
   await page.goto('/market')
+  await openObservations(page)
   await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toBeVisible()
-  await page.getByText('全部刷新').click()
-  await expect(page.getByText('当前 Alert Event 暂不可用；不能据此判断本时段无研究观察。')).toBeVisible()
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByText(/当前 Alert Event 暂不可用/)).toBeVisible()
   await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toHaveCount(0)
-  await expect(page.locator('tbody tr .market-state-icon--unavailable')).toHaveCount(2)
 })
 
-test('keeps Event unavailable semantics and local summary filters on mobile', async ({ page }) => {
-  const requests = []
-  await mockMarketHomeApi(page, requests, { status: 'unavailable', trading_day: null, items: [] }, overview(), runtime('ready'))
+for (const [width, height] of [[1280, 800], [1440, 900], [1920, 1080], [2560, 1440]]) {
+  test(`60-product white home fills ${width}px without overflow and keeps header visible while scrolling`, async ({ page }) => {
+    await page.setViewportSize({ width, height })
+    const requests = []
+    await mockMarketHomeApi(page, requests, events(), lightHomeOverview())
+    await page.goto('/market')
+    await expect(page.locator('tbody tr')).toHaveCount(60)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    const table = await page.locator('table').boundingBox()
+    expect(table.width).toBeGreaterThan(width * .92)
+    await expect(page).toHaveScreenshot(`market-home-${width}.png`, { animations: 'disabled', maxDiffPixels: 500 })
+    await page.locator('tbody tr').last().scrollIntoViewIfNeeded()
+    await expect(page.locator('tbody tr').last()).toBeInViewport()
+    await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toBeInViewport()
+    await page.locator('tbody tr').last().focus()
+    await expect(page.locator('tbody tr').last()).toHaveCSS('outline-style', 'solid')
+    expectHomeReads(requests)
+  })
+}
+
+test('390px compatibility retains readable observations and product entry without horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/market')
-  await expect(page.getByText('当前 Alert Event 暂不可用；不能据此判断本时段无研究观察。')).toBeVisible()
-  await expect(page.getByLabel('移动端品种列表')).toContainText('观察')
-  await expect(page.getByLabel('移动端品种列表')).toContainText('Event 不可用')
-  await expect(page.getByLabel('移动端品种列表').locator('.event .market-state-icon').first()).toHaveCSS('width', '28px')
-  await expect(page.getByText('Runtime ready')).toBeVisible()
-})
-
-test('applies every summary choice locally and makes compact density visible', async ({ page }) => {
   const requests = []
-  await mockMarketHomeApi(page, requests)
+  await mockMarketHomeApi(page, requests, { status: 'unavailable', trading_day: null, items: [] })
   await page.goto('/market')
-  const row = page.locator('tbody tr').first()
-  const regularPadding = await row.locator('th').evaluate((element) => getComputedStyle(element).paddingTop)
-  await page.getByRole('button', { name: /下跌 1/ }).click()
-  await expect(page.getByText('AG 白银')).toHaveCount(0)
-  await expect(page.getByRole('rowheader', { name: 'JM 焦煤' })).toBeVisible()
-  await page.getByText('紧凑密度').click()
-  await expect.poll(async () => page.locator('tbody tr').first().locator('th').evaluate((element) => getComputedStyle(element).paddingTop)).not.toBe(regularPadding)
-  expect(requests.filter((path) => path.endsWith('/home-overview'))).toHaveLength(1)
-})
-
-test('gives keyboard rows an explicit chart-review label', async ({ page }) => {
-  const requests = []
-  await mockMarketHomeApi(page, requests)
-  await page.goto('/market')
-  await expect(page.locator('tbody tr').first()).toHaveAttribute('aria-label', /按 Enter 进入品种复核/)
+  const list = page.getByLabel('移动端品种列表')
+  await expect(list).toContainText('Event 不可用')
+  await openObservations(page)
+  await expect(page.getByText(/当前 Alert Event 暂不可用/)).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await expect(list).toHaveScreenshot('market-home-390-list.png', { animations: 'disabled', maxDiffPixels: 400 })
+  await expect(page).toHaveScreenshot('market-home-390.png', { fullPage: true, animations: 'disabled', maxDiffPixels: 400 })
+  await list.getByRole('button').first().click()
+  await expect(page).toHaveURL(/view=newow.*symbol=ag/)
 })
