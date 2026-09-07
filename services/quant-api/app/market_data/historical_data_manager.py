@@ -184,6 +184,7 @@ class ContractWarmupRequest:
     through: date
     expected_plan_sha256: str | None = None
     apply: bool = False
+    frequency: str | BarFrequency | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +202,9 @@ class ContractWarmupPlan:
     expected_bar_count: int
     provider_request_count: int
     plan_sha256: str
+    frequency: str | None = None
+    dependency_frequencies: tuple[str, ...] = ()
+    frequencies: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,6 +337,22 @@ _FREQUENCY_ORDER = (
     BarFrequency.M30,
     BarFrequency.H1,
 )
+
+
+def _contract_warmup_scope(
+    requested: str | BarFrequency | None,
+) -> tuple[str | None, tuple[str, ...], tuple[str, ...], tuple[BarFrequency, ...]]:
+    """将显式 warm-up 范围收敛为唯一可验证的频率依赖闭包。"""
+    if requested is None:
+        return None, (), tuple(item.value for item in _FREQUENCY_ORDER), _FREQUENCY_ORDER
+    try:
+        frequency = BarFrequency(requested)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("CONTRACT_WARMUP_FREQUENCY_INVALID") from exc
+    if frequency is not BarFrequency.M15:
+        raise ValueError("CONTRACT_WARMUP_FREQUENCY_INVALID")
+    planned = (BarFrequency.M1, frequency)
+    return frequency.value, (BarFrequency.M1.value,), tuple(item.value for item in planned), planned
 
 _AUDIT_METADATA_CATEGORIES = {
     "TRADING_SESSION_MISSING": ("metadata_session", "session"),
@@ -497,7 +517,7 @@ class HistoricalDataManager:
         *,
         before_apply: Callable[[], None] | None = None,
     ) -> ContractWarmupResult:
-        """规划或执行单一真实合约上市有效期内的七周期 warm-up。"""
+        """规划或执行单一真实合约的默认七周期或有界 15m warm-up。"""
         plan, _targets = self._contract_warmup_plan(request)
         if not request.apply:
             return ContractWarmupResult(
@@ -548,6 +568,7 @@ class HistoricalDataManager:
                 ),
                 request.through,
                 weekly_daily_companions=False,
+                fail_stop=locked_plan.frequency == BarFrequency.M15.value,
             )
             return ContractWarmupResult(
                 status=maintenance.status,
@@ -583,13 +604,16 @@ class HistoricalDataManager:
         if fact.listed_date > effective_through:
             raise ValueError("CONTRACT_ACTIVE_WINDOW_MISSING")
 
+        frequency, dependency_frequencies, frequencies, planned_frequencies = _contract_warmup_scope(
+            request.frequency
+        )
         targets: list[_Target] = []
-        for frequency in _FREQUENCY_ORDER:
+        for target_frequency in planned_frequencies:
             key = DatasetKey(
                 DatasetKind.CONTRACT,
                 symbol,
                 contract,
-                frequency,
+                target_frequency,
             )
             for year, month in _months(fact.listed_date, effective_through):
                 expected = tuple(
@@ -661,6 +685,9 @@ class HistoricalDataManager:
                 "start": fact.listed_date.isoformat(),
                 "through": effective_through.isoformat(),
             },
+            "frequency": frequency,
+            "dependency_frequencies": dependency_frequencies,
+            "frequencies": frequencies,
             "targets": tuple(
                 _contract_warmup_hash_target_payload(target) for target in targets
             ),
@@ -691,6 +718,9 @@ class HistoricalDataManager:
                 expected_bar_count=sum(len(target.expected) for target in targets),
                 provider_request_count=direct_target_count,
                 plan_sha256=plan_sha256,
+                frequency=frequency,
+                dependency_frequencies=dependency_frequencies,
+                frequencies=frequencies,
             ),
             tuple(targets),
         )
@@ -1171,6 +1201,7 @@ class HistoricalDataManager:
         through: date | None,
         *,
         weekly_daily_companions: bool,
+        fail_stop: bool = False,
     ) -> MaintenanceResult:
         """apply 核心循环：先聚合已有 1m，再 fetch，最后扫剩余日内派生目标。"""
         remaining_derived = list(intraday_derived)
@@ -1193,6 +1224,22 @@ class HistoricalDataManager:
                     "TARGET_WINDOW_INCOMPLETE",
                 }:
                     continue
+                if fail_stop:
+                    planned += 1
+                    failures.append(_failure(target, exc))
+                    self.catalog.session.rollback()
+                    return MaintenanceResult(
+                        action=action,
+                        status="partial" if applied else "failed",
+                        through=through,
+                        planned=planned,
+                        applied=applied,
+                        blocked=blocked,
+                        failed=len(failures),
+                        provider_requests=provider_requests,
+                        stop_reason="contract_warmup_target_failed",
+                        failures=tuple(failures),
+                    )
                 raise
             else:
                 remaining_derived.remove(target)
@@ -1277,6 +1324,19 @@ class HistoricalDataManager:
                 failed_families.add(_family(failure_target.key))
                 failures.append(_failure(failure_target, exc))
                 self.catalog.session.rollback()
+                if fail_stop:
+                    return MaintenanceResult(
+                        action=action,
+                        status="partial" if applied else "failed",
+                        through=through,
+                        planned=planned,
+                        applied=applied,
+                        blocked=blocked,
+                        failed=len(failures),
+                        provider_requests=provider_requests,
+                        stop_reason="contract_warmup_target_failed",
+                        failures=tuple(failures),
+                    )
             if planned == 1 or planned % 100 == 0:
                 print(
                     f"maintenance {action} fetched planned={planned} applied={applied} "
@@ -1296,6 +1356,19 @@ class HistoricalDataManager:
                     raise
                 failures.append(_failure(target, exc))
                 self.catalog.session.rollback()
+                if fail_stop:
+                    return MaintenanceResult(
+                        action=action,
+                        status="partial" if applied else "failed",
+                        through=through,
+                        planned=planned,
+                        applied=applied,
+                        blocked=blocked,
+                        failed=len(failures),
+                        provider_requests=provider_requests,
+                        stop_reason="contract_warmup_target_failed",
+                        failures=tuple(failures),
+                    )
             if planned % 100 == 0:
                 print(
                     f"maintenance {action} derived planned={planned} applied={applied} "

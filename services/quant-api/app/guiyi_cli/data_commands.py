@@ -62,6 +62,7 @@ def build_request(args: argparse.Namespace):
             through=_required_day(args.through),
             expected_plan_sha256=args.expected_plan_sha256,
             apply=bool(args.apply),
+            frequency=getattr(args, "frequency", None),
         )
     raise ValueError("CLI_DATA_COMMAND_INVALID")
 
@@ -107,6 +108,9 @@ def contract_warmup_payload(result: ContractWarmupResult) -> dict[str, object]:
             "start": plan.listed_date.isoformat(),
             "through": plan.effective_through.isoformat(),
         },
+        "frequency": plan.frequency,
+        "dependency_frequencies": list(plan.dependency_frequencies),
+        "frequencies": list(plan.frequencies),
         "direct_target_count": plan.direct_target_count,
         "derived_target_count": plan.derived_target_count,
         "expected_bar_count": plan.expected_bar_count,
