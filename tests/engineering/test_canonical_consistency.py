@@ -151,6 +151,11 @@ ACTIVE_MARKET_ROUTE_OWNERS = {
     ),
     (
         "GET",
+        "/api/v1/market/newow/strategy-detail",
+        "app.api.market_newow:newow_strategy_detail",
+    ),
+    (
+        "GET",
         "/api/v1/market/research/home-overview",
         "app.api.market:market_home_overview",
     ),

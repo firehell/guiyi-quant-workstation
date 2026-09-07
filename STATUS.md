@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-09-05
+更新时间：2026-09-07
 
 本文件只记录当前 release、production Runtime、Scope、自然 evidence 与尚未完成的 Gate。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`；已完成版本的实现和验证过程从 Git tag、GitHub Release、PR 与 Git history 追溯。
 
@@ -18,6 +18,12 @@
 | Alert Scope | HTDY 为 `jm × 15m`；SuBing 为 execution-time operational 60 个品种 × 15m，Scope hash `ce1daca77aeb1abe134806b67aebd96b2c35db3ba82aa10af58f6e5a2e4f5fa2`。两条 Rule 均为 enabled；SuBing Event 为 0。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
+
+## Newow 开发候选
+
+- `feature/newow-product-reference-trading-p6` 的产品代码候选为 `3e3c81df0c2fb53a3f64791cf94aa95b72f821e1` / tree `e6e1705f6a225e1d3e9e080bc84adf5ee392a5aa`。P6 已形成 tracked 浏览器、视觉和 route-intercept 性能证据，并进入 Task 22 全量矩阵收口；阶段为 `P6_MATRIX_CANDIDATE / FINAL_DUAL_REVIEW_PENDING / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`，不是完整 page parity、release 或 Runtime 能力。
+- 页面诊断 token、六组合评分/排序、AI copy、目标/吸筹的权威昨收与期货 owner parity、比较器 browser-final/tie golden 等 P3 原件缺口继续为 `EVIDENCE_REQUIRED`。route fixture 不能替代这些原件；`REAL_WORKSTATION_MDS_PERFORMANCE = NOT_RUN / PENDING`。
+- Newow 候选不改变本文件中的 `v1.9.15` Release、现役 Runtime、SuBing Event=0、`NATURAL_EVIDENCE_PENDING` 或 G12 人工收件 Gate，也未授权 main/tag/release、Runtime promotion 或任何生产写入。
 
 ## 自然 evidence
 

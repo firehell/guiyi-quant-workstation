@@ -192,7 +192,14 @@ pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web build
 ```
 
-P5 浏览器 smoke 使用临时 route-intercept fixture 和 Playwright CLI，逐项检查九个 strategy×frequency 组合、409 单次恢复、429 不循环重试、参考分页/精确信号定位、解释 evidence-required，以及桌面和 `390×844` 移动视口。该手工 smoke 不创建 P6 `apps/quant-web/e2e/newow-product*.mjs`，不替代 P6、真实 MDS、真实工作站性能或页面原站 parity 验收。
+Newow P6 浏览器验收使用 tracked route-intercept fixture，覆盖九个 strategy×frequency 组合、409 单次恢复、429 不循环重试、参考分页/精确信号定位、解释 evidence-required、既有详情/Home 回归，以及桌面和 `390×844` 移动视口：
+
+```bash
+pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs \
+  e2e/newow-product.spec.mjs e2e/market-detail.spec.mjs e2e/market-home.spec.mjs
+```
+
+全量 `test:e2e` 同样包含这些用例。route-intercept timing 只证明浏览器交互，不替代真实 MDS、真实工作站性能或页面原站 parity 验收。
 
 SuBing Alert Rule/API/Event-backed `S↑/S↓` 与 Market Home 定向检查：
 

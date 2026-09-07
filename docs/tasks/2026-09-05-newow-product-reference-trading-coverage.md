@@ -1,7 +1,7 @@
 # Newow 产品与乐观参考交易 P0 覆盖与证据 Gate
 
 日期：2026-09-05
-状态：`P5_WEB_CANDIDATE_EVIDENCE_MAP / P6_PENDING`（阶段事实仍只以 `STATUS.md` 为准）
+状态：`P6_MATRIX_CANDIDATE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED / FINAL_DUAL_REVIEW_PENDING`（阶段事实仍只以 `STATUS.md` 为准）
 边界：只记录批准范围、当前源码/测试入口和本地证据可用性；不修改公式，不重跑历史页面一致性，不授权 develop/main 集成、发布、生产数据、Runtime、通知或订单操作。
 
 ## 1. Plan execution identity
@@ -91,4 +91,67 @@ P5 Tasks 17–20 已在候选分支 `feature/newow-product-reference-trading-p5`
 
 P5 浏览器 smoke 使用本地 route-intercept fixture，以真实浏览器逐项切换九组合并检查 409 单次恢复、429 单次 busy、参考分页/定位、解释 evidence-required、桌面及 `390×844` 移动端布局。该证据只证明候选 UI 与错误呈现，不是 P6 新建 E2E、真实 MDS、真实工作站性能、页面原站 parity 或 production 验收；被刻意注入的 409/429 是预期控制台 error。P3 的目标/吸筹、原页面期货 owner、browser-final/tie golden、AI copy、稳定诊断 token 与六组合 oracle 缺口继续保留。
 
-P5 候选分支尚未合入 `develop`。P6 Tasks 21–22、全量浏览器/全项目矩阵、真实工作站性能、release、Runtime 与任何外部写入均未执行、未获授权。
+P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`。P6 Task 21 候选 `3e3c81df0c2fb53a3f64791cf94aa95b72f821e1` / tree `e6e1705f6a225e1d3e9e080bc84adf5ee392a5aa` 已完成 tracked browser/visual fixture Gate；Task 22 初始全量矩阵与 AC ledger 见下节。P6 的仓库候选、完整 Newow 产品、release、Runtime 和真实工作站性能继续分别判断。
+
+## 5. Task 22 初始矩阵与修复事实
+
+初始矩阵在 `origin/develop@242368b893256c48656f047178c213d1cf2d012f` 之上的 P6 产品候选执行。各命令分别记账，不合并重叠 suite 数量：
+
+| 命令 | exit / 结果 | wall time |
+|---|---|---:|
+| `uv sync --project services/quant-api --locked` | `0` | `2.12s` |
+| backend pytest excluding isolated/manual | `0`; `2274 passed, 4 skipped, 15 deselected` | `266.14s` |
+| `pytest -q tests/engineering` | `1`; `73 passed, 1 failed` | `53.98s` |
+| Ruff | `0`; all checks passed | `0.52s` |
+| Mypy | `0`; 128 source files | `6.83s` |
+| `check:alert-rules` | `0` | `0.64s` |
+| Web unit | `0`; `424 passed, 1 skipped` | `2.49s` runner |
+| Web build | `0`; 3,075 modules, topology passed | `3.57s` |
+| full Playwright | `0`; `109 passed` | `1.7m` runner |
+| OpenSpec strict | `0`; `9 passed, 0 failed` | `0.95s` |
+| secret scan | `0`; finding count 0 | `0.45s` |
+| `git diff --check` / status | `0`; tracked tree initially clean | `<0.01s` each |
+
+唯一失败是 `ACTIVE_MARKET_ROUTE_OWNERS` 仍列七条 route，未包含 P4 已加入的只读 `GET /api/v1/market/newow/strategy-detail -> app.api.market_newow:newow_strategy_detail`。该缺口已存在于本轮 `origin/develop`，P6 Web diff 未改后端路由或工程测试。最小修复只补精确 method/path/owner 三元组；原失败用例随后 `1 passed in 0.76s`，完整 `test_canonical_consistency.py` 为 `13 passed in 1.68s`。最终 exact-tree 全矩阵和独立双轴 Review 仍是 AC20 Gate。
+
+## 6. AC01–28 ledger
+
+`PASS` 表示该 AC 的当前仓库合同已有具体代码/测试/browser 或可复用 evidence；它不升级缺失的原页面证据。`BLOCKED` 表示仍需外部证据或最终 Review。
+
+| AC | 状态 | 证据 / 剩余边界 |
+|---|---|---|
+| AC01 | `PASS` | `test_product_adapters.py`、`test_market_newow_product_api.py`、Task 21 九组合 browser cases。 |
+| AC02 | `BLOCKED / EVIDENCE_REQUIRED` | 主公式现役 golden/adapter 回归与 M-SOURCE/M-CORE/M-REPLAY 保留；页面诊断 token、六组合输出 oracle/评分排序、AI copy 等未冻结，不能宣称完整 page parity。 |
+| AC03 | `PASS` | `test_product_reader.py` 与 `test_product_replay_invariants.py` 覆盖 60m 同日、W1 零 Bar owner 段和 4001 前缀分页。 |
+| AC04 | `PASS` | `test_product_adapters.py`、`test_product_replay_invariants.py` 的 prefix/batch/rebuild/owner 隔离。 |
+| AC05 | `PASS` | reader/adapter/reference-statistics 测试覆盖 warm-up BUILD 不补 entry 与期初单列。 |
+| AC06 | `PASS` | `test_reference_trades.py` 与 Task 21 same-Bar CLEAR→BUILD 精确双 ID 定位。 |
+| AC07 | `PASS` | `test_reference_interruptions.py`、`test_product_auxiliary.py`、reference panel tests 证明 Hint 不改交易和空仓 Hint 保留。 |
+| AC08 | `PASS` | reader/interruption tests 与 browser reference rows 覆盖中断、负浮动和禁止跨价。 |
+| AC09 | `PASS` | reference/service/composable/browser pagination 证明样本末不 CLEAR、统计与 viewport 独立。 |
+| AC10 | `PASS` | adapter/reference tests 与 fixture semantic validator 分别校验 B、Low/High、MA45，拒绝绘图锚点替代。 |
+| AC11 | `PASS` | `test_reference_statistics.py`、API Decimal serializer、Web null/舍入显示测试。 |
+| AC12 | `PASS` | reference summary/API/Web 将 CLOSED、OPEN、中断、期初分列，零 CLOSED 保持 null/“—”。 |
+| AC13 | `PASS` | `test_page_comparator.py`、Explanation panel 与 browser comparator case 保持 synthetic terminal 隔离。 |
+| AC14 | `PASS` | `test_context_alignment.py`、service cutoff tests、解释 source-bar browser evidence。 |
+| AC15 | `PASS` | auxiliary/Core tests 与 browser repaint disclosure；杯柄仅 confirmed D1，其他周期 not-applicable。 |
+| AC16 | `PASS` | readonly compatibility tests、route tests、Task 21 Legacy/HTDY/SuBing/Free/Home journeys。 |
+| AC17 | `PASS` | service/cache/API/composable/browser tests 覆盖 generation、revision、409/429、warming/stale 与失败清理。 |
+| AC18 | `PASS` | `test_product_readonly_compatibility.py`、仓库受控面 diff 扫描；无新增外部副作用或交易域。 |
+| AC19 | `PASS` | Task 21 desktop/mobile/keyboard/reference-locate/marker selection 与截图 evidence。 |
+| AC20 | `BLOCKED / FINAL_DUAL_REVIEW_PENDING` | 初始全矩阵仅 stale route inventory 失败且已定向关闭；仍须在文档候选 exact tree 完整复跑并完成 Standards/Spec 独立 Review。 |
+| AC21 | `PASS` | `test_product_service.py` spy、Web chart-first browser case；未请求 section 零调用。 |
+| AC22 | `PASS` | service cutoff/Calendar/Session/night trading-day tests；晚 CLEAR/Hint/owner 不污染早期快照。 |
+| AC23 | `PASS` | `test_product_source_facts.py` 与 API 负测校验来源白名单、值/owner/version/as-of；缺项准确降级。 |
+| AC24 | `PASS` | snapshot/cache/inflight/API/composable/browser 409 tests 覆盖 token/cursor/revision/共同事实冲突和一次重建。 |
+| AC25 | `PASS` | `test_product_snapshot_cache.py`、readonly/performance tests 覆盖 32 entries/128MiB/32MiB/300s LRU、bypass 与 cache-off 等价。 |
+| AC26 | `PASS` | `test_product_resource_gate.py`、`test_product_inflight.py` 覆盖并发 1、FIFO waiters 2、5s timeout、取消/最后消费者释放；chart 不等待。 |
+| AC27 | `PASS` | typed API/schema/客户端 parser 与旧 D1 compatibility tests；内部错误固定脱敏。 |
+| AC28 | `PASS` | `test_product_performance.py` 保留 backend fake-MDS 30 次冷热/修订/压力入口；Task 21/22 提供 route-fixture browser timing。`REAL_WORKSTATION_MDS_PERFORMANCE = NOT_RUN / PENDING`，不由 fixture 冒充。 |
+
+## 7. 当前 Gate 结论
+
+- P6 现为全矩阵候选，只有 AC20 的最终 exact-tree matrix 与独立 Standards/Spec Review 尚待关闭。
+- 即使 AC20 后续通过，产品状态也只能是 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`；AC02 所列 P3 原件缺口阻止 `NEWOW_PRODUCT_AND_REFERENCE_TRADING_COMPLETE` 与笼统 `page_parity=true`。
+- 既有 18 个 D1/60m OOS 结果和 9 个 W1 执行事实阻塞保持历史 evidence 状态；本轮产品测试不能改写为 `OOS_PASSED`。
+- `REAL_WORKSTATION_MDS_PERFORMANCE = NOT_RUN / PENDING`。本轮不连接或切换 active services，不执行 RQData、Canonical、production DB/Redis、Scope、notification、account/order/fill/ledger、Runtime、main/tag/release。
