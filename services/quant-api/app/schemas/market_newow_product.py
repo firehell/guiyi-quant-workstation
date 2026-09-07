@@ -283,6 +283,51 @@ class AuxiliaryValueOut(_Out):
     allowed_uses: list[str]
 
 
+class MacdPointOut(_Out):
+    bar_end: datetime
+    value: float | None
+    ready: bool
+    valid: bool
+    reason: str | None
+
+
+class MacdDataOut(_Out):
+    dif: list[MacdPointOut]
+    dea: list[MacdPointOut]
+    histogram: list[MacdPointOut]
+
+
+class MacdSegmentOut(_Out):
+    physical_contract: str
+    segment_id: str
+    bar_ends: list[datetime]
+    status: ProductFeatureStatusOut
+    data: MacdDataOut
+
+
+class MacdParametersOut(_Out):
+    fast: Literal[12]
+    slow: Literal[26]
+    signal: Literal[9]
+    ema_seed_policy: Literal["sma_window"]
+    histogram_scale: Literal[2]
+    round_digits: Literal[6]
+
+
+class MacdValueOut(_Out):
+    component: Literal["macd"]
+    formula_version: str
+    display_adapter_version: Literal["guiyi_newow_macd_display_v1"]
+    parameters: MacdParametersOut
+    parameters_hash: str
+    segments: list[MacdSegmentOut]
+    repainting: Literal[False]
+    formal_signal_eligible: Literal[False]
+    page_parity: Literal[False]
+    source_category: Literal["guiyi_product_auxiliary_adapter"]
+    allowed_uses: list[Literal["research_display"]]
+
+
 class ContextSlotOut(_Out):
     frequency: ProductFrequencyValue
     as_of: datetime
@@ -593,7 +638,7 @@ class ChartDeliveryOut(_Out):
 class AuxiliaryDeliveryOut(_Out):
     delivery: Literal["delivered", "not_requested"]
     status: ProductFeatureStatusOut | None
-    value: AuxiliaryValueOut | None
+    value: AuxiliaryValueOut | MacdValueOut | None
 
 
 class ReferenceDeliveryOut(_Out):

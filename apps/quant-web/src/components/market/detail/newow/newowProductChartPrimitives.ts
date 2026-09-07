@@ -202,6 +202,8 @@ const AUXILIARY_SERIES_LABELS = {
 
 /** Maps aligned P4 arrays to visible series; it never derives an indicator. */
 export function buildNewowAuxiliaryChartModel(value: NewowAuxiliaryValue): NewowAuxiliaryChartModel {
+  // Point objects are excluded from this legacy scalar-array renderer.
+  if (value.component === 'macd') return { component: 'macd', totalPoints: value.segments.reduce((size, segment) => size + segment.bar_ends.length, 0), series: [] }
   const series: NewowAuxiliaryChartSeries[] = []
   let offset = 0
   for (const segment of value.segments) {
@@ -284,6 +286,7 @@ export interface NewowAuxiliaryDisclosure {
 }
 
 const AUXILIARY_TITLES: Readonly<Record<NewowAuxiliaryComponent, string>> = {
+  macd: 'MACD',
   main_force_control: '主力控盘',
   up_down_energy: '涨跌动能',
   zhaoyao_mirror: '主力照妖镜',

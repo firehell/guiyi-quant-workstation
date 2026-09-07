@@ -4,6 +4,8 @@ import {
 } from '../types/newowProduct.ts'
 import type {
   NewowAuxiliaryValue,
+  NewowMacdValue,
+  NewowMacdPoint,
   NewowChartValue,
   NewowComparatorDisplay,
   NewowComparatorProductValue,
@@ -200,7 +202,7 @@ function normalizeStatus(payload: unknown, field: string): NewowFeatureStatus {
 function normalizeSectionValue(section: NewowProductSection, payload: unknown, meta: NewowProductMeta, expected: NormalizedExpected) {
   if (section === 'chart') return normalizeChart(payload, meta)
   if (section === 'reference') return normalizeReference(payload, meta, expected)
-  if (section === 'auxiliary') return normalizeAuxiliary(payload, expected.component)
+  if (section === 'auxiliary') return normalizeAuxiliary(payload, meta, expected.component)
   if (section === 'explanation') return normalizeExplanation(payload, meta)
   return normalizeComparator(payload, meta)
 }
@@ -434,7 +436,11 @@ function normalizeTrade(payload: unknown, index: number, meta: NewowProductMeta,
   }
 }
 
-function normalizeAuxiliary(payload: unknown, expectedComponent?: NewowAuxiliaryValue['component']): NewowAuxiliaryValue {
+function normalizeAuxiliary(payload: unknown, meta: NewowProductMeta, expectedComponent?: NewowAuxiliaryValue['component']): NewowAuxiliaryValue {
+  if (record(payload, 'auxiliary.value').component === 'macd') {
+    if (expectedComponent !== undefined) requireExact(expectedComponent, 'macd', 'auxiliary.component')
+    return normalizeMacd(payload, meta)
+  }
   const value = exactRecord(payload, 'auxiliary.value', ['component', 'formula_version', 'segments', 'repainting', 'formal_signal_eligible', 'page_parity', 'source_category', 'allowed_uses'])
   requireExact(value.source_category, 'guiyi_product_auxiliary_adapter', 'auxiliary.source_category')
   const component = literal(value.component, ['main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'], 'auxiliary.component')
@@ -459,6 +465,55 @@ function normalizeAuxiliary(payload: unknown, expectedComponent?: NewowAuxiliary
     page_parity: boolean(value.page_parity, 'auxiliary.page_parity'), source_category: 'guiyi_product_auxiliary_adapter',
     allowed_uses: stringArray(value.allowed_uses, 'auxiliary.allowed_uses'),
   }
+}
+
+function normalizeMacd(payload: unknown, meta: NewowProductMeta): NewowMacdValue {
+  const field = 'auxiliary.value'
+  const value = exactRecord(payload, field, ['component', 'formula_version', 'display_adapter_version', 'parameters', 'parameters_hash', 'segments', 'repainting', 'formal_signal_eligible', 'page_parity', 'source_category', 'allowed_uses'])
+  requireExact(value.display_adapter_version, 'guiyi_newow_macd_display_v1', `${field}.display_adapter_version`)
+  requireExact(value.source_category, 'guiyi_product_auxiliary_adapter', `${field}.source_category`)
+  for (const key of ['repainting', 'formal_signal_eligible', 'page_parity']) requireExact(value[key], false, `${field}.${key}`)
+  const parameters = exactRecord(value.parameters, `${field}.parameters`, ['fast', 'slow', 'signal', 'ema_seed_policy', 'histogram_scale', 'round_digits'])
+  const expectedParameters = { fast: 12, slow: 26, signal: 9, ema_seed_policy: 'sma_window', histogram_scale: 2, round_digits: 6 } as const
+  for (const [key, expected] of Object.entries(expectedParameters)) requireExact(parameters[key], expected, `${field}.parameters.${key}`)
+  const seen = new Set<string>()
+  let previousEnd = -Infinity
+  const segments = array(value.segments, `${field}.segments`).map((payload, index) => {
+    const path = `${field}.segments[${index}]`
+    const segment = exactRecord(payload, path, ['physical_contract', 'segment_id', 'bar_ends', 'status', 'data'])
+    const physical = contract(segment.physical_contract, `${path}.physical_contract`)
+    if (physical.replace(/\d+$/, '').toLowerCase() !== meta.identity.product) throw new Error(`${path}.physical_contract conflicts with product`)
+    const segmentId = text(segment.segment_id, `${path}.segment_id`)
+    if (seen.has(segmentId)) throw new Error(`${path}.segment_id duplicates an owner`)
+    seen.add(segmentId)
+    const ends = array(segment.bar_ends, `${path}.bar_ends`).map((item, i) => instant(item, `${path}.bar_ends[${i}]`))
+    if (!ends.length) throw new Error(`${path}.bar_ends is empty`)
+    for (const end of ends) {
+      const timestamp = Date.parse(end)
+      if (timestamp <= previousEnd || timestamp > Date.parse(meta.as_of)) throw new Error(`${path}.bar_ends order or as_of conflict`)
+      previousEnd = timestamp
+    }
+    const data = exactRecord(segment.data, `${path}.data`, ['dif', 'dea', 'histogram'])
+    const points = (key: string): NewowMacdPoint[] => {
+      const items = array(data[key], `${path}.data.${key}`)
+      requireAligned(ends.length, path, items)
+      return items.map((payload, i) => {
+        const location = `${path}.data.${key}[${i}]`
+        const point = exactRecord(payload, location, ['bar_end', 'value', 'ready', 'valid', 'reason'])
+        const barEnd = sameInstant(point.bar_end, ends[i]!, `${location}.bar_end`)
+        const number = point.value === null ? null : finiteNumber(point.value, `${location}.value`)
+        const ready = boolean(point.ready, `${location}.ready`), valid = boolean(point.valid, `${location}.valid`)
+        const reason = nullableText(point.reason, `${location}.reason`)
+        if (ready && valid ? number === null || reason !== null : number !== null || reason === null) throw new Error(`${location} point state contradicts value/reason`)
+        if (!ready && (!valid || reason !== 'warming_up')) throw new Error(`${location} warming state is invalid`)
+        return { bar_end: barEnd, value: number, ready, valid, reason }
+      })
+    }
+    return { physical_contract: physical, segment_id: segmentId, bar_ends: ends, status: normalizeStatus(segment.status, `${path}.status`), data: { dif: points('dif'), dea: points('dea'), histogram: points('histogram') } }
+  })
+  return { component: 'macd', formula_version: text(value.formula_version, `${field}.formula_version`), display_adapter_version: 'guiyi_newow_macd_display_v1', parameters: expectedParameters,
+    parameters_hash: sha256(value.parameters_hash, `${field}.parameters_hash`), segments, repainting: false, formal_signal_eligible: false, page_parity: false, source_category: 'guiyi_product_auxiliary_adapter',
+    allowed_uses: exactStringArray(value.allowed_uses, ['research_display'] as const, `${field}.allowed_uses`) }
 }
 
 function normalizeAuxiliaryData(payload: unknown, component: NewowAuxiliaryValue['component'], formulaVersion: string, size: number, field: string) {

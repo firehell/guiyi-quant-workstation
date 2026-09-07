@@ -20,6 +20,8 @@ from guiyi_quant.newow.page_comparator import (
 )
 from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
 from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
+
+from .product_macd import MACD_CACHE_IDENTITY, calculate_macd_display
 from guiyi_quant.newow.product_contracts import (
     EvidenceStatus,
     FeatureRuntimeStatus,
@@ -78,6 +80,7 @@ class ProductSection(StrEnum):
 
 
 class AuxiliaryComponent(StrEnum):
+    MACD = "macd"
     MAIN_FORCE_CONTROL = "main_force_control"
     UP_DOWN_ENERGY = "up_down_energy"
     ZHAOYAO_MIRROR = "zhaoyao_mirror"
@@ -654,6 +657,7 @@ class NewowProductService:
             fact_key,
             page_identity,
             request.section.value,
+            MACD_CACHE_IDENTITY if request.component is AuxiliaryComponent.MACD else None,
             request.component.value if request.component else None,
             window.since.isoformat(),
             window.through.isoformat(),
@@ -715,8 +719,12 @@ class NewowProductService:
             )
         elif request.section is ProductSection.AUXILIARY:
             assert request.component is not None
-            layer = calculate_auxiliary_component(
-                identity, read.replay_bars, request.component.value, as_of=read.as_of
+            layer = (
+                calculate_macd_display(identity, read)
+                if request.component is AuxiliaryComponent.MACD
+                else calculate_auxiliary_component(
+                    identity, read.replay_bars, request.component.value, as_of=read.as_of
+                )
             )
             self._check_cancelled(cancelled)
             deliveries[request.section] = SectionDelivery(

@@ -180,7 +180,7 @@ def newow_strategy_detail(
     chart_limit: int = Query(500, ge=1, le=2000),
     chart_before: str | None = Query(None, min_length=1, max_length=2048),
     component: Literal[
-        "main_force_control", "up_down_energy", "zhaoyao_mirror", "cup_handle"
+        "macd", "main_force_control", "up_down_energy", "zhaoyao_mirror", "cup_handle"
     ]
     | None = Query(None),
     history_limit: int = Query(50, ge=1, le=200),
@@ -468,6 +468,15 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
         result.auxiliary,
         lambda value: {
             "component": value.name,
+            **(
+                {
+                    "display_adapter_version": value.display_adapter_version,
+                    "parameters": value.parameters,
+                    "parameters_hash": value.parameters_hash,
+                }
+                if value.name == "macd"
+                else {}
+            ),
             "formula_version": value.formula_version,
             "segments": [
                 {
@@ -483,7 +492,9 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             "formal_signal_eligible": value.formal_signal_eligible,
             "page_parity": value.page_parity,
             "source_category": "guiyi_product_auxiliary_adapter",
-            "allowed_uses": ["retrospective_display"]
+            "allowed_uses": ["research_display"]
+            if value.name == "macd"
+            else ["retrospective_display"]
             if value.repainting
             else ["product_display"],
         },
