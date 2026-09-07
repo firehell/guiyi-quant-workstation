@@ -51,7 +51,7 @@ export type NewowAuxiliaryComponent =
 
 ## Task 2：白色 Shell、折叠摘要、解释弹窗与参考卡片
 
-**Files:** `MarketDetailPage.vue`、`MarketDetailViewNav.vue`、`MarketDetailQuoteHeader.vue`（显式 Newow 变体）；`NewowProductWorkspace.vue`、`NewowReferencePanel.vue`、`NewowExplanationPanel.vue`；新建 `NewowDetailDialog.vue`、`newowDetailPresentation.ts`、局部 `newowDetail.css`；对应 presentation/unit/E2E tests。路径分别位于现有 pages/market、components/market/detail/newow、utils、styles 目录。
+**Files:** `MarketDetailPage.vue`、`MarketDetailViewNav.vue`、`MarketDetailQuoteHeader.vue`（显式 Newow 变体）；现有 controller 暴露已读取产品目录，新建 `useNewowDailyQuote.ts` 及测试（已有 Market bars/page 的两根日线，只供页头，无 WS/research）；`NewowProductWorkspace.vue`、`NewowReferencePanel.vue`、`NewowExplanationPanel.vue`；新建 `NewowDetailDialog.vue`、`newowDetailPresentation.ts`、局部 `newowDetail.css`；对应 presentation/unit/E2E tests。路径分别位于现有 pages/market、components/market/detail/newow、utils、styles 目录。
 
 **Consumes:** 现有 controller 元数据/quote、route serializer、chart/reference/explanation/comparator section、既有 ViewModel、Task 1 MACD component。
 **Produces:** 全宽 Newow 页面，原生 dialog，正确身份的 summary、纵向参考卡片和按需资源；workspace 将当前辅助 response 传给 Task 3 chart。
@@ -65,6 +65,7 @@ type DetailStatus = { label: string; state: string; barEnd: string | null; histo
 ```
 
 - [ ] 运行对应 tests 确认 RED，实现 Newow 局部变量和 Shell 变体。产品选择来自现有目录；导航只用 `resolveViewSwitchIdentity` / serializer，其他视角原样。
+- [ ] 页头独立读取 `getMarketBarsPage({series_kind:"actual_dominant",symbol,frequency:"1d",limit:2})`；严格校验 request、Bar 次序/数值/覆盖及 resolved_contract_segments，复用现有 Bar-to-owner 校验。产品 generation/取消隔离，频率/策略切换不重复请求，跨合约不算涨跌，失败不抑制主图。增加相关 controller/quote tests；此有界报价不是通用图表流。
 - [ ] 替换研究 tabs：图上摘要折叠，状态/信息 icon 开 dialog；保留当前 explanation 与独立 comparator 作为按需入口，不自动触发重型 comparator。
 
 ```vue
