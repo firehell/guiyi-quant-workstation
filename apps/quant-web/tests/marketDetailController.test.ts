@@ -4,6 +4,7 @@ import test from 'node:test'
 import { nextTick, ref } from 'vue'
 
 import type { MarketSeriesMutation } from '../src/composables/useMarketSeries.ts'
+import { useNewowProduct } from '../src/composables/useNewowProduct.ts'
 
 import type {
   BarData,
@@ -19,6 +20,9 @@ const jmIdentity: MarketDetailIdentity = {
 }
 const rbIdentity: MarketDetailIdentity = {
   view: 'free', symbol: 'rb', seriesKind: 'actual_dominant', frequency: '15m',
+}
+const newowIdentity: MarketDetailIdentity = {
+  view: 'newow', symbol: 'jm', strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d',
 }
 
 function deferred<T>() {
@@ -299,4 +303,65 @@ test('reports only an active generation market-series failure', async () => {
   assert.equal(controller.state.value.header, null)
   assert.equal(controller.state.value.loading, false)
   assert.equal(controller.state.value.error, '详情行情加载失败')
+})
+
+test('Newow chart starts while generic series is still pending', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const generic = deferred<void>()
+  const series = fakeSeries()
+  let genericRequests = 0
+  series.replaceSeries = async () => {
+    genericRequests += 1
+    await generic.promise
+  }
+  const controller = useMarketDetailController({
+    routeQuery: () => ({ symbol: 'jm', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '1d' }),
+    createSeries: () => series,
+    fetchDominants: async () => ({ items: [dominant('jm')] }),
+    fetchResearch: async () => research('jm'),
+  })
+  let chartRequests = 0
+  const product = useNewowProduct({
+    identity: ref<MarketDetailIdentity | null>(newowIdentity),
+    now: () => new Date('2026-09-03T07:00:00Z'),
+    fetchSection: async () => {
+      chartRequests += 1
+      return new Promise(() => {})
+    },
+  })
+
+  const switched = controller.switchIdentity(newowIdentity)
+  await Promise.resolve()
+  await nextTick()
+
+  assert.equal(chartRequests, 1)
+  assert.equal(genericRequests, 0, 'Newow must not request an unused generic series')
+  await switched
+  assert.equal(controller.state.value.loading, false)
+  assert.equal(controller.state.value.header?.productName, '焦煤')
+  product.dispose()
+  controller.dispose()
+})
+
+test('generic series failure does not suppress an otherwise valid Newow workspace', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const series = fakeSeries()
+  let genericRequests = 0
+  series.replaceSeries = async () => {
+    genericRequests += 1
+    throw new Error('generic series unavailable')
+  }
+  const controller = useMarketDetailController({
+    routeQuery: () => ({ symbol: 'jm', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '1d' }),
+    createSeries: () => series,
+    fetchDominants: async () => ({ items: [dominant('jm')] }),
+    fetchResearch: async () => research('jm'),
+  })
+
+  await controller.switchIdentity(newowIdentity)
+
+  assert.equal(genericRequests, 0, 'Newow must not request an unused generic series')
+  assert.equal(controller.state.value.error, null)
+  assert.equal(controller.state.value.header?.productName, '焦煤')
+  controller.dispose()
 })

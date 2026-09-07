@@ -5,6 +5,7 @@ import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
 const componentUrl = new URL('../src/pages/market/MarketDetailPage.vue', import.meta.url)
+const newowWorkspaceUrl = new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue', import.meta.url)
 
 function page() {
   const source = readFileSync(componentUrl, 'utf8')
@@ -22,15 +23,15 @@ test('activates generic facts and mounts the isolated Newow product workspace', 
   assert.match(source, /\['newow',\s*'free',\s*'htdy',\s*'trend',\s*'subing'\]\.includes\(explicitIdentity\.value\?\.view/)
   assert.match(source, /\['newow',\s*'free',\s*'htdy',\s*'trend',\s*'subing'\]\.includes\(result\.identity\.view/)
   assert.match(source, /identity\.strategy \?\? ''/)
-  assert.match(template, /<TrendDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'trend'"/)
+  assert.match(template, /<TrendDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'trend' && header"/)
   assert.match(template, /:identity="routeResult\.identity"/)
   assert.match(template, /:header="header"/)
   assert.match(template, /:bars="controller\.bars\.value"/)
-  assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy'"/)
-  assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing'"/)
+  assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy' && header"/)
+  assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing' && header"/)
   assert.match(source, /import NewowProductWorkspace/)
   assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow'"/)
-  assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free'"/)
+  assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free' && header"/)
   assert.doesNotMatch(template, /<HtdyDetailWorkspace\s+v-else(?:\s|>)/)
 })
 
@@ -52,8 +53,18 @@ test('keeps Free and HTDY as separate explicit workspaces', () => {
   const { template } = page()
 
   assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow'"/)
-  assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free'"/)
-  assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy'"/)
-  assert.match(template, /<TrendDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'trend'"/)
-  assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing'"/)
+  assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free' && header"/)
+  assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy' && header"/)
+  assert.match(template, /<TrendDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'trend' && header"/)
+  assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing' && header"/)
+})
+
+test('initial Newow startup does not request research sections', () => {
+  const workspace = readFileSync(newowWorkspaceUrl, 'utf8')
+
+  assert.doesNotMatch(
+    workspace,
+    /watch\(chartResponse,[\s\S]*loader\.loadReference\(\)/,
+    'a successful chart load must not implicitly request reference or other research sections',
+  )
 })

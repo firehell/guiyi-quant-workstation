@@ -155,15 +155,19 @@ export function useMarketDetailController(
       (value) => ({ ok: true as const, value }),
       () => ({ ok: false as const }),
     )
-    const researchRequest = fetchResearch({
-      symbol: identity.symbol,
-      seriesKind: identity.seriesKind,
-      contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
-    }).catch(() => null)
+    const usesGenericSeries = identity.view !== 'newow'
+    if (!usesGenericSeries) series.clearSeries()
+    const researchRequest = usesGenericSeries
+      ? fetchResearch({
+          symbol: identity.symbol,
+          seriesKind: identity.seriesKind,
+          contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
+        }).catch(() => null)
+      : Promise.resolve(null)
     try {
       const [metadata] = await Promise.all([
         metadataRequest,
-        series.replaceSeries(identity),
+        usesGenericSeries ? series.replaceSeries(identity) : Promise.resolve(),
       ])
       if (disposed || state.value.generation !== generation) return
       const hasCurrentProduct = metadata.ok && metadata.value.items.some(

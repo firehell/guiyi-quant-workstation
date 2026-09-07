@@ -173,10 +173,6 @@ watch([chartModel, () => props.identity.focusBarEnd], ([model, focusBarEnd]) => 
   if (!focusBarEnd || model === null || selectedSignalId.value !== null) return
   selectedSignalId.value = model.actions.find((action) => action.barEnd === focusBarEnd)?.id ?? null
 }, { immediate: true })
-watch(chartResponse, (response) => {
-  if (response === null || researchTab.value !== 'reference' || loader.sections.reference.state.value !== 'not_requested') return
-  void loader.loadReference()
-}, { immediate: true })
 
 onBeforeUnmount(loader.dispose)
 </script>

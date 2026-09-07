@@ -31,7 +31,10 @@ const controller = useMarketDetailController({ routeQuery: () => ({ ...route.que
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
 const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'trend', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
-const shellReady = computed(() => isWorkspacePreview.value && controller.state.value.header !== null && !controller.state.value.loading)
+const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
+const shellReady = computed(() => isWorkspacePreview.value && (
+  isNewowView.value || (controller.state.value.header !== null && !controller.state.value.loading)
+))
 const htdyWorkspace = ref<InstanceType<typeof HtdyDetailWorkspace> | null>(null)
 const trendWorkspace = ref<InstanceType<typeof TrendDetailWorkspace> | null>(null)
 const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(null)
@@ -175,16 +178,18 @@ onBeforeUnmount(controller.dispose)
         <button type="button" role="menuitem" @click="returnLegacy">返回旧版详情</button>
       </div>
 
-      <p v-if="controller.state.value.loading" class="market-detail-page__loading" role="status">正在加载行情事实…</p>
+      <p v-if="controller.state.value.loading" class="market-detail-page__loading" role="status">
+        {{ routeResult.identity.view === 'newow' ? '正在加载品种元数据…' : '正在加载行情事实…' }}
+      </p>
       <MarketDetailUnavailable
         v-else-if="controller.state.value.error || !header"
-        title="行情事实不可用"
+        :title="routeResult.identity.view === 'newow' ? '品种元数据不可用' : '行情事实不可用'"
         :message="controller.state.value.error || '当前身份没有可用的已完成 Bar。'"
         :can-return-legacy="true"
         @return-legacy="returnLegacy"
       />
-      <template v-else>
-        <MarketDetailQuoteHeader :header="header" :identity-key="identityKey" />
+      <template v-if="routeResult.identity.view === 'newow' || (!controller.state.value.loading && !controller.state.value.error && header)">
+        <MarketDetailQuoteHeader v-if="header" :header="header" :identity-key="identityKey" />
         <MarketDetailViewNav
           :identity="routeResult.identity"
           :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
@@ -198,7 +203,7 @@ onBeforeUnmount(controller.dispose)
             @focus-resolved="resolveFocus"
           />
           <FreeChartWorkspace
-            v-else-if="routeResult.identity.view === 'free'"
+            v-else-if="routeResult.identity.view === 'free' && header"
             :identity="routeResult.identity"
             :header="header"
             :bars="controller.bars.value"
@@ -214,7 +219,7 @@ onBeforeUnmount(controller.dispose)
             @update-preferences="updateFreePreferences"
           />
           <HtdyDetailWorkspace
-            v-else-if="routeResult.identity.view === 'htdy'"
+            v-else-if="routeResult.identity.view === 'htdy' && header"
             ref="htdyWorkspace"
             :identity="routeResult.identity"
             :header="header"
@@ -231,7 +236,7 @@ onBeforeUnmount(controller.dispose)
             @focus-resolved="resolveFocus"
           />
           <TrendDetailWorkspace
-            v-else-if="routeResult.identity.view === 'trend'"
+            v-else-if="routeResult.identity.view === 'trend' && header"
             ref="trendWorkspace"
             :identity="routeResult.identity"
             :header="header"
@@ -245,7 +250,7 @@ onBeforeUnmount(controller.dispose)
             @focus-resolved="resolveFocus"
           />
           <SubingDetailWorkspace
-            v-else-if="routeResult.identity.view === 'subing'"
+            v-else-if="routeResult.identity.view === 'subing' && header"
             ref="subingWorkspace"
             :identity="routeResult.identity"
             :focus-bar-end="routeResult.identity.focusBarEnd"
