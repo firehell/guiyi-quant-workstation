@@ -7,11 +7,13 @@ import {
   NEWOW_FREQUENCIES,
   NEWOW_STRATEGIES,
   assertNoUnexpectedRequests,
+  buildNewowFixtureEnvelopeForTest,
   installNewowProductFixtures,
   newowRoute,
   productRequests,
   releaseDeferred,
   unavailable,
+  validateNewowFixtureEnvelopeForTest,
   warming,
 } from './newow-product.helpers.mjs'
 
@@ -54,7 +56,8 @@ for (const strategy of NEWOW_STRATEGIES) {
       await expect(chart).toHaveAttribute('data-strategy', strategy)
       await expect(chart).toHaveAttribute('data-frequency', frequency)
       await expect(chart.getByText(lineByStrategy[strategy], { exact: true }).first()).toBeVisible()
-      await expect(chart).toHaveAttribute('data-action-ids', new RegExp(`${strategy}-${frequency}-build-closed.*${strategy}-${frequency}-build-open`))
+      const clearId = strategy === 'oscillation' ? `${strategy}-${frequency}-clear-same` : `${strategy}-${frequency}-clear`
+      await expect(chart).toHaveAttribute('data-action-ids', `${strategy}-${frequency}-build-closed,${clearId},${strategy}-${frequency}-build-open`)
       expectExactQuery(productRequests(fixture, 'chart')[0], { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', section: 'chart', as_of: NEWOW_AS_OF })
       expect(productRequests(fixture, 'reference')).toHaveLength(0)
 
@@ -95,12 +98,20 @@ test('main-rise chart has a stable representative viewport', async ({ page }) =>
   assertNoUnexpectedRequests(fixture)
 })
 
-test('fixture rejects extra product query parameters and accepts legal no-action', async ({ page }) => {
+test('fixture rejects extra parameters, wrong fixed tokens and inconsistent ReferenceTrade facts', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page, { noAction: true })
   await page.goto(newowRoute())
   await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-action-ids', '')
   await page.evaluate(async () => { try { await fetch('/api/v1/market/newow/strategy-detail?product=rb&strategy=trend&frequency=1d&series_kind=actual_dominant&section=chart&as_of=2026-09-03T08%3A00%3A00.000Z&rogue=1') } catch {} })
-  expect(fixture.unexpected).toEqual([expect.stringContaining('unexpected Newow query')])
+  await page.evaluate(async () => { try { await fetch('/api/v1/market/newow/strategy-detail?product=rb&strategy=trend&frequency=1d&series_kind=actual_dominant&section=reference&as_of=2026-09-03T08%3A00%3A00.000Z&snapshot_token=wrong-generation') } catch {} })
+  expect(fixture.unexpected).toEqual([expect.stringContaining('unexpected Newow query'), expect.stringContaining('invalid snapshot token')])
+
+  const invalid = structuredClone(buildNewowFixtureEnvelopeForTest('reference', 'trend', '1d'))
+  invalid.reference.value.items[0].entry_reference_price = '999.0000'
+  expect(() => validateNewowFixtureEnvelopeForTest(invalid, 'reference', 'trend', '1d')).toThrow(/ReferenceTrade\/Action relation drift/)
+  for (const locateFrom of ['2025-12-15', '2026-01-03', '2026-01-05']) {
+    expect(() => buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, locateFrom)).not.toThrow()
+  }
 })
 
 test('strategy and frequency controls clear prior selection and request only the new identity', async ({ page }) => {
@@ -149,7 +160,7 @@ test('exact locate loads an unloaded window and never falls back to nearest mark
   await page.getByRole('tab', { name: '参考历史与统计' }).click()
   await page.getByRole('button', { name: '加载更多参考历史' }).click()
   await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'historic-build')
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-bi')
   const locate = productRequests(fixture, 'chart').at(-1).url.searchParams
   expect(locate.get('from')).toBe('2026-01-05')
   expect(locate.has('performance_since')).toBe(false)
@@ -164,7 +175,7 @@ test('absent exact locate stays unavailable without selecting a neighbor or chan
   const summaryBefore = await summary.innerText()
   await page.getByRole('button', { name: '加载更多参考历史' }).click()
   await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
-  await expect(page.getByText(/无法按精确信号 historic-build.*没有跳转到邻近日期/)).toBeVisible()
+  await expect(page.getByText(/无法按精确信号 trend-1d-bi.*没有跳转到邻近日期/)).toBeVisible()
   await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', '')
   expect(await summary.innerText()).toBe(summaryBefore)
   assertNoUnexpectedRequests(fixture)
@@ -172,9 +183,11 @@ test('absent exact locate stays unavailable without selecting a neighbor or chan
 
 test('generic series failure does not suppress chart-first Newow or prefetch dependent sections', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page, { genericSeries: 'failed' })
+  await page.goto('/market/chart?symbol=rb&view=free&frequency=1d&series_kind=actual_dominant')
+  await expect.poll(() => fixture.requests.filter((item) => item.url.pathname === '/api/v1/market/bars/page').length).toBe(1)
+  await expect.poll(() => fixture.aborted.filter((url) => url.includes('/api/v1/market/bars/page')).length).toBe(1)
   await page.goto(newowRoute('main_rise', '1d'))
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
-  await page.evaluate(async () => { try { await fetch('/api/v1/market/bars/page?series_kind=actual_dominant&symbol=rb&frequency=1d&limit=500') } catch {} })
   expect(fixture.requests.filter((item) => item.url.pathname === '/api/v1/market/bars/page')).toHaveLength(1)
   expect(productRequests(fixture, 'chart')).toHaveLength(1)
   for (const section of ['reference', 'auxiliary', 'explanation', 'comparator']) expect(productRequests(fixture, section)).toHaveLength(0)

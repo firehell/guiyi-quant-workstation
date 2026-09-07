@@ -91,6 +91,41 @@ test('reuses the first-page chart and reference limits for opaque cursor request
   state.dispose()
 })
 
+test('rejects a chart cursor whose data revision differs from the retained page', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChartPage(pending[0]!.request, '2026-08-14', 'chart-cursor', 'revision-a'))
+  await flush()
+
+  const page = state.loadNextChartPage()
+  pending[1]!.resolve(normalizedChartPage(pending[1]!.request, '2026-08-13', null, 'revision-b'))
+  await page
+
+  assert.equal(state.sections.chart.data.value, null)
+  assert.equal(state.sections.chart.state.value, 'input_conflict')
+  state.dispose()
+})
+
+test('rejects a reference cursor whose data revision differs from the retained page', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request))
+  await flush()
+
+  const first = state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  pending[1]!.resolve(normalizedReference(pending[1]!.request, { nextBefore: 'reference-cursor', revision: 'revision-a' }))
+  await first
+  const page = state.loadNextReferencePage()
+  pending[2]!.resolve(normalizedReference(pending[2]!.request, { items: [referenceItem('trade-2', '-1.000')], nextBefore: null, revision: 'revision-b' }))
+  await page
+
+  assert.equal(state.sections.reference.data.value, null)
+  assert.equal(state.sections.reference.state.value, 'input_conflict')
+  state.dispose()
+})
+
 test('same-identity revision may replace chart when shared bars agree, but a shared-bar conflict fails closed', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
@@ -643,7 +678,7 @@ function normalizedChart(request: NewowProductRequest, options: { token?: string
   return normalizeNewowProductResponse(chartWire({ strategy: request.identity.strategy, frequency: request.identity.frequency, ...options }), request)
 }
 
-function normalizedReference(request: NewowProductRequest, options: { token?: string | null; hash?: string; referenceHash?: string; items?: unknown[]; nextBefore?: string | null; performanceSince?: string } = {}) {
+function normalizedReference(request: NewowProductRequest, options: { token?: string | null; hash?: string; referenceHash?: string; items?: unknown[]; nextBefore?: string | null; performanceSince?: string; revision?: string | null } = {}) {
   return normalizeNewowProductResponse(referenceWire(options), request)
 }
 
@@ -660,8 +695,9 @@ function normalizedStatus(request: NewowProductRequest, token: string | null) {
   return normalizeNewowProductResponse(raw, request)
 }
 
-function normalizedChartPage(request: NewowProductRequest, day: string, nextBefore: string | null) {
+function normalizedChartPage(request: NewowProductRequest, day: string, nextBefore: string | null, revision: string | null = null) {
   const raw = chartWire({ strategy: request.identity.strategy, frequency: request.identity.frequency })
+  raw.meta.data_revision_identity = revision
   raw.chart.value.chart_from = '2026-08-01'
   raw.chart.value.next_before = nextBefore
   raw.chart.value.bars[0]!.bar_end = `${day}T07:00:00Z`
@@ -695,7 +731,7 @@ function bulkReference(request: NewowProductRequest, offset: number, count: numb
   return { ...base, value: { ...base.value!, items, next_before: nextBefore } }
 }
 
-function chartWire(options: { strategy?: 'trend' | 'oscillation' | 'main_rise'; frequency?: '1w' | '1d' | '60m'; token?: string | null; hash?: string; close?: string } = {}) {
+function chartWire(options: { strategy?: 'trend' | 'oscillation' | 'main_rise'; frequency?: '1w' | '1d' | '60m'; token?: string | null; hash?: string; close?: string; revision?: string | null } = {}) {
   const strategy = options.strategy ?? 'trend'
   const frequency = options.frequency ?? '1d'
   const formulas = strategy === 'trend'
@@ -706,7 +742,7 @@ function chartWire(options: { strategy?: 'trend' | 'oscillation' | 'main_rise'; 
   return {
     meta: {
       schema_version: 'newow_product_detail_v1', identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
-      as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64), data_revision_identity: null,
+      as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64), data_revision_identity: options.revision ?? null,
       snapshot_token: options.token === undefined ? 'snapshot-a' : options.token,
       reference_model_version: 'newow_marker_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     },
@@ -722,7 +758,7 @@ function chartWire(options: { strategy?: 'trend' | 'oscillation' | 'main_rise'; 
   }
 }
 
-function referenceWire(options: { token?: string | null; hash?: string; referenceHash?: string; items?: unknown[]; nextBefore?: string | null; performanceSince?: string } = {}) {
+function referenceWire(options: { token?: string | null; hash?: string; referenceHash?: string; items?: unknown[]; nextBefore?: string | null; performanceSince?: string; revision?: string | null } = {}) {
   const base = chartWire(options)
   return {
     ...base, section: 'reference', chart: notRequested(),
