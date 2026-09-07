@@ -76,10 +76,17 @@ export interface NewowProductChartModel {
     readonly frequency: NewowProductFrequency
   }
   readonly bars: readonly NewowProductChartBar[]
+  readonly bandAreas: readonly NewowProductBandArea[]
   readonly mainLines: readonly NewowProductMainLine[]
   readonly actions: readonly NewowProductActionMarker[]
   readonly hints: readonly NewowProductHintMarker[]
   readonly nextBefore: string | null
+}
+
+export interface NewowProductBandArea {
+  readonly from: { readonly time: Time; readonly a: number; readonly b: number }
+  readonly through: { readonly time: Time; readonly a: number; readonly b: number }
+  readonly color: string
 }
 
 const MAIN_LAYER_DEFINITIONS = {
@@ -99,7 +106,7 @@ export function buildNewowProductChartModel(
         strategy: response.meta.identity.strategy,
         frequency: response.meta.identity.frequency,
       },
-      bars: [], mainLines: [], actions: [], hints: [], nextBefore: null,
+      bars: [], bandAreas: [], mainLines: [], actions: [], hints: [], nextBefore: null,
     }
   }
   const value = response.value
@@ -117,18 +124,40 @@ export function buildNewowProductChartModel(
   }))
   const barByEnd = new Map(bars.map((bar) => [bar.barEnd, bar]))
   const mainLines: NewowProductMainLine[] = []
+  const frameByEnd = new Map(value.frames.map(frame => [frame.bar_end, frame]))
   for (const [key, label] of MAIN_LAYER_DEFINITIONS[response.meta.identity.strategy]) {
-    const bySegment = new Map<string, NewowProductLinePoint[]>()
-    for (const frame of value.frames) {
-      const text = frame.main_values[key]
-      const bar = barByEnd.get(frame.bar_end)
-      if (text === null || text === undefined || bar === undefined) continue
-      const points = bySegment.get(bar.segmentId) ?? []
-      points.push({ barEnd: bar.barEnd, tradingDay: bar.tradingDay, value: chartCoordinate(text) })
-      bySegment.set(bar.segmentId, points)
+    let line: { id: string; key: string; label: string; segmentId: string; points: NewowProductLinePoint[] } | null = null
+    let owner = ''
+    let run = 0
+    for (const bar of bars) {
+      const frame = frameByEnd.get(bar.barEnd)
+      const text = frame?.main_values[key]
+      const nextOwner = `${bar.physicalContract}:${bar.segmentId}`
+      if (text == null || frame?.status.status !== 'ready') { line = null; continue }
+      if (line === null || owner !== nextOwner) {
+        line = { id: `${key}:${nextOwner}:${run++}`, key, label, segmentId: bar.segmentId, points: [] }
+        mainLines.push(line)
+      }
+      line.points.push({ barEnd: bar.barEnd, tradingDay: bar.tradingDay, value: chartCoordinate(text) })
+      owner = nextOwner
     }
-    for (const [segmentId, points] of bySegment) {
-      mainLines.push({ id: `${key}:${segmentId}`, key, label, segmentId, points })
+  }
+  const bandAreas: NewowProductBandArea[] = []
+  if (response.meta.identity.strategy === 'trend') {
+    for (let index = 1; index < bars.length; index++) {
+      const previous = bars[index - 1]!
+      const current = bars[index]!
+      const left = frameByEnd.get(previous.barEnd)
+      const right = frameByEnd.get(current.barEnd)
+      if (previous.physicalContract !== current.physicalContract || previous.segmentId !== current.segmentId
+        || left?.status.status !== 'ready' || right?.status.status !== 'ready'
+        || left.main_values.a == null || left.main_values.b == null || right.main_values.a == null || right.main_values.b == null
+        || !['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(left.main_state) || !['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(right.main_state)) continue
+      bandAreas.push({
+        from: { time: chartMarkerTime(previous.barEnd, response.meta.identity.frequency, previous.tradingDay), a: chartCoordinate(left.main_values.a), b: chartCoordinate(left.main_values.b) },
+        through: { time: chartMarkerTime(current.barEnd, response.meta.identity.frequency, current.tradingDay), a: chartCoordinate(right.main_values.a), b: chartCoordinate(right.main_values.b) },
+        color: ['BUILD', 'HOLD'].includes(right.main_state) ? 'rgba(245, 183, 38, 0.24)' : 'rgba(54, 90, 245, 0.18)',
+      })
     }
   }
   const actions = value.actions.map((action): NewowProductActionMarker => ({
@@ -162,7 +191,7 @@ export function buildNewowProductChartModel(
       strategy: response.meta.identity.strategy,
       frequency: response.meta.identity.frequency,
     },
-    bars, mainLines, actions, hints, nextBefore: value.next_before,
+    bars, bandAreas, mainLines, actions, hints, nextBefore: value.next_before,
   }
 }
 
@@ -202,8 +231,29 @@ const AUXILIARY_SERIES_LABELS = {
 
 /** Maps aligned P4 arrays to visible series; it never derives an indicator. */
 export function buildNewowAuxiliaryChartModel(value: NewowAuxiliaryValue): NewowAuxiliaryChartModel {
-  // Point objects are excluded from this legacy scalar-array renderer.
-  if (value.component === 'macd') return { component: 'macd', totalPoints: value.segments.reduce((size, segment) => size + segment.bar_ends.length, 0), series: [] }
+  if (value.component === 'macd') {
+    const series: NewowAuxiliaryChartSeries[] = []
+    let offset = 0
+    for (const segment of value.segments) {
+      for (const [key, label] of [['dif', 'DIF'], ['dea', 'DEA'], ['histogram', 'MACD']] as const) {
+        const byTime = new Map(segment.data[key].map(point => [point.bar_end, point]))
+        let points: NewowAuxiliaryChartPoint[] = []
+        let run = 0
+        const flush = () => {
+          if (points.length) series.push({ id: `${key}:${segment.segment_id}:${run++}`, key, label, points })
+          points = []
+        }
+        segment.bar_ends.forEach((barEnd, index) => {
+          const point = byTime.get(barEnd)
+          if (!point?.ready || !point.valid || point.value === null || !Number.isFinite(point.value)) { flush(); return }
+          points.push({ barEnd, index: offset + index, value: point.value, physicalContract: segment.physical_contract, segmentId: segment.segment_id })
+        })
+        flush()
+      }
+      offset += segment.bar_ends.length
+    }
+    return { component: value.component, totalPoints: offset, series }
+  }
   const series: NewowAuxiliaryChartSeries[] = []
   let offset = 0
   for (const segment of value.segments) {
@@ -221,7 +271,7 @@ export function buildNewowAuxiliaryChartModel(value: NewowAuxiliaryValue): Newow
         }
         for (let index = 0; index < sequence.length; index += 1) {
           const item = sequence[index]
-          if (item === null) { flush(); continue }
+          if (item === null || !Number.isFinite(item)) { flush(); continue }
           points.push({
             barEnd: segment.bar_ends[index]!, index: offset + index, value: item,
             physicalContract: segment.physical_contract, segmentId: segment.segment_id,
@@ -366,8 +416,53 @@ export function productChartMarker(
     time,
     position: action ? (build ? 'belowBar' : 'aboveBar') : 'inBar',
     shape: action ? (build ? 'arrowUp' : 'arrowDown') : 'circle',
-    color: item.id === selectedSignalId ? '#7C3AED' : action ? (build ? '#D97706' : '#2563EB') : '#64748B',
+    color: item.id === selectedSignalId ? '#7C3AED' : action ? (build ? '#FF403A' : '#22B95D') : '#64748B',
     text: action ? (build ? '建仓' : '清仓') : item.kind,
     size: action ? 1.5 : 1,
   }
+}
+
+
+/** Same server proof across display windows; the content hash may differ between sections. */
+export function newowChartSnapshotKey(response: NewowProductSectionResponse | null): string | null {
+  if (!response?.meta.snapshot_token) return null
+  const meta = response.meta
+  return JSON.stringify([meta.schema_version, meta.snapshot_token,
+    meta.identity.product, meta.identity.strategy, meta.identity.frequency, meta.identity.series_kind,
+    meta.identity.profile_id, meta.identity.formula_versions, meta.as_of, meta.data_revision_identity,
+    meta.reference_model_version, meta.futures_adaptation_version])
+}
+
+export interface NewowAlignedAuxiliaryChartModel {
+  readonly component: NewowAuxiliaryComponent
+  readonly series: readonly (Omit<NewowAuxiliaryChartSeries, 'points'> & {
+    readonly points: readonly (NewowAuxiliaryChartPoint & { readonly time: Time })[]
+  })[]
+}
+
+/** Intersect with chart authority, splitting runs when a chart Bar has no matching point. */
+export function alignNewowAuxiliaryChartModel(
+  chart: NewowProductSectionResponse<'chart'> | null,
+  auxiliary: NewowProductSectionResponse<'auxiliary'> | null,
+): NewowAlignedAuxiliaryChartModel | null {
+  const proof = newowChartSnapshotKey(chart)
+  if (proof === null || proof !== newowChartSnapshotKey(auxiliary) || !chart?.value || !auxiliary?.value) return null
+  const raw = buildNewowAuxiliaryChartModel(auxiliary.value)
+  const series: NewowAlignedAuxiliaryChartModel['series'][number][] = []
+  for (const source of raw.series) {
+    const pointsByOwnerTime = new Map(source.points.map(point => [`${point.physicalContract}:${point.segmentId}:${point.barEnd}`, point]))
+    let points: Array<NewowAuxiliaryChartPoint & { time: Time }> = []
+    let run = 0
+    const flush = () => {
+      if (points.length) series.push({ ...source, id: `${source.id}:visible:${run++}`, points })
+      points = []
+    }
+    for (const bar of chart.value.bars) {
+      const point = pointsByOwnerTime.get(`${bar.physical_contract}:${bar.segment_id}:${bar.bar_end}`)
+      if (!point) { flush(); continue }
+      points.push({ ...point, time: chartMarkerTime(bar.bar_end, chart.meta.identity.frequency, bar.trading_day) })
+    }
+    flush()
+  }
+  return { component: raw.component, series }
 }

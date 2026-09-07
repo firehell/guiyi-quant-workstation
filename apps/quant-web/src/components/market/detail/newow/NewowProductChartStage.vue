@@ -6,6 +6,7 @@ import {
   createChart,
   createSeriesMarkers,
   LineSeries,
+  HistogramSeries,
   type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
@@ -16,12 +17,15 @@ import {
   type Time,
 } from 'lightweight-charts'
 
+import { NewowProductBandPrimitive } from '@/components/market/detail/newow/newowProductBandPrimitive'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import type { NewowProductSectionResponse } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { initialChartLogicalRange } from '@/utils/chartViewport'
 import {
   buildNewowProductChartModel,
+  alignNewowAuxiliaryChartModel,
+  resolveNewowAuxiliaryRenderState,
   chartMarkerTime,
   createNewowProductChartDisposer,
   NEWOW_PRODUCT_CHART_ADAPTER_KEY,
@@ -44,11 +48,22 @@ const emit = defineEmits<{
   loadEarlier: []
   'select-signal': [signalId: string]
   'focus-resolved': [signalId: string]
+  'select-hint': [hintId: string]
+  'explain-main': []
+  'explain-auxiliary': []
 }>()
 
+const stageRoot = ref<HTMLElement | null>(null)
+const fullscreen = ref(false)
+const fullscreenError = ref<string | null>(null)
+const volumeTop = ref(0)
+const auxiliaryTop = ref(0)
 const container = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
 const model = computed(() => props.response === null ? null : buildNewowProductChartModel(props.response))
+const auxiliaryModel = computed(() => alignNewowAuxiliaryChartModel(props.response, props.auxiliaryResponse ?? null))
+const auxiliaryPresentation = computed(() => resolveNewowAuxiliaryRenderState(props.auxiliaryLifecycle ?? 'not_requested', auxiliaryModel.value !== null, props.auxiliaryError ?? null))
+const legend = computed(() => [...new Map(model.value?.mainLines.map(line => [line.key, line]) ?? []).values()])
 const adapter = inject(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
   createChart,
   createSeriesMarkers: (series) => createSeriesMarkers(series),
@@ -57,6 +72,10 @@ const adapter = inject(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
 
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
+let volume: ISeriesApi<'Histogram'> | null = null
+const band = new NewowProductBandPrimitive()
+let auxiliaryAnchor: ISeriesApi<'Line'> | null = null
+const auxiliaryLines = new Map<string, ISeriesApi<'Line'> | ISeriesApi<'Histogram'>>()
 let actionMarkers: ISeriesMarkersPluginApi<Time> | null = null
 let observer: NewowProductResizeObserver | null = null
 let renderedBars: NewowProductChartModel['bars'] = []
@@ -78,9 +97,9 @@ onMounted(async () => {
   chart = adapter.createChart(container.value, {
     width: container.value.clientWidth,
     height: container.value.clientHeight,
-    layout: { background: { type: ColorType.Solid, color: theme.background }, textColor: theme.text },
+    layout: { background: { type: ColorType.Solid, color: theme.background }, textColor: theme.text, panes: { enableResize: false, separatorColor: '#EBEDF0' } },
     grid: { vertLines: { color: theme.grid }, horzLines: { color: theme.grid } },
-    rightPriceScale: { borderColor: theme.axis },
+    rightPriceScale: { borderColor: theme.axis, scaleMargins: { top: 0.24, bottom: 0.1 } },
     localization: { timeFormatter: formatChartTimeInShanghai },
     timeScale: { borderColor: theme.axis, timeVisible: true, tickMarkFormatter: formatChartAxisTimeInShanghai },
   })
@@ -89,22 +108,39 @@ onMounted(async () => {
     borderUpColor: theme.up, borderDownColor: theme.down,
     wickUpColor: theme.up, wickDownColor: theme.down,
   })
+  chart.panes()[0]!.setStretchFactor(5)
+  chart.addPane().setStretchFactor(1.2)
+  chart.addPane().setStretchFactor(2)
+  candles.attachPrimitive(band)
+  volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false }, 1)
+  // Whitespace keeps the auxiliary pane/timeline present during loading, without inventing zero values.
+  auxiliaryAnchor = chart.addSeries(LineSeries, { lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }, 2)
+  auxiliaryAnchor.createPriceLine({ price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false })
+  if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', onFullscreenChange)
   actionMarkers = adapter.createSeriesMarkers(candles as never)
   chart.subscribeClick(onClick)
   chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange)
   observer = adapter.createResizeObserver(resize)
   observer.observe(container.value)
   renderModel(model.value)
+  resize()
 })
 
 onUnmounted(createNewowProductChartDisposer({
   unsubscribeRange: () => chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange),
   unsubscribeClick: () => chart?.unsubscribeClick(onClick),
   disconnectResizeObserver: () => observer?.disconnect(),
-  removeChart: () => chart?.remove(),
+  removeChart: () => {
+    if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', onFullscreenChange)
+    candles?.detachPrimitive(band)
+    chart?.remove()
+    chart = null; candles = null; volume = null; auxiliaryAnchor = null
+    mainLines.clear(); hintSeries.clear(); auxiliaryLines.clear()
+  },
 }))
 
 watch(model, (value) => renderModel(value))
+watch([auxiliaryModel, auxiliaryPresentation], renderAuxiliary)
 watch(() => props.selectedSignalId, () => {
   resolvedSignalKey = null
   renderMarkers(model.value)
@@ -119,6 +155,10 @@ function renderModel(value: NewowProductChartModel | null): void {
   if (chart === null || candles === null) return
   if (value === null) {
     candles.setData([])
+    volume?.setData([])
+    auxiliaryAnchor?.setData([])
+    band.setData([])
+    renderAuxiliary()
     for (const series of mainLines.values()) chart.removeSeries(series)
     mainLines.clear()
     for (const entry of hintSeries.values()) chart.removeSeries(entry.series)
@@ -139,6 +179,10 @@ function renderModel(value: NewowProductChartModel | null): void {
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
   })))
+  volume?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: bar.close >= bar.open ? '#FF403A' : '#22B95D' })))
+  auxiliaryAnchor?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })))
+  band.setData(value.bandAreas)
+  renderAuxiliary()
   syncMainLines(value)
   renderMarkers(value)
   if (resetViewport || renderedBars.length === 0) {
@@ -257,6 +301,7 @@ function onClick(event: MouseEventParams<Time>): void {
   if (event.hoveredInfo?.objectKind !== 'series-marker' || typeof event.hoveredInfo.objectId !== 'string') return
   const value = model.value
   if (value?.actions.some((action) => action.id === event.hoveredInfo?.objectId)) emit('select-signal', event.hoveredInfo.objectId)
+  else if (value?.hints.some(hint => hint.id === event.hoveredInfo?.objectId)) emit('select-hint', event.hoveredInfo.objectId)
 }
 
 function onRangeChange(range: LogicalRange | null): void {
@@ -281,11 +326,51 @@ function scrollToLatest(): void {
 }
 
 function resize(): void {
-  if (chart !== null && container.value !== null) chart.resize(container.value.clientWidth, container.value.clientHeight)
+  if (chart !== null && container.value !== null) {
+    chart.resize(container.value.clientWidth, container.value.clientHeight)
+    volumeTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
+    auxiliaryTop.value = volumeTop.value + chart.panes()[1]!.getHeight()
+  }
 }
 
-function formatKnownAt(value: string): string {
-  return formatChartTimeInShanghai(Math.floor(Date.parse(value) / 1000) as Time)
+function renderAuxiliary(): void {
+  if (!chart) return
+  const active = new Set<string>()
+  const value = auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null
+  const colors: Record<string, string> = { dif: '#FF6B2C', dea: '#365AF5', kongpan: '#FF6B2C', var4: '#FF6B2C', ma10: '#365AF5', var3: '#9333EA', ma120: '#667085', entry: '#FF403A', wash: '#F5B726', distribution: '#22B95D', markup: '#FF6B2C', exit: '#365AF5', inducement: '#9333EA', peaks: '#B45309', caution: '#667085', band_entry: '#FF403A', rebound_entry: '#F5B726', oversold_entry: '#22B95D' }
+  for (const item of value?.series ?? []) {
+    const id = `${value!.component}:${item.id}`
+    active.add(id)
+    let series = auxiliaryLines.get(id)
+    if (!series) {
+      const options = { color: colors[item.key] ?? '#667085', lineWidth: 1 as const, lastValueVisible: false, priceLineVisible: false,
+        autoscaleInfoProvider: (base: () => import('lightweight-charts').AutoscaleInfo | null) => {
+          const info = base()
+          return info?.priceRange == null ? info : { ...info, priceRange: { minValue: Math.min(0, info.priceRange.minValue), maxValue: Math.max(0, info.priceRange.maxValue) } }
+        },
+      }
+      series = item.key === 'histogram' ? chart.addSeries(HistogramSeries, options, 2) : chart.addSeries(LineSeries, options, 2)
+      auxiliaryLines.set(id, series)
+    }
+    series.setData(item.points.map(point => ({ time: point.time, value: point.value, ...(item.key === 'histogram' ? { color: point.value >= 0 ? '#FF403A' : '#22B95D' } : {}) })))
+  }
+  for (const [id, series] of auxiliaryLines) {
+    if (active.has(id)) continue
+    chart.removeSeries(series); auxiliaryLines.delete(id)
+  }
+}
+
+function onFullscreenChange(): void {
+  fullscreen.value = document.fullscreenElement === stageRoot.value
+  resize()
+}
+async function toggleFullscreen(): Promise<void> {
+  fullscreenError.value = null
+  try {
+    if (document.fullscreenElement === stageRoot.value) await document.exitFullscreen()
+    else if (stageRoot.value?.requestFullscreen) await stageRoot.value.requestFullscreen()
+    else fullscreenError.value = '当前浏览器不支持图表全屏。'
+  } catch { fullscreenError.value = '无法进入图表全屏。' }
 }
 
 defineExpose({ revealSignal, scrollToLatest })
@@ -293,30 +378,29 @@ defineExpose({ revealSignal, scrollToLatest })
 
 <template>
   <section
+    ref="stageRoot"
     class="newow-product-chart-stage"
+    :data-auxiliary-component="auxiliaryModel?.component ?? ''"
+    :data-auxiliary-state="auxiliaryPresentation.mode"
+    :data-band-area-count="model?.bandAreas.length ?? 0"
     data-testid="newow-product-chart-stage"
     :data-strategy="model?.identity.strategy ?? ''"
     :data-frequency="model?.identity.frequency ?? ''"
     :data-selected-signal-id="selectedSignalId ?? ''"
     :data-action-ids="model?.actions.map((action) => action.id).join(',') ?? ''"
   >
+    <div class="newow-product-chart-stage__toolbar">
+    <div class="newow-product-chart-stage__legend" aria-label="Newow 主图图例"><button class="newow-product-chart-stage__main-legend" type="button" @click="emit('explain-main')">{{ model?.identity.strategy === 'trend' ? '趋势带' : model?.identity.strategy === 'oscillation' ? '震荡区间' : '主升浪' }}<span v-for="line in legend" :key="line.key">{{ line.label }}</span>ⓘ</button><details v-if="model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" @click="emit('select-hint', hint.id)">{{ hint.kind }} · {{ hint.barEnd }}</button></details></div>
     <div class="newow-product-chart-stage__controls">
       <button v-if="hasMoreBefore" type="button" data-testid="newow-load-earlier" :disabled="loading" @click="emit('loadEarlier')">加载更早</button>
       <button v-if="!followLatest" type="button" @click="scrollToLatest">回到最新</button>
+      <button type="button" :aria-label="fullscreen ? '退出图表全屏' : '图表全屏'" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '全屏' }}</button>
+    </div>
     </div>
     <div ref="container" class="newow-product-chart-stage__chart" />
-    <div class="newow-product-chart-stage__legend" aria-label="Newow 主图图例">
-      <span v-for="line in model?.mainLines ?? []" :key="line.id">{{ line.label }}</span>
-      <span>建仓 / 清仓</span>
-    </div>
-    <ul v-if="model?.hints.length" class="newow-product-chart-stage__hints" aria-label="非重绘过程提示">
-      <li v-for="hint in model.hints" :key="hint.id">
-        {{ hint.kind }} · 来源 {{ hint.sourceIdentity ?? '未提供更细来源' }}
-        · 响应公式 {{ hint.formulaVersions.join(' / ') }}
-        · owner {{ hint.physicalContract }} · {{ hint.segmentId }}
-        · 确认 {{ formatKnownAt(hint.confirmedAt) }}
-      </li>
-    </ul>
+    <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量</span>
+    <div class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
+    <p v-if="auxiliaryPresentation.message || fullscreenError" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
     <p v-if="loading && response === null" class="newow-product-chart-stage__status" role="status">正在读取 Newow 主图…</p>
     <p v-else-if="response?.value === null" class="newow-product-chart-stage__status" role="status">当前组合主图不可用。</p>
     <p v-else-if="model?.bars.length === 0" class="newow-product-chart-stage__status" role="status">当前窗口没有已完成 Bar。</p>
@@ -324,12 +408,20 @@ defineExpose({ revealSignal, scrollToLatest })
 </template>
 
 <style scoped>
-.newow-product-chart-stage { position: relative; min-width: 0; height: clamp(560px, 68vh, 900px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
-.newow-product-chart-stage__chart { width: 100%; height: 100%; }
-.newow-product-chart-stage__controls { position: absolute; z-index: 5; top: 10px; right: 10px; display: flex; gap: 8px; }
-.newow-product-chart-stage__controls button { min-height: 44px; padding: 0 12px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-primary); background: var(--gy-bg-panel); cursor: pointer; }
-.newow-product-chart-stage__legend { position: absolute; z-index: 4; top: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 8px; color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; }
-.newow-product-chart-stage__hints { position: absolute; z-index: 4; right: 12px; bottom: 12px; max-width: min(520px, calc(100% - 24px)); margin: 0; padding: 8px 12px 8px 28px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-secondary); background: color-mix(in srgb, var(--gy-bg-panel) 94%, transparent); font-size: var(--gy-font-size-xs); }
-.newow-product-chart-stage__status { position: absolute; z-index: 5; inset: auto 12px 12px; margin: 0; padding: 8px 10px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-status-warning); background: var(--gy-bg-panel); }
-@media (max-width: 640px) { .newow-product-chart-stage { height: 58vh; min-height: 480px; } .newow-product-chart-stage__hints { max-height: 120px; overflow: auto; } }
+.newow-product-chart-stage { --gy-chart-bg:#FFFFFF; --gy-chart-text:#667085; --gy-chart-grid:#F2F4F7; --gy-chart-axis:#EBEDF0; --gy-up:#FF403A; --gy-down:#22B95D; position:relative; min-width:0; height:clamp(580px, 70vh, 920px); display:flex; flex-direction:column; border:1px solid #ebedf0; background:#fff; }
+.newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
+.newow-product-chart-stage__chart { width:100%; flex:1; min-height:500px; }
+.newow-product-chart-stage__toolbar { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; min-height:48px; border-bottom:1px solid #ebedf0; padding:0 8px; }
+.newow-product-chart-stage__controls,.newow-product-chart-stage__legend { display:flex; align-items:center; gap:8px; }
+button,summary { min-height:44px; padding:0 10px; border:0; color:#667085; background:#fff; cursor:pointer; font-size:12px; }
+.newow-product-chart-stage__main-legend { display:flex; align-items:center; gap:6px; }
+button:focus-visible,summary:focus-visible { outline:2px solid #365af5; outline-offset:2px; }
+summary { display:flex; align-items:center; }
+.newow-product-chart-stage__volume-label { position:absolute; left:12px; margin-top:4px; color:#667085; font-size:11px; pointer-events:none; z-index:2; background:#fff; padding-right:4px; }
+.newow-product-chart-stage__auxiliary-toolbar { position:absolute; left:1px; right:70px; min-height:32px; background:#fff; z-index:3; }
+details { position:relative; } details[open] { z-index:6; } details[open] > button { display:block; white-space:nowrap; }
+details[open] { position:absolute; top:0; left:90px; max-height:240px; max-width:calc(100% - 100px); overflow:auto; border:1px solid #ebedf0; background:#fff; box-shadow:0 8px 24px #20242b14; }
+.newow-product-chart-stage__auxiliary-status { margin:0; padding:6px 12px; color:#b45309; font-size:12px; }
+.newow-product-chart-stage__status { position:absolute; z-index:5; top:64px; left:12px; margin:0; color:#b45309; background:#fff; }
+@media(max-width:640px) { .newow-product-chart-stage { height:640px; } .newow-product-chart-stage__chart { min-height:500px; } }
 </style>

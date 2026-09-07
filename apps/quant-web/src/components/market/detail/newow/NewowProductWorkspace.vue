@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useNewowProduct } from '@/composables/useNewowProduct'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
-import type { NewowAuxiliaryComponent, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
+import type { NewowAuxiliaryComponent, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
 import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
 import { projectNewowDetail, newowDisplayLabel, shortNewowTime } from '@/utils/newowDetailPresentation'
-import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure } from './newowProductChartPrimitives'
+import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, newowChartSnapshotKey } from './newowProductChartPrimitives'
 import NewowProductChartStage from './NewowProductChartStage.vue'
 import NewowExplanationPanel from './NewowExplanationPanel.vue'
 import NewowReferencePanel from './NewowReferencePanel.vue'
@@ -16,9 +16,10 @@ const identity = computed(() => props.identity)
 const identityKey = computed(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency].join(':'))
 const loader = useNewowProduct({ identity })
 const selectedSignalId = ref<string | null>(null)
+const selectedHintId = ref<string | null>(null)
 const selectedAuxiliary = ref<NewowAuxiliaryComponent>('macd')
 const detailsOpen = ref(false)
-const dialogKind = ref<'explanation' | 'action' | 'indicator' | 'comparator' | 'cup_handle' | null>(null)
+const dialogKind = ref<'explanation' | 'action' | 'hint' | 'indicator' | 'comparator' | 'cup_handle' | null>(null)
 const locateMessage = ref<string | null>(null)
 const referenceAnchor = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
@@ -28,6 +29,7 @@ const chartResponse = computed(() => (
     : null
 ))
 const chartModel = computed(() => chartResponse.value === null ? null : buildNewowProductChartModel(chartResponse.value))
+const selectedHint = computed(() => chartModel.value?.hints.find(hint => hint.id === selectedHintId.value) ?? null)
 const selectedAction = computed(() => chartModel.value?.actions.find((action) => action.id === selectedSignalId.value) ?? null)
 const referenceResponse = computed(() => (
   loader.sections.reference.data.value?.section === 'reference'
@@ -49,21 +51,32 @@ const auxiliaryResponse = computed(() => (
     ? loader.sections.auxiliary.data.value as NewowProductSectionResponse<'auxiliary'>
     : null
 ))
-const currentAuxiliaryResponse = computed(() => (
-  auxiliaryResponse.value?.value?.component === selectedAuxiliary.value
-    ? auxiliaryResponse.value
-    : null
-))
+// A display-only retention of the accepted selected pane while the same loader serves the cup dialog.
+const retainedPane = shallowRef<{ response: NewowProductSectionResponse<'auxiliary'> | null; lifecycle: NewowResourceLifecycle; error: string | null; proof: string | null; component: NewowAuxiliaryComponent } | null>(null)
+const retainedPaneCompatible = computed(() => dialogKind.value === 'cup_handle' && retainedPane.value !== null
+  && retainedPane.value.proof !== null && retainedPane.value.proof === newowChartSnapshotKey(chartResponse.value)
+  && retainedPane.value.component === selectedAuxiliary.value)
+const currentAuxiliaryResponse = computed(() => {
+  const response = retainedPaneCompatible.value ? retainedPane.value!.response : auxiliaryResponse.value
+  return response?.value?.component === selectedAuxiliary.value && newowChartSnapshotKey(response) !== null
+    && newowChartSnapshotKey(response) === newowChartSnapshotKey(chartResponse.value) ? response : null
+})
+const currentAuxiliaryLifecycle = computed(() => retainedPaneCompatible.value ? retainedPane.value!.lifecycle
+  : dialogKind.value === 'cup_handle' ? 'not_requested' : loader.sections.auxiliary.state.value)
+const currentAuxiliaryError = computed(() => retainedPaneCompatible.value ? retainedPane.value!.error
+  : dialogKind.value === 'cup_handle' ? null : loader.sections.auxiliary.error.value)
 
 const summary = computed(() => projectNewowDetail(chartResponse.value, loader.sections.chart.state.value,
   explanationResponse.value, loader.sections.explanation.state.value, loader.explanationChartCompatible.value,
   referenceResponse.value, loader.sections.reference.state.value, loader.referenceChartCompatible.value))
-const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '60m', loader.sections.auxiliary.state.value))
+const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '60m', currentAuxiliaryLifecycle.value))
 const auxiliaryOptions = [{ id: 'macd', label: 'MACD' }, { id: 'zhaoyao_mirror', label: '照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }] as const
-const dialogTitle = computed(() => ({ explanation: '策略解释', action: '历史主动作事实', indicator: '指标解读', comparator: '页面比较说明', cup_handle: '杯柄说明' }[dialogKind.value ?? 'explanation']))
+const dialogTitle = computed(() => ({ explanation: '策略解释', action: '历史主动作事实', hint: '历史过程提示', indicator: '指标解读', comparator: '页面比较说明', cup_handle: '杯柄说明' }[dialogKind.value ?? 'explanation']))
 async function loadExplanation() { if (loader.sections.explanation.state.value === 'not_requested') await loader.loadExplanation() }
 async function toggleDetails() { detailsOpen.value = !detailsOpen.value; if (detailsOpen.value) await loadExplanation() }
 async function openDialog(kind: NonNullable<typeof dialogKind.value>) {
+  if (kind === 'cup_handle') retainedPane.value = { response: currentAuxiliaryResponse.value, lifecycle: currentAuxiliaryLifecycle.value,
+    error: currentAuxiliaryError.value, proof: newowChartSnapshotKey(chartResponse.value), component: selectedAuxiliary.value }
   dialogKind.value = kind
   if (kind === 'explanation') await loadExplanation()
   if (kind === 'comparator' && loader.sections.comparator.state.value === 'not_requested') await loader.loadComparator()
@@ -73,11 +86,17 @@ function closeDialog() {
   const wasCup = dialogKind.value === 'cup_handle'
   dialogKind.value = null
   if (wasCup) void loader.loadAuxiliary(selectedAuxiliary.value)
+  retainedPane.value = null
 }
 function selectSignal(signalId: string) {
   if (!chartModel.value?.actions.some(action => action.id === signalId)) return
   selectedSignalId.value = signalId
   void openDialog('action')
+}
+function selectHint(hintId: string) {
+  if (!chartModel.value?.hints.some(hint => hint.id === hintId)) return
+  selectedHintId.value = hintId
+  void openDialog('hint')
 }
 async function toggleAuxiliary(component: NewowAuxiliaryComponent) {
   if (selectedAuxiliary.value === component) return
@@ -115,8 +134,13 @@ function resolveSignalFocus(signalId: string): void {
 
 
 watch(identityKey, async () => {
-  selectedSignalId.value = null; selectedAuxiliary.value = 'macd'; detailsOpen.value = false; dialogKind.value = null; locateMessage.value = null
+  selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null; selectedAuxiliary.value = 'macd'; detailsOpen.value = false; dialogKind.value = null; locateMessage.value = null
   await nextTick(); observeReference()
+}, { flush: 'sync' })
+watch(() => newowChartSnapshotKey(chartResponse.value), (proof, previous) => {
+  if (proof === previous) return
+  retainedPane.value = null
+  if (dialogKind.value === 'cup_handle') dialogKind.value = null
 }, { flush: 'sync' })
 // Load the default auxiliary only after chart acceptance, so its request carries the chart snapshot proof.
 watch(() => [chartResponse.value?.meta.snapshot_token, chartResponse.value?.value?.page_identity], () => {
@@ -153,27 +177,36 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
       </div>
     </section>
     <p v-if="loader.sections.chart.error.value" class="newow-product-workspace__notice" role="status">{{ loader.sections.chart.error.value }}：主图事实不可用或已过期。</p>
-    <NewowProductChartStage :response="chartResponse" :selected-signal-id="selectedSignalId" :loading="loader.sections.chart.state.value === 'loading'" :has-more-before="chartModel?.nextBefore != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="loader.sections.auxiliary.state.value" :auxiliary-error="loader.sections.auxiliary.error.value" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @focus-resolved="resolveSignalFocus" />
+    <NewowProductChartStage :response="chartResponse" :selected-signal-id="selectedSignalId" :loading="loader.sections.chart.state.value === 'loading'" :has-more-before="chartModel?.nextBefore != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @explain-main="openDialog('explanation')" @explain-auxiliary="openDialog('indicator')">
+    <template #auxiliary-controls>
     <section class="newow-product-workspace__auxiliary" aria-label="Newow 辅助图层">
       <div class="newow-product-workspace__auxiliary-controls">
         <button v-for="option in auxiliaryOptions" :key="option.id" :aria-pressed="selectedAuxiliary === option.id" @click="toggleAuxiliary(option.id)">{{ option.label }}</button>
+        <span v-if="selectedAuxiliary === 'macd'" class="newow-macd-legend"><span>DIF</span> / <span>DEA</span></span>
         <button aria-label="指标解读" @click="openDialog('indicator')">ⓘ</button>
         <button @click="openDialog('cup_handle')">杯柄说明</button>
       </div>
-      <p v-if="loader.sections.auxiliary.error.value" role="status">{{ loader.sections.auxiliary.error.value }} · 辅助图层不可用 <button @click="loader.loadAuxiliary(selectedAuxiliary)">重试指标</button></p>
+      <p v-if="currentAuxiliaryError" role="status">{{ currentAuxiliaryError }} · 辅助图层不可用 <button @click="loader.loadAuxiliary(selectedAuxiliary)">重试指标</button></p>
     </section>
+    </template>
+    </NewowProductChartStage>
     <section ref="referenceAnchor" class="newow-product-workspace__research" aria-label="Newow 参考与解释">
       <button @click="openDialog('comparator')">页面比较说明</button>
       <NewowReferencePanel :key="identityKey" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="locateMessage" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="loader.loadNextReferencePage" @locate="locateReferenceTrade" />
     </section>
     <NewowDetailDialog :open="dialogKind !== null" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">
-      <p>{{ identity.symbol.toUpperCase() }} · {{ newowDisplayLabel(identity.strategy ?? 'UNAVAILABLE') }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
-      <template v-if="dialogKind === 'action'">
+      <p>{{ identity.symbol.toUpperCase() }} · {{ newowDisplayLabel(identity.strategy ?? 'UNAVAILABLE') }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : dialogKind === 'hint' ? selectedHint?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
+      <template v-if="dialogKind === 'hint'">
+        <p v-if="selectedHint">{{ selectedHint.kind }} · {{ selectedHint.anchorPrice ?? '—' }} · {{ shortNewowTime(selectedHint.barEnd) }}</p>
+        <p>仅为所选历史过程提示，不代表主动作或账户成交。</p>
+        <details v-if="selectedHint"><summary>来源与原始事实</summary><p>{{ selectedHint.id }} · {{ selectedHint.barEnd }}</p><p>known_at {{ selectedHint.confirmedAt }} · sequence {{ selectedHint.sequence ?? '—' }}</p><p>owner {{ selectedHint.physicalContract }} · {{ selectedHint.segmentId }}</p><p>来源 {{ selectedHint.sourceIdentity ?? '—' }} · 响应公式 {{ selectedHint.formulaVersions.join(' / ') }}</p><p>anchor_price {{ selectedHint.anchorPrice ?? '—' }}</p></details>
+      </template>
+      <template v-else-if="dialogKind === 'action'">
         <p v-if="selectedAction">历史主动作 {{ newowDisplayLabel(selectedAction.kind) }} · {{ selectedAction.referencePrice }} · {{ shortNewowTime(selectedAction.barEnd) }}</p>
         <p>仅为所选历史主动作事实，不代表账户成交。</p>
         <details><summary>来源与关联 Hint</summary><p>{{ selectedSignalId }} · {{ selectedAction?.barEnd }}</p><p v-for="hint in chartResponse?.value?.hints.filter(hint => chartResponse?.value?.frames.find(frame => frame.bar_end === selectedAction?.barEnd)?.hint_ids.includes(hint.hint_id)) ?? []" :key="hint.hint_id">{{ hint.kind }} · {{ hint.hint_id }} · known_at {{ hint.known_at }} · {{ hint.anchor_price ?? '—' }}</p></details>
       </template>
-      <template v-else-if="dialogKind === 'indicator'"><p>{{ auxiliaryDisclosure.title }}</p><p>{{ auxiliaryDisclosure.disclosure }}</p><p>{{ loader.sections.auxiliary.state.value }} · {{ loader.sections.auxiliary.error.value ?? '—' }}</p><details><summary>来源</summary><p>{{ currentAuxiliaryResponse?.value?.formula_version ?? '未读取' }}</p><p>截至 {{ currentAuxiliaryResponse?.meta.as_of ?? '—' }}</p></details></template>
+      <template v-else-if="dialogKind === 'indicator'"><p>{{ auxiliaryDisclosure.title }}</p><p>{{ auxiliaryDisclosure.disclosure }}</p><p>{{ currentAuxiliaryLifecycle }} · {{ currentAuxiliaryError ?? '—' }}</p><details><summary>来源</summary><p>{{ currentAuxiliaryResponse?.value?.formula_version ?? '未读取' }}</p><p>截至 {{ currentAuxiliaryResponse?.meta.as_of ?? '—' }}</p></details></template>
       <template v-else-if="dialogKind === 'cup_handle'"><p>{{ identity.frequency !== '1d' ? '杯柄仅适用于 1d' : loader.sections.auxiliary.state.value }}</p><p v-if="loader.sections.auxiliary.error.value">{{ loader.sections.auxiliary.error.value }}</p><template v-if="auxiliaryResponse?.value?.component === 'cup_handle'"><p v-for="segment in auxiliaryResponse.value.segments" :key="segment.segment_id">{{ segment.physical_contract }} · {{ segment.status.reason_code ?? segment.status.status }}</p><details><summary>服务端杯柄事实</summary><pre>{{ auxiliaryResponse.value.segments }}</pre></details></template></template>
       <NewowExplanationPanel v-else :chart-state="summary.status" :response="explanationResponse" :lifecycle="loader.sections.explanation.state.value" :error="loader.sections.explanation.error.value" :comparator-response="comparatorResponse" :comparator-lifecycle="loader.sections.comparator.state.value" :comparator-error="loader.sections.comparator.error.value" :mode="dialogKind === 'comparator' ? 'comparator' : 'explanation'" />
       <button v-if="dialogKind === 'explanation' && loader.sections.explanation.error.value" @click="loader.loadExplanation">重试解释</button>
@@ -192,8 +225,11 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
 .newow-status[data-state="BUILD"] { color:#ff403a; }.newow-status[data-state="HOLD"] { color:#ff6b2c; }.newow-status[data-state="CLEAR"] { color:#22b95d; }.newow-status[data-state="FLAT"] { color:#365af5; }
 .newow-price { padding:8px 12px; border-radius:7px; }.newow-price--target { color:#dd4c15; background:#fff4ee; }.newow-price--absorb { color:#365af5; background:#eef3ff; }
 .newow-price small { font-size:11px; }.newow-summary__expand { margin-left:auto; }
-.newow-product-workspace__auxiliary-controls { display:flex; flex-wrap:wrap; border-bottom:1px solid #ebedf0; }
+.newow-product-workspace__auxiliary-controls { display:flex; flex-wrap:nowrap; overflow-x:auto; white-space:nowrap; align-items:center; border-top:1px solid #ebedf0; gap:0; font-size:12px; }
+.newow-product-workspace__auxiliary-controls button { min-height:36px; padding:0 10px; }
 .newow-product-workspace__auxiliary-controls button[aria-pressed="true"] { color:#ff6b2c; border-bottom:2px solid #ff6b2c; }
+.newow-macd-legend { padding:0 6px; color:#667085; }.newow-macd-legend span:first-child { color:#ff6b2c; }.newow-macd-legend span:last-child { color:#365af5; }
 .newow-product-workspace__notice { color:#b45309; }
 pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+@media(max-width:640px) { .newow-product-workspace__auxiliary-controls button { min-height:44px; } }
 </style>
