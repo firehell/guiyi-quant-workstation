@@ -1,7 +1,7 @@
 # Newow 产品与乐观参考交易 P0 覆盖与证据 Gate
 
 日期：2026-09-05
-状态：`P6_MATRIX_CANDIDATE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED / FINAL_DUAL_REVIEW_PENDING`（阶段事实仍只以 `STATUS.md` 为准）
+状态：`P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`（阶段事实仍只以 `STATUS.md` 为准）
 边界：只记录批准范围、当前源码/测试入口和本地证据可用性；不修改公式，不重跑历史页面一致性，不授权 develop/main 集成、发布、生产数据、Runtime、通知或订单操作。
 
 ## 1. Plan execution identity
@@ -91,7 +91,7 @@ P5 Tasks 17–20 已在候选分支 `feature/newow-product-reference-trading-p5`
 
 P5 浏览器 smoke 使用本地 route-intercept fixture，以真实浏览器逐项切换九组合并检查 409 单次恢复、429 单次 busy、参考分页/定位、解释 evidence-required、桌面及 `390×844` 移动端布局。该证据只证明候选 UI 与错误呈现，不是 P6 新建 E2E、真实 MDS、真实工作站性能、页面原站 parity 或 production 验收；被刻意注入的 409/429 是预期控制台 error。P3 的目标/吸筹、原页面期货 owner、browser-final/tie golden、AI copy、稳定诊断 token 与六组合 oracle 缺口继续保留。
 
-P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`。P6 Task 21 候选 `3e3c81df0c2fb53a3f64791cf94aa95b72f821e1` / tree `e6e1705f6a225e1d3e9e080bc84adf5ee392a5aa` 已完成 tracked browser/visual fixture Gate；Task 22 初始全量矩阵与 AC ledger 见下节。P6 的仓库候选、完整 Newow 产品、release、Runtime 和真实工作站性能继续分别判断。
+P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`。P6 Task 21 候选 `3e3c81df0c2fb53a3f64791cf94aa95b72f821e1` / tree `e6e1705f6a225e1d3e9e080bc84adf5ee392a5aa` 已完成 tracked browser/visual fixture Gate；`origin/develop` 随后直接推进到包含 P6 矩阵候选的 `24610c582458a47ab1bb1108fe36b7c8bb07ab5e` / tree `e2aa0fb19f4595734709438a5fe7bcba0d928f17`。Task 22 矩阵、Review 修复和 AC ledger 见下节；P6 完成、完整 Newow 产品、release、Runtime 和真实工作站性能继续分别判断。
 
 ## 5. Task 22 初始矩阵与修复事实
 
@@ -112,7 +112,26 @@ P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`�
 | secret scan | `0`; finding count 0 | `0.45s` |
 | `git diff --check` / status | `0`; tracked tree initially clean | `<0.01s` each |
 
-唯一失败是 `ACTIVE_MARKET_ROUTE_OWNERS` 仍列七条 route，未包含 P4 已加入的只读 `GET /api/v1/market/newow/strategy-detail -> app.api.market_newow:newow_strategy_detail`。该缺口已存在于本轮 `origin/develop`，P6 Web diff 未改后端路由或工程测试。最小修复只补精确 method/path/owner 三元组；原失败用例随后 `1 passed in 0.76s`，完整 `test_canonical_consistency.py` 为 `13 passed in 1.68s`。最终 exact-tree 全矩阵和独立双轴 Review 仍是 AC20 Gate。
+唯一失败是 `ACTIVE_MARKET_ROUTE_OWNERS` 仍列七条 route，未包含 P4 已加入的只读 `GET /api/v1/market/newow/strategy-detail -> app.api.market_newow:newow_strategy_detail`。该缺口已存在于本轮 `origin/develop`，P6 Web diff 未改后端路由或工程测试。最小修复只补精确 method/path/owner 三元组；原失败用例随后 `1 passed in 0.76s`，完整 `test_canonical_consistency.py` 为 `13 passed in 1.68s`。在该时点，最终 exact-tree 全矩阵和独立双轴 Review 尚属 AC20 Gate；后续关闭事实见下文。
+
+`origin/develop` 随后直接推进到 P6 矩阵候选 `24610c582458a47ab1bb1108fe36b7c8bb07ab5e` / tree `e2aa0fb19f4595734709438a5fe7bcba0d928f17`。由于该推进直接修改 Wave0 Fix B 的共享 auxiliary cache 域，Task 22 在该 exact tree 重新执行完整矩阵，而不是把 `4bafd94b` 的 clean-continuation 结果冒充最终树证据：
+
+| 命令 | exit / 结果 | wall time |
+|---|---|---:|
+| `uv sync --project services/quant-api --locked` | `0` | `0.20s` |
+| backend pytest excluding isolated/manual | `0`; `2274 passed, 4 skipped, 15 deselected` | `237.42s` |
+| `pytest -q tests/engineering` | `0`; `74 passed` | `56.13s` |
+| Ruff | `0`; all checks passed | `0.08s` |
+| Mypy | `0`; 128 source files | `0.32s` |
+| `check:alert-rules` | `0` | `0.84s` |
+| Web unit | `0`; `426 passed, 1 skipped` | `2.99s` |
+| Web build | `0`; 3,075 modules, topology passed | `3.82s` |
+| full Playwright | `0`; `109 passed` | `100.14s` |
+| OpenSpec strict | `0`; `9 passed, 0 failed` | `1.08s` |
+| secret scan | `0`; finding count 0 | `1.60s` |
+| `git diff --check` / status | `0`; tracked tree clean | `1.08s` / `<0.01s` |
+
+该 exact matrix 无失败、无重试，各 suite 不合并计数。初始完整 Standards 与 Spec Review 在 `24610c582` 上发现 3 个 P2：共享 chart snapshot generation 变化时 dependent section/cache 的清理与晚到响应边界不完整、auxiliary cache 未完整满足已声明的代际/LRU 行为、桌面 Reference 视觉证据未先断言最终 DOM 交易事实。修复提交 `74e58587bcbfe8bc2826db8d45777ebea1eb15f7` / tree `eb2b0b77016c1e939ebac31c84c5a63053fbc504` 仅修改 `useNewowProduct.ts`、对应 unit/E2E 和一个桌面 Reference baseline：focused Web 为 `66 passed`，affected Playwright 为 `11 passed`，3,075-module build/topology 与 diff check 通过。独立 Standards fix-delta re-review 与 Spec fix-delta re-review 均为 PASS、无新 P1/P2/P3；结合 initial full Review，累计双轴 ledger clean。
 
 ## 6. AC01–28 ledger
 
@@ -136,14 +155,14 @@ P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`�
 | AC14 | `PASS` | `test_context_alignment.py`、service cutoff tests、解释 source-bar browser evidence。 |
 | AC15 | `PASS` | auxiliary/Core tests 与 browser repaint disclosure；杯柄仅 confirmed D1，其他周期 not-applicable。 |
 | AC16 | `PASS` | readonly compatibility tests、route tests、Task 21 Legacy/HTDY/SuBing/Free/Home journeys。 |
-| AC17 | `PASS` | service/cache/API/composable/browser tests 覆盖 generation、revision、409/429、warming/stale 与失败清理。 |
+| AC17 | `PASS` | `74e58587b` 以 accepted chart-generation signature 绑定 token/revision/hash/window，代际变化时清理 dependent section、终止旧 in-flight 并阻止晚到污染；focused unit 与 affected browser 通过，双轴 scoped re-review PASS。 |
 | AC18 | `PASS` | `test_product_readonly_compatibility.py`、仓库受控面 diff 扫描；无新增外部副作用或交易域。 |
-| AC19 | `PASS` | Task 21 desktop/mobile/keyboard/reference-locate/marker selection 与截图 evidence。 |
-| AC20 | `BLOCKED / FINAL_DUAL_REVIEW_PENDING` | 初始全矩阵仅 stale route inventory 失败且已定向关闭；仍须在文档候选 exact tree 完整复跑并完成 Standards/Spec 独立 Review。 |
+| AC19 | `PASS` | Task 21 desktop/mobile/keyboard/reference-locate/marker selection 保留；`74e58587b` 在桌面 Reference 截图前新增 OPEN/CLOSED/interrupted 的 ID 与价格 DOM 断言并只更新该 baseline，ordinary no-update run 通过，双轴 scoped re-review PASS。 |
+| AC20 | `PASS` | `24610c582` exact full matrix 全绿；initial full Standards/Spec Review 的 3 个 P2 均由 `74e58587b` 修复，两轴 fix-delta scoped re-review 均 PASS、无新 P1/P2/P3，累计 Review ledger clean。 |
 | AC21 | `PASS` | `test_product_service.py` spy、Web chart-first browser case；未请求 section 零调用。 |
 | AC22 | `PASS` | service cutoff/Calendar/Session/night trading-day tests；晚 CLEAR/Hint/owner 不污染早期快照。 |
 | AC23 | `PASS` | `test_product_source_facts.py` 与 API 负测校验来源白名单、值/owner/version/as-of；缺项准确降级。 |
-| AC24 | `PASS` | snapshot/cache/inflight/API/composable/browser 409 tests 覆盖 token/cursor/revision/共同事实冲突和一次重建。 |
+| AC24 | `PASS` | snapshot/cache/inflight/API/composable/browser 409 tests 保留；`74e58587b` 补齐 generation 变化后的四 dependent section 失效、tokenless old-revision 清理、in-flight abort 与 touched LRU witness，双轴 scoped re-review PASS。 |
 | AC25 | `PASS` | `test_product_snapshot_cache.py`、readonly/performance tests 覆盖 32 entries/128MiB/32MiB/300s LRU、bypass 与 cache-off 等价。 |
 | AC26 | `PASS` | `test_product_resource_gate.py`、`test_product_inflight.py` 覆盖并发 1、FIFO waiters 2、5s timeout、取消/最后消费者释放；chart 不等待。 |
 | AC27 | `PASS` | typed API/schema/客户端 parser 与旧 D1 compatibility tests；内部错误固定脱敏。 |
@@ -151,7 +170,7 @@ P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`�
 
 ## 7. 当前 Gate 结论
 
-- P6 现为全矩阵候选，只有 AC20 的最终 exact-tree matrix 与独立 Standards/Spec Review 尚待关闭。
-- 即使 AC20 后续通过，产品状态也只能是 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`；AC02 所列 P3 原件缺口阻止 `NEWOW_PRODUCT_AND_REFERENCE_TRADING_COMPLETE` 与笼统 `page_parity=true`。
+- AC01–28 最终 ledger 为 27 `PASS`、仅 AC02 `BLOCKED / EVIDENCE_REQUIRED`；P6 状态为 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`。
+- AC02 所列 P3 原件缺口继续阻止 `NEWOW_PRODUCT_AND_REFERENCE_TRADING_COMPLETE` 与笼统 `page_parity=true`；P6 工程完成不等于完整产品证据完成。
 - 既有 18 个 D1/60m OOS 结果和 9 个 W1 执行事实阻塞保持历史 evidence 状态；本轮产品测试不能改写为 `OOS_PASSED`。
-- `REAL_WORKSTATION_MDS_PERFORMANCE = NOT_RUN / PENDING`。本轮不连接或切换 active services，不执行 RQData、Canonical、production DB/Redis、Scope、notification、account/order/fill/ledger、Runtime、main/tag/release。
+- `74e58587b` / `eb2b0b7` 是未发布、未进入 Runtime 的 Review 修复候选；`REAL_WORKSTATION_MDS_PERFORMANCE = NOT_RUN / PENDING`。本轮不连接或切换 active services，不执行 RQData、Canonical、production DB/Redis、Scope、notification、account/order/fill/ledger、Runtime、main/tag/release。

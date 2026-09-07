@@ -21,9 +21,9 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Newow 开发候选
 
-- `feature/newow-product-reference-trading-p6` 的产品代码候选为 `3e3c81df0c2fb53a3f64791cf94aa95b72f821e1` / tree `e6e1705f6a225e1d3e9e080bc84adf5ee392a5aa`。P6 已形成 tracked 浏览器、视觉和 route-intercept 性能证据，并进入 Task 22 全量矩阵收口；阶段为 `P6_MATRIX_CANDIDATE / FINAL_DUAL_REVIEW_PENDING / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`，不是完整 page parity、release 或 Runtime 能力。
+- `origin/develop@24610c582458a47ab1bb1108fe36b7c8bb07ab5e` / tree `e2aa0fb19f4595734709438a5fe7bcba0d928f17` 已直接包含 P6 全矩阵候选；该 exact tree 的 Task 22 矩阵为 backend `2274 passed, 4 skipped, 15 deselected`、engineering `74 passed`、Web `426 passed, 1 skipped`、Playwright `109 passed`，Ruff、Mypy、Alert Rule ownership、build/topology、OpenSpec `9/9`、secret 与 diff checks 均通过。初始完整 Standards/Spec Review 在该 tree 发现 3 个 P2，均由 `feature/newow-product-reference-trading-p6-final@74e58587bcbfe8bc2826db8d45777ebea1eb15f7` / tree `eb2b0b77016c1e939ebac31c84c5a63053fbc504` 修复；两轴 fix-delta scoped re-review 均为 PASS，未发现新 P1/P2/P3，累计 Review ledger clean。P6 状态为 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`，不是完整 page parity、release 或 Runtime 能力。
 - 页面诊断 token、六组合评分/排序、AI copy、目标/吸筹的权威昨收与期货 owner parity、比较器 browser-final/tie golden 等 P3 原件缺口继续为 `EVIDENCE_REQUIRED`。route fixture 不能替代这些原件；`REAL_WORKSTATION_MDS_PERFORMANCE = NOT_RUN / PENDING`。
-- Newow 候选不改变本文件中的 `v1.9.15` Release、现役 Runtime、SuBing Event=0、`NATURAL_EVIDENCE_PENDING` 或 G12 人工收件 Gate，也未授权 main/tag/release、Runtime promotion 或任何生产写入。
+- `74e58587b` 是尚未发布、未进入 Runtime 的 Review 修复候选；它不改变本文件中的 `v1.9.15` Release、现役 Runtime、SuBing Event=0、`NATURAL_EVIDENCE_PENDING` 或 G12 人工收件 Gate，也未授权 main/tag/release、Runtime promotion 或任何生产写入。
 
 ## 自然 evidence
 
