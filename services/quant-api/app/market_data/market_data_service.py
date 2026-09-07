@@ -165,6 +165,30 @@ class MarketDataService:
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
 
+    def completed_trading_days(
+        self,
+        *,
+        symbol: str,
+        start: datetime,
+        as_of: datetime,
+        latest: date,
+    ) -> tuple[date, ...]:
+        """Resolve completed days using one batch of authoritative session facts."""
+        try:
+            assert_not_retired(symbol)
+            windows = self.catalog.session_windows_overlapping_window(
+                symbol, start, as_of + timedelta(microseconds=1)
+            )
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        return tuple(
+            day
+            for day, sessions in windows
+            if day <= latest and max(window.end for window in sessions) <= as_of
+        )
+
     def query_actual_dominant_trading_days(
         self,
         request: ActualDominantTradingDayQuery,

@@ -29,6 +29,35 @@
 - [来源登记](evidence/source-registry.json)
 - [本地完整证据清单](evidence/full-local-evidence-manifest.json)
 
+## 冻结来源与复算索引
+
+长期产品合同见[Newow OpenSpec](../../../openspec/specs/newow-product-reference-trading/spec.md)，阶段与待验收只见
+[STATUS](../../../STATUS.md)。旧设计/实施过程从Git history追溯，不再作为公式或发布授权源。
+
+初始owner材料包括真实详情页/指标弹层、D1–D3说明、v3.6杯柄说明截图、录屏和原始指南；
+[参考索引](../../tasks/fixtures/newow/reference-index.json)及[登记说明](../../tasks/fixtures/newow/README.md)保留原出处。
+这些截图可以支持视觉观察，但未公开的数学公式必须维持clean-room身份；个股与指数证据均保留。
+
+以下相对路径属于[完整本地manifest](evidence/full-local-evidence-manifest.json)登记的逻辑根
+`newow-strategy-detail-research/v3.2.82-gap-closure`，不是本仓库缺失文件的下载入口：
+
+| 证据组 | manifest原件/重放入口 | 权限边界 |
+|---|---|---|
+| M-SOURCE | `sources/stock-detail-v3.2.82.html`、`sources/strategy-calc-v3.2.82.js` | 公开页面控制流/计算源码 |
+| M-CORE | `analysis/core-parity-inputs.json`、`analysis/core-page-parity-results.json`、`analysis/multi-period-page-facts.json` | 27点冻结输入/结果/多周期事实 |
+| M-REPLAY | `analysis/collect_exact_page_cases.mjs`、`analysis/verify_exact_page_cases.py`、`analysis/verify_core_page_parity.py`、`analysis/kline-source-index.json` | 逐点采集和重放链 |
+| M-COMPOSITE | `analysis/composite-reachability.json`、`analysis/verify_composite_reachability.py` | 13格可达性与不可达分支 |
+| M-AI | `analysis/ai-template-evidence.json`、`analysis/extract_ai_template_evidence.py` | 周日16组合与历史模板来源，不证明AI逐字复刻 |
+| M-OPTIMIZER | `analysis/page-optimizer-oracle.json`、`analysis/build_page_optimizer_oracle.mjs`、`sources/page-cases/600519-SH/day.json` | 五窗口oracle，不代替browser-final/tie golden |
+| M-FUTURES | `futures/newow-futures-evidence-20260904.json`、`futures/normalized-research-snapshot.json`、`futures/oos-cost-stress-matrix.json` | 期货研究，不证明页面乐观参考交易或账户收益 |
+
+2026-09-05历史登记核验为133项（captured96、derived37），missing/mismatch/unsafe均0；
+source registry为96项（86 GET、10 POST），SHA-256为
+`0b9e841c9d6af50acfc9adb924f90d4eb161e127db641198301b74a45c1e7dab`。
+本次文档迁移没有重新读取完整本地原件或执行重放；133项字节核验不能冒充新的27/27公式测试。
+原页面目标/吸筹昨收和owner语义、浏览器最终K线/DOM/tie、六组合oracle、诊断token及AI copy仍须各自原件支持；
+现有受控wrapper和测试只证明如实降级，不补齐这些缺口。
+
 ## 截图矩阵
 
 截图按 3 个指数、6 只个股和 week/day/60min 三个周期采集，共 27 张。

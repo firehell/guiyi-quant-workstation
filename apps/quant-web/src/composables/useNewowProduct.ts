@@ -528,11 +528,13 @@ function chartIdentity(meta: NewowProductSectionResponse['meta'], value: NewowCh
 }
 
 function chartGenerationSignature(meta: NewowProductSectionResponse['meta']): string {
+  // A server-validated token spans section/display windows; their input hashes
+  // legitimately differ. Without that proof retain strict fingerprint isolation.
   return JSON.stringify([
     meta.schema_version, meta.snapshot_token,
     meta.identity.product, meta.identity.strategy, meta.identity.frequency, meta.identity.series_kind,
     meta.identity.profile_id, meta.identity.formula_versions,
-    meta.as_of, meta.input_content_sha256, meta.data_revision_identity,
+    meta.as_of, meta.snapshot_token === null ? meta.input_content_sha256 : null, meta.data_revision_identity,
     meta.reference_model_version, meta.futures_adaptation_version,
   ])
 }

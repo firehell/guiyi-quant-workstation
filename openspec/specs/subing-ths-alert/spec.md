@@ -203,3 +203,16 @@ promotion、真实通知、provider acceptance 与微信实际送达均是彼此
 
 - **WHEN** implementation、full verification 与 independent review 完成
 - **THEN** 结论最多为允许进入 release candidate，不能声明 RELEASED、RUNTIME_READY、真实通知或业务闭环
+
+### Requirement: Runtime aggregate health preserves current rule errors
+
+聚合Alert health MUST 检查两条Rule当前error_type；任一Rule仍为evaluation_failed等当前错误时，
+不能因进程运行或aggregate旧字段为ok而显示整体健康。后续成功eval清空当前error_type后可以回绿，
+Rule的last_failure_at MUST 保留，现有全局失败事实继续按原合同保存；不新增Rule历史分类或计数字段。
+不得用历史失败永久阻止回绿，也不得把回绿宣称自然Event或通知已完成。
+
+#### Scenario: Successful evaluation follows a previous failure
+
+- **GIVEN** Rule保留last_failure_at，但成功eval已清空当前error_type
+- **WHEN** 计算聚合health
+- **THEN** 允许当前health为ok并继续呈现历史失败；若error_type仍存在则不能回绿

@@ -39,3 +39,17 @@ D1 owner 推断 W1/60m，也不得把各周期 owner 子集的并集冒充全局
 #### Scenario: 短主力段没有完整周线 Bar
 - **WHEN** 一个 rank1 分段短于完整 ISO 周且该段没有 W1 Bar，但 D1/60m 存在 Bar
 - **THEN** 全局权威分段仍包含该段，W1 响应 owner 子集可以省略它，逐 Bar owner 校验通过
+
+### Requirement: Completed viewport windows use batched authoritative sessions
+
+默认图表窗口 MUST 由MarketDataService经Catalog和Session clock批量解析completed交易日。
+候选日历、下一交易日夜盘身份、Session有效区间和前交易日锚点必须保留；单日与批量窗口转换 MUST 共用权威逻辑。
+不能为每个候选日重复读取同一Session/Calendar，再由consumer逐日重复查询。
+completed筛选必须使用精确session end≤as-of以及coverage上限；周末、未完成日、缺失session/前交易日保持既有fail-closed。
+批量优化不得改变物理合约、owner边界、周线完成或跨频回退规则，也不建立常驻行情cache。
+
+#### Scenario: A one-Bar chart has a long available history
+
+- **GIVEN** 960个权威交易日覆盖且只请求最新1根或500根图表
+- **WHEN** 解析默认viewport
+- **THEN** Session/Calendar数据库查询次数保持有界，不随逐日重复查询线性增长，窗口结果与既有completed语义一致

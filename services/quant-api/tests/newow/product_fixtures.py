@@ -663,6 +663,17 @@ class _PagedMarketData:
         if stage in self.failures:
             raise self.failures[stage]
 
+    def completed_trading_days(self, *, symbol, start, as_of, latest):
+        return tuple(
+            day
+            for day in self.trading_days_overlapping_window(
+                symbol, start, as_of + timedelta(microseconds=1)
+            )
+            if day <= latest
+            and max(w.end for w in self.session_windows(symbol=symbol, trading_day=day))
+            <= as_of
+        )
+
     def trading_days_overlapping_window(self, symbol, start, end):
         self._fail("calendar")
         return tuple(

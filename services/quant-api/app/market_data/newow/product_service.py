@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, fields, is_dataclass, replace
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
 from hashlib import sha256
 import json
-import sys
 
 from guiyi_quant.newow.composite_explanation import calculate_composite_explanation
 from guiyi_quant.newow.context_alignment import ContextSnapshot
@@ -460,27 +459,6 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
     return proof
 
 
-def _retained_size(value: object, seen: set[int] | None = None) -> int:
-    seen = seen or set()
-    identity = id(value)
-    if identity in seen:
-        return 0
-    seen.add(identity)
-    size = sys.getsizeof(value)
-    if is_dataclass(value) and not isinstance(value, type):
-        return size + sum(
-            _retained_size(getattr(value, field.name), seen) for field in fields(value)
-        )
-    if isinstance(value, Mapping):
-        return size + sum(
-            _retained_size(key, seen) + _retained_size(item, seen)
-            for key, item in value.items()
-        )
-    if isinstance(value, (tuple, list, set, frozenset)):
-        return size + sum(_retained_size(item, seen) for item in value)
-    return size
-
-
 class NewowProductService:
     def __init__(
         self,
@@ -628,7 +606,6 @@ class NewowProductService:
                 common_key,
                 section_key,
                 result,
-                _retained_size(result),
                 token=request.snapshot_token,
                 proof=proof,
             )
@@ -650,14 +627,14 @@ class NewowProductService:
                 result.explanation,
                 result.comparator,
             )
-            self._cache.put(
+            if self._cache.put(
                 common_key,
                 section_key,
                 result,
-                _retained_size(result),
                 token=token,
                 proof=proof,
-            )
+            ) is None:
+                result = replace(result, meta=replace(result.meta, snapshot_token=None))
         return result
 
     @staticmethod

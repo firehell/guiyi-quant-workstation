@@ -200,11 +200,19 @@ test('exact locate loads an unloaded window and never falls back to nearest mark
   await page.goto(newowRoute())
   await page.getByRole('tab', { name: '参考历史与统计' }).click()
   await page.getByRole('button', { name: '加载更多参考历史' }).click()
+  await expect(page.locator('tr[data-reference-category]')).toHaveCount(4)
+  const summaryBefore = await page.getByTestId('newow-reference-summary').innerText()
+  const rowCountBefore = await page.locator('tr[data-reference-category]').count()
+  const referenceRequestsBefore = productRequests(fixture, 'reference').length
   await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
   await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-bi')
   const locate = productRequests(fixture, 'chart').at(-1).url.searchParams
   expect(locate.get('from')).toBe('2026-01-05')
   expect(locate.has('performance_since')).toBe(false)
+  await page.getByRole('tab', { name: '参考历史与统计' }).click()
+  expect(await page.getByTestId('newow-reference-summary').innerText()).toBe(summaryBefore)
+  await expect(page.locator('tr[data-reference-category]')).toHaveCount(rowCountBefore)
+  expect(productRequests(fixture, 'reference')).toHaveLength(referenceRequestsBefore)
   assertNoUnexpectedRequests(fixture)
 })
 

@@ -563,6 +563,33 @@ test('keeps validated auxiliary reuse across same-generation chart pagination an
   state.dispose()
 })
 
+test('server-proven chart window changes keep reference history and its paging identity', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'shared-token', hash: 'a'.repeat(64) }))
+  await flush()
+  const loading = state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  pending[1]!.resolve(normalizedReference(pending[1]!.request, { token: 'shared-token', nextBefore: 'reference-page-2' }))
+  await loading
+  const before = state.sections.reference.data.value
+  const changed = state.loadChart({ from: '2026-08-14', through: '2026-08-14' })
+  assert.equal(pending[2]!.request.snapshotToken, 'shared-token')
+  pending[2]!.resolve(normalizedChart(pending[2]!.request, { token: 'shared-token', hash: 'b'.repeat(64) }))
+  await changed
+  assert.equal(state.sections.reference.data.value, before)
+  assert.equal(state.referenceChartCompatible.value, true)
+  const nextPage = state.loadNextReferencePage()
+  assert.equal(pending[3]!.request.section, 'reference')
+  if (pending[3]!.request.section === 'reference') {
+    assert.equal(pending[3]!.request.historyBefore, 'reference-page-2')
+    assert.equal(pending[3]!.request.performanceSince, '2025-01-01')
+  }
+  pending[3]!.resolve(normalizedReference(pending[3]!.request, { token: 'shared-token', items: [] }))
+  await nextPage
+  state.dispose()
+})
+
 test('a changed chart token clears loaded dependents and binds the next auxiliary request to the new token', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })

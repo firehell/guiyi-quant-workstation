@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, fields, is_dataclass
 from secrets import token_urlsafe
 from threading import RLock
 from time import monotonic
+import sys
 
 
 @dataclass(slots=True)
@@ -16,7 +17,7 @@ class _Entry:
     token: str
     expires_at: float
     values: dict[tuple[object, ...], object]
-    sizes: dict[tuple[object, ...], int]
+    retained_bytes: int
     proof: dict[str, str]
 
 
@@ -48,7 +49,18 @@ class SnapshotCache:
         entry = self._entries.pop(fact_key, None)
         if entry is not None:
             self._tokens.pop(entry.token, None)
-            self._bytes -= sum(entry.sizes.values())
+            self._entries = OrderedDict(self._entries.items())
+            self._tokens = dict(self._tokens.items())
+            self._bytes = self._retained_bytes(self._entries, self._tokens)
+
+    @staticmethod
+    def _retained_bytes(
+        entries: OrderedDict[str, _Entry], tokens: dict[str, str]
+    ) -> int:
+        return (
+            sum(entry.retained_bytes for entry in entries.values())
+            + sys.getsizeof(entries) + sys.getsizeof(tokens)
+        )
 
     def _expire(self) -> None:
         current = self._now()
@@ -61,7 +73,6 @@ class SnapshotCache:
         fact_key: str,
         section_key: tuple[object, ...],
         value: object,
-        retained_size: int,
         *,
         token: str | None = None,
         proof: dict[str, str] | None = None,
@@ -70,55 +81,62 @@ class SnapshotCache:
             not self._enabled
             or not isinstance(fact_key, str)
             or not fact_key
-            or type(retained_size) is not int
-            or retained_size < 0
-            or retained_size > self._max_entry_bytes
-            or retained_size > self._max_bytes
         ):
             return None
         normalized_section = tuple(section_key)
         with self._lock:
             self._expire()
-            entry = self._entries.get(fact_key)
+            previous = self._entries.get(fact_key)
             normalized_proof = dict(proof or {})
-            if entry is not None and not self._proofs_compatible(
-                entry.proof, normalized_proof
+            compatible = previous is not None and self._proofs_compatible(
+                previous.proof, normalized_proof
+            )
+            if token is not None and (
+                previous is None or not compatible or token != previous.token
             ):
-                if token is not None:
-                    return None
-                self._drop(fact_key)
-                entry = None
-            if entry is None:
-                token = token or token_urlsafe(24)
-                entry = _Entry(
-                    fact_key,
-                    token,
-                    self._now() + self._ttl,
-                    {},
-                    {},
-                    normalized_proof,
-                )
-                self._entries[fact_key] = entry
-                self._tokens[token] = fact_key
-            elif token is not None and token != entry.token:
                 return None
-            else:
-                entry.proof.update(normalized_proof)
-            previous_size = entry.sizes.get(normalized_section, 0)
-            retained_total = sum(entry.sizes.values()) - previous_size + retained_size
-            if retained_total > self._max_entry_bytes:
-                return None
-            entry.values[normalized_section] = value
-            entry.sizes[normalized_section] = retained_size
-            entry.expires_at = self._now() + self._ttl
-            self._entries.move_to_end(fact_key)
-            self._bytes -= previous_size
-            self._bytes += retained_size
-            while (
-                len(self._entries) > self._max_entries or self._bytes > self._max_bytes
+            # Build a candidate off to the side. A rejected extension/revision must
+            # not alter the accepted proof, values, token, TTL or LRU position.
+            values = dict(previous.values) if compatible and previous else {}
+            merged_proof = dict(previous.proof) if compatible and previous else {}
+            merged_proof.update(normalized_proof)
+            values[normalized_section] = value
+            candidate = _Entry(
+                fact_key,
+                previous.token if compatible and previous else token_urlsafe(24),
+                self._now() + self._ttl,
+                values,
+                0,
+                merged_proof,
+            )
+            # Reserve the final counter integer as well as the complete payload.
+            # The zero placeholder can share identity with a value in the graph.
+            candidate.retained_bytes = _retained_size(candidate) + sys.getsizeof(
+                max(self._max_entry_bytes, self._max_bytes)
+            )
+            single_entries = OrderedDict([(fact_key, candidate)])
+            single_tokens = {candidate.token: fact_key}
+            if self._retained_bytes(single_entries, single_tokens) > min(
+                self._max_entry_bytes, self._max_bytes
             ):
-                self._drop(next(iter(self._entries)))
-            return entry.token if fact_key in self._entries else None
+                return None
+            pending = OrderedDict(
+                (key, entry) for key, entry in self._entries.items() if key != fact_key
+            )
+            pending[fact_key] = candidate
+            while True:
+                # Measure the actual indexes that will be retained, including
+                # their allocated capacity; deletions alone do not shrink dicts.
+                pending = OrderedDict(pending.items())
+                pending_tokens = {entry.token: key for key, entry in pending.items()}
+                retained_bytes = self._retained_bytes(pending, pending_tokens)
+                if len(pending) <= self._max_entries and retained_bytes <= self._max_bytes:
+                    break
+                pending.popitem(last=False)
+            self._entries = pending
+            self._tokens = pending_tokens
+            self._bytes = retained_bytes
+            return candidate.token
 
     def get(self, fact_key: str, section_key: tuple[object, ...]) -> object | None:
         with self._lock:
@@ -164,3 +182,29 @@ class SnapshotCache:
         shared = left.keys() & right.keys()
         shared_bars = tuple(key for key in shared if key.startswith("bar|"))
         return bool(shared_bars) and all(left[key] == right[key] for key in shared)
+
+
+def _retained_size(value: object, seen: set[int] | None = None) -> int:
+    """Conservative size of the retained graph, counting shared objects once."""
+    if seen is None:
+        seen = set()
+    identity = id(value)
+    if identity in seen:
+        return 0
+    seen.add(identity)
+    size = sys.getsizeof(value)
+    if is_dataclass(value) and not isinstance(value, type):
+        attributes = getattr(value, "__dict__", None)
+        if attributes is not None:
+            return size + _retained_size(attributes, seen)
+        return size + sum(
+            _retained_size(getattr(value, field.name), seen) for field in fields(value)
+        )
+    if isinstance(value, Mapping):
+        return size + sum(
+            _retained_size(key, seen) + _retained_size(item, seen)
+            for key, item in value.items()
+        )
+    if isinstance(value, (tuple, list, set, frozenset)):
+        return size + sum(_retained_size(item, seen) for item in value)
+    return size

@@ -50,12 +50,123 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 - **WHEN** Newow 产品开始设计、测试或实现
 - **THEN** 可以推进独立 Newow 开发，但不得更新 SuBing 闭环状态、触发通知或切换现役 Runtime
 
+### Requirement: Frozen formula profiles remain distinct
+
+当前产品趋势 MUST 使用 `NEWOW_TREND_D1_PAGE_V2` 的公式身份，不得把旧 clean-room 参数覆写到 page-v2。
+公式 authority 为 `packages/quant-core/guiyi_quant/newow/profile.py`、`trend_band.py` 与 `escape_d123.py`。
+
+| 合同 | 当前 page-v2 | 保留的 clean-room v1 身份 |
+|---|---|---|
+| Profile | `newow_trend_d1_page_v2` | `newow_trend_d1_v1` |
+| 趋势公式 | `newow_trend_band_page_v2` | `newow_trend_band_cleanroom_v1` |
+| 典型价 T | `(Close + High + Low) / 3` | `(3*Close + Open + High + Low) / 6` |
+| 趋势线 | `A=MA(T,7)`，`B=MA(T,10)`；不足窗口按已有样本平均 | `B=WMA(T,20)`（新值权重大），`C=MA(B,5)`；不足完整窗口 unavailable |
+| 黄带条件 | `Close >= B` | `B >= C` |
+| 风险公式 | `newow_escape_d123_page_v2` | `newow_escape_d123_v1` |
+| VAR4 | `raw=100*(Close-LLV(Low,10))/(HHV(High,10)-LLV(Low,10))`，零区间取50；VAR4为最近至多3个raw均值、保留4位小数 | RSV9 + SMA(3,1)递推；不是 page-v2 VAR4 |
+
+page-v2 风险条件 MUST 保持：`Z=MA(Close,120)`、`V3=round4((MA(High,5)-Z)/Z)`，窗口不足按已有样本；
+D1 为前 VAR4≥95、当前<95 且 V3>0.3；D2 为前 VAR4≥93、当前<93、30根振幅>0.10 且前Z/Z>0.997；
+D3 为 Close<Z、Z<前Z、前VAR4>90、当前VAR4<前VAR4 且前VAR4>前前VAR4。
+D3 不得改成“当前下穿90”，D1/D2/D3 不得互斥压缩为一项；这些风险提示不改变主动作。
+旧 v1 的 MA120 十点斜率/0.0005 阈值和 RSV9 仅属于其独立身份，不是 page-v2 的隐藏过滤。
+所有公式 MUST 使用同物理区段的 completed 输入；首个状态不补建仓，跨物理区段重置，Marker 的关联身份不得回写。
+
+#### Scenario: A historical design uses different periods
+
+- **GIVEN** 历史 clean-room 设计写有 20/5 与 RSV9，而当前产品选择 page-v2
+- **WHEN** 实现、维护或迁移文档
+- **THEN** 保留两者独立公式身份，以 page-v2 的 7/10 与10周期VAR4执行当前产品，不把旧计划当成参数变更授权
+
+### Requirement: Cup handle is a bounded causal D1 setup
+
+杯柄 MUST 保持 `newow_cup_handle_v1`、`page_parity=false`，仅 `trend × 1d` 可用；它是 clean-room 结构观察，
+不是买卖、减仓、选股或页面私有公式。权威参数为 `NEWOW_TREND_D1_V1` 中的 cup 字段，page-v2 继承同一杯柄参数。
+正杯/倒杯按方向归一化计算，不能把倒杯变成可执行空单。
+
+| 参数组 | 冻结值 |
+|---|---|
+| ATR / Pivot | Wilder ATR14，反转1.25 ATR、最小腿3根；ATR在极值位置冻结，确认靠后来已完成Close |
+| 前置趋势 | 左沿前20–60个interval；归一化OLS斜率>0，方向收益≥10%或移动≥4 ATR |
+| 杯体 | 左右沿含端点25–90根；深度10%–50%，偏好≤35%，且≥3 ATR；沿差同时≤5%与≤1.5 ATR |
+| U形 | 底部区为杯深25%；READY底部连续停留≥3根；左右腿软比例0.5–2、硬比例1/3–3；中轴穿越软上限3、硬上限5 |
+| 柄部 | 5–15根；深度≤15%，回撤≤右腿高度1/3，位于杯体上半部；柄/右腿量中位数≤0.8，柄/前20根基准≤0.9 |
+| 突破 | 冻结P加0.1当前ATR；当前量/前20根中位数≥1.2，当前量/冻结柄窗口中位数≥1.5 |
+| 分数 | 前趋势15+几何25+U形20+柄20+量20；FORMING体分≥45、READY总分≥80、BREAKOUT完整分≥85 |
+| 生命周期/内存 | READY 20根未突破过期；BREAKOUT 20根后内部清除；历史220根、已确认Pivot32个、每步候选检查256次、最近终态ID32个 |
+
+在硬条件通过后，分项评分 MUST 保留以下边界（先命中的分支优先）：
+
+| 分项 | 计分 |
+|---|---|
+| 前趋势 | 收益和ATR门槛均满足15；仅一项通过且强度≥1.5倍12，否则10；按较强门槛强度、较弱门槛强度、较短窗口依次择优 |
+| 几何 | 杯长35–70取5，否则3；深度≤35%取8，否则4；深度≥4ATR取5，否则3；沿差同时≤2.5%和0.75ATR取7，否则5 |
+| U形 | 底部停留≥5/≥3/=2/≤1分别8/6/2/0；腿比0.75–1.33取6、0.5–2取4、其余硬范围内2；穿越≤1/=2/=3/>3分别6/4/2/0 |
+| 柄 | 长度7–10取6，否则4；深度≤8%/≤12%/其余取5/3/1；回撤比例≤0.20/≤0.28/其余取5/3/1；上半区通过再加4 |
+| 量能 | 柄/右腿≤0.65/≤0.75/其余取7/5/3；柄/基准≤0.75/≤0.85/其余取7/5/3；有效放量突破另加6 |
+
+READY分数最高94，突破量能6分不得预支。杯长含左右沿端点；柄长为柄确认index减右沿pivot index。
+杯深使用两沿均值减底部，深度百分比分母为两沿均值绝对值；柄深用右沿减柄极值，
+柄回撤分母为右沿减杯底，不能用杯深替换。仅有单Bar杯底可FORMING诊断，但不能READY。
+primary候选 MUST 按BREAKOUT（含本Bar可突破）优先、READY、FORMING，再按分数高、确认时间新、candidate ID字典序选择。
+
+TR MUST 为 `max(High-Low, abs(High-前Close), abs(Low-前Close))`，前14个有限TR均值为种子，
+后续ATR为 `(13*前ATR+TR)/14`。同合约不具观察资格的warm-up可预热ATR，但不得进入Pivot、形态、量窗或候选ID；
+合约/segment改变时全部重置。ATR或连续窗口缺失 MUST 明示不可用，不得借跨合约历史补齐。
+
+Pivot MUST 分开 `pivot_at` 与 `confirmed_at`；只允许确认后消费，等高/等低保留较早极值。
+杯底、左右沿和柄必须来自已确认锚点；候选ID绑定公式、方向、物理合约、segment及杯体锚点。
+锚点选择 MUST 精确如下：L/R为同类已确认杯沿；B在L/R之间的反类Pivot中取归一化价格最低，等价取更早pivot index；
+H在R之后的反类Pivot中筛选`H.confirmed_index-R.pivot_index`为5–15，再取归一化价格最低，等价取更晚pivot index。
+Pivot初始阶段若向上/向下反转同时成立，MUST 先比较各自移动除极值ATR的归一化幅度，取较大者；
+相等取更早极值，仍相等优先确认HIGH。该H选择的晚锚点tie不能与单个Pivot追踪时等价保留早极值混淆。
+
+P MUST 为`R.pivot_index+1 .. H.confirmed_index-1`内正杯最高High、倒杯最低Low，
+同时排除R本身与H确认Bar；连续窗口缺失时不可用，不得使用确认Bar的新高/新低抬升或降低P。
+量能中位数窗口 MUST 分别为右腿`B.pivot_index+1 .. R.pivot_index`、柄`R.pivot_index+1 .. H.confirmed_index-1`、
+READY基准20根`R.pivot_index-19 .. R.pivot_index`（包含R）、突破基准20根`current_index-20 .. current_index-1`（排除当前）。
+
+candidate ID MUST 为固定`newow_trend_v1` namespace、cup公式版本、physical contract、segment、direction、
+L/B/R的pivot_at规范值按固定顺序连接后的SHA-256，不包含H；同一L/B/R候选进入终态后不得通过换H重生。
+READY/BREAKOUT/WEAKENED/INVALIDATED/EXPIRED Marker ID MUST 绑定candidate ID、Marker类型与当前bar_end；
+`related_marker_ids`保留此前已发出的同候选生命周期Marker，不能借新候选ID重写关联。
+FORMING允许换候选；READY冻结候选、柄极值、P、分项分数及witness，不能被新高分候选替换。
+同Bar READY/BREAKOUT MUST 保留有序双Marker及关联ID；READY时已在阈值上方但未有效上穿不得追认突破。
+突破必须同时满足前Close≤前阈值、当前Close>当前阈值及量能条件；穿越但量能不足只记录诊断，须先回阈值下方再有效上穿。
+成交量窗 MUST 排除当前突破Bar，冻结柄窗排除柄确认Bar；缺量/零中位数不得猜测放量。
+
+`READY / BREAKOUT / WEAKENED` 的归一化Close跌破柄极值减0.1当前ATR时 MUST 优先INVALIDATED；
+BREAKOUT跌回P下方才WEAKENED，WEAKENED不重发BREAKOUT。终态Marker保持不可变，不得因内部清除而改写历史。
+终态触发Bar MUST 只完成当前候选终态，不在同Bar再次枚举或建立新候选。
+分项评分及明确边界实现由 `cup_handle.py` 的 `_pretrend_score / _body_facts / _ready_handle_facts /
+_ready_volume_facts / _breakout_facts` 承担；参数或评分变更 MUST 新建版本，不得以收益调优覆盖v1。
+恢复状态损坏、重复/乱序Bar、身份或witness冲突 MUST fail-closed；batch、incremental、重启恢复与prefix结果必须一致。
+
+统一D1 Engine遇physical contract或segment切换 MUST 清空band、D1/D2/D3、杯柄与ATR状态；
+首个rollover Bar可开始新段预热但不产生任何新Marker，不把旧杯柄伪造为INVALIDATED或EXPIRED。
+Engine的bar_end和trading_day MUST 均严格递增；同segment内observation_eligible可以保持False或True，
+仅允许False→True的资格转换，True→False必须拒绝；合法rollover新段可以重新从False预热。
+恢复状态损坏（含各子状态/witness/身份不一致）时 MUST 返回全frame `UNAVAILABLE`、空Marker、空杯柄、
+诊断`NEWOW_ENGINE_STATE_INVALID`及initial state；不得只忽略损坏部分继续输出正常frame。
+仅杯柄正常warming/ATR不足或候选级unavailable MUST 不清除正常band和D1/D2/D3输出。
+同Bar Marker family顺序 MUST 为BUILD/CLEAR主动作、D1→D2→D3、杯柄READY→BREAKOUT→WEAKENED→INVALIDATED→EXPIRED；
+family内部保持类型与稳定Marker ID的确定顺序，不按图层覆盖或候选分数重排。
+
+#### Scenario: A pivot is only confirmed later
+
+- **GIVEN** 历史极值在后续反转Bar才完成确认
+- **WHEN** 历史as-of或图层显示杯柄
+- **THEN** 确认之前不可见，确认之后才显示原极值位置及独立确认时间，不回填为当时已知交易信号
+
 ### Requirement: Independent completed series and owner validation
 
 各组合 MUST 只消费 `active_products.txt` 研究边界内、由 `MarketDataService` 读取的 completed
 Canonical `actual_dominant`。`1w / 1d / 60m` SHALL 独立读取本周期 Canonical，逐 Bar 校验
 `physical_contract / segment_id / trading_day / bar_end`；浏览器和应用层不得用分钟线拼周线、
 猜测主力或跨频回退。
+
+segment ID MUST 绑定品种、物理合约及真实owner起点，不包含query cutoff、可变区段末尾或input hash；
+同一合约退出后重返rank1 MUST 使用新owner起点与新segment ID，不能因合约代码相同继承旧区段。
 
 同合约生命周期前缀可用于 warm-up，但跨物理合约或不连续 owner 区段 MUST 重置递归状态和参考持有。
 warm-up Bar 不得产生有效主力区段内的 BUILD；新主力起点已经处于持有状态时，只能显示 HOLD 和
@@ -111,7 +222,11 @@ Action MUST 带稳定 identity、策略及公式、周期、品种、物理合�
 Execution、Fill、Ledger 或 AlertEvent。趋势 BUILD/CLEAR MUST 使用内核慢线 B，震荡 MUST 使用 BUILD Bar
 Low 与 CLEAR Bar High，主升浪 MUST 使用主带信号 MA45；绘图锚点、Hint 价格和 Close 不得替代这些语义价。
 
-所有价格和参考收益 MUST 使用 Decimal 并序列化为十进制字符串；显示舍入不得反向影响统计。对正数且有限的
+ReferenceTrade ID MUST 只由entry_signal_id、reference_model_version与futures_adaptation_version决定，
+不包含exit、return、viewport或input hash；
+OPEN变CLOSED、查询裁剪或输入指纹变化不得改写同一entry交易身份。
+所有价格和参考收益 MUST 使用 Decimal 并序列化为十进制字符串；计算采用本地context的precision=28与ROUND_HALF_EVEN，
+不得修改global Decimal context；显示舍入不得反向影响统计。对正数且有限的
 有效参考价，CLOSED 单笔 SHALL 计算
 `(exit_reference_price / entry_reference_price - 1) * 100`。该 long/flat 零成本乐观口径 MUST 明示
 未计手续费、滑点、资金占用和真实成交限制，且不得推断手数、空单、账户净值或真实收益。
@@ -290,7 +405,11 @@ frequency/contract/segment/bar_end 的 OHLCV/OI、trading_day、source identity 
 任一重叠事实冲突均拒绝。section result/dedup key MUST 另含实际 section 输入指纹与规范化参数：chart 的
 from/through/cursor/page identity、auxiliary component、reference performance window 与 history cursor/page identity。
 summary 可在同 reference 指纹下共享，页结果不得跨 cursor/limit 复用。TTL 固定 300 秒且只负责淘汰，不能证明新鲜度。
-最多保留 32 条、总计 128 MiB、单条超过 32 MiB 不缓存，按 LRU 淘汰。旧 cursor、失效 token、数据修订或共同事实冲突 MUST 返回
+最多保留 32 条、总计 128 MiB、单条超过 32 MiB 不缓存，按 LRU 淘汰。
+预算 MUST 包含 entry 中验证proof、共同事实、结果及实际容器/index分配容量，不得只计算响应value。
+扩展proof或插入结果前 MUST 先估算增量并校验单条/总预算；超限必须原子拒绝或按既有缓存政策淘汰，
+不得留下半更新proof、超额entry或错误token；拒绝时未过期旧entry的value、proof、token、TTL和LRU位置必须不变，
+也不得以缓存命中绕过逐事实重验。旧 cursor、失效 token、数据修订或共同事实冲突 MUST 返回
 可分类 409，要求客户端清除相关旧结果并重建快照；不得无限自动重试或继续旧 cursor。
 
 失败、不完整读取和未验证结果不得缓存。关闭缓存时结果、身份和错误语义 MUST 不变。reference/comparator
@@ -329,3 +448,18 @@ repainting、formal-signal eligibility、允许用途、实际图表/统计窗�
 - **GIVEN** 主策略事实可用，但某解释输入来源无法证明
 - **WHEN** 请求 `section=explanation`
 - **THEN** 仅对应子功能返回准确 evidence status/reason/source，不能用 0、空数组、neutral 或“暂无信号”掩盖
+
+### Requirement: Compatible chart windows retain reference state
+
+服务端 snapshot token MUST 决定已验证共同事实的兼容关系。定位历史记录重新加载不同chart窗口时，
+若服务端仍接受同一token，客户端 MUST 保留独立reference统计、列表与cursor；
+不能仅因新窗口输入hash变化自行判作数据世代改变。同一chart窗口向左分页仍 MUST 严格校验
+input hash及page identity，不能以token相同跳过分页合同。无token时仍须严格校验指纹；
+shared Bar逐事实冲突、真实token替换、409不兼容或来源版本改变时，MUST 失效相关旧结果、
+取消旧在途请求并阻止晚到响应污染重建快照。
+
+#### Scenario: Locating a historical trade changes only the chart window
+
+- **GIVEN** reference统计窗口未变且服务端接受同一snapshot token
+- **WHEN** 用户定位历史记录，重新加载不同chart窗口及其输入hash
+- **THEN** 保留reference统计、列表与cursor；同窗口分页身份和无token严格指纹校验仍独立生效

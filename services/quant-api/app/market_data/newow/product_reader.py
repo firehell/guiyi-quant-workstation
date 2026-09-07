@@ -279,22 +279,10 @@ class NewowProductReader:
         start_day = self._coverage.product_start(product)
         latest = self._coverage.latest_complete_day((product,))
         start = datetime.combine(start_day, time.min, _SHANGHAI)
-        days = []
-        for day in self._market_data.trading_days_overlapping_window(
-            symbol=product, start=start, end=cutoff + _MICROSECOND
-        ):
-            self._check_cancelled()
-            if (
-                day <= latest
-                and max(
-                    window.end
-                    for window in self._market_data.session_windows(
-                        symbol=product, trading_day=day
-                    )
-                )
-                <= cutoff
-            ):
-                days.append(day)
+        days = self._market_data.completed_trading_days(
+            symbol=product, start=start, as_of=cutoff, latest=latest
+        )
+        self._check_cancelled()
         if not days or any(
             current <= previous for previous, current in zip(days, days[1:])
         ):

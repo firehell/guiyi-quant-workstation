@@ -395,7 +395,7 @@ function meta(url, strategy, frequency, section, options) {
     schema_version: 'newow_product_detail_v1',
     identity: { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas(strategy) },
     as_of: url.searchParams.get('as_of') || NEWOW_AS_OF,
-    read_at: '2026-09-03T08:00:01.000Z', input_content_sha256: HASH[section] || HASH.chart,
+    read_at: '2026-09-03T08:00:01.000Z', input_content_sha256: section === 'chart' && url.searchParams.has('snapshot_token') && url.searchParams.has('from') && !url.searchParams.has('chart_before') ? 'f'.repeat(64) : HASH[section] || HASH.chart,
     data_revision_identity: revision, snapshot_token: options.tokenlessSections?.includes(section) ? null : `snapshot:${strategy}:${frequency}:${revision}`,
     reference_model_version: 'newow_marker_reference_zero_cost_v1',
     futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
