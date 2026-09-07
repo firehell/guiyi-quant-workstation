@@ -164,14 +164,12 @@ test('explanation component renders evidence gaps and comparator in a separate t
   app.unmount()
 })
 
-test('workspace uses native tab buttons and keeps one selected signal authority for chart and history', () => {
+test('workspace uses a disclosure and dialog while keeping one selected signal authority', () => {
   const source = readFileSync(workspaceUrl, 'utf8')
-  assert.match(source, /role="tablist"/)
-  assert.match(source, /role="tab"/)
-  assert.match(source, /:tabindex="researchTab === 'reference' \? 0 : -1"/)
-  assert.match(source, /:tabindex="researchTab === 'explanation' \? 0 : -1"/)
-  assert.match(source, /@keydown\.left/)
-  assert.match(source, /@keydown\.right/)
+  assert.match(source, /:aria-expanded="detailsOpen"/)
+  assert.match(source, /aria-controls="newow-details"/)
+  assert.match(source, /<NewowDetailDialog/)
+  assert.doesNotMatch(source, /role="tablist"|researchTab/)
   assert.match(source, /<NewowReferencePanel/)
   assert.match(source, /<NewowExplanationPanel/)
   assert.match(source, /@locate="locateReferenceTrade"/)

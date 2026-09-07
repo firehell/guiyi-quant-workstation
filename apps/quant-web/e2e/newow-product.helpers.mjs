@@ -231,7 +231,7 @@ function validateProductQuery(url, section, strategy, frequency) {
     comparator: ['', 'snapshot_token'],
   }
   if (!allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
-  if (section === 'auxiliary' && !['main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
+  if (section === 'auxiliary' && !['macd', 'main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
   if (url.searchParams.has('chart_limit') && url.searchParams.get('chart_limit') !== '500') return `invalid chart limit ${url.search}`
   if (url.searchParams.has('history_limit') && url.searchParams.get('history_limit') !== '50') return `invalid reference limit ${url.search}`
   if (url.searchParams.has('chart_before') && url.searchParams.get('chart_before') !== 'chart-page-2') return `invalid chart cursor ${url.search}`
@@ -530,6 +530,11 @@ function frameMainValues(strategy, actions, bar) {
 
 function auxiliaryValue(component, frequency) {
   const base = { component, segments: [], repainting: false, formal_signal_eligible: true, page_parity: false, source_category: 'guiyi_product_auxiliary_adapter', allowed_uses: ['product_display'] }
+  if (component === 'macd') {
+    const barEnds = [productBar(frequency, 62).bar_end, productBar(frequency, 63).bar_end]
+    const points = barEnds.map((bar_end, index) => ({ bar_end, value: index === 0 ? 0 : 0.5, ready: true, valid: true, reason: null }))
+    return { ...base, formal_signal_eligible: false, formula_version: 'v1-draft', display_adapter_version: 'guiyi_newow_macd_display_v1', parameters: { fast: 12, slow: 26, signal: 9, ema_seed_policy: 'sma_window', histogram_scale: 2, round_digits: 6 }, parameters_hash: 'a'.repeat(64), allowed_uses: ['research_display'], segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { dif: points, dea: points.map(point => ({ ...point, value: point.value / 2 })), histogram: points } }] }
+  }
   if (component === 'cup_handle') return { ...base, formula_version: 'newow_cup_handle_v1', segments: frequency === '1d' ? [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: ['2026-09-03T07:00:00.000Z'], status: ready(), data: [] }] : [] }
   const barEnds = ['2026-09-02T07:00:00.000Z', '2026-09-03T07:00:00.000Z']
   if (component === 'main_force_control') return { ...base, formula_version: 'newow_main_force_control_page_v1', segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { kongpan: [10, 12], status: ['HOLD', 'BUILD'], current_status: 'BUILD', formula_version: 'newow_main_force_control_page_v1' } }] }

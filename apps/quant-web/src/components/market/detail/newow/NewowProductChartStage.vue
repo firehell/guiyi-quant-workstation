@@ -32,6 +32,9 @@ import {
 
 const props = withDefaults(defineProps<{
   response: NewowProductSectionResponse<'chart'> | null
+  auxiliaryResponse?: NewowProductSectionResponse<'auxiliary'> | null
+  auxiliaryLifecycle?: import('@/types/newowProduct').NewowResourceLifecycle
+  auxiliaryError?: string | null
   selectedSignalId: string | null
   loading?: boolean
   hasMoreBefore?: boolean

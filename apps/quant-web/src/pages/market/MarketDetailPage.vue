@@ -11,6 +11,8 @@ import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspa
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
 import NewowProductWorkspace from '@/components/market/detail/newow/NewowProductWorkspace.vue'
+import '@/styles/newowDetail.css'
+import { useNewowDailyQuote } from '@/composables/useNewowDailyQuote'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import {
@@ -41,7 +43,16 @@ const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(n
 const hasHtdyHistory = ref(false)
 const hasTrendHistory = ref(false)
 const hasSubingHistory = ref(false)
-const header = computed(() => controller.state.value.header)
+const dailyQuote = useNewowDailyQuote({
+  symbol: computed(() => isNewowView.value ? explicitIdentity.value!.symbol : null),
+  contract: computed(() => controller.productCatalog.value.find(item => item.product.toLowerCase() === explicitIdentity.value?.symbol)?.actual_contract ?? null),
+})
+const header = computed(() => {
+  const base = controller.state.value.header
+  if (!base || !isNewowView.value) return base
+  const quote = dailyQuote.quote.value
+  return { ...base, ...(quote ?? {}), displayContract: quote ? controller.productCatalog.value.find(item => item.product.toLowerCase() === explicitIdentity.value?.symbol)?.actual_contract ?? null : null, freshness: quote ? 'fresh' as const : 'unavailable' as const }
+})
 const identityWarning = ref(
   typeof window !== 'undefined' && window.history.state?.contractCleared === true
     ? '已切换品种，指定合约已清除并回到真实主力。'
@@ -147,11 +158,11 @@ function goBack() {
 }
 
 watch(identityKey, () => { void activateRoute() }, { immediate: true })
-onBeforeUnmount(controller.dispose)
+onBeforeUnmount(() => { dailyQuote.dispose(); controller.dispose() })
 </script>
 
 <template>
-  <main class="market-detail-page" :data-detail-ready="shellReady ? 'true' : 'false'">
+  <main class="market-detail-page" :class="{ 'newow-detail-light': isNewowView }" :data-detail-ready="shellReady ? 'true' : 'false'">
     <template v-if="routeResult.kind === 'invalid'">
       <MarketDetailUnavailable
         title="详情页地址无效"
@@ -165,6 +176,7 @@ onBeforeUnmount(controller.dispose)
 
     <template v-else-if="routeResult.kind === 'valid'">
       <MarketDetailTopBar
+        v-if="!isNewowView"
         :product-name="header?.productName ?? routeResult.identity.symbol.toUpperCase()"
         :symbol="routeResult.identity.symbol"
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"
@@ -189,9 +201,10 @@ onBeforeUnmount(controller.dispose)
         @return-legacy="returnLegacy"
       />
       <template v-if="routeResult.identity.view === 'newow' || (!controller.state.value.loading && !controller.state.value.error && header)">
-        <MarketDetailQuoteHeader v-if="header" :header="header" :identity-key="identityKey" />
+        <MarketDetailQuoteHeader v-if="header" :header="header" :identity-key="identityKey" :newow="isNewowView" />
         <MarketDetailViewNav
           :identity="routeResult.identity"
+          :products="controller.productCatalog.value"
           :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
           @select="selectIdentity"
           @contract-cleared="selectContractCleared"

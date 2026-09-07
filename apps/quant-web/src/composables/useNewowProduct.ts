@@ -453,7 +453,15 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       && reference.meta.snapshot_token === token
   })
 
+  const explanationChartCompatible = computed(() => {
+    const chart = resources.chart.data.value
+    const explanation = resources.explanation.data.value
+    return chart !== null && explanation !== null && chart.meta.snapshot_token !== null
+      && chartGenerationSignature(chart.meta) === chartGenerationSignature(explanation.meta)
+  })
+
   return {
+    explanationChartCompatible: readonly(explanationChartCompatible),
     identity: readonly(currentIdentity),
     asOf: readonly(asOf),
     sections: resources,

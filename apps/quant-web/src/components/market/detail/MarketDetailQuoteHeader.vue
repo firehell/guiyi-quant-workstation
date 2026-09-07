@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { priceDirection } from '@/utils/newowDetailPresentation'
 import type { MarketDetailHeaderModel } from '@/types/marketDetail'
 import MarketDetailIcon from './MarketDetailIcon.vue'
 import MarketFactsDisclosure from './MarketFactsDisclosure.vue'
 
 const props = defineProps<{
   header: MarketDetailHeaderModel
+  newow?: boolean
   identityKey: string
 }>()
 
-const direction = computed(() => props.header.change === null ? 'neutral' : props.header.change > 0 ? 'up' : props.header.change < 0 ? 'down' : 'neutral')
+const direction = computed(() => priceDirection(props.header.change))
 const statusLabel = computed(() => ({ fresh: '数据正常', stale: '数据可能过时', unavailable: '数据不可用' })[props.header.freshness])
 const phaseLabel = computed(() => ({ TRADING: '交易中', BREAK: '盘中休市', CLOSED: '已收盘', UNKNOWN: '状态未知' })[props.header.phase] ?? '状态未知')
 const seriesLabel = computed(() => ({ actual_dominant: '真实主力', continuous: '主连', contract: '指定合约' })[props.header.seriesKind])
@@ -26,7 +28,7 @@ function integer(value: number | null): string {
 </script>
 
 <template>
-  <section class="quote-header" data-detail-section="quote">
+  <section class="quote-header" :class="{ 'quote-header--newow': newow }" data-detail-section="quote">
     <div class="quote-header__identity">
       <div>
         <p class="quote-header__eyebrow">{{ header.exchange }} · {{ header.sector }}</p>
@@ -39,7 +41,7 @@ function integer(value: number | null): string {
       </span>
     </div>
 
-    <div class="quote-header__statuses" aria-label="行情状态">
+    <div v-if="!newow" class="quote-header__statuses" aria-label="行情状态">
       <span>{{ seriesLabel }}</span>
       <span>{{ header.exchange || '交易所未知' }}</span>
       <span>{{ phaseLabel }}</span>
@@ -51,7 +53,7 @@ function integer(value: number | null): string {
       <span>{{ header.change === null ? '变动 —' : `${header.change >= 0 ? '+' : ''}${number(header.change)}` }}</span>
       <span>{{ header.pct === null ? '涨跌幅 —' : `${header.pct >= 0 ? '+' : ''}${number(header.pct)}%` }}</span>
     </div>
-    <p class="quote-header__asof">截至 {{ header.asOf || '—' }}</p>
+    <p class="quote-header__asof">{{ newow ? '最近日线收盘 · 非实时 · 截至' : '截至' }} {{ header.asOf || '—' }}</p>
 
     <dl class="quote-header__facts">
       <div><dt>开</dt><dd>{{ number(header.open) }}</dd></div>
@@ -62,6 +64,7 @@ function integer(value: number | null): string {
     </dl>
 
     <MarketFactsDisclosure
+      v-if="!newow"
       :identity-key="identityKey"
       :sections="header.extendedSections"
       :freshness="header.freshness"

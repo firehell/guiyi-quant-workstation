@@ -47,8 +47,8 @@ function toNumber(value: number | string | null): number | null {
   return value === null ? null : Number(value)
 }
 
-export function getMarketBarsPage(params: MarketBarsPageRequest) {
-  return request.get<never, MarketBarsPageResponse>('/market/bars/page', { params })
+export function getMarketBarsPage(params: MarketBarsPageRequest, signal?: AbortSignal) {
+  return request.get<never, MarketBarsPageResponse>('/market/bars/page', { params, signal })
 }
 
 export interface MarketStateRequest {
