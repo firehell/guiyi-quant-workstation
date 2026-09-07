@@ -221,7 +221,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     if (response.section !== section) { failConflict(section, 'NEWOW_RESPONSE_INVALID'); return }
     if (section === 'auxiliary' && request.section === 'auxiliary') {
       const auxiliaryResponse = response as NewowProductSectionResponse<'auxiliary'>
-      if (auxiliaryResponse.value?.component !== request.component) {
+      if (auxiliaryResponse.value !== null && auxiliaryResponse.value.component !== request.component) {
         failConflict(section, 'NEWOW_AUXILIARY_IDENTITY_CONFLICT')
         return
       }
@@ -496,7 +496,7 @@ function withoutGenerationBindings(request: NewowProductRequest): NewowProductRe
 function chartIdentity(meta: NewowProductSectionResponse['meta'], value: NewowChartValue): string {
   return JSON.stringify([
     meta.identity.product, meta.identity.strategy, meta.identity.frequency, meta.identity.series_kind,
-    meta.identity.profile_id, meta.identity.formula_versions, meta.as_of, meta.input_content_sha256,
+    meta.identity.profile_id, meta.identity.formula_versions, meta.as_of, meta.input_content_sha256, meta.data_revision_identity,
     value.chart_from, value.chart_through, value.page_identity,
   ])
 }
@@ -517,7 +517,7 @@ function mergeUnique<T>(left: readonly T[], right: readonly T[], key: (item: T) 
 function referenceIdentity(meta: NewowProductSectionResponse['meta'], value: NewowReferenceValue): string {
   return JSON.stringify([
     meta.identity.product, meta.identity.strategy, meta.identity.frequency, meta.identity.series_kind,
-    meta.identity.profile_id, meta.identity.formula_versions, meta.as_of, meta.reference_model_version,
+    meta.identity.profile_id, meta.identity.formula_versions, meta.as_of, meta.data_revision_identity, meta.reference_model_version,
     meta.futures_adaptation_version, value.performance_since, value.performance_through,
     value.actual_available_through, value.reference_cutoff, value.reference_input_sha256,
   ])

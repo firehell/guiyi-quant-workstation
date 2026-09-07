@@ -11,6 +11,17 @@ const HASH = {
   chart: 'a'.repeat(64), reference: 'b'.repeat(64), explanation: 'c'.repeat(64),
   comparator: 'd'.repeat(64), auxiliary: 'e'.repeat(64), page: 'f'.repeat(64),
 }
+const MAIN_VALUES = Object.freeze({
+  trend: Object.freeze({ b: '104.0000', a: '108.0000' }),
+  oscillation: Object.freeze({ upper: '110.0000', lower: '102.0000' }),
+  main_rise: Object.freeze({ ma35: '105.0000', ma45: '103.0000' }),
+})
+const ACTION_PRICES = Object.freeze({
+  trend: Object.freeze({ closedBuild: '104.0000', clear: '105.0000', openBuild: '106.0000', historic: '94.0000' }),
+  oscillation: Object.freeze({ closedBuild: '104.2000', clear: '108.3000', openBuild: '104.3000', historic: '94.0000' }),
+  main_rise: Object.freeze({ closedBuild: '103.0000', clear: '104.0000', openBuild: '105.0000', historic: '94.0000' }),
+})
+const REFERENCE_PRICES = Object.freeze({ entryClosed: '104.0000', exitClosed: '105.0000', entryOpen: '106.0000', markOpen: '106.3000', entryInterrupted: '88.0000', markInterrupted: '90.0000' })
 
 export function newowRoute(strategy = 'trend', frequency = '1d', extra = '') {
   return `/market/chart?symbol=rb&view=newow&strategy=${strategy}&frequency=${frequency}&series_kind=actual_dominant${extra}`
@@ -19,9 +30,16 @@ export function newowRoute(strategy = 'trend', frequency = '1d', extra = '') {
 export async function installNewowProductFixtures(page, options = {}) {
   const state = {
     requests: [], productRequests: [], unexpected: [], aborted: [],
-    counts: new Map(), requestStartedAt: new Map(),
+    counts: new Map(), requestStartedAt: new Map(), deferred: new Map(),
   }
-  await page.addInitScript(() => {
+  page.on('requestfailed', (request) => state.aborted.push(request.url()))
+  await page.addInitScript(({ frozenNow }) => {
+    const NativeDate = Date
+    class FrozenDate extends NativeDate {
+      constructor(...args) { super(...(args.length === 0 ? [frozenNow] : args)) }
+      static now() { return NativeDate.parse(frozenNow) }
+    }
+    window.Date = FrozenDate
     window.__newowBrowserClock = { installedAt: performance.now() }
     class FixtureWebSocket {
       static OPEN = 1
@@ -33,7 +51,7 @@ export async function installNewowProductFixtures(page, options = {}) {
       close() { this.readyState = FixtureWebSocket.CLOSED; this.onclose?.() }
     }
     window.WebSocket = FixtureWebSocket
-  })
+  }, { frozenNow: NEWOW_AS_OF })
 
   await page.route('**/*', async (route) => {
     const request = route.request()
@@ -47,18 +65,30 @@ export async function installNewowProductFixtures(page, options = {}) {
       const section = url.searchParams.get('section') || 'chart'
       const strategy = url.searchParams.get('strategy') || 'trend'
       const frequency = url.searchParams.get('frequency') || '1d'
+      const queryError = validateProductQuery(url, section, strategy, frequency)
+      if (queryError !== null) return unexpected(route, state, queryError)
       const key = [strategy, frequency, section, url.searchParams.get('component') || '', url.searchParams.get('chart_before') || '', url.searchParams.get('history_before') || ''].join(':')
       const count = (state.counts.get(key) || 0) + 1
       state.counts.set(key, count)
       state.requestStartedAt.set(key, startedAt)
       state.productRequests.push({ url, section, strategy, frequency, key, count, startedAt })
 
+      if (options.deferOnce === `${strategy}:${frequency}:${section}` && count === 1) {
+        return new Promise((resolve) => {
+          state.deferred.set(`${strategy}:${frequency}:${section}`, async () => {
+            try { await route.fulfill({ json: envelope(url, section, strategy, frequency, options) }) } catch {}
+            resolve()
+          })
+        })
+      }
+
       if (typeof options.onProductRequest === 'function') {
         const decision = await options.onProductRequest({ route, url, section, strategy, frequency, key, count, state })
         if (decision === 'handled') return
       }
       const conflictKey = `${strategy}:${frequency}:${section}`
-      if (options.conflictOnce === conflictKey && count === 1) {
+      const conflictAt = options.conflictAt?.[conflictKey]
+      if (options.conflictAlways === conflictKey || (options.conflictOnce === conflictKey && count === 1) || (options.cursorConflictOnce === conflictKey && url.searchParams.has('history_before') && count === 1) || conflictAt === count) {
         return route.fulfill({ status: 409, json: { detail: { code: 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' } } })
       }
       if (options.busy === conflictKey) {
@@ -69,7 +99,9 @@ export async function installNewowProductFixtures(page, options = {}) {
         payload.meta.identity.frequency = frequency === '1d' ? '1w' : '1d'
         return route.fulfill({ json: payload })
       }
-      return route.fulfill({ json: envelope(url, section, strategy, frequency, options) })
+      const payload = envelope(url, section, strategy, frequency, options)
+      validateFixtureEnvelope(payload, section, strategy, frequency)
+      return route.fulfill({ json: payload })
     }
 
     if (url.pathname === '/api/v1/market/dominants') {
@@ -100,6 +132,68 @@ export async function installNewowProductFixtures(page, options = {}) {
   return state
 }
 
+function validateProductQuery(url, section, strategy, frequency) {
+  const allowedBySection = {
+    chart: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'from', 'through', 'chart_limit', 'chart_before', 'snapshot_token'],
+    auxiliary: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'component', 'from', 'through', 'snapshot_token'],
+    reference: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'performance_since', 'performance_through', 'history_limit', 'history_before', 'snapshot_token'],
+    explanation: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token'],
+    comparator: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token'],
+  }
+  if (!Object.hasOwn(allowedBySection, section)) return `invalid Newow section ${section}`
+  for (const key of ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of']) {
+    if (url.searchParams.getAll(key).length !== 1) return `missing or duplicate Newow ${key} ${url.search}`
+  }
+  if (url.searchParams.get('product') !== 'rb' || url.searchParams.get('series_kind') !== 'actual_dominant') return `invalid Newow identity ${url.search}`
+  if (!NEWOW_STRATEGIES.includes(strategy) || !NEWOW_FREQUENCIES.includes(frequency)) return `invalid Newow combination ${strategy}/${frequency}`
+  if (url.searchParams.get('as_of') !== NEWOW_AS_OF) return `unfrozen Newow as_of ${url.searchParams.get('as_of')}`
+  const actual = [...url.searchParams.keys()]
+  if (new Set(actual).size !== actual.length || actual.some((key) => !allowedBySection[section].includes(key))) return `unexpected Newow query ${url.search}`
+  const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of'].includes(key)).sort().join(',')
+  const allowedShapes = {
+    chart: ['', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
+    auxiliary: ['component', 'component,snapshot_token', 'component,from,snapshot_token,through'],
+    reference: ['', 'snapshot_token', 'performance_since,performance_through', 'performance_since,performance_through,snapshot_token', 'history_limit,performance_since,performance_through', 'history_before,history_limit,performance_since,performance_through,snapshot_token'],
+    explanation: ['', 'snapshot_token'],
+    comparator: ['', 'snapshot_token'],
+  }
+  if (!allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
+  if (section === 'auxiliary' && !['main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
+  if (url.searchParams.has('chart_limit') && url.searchParams.get('chart_limit') !== '500') return `invalid chart limit ${url.search}`
+  if (url.searchParams.has('history_limit') && url.searchParams.get('history_limit') !== '50') return `invalid reference limit ${url.search}`
+  if (url.searchParams.has('chart_before') && url.searchParams.get('chart_before') !== 'chart-page-2') return `invalid chart cursor ${url.search}`
+  if (url.searchParams.has('history_before') && url.searchParams.get('history_before') !== 'reference-page-2') return `invalid reference cursor ${url.search}`
+  if (url.searchParams.has('performance_since') && url.searchParams.get('performance_since') !== '2026-01-01') return `invalid performance start ${url.search}`
+  if (url.searchParams.has('performance_through') && url.searchParams.get('performance_through') !== '2026-09-03') return `invalid performance end ${url.search}`
+  if (url.searchParams.has('from') && !['2026-01-01', '2026-01-05'].includes(url.searchParams.get('from'))) return `invalid chart start ${url.search}`
+  if (url.searchParams.has('through') && !['2026-01-05', '2026-09-03'].includes(url.searchParams.get('through'))) return `invalid chart end ${url.search}`
+  if ((url.searchParams.has('performance_since') || url.searchParams.has('performance_through')) && section !== 'reference') return `performance query leaked into ${section}`
+  if (url.searchParams.has('chart_before') && section !== 'chart') return `chart cursor leaked into ${section}`
+  if (url.searchParams.has('history_before') && section !== 'reference') return `reference cursor leaked into ${section}`
+  return null
+}
+
+function validateFixtureEnvelope(payload, section, strategy, frequency) {
+  if (payload.section !== section || payload.meta.identity.strategy !== strategy || payload.meta.identity.frequency !== frequency || payload.meta.as_of !== NEWOW_AS_OF) throw new Error('fixture envelope identity drift')
+  const delivered = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'].filter((candidate) => payload[candidate].delivery === 'delivered')
+  if (delivered.length !== 1 || delivered[0] !== section) throw new Error('fixture envelope delivery drift')
+  if (section === 'chart' && payload.chart.value !== null) {
+    const actionIds = new Set(payload.chart.value.actions.map((item) => item.signal_id))
+    for (const frame of payload.chart.value.frames) {
+      if (frame.action_ids.some((id) => !actionIds.has(id))) throw new Error('fixture frame/action drift')
+    }
+    if (payload.chart.value.actions.length > 1 && (!actionIds.has(id(strategy, frequency, 'build-closed')) || !actionIds.has(id(strategy, frequency, 'build-open')))) throw new Error('fixture BUILD identity drift')
+    if (payload.chart.value.actions.length === 1 && !actionIds.has('historic-build')) throw new Error('fixture locate identity drift')
+  }
+  if (section === 'reference' && payload.reference.value !== null && !urlHasCursorPayload(payload.reference.value)) {
+    const entries = payload.reference.value.items.map((item) => item.entry_signal_id)
+    const required = payload.reference.value.summary.closed_count === 0 ? [id(strategy, frequency, 'build-open')] : [id(strategy, frequency, 'build-closed'), id(strategy, frequency, 'build-open')]
+    if (required.some((entry) => !entries.includes(entry)) || new Set(entries).size !== entries.length) throw new Error('fixture reference identity drift')
+  }
+}
+
+function urlHasCursorPayload(value) { return value.items.some((item) => item.status === 'ROLLOVER_INTERRUPTED') }
+
 function unexpected(route, state, message) {
   state.unexpected.push(message)
   return route.abort('blockedbyclient')
@@ -127,13 +221,13 @@ function envelope(url, section, strategy, frequency, options) {
 }
 
 function meta(url, strategy, frequency, section, options) {
-  const revision = options.revision || 'fixture-revision-1'
+  const revision = typeof options.revision === 'function' ? options.revision({ url, section, strategy, frequency }) : options.revision || 'fixture-revision-1'
   return {
     schema_version: 'newow_product_detail_v1',
     identity: { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas(strategy) },
     as_of: url.searchParams.get('as_of') || NEWOW_AS_OF,
     read_at: '2026-09-03T08:00:01.000Z', input_content_sha256: HASH[section] || HASH.chart,
-    data_revision_identity: revision, snapshot_token: `snapshot:${strategy}:${frequency}:${revision}`,
+    data_revision_identity: revision, snapshot_token: options.tokenlessSections?.includes(section) ? null : `snapshot:${strategy}:${frequency}:${revision}`,
     reference_model_version: 'newow_marker_reference_zero_cost_v1',
     futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
   }
@@ -151,30 +245,35 @@ function chartValue(url, strategy, frequency, options) {
   const long = options.longHistory === true
   const count = long ? (before ? 360 : 480) : 24
   const offset = before ? 0 : long ? 360 : 40
-  let bars = Array.from({ length: count }, (_, index) => productBar(frequency, index + offset))
+  let bars = Array.from({ length: count }, (_, index) => productBar(frequency, index + offset, long))
+  if (before && options.sharedBarConflict) {
+    const conflict = { ...productBar(frequency, long ? 360 : 40, long), close: '999.0000', high: '1000.0000' }
+    bars = [...bars, conflict]
+  }
   if (locateFrom === '2026-01-05') bars = [productBarAt(frequency, '2026-01-05T07:00:00.000Z', '2026-01-05', 96)]
-  const values = strategy === 'trend'
-    ? (close) => ({ b: String(close - 2), a: String(close + 2) })
-    : strategy === 'oscillation'
-      ? (close) => ({ upper: String(close + 5), lower: String(close - 5) })
-      : (close) => ({ ma35: String(close - 1), ma45: String(close - 2) })
   const actions = []
   if (!options.noAction && !before) {
-    const first = bars.at(-2)
+    const first = bars.at(-3)
+    const middle = bars.at(-2)
     const last = bars.at(-1)
-    if (locateFrom === '2026-01-05') actions.push(action('historic-build', 'BUILD', bars[0], strategy, 0))
+    if (locateFrom === '2026-01-05') actions.push(action('historic-build', 'BUILD', bars[0], ACTION_PRICES[strategy].historic, 0))
     else if (strategy === 'oscillation') actions.push(
-      action(id(strategy, frequency, 'build-old'), 'BUILD', first, strategy, 0),
-      action(id(strategy, frequency, 'clear-same'), 'CLEAR', last, strategy, 0, id(strategy, frequency, 'build-old')),
-      action(id(strategy, frequency, 'build-same'), 'BUILD', last, strategy, 1),
+      action(id(strategy, frequency, 'build-closed'), 'BUILD', first, ACTION_PRICES.oscillation.closedBuild, 0),
+      action(id(strategy, frequency, 'clear-same'), 'CLEAR', last, ACTION_PRICES.oscillation.clear, 0, id(strategy, frequency, 'build-closed')),
+      action(id(strategy, frequency, 'build-open'), 'BUILD', last, ACTION_PRICES.oscillation.openBuild, 1),
     )
-    else actions.push(action(id(strategy, frequency, 'build'), 'BUILD', first, strategy, 0), action(id(strategy, frequency, 'clear'), 'CLEAR', last, strategy, 0, id(strategy, frequency, 'build')))
+    else actions.push(
+      action(id(strategy, frequency, 'build-closed'), 'BUILD', first, ACTION_PRICES[strategy].closedBuild, 0),
+      action(id(strategy, frequency, 'clear'), 'CLEAR', middle, ACTION_PRICES[strategy].clear, 0, id(strategy, frequency, 'build-closed')),
+      action(id(strategy, frequency, 'build-open'), 'BUILD', last, ACTION_PRICES[strategy].openBuild, 0),
+    )
   }
-  const hints = options.noAction || before ? [] : [{ hint_id: id(strategy, frequency, 'hint-d4'), kind: 'D4', bar_end: bars.at(-1).bar_end, known_at: bars.at(-1).bar_end, anchor_price: String(Number(bars.at(-1).close) - 0.5), physical_contract: CONTRACT, segment_id: SEGMENT, retrospective: false, quantity_effect: 'none', sequence: null }]
+  const hintBar = bars.at(-2) ?? bars.at(-1)
+  const hints = options.noAction || before ? [] : [{ hint_id: id(strategy, frequency, 'hint-d4'), kind: 'D4', bar_end: hintBar.bar_end, known_at: hintBar.bar_end, anchor_price: '104.5000', physical_contract: CONTRACT, segment_id: SEGMENT, retrospective: false, quantity_effect: 'none', sequence: null }]
   return {
     chart_from: '2026-01-01', chart_through: '2026-09-03', page_identity: HASH.page,
     bars,
-    frames: bars.map((bar) => ({ bar_end: bar.bar_end, main_state: actions.some((item) => item.bar_end === bar.bar_end && item.kind === 'BUILD') ? 'BUILD' : 'HOLD', main_values: values(Number(bar.close)), status: ready(), action_ids: actions.filter((item) => item.bar_end === bar.bar_end).map((item) => item.signal_id), hint_ids: hints.filter((item) => item.bar_end === bar.bar_end).map((item) => item.hint_id) })),
+    frames: bars.map((bar) => ({ bar_end: bar.bar_end, main_state: actions.some((item) => item.bar_end === bar.bar_end && item.kind === 'BUILD') ? 'BUILD' : 'HOLD', main_values: MAIN_VALUES[strategy], status: ready(), action_ids: actions.filter((item) => item.bar_end === bar.bar_end).map((item) => item.signal_id), hint_ids: hints.filter((item) => item.bar_end === bar.bar_end).map((item) => item.hint_id) })),
     actions,
     hints,
     diagnostics: options.noAction ? ['NO_MAIN_ACTION_IS_VALID'] : [], next_before: before || locateFrom ? null : 'chart-page-2',
@@ -191,11 +290,12 @@ function referenceValue(url, strategy, frequency, options) {
     open_count: 1, interrupted_count: 1, initial_count: 1,
   }
   const recent = productBar(frequency, 63)
-  const prior = productBar(frequency, 62)
-  const closed = trade(id(strategy, frequency, 'closed'), strategy, frequency, prior, recent, 'CLOSED', '5.1020', null, strategy === 'oscillation' ? id(strategy, frequency, 'build-old') : id(strategy, frequency, 'build'))
-  const open = trade(id(strategy, frequency, 'open'), strategy, frequency, recent, null, 'OPEN', null, '-1.2500', strategy === 'oscillation' ? id(strategy, frequency, 'build-same') : id(strategy, frequency, 'build'))
+  const closedEntry = productBar(frequency, 61)
+  const closedExit = productBar(frequency, 62)
+  const closed = trade(id(strategy, frequency, 'closed'), strategy, frequency, closedEntry, closedExit, 'CLOSED', '5.1020', null, id(strategy, frequency, 'build-closed'), REFERENCE_PRICES.entryClosed, REFERENCE_PRICES.exitClosed, null)
+  const open = trade(id(strategy, frequency, 'open'), strategy, frequency, recent, null, 'OPEN', null, '-1.2500', id(strategy, frequency, 'build-open'), REFERENCE_PRICES.entryOpen, null, REFERENCE_PRICES.markOpen)
   const interruptedBar = productBarAt(frequency, '2026-01-05T07:00:00.000Z', '2026-01-05', 90)
-  const interrupted = trade(id(strategy, frequency, 'interrupted'), strategy, frequency, interruptedBar, null, 'ROLLOVER_INTERRUPTED', null, '-10.0000', 'historic-build')
+  const interrupted = trade(id(strategy, frequency, 'interrupted'), strategy, frequency, interruptedBar, null, 'ROLLOVER_INTERRUPTED', null, '-10.0000', 'historic-build', REFERENCE_PRICES.entryInterrupted, null, REFERENCE_PRICES.markInterrupted)
   const initial = { ...closed, reference_trade_id: id(strategy, frequency, 'initial'), statistics_membership: 'initial_before_window', entry_signal_id: 'historic-build', entry_bar_end: '2023-11-20T07:00:00.000Z', entry_trading_day: '2023-11-20' }
   return {
     performance_since: '2026-01-01', performance_through: '2026-09-03', actual_available_through: '2026-09-03', reference_cutoff: url.searchParams.get('as_of') || NEWOW_AS_OF,
@@ -204,22 +304,20 @@ function referenceValue(url, strategy, frequency, options) {
   }
 }
 
-function trade(tradeId, strategy, frequency, entry, exit, status, result, mark = null, entrySignalId = null) {
-  const suffix = status === 'OPEN' ? 'open' : status === 'ROLLOVER_INTERRUPTED' ? 'interrupted' : 'build'
+function trade(tradeId, strategy, frequency, entry, exit, status, result, mark, entrySignalId, entryPrice, exitPrice, markPrice) {
   return {
     reference_trade_id: tradeId, product: 'rb', strategy_code: strategy, frequency, physical_contract: CONTRACT, segment_id: SEGMENT,
     formula_versions: formulas(strategy), reference_model_version: 'newow_marker_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
-    entry_signal_id: entrySignalId || id(strategy, frequency, suffix), entry_sequence: 0, entry_bar_end: entry.bar_end, entry_trading_day: entry.trading_day, entry_reference_price: strategy === 'oscillation' ? entry.low : strategy === 'main_rise' ? String(Number(entry.close) - 2) : String(Number(entry.close) - 2),
-    exit_signal_id: exit ? id(strategy, frequency, 'clear') : null, exit_bar_end: exit?.bar_end || null, exit_trading_day: exit?.trading_day || null, exit_reference_price: exit ? String(Number(exit.close) + (strategy === 'oscillation' ? 5 : -2)) : null,
-    status, holding_bars: 1, reference_return_pct: result, mark_bar_end: exit ? null : entry.bar_end, mark_reference_price: exit ? null : entry.close, mark_change_pct: mark,
+    entry_signal_id: entrySignalId, entry_sequence: 0, entry_bar_end: entry.bar_end, entry_trading_day: entry.trading_day, entry_reference_price: entryPrice,
+    exit_signal_id: exit ? (strategy === 'oscillation' ? id(strategy, frequency, 'clear-same') : id(strategy, frequency, 'clear')) : null, exit_bar_end: exit?.bar_end || null, exit_trading_day: exit?.trading_day || null, exit_reference_price: exit ? exitPrice : null,
+    status, holding_bars: 1, reference_return_pct: result, mark_bar_end: exit ? null : entry.bar_end, mark_reference_price: exit ? null : markPrice, mark_change_pct: mark,
     interrupted_at: status === 'ROLLOVER_INTERRUPTED' ? '2026-01-06T00:00:00.000Z' : null, interruption_reason: status === 'ROLLOVER_INTERRUPTED' ? 'OWNER_BOUNDARY' : null,
     statistics_membership: 'entry_in_window_v1', hint_ids: status === 'OPEN' ? [id(strategy, frequency, 'hint-d4'), 'hint-not-loaded'] : [],
   }
 }
 
-function action(signalId, kind, owner, strategy, sequence, related = null) {
-  const reference = strategy === 'oscillation' ? (kind === 'BUILD' ? owner.low : owner.high) : String(Number(owner.close) - 2)
-  return { signal_id: signalId, kind, bar_end: owner.bar_end, trading_day: owner.trading_day, reference_price: reference, physical_contract: CONTRACT, segment_id: SEGMENT, related_build_id: related, trade_eligibility: 'ELIGIBLE', sequence }
+function action(signalId, kind, owner, referencePrice, sequence, related = null) {
+  return { signal_id: signalId, kind, bar_end: owner.bar_end, trading_day: owner.trading_day, reference_price: referencePrice, physical_contract: CONTRACT, segment_id: SEGMENT, related_build_id: related, trade_eligibility: 'ELIGIBLE', sequence }
 }
 
 function auxiliaryValue(component, frequency) {
@@ -260,14 +358,14 @@ function comparatorValue(strategy, frequency, asOf) {
   return { result: { identity: { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas(strategy) }, status: 'ready', evidence_status: 'RESEARCH_EVIDENCE_ONLY', reason_code: null, as_of: asOf, formula_versions: ['newow_hhv_llv_window_optimizer_page_v1'], source_bars: [sourceBars], value: { segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, frequency, authoritative_start_trading_day: '2026-01-01', authoritative_end_trading_day: '2026-09-03', source_bars: sourceBars, as_of: asOf, in_sample: true, repainting: false, repaint_status: ready(), input_snapshot_status: ready(), status: ready(), results: windows, ranked_windows: [52, 30, 24, 20, 10] }], default_segment_id: SEGMENT, candidate_windows: [10, 20, 24, 30, 52], page_formula_version: 'newow_hhv_llv_window_optimizer_page_v1', futures_adapter_version: 'newow_futures_segment_comparator_v1', page_source_kernel_page_parity: true, futures_adapter_page_parity: false, in_sample: true, executable: false, input_mode: 'canonical', subfeatures: [] } }, executable: false, page_parity: false, synthetic_terminal_is_reference_exit: false, allowed_uses: ['in_sample_comparison'] }
 }
 
-function productBar(frequency, index) {
+function productBar(frequency, index, long = false) {
   if (frequency === '60m') {
     const base = Date.UTC(2026, 6, 1, 1)
     const time = new Date(base + index * 60 * 60 * 1000)
     return productBarAt(frequency, time.toISOString(), time.toISOString().slice(0, 10), 100 + index / 10)
   }
   const step = frequency === '1w' ? 7 : 1
-  const base = frequency === '1w' ? Date.UTC(2025, 0, 1, 7) : Date.UTC(2023, 11, 1, 7)
+  const base = frequency === '1w' ? Date.UTC(2025, 0, 1, 7) : long ? Date.UTC(2023, 11, 1, 7) : Date.UTC(2026, 5, 1, 7)
   const time = new Date(base + index * step * 24 * 60 * 60 * 1000)
   return productBarAt(frequency, time.toISOString(), time.toISOString().slice(0, 10), 100 + index / 10)
 }
@@ -289,3 +387,9 @@ function notRequested() { return { delivery: 'not_requested', status: null, valu
 
 export function productRequests(state, section) { return state.productRequests.filter((item) => item.section === section) }
 export function assertNoUnexpectedRequests(state) { if (state.unexpected.length) throw new Error(`unexpected requests: ${state.unexpected.join(', ')}`) }
+export async function releaseDeferred(state, key) {
+  const release = state.deferred.get(key)
+  if (release === undefined) throw new Error(`missing deferred request ${key}`)
+  state.deferred.delete(key)
+  await release()
+}

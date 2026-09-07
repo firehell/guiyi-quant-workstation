@@ -450,6 +450,23 @@ test('reopening a validated auxiliary component reuses the current generation', 
   state.dispose()
 })
 
+test('accepts an identity-valid auxiliary warming response without a partial value', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'shared-token' }))
+  await flush()
+
+  const loading = state.loadAuxiliary('main_force_control')
+  pending[1]!.resolve(normalizedStatus(pending[1]!.request, 'shared-token'))
+  await loading
+
+  assert.equal(state.sections.auxiliary.state.value, 'warming')
+  assert.equal(state.sections.auxiliary.data.value?.section, 'auxiliary')
+  assert.equal(state.sections.auxiliary.data.value?.value, null)
+  state.dispose()
+})
+
 test('A -> B -> A reuses each validated auxiliary component once', async () => {
   const calls: NewowProductRequest[] = []
   const state = useNewowProduct({

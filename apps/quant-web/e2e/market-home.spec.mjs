@@ -46,8 +46,17 @@ function mixedEvents() {
 }
 
 async function mockMarketHomeApi(page, requests, currentEvents = events(), currentOverview = overview(), currentRuntime = runtime()) {
-  await page.route(/\/api\/(?:v1\/market\/research\/home-overview|runtime\/health|alerts\/current-events)/, async (route) => {
+  requests.all = []
+  requests.unexpected = []
+  page.on('request', (request) => requests.all.push({ method: request.method(), url: new URL(request.url()) }))
+  await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
+    if (!url.pathname.startsWith('/api/')) return route.continue()
+    const allowed = new Set(['/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events'])
+    if (route.request().method() !== 'GET' || !allowed.has(url.pathname)) {
+      requests.unexpected.push(`${route.request().method()} ${url.pathname}`)
+      return route.abort('blockedbyclient')
+    }
     requests.push(url.pathname)
     if (url.pathname.endsWith('/market/research/home-overview')) { const value = typeof currentOverview === 'function' ? currentOverview() : currentOverview; return value === null ? route.abort() : route.fulfill({ json: value }) }
     if (url.pathname === '/api/runtime/health') return route.fulfill({ json: typeof currentRuntime === 'function' ? currentRuntime() : currentRuntime })
@@ -89,6 +98,11 @@ test('uses exactly three all-ready top-level reads and opens immutable HTDY actu
   await expect.poll(() => requests.filter((path) => path.endsWith('/home-overview')).length).toBe(1)
   expect(requests.filter((path) => path === '/api/runtime/health')).toHaveLength(1)
   expect(requests.filter((path) => path === '/api/alerts/current-events')).toHaveLength(1)
+  expect(requests.unexpected).toEqual([])
+  expect(requests.all.filter((request) => request.url.pathname.startsWith('/api/')).map((request) => request.url.pathname).sort()).toEqual([
+    '/api/alerts/current-events', '/api/runtime/health', '/api/v1/market/research/home-overview',
+  ])
+  expect(requests.all.filter((request) => request.url.pathname === '/api/v1/market/newow/strategy-detail')).toHaveLength(0)
 
   await page.getByText('AG · 火天大有 · 买观察 · 15m').click()
   await expect(page).toHaveURL(/symbol=ag.*series_kind=actual_dominant.*frequency=15m.*overlay=htdy/)
