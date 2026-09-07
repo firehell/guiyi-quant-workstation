@@ -238,6 +238,28 @@ pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/mark
 
 ## 工程一致性与静态检查
 
+Newow 白色详情 V2 的 MACD 只读适配、同身份图表和交互验收（内存 fixture，不连接生产）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/newow/test_product_macd.py \
+  services/quant-api/tests/newow/test_market_newow_product_api.py \
+  services/quant-api/tests/newow/test_product_readonly_compatibility.py \
+  services/quant-api/tests/newow/test_product_snapshot_cache.py
+pnpm -C apps/quant-web exec node --test \
+  tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts \
+  tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts \
+  tests/newowReferencePanel.test.ts tests/newowExplanationPanel.test.ts \
+  tests/newowDetailPresentation.test.ts
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
+  e2e/newow-product.spec.mjs e2e/newow-detail-light.spec.mjs \
+  e2e/market-home.spec.mjs e2e/market-detail.spec.mjs
+```
+
+新增测试入口随 V2 任务实现提供；文档提交阶段不能声称它们已经可运行或通过。
+浏览器原站观察只用于设计依据；受控截图与 API fixture 不证明真实工作站或原站完整 parity。
+
 苏冰当日缺口、恢复水位、只读诊断及日志：
 
 ```bash
