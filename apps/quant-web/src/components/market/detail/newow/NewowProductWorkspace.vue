@@ -61,9 +61,11 @@ const currentAuxiliaryResponse = computed(() => {
   return response?.value?.component === selectedAuxiliary.value && newowChartSnapshotKey(response) !== null
     && newowChartSnapshotKey(response) === newowChartSnapshotKey(chartResponse.value) ? response : null
 })
-const currentAuxiliaryLifecycle = computed(() => retainedPaneCompatible.value ? retainedPane.value!.lifecycle
+const currentAuxiliaryLifecycle = computed(() => loader.sections.auxiliary.state.value === 'input_conflict' ? 'input_conflict'
+  : retainedPaneCompatible.value ? retainedPane.value!.lifecycle
   : dialogKind.value === 'cup_handle' ? 'not_requested' : loader.sections.auxiliary.state.value)
-const currentAuxiliaryError = computed(() => retainedPaneCompatible.value ? retainedPane.value!.error
+const currentAuxiliaryError = computed(() => loader.sections.auxiliary.state.value === 'input_conflict' ? loader.sections.auxiliary.error.value
+  : retainedPaneCompatible.value ? retainedPane.value!.error
   : dialogKind.value === 'cup_handle' ? null : loader.sections.auxiliary.error.value)
 
 const summary = computed(() => projectNewowDetail(chartResponse.value, loader.sections.chart.state.value,
@@ -136,6 +138,10 @@ function resolveSignalFocus(signalId: string): void {
 watch(identityKey, async () => {
   selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null; selectedAuxiliary.value = 'macd'; detailsOpen.value = false; dialogKind.value = null; locateMessage.value = null
   await nextTick(); observeReference()
+}, { flush: 'sync' })
+// The single loader's invalidation also revokes display retention, even when the chart proof is unchanged.
+watch(loader.sections.auxiliary.state, state => {
+  if (state === 'input_conflict' || state === 'not_requested') retainedPane.value = null
 }, { flush: 'sync' })
 watch(() => newowChartSnapshotKey(chartResponse.value), (proof, previous) => {
   if (proof === previous) return

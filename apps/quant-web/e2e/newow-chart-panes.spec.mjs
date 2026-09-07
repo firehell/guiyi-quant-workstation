@@ -107,3 +107,44 @@ test('late cup response cannot restore a pane from a previous strategy identity'
   expect(productRequests(fixture, 'auxiliary').filter(item => item.strategy === 'oscillation')).toHaveLength(1)
   assertNoUnexpectedRequests(fixture)
 })
+
+for (const conflict of ['malformed', 'identity-conflict']) {
+  test(`cup invalidation ${conflict} clears retained pane until a fresh selected response is accepted`, async ({ page }) => {
+    let releaseRestore
+    const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, url, count }) => {
+      if (url.searchParams.get('component') === 'cup_handle') {
+        if (conflict === 'malformed') await route.fulfill({ json: { malformed: true } })
+        else await route.fulfill({ status: 409, json: { detail: { code: 'NEWOW_DATA_IDENTITY_INVALID' } } })
+        return 'handled'
+      }
+      if (url.searchParams.get('component') === 'macd' && count === 2) {
+        await new Promise(resolve => { releaseRestore = async () => {
+          await route.fulfill({ status: 503, json: { detail: { code: 'NEWOW_API_UNAVAILABLE' } } })
+          resolve()
+        } })
+        return 'handled'
+      }
+    } })
+    await page.goto(newowRoute())
+    const workspace = page.locator('[data-detail-workspace="newow"]')
+    const stage = page.getByTestId('newow-product-chart-stage')
+    await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
+    await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
+    await page.getByRole('button', { name: '杯柄说明', exact: true }).click()
+    await expect(workspace).toHaveAttribute('data-auxiliary-state', 'input_conflict')
+    await expect(workspace).toHaveAttribute('data-chart-state', 'ready')
+    await expect(stage).toHaveAttribute('data-auxiliary-component', '')
+    await expect(stage).toHaveAttribute('data-auxiliary-state', 'error')
+    await page.keyboard.press('Escape')
+    await expect.poll(() => typeof releaseRestore).toBe('function')
+    await expect(stage).toHaveAttribute('data-auxiliary-state', 'loading')
+    await expect(stage).toHaveAttribute('data-auxiliary-component', '')
+    // A late failed restore cannot resurrect the invalidated cache/presentation.
+    await releaseRestore()
+    await expect(stage).toHaveAttribute('data-auxiliary-state', 'error')
+    await expect(stage).toHaveAttribute('data-auxiliary-component', '')
+    expect(productRequests(fixture, 'chart')).toHaveLength(1)
+    expect(productRequests(fixture, 'auxiliary').map(item => item.url.searchParams.get('component'))).toEqual(['macd', 'cup_handle', 'macd'])
+    assertNoUnexpectedRequests(fixture)
+  })
+}
