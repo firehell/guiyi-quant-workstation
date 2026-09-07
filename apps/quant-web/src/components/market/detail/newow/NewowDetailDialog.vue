@@ -17,7 +17,7 @@ function unlockScroll() {
 function lockScroll() {
   let element = dialog.value?.parentElement ?? null
   while (element) {
-    if (/(auto|scroll)/.test(getComputedStyle(element).overflowY)) {
+    if (element === document.scrollingElement || /(auto|scroll)/.test(getComputedStyle(element).overflowY)) {
       scrollLocks.push({ element, overflow: element.style.overflow, top: element.scrollTop, left: element.scrollLeft })
       element.style.overflow = 'hidden'
     }

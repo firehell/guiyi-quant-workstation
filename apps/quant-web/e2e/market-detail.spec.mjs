@@ -68,16 +68,16 @@ test('missing view keeps the complete legacy detail page', async ({ page }) => {
   await expect(page.locator('[data-detail-ready]')).toHaveCount(0)
 })
 
-test('Newow route mounts its chart before an unused generic series can settle', async ({ page }) => {
+test('Newow route mounts its chart while its bounded independent daily quote is pending', async ({ page }) => {
   const requests = await mockMarketDetail(page)
   const typedRequests = []
-  let genericRequests = 0
+  const genericRequests = []
   await page.route('**/api/v1/market/newow/strategy-detail**', async (route) => {
     typedRequests.push(new URL(route.request().url()))
     await new Promise(() => {})
   })
-  await page.route('**/api/v1/market/bars/page**', async () => {
-    genericRequests += 1
+  await page.route('**/api/v1/market/bars/page**', async (route) => {
+    genericRequests.push(new URL(route.request().url()))
     await new Promise(() => {})
   })
 
@@ -88,7 +88,8 @@ test('Newow route mounts its chart before an unused generic series can settle', 
   await expect(page.getByText('正在读取 Newow 主图…', { exact: true })).toBeVisible()
   await expect.poll(() => typedRequests.length).toBe(1)
   expect(typedRequests.map((url) => url.searchParams.get('section'))).toEqual(['chart'])
-  expect(genericRequests).toBe(0)
+  expect(genericRequests).toHaveLength(1)
+  expect(Object.fromEntries(genericRequests[0].searchParams)).toEqual({ series_kind: 'actual_dominant', symbol: 'jm', frequency: '1d', limit: '2' })
   expect(requests.filter((url) => url.pathname.endsWith('/research/product'))).toEqual([])
 })
 

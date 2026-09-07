@@ -56,3 +56,14 @@ export function describeNewowState(value: string, historical = false): string {
 export function shortNewowTime(value: string | null | undefined): string {
   return value ? formatChartTimeInShanghai(value).slice(5) || '—' : '—'
 }
+
+/** Decoration of server-provided Decimal text only; no return calculation. */
+export function referencePercentDisplay(value: string | null | undefined): { text: string; direction: 'up' | 'down' | 'neutral' } {
+  if (value == null || !/^-?\d+(\.\d+)?$/.test(value)) return { text: '—', direction: 'neutral' }
+  const zero = /^-?0+(\.0+)?$/.test(value)
+  const direction = zero ? 'neutral' : value.startsWith('-') ? 'down' : 'up'
+  return { text: `${direction === 'up' ? '+' : ''}${value}%`, direction }
+}
+export function referenceInterruptionLabel(reason: string | null): string {
+  return reason === 'OWNER_BOUNDARY' ? '物理合约区段结束' : '中断原因待确认（见详情）'
+}

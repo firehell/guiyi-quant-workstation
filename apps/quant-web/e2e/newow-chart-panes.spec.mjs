@@ -18,6 +18,11 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of NEWOW_FREQUENCI
     expect(paneHeights[1]).toBeGreaterThanOrEqual(64)
     expect(paneHeights[2]).toBeGreaterThanOrEqual(112)
     await expect(stage.locator('.newow-product-chart-stage__volume-label')).toBeVisible()
+    await expect.poll(async () => {
+      const native = await nativeRows.nth(2).boundingBox()
+      const controls = await stage.locator('.newow-product-chart-stage__auxiliary-toolbar').boundingBox()
+      return Math.abs(native.y - controls.y)
+    }).toBeLessThanOrEqual(4)
     expect(productRequests(fixture, 'auxiliary').map(item => item.url.searchParams.get('component'))).toEqual(['macd'])
     for (const [label, component] of [['照妖镜', 'zhaoyao_mirror'], ['涨跌动能', 'up_down_energy'], ['主力控盘', 'main_force_control'], ['MACD', 'macd']]) {
       const button = page.getByRole('button', { name: label, exact: true })

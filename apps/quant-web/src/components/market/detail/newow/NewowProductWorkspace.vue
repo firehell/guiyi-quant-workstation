@@ -4,7 +4,7 @@ import { useNewowProduct } from '@/composables/useNewowProduct'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import type { NewowAuxiliaryComponent, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
 import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
-import { projectNewowDetail, newowDisplayLabel, shortNewowTime } from '@/utils/newowDetailPresentation'
+import { projectNewowDetail, newowDisplayLabel, shortNewowTime, referencePercentDisplay } from '@/utils/newowDetailPresentation'
 import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, newowChartSnapshotKey } from './newowProductChartPrimitives'
 import NewowProductChartStage from './NewowProductChartStage.vue'
 import NewowExplanationPanel from './NewowExplanationPanel.vue'
@@ -174,7 +174,7 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
       <div class="newow-summary__facts">
         <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口最近主动作' : '已读取窗口最近主动作' }} <button v-if="summary.latestAction" :title="summary.latestAction.bar_end" @click="selectSignal(summary.latestAction.signal_id)">{{ newowDisplayLabel(summary.latestAction.kind) }} · {{ summary.latestAction.reference_price }} · {{ shortNewowTime(summary.latestAction.bar_end) }}</button><template v-else>—</template></span>
         <span>当前参考交易 {{ summary.openReference ? '未清仓' : '—' }} <small v-if="!summary.openReference">{{ loader.sections.reference.state.value === 'not_requested' ? '未读取' : '当前窗口不可用' }}</small></span>
-        <span>参考浮动 {{ summary.openReference?.mark_change_pct ?? '—' }}{{ summary.openReference?.mark_change_pct != null ? '%' : '' }} · {{ shortNewowTime(summary.openReference?.mark_bar_end) }}</span>
+        <span>参考浮动 <span class="newow-return-badge" :data-direction="referencePercentDisplay(summary.openReference?.mark_change_pct).direction">{{ referencePercentDisplay(summary.openReference?.mark_change_pct).text }}</span> · {{ shortNewowTime(summary.openReference?.mark_bar_end) }}</span>
         <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</span>
       </div>
       <div v-if="detailsOpen" id="newow-details">

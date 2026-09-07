@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import kernelMacdFixture from '../e2e/fixtures/newow-rich-macd.json' with { type: 'json' }
 
 import {
   getNewowProductSection,
@@ -467,6 +468,7 @@ test('accepts MACD as a distinct read-only branch preserving zero and per-point 
   assert.equal(result.value.component, 'macd')
   if (result.value.component !== 'macd') throw new Error('MACD expected')
   assert.equal(result.value.display_adapter_version, 'guiyi_newow_macd_display_v1')
+  assert.equal(result.value.parameters_hash, '5dd0ebd25122eea6')
   assert.equal(result.value.segments[0]!.data!.dif[0]!.value, 0)
   assert.deepEqual(result.value.segments[0]!.data!.dea[0], {
     bar_end: '2026-08-14T07:00:00Z', value: null, ready: false, valid: true, reason: 'warming_up',
@@ -485,6 +487,8 @@ test('rejects MACD malformed point states, times, identities, parameters and per
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments.push(wire.auxiliary.value.segments[0]!) },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.parameters.fast = 10 },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.parameters_hash = 'bad' },
+    (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.parameters_hash = 'a'.repeat(64) },
+    (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.parameters_hash = '5DD0EBD25122EEA6' },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.formal_signal_eligible = true },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.allowed_uses = ['alert'] },
   ]
@@ -502,7 +506,7 @@ function macdWire() {
     ...base.auxiliary.value, component: 'macd' as const, formula_version: 'v1-draft',
     display_adapter_version: 'guiyi_newow_macd_display_v1',
     parameters: { fast: 12, slow: 26, signal: 9, ema_seed_policy: 'sma_window', histogram_scale: 2, round_digits: 6 },
-    parameters_hash: 'a'.repeat(64), page_parity: false, allowed_uses: ['research_display'],
+    parameters_hash: kernelMacdFixture['trend:1d'].parameters_hash, page_parity: false, allowed_uses: ['research_display'],
     segments: [{ ...base.auxiliary.value.segments[0]!, data: { dif: [point(true)], dea: [point(false)], histogram: [point(false)] } }],
   } } }
 }

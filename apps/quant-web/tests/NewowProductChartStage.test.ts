@@ -117,6 +117,7 @@ test('creates three native panes with volume zero/color and releases resources',
   const records: Array<{ definition: { type: string }; options: Record<string, unknown>; pane: number; data: Array<{ value: number; color: string }> }> = []
   let removed = false
   let disconnected = false
+  const resizeCalls: unknown[][] = []
   const panes = [pane(), pane(), pane()]
   let paneCount = 1
   const fakeChart = {
@@ -126,7 +127,7 @@ test('creates three native panes with volume zero/color and releases resources',
       return { setData(data: typeof record.data) { record.data = data }, attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {} }
     }, removeSeries() {},
     timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
-    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() { removed = true },
+    subscribeClick() {}, unsubscribeClick() {}, resize(...args: unknown[]) { resizeCalls.push(args) }, remove() { removed = true },
   }
   const response = chartResponse()
   response.value!.bars[0]!.volume = 0
@@ -140,6 +141,7 @@ test('creates three native panes with volume zero/color and releases resources',
   assert.equal(volume.data[0]!.color, '#FF403A')
   assert.deepEqual(volume.data.map(point => [point.value, point.color]), [[0, '#FF403A'], [9, '#22B95D']])
   assert.equal(records.filter(record => record.pane === 2).length > 0, true, 'keep empty auxiliary pane without manufacturing an indicator zero')
+  assert.equal(resizeCalls.at(-1)?.[2], true, 'pane labels require completed native layout before reading pane heights')
   app.unmount()
   assert.equal(removed, true); assert.equal(disconnected, true)
 })

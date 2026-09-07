@@ -118,7 +118,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <NLayout :has-sider="!isFullscreenMarketRoute" class="main-layout">
+  <NLayout :has-sider="!isFullscreenMarketRoute" class="main-layout" :class="{ 'main-layout--newow': route.name === 'market-chart' && route.query.view === 'newow' }">
     <NLayoutSider
       v-if="!isFullscreenMarketRoute"
       bordered
@@ -368,6 +368,11 @@ onUnmounted(() => {
     display: none;
   }
 }
+/* Newow uses document scrolling; the other workspaces retain their own scroller. */
+.main-layout.main-layout--newow,
+.main-layout--newow :deep(.n-layout),
+.main-layout--newow :deep(.n-layout-scroll-container) { height:auto; min-height:100vh; overflow:visible; }
+.main-layout--newow :deep(.content--newow-detail) { height:auto; overflow:visible; }
 /* The white Home canvas must not change detail or other route themes. */
 .content.content--newow-detail { padding: 0; background: #fff; }
 .content.content--market-home {

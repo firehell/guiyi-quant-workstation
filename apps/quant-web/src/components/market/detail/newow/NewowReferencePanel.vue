@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { shortNewowTime, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 
 import type {
   NewowProductSectionResponse,
@@ -96,13 +97,12 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
           <div><dt>胜率</dt><dd>{{ model.summary.winRateText }}</dd></div>
           <div><dt>平均单笔</dt><dd>{{ model.summary.meanText }}</dd></div>
           <div><dt>收益合计</dt><dd>{{ model.summary.sumText }} <small>{{ model.summary.sumUnit }}</small></dd></div>
-          <div><dt>OPEN</dt><dd>{{ model.counts.open }}</dd></div>
+          <div><dt>未清仓</dt><dd>{{ model.counts.open }}</dd></div>
           <div><dt>换月中断</dt><dd>{{ model.counts.interrupted }}</dd></div>
           <div><dt>期初已有</dt><dd>{{ model.counts.initial }}</dd></div>
         </dl>
         <p v-if="model.summary.closedCount === 0">暂无已完成参考交易；统计指标不是 0%。</p>
-        <p>Performance window {{ model.performanceWindow.since }} → {{ model.performanceWindow.through }}</p>
-        <p>实际可用至 {{ model.actualAvailableThrough }} · reference cutoff {{ model.performanceWindow.cutoff }}</p>
+        <details><summary>统计时间与来源</summary><p>Performance window {{ model.performanceWindow.since }} → {{ model.performanceWindow.through }}</p><p>实际可用至 {{ model.actualAvailableThrough }} · reference cutoff {{ model.performanceWindow.cutoff }}</p></details>
       </section>
 
       <div class="newow-reference__tools">
@@ -121,15 +121,15 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 
       <div class="newow-reference__cards">
         <article v-for="row in visibleModel?.rows ?? []" :key="row.id" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id">
-          <header><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : '换月中断' }} · {{ row.statusText }}</strong><span>{{ row.trade.physical_contract }} · {{ row.trade.entry_bar_end }} → {{ row.trade.exit_bar_end ?? (row.category === 'open' ? '至估值日' : row.trade.interrupted_at ?? '—') }}</span><span v-if="row.initial">期初已有</span></header>
+          <header :title="`${row.trade.entry_bar_end} → ${row.trade.exit_bar_end ?? row.trade.mark_bar_end ?? row.trade.interrupted_at}`"><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : '换月中断' }}</strong><span>{{ row.trade.physical_contract }} · {{ shortNewowTime(row.trade.entry_bar_end) }} → {{ row.trade.exit_bar_end ? shortNewowTime(row.trade.exit_bar_end) : row.category === 'open' ? '至估值日' : shortNewowTime(row.trade.interrupted_at) }}</span><span v-if="row.initial">期初已有</span></header>
           <div class="newow-reference__card-body">
-            <p>▲ 参考建仓 {{ row.trade.entry_reference_price }} · {{ row.trade.entry_bar_end }} <template v-if="row.category === 'closed'">　▼ 参考清仓 {{ row.trade.exit_reference_price }} · {{ row.trade.exit_bar_end }}</template><template v-else-if="row.category === 'interrupted'">　换月中断 · {{ row.trade.interruption_reason }}</template></p>
-            <p class="newow-reference__return">{{ row.category === 'open' ? '参考浮动' : row.category === 'closed' ? '已清仓收益' : '中断浮动' }} {{ row.returnText }}<small v-if="row.category !== 'closed'"> · 估值 {{ row.valuationText }}</small></p>
+            <p>▲ 参考建仓 {{ row.trade.entry_reference_price }} · {{ shortNewowTime(row.trade.entry_bar_end) }} <template v-if="row.category === 'closed'">　▼ 参考清仓 {{ row.trade.exit_reference_price }} · {{ shortNewowTime(row.trade.exit_bar_end) }}</template><template v-else-if="row.category === 'interrupted'">　换月中断 · {{ referenceInterruptionLabel(row.trade.interruption_reason) }}</template></p>
+            <p class="newow-reference__return">{{ row.category === 'open' ? '参考浮动' : row.category === 'closed' ? '已清仓收益' : '中断浮动' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</span><small v-if="row.category !== 'closed'" :title="row.valuationText"> · 估值 {{ shortNewowTime(row.trade.mark_bar_end) }}</small></p>
             <button type="button" :aria-label="`定位参考记录 ${row.id} 的建仓信号`" @click="emit('locate', row.trade)">定位</button>
             <button type="button" :aria-label="`展开参考记录 ${row.id}`" :aria-expanded="expanded.includes(row.id)" @click="toggle(row.id)">详情</button>
           </div>
           <div v-if="expanded.includes(row.id)" class="newow-reference__details">
-            <p>{{ row.trade.strategy_code }} / {{ row.trade.frequency }} · {{ row.trade.holding_bars }} Bars</p><p>{{ row.id }} · {{ row.trade.segment_id }}</p>
+            <p>{{ row.returnText }} · 估值 {{ row.valuationText }} · 中断原始原因 {{ row.trade.interruption_reason ?? '—' }}</p><p>{{ row.statusText }} · 建仓 {{ row.trade.entry_bar_end }} · 清仓 {{ row.trade.exit_bar_end ?? '—' }}</p><p>{{ row.trade.strategy_code }} / {{ row.trade.frequency }} · {{ row.trade.holding_bars }} Bars</p><p>{{ row.id }} · {{ row.trade.segment_id }}</p>
             <p>建仓 ID {{ row.trade.entry_signal_id }} · 清仓 ID {{ row.trade.exit_signal_id ?? '—' }}</p>
             <p>公式 {{ row.trade.formula_versions.join(' / ') }} · {{ row.trade.reference_model_version }} · {{ row.trade.futures_adaptation_version }}</p>
             <p v-if="row.hints.length === 0">该记录没有服务端 Hint ID。</p>
@@ -168,5 +168,5 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference__return { font-variant-numeric:tabular-nums; }
 .newow-reference__details { margin-top:12px; color:var(--gy-text-secondary); overflow-wrap:anywhere; }
 .newow-reference__state { color: var(--gy-status-warning); }
-@media (max-width: 720px) { .newow-reference__header { flex-direction: column; } }
+@media (max-width: 720px) { .newow-reference__header { flex-direction: column; } .newow-reference__card-body > p:first-child { flex-basis:100%; } }
 </style>

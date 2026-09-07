@@ -467,6 +467,14 @@ function normalizeAuxiliary(payload: unknown, meta: NewowProductMeta, expectedCo
   }
 }
 
+// Indicator kernel parameters_hash is the first 16 lowercase hex characters of
+// its canonical parameter digest; it is distinct from snapshot SHA-256 fields.
+function macdParametersHash(value: unknown, field: string): string {
+  const result = text(value, field)
+  if (!/^[0-9a-f]{16}$/.test(result)) throw new Error(`${field} must match the kernel parameter hash format`)
+  return result
+}
+
 function normalizeMacd(payload: unknown, meta: NewowProductMeta): NewowMacdValue {
   const field = 'auxiliary.value'
   const value = exactRecord(payload, field, ['component', 'formula_version', 'display_adapter_version', 'parameters', 'parameters_hash', 'segments', 'repainting', 'formal_signal_eligible', 'page_parity', 'source_category', 'allowed_uses'])
@@ -512,7 +520,7 @@ function normalizeMacd(payload: unknown, meta: NewowProductMeta): NewowMacdValue
     return { physical_contract: physical, segment_id: segmentId, bar_ends: ends, status: normalizeStatus(segment.status, `${path}.status`), data: { dif: points('dif'), dea: points('dea'), histogram: points('histogram') } }
   })
   return { component: 'macd', formula_version: text(value.formula_version, `${field}.formula_version`), display_adapter_version: 'guiyi_newow_macd_display_v1', parameters: expectedParameters,
-    parameters_hash: sha256(value.parameters_hash, `${field}.parameters_hash`), segments, repainting: false, formal_signal_eligible: false, page_parity: false, source_category: 'guiyi_product_auxiliary_adapter',
+    parameters_hash: macdParametersHash(value.parameters_hash, `${field}.parameters_hash`), segments, repainting: false, formal_signal_eligible: false, page_parity: false, source_category: 'guiyi_product_auxiliary_adapter',
     allowed_uses: exactStringArray(value.allowed_uses, ['research_display'] as const, `${field}.allowed_uses`) }
 }
 

@@ -64,3 +64,14 @@ test('historical chart state description never claims to describe current snapsh
   assert.match(description, /历史.*持有/)
   assert.doesNotMatch(description, /当前/)
 })
+
+test('reference percentage display preserves server decimals and never treats missing as zero', async () => {
+  const { referencePercentDisplay, referenceInterruptionLabel } = await import('../src/utils/newowDetailPresentation.ts')
+  assert.deepEqual(referencePercentDisplay('5.1020'), { text: '+5.1020%', direction: 'up' })
+  assert.deepEqual(referencePercentDisplay('-1.2500'), { text: '-1.2500%', direction: 'down' })
+  assert.deepEqual(referencePercentDisplay('-0.0000'), { text: '-0.0000%', direction: 'neutral' })
+  assert.deepEqual(referencePercentDisplay(null), { text: '—', direction: 'neutral' })
+  assert.deepEqual(referencePercentDisplay('unknown'), { text: '—', direction: 'neutral' })
+  assert.equal(referenceInterruptionLabel('OWNER_BOUNDARY'), '物理合约区段结束')
+  assert.equal(referenceInterruptionLabel('UNVERIFIED'), '中断原因待确认（见详情）')
+})
