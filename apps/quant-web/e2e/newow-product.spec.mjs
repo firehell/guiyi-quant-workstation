@@ -82,7 +82,7 @@ test('same-Bar CLEAR then BUILD actions remain separately locatable', async ({ p
   await page.goto(newowRoute('oscillation', '1d'))
   const chart = page.getByTestId('newow-product-chart-stage')
   await expect(chart).toHaveAttribute('data-action-ids', /oscillation-1d-clear-same,oscillation-1d-build-open/)
-  await clickLastBarMarker(page, 'oscillation-1d-clear-same', [0.26, 0.28, 0.29, 0.3, 0.31, 0.32])
+  await clickLastBarMarker(page, 'oscillation-1d-clear-same', [0.2, 0.22, 0.24, 0.26, 0.28, 0.3])
   await expect(chart).toHaveAttribute('data-selected-signal-id', 'oscillation-1d-clear-same')
   await clickLastBarMarker(page, 'oscillation-1d-build-open', [0.68, 0.72, 0.76, 0.8, 0.84, 0.88])
   await expect(chart).toHaveAttribute('data-selected-signal-id', 'oscillation-1d-build-open')
@@ -109,9 +109,36 @@ test('fixture rejects extra parameters, wrong fixed tokens and inconsistent Refe
   const invalid = structuredClone(buildNewowFixtureEnvelopeForTest('reference', 'trend', '1d'))
   invalid.reference.value.items[0].entry_reference_price = '999.0000'
   expect(() => validateNewowFixtureEnvelopeForTest(invalid, 'reference', 'trend', '1d')).toThrow(/ReferenceTrade\/Action relation drift/)
-  for (const locateFrom of ['2025-12-15', '2026-01-03', '2026-01-05']) {
-    expect(() => buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, locateFrom)).not.toThrow()
+  for (const locateFrom of ['2025-12-15', '2025-12-31', '2026-01-05', '2026-01-06', '2026-09-03']) {
+    const located = buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, locateFrom)
+    expect(located.chart.value.chart_from).toBe(locateFrom)
+    expect(located.chart.value.chart_through).toBe(locateFrom)
   }
+})
+
+test('fixture validator rejects main-line semantic and OHLC contradictions', () => {
+  const semantic = structuredClone(buildNewowFixtureEnvelopeForTest('chart', 'main_rise', '1d'))
+  const action = semantic.chart.value.actions[0]
+  const frame = semantic.chart.value.frames.find((item) => item.bar_end === action.bar_end)
+  frame.main_values.ma45 = '999.0000'
+  expect(() => validateNewowFixtureEnvelopeForTest(semantic, 'chart', 'main_rise', '1d')).toThrow(/main-line semantic/)
+
+  const ohlc = structuredClone(buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d'))
+  ohlc.chart.value.bars[0].low = '999.0000'
+  expect(() => validateNewowFixtureEnvelopeForTest(ohlc, 'chart', 'trend', '1d')).toThrow(/OHLC/)
+})
+
+test('fixture validator rejects a Reference mark that differs from its completed Bar Close', () => {
+  const reference = buildNewowFixtureEnvelopeForTest('reference', 'trend', '1d')
+  const markChart = structuredClone(buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, '2026-09-03'))
+  markChart.chart.value.bars[0].close = '999.0000'
+  expect(() => validateNewowFixtureEnvelopeForTest(reference, 'reference', 'trend', '1d', false, null, { charts: [markChart] })).toThrow(/mark\/Close/)
+})
+
+test('fixture validator rejects Bar ownership outside its physical segment window', () => {
+  const chart = structuredClone(buildNewowFixtureEnvelopeForTest('chart', 'trend', '1w'))
+  chart.chart.value.bars[0].segment_id = 'rb:RB9999:2099-01-01T00:00:00+00:00'
+  expect(() => validateNewowFixtureEnvelopeForTest(chart, 'chart', 'trend', '1w')).toThrow(/segment window/)
 })
 
 test('strategy and frequency controls clear prior selection and request only the new identity', async ({ page }) => {
@@ -426,9 +453,9 @@ test.describe('mobile', () => {
 
 test('records raw cold, warm, reuse, rebuild and long-history timings without fixed sleeps', async ({ page }, testInfo) => {
   const samples = []
-  const fixture = await installNewowProductFixtures(page, { longHistory: true })
+  const fixture = await installNewowProductFixtures(page, { longHistory: 'trend:60m' })
   const start = performance.now()
-  await page.goto(newowRoute())
+  await page.goto(newowRoute('trend', '60m'))
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   samples.push({ metric: 'cold_chart_visible_ms', value: performance.now() - start })
   samples.push({ metric: 'cold_chart_request_dispatch_ms', value: productRequests(fixture, 'chart')[0].startedAt - start })
@@ -470,8 +497,8 @@ test('records raw cold, warm, reuse, rebuild and long-history timings without fi
   samples.push({ metric: 'strategy_switch_visible_ms', value: performance.now() - strategySwitch })
   samples.push({ metric: 'strategy_switch_request_dispatch_ms', value: productRequests(fixture, 'chart').at(-1).startedAt - strategySwitch })
   const frequencySwitch = performance.now()
-  await page.getByRole('button', { name: '60m', exact: true }).click()
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-frequency', '60m')
+  await page.getByRole('button', { name: '日K', exact: true }).click()
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-frequency', '1d')
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   samples.push({ metric: 'frequency_switch_visible_ms', value: performance.now() - frequencySwitch })
   samples.push({ metric: 'frequency_switch_request_dispatch_ms', value: productRequests(fixture, 'chart').at(-1).startedAt - frequencySwitch })
