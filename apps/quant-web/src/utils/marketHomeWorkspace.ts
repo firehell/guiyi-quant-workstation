@@ -65,7 +65,8 @@ function compareRows(left: MarketHomeRow, right: MarketHomeRow, sort: Exclude<Ma
     const presence = Number(Boolean(right.event)) - Number(Boolean(left.event))
     if (presence) return presence
     if (!left.event || !right.event) return left.symbol.localeCompare(right.symbol)
-    return latestEventFirst(left, right) || left.symbol.localeCompare(right.symbol)
+    const eventTimeOrder = latestEventFirst(left, right)
+    return (direction === 'desc' ? eventTimeOrder : -eventTimeOrder) || left.symbol.localeCompare(right.symbol)
   }
 
   const values: Record<Exclude<MarketHomeSort, 'default' | 'event'>, (row: MarketHomeRow) => number | null> = {
@@ -98,6 +99,5 @@ function compareNumericRows(
 function latestEventFirst(left: MarketHomeRow, right: MarketHomeRow): number {
   const detected = Date.parse(right.event!.detected_at) - Date.parse(left.event!.detected_at)
   if (detected) return detected
-  const barEnd = Date.parse(right.event!.bar_end) - Date.parse(left.event!.bar_end)
-  return barEnd || right.event!.id - left.event!.id
+  return Date.parse(right.event!.bar_end) - Date.parse(left.event!.bar_end)
 }

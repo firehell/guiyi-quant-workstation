@@ -20,14 +20,20 @@ test('filters and sorts Market Home rows locally without changing resource input
   assert.deepEqual(filterAndSortMarketHomeRows(rows, { query: '', sector: '', filter: 'with-event', sort: 'default' }).map((row) => row.symbol), ['jm'])
 })
 
-test('orders Event rows by the latest immutable detection time before symbol', () => {
+test('orders Event rows by direction while keeping missing Events last and time ties stable by symbol', () => {
   const eventRows = [
     { ...rows[0]!, symbol: 'ag', event: { id: 1, detected_at: '2026-09-02T01:00:00Z', bar_end: '2026-09-02T00:59:00Z' } },
     { ...rows[1]!, symbol: 'jm', event: { id: 2, detected_at: '2026-09-02T02:00:00Z', bar_end: '2026-09-02T01:59:00Z' } },
+    { ...rows[0]!, symbol: 'cu', event: { id: 99, detected_at: '2026-09-02T01:00:00Z', bar_end: '2026-09-02T00:59:00Z' } },
     { ...rows[0]!, symbol: 'au', event: null },
   ] as unknown as MarketHomeRow[]
 
-  assert.deepEqual(filterAndSortMarketHomeRows(eventRows, { query: '', sector: '', filter: 'all', sort: 'event' }).map((row) => row.symbol), ['jm', 'ag', 'au'])
+  assert.deepEqual(filterAndSortMarketHomeRows(eventRows, {
+    query: '', sector: '', filter: 'all', sort: 'event', sortDirection: 'desc',
+  }).map((row) => row.symbol), ['jm', 'ag', 'cu', 'au'])
+  assert.deepEqual(filterAndSortMarketHomeRows(eventRows, {
+    query: '', sector: '', filter: 'all', sort: 'event', sortDirection: 'asc',
+  }).map((row) => row.symbol), ['ag', 'cu', 'jm', 'au'])
 })
 
 test('cycles a sortable column through descending, ascending, and default order', () => {
