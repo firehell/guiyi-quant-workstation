@@ -348,6 +348,36 @@ test('a cursor 409 aborts a pending old-token explanation before its late respon
   state.dispose()
 })
 
+test('a rejected reference token aborts a tokenless chart page registered from its retained generation', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChartPage(pending[0]!.request, '2026-08-14', 'old-chart-cursor'))
+  await flush()
+
+  const reference = state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  assert.equal(pending[1]!.request.snapshotToken, 'snapshot-a')
+  const chartPage = state.loadNextChartPage()
+  assert.equal(pending[2]!.request.section === 'chart' && pending[2]!.request.chartBefore, 'old-chart-cursor')
+  assert.equal(pending[2]!.request.snapshotToken, undefined)
+  assert.equal(pending[2]!.signal.aborted, false)
+
+  pending[1]!.reject(new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'))
+  await flush()
+  assert.equal(pending.length, 4)
+  assert.equal(pending[2]!.signal.aborted, true)
+  assert.equal(pending[3]!.request.section, 'reference')
+  assert.equal(pending[3]!.request.snapshotToken, undefined)
+
+  pending[3]!.resolve(normalizedReference(pending[3]!.request, { token: 'new-token', nextBefore: null }))
+  await reference
+  pending[2]!.resolve(normalizedChartPage(pending[2]!.request, '2026-08-13', null))
+  await chartPage
+  assert.equal(state.sections.chart.data.value, null)
+  assert.equal(state.sections.reference.data.value?.meta.snapshot_token, 'new-token')
+  state.dispose()
+})
+
 test('merges an older chart cursor page atomically without changing the fixed reference window', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })

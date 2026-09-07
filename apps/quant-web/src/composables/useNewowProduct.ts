@@ -178,7 +178,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     let rebuilt = false
     try {
       while (true) {
-        inFlightSnapshotTokens.set(section, request.snapshotToken)
+        inFlightSnapshotTokens.set(section, request.snapshotToken ?? resource.data.value?.meta.snapshot_token ?? undefined)
         try {
           const response = await fetchSection(request, controller.signal)
           if (!isCurrent(section, requestGeneration, sectionGeneration, controller)) return
