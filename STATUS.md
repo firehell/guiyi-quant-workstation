@@ -1,6 +1,6 @@
 # 当前状态
 
-更新时间：2026-09-07
+更新时间：2026-09-08
 
 本文件只记录当前 release、production Runtime、Scope、自然 evidence 与尚未完成的 Gate。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`；已完成版本的实现和验证过程从 Git tag、GitHub Release、PR 与 Git history 追溯。
 
@@ -10,13 +10,13 @@
 |---|---|
 | 正式 Release | `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6` 是最新正式 release；发布 tree 为 `d33efc91071995f2f04860b8916ea56f660eb903`，annotated tag object 为 `e90ad8ac67ceb5b02576f02998697cd0d288eeba`，GitHub Release 已于 2026-09-05 发布。 |
 | `main` | `main@36fef03923a168145e6fd2eab023dc1d2b411ad6` 与 `v1.9.15` peeled commit 一致，对应 tree `d33efc91071995f2f04860b8916ea56f660eb903`。 |
-| Runtime | 五项 launchd 已于 `2026-09-05T09:14:07Z` promotion 到 clean、detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.15-r1@36fef03923a168145e6fd2eab023dc1d2b411ad6`，installed 与 loaded root/commit 均一致。显式及安装器内置 preflight 均以 `non_trading_interval` 通过；fresh 只读 readback 中 API/Web/Live/Alert 为 `running`，After-market 已加载、按每日 18:05 调度且 `not running`，API/Web HTTP 为 200，Runtime health 为 `ok / readonly=true`，本地隧道 health 通过。状态为 `RUNTIME_PROMOTED_V1_9_15 / NATURAL_EVIDENCE_PENDING`；该点时进程健康不构成 `RUNTIME_READY`，也不改写 2026-09-03 的自然盘后失败。 |
+| Runtime | 五项 launchd 已于 `2026-09-05T09:14:07Z` promotion 到 clean、detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.9.15-r1@36fef03923a168145e6fd2eab023dc1d2b411ad6`，installed 与 loaded root/commit 均一致。显式及安装器内置 preflight 均以 `non_trading_interval` 通过。2026-09-08 最终只读核对中五项服务仍指向该 exact root/commit，API/Web 为 200，Runtime health 为 `ok / readonly=true`，本地隧道通过；同一 exact Runtime 已完成自然 SuBing 15m Event、one-shot PushPlus provider acceptance 及 Owner 微信收件确认，因此 v1.9.15 发布验收状态为 `RUNTIME_READY / SUBING_NATURAL_CLOSURE_COMPLETE`。该状态不改写 2026-09-03 的自然盘后失败，也不代表 60 品种当前输入全部完整。 |
 | Runtime root 核对 | 2026-09-07 只读核对：Git worktree 与文件系统均已不存在旧 `guiyi-quant-runtime-v1.9.14-r1`，不能再把它列为可直接切换的保留副本；当前正式运行副本仍为上述 `v1.9.15-r1`。本轮未删除或切换 Runtime。 |
 | Database 与 Canonical | 最近 production 只读 readback 为 Alembic `20260903_0045`；RQData session anchor repair 已发布并保留 D1/W1 原始事实。此前全库 Canonical 快照为 8,801 个 Dataset、42,575 个分区、44,629,532 行；本次 PF2611 warm-up 的最新事实见下行。 |
 | PF2611 physical warm-up | 2026-09-05 从 clean detached `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6`，以 `symbol=pf`、`contract=PF2611`、`through=2026-09-04`、plan SHA-256 `7a51886988ff0508f6b3295d40665cef11ff54bc7b0b63ab79aee4fec5544f19` 完成唯一一次真实 RQData/Canonical apply：76 个目标全部 applied，blocked/failed 均为 0。只读 audit finding 为 0；MarketDataService exact physical 15m 读回 4,491 根，交易日窗口为 `2025-11-17..2026-09-04`，七周期最终共 77 个分区、89,280 行（含原已完整且未改写的 1w 分区 1 行）。Rule/Scope/Event、非目标 Catalog、pf 其他合约与 continuous 文件、MainContractMap 及五项 Runtime 的前后基线一致；状态为 `PF2611_WARMUP_APPLIED_AND_VERIFIED`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | `2026-09-07T06:49:43Z` 只读审计：HTDY 仅 `jm × 5m/15m`，其余59品种Scope为空；SuBing为全部60品种 × 15m，两Rule均enabled。HTDY“焦煤继续15m和5m，其他所有品种统一60m”共61对仅为目标，尚未应用。 |
-| 当前 Alert health | 同轮只读审计中aggregate显示`ok`，但SuBing `error_type=evaluation_failed`，`last_failure=2026-09-07T06:45:40.440418Z`、`last_eval=2026-09-07T03:30:00Z`、`last_event=null`。聚合ok不能证明Rule健康或提醒链路修好。 |
+| 当前 Alert health | `2026-09-08T00:02:58 Asia/Shanghai` 只读核对：Alert aggregate 为 `ok`、heartbeat 持续前进、notification 为 `provider_accepted`；但 SuBing 最新 `last_eval=2026-09-08T00:00:00 Asia/Shanghai`、`last_failure=2026-09-08T00:00:08 Asia/Shanghai`、`error_type=evaluation_failed`。已完成的自然 Event/收件闭环不撤销，但 aggregate `ok` 仍不能冒充 60 品种全部 Rule 输入健康。 |
 | 当前 After-market | 2026-09-07 的自然 18:05 任务于 `19:30:30 Asia/Shanghai` 完成，`status=passed`、`attempts=1`、`last_successful_trading_day=2026-09-07`、`last_failure=null`；任务已退出。该成功关闭此前盘后 `missed`，但不替代苏冰历史 warm-up 或自然 Alert evidence。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
@@ -38,17 +38,18 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 - PR #352 已将 P6 Review 修复与 facts-only truth closure 集成到 `develop@c64b42f10b48ec8eace2390abd3254e0dd573d22` / tree `60e606cc92b33160e1fee67a35a2c60917844c89`。同 tree 的最终候选 `efcd12f1794c80ae7f6cad638d98b0acc1693380` 在全部 Review finding 关闭后完成唯一一次最终 Task 22 矩阵：backend `2274 passed, 4 skipped, 15 deselected`、engineering `74 passed`、Web `431 passed, 1 skipped`、Playwright `109 passed`，Ruff、Mypy、Alert Rule ownership、build/topology、OpenSpec `9/9`、secret 与 diff/status checks 均通过，失败与重试均为 0。初始完整 Review 按轴记录为 Standards 3 个 P2、Spec 1 个独立 P2，共 4 个唯一 finding：generation invalidation、auxiliary FIFO/LRU、tracked docs truth、Reference DOM/PNG；`74e58587b` 关闭三个 code/visual finding，`84868658e` 与 `efcd12f17` 关闭 docs truth，相应两轴 scoped re-review 均为 PASS、无新 P1/P2/P3，累计 Review ledger clean。P6 状态为 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`，不是完整 page parity、release 或 Runtime 能力。
 - 旧任务文档迁移不升级验收：杯柄D1 clean-room并非原页面精确公式；既有18个D1/60m OOS结果与9个W1执行事实不足仍属于研究证据，产品测试不能升级为新的`OOS_PASSED`。
 - 页面诊断 token、六组合评分/排序、AI copy、目标/吸筹的权威昨收与期货 owner parity、比较器 browser-final/tie golden 等 P3 原件缺口继续为 `EVIDENCE_REQUIRED`。route fixture 不能替代这些原件；`REAL_WORKSTATION_MDS_PERFORMANCE = NOT_RUN / PENDING`。
-- `74e58587b` 的 Review 修复已随 PR #352 集成 develop，但尚未发布、未进入 Runtime；它不改变本文件中的 `v1.9.15` Release、现役 Runtime、SuBing Event=0、`NATURAL_EVIDENCE_PENDING` 或 G12 人工收件 Gate，也未授权 main/tag/release、Runtime promotion 或任何生产写入。
+- `74e58587b` 的 Review 修复已随 PR #352 集成 develop，但尚未发布、未进入 Runtime；它不改变本文件中的 `v1.9.15` Release、现役 Runtime 或已完成的 SuBing 自然收件闭环，也不会将 10/60 历史输入完整度升级为全量健康。它未授权 main/tag/release、Runtime promotion 或任何生产写入。
 
 ## 自然 evidence
 
-- `2026-09-07T06:55:25Z` 对全部60品种逐一GET events，查询区间为2026-09-03至该次审计时刻，SuBing合计`total=0`。该结果与当前evaluation_failed共同说明自然Event/provider/人工收件仍未完成，不能宣称提醒链路已修好。
+- `2026-09-07T06:55:25Z` 对全部 60 品种逐一 GET events，查询区间为 2026-09-03 至该次审计时刻，SuBing 合计 `total=0`。该历史快照只证明当时自然 Event/provider/人工收件尚未完成；后续发生的自然闭环见下文，不得回写或删除这个早期事实。
 - 2026-09-03 的自然 after-market 为 `failed`，`attempts=1`、`error_code=LIVE_DOMINANT_MISMATCH`；这是 strict rank1/Live subscription snapshot reconciliation 未通过的真实失败，不能改写为 passed，也不能以手工、synthetic、replay 或 fallback 替代。
+- 2026-09-07 夜盘后，exact `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6` Runtime 自然持久化 SuBing 15m Event：`AG2610` Event `id=31`、`bar_end=2026-09-07T13:15:00Z`、`result=buy`、`detected_at=2026-09-07T13:15:15.222713Z`；`AL2610` 还分别在 `13:30Z` 和 `14:00Z` 形成 `sell` / `buy` Event。Event 的 `notification_attempted_at` 与各自 `detected_at` 一致，Runtime 通知状态为 `provider_accepted`。没有 synthetic、replay、backfill、手工发送或同 Event retry 代替自然闭环。
+- 2026-09-08 Owner 明确确认微信已收到与上述事件匹配的沪银 `AG2610` 与沪铝 `AL2610` 15m 通知。因此 G11 provider acceptance 与 G12 Owner 实际收件均已完成，状态为 `SUBING_WECHAT_DELIVERY_CONFIRMED / SUBING_NATURAL_CLOSURE_COMPLETE`。该确认不证明 Topic 内其他成员的逐人送达。
+- v1.9.15 最终发布核对：reviewed RC tree、release tree 与 `main` tree 均为 `d33efc91071995f2f04860b8916ea56f660eb903`；PR #333 的最终证据记录双轴 Review P1/P2=0，GitHub 未配置 checks，精确分类为 `NO_CHECKS_REPORTED`，不是 `CHECKS_PASSED`。Issue #307 所列 exact RC/Review、release、PF2611 plan/apply、Runtime promotion、自然 Event、provider acceptance 与 Owner 收件八项 Gate 全部完成。
 
 ## Pending Gate
 
-- 苏冰候选停在等待版本发布；历史 warm-up 当前为 `PARTIAL`，50 个合约未开始。用户已授权常规诊断、最小修复与串行继续；但 BZ 的 `2026-03-20` 非零成交零价事实没有允许的替代来源，必须等待 RQData 更正或新的权威数据合同，不能自动改写后继续。BU 的 D1/W1、main/tag/release、exact-tag Runtime promotion、生产 Live recovery enable 仍分别受 Gate 约束。启用恢复前必须核对 Live/Alert 为同一 exact root/version 且恢复协议同时启用；60 品种输入完整性、后续自然 Event、provider acceptance 与人工收件仍须分别验收。盘后 `missed` 已由 2026-09-07 自然 passed 关闭。
-- `PF2611` exact plan、一次性真实 apply、只读验证及 exact `v1.9.15` 五项 Runtime promotion 已完成；当前仍为 `NATURAL_EVIDENCE_PENDING`，`RUNTIME_READY` 尚未证实。
+- 苏冰输入恢复候选停在等待版本发布；历史 warm-up 当前为 `PARTIAL`，50 个合约未开始。用户已授权常规诊断、最小修复与串行继续；但 BZ 的 `2026-03-20` 非零成交零价事实没有允许的替代来源，必须等待 RQData 更正或新的权威数据合同，不能自动改写后继续。BU 的 D1/W1、该恢复候选的 main/tag/release、exact-tag Runtime promotion 与生产 Live recovery enable 仍分别受 Gate 约束。启用恢复前必须核对 Live/Alert 为同一 exact root/version 且恢复协议同时启用；60 品种输入完整性与当前单 Rule `evaluation_failed` 仍待收口。盘后 `missed` 已由 2026-09-07 自然 passed 关闭。
+- `PF2611` exact plan、一次性真实 apply、只读验证、exact `v1.9.15` 五项 Runtime promotion 与自然收件验收已完成；`NATURAL_EVIDENCE_PENDING` 已由 `RUNTIME_READY / SUBING_NATURAL_CLOSURE_COMPLETE` 替代。这是 v1.9.15 发布闭环状态，不替代上一条的全量输入完整性与后续恢复发布 Gate。
 - HTDY目标61对Scope未应用；任何Scope调整、真实数据修复、通知、main/tag/release或Runtime版本切换仍需目标/环境/范围明确的单次执行意图。本轮仓库修复不改变现役`v1.9.15@36fef039`。
-- 仍须等待自然 completed SuBing 15m Event、immutable `AlertEvent` 与 one-shot PushPlus provider acceptance；不得用 synthetic、replay、backfill 或手工发送替代。
-- 最终 G12 仍须由用户人工确认微信实际收到同一自然 Event；provider accepted 不能替代实际送达确认。
