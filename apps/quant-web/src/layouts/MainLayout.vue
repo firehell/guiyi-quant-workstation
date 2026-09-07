@@ -178,7 +178,7 @@ onUnmounted(() => {
           <time class="header__clock gy-number">{{ clockText }}</time>
         </div>
       </NLayoutHeader>
-      <NLayoutContent class="content" :class="{ 'content--fullscreen': isFullscreenMarketRoute }">
+      <NLayoutContent class="content" :class="{ 'content--fullscreen': isFullscreenMarketRoute, 'content--market-home': route.name === 'market' }">
         <RouteErrorFallback
           v-if="routeError"
           :error="routeError"
@@ -367,5 +367,10 @@ onUnmounted(() => {
   .header__boundary {
     display: none;
   }
+}
+/* The white Home canvas must not change detail or other route themes. */
+.content.content--market-home {
+  padding: 0;
+  background: #fff;
 }
 </style>

@@ -1,3 +1,18 @@
-<script setup lang="ts">import { productSectorLabel } from '@/utils/productDirectory';defineProps<{sectors:Array<{sector:string;median_price_change_1d:number|null}>}>();defineEmits<{select:[sector:string]}>()</script>
-<template><nav class="ticker" aria-label="板块涨跌"><button type="button" @click="$emit('select','')">全部</button><button v-for="s in sectors" :key="s.sector" type="button" @click="$emit('select',s.sector)">{{ productSectorLabel(s.sector) }} <b :class="s.median_price_change_1d===null?'':s.median_price_change_1d<0?'down':'up'">{{s.median_price_change_1d===null?'—':`${(s.median_price_change_1d*100).toFixed(2)}%`}}</b></button></nav></template>
-<style scoped>.ticker{display:flex;gap:8px;overflow:auto;padding-bottom:2px}.ticker button{white-space:nowrap;border:0;border-radius:var(--gy-radius-pill);padding:7px 10px;background:var(--gy-bg-panel);cursor:pointer}.up{color:var(--gy-market-icon-up)}.down{color:var(--gy-market-icon-down)}</style>
+<script setup lang="ts">
+import { productSectorLabel } from '@/utils/productDirectory'
+import type { MarketHomeOverviewResponse } from '@/types/market'
+defineProps<{ sectors: MarketHomeOverviewResponse['sectors']; active: number | null; selected: string }>()
+defineEmits<{ select: [sector: string] }>()
+</script>
+
+<template>
+  <section class="market-home-sectors">
+    <h2>品种板块</h2>
+    <nav class="ticker" aria-label="品种板块">
+      <button type="button" :aria-pressed="!selected" @click="$emit('select', '')">全部 <span>{{ active ?? '—' }}</span></button>
+      <button v-for="item in sectors" :key="item.sector" type="button" :aria-pressed="selected === item.sector" @click="$emit('select', selected === item.sector ? '' : item.sector)">
+        {{ productSectorLabel(item.sector) }} <span>{{ item.active_count }}</span>
+      </button>
+    </nav>
+  </section>
+</template>
