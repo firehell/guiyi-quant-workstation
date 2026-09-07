@@ -42,14 +42,15 @@ export function newowDisplayLabel(value: string): string {
   const labels: Record<string, string> = { trend: '趋势', oscillation: '震荡', main_rise: '主升浪', BUILD: '参考建仓', HOLD: '策略持有', CLEAR: '参考清仓', FLAT: '策略空仓', UNAVAILABLE: '状态不可用', LONG_BIAS: '偏多', SHORT_BIAS: '偏空', NEUTRAL: '中性', WAIT_CONFIRM: '等待确认', low: '低', medium: '中等', high: '高' }
   return labels[value] ?? (value === '—' ? '—' : '未确认')
 }
-export function describeNewowState(value: string): string {
+export function describeNewowState(value: string, historical = false): string {
   const descriptions: Record<string, string> = {
     BUILD: '策略当前为建仓状态，仅作页面参考，不代表已成交。',
     HOLD: '策略当前为持有状态，仅作页面参考，不代表账户持仓。',
     CLEAR: '策略当前为清仓状态，仅作页面参考，不代表已成交。',
     FLAT: '策略当前为空仓状态，仅作页面参考，不代表账户持仓。',
   }
-  return descriptions[value] ?? '当前状态不可用，等待可核实的已完成行情与策略事实。'
+  const description = descriptions[value] ?? '当前状态不可用，等待可核实的已完成行情与策略事实。'
+  return historical ? description.replace('策略当前为', '所示历史 Bar 的策略状态为').replace('当前状态不可用', '所示历史 Bar 状态不可用') : description
 }
 
 export function shortNewowTime(value: string | null | undefined): string {

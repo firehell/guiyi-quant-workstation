@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
 
-import { describeNewowState, newowDisplayLabel } from '@/utils/newowDetailPresentation'
+import { describeNewowState, newowDisplayLabel, shortNewowTime } from '@/utils/newowDetailPresentation'
 import type { NewowProductSectionResponse, NewowResourceLifecycle } from '@/types/newowProduct'
 import {
   buildNewowComparatorPanelViewModel,
@@ -11,7 +11,7 @@ import {
 
 const props = defineProps<{
   mode?: 'explanation' | 'comparator'
-  detailState?: string
+  chartState?: { state: string; barEnd: string | null; historical: boolean }
   response: NewowProductSectionResponse<'explanation'> | null
   lifecycle: NewowResourceLifecycle
   error: string | null
@@ -33,10 +33,16 @@ const comparator = computed(() => comparatorPresentation.value.showValue && prop
 
 <template>
   <div class="newow-explanation-layout">
+    <section v-if="mode !== 'comparator' && chartState" class="newow-window-state" data-testid="newow-window-state" :aria-label="chartState.historical ? '所示历史窗口状态' : '所示图表状态'">
+      <h3>{{ chartState.historical ? '所示历史窗口状态' : '所示图表状态' }}</h3>
+      <p :title="chartState.barEnd ?? undefined">截至 {{ shortNewowTime(chartState.barEnd) }}</p>
+      <p>{{ describeNewowState(chartState.state, chartState.historical) }}</p>
+    </section>
     <article v-if="mode !== 'comparator'" class="newow-explanation" data-testid="newow-explanation-panel" :aria-labelledby="`newow-explanation-${titleId}`">
       <header>
         <h3 :id="`newow-explanation-${titleId}`">当前综合解释</h3>
-        <p>{{ describeNewowState(detailState ?? 'UNAVAILABLE') }}</p>
+        <p :title="response?.meta.as_of">当前快照截至 {{ shortNewowTime(response?.meta.as_of) }}</p>
+        <p>以下综合事实来自当前快照，不作为所示历史窗口当时的解释。</p>
       </header>
       <p v-if="presentation.message" class="newow-explanation__state" role="status">
         {{ lifecycle === 'stale' ? '解释已过期，请重新读取。' : lifecycle === 'loading' ? '正在读取解释…' : lifecycle === 'not_requested' ? '解释尚未读取。' : '解释暂不可用，请重试或查看来源。' }}
@@ -111,7 +117,9 @@ const comparator = computed(() => comparatorPresentation.value.showValue && prop
 <style scoped>
 .newow-explanation-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gy-space-3); }
 .newow-explanation, .newow-comparator { display: grid; gap: var(--gy-space-3); padding: var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); }
-.newow-explanation h3, .newow-explanation p, .newow-comparator h3, .newow-comparator p, .newow-explanation dl { margin: 0; }
+.newow-window-state h3, .newow-window-state p, .newow-explanation h3, .newow-explanation p, .newow-comparator h3, .newow-comparator p, .newow-explanation dl { margin: 0; }
+.newow-window-state { display:grid; gap:6px; padding:12px; border:1px solid var(--gy-border); border-radius:7px; }
+.newow-window-state h3 { font-size:14px; }
 .newow-explanation__state { color: var(--gy-status-warning); }
 .newow-explanation table, .newow-comparator table { width: 100%; table-layout:fixed; border-collapse: collapse; }
 .newow-explanation th, .newow-explanation td, .newow-comparator th, .newow-comparator td { padding: var(--gy-space-2); border: 1px solid var(--gy-border); text-align: left; vertical-align: top; overflow-wrap:anywhere; }

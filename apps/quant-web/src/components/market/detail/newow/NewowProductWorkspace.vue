@@ -148,7 +148,7 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
         <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</span>
       </div>
       <div v-if="detailsOpen" id="newow-details">
-        <NewowExplanationPanel :detail-state="summary.status.state" :response="explanationResponse" :lifecycle="loader.sections.explanation.state.value" :error="loader.sections.explanation.error.value" :comparator-response="null" comparator-lifecycle="not_requested" :comparator-error="null" mode="explanation" />
+        <NewowExplanationPanel :chart-state="summary.status" :response="explanationResponse" :lifecycle="loader.sections.explanation.state.value" :error="loader.sections.explanation.error.value" :comparator-response="null" comparator-lifecycle="not_requested" :comparator-error="null" mode="explanation" />
         <button v-if="loader.sections.explanation.error.value" @click="loader.loadExplanation">重试解释</button>
       </div>
     </section>
@@ -168,7 +168,6 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
     </section>
     <NewowDetailDialog :open="dialogKind !== null" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">
       <p>{{ identity.symbol.toUpperCase() }} · {{ newowDisplayLabel(identity.strategy ?? 'UNAVAILABLE') }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
-      <p v-if="dialogKind === 'explanation'" :title="summary.status.barEnd ?? undefined">{{ summary.status.label }} · {{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</p>
       <template v-if="dialogKind === 'action'">
         <p v-if="selectedAction">历史主动作 {{ newowDisplayLabel(selectedAction.kind) }} · {{ selectedAction.referencePrice }} · {{ shortNewowTime(selectedAction.barEnd) }}</p>
         <p>仅为所选历史主动作事实，不代表账户成交。</p>
@@ -176,7 +175,7 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
       </template>
       <template v-else-if="dialogKind === 'indicator'"><p>{{ auxiliaryDisclosure.title }}</p><p>{{ auxiliaryDisclosure.disclosure }}</p><p>{{ loader.sections.auxiliary.state.value }} · {{ loader.sections.auxiliary.error.value ?? '—' }}</p><details><summary>来源</summary><p>{{ currentAuxiliaryResponse?.value?.formula_version ?? '未读取' }}</p><p>截至 {{ currentAuxiliaryResponse?.meta.as_of ?? '—' }}</p></details></template>
       <template v-else-if="dialogKind === 'cup_handle'"><p>{{ identity.frequency !== '1d' ? '杯柄仅适用于 1d' : loader.sections.auxiliary.state.value }}</p><p v-if="loader.sections.auxiliary.error.value">{{ loader.sections.auxiliary.error.value }}</p><template v-if="auxiliaryResponse?.value?.component === 'cup_handle'"><p v-for="segment in auxiliaryResponse.value.segments" :key="segment.segment_id">{{ segment.physical_contract }} · {{ segment.status.reason_code ?? segment.status.status }}</p><details><summary>服务端杯柄事实</summary><pre>{{ auxiliaryResponse.value.segments }}</pre></details></template></template>
-      <NewowExplanationPanel v-else :detail-state="summary.status.state" :response="explanationResponse" :lifecycle="loader.sections.explanation.state.value" :error="loader.sections.explanation.error.value" :comparator-response="comparatorResponse" :comparator-lifecycle="loader.sections.comparator.state.value" :comparator-error="loader.sections.comparator.error.value" :mode="dialogKind === 'comparator' ? 'comparator' : 'explanation'" />
+      <NewowExplanationPanel v-else :chart-state="summary.status" :response="explanationResponse" :lifecycle="loader.sections.explanation.state.value" :error="loader.sections.explanation.error.value" :comparator-response="comparatorResponse" :comparator-lifecycle="loader.sections.comparator.state.value" :comparator-error="loader.sections.comparator.error.value" :mode="dialogKind === 'comparator' ? 'comparator' : 'explanation'" />
       <button v-if="dialogKind === 'explanation' && loader.sections.explanation.error.value" @click="loader.loadExplanation">重试解释</button>
       <button v-if="dialogKind === 'comparator' && loader.sections.comparator.error.value" @click="loader.loadComparator">重试比较器</button>
     </NewowDetailDialog>

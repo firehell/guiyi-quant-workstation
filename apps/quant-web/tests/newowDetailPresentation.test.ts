@@ -58,3 +58,9 @@ test('short state and enum labels remain deterministic and unknown values are un
   assert.equal(newowDisplayLabel('UNKNOWN_NEW_TOKEN'), '未确认')
   assert.equal(shortNewowTime('2026-09-03T07:00:00Z'), '09-03 15:00')
 })
+test('historical chart state description never claims to describe current snapshot state', async () => {
+  const { describeNewowState } = await import('../src/utils/newowDetailPresentation.ts')
+  const description = describeNewowState('HOLD', true)
+  assert.match(description, /历史.*持有/)
+  assert.doesNotMatch(description, /当前/)
+})

@@ -141,7 +141,7 @@ test('explanation component renders evidence gaps and comparator in a separate t
     reason_code: 'NEWOW_COMPOSITE_SOURCE_UNPROVEN',
   }
   const Host = defineComponent({ setup: () => () => h(Panel, {
-    response: explanation, lifecycle: 'evidence_required', error: null, detailState: 'HOLD',
+    response: explanation, lifecycle: 'evidence_required', error: null, chartState: { state: 'HOLD', barEnd: '2026-01-05T07:00:00Z', historical: true },
     comparatorResponse: comparatorResponse(), comparatorLifecycle: 'ready', comparatorError: null,
   }) })
   const root = element('root')
@@ -153,7 +153,11 @@ test('explanation component renders evidence gaps and comparator in a separate t
   const comparatorPanel = findNode(root, (node) => node.props['data-testid'] === 'newow-comparator-panel')!
   assert.ok(explanationPanel)
   assert.ok(comparatorPanel)
-  assert.match(nodeText(explanationPanel), /策略当前为持有状态/)
+  const historicalState = findNode(root, node => node.props['data-testid'] === 'newow-window-state')!
+  assert.match(nodeText(historicalState), /所示历史.*持有/)
+  assert.doesNotMatch(nodeText(historicalState), /当前/)
+  assert.doesNotMatch(nodeText(explanationPanel), /策略当前为持有状态|历史 Bar 的策略状态为/)
+  assert.match(nodeText(explanationPanel), /当前快照截至/)
   const readable = findNode(root, node => node.props['data-testid'] === 'newow-readable-facts')!
   assert.doesNotMatch(nodeText(readable), /LONG_BIAS|WAIT_CONFIRM|NEWOW_/)
   const sources = findNode(root, node => node.type === 'details' && node.props.class === 'newow-explanation__sources')!

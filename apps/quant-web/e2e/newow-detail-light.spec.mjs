@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
+import { installNewowProductFixtures, buildNewowFixtureEnvelopeForTest, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
 test('white summary, lazy reference, bounded quote and native explanation dialog remain identity-safe', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
@@ -99,3 +99,40 @@ for (const [mode, close, color] of [['up', 105, 'rgb(255, 64, 58)'], ['down', 95
     await expect(headline).toHaveCSS('color', color)
   })
 }
+
+
+test('historical exact locate keeps window state separate from current explanation in inline and modal views', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page)
+  await page.route('**/api/v1/market/newow/strategy-detail?**', async route => {
+    if (new URL(route.request().url()).searchParams.get('section') !== 'explanation') return route.fallback()
+    const payload = buildNewowFixtureEnvelopeForTest('explanation')
+    payload.explanation.value.context.daily.main_state = 'HOLD'
+    return route.fulfill({ json: payload })
+  })
+  await page.goto(newowRoute())
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  await page.locator('.newow-reference').scrollIntoViewIfNeeded()
+  await page.getByRole('button', { name: '加载更多参考历史', exact: true }).click()
+  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-bi')
+  expect(productRequests(fixture, 'chart').at(-1).url.searchParams.get('from')).toBe('2026-01-05')
+  await page.getByRole('button', { name: '展开详情', exact: true }).click()
+  const inline = page.locator('#newow-details')
+  await expect(inline.getByTestId('newow-window-state')).toContainText('所示历史 Bar 的策略状态为建仓')
+  await expect(inline.getByTestId('newow-window-state')).not.toContainText('当前')
+  await expect(inline.getByTestId('newow-explanation-panel')).toContainText('当前快照截至 09-03 16:00')
+  await expect(inline.getByTestId('newow-explanation-panel')).not.toContainText('策略当前为建仓')
+  await page.getByRole('button', { name: '策略信息', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByTestId('newow-window-state')).toContainText('所示历史窗口状态')
+  await expect(dialog.getByTestId('newow-window-state')).toContainText('01-05 15:00')
+  await expect(dialog.getByTestId('newow-window-state')).not.toContainText('当前')
+  const current = dialog.getByTestId('newow-explanation-panel')
+  await expect(current).toContainText('当前快照截至 09-03 16:00')
+  await current.getByText('来源与证据详情', { exact: true }).click()
+  await current.getByText('多周期来源上下文', { exact: true }).first().click()
+  await expect(current.locator('tr').filter({ hasText: '1d' }).first()).toContainText('HOLD')
+  await expect(current).toContainText('2026-09-03T08:00:00.000Z')
+  await page.screenshot({ path: '/private/tmp/newow-task2-history-dialog.png' })
+  assertNoUnexpectedRequests(fixture)
+})
