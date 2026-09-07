@@ -83,6 +83,63 @@ for (const strategy of NEWOW_STRATEGIES) {
   }
 }
 
+test('dense same-Bar hints use the disclosure and exact historical facts while native actions remain clickable', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__newowPaintedMarkerText = []
+    const fillText = CanvasRenderingContext2D.prototype.fillText
+    CanvasRenderingContext2D.prototype.fillText = function (text, ...args) {
+      if (this.canvas.closest('.newow-product-chart-stage') && /^(D[1-6]|建仓|清仓)$/.test(text)) window.__newowPaintedMarkerText.push(text)
+      return fillText.call(this, text, ...args)
+    }
+  })
+  const payload = buildNewowFixtureEnvelopeForTest('chart', 'oscillation', '1d')
+  const value = payload.chart.value
+  const owner = value.bars.at(-1)
+  value.hints = Array.from({ length: 24 }, (_, index) => ({
+    ...value.hints[0], hint_id: `dense-hint-${index}`, kind: `D${index % 6 + 1}`,
+    bar_end: owner.bar_end, known_at: NEWOW_AS_OF, sequence: index + 2,
+    anchor_price: index === 23 ? '104.123400' : '104.5000',
+  }))
+  for (const frame of value.frames) frame.hint_ids = frame.bar_end === owner.bar_end ? value.hints.map(hint => hint.hint_id) : []
+  validateNewowFixtureEnvelopeForTest(payload, 'chart', 'oscillation', '1d')
+  const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, section }) => {
+    if (section !== 'chart') return
+    await route.fulfill({ json: payload })
+    return 'handled'
+  } })
+  await page.goto(newowRoute('oscillation', '1d'))
+  const chart = page.getByTestId('newow-product-chart-stage')
+  await expect(chart).toHaveAttribute('data-auxiliary-state', 'ready')
+  await expect.poll(() => page.evaluate(() => window.__newowPaintedMarkerText.includes('建仓'))).toBe(true)
+  expect(await page.evaluate(() => window.__newowPaintedMarkerText.filter(text => /^D[1-6]$/.test(text)))).toEqual([])
+  const entries = chart.locator('[data-hint-id]')
+  await expect(entries).toHaveCount(24)
+  await expect(entries.first()).not.toBeVisible()
+  await chart.getByText('过程提示', { exact: true }).click()
+  const selected = chart.locator('[data-hint-id="dense-hint-23"]')
+  await selected.click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('历史过程提示')
+  await expect(dialog).toContainText('D6 · 104.123400')
+  await dialog.getByText('来源与原始事实', { exact: true }).click()
+  await expect(dialog).toContainText(`dense-hint-23 · ${owner.bar_end}`)
+  await expect(dialog).toContainText(`known_at ${NEWOW_AS_OF} · sequence 25`)
+  await expect(dialog).toContainText(`owner ${owner.physical_contract} · ${owner.segment_id}`)
+  await expect(dialog).not.toContainText('dense-hint-17')
+  await expect(dialog).not.toContainText('当前综合解释')
+  expect(productRequests(fixture, 'explanation')).toHaveLength(0)
+  await page.keyboard.press('Escape')
+  await expect(selected).toBeFocused()
+  await chart.getByText('过程提示', { exact: true }).click()
+  await clickLastBarMarker(page, 'oscillation-1d-clear-same', [0.30, 0.32, 0.34, 0.36])
+  await expect(dialog).toContainText('历史主动作 参考清仓')
+  await page.keyboard.press('Escape')
+  await clickLastBarMarker(page, 'oscillation-1d-build-open', [0.68, 0.70, 0.72, 0.74, 0.76])
+  await expect(dialog).toContainText('历史主动作 参考建仓')
+  expect(productRequests(fixture, 'explanation')).toHaveLength(0)
+  assertNoUnexpectedRequests(fixture)
+})
+
 test('same-Bar CLEAR then BUILD actions remain separately locatable', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute('oscillation', '1d'))
@@ -413,6 +470,10 @@ test('zero CLOSED summary renders missing metrics instead of zero percent', asyn
 test('auxiliary cache, applicability and disclosures remain section-local', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute('trend', '1d'))
+  // Fix the modal's background at a completed read, independent of toolbar scroll timing.
+  await showReference(page)
+  await expect(page.getByTestId('newow-reference-summary')).toContainText('100')
+  await page.evaluate(() => window.scrollTo(0, 0))
   for (const label of ['主力控盘', '涨跌动能', '照妖镜']) {
     await page.getByRole('button', { name: label, exact: true }).click()
     await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-auxiliary-state', 'ready')

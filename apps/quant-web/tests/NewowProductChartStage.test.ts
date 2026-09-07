@@ -85,7 +85,7 @@ test('emits stable signal selection and preserves an established viewport and fo
   assert.equal(clickListener, undefined)
 })
 
-test('renders action IDs, hint source and confirmation facts without owning a product or period selector', async () => {
+test('dense same-Bar hints stay queryable by exact ID without adding native markers or anchor series', async () => {
   const Stage = await loadComponent()
   const source = readFileSync(componentUrl, 'utf8')
   assert.doesNotMatch(source, /defineModel|strategy-options|frequency-options|select-symbol/)
@@ -96,18 +96,31 @@ test('renders action IDs, hint source and confirmation facts without owning a pr
     timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
     subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
   }
-  const Host = defineComponent({ setup: () => () => h(Stage, { response: chartResponse(), selectedSignalId: null }) })
+  const response = chartResponse()
+  const value = response.value!
+  value.hints = Array.from({ length: 24 }, (_, index) => ({ ...value.hints[0]!, hint_id: `hint-${index}`, sequence: index + 2 }))
+  value.frames[0]!.hint_ids = value.hints.map(hint => hint.hint_id)
+  value.actions[0]!.sequence = 1
+  value.actions.unshift({ ...value.actions[0]!, signal_id: 'clear-stable', kind: 'CLEAR', sequence: 0 })
+  value.frames[0]!.action_ids.unshift('clear-stable')
+  const selected: string[] = []
+  const Host = defineComponent({ setup: () => () => h(Stage, { response, selectedSignalId: null, 'onSelect-hint': (id: string) => selected.push(id) }) })
   const app = createRenderer(nodeOperations()).createApp(Host)
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart, markerSets))
   const root = element('root')
   app.mount(root)
   await nextTick()
 
-  assert.deepEqual(markerSets.flatMap((items) => items.map((marker) => marker.id)), ['build-stable', 'hint-stable'])
+  assert.deepEqual(markerSets.flatMap((items) => items.map((marker) => marker.id)), ['clear-stable', 'build-stable'])
   assert.equal(seriesData.some((items) => items.some((item) => (
     typeof item === 'object' && item !== null && 'value' in item && item.value === 88
-  ))), true, 'the Hint marker series must use anchor_price instead of candle/reference price')
-  assert.ok(findNode(root, (node) => node.props['data-hint-id'] === 'hint-stable'))
+  ))), false, 'hidden Hint anchors must not affect the native price scale')
+  for (const hint of value.hints) {
+    const button = findNode(root, (node) => node.props['data-hint-id'] === hint.hint_id)
+    assert.ok(button, `complete Hint entry remains available: ${hint.hint_id}`)
+    ;(button.props.onClick as () => void)()
+  }
+  assert.deepEqual(selected, value.hints.map(hint => hint.hint_id), 'same-kind same-Bar entries retain distinct selection IDs')
   assert.doesNotMatch(source, /<ul[\s\S]*来源/)
   app.unmount()
 })

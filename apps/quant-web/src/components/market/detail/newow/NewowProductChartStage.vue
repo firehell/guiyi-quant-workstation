@@ -86,10 +86,6 @@ let nearLeftBoundary = false
 let programmaticRange: { from: number; to: number } | null = null
 let resolvedSignalKey: string | null = null
 const mainLines = new Map<string, ISeriesApi<'Line'>>()
-const hintSeries = new Map<string, {
-  series: ISeriesApi<'Line'>
-  markers: ISeriesMarkersPluginApi<Time>
-}>()
 
 onMounted(async () => {
   await nextTick()
@@ -136,7 +132,7 @@ onUnmounted(createNewowProductChartDisposer({
     candles?.detachPrimitive(band)
     chart?.remove()
     chart = null; candles = null; volume = null; auxiliaryAnchor = null
-    mainLines.clear(); hintSeries.clear(); auxiliaryLines.clear()
+    mainLines.clear(); auxiliaryLines.clear()
   },
 }))
 
@@ -162,8 +158,6 @@ function renderModel(value: NewowProductChartModel | null): void {
     renderAuxiliary()
     for (const series of mainLines.values()) chart.removeSeries(series)
     mainLines.clear()
-    for (const entry of hintSeries.values()) chart.removeSeries(entry.series)
-    hintSeries.clear()
     actionMarkers?.setMarkers([])
     renderedBars = []
     renderedIdentity = ''
@@ -234,43 +228,6 @@ function renderMarkers(value: NewowProductChartModel | null): void {
       chartMarkerTime(item.barEnd, value.identity.frequency, item.tradingDay),
     ))
   actionMarkers.setMarkers(actions)
-  const groups = new Map<string, NewowProductChartModel['hints'][number][]>()
-  const occurrences = new Map<string, number>()
-  for (const hint of value.hints) {
-    if (hint.value === null) continue
-    const occurrenceKey = `${hint.kind}:${hint.barEnd}`
-    const occurrence = occurrences.get(occurrenceKey) ?? 0
-    occurrences.set(occurrenceKey, occurrence + 1)
-    const seriesKey = `${hint.kind}:${occurrence}`
-    const items = groups.get(seriesKey) ?? []
-    items.push(hint)
-    groups.set(seriesKey, items)
-  }
-  for (const [seriesKey, entry] of hintSeries) {
-    if (groups.has(seriesKey)) continue
-    chart.removeSeries(entry.series)
-    hintSeries.delete(seriesKey)
-  }
-  for (const [seriesKey, items] of groups) {
-    let entry = hintSeries.get(seriesKey)
-    if (entry === undefined) {
-      const series = chart.addSeries(LineSeries, {
-        color: 'rgba(0, 0, 0, 0)', lineVisible: false, crosshairMarkerVisible: false,
-        lastValueVisible: false, priceLineVisible: false,
-      })
-      entry = { series, markers: adapter.createSeriesMarkers(series as never) }
-      hintSeries.set(seriesKey, entry)
-    }
-    const ordered = [...items].sort((left, right) => Date.parse(left.barEnd) - Date.parse(right.barEnd) || (left.sequence ?? -1) - (right.sequence ?? -1))
-    entry.series.setData(ordered.map((hint): LineData<Time> => ({
-      time: chartMarkerTime(hint.barEnd, value.identity.frequency, hint.tradingDay), value: hint.value!,
-    })))
-    entry.markers.setMarkers(ordered.map((hint) => productChartMarker(
-      hint,
-      props.selectedSignalId,
-      chartMarkerTime(hint.barEnd, value.identity.frequency, hint.tradingDay),
-    )))
-  }
 }
 
 function revealSignal(signalId: string): boolean {
@@ -302,7 +259,6 @@ function onClick(event: MouseEventParams<Time>): void {
   if (event.hoveredInfo?.objectKind !== 'series-marker' || typeof event.hoveredInfo.objectId !== 'string') return
   const value = model.value
   if (value?.actions.some((action) => action.id === event.hoveredInfo?.objectId)) emit('select-signal', event.hoveredInfo.objectId)
-  else if (value?.hints.some(hint => hint.id === event.hoveredInfo?.objectId)) emit('select-hint', event.hoveredInfo.objectId)
 }
 
 function onRangeChange(range: LogicalRange | null): void {
