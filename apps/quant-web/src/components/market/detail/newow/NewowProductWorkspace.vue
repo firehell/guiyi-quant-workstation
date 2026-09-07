@@ -4,7 +4,7 @@ import { useNewowProduct } from '@/composables/useNewowProduct'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
 import type { NewowAuxiliaryComponent, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
 import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
-import { projectNewowDetail } from '@/utils/newowDetailPresentation'
+import { projectNewowDetail, newowDisplayLabel, shortNewowTime } from '@/utils/newowDetailPresentation'
 import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure } from './newowProductChartPrimitives'
 import NewowProductChartStage from './NewowProductChartStage.vue'
 import NewowExplanationPanel from './NewowExplanationPanel.vue'
@@ -137,18 +137,18 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
         <strong>策略概览</strong>
         <button class="newow-status" :data-state="summary.status.state" @click="openDialog('explanation')"><span>{{ ({ BUILD: '▲', HOLD: '✓', CLEAR: '▼', FLAT: '×', UNAVAILABLE: '?' })[summary.status.state] }}</span>{{ summary.status.label }}</button>
         <button aria-label="策略信息" @click="openDialog('explanation')">ⓘ</button>
-        <span class="newow-price newow-price--target">目标参考 {{ summary.target?.display_value ?? '—' }}<small v-if="summary.target"> · {{ summary.target.bar_end }}</small><small v-else> · {{ loader.sections.explanation.state.value === 'not_requested' ? '未读取' : '不可用 / 证据不足' }}</small></span>
-        <span class="newow-price newow-price--absorb">吸筹参考 {{ summary.absorb?.display_value ?? '—' }}<small v-if="summary.absorb"> · {{ summary.absorb.bar_end }}</small><small v-else> · {{ loader.sections.explanation.state.value === 'not_requested' ? '未读取' : '不可用 / 证据不足' }}</small></span>
+        <span class="newow-price newow-price--target" :title="summary.target?.bar_end">目标参考 {{ summary.target?.display_value ?? '—' }}<small v-if="summary.target"> · {{ shortNewowTime(summary.target.bar_end) }}</small><small v-else> · {{ loader.sections.explanation.state.value === 'not_requested' ? '未读取' : '不可用 / 证据不足' }}</small></span>
+        <span class="newow-price newow-price--absorb" :title="summary.absorb?.bar_end">吸筹参考 {{ summary.absorb?.display_value ?? '—' }}<small v-if="summary.absorb"> · {{ shortNewowTime(summary.absorb.bar_end) }}</small><small v-else> · {{ loader.sections.explanation.state.value === 'not_requested' ? '未读取' : '不可用 / 证据不足' }}</small></span>
         <button class="newow-summary__expand" :aria-expanded="detailsOpen" aria-controls="newow-details" @click="toggleDetails">{{ detailsOpen ? '收起详情' : '展开详情' }}</button>
       </div>
       <div class="newow-summary__facts">
-        <span>{{ summary.status.historical ? '历史窗口最近主动作' : '已读取窗口最近主动作' }} <button v-if="summary.latestAction" @click="selectSignal(summary.latestAction.signal_id)">{{ summary.latestAction.kind }} · {{ summary.latestAction.reference_price }} · {{ summary.latestAction.bar_end }}</button><template v-else>—</template></span>
+        <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口最近主动作' : '已读取窗口最近主动作' }} <button v-if="summary.latestAction" :title="summary.latestAction.bar_end" @click="selectSignal(summary.latestAction.signal_id)">{{ newowDisplayLabel(summary.latestAction.kind) }} · {{ summary.latestAction.reference_price }} · {{ shortNewowTime(summary.latestAction.bar_end) }}</button><template v-else>—</template></span>
         <span>当前参考交易 {{ summary.openReference ? '未清仓' : '—' }} <small v-if="!summary.openReference">{{ loader.sections.reference.state.value === 'not_requested' ? '未读取' : '当前窗口不可用' }}</small></span>
-        <span>参考浮动 {{ summary.openReference?.mark_change_pct ?? '—' }}{{ summary.openReference?.mark_change_pct != null ? '%' : '' }} · {{ summary.openReference?.mark_bar_end ?? '—' }}</span>
-        <span>{{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ summary.status.barEnd ?? '—' }}</span>
+        <span>参考浮动 {{ summary.openReference?.mark_change_pct ?? '—' }}{{ summary.openReference?.mark_change_pct != null ? '%' : '' }} · {{ shortNewowTime(summary.openReference?.mark_bar_end) }}</span>
+        <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</span>
       </div>
       <div v-if="detailsOpen" id="newow-details">
-        <NewowExplanationPanel :response="explanationResponse" :lifecycle="loader.sections.explanation.state.value" :error="loader.sections.explanation.error.value" :comparator-response="null" comparator-lifecycle="not_requested" :comparator-error="null" mode="explanation" />
+        <NewowExplanationPanel :detail-state="summary.status.state" :response="explanationResponse" :lifecycle="loader.sections.explanation.state.value" :error="loader.sections.explanation.error.value" :comparator-response="null" comparator-lifecycle="not_requested" :comparator-error="null" mode="explanation" />
         <button v-if="loader.sections.explanation.error.value" @click="loader.loadExplanation">重试解释</button>
       </div>
     </section>
@@ -167,16 +167,16 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
       <NewowReferencePanel :key="identityKey" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="locateMessage" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="loader.loadNextReferencePage" @locate="locateReferenceTrade" />
     </section>
     <NewowDetailDialog :open="dialogKind !== null" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">
-      <p>{{ identity.symbol.toUpperCase() }} · {{ identity.strategy }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
-      <p v-if="dialogKind === 'explanation'">{{ summary.status.label }} · {{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ summary.status.barEnd ?? '—' }}</p>
+      <p>{{ identity.symbol.toUpperCase() }} · {{ newowDisplayLabel(identity.strategy ?? 'UNAVAILABLE') }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
+      <p v-if="dialogKind === 'explanation'" :title="summary.status.barEnd ?? undefined">{{ summary.status.label }} · {{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</p>
       <template v-if="dialogKind === 'action'">
-        <p v-if="selectedAction">历史主动作 {{ selectedAction.kind }} · {{ selectedAction.referencePrice }} · {{ selectedAction.barEnd }}</p>
+        <p v-if="selectedAction">历史主动作 {{ newowDisplayLabel(selectedAction.kind) }} · {{ selectedAction.referencePrice }} · {{ shortNewowTime(selectedAction.barEnd) }}</p>
         <p>仅为所选历史主动作事实，不代表账户成交。</p>
-        <details><summary>来源与关联 Hint</summary><p>{{ selectedSignalId }}</p><p v-for="hint in chartResponse?.value?.hints.filter(hint => chartResponse?.value?.frames.find(frame => frame.bar_end === selectedAction?.barEnd)?.hint_ids.includes(hint.hint_id)) ?? []" :key="hint.hint_id">{{ hint.kind }} · {{ hint.hint_id }} · known_at {{ hint.known_at }} · {{ hint.anchor_price ?? '—' }}</p></details>
+        <details><summary>来源与关联 Hint</summary><p>{{ selectedSignalId }} · {{ selectedAction?.barEnd }}</p><p v-for="hint in chartResponse?.value?.hints.filter(hint => chartResponse?.value?.frames.find(frame => frame.bar_end === selectedAction?.barEnd)?.hint_ids.includes(hint.hint_id)) ?? []" :key="hint.hint_id">{{ hint.kind }} · {{ hint.hint_id }} · known_at {{ hint.known_at }} · {{ hint.anchor_price ?? '—' }}</p></details>
       </template>
       <template v-else-if="dialogKind === 'indicator'"><p>{{ auxiliaryDisclosure.title }}</p><p>{{ auxiliaryDisclosure.disclosure }}</p><p>{{ loader.sections.auxiliary.state.value }} · {{ loader.sections.auxiliary.error.value ?? '—' }}</p><details><summary>来源</summary><p>{{ currentAuxiliaryResponse?.value?.formula_version ?? '未读取' }}</p><p>截至 {{ currentAuxiliaryResponse?.meta.as_of ?? '—' }}</p></details></template>
       <template v-else-if="dialogKind === 'cup_handle'"><p>{{ identity.frequency !== '1d' ? '杯柄仅适用于 1d' : loader.sections.auxiliary.state.value }}</p><p v-if="loader.sections.auxiliary.error.value">{{ loader.sections.auxiliary.error.value }}</p><template v-if="auxiliaryResponse?.value?.component === 'cup_handle'"><p v-for="segment in auxiliaryResponse.value.segments" :key="segment.segment_id">{{ segment.physical_contract }} · {{ segment.status.reason_code ?? segment.status.status }}</p><details><summary>服务端杯柄事实</summary><pre>{{ auxiliaryResponse.value.segments }}</pre></details></template></template>
-      <NewowExplanationPanel v-else :response="explanationResponse" :lifecycle="loader.sections.explanation.state.value" :error="loader.sections.explanation.error.value" :comparator-response="comparatorResponse" :comparator-lifecycle="loader.sections.comparator.state.value" :comparator-error="loader.sections.comparator.error.value" :mode="dialogKind === 'comparator' ? 'comparator' : 'explanation'" />
+      <NewowExplanationPanel v-else :detail-state="summary.status.state" :response="explanationResponse" :lifecycle="loader.sections.explanation.state.value" :error="loader.sections.explanation.error.value" :comparator-response="comparatorResponse" :comparator-lifecycle="loader.sections.comparator.state.value" :comparator-error="loader.sections.comparator.error.value" :mode="dialogKind === 'comparator' ? 'comparator' : 'explanation'" />
       <button v-if="dialogKind === 'explanation' && loader.sections.explanation.error.value" @click="loader.loadExplanation">重试解释</button>
       <button v-if="dialogKind === 'comparator' && loader.sections.comparator.error.value" @click="loader.loadComparator">重试比较器</button>
     </NewowDetailDialog>

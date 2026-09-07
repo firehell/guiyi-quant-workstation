@@ -141,7 +141,7 @@ test('explanation component renders evidence gaps and comparator in a separate t
     reason_code: 'NEWOW_COMPOSITE_SOURCE_UNPROVEN',
   }
   const Host = defineComponent({ setup: () => () => h(Panel, {
-    response: explanation, lifecycle: 'evidence_required', error: null,
+    response: explanation, lifecycle: 'evidence_required', error: null, detailState: 'HOLD',
     comparatorResponse: comparatorResponse(), comparatorLifecycle: 'ready', comparatorError: null,
   }) })
   const root = element('root')
@@ -153,6 +153,13 @@ test('explanation component renders evidence gaps and comparator in a separate t
   const comparatorPanel = findNode(root, (node) => node.props['data-testid'] === 'newow-comparator-panel')!
   assert.ok(explanationPanel)
   assert.ok(comparatorPanel)
+  assert.match(nodeText(explanationPanel), /策略当前为持有状态/)
+  const readable = findNode(root, node => node.props['data-testid'] === 'newow-readable-facts')!
+  assert.doesNotMatch(nodeText(readable), /LONG_BIAS|WAIT_CONFIRM|NEWOW_/)
+  const sources = findNode(root, node => node.type === 'details' && node.props.class === 'newow-explanation__sources')!
+  assert.match(nodeText(sources), /NEWOW_COMPOSITE_SOURCE_UNPROVEN/)
+  assert.match(nodeText(sources), /as_of/)
+
   assert.match(nodeText(explanationPanel), /NEWOW_COMPOSITE_SOURCE_UNPROVEN/)
   assert.match(nodeText(explanationPanel), /NEWOW_WEEKLY_FACT_UNAVAILABLE/)
   assert.match(nodeText(explanationPanel), /NEWOW_PRIVATE_SCORE_UNPROVEN/)

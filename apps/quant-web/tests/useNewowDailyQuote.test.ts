@@ -26,3 +26,15 @@ test('product switch cancels pending quote and rejects late response; same produ
   symbol.value = 'ag'; await nextTick(); assert.equal(pending.length, 2)
   q.dispose(); assert.equal(pending[1].signal.aborted, true)
 })
+test('D1 timestamps must agree with Shanghai trading day and exact timestamp coverage', () => {
+  const future = page(); future.bars[1].bar_end = '2099-09-03T07:00:00Z'
+  assert.throws(() => projectNewowDailyQuote(future, 'rb', 'RB2605'))
+  const outside = page(); outside.canonical_coverage = { start: '2026-09-02T07:00:00Z', end: '2026-09-03T06:59:00Z' }
+  assert.throws(() => projectNewowDailyQuote(outside, 'rb', 'RB2605'))
+  const valid = page(); valid.bars[1].bar_end = '2026-09-03T15:00:00+08:00'; valid.canonical_coverage = { start: '2026-09-02T07:00:00Z', end: '2026-09-03T07:00:00Z' }
+  assert.equal(projectNewowDailyQuote(valid, 'rb', 'RB2605').close, 105)
+  valid.bars[1].bar_end = '2026-09-03T15:15:00+08:00'; valid.canonical_coverage.end = '2026-09-03T07:15:00Z'
+  assert.equal(projectNewowDailyQuote(valid, 'rb', 'RB2605').close, 105)
+  const ambiguous = page(); ambiguous.bars[1].bar_end = '2026-09-03T15:00:00'
+  assert.throws(() => projectNewowDailyQuote(ambiguous, 'rb', 'RB2605'))
+})

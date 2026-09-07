@@ -23,8 +23,17 @@ test('white summary, lazy reference, bounded quote and native explanation dialog
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
   await expect(dialog).toContainText('当前综合解释')
-  await expect(dialog).toContainText('NEWOW_TARGET_SOURCE_UNPROVEN')
+  await expect(dialog).toContainText('策略当前为建仓状态')
+  await expect(dialog.getByRole('status')).toContainText('部分解释证据不足')
+  const rawReason = dialog.getByText('NEWOW_TARGET_SOURCE_UNPROVEN', { exact: true }).first()
+  await expect(rawReason).not.toBeVisible()
+  await expect(dialog.getByTestId('newow-readable-facts')).toContainText('偏多')
+  await expect(dialog.getByTestId('newow-readable-facts')).not.toContainText('LONG_BIAS')
+  await expect(dialog.getByRole('button', { name: '知道了', exact: true })).toHaveCSS('background-color', 'rgb(54, 90, 245)')
   await page.screenshot({ path: '/private/tmp/newow-task2-dialog.png' })
+  await dialog.getByText('来源与证据详情', { exact: true }).click()
+  await expect(rawReason).toBeVisible()
+  await dialog.getByText('来源与证据详情', { exact: true }).click()
   expect(productRequests(fixture, 'comparator')).toHaveLength(0)
   for (let index = 0; index < 10; index++) {
     await page.keyboard.press('Tab')
@@ -75,3 +84,18 @@ test('historical action dialog uses marker facts without requesting current expl
   await expect(dialog).not.toBeVisible()
   assertNoUnexpectedRequests(fixture)
 })
+
+for (const [mode, close, color] of [['up', 105, 'rgb(255, 64, 58)'], ['down', 95, 'rgb(34, 185, 93)'], ['neutral', 100, 'rgb(32, 36, 43)'], ['unavailable', null, 'rgb(32, 36, 43)']]) {
+  test(`Newow headline quote uses ${mode} direction color`, async ({ page }) => {
+    await installNewowProductFixtures(page)
+    await page.route('**/api/v1/market/bars/page?**', async route => {
+      if (close === null) return route.abort('failed')
+      const bars = [100, close].map((value, index) => ({ bar_end: `2026-09-0${index + 2}T07:00:00Z`, trading_day: `2026-09-0${index + 2}`, open: 100, high: 110, low: 90, close: value, volume: 1, turnover: null, open_interest: null }))
+      await route.fulfill({ json: { request: { series_kind: 'actual_dominant', symbol: 'rb', contract: null, frequency: '1d', before: null, limit: 2 }, bars, canonical_coverage: { start: bars[0].bar_end, end: bars[1].bar_end }, page: { has_more_before: false, next_before: null }, resolved_contract_segments: [{ contract: 'RB2605', start_trading_day: '2026-01-01', end_trading_day: '2026-12-31' }] } })
+    })
+    await page.goto(newowRoute())
+    const headline = page.locator('.quote-header__price strong')
+    await expect(headline).toHaveText(close === null ? '—' : `${close.toFixed(2)}`)
+    await expect(headline).toHaveCSS('color', color)
+  })
+}

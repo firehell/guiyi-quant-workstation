@@ -31,3 +31,7 @@
 .newow-detail-light :focus-visible { outline:2px solid #365af5; outline-offset:2px; }
 .newow-detail-light code { overflow-wrap:anywhere; }
 @media(max-width:640px) { .market-detail-page.newow-detail-light.newow-detail-light { padding-inline:12px; } .newow-detail-light .quote-header__facts { min-width:0; flex-basis:100%; } }
+
+.newow-detail-light .quote-header__price--up strong { color:#ff403a; }
+.newow-detail-light .quote-header__price--down strong { color:#22b95d; }
+.newow-detail-light .quote-header__price--neutral strong { color:#20242b; }

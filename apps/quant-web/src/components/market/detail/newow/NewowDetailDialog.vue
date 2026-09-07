@@ -70,6 +70,6 @@ onBeforeUnmount(() => { ++generation; closing = true; dialog.value?.close(); unl
 header, footer { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; flex-shrink:0; }
 h2 { margin:0; font-size:18px; }
 .newow-detail-dialog__body { padding:0 20px; min-height:0; overflow:auto; overflow-wrap:anywhere; }
-button { min-height:44px; min-width:44px; border:0; border-radius:7px; background:#fff4ee; color:#d94b10; cursor:pointer; }
-footer { justify-content:center; } footer button { width:100%; }
+button { min-height:44px; min-width:44px; border:0; border-radius:7px; background:#f3f4f6; color:#667085; cursor:pointer; }
+footer { justify-content:center; } footer button { width:100%; background:#365af5; color:#fff; }
 </style>

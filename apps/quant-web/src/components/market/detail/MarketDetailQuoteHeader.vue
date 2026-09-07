@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { priceDirection } from '@/utils/newowDetailPresentation'
+import { priceDirection, shortNewowTime } from '@/utils/newowDetailPresentation'
 import type { MarketDetailHeaderModel } from '@/types/marketDetail'
 import MarketDetailIcon from './MarketDetailIcon.vue'
 import MarketFactsDisclosure from './MarketFactsDisclosure.vue'
@@ -53,7 +53,7 @@ function integer(value: number | null): string {
       <span>{{ header.change === null ? '变动 —' : `${header.change >= 0 ? '+' : ''}${number(header.change)}` }}</span>
       <span>{{ header.pct === null ? '涨跌幅 —' : `${header.pct >= 0 ? '+' : ''}${number(header.pct)}%` }}</span>
     </div>
-    <p class="quote-header__asof">{{ newow ? '最近日线收盘 · 非实时 · 截至' : '截至' }} {{ header.asOf || '—' }}</p>
+    <p class="quote-header__asof" :title="header.asOf ?? undefined">{{ newow ? '最近日线收盘 · 非实时 · 截至' : '截至' }} {{ newow ? shortNewowTime(header.asOf) : header.asOf || '—' }}</p>
 
     <dl class="quote-header__facts">
       <div><dt>开</dt><dd>{{ number(header.open) }}</dd></div>

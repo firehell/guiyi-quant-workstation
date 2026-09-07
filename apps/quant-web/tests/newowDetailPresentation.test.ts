@@ -50,3 +50,11 @@ test('reference summary requires ready compatible current identity and never der
   assert.equal(open.mark_change_pct, '-1.2500')
   assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, r, 'stale', true).openReference, null)
 })
+test('short state and enum labels remain deterministic and unknown values are unavailable', async () => {
+  const { describeNewowState, newowDisplayLabel, shortNewowTime } = await import('../src/utils/newowDetailPresentation.ts')
+  assert.equal(describeNewowState('HOLD'), '策略当前为持有状态，仅作页面参考，不代表账户持仓。')
+  assert.equal(newowDisplayLabel('BUILD'), '参考建仓')
+  assert.equal(newowDisplayLabel('LONG_BIAS'), '偏多')
+  assert.equal(newowDisplayLabel('UNKNOWN_NEW_TOKEN'), '未确认')
+  assert.equal(shortNewowTime('2026-09-03T07:00:00Z'), '09-03 15:00')
+})
