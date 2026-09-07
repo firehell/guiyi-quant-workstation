@@ -125,11 +125,13 @@ expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWi
 
 - [x] 依次完成直接测试、完整 Web unit/build、Newow/Home/详情必要 E2E、后端 Task1 回归、工程/OpenSpec/secret/diff。不因纯 UI 改动运行生产 smoke。
 - [x] 对照最终代码更新稳定产品 canonical；STATUS 不添加视觉已上线声明。保留现有 evidence gaps 和非 Runtime 验收。
-- [ ] 自审后固定 branch base..HEAD，派独立 Standards 与 Spec reviewers；修正后按 finding 范围复验再复审。保留 exact refs 和真实输出。
-- [ ] 全部通过后提交/推送 task，按已授权 Lane2 流程集成 develop 并核对远端。仅清理已安全合入且干净的 task worktree/branch，Runtime 和其他任务 worktree 不动。
+- [x] 自审后固定 branch base..HEAD，派独立 Standards 与 Spec reviewers；修正后按 finding 范围复验再复审。保留 exact refs 和真实输出。
+- [x] 全部通过后提交/推送 task，按已授权 Lane2 流程集成 develop 并核对远端。仅清理已安全合入且干净的 task worktree/branch，Runtime 和其他任务 worktree 不动。
 
 ## 验收映射
 
 AC01/02/03/06 → Task2；AC04 → Task3；AC05 → Task1；AC07/08 → Task4。任何必要检查未通过不得标记完成；设计图批准不等于原站完整 page parity 或真实数据验收。
 
 验收执行说明：Task 1–3 已各自完成独立 Review/修正；Task 4 的本地检查与视觉回归结果见当前 task 提交。全分支独立 Standards/Spec Review、最终推送和集成由主任务执行，末两项保持未勾选。截图是受控 fixture，不关闭原站完整 parity、真实性能或 Runtime evidence Gate。
+
+完成记录（2026-09-08）：最终实现 `12c844d360ce14f4c6ff7f19d25cabf4fbe92742`，Standards Review 通过，Spec 的 Hint 叠层问题修正后独立复审通过，剩余发现为 0。已合入并核对远端 `develop@222b1262cc1c3963a0e13e90e483c4214cc63750`，完整审查与验证摘要见集成提交 `2cde4a734c18a5340e0828c8fe9a3dee3585ca60`。任务 worktree 和本地/远端分支已清理；main、release、Runtime 和生产数据未操作。
