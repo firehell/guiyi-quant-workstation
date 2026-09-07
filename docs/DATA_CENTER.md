@@ -22,7 +22,9 @@ Dataset。
 不是可替代来源，任何空窗都必须显式失败。期货 `1d` 的事实固定为 RQData
 `futures.get_exchange_daily`：真实合约直接读取，`continuous/MAIN` 按每个交易日 rank1
 `MainContractMap` 拼接对应真实合约。`1w` 仅由同一交易所日行情在完整 ISO 周内聚合，缺任一应有
-交易日事实即失败；不得用 `get_price` 的期货日/周 `close` 或 `settlement` 互相替代。
+交易日事实即失败。RQData 对零成交日返回 `volume=0`、有效 `close` 且 O/H/L 同时为空时，adapter
+只允许用同一行 `close` 规范成平价 OHLC；非零成交、部分价格缺失或无有效 `close` 仍须失败。
+不得用 `get_price` 的期货日/周 `close` 或 `settlement` 互相替代。
 
 ## 2. Canonical 物理合同
 

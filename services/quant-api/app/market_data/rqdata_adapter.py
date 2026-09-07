@@ -202,7 +202,9 @@ class RQDataMarketAdapter:
                     if trading_day in seen:
                         raise InfrastructureError("RQDATA_EXCHANGE_DAILY_DUPLICATE")
                     seen.add(trading_day)
-                    active_cache[(contract, trading_day)] = row
+                    active_cache[(contract, trading_day)] = (
+                        _normalize_exchange_daily_zero_volume_row(row)
+                    )
             for trading_day in contract_days:
                 cached_row = active_cache.get((contract, trading_day))
                 if cached_row is None:
@@ -717,6 +719,32 @@ def _canonical_bar(
             _row_value(row, "open_interest", "open_oi", "close_oi", required=False)
         ),
     )
+
+
+def _normalize_exchange_daily_zero_volume_row(
+    row: dict[str, Any],
+) -> dict[str, Any]:
+    """将 RQData 零量日的全空 O/H/L 规范为同一行 close，不借用 settlement。"""
+    open_value = _optional_decimal(_row_value(row, "open", required=False))
+    high_value = _optional_decimal(_row_value(row, "high", required=False))
+    low_value = _optional_decimal(_row_value(row, "low", required=False))
+    close_value = _optional_decimal(_row_value(row, "close", required=False))
+    volume = _optional_decimal(_row_value(row, "volume", required=False))
+    if (
+        volume == 0
+        and close_value is not None
+        and open_value is None
+        and high_value is None
+        and low_value is None
+    ):
+        normalized = dict(row)
+        normalized.update(
+            open=close_value,
+            high=close_value,
+            low=close_value,
+        )
+        return normalized
+    return row
 
 
 def _decimal(row: dict[str, Any], field: str) -> Decimal:
