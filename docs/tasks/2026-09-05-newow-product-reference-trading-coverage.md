@@ -91,9 +91,9 @@ P5 Tasks 17–20 已在候选分支 `feature/newow-product-reference-trading-p5`
 
 P5 浏览器 smoke 使用本地 route-intercept fixture，以真实浏览器逐项切换九组合并检查 409 单次恢复、429 单次 busy、参考分页/定位、解释 evidence-required、桌面及 `390×844` 移动端布局。该证据只证明候选 UI 与错误呈现，不是 P6 新建 E2E、真实 MDS、真实工作站性能、页面原站 parity 或 production 验收；被刻意注入的 409/429 是预期控制台 error。P3 的目标/吸筹、原页面期货 owner、browser-final/tie golden、AI copy、稳定诊断 token 与六组合 oracle 缺口继续保留。
 
-P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`。P6 Task 21 候选 `3e3c81df0c2fb53a3f64791cf94aa95b72f821e1` / tree `e6e1705f6a225e1d3e9e080bc84adf5ee392a5aa` 已完成 tracked browser/visual fixture Gate；`origin/develop` 随后直接推进到包含 P6 矩阵候选的 `24610c582458a47ab1bb1108fe36b7c8bb07ab5e` / tree `e2aa0fb19f4595734709438a5fe7bcba0d928f17`。Task 22 矩阵、Review 修复和 AC ledger 见下节；P6 完成、完整 Newow 产品、release、Runtime 和真实工作站性能继续分别判断。
+P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`。P6 Task 21 候选 `3e3c81df0c2fb53a3f64791cf94aa95b72f821e1` / tree `e6e1705f6a225e1d3e9e080bc84adf5ee392a5aa` 已完成 tracked browser/visual fixture Gate；`origin/develop` 随后直接推进到包含 P6 矩阵候选的 `24610c582458a47ab1bb1108fe36b7c8bb07ab5e` / tree `e2aa0fb19f4595734709438a5fe7bcba0d928f17`。Review 修复与 facts-only truth closure 最终经 PR #352 集成到 `develop@c64b42f10b48ec8eace2390abd3254e0dd573d22` / tree `60e606cc92b33160e1fee67a35a2c60917844c89`。Task 22 矩阵、Review 修复和 AC ledger 见下节；P6 完成、完整 Newow 产品、release、Runtime 和真实工作站性能继续分别判断。
 
-## 5. Task 22 初始矩阵与修复事实
+## 5. Task 22 初始矩阵、修复与最终矩阵
 
 初始矩阵在 `origin/develop@242368b893256c48656f047178c213d1cf2d012f` 之上的 P6 产品候选执行。各命令分别记账，不合并重叠 suite 数量：
 
@@ -133,6 +133,25 @@ P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`�
 
 该 exact matrix 无失败、无重试，各 suite 不合并计数。初始完整 Review 在 `24610c582` 上按轴记录为 Standards 3 个 P2、Spec 1 个独立 P2，共 4 个唯一 finding：共享 chart snapshot generation 变化时 dependent section/cache 的清理与晚到响应边界不完整、auxiliary cache 的 FIFO/LRU 偏差、tracked docs truth 未收口、桌面 Reference 视觉证据未先断言最终 DOM 交易事实。修复提交 `74e58587bcbfe8bc2826db8d45777ebea1eb15f7` / tree `eb2b0b77016c1e939ebac31c84c5a63053fbc504` 关闭 generation、LRU 与 Reference DOM/PNG 三项，focused Web 为 `66 passed`，affected Playwright 为 `11 passed`，3,075-module build/topology 与 diff check 通过；本次 facts-only docs delta 关闭 tracked docs truth。独立两轴 fix-delta 与 docs-delta scoped re-review 均为 PASS、无新 P1/P2/P3；结合 initial full Review，累计双轴 ledger clean。
 
+全部已知 finding 关闭后，在 exact candidate `efcd12f1794c80ae7f6cad638d98b0acc1693380` / tree `60e606cc92b33160e1fee67a35a2c60917844c89` 统一执行 Review 后唯一一次最终矩阵；PR #352 的 merge commit `c64b42f10b48ec8eace2390abd3254e0dd573d22` 保持相同 tree：
+
+| 命令 | exit / 结果 | wall time |
+|---|---|---:|
+| `uv sync --project services/quant-api --locked` | `0` | `0.13s` |
+| backend pytest excluding isolated/manual | `0`; `2274 passed, 4 skipped, 15 deselected` | `229.52s` |
+| `pytest -q tests/engineering` | `0`; `74 passed` | `57.94s` |
+| Ruff | `0`; all checks passed | `0.06s` |
+| Mypy | `0`; 128 source files | `0.27s` |
+| `check:alert-rules` | `0` | `0.76s` |
+| Web unit | `0`; `431 passed, 1 skipped` | `2.89s` |
+| Web build | `0`; 3,075 modules, topology passed | `3.63s` |
+| full Playwright | `0`; `109 passed` | `103.60s` |
+| OpenSpec strict | `0`; `9 passed, 0 failed` | `1.09s` |
+| secret scan | `0`; finding count 0 | `1.58s` |
+| `git diff --check` / status | `0`; tracked tree clean | `1.08s` / `1.09s` |
+
+该最终矩阵失败与重试均为 0；各 suite 不合并计数。合并后的 facts-only 状态更新不改变受测代码 tree，其验证仅按文档影响范围执行。
+
 ## 6. AC01–28 ledger
 
 `PASS` 表示该 AC 的当前仓库合同已有具体代码/测试/browser 或可复用 evidence；它不升级缺失的原页面证据。`BLOCKED` 表示仍需外部证据或最终 Review。
@@ -158,7 +177,7 @@ P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`�
 | AC17 | `PASS` | `74e58587b` 以 accepted chart-generation signature 绑定 token/revision/hash/as_of 与身份/版本；window/page identity 由 chart fingerprint 和 auxiliary cache key 独立约束。代际变化时清理 dependent section、终止旧 in-flight 并阻止晚到污染；同代分页保留 cache/dependent，focused unit 与 affected browser 通过，双轴 scoped re-review PASS。 |
 | AC18 | `PASS` | `test_product_readonly_compatibility.py`、仓库受控面 diff 扫描；无新增外部副作用或交易域。 |
 | AC19 | `PASS` | Task 21 desktop/mobile/keyboard/reference-locate/marker selection 保留；`74e58587b` 在桌面 Reference 截图前新增 OPEN/CLOSED/interrupted 的 ID 与价格 DOM 断言并只更新该 baseline，ordinary no-update run 通过，双轴 scoped re-review PASS。 |
-| AC20 | `PASS` | `24610c582` exact full matrix 全绿；initial full Review 为 Standards 3 个 P2 + Spec 1 个独立 P2（4 个唯一 finding），`74e58587b` 关闭 generation/LRU/Reference DOM-PNG 三项，本次 facts-only docs delta 关闭 tracked docs truth；两轴对应 scoped re-review 均 PASS、无新 P1/P2/P3，累计 Review ledger clean。 |
+| AC20 | `PASS` | 全部 finding 关闭后，`efcd12f17` / tree `60e606cc9` 的 Review 后最终 full matrix 全绿且零重试；initial full Review 为 Standards 3 个 P2 + Spec 1 个独立 P2（4 个唯一 finding），`74e58587b` 关闭 generation/LRU/Reference DOM-PNG 三项，`84868658e` 与 `efcd12f17` 关闭 tracked docs truth；两轴对应 scoped re-review 均 PASS、无新 P1/P2/P3，累计 Review ledger clean。PR #352 merge commit `c64b42f10` 保持同一受测 tree。 |
 | AC21 | `PASS` | `test_product_service.py` spy、Web chart-first browser case；未请求 section 零调用。 |
 | AC22 | `PASS` | service cutoff/Calendar/Session/night trading-day tests；晚 CLEAR/Hint/owner 不污染早期快照。 |
 | AC23 | `PASS` | `test_product_source_facts.py` 与 API 负测校验来源白名单、值/owner/version/as-of；缺项准确降级。 |
@@ -173,4 +192,4 @@ P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`�
 - AC01–28 最终 ledger 为 27 `PASS`、仅 AC02 `BLOCKED / EVIDENCE_REQUIRED`；P6 状态为 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`。
 - AC02 所列 P3 原件缺口继续阻止 `NEWOW_PRODUCT_AND_REFERENCE_TRADING_COMPLETE` 与笼统 `page_parity=true`；P6 工程完成不等于完整产品证据完成。
 - 既有 18 个 D1/60m OOS 结果和 9 个 W1 执行事实阻塞保持历史 evidence 状态；本轮产品测试不能改写为 `OOS_PASSED`。
-- `74e58587b` / `eb2b0b7` 是未发布、未进入 Runtime 的 Review 修复候选；`REAL_WORKSTATION_MDS_PERFORMANCE = NOT_RUN / PENDING`。本轮不连接或切换 active services，不执行 RQData、Canonical、production DB/Redis、Scope、notification、account/order/fill/ledger、Runtime、main/tag/release。
+- `74e58587b` / `eb2b0b7` 的 Review 修复已随 PR #352 集成 develop，但未发布、未进入 Runtime；`REAL_WORKSTATION_MDS_PERFORMANCE = NOT_RUN / PENDING`。本轮不连接或切换 active services，不执行 RQData、Canonical、production DB/Redis、Scope、notification、account/order/fill/ledger、Runtime、main/tag/release。
