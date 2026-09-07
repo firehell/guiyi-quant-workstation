@@ -27,7 +27,8 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 - 2026-09-07 以 `as_of=2026-09-07T07:00:00Z` 对全部 60 品种做只读输入检查：Scope 全部启用，`ready_count=0`。a/ag/al/ao/ap/au/b/pf 的历史物理 15m 前缀完整；其余 52 个中，51 个有历史缺口，RS 历史输入不可读。全部 60 品种缺少当日 13:31 的 1m 和 13:45 的 15m；FG、RS、SH 另有当日缺失分钟。代码检查不能把这些生产输入变为完整。
 - 针对上述 52 个阻塞合约的只读执行清单固定为 `through=2026-09-04`，初始批次 SHA-256 为 `f19338ea0d4540e69fc9f90e5c00b5141701228b0c82ad9d08cdaac1fefb1b00`，共 1,454 个 direct 和 1,948 个 derived 目标。用户于 2026-09-07 明确授权逐合约串行 production apply，并要求任一失败、partial、blocked 或 quota 立即停止且不重试。
 - 该 apply 从 clean detached `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6` 开始，在第 1 个 `BU2610` 返回非零/partial 后按约定停止；其余 51 个合约未开始，也未重试。失败后的只读计划证明 BU 的 1m 与 `5m/15m/30m/60m` 已全部发布，只剩 11 个 1d 与 11 个 1w direct 月目标，新的 BU plan SHA-256 为 `4db0746534645779c5c64cb3ce6fb9bbf515e92ec21607f6441a2265b167ecb6`。MarketDataService 从 Catalog/Canonical 严格读回 BU2610 physical 15m 共 4,997 根，交易日覆盖 `2025-10-16..2026-09-04`；因此苏冰历史 15m 已完整品种由 8 个增至 9 个，仍有 51 个待修复。批次整体状态保持 `PARTIAL`。
-- 停止后为剩余 51 个合约重新生成了零 provider 请求、零写入的只读计划：1,421 个 direct、1,904 个 derived 目标，预计 3,983,204 根 Bar，批次 SHA-256 为 `93b913e561f6a7b3bfc8c09ba15ad90948b54f45aea81b3cce436fca988aee88`。它不构成继续执行授权。
+- 停止后为剩余 51 个合约重新生成了零 provider 请求、零写入的只读计划：1,421 个 direct、1,904 个 derived 目标，预计 3,983,204 根 Bar，批次 SHA-256 为 `93b913e561f6a7b3bfc8c09ba15ad90948b54f45aea81b3cce436fca988aee88`。后续在 `develop@7ba649ad1b79e3fda765f49e30a1b8d7e208810a` 以同一 `through` 重新读取 Catalog，51 个唯一计划保持 1,421 个 direct、1,904 个 derived 和 3,983,204 根 Bar；HC2701、RB2701 的 2026-09 期望窗口由 4 个交易日扩为 5 个交易日，缺口数量与范围未扩大，故使用新 hash。
+- 该批次第 1 个 `BZ2610` 以 hash `4f87127f5e85058d7ea6e236754a921a0d64402813e12ff56340fab4fd443c60` 返回 `partial`，因此按合同停止，未启动余下 50 个合约，也未重试。其结果为 55 个目标 applied、8 个 blocked、1 个 failed；失败为 `contract:bz:BZ2610:1w:2025-10` 的 `MARKET_DATA_CONTRACT_INVALID`。只读 MarketDataService/Catalog 验证确认 BZ2610 physical 15m 已完整：4,790 根，交易日 `2025-10-29..2026-09-04`，`coverage_exact=true`。苏冰历史物理 15m 完整度因此从 9/60 提升到 10/60，仍有 50/60 待修复；日内 Live 缺口保持未解决。
 - 恢复代码的验证为后端完整测试 `2333 passed, 5 skipped, 15 deselected`，工程检查 `74 passed`，隔离 Redis `27 passed`；Mypy 133 个源文件、Ruff、前端类型/build/topology、OpenSpec `9/9`、secret 与 diff 检查通过。独立 Standards 与 Spec 复审均 PASS，旧 finding 已关闭。隔离 Redis 验证数据/水位原子性、拒绝不改旧值及幂等；不连接生产 Redis。本次 production apply 事实只以上一条的 partial 结果与只读读回为准；真实推送、release、Runtime promotion 和恢复开关启用均未执行。
 
 ## Newow 开发候选
@@ -44,7 +45,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- 苏冰候选停在等待版本发布；历史 warm-up 当前为 `PARTIAL`，51 个合约未开始。按照 stop-on-first-failure 合同，继续 51 个合约、重试 BU 的 D1/W1、main/tag/release、exact-tag Runtime promotion、生产 Live recovery enable 均分别需要新的明确执行意图。启用恢复前必须核对 Live/Alert 为同一 exact root/version 且恢复协议同时启用；60 品种输入完整性、后续自然 Event、provider acceptance 与人工收件仍须分别验收。盘后 `missed` 已由 2026-09-07 自然 passed 关闭。
+- 苏冰候选停在等待版本发布；历史 warm-up 当前为 `PARTIAL`，50 个合约未开始。按照 stop-on-first-failure 合同，继续余下 50 个合约、重试 BU 的 D1/W1 或诊断/修复 BZ 的 1w 无效合约事实、main/tag/release、exact-tag Runtime promotion、生产 Live recovery enable 均分别需要新的明确执行意图。启用恢复前必须核对 Live/Alert 为同一 exact root/version 且恢复协议同时启用；60 品种输入完整性、后续自然 Event、provider acceptance 与人工收件仍须分别验收。盘后 `missed` 已由 2026-09-07 自然 passed 关闭。
 - `PF2611` exact plan、一次性真实 apply、只读验证及 exact `v1.9.15` 五项 Runtime promotion 已完成；当前仍为 `NATURAL_EVIDENCE_PENDING`，`RUNTIME_READY` 尚未证实。
 - HTDY目标61对Scope未应用；任何Scope调整、真实数据修复、通知、main/tag/release或Runtime版本切换仍需目标/环境/范围明确的单次执行意图。本轮仓库修复不改变现役`v1.9.15@36fef039`。
 - 仍须等待自然 completed SuBing 15m Event、immutable `AlertEvent` 与 one-shot PushPlus provider acceptance；不得用 synthetic、replay、backfill 或手工发送替代。
