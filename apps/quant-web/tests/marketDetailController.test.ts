@@ -339,6 +339,7 @@ test('Newow chart starts while generic series is still pending', async () => {
   await switched
   assert.equal(controller.state.value.loading, false)
   assert.equal(controller.state.value.header?.productName, '焦煤')
+  assert.deepEqual(controller.productCatalog.value, [dominant('jm')])
   product.dispose()
   controller.dispose()
 })

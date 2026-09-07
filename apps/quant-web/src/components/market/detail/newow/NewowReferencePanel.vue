@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { shortNewowTime, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 
 import type {
   NewowProductSectionResponse,
@@ -25,6 +26,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   reload: [window: { performanceSince: string; performanceThrough: string }]
+  retry: []
   'load-more': []
   locate: [trade: NewowReferenceTrade]
 }>()
@@ -71,8 +73,9 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
   <section class="newow-reference" aria-labelledby="newow-reference-title">
     <header class="newow-reference__header">
       <div>
-        <h3 id="newow-reference-title">单品种乐观参考历史</h3>
-        <p>Reference 固定乐观口径：只表达 long/flat；使用趋势 B、震荡 Low/High、主升浪 MA45 的 API reference_price；零手续费、零滑点；不计资金占用与真实成交限制；不推断手数、不推断空单、不推断账户净值、不推断真实收益。Reference 非因果回测、非模拟账户、非真实成交，不使用同 Bar Close；同 Bar Close 仅属于独立 comparator。</p>
+        <h3 id="newow-reference-title">参考交易</h3>
+        <p>页面参考 · 零手续费 / 零滑点 · 非账户成交</p>
+        <details><summary>参考口径说明</summary><p>只表达 long/flat；使用趋势 B、震荡 Low/High、主升浪 MA45 的 API reference_price；不计资金占用与真实成交限制，不推断手数、不推断空单、不推断账户净值、不推断真实收益。Reference 非因果回测、非模拟账户、非真实成交，不使用同 Bar Close；同 Bar Close 仅属于独立 comparator。</p></details>
       </div>
       <form class="newow-reference__window" @submit.prevent="reload">
         <label>统计起点 <input :value="performanceSince" type="date" @input="updateSince" /></label>
@@ -86,6 +89,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
       <span v-if="presentation.staleAt">stale 读取时间 {{ presentation.staleAt }}</span>
     </p>
 
+    <button v-if="lifecycle === 'not_requested' || error || lifecycle === 'unavailable'" type="button" @click="emit('retry')">{{ lifecycle === 'not_requested' ? '读取参考交易' : '重试参考交易' }}</button>
     <template v-if="model">
       <section class="newow-reference__summary" data-testid="newow-reference-summary" aria-label="参考交易统计摘要">
         <dl>
@@ -93,18 +97,17 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
           <div><dt>胜率</dt><dd>{{ model.summary.winRateText }}</dd></div>
           <div><dt>平均单笔</dt><dd>{{ model.summary.meanText }}</dd></div>
           <div><dt>收益合计</dt><dd>{{ model.summary.sumText }} <small>{{ model.summary.sumUnit }}</small></dd></div>
-          <div><dt>OPEN</dt><dd>{{ model.counts.open }}</dd></div>
+          <div><dt>未清仓</dt><dd>{{ model.counts.open }}</dd></div>
           <div><dt>换月中断</dt><dd>{{ model.counts.interrupted }}</dd></div>
           <div><dt>期初已有</dt><dd>{{ model.counts.initial }}</dd></div>
         </dl>
         <p v-if="model.summary.closedCount === 0">暂无已完成参考交易；统计指标不是 0%。</p>
-        <p>Performance window {{ model.performanceWindow.since }} → {{ model.performanceWindow.through }}</p>
-        <p>实际可用至 {{ model.actualAvailableThrough }} · reference cutoff {{ model.performanceWindow.cutoff }}</p>
+        <details><summary>统计时间与来源</summary><p>Performance window {{ model.performanceWindow.since }} → {{ model.performanceWindow.through }}</p><p>实际可用至 {{ model.actualAvailableThrough }} · reference cutoff {{ model.performanceWindow.cutoff }}</p></details>
       </section>
 
       <div class="newow-reference__tools">
         <label>
-          表格筛选
+          记录筛选
           <select :value="filter" aria-label="筛选参考历史" @change="updateFilter">
             <option value="all">全部记录</option>
             <option value="closed">CLOSED</option>
@@ -113,44 +116,26 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
             <option value="initial">期初已有</option>
           </select>
         </label>
-        <span>筛选仅改变下表，不改变服务端统计或 Performance window。</span>
+        <span>筛选仅改变记录，不改变服务端统计或 Performance window。</span>
       </div>
 
-      <div class="newow-reference__table-wrap">
-        <table>
-          <thead>
-            <tr><th>记录</th><th>策略 / 周期</th><th>合约 / Segment</th><th>建仓</th><th>清仓</th><th>状态 / 持有</th><th>收益 / 估值</th><th>操作</th></tr>
-          </thead>
-          <tbody>
-            <template v-for="row in visibleModel?.rows ?? []" :key="row.id">
-              <tr :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id">
-                <td><code>{{ row.id }}</code></td>
-                <td>{{ row.trade.strategy_code }} / {{ row.trade.frequency }}<br /><small>{{ row.trade.formula_versions.join(' / ') }}</small></td>
-                <td>{{ row.trade.physical_contract }}<br /><small>{{ row.trade.segment_id }}</small></td>
-                <td><code>{{ row.trade.entry_signal_id }}</code><br />{{ row.trade.entry_bar_end }}<br />参考价 {{ row.trade.entry_reference_price }}</td>
-                <td><code>{{ row.trade.exit_signal_id ?? '—' }}</code><br />{{ row.trade.exit_bar_end ?? '—' }}<br />参考价 {{ row.trade.exit_reference_price ?? '—' }}</td>
-                <td>{{ row.statusText }}<br />{{ row.trade.holding_bars }} Bars</td>
-                <td>{{ row.returnText }}<br /><small>估值 {{ row.valuationText }}</small></td>
-                <td>
-                  <button type="button" :aria-label="`定位参考记录 ${row.id} 的建仓信号`" @click="emit('locate', row.trade)">定位</button>
-                  <button type="button" :aria-label="`展开参考记录 ${row.id}`" :aria-expanded="expanded.includes(row.id)" @click="toggle(row.id)">Hint</button>
-                </td>
-              </tr>
-              <tr v-if="expanded.includes(row.id)" class="newow-reference__details">
-                <td colspan="8">
-                  <p>身份 {{ row.trade.reference_model_version }} · {{ row.trade.futures_adaptation_version }}</p>
-                  <p v-if="row.hints.length === 0">该记录没有服务端 Hint ID。</p>
-                  <ul v-else>
-                    <li v-for="hint in row.hints" :key="hint.id" :data-hint-availability="hint.availability">
-                      <code>{{ hint.id }}</code> · {{ hint.text }}
-                      <template v-if="hint.fact"> · known_at {{ hint.fact.known_at }} · anchor {{ hint.fact.anchor_price ?? '—' }} · {{ hint.fact.physical_contract }} / {{ hint.fact.segment_id }}</template>
-                    </li>
-                  </ul>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
+      <div class="newow-reference__cards">
+        <article v-for="row in visibleModel?.rows ?? []" :key="row.id" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id">
+          <header :title="`${row.trade.entry_bar_end} → ${row.trade.exit_bar_end ?? row.trade.mark_bar_end ?? row.trade.interrupted_at}`"><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : '换月中断' }}</strong><span>{{ row.trade.physical_contract }} · {{ shortNewowTime(row.trade.entry_bar_end) }} → {{ row.trade.exit_bar_end ? shortNewowTime(row.trade.exit_bar_end) : row.category === 'open' ? '至估值日' : shortNewowTime(row.trade.interrupted_at) }}</span><span v-if="row.initial">期初已有</span></header>
+          <div class="newow-reference__card-body">
+            <p>▲ 参考建仓 {{ row.trade.entry_reference_price }} · {{ shortNewowTime(row.trade.entry_bar_end) }} <template v-if="row.category === 'closed'">　▼ 参考清仓 {{ row.trade.exit_reference_price }} · {{ shortNewowTime(row.trade.exit_bar_end) }}</template><template v-else-if="row.category === 'interrupted'">　换月中断 · {{ referenceInterruptionLabel(row.trade.interruption_reason) }}</template></p>
+            <p class="newow-reference__return">{{ row.category === 'open' ? '参考浮动' : row.category === 'closed' ? '已清仓收益' : '中断浮动' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</span><small v-if="row.category !== 'closed'" :title="row.valuationText"> · 估值 {{ shortNewowTime(row.trade.mark_bar_end) }}</small></p>
+            <button type="button" :aria-label="`定位参考记录 ${row.id} 的建仓信号`" @click="emit('locate', row.trade)">定位</button>
+            <button type="button" :aria-label="`展开参考记录 ${row.id}`" :aria-expanded="expanded.includes(row.id)" @click="toggle(row.id)">详情</button>
+          </div>
+          <div v-if="expanded.includes(row.id)" class="newow-reference__details">
+            <p>{{ row.returnText }} · 估值 {{ row.valuationText }} · 中断原始原因 {{ row.trade.interruption_reason ?? '—' }}</p><p>{{ row.statusText }} · 建仓 {{ row.trade.entry_bar_end }} · 清仓 {{ row.trade.exit_bar_end ?? '—' }}</p><p>{{ row.trade.strategy_code }} / {{ row.trade.frequency }} · {{ row.trade.holding_bars }} Bars</p><p>{{ row.id }} · {{ row.trade.segment_id }}</p>
+            <p>建仓 ID {{ row.trade.entry_signal_id }} · 清仓 ID {{ row.trade.exit_signal_id ?? '—' }}</p>
+            <p>公式 {{ row.trade.formula_versions.join(' / ') }} · {{ row.trade.reference_model_version }} · {{ row.trade.futures_adaptation_version }}</p>
+            <p v-if="row.hints.length === 0">该记录没有服务端 Hint ID。</p>
+            <ul v-else><li v-for="hint in row.hints" :key="hint.id" :data-hint-availability="hint.availability"><code>{{ hint.id }}</code> · {{ hint.text }}<template v-if="hint.fact"> · known_at {{ hint.fact.known_at }} · anchor {{ hint.fact.anchor_price ?? '—' }} · {{ hint.fact.physical_contract }} / {{ hint.fact.segment_id }}</template></li></ul>
+          </div>
+        </article>
       </div>
       <p v-if="visibleModel?.rows.length === 0" class="newow-reference__state">当前筛选没有记录。</p>
       <p v-if="locateMessage" class="newow-reference__state" role="status">{{ locateMessage }}</p>
@@ -172,11 +157,16 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference__summary dl div { padding: var(--gy-space-2); background: var(--gy-bg-elevated); }
 .newow-reference__summary dt { color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .newow-reference__summary dd { margin: 4px 0 0; font-variant-numeric: tabular-nums; }
-.newow-reference__table-wrap { overflow-x: auto; }
-.newow-reference table { width: 100%; min-width: 1120px; border-collapse: collapse; background: var(--gy-bg-panel); }
-.newow-reference th, .newow-reference td { padding: var(--gy-space-2); border: 1px solid var(--gy-border); text-align: left; vertical-align: top; }
-.newow-reference tr[data-selected="true"] { outline: 2px solid var(--gy-border-focus); outline-offset: -2px; }
-.newow-reference__details td { background: var(--gy-bg-elevated); }
+.newow-reference__cards { display:grid; gap:8px; }
+.newow-reference__card { padding:12px 16px; border:1px solid var(--gy-border); border-radius:7px; background:var(--gy-bg-panel); min-width:0; }
+.newow-reference__card[data-reference-category="open"] { background:#fff8f2; border-left:4px solid #ff6b2c; }
+.newow-reference__card[data-selected="true"] { outline:2px solid var(--gy-border-focus); }
+.newow-reference__card header,.newow-reference__card-body { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.newow-reference__card header { margin-bottom:6px; }
+.newow-reference__card header strong { font-size:12px; padding:4px 10px; border-radius:7px; background:var(--gy-bg-elevated); }
+.newow-reference__card-body > p:first-child { flex:1; }
+.newow-reference__return { font-variant-numeric:tabular-nums; }
+.newow-reference__details { margin-top:12px; color:var(--gy-text-secondary); overflow-wrap:anywhere; }
 .newow-reference__state { color: var(--gy-status-warning); }
-@media (max-width: 720px) { .newow-reference__header { flex-direction: column; } }
+@media (max-width: 720px) { .newow-reference__header { flex-direction: column; } .newow-reference__card-body > p:first-child { flex-basis:100%; } }
 </style>

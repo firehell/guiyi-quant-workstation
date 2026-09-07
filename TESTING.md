@@ -251,13 +251,21 @@ pnpm -C apps/quant-web exec node --test \
   tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts \
   tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts \
   tests/newowReferencePanel.test.ts tests/newowExplanationPanel.test.ts \
-  tests/newowDetailPresentation.test.ts
+  tests/newowDetailPresentation.test.ts tests/useNewowDailyQuote.test.ts
 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
-  e2e/newow-product.spec.mjs e2e/newow-detail-light.spec.mjs \
+  e2e/newow-product.spec.mjs e2e/newow-detail-light.spec.mjs e2e/newow-chart-panes.spec.mjs \
   e2e/market-home.spec.mjs e2e/market-detail.spec.mjs
 ```
 
-新增测试入口随 V2 任务实现提供；文档提交阶段不能声称它们已经可运行或通过。
+上述 V2 测试入口已随实现提供；实际通过状态以本次命令结果为准，不代表发布或 Runtime 验收。
+MACD 视觉 fixture 通过既有 Python 内核预生成，保留真实参数 hash 与同区段 Bar 输入；修改受控
+输入后先去掉 `--check` 重新生成，再运行下述一致性检查与浏览器截图复核：
+
+```bash
+PYTHONPATH=packages/quant-core uv run --project services/quant-api python \
+  apps/quant-web/e2e/fixtures/generate_newow_macd.py --check
+```
+
 浏览器原站观察只用于设计依据；受控截图与 API fixture 不证明真实工作站或原站完整 parity。
 
 苏冰当日缺口、恢复水位、只读诊断及日志：

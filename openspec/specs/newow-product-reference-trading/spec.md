@@ -343,6 +343,61 @@ MUST NOT 截断 warm-up、owner 验证、参考统计或比较器的必要计算
 - **WHEN** 服务装配响应
 - **THEN** 不调用 ReferenceTrade 统计、三副图、多周期解释或比较器，主图不等待未请求研究
 
+### Requirement: White detail preserves section ownership and accessible disclosure
+
+The Newow route SHALL use a white full-width shell with document scrolling, a compact two-line
+strategy summary, inline expanded explanation and one native modal dialog. Dialog controls SHALL
+support keyboard focus containment, Escape, backdrop close and trigger focus restoration without
+reviving an old identity. Historical Action/Hint dialogs SHALL retain their own exact facts;
+current snapshot explanation MUST NOT be presented as historical reasoning.
+
+The chart SHALL share one timeline across price, same-Bar volume and one selected auxiliary pane.
+MACD SHALL load by default after chart acceptance; reselecting the selected component MUST NOT
+close or reload it. The quote SHALL use an independent bounded completed actual-dominant D1
+read of two Bars with physical-owner validation, labeled as non-live. Reference SHALL load once
+on first visibility, preserve explicit retry and manual cursor pagination, and render vertical
+cards with raw identities accessible in details. Filtering and chart location MUST NOT alter
+server statistics. Explanation and comparator SHALL remain user-requested and distinct.
+
+#### Scenario: Reference section enters the viewport repeatedly
+
+- **GIVEN** the reference section has already loaded for the accepted identity
+- **WHEN** it leaves and re-enters the viewport
+- **THEN** the client SHALL reuse it without prefetching every history cursor
+- **AND** a failed first request SHALL require explicit retry
+
+### Requirement: MACD auxiliary display preserves the generic kernel contract
+
+`section=auxiliary&component=macd` SHALL be a read-only display branch of the existing route,
+with the same product identity, snapshot proof and resource budgets. It MUST use the existing
+`macd_series` kernel with fast=12, slow=26, signal=9, ema_seed_policy=`sma_window`,
+histogram_scale=2 and round_digits=6. The kernel `MACD_VERSION` and `parameters_hash` SHALL
+be preserved separately from `display_adapter_version=guiyi_newow_macd_display_v1`.
+The client SHALL retain the kernel parameter hash as 16 lowercase hexadecimal characters;
+this hash is distinct from the 64-character snapshot/input SHA-256 fields.
+The display adapter version and parameters hash MUST participate in the MACD section cache key.
+
+Each physical owner segment SHALL calculate from the existing completed, as-of-bounded lifecycle
+replay prefix before projecting observation-eligible points into the display window. Warm-up-only
+bars MAY seed that same physical segment but MUST NOT be displayed. The adapter MUST NOT fetch
+provider data, borrow another contract's state, change strategy formula versions, Action or
+ReferenceTrade identities, or turn missing/warming values into zero.
+
+The MACD-only envelope SHALL add `display_adapter_version`, `parameters` and `parameters_hash`;
+each segment's `data.dif/dea/histogram` SHALL contain aligned points with `bar_end`, `value`,
+`ready`, `valid` and `reason`. DIF MAY be ready while DEA and histogram remain warming.
+The branch SHALL set `repainting=false`, `formal_signal_eligible=false`, `page_parity=false`,
+and `allowed_uses=["research_display"]`. Existing auxiliary shapes and the top-level
+`newow_product_detail_v1` SHALL remain compatible. MACD MUST NOT feed actions, reference returns
+or Alert. The client SHALL reject malformed, non-finite, misaligned or contradictory points.
+
+#### Scenario: Display windows share a physical MACD prefix
+
+- **GIVEN** two compatible snapshots differ only in their requested display windows
+- **WHEN** each window displays the same physical Bar
+- **THEN** DIF, DEA and histogram values and point states SHALL be equal for that Bar
+- **AND** a later physical owner segment SHALL restart its own MACD state
+
 ### Requirement: Reference cutoff is authoritative and independent of chart data
 
 `performance_since / performance_through` SHALL 表示用户明确选择的统计 membership 窗口，并必须成对。

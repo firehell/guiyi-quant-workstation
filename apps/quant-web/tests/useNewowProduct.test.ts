@@ -1029,3 +1029,21 @@ async function flush(): Promise<void> {
   await Promise.resolve()
   await nextTick()
 }
+
+test('explanation summary compatibility requires the entire accepted chart generation, not token text alone', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'shared-token' }))
+  await flush()
+  const first = state.loadExplanation()
+  pending[1]!.resolve(normalizedStatus(pending[1]!.request, 'shared-token'))
+  await first
+  assert.equal(state.explanationChartCompatible.value, true)
+  const second = state.loadExplanation()
+  const changed = normalizedStatus(pending[2]!.request, 'shared-token')
+  pending[2]!.resolve({ ...changed, meta: { ...changed.meta, data_revision_identity: 'different-revision' } })
+  await second
+  assert.equal(state.explanationChartCompatible.value, false)
+  state.dispose()
+})
