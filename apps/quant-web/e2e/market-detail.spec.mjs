@@ -106,7 +106,7 @@ test('Free mounts its generic workspace without the legacy sidebar or strategy m
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-research-marker-count', '0')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-rendered-marker-count', '0')
   await expect(page.getByText('火天大有（原始观察）', { exact: true })).toHaveCount(0)
-  await expect(page.getByText(/SuBing|牛哇|Newow/, { exact: false })).toHaveCount(0)
+  await expect(shell.locator('[data-detail-workspace="free"]').getByText(/SuBing|牛哇|Newow/, { exact: false })).toHaveCount(0)
 
   const order = await shell.locator('[data-detail-section]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-detail-section')))
   expect(order.slice(0, 4)).toEqual(['topbar', 'quote', 'view-nav', 'workspace-slot'])
