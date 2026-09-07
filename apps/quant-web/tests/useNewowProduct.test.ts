@@ -425,6 +425,118 @@ test('bounds cumulative chart and reference pages and stops exposing an older cu
   state.dispose()
 })
 
+test('reopening a validated auxiliary component reuses the current generation', async () => {
+  const calls: NewowProductRequest[] = []
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      calls.push(request)
+      return request.section === 'chart'
+        ? normalizedChart(request)
+        : normalizedAuxiliary(request)
+    },
+  })
+  await flush()
+
+  await state.loadAuxiliary('main_force_control')
+  await state.loadAuxiliary('main_force_control')
+
+  assert.deepEqual(
+    calls.filter((request) => request.section === 'auxiliary').map((request) => request.component),
+    ['main_force_control'],
+  )
+  assert.equal(state.sections.auxiliary.data.value?.section === 'auxiliary' && state.sections.auxiliary.data.value.value?.component, 'main_force_control')
+  state.dispose()
+})
+
+test('A -> B -> A reuses each validated auxiliary component once', async () => {
+  const calls: NewowProductRequest[] = []
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      calls.push(request)
+      return request.section === 'chart'
+        ? normalizedChart(request)
+        : normalizedAuxiliary(request)
+    },
+  })
+  await flush()
+
+  await state.loadAuxiliary('main_force_control')
+  await state.loadAuxiliary('up_down_energy')
+  await state.loadAuxiliary('main_force_control')
+
+  assert.deepEqual(
+    calls.filter((request) => request.section === 'auxiliary').map((request) => request.component),
+    ['main_force_control', 'up_down_energy'],
+  )
+  assert.equal(state.sections.auxiliary.data.value?.section === 'auxiliary' && state.sections.auxiliary.data.value.value?.component, 'main_force_control')
+  state.dispose()
+})
+
+test('identity replacement invalidates validated auxiliary reuse', async () => {
+  const identity = ref<MarketDetailIdentity | null>(newowIdentity('trend', '1d'))
+  const calls: NewowProductRequest[] = []
+  const state = useNewowProduct({
+    identity,
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      calls.push(request)
+      return request.section === 'chart'
+        ? normalizedChart(request)
+        : normalizedAuxiliary(request)
+    },
+  })
+  await flush()
+  await state.loadAuxiliary('main_force_control')
+  await state.loadAuxiliary('main_force_control')
+
+  identity.value = newowIdentity('oscillation', '60m')
+  await flush()
+  await state.loadAuxiliary('main_force_control')
+
+  assert.deepEqual(
+    calls.filter((request) => request.section === 'auxiliary').map((request) => [request.identity.strategy, request.identity.frequency, request.component]),
+    [
+      ['trend', '1d', 'main_force_control'],
+      ['oscillation', '60m', 'main_force_control'],
+    ],
+  )
+  state.dispose()
+})
+
+test('rejected snapshot generation invalidates validated auxiliary reuse', async () => {
+  const calls: NewowProductRequest[] = []
+  let referenceAttempts = 0
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      calls.push(request)
+      if (request.section === 'chart') return normalizedChart(request, { token: 'old-token' })
+      if (request.section === 'auxiliary') return normalizedAuxiliary(request, request.snapshotToken ?? null)
+      referenceAttempts += 1
+      if (referenceAttempts === 1) throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+      return normalizedReference(request, { token: 'new-token' })
+    },
+  })
+  await flush()
+  await state.loadAuxiliary('main_force_control')
+  await state.loadAuxiliary('main_force_control')
+
+  await state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15' })
+  await state.loadAuxiliary('main_force_control')
+
+  assert.equal(referenceAttempts, 2)
+  assert.deepEqual(
+    calls.filter((request) => request.section === 'auxiliary').map((request) => request.snapshotToken),
+    ['old-token', 'new-token'],
+  )
+  state.dispose()
+})
+
 interface Pending {
   request: NewowProductRequest
   signal: AbortSignal
@@ -448,6 +560,11 @@ function normalizedChart(request: NewowProductRequest, options: { token?: string
 
 function normalizedReference(request: NewowProductRequest, options: { token?: string | null; hash?: string; referenceHash?: string; items?: unknown[]; nextBefore?: string | null; performanceSince?: string } = {}) {
   return normalizeNewowProductResponse(referenceWire(options), request)
+}
+
+function normalizedAuxiliary(request: NewowProductRequest, token: string | null = request.snapshotToken ?? 'snapshot-a') {
+  if (request.section !== 'auxiliary') throw new Error('auxiliary request required')
+  return normalizeNewowProductResponse(auxiliaryWire(request, token), request)
 }
 
 function normalizedStatus(request: NewowProductRequest, token: string | null) {
@@ -528,6 +645,31 @@ function referenceWire(options: { token?: string | null; hash?: string; referenc
       performance_since: options.performanceSince ?? '2025-01-01', performance_through: '2026-08-15', actual_available_through: '2026-08-15', reference_cutoff: '2026-08-15T07:00:00Z', reference_input_sha256: options.referenceHash ?? 'c'.repeat(64),
       summary: { membership_policy: 'closed_entry_in_requested_window', closed_count: 1, win_count: 1, loss_count: 0, flat_count: 0, win_rate_pct: '100.00', mean_return_pct: '1.2500', sum_return_percentage_points: '1.2500', open_count: 0, interrupted_count: 0, initial_count: 0 },
       items: options.items ?? [referenceItem('trade-1', '1.2500')], next_before: options.nextBefore ?? null, executable: false, auto_order: false, allowed_uses: ['page_parity_reference', 'research_display'],
+    } },
+  }
+}
+
+function auxiliaryWire(request: Extract<NewowProductRequest, { section: 'auxiliary' }>, token: string | null) {
+  const base = chartWire({ strategy: request.identity.strategy, frequency: request.identity.frequency, token })
+  const formulaVersion = request.component === 'main_force_control'
+    ? 'newow_main_force_control_page_v1'
+    : 'newow_up_down_energy_page_v1'
+  const data = request.component === 'main_force_control'
+    ? { kongpan: [1.25], status: ['control'], current_status: 'control', formula_version: formulaVersion }
+    : { var4: [1.25], ma10: [1], band_entry: [0], rebound_entry: [0], oversold_entry: [0], var3: [2], ma120: [3], formula_version: formulaVersion }
+  return {
+    ...base,
+    section: 'auxiliary',
+    chart: notRequested(),
+    auxiliary: { delivery: 'delivered', status: readyStatus(), value: {
+      component: request.component,
+      formula_version: formulaVersion,
+      segments: [{
+        physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+        bar_ends: ['2026-08-14T07:00:00Z'], status: readyStatus(), data,
+      }],
+      repainting: false, formal_signal_eligible: false, page_parity: true,
+      source_category: 'guiyi_product_auxiliary_adapter', allowed_uses: ['product_auxiliary'],
     } },
   }
 }
