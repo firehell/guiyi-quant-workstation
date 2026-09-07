@@ -796,6 +796,113 @@ def test_rqdata_daily_and_weekly_normalize_zero_volume_nan_ohl_to_close(
     session.close()
 
 
+def test_rqdata_daily_and_weekly_normalize_zero_volume_zero_ohl_to_close(
+    tmp_path,
+) -> None:
+    """RQData 的非零 close 配合 0 O/H/L 是零成交占位，不是有效零价。"""
+    session, _starts = _session(tmp_path)
+    daily_key = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly_key = DatasetKey("contract", "jm", "JM2509", "1w")
+    daily_ends = tuple(
+        datetime(2025, 1, day, 1, 5, tzinfo=UTC) for day in range(6, 11)
+    )
+    rows = [
+        {
+            "date": date(2025, 1, 6),
+            "open": 0,
+            "high": 0,
+            "low": 0,
+            "close": 100,
+            "volume": 0,
+            "total_turnover": 0,
+            "open_interest": 20,
+        },
+        *[
+            {
+                "date": date(2025, 1, day),
+                "open": 100 + day,
+                "high": 110 + day,
+                "low": 90 + day,
+                "close": 105 + day,
+                "volume": day,
+                "total_turnover": day * 100,
+                "open_interest": 20 + day,
+            }
+            for day in range(7, 11)
+        ],
+    ]
+    adapter = RQDataMarketAdapter(
+        session=session,
+        client=ExchangeDailyClient({"JM2509": pd.DataFrame(rows)}),
+    )
+
+    daily_batch, weekly_batch = adapter.fetch_many(
+        (
+            BarFetchRequest(daily_key, daily_ends),
+            BarFetchRequest(weekly_key, (daily_ends[-1],)),
+        )
+    )
+
+    assert (
+        daily_batch.bars[0].open,
+        daily_batch.bars[0].high,
+        daily_batch.bars[0].low,
+        daily_batch.bars[0].close,
+    ) == (Decimal("100"),) * 4
+    assert (
+        weekly_batch.bars[0].open,
+        weekly_batch.bars[0].high,
+        weekly_batch.bars[0].low,
+        weekly_batch.bars[0].close,
+    ) == (Decimal("100"), Decimal("120"), Decimal("97"), Decimal("115"))
+    session.close()
+
+
+@pytest.mark.parametrize(
+    ("open_value", "high_value", "low_value", "volume"),
+    [
+        (0, 100, 0, 0),
+        (0, 100, 0, 1),
+        (0, 0, 0, 1),
+    ],
+)
+def test_rqdata_daily_rejects_partial_or_traded_zero_ohl(
+    tmp_path,
+    open_value,
+    high_value,
+    low_value,
+    volume,
+) -> None:
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 6, 1, 5, tzinfo=UTC)
+    adapter = RQDataMarketAdapter(
+        session=session,
+        client=ExchangeDailyClient(
+            {
+                "JM2509": pd.DataFrame(
+                    [
+                        {
+                            "date": date(2025, 1, 6),
+                            "open": open_value,
+                            "high": high_value,
+                            "low": low_value,
+                            "close": 100,
+                            "volume": volume,
+                            "total_turnover": volume * 100,
+                            "open_interest": 20,
+                        }
+                    ]
+                )
+            }
+        ),
+    )
+
+    with pytest.raises(InfrastructureError, match="^RQDATA_ZERO_OHL_INVALID$"):
+        _fetch(adapter, DatasetKey("contract", "jm", "JM2509", "1d"), (expected,))
+
+    session.close()
+
+
 @pytest.mark.parametrize(
     ("open_value", "high_value", "low_value", "volume"),
     [

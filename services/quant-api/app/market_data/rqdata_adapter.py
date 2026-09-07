@@ -730,12 +730,20 @@ def _normalize_exchange_daily_zero_volume_row(
     low_value = _optional_decimal(_row_value(row, "low", required=False))
     close_value = _optional_decimal(_row_value(row, "close", required=False))
     volume = _optional_decimal(_row_value(row, "volume", required=False))
-    if (
-        volume == 0
-        and close_value is not None
-        and open_value is None
-        and high_value is None
-        and low_value is None
+    missing_ohl = open_value is None and high_value is None and low_value is None
+    zero_ohl = open_value == high_value == low_value == Decimal(0)
+    has_zero_ohl = any(
+        value == Decimal(0) for value in (open_value, high_value, low_value)
+    )
+    if has_zero_ohl and not zero_ohl:
+        raise InfrastructureError("RQDATA_ZERO_OHL_INVALID")
+    if zero_ohl:
+        if volume == 0 and close_value == 0:
+            return row
+        if volume != 0 or close_value is None or close_value <= 0:
+            raise InfrastructureError("RQDATA_ZERO_OHL_INVALID")
+    if volume == 0 and close_value is not None and close_value > 0 and (
+        missing_ohl or zero_ohl
     ):
         normalized = dict(row)
         normalized.update(
