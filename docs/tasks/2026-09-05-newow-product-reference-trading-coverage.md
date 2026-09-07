@@ -131,7 +131,7 @@ P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`�
 | secret scan | `0`; finding count 0 | `1.60s` |
 | `git diff --check` / status | `0`; tracked tree clean | `1.08s` / `<0.01s` |
 
-该 exact matrix 无失败、无重试，各 suite 不合并计数。初始完整 Standards 与 Spec Review 在 `24610c582` 上发现 3 个 P2：共享 chart snapshot generation 变化时 dependent section/cache 的清理与晚到响应边界不完整、auxiliary cache 未完整满足已声明的代际/LRU 行为、桌面 Reference 视觉证据未先断言最终 DOM 交易事实。修复提交 `74e58587bcbfe8bc2826db8d45777ebea1eb15f7` / tree `eb2b0b77016c1e939ebac31c84c5a63053fbc504` 仅修改 `useNewowProduct.ts`、对应 unit/E2E 和一个桌面 Reference baseline：focused Web 为 `66 passed`，affected Playwright 为 `11 passed`，3,075-module build/topology 与 diff check 通过。独立 Standards fix-delta re-review 与 Spec fix-delta re-review 均为 PASS、无新 P1/P2/P3；结合 initial full Review，累计双轴 ledger clean。
+该 exact matrix 无失败、无重试，各 suite 不合并计数。初始完整 Review 在 `24610c582` 上按轴记录为 Standards 3 个 P2、Spec 1 个独立 P2，共 4 个唯一 finding：共享 chart snapshot generation 变化时 dependent section/cache 的清理与晚到响应边界不完整、auxiliary cache 的 FIFO/LRU 偏差、tracked docs truth 未收口、桌面 Reference 视觉证据未先断言最终 DOM 交易事实。修复提交 `74e58587bcbfe8bc2826db8d45777ebea1eb15f7` / tree `eb2b0b77016c1e939ebac31c84c5a63053fbc504` 关闭 generation、LRU 与 Reference DOM/PNG 三项，focused Web 为 `66 passed`，affected Playwright 为 `11 passed`，3,075-module build/topology 与 diff check 通过；本次 facts-only docs delta 关闭 tracked docs truth。独立两轴 fix-delta 与 docs-delta scoped re-review 均为 PASS、无新 P1/P2/P3；结合 initial full Review，累计双轴 ledger clean。
 
 ## 6. AC01–28 ledger
 
@@ -155,10 +155,10 @@ P5 已经 PR #351 集成到 `develop@242368b893256c48656f047178c213d1cf2d012f`�
 | AC14 | `PASS` | `test_context_alignment.py`、service cutoff tests、解释 source-bar browser evidence。 |
 | AC15 | `PASS` | auxiliary/Core tests 与 browser repaint disclosure；杯柄仅 confirmed D1，其他周期 not-applicable。 |
 | AC16 | `PASS` | readonly compatibility tests、route tests、Task 21 Legacy/HTDY/SuBing/Free/Home journeys。 |
-| AC17 | `PASS` | `74e58587b` 以 accepted chart-generation signature 绑定 token/revision/hash/window，代际变化时清理 dependent section、终止旧 in-flight 并阻止晚到污染；focused unit 与 affected browser 通过，双轴 scoped re-review PASS。 |
+| AC17 | `PASS` | `74e58587b` 以 accepted chart-generation signature 绑定 token/revision/hash/as_of 与身份/版本；window/page identity 由 chart fingerprint 和 auxiliary cache key 独立约束。代际变化时清理 dependent section、终止旧 in-flight 并阻止晚到污染；同代分页保留 cache/dependent，focused unit 与 affected browser 通过，双轴 scoped re-review PASS。 |
 | AC18 | `PASS` | `test_product_readonly_compatibility.py`、仓库受控面 diff 扫描；无新增外部副作用或交易域。 |
 | AC19 | `PASS` | Task 21 desktop/mobile/keyboard/reference-locate/marker selection 保留；`74e58587b` 在桌面 Reference 截图前新增 OPEN/CLOSED/interrupted 的 ID 与价格 DOM 断言并只更新该 baseline，ordinary no-update run 通过，双轴 scoped re-review PASS。 |
-| AC20 | `PASS` | `24610c582` exact full matrix 全绿；initial full Standards/Spec Review 的 3 个 P2 均由 `74e58587b` 修复，两轴 fix-delta scoped re-review 均 PASS、无新 P1/P2/P3，累计 Review ledger clean。 |
+| AC20 | `PASS` | `24610c582` exact full matrix 全绿；initial full Review 为 Standards 3 个 P2 + Spec 1 个独立 P2（4 个唯一 finding），`74e58587b` 关闭 generation/LRU/Reference DOM-PNG 三项，本次 facts-only docs delta 关闭 tracked docs truth；两轴对应 scoped re-review 均 PASS、无新 P1/P2/P3，累计 Review ledger clean。 |
 | AC21 | `PASS` | `test_product_service.py` spy、Web chart-first browser case；未请求 section 零调用。 |
 | AC22 | `PASS` | service cutoff/Calendar/Session/night trading-day tests；晚 CLEAR/Hint/owner 不污染早期快照。 |
 | AC23 | `PASS` | `test_product_source_facts.py` 与 API 负测校验来源白名单、值/owner/version/as-of；缺项准确降级。 |
