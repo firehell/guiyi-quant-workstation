@@ -17,7 +17,7 @@
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | `2026-09-07T06:49:43Z` 只读审计：HTDY 仅 `jm × 5m/15m`，其余59品种Scope为空；SuBing为全部60品种 × 15m，两Rule均enabled。HTDY“焦煤继续15m和5m，其他所有品种统一60m”共61对仅为目标，尚未应用。 |
 | 当前 Alert health | 同轮只读审计中aggregate显示`ok`，但SuBing `error_type=evaluation_failed`，`last_failure=2026-09-07T06:45:40.440418Z`、`last_eval=2026-09-07T03:30:00Z`、`last_event=null`。聚合ok不能证明Rule健康或提醒链路修好。 |
-| 当前 After-market | 只读状态为`missed`，expected为`2026-09-04`；最近运行`2026-09-06 18:05 Asia/Shanghai`以`NON_TRADING_DAY`跳过，`last_success=null`。非交易日skip不是成功盘后业务证据。 |
+| 当前 After-market | 2026-09-07 的自然 18:05 任务于 `19:30:30 Asia/Shanghai` 完成，`status=passed`、`attempts=1`、`last_successful_trading_day=2026-09-07`、`last_failure=null`；任务已退出。该成功关闭此前盘后 `missed`，但不替代苏冰历史 warm-up 或自然 Alert evidence。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -25,8 +25,9 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 - 当前开发候选为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：新增只读 `runtime subing-readiness`、默认关闭的当日 Live 缺口恢复、原子数据与恢复水位提交、跨进程 Alert/recovery 互斥及日志丢失后安全重开。恢复窗口和旧触发不创建 Event 或补发；恢复后的新 completed Bar 才允许按既有 Rule 评估与 one-shot transport。苏冰公式、版本、60 × 15m Scope 与 HTDY Scope 均未改变。
 - 2026-09-07 以 `as_of=2026-09-07T07:00:00Z` 对全部 60 品种做只读输入检查：Scope 全部启用，`ready_count=0`。a/ag/al/ao/ap/au/b/pf 的历史物理 15m 前缀完整；其余 52 个中，51 个有历史缺口，RS 历史输入不可读。全部 60 品种缺少当日 13:31 的 1m 和 13:45 的 15m；FG、RS、SH 另有当日缺失分钟。代码检查不能把这些生产输入变为完整。
-- 60 个当前物理合约的 warm-up 计划已从现有权威入口重新只读生成，`snapshot_day=2026-09-07`、`through=2026-09-04`，批次 SHA-256 为 `b3036983f8a711462bde61dc0dc75e37f457adf8a51a0e9ad6d52cf80dbd71a2`。53 个计划有待补目标，共 1,474 个 direct 和 1,948 个 derived 目标；实际 provider 请求与 applied 均为 0。七周期计划的待补数量不能等同于苏冰 15m 输入阻塞数量，后续真实 apply 必须重新 preflight。
-- 后端完整测试 `2333 passed, 5 skipped, 15 deselected`，工程检查 `74 passed`，隔离 Redis `27 passed`；Mypy 133 个源文件、Ruff、前端类型/build/topology、OpenSpec `9/9`、secret 与 diff 检查通过。独立 Standards 与 Spec 复审均 PASS，旧 finding 已关闭。隔离 Redis 验证数据/水位原子性、拒绝不改旧值及幂等；不连接生产 Redis。集成结果从对应 develop 提交追溯。本轮未执行数据 apply、真实推送、release、Runtime promotion 或恢复开关启用。
+- 针对上述 52 个阻塞合约的只读执行清单固定为 `through=2026-09-04`，初始批次 SHA-256 为 `f19338ea0d4540e69fc9f90e5c00b5141701228b0c82ad9d08cdaac1fefb1b00`，共 1,454 个 direct 和 1,948 个 derived 目标。用户于 2026-09-07 明确授权逐合约串行 production apply，并要求任一失败、partial、blocked 或 quota 立即停止且不重试。
+- 该 apply 从 clean detached `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6` 开始，在第 1 个 `BU2610` 返回非零/partial 后按约定停止；其余 51 个合约未开始，也未重试。失败后的只读计划证明 BU 的 1m 与 `5m/15m/30m/60m` 已全部发布，只剩 11 个 1d 与 11 个 1w direct 月目标，新的 BU plan SHA-256 为 `4db0746534645779c5c64cb3ce6fb9bbf515e92ec21607f6441a2265b167ecb6`。MarketDataService 从 Catalog/Canonical 严格读回 BU2610 physical 15m 共 4,997 根，交易日覆盖 `2025-10-16..2026-09-04`；因此苏冰历史 15m 已完整品种由 8 个增至 9 个，仍有 51 个待修复。批次整体状态保持 `PARTIAL`。
+- 恢复代码的验证为后端完整测试 `2333 passed, 5 skipped, 15 deselected`，工程检查 `74 passed`，隔离 Redis `27 passed`；Mypy 133 个源文件、Ruff、前端类型/build/topology、OpenSpec `9/9`、secret 与 diff 检查通过。独立 Standards 与 Spec 复审均 PASS，旧 finding 已关闭。隔离 Redis 验证数据/水位原子性、拒绝不改旧值及幂等；不连接生产 Redis。本次 production apply 事实只以上一条的 partial 结果与只读读回为准；真实推送、release、Runtime promotion 和恢复开关启用均未执行。
 
 ## Newow 开发候选
 
@@ -42,7 +43,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## Pending Gate
 
-- 苏冰候选停在等待版本发布：历史 warm-up 真实 apply、main/tag/release、exact-tag Runtime promotion、生产 Live recovery enable 分别需要新的明确执行意图。启用恢复前必须核对 Live/Alert 为同一 exact root/version 且恢复协议同时启用；60 品种输入完整性、后续自然 Event、provider acceptance 与人工收件仍须分别验收。盘后 `missed` 保持未解决。
+- 苏冰候选停在等待版本发布；历史 warm-up 当前为 `PARTIAL`，51 个合约未开始。按照 stop-on-first-failure 合同，继续 51 个合约、重试 BU 的 D1/W1、main/tag/release、exact-tag Runtime promotion、生产 Live recovery enable 均分别需要新的明确执行意图。启用恢复前必须核对 Live/Alert 为同一 exact root/version 且恢复协议同时启用；60 品种输入完整性、后续自然 Event、provider acceptance 与人工收件仍须分别验收。盘后 `missed` 已由 2026-09-07 自然 passed 关闭。
 - `PF2611` exact plan、一次性真实 apply、只读验证及 exact `v1.9.15` 五项 Runtime promotion 已完成；当前仍为 `NATURAL_EVIDENCE_PENDING`，`RUNTIME_READY` 尚未证实。
 - HTDY目标61对Scope未应用；任何Scope调整、真实数据修复、通知、main/tag/release或Runtime版本切换仍需目标/环境/范围明确的单次执行意图。本轮仓库修复不改变现役`v1.9.15@36fef039`。
 - 仍须等待自然 completed SuBing 15m Event、immutable `AlertEvent` 与 one-shot PushPlus provider acceptance；不得用 synthetic、replay、backfill 或手工发送替代。
