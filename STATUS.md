@@ -17,8 +17,8 @@
 | PF2611 physical warm-up | 2026-09-05 从 clean detached `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6`，以 `symbol=pf`、`contract=PF2611`、`through=2026-09-04`、plan SHA-256 `7a51886988ff0508f6b3295d40665cef11ff54bc7b0b63ab79aee4fec5544f19` 完成唯一一次真实 RQData/Canonical apply：76 个目标全部 applied，blocked/failed 均为 0。只读 audit finding 为 0；MarketDataService exact physical 15m 读回 4,491 根，交易日窗口为 `2025-11-17..2026-09-04`，七周期最终共 77 个分区、89,280 行（含原已完整且未改写的 1w 分区 1 行）。Rule/Scope/Event、非目标 Catalog、pf 其他合约与 continuous 文件、MainContractMap 及五项 Runtime 的前后基线一致；状态为 `PF2611_WARMUP_APPLIED_AND_VERIFIED`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | `2026-09-07T06:49:43Z` 只读审计：HTDY 仅 `jm × 5m/15m`，其余59品种Scope为空；SuBing为全部60品种 × 15m，两Rule均enabled。HTDY“焦煤继续15m和5m，其他所有品种统一60m”共61对仅为目标，尚未应用。 |
-| 当前 Runtime health | `2026-09-08T09:50:54Z` 与 `09:52:08Z` 两次只读验收：API/Web 为 200，API version=`1.10.3`，实际 Web HTML 与 exact-tag dist 字节一致；DB/Redis/Live/After-market 为 ok，本地隧道检查通过。Live heartbeat 从 `09:50:53.950741Z` 推进到 `09:52:07.457585Z`，Alert 从 `09:50:53.653083Z` 推进到 `09:52:03.876782Z`。60 品种 CLOSED，新进程 `last_bar_at=null`，尚无新版本自然 completed Bar。Alert 仍 degraded：SuBing 的 `evaluation_failed@2026-09-08T07:00:29.336273Z` 与部署前一致，HTDY 无 Rule failure；Event、transport、provider acceptance 和两 Rule health 事实均与切换前一致。旧通知失败仍保留且不重发；provider accepted 不等于送达。`local-services-status.sh overall=failed, failures=1`，三项 would-side-effect 均 false。 |
-| 最近自然 After-market | 最近完成的自然盘后记录仍为 2026-09-07：18:05 开始、19:30:30 完成，passed、attempts=1、60 品种顺序有效、last_failure/current_run 均 null。本轮经唯一 operational loader、public schema v2、owner/mode 与精确 hash 校验后，以 create-only 将现役旧根状态原字节带入 v1.10.3，SHA-256=`e98f09a39ded99fe4b566b9e6616455929155a9e6619dd99c284d3578431e610`、mode=0600。这是延续的历史状态，不能作为 v1.10.3 自然盘后验收；新根 18:05 自然结果待验收。 |
+| 当前 Runtime health | `2026-09-08 19:26:57 CST` 只读核对：DB/Redis/Live/After-market 均 ok；60 品种 CLOSED，Live 当日订阅已清理，新进程 last_bar_at=null。Alert 仍 degraded，SuBing 保留 `evaluation_failed@2026-09-08T07:00:29.336273Z`；通用 processing success 已自然推进至 `11:05:52.775687Z`，这不是 RS 新 completed Bar 的苏冰评估证据。未清除故障、确认通知或补发，尚不能声明 `RUNTIME_READY`。 |
+| 最近自然 After-market | `v1.10.3` 于 2026-09-08 自然运行：18:05:05 开始、19:05:52 完成，passed、attempts=1、60 品种顺序有效，last_failure/current_run 均 null。19:26 CST 通过现役 API health 与状态文件读回确认；Canonical 发布和当日 Live 清理已完成。本轮没有手工触发盘后任务。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -31,6 +31,29 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 `v1.10.3` 发布矩阵绑定 `83e9e291f68981cf4ae02752d333d83749b28345`：backend `2415 passed, 5 skipped, 15 deselected`、engineering `74 passed`、Web `478 passed, 1 skipped`、Playwright `141 passed`、Mypy 135 个源文件、Ruff、Alert Rule ownership、build/topology、OpenSpec `9/9`、secret scan `0` 与 diff check 均通过。独立 Standards / Spec Review 覆盖 `v1.10.1@8e3df5c0...` 到该候选的 62 个文件，均 PASS、0 findings。最初 pnpm 自动安装受网络沙箱限制、浏览器监听受沙箱限制以及临时端口 5193 不匹配 fixture 白名单的尝试未通过；最终复用既有依赖、关闭 pnpm 自动安装，在默认 5182 隔离运行的完整矩阵通过，没有修改测试白名单或截图基线。此后仅补充本文验证事实。2026-09-08 17:22 CST 只读核对五项 launchd 均引用现役 `v1.10.0@f8f7d917...`；该发布轮次明确不部署、不切换 Runtime、不连接 RQData、不写生产数据、DB、Scope 或通知；后续部署事实见上表。
 
 `v1.10.3` 首次部署准备的 exact-tag 定向回归为 `90 passed in 65.45s`（Market/Alert launchd 与 promotion），新根独立 Web typecheck/build/topology 与 render-only 通过；只读 promotion preflight 为 `snapshot_ready / operational_count=60 / snapshot_count=60`。盘后状态复制在 mutation 前因错误的 `config/universe/operational_products.txt` 路径退出；随后只读核验已改用唯一 `load_operational_products()`，确认源 public schema v2、60 品种顺序、无 current run、passed 与源 SHA-256 `e98f09a39ded99fe4b566b9e6616455929155a9e6619dd99c284d3578431e610` 均有效，目标仍不存在。用户随后给出新的明确授权，本轮已按修正校验 create-only 带入该状态并完成一次五服务切换；各安装器成功，无自动重试或回滚。部署前 API/Web 为 200、DB/Redis/Live/After-market 为 ok，60 品种处于 CLOSED；Alert 已 degraded，SuBing `evaluation_failed` 的最新失败时间为 `2026-09-08T07:00:29.336273+00:00`。该故障是切换前基线；未清除故障、改 Scope、补数或补发通知。
+
+## v1.10.4 候选与盘后复核
+
+用户已确认新候选版本为 `v1.10.4`；API/Web、Python 项目/lock 与 health 测试版本同步准备，
+候选包含 `4b55a4189` 的 captured-source 恢复及盘后互斥修复。正式发布和本机五服务切换仍未执行，
+现役保持 `v1.10.3`。候选完整验证已通过：backend `2563 passed, 16 skipped, 15 deselected`、
+engineering `74 passed`、Web `478 passed, 1 skipped`、Playwright `141 passed`、Mypy `138` 源文件、
+Ruff、Alert Rule ownership、build/topology、OpenSpec `9/9`、secret scan `0` 与 diff check。
+工程检查首次发现固定版本断言尚为 1.10.3，同步至 1.10.4 后完整重跑通过。独立 Review 尚待结束。
+
+2026-09-08 19:26:46..19:26:57 CST 从现役 exact v1.10.3，只读 PostgreSQL 事务及统一
+MarketDataService/Redis/API 复核：RS2609 当日 Canonical 的 1m/5m/15m/30m/60m 分别为
+225/45/15/8/5 根，均与权威 Session 期望精确一致；旧五根目标 09:01/09:05/09:15/09:30/10:00
+全部存在。60 个当日 rank1 合约从上市日至当日收盘的 physical 15m 前缀均 `coverage_exact=true`，
+RS2609 为 3,570/3,570 根；本次 JD 的当前主力为 JD2611，不能沿用旧 JD2610 身份。
+自然盘后已清理当日 Live bars 和订阅，RS recovery watermark/circuit 均 null，下午 provider
+attempt count 仍为 3；没有清零预算或补写水位。旧日内 event reader 因订阅已清理返回
+`MARKET_READ_CONTRACT_UNAVAILABLE`，属于已结束的 Live 生命周期，不能重新解释为 Canonical 缺口。
+
+结论：原五根缺口已由自然盘后维护解决，本轮不再生成或执行这五根 Live 恢复计划；旧计划失效，
+不能为完成步骤而重建过期 Live 数据。剩余为新版本发布/部署以及后续自然 completed Bar 的苏冰
+评估与健康验收。通用盘后 processing success、完整历史数据或旧 Rule 最新评估时间均不能替代
+RS 的自然评估成功证据；不手工清除 `evaluation_failed`。
 
 ## 苏冰 60 品种输入恢复候选
 
