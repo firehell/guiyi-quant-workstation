@@ -287,7 +287,9 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 逐品种诊断命令为 `guiyi runtime subing-readiness --trading-day YYYY-MM-DD --as-of OFFSET_DATETIME`；
 `as-of` 必须带时区且不晚于执行时刻。命令只读 PostgreSQL/Redis/Canonical，逐品种报告当前输入与 Scope，
 非全部 ready 时退出 1；参数错误退出 2。该结果不证明 provider acceptance 或实际收件，真实连接仍须
-位于用户明确授权的只读诊断范围。
+位于用户明确授权的只读诊断范围。生产只读执行还必须使用与现役服务启动器相同的 authenticated
+`REDIS_URL` 解析结果；只加载未提供该连接结果的 `project.env` 会在订阅快照读取处产生 Redis
+authentication failure，此时外层的 `INPUT_DIAGNOSIS_UNAVAILABLE` 不是行情缺口或逐品种 readiness 结论。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
