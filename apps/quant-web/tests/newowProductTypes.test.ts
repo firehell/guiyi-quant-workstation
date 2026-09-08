@@ -207,6 +207,7 @@ test('builds the exact P4 query for every section and omits cross-section parame
 
 test('maps 409 and 429 into safe classified errors without leaking transport details', async () => {
   const cases = [
+    [409, 'NEWOW_DATA_UNAVAILABLE', 'conflict'],
     [409, 'NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'],
     [429, 'NEWOW_RESOURCE_BUSY', 'busy'],
     [429, 'NEWOW_REQUEST_CANCELLED', 'cancelled'],

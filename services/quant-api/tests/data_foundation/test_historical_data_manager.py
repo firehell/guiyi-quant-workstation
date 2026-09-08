@@ -774,8 +774,9 @@ def test_contract_warmup_apply_recomputes_plan_under_lock_before_callback(
     assert tuple(tmp_path.rglob("*.parquet")) == ()
 
 
+@pytest.mark.parametrize("frequency", (None, "15m", "60m"))
 def test_contract_warmup_apply_rejects_middle_timestamp_drift_under_lock(
-    session, tmp_path, monkeypatch
+    session, tmp_path, monkeypatch, frequency
 ) -> None:
     through = date(2025, 1, 2)
     _add_contract(
@@ -796,7 +797,7 @@ def test_contract_warmup_apply_rejects_middle_timestamp_drift_under_lock(
     provider = FakeProvider({})
     manager = _manager(session, tmp_path, coverage, provider)
     dry_run = manager.contract_warmup(
-        historical.ContractWarmupRequest("pf", "PF2611", through)
+        historical.ContractWarmupRequest("pf", "PF2611", through, frequency=frequency)
     )
     lease = _TrackingLease()
     callbacks = []
@@ -814,7 +815,7 @@ def test_contract_warmup_apply_rejects_middle_timestamp_drift_under_lock(
     with pytest.raises(ValueError, match="^CONTRACT_WARMUP_PLAN_CHANGED$"):
         manager.contract_warmup(
             historical.ContractWarmupRequest(
-                "pf", "PF2611", through, dry_run.plan.plan_sha256, True
+                "pf", "PF2611", through, dry_run.plan.plan_sha256, True, frequency
             ),
             before_apply=lambda: callbacks.append("callback"),
         )
@@ -1341,27 +1342,29 @@ def test_contract_warmup_contracts_expose_only_the_frozen_public_fields() -> Non
     )
 
 
-def test_contract_warmup_15m_scope_plans_only_minute_dependency_and_15m_derivation(
-    session, tmp_path
+@pytest.mark.parametrize("frequency", ("15m", "60m"))
+def test_contract_warmup_bounded_scope_plans_only_minute_dependency_and_selected_derivation(
+    session, tmp_path, frequency
 ) -> None:
     manager, _coverage, provider = _single_day_contract_warmup_manager(session, tmp_path)
 
     result = manager.contract_warmup(
-        historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2), frequency="15m")
+        historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2), frequency=frequency)
     )
 
     assert result.status == "planned"
-    assert result.plan.frequency == "15m"
+    assert result.plan.frequency == frequency
     assert result.plan.dependency_frequencies == ("1m",)
-    assert result.plan.frequencies == ("1m", "15m")
-    assert {target["dataset"][3] for target in result.plan.target_windows} == {"1m", "15m"}
+    assert result.plan.frequencies == ("1m", frequency)
+    assert {target["dataset"][3] for target in result.plan.target_windows} == {"1m", frequency}
     assert result.plan.direct_target_count == result.plan.provider_request_count == 1
     assert result.plan.derived_target_count == 1
     assert provider.calls == []
 
 
-def test_contract_warmup_15m_scope_hash_cannot_be_reused_by_empty_default_scope(
-    session, tmp_path
+@pytest.mark.parametrize("frequency", ("15m", "60m"))
+def test_contract_warmup_bounded_scope_hash_cannot_be_reused_by_empty_default_scope(
+    session, tmp_path, frequency
 ) -> None:
     manager, coverage, _provider = _single_day_contract_warmup_manager(session, tmp_path)
     coverage.ends = {}
@@ -1370,14 +1373,14 @@ def test_contract_warmup_15m_scope_hash_cannot_be_reused_by_empty_default_scope(
         historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2))
     )
     scoped = manager.contract_warmup(
-        historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2), frequency="15m")
+        historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2), frequency=frequency)
     )
 
     assert all_frequencies.plan.target_windows == scoped.plan.target_windows == ()
     assert all_frequencies.plan.plan_sha256 != scoped.plan.plan_sha256
 
 
-@pytest.mark.parametrize("frequency", ("1m", "5m", "1d", "1w", "invalid"))
+@pytest.mark.parametrize("frequency", ("1m", "5m", "30m", "1d", "1w", "invalid"))
 def test_contract_warmup_rejects_unsupported_frequency_scope_before_planning(
     session, tmp_path, frequency
 ) -> None:
@@ -1391,8 +1394,9 @@ def test_contract_warmup_rejects_unsupported_frequency_scope_before_planning(
     assert provider.calls == []
 
 
-def test_contract_warmup_15m_scope_stops_after_first_failed_minute_partition(
-    session, tmp_path
+@pytest.mark.parametrize("frequency", ("15m", "60m"))
+def test_contract_warmup_bounded_scope_stops_after_first_failed_minute_partition(
+    session, tmp_path, frequency
 ) -> None:
     listed = date(2025, 1, 3)
     through = date(2025, 2, 3)
@@ -1400,7 +1404,7 @@ def test_contract_warmup_15m_scope_stops_after_first_failed_minute_partition(
         session, symbol="pf", contract="PF2611", listed_date=listed, expired_date=date(2025, 3, 1)
     )
     minute = DatasetKey("contract", "pf", "PF2611", "1m")
-    fifteen = DatasetKey("contract", "pf", "PF2611", "15m")
+    fifteen = DatasetKey("contract", "pf", "PF2611", frequency)
     january = _minute_at(datetime(2025, 1, 3, 1, 1, tzinfo=UTC), 100)
     february = _minute_at(datetime(2025, 2, 3, 1, 1, tzinfo=UTC), 101)
     coverage = FakeCoverage(
@@ -1410,12 +1414,12 @@ def test_contract_warmup_15m_scope_stops_after_first_failed_minute_partition(
     provider = FakeProvider({minute.as_tuple(): (february,)})
     manager = _manager(session, tmp_path, coverage, provider)
     dry_run = manager.contract_warmup(
-        historical.ContractWarmupRequest("pf", "PF2611", through, frequency="15m")
+        historical.ContractWarmupRequest("pf", "PF2611", through, frequency=frequency)
     )
 
     result = manager.contract_warmup(
         historical.ContractWarmupRequest(
-            "pf", "PF2611", through, dry_run.plan.plan_sha256, True, "15m"
+            "pf", "PF2611", through, dry_run.plan.plan_sha256, True, frequency
         )
     )
 
@@ -1426,64 +1430,67 @@ def test_contract_warmup_15m_scope_stops_after_first_failed_minute_partition(
     assert tuple(session.scalars(select(MarketPartition))) == ()
 
 
-def test_contract_warmup_15m_scope_quota_partial_never_reports_passed(
-    session, tmp_path, monkeypatch
+@pytest.mark.parametrize("frequency", ("15m", "60m"))
+def test_contract_warmup_bounded_scope_quota_partial_never_reports_passed(
+    session, tmp_path, frequency
 ) -> None:
-    listed = date(2025, 1, 3)
+    manager, minute, _hour, bars, provider = _hourly_contract_warmup_manager(session, tmp_path)
+    fact = session.scalar(select(Contract).where(Contract.contract_code == "PF2611"))
+    assert fact is not None
+    fact.expired_date = date(2025, 3, 1)
+    session.commit()
     through = date(2025, 2, 3)
-    _add_contract(
-        session, symbol="pf", contract="PF2611", listed_date=listed, expired_date=date(2025, 3, 1)
-    )
-    minute = DatasetKey("contract", "pf", "PF2611", "1m")
-    fifteen = DatasetKey("contract", "pf", "PF2611", "15m")
-    january = _minute_at(datetime(2025, 1, 3, 1, 1, tzinfo=UTC), 100)
-    february = _minute_at(datetime(2025, 2, 3, 1, 1, tzinfo=UTC), 101)
-    coverage = FakeCoverage(
-        {minute.as_tuple(): (january.bar_end, february.bar_end), fifteen.as_tuple(): (january.bar_end, february.bar_end)}
-    )
-    coverage.latest_day = through
-    provider = FakeProvider({minute.as_tuple(): (january, february)})
+    february = _minute_at(datetime(2025, 2, 3, 1, 1, tzinfo=UTC), 200)
+    selected = DatasetKey("contract", "pf", "PF2611", frequency)
+    manager.coverage.ends[minute.as_tuple()] += (february.bar_end,)
+    manager.coverage.ends[selected.as_tuple()] += (february.bar_end,)
+    manager.coverage.latest_day = through
     provider.quota_after = 1
-    manager = _manager(session, tmp_path, coverage, provider)
     dry_run = manager.contract_warmup(
-        historical.ContractWarmupRequest("pf", "PF2611", through, frequency="15m")
+        historical.ContractWarmupRequest("pf", "PF2611", through, frequency=frequency)
     )
-    monkeypatch.setattr(manager, "_publish_derived", lambda _target: None)
 
     result = manager.contract_warmup(
         historical.ContractWarmupRequest(
-            "pf", "PF2611", through, dry_run.plan.plan_sha256, True, "15m"
+            "pf", "PF2611", through, dry_run.plan.plan_sha256, True, frequency
         )
     )
 
     assert result.status == "partial"
-    assert result.applied == 3
+    assert result.applied == 2
     assert result.failed == result.blocked == 0
     assert result.provider_requests == 2
-    assert provider.calls == [(minute, (january.bar_end,)), (minute, (february.bar_end,))]
+    assert provider.calls == [
+        (minute, tuple(bar.bar_end for bar in bars)), (minute, (february.bar_end,))
+    ]
+    assert {(p.year, p.month) for p in session.scalars(select(MarketPartition))} == {(2025, 1)}
+    assert len(manager.store.read_month(selected, 2025, 1)) == (4 if frequency == "15m" else 1)
 
 
-def test_contract_warmup_15m_scope_stops_after_existing_minute_derived_failure(
-    session, tmp_path, monkeypatch
+@pytest.mark.parametrize("frequency", ("15m", "60m"))
+def test_contract_warmup_bounded_scope_stops_after_existing_minute_derived_failure(
+    session, tmp_path, frequency, monkeypatch
 ) -> None:
     listed = date(2025, 1, 3)
-    through = date(2025, 2, 3)
+    through = date(2025, 3, 3)
     _add_contract(
-        session, symbol="pf", contract="PF2611", listed_date=listed, expired_date=date(2025, 3, 1)
+        session, symbol="pf", contract="PF2611", listed_date=listed, expired_date=date(2025, 4, 1)
     )
     minute = DatasetKey("contract", "pf", "PF2611", "1m")
-    fifteen = DatasetKey("contract", "pf", "PF2611", "15m")
+    fifteen = DatasetKey("contract", "pf", "PF2611", frequency)
     january = _minute_at(datetime(2025, 1, 3, 1, 1, tzinfo=UTC), 100)
     february = _minute_at(datetime(2025, 2, 3, 1, 1, tzinfo=UTC), 101)
+    march = _minute_at(datetime(2025, 3, 3, 1, 1, tzinfo=UTC), 102)
     coverage = FakeCoverage(
-        {minute.as_tuple(): (january.bar_end, february.bar_end), fifteen.as_tuple(): (january.bar_end, february.bar_end)}
+        {minute.as_tuple(): (january.bar_end, february.bar_end, march.bar_end), fifteen.as_tuple(): (january.bar_end, february.bar_end, march.bar_end)}
     )
     coverage.latest_day = through
     manager = _manager(session, tmp_path, coverage, FakeProvider({}))
     _publish_existing(manager, minute, (january,))
     _publish_existing(manager, minute, (february,))
+    _publish_existing(manager, minute, (march,))
     dry_run = manager.contract_warmup(
-        historical.ContractWarmupRequest("pf", "PF2611", through, frequency="15m")
+        historical.ContractWarmupRequest("pf", "PF2611", through, frequency=frequency)
     )
     calls = []
 
@@ -1496,7 +1503,7 @@ def test_contract_warmup_15m_scope_stops_after_existing_minute_derived_failure(
 
     result = manager.contract_warmup(
         historical.ContractWarmupRequest(
-            "pf", "PF2611", through, dry_run.plan.plan_sha256, True, "15m"
+            "pf", "PF2611", through, dry_run.plan.plan_sha256, True, frequency
         )
     )
 
@@ -1505,6 +1512,191 @@ def test_contract_warmup_15m_scope_stops_after_existing_minute_derived_failure(
     assert result.failed == 1
     assert result.provider_requests == 0
     assert calls == [(2025, 1), (2025, 2)]
+
+
+@pytest.mark.parametrize("source_present", (False, True))
+def test_contract_warmup_60m_publishes_only_its_scope_and_reuses_complete_source(
+    session, tmp_path, source_present
+) -> None:
+    manager, minute, hour, bars, provider = _hourly_contract_warmup_manager(session, tmp_path)
+    if source_present:
+        _publish_existing(manager, minute, bars)
+    original_source = tuple(manager.store.read_month(minute, 2025, 1)) if source_present else ()
+    request = historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2), frequency="60m")
+    plan = manager.contract_warmup(request).plan
+
+    assert plan.frequencies == ("1m", "60m")
+    assert plan.direct_target_count == (0 if source_present else 1)
+    assert plan.derived_target_count == 1
+    assert provider.calls == []
+    result = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", request.through, plan.plan_sha256, True, "60m"
+        )
+    )
+
+    assert result.status == "passed"
+    assert result.applied == (1 if source_present else 2)
+    assert result.provider_requests == (0 if source_present else 1)
+    assert provider.calls == ([] if source_present else [(minute, tuple(b.bar_end for b in bars))])
+    assert manager.store.read_month(minute, 2025, 1) == (original_source or bars)
+    assert manager.store.read_month(hour, 2025, 1) == (
+        CanonicalBar(datetime(2025, 1, 2, 2, tzinfo=UTC), date(2025, 1, 2),
+                     Decimal(101), Decimal(160), Decimal(101), Decimal(160),
+                     Decimal(60), Decimal(600), Decimal(20)),
+    )
+    assert {(d.kind, d.symbol, d.series_or_contract, d.frequency)
+            for d in session.scalars(select(MarketDataset))} == {
+                ("contract", "pf", "PF2611", "1m"),
+                ("contract", "pf", "PF2611", "60m"),
+            }
+    assert manager.contract_warmup(request).plan.target_windows == ()
+
+
+def _hourly_contract_warmup_manager(session, tmp_path):
+    """One real hour; other frequencies and contracts also have expected data."""
+    through = date(2025, 1, 2)
+    _add_contract(session, symbol="pf", contract="PF2611", listed_date=through,
+                  expired_date=date(2025, 2, 1))
+    minute = DatasetKey("contract", "pf", "PF2611", "1m")
+    hour = DatasetKey("contract", "pf", "PF2611", "60m")
+    start = datetime(2025, 1, 2, 1, tzinfo=UTC)
+    bars = tuple(_minute_at(start + timedelta(minutes=i), 100 + i) for i in range(1, 61))
+
+    class HourCoverage(FakeCoverage):
+        def sessions(self, _key, _year, _month, through=None):
+            return (SessionWindow(start, start + timedelta(hours=1)),)
+
+    coverage = HourCoverage({
+        minute.as_tuple(): tuple(b.bar_end for b in bars),
+        **{DatasetKey("contract", "pf", "PF2611", f).as_tuple(): (bars[-1].bar_end,)
+           for f in ("5m", "15m", "30m", "60m", "1d", "1w")},
+        DatasetKey("contract", "pf", "PF2611", "15m").as_tuple():
+            tuple(bars[i - 1].bar_end for i in (15, 30, 45, 60)),
+        DatasetKey("continuous", "pf", "MAIN", "60m").as_tuple(): (bars[-1].bar_end,),
+        DatasetKey("contract", "jm", "JM2509", "60m").as_tuple(): (bars[-1].bar_end,),
+    })
+    provider = FakeProvider({minute.as_tuple(): bars})
+    return _manager(session, tmp_path, coverage, provider), minute, hour, bars, provider
+
+
+@pytest.mark.parametrize("approved,requested", ((None, "60m"), ("15m", "60m"), ("60m", None), ("60m", "15m")))
+@pytest.mark.parametrize("empty", (False, True))
+def test_contract_warmup_rejects_cross_scope_hash_before_side_effects(
+    session, tmp_path, approved, requested, empty
+) -> None:
+    manager, coverage, provider = _single_day_contract_warmup_manager(session, tmp_path)
+    if empty:
+        coverage.ends = {}
+    plan = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", date(2025, 1, 2), frequency=approved
+    )).plan
+    callbacks = []
+    with pytest.raises(ValueError, match="^CONTRACT_WARMUP_PLAN_CHANGED$"):
+        manager.contract_warmup(historical.ContractWarmupRequest(
+            "pf", "PF2611", date(2025, 1, 2), plan.plan_sha256, True, requested
+        ), before_apply=lambda: callbacks.append("called"))
+    assert callbacks == provider.calls == []
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+    assert tuple(tmp_path.rglob("*.parquet")) == ()
+
+
+@pytest.mark.parametrize("failure_stage", ("provider", "source_publish", "derived_publish"))
+def test_contract_warmup_60m_failure_prevents_later_month_fetch_and_publish(
+    session, tmp_path, monkeypatch, failure_stage
+) -> None:
+    manager, minute, hour, bars, provider = _hourly_contract_warmup_manager(session, tmp_path)
+    # Both months are pending, so continuing after January fails would request February.
+    fact = session.scalar(select(Contract).where(Contract.contract_code == "PF2611"))
+    assert fact is not None
+    fact.expired_date = date(2025, 3, 1)
+    session.commit()
+    february = _minute_at(datetime(2025, 2, 3, 1, 1, tzinfo=UTC), 200)
+    manager.coverage.ends[minute.as_tuple()] += (february.bar_end,)
+    manager.coverage.ends[hour.as_tuple()] += (february.bar_end,)
+    manager.coverage.latest_day = date(2025, 2, 3)
+    provider.bars[minute.as_tuple()] += (february,)
+    if failure_stage == "provider":
+        provider.fail_symbols.add("pf")
+    else:
+        original_publish = manager.store.publish
+
+        def fail_publish(request):
+            if request.dataset.frequency.value == ("1m" if failure_stage == "source_publish" else "60m"):
+                raise historical.StorageError("PARTITION_WRITE_FAILED")
+            return original_publish(request)
+
+        monkeypatch.setattr(manager.store, "publish", fail_publish)
+    plan = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", date(2025, 2, 3), frequency="60m"
+    )).plan
+    result = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", date(2025, 2, 3), plan.plan_sha256, True, "60m"
+    ))
+    if failure_stage != "provider":
+        assert result.failures[0]["reason_code"] == "PARTITION_WRITE_FAILED"
+    assert result.status == ("partial" if failure_stage == "derived_publish" else "failed")
+    assert result.applied == (1 if failure_stage == "derived_publish" else 0)
+    assert result.failed == result.provider_requests == 1
+    assert provider.calls == [(minute, tuple(b.bar_end for b in bars))]
+    assert [(p.year, p.month) for p in session.scalars(select(MarketPartition))] == (
+        [(2025, 1)] if failure_stage == "derived_publish" else []
+    )
+
+
+@pytest.mark.parametrize("frequency", ("15m", "60m"))
+@pytest.mark.parametrize("reason", ("SOURCE_1M_INCOMPLETE", "SOURCE_1M_NOT_ORDERED", "TARGET_WINDOW_INCOMPLETE"))
+def test_contract_warmup_ready_source_failure_is_not_retried(
+    session, tmp_path, monkeypatch, frequency, reason
+) -> None:
+    manager, minute, _hour, bars, provider = _hourly_contract_warmup_manager(session, tmp_path)
+    _publish_existing(manager, minute, bars)
+    original_publish = manager.store.publish
+    attempts = []
+
+    def fail_once(request):
+        attempts.append(request.dataset.frequency.value)
+        if len(attempts) == 1:
+            raise historical.StorageError(reason)
+        return original_publish(request)
+
+    monkeypatch.setattr(manager.store, "publish", fail_once)
+    plan = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", date(2025, 1, 2), frequency=frequency
+    )).plan
+    result = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", date(2025, 1, 2), plan.plan_sha256, True, frequency
+    ))
+    assert result.status == "failed"
+    assert result.applied == 0 and result.failed == 1
+    assert result.failures[0]["reason_code"] == reason
+    assert attempts == [frequency]
+    assert provider.calls == []
+    assert len(tuple(session.scalars(select(MarketPartition)))) == 1
+
+
+@pytest.mark.parametrize("frequency", ("15m", "60m"))
+def test_contract_warmup_pending_source_is_not_derived_before_fetch(
+    session, tmp_path, monkeypatch, frequency
+) -> None:
+    manager, _minute, _hour, _bars, provider = _hourly_contract_warmup_manager(session, tmp_path)
+    original_derive = manager._publish_derived
+    attempts = []
+
+    def derive(target):
+        attempts.append(len(provider.calls))
+        return original_derive(target)
+
+    monkeypatch.setattr(manager, "_publish_derived", derive)
+    plan = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", date(2025, 1, 2), frequency=frequency
+    )).plan
+    result = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", date(2025, 1, 2), plan.plan_sha256, True, frequency
+    ))
+    assert result.status == "passed"
+    assert result.applied == 2
+    assert attempts == [1]
 
 
 def test_update_apply_syncs_metadata_before_provider_and_fixed_through_repeats_noop(

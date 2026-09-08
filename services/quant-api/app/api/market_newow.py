@@ -22,6 +22,7 @@ from app.market_data.composition import (
     build_database_coverage_source,
     build_market_data_service,
 )
+from app.market_data.market_data_service import MarketDataError
 from app.market_data.newow.product_reader import (
     NewowProductReadCancelled,
     NewowProductReadError,
@@ -241,6 +242,10 @@ def newow_strategy_detail(
     except NewowProductReadError as exc:
         status = 422 if exc.code.startswith("NEWOW_INVALID_") else 409
         raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
+    except MarketDataError as exc:
+        raise HTTPException(
+            status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
+        ) from exc
     except (ActiveUniverseError, ProductTaxonomyError) as exc:
         raise HTTPException(
             status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
