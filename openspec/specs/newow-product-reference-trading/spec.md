@@ -23,6 +23,10 @@ to the cutoff, preserving earlier historical snapshots and existing completed/ow
 The historical resolver SHALL use the same upper-bound clock. Home overview and dominant metadata
 SHALL retain their independent authoritative timestamps, without implying that all rows or panels
 share a last Bar or a historical database revision.
+The independent candidate daily quote SHALL explicitly request the trusted configured `before`,
+require the echoed cutoff to match that instant without discarding sub-millisecond precision, and
+reject Bars at or after this exclusive bound. Normal mode SHALL retain its unbounded request and
+null-echo contract. Decimal, physical-owner, coverage and rollover validation SHALL remain unchanged.
 
 Only exact existing GET paths for preview identity, bars, dominants, home overview, strategy detail
 and historical snapshot SHALL reach the candidate API. Legacy queries without a safe cutoff seam
