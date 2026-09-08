@@ -245,6 +245,34 @@ segment identity 与换月状态隔离，不得根据未来 `end_trading_day` �
 
 ## 6. CLI 与外部操作
 
+`metadata-repair` 是独立的 missing-key 三阶段入口：默认 plan 只读 Catalog；fetch 和 apply 分别要求
+显式 phase、对应内容 hash 与单次外部执行意图。范围只来自最多 64 个明确的 active
+`symbol/contract/through` 目标，Contract、Instrument、Exchange 和生命周期必须已有权威事实；
+未知身份保持 `IDENTITY_UNKNOWN`。Calendar 上下文沿用上市月起点前一个自然月到 effective through 后
+七天，按 exchange/date 去重；Session 只规划已被 Calendar 确认为交易日且整个日期无既有行的
+product/date。任何已有 Session 日期都保留并单列 `existing_session_dates_preserved`，不把部分日
+拼补或宣称其完整；冲突身份、非权威行和重叠 template 显式阻断。
+
+plan hash 绑定 source targets、生命周期、相关既有事实、缺键、classification 来源和固定 provider 参数；
+自然日期键数、Session 日期数、尚未知的 Session 行数与精确请求次数分开公开。未知 Calendar 只允许对
+连续缺键组做 `get_trading_dates` 分类，不猜周末，也不在同次 fetch 自动增加 Session 请求。分类快照
+只能经新的显式 plan 纳入新增 Session 日期并重算 hash。Calendar `has_night_session=true` 必须有当日
+精确历史夜盘正证据；非交易日可为 false，单品种仅日盘不能证明交易所无夜盘，此时保留
+`NIGHT_SESSION_EVIDENCE_REQUIRED`，整个 blocked snapshot 不可 apply。
+
+上市前等 Calendar 上下文允许可选显式 `evidence_sources`（symbol/contract/date）：只给原缺键集合中
+已分类为交易日的精确日期提供 Session 证据，必须独立通过 Catalog identity/lifecycle 校验并进入
+request/hash；不自动搜寻合约，不从供证合约上市日再扩建 Calendar 范围，也不写供证 Session。
+同 product/date 的多个物理来源必须一致。fetch 串行执行固定请求，每次响应立即校验，首次失败停止，
+无 retry/fallback/补充调用。Session 复用中性 source-contract/day 纯转换与 start-exclusive 规范化，
+不伪造或写入 MainContractMap。
+
+apply 不构造 provider，在一个新事务锁定相关五张 metadata 表后重读计划，再只插入缺失 Calendar
+和完整 Session 日期，一次 commit，失败 rollback；不覆盖、删除或合并已有行，不写 Contract、
+Instrument、Exchange、MainContractMap、Dataset、Parquet、Redis 或 Runtime。重复旧 snapshot 遇到
+已插入事实要求 replan，不能把相似行冒充同一 prior result 的 NOOP。commit 前失败可回滚；commit 后
+保留新事实并只读 replan，不自动删除。命令与 fixture 验证入口见 `TESTING.md`。
+
 Newow dependency audit 复用 `NewowProductReader`、共享 rank1 owner validator 和 MDS 的生命周期
 endpoint authority：先枚举各 section 必需的 owner，再独立验证每个物理合约/周期的完整 prefix，
 一个缺失合约不能阻止发现后续独立合约。chart/auxiliary 使用权威近期窗口，reference 使用独立统计

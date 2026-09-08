@@ -17,6 +17,37 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
+有界 metadata fixture 与既有同步/provider/CLI 回归（全部隔离，无生产连接）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_bounded_metadata.py \
+  services/quant-api/tests/data_foundation/test_metadata.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
+  services/quant-api/tests/data_foundation/test_cli.py
+```
+
+以下为用法，非外部执行授权。`targets.json` 是明确的
+`[{"symbol":"au","contract":"AU2304","through":"2023-03-13"}]`；输出为普通 JSON，由 operator 保存。
+fetch 和 apply 各自需要新的单次执行意图，不能在一个获准 fetch 后自动 apply。
+
+```bash
+uv run --project services/quant-api guiyi data metadata-repair --targets /absolute/targets.json
+uv run --project services/quant-api guiyi data metadata-repair --phase fetch \
+  --plan /absolute/plan.json --expected-plan-sha256 EXACT_PLAN_SHA256 --apply
+uv run --project services/quant-api guiyi data metadata-repair --targets /absolute/targets.json \
+  --classification /absolute/classification-snapshot.json --evidence-sources /absolute/evidence-sources.json
+uv run --project services/quant-api guiyi data metadata-repair --phase apply \
+  --snapshot /absolute/snapshot.json --expected-plan-sha256 EXACT_PLAN_SHA256 \
+  --expected-snapshot-sha256 EXACT_SNAPSHOT_SHA256 --apply
+```
+
+`--classification` 与 `--evidence-sources` 均为可选 plan 输入；供证列表仅含显式
+`symbol/contract/date`，不扩写入范围。新 plan 如有新增 Session 请求，需要对其 hash 另行批准 fetch。
+未知夜盘证据的 snapshot 为 blocked（退出 1），不能 apply。成功 apply 后旧 plan 失效，必须只读 replan，
+不自动重试、覆盖或删除。已有 Session 日期只保留，不把未验证的完整性计为修复通过。
+
 Newow dependency/readiness 定向 fixture 验证（不连接生产数据库，不下载）：
 
 ```bash

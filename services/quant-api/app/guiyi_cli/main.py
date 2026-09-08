@@ -31,6 +31,7 @@ from app.guiyi_cli.data_commands import (
     build_request,
     contract_warmup_payload,
     run_data_command,
+    run_metadata_repair,
 )
 from app.guiyi_cli.data_parser import (
     CliUsageError,
@@ -297,6 +298,8 @@ def _run_data(
     newow_readiness_builder=None,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
+    if args.data_command == "metadata-repair":
+        return run_metadata_repair(args, session_factory)
     if args.data_command == "newow-readiness":
         from app.db.readonly import readonly_transaction
         from app.market_data.newow.readiness_composition import build_newow_readiness

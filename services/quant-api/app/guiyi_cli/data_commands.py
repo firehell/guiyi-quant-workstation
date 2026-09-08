@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import UTC, date, datetime
-from typing import TextIO
+from typing import Any, TextIO
 
 from app.market_data.historical_data_manager import (
     AuditProgressEvent,
@@ -31,7 +31,7 @@ from app.market_data.product_retirement import assert_not_retired
 
 def build_request(args: argparse.Namespace):
     """根据 data_command 分支构造对应的维护请求对象。"""
-    if args.data_command in {"after-market", "session-anchor-repair"}:
+    if args.data_command in {"after-market", "session-anchor-repair", "metadata-repair"}:
         return None
     if args.data_command == "newow-readiness":
         from app.market_data.newow.readiness import ReadinessRequest
@@ -76,6 +76,45 @@ def build_request(args: argparse.Namespace):
             frequency=getattr(args, "frequency", None),
         )
     raise ValueError("CLI_DATA_COMMAND_INVALID")
+
+
+def run_metadata_repair(args: argparse.Namespace, session_factory) -> dict:
+    """Compose read-only planning before, and separately from, provider/write phases."""
+    from pathlib import Path
+
+    from app.db.readonly import readonly_transaction
+    from app.market_data.bounded_metadata import (
+        MetadataRepairError, apply_metadata, fetch_metadata, plan_metadata, recheck_plan,
+    )
+
+    def read(path: str) -> Any:
+        try:
+            with Path(path).open("rb") as source:
+                content = source.read(16 * 1024 * 1024 + 1)
+            if len(content) > 16 * 1024 * 1024:
+                raise ValueError
+            return json.loads(content)
+        except (OSError, ValueError):
+            raise MetadataRepairError("PAYLOAD_INVALID") from None
+
+    if args.phase == "plan":
+        targets = read(args.targets)
+        classification = read(args.classification) if args.classification else None
+        evidence_sources = read(args.evidence_sources) if args.evidence_sources else None
+        with session_factory() as session, readonly_transaction(session):
+            return plan_metadata(session, targets, classification=classification, evidence_sources=evidence_sources)
+    if args.phase == "fetch":
+        plan = read(args.plan)
+        with session_factory() as session, readonly_transaction(session):
+            recheck_plan(session, plan, expected_plan_sha256=args.expected_plan_sha256)
+        from app.market_data.rqdata_adapter import RQDataClient
+
+        api = RQDataClient().api if plan["requests"] else None
+        return fetch_metadata(plan, expected_plan_sha256=args.expected_plan_sha256, api=api)
+    snapshot = read(args.snapshot)
+    with session_factory() as session:
+        return apply_metadata(session, snapshot, expected_plan_sha256=args.expected_plan_sha256,
+                              expected_snapshot_sha256=args.expected_snapshot_sha256)
 
 
 def run_data_command(

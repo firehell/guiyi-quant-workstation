@@ -82,6 +82,32 @@ Event 或通知。月分区仍依次经过 staging 与完整发布校验。任�
 - **WHEN** `1d`、`1w`、`15m` 或 `60m` apply 的 provider、源发布或派生失败
 - **THEN** 后续 target 不再执行；保留已成功分区，零成功返回 `failed`、部分成功返回 `partial`；quota 返回 `partial`，不自动 retry
 
+### Requirement: Bounded missing metadata repair separates plan fetch and apply
+系统 SHALL 提供默认只读的 `metadata-repair`，以显式 physical contract/owner-through 列表和现有
+Catalog identity/lifecycle 规划精确缺失 Calendar 与整个缺失 Session 日期。plan MUST 绑定相关既有
+事实、缺键、来源和固定请求参数的 SHA-256，并分别报告自然日期键、Session 日期、未知实际行数与请求数。
+fetch 与 apply MUST 分别显式选择 phase 和 exact hash；每次真实操作仍需独立单次执行意图。
+
+#### Scenario: Unknown Calendar requires a second explicit plan
+- **WHEN** 分类 fetch 对精确未知日期返回交易日事实
+- **THEN** 该次 fetch 不追加 Session 请求；只有新的显式 plan 可以纳入这些日期并重算 hash
+
+#### Scenario: Night evidence cannot be inferred from missing rows
+- **WHEN** 交易日缺少当日精确夜盘正证据，且单品种日盘不足以证明交易所无夜盘
+- **THEN** snapshot 保留 `NIGHT_SESSION_EVIDENCE_REQUIRED` 并禁止 apply；非交易日才可明确无夜盘
+
+#### Scenario: Explicit context evidence cannot recursively widen scope
+- **WHEN** operator 为已分类交易日的原缺失 Calendar 键指定额外 physical contract/date 供证
+- **THEN** 系统校验该来源 Catalog identity/lifecycle，把请求绑定进新 plan hash；不扩 Calendar 键集合，不写供证 Session，不制造 MainContractMap
+
+#### Scenario: Provider failure or disagreement stops this attempt
+- **WHEN** 精确请求的响应越界、重复、缺失、格式错误或同品种日期多个物理来源不一致
+- **THEN** fetch 立即停止后续调用，不 retry、不补充查询，也不提供可 apply 的 snapshot
+
+#### Scenario: Apply observes drift or occupied Session day
+- **WHEN** 新事务锁定后重读发现计划漂移、已有部分日、重叠 template 或身份冲突
+- **THEN** 在任何插入前拒绝，既有行保持原样；成功仅插入缺失 Calendar 与整个缺失 Session 日期并一次 commit，异常全部 rollback
+
 ### Requirement: 分类 audit finding
 audit SHALL 为每个请求品种独立检查并返回 `code`、`category`、dataset、year、month 的结构化 finding。
 已知历史 Session、交易日历和产品窗口元数据缺口 MUST 分别使用 `metadata_session`、
