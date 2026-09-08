@@ -279,12 +279,12 @@ test('historical reference data unavailable stays section-local and preserves th
   await nextTick()
   const switching = state.switchToHistorical()
   await flush()
-  pending[1]!.resolve(normalizedChart(pending[1]!.request, { token: 'historical-token' }))
+  pending[1]!.resolve(normalizedChart(pending[1]!.request, { token: 'test-only-historical-token' }))
   await switching
 
   const mirror = state.loadAuxiliary('zhaoyao_mirror')
   assert.equal(pending[2]!.request.asOf, historicalAsOf)
-  pending[2]!.resolve(normalizedAuxiliary(pending[2]!.request, 'historical-token'))
+  pending[2]!.resolve(normalizedAuxiliary(pending[2]!.request, 'test-only-historical-token'))
   await mirror
   const chart = state.sections.chart.data.value
   const auxiliary = state.sections.auxiliary.data.value

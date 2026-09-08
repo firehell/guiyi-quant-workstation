@@ -120,6 +120,12 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 - 2026-09-08 `12:47:43..12:53:53 Asia/Shanghai`，按 Owner 本轮对三个新有界计划的批准，从 clean `develop@edfab6fd469919fe25a1f7ba9e27579b3e99d25e` 完成 rb 同合约 `1m + 60m` 补齐：RB2701（through=2026-09-07）9/9、RB2605（through=2026-04-07）16/16、RB2610（through=2026-09-01）14/14，共39/39分区，实际RQData请求15次；failed/partial/blocked/unstarted=0，无重试或回滚。执行前三个fresh hash均匹配，锁内复核；逐合约新只读事务经Catalog/Canonical物理读取和MarketDataService完整端点验证，60m分别为1,084/1,509/1,502根（合计4,095），原有Bar全字段一致，剩余有界目标均为0。净补齐85,995根1m和2,803根60m；执行结果和逐月目标在本机 `rb60m-apply` 诊断附件中。该批准已消费，不授权重跑或其它周期/合约。
 - 上述补齐后，现役v1.10.0 API的 `rb / trend / 60m / auxiliary / zhaoyao_mirror` 固定历史快照 `as_of=2026-09-07T07:00:01Z` 两次真实HTTP均200，约3,096/2,902ms、406,663B。独立同release只读进程确认结果cache首次miss、第二次hit，但每次仍执行2,432条DB语句；独立进程首次结果缓存未命中的请求（未清除OS/磁盘缓存）窗口解析约535ms、读取/覆盖校验约1,462ms、照妖镜公式约10ms。该单样本支持后续优先研究读取成本，不构成全产品SLA或浏览器渲染验收。`2026-09-08T04:56:17Z` 当前日期请求仍500/NEWOW_INTERNAL_ERROR，同日rb rank1映射只读行数为0；历史补齐不关闭当日owner边界Gate，也未切换Runtime或修改映射。
 
+
+- 2026-09-08 照妖镜与历史入口候选 `3f14974e392dbdcf0642f2bb8c64725a50c89bbe` 已完成独立 worktree 实现、测试和 Standards/Spec Review，状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。照妖镜改用冻结原件的分类彩柱、上下独立缩放与提示装饰；空数据清空后不会污染其他副图。历史入口显式验证最多20个完成交易日，保留最后Session结束后1微秒的精确截止及30秒协作式检查预算；当前数据不自动回退。历史模式隐藏当前报价/合约，跨合约重叠时间戳的Action/Hint按已选Frame归属投影；reference缺数只影响自身，真正身份/世代冲突仍联动撤销。
+- 同一固定历史 rb 60m 请求，优化前后各五组新进程首次/同进程缓存命中测试均为HTTP200，4,095根输入、406,663B及完整稳定业务字段不变。含诊断事务开销的DB语句2,433→89（减少96.34%），冷/热HTTP中位数2,210/2,167ms→536/488ms（降低75.77%/77.46%）；未清除OS/磁盘缓存、未改公式或裁剪输入。冻结原件与新绘图对确定性及真实60根数组、三个视窗、DPR1/2共12组对照，像素差异均0；这是有界绘图证据，不是在线全页面或60品种SLA。
+- 最终回归：后端 `2415 passed, 5 skipped, 15 deselected`，engineering `74 passed`，Web `478 passed, 1 skipped`，Playwright `141 passed`；Mypy135源文件、Ruff、build/topology、OpenSpec9/9、secret scan0与diff检查通过。后端矩阵位于`a24320bf6`，此后`3f14974e3`仅修复前端缺数分类并通过新定向/完整Web验证；两轴scoped re-review均PASS。真实浏览器DPR1/2主动等待reference409后，历史主图/照妖镜仍ready，MACD切换、平移缩放及返回当前均通过，无pageerror；首次照妖镜点击到绘制1,344/1,368ms，缓存切回31.9/32.9ms且无新增HTTP。
+- `2026-09-08T08:41:20Z`最终只读核对：当天rb rank1映射仍0行、有效RQData Session4行，最新映射日09-07。历史入口真实返回 `2026-09-07T07:00:00.000001Z` 并验证chart+zhaoyao_mirror，当前请求在候选API中仍明确409；reference自身仍409/NEWOW_DATA_UNAVAILABLE。当日权威输入、其他独立面板及正式Runtime Gate未关闭。本任务未下载、补写映射/Canonical/DB、重跑旧补数、发布main/tag或切换Runtime。
+
 ## 自然 evidence
 
 - `2026-09-07T06:55:25Z` 对全部 60 品种逐一 GET events，查询区间为 2026-09-03 至该次审计时刻，SuBing 合计 `total=0`。该历史快照只证明当时自然 Event/provider/人工收件尚未完成；后续发生的自然闭环见下文，不得回写或删除这个早期事实。
