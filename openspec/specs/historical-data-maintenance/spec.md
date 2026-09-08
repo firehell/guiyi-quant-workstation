@@ -32,12 +32,12 @@ Catalog、执行精确 0045 并清理 publish 执行时由 operational phase aut
 - **THEN** 系统保持维护状态并返回 forward recovery required，不恢复错误 session 或混用新旧锚点
 
 ### Requirement: Exact physical-contract warm-up is a hash-locked maintenance seam
-`guiyi data contract-warmup --symbol SYMBOL --contract CONTRACT --through DATE [--frequency 15m]` SHALL 只接受 active、
+`guiyi data contract-warmup --symbol SYMBOL --contract CONTRACT --through DATE [--frequency {15m,60m}]` SHALL 只接受 active、
 non-retired symbol 与其 RQData Contract identity。窗口 MUST 为该 Contract 的
 `[listed_date, min(through, expired_date - 1 day)]`，且 `through` 不得晚于最近完整交易日。无 `--apply`
 时 MUST 只读 Catalog/Calendar/Session，零 RQData 请求、零 PostgreSQL/Parquet/Redis mutation，并返回稳定
 plan hash、direct/derived target 数、预计 Bar 数和 provider request 数。省略 `--frequency` MUST 保持全部七周期；
-显式 `--frequency 15m` MUST 只规划/执行同 contract 的 `1m` 基础和 `15m` 派生，且 payload 与 plan hash MUST 绑定
+显式 `--frequency 15m` 或 `--frequency 60m` MUST 只规划/执行同 contract 的 `1m` 基础和所选周期派生，且 payload 与 plan hash MUST 绑定
 所选 frequency、完整 frequency scope 及其 `1m` dependency，即使 targets 为空也不得跨 scope 复用 hash。其它显式
 frequency MUST fail closed。`--apply` MUST 要求相同的 lowercase
 SHA-256 `--expected-plan-sha256`，在 maintenance lock 内重算计划；identity、lifecycle、session 或 hash
@@ -46,7 +46,7 @@ SHA-256 `--expected-plan-sha256`，在 maintenance lock 内重算计划；identi
 apply 只可为指定 physical contract 获取 `1m/1d` 基础事实；`1w` MUST 由同一交易所完整日行情在 adapter
 边界聚合，`5m/15m/30m/60m` 只由质量通过的同 contract `1m` 派生；不得写 continuous、其它 contract、
 MainContractMap、Rule、Scope、Runtime、Redis Live、
-Event 或通知。月分区仍依次经过 staging 与完整发布校验。显式 15m scope 的任一 provider、发布或派生失败 MUST 立即
+Event 或通知。月分区仍依次经过 staging 与完整发布校验。显式 15m/60m scope 的任一 provider、发布或派生失败 MUST 立即
 停止该 contract 的后续 target；额度耗尽 MUST 返回 `partial`，不得报告 `passed`。部分成功 MUST 显式返回 `partial/failed`；不得
 自动 retry，任何真实 RQData/Canonical apply 仍需一次与 exact plan hash 对应的独立授权。
 
@@ -59,6 +59,21 @@ Event 或通知。月分区仍依次经过 staging 与完整发布校验。显�
 
 - **WHEN** apply lock 后重新计算的 contract identity、window、target 或 hash 与 `--expected-plan-sha256` 不一致
 - **THEN** 系统在首次 provider request 和任何写入前拒绝执行
+
+#### Scenario: Bounded 60m reuses complete same-contract minute input
+
+- **WHEN** operator 指定 `--frequency 60m`，且目标月的同 physical contract Canonical `1m` 完整
+- **THEN** 计划只包含缺失 `60m` 派生目标；获准 apply 从这些 `1m` 聚合，零 provider 请求，不修改其它周期或合约
+
+#### Scenario: Bounded scope cannot reuse another scope hash
+
+- **WHEN** operator 对 `60m` apply 提供默认七周期或 `15m` 的 plan hash，即使两计划均无目标
+- **THEN** 系统在 callback、provider 和发布前拒绝；反向复用同样拒绝
+
+#### Scenario: Bounded scope stops on the first failed target
+
+- **WHEN** `15m` 或 `60m` 有界 apply 的 provider、源发布或派生失败
+- **THEN** 后续 target 不再执行；保留已成功分区，零成功返回 `failed`、部分成功返回 `partial`；quota 返回 `partial`，不自动 retry
 
 ### Requirement: 分类 audit finding
 audit SHALL 为每个请求品种独立检查并返回 `code`、`category`、dataset、year、month 的结构化 finding。

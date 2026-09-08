@@ -105,7 +105,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 Canonical、写 production DB/Redis 或停止 Runtime。`prepare/publish --apply` 不是测试命令，分别需要新的单次
 真实数据/维护授权。
 
-Physical-contract warm-up（含 `--frequency 15m` 的 1m dependency、scope hash 隔离与 fail-stop）、同合约 Canonical + Live replay、CLI plan hash 与 projection invalidation：
+Physical-contract warm-up（含 `--frequency 15m` / `--frequency 60m` 的 1m dependency、scope hash 隔离与 fail-stop）、同合约 Canonical + Live replay、CLI plan hash 与 projection invalidation：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \

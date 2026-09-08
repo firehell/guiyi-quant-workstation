@@ -349,7 +349,7 @@ def _contract_warmup_scope(
         frequency = BarFrequency(requested)
     except (TypeError, ValueError) as exc:
         raise ValueError("CONTRACT_WARMUP_FREQUENCY_INVALID") from exc
-    if frequency is not BarFrequency.M15:
+    if frequency not in (BarFrequency.M15, BarFrequency.H1):
         raise ValueError("CONTRACT_WARMUP_FREQUENCY_INVALID")
     planned = (BarFrequency.M1, frequency)
     return frequency.value, (BarFrequency.M1.value,), tuple(item.value for item in planned), planned
@@ -517,7 +517,7 @@ class HistoricalDataManager:
         *,
         before_apply: Callable[[], None] | None = None,
     ) -> ContractWarmupResult:
-        """规划或执行单一真实合约的默认七周期或有界 15m warm-up。"""
+        """规划或执行单一真实合约的默认七周期或有界 15m/60m warm-up。"""
         plan, _targets = self._contract_warmup_plan(request)
         if not request.apply:
             return ContractWarmupResult(
@@ -568,7 +568,7 @@ class HistoricalDataManager:
                 ),
                 request.through,
                 weekly_daily_companions=False,
-                fail_stop=locked_plan.frequency == BarFrequency.M15.value,
+                fail_stop=locked_plan.frequency is not None,
             )
             return ContractWarmupResult(
                 status=maintenance.status,

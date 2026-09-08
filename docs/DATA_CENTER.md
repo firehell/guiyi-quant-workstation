@@ -108,11 +108,11 @@ contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四�
 `contract-warmup` 只维护一个已验证 identity 的 physical contract：请求窗口从 `listed_date` 到不晚于最近完整
 交易日的 `requested_window.through`；计划的 `effective_window.through` 再按 `expired_date - 1 day` 截断，获取该
 contract 的 `1m/1d` 基础事实。CLI schema v2 必须同时公开两个窗口，不使用含义不明的单一 `through`；两者也进入
-plan hash identity。省略 `--frequency` 时维持七周期；显式 `--frequency 15m` 的有界 warm-up 只规划/执行同 contract
-`1m` 基础与 `15m` 派生，且 payload 与 plan hash 同时绑定所选频率、完整 frequency scope 和 `1m` 依赖，即使没有
+plan hash identity。省略 `--frequency` 时维持七周期；显式 `--frequency 15m` 或 `--frequency 60m` 的有界 warm-up 只规划/执行同 contract
+`1m` 基础与所选的 `15m` 或 `60m` 派生，且 payload 与 plan hash 同时绑定所选频率、完整 frequency scope 和 `1m` 依赖，即使没有
 target 也不得跨 scope 复用 hash。其它显式 frequency 均 fail-closed。`1w` 只由同一交易所完整日行情聚合，四个日内派生周期只由同 contract `1m` 生成。dry-run
 只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
-MainContractMap、Redis Live、Rule、Scope、Event 或 notification。显式 15m scope 的任一 provider、发布或派生失败
+MainContractMap、Redis Live、Rule、Scope、Event 或 notification。显式 15m/60m scope 的任一 provider、发布或派生失败
 必须立刻停止该 contract 的后续 target；额度耗尽返回 `partial`，不得报告 `passed`。分区失败可明确部分成功，不能自动重试。
 
 ### 当日 Live 缺口恢复
@@ -204,7 +204,7 @@ segment identity 与换月状态隔离，不得根据未来 `end_trading_day` �
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
-guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency 15m] [--expected-plan-sha256 HASH] [--apply]
+guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {15m,60m}] [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe active) [--through DATE] [--progress]
 guiyi data session-anchor-repair --phase plan
 guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
