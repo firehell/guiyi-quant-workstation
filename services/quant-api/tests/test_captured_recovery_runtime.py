@@ -281,3 +281,78 @@ def test_after_market_installed_plist_must_match_loaded_identity(runtime, altera
         runtime.plist.write_bytes(plistlib.dumps(payload))
     with pytest.raises(runtime.module.CapturedRecoveryRuntimeError):
         verify(runtime)
+
+
+# Matches the observed launchctl nesting; labels and values are synthetic.
+_CALENDAR_TRIGGER_BLOCK = """event triggers = {
+    scheduled-event => {
+        stream = com.apple.launchd.calendarinterval
+        descriptor = {
+            Hour => 18
+            Minute => 5
+        }
+    }
+}
+event channels = {
+    com.apple.launchd.calendarinterval = {
+        active = 1
+    }
+}
+"""
+
+
+def _with_calendar_trigger(output):
+    return output.replace("resource coalition = {", _CALENDAR_TRIGGER_BLOCK + "resource coalition = {")
+
+
+@pytest.mark.parametrize("state", ["not running", "waiting", "running"])
+def test_scheduled_service_accepts_mixed_arrow_and_equals_blocks(runtime, state):
+    runtime.outputs["after_market"] = _with_calendar_trigger(
+        runtime.outputs["live"].replace("state = running", f"state = {state}")
+    )
+    result = json.loads(verify(runtime))
+    assert result == {"root": str(runtime.root), "commit": COMMIT, "tag": "v1.10.4"}
+
+
+def test_arrow_trigger_cannot_override_service_or_environment_fields(runtime):
+    output = _with_calendar_trigger(runtime.outputs["after_market"])
+    output = output.replace("stream = com.apple.launchd.calendarinterval", """state = failed
+pid = 0
+working directory = /untrusted
+GUIYI_PROJECT_ROOT => /untrusted
+GUIYI_RUNTIME_COMMIT => invalid
+environment = {
+    GUIYI_PROJECT_ROOT => /untrusted
+    GUIYI_RUNTIME_COMMIT => invalid
+}""")
+    runtime.outputs["after_market"] = output
+    assert json.loads(verify(runtime))["commit"] == COMMIT
+
+
+@pytest.mark.parametrize("alteration", [
+    "missing_commit", "wrong_root", "duplicate_commit", "unclosed_block", "extra_close",
+    "unknown_operator", "arrow_environment", "arrow_service",
+])
+def test_scheduled_service_keeps_identity_and_structure_checks(runtime, alteration):
+    output = _with_calendar_trigger(runtime.outputs["after_market"])
+    commit_line = f"GUIYI_RUNTIME_COMMIT => {COMMIT}"
+    if alteration == "missing_commit":
+        output = output.replace(commit_line, "UNKNOWN_COMMIT => invalid")
+    elif alteration == "wrong_root":
+        output = output.replace(f"GUIYI_PROJECT_ROOT => {runtime.root}", "GUIYI_PROJECT_ROOT => /other")
+    elif alteration == "duplicate_commit":
+        output = output.replace(commit_line, f"{commit_line}\n{commit_line}")
+    elif alteration == "unclosed_block":
+        output = output.removesuffix("}\n")
+    elif alteration == "extra_close":
+        output += "}\n"
+    elif alteration == "unknown_operator":
+        output = output.replace("scheduled-event => {", "scheduled-event -> {")
+    elif alteration == "arrow_environment":
+        output = output.replace("environment = {", "environment => {")
+    else:
+        output = output.replace("gui/501/com.guiyi.quant-live = {", "gui/501/com.guiyi.quant-live => {")
+    runtime.outputs["after_market"] = output
+    with pytest.raises(runtime.module.CapturedRecoveryRuntimeError) as caught:
+        verify(runtime)
+    assert caught.value.code == "CAPTURED_RECOVERY_RUNTIME_SERVICE_IDENTITY_INVALID"

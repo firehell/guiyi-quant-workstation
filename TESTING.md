@@ -349,7 +349,9 @@ Runtime health、data audit 与 alert status 是只读入口，不能推导 Runt
 
 以下为人工操作语法，普通测试不得执行。CLI 默认只读，但连接生产前仍须明确只读范围。
 须先部署通过审查的新 exact tag，证明 Live/Alert/After-market 同根同 commit、共享锁已启用、Live/Alert 心跳新鲜；开发 worktree
-和 v1.10.3 的旧心跳不满足该 Gate。源文件必须来自已授权查询，不能为了运行此命令临时下载。
+和 v1.10.3 的旧心跳不满足该 Gate。`test_captured_recovery_runtime.py` 包含 launchd 定时触发
+`=> {` 与 `= {` 混合嵌套回归，验证 idle/waiting/running、字段层级、重复身份和括号不平衡拒绝。
+源文件必须来自已授权查询，不能为了运行此命令临时下载。
 
 ```text
 guiyi runtime recover-live-captured --trading-day YYYY-MM-DD --symbol rs --contract RS2609 --source /absolute/captured-source.json --source-sha256 SOURCE_SHA256

@@ -78,8 +78,14 @@ idle 状态及 installed plist 身份均正确；Live/Alert 实际共享锁心�
 影响限于 captured-source 恢复入口的 Runtime 身份 Gate；五服务实际加载成功，API/Web 版本正确。
 RS 下午已用预算仍为 `count=3 / last_at=1788845523423`，watermark/circuit 均 null；告警基线未改变。
 验收失败后已停止部署 mutation，无重试、自动回滚、补数、Scope 修改、历史补评或通知。
-最小下一步是修复该解析器，保留字段层级/重复字段/身份校验并补真实结构回归；新版发布及再次部署
-需要新的明确授权。自然苏冰评估与完整 Runtime health 验收仍独立待完成。
+本轮后续开发已修复块识别，保留字段层级/重复字段/身份校验，并新增混合嵌套与伪造字段回归。
+新用例先在原实现上出现 4 个预期失败；修正后身份模块 `76 passed`，调用链回归 `249 passed / 11 skipped`
+（未配置隔离 Redis 的集成用例）；仓库与 canonical 一致性 `18 passed`，Mypy、Ruff、OpenSpec 与 secret scan 通过。
+Standards / Spec 独立审查均为 0 findings。
+只读将同一份实机 launchctl 输出分别交给旧/新纯解析器：Live、Alert 均通过；After-market 旧解析器
+返回原错误，新解析器通过。仅验证解析器，未绕过 exact-tag Gate 从 task 根运行完整恢复入口。
+当前状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；现役仍是未修订的 v1.10.4，没有热改运行根，
+因此上表的生产阻塞仍成立。新版发布及再次部署需要新的明确授权；自然苏冰评估验收独立待完成。
 
 ## 苏冰 60 品种输入恢复候选
 
