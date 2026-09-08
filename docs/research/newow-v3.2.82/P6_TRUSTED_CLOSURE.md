@@ -113,3 +113,26 @@ RUNTIME_SWITCH = NOT_EXECUTED
 ```
 
 必须先有权威输入完整性和后续exact release下的成功响应测量，才能判定真实工作站MDS成功路径性能。本轮没有切换、重启、回滚或启用任何服务。
+
+## 6. 五服务切换前只读回执
+
+在clean、detached的`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.0-r1@f8f7d91765122c33cf5e82ed425b6c44f41ad0b1`上执行安装器`--render-only`。五份渲染plist的`GUIYI_PROJECT_ROOT`均为该exact root，`GUIYI_RUNTIME_COMMIT`均为同一40位commit；渲染后Git状态仍为clean。
+
+Market promotion只读preflight返回：
+
+```json
+{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"passed","reason":"snapshot_ready","trading_day":"2026-09-08","operational_count":60,"snapshot_count":60}
+```
+
+Alert只读结构核对为`ready`：Git外通知配置是当前用户拥有的普通文件，file/parent权限分别为`0600/0700`；installed API与rendered Alert使用同一路径。核对过程未读取或输出配置内容。
+
+最终再次运行`local-services-status.sh`仍为API/Web=`v1.10.0`、Live/After-market/Alert=`v1.9.15`，API/Web HTTP 200、Runtime health=`ok / readonly=true`、`overall=failed, failures=9`。因此只读preflight通过不等于同版Runtime已成立。
+
+以下两个mutation入口明确停留在Gate前，均未执行：
+
+```text
+install-local-services.sh --confirm-market-runtime
+install-local-services.sh --confirm-alert-runtime
+```
+
+另外，`develop@c59a204f986bbab31cb94cba238cd466e70903e4`中的typed 409修复不属于已发布`v1.10.0`；真实MDS成功路径仍被权威MainContractMap输入缺失阻塞。因此本回执只证明exact root的机械切换前条件，不授权或建议立即切换五服务。
