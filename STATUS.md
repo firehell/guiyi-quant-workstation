@@ -8,8 +8,8 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| 正式 Release | `v1.10.0@f8f7d91765122c33cf5e82ed425b6c44f41ad0b1` 是最新正式 release；发布 tree 为 `ccb8f27a1a51e09602a4734c032918f063aa4df2`，annotated tag object 为 `d5faa6923011746a497efbca0aa9a7bdea1c8bb6`，GitHub Release 为 non-draft、non-prerelease，已于 `2026-09-08T00:50:04Z` 发布。 |
-| `main` | `main@f8f7d91765122c33cf5e82ed425b6c44f41ad0b1` 与 `v1.10.0` peeled commit 一致，对应 tree `ccb8f27a1a51e09602a4734c032918f063aa4df2`。 |
+| 正式 Release | `v1.10.1@8e3df5c0bf6ced6712f76941bcf08065f1015188` 是最新正式 release；发布 tree 为 `abfce0787fd504a24d5c6965cc6c6b674f5c9c79`，annotated tag object 为 `2b62400c5edb7aa5050961623ba8ffec0fb2f6c1`，GitHub Release 为 non-draft、non-prerelease，已于 `2026-09-08T05:36:54Z` 发布。 |
+| `main` | `main@8e3df5c0bf6ced6712f76941bcf08065f1015188` 与 `v1.10.1` peeled commit 一致，对应 tree `abfce0787fd504a24d5c6965cc6c6b674f5c9c79`。 |
 | Runtime | `2026-09-08 12:18 CST` 按本轮用户部署请求完成一次服务切换：API/Web/Live/After-market/Alert 五项均加载 clean、detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.0-r1@f8f7d91765122c33cf5e82ed425b6c44f41ad0b1`。API/Web 保持原已加载的该版本，Market 与 Alert 安装器分别成功返回 `services=2` / `services=1`；两个 activation marker 均已启用。Market preflight 为 `snapshot_ready / operational_count=60 / snapshot_count=60`。身份切换完成，但完整健康验收为 `PARTIAL / EXTERNAL_GATE_PENDING`：`local-services-status.sh overall=failed, failures=1`，Runtime API 为 `degraded`，不得声明 `RUNTIME_READY`。未重试或回滚。 |
 | Runtime root 核对 | `guiyi-quant-runtime-v1.10.0-r1@f8f7d917...` 与 `guiyi-quant-runtime-v1.9.15-r1@36fef039...` 均为 clean、detached；五项服务已全部引用前者，后者保留供后续明确批准的恢复操作使用，本轮未删除任何 worktree。 |
 | Database 与 Canonical | 最近 production 只读 readback 为 Alembic `20260903_0045`；RQData session anchor repair 已发布并保留 D1/W1 原始事实。此前全库 Canonical 快照为 8,801 个 Dataset、42,575 个分区、44,629,532 行；该快照不是当前全库总量；PF2611 与本轮 60 合约历史 15m 的最新验收分别见下行及后文。 |
@@ -22,6 +22,8 @@
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 本轮部署验证在 exact v1.10.0 上运行 Market/Alert launchd 与 promotion 定向回归，结果 `90 passed in 53.82s`；render-only 通过，远端 main、annotated tag peeled commit 与 GitHub non-draft/non-prerelease Release 身份一致。未修改发布 tag、Scope、生产配置或 Live recovery 开关，未手工下载/修复数据、清除故障、确认通知、补发或发送测试通知；新版本自然业务证据仍待采集。
+
+`v1.10.1` 在 reviewed RC `e5771d6a674700ee3a561c3787e0871b475c56d5` 上完成 backend `2394 passed, 5 skipped, 15 deselected`、Mypy 134 个源文件、Ruff、engineering `74 passed`、OpenSpec `9/9`、secret scan `0`、Web `467 passed, 1 skipped`、build/topology 与 Playwright `140 passed`；独立 Standards 与 Spec Review 均为 PASS、0 findings。PR #356、main、annotated tag peeled commit 与 GitHub Release target 已读回为同一发布 tree。本轮未执行 Runtime promotion、生产数据/DB/Redis 写入、Scope 变更或真实通知；现役五服务仍为 v1.10.0。
 
 ## 苏冰 60 品种输入恢复候选
 
@@ -112,7 +114,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 - PR #352 已将 P6 Review 修复与 facts-only truth closure 集成到 `develop@c64b42f10b48ec8eace2390abd3254e0dd573d22` / tree `60e606cc92b33160e1fee67a35a2c60917844c89`。同 tree 的最终候选 `efcd12f1794c80ae7f6cad638d98b0acc1693380` 在全部 Review finding 关闭后完成唯一一次最终 Task 22 矩阵：backend `2274 passed, 4 skipped, 15 deselected`、engineering `74 passed`、Web `431 passed, 1 skipped`、Playwright `109 passed`，Ruff、Mypy、Alert Rule ownership、build/topology、OpenSpec `9/9`、secret 与 diff/status checks 均通过，失败与重试均为 0。初始完整 Review 按轴记录为 Standards 3 个 P2、Spec 1 个独立 P2，共 4 个唯一 finding：generation invalidation、auxiliary FIFO/LRU、tracked docs truth、Reference DOM/PNG；`74e58587b` 关闭三个 code/visual finding，`84868658e` 与 `efcd12f17` 关闭 docs truth，相应两轴 scoped re-review 均为 PASS、无新 P1/P2/P3，累计 Review ledger clean。该P6代码已随`v1.10.0@f8f7d917...`发布；产品证据状态仍为 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`，不是完整page parity或Runtime验收。
 - 旧任务文档迁移不升级验收：杯柄D1 clean-room并非原页面精确公式；既有18个D1/60m OOS结果与9个W1执行事实不足仍属于研究证据，产品测试不能升级为新的`OOS_PASSED`。
 - 页面诊断 token、六组合评分/排序、AI copy、目标/吸筹的权威昨收与期货 owner parity、比较器 browser-final/tie golden 等 P3 原件缺口继续为 `EVIDENCE_REQUIRED`。本机已找到manifest登记的完整逻辑根，133项manifest完整性、27项页面响应、AI矩阵、综合决策witness与离线比较器均可重放；但当前Core replay因原包依赖已退役接口而阻塞，且来源包自身仍明确缺少上述原件，route fixture不能替代。
-- [P6真实工作站只读证据](docs/research/newow-v3.2.82/P6_TRUSTED_CLOSURE.md)在已加载v1.10.0 API上完成首30品种两轮和rb 45项矩阵；两轮分别`30/30`、代表矩阵`45/45`均为HTTP 500，诊断根因为`MAIN_CONTRACT_MAP_MISSING`被v1.10.0 API错误包装为`NEWOW_INTERNAL_ERROR`。因此`REAL_WORKSTATION_MDS_REQUEST_PATH = MEASURED`，但`REAL_WORKSTATION_MDS_SUCCESS_PERFORMANCE = BLOCKED / INPUT_IDENTITY_UNAVAILABLE`，不生成SLA pass/fail。develop候选已以RED→GREEN回归测试将MDS失败统一映射为typed Web可识别的`NEWOW_DATA_UNAVAILABLE / HTTP 409`；该修复不改MDS或主力映射，也未进入当前Runtime。
+- [P6真实工作站只读证据](docs/research/newow-v3.2.82/P6_TRUSTED_CLOSURE.md)在已加载v1.10.0 API上完成首30品种两轮和rb 45项矩阵；两轮分别`30/30`、代表矩阵`45/45`均为HTTP 500，诊断根因为`MAIN_CONTRACT_MAP_MISSING`被v1.10.0 API错误包装为`NEWOW_INTERNAL_ERROR`。因此`REAL_WORKSTATION_MDS_REQUEST_PATH = MEASURED`，但`REAL_WORKSTATION_MDS_SUCCESS_PERFORMANCE = BLOCKED / INPUT_IDENTITY_UNAVAILABLE`，不生成SLA pass/fail。`v1.10.1` 已以RED→GREEN回归测试将MDS失败统一映射为typed Web可识别的`NEWOW_DATA_UNAVAILABLE / HTTP 409`；该修复不改MDS或主力映射，且尚未进入当前Runtime。
 
 
 - 2026-09-08 `12:47:43..12:53:53 Asia/Shanghai`，按 Owner 本轮对三个新有界计划的批准，从 clean `develop@edfab6fd469919fe25a1f7ba9e27579b3e99d25e` 完成 rb 同合约 `1m + 60m` 补齐：RB2701（through=2026-09-07）9/9、RB2605（through=2026-04-07）16/16、RB2610（through=2026-09-01）14/14，共39/39分区，实际RQData请求15次；failed/partial/blocked/unstarted=0，无重试或回滚。执行前三个fresh hash均匹配，锁内复核；逐合约新只读事务经Catalog/Canonical物理读取和MarketDataService完整端点验证，60m分别为1,084/1,509/1,502根（合计4,095），原有Bar全字段一致，剩余有界目标均为0。净补齐85,995根1m和2,803根60m；执行结果和逐月目标在本机 `rb60m-apply` 诊断附件中。该批准已消费，不授权重跑或其它周期/合约。
