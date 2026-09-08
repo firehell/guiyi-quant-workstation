@@ -26,6 +26,7 @@
 - [AI 模板与周日矩阵证据](evidence/ai-template-evidence.json)
 - [期货迁移摘要](evidence/futures-validation-summary.json)
 - [OOS / 成本压力矩阵](evidence/oos-cost-stress-matrix.json)
+- [P6 可信收口与真实工作站 MDS 证据](P6_TRUSTED_CLOSURE.md)
 - [来源登记](evidence/source-registry.json)
 - [本地完整证据清单](evidence/full-local-evidence-manifest.json)
 

@@ -6,6 +6,7 @@ from guiyi_quant.newow.product_contracts import ProductFrequency
 from app.api import market_newow
 from app.db.session import get_db
 from app.main import app
+from app.market_data.market_data_service import MarketDataError
 from app.market_data.newow.product_service import (
     NewowProductService,
     ProductServiceQuery,
@@ -196,6 +197,29 @@ def test_strategy_detail_maps_future_as_of_and_safe_internal_errors(monkeypatch)
     assert internal.status_code == 500
     assert internal.json() == {"detail": {"code": "NEWOW_INTERNAL_ERROR"}}
     assert "password" not in internal.text
+
+
+def test_strategy_detail_normalizes_mds_failure_to_public_conflict(monkeypatch):
+    class Fake:
+        def query(self, _query):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+
+    monkeypatch.setattr(
+        market_newow,
+        "_build_product_service",
+        lambda _session, _cancelled=None: Fake(),
+        raising=False,
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get(
+            "/api/v1/market/newow/strategy-detail",
+            params={"product": "rb", "strategy": "trend", "frequency": "1d"},
+        )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "NEWOW_DATA_UNAVAILABLE"}}
 
 
 def test_all_research_sections_validate_against_explicit_wire_models(product_cases):
