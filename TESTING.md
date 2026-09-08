@@ -17,6 +17,34 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
+Newow dependency/readiness 定向 fixture 验证（不连接生产数据库，不下载）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/newow/test_readiness.py \
+  services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/data_foundation/test_newow_readiness_cli.py \
+  services/quant-api/tests/data_foundation/test_historical_data_manager.py \
+  services/quant-api/tests/data_foundation/test_cli.py
+```
+
+已获真实只读连接授权时，可在 exact 代码副本执行以下用法；`--as-of` 必须为本次选定的固定截止时间。
+
+```bash
+uv run --project services/quant-api guiyi data newow-readiness \
+  --symbol rb --as-of 2026-09-04T08:00:00Z --max-work 10000 --timeout-seconds 300
+uv run --project services/quant-api guiyi data newow-readiness \
+  --universe active --as-of 2026-09-04T08:00:00Z --matrix --max-work 10000 --timeout-seconds 300
+```
+
+没有 `--apply` 或自动修复开关；symbol/universe 互斥。`max-work` 为串行枚举/依赖验证/候选规划/section
+调用次数上限（1–100000），deadline 为 1–3600 秒并在 reader 分页、planner 月循环之间检查；单条 PG
+查询受 statement timeout 约束，进行中的文件读取返回后才检查 deadline。审计完成退出 0，
+`status=incomplete` 或异常退出 1，非法参数退出 2。退出 0 表示审计完成而非所有数据/业务 ready；
+必须读取 dependencies、repair_targets、metadata_proposals、main_ready_count 和逐 case section 状态。
+fixture 的 540-case 枚举不构成真实 540-case 验收。后续下载/生产数据写入仍需独立明确授权。
+
 Newow P4 分区编排、typed API、统计截止、来源事实、快照/资源边界、旧 D1 兼容与只读保护：
 
 ```bash

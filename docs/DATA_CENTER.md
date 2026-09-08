@@ -242,6 +242,30 @@ segment identity 与换月状态隔离，不得根据未来 `end_trading_day` �
 
 ## 6. CLI 与外部操作
 
+Newow dependency audit 复用 `NewowProductReader`、共享 rank1 owner validator 和 MDS 的生命周期
+endpoint authority：先枚举各 section 必需的 owner，再独立验证每个物理合约/周期的完整 prefix，
+一个缺失合约不能阻止发现后续独立合约。chart/auxiliary 使用权威近期窗口，reference 使用独立统计
+窗口，explanation 使用三周期输入；每个依赖保留 owner 区间及 strategy/frequency/section consumer provenance。
+W1 合法零 Bar owner 标为 `NOT_APPLICABLE`，不得填 Bar 或计入 data-ready。
+
+`newow-readiness` 只接受互斥的单 active symbol 或 active universe，必须固定带时区 `as_of`；串行工作量和
+deadline 均有界。metadata 不足时返回 `UNKNOWN` 与 bounded metadata repair proposal，预计根数/请求数
+为 null；预算耗尽明确 `incomplete`，保留未启动枚举/依赖/case，不能报告完整覆盖。未知异常仅公开固定内部
+错误，原始非正价格单列 `SOURCE_EXCEPTION`，完整性错误单列 `INTEGRITY_ERROR`，两者不生成盲目下载目标。
+
+仅已证明缺 replay/partition 的依赖进入精确去重的候选请求；纯 `ContractWarmupPlanner` 与
+`HistoricalDataManager` 共用同一规划规则、频率 scope、计数、日周 companion 与 hash。metadata 不足或
+规划未完成不得提供有效 hash/计数。该候选不执行 apply，不能调用会替换更大 Session/Map 集合的
+`MetadataSynchronizer` 来补 Calendar。审计只组合 MDS/Catalog/Canonical reader/coverage/planner，
+不构造 provider、Redis、metadata writer 或维护 apply pipeline；DB 使用 fresh read-only transaction、
+no-autoflush、statement timeout 和 finally rollback。
+
+matrix 模式保留 active 60 × 三策略 × 三周期的 540 main cases，同时独立运行实际 section service，
+保留 `EVIDENCE_REQUIRED`、`NOT_APPLICABLE`、`WARMING` 等业务状态。`complete=true/status=audited`
+仅表示本次限定审计已完成，不表示全部数据 ready、原站 parity、Release 或 Runtime acceptance；
+main ready count 只计算实际主图 READY，不把其他 section 的证据状态算作数据成功。真实只读连接亦须位于
+用户授权范围，fixture 验证与命令存在不构成真实连接或数据修复授权。用法与定向测试见 `TESTING.md`。
+
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]

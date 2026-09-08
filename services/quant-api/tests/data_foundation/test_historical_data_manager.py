@@ -452,6 +452,22 @@ def test_target_contains_only_active_planning_fields() -> None:
     )
 
 
+def test_pure_warmup_planner_matches_maintenance_without_apply_capabilities(session, tmp_path):
+    manager, _coverage, provider = _single_day_contract_warmup_manager(session, tmp_path)
+    planner = historical.ContractWarmupPlanner(catalog=manager.catalog, store=manager.store,
+                                              coverage=manager.coverage)
+    request = historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2), frequency="1d")
+    direct = planner.plan(request)
+    assert direct == manager.contract_warmup(request).plan
+    assert direct.frequencies == ("1d",)
+    assert direct.dependency_frequencies == ()
+    assert direct.expected_bar_count == direct.provider_request_count == 1
+    assert not hasattr(planner, "provider")
+    assert not hasattr(planner, "metadata")
+    assert not hasattr(planner, "contract_warmup")
+    assert provider.calls == []
+
+
 def test_contract_warmup_dry_run_has_exact_month_targets_stable_hash_and_no_writes(
     session, tmp_path
 ) -> None:

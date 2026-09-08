@@ -9,6 +9,39 @@ ReferenceTrade、乐观参考摘要、多周期解释、证据状态和回看图
 
 ## Requirements
 
+### Requirement: Read-only readiness enumerates independent dependencies
+
+Readiness audit SHALL use the existing reader and shared validated MDS rank1 owner enumeration before
+reading physical prefixes. It SHALL collect every independent contract/frequency failure across chart,
+auxiliary, reference and three-frequency explanation inputs, preserving owner segments and consumer provenance.
+Missing metadata SHALL retain UNKNOWN enumeration and null counts, with only bounded repair proposals.
+Exact repair requests SHALL be deduplicated and use the same read-only contract warm-up planner as maintenance;
+source nonpositive rows and integrity errors MUST NOT become blind download targets.
+
+The audit SHALL require fixed timezone-aware as_of, an active symbol or mutually exclusive active universe,
+serial work and deadline budgets. Budget interruption MUST retain UNSTARTED cases and explicit incomplete
+coverage. The 60-product matrix SHALL contain 540 main strategy/frequency cases and preserve actual section
+EVIDENCE_REQUIRED/NOT_APPLICABLE/WARMING states independently of readiness counts. Only a real section service
+READY result may count as main ready. Completed auditing MUST NOT imply all dependencies are ready.
+
+Composition SHALL contain only read authorities and the pure planner, never a provider, metadata writer,
+maintenance apply pipeline or Redis. A fresh read-only database transaction SHALL use no-autoflush and always
+rollback; real connections and any future repair remain separate authorized operations.
+
+#### Scenario: The first physical owner lacks its prefix
+
+- **GIVEN** two authoritative owner contracts have independently missing replay prefixes
+- **WHEN** the dependency audit runs
+- **THEN** both failures are collected, with one repair request per exact contract/frequency/through scope
+- **AND** all affected consumers remain visible; no download or metadata synchronization occurs
+
+#### Scenario: The matrix deadline is reached
+
+- **GIVEN** an active-universe matrix has 540 planned main cases
+- **WHEN** the serial budget expires
+- **THEN** the report is incomplete and every remaining main case stays UNSTARTED
+- **AND** missing section evidence is never relabeled READY
+
 ### Requirement: Parallel development without production promotion
 
 Newow 产品 SHALL 以趋势、震荡、主升浪 × `1w / 1d / 60m` 九个独立组合提供只读主状态、

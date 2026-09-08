@@ -80,6 +80,15 @@ def add_data_commands(
     audit.add_argument("--through")
     audit.add_argument("--progress", action="store_true")
 
+    readiness = commands.add_parser("newow-readiness", allow_abbrev=False)
+    selector = readiness.add_mutually_exclusive_group(required=True)
+    selector.add_argument("--symbol")
+    selector.add_argument("--universe", choices=("active",))
+    readiness.add_argument("--as-of", required=True)
+    readiness.add_argument("--matrix", action="store_true")
+    readiness.add_argument("--max-work", type=int, default=10000)
+    readiness.add_argument("--timeout-seconds", type=int, default=300)
+
     commands.add_parser("after-market")
 
     repair = commands.add_parser("session-anchor-repair", allow_abbrev=False)

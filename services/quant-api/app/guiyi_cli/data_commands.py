@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import TextIO
 
 from app.market_data.historical_data_manager import (
@@ -33,6 +33,17 @@ def build_request(args: argparse.Namespace):
     """根据 data_command 分支构造对应的维护请求对象。"""
     if args.data_command in {"after-market", "session-anchor-repair"}:
         return None
+    if args.data_command == "newow-readiness":
+        from app.market_data.newow.readiness import ReadinessRequest
+
+        as_of = datetime.fromisoformat(args.as_of.replace("Z", "+00:00"))
+        if as_of.utcoffset() is None or as_of > datetime.now(UTC):
+            raise ValueError("CLI_ARGUMENT_INVALID")
+        return ReadinessRequest(
+            products=load_active_products() if args.universe == "active" else (_active_product(args.symbol),),
+            as_of=as_of, matrix=args.matrix, max_work=args.max_work,
+            timeout_seconds=args.timeout_seconds,
+        )
     if args.data_command == "update":
         return UpdateRequest(
             products=_products(args.symbol, args.universe),

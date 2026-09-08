@@ -196,6 +196,7 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         "after-market",
         "session-anchor-repair",
         "contract-warmup",
+        "newow-readiness",
     }
 
 
