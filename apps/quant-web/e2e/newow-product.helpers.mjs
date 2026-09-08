@@ -100,17 +100,18 @@ export async function installNewowProductFixtures(page, options = {}) {
     }
     window.Date = FrozenDate
     window.__newowBrowserClock = { installedAt: performance.now() }
+    window.__newowFixtureWebSockets = []
     class FixtureWebSocket {
       static OPEN = 1
       static CLOSED = 3
       readyState = FixtureWebSocket.OPEN
       onopen = null
       onclose = null
-      constructor(url) { this.url = url; queueMicrotask(() => this.onopen?.()) }
+      constructor(url) { this.url = url; window.__newowFixtureWebSockets.push(url); queueMicrotask(() => this.onopen?.()) }
       close() { this.readyState = FixtureWebSocket.CLOSED; this.onclose?.() }
     }
     window.WebSocket = FixtureWebSocket
-  }, { frozenNow: NEWOW_AS_OF })
+  }, { frozenNow: options.frozenNow ?? NEWOW_AS_OF })
 
   await page.route('**/*', async (route) => {
     const request = route.request()

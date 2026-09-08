@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { candidatePreview } from '../utils/candidatePreview.ts'
 import { resolveWsURL } from '../utils/network.ts'
 import { normalizeBarSeries } from '../utils/barSeries.ts'
 import { normalizeMarketBarWire } from '../api/marketWire.ts'
@@ -362,6 +363,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   }
 
   function openSocket(requestGeneration: number, nextIdentity: MarketSeriesIdentity): void {
+    if (candidatePreview.enabled) return
     if (!isCurrentGeneration(requestGeneration, generation) || !marketState.value || !shouldKeepStateSocket(nextIdentity, marketState.value)) return
     const socket = createWebSocket(socketUrl(getWsURL(), nextIdentity, latestEnd(liveBars)))
     activeSocket = socket
@@ -488,6 +490,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
       publishMerged({ kind: 'replace' })
       try {
+        if (candidatePreview.enabled) return
         const nextState = await fetchState(nextIdentity)
         if (!isCurrentGeneration(requestGeneration, generation)) return
         marketState.value = nextState

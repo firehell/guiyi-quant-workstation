@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test'
 
 const e2ePort = Number(process.env.PLAYWRIGHT_PORT || 5182)
 const e2eBaseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${e2ePort}`
+const candidatePreview = process.env.PLAYWRIGHT_CANDIDATE_PREVIEW === '1'
+if (candidatePreview && e2eBaseURL !== 'http://127.0.0.1:5182') throw new Error('Preview fixtures require isolated port 5182')
 
 /**
  * Web V1 最小浏览器 Gate：mock smoke 默认；readonly 需 REAL_BACKEND=1。
@@ -36,7 +38,9 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
     ? undefined
     : {
-        command: `VITE_PROXY_API_TARGET=http://127.0.0.1:1 VITE_PROXY_WS_TARGET=ws://127.0.0.1:1 pnpm dev --host 127.0.0.1 --port ${e2ePort}`,
+        command: candidatePreview
+          ? 'GUIYI_PREVIEW_AS_OF=2026-09-03T08:00:00.000Z VITE_API_BASE_URL=http://127.0.0.1:1 VITE_MARKET_WS_URL=ws://127.0.0.1:1 pnpm dev --mode candidate-preview --host 127.0.0.1 --port 5182'
+          : `VITE_PROXY_API_TARGET=http://127.0.0.1:1 VITE_PROXY_WS_TARGET=ws://127.0.0.1:1 pnpm dev --host 127.0.0.1 --port ${e2ePort}`,
         url: e2eBaseURL,
         // An arbitrary local server can belong to another worktree; fail rather than test stale source.
         reuseExistingServer: false,

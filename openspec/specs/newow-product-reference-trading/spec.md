@@ -9,6 +9,46 @@ ReferenceTrade、乐观参考摘要、多周期解释、证据状态和回看图
 
 ## Requirements
 
+### Requirement: Local candidate preview is explicitly enabled and read-only
+
+Candidate preview SHALL be default-off, local API `127.0.0.1:8010` and development Web
+`127.0.0.1:5174`, sharing the configured authoritative Catalog/Canonical through existing
+Market/Newow readers. It MUST NOT import the normal application, construct workers/providers,
+enable Runtime, write projections/data, or connect Redis. Each database request SHALL use the shared
+fresh read-only transaction and always rollback. Validation and unexpected failures SHALL be sanitized.
+
+Preview SHALL bind the current repository commit and an explicitly supplied timezone-aware cutoff.
+Market bars SHALL clamp the exclusive `before` cursor to that cutoff; Newow SHALL clamp `as_of`
+to the cutoff, preserving earlier historical snapshots and existing completed/owner validation.
+The historical resolver SHALL use the same upper-bound clock. Home overview and dominant metadata
+SHALL retain their independent authoritative timestamps, without implying that all rows or panels
+share a last Bar or a historical database revision.
+
+Only exact existing GET paths for preview identity, bars, dominants, home overview, strategy detail
+and historical snapshot SHALL reach the candidate API. Legacy queries without a safe cutoff seam
+SHALL return `PREVIEW_ROUTE_FORBIDDEN`. Web proxy SHALL permit only exact GET `/api/runtime/health`
+and `/api/alerts/current-events?limit=30` on the supervised formal API `127.0.0.1:8000`; all other
+management methods/routes and business WebSocket forwarding SHALL be rejected. Existing frontend
+API/WS environment overrides MUST NOT bypass preview isolation; no Live state request or subscription
+SHALL start. Normal development behavior SHALL remain unchanged.
+
+The visible banner SHALL identify candidate versus supervised status origins, code SHA, cutoff scope,
+non-realtime behavior and unsupported routes. Candidate page queries SHALL wait for matching API code
+identity and cutoff; mismatch or unavailable identity SHALL fail closed. Actual process startup and
+database connections remain separately authorized operations, not a consequence of fixture tests.
+
+#### Scenario: A later date is supplied to the preview
+
+- **GIVEN** the preview is explicitly bound to a fixed cutoff
+- **WHEN** a browser supplies a later bars cursor or Newow as-of
+- **THEN** the existing authoritative reader receives the bounded cutoff, not the later date
+- **AND** supervised status and home metadata retain their separately labeled source timestamps
+
+#### Scenario: A management request uses an encoded or trailing path
+
+- **WHEN** preview receives a management method, encoded/trailing API path or business WebSocket
+- **THEN** it rejects the request before any proxy forwarding or database access
+
 ### Requirement: Read-only readiness enumerates independent dependencies
 
 Readiness audit SHALL use the existing reader and shared validated MDS rank1 owner enumeration before

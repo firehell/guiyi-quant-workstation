@@ -229,7 +229,7 @@ def newow_historical_snapshot(
         except RuntimeError:
             return False
 
-    now = datetime.now(UTC)
+    now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         result = _build_historical_resolver(session, cancelled, lambda: now).resolve(
             product, ProductStrategy(strategy), ProductFrequency(frequency)

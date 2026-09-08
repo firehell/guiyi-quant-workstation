@@ -220,6 +220,36 @@ pnpm -C apps/quant-web exec node --test \
 
 ## Web
 
+候选只读预览的隔离 fixture Gate（不启动 8010/5174，不连接真实数据或正式 API）：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -p no:cacheprovider -q \
+  services/quant-api/tests/newow/test_candidate_preview.py
+pnpm -C apps/quant-web exec node --test tests/candidatePreview.test.ts tests/marketSeries.test.ts tests/useNewowProduct.test.ts
+PLAYWRIGHT_CANDIDATE_PREVIEW=1 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/candidate-preview.spec.mjs
+```
+
+浏览器 fixture 固定 5182，拦截业务请求并故意设置错误的旧 API/WS override，以验证隔离。
+普通 dev/build 不启用预览；候选模式只供 dev server，禁止构建成 production bundle。
+实际预览仅在本次明确启动/只读连接授权后，由 controller 确认干净 exact commit、共享 Catalog/Canonical
+配置与无端口占用，再在同一候选代码根、沿用既有配置加载运行下面两个入口。时间值仅是用法示例，
+须替换为本次选定值且两进程完全一致；不得创建第二份 Canonical 或修改 `.env`、launchd、正式服务。
+
+```bash
+GUIYI_CANDIDATE_PREVIEW=1 GUIYI_PREVIEW_AS_OF=2026-09-03T08:00:00Z \
+  PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m app.preview
+GUIYI_PREVIEW_AS_OF=2026-09-03T08:00:00Z pnpm -C apps/quant-web dev:candidate
+```
+
+API 固定只绑定 `127.0.0.1:8010`，Web 固定 `127.0.0.1:5174`，端口占用直接失败。
+启动后核对 `/api/preview/identity` 与横幅的 SHA/cutoff；改变代码后须停止候选进程并重新核对启动。
+K线 `before` 是排他上界，牛哇保留既有 `as_of` completed 语义；首页投影/主力元数据与正式
+Runtime health/当前事件不伪装成同一历史快照，各自保留响应时间戳。页面身份不匹配时不加载业务查询。
+代理只允许既有两项正式 GET，其他请求返回 `PREVIEW_ROUTE_FORBIDDEN`，无 Live subscription。
+停止候选进程即关闭预览；没有数据写入需要回滚，正式 Runtime 与 release Gate 不因预览通过而改变。
+
 Newow P5 路由/偏好、typed section consumer、九组合图层、参考历史与解释面板定向回归：
 
 ```bash
