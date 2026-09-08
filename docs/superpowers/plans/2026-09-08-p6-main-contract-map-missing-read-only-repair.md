@@ -1,6 +1,6 @@
 # P6 `MAIN_CONTRACT_MAP_MISSING` Read-only Repair Plan
 
-> 状态：`READ_ONLY_PLAN_COMPLETE / PRODUCTION_DATA_APPLY_NOT_READY`
+> 状态：`READ_ONLY_PLAN_CORRECTED / READER_FIX_REJECTED_BY_EXISTING_CONTRACT`
 >
 > 本计划只冻结诊断、目标和 Gate。它不授权 RQData 请求、PostgreSQL/Canonical/Parquet/Redis 写入、Runtime 切换、main merge、tag 或 release。
 
@@ -54,61 +54,53 @@ pr, px, rb, rm, ru, sa, sc, sh, sn, sr, ss, ta, v, y, zn
 × 2026-09-08
 ```
 
-同一时点，production Catalog 对全部 60 个 operational 品种都尚未发布 `2026-09-08` rank1；15 个无夜盘/该时点不 overlap 的品种没有进入上述 07:00 请求集合。
+同一时点，production Catalog 对全部 60 个 operational 品种都尚未发布 `2026-09-08` rank1；其余 15 个品种在该固定时点没有把 09-08 纳入 overlap owner 请求。
 
-## 3. 判定：不得执行 MainContractMap production 修复
+## 3. 更正判定：reader 不得收窄 owner 边界
 
-仓库合同规定：受限 metadata 同步只发布当天 rank1，正常入口位于盘后 update；不得提前发布未来主力映射。Newow 当前读取的是 Historical Canonical，权威完成日为 `2026-09-07`，不应为了读取该完成日前缀而要求 `2026-09-08` owner。
+首次计划错误地把 `days[-1]` 解释为窗口扩大缺陷。TDD 的 RED 用例虽然精确复现了该行为，但最小实现随后使四个既有 owner/rollover 合同失败：
 
-所以这 45 个目标是 reader 的窗口扩大缺陷，不是应补写的历史数据缺口。直接补写会：
+```text
+test_only_effective_owners_can_prove_rollover_without_next_weekly_bar × 2
+test_night_session_boundary_uses_next_trading_day_without_natural_date_guess
+test_request_end_is_not_rollover_but_later_effective_mapping_is
+```
 
-1. 绕过既有盘后 metadata 发布时序；
-2. 用每日临时写入掩盖确定性代码缺陷；
-3. 次日再次复发；
-4. 把 Historical Canonical 与当日 Live observation 边界混在一起。
+这些测试和 Newow canonical 共同要求：display/performance 可以截止在更早的 completed Bar，但 owners 必须保留截至 `as_of` 已生效的权威换月边界；否则旧 owner 的 OPEN 参考交易可能漏掉 `ROLLOVER_INTERRUPTED`，相同 query cutoff 的 segment identity 也会被错误改变。
 
-以下 mutation 明确禁止：
+因此，以下拟议改动已被拒绝且没有提交：
 
-- 直接 SQL 插入或更新 `main_contract_map`；
-- 为消除 Newow 错误提前运行 current-day metadata production sync；
-- 将 `guiyi data update --through 2026-09-08 --apply` 解释为本问题修复；
-- 缩短 Catalog、回退 continuous、推测 physical contract；
-- 在修复和验证前切换五服务。
+- 不把 owner loader 收窄到 `max(query.through, performance_through)`；
+- 不从 owner coverage 中删除与 `as_of` 重叠的下一交易日；
+- 不把缺少权威 current owner 降级成历史成功响应。
 
-结论：`MAIN_CONTRACT_MAP_MISSING_PRODUCTION_APPLY = REJECTED_AS_WRONG_TARGET`。本问题没有可请求的一次 production 数据授权。
+恢复原实现后，`test_product_reader.py` 为 `86 passed`，worktree 无源码修改。
 
-## 4. 正确代码修复
+结论：`READER_COMPLETED_DAY_BOUNDARY_FIX = INVALID / CONTRACT_REGRESSION`。现有 reader 的 fail-closed 行为必须保留。
 
-### Task 1：先锁定失败测试
+## 4. 当前 MainContractMap 状态与合法处理
 
-修改：
+production 的自然盘后状态为：
 
-- `services/quant-api/tests/newow/test_product_reader.py`
+```text
+last_run.trading_day=2026-09-07
+last_run.status=passed
+last_run.attempts=1
+started_at=2026-09-07T18:05:06.856229+08:00
+finished_at=2026-09-07T19:30:30.071088+08:00
+last_successful_trading_day=2026-09-07
+```
 
-新增真实时序回归：Calendar 已包含当前交易日、MainContractMap 只到上一完成日、`as_of` 位于当前日夜盘结束后但日盘完成前、coverage latest complete day 为上一日。断言：
+当前日 `2026-09-08` 对全部 60 个 operational 品种都没有 rank1 行；这是现有盘后发布水位，而不是 09-07 及以前的历史缺口。45 个冻结请求在 07:00 已进入 09-08 owner 时段，所以按权威 identity 合同返回 unavailable。
 
-- chart window 只消费上一完成日；
-- owner-map 请求不得越过 display/performance 的最大完成日；
-- 当前未完成日不进入 owners、boundaries、replay bars 或 input identity；
-- completed-only、strict-before 和 prefix invariance 保持不变。
+合法处理顺序：
 
-### Task 2：收窄 owner/read 边界
+1. 推荐等待 `2026-09-08 18:05` 的自然盘后任务发布 09-08 metadata/Canonical，再做只读 readback；自然任务结果未知前不得预报成功。
+2. 如果必须在自然盘后前手工同步，只能调用受限 `synchronize_current_day(operational-60, 2026-09-08)`；该操作会请求真实 RQData，并在一个事务内更新 09-08 至下一交易日的 Calendar、09-08/下一交易日 Session、以及恰好 60 个 09-08 rank1。它没有公开 dry-run CLI，当前也没有单次 production 授权，因此不得执行。
+3. 禁止直接 SQL、推测合约、从 Redis subscription snapshot 回填 Catalog、回退 continuous 或用 `data update --through 2026-09-08 --apply` 冒充 metadata-only 修复。
+4. 当前 develop 已将底层 `MarketDataError` 脱敏映射为 `409 / NEWOW_DATA_UNAVAILABLE`；该 fallback 应保留，但它不补数据、不改变 owner 语义。
 
-修改：
-
-- `services/quant-api/app/market_data/newow/product_reader.py`
-
-实现要求：
-
-1. 计算唯一 `read_through = max(query.through, performance_through)`；
-2. owner loader、actual-dominant day query和 owner coverage 校验使用同一 `read_through`；
-3. overlap calendar 仍用于 session/as-of 判定，但未完成且大于 `read_through` 的日期不得参与 owner 完整性断言；
-4. 不放宽 MDS 的缺口、冲突、physical identity 或 replay coverage Gate；
-5. 不改变 page-parity 公式、Marker、收益、策略版本或参考交易语义。
-
-### Task 3：保持 API typed fallback
-
-当前 develop 已将底层 `MarketDataError` 脱敏映射为 `409 / NEWOW_DATA_UNAVAILABLE`。保留该 fallback，新增回归确保真正的 MDS 缺口仍 fail-closed；代码窗口修复不得把数据错误转换为成功。
+当前最小正确动作是等待自然盘后并只读核对；若自然任务失败，再基于失败后的 exact state 生成新的手工 metadata Packet 和单次授权请求。
 
 ## 5. 被首层错误遮蔽的独立 production 数据 Gate
 
@@ -141,9 +133,9 @@ plan_sha256=4312ba1e3efda03298b639a159e9f335d5ba55381d9f9199d2945451da422195
 status=planned / readonly=true / applied=0 / failed=0
 ```
 
-这只是 rb 的首个失败合同，不是 P6 全矩阵的完整数据修复范围。不得仅凭该 hash 执行 apply，也不得把它与 MainContractMap 代码修复合并成一个授权。
+这只是 rb 的首个失败合同，不是 P6 全矩阵的完整数据修复范围。不得仅凭该 hash 执行 apply，也不得把它与 current-day metadata 同步合并成一个授权。
 
-在申请任何 production 数据授权前，必须先在代码修复后的 exact commit 上串行重放 P6 矩阵，逐个暴露并去重所有 `symbol × physical_contract × through`，对每个身份生成新的官方 dry-run 和 plan hash。授权 Packet 至少包含：
+必须先在 09-08 MainContractMap 完整后的 exact code commit 上串行重放 P6 矩阵，逐个暴露并去重所有 `symbol × physical_contract × through`，对每个身份生成新的官方 dry-run 和 plan hash。申请 physical Canonical production 授权的 Packet 至少包含：
 
 - exact code commit/tree；
 - 每个 symbol/contract/effective window；
@@ -154,24 +146,23 @@ status=planned / readonly=true / applied=0 / failed=0
 
 ## 6. 验证顺序
 
-1. 运行新增失败测试，证明 v1.10.0 复现未完成日 owner 扩大。
-2. 实施最小 reader 修复。
-3. 运行 `test_product_reader.py`、Newow product/API tests 和相关 MDS/Catalog tests。
-4. 对修复 commit 执行 fixed-as-of 进程内 rb 请求；预期不再出现 09-08 `MAIN_CONTRACT_MAP_MISSING`，允许准确暴露下一数据 Gate。
-5. 只读生成 P6 全矩阵 physical warm-up inventory；在此之前不申请 production 数据授权。
-6. 用户按完整 Packet 明确授权后，只执行一次逐项匹配的 production apply；失败不自动重试。
+1. 保留现有 reader；`test_product_reader.py` 必须继续 `86 passed`，四个 owner/rollover 合同不得删除或改弱。
+2. 09-08 自然盘后任务结束后，只读检查 status 必须为 exact `trading_day=2026-09-08 / status=passed`；失败时停止并重新计划，不手工重试。
+3. 只读检查 operational 60 的 09-08 MainContractMap 必须恰好一品种一条、无缺失、重复或越界身份，并与同交易日 Live subscription snapshot 严格一致。
+4. 在同一 production state 上重放 fixed-as-of rb 请求；预期不再出现 09-08 `MAIN_CONTRACT_MAP_MISSING`，允许准确暴露下一 data Gate。
+5. 只读生成 P6 全矩阵 physical warm-up inventory；在完整 Packet 前不申请 physical Canonical production 授权。
+6. 用户按完整 Packet 明确授权后，只执行一次逐项匹配的 physical production apply；失败不自动重试。
 7. apply 后运行 `data audit`、physical replay coverage、P6 HTTP 成功矩阵及 input hash/owner/segment 一致性验证。
 8. 独立 Review clean 后才准备新 Release Candidate；不得改写 `v1.10.0` tag。
 9. 新 RC 只做到 release-candidate evidence。main merge、tag、GitHub Release 和五服务切换继续保持各自独立 Gate。
 
 ## 7. 验收与回滚
 
-代码验收：
+reader 合同验收：
 
-- 固定 07:00 请求不再要求未完成的 09-08 owner；
-- 已完成窗口中的真实 map 缺口仍返回 typed unavailable；
-- 所有直接及必要回归通过；
-- diff/secret scan clean；独立 Review 无 finding。
+- 缺少截至 `as_of` 已生效 owner 时继续 typed unavailable；
+- display/performance 截止更早时，已知的后续有效 owner 和 rollover interruption 仍被保留；
+- `test_product_reader.py` 全部通过且源码 diff 为空。
 
 数据验收（未来单次授权后）：
 
@@ -181,17 +172,17 @@ status=planned / readonly=true / applied=0 / failed=0
 - audit、Catalog/Parquet 完整性和 replay coverage 全部通过；
 - P6 成功响应只归属新的 exact RC commit/tree。
 
-回滚：代码通过普通 Git revert 回退；Canonical apply 使用最后有效分区和 Catalog 原子发布语义恢复。由于本计划未执行任何 production mutation，当前没有数据回滚动作。
+回滚：本轮没有 reader 源码提交，也没有 production mutation，因此当前没有代码或数据回滚动作。未来 physical Canonical apply 继续使用最后有效分区和 Catalog 原子发布语义恢复。
 
 ## 8. 当前 Gate
 
 ```text
 READ_ONLY_PLAN = COMPLETE
-MAIN_CONTRACT_MAP_DATA_APPLY = NOT_APPLICABLE / REJECTED_AS_WRONG_TARGET
-READER_CODE_FIX = READY_FOR_IMPLEMENTATION
-PHYSICAL_WARMUP_PACKET = INCOMPLETE / MUST_REINVENTORY_AFTER_CODE_FIX
+MAIN_CONTRACT_MAP = PENDING_NATURAL_AFTER_MARKET_2026-09-08
+READER_CODE_FIX = REJECTED / CONTRACT_REGRESSION
+PHYSICAL_WARMUP_PACKET = INCOMPLETE / MUST_REINVENTORY_AFTER_MAIN_MAP_READBACK
 NEW_RELEASE_CANDIDATE = BLOCKED
 RUNTIME_SWITCH = NOT_EXECUTED
 ```
 
-唯一下一步：批准按本计划实施 reader 的完成日边界修复；该批准不包含任何 production 数据写入或服务切换。
+唯一下一步：等待 2026-09-08 自然盘后任务结束后，执行 09-08 MainContractMap 和 rb fixed-as-of 的完整只读回执；不手工触发 production mutation，不切换服务。
