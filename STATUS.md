@@ -23,7 +23,7 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 本轮部署验证在 exact v1.10.0 上运行 Market/Alert launchd 与 promotion 定向回归，结果 `90 passed in 53.82s`；render-only 通过，远端 main、annotated tag peeled commit 与 GitHub non-draft/non-prerelease Release 身份一致。未修改发布 tag、Scope、生产配置或 Live recovery 开关，未手工下载/修复数据、清除故障、确认通知、补发或发送测试通知；新版本自然业务证据仍待采集。
 
-`v1.10.1` 在 reviewed RC `e5771d6a674700ee3a561c3787e0871b475c56d5` 上完成 backend `2394 passed, 5 skipped, 15 deselected`、Mypy 134 个源文件、Ruff、engineering `74 passed`、OpenSpec `9/9`、secret scan `0`、Web `467 passed, 1 skipped`、build/topology 与 Playwright `140 passed`；独立 Standards 与 Spec Review 均为 PASS、0 findings。PR #356、main、annotated tag peeled commit 与 GitHub Release target 已读回为同一发布 tree。本轮未执行 Runtime promotion、生产数据/DB/Redis 写入、Scope 变更或真实通知；现役五服务仍为 v1.10.0。
+`v1.10.1` 全量发布矩阵在对齐 main 前的 RC `30debdf3787686c09b312ab4472579479a1cb459` 上完成：backend `2394 passed, 5 skipped, 15 deselected`、Mypy 134 个源文件、Ruff、engineering `74 passed`、OpenSpec `9/9`、secret scan `0`、Web `467 passed, 1 skipped`、build/topology 与 Playwright `140 passed`。对齐 `origin/main@f8f7d917...` 后的 merge commit `0e140552605da9079d5525e5977821b7de9b2496` 仅吸收已发布 v1.10.0 的 README、ARCHITECTURE 与两份任务事实文档，未改功能代码；该 tree 的 focused 验证为 backend `181 passed`、engineering `74 passed`、OpenSpec `9/9`、secret scan `0`、Web `467 passed, 1 skipped` 与 build/topology 通过。此后至 reviewed RC `e5771d6a674700ee3a561c3787e0871b475c56d5` 仅更新 `STATUS.md` 的验证/Review 事实；独立 Standards 与 Spec Review 均为 PASS、0 findings。reviewed RC、PR #356 合入结果、main、annotated tag peeled commit 与 GitHub Release target 已读回为同一发布 tree。本轮未执行 Runtime promotion、生产数据/DB/Redis 写入、Scope 变更或真实通知；现役五服务仍为 v1.10.0。
 
 ## 苏冰 60 品种输入恢复候选
 
