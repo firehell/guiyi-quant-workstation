@@ -39,7 +39,11 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 现役保持 `v1.10.3`。候选完整验证已通过：backend `2563 passed, 16 skipped, 15 deselected`、
 engineering `74 passed`、Web `478 passed, 1 skipped`、Playwright `141 passed`、Mypy `138` 源文件、
 Ruff、Alert Rule ownership、build/topology、OpenSpec `9/9`、secret scan `0` 与 diff check。
-工程检查首次发现固定版本断言尚为 1.10.3，同步至 1.10.4 后完整重跑通过。独立 Review 尚待结束。
+工程检查首次发现固定版本断言尚为 1.10.3，同步至 1.10.4 后完整重跑通过。
+独立 Standards/Spec Review 绑定 `dfa5523ce11f877496daa2193b6dc872639224dd`、tree
+`dd25d5fc65634a02728b90535490916a86513057`，均 PASS、0 findings；五项服务的 render-only
+配置 root/commit 核对通过，未加载服务。状态为 `RELEASE_CANDIDATE / EXTERNAL_GATE_PENDING`；
+此后的文档提交仅记录这些验证与 Review 事实。
 
 2026-09-08 19:26:46..19:26:57 CST 从现役 exact v1.10.3，只读 PostgreSQL 事务及统一
 MarketDataService/Redis/API 复核：RS2609 当日 Canonical 的 1m/5m/15m/30m/60m 分别为
