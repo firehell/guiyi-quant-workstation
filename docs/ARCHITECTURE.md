@@ -37,6 +37,12 @@ flowchart LR
   MARKET -. projection miss .-> HOME
   MARKET --> WEB[Market Web<br/>/market + /market/chart]
   IND --> WEB
+  MDS --> SREAD[SuBing historical reader<br/>rank1 + physical lifecycle coverage]
+  SREAD --> SK[SubingThs15mKernel<br/>single formula authority]
+  SE --> SK
+  SK --> SREF[SuBing reference projection<br/>Decimal reversal at signal close]
+  SREF --> SAPI[read-only SuBing reference API]
+  SAPI --> WEB
 
   DCLI -. apply invalidates .-> PROJ
 
@@ -78,7 +84,7 @@ flowchart LR
 - `/market` 页面仍固定读取 overview、`GET /api/runtime/health` 与 current Alert Events 三项 O(1) 资源；不存在 per-product HTTP、WebSocket 或写入。
 - `active_products.txt` 是研究能力边界；`operational_products.txt` 是 Market/Alert Runtime 外层授权边界。
 - Alert 独立于 Market Catalog。一个 `single Alert Runtime` 按 Rule dispatch 到 HTDY `first_seen` 与 `SubingThs15mEvaluator` `exact`，不新增进程。SuBing 只使用同物理 rank1 合约的 completed `actual_dominant` 15m；首次/换月重建经 `MarketReadService -> MarketDataService` 取得同合约 lifecycle Canonical prefix，再严格合并当日 completed Live，缺 history 即 fail-closed；Event 持久化后最多尝试一次 transport。
-- Web 的 SuBing `S↑/S↓` 只来自 immutable Event，`no SuBing overlay`；API、Web 与 formatter 不复制公式。
+- Web 的正式 SuBing `S↑/S↓` 只来自 immutable Event，通用 Overlay 不增加 SuBing（`no SuBing overlay`）；API、Web 与 formatter 不复制公式。独立历史参考服务经现有 `ActualDominantResearchSegmentLoader` 和 `MarketDataService` 获取完整主力区段、物理生命周期 Bar 及 coverage，复用同一个 Kernel 后进入纯 Decimal 参考投影。`GET /api/v1/market/{symbol}/subing/reference` 提供单品种只读响应，进程内单并发、30 秒协作式预算；输入 hash 绑定游标、统计与信号，历史参考不依赖 Alert Rule/Scope、Redis 或 Event 写入。
 - 默认关闭的 Live recovery worker 属于既有 Market Runtime；复用 RQData adapter、Session 与聚合器，
   只向 Redis Live 原子提交缺失 observation 和恢复水位。MarketReadService 将水位随 Alert window
   传递；同 Runtime root 的 Live 最终提交与 Alert Event/send 通过品种级 OS 锁串行化。只读 readiness

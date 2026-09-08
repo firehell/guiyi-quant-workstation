@@ -24,7 +24,7 @@ export function buildSubingDetailViewModel(input: {
   }))
   return {
     view: 'subing', identity: input.identity, asOf: latest?.detected_at ?? input.header.asOf,
-    semanticBanner: { text: '正式 S↑ / S↓ 只来自 AlertEvent；图上的 EMA21 与 MACD 仅用于人工复核。', tone: 'info' },
+    semanticBanner: { text: '正式 S↑ / S↓ 只来自 AlertEvent；白底标注为历史重算·乐观参考｜零费用/零滑点。EMA21 与 MACD 仅用于人工复核。', tone: 'info' },
     facts: [
       { id: 'latest-alert', label: '最新已保存预警', value: signal ? `${signal}${stale ? '（数据刷新失败，展示上一份成功快照）' : ''}` : unavailable ? '预警数据不可用' : '当前窗口暂无已保存苏冰预警', tone: signal ? (latest!.result_codes[0] === 'buy' ? 'up' : 'down') : unavailable ? 'unavailable' : 'default', source: 'alert_event' },
       { id: 'signal-kline', label: '信号 K 线', value: latest ? `${latest.bar_end} · ${latest.contract}` : unavailable ? '不可用' : '暂无', tone: latest ? 'default' : unavailable ? 'unavailable' : 'default', source: 'alert_event' },

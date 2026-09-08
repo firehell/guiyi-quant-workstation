@@ -178,12 +178,19 @@ class MarketDataService:
         start: datetime,
         as_of: datetime,
         latest: date,
+        calendar_since: date | None = None,
     ) -> tuple[date, ...]:
-        """Resolve completed days using one batch of authoritative session facts."""
+        """Resolve completed days; optionally prove the entire Calendar horizon."""
+        if calendar_since is not None:
+            if type(calendar_since) is not date or calendar_since > latest:
+                raise MarketDataError("TRADING_CALENDAR_MISSING")
+            self._exact_calendar(symbol, calendar_since, latest)
         try:
             assert_not_retired(symbol)
-            windows = self.catalog.session_windows_overlapping_window(
-                symbol, start, as_of + timedelta(microseconds=1)
+            windows = (
+                self.catalog.session_windows_overlapping_window(symbol, start, as_of + timedelta(microseconds=1), latest=latest)
+                if calendar_since is not None
+                else self.catalog.session_windows_overlapping_window(symbol, start, as_of + timedelta(microseconds=1))
             )
         except ProductRetiredError as exc:
             raise MarketDataError("PRODUCT_RETIRED") from exc

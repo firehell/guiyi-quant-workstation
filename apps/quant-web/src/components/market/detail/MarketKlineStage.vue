@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import type { KlineReferenceCallout, KlineReferenceSelection } from '@/types/referenceCallout'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import MarketDetailIcon from '@/components/market/detail/MarketDetailIcon.vue'
 import type { BarData, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/market'
@@ -19,12 +20,16 @@ const props = withDefaults(defineProps<{
   identityKey: string
   focusBarEnd?: string | null
   markers?: KlineMarker[]
+  referenceCallouts?: KlineReferenceCallout[]
+  referenceSelection?: KlineReferenceSelection[]
+  focusRequestId?: number
 }>(), { markers: () => [] })
 
 const emit = defineEmits<{
   loadEarlier: []
   'focus-resolved': [focusBarEnd: string]
   'marker-select': [marker: KlineMarker]
+  'reference-select': [id: string]
 }>()
 const chart = ref<InstanceType<typeof KlineChart> | null>(null)
 const root = ref<HTMLElement | null>(null)
@@ -34,7 +39,7 @@ let resolvedFocusKey: string | null = null
 
 function resolveFocus(): boolean {
   if (!props.focusBarEnd) return false
-  const focusKey = `${props.identityKey}:${props.focusBarEnd}`
+  const focusKey = `${props.identityKey}:${props.focusBarEnd}:${props.focusRequestId ?? 0}`
   if (resolvedFocusKey === focusKey) return true
   if (!chart.value?.revealTime(props.focusBarEnd)) return false
   resolvedFocusKey = focusKey
@@ -48,7 +53,7 @@ watch(() => props.identityKey, () => {
   followLatest.value = true
 })
 
-watch(() => [props.identityKey, props.focusBarEnd], async () => {
+watch(() => [props.identityKey, props.focusBarEnd, props.focusRequestId], async () => {
   await nextTick()
   resolveFocus()
 }, { immediate: true })
@@ -100,6 +105,9 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :range-detector-source-identity="rangeDetectorSourceIdentity"
       :range-detector-anchor-time="rangeDetectorAnchorTime"
       :alert-markers="markers"
+      :reference-callouts="referenceCallouts"
+      :reference-selection="referenceSelection"
+      @reference-select="emit('reference-select', $event)"
       @need-more-before="emit('loadEarlier')"
       @follow-latest-change="followLatest = $event"
       @marker-select="emit('marker-select', $event)"

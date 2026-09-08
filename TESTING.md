@@ -2,6 +2,23 @@
 
 以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
 
+## 苏冰历史参考交易
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_ths_kernel.py \
+  services/quant-api/tests/test_subing_reference_projection.py \
+  services/quant-api/tests/test_subing_reference_service.py \
+  services/quant-api/tests/test_subing_reference_api.py \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py
+pnpm -C apps/quant-web exec node --test tests/subingReference.test.ts
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-reference.spec.mjs
+```
+
+上述浏览器截图使用 route-intercept fixture，只证明视觉与交互，不代表生产历史收益或自然预警。
+真实历史读取、发布和 Runtime 验收单独报告；测试不授权生产数据库连接或外部写入。
+
 ## 后端
 
 ```bash

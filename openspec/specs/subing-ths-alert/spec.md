@@ -156,9 +156,9 @@ provider accepted MUST NOT 表述为微信实际送达。
 
 ### Requirement: Web is Event-backed and adds no SuBing overlay
 
-Market Home 与 `/market/chart` SHALL 只从 typed Alert Event API 获取 SuBing facts。实际主力 15m 图上可显示
+Market Home 与 `/market/chart` 的正式 SuBing 预警 facts SHALL 只从 typed Alert Event API 获取。实际主力 15m 图上可显示
 Event-backed `S↑/S↓` marker 并按正式 `bar_end` 定位；Overlay 仍只允许 `none | htdy`，不得增加 SuBing
-overlay、复制 BUY/SELL 公式、发起 O(N) per-product 请求或产生写入。
+通用 overlay、复制 BUY/SELL 公式、发起 O(N) per-product 请求或产生写入。专用页面的历史参考 SHALL 使用下面的独立只读接口和来源标记，不冒充 Event。
 
 #### Scenario: A SuBing Event is opened from Market Home
 
@@ -243,3 +243,69 @@ Rule的last_failure_at MUST 保留，现有全局失败事实继续按原合同�
 - **GIVEN** Rule保留last_failure_at，但成功eval已清空当前error_type
 - **WHEN** 计算聚合health
 - **THEN** 允许当前health为ok并继续呈现历史失败；若error_type仍存在则不能回绿
+
+
+### Requirement: Historical reference uses the existing formula and an independent model
+
+苏冰专用历史参考 SHALL 复用唯一 `SubingThs15mKernel` 和 `subing_ths_15m_v3`，不得恢复已退役策略。
+参考模型 SHALL 为 `subing_reference_reverse_close_v1`：首次 buy 开多、首次 sell 开空；反向信号在同一已完成
+信号 Bar close 平仓并反手，同向信号不加仓、不重置入场。参考身份 MUST 绑定品种、物理合约、rank1 segment、
+公式、参考模型及入场信号，平仓显式关联入场；不得依赖显示窗口或最近标记猜测。
+历史参考 SHALL 标记 `source=historical_replay`、`executable=false`、`auto_order=false`，不创建 Event、订单、
+持仓账本、通知或 Scope 写入，也不声明牛哇公式 parity、因果回测或账户收益。
+
+#### Scenario: A reverse signal follows an open reference
+
+- **WHEN** 同合约同 segment 内已有多头参考并出现 sell
+- **THEN** 使用该 completed Bar close 平多并开空，signal 同时关联已平和新开的 reference_trade_id；空头到 buy 对称处理
+
+#### Scenario: The same direction occurs again
+
+- **WHEN** 参考方向未变化而出现同向有效信号
+- **THEN** 保留该历史信号及既有参考身份，不创建第二笔交易或变更入场价格
+
+### Requirement: Historical reads prove the selected completed window
+
+历史参考 SHALL 只通过现有 `MarketDataService`、rank1 segment loader、Calendar 和 Session 读取 Canonical，
+不读取 Live、不下载或补写。默认最近 20 个完成交易日由完整 Calendar/Session 决定，不以现有数据回退；
+显式日期区间 MUST 完整读取，结束日为已完成交易日，单请求跨度最多 365 个日期间隔。
+每个 owner SHALL 读取并验证自己的完整物理 lifecycle prefix，状态不跨合约继承；只有 owner 有效期间可输出信号。
+前段结束、Session、映射、Calendar、Bar coverage 或物理事实冲突 MUST 整个参考面 fail closed，不能缩短窗口。
+
+#### Scenario: Calendar tail or an owner final day is missing
+
+- **WHEN** Calendar 覆盖不完整，或任一物理合约的主力有效末日 Bar 缺失
+- **THEN** 返回不可用，不能把更早日期当作完整请求结果
+
+#### Scenario: Ownership changes
+
+- **WHEN** 后续 owner 的 Session 起点已生效
+- **THEN** 前段未平参考成为 ROLLOVER_INTERRUPTED，无 synthetic exit 或已平收益；新 owner 独立 warm-up 和建仓
+
+### Requirement: Reference arithmetic and statistics are explicit
+
+价格和收益 MUST 使用独立固定 Decimal context（28 位、ROUND_HALF_EVEN）；费用与滑点为零。
+多头收益为 `(exit-entry)/entry*100`，空头为 `(entry-exit)/entry*100`。
+OPEN 只用本合约已完成 Bar 标记浮动；中断记录不生成退出价格、已平收益或当前浮动，不制造窗口末端平仓。
+统计 SHALL 只包括窗口内新开且已平的交易；期初已有、OPEN 和 ROLLOVER_INTERRUPTED 单独分组，
+已在窗口开始前结束的中断记录不返回。汇总包含胜/负/平、胜率、平均收益和收益简单相加百分点，不称复利净值。
+
+#### Scenario: Paging or chart zoom changes
+
+- **WHEN** 用户翻交易页或缩放 K 线
+- **THEN** 相同窗口和输入的信号、交易身份与汇总不变，游标绑定窗口、cutoff 和完整输入 hash；输入改变要求重新读取
+
+### Requirement: Historical reference API and visual sources stay distinct
+
+`GET /api/v1/market/{symbol}/subing/reference` SHALL 固定 actual_dominant/15m，接受 `since`、`through`、
+`as_of`、`before`、`limit`（默认 50，最大 200）；拒绝未知/重复 query、未来或无时区截止。
+返回 typed signal/trade/summary、窗口、cutoff、版本和 input_snapshot_hash；价格/收益为十进制字符串。
+单进程 SHALL 最多一个计算和 30 秒协作式检查预算，不落盘派生缓存，不输出内部错误详情。
+图表 SHALL 显示可避让的白底细边框价格/平仓收益标注，空间不足收起为可交互标记；只锚定匹配的时间与物理合约。
+列表 SHALL 显示方向、状态、合约、开平时间价格、持有 Bar 数和参考收益，点击记录定位对应 Bar。
+历史与实际 Event MUST 分别保留身份、来源和详情；刷新/切换窗口撤销旧参考详情，迟到响应不得覆盖新身份。
+
+#### Scenario: Historical data is unavailable but actual events exist
+
+- **WHEN** 历史参考查询失败而 Event API 有已保存预警
+- **THEN** 历史面明确显示不可用，日期仍可编辑；实际预警入口保留，不伪造历史参考或 Event

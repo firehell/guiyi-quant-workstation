@@ -453,6 +453,8 @@ class MarketCatalog:
         symbol: str,
         start: datetime,
         end: datetime,
+        *,
+        latest: date | None = None,
     ) -> tuple[tuple[date, tuple[SessionWindow, ...]], ...]:
         """Resolve Calendar/Session once and retain windows for completion checks."""
         exchange = self.exchange_for_symbol(symbol)
@@ -471,7 +473,8 @@ class MarketCatalog:
         )
         if next_day is not None:
             candidates.append(next_day)
-        candidate_days = tuple(dict.fromkeys(candidates))
+        # Completed historical requests need no Session facts beyond their horizon.
+        candidate_days = tuple(day for day in dict.fromkeys(candidates) if latest is None or day <= latest)
         batch = SessionWindowBatch(
             self.session, exchange=exchange, symbol=symbol, trading_days=candidate_days
         )
