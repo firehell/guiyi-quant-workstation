@@ -8,11 +8,11 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| 正式 Release | `v1.10.3@dd9f3fa0fa332d433e4409dd657d35174b2b371c` 是最新正式 release；PR #357 于 `2026-09-08T09:31:21Z` 合入 main。发布 tree 为 `e8d81d08be57abe30034b9db9982ac6ce26263b0`，annotated tag object 为 `411502b0c9543192e0844c0034b75788fea29d11`，GitHub Release 为 non-draft、non-prerelease，已于 `2026-09-08T09:32:17Z` 发布。v1.10.2 候选已完整吸收，未单独发布。 |
-| `main` | `main@dd9f3fa0fa332d433e4409dd657d35174b2b371c` 与 `v1.10.3` peeled commit、GitHub Release target 一致；tree 与已双审候选 `9f22847cfa39d7318d039fc645697ba9da9f3fc0` 一致。发布合并结果已回流 develop；之后仅在 develop 更新本文发布/清理事实，不改已发布 tag。 |
-| 发布与部署边界 | 用户明确授权继续一次本机五服务部署、失败即停且不自动回滚后，`v1.10.3@dd9f3fa0fa332d433e4409dd657d35174b2b371c` 已完成一次实际服务切换。API/Web/Live/After-market/Alert 均加载同一 clean detached 新根；发布与加载身份一致。完整健康验收为 `PARTIAL / EXTERNAL_GATE_PENDING`：部署前已有 SuBing `evaluation_failed` 仍保留，尚不能声明 `RUNTIME_READY`。未自动重试或回滚。 |
-| Runtime | `2026-09-08 17:50 CST` 只读核对五项服务均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.3-r1@dd9f3fa0fa332d433e4409dd657d35174b2b371c`。三个安装器步骤均成功：API/Web/既有日志轮转 `services=3`、Live/After-market `services=2`、Alert `services=1`；Market preflight 为 `snapshot_ready / operational_count=60 / snapshot_count=60`，Market/Alert activation marker 均为 enabled、0600。After-market 为已加载、等待自然 18:05 调度，未手工触发；API/Web/Live/Alert 为 running。 |
-| Runtime root 核对 | 当前保留主 develop、clean detached v1.10.3 现役根、clean detached `v1.10.0@f8f7d91765122c33cf5e82ed425b6c44f41ad0b1` 切换前恢复根，以及 clean detached `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6` 旧恢复根。此前两个 RC 工作树与分支已清理；本轮未删除恢复目录。五服务 root/loaded commit 均只引用 v1.10.3。 |
+| 正式 Release | `v1.10.4@43797a5c1ddf581c9381dead9273df8a34375dfa` 是最新正式 release；PR #358 于 `2026-09-08T11:53:33Z` 合入 main。发布 tree 为 `8f930282dffcc296e3244cc376bebee37ab43076`，annotated tag object 为 `a709ca4117a2062c716a8b0ad67c340e83f9aa93`。GitHub Release 为 non-draft、non-prerelease，于 `2026-09-08T11:55:42Z` 发布；API/Web/Python/lock 版本均为 1.10.4。 |
+| `main` | `main@43797a5c1ddf581c9381dead9273df8a34375dfa` 与 v1.10.4 peeled commit、GitHub Release target 一致；tree 与批准且已双审的候选 `9dd47427269acc2c11ec845976081a816a8925e4` 完全一致。发布合并结果已回流 develop；本文后续仅在 develop 记录发布事实，不改发布 tag。 |
+| 发布与部署边界 | v1.10.4 main merge、annotated tag 与 GitHub Release 已按本轮单次授权全部成功，无失败或重试。本轮明确不部署；五项服务仍加载 v1.10.3。自然盘后已确认 RS 当日 Canonical 完整并清理 Live，原五根 Live 恢复计划已失效，但苏冰旧 evaluation_failed 与新自然评估 Gate 仍保留，不能声明 RUNTIME_READY。 |
+| Runtime | v1.10.4 发布前只读核对五项 launchd 仍加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.3-r1@dd9f3fa0fa332d433e4409dd657d35174b2b371c`。API/Web/Live/Alert 为 running；After-market 已加载且本次自然盘后完成，当前 idle。本轮没有创建 v1.10.4 Runtime root、切换服务、修改配置或补数；部署另行批准。 |
+| Runtime root 核对 | 主 develop、v1.10.4 候选工作树 `.worktrees/release-v1.10.4@9dd474272...` 及三个 detached Runtime 根均 clean。现役仍为 v1.10.3；v1.10.0 与 v1.9.15 恢复根保留。本轮没有删除工作树；候选根和历史恢复根的清理待部署读回后按精确引用审计另行处理。 |
 | Database 与 Canonical | 最近 production 只读 readback 为 Alembic `20260903_0045`；RQData session anchor repair 已发布并保留 D1/W1 原始事实。此前全库 Canonical 快照为 8,801 个 Dataset、42,575 个分区、44,629,532 行；该快照不是当前全库总量；PF2611 与本轮 60 合约历史 15m 的最新验收分别见下行及后文。 |
 | PF2611 physical warm-up | 2026-09-05 从 clean detached `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6`，以 `symbol=pf`、`contract=PF2611`、`through=2026-09-04`、plan SHA-256 `7a51886988ff0508f6b3295d40665cef11ff54bc7b0b63ab79aee4fec5544f19` 完成唯一一次真实 RQData/Canonical apply：76 个目标全部 applied，blocked/failed 均为 0。只读 audit finding 为 0；MarketDataService exact physical 15m 读回 4,491 根，交易日窗口为 `2025-11-17..2026-09-04`，七周期最终共 77 个分区、89,280 行（含原已完整且未改写的 1w 分区 1 行）。Rule/Scope/Event、非目标 Catalog、pf 其他合约与 continuous 文件、MainContractMap 及五项 Runtime 的前后基线一致；状态为 `PF2611_WARMUP_APPLIED_AND_VERIFIED`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
@@ -32,18 +32,19 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 `v1.10.3` 首次部署准备的 exact-tag 定向回归为 `90 passed in 65.45s`（Market/Alert launchd 与 promotion），新根独立 Web typecheck/build/topology 与 render-only 通过；只读 promotion preflight 为 `snapshot_ready / operational_count=60 / snapshot_count=60`。盘后状态复制在 mutation 前因错误的 `config/universe/operational_products.txt` 路径退出；随后只读核验已改用唯一 `load_operational_products()`，确认源 public schema v2、60 品种顺序、无 current run、passed 与源 SHA-256 `e98f09a39ded99fe4b566b9e6616455929155a9e6619dd99c284d3578431e610` 均有效，目标仍不存在。用户随后给出新的明确授权，本轮已按修正校验 create-only 带入该状态并完成一次五服务切换；各安装器成功，无自动重试或回滚。部署前 API/Web 为 200、DB/Redis/Live/After-market 为 ok，60 品种处于 CLOSED；Alert 已 degraded，SuBing `evaluation_failed` 的最新失败时间为 `2026-09-08T07:00:29.336273+00:00`。该故障是切换前基线；未清除故障、改 Scope、补数或补发通知。
 
-## v1.10.4 候选与盘后复核
+## v1.10.4 发布与盘后复核
 
-用户已确认新候选版本为 `v1.10.4`；API/Web、Python 项目/lock 与 health 测试版本同步准备，
-候选包含 `4b55a4189` 的 captured-source 恢复及盘后互斥修复。正式发布和本机五服务切换仍未执行，
-现役保持 `v1.10.3`。候选完整验证已通过：backend `2563 passed, 16 skipped, 15 deselected`、
+用户以 `9dd474272` 为候选明确批准 v1.10.4 main merge、annotated tag 与 GitHub Release，失败即停。
+本次三步均成功，正式身份见上表；包含 `4b55a4189` 的 captured-source 恢复及盘后互斥修复。
+五服务切换未执行，现役保持 `v1.10.3`。候选完整验证已通过：backend `2563 passed, 16 skipped, 15 deselected`、
 engineering `74 passed`、Web `478 passed, 1 skipped`、Playwright `141 passed`、Mypy `138` 源文件、
 Ruff、Alert Rule ownership、build/topology、OpenSpec `9/9`、secret scan `0` 与 diff check。
 工程检查首次发现固定版本断言尚为 1.10.3，同步至 1.10.4 后完整重跑通过。
 独立 Standards/Spec Review 绑定 `dfa5523ce11f877496daa2193b6dc872639224dd`、tree
 `dd25d5fc65634a02728b90535490916a86513057`，均 PASS、0 findings；五项服务的 render-only
-配置 root/commit 核对通过，未加载服务。状态为 `RELEASE_CANDIDATE / EXTERNAL_GATE_PENDING`；
-此后的文档提交仅记录这些验证与 Review 事实。
+配置 root/commit 核对通过，未加载服务。最终候选 `9dd474272` 的增量事实文档双审同为 PASS、0 findings。
+发布前再次运行 health 与版本一致性测试 `7 passed`；未重复运行已在同一功能 tree 通过的完整矩阵。
+本次状态为 `RELEASED / RUNTIME_EXTERNAL_GATE_PENDING`，发布后的文档提交仅记录实际结果。
 
 2026-09-08 19:26:46..19:26:57 CST 从现役 exact v1.10.3，只读 PostgreSQL 事务及统一
 MarketDataService/Redis/API 复核：RS2609 当日 Canonical 的 1m/5m/15m/30m/60m 分别为
@@ -55,7 +56,7 @@ attempt count 仍为 3；没有清零预算或补写水位。旧日内 event rea
 `MARKET_READ_CONTRACT_UNAVAILABLE`，属于已结束的 Live 生命周期，不能重新解释为 Canonical 缺口。
 
 结论：原五根缺口已由自然盘后维护解决，本轮不再生成或执行这五根 Live 恢复计划；旧计划失效，
-不能为完成步骤而重建过期 Live 数据。剩余为新版本发布/部署以及后续自然 completed Bar 的苏冰
+不能为完成步骤而重建过期 Live 数据。新版本已发布，剩余为部署以及后续自然 completed Bar 的苏冰
 评估与健康验收。通用盘后 processing success、完整历史数据或旧 Rule 最新评估时间均不能替代
 RS 的自然评估成功证据；不手工清除 `evaluation_failed`。
 
