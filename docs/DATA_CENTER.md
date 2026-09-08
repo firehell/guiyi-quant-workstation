@@ -167,6 +167,8 @@ provider 已耗尽的三次预算保持原值；零下载模式不 claim、不�
 这六个键的修改与共享锁文件使用均须包含在实际执行范围中。
 
 CLI 仅从 clean detached annotated exact-tag Runtime 运行，Live/Alert/After-market 已加载 root/commit 必须匹配；
+launchd 身份读取须保持块层级：识别 `= {` 与嵌套定时触发块 `=> {`，但 root/commit 只取
+服务直接 `environment = {`，state/PID/WorkingDirectory 只取服务顶层；重复字段与不平衡块仍拒绝。
 两条独立心跳须新鲜且明确证明该进程实际组合了恢复共享锁。缺字段的旧版本不合格；不能仅凭 shell
 开关推断另一进程状态。心跳新增 `runtime_root`、`runtime_commit`、`recovery_guard_enabled`，
 不改变 `alert:runtime-status` schema v6 或 Rule health 语义。未运行/已过期/未来心跳均拒绝。
