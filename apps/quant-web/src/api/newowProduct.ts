@@ -1,4 +1,5 @@
 import type {
+  NewowHistoricalSnapshot,
   NewowProductRequest,
   NewowProductSectionResponse,
 } from '../types/newowProduct.ts'
@@ -12,10 +13,11 @@ const INVALID_CODES = new Set([
   'NEWOW_SECTION_PARAMETER_INVALID', 'NEWOW_COMPLETE_PERIOD_MISSING',
 ])
 const CONFLICT_CODES = new Set([
-  'NEWOW_DATA_IDENTITY_INVALID', 'NEWOW_DATA_UNAVAILABLE', 'NEWOW_DATA_OUT_OF_ORDER',
+  'NEWOW_DATA_IDENTITY_INVALID', 'NEWOW_DATA_OUT_OF_ORDER',
   'NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'NEWOW_CURSOR_GENERATION_CONFLICT', 'NEWOW_CURSOR_INVALID',
   'NEWOW_REFERENCE_PAIRING_CONFLICT', 'NEWOW_PAGE_COMPARATOR_CONFLICTING_FACT',
 ])
+const UNAVAILABLE_CODES = new Set(['NEWOW_DATA_UNAVAILABLE'])
 
 export class NewowProductRequestError extends Error {
   readonly code: string
@@ -27,6 +29,43 @@ export class NewowProductRequestError extends Error {
     this.code = code
     this.classification = classification
   }
+}
+
+export async function getNewowHistoricalSnapshot(
+  identity: NewowProductRequest['identity'],
+  options: NewowProductRequestOptions = {},
+): Promise<NewowHistoricalSnapshot> {
+  const transport = options.request ?? defaultRequest
+  let payload: unknown
+  try {
+    payload = await transport('/market/newow/historical-snapshot', {
+      params: { product: identity.product, strategy: identity.strategy, frequency: identity.frequency },
+      signal: options.signal,
+    })
+  } catch (error) {
+    if (error instanceof NewowProductRequestError) throw error
+    throw classifyTransportError(error)
+  }
+  if (!isHistoricalSnapshot(payload, identity)) throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
+  return payload
+}
+
+function isHistoricalSnapshot(value: unknown, identity: NewowProductRequest['identity']): value is NewowHistoricalSnapshot {
+  return isRecord(value) && value.schema_version === 'newow_historical_snapshot_v1'
+    && value.product === identity.product && value.strategy === identity.strategy
+    && value.frequency === identity.frequency && value.series_kind === 'actual_dominant'
+    && typeof value.trading_day === 'string' && validCalendarDate(value.trading_day)
+    && typeof value.as_of === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value.as_of) && Number.isFinite(Date.parse(value.as_of))
+    && Array.isArray(value.validated_sections) && value.validated_sections.length === 2
+    && value.validated_sections[0] === 'chart' && value.validated_sections[1] === 'zhaoyao_mirror'
+}
+
+function validCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (match === null) return false
+  const year = Number(match[1]); const month = Number(match[2]); const day = Number(match[3])
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day
 }
 
 interface ProductRequestConfig {
@@ -107,6 +146,7 @@ function classifyTransportError(error: unknown): NewowProductRequestError {
   const detail = httpDetail(error)
   if (detail?.status === 429 && detail.code === 'NEWOW_RESOURCE_BUSY') return new NewowProductRequestError(detail.code, 'busy')
   if (detail?.status === 429 && detail.code === 'NEWOW_REQUEST_CANCELLED') return new NewowProductRequestError(detail.code, 'cancelled')
+  if (detail?.status === 409 && UNAVAILABLE_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'unavailable')
   if (detail?.status === 409 && CONFLICT_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'conflict')
   if (detail?.status === 422 && INVALID_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'invalid')
   return new NewowProductRequestError('NEWOW_API_UNAVAILABLE', 'unavailable')

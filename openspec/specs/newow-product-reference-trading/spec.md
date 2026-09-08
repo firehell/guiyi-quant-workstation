@@ -320,6 +320,47 @@ identity 与确认时间语义；`pivot_at` 不得冒充首次可知时间，其
 - **WHEN** 刷新页面
 - **THEN** 只更新标明回看的图层，不改 ReferenceTrade 的 BUILD/CLEAR 与收益，也不把回绘点写为当时的交易原因
 
+### Requirement: Render the frozen mirror display without changing its values
+
+照妖镜副图 MUST 使用冻结 v3.2.82 的六类柱线与叠加顺序：进场红色宽柱、拉高黄色宽柱、
+洗盘绿色窄柱、出货蓝色窄柱，以及退场和诱多细虚线。零轴 SHALL 位于绘图区 48%，
+可见窗口的上方与下方 SHALL 分别缩放；诱多参与上方最大值但按下方比例绘制的原件规则 MUST 保留。
+“小心”三角、文字和引线 SHALL 按原件显示，原件已隐藏的星标 MUST NOT 恢复。
+这些坐标变换 MUST NOT 修改原始指标值、公式身份或 retrospective-only 边界。
+
+#### Scenario: Pan changes visible extrema
+
+- **GIVEN** 可见区外存在更大的照妖镜值
+- **WHEN** 用户平移、缩放或加载历史窗口
+- **THEN** 副图只按当前可见窗口重新缩放，时间坐标与主图对齐，不连接成通用指标折线
+
+### Requirement: Historical snapshot selection is explicit and verified
+
+当前快照输入不足 MUST 明确不可用，不得自动使用历史数据或推断缺失 owner。
+用户主动选择历史入口后，服务端 SHALL 从权威完成交易日逆序检查最多 20 个候选；
+候选 as_of 为该日最后 Session 结束后一个微秒且不得晚于当前时间。
+返回候选前 MUST 使用既有 reader 验证主图和照妖镜所需完整输入，包括同合约 warm-up 和物理可读性。
+只有可证明为缺失的数据错误允许检查更早日期；身份、完整性或截止时间冲突、未知错误、取消或超时 MUST 停止。
+候选日期 SHALL 分批读取，不能另加自然日截止而缩短最近 20 个完成交易日的范围；
+解析器 SHALL 使用 30 秒单调时钟预算并在读取边界检查取消，超时后不得返回成功。
+
+客户端 SHALL 显著显示历史截止时间并提供返回当前入口；切换时取消旧请求、重置 token 与分页，
+所有面板 MUST 使用同一 as_of；历史模式 SHALL 隐藏独立的当前日报价与当前合约标题，返回当前后恢复。
+候选验证只覆盖主图和照妖镜，其他面板 SHALL 独立报告输入不足。
+该入口 MUST NOT 下载、写入、推断主力映射或静默放宽原当前请求的 owner 边界。
+
+#### Scenario: Current owner missing but historical input complete
+
+- **GIVEN** 当前日期映射缺失且较早完成交易日通过完整输入检查
+- **WHEN** 用户主动选择最近可用历史快照
+- **THEN** 页面使用已验证历史 as_of 并持续标明截止时间，当前输入 Gate 保持未关闭
+
+#### Scenario: No verified candidate within the bound
+
+- **GIVEN** 最近 20 个完成交易日均存在输入缺口
+- **WHEN** 用户请求历史快照
+- **THEN** 返回明确不可用，不继续扫描或以部分输入生成成功响应
+
 ### Requirement: Sectioned product delivery is computation-bounded
 
 新的 `GET /api/v1/market/newow/strategy-detail` MUST 使用单一路由和显式

@@ -130,6 +130,8 @@ class SessionWindowBatch:
         trading_days: tuple[date, ...],
     ) -> None:
         self.templates: tuple[TradingSession, ...] = ()
+        self._exact_templates: dict[date, tuple[TradingSession, ...]] = {}
+        self._range_templates: tuple[TradingSession, ...] = ()
         self.calendar: tuple[date, ...] = ()
         if not trading_days:
             return
@@ -148,6 +150,15 @@ class SessionWindowBatch:
                 .order_by(TradingSession.start_time)
             )
         )
+        exact: dict[date, list[TradingSession]] = {}
+        ranged: list[TradingSession] = []
+        for template in self.templates:
+            if template.effective_to == template.effective_from:
+                exact.setdefault(template.effective_from, []).append(template)
+            else:
+                ranged.append(template)
+        self._exact_templates = {day: tuple(values) for day, values in exact.items()}
+        self._range_templates = tuple(ranged)
         prior = (
             select(func.max(TradingCalendar.trade_date))
             .where(
@@ -172,12 +183,13 @@ class SessionWindowBatch:
         )
 
     def windows(self, trading_day: date) -> tuple[SessionWindow, ...]:
-        templates = tuple(
+        templates = self._exact_templates.get(trading_day, ()) + tuple(
             t
-            for t in self.templates
+            for t in self._range_templates
             if t.effective_from <= trading_day
             and (t.effective_to is None or t.effective_to >= trading_day)
         )
+        templates = tuple(sorted(templates, key=lambda item: item.start_time))
         index = bisect_left(self.calendar, trading_day)
         prior = self.calendar[index - 1] if index else None
         return tuple(

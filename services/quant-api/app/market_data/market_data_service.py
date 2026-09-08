@@ -302,8 +302,12 @@ class MarketDataService:
         The caller has already checked overlap and physical provenance.
         """
         expected = self.expected_contract_replay_endpoints(
-            symbol=symbol, contract=contract, frequency=frequency,
-            trading_day=trading_day, cutoff=cutoff, after=after,
+            symbol=symbol,
+            contract=contract,
+            frequency=frequency,
+            trading_day=trading_day,
+            cutoff=cutoff,
+            after=after,
         )
         if (
             not expected
@@ -313,8 +317,14 @@ class MarketDataService:
             raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
 
     def expected_contract_replay_endpoints(
-        self, *, symbol: str, contract: str, frequency: BarFrequency | str,
-        trading_day: date, cutoff: datetime, after: datetime | None = None,
+        self,
+        *,
+        symbol: str,
+        contract: str,
+        frequency: BarFrequency | str,
+        trading_day: date,
+        cutoff: datetime,
+        after: datetime | None = None,
         since: date | None = None,
     ) -> tuple[tuple[datetime, date], ...]:
         """Shared lifecycle/session authority for validation and read-only diagnosis."""
@@ -328,12 +338,17 @@ class MarketDataService:
                 self.catalog.session,
                 PROJECT_ROOT / "data/universe/product_window_starts.csv",
             )
-            days = coverage.contract_trading_days(fact, max(fact.listed_date, since or fact.listed_date), trading_day)
-            key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency(frequency))
+            days = coverage.contract_trading_days(
+                fact, max(fact.listed_date, since or fact.listed_date), trading_day
+            )
+            key = DatasetKey(
+                DatasetKind.CONTRACT, symbol, contract, BarFrequency(frequency)
+            )
             return tuple(
                 (bar_end, day)
-                for day in days
-                for bar_end in coverage.expected_bar_ends_for_trading_days(key, (day,))
+                for bar_end, day in coverage.expected_bar_end_pairs_for_trading_days(
+                    key, days
+                )
                 if bar_end <= cutoff and (after is None or bar_end > after)
             )
         except (CatalogError, InfrastructureError) as exc:
@@ -445,7 +460,8 @@ class MarketDataService:
                         (partition.year, partition.month),
                         (newer_partition.year, newer_partition.month),
                     )
-                ) > 2
+                )
+                > 2
             ):
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
             if newer_partition is not None:
@@ -626,7 +642,9 @@ class MarketDataService:
             raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
         end_day = max(relevant_days)
         try:
-            expected_days = self.catalog.trading_days(request.symbol, page_start, end_day)
+            expected_days = self.catalog.trading_days(
+                request.symbol, page_start, end_day
+            )
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
         if not expected_days:
@@ -664,7 +682,9 @@ class MarketDataService:
         """仅将完整 ISO 交易周最后交易日的正式 owner 用于周线拼接。"""
         monday = trading_day - timedelta(days=trading_day.isoweekday() - 1)
         try:
-            week_days = self.catalog.trading_days(symbol, monday, monday + timedelta(days=6))
+            week_days = self.catalog.trading_days(
+                symbol, monday, monday + timedelta(days=6)
+            )
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
         if not week_days or week_days[-1] != trading_day:
@@ -885,11 +905,7 @@ class MarketDataService:
             assert_not_retired(normalized_symbol)
         except ProductRetiredError as exc:
             raise MarketDataError("PRODUCT_RETIRED") from exc
-        if (
-            type(since) is not date
-            or type(through) is not date
-            or since > through
-        ):
+        if type(since) is not date or type(through) is not date or since > through:
             raise MarketDataError("TRADING_CALENDAR_MISSING")
         return self._authoritative_rank1_segments(
             normalized_symbol,
@@ -972,7 +988,9 @@ class MarketDataService:
             for mapping in mappings
             if validation_start <= mapping.trade_date <= validation_end
         )
-        mapping_by_day = {mapping.trade_date: mapping for mapping in contextual_mappings}
+        mapping_by_day = {
+            mapping.trade_date: mapping for mapping in contextual_mappings
+        }
         if len(mapping_by_day) != len(contextual_mappings) or any(
             mapping.symbol != symbol for mapping in contextual_mappings
         ):
@@ -986,9 +1004,7 @@ class MarketDataService:
         segment_days = tuple(
             day
             for day in validation_trading_days
-            if segment_mappings[0].trade_date
-            <= day
-            <= segment_mappings[-1].trade_date
+            if segment_mappings[0].trade_date <= day <= segment_mappings[-1].trade_date
         )
         if tuple(mapping.trade_date for mapping in segment_mappings) != segment_days:
             raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
@@ -1250,10 +1266,7 @@ def _partition_month_groups(
     groups: dict[tuple[int, int], list[CatalogPartition]] = {}
     for partition in partitions:
         groups.setdefault((partition.year, partition.month), []).append(partition)
-    return tuple(
-        (month, tuple(values))
-        for month, values in groups.items()
-    )
+    return tuple((month, tuple(values)) for month, values in groups.items())
 
 
 def _local_date(value: datetime) -> date:

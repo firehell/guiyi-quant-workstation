@@ -34,6 +34,7 @@ const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
 const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'trend', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
+const newowHistoricalAsOf = ref<string | null>(null)
 const shellReady = computed(() => isWorkspacePreview.value && (
   isNewowView.value || (controller.state.value.header !== null && !controller.state.value.loading)
 ))
@@ -65,6 +66,7 @@ const identityKey = computed(() => {
     : 'invalid'
 })
 async function activateRoute() {
+  newowHistoricalAsOf.value = null
   moreOpen.value = false
   hasHtdyHistory.value = false
   hasTrendHistory.value = false
@@ -201,7 +203,7 @@ onBeforeUnmount(() => { dailyQuote.dispose(); controller.dispose() })
         @return-legacy="returnLegacy"
       />
       <template v-if="routeResult.identity.view === 'newow' || (!controller.state.value.loading && !controller.state.value.error && header)">
-        <MarketDetailQuoteHeader v-if="header" :header="header" :identity-key="identityKey" :newow="isNewowView" />
+        <MarketDetailQuoteHeader v-if="header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :newow="isNewowView" />
         <MarketDetailViewNav
           :identity="routeResult.identity"
           :products="controller.productCatalog.value"
@@ -214,6 +216,7 @@ onBeforeUnmount(() => { dailyQuote.dispose(); controller.dispose() })
             v-if="routeResult.identity.view === 'newow'"
             :identity="routeResult.identity"
             @focus-resolved="resolveFocus"
+            @snapshot-mode="newowHistoricalAsOf = $event"
           />
           <FreeChartWorkspace
             v-else-if="routeResult.identity.view === 'free' && header"

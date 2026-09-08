@@ -667,3 +667,16 @@ class NewowProductResponse(_Out):
     reference: ReferenceDeliveryOut
     explanation: ExplanationDeliveryOut
     comparator: ComparatorDeliveryOut
+
+
+class NewowHistoricalSnapshotResponse(_Out):
+    schema_version: Literal["newow_historical_snapshot_v1"] = (
+        "newow_historical_snapshot_v1"
+    )
+    product: str
+    strategy: ProductStrategyValue
+    frequency: ProductFrequencyValue
+    series_kind: Literal["actual_dominant"] = "actual_dominant"
+    trading_day: date
+    as_of: datetime
+    validated_sections: list[Literal["chart", "zhaoyao_mirror"]]

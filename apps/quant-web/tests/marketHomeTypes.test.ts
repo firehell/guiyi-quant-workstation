@@ -19,6 +19,7 @@ const overview = {
     price_up_count: 1,
     price_down_count: 1,
     price_flat_count: 0,
+    price_unavailable_count: 0,
     daily_up_count: 1,
     daily_down_count: 1,
     daily_neutral_count: 0,
@@ -66,6 +67,24 @@ test('normalizes finite Decimal strings and preserves null market home metrics',
   assert.equal(value.items[0]!.price_change_5d, null)
   assert.equal(value.items[1]!.volume_ratio20, null)
   assert.equal(value.sectors[0]!.median_price_change_1d, 0.0125)
+})
+
+test('requires four price bins and matches the unavailable bin to null 1d price facts', () => {
+  const payload = structuredClone(overview)
+  payload.items[1].price_change_1d = null
+  payload.summary = { ...payload.summary, price_down_count: 0, price_unavailable_count: 1 }
+
+  const value = normalizeMarketHomeOverviewResponse(payload)
+  assert.equal(value.summary.price_unavailable_count, 1)
+  assert.equal(value.items[1]!.price_change_1d, null)
+
+  assert.throws(() => normalizeMarketHomeOverviewResponse({
+    ...payload,
+    summary: { ...payload.summary, price_unavailable_count: 0 },
+  }))
+  const missing = structuredClone(payload)
+  delete (missing.summary as Record<string, unknown>).price_unavailable_count
+  assert.throws(() => normalizeMarketHomeOverviewResponse(missing))
 })
 
 test('fails closed for malformed market home authority facts', () => {

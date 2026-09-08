@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 from guiyi_quant.newow.product_contracts import ProductFrequency
@@ -9,8 +9,11 @@ from app.main import app
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.newow.product_service import (
     NewowProductService,
+    NewowProductServiceError,
     ProductServiceQuery,
 )
+from app.market_data.newow.historical_snapshot import HistoricalSnapshot
+from app.market_data.newow.resource_gate import NewowResourceBusy
 
 
 def _service_result(product_cases):
@@ -58,13 +61,92 @@ def test_strategy_detail_returns_only_requested_typed_section(
         "value": None,
     }
     assert isinstance(body["chart"]["value"]["bars"][0]["close"], str)
-    assert body["chart"]["value"]["chart_from"] <= body["chart"]["value"]["chart_through"]
+    assert (
+        body["chart"]["value"]["chart_from"] <= body["chart"]["value"]["chart_through"]
+    )
     assert len(body["chart"]["value"]["page_identity"]) == 64
     assert body["chart"]["value"]["formal_signal_eligible"] is True
     assert all(
         isinstance(action["sequence"], int)
         for action in body["chart"]["value"]["actions"]
     )
+
+
+def test_historical_snapshot_strict_query_and_exact_cutoff(monkeypatch):
+    cutoff = datetime(2026, 9, 7, 7, 0, 0, 1, tzinfo=UTC)
+
+    class Resolver:
+        def resolve(self, product, strategy, frequency):
+            return HistoricalSnapshot(
+                product, strategy, frequency, date(2026, 9, 7), cutoff
+            )
+
+    monkeypatch.setattr(
+        market_newow, "_build_historical_resolver", lambda *_args: Resolver()
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    with TestClient(app) as client:
+        ok = client.get(
+            "/api/v1/market/newow/historical-snapshot",
+            params={"product": "rb", "strategy": "trend", "frequency": "1d"},
+        )
+        duplicate = client.get(
+            "/api/v1/market/newow/historical-snapshot?product=rb&product=ag&strategy=trend&frequency=1d"
+        )
+        unknown = client.get(
+            "/api/v1/market/newow/historical-snapshot",
+            params={
+                "product": "rb",
+                "strategy": "trend",
+                "frequency": "1d",
+                "as_of": cutoff.isoformat(),
+            },
+        )
+    app.dependency_overrides.clear()
+    assert ok.status_code == 200
+    assert ok.json()["as_of"].endswith(".000001Z")
+    assert ok.json()["validated_sections"] == ["chart", "zhaoyao_mirror"]
+    assert duplicate.status_code == unknown.status_code == 422
+
+
+def test_historical_resolver_reuses_shared_resource_controls(monkeypatch):
+    monkeypatch.setattr(market_newow, "build_market_data_service", lambda _session: object())
+    monkeypatch.setattr(market_newow, "build_database_coverage_source", lambda _session: object())
+    monkeypatch.setattr(market_newow, "load_active_products", lambda: ("rb",))
+    now = datetime(2026, 9, 8, 8, tzinfo=UTC)
+    resolver = market_newow._build_historical_resolver(
+        object(), lambda: False, lambda: now
+    )
+    service = resolver._service_factory(lambda: False)
+    assert service._cache is market_newow._PRODUCT_CACHE
+    assert service._gate is market_newow._PRODUCT_GATE
+    assert service._inflight is market_newow._PRODUCT_INFLIGHT
+
+
+def test_historical_snapshot_preserves_typed_resource_and_service_errors(monkeypatch):
+    class Resolver:
+        error = None
+        def resolve(self, *_args):
+            raise self.error
+
+    resolver = Resolver()
+    monkeypatch.setattr(market_newow, "_build_historical_resolver", lambda *_args: resolver)
+    app.dependency_overrides[get_db] = lambda: object()
+    cases = (
+        (NewowResourceBusy("NEWOW_RESOURCE_BUSY"), 429, "NEWOW_RESOURCE_BUSY"),
+        (NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT"), 409, "NEWOW_SNAPSHOT_GENERATION_CONFLICT"),
+        (NewowProductServiceError("NEWOW_SECTION_PARAMETER_INVALID"), 422, "NEWOW_SECTION_PARAMETER_INVALID"),
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        for error, status, code in cases:
+            resolver.error = error
+            response = client.get(
+                "/api/v1/market/newow/historical-snapshot",
+                params={"product": "rb", "strategy": "trend", "frequency": "1d"},
+            )
+            assert response.status_code == status
+            assert response.json() == {"detail": {"code": code}}
+    app.dependency_overrides.clear()
 
 
 def test_strategy_detail_rejects_unknown_or_cross_section_inputs(monkeypatch):

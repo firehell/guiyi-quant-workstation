@@ -25,6 +25,7 @@ from app.market_data.errors import InfrastructureError
 from app.market_data.session_clock import (
     SHANGHAI,
     SessionClockError,
+    SessionWindowBatch,
     session_windows_for_trading_day,
 )
 from app.models import (
@@ -294,13 +295,36 @@ class DatabaseCoverageSource:
         trading_days: tuple[date, ...],
     ) -> tuple[datetime, ...]:
         """按频度与会话模板，将交易日列表展开为 bar_end 时间戳序列。"""
+        return tuple(
+            bar_end
+            for bar_end, _day in self.expected_bar_end_pairs_for_trading_days(
+                key, trading_days
+            )
+        )
+
+    def expected_bar_end_pairs_for_trading_days(
+        self,
+        key: DatasetKey,
+        trading_days: tuple[date, ...],
+    ) -> tuple[tuple[datetime, date], ...]:
+        """Bulk-expand endpoints while retaining their authoritative trading day."""
         days = tuple(sorted(dict.fromkeys(trading_days)))
         if not days:
             return ()
-        sessions_by_day = {day: self._sessions_for_day(key.symbol, day) for day in days}
+        exchange = self._exchange(key.symbol)
+        batch = SessionWindowBatch(
+            self.session,
+            exchange=exchange,
+            symbol=key.symbol,
+            trading_days=days,
+        )
+        try:
+            sessions_by_day = {day: batch.windows(day) for day in days}
+        except SessionClockError as exc:
+            raise InfrastructureError(exc.code) from exc
         if key.frequency is BarFrequency.M1:
             return tuple(
-                window.start + timedelta(minutes=minute)
+                (window.start + timedelta(minutes=minute), day)
                 for day in days
                 for window in sessions_by_day[day]
                 for minute in range(1, _minutes(window) + 1)
@@ -317,31 +341,40 @@ class DatabaseCoverageSource:
                 BarFrequency.M30: 30,
                 BarFrequency.H1: 60,
             }[key.frequency]
-            result: list[datetime] = []
+            result: list[tuple[datetime, date]] = []
             for day in days:
                 for window in sessions_by_day[day]:
                     count = _minutes(window)
                     result.extend(
-                        window.start + timedelta(minutes=min(offset, count))
+                        (window.start + timedelta(minutes=min(offset, count)), day)
                         for offset in range(width, count + width, width)
                     )
             return tuple(dict.fromkeys(result))
-        daily = tuple(sessions_by_day[day][-1].end for day in days)
+        daily = tuple((sessions_by_day[day][-1].end, day) for day in days)
         if key.frequency is BarFrequency.D1:
             return daily
         # W1：仅当 ISO 周内最后一个交易日落在该周时才产生周线 bar_end。
         result = []
+        first_monday = days[0] - timedelta(days=days[0].isoweekday() - 1)
+        last_sunday = days[-1] + timedelta(days=7 - days[-1].isoweekday())
+        full_span_days = self._trading_days(key.symbol, first_monday, last_sunday)
+        last_day_by_week = {
+            (day.isocalendar().year, day.isocalendar().week): day
+            for day in full_span_days
+        }
         grouped: dict[tuple[int, int], list[tuple[date, datetime]]] = {}
-        for day, bar_end in zip(days, daily, strict=True):
+        for bar_end, day in daily:
             iso = day.isocalendar()
             grouped.setdefault((iso.year, iso.week), []).append((day, bar_end))
         for values in grouped.values():
             candidate_day, bar_end = values[-1]
-            monday = candidate_day - timedelta(days=candidate_day.isoweekday() - 1)
-            sunday = monday + timedelta(days=6)
-            full_week = self._trading_days(key.symbol, monday, sunday)
-            if full_week and full_week[-1] == candidate_day:
-                result.append(bar_end)
+            if (
+                last_day_by_week.get(
+                    (candidate_day.isocalendar().year, candidate_day.isocalendar().week)
+                )
+                == candidate_day
+            ):
+                result.append((bar_end, candidate_day))
         return tuple(result)
 
     def contract_trading_days(
@@ -368,27 +401,27 @@ class DatabaseCoverageSource:
             ).tuples()
         )
         calendar_days = tuple(
-            lower + timedelta(days=offset)
-            for offset in range((upper - lower).days + 1)
+            lower + timedelta(days=offset) for offset in range((upper - lower).days + 1)
         )
         if tuple(day for day, _is_trading in rows) != calendar_days:
             raise InfrastructureError("HISTORICAL_SESSION_FACT_MISSING")
         trading_days = tuple(day for day, is_trading in rows if is_trading)
-        for trading_day in trading_days:
-            session_fact = self.session.scalar(
-                select(TradingSession.id)
+        session_days = set(
+            self.session.scalars(
+                select(TradingSession.effective_from)
                 .where(
                     TradingSession.exchange_code == fact.exchange,
                     TradingSession.instrument_symbol == fact.symbol,
                     TradingSession.provider == "rqdata",
                     TradingSession.is_active.is_(True),
-                    TradingSession.effective_from == trading_day,
-                    TradingSession.effective_to == trading_day,
+                    TradingSession.effective_from.in_(trading_days),
+                    TradingSession.effective_to == TradingSession.effective_from,
                 )
-                .limit(1)
+                .distinct()
             )
-            if session_fact is None:
-                raise InfrastructureError("HISTORICAL_SESSION_FACT_MISSING")
+        )
+        if session_days != set(trading_days):
+            raise InfrastructureError("HISTORICAL_SESSION_FACT_MISSING")
         return trading_days
 
     def contract_expected_bar_ends(

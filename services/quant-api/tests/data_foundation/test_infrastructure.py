@@ -283,6 +283,10 @@ def test_database_coverage_uses_actual_exchange_sessions_and_complete_iso_week(t
     assert len(five_ends) == 5
     assert len(daily_ends) == 5
     assert weekly_ends == (daily_ends[-1],)
+    assert coverage.expected_bar_end_pairs_for_trading_days(
+        weekly_key,
+        tuple(date(2025, 1, day) for day in range(6, 11)),
+    ) == ((daily_ends[-1], date(2025, 1, 10)),)
     assert coverage.valid_boundary(minute_key, _bar(minute_ends[0], date(2025, 1, 6)))
     session.close()
 

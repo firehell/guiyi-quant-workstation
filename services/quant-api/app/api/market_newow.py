@@ -28,6 +28,11 @@ from app.market_data.newow.product_reader import (
     NewowProductReadError,
     NewowProductReader,
 )
+from app.market_data.newow.historical_snapshot import (
+    HistoricalSnapshotError,
+    NewowHistoricalSnapshotResolver,
+    is_historical_candidate_unavailable,
+)
 from app.market_data.newow.inflight import (
     InFlightCoordinator,
     NewowComputationCancelled,
@@ -64,7 +69,10 @@ from app.schemas.market_newow import (
     NewowTrendBandOut,
     NewowTrendDetailResponse,
 )
-from app.schemas.market_newow_product import NewowProductResponse
+from app.schemas.market_newow_product import (
+    NewowHistoricalSnapshotResponse,
+    NewowProductResponse,
+)
 
 router = APIRouter(prefix="/api/v1/market/newow", tags=["market"])
 
@@ -105,6 +113,7 @@ _PRODUCT_QUERY_FIELDS = frozenset(
         "snapshot_token",
     }
 )
+_HISTORICAL_QUERY_FIELDS = frozenset({"product", "strategy", "frequency"})
 
 
 @router.get("/trend-detail", response_model=NewowTrendDetailResponse)
@@ -161,6 +170,106 @@ def _build_product_service(
         inflight=_PRODUCT_INFLIGHT,
         cancelled=cancelled,
     )
+
+
+def _build_historical_resolver(
+    session: Session, cancelled: Callable[[], bool], now: Callable[[], datetime]
+) -> NewowHistoricalSnapshotResolver:
+    market_data = build_market_data_service(session)
+    coverage = build_database_coverage_source(session)
+    active = load_active_products()
+    reader = NewowProductReader(
+        market_data,
+        coverage=coverage,
+        active_products=active,
+        cancelled=cancelled,
+        now=now,
+    )
+
+    def service_factory(deadline_cancelled: Callable[[], bool]) -> NewowProductService:
+        def reader_factory(context, inner_cancelled):
+            return NewowProductReader(
+                market_data,
+                coverage=coverage,
+                active_products=active,
+                context_frequencies=context,
+                cancelled=inner_cancelled,
+                now=now,
+            )
+
+        return NewowProductService(
+            reader_factory,
+            cache=_PRODUCT_CACHE,
+            heavy_gate=_PRODUCT_GATE,
+            inflight=_PRODUCT_INFLIGHT,
+            cancelled=deadline_cancelled,
+            now=now,
+        )
+
+    return NewowHistoricalSnapshotResolver(
+        reader, service_factory, now=now, cancelled=cancelled
+    )
+
+
+@router.get("/historical-snapshot", response_model=NewowHistoricalSnapshotResponse)
+def newow_historical_snapshot(
+    request: Request,
+    product: str = Query(...),
+    strategy: Literal["trend", "oscillation", "main_rise"] = Query(...),
+    frequency: Literal["1w", "1d", "60m"] = Query(...),
+    session: Session = Depends(get_db),
+) -> NewowHistoricalSnapshotResponse:
+    unknown = set(request.query_params) - _HISTORICAL_QUERY_FIELDS
+    duplicates = {
+        key
+        for key in request.query_params
+        if len(request.query_params.getlist(key)) != 1
+    }
+    if unknown or duplicates:
+        raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
+
+    def cancelled() -> bool:
+        try:
+            return from_thread.run(request.is_disconnected)
+        except RuntimeError:
+            return False
+
+    now = datetime.now(UTC)
+    try:
+        result = _build_historical_resolver(session, cancelled, lambda: now).resolve(
+            product, ProductStrategy(strategy), ProductFrequency(frequency)
+        )
+        return NewowHistoricalSnapshotResponse(
+            product=result.product,
+            strategy=result.strategy.value,
+            frequency=result.frequency.value,
+            trading_day=result.trading_day,
+            as_of=result.as_of,
+            validated_sections=list(result.validated_sections),
+        )
+    except HistoricalSnapshotError as exc:
+        status = 429 if exc.code == "NEWOW_HISTORICAL_RESOLUTION_TIMEOUT" else 409
+        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
+    except NewowResourceBusy as exc:
+        raise HTTPException(status_code=429, detail={"code": exc.code}) from exc
+    except NewowProductServiceError as exc:
+        status = 409 if "CONFLICT" in exc.code else 422
+        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
+    except (NewowProductReadCancelled, NewowComputationCancelled) as exc:
+        raise HTTPException(
+            status_code=429, detail={"code": "NEWOW_REQUEST_CANCELLED"}
+        ) from exc
+    except NewowProductReadError as exc:
+        status = 422 if exc.code.startswith("NEWOW_INVALID_") else 409
+        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
+    except (ActiveUniverseError, ProductTaxonomyError) as exc:
+        raise HTTPException(
+            status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
+        ) from exc
+    except MarketDataError as exc:
+        status = 409 if is_historical_candidate_unavailable(exc.code) else 500
+        code = "NEWOW_DATA_UNAVAILABLE" if status == 409 else "NEWOW_INTERNAL_ERROR"
+        raise HTTPException(status_code=status, detail={"code": code}) from exc
 
 
 @router.get("/strategy-detail", response_model=NewowProductResponse)

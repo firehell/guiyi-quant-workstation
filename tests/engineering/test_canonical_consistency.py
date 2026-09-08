@@ -156,6 +156,11 @@ ACTIVE_MARKET_ROUTE_OWNERS = {
     ),
     (
         "GET",
+        "/api/v1/market/newow/historical-snapshot",
+        "app.api.market_newow:newow_historical_snapshot",
+    ),
+    (
+        "GET",
         "/api/v1/market/research/home-overview",
         "app.api.market:market_home_overview",
     ),
@@ -440,7 +445,7 @@ def test_release_versions_are_consistent() -> None:
         web["version"],
         *lock_versions,
         *app_versions,
-    } == {"1.10.1"}
+    } == {"1.10.3"}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
 

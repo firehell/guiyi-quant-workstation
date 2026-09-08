@@ -71,6 +71,7 @@ def _snapshot(*, as_of: date = TARGET) -> MarketHomeOverviewSnapshot:
             price_up_count=1,
             price_down_count=0,
             price_flat_count=0,
+            price_unavailable_count=0,
             daily_up_count=1,
             daily_down_count=0,
             daily_neutral_count=0,
@@ -183,8 +184,85 @@ def test_projection_store_round_trip_preserves_wire_types(tmp_path: Path) -> Non
     assert restored is not None
     assert restored == payload
     raw = path.read_text(encoding="utf-8")
+    assert '"schema_version":2' in raw
     assert '"close":"1234.5"' in raw
     assert '"price_change_5d":null' in raw
+
+
+def test_projection_read_rejects_v1_and_falls_back_without_writing(tmp_path: Path) -> None:
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    payload = market_home_response(_snapshot())
+    store.publish(
+        IDENTITY,
+        payload,
+        generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    v1 = path.read_text(encoding="utf-8").replace(
+        '"schema_version":2', '"schema_version":1'
+    )
+    path.write_text(v1, encoding="utf-8")
+    service = _Service()
+
+    response = MarketHomeProjection(service=service, store=store).read()
+
+    assert response == payload
+    assert service.snapshot_calls == 1
+    assert path.read_text(encoding="utf-8") == v1
+
+
+def test_projection_read_rejects_price_bucket_contradiction_and_falls_back(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    payload = market_home_response(_snapshot())
+    store.publish(
+        IDENTITY,
+        payload,
+        generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    contradictory = json.loads(path.read_text(encoding="utf-8"))
+    contradictory["payload"]["items"][0]["price_change_1d"] = None
+    contradictory["payload"]["summary"].update(
+        price_up_count=0,
+        price_flat_count=1,
+        price_unavailable_count=0,
+    )
+    encoded = json.dumps(contradictory)
+    path.write_text(encoded, encoding="utf-8")
+    service = _Service()
+
+    response = MarketHomeProjection(service=service, store=store).read()
+
+    assert response == payload
+    assert service.snapshot_calls == 1
+    assert path.read_text(encoding="utf-8") == encoded
+
+
+def test_projection_read_rejects_participant_item_count_contradiction(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    payload = market_home_response(_snapshot())
+    store.publish(
+        IDENTITY,
+        payload,
+        generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    contradictory = json.loads(path.read_text(encoding="utf-8"))
+    contradictory["payload"].update(participant_count=2)
+    contradictory["payload"]["summary"].update(price_up_count=2)
+    encoded = json.dumps(contradictory)
+    path.write_text(encoded, encoding="utf-8")
+    service = _Service()
+
+    response = MarketHomeProjection(service=service, store=store).read()
+
+    assert response == payload
+    assert service.snapshot_calls == 1
+    assert path.read_text(encoding="utf-8") == encoded
 
 
 def test_projection_store_missing_symlink_empty_oversize_and_corrupt_are_misses(
@@ -254,7 +332,7 @@ def test_projection_store_rejects_schema_target_digest_and_payload_identity_mism
     assert store.load(MarketHomeAuthorityIdentity(TARGET, "b" * 64)) is None
     assert store.load(MarketHomeAuthorityIdentity(date(2026, 9, 1), "a" * 64)) is None
 
-    path.write_text(valid.replace('"schema_version":1', '"schema_version":2'), encoding="utf-8")
+    path.write_text(valid.replace('"schema_version":2', '"schema_version":1'), encoding="utf-8")
     assert store.load(IDENTITY) is None
 
     path.write_text(

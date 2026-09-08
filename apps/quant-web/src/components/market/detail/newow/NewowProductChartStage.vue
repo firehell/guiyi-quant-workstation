@@ -18,6 +18,7 @@ import {
 } from 'lightweight-charts'
 
 import { NewowProductBandPrimitive } from '@/components/market/detail/newow/newowProductBandPrimitive'
+import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import type { NewowProductSectionResponse } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
@@ -75,7 +76,9 @@ let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
 const band = new NewowProductBandPrimitive()
+const zhaoyaoMirror = new NewowZhaoyaoMirrorPrimitive()
 let auxiliaryAnchor: ISeriesApi<'Line'> | null = null
+let auxiliaryZeroLine: { applyOptions(options: { color: string }): void } | null = null
 const auxiliaryLines = new Map<string, ISeriesApi<'Line'> | ISeriesApi<'Histogram'>>()
 let actionMarkers: ISeriesMarkersPluginApi<Time> | null = null
 let observer: NewowProductResizeObserver | null = null
@@ -112,7 +115,8 @@ onMounted(async () => {
   volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false }, 1)
   // Whitespace keeps the auxiliary pane/timeline present during loading, without inventing zero values.
   auxiliaryAnchor = chart.addSeries(LineSeries, { lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }, 2)
-  auxiliaryAnchor.createPriceLine({ price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false })
+  auxiliaryZeroLine = auxiliaryAnchor.createPriceLine({ price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false })
+  auxiliaryAnchor.attachPrimitive(zhaoyaoMirror)
   if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', onFullscreenChange)
   actionMarkers = adapter.createSeriesMarkers(candles as never)
   chart.subscribeClick(onClick)
@@ -130,8 +134,9 @@ onUnmounted(createNewowProductChartDisposer({
   removeChart: () => {
     if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', onFullscreenChange)
     candles?.detachPrimitive(band)
+    auxiliaryAnchor?.detachPrimitive(zhaoyaoMirror)
     chart?.remove()
-    chart = null; candles = null; volume = null; auxiliaryAnchor = null
+    chart = null; candles = null; volume = null; auxiliaryAnchor = null; auxiliaryZeroLine = null
     mainLines.clear(); auxiliaryLines.clear()
   },
 }))
@@ -296,7 +301,11 @@ function renderAuxiliary(): void {
   const active = new Set<string>()
   const value = auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null
   const colors: Record<string, string> = { dif: '#FF6B2C', dea: '#365AF5', kongpan: '#FF6B2C', var4: '#FF6B2C', ma10: '#365AF5', var3: '#9333EA', ma120: '#667085', entry: '#FF403A', wash: '#F5B726', distribution: '#22B95D', markup: '#FF6B2C', exit: '#365AF5', inducement: '#9333EA', peaks: '#B45309', caution: '#667085', band_entry: '#FF403A', rebound_entry: '#F5B726', oversold_entry: '#22B95D' }
+  const mirror = value?.component === 'zhaoyao_mirror'
+  auxiliaryZeroLine?.applyOptions({ color: mirror ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
+  zhaoyaoMirror.setData(mirror ? buildNewowZhaoyaoMirrorData(value.series) : [])
   for (const item of value?.series ?? []) {
+    if (value?.component === 'zhaoyao_mirror') continue
     const id = `${value!.component}:${item.id}`
     active.add(id)
     let series = auxiliaryLines.get(id)

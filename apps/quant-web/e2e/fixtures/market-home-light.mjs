@@ -34,6 +34,7 @@ export function lightHomeOverview() {
       price_up_count: count(item => item.price_change_1d !== null && Number(item.price_change_1d) > 0),
       price_down_count: count(item => item.price_change_1d !== null && Number(item.price_change_1d) < 0),
       price_flat_count: count(item => item.price_change_1d !== null && Number(item.price_change_1d) === 0),
+      price_unavailable_count: 0,
       daily_up_count: count(item => item.daily_trend === 'up'),
       daily_down_count: count(item => item.daily_trend === 'down'),
       daily_neutral_count: count(item => item.daily_trend === 'neutral'), daily_unavailable_count: 0,
@@ -41,4 +42,20 @@ export function lightHomeOverview() {
       aligned_down_count: count(item => item.daily_trend === 'down' && item.weekly_trend === 'down'),
     },
   }
+}
+
+export function lightHomeOverviewWithUnavailablePrice() {
+  const overview = lightHomeOverview()
+  const row = overview.items.find((item) => item.symbol === 'rs')
+  if (!row) throw new Error('controlled 60-product fixture must include rs')
+  const previousPriceChange = Number(row.price_change_1d)
+  if (previousPriceChange > 0) overview.summary.price_up_count -= 1
+  else if (previousPriceChange < 0) overview.summary.price_down_count -= 1
+  else overview.summary.price_flat_count -= 1
+  // RS2609 has a completed target-day close; its prior completed D1 close is zero.
+  row.actual_contract = 'RS2609'
+  row.close = '1234.5'
+  row.price_change_1d = null
+  overview.summary.price_unavailable_count = 1
+  return overview
 }

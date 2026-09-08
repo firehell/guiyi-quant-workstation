@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class MarketBarOut(BaseModel):
@@ -100,6 +100,7 @@ class MarketHomeSummaryOut(BaseModel):
     price_up_count: int
     price_down_count: int
     price_flat_count: int
+    price_unavailable_count: int = Field(ge=0)
     daily_up_count: int
     daily_down_count: int
     daily_neutral_count: int
@@ -152,3 +153,27 @@ class MarketHomeOverviewResponse(BaseModel):
     summary: MarketHomeSummaryOut
     items: list[MarketHomeItemOut]
     sectors: list[MarketHomeSectorOut]
+
+    @model_validator(mode="after")
+    def validate_price_summary_partition(self) -> "MarketHomeOverviewResponse":
+        expected_counts = (
+            sum(
+                item.price_change_1d is not None and item.price_change_1d > 0
+                for item in self.items
+            ),
+            sum(
+                item.price_change_1d is not None and item.price_change_1d < 0
+                for item in self.items
+            ),
+            sum(item.price_change_1d == 0 for item in self.items),
+            sum(item.price_change_1d is None for item in self.items),
+        )
+        actual_counts = (
+            self.summary.price_up_count,
+            self.summary.price_down_count,
+            self.summary.price_flat_count,
+            self.summary.price_unavailable_count,
+        )
+        if self.participant_count != len(self.items) or actual_counts != expected_counts:
+            raise ValueError("price summary does not match participants")
+        return self

@@ -679,3 +679,85 @@ def test_already_cancelled_request_never_reads_market(product_cases):
     assert (
         fake.owner_requests == fake.actual_requests == fake.physical_page_requests == []
     )
+
+
+def _candidate_reader(product_cases, days, sessions, now):
+    _reader, _query, fake = product_cases.paged_reader(prefix_bars=3)
+    fake.sessions = {day: sessions(day) for day in days}
+    fake.coverage.start = min(days)
+    fake.as_of = now
+    return NewowProductReader(
+        fake,
+        coverage=fake.coverage,
+        active_products=("rb",),
+        now=lambda: now,
+    ), fake
+
+
+def test_historical_candidates_are_newest_twenty_across_bounded_sparse_batches(product_cases):
+    days = tuple(date(2024, 1, 2) + timedelta(days=20 * index) for index in range(24))
+    def sessions(day):
+        start = datetime.combine(day, datetime.min.time(), UTC)
+        return (SessionWindow(start + timedelta(hours=1), start + timedelta(hours=7)),)
+    now = datetime.combine(days[-1], datetime.min.time(), UTC) + timedelta(hours=8)
+    reader, _fake = _candidate_reader(product_cases, days, sessions, now)
+
+    candidates = reader.historical_snapshot_candidates("rb", as_of=now, limit=20)
+
+    assert [day for day, _cutoff in candidates] == list(reversed(days[-20:]))
+    assert (days[-1] - days[-20]).days > 60
+    assert all(cutoff.microsecond == 1 for _day, cutoff in candidates)
+
+
+def test_historical_candidate_requires_final_session_end_plus_one_microsecond(product_cases):
+    day = date(2026, 9, 8)
+    final_end = datetime(2026, 9, 8, 7, tzinfo=UTC)
+    def sessions(_day):
+        return (
+            SessionWindow(datetime(2026, 9, 7, 13, tzinfo=UTC), datetime(2026, 9, 7, 15, tzinfo=UTC)),
+            SessionWindow(datetime(2026, 9, 8, 1, tzinfo=UTC), final_end),
+        )
+    reader, _fake = _candidate_reader(product_cases, (day,), sessions, final_end + timedelta(microseconds=1))
+
+    assert reader.historical_snapshot_candidates("rb", as_of=final_end) == ()
+    assert reader.historical_snapshot_candidates("rb", as_of=final_end + timedelta(microseconds=1)) == (
+        (day, final_end + timedelta(microseconds=1)),
+    )
+
+
+def test_historical_candidates_fill_twenty_after_filtering_day_at_exact_close(product_cases):
+    days = tuple(date(2026, 8, 10) + timedelta(days=index) for index in range(21))
+    def sessions(day):
+        start = datetime.combine(day, datetime.min.time(), UTC)
+        return (SessionWindow(start + timedelta(hours=1), start + timedelta(hours=7)),)
+    exact_latest_close = datetime.combine(days[-1], datetime.min.time(), UTC) + timedelta(hours=7)
+    reader, _fake = _candidate_reader(
+        product_cases, days, sessions, exact_latest_close + timedelta(microseconds=1)
+    )
+
+    candidates = reader.historical_snapshot_candidates(
+        "rb", as_of=exact_latest_close, limit=20
+    )
+
+    assert len(candidates) == 20
+    assert [day for day, _cutoff in candidates] == list(reversed(days[:-1]))
+
+
+def test_historical_candidate_discovery_cancels_and_rejects_malformed_day_identity(product_cases):
+    days = (date(2026, 9, 7), date(2026, 9, 8))
+    def sessions(day):
+        start = datetime.combine(day, datetime.min.time(), UTC)
+        return (SessionWindow(start, start + timedelta(hours=7)),)
+    now = datetime(2026, 9, 8, 8, tzinfo=UTC)
+    reader, fake = _candidate_reader(product_cases, days, sessions, now)
+    checks = 0
+    def cancelled():
+        nonlocal checks
+        checks += 1
+        return checks > 1
+    with pytest.raises(NewowProductReadCancelled):
+        reader.historical_snapshot_candidates("rb", as_of=now, cancelled=cancelled)
+
+    fake.completed_trading_days = lambda **_kwargs: tuple(reversed(days))
+    with pytest.raises(NewowProductReadError, match="NEWOW_DATA_IDENTITY_INVALID"):
+        reader.historical_snapshot_candidates("rb", as_of=now)
