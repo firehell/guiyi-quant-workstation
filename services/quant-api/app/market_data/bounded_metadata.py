@@ -174,12 +174,23 @@ def _plan(session: Session, targets: list[dict], classified: list[dict], source_
         TradingSession.instrument_symbol.in_({t["symbol"] for t in targets}),
         TradingSession.effective_from <= _day(ceiling),
         or_(TradingSession.effective_to.is_(None), TradingSession.effective_to >= _day(floor)))))
+    existing_session_days: set[tuple[str, str]] = set()
     for existing_session in sessions:
         if (existing_session.start_time == existing_session.end_time
                 or existing_session.crosses_midnight != (existing_session.end_time < existing_session.start_time)
                 or any(value.second or value.microsecond for value in (existing_session.start_time, existing_session.end_time))
                 or existing_session.start_time.minute not in {0, 30}):
             raise MetadataRepairError("SESSION_INVALID")
+        if existing_session.is_active and existing_session.effective_from == existing_session.effective_to:
+            key = (existing_session.exchange_code, existing_session.effective_from.isoformat())
+            if key in calendar_sources:
+                existing_session_days.add(key)
+                calendar = calendar_by_key.get(key)
+                night = existing_session.start_time >= time(18) or existing_session.crosses_midnight
+                if calendar is not None and (
+                    not calendar.is_trading_day or (night and not calendar.has_night_session)
+                ):
+                    raise MetadataRepairError("CALENDAR_CONFLICT")
     # Preserve every existing row (including inactive/partial/template rows) in the baseline.
     # An occupied date is never repaired by appending missing pieces.
     facts.extend(_row(row) for row in (*calendars, *sessions))
@@ -236,6 +247,8 @@ def _plan(session: Session, targets: list[dict], classified: list[dict], source_
                     "baseline_sha256": _hash(sorted({_json(f): f for f in facts}.values(), key=_json)),
                     "classification": classified, "classification_source_sha256": source_hash,
                     "missing_calendars": missing_calendars, "missing_sessions": missing_sessions,
+                    "existing_session_days": [{"exchange": exchange, "date": day}
+                                              for exchange, day in sorted(existing_session_days)],
                     "evidence_sources": source_values, "resolved_evidence_sources": evidence_resolved,
                     "session_calendars": [_row(row) for row in sorted(calendars, key=lambda r: (r.exchange_code, r.trade_date))
                                           if any(r["exchange"] == row.exchange_code and r["date"] == row.trade_date.isoformat() for r in missing_sessions)],
@@ -404,7 +417,9 @@ def _snapshot(plan: dict, responses: list) -> dict:
                     and row["effective_from"] == missing["date"]
                     and (row["start_time"] >= "18:00:00" or row["crosses_midnight"])
                     for row in (*source_sessions, *plan["existing_night_evidence"]))
-        if not item["is_trading_day"] and night:
+        if not item["is_trading_day"] and (
+            night or {"exchange": missing["exchange"], "date": missing["date"]} in plan["existing_session_days"]
+        ):
             raise MetadataRepairError("CALENDAR_CONFLICT")
         if item["is_trading_day"] and not night:
             blockers.append({**missing, "code": "NIGHT_SESSION_EVIDENCE_REQUIRED"})

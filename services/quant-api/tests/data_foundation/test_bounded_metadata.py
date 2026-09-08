@@ -507,3 +507,63 @@ def test_fetch_discloses_external_phase_and_exact_call_count(db):
     assert snapshot["readonly"] is False
     assert snapshot["database_writes"] == 0
     assert snapshot["provider_request_count"] == 1
+
+
+@pytest.mark.parametrize("is_trading", [False, True])
+@pytest.mark.parametrize("session_day", [DAY, DAY - timedelta(days=1)])
+def test_existing_calendar_session_conflict_blocks_other_metadata_repairs(db, is_trading, session_day):
+    remove_calendar(db, DAY - timedelta(days=2))
+    with Session(db) as session:
+        calendar = session.scalar(select(TradingCalendar).where(TradingCalendar.trade_date == session_day))
+        calendar.is_trading_day = is_trading
+        calendar.has_night_session = False
+        session.add(TradingSession(exchange_code="SHFE", instrument_symbol="au", session_name="existing",
+            start_time=time(21) if is_trading else time(9), end_time=time(23) if is_trading else time(15),
+            effective_from=session_day, effective_to=session_day, provider="rqdata", is_active=True))
+        session.commit()
+    with pytest.raises(repair.MetadataRepairError, match="CALENDAR_CONFLICT"):
+        plan(db)
+    with Session(db) as session:
+        assert session.scalar(select(TradingCalendar).where(
+            TradingCalendar.trade_date == DAY - timedelta(days=2))) is None
+
+
+@pytest.mark.parametrize("is_trading", [False, True])
+def test_apply_rechecks_new_existing_session_conflict_after_lock(db, is_trading):
+    remove_calendar(db, DAY - timedelta(days=2))
+    with Session(db) as session:
+        calendar = session.scalar(select(TradingCalendar).where(TradingCalendar.trade_date == DAY))
+        calendar.is_trading_day = is_trading
+        calendar.has_night_session = False
+        session.commit()
+    snapshot = fetch(plan(db), Provider(hours="09:01-15:00"))
+    with Session(db) as session:
+        session.add(TradingSession(exchange_code="SHFE", instrument_symbol="au", session_name="new-conflict",
+            start_time=time(21) if is_trading else time(9), end_time=time(23) if is_trading else time(15),
+            effective_from=DAY, effective_to=DAY, provider="rqdata", is_active=True))
+        session.commit()
+    statements = []
+    event.listen(db, "before_cursor_execute", lambda _conn, _cursor, stmt, *_args: statements.append(stmt))
+    with pytest.raises(repair.MetadataRepairError, match="CALENDAR_CONFLICT"):
+        apply(db, snapshot)
+    assert statements[0] == "BEGIN IMMEDIATE"
+    assert not any(statement.startswith("INSERT") for statement in statements)
+    with Session(db) as session:
+        assert session.scalar(select(TradingCalendar).where(
+            TradingCalendar.trade_date == DAY - timedelta(days=2))) is None
+
+
+def test_unknown_calendar_can_wait_for_classification_but_not_contradict_existing_day_session(db):
+    remove_calendar(db)
+    with Session(db) as session:
+        session.add(TradingSession(exchange_code="SHFE", instrument_symbol="au", session_name="existing-day",
+            start_time=time(9), end_time=time(15), effective_from=DAY, effective_to=DAY,
+            provider="rqdata", is_active=True))
+        session.commit()
+    value = plan(db)
+    assert value["counts"]["natural_date_keys"] == 1
+    assert value["missing_sessions"] == []
+    with pytest.raises(repair.MetadataRepairError, match="CALENDAR_CONFLICT"):
+        fetch(value, Provider(trading=[]))
+    classified = fetch(value, Provider(trading=[DAY]))
+    assert classified["blockers"][0]["code"] == "NIGHT_SESSION_EVIDENCE_REQUIRED"
