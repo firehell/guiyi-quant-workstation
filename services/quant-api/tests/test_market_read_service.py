@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
@@ -70,23 +70,89 @@ def test_replay_endpoint_authority_can_bound_today_without_losing_lifecycle(tmp_
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         _add_replay_metadata(session, (DAY_1, DAY_2))
-        mds = MarketDataService(MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path))
+        mds = MarketDataService(
+            MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path)
+        )
         endpoints = mds.expected_contract_replay_endpoints(
-            symbol="rb", contract="RB2610", frequency="15m",
-            trading_day=DAY_2, cutoff=LIVE_END,
+            symbol="rb",
+            contract="RB2610",
+            frequency="15m",
+            trading_day=DAY_2,
+            cutoff=LIVE_END,
         )
         assert endpoints == (
             (HISTORICAL_END_1, DAY_1),
             (datetime(2026, 8, 30, 2, tzinfo=UTC), DAY_1),
-            (HISTORICAL_END_2, DAY_2), (LIVE_END, DAY_2),
+            (HISTORICAL_END_2, DAY_2),
+            (LIVE_END, DAY_2),
         )
         today = mds.expected_contract_replay_endpoints(
-            symbol="rb", contract="RB2610", frequency="1m",
-            trading_day=DAY_2, cutoff=LIVE_END, since=DAY_2,
+            symbol="rb",
+            contract="RB2610",
+            frequency="1m",
+            trading_day=DAY_2,
+            cutoff=LIVE_END,
+            since=DAY_2,
         )
         assert len(today) == 30
         assert today[0] == (datetime(2026, 8, 31, 1, 31, tzinfo=UTC), DAY_2)
         assert today[-1] == (LIVE_END, DAY_2)
+
+
+def test_replay_endpoint_queries_are_bounded_across_long_exact_session_history(
+    tmp_path,
+) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    first = date(2024, 1, 1)
+    through = date(2025, 11, 30)
+    calendar = tuple(
+        first + timedelta(days=offset) for offset in range((through - first).days + 1)
+    )
+    trading_days = tuple(day for day in calendar if day.weekday() < 5)
+    with Session(engine) as session:
+        _add_replay_metadata(session, trading_days)
+        session.add_all(
+            TradingCalendar(
+                exchange_code="SHFE",
+                trade_date=day,
+                is_trading_day=False,
+                provider="rqdata",
+            )
+            for day in calendar
+            if day.weekday() >= 5
+        )
+        contract = session.scalar(
+            select(Contract).where(Contract.contract_code == "RB2610")
+        )
+        assert contract is not None
+        contract.expired_date = through + timedelta(days=1)
+        session.commit()
+        service = MarketDataService(
+            MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path)
+        )
+        selects: list[str] = []
+
+        def count_selects(_conn, _cursor, statement, _params, _context, _many):
+            if statement.lstrip().upper().startswith("SELECT"):
+                selects.append(statement)
+
+        event.listen(engine, "before_cursor_execute", count_selects)
+        try:
+            endpoints = service.expected_contract_replay_endpoints(
+                symbol="rb",
+                contract="RB2610",
+                frequency="15m",
+                trading_day=trading_days[-1],
+                cutoff=datetime.combine(trading_days[-1], time.max, tzinfo=UTC),
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", count_selects)
+
+    assert len(trading_days) == 500
+    assert len(endpoints) == 1000
+    assert {day for _bar_end, day in endpoints} == set(trading_days)
+    assert len(selects) <= 6
 
 
 def test_input_readiness_separates_historical_prefix_from_live_gap(tmp_path):
@@ -98,26 +164,47 @@ def test_input_readiness_separates_historical_prefix_from_live_gap(tmp_path):
         _add_replay_metadata(session, (DAY_1, DAY_2))
         catalog = MarketCatalog(session, tmp_path)
         store = CanonicalMonthlyStore(tmp_path)
-        canonical = (_bar(HISTORICAL_END_1, DAY_1), _bar(datetime(2026, 8, 30, 2, tzinfo=UTC), DAY_1))
-        catalog.register_partition(store.publish(PublishRequest(
-            DatasetKey("contract", "rb", "RB2610", "15m"), 2026, 8, canonical,
-            tuple(bar.bar_end for bar in canonical),
-        )))
+        canonical = (
+            _bar(HISTORICAL_END_1, DAY_1),
+            _bar(datetime(2026, 8, 30, 2, tzinfo=UTC), DAY_1),
+        )
+        catalog.register_partition(
+            store.publish(
+                PublishRequest(
+                    DatasetKey("contract", "rb", "RB2610", "15m"),
+                    2026,
+                    8,
+                    canonical,
+                    tuple(bar.bar_end for bar in canonical),
+                )
+            )
+        )
         # Today's MainContractMap is published by after-market; the frozen Live
         # rank1 snapshot is the established intraday authority.
         session.commit()
 
         class Live(_ContractReplayLiveStore):
-            def bar_observations(self, trading_day, symbol, frequency, after, until, **kwargs):
+            def bar_observations(
+                self, trading_day, symbol, frequency, after, until, **kwargs
+            ):
                 if frequency == "1m":
-                    return tuple(LiveBarObservation(_bar(LIVE_END - timedelta(minutes=i), DAY_2), "RB2610")
-                                 for i in reversed(range(29)))
+                    return tuple(
+                        LiveBarObservation(
+                            _bar(LIVE_END - timedelta(minutes=i), DAY_2), "RB2610"
+                        )
+                        for i in reversed(range(29))
+                    )
                 return (LiveBarObservation(_bar(LIVE_END, DAY_2), "RB2610"),)
 
-        service = MarketReadService(market_data=MarketDataService(catalog, store),
-                                    phase_resolver=_ForbiddenPhaseReader(), operational_products=("rb",),
-                                    live_store=Live((_bar(LIVE_END, DAY_2),)))
-        result = service.contract_input_readiness("rb", trading_day=DAY_2, as_of=LIVE_END)
+        service = MarketReadService(
+            market_data=MarketDataService(catalog, store),
+            phase_resolver=_ForbiddenPhaseReader(),
+            operational_products=("rb",),
+            live_store=Live((_bar(LIVE_END, DAY_2),)),
+        )
+        result = service.contract_input_readiness(
+            "rb", trading_day=DAY_2, as_of=LIVE_END
+        )
         assert result["status"] == "blocked"
         assert result["historical_15m_gap"]["count"] == 0
         assert result["live_1m_gap"]["count"] == 1
@@ -346,7 +433,9 @@ class _MarketPageReader:
 
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         bars = tuple(
-            bar for bar in self._bars if request.before is None or bar.bar_end < request.before
+            bar
+            for bar in self._bars
+            if request.before is None or bar.bar_end < request.before
         )[-request.limit :]
         return MarketSeriesPageResult(
             request_identity={"symbol": request.symbol},
@@ -412,7 +501,11 @@ class _LiveStore:
         return tuple(
             LiveBarObservation(bar=bar, contract=self._contract)
             for bar in self._bars
-            if (after is None or bar.bar_end > after or (inclusive_after and bar.bar_end == after))
+            if (
+                after is None
+                or bar.bar_end > after
+                or (inclusive_after and bar.bar_end == after)
+            )
             and bar.bar_end <= until
         )
 
@@ -506,7 +599,11 @@ class _ProvenanceLiveStore(_LiveStore):
         bars = tuple(
             bar
             for bar in self._bars
-            if (after is None or bar.bar_end > after or (inclusive_after and bar.bar_end == after))
+            if (
+                after is None
+                or bar.bar_end > after
+                or (inclusive_after and bar.bar_end == after)
+            )
             and bar.bar_end <= until
         )
         self._apply_aba_drift()
@@ -723,7 +820,9 @@ def test_observation_snapshot_rejects_untrusted_bar_provenance(
     assert snapshot.bars == ()
 
 
-@pytest.mark.parametrize("drift", [None, "heartbeat"], ids=("stable", "availability-aba"))
+@pytest.mark.parametrize(
+    "drift", [None, "heartbeat"], ids=("stable", "availability-aba")
+)
 def test_observation_snapshot_accepts_matching_bar_provenance(
     drift: str | None,
 ) -> None:
@@ -768,7 +867,9 @@ def test_bars_until_aligns_historical_and_live_rank1_contract_owners() -> None:
     )
 
     assert len(window.bar_contracts) == len(window.bars)
-    assert tuple(zip((bar.trading_day for bar in window.bars), window.bar_contracts)) == (
+    assert tuple(
+        zip((bar.trading_day for bar in window.bars), window.bar_contracts)
+    ) == (
         (DAY_1, "JM2701"),
         (DAY_2, "JM2705"),
         (DAY_2, "JM2705"),
@@ -874,7 +975,9 @@ def test_latest_canonical_window_preserves_each_bar_rank1_owner() -> None:
 
 
 class _ContractReplayPageReader:
-    def __init__(self, bars: tuple[CanonicalBar, ...], *, stalled: bool = False) -> None:
+    def __init__(
+        self, bars: tuple[CanonicalBar, ...], *, stalled: bool = False
+    ) -> None:
         self._bars = bars
         self._stalled = stalled
         self.requests: list[SeriesPageQuery] = []
@@ -904,7 +1007,9 @@ class _ContractReplayPageReader:
             bars=page,
             canonical_coverage=None,
             has_more_before=has_more_before or self._stalled,
-            next_before=request.before if self._stalled else (page[0].bar_end if has_more_before else None),
+            next_before=request.before
+            if self._stalled
+            else (page[0].bar_end if has_more_before else None),
             resolved_contract_segments=(),
         )
 
@@ -946,11 +1051,7 @@ class _ContractReplayLiveStore:
         start: datetime,
         end: datetime,
     ) -> tuple[CanonicalBar, ...]:
-        return tuple(
-            bar
-            for bar in self._bars
-            if start <= bar.bar_end <= end
-        )
+        return tuple(bar for bar in self._bars if start <= bar.bar_end <= end)
 
     def bar_observations(
         self,
@@ -970,7 +1071,11 @@ class _ContractReplayLiveStore:
         bars = tuple(
             bar
             for bar in self._bars
-            if (after is None or bar.bar_end > after or (inclusive_after and bar.bar_end == after))
+            if (
+                after is None
+                or bar.bar_end > after
+                or (inclusive_after and bar.bar_end == after)
+            )
             and bar.bar_end <= until
         )
         return tuple(
@@ -996,7 +1101,9 @@ def _replay_window(cutoff: datetime = LIVE_END) -> MarketReadWindow:
 def test_contract_replay_rejects_recovery_committed_after_window_was_read():
     from app.market_data.live_market import LiveRecoveryState
 
-    service, reader = _replay_service((_bar(HISTORICAL_END_1, DAY_1),), (_bar(LIVE_END, DAY_2),))
+    service, reader = _replay_service(
+        (_bar(HISTORICAL_END_1, DAY_1),), (_bar(LIVE_END, DAY_2),)
+    )
     service._live_store.recovery_state = lambda *args: LiveRecoveryState(1, LIVE_END)
     with pytest.raises(MarketReadWindowError, match="MARKET_READ_RECOVERY_CHANGED"):
         service.current_contract_replay_window(_replay_window(), after=None)
@@ -1076,8 +1183,7 @@ def test_current_contract_replay_includes_predominant_same_contract_only() -> No
 def test_current_contract_replay_pages_back_to_all_same_contract_history() -> None:
     start = datetime(2024, 1, 1, tzinfo=UTC)
     historical = tuple(
-        _bar(start + timedelta(minutes=15 * index), DAY_1)
-        for index in range(2001)
+        _bar(start + timedelta(minutes=15 * index), DAY_1) for index in range(2001)
     ) + (_bar(LIVE_END, DAY_2),)
     service, reader = _replay_service(historical, ())
 
@@ -1112,9 +1218,9 @@ def test_current_contract_replay_allows_duplicate_cutoff_and_rejects_conflict() 
     canonical = _bar(LIVE_END, DAY_2)
     service, _reader = _replay_service((canonical,), (canonical,))
 
-    assert service.current_contract_replay_window(_replay_window(), after=None).bars == (
-        canonical,
-    )
+    assert service.current_contract_replay_window(
+        _replay_window(), after=None
+    ).bars == (canonical,)
 
     conflict = replace(canonical, turnover=Decimal("1001"))
     conflicted, _reader = _replay_service((canonical,), (conflict,))
@@ -1160,12 +1266,16 @@ def test_current_contract_replay_allows_stale_duplicate_cutoff() -> None:
     assert replay.bars == ()
 
 
-def test_current_contract_replay_fails_closed_for_missing_cutoff_and_stalled_cursor() -> None:
+def test_current_contract_replay_fails_closed_for_missing_cutoff_and_stalled_cursor() -> (
+    None
+):
     missing, _reader = _replay_service((_bar(HISTORICAL_END_2, DAY_2),), ())
     with pytest.raises(MarketReadWindowError, match="MARKET_READ_CUTOFF_BAR_MISSING"):
         missing.current_contract_replay_window(_replay_window(), after=None)
 
-    stalled, _reader = _replay_service((_bar(HISTORICAL_END_2, DAY_2),), (), stalled=True)
+    stalled, _reader = _replay_service(
+        (_bar(HISTORICAL_END_2, DAY_2),), (), stalled=True
+    )
     with pytest.raises(MarketReadWindowError, match="MARKET_READ_PAGINATION_STALLED"):
         stalled.current_contract_replay_window(_replay_window(), after=None)
 
