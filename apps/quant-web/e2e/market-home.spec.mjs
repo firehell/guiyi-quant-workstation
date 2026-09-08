@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test'
 import { mockMarketDetail, installDetailFakeWebSocket } from './market-detail.helpers.mjs'
-import { lightHomeOverview } from './fixtures/market-home-light.mjs'
+import { lightHomeOverview, lightHomeOverviewWithUnavailablePrice } from './fixtures/market-home-light.mjs'
 
 function overview() {
   return {
     status: 'ready', target_as_of: '2026-09-02', data_as_of: '2026-09-02', freshness: 'fresh',
     active_count: 2, participant_count: 2, stale_count: 0, unavailable_count: 0,
-    summary: { price_up_count: 1, price_down_count: 1, price_flat_count: 0, daily_up_count: 1, daily_down_count: 1, daily_neutral_count: 0, daily_unavailable_count: 0, aligned_up_count: 1, aligned_down_count: 1 },
+    summary: { price_up_count: 1, price_down_count: 1, price_flat_count: 0, price_unavailable_count: 0, daily_up_count: 1, daily_down_count: 1, daily_neutral_count: 0, daily_unavailable_count: 0, aligned_up_count: 1, aligned_down_count: 1 },
     items: [item('ag', '白银', 'precious', 'up', 'up'), item('jm', '焦煤', 'black', 'down', 'down')],
     sectors: [{ sector: 'precious', active_count: 1, participant_count: 1, median_price_change_1d: '0.01' }, { sector: 'black', active_count: 1, participant_count: 1, median_price_change_1d: '-0.02' }],
   }
@@ -24,7 +24,7 @@ function allTableStatesOverview() {
     item('cu', '沪铜', 'black', 'up', 'down'),
   ]
   value.active_count = value.participant_count = 5
-  value.summary = { price_up_count: 2, price_down_count: 3, price_flat_count: 0, daily_up_count: 2, daily_down_count: 1, daily_neutral_count: 1, daily_unavailable_count: 1, aligned_up_count: 1, aligned_down_count: 1 }
+  value.summary = { price_up_count: 2, price_down_count: 3, price_flat_count: 0, price_unavailable_count: 0, daily_up_count: 2, daily_down_count: 1, daily_neutral_count: 1, daily_unavailable_count: 1, aligned_up_count: 1, aligned_down_count: 1 }
   value.sectors = [{ sector: 'black', active_count: 5, participant_count: 5, median_price_change_1d: '0.01' }]
   return value
 }
@@ -34,7 +34,7 @@ function degradedStaleOverview() {
   value.freshness = 'stale'
   value.participant_count = 1
   value.stale_count = 1
-  value.summary = { price_up_count: 1, price_down_count: 0, price_flat_count: 0, daily_up_count: 1, daily_down_count: 0, daily_neutral_count: 0, daily_unavailable_count: 0, aligned_up_count: 1, aligned_down_count: 0 }
+  value.summary = { price_up_count: 1, price_down_count: 0, price_flat_count: 0, price_unavailable_count: 0, daily_up_count: 1, daily_down_count: 0, daily_neutral_count: 0, daily_unavailable_count: 0, aligned_up_count: 1, aligned_down_count: 0 }
   value.items = [value.items[0]]
   value.sectors = [{ ...value.sectors[0] }, { ...value.sectors[1], participant_count: 0 }]
   return value
@@ -174,6 +174,24 @@ test('column headers sort 60 products in both directions then restore stable sou
     await expect(header).toHaveAttribute('aria-sort', 'none')
     expect(await symbols()).toEqual(value.items.map(row => row.symbol))
     await expect(page).toHaveURL(/\/market$/)
+  }
+  expectHomeReads(requests)
+})
+
+test('keeps 60 target-day D1 participants visible when RS2609 price change is unavailable', async ({ page }) => {
+  const requests = []
+  const value = lightHomeOverviewWithUnavailablePrice()
+  const rs = value.items.find((item) => item.symbol === 'rs')
+  await mockMarketHomeApi(page, requests, events(), value, runtime('ready'))
+  await page.goto('/market')
+
+  await expect(page.locator('tbody tr')).toHaveCount(60)
+  await expect(page.getByText('涨跌不可用 1', { exact: true })).toBeVisible()
+  await expect(page.locator('tbody tr[data-symbol="rs"]')).toContainText('—')
+  for (const label of ['牛哇', '火天大有', '苏冰预警', '更多']) {
+    const menu = page.locator('.market-home-header details').filter({ has: page.locator('summary', { hasText: label }) })
+    await menu.locator('summary').click()
+    await expect(menu.getByRole('button', { name: new RegExp(rs.product_name) })).toBeVisible()
   }
   expectHomeReads(requests)
 })
