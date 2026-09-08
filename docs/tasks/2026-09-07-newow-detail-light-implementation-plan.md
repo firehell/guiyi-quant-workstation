@@ -132,6 +132,6 @@ expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWi
 
 AC01/02/03/06 → Task2；AC04 → Task3；AC05 → Task1；AC07/08 → Task4。任何必要检查未通过不得标记完成；设计图批准不等于原站完整 page parity 或真实数据验收。
 
-验收执行说明：Task 1–3 已各自完成独立 Review/修正；Task 4 的本地检查与视觉回归结果见当前 task 提交。全分支独立 Standards/Spec Review、最终推送和集成由主任务执行，末两项保持未勾选。截图是受控 fixture，不关闭原站完整 parity、真实性能或 Runtime evidence Gate。
+验收执行说明：Task 1–4、全分支独立 Standards/Spec Review、最终推送和 develop 集成均已完成，精确结果见下方完成记录。截图是受控 fixture，不关闭原站完整 parity、真实性能或 Runtime evidence Gate。
 
 完成记录（2026-09-08）：最终实现 `12c844d360ce14f4c6ff7f19d25cabf4fbe92742`，Standards Review 通过，Spec 的 Hint 叠层问题修正后独立复审通过，剩余发现为 0。已合入并核对远端 `develop@222b1262cc1c3963a0e13e90e483c4214cc63750`，完整审查与验证摘要见集成提交 `2cde4a734c18a5340e0828c8fe9a3dee3585ca60`。任务 worktree 和本地/远端分支已清理；main、release、Runtime 和生产数据未操作。
