@@ -113,7 +113,8 @@ plan hash identity。省略 `--frequency` 时维持七周期；显式 `--frequen
 target 也不得跨 scope 复用 hash。其它显式 frequency 均 fail-closed。`1w` 只由同一交易所完整日行情聚合，四个日内派生周期只由同 contract `1m` 生成。dry-run
 只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
 MainContractMap、Redis Live、Rule、Scope、Event 或 notification。显式 15m/60m scope 的任一 provider、发布或派生失败
-必须立刻停止该 contract 的后续 target；额度耗尽返回 `partial`，不得报告 `passed`。分区失败可明确部分成功，不能自动重试。
+必须立刻停止该 contract 的后续 target。仅当同族同月存在待补 `1m` 目标时，才在开始派生前推迟到源发布后；
+已经开始的派生/发布失败不得按缺源错误码推迟重试。额度耗尽返回 `partial`，不得报告 `passed`。分区失败可明确部分成功，不能自动重试。
 
 ### 当日 Live 缺口恢复
 

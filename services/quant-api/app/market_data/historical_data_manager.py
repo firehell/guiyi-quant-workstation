@@ -1205,6 +1205,12 @@ class HistoricalDataManager:
     ) -> MaintenanceResult:
         """apply 核心循环：先聚合已有 1m，再 fetch，最后扫剩余日内派生目标。"""
         remaining_derived = list(intraday_derived)
+        fetched_targets = tuple(fetched)
+        pending_minute_months = {
+            (*_family(target.key), target.year, target.month)
+            for target in fetched_targets
+            if target.key.frequency is BarFrequency.M1
+        }
         planned = 0
         applied = 0
         blocked = 0
@@ -1214,11 +1220,14 @@ class HistoricalDataManager:
         failed_families: set[tuple[str, str, str]] = set()
         # 已有完整 1m 的日内派生可先发布（例如 refresh 只涉及日内派生频度）。
         for target in tuple(remaining_derived):
+            # 有界 warm-up 仅推迟明确待补的源月份；已开始的派生失败不得重试。
+            if fail_stop and (*_family(target.key), target.year, target.month) in pending_minute_months:
+                continue
             try:
                 self._publish_derived(target)
             except (AggregationError, StorageError) as exc:
                 # 源 1m 尚未就绪时跳过，留待 direct 补齐同月 1m 后再聚合。
-                if getattr(exc, "code", "") in {
+                if not fail_stop and getattr(exc, "code", "") in {
                     "SOURCE_1M_INCOMPLETE",
                     "SOURCE_1M_NOT_ORDERED",
                     "TARGET_WINDOW_INCOMPLETE",
@@ -1245,7 +1254,6 @@ class HistoricalDataManager:
                 remaining_derived.remove(target)
                 planned += 1
                 applied += 1
-        fetched_targets = tuple(fetched)
         fetch_groups: Iterable[tuple[_Target, ...]]
         if weekly_daily_companions:
             fetch_groups = (

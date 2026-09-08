@@ -47,7 +47,8 @@ apply 只可为指定 physical contract 获取 `1m/1d` 基础事实；`1w` MUST 
 边界聚合，`5m/15m/30m/60m` 只由质量通过的同 contract `1m` 派生；不得写 continuous、其它 contract、
 MainContractMap、Rule、Scope、Runtime、Redis Live、
 Event 或通知。月分区仍依次经过 staging 与完整发布校验。显式 15m/60m scope 的任一 provider、发布或派生失败 MUST 立即
-停止该 contract 的后续 target；额度耗尽 MUST 返回 `partial`，不得报告 `passed`。部分成功 MUST 显式返回 `partial/failed`；不得
+停止该 contract 的后续 target。仅同族同月存在待补 `1m` target 时，才可在开始派生前推迟至源发布后；
+已开始的派生/发布失败 MUST NOT 按缺源错误码自动推迟或重试。额度耗尽 MUST 返回 `partial`，不得报告 `passed`。部分成功 MUST 显式返回 `partial/failed`；不得
 自动 retry，任何真实 RQData/Canonical apply 仍需一次与 exact plan hash 对应的独立授权。
 
 #### Scenario: Warm-up dry-run is read-only
