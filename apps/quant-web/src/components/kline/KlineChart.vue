@@ -16,6 +16,8 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
+import type { KlineReferenceCallout, KlineReferenceSelection } from '@/types/referenceCallout'
+import { layoutReferenceCallouts, matchesReferenceBar, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import KlineHoverLegend from '@/components/kline/KlineHoverLegend.vue'
 import type {
   BarData,
@@ -51,6 +53,8 @@ const props = withDefaults(defineProps<{
   rangeDetectorAnchorTime?: string | null
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
+  referenceCallouts?: KlineReferenceCallout[]
+  referenceSelection?: KlineReferenceSelection[]
 }>(), {
   loading: false,
   error: null,
@@ -60,6 +64,8 @@ const props = withDefaults(defineProps<{
   rangeDetectorAnchorTime: null,
   alertMarkers: () => [],
   researchMarkers: () => [],
+  referenceCallouts: () => [],
+  referenceSelection: () => [],
 })
 
 const emit = defineEmits<{
@@ -67,9 +73,49 @@ const emit = defineEmits<{
   'follow-latest-change': [followLatest: boolean]
   'crosshair-change': [context: HoverKlineContext | null]
   'marker-select': [marker: KlineMarker]
+  'reference-select': [id: string]
 }>()
 
 const container = ref<HTMLElement>()
+const positionedCallouts = ref<PositionedCallout[]>([])
+const positionedSelection = ref<Array<{ time: string; x: number; height: number }>>([])
+const isReferenceSelected = (callout: KlineReferenceCallout) => props.referenceSelection.some(selection => matchesReferenceBar(selection, callout))
+const activeCallout = ref<string | null>(null)
+let calloutFrame: number | null = null
+function scheduleReferenceCallouts() {
+  if (calloutFrame !== null || (!props.referenceCallouts.length && !props.referenceSelection.length)) return
+  calloutFrame = requestAnimationFrame(projectReferenceCallouts)
+}
+function projectReferenceCallouts() {
+  calloutFrame = null
+  if (chart && candles && container.value) {
+    const width = chart.timeScale().width()
+    const height = chart.panes()[0]?.getHeight() ?? 0
+    const points = props.referenceCallouts.flatMap((callout) => {
+      const bar = renderedBars.find((item) => matchesReferenceBar(callout, item))
+      if (!bar) return []
+      const x = chart!.timeScale().timeToCoordinate(chartTime(bar))
+      const y = candles!.priceToCoordinate(Number(callout.price))
+      return x === null || y === null ? [] : [{ callout, x, y }]
+    })
+    positionedCallouts.value = layoutReferenceCallouts(points, width, height)
+    positionedSelection.value = props.referenceSelection.flatMap(selection => {
+      const bar = renderedBars.find(item => matchesReferenceBar(selection, item))
+      if (!bar) return []
+      const x = chart!.timeScale().timeToCoordinate(chartTime(bar))
+      return x === null || x < 0 || x > width ? [] : [{ time: selection.time, x, height }]
+    })
+  }
+
+}
+watch(() => [props.referenceCallouts, props.referenceSelection], () => {
+  if (calloutFrame !== null) cancelAnimationFrame(calloutFrame)
+  calloutFrame = null
+  activeCallout.value = null
+  positionedCallouts.value = []
+  positionedSelection.value = []
+  scheduleReferenceCallouts()
+}, { deep: true })
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
@@ -176,6 +222,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (calloutFrame !== null) cancelAnimationFrame(calloutFrame)
   if (viewportStabilityFrame !== null) cancelAnimationFrame(viewportStabilityFrame)
   chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart?.unsubscribeCrosshairMove(onCrosshairMove)
@@ -335,6 +382,7 @@ function revealTime(iso: string): boolean {
 }
 
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
+  scheduleReferenceCallouts()
   if (!range || !renderedBars.length) return
   const isFollowing = range.to >= renderedBars.length - 3
   if (isFollowing !== followLatest) {
@@ -510,6 +558,7 @@ function isDaily() {
 }
 
 function syncMacdLabelTop() {
+  scheduleReferenceCallouts()
   const panes = chart?.panes()
   if (!panes || panes.length < 3) return
   macdLabelTop.value = panes[0].getHeight() + panes[1].getHeight()
@@ -547,7 +596,14 @@ defineExpose({
     :data-range-detector-range-count="derivedData.rangeDetector?.ranges.length ?? 0"
     :data-chart-viewport-ready="chartViewportReady"
   >
-    <div ref="container" class="chart" />
+    <div ref="container" class="chart" @pointermove="scheduleReferenceCallouts" @pointerup="scheduleReferenceCallouts" @wheel="scheduleReferenceCallouts" />
+    <div v-for="selection in positionedSelection" :key="selection.time" class="reference-candle-selection" aria-hidden="true" :style="{ left: `${selection.x - 6}px`, height: `${selection.height}px` }" />
+    <div v-if="referenceCallouts.length" class="reference-callouts" aria-label="历史重算参考信号">
+      <svg class="reference-callouts__lines" aria-hidden="true"><line v-for="item in positionedCallouts.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.left + 66" :y2="item.top + (item.callout.above ? 44 : 0)" /></svg>
+      <button v-for="item in positionedCallouts" :key="item.callout.id" type="button" class="reference-callout" :class="[{ 'reference-callout--compact': item.compact, 'reference-callout--active': activeCallout === item.callout.id, 'reference-callout--selected': isReferenceSelected(item.callout) }, `reference-callout--${item.callout.tone}`]" :style="{ left: `${item.left}px`, top: `${item.top}px` }" :aria-label="`${item.callout.title}，参考价 ${item.callout.detail}，历史重算`" :title="`${item.callout.title} · ${item.callout.detail}`" @mouseenter="activeCallout = item.callout.id" @mouseleave="activeCallout = null" @focus="activeCallout = item.callout.id" @blur="activeCallout = null" @click="emit('reference-select', item.callout.id)">
+        <template v-if="!item.compact || activeCallout === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template>
+      </button>
+    </div>
     <KlineHoverLegend
       :context="hoverContext"
       :period="period"
@@ -578,6 +634,16 @@ defineExpose({
 
 <style scoped>
 .kline-shell { position: relative; min-height: 680px; height: clamp(680px, 74vh, 1040px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
+.reference-candle-selection { position: absolute; top: 0; width: 12px; background: #aa927b2b; border-inline: 1px solid #8b653d; pointer-events: none; z-index: 2; }
+.reference-callout--selected { outline: 2px solid #8b653d; background: #fff3d9; }
+.reference-callouts { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+.reference-callouts__lines { width: 100%; height: 100%; position: absolute; inset: 0; stroke: #9b8169; stroke-width: 1; }
+.reference-callout { position: absolute; pointer-events: auto; display: grid; align-content: center; gap: 3px; width: 132px; min-height: 44px; padding: 4px; border: 1px solid #aa927b; border-radius: 2px; background: #fffefa; color: #665343; font-size: 11px; cursor: pointer; box-shadow: 0 1px 3px #8c73551a; }
+.reference-callout strong { font-weight: 500; font-size: 12px; }
+.reference-callout--gain span { color: #cb3737; }
+.reference-callout--loss span { color: #188052; }
+.reference-callout--compact { width: 24px; min-height: 26px; }
+.reference-callout--active { z-index: 5; width: 132px; min-height: 44px; outline: 2px solid #aa927b; }
 .chart { width: 100%; height: 100%; }
 .secondary-panel-label { position: absolute; z-index: 3; left: 10px; min-height: 26px; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-primary); font-size: var(--gy-font-size-xs); font-weight: 600; pointer-events: none; }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }

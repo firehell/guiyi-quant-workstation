@@ -1,0 +1,92 @@
+import { expect, test } from '@playwright/test'
+import { mockSubingReference, referenceBars, subingReferenceFixture } from './subing-reference.helpers.mjs'
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  test(`SuBing historical fixture preview ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport)
+    await mockSubingReference(page)
+    await page.goto('/market/chart?symbol=jm&view=subing')
+    await expect(page.getByRole('heading', { name: '乐观参考交易' })).toBeVisible()
+    await expect(page.getByLabel('参考开始交易日')).toHaveValue('2026-08-12')
+    await page.getByTestId('kline-shell').scrollIntoViewIfNeeded()
+    await expect(page.locator('.reference-callout')).not.toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath(`subing-reference-fixture-${viewport.width}x${viewport.height}.png`) })
+    await page.locator('.subing-reference').screenshot({ path: testInfo.outputPath(`subing-reference-table-fixture-${viewport.width}.png`) })
+    await page.getByTestId('kline-shell').scrollIntoViewIfNeeded()
+    await page.locator('.reference-callout').first().focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog', { name: '历史重算参考信号' })).toContainText('非实际预警 Event')
+    await page.getByRole('button', { name: '查看 AlertEvent #9' }).click()
+    await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText(referenceBars[8].bar_end)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  })
+}
+test('historical unavailable keeps immutable events and Rule facts visible', async ({ page }) => {
+  await mockSubingReference(page, { unavailable: true })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  await expect(page.getByText('历史参考不可用，请核查数据覆盖或重新读取。实际预警记录独立展示。')).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  await page.getByRole('button', { name: '历史记录', exact: true }).click()
+  await expect(page.locator('.detail-section-tabs__history')).toContainText(`Bar ${referenceBars[8].bar_end}`)
+})
+
+test('date range and cursor keep a fixed summary and row selects its reference record', async ({ page }) => {
+  const requests = []
+  await mockSubingReference(page, { response(url) {
+    requests.push(url)
+    const full = subingReferenceFixture()
+    return { ...full, performance_since: url.searchParams.get('since') || full.performance_since, performance_through: url.searchParams.get('through') || full.performance_through, items: url.searchParams.get('before') ? full.items.slice(2) : full.items.slice(0, 2), next_before: url.searchParams.get('before') ? null : 'fixture-next' }
+  } })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  await page.getByLabel('参考开始交易日').fill('2026-08-20')
+  await page.getByLabel('参考结束交易日').fill('2026-09-04')
+  await page.getByRole('button', { name: '读取参考', exact: true }).click()
+  await expect.poll(() => requests.at(-1).searchParams.get('since')).toBe('2026-08-20')
+  const summary = await page.locator('.subing-reference__summary').innerText()
+  await page.getByRole('button', { name: '加载更多参考记录' }).click()
+  await expect(page.locator('.subing-reference tbody tr')).toHaveCount(4)
+  expect(await page.locator('.subing-reference__summary').innerText()).toBe(summary)
+  expect(requests.at(-1).searchParams.get('as_of')).toBe('2026-09-08T16:00:00+08:00')
+  await page.locator('.subing-reference tbody button').first().click()
+  await expect(page.getByRole('dialog', { name: '历史参考记录详情' })).toContainText('尚无配对平仓')
+})
+
+test('wrong physical owner stays unanchored and a date refresh closes prior historical details', async ({ page }) => {
+  let mismatch = false
+  await mockSubingReference(page, { response() { const data = subingReferenceFixture(); return mismatch ? { ...data, signals: data.signals.map(signal => ({ ...signal, physical_contract: 'JM2605' })), input_snapshot_hash: 'b'.repeat(64) } : data } })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  await expect(page.locator('.reference-callout')).toHaveCount(4)
+  await page.locator('.subing-reference tbody button').first().click()
+  await expect(page.getByRole('dialog', { name: '历史参考记录详情' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  mismatch = true
+  await page.getByRole('button', { name: '读取参考', exact: true }).click()
+  await expect(page.locator('.reference-callout')).toHaveCount(0)
+  await expect(page.getByText('4 个历史参考信号尚未匹配当前已载 Bar 与物理合约；可在参考记录中点击定位，数据不足时不绘制。')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '历史参考记录详情' })).toHaveCount(0)
+})
+
+test('explicit same-row focus recenters after pan and highlights its exact physical entry and exit', async ({ page }) => {
+  await mockSubingReference(page)
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const row = page.locator('.subing-reference tbody button').nth(1)
+  await row.click()
+  await page.keyboard.press('Escape')
+  await page.getByTestId('kline-shell').scrollIntoViewIfNeeded()
+  const selected = page.locator('.reference-candle-selection').last()
+  await expect(page.locator('.reference-candle-selection')).toHaveCount(2)
+  await expect(page.locator('.reference-callout--selected')).toHaveCount(2)
+  const original = await selected.boundingBox()
+  const chart = await page.locator('.kline-shell .chart').boundingBox()
+  await page.mouse.move(chart.x + chart.width * .5, chart.y + 180)
+  await page.mouse.down()
+  await page.mouse.move(chart.x + chart.width * .5 + 140, chart.y + 180, { steps: 12 })
+  await page.mouse.up()
+  await expect.poll(async () => Math.abs((await selected.boundingBox()).x - original.x)).toBeGreaterThan(50)
+  await row.click()
+  await page.keyboard.press('Escape')
+  await page.getByTestId('kline-shell').scrollIntoViewIfNeeded()
+  await expect.poll(async () => Math.abs((await selected.boundingBox()).x - original.x)).toBeLessThan(3)
+  await page.getByRole('button', { name: '读取参考', exact: true }).click()
+  await expect(page.locator('.reference-candle-selection')).toHaveCount(0)
+  await expect(page.locator('.reference-callout--selected')).toHaveCount(0)
+})

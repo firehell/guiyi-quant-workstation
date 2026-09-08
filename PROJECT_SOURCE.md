@@ -10,7 +10,7 @@
 - Market 首页以三个 O(1) bulk、只读资源展示 Runtime health、active completed D1/W1 generic overview 与当前 immutable Alert Events；浏览器不按品种请求、不重算指标或策略。人工点击品种或 Event 后进入 `/market/chart` 复核。
 - 首页采用白色全宽桌面布局、期货板块本地筛选与收盘/涨跌幅/量比/增仓率表头三态排序；研究观察默认收起，偏好可恢复。目标参考价未接入同身份 bulk authority，固定不可用且不可排序；增仓率按比例百分比展示，不能解释为做多。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
-- 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 只显示 Event-backed `S↑/S↓` marker，不新增 overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
+- 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
 - Market 详情的已接受产品合同使用 `Newow / HTDY / SuBing / Free` 四个视角。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；旧 `view=trend` 与 `/api/v1/market/newow/trend-detail` 仅保留固定 `actual_dominant + 1d` 兼容语义。其他视角不得消费或复制这些 Newow 事实。
 - Web 不显示模糊的“全历史策略效果”、账户收益、模拟或真实持仓、订单、成交或已退役策略事件。Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，不属于这些账户/执行事实。
 
@@ -44,7 +44,9 @@ HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m
 
 苏冰预警是新的 observation-only 产品，身份固定为 `subing_ths_alert_15m_v1`，公式身份固定为 `subing_ths_15m_v3`。它只消费 operational Scope 内的 completed actual_dominant 15m，并按 MACD(12,26,9) exact CROSS 与 `EMA(CLOSE, 21)` 判定多头/空头预警；EMA 使用 `sma_window` seed。v3 不改变数学公式，只冻结 RQData 首分钟 session 锚点修正后的正式 Bar、时间与 Candidate。warm-up 与递归状态只在同一物理主力合约内延续，换月重新构建。零轴、Range、量能/OI、ATR、EMA 斜率与多周期共振都不是 V1 Gate。
 
-苏冰持久 Event 使用 `exact` identity：同一 Rule、symbol、frequency、bar_end 的事实完全一致才幂等，冲突 fail-closed。Web 和通知只消费 Event，不复制公式；Event-backed `S↑/S↓` 不拥有 Overlay 或订单语义。
+苏冰持久 Event 使用 `exact` identity：同一 Rule、symbol、frequency、bar_end 的事实完全一致才幂等，冲突 fail-closed。正式预警 Web 和通知只消费 Event，不复制公式；Event-backed `S↑/S↓` 不拥有 Overlay 或订单语义。
+
+苏冰历史参考复用同一公式 Kernel，从 Canonical 同物理合约生命周期预热，仅在 rank1 有效区间生成历史参考信号；它不创建或补发 AlertEvent。参考模型 `subing_reference_reverse_close_v1` 使用已完成信号 Bar 收盘价，多空双向反手、同向不加仓、零费用和零滑点，独立展示已平、未平、换月中断及期初已有交易。页面明确标注“历史重算·乐观参考”，不是牛哇公式一致性、因果回测或账户收益；`executable=false`、`auto_order=false`。收益统计按显式交易日窗口固定，简单相加以百分点展示，不随缩放或分页变化。
 
 Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。通用 Scope 写入拒绝 disabled Rule；首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
 

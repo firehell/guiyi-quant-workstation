@@ -1586,3 +1586,18 @@ def test_session_batch_matches_authoritative_single_day_across_template_change(s
             session, exchange="DCE", symbol="jm", trading_day=day)
     assert batch.windows(days[0])[-1].end == datetime(2025, 1, 3, 7, tzinfo=UTC)
     assert batch.windows(days[1])[-1].end == datetime(2025, 1, 6, 3, tzinfo=UTC)
+
+
+def test_strict_completed_days_does_not_load_future_mapped_session(session, tmp_path):
+    from app.models import MainContractMap
+    day = date(2025, 1, 3)
+    future = date(2025, 1, 6)
+    session.add_all([
+        TradingCalendar(exchange_code='DCE', trade_date=day, is_trading_day=True),
+        TradingCalendar(exchange_code='DCE', trade_date=future, is_trading_day=True),
+        MainContractMap(symbol='jm',trade_date=future,rank=1,contract_code='JM2505'),
+    ])
+    session.execute(update(TradingSession).values(effective_to=day))
+    session.commit()
+    mds=MarketDataService(MarketCatalog(session,tmp_path),CanonicalMonthlyStore(tmp_path))
+    assert mds.completed_trading_days(symbol='jm',start=datetime(2025,1,3,tzinfo=UTC),as_of=datetime(2025,1,3,7,tzinfo=UTC),latest=day,calendar_since=day)==(day,)
