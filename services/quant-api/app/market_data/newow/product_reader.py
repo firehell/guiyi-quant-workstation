@@ -46,8 +46,11 @@ _OWNER_SOURCE = "main_contract_map:rank1:calendar_session_v1"
 
 
 class NewowProductReadError(ValueError):
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, *, context: dict[str, object] | None = None) -> None:
+        from app.market_data.diagnostics import safe_context
+
         self.code = code
+        self.context = safe_context(context)
         super().__init__(code)
 
 
@@ -679,4 +682,10 @@ def _product_bar(
             frequency,
         )
     except ValueError as exc:
+        if str(exc) == "NEWOW_BAR_NONPOSITIVE_PRICE":
+            raise NewowProductReadError(
+                "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+                context={"symbol": product, "contract": contract, "frequency": frequency,
+                         "trading_day": bar.trading_day, "cutoff": bar.bar_end},
+            ) from exc
         raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID") from exc

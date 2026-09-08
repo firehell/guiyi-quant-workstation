@@ -316,6 +316,28 @@ test('ordinary other-panel failure preserves an accepted main chart', async () =
   state.dispose()
 })
 
+test('each failed panel shows its sanitized Chinese diagnostic without replacing the main chart', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request)); await flush()
+  const accepted = state.sections.chart.data.value
+  const loads = [() => state.loadAuxiliary('main_force_control'), () => state.loadReference(), () => state.loadExplanation(), () => state.loadComparator()]
+  const sections = ['auxiliary', 'reference', 'explanation', 'comparator'] as const
+  for (const [index, load] of loads.entries()) {
+    const loading = load()
+    pending[index + 1]!.reject(new NewowProductRequestError('NEWOW_DATA_UNAVAILABLE', 'unavailable', {
+      reason: 'REPLAY_PREFIX_MISSING', context: { contract: 'RB2701', frequency: '1d' }, historicalCandidateRecoverable: true,
+    }))
+    await loading
+    const resource = state.sections[sections[index]!]
+    assert.match(resource.error.value ?? '', /预热历史缺失.*RB2701/)
+    assert.match(resolveNewowPanelRenderState(resource.state.value, resource.data.value, resource.error.value).message, /历史快照/)
+    assert.equal(state.sections.chart.data.value, accepted)
+  }
+  state.dispose()
+})
+
 test('historical reference data unavailable stays section-local and preserves the validated chart and mirror', async () => {
   const pending: Pending[] = []
   const historicalAsOf = '2026-08-14T07:00:00.000001Z'

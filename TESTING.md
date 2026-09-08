@@ -25,6 +25,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/newow/test_product_service.py \
   services/quant-api/tests/newow/test_product_reader.py \
   services/quant-api/tests/newow/test_historical_snapshot.py \
+  services/quant-api/tests/newow/test_data_diagnostics.py \
   services/quant-api/tests/newow/test_product_source_facts.py \
   services/quant-api/tests/newow/test_product_snapshot_cache.py \
   services/quant-api/tests/newow/test_product_resource_gate.py \

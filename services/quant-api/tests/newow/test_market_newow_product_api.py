@@ -301,7 +301,11 @@ def test_strategy_detail_normalizes_mds_failure_to_public_conflict(monkeypatch):
     app.dependency_overrides.clear()
 
     assert response.status_code == 409
-    assert response.json() == {"detail": {"code": "NEWOW_DATA_UNAVAILABLE"}}
+    assert response.json() == {"detail": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {"reason": "MAIN_CONTRACT_MAP_MISSING", "context": {"symbol": "rb", "frequency": "1d"},
+                       "historical_candidate_recoverable": True},
+    }}
 
 
 def test_all_research_sections_validate_against_explicit_wire_models(product_cases):

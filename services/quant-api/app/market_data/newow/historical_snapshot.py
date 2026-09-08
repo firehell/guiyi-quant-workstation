@@ -10,6 +10,8 @@ from typing import Literal
 
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from app.market_data.market_data_service import MarketDataError
+from app.market_data.diagnostics import MISSING_REASONS, data_reason
+from app.market_data.errors import InfrastructureError
 
 from .product_reader import (
     NewowProductReadCancelled,
@@ -48,8 +50,11 @@ _KNOWN_MARKET_UNAVAILABLE = frozenset(
 )
 
 
-def is_historical_candidate_unavailable(code: str) -> bool:
-    return code in _KNOWN_MARKET_UNAVAILABLE
+def is_historical_candidate_unavailable(error: str | MarketDataError | InfrastructureError) -> bool:
+    if isinstance(error, str):
+        return error in _KNOWN_MARKET_UNAVAILABLE
+    reason = error.reason if isinstance(error, MarketDataError) else data_reason(error.code)
+    return reason in MISSING_REASONS
 
 
 class HistoricalSnapshotError(RuntimeError):
@@ -194,8 +199,8 @@ class NewowHistoricalSnapshotResolver:
             except (NewowProductReadError, NewowProductServiceError) as exc:
                 if exc.code not in _KNOWN_UNAVAILABLE:
                     raise
-            except MarketDataError as exc:
-                if not is_historical_candidate_unavailable(exc.code):
+            except (MarketDataError, InfrastructureError) as exc:
+                if not is_historical_candidate_unavailable(exc):
                     raise
         if stopped():
             if deadline_exceeded():

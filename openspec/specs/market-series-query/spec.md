@@ -6,6 +6,29 @@
 
 ## Requirements
 
+### Requirement: Replay diagnostics preserve stable codes and distinguish missing facts
+
+`MarketDataError.code` MUST remain backward compatible. Physical contract replay validation SHALL
+add a bounded reason and sanitized context without changing accepted Bars or the lifecycle/session authority.
+Missing prefix or interior/suffix endpoints SHALL be distinguished from extra endpoints, order/duplicates,
+cutoff mismatch and metadata identity failures. Known missing Calendar/Session/contract metadata SHALL retain
+their missing classification; unknown infrastructure exceptions MUST NOT become recoverable gaps.
+Diagnostic context SHALL contain only validated symbol, physical contract, frequency, dates/instants and
+bounded nonnegative counts; exception text, storage paths, SQL and adapter samples MUST NOT be public.
+
+#### Scenario: A replay lacks its lifecycle prefix
+
+- **GIVEN** the authoritative lifecycle endpoints include earlier Bars absent from a valid ordered suffix
+- **WHEN** physical replay coverage is validated
+- **THEN** the service preserves `CONTRACT_REPLAY_COVERAGE_UNAVAILABLE` and reports `REPLAY_PREFIX_MISSING`
+- **AND** it includes only safe contract/frequency/time/count context and returns no partial replay
+
+#### Scenario: A replay contains an extra endpoint
+
+- **GIVEN** a replay contains an endpoint outside the authoritative lifecycle/session facts
+- **WHEN** physical replay coverage is validated
+- **THEN** the service reports `REPLAY_ENDPOINTS_EXTRA` without classifying it as recoverable missing data
+
 ### Requirement: 三种 SeriesQuery
 查询 SHALL 接受 `continuous|actual_dominant|contract`、symbol、frequency、start、end；contract
 模式必须有 contract，其他模式不得提供 contract。连续/真实合约查询直接读取同频 Catalog 月分区；

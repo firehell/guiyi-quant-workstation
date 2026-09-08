@@ -118,10 +118,10 @@ test('comparator selects only the exact default segment and fails closed on ambi
 
 test('first-load error clears values while retained same-identity failure exposes stale timestamp', () => {
   assert.deepEqual(resolvePanelState('unavailable', null, 'NEWOW_API_UNAVAILABLE'), {
-    showValue: false, message: '加载失败（NEWOW_API_UNAVAILABLE），没有可显示的已验证数值。', staleAt: null,
+    showValue: false, message: '加载失败（服务暂不可用，可重试本面板（NEWOW_API_UNAVAILABLE）），没有可显示的已验证数值。', staleAt: null,
   })
   assert.deepEqual(resolvePanelState('stale', explanationResponse(), 'NEWOW_API_UNAVAILABLE'), {
-    showValue: true, message: '刷新失败（NEWOW_API_UNAVAILABLE）；以下为同一身份上次成功的 stale 数值。', staleAt: '2026-08-15T07:00:01Z',
+    showValue: true, message: '刷新失败（服务暂不可用，可重试本面板（NEWOW_API_UNAVAILABLE））；以下为同一身份上次成功的 stale 数值。', staleAt: '2026-08-15T07:00:01Z',
   })
   assert.deepEqual(resolvePanelState('input_conflict', null, 'NEWOW_SHARED_BAR_CONFLICT'), {
     showValue: false, message: 'DATA_CONFLICT（NEWOW_SHARED_BAR_CONFLICT）：冲突事实已清空，不能继续展示旧数值。', staleAt: null,

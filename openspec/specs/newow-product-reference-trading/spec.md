@@ -341,6 +341,11 @@ identity 与确认时间语义；`pivot_at` 不得冒充首次可知时间，其
 候选 as_of 为该日最后 Session 结束后一个微秒且不得晚于当前时间。
 返回候选前 MUST 使用既有 reader 验证主图和照妖镜所需完整输入，包括同合约 warm-up 和物理可读性。
 只有可证明为缺失的数据错误允许检查更早日期；身份、完整性或截止时间冲突、未知错误、取消或超时 MUST 停止。
+`CONTRACT_REPLAY_COVERAGE_UNAVAILABLE` 旧 code 本身 MUST NOT 授权历史回退；只有结构化
+`REPLAY_PREFIX_MISSING` / `REPLAY_ENDPOINTS_MISSING` 或明确缺失的 Calendar、Session、合约元数据
+等 reason 允许继续既有限定候选搜索。额外 Bar、重复/乱序、截止不一致以及无已知 reason 的基础设施失败
+必须立即停止。原始非正价格使用 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不得跳行、填充或改变 warm-up；
+该来源限制不授权更早候选回退或重复下载。
 候选日期 SHALL 分批读取，不能另加自然日截止而缩短最近 20 个完成交易日的范围；
 解析器 SHALL 使用 30 秒单调时钟预算并在读取边界检查取消，超时后不得返回成功。
 
@@ -538,6 +543,11 @@ repainting、formal-signal eligibility、允许用途、实际图表/统计窗�
 顶层 ready 不得掩盖子功能 `evidence_required`，也不得把参考交易资格表达成真实下单授权。
 旧 `/trend-detail` 的参数、profile、marker 和响应语义 MUST 保持不变。未预期内部错误使用固定
 `500 {"detail":{"code":"NEWOW_INTERNAL_ERROR"}}`，不得返回异常文本、SQL、内部路径、stack 或凭据。
+当前与历史快照端点 SHALL 共用有限公开错误码映射，不得信任任意 `NEWOW_` 前缀的异常文本。
+已知数据不可用返回 409，并可附加 `diagnostic`：有限 `reason`、只含已验证品种/合约/周期/日期/时间/数量的
+`context` 与 `historical_candidate_recoverable`。后者只表示本次错误可检查下一历史候选，不证明历史快照存在。
+Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置及重试/历史入口提示；未知 reason
+不得透传文本或诱导历史回退。其他面板缺失不得清除已验证主图。
 
 #### Scenario: A requested explanation has an evidence gap
 

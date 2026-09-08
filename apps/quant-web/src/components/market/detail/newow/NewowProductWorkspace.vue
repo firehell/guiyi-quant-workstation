@@ -7,6 +7,7 @@ import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
 import { projectNewowDetail, newowDisplayLabel, shortNewowTime, referencePercentDisplay } from '@/utils/newowDetailPresentation'
 import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, newowChartSnapshotKey } from './newowProductChartPrimitives'
 import { formatChartTimeInShanghai } from '@/utils/barTime'
+import { newowErrorDisplay } from '@/utils/newowDataDiagnostics'
 import NewowProductChartStage from './NewowProductChartStage.vue'
 import NewowExplanationPanel from './NewowExplanationPanel.vue'
 import NewowReferencePanel from './NewowReferencePanel.vue'
@@ -181,7 +182,7 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
         <template v-else>
           <button :disabled="loader.historicalLoading.value" @click="loader.switchToHistorical">查看最近可用历史快照</button>
           <button @click="refreshCurrent">刷新当前</button>
-          <span v-if="loader.historicalError.value" role="status">{{ loader.historicalError.value }}</span>
+          <span v-if="loader.historicalError.value" role="status">{{ newowErrorDisplay(loader.historicalError.value) }}</span>
         </template>
       </div>
       <div class="newow-summary__main">
@@ -203,7 +204,7 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
         <button v-if="loader.sections.explanation.error.value" @click="loader.loadExplanation">重试解释</button>
       </div>
     </section>
-    <p v-if="loader.sections.chart.error.value" class="newow-product-workspace__notice" role="status">{{ loader.sections.chart.error.value }}：主图事实不可用或已过期。 <button @click="loader.loadChart()">重试主图</button></p>
+    <p v-if="loader.sections.chart.error.value" class="newow-product-workspace__notice" role="status">{{ newowErrorDisplay(loader.sections.chart.error.value) }}：主图事实不可用或已过期。 <button @click="loader.loadChart()">重试主图</button></p>
     <NewowProductChartStage :response="chartResponse" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :loading="loader.sections.chart.state.value === 'loading'" :has-more-before="chartModel?.nextBefore != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @explain-main="openDialog('explanation')" @explain-auxiliary="openDialog('indicator')">
     <template #auxiliary-controls>
     <section class="newow-product-workspace__auxiliary" aria-label="Newow 辅助图层">

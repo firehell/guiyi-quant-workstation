@@ -22,30 +22,24 @@ from app.market_data.composition import (
     build_database_coverage_source,
     build_market_data_service,
 )
-from app.market_data.market_data_service import MarketDataError
 from app.market_data.newow.product_reader import (
-    NewowProductReadCancelled,
-    NewowProductReadError,
     NewowProductReader,
 )
 from app.market_data.newow.historical_snapshot import (
-    HistoricalSnapshotError,
     NewowHistoricalSnapshotResolver,
-    is_historical_candidate_unavailable,
 )
+from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.inflight import (
     InFlightCoordinator,
-    NewowComputationCancelled,
 )
 from app.market_data.newow.product_service import (
     NewowProductResult,
     NewowProductService,
-    NewowProductServiceError,
     ProductServiceQuery,
     ProductSection,
     AuxiliaryComponent,
 )
-from app.market_data.newow.resource_gate import HeavyResourceGate, NewowResourceBusy
+from app.market_data.newow.resource_gate import HeavyResourceGate
 from app.market_data.newow.snapshot_cache import SnapshotCache
 from app.market_data.operational_universe import (
     ActiveUniverseError,
@@ -247,29 +241,15 @@ def newow_historical_snapshot(
             as_of=result.as_of,
             validated_sections=list(result.validated_sections),
         )
-    except HistoricalSnapshotError as exc:
-        status = 429 if exc.code == "NEWOW_HISTORICAL_RESOLUTION_TIMEOUT" else 409
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
-    except NewowResourceBusy as exc:
-        raise HTTPException(status_code=429, detail={"code": exc.code}) from exc
-    except NewowProductServiceError as exc:
-        status = 409 if "CONFLICT" in exc.code else 422
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
-    except (NewowProductReadCancelled, NewowComputationCancelled) as exc:
-        raise HTTPException(
-            status_code=429, detail={"code": "NEWOW_REQUEST_CANCELLED"}
-        ) from exc
-    except NewowProductReadError as exc:
-        status = 422 if exc.code.startswith("NEWOW_INVALID_") else 409
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
     except (ActiveUniverseError, ProductTaxonomyError) as exc:
         raise HTTPException(
             status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
         ) from exc
-    except MarketDataError as exc:
-        status = 409 if is_historical_candidate_unavailable(exc.code) else 500
-        code = "NEWOW_DATA_UNAVAILABLE" if status == 409 else "NEWOW_INTERNAL_ERROR"
-        raise HTTPException(status_code=status, detail={"code": code}) from exc
+    except Exception as exc:
+        status, detail = public_product_error(
+            exc, context={"symbol": product, "frequency": frequency}
+        )
+        raise HTTPException(status_code=status, detail=detail) from exc
 
 
 @router.get("/strategy-detail", response_model=NewowProductResponse)
@@ -339,44 +319,15 @@ def newow_strategy_detail(
         )
         result = _build_product_service(session, cancelled).query(product_query)
         return _product_response(result)
-    except NewowResourceBusy as exc:
-        raise HTTPException(status_code=429, detail={"code": exc.code}) from exc
-    except (NewowComputationCancelled, NewowProductReadCancelled) as exc:
-        raise HTTPException(
-            status_code=429, detail={"code": "NEWOW_REQUEST_CANCELLED"}
-        ) from exc
-    except NewowProductServiceError as exc:
-        status = 409 if "CONFLICT" in exc.code else 422
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
-    except NewowProductReadError as exc:
-        status = 422 if exc.code.startswith("NEWOW_INVALID_") else 409
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
-    except MarketDataError as exc:
-        raise HTTPException(
-            status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
-        ) from exc
     except (ActiveUniverseError, ProductTaxonomyError) as exc:
         raise HTTPException(
             status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
         ) from exc
-    except ValueError as exc:
-        code = str(exc)
-        if not code.startswith("NEWOW_"):
-            raise HTTPException(
-                status_code=500, detail={"code": "NEWOW_INTERNAL_ERROR"}
-            ) from exc
-        status = (
-            422
-            if code.startswith("NEWOW_INVALID_")
-            or "REQUIRED" in code
-            or "PARAMETER" in code
-            else 409
-        )
-        raise HTTPException(status_code=status, detail={"code": code}) from exc
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail={"code": "NEWOW_INTERNAL_ERROR"}
-        ) from exc
+        status, detail = public_product_error(
+            exc, context={"symbol": product, "frequency": frequency}
+        )
+        raise HTTPException(status_code=status, detail=detail) from exc
 
 
 def _status(value) -> dict[str, object] | None:

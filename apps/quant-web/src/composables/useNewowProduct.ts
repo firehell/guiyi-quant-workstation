@@ -122,7 +122,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       asOf.value = resolved.as_of
       await loadChart()
     } catch (error) {
-      if (!controller.signal.aborted && resolverController === controller && generation === resolverGeneration) historicalError.value = error instanceof NewowProductRequestError ? error.code : 'NEWOW_API_UNAVAILABLE'
+      if (!controller.signal.aborted && resolverController === controller && generation === resolverGeneration) historicalError.value = error instanceof NewowProductRequestError ? error.message : 'NEWOW_API_UNAVAILABLE'
     } finally {
       if (resolverController === controller) { resolverController = null; historicalLoading.value = false }
     }
@@ -404,7 +404,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     const requestError = error instanceof NewowProductRequestError
       ? error
       : new NewowProductRequestError('NEWOW_API_UNAVAILABLE', 'unavailable')
-    resource.error.value = requestError.code
+    resource.error.value = requestError.message
     if (requestError.classification === 'conflict' || requestError.classification === 'response_invalid') {
       failConflict(section, requestError.code)
       return
