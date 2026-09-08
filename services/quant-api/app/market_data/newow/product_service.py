@@ -542,6 +542,7 @@ class NewowProductService:
             candidate = self._cache.get_by_token(
                 request.snapshot_token or "", common_key,
                 ("older_window", request.chart_older_window),
+                touch=False,
             )
             if not isinstance(candidate, _ChartNavigation) or candidate.limit != request.chart_limit:
                 raise NewowProductServiceError("NEWOW_CHART_CURSOR_INVALID")
@@ -635,7 +636,8 @@ class NewowProductService:
             request.since is None or (
                 request.chart_before is not None and request.snapshot_token is not None
                 and isinstance(self._cache.get_by_token(
-                    request.snapshot_token, common_key, ("chart_window", page_identity)
+                    request.snapshot_token, common_key, ("chart_window", page_identity),
+                    touch=False,
                 ), _ChartNavigation)
             )
         )
@@ -677,59 +679,33 @@ class NewowProductService:
             ) is not None
         )
         self._check_cancelled(cancelled)
-        token = None
-        if self._cacheable(result):
-            token = self._cache.put(
-                common_key,
-                section_key,
-                result,
-                token=request.snapshot_token,
-                proof=proof,
+        if not self._cacheable(result):
+            return result
+        related: dict[tuple[object, ...], object] = {}
+        complete = result
+        if navigable and isinstance(chart, ChartSectionValue):
+            navigation = _ChartNavigation(
+                window, request.chart_limit, fact_key,
+                chart.bars[0].bar.bar_end if chart.bars else None,
             )
-        if token is not None:
-            result = NewowProductResult(
-                ProductResultMeta(
-                    result.meta.schema_version,
-                    result.meta.identity,
-                    result.meta.as_of,
-                    result.meta.read_at,
-                    result.meta.input_content_sha256,
-                    None,
-                    token,
-                ),
-                result.section,
-                result.chart,
-                result.auxiliary,
-                result.reference,
-                result.explanation,
-                result.comparator,
-            )
-            related: dict[tuple[object, ...], object] = {}
-            if navigable and isinstance(chart, ChartSectionValue):
-                navigation = _ChartNavigation(
-                    window, request.chart_limit, fact_key,
-                    chart.bars[0].bar.bar_end if chart.bars else None,
-                )
-                related[("chart_window", page_identity)] = navigation
-                if has_older_window:
-                    cursor = token_urlsafe(24)
-                    related[("older_window", cursor)] = navigation
-                    result = replace(result, chart=replace(
-                        result.chart, value=replace(chart, next_older_window=cursor)
-                    ))
-            if self._cache.put(
-                common_key,
-                section_key,
-                result,
-                token=token,
-                proof=proof,
-                related_values=related,
-            ) is None:
-                result = replace(result, meta=replace(result.meta, snapshot_token=None))
-                if isinstance(result.chart.value, ChartSectionValue):
-                    result = replace(result, chart=replace(result.chart,
-                        value=replace(result.chart.value, next_older_window=None)))
-        return result
+            related[("chart_window", page_identity)] = navigation
+            if has_older_window:
+                cursor = token_urlsafe(24)
+                related[("older_window", cursor)] = navigation
+                complete = replace(result, chart=replace(
+                    result.chart, value=replace(chart, next_older_window=cursor)
+                ))
+
+        def bind_snapshot(token: str) -> NewowProductResult:
+            return replace(complete, meta=replace(complete.meta, snapshot_token=token))
+
+        # Result, token, proof and navigation are one measured cache candidate.
+        # Rejection retains no partial success and leaves the old entry intact.
+        token = self._cache.put(
+            common_key, section_key, complete, token=request.snapshot_token,
+            proof=proof, related_values=related, value_factory=bind_snapshot,
+        )
+        return bind_snapshot(token) if token is not None else result
 
     @staticmethod
     def _check_cancelled(cancelled: Callable[[], bool]) -> None:

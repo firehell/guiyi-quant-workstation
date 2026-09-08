@@ -1,6 +1,7 @@
 """Real reader/resolver and service over isolated MDS facts; no external services."""
 
 from dataclasses import replace
+from collections import OrderedDict
 
 import pytest
 
@@ -184,4 +185,80 @@ def test_failed_older_availability_read_does_not_cache_partial_navigation(produc
     with pytest.raises(NewowProductReadError):
         service.query(request)
     retried = service.query(request)
+    assert retried.chart.value.next_older_window is not None
+
+
+def test_service_budget_rejection_preserves_complete_prior_snapshot_and_navigation(product_cases):
+    """Catch two-phase service caching where only the second put exceeds budget."""
+    clock = [0.0]
+    cache = SnapshotCache(now=lambda: clock[0])
+    service, reader, facts = setup_service(product_cases, cache=cache)
+    request = ProductServiceQuery("rb", "trend", "1d", as_of=facts.as_of, chart_limit=20)
+    first = service.query(request)
+    following = older_request(request, first)
+    namespace = cache.fact_key_for_token(first.meta.snapshot_token)
+    assert namespace
+    accepted = cache._entries[namespace]
+    original_values = dict(accepted.values)
+    original_proof = dict(accepted.proof)
+    original_expiry = accepted.expires_at
+    cache.put("other-query", ("section",), "other accepted result")
+    original_order = tuple(cache._entries)
+    original_bytes = cache._bytes
+
+    def fork_cache():
+        isolated = SnapshotCache(now=lambda: clock[0])
+        isolated._entries = cache._entries.copy()
+        isolated._tokens = dict(cache._tokens)
+        isolated._bytes = cache._bytes
+        return isolated
+
+    # Calibrate an actual service result at the exact memory boundary. Both
+    # runs start with the same accepted snapshot; the assertions below concern
+    # externally usable navigation and preservation, not a guessed byte count.
+    probe = fork_cache()
+    writes = []
+    put = probe.put
+
+    def record(*args, **kwargs):
+        writes.append((args, kwargs))
+        return put(*args, **kwargs)
+
+    probe.put = record
+    probe_service = NewowProductService(lambda *_: reader, cache=probe, now=lambda: facts.as_of)
+    complete = probe_service.query(following)
+    assert complete.chart.value.next_older_window is not None
+    args, kwargs = writes[-1]
+    bare_result = replace(complete, meta=replace(complete.meta, snapshot_token=None),
+        chart=replace(complete.chart, value=replace(complete.chart.value, next_older_window=None)))
+    bare = fork_cache()
+    assert bare.put(args[0], args[1], bare_result,
+        token=first.meta.snapshot_token, proof=kwargs["proof"]) is not None
+    bare_entry = bare._entries[namespace]
+    budget = bare._retained_bytes(OrderedDict([(namespace, bare_entry)]),
+                                  {bare_entry.token: namespace})
+    full_entry = probe._entries[namespace]
+    assert budget < probe._retained_bytes(OrderedDict([(namespace, full_entry)]),
+                                          {full_entry.token: namespace})
+    cache._max_entry_bytes = budget
+    clock[0] = 10.0
+
+    rejected = service.query(following)
+
+    assert rejected.meta.snapshot_token is None
+    assert rejected.chart.value.next_older_window is None
+    assert cache._entries[namespace] is accepted
+    assert accepted.values == original_values
+    assert accepted.proof == original_proof
+    assert accepted.expires_at == original_expiry
+    assert tuple(cache._entries) == original_order
+    assert cache._bytes == original_bytes
+    old_navigation = ("older_window", first.chart.value.next_older_window)
+    assert cache.get_by_token(first.meta.snapshot_token, namespace, old_navigation) == original_values[old_navigation]
+
+    # A retry after restoring space must build the full page, rather than hit a
+    # stranded no-cursor result from the rejected attempt.
+    cache._max_entry_bytes = 32 * 1024 * 1024
+    retried = service.query(following)
+    assert retried.meta.snapshot_token == first.meta.snapshot_token
     assert retried.chart.value.next_older_window is not None
