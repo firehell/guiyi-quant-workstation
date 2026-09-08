@@ -189,6 +189,35 @@ test('signed MACD bars share pane 2 and switch/invalidated snapshots remove ever
   app.unmount()
 })
 
+test('zhaoyao mirror uses one dedicated primitive and no generic value series', async () => {
+  const Stage = await loadComponent()
+  const attached: object[] = []
+  const records: Array<{ pane: number; data: Array<{ value?: number }> }> = []
+  const chart = prependBar(chartResponse())
+  const times = chart.value!.bars.map(item => item.bar_end)
+  const auxiliary = { section: 'auxiliary', meta: chart.meta, status: ready(), value: {
+    component: 'zhaoyao_mirror', formula_version: 'newow_zhaoyao_mirror_repainting_page_v1',
+    segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, status: ready(), data: {
+      entry: [1, 2], wash: [2, 1], distribution: [3, 1], markup: [4, 2], exit: [5, 0], inducement: [6, 1], peaks: [9, 9], caution: [0, 50],
+      repainting: true, formal_signal_eligible: false, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1',
+    } }],
+  } } as NewowProductSectionResponse<'auxiliary'>
+  const fakeChart = {
+    addSeries(_definition: unknown, _options: unknown, pane = 0) {
+      const record = { pane, data: [] as Array<{ value?: number }> }; records.push(record)
+      return { setData(data: typeof record.data) { record.data = data }, attachPrimitive(value: object) { attached.push(value) }, detachPrimitive() {}, createPriceLine() {} }
+    }, removeSeries() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, { response: chart, auxiliaryResponse: auxiliary, auxiliaryLifecycle: 'ready', selectedSignalId: null }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+  assert.equal(attached.some(value => value.constructor.name === 'NewowZhaoyaoMirrorPrimitive'), true)
+  assert.equal(records.filter(record => record.pane === 2 && record.data.some(point => point.value !== undefined)).length, 0)
+  app.unmount()
+})
+
 function pane() { return { getHeight: () => 100, setStretchFactor() {}, setHeight() {}, setPreserveEmptyPane() {} } }
 
 function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: string }>> = []): NewowProductChartAdapter {
