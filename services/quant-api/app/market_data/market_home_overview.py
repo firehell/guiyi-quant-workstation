@@ -73,6 +73,7 @@ class MarketHomeSummary:
     price_up_count: int
     price_down_count: int
     price_flat_count: int
+    price_unavailable_count: int
     daily_up_count: int
     daily_down_count: int
     daily_neutral_count: int
@@ -333,6 +334,9 @@ def _summary(items: list[MarketHomeItem]) -> MarketHomeSummary:
             for item in items
         ),
         price_flat_count=sum(item.price_change_1d == 0 for item in items),
+        price_unavailable_count=sum(
+            item.price_change_1d is None for item in items
+        ),
         daily_up_count=sum(item.daily_trend == "up" for item in items),
         daily_down_count=sum(item.daily_trend == "down" for item in items),
         daily_neutral_count=sum(item.daily_trend == "neutral" for item in items),

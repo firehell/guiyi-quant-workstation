@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -78,6 +79,54 @@ def test_snapshot_excludes_product_without_completed_daily_bar_and_counts_unavai
         ("rb", "1d"),
         ("rb", "1w"),
     ]
+
+
+def test_snapshot_retains_zero_fact_predecessor_and_counts_unavailable_price() -> None:
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+
+    daily = _bars(30, end=TARGET)
+    zero_fact = replace(
+        daily[-2],
+        open=Decimal("0"),
+        high=Decimal("0"),
+        low=Decimal("0"),
+        close=Decimal("0"),
+        volume=Decimal("0"),
+        turnover=Decimal("0"),
+        open_interest=Decimal("0"),
+    )
+    daily = daily[:-2] + (zero_fact, daily[-1])
+    snapshot = MarketHomeOverviewService(
+        market_data=_FakeMarketDataService(
+            daily={"jm": daily},
+            weekly={"jm": _bars(22, end=TARGET)},
+            dominants=(
+                DominantContractSummary(
+                    symbol="jm",
+                    product_name="焦煤",
+                    sector="black",
+                    exchange="DCE",
+                    actual_contract="JM2505",
+                    dominant_mapping_date=TARGET,
+                ),
+            ),
+        ),
+        products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="black")},
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot()
+
+    assert snapshot.participant_count == 1
+    assert snapshot.items[0].data_as_of == TARGET
+    assert snapshot.items[0].price_change_1d is None
+    assert snapshot.summary.price_unavailable_count == 1
+    assert (
+        snapshot.summary.price_up_count
+        + snapshot.summary.price_down_count
+        + snapshot.summary.price_flat_count
+        + snapshot.summary.price_unavailable_count
+        == snapshot.participant_count
+    )
 
 
 def test_snapshot_uses_taxonomy_as_the_name_and_sector_authority() -> None:

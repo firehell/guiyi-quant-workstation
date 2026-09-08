@@ -51,7 +51,7 @@ def market_home_projection_path(canonical_root: Path) -> Path:
 class MarketHomeProjectionEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     generated_at: datetime
     target_as_of: date
     authority_digest: str
@@ -273,6 +273,7 @@ def market_home_response(
             price_up_count=snapshot.summary.price_up_count,
             price_down_count=snapshot.summary.price_down_count,
             price_flat_count=snapshot.summary.price_flat_count,
+            price_unavailable_count=snapshot.summary.price_unavailable_count,
             daily_up_count=snapshot.summary.daily_up_count,
             daily_down_count=snapshot.summary.daily_down_count,
             daily_neutral_count=snapshot.summary.daily_neutral_count,
