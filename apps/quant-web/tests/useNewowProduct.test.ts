@@ -262,6 +262,48 @@ test('same-identity busy and cancelled refreshes retain the last success as stal
   firstCancelled.dispose()
 })
 
+test('historical reference data unavailable stays section-local and preserves the validated chart and mirror', async () => {
+  const pending: Pending[] = []
+  const historicalAsOf = '2026-08-14T07:00:00.000001Z'
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: controlled(pending),
+    fetchHistoricalSnapshot: async () => ({
+      schema_version: 'newow_historical_snapshot_v1',
+      product: 'rb', strategy: 'trend', frequency: '1d', series_kind: 'actual_dominant',
+      trading_day: '2026-08-14', as_of: historicalAsOf,
+      validated_sections: ['chart', 'zhaoyao_mirror'],
+    }),
+  })
+  await nextTick()
+  const switching = state.switchToHistorical()
+  await flush()
+  pending[1]!.resolve(normalizedChart(pending[1]!.request, { token: 'historical-token' }))
+  await switching
+
+  const mirror = state.loadAuxiliary('zhaoyao_mirror')
+  assert.equal(pending[2]!.request.asOf, historicalAsOf)
+  pending[2]!.resolve(normalizedAuxiliary(pending[2]!.request, 'historical-token'))
+  await mirror
+  const chart = state.sections.chart.data.value
+  const auxiliary = state.sections.auxiliary.data.value
+
+  const reference = state.loadReference()
+  assert.equal(pending[3]!.request.asOf, historicalAsOf)
+  pending[3]!.reject(new NewowProductRequestError('NEWOW_DATA_UNAVAILABLE', 'unavailable'))
+  await reference
+
+  assert.equal(state.sections.reference.state.value, 'unavailable')
+  assert.equal(state.sections.reference.error.value, 'NEWOW_DATA_UNAVAILABLE')
+  assert.equal(state.sections.chart.state.value, 'ready')
+  assert.equal(state.sections.chart.data.value, chart)
+  assert.equal(state.sections.auxiliary.state.value, 'ready')
+  assert.equal(state.sections.auxiliary.data.value, auxiliary)
+  assert.equal(state.asOf.value, historicalAsOf)
+  state.dispose()
+})
+
 test('reference pages merge only under one fingerprint and reject duplicate IDs with changed facts', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
@@ -961,7 +1003,9 @@ function normalizedReference(request: NewowProductRequest, options: { token?: st
 
 function normalizedAuxiliary(request: NewowProductRequest, token: string | null = request.snapshotToken ?? 'snapshot-a') {
   if (request.section !== 'auxiliary') throw new Error('auxiliary request required')
-  return normalizeNewowProductResponse(auxiliaryWire(request, token), request)
+  const raw = auxiliaryWire(request, token)
+  raw.meta.as_of = request.asOf
+  return normalizeNewowProductResponse(raw, request)
 }
 
 function normalizedStatus(request: NewowProductRequest, token: string | null) {
@@ -1051,9 +1095,13 @@ function auxiliaryWire(request: Extract<NewowProductRequest, { section: 'auxilia
   const base = chartWire({ strategy: request.identity.strategy, frequency: request.identity.frequency, token })
   const formulaVersion = request.component === 'main_force_control'
     ? 'newow_main_force_control_page_v1'
+    : request.component === 'zhaoyao_mirror'
+      ? 'newow_zhaoyao_mirror_repainting_page_v1'
     : 'newow_up_down_energy_page_v1'
   const data = request.component === 'main_force_control'
     ? { kongpan: [1.25], status: ['control'], current_status: 'control', formula_version: formulaVersion }
+    : request.component === 'zhaoyao_mirror'
+      ? { entry: [1], wash: [2], distribution: [3], markup: [4], exit: [5], inducement: [6], peaks: [0], caution: [1], repainting: true, formal_signal_eligible: false, formula_version: formulaVersion }
     : { var4: [1.25], ma10: [1], band_entry: [0], rebound_entry: [0], oversold_entry: [0], var3: [2], ma120: [3], formula_version: formulaVersion }
   return {
     ...base,
@@ -1066,7 +1114,7 @@ function auxiliaryWire(request: Extract<NewowProductRequest, { section: 'auxilia
         physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
         bar_ends: ['2026-08-14T07:00:00Z'], status: readyStatus(), data,
       }],
-      repainting: false, formal_signal_eligible: false, page_parity: true,
+      repainting: request.component === 'zhaoyao_mirror', formal_signal_eligible: false, page_parity: true,
       source_category: 'guiyi_product_auxiliary_adapter', allowed_uses: ['product_auxiliary'],
     } },
   }

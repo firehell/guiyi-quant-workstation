@@ -13,10 +13,11 @@ const INVALID_CODES = new Set([
   'NEWOW_SECTION_PARAMETER_INVALID', 'NEWOW_COMPLETE_PERIOD_MISSING',
 ])
 const CONFLICT_CODES = new Set([
-  'NEWOW_DATA_IDENTITY_INVALID', 'NEWOW_DATA_UNAVAILABLE', 'NEWOW_DATA_OUT_OF_ORDER',
+  'NEWOW_DATA_IDENTITY_INVALID', 'NEWOW_DATA_OUT_OF_ORDER',
   'NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'NEWOW_CURSOR_GENERATION_CONFLICT', 'NEWOW_CURSOR_INVALID',
   'NEWOW_REFERENCE_PAIRING_CONFLICT', 'NEWOW_PAGE_COMPARATOR_CONFLICTING_FACT',
 ])
+const UNAVAILABLE_CODES = new Set(['NEWOW_DATA_UNAVAILABLE'])
 
 export class NewowProductRequestError extends Error {
   readonly code: string
@@ -145,6 +146,7 @@ function classifyTransportError(error: unknown): NewowProductRequestError {
   const detail = httpDetail(error)
   if (detail?.status === 429 && detail.code === 'NEWOW_RESOURCE_BUSY') return new NewowProductRequestError(detail.code, 'busy')
   if (detail?.status === 429 && detail.code === 'NEWOW_REQUEST_CANCELLED') return new NewowProductRequestError(detail.code, 'cancelled')
+  if (detail?.status === 409 && UNAVAILABLE_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'unavailable')
   if (detail?.status === 409 && CONFLICT_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'conflict')
   if (detail?.status === 422 && INVALID_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'invalid')
   return new NewowProductRequestError('NEWOW_API_UNAVAILABLE', 'unavailable')
