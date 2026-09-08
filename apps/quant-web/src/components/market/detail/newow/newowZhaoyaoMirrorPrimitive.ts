@@ -105,7 +105,7 @@ export class NewowZhaoyaoMirrorPrimitive implements ISeriesPrimitive<Time> {
   updateAllViews(): void {}
 
   private draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]): void {
-    if (!this.attachment) return
+    if (!this.attachment || this.data.length === 0) return
     const attachment = this.attachment
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       const projected = buildNewowZhaoyaoMirrorCommands(this.data, mediaSize.width, mediaSize.height, time => attachment.chart.timeScale().timeToCoordinate(time))

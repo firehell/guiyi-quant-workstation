@@ -3,10 +3,38 @@ import test from 'node:test'
 
 import {
   NEWOW_ZHAOYAO_MIRROR_STYLE,
+  NewowZhaoyaoMirrorPrimitive,
   buildNewowZhaoyaoMirrorData,
   buildNewowZhaoyaoMirrorCommands,
   type NewowZhaoyaoMirrorDatum,
 } from '../src/components/market/detail/newow/newowZhaoyaoMirrorPrimitive.ts'
+
+test('primitive draw is inactive when initially empty, after clear, and after detach', () => {
+  const primitive = new NewowZhaoyaoMirrorPrimitive()
+  let mediaDraws = 0
+  let strokes = 0
+  const context = {
+    save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, fillRect() {}, closePath() {}, fill() {}, fillText() {}, setLineDash() {},
+    stroke() { strokes += 1 },
+  }
+  const target = { useMediaCoordinateSpace(callback: (scope: { context: object; mediaSize: { width: number; height: number } }) => void) {
+    mediaDraws += 1; callback({ context, mediaSize: { width: 100, height: 200 } })
+  } }
+  primitive.attached({ chart: { timeScale: () => ({ timeToCoordinate: () => 50 }) }, requestUpdate() {}, series: {} } as never)
+  const renderer = primitive.paneViews()[0]!.renderer()!
+  renderer.draw(target as never)
+  assert.deepEqual({ mediaDraws, strokes }, { mediaDraws: 0, strokes: 0 })
+
+  primitive.setData([rows[0]!]); renderer.draw(target as never)
+  assert.equal(mediaDraws, 1); assert.ok(strokes > 0)
+  const afterNonEmpty = strokes
+
+  primitive.setData([]); renderer.draw(target as never)
+  assert.deepEqual({ mediaDraws, strokes }, { mediaDraws: 1, strokes: afterNonEmpty })
+
+  primitive.setData([rows[0]!]); primitive.detached(); renderer.draw(target as never)
+  assert.deepEqual({ mediaDraws, strokes }, { mediaDraws: 1, strokes: afterNonEmpty })
+})
 
 test('joins split physical segments by global index in one detached mirror row set', () => {
   const series = [
