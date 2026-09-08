@@ -349,10 +349,24 @@ def _contract_warmup_scope(
         frequency = BarFrequency(requested)
     except (TypeError, ValueError) as exc:
         raise ValueError("CONTRACT_WARMUP_FREQUENCY_INVALID") from exc
-    if frequency not in (BarFrequency.M15, BarFrequency.H1):
+    planned: tuple[BarFrequency, ...]
+    if frequency is BarFrequency.D1:
+        planned = (BarFrequency.D1,)
+        dependencies: tuple[str, ...] = ()
+    elif frequency is BarFrequency.W1:
+        planned = (BarFrequency.D1, BarFrequency.W1)
+        dependencies = (BarFrequency.D1.value,)
+    elif frequency in (BarFrequency.M15, BarFrequency.H1):
+        planned = (BarFrequency.M1, frequency)
+        dependencies = (BarFrequency.M1.value,)
+    else:
         raise ValueError("CONTRACT_WARMUP_FREQUENCY_INVALID")
-    planned = (BarFrequency.M1, frequency)
-    return frequency.value, (BarFrequency.M1.value,), tuple(item.value for item in planned), planned
+    return (
+        frequency.value,
+        dependencies,
+        tuple(item.value for item in planned),
+        planned,
+    )
 
 _AUDIT_METADATA_CATEGORIES = {
     "TRADING_SESSION_MISSING": ("metadata_session", "session"),
@@ -517,7 +531,7 @@ class HistoricalDataManager:
         *,
         before_apply: Callable[[], None] | None = None,
     ) -> ContractWarmupResult:
-        """规划或执行单一真实合约的默认七周期或有界 15m/60m warm-up。"""
+        """规划或执行单一真实合约的默认七周期或显式频率 warm-up。"""
         plan, _targets = self._contract_warmup_plan(request)
         if not request.apply:
             return ContractWarmupResult(

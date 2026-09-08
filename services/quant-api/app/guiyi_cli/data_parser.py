@@ -69,7 +69,7 @@ def add_data_commands(
     contract_warmup.add_argument("--symbol", required=True)
     contract_warmup.add_argument("--contract", required=True)
     contract_warmup.add_argument("--through", required=True)
-    contract_warmup.add_argument("--frequency", choices=("15m", "60m"))
+    contract_warmup.add_argument("--frequency", choices=("1d", "1w", "15m", "60m"))
     contract_warmup.add_argument("--expected-plan-sha256")
     contract_warmup.add_argument("--apply", action="store_true")
 

@@ -241,7 +241,7 @@ def test_contract_warmup_parser_requires_apply_hash_and_rejects_abbreviations() 
             parser.parse_args(missing)
 
 
-@pytest.mark.parametrize("frequency", ("15m", "60m"))
+@pytest.mark.parametrize("frequency", ("1d", "1w", "15m", "60m"))
 def test_contract_warmup_parser_accepts_bounded_scope(frequency) -> None:
     parser = build_parser()
     common = [
@@ -382,8 +382,18 @@ def test_contract_warmup_payload_exposes_requested_and_effective_windows() -> No
     assert "through" not in payload
 
 
-@pytest.mark.parametrize("frequency", ("15m", "60m"))
-def test_contract_warmup_payload_binds_bounded_scope_and_minute_dependency(frequency) -> None:
+@pytest.mark.parametrize(
+    ("frequency", "dependencies", "frequencies"),
+    (
+        ("1d", (), ("1d",)),
+        ("1w", ("1d",), ("1d", "1w")),
+        ("15m", ("1m",), ("1m", "15m")),
+        ("60m", ("1m",), ("1m", "60m")),
+    ),
+)
+def test_contract_warmup_payload_binds_explicit_scope_and_dependencies(
+    frequency, dependencies, frequencies
+) -> None:
     result = ContractWarmupResult(
         status="planned",
         readonly=True,
@@ -393,14 +403,18 @@ def test_contract_warmup_payload_binds_bounded_scope_and_minute_dependency(frequ
             requested_through=date(2026, 9, 3), effective_through=date(2026, 9, 3),
             target_windows=(), direct_target_count=0, derived_target_count=0,
             expected_bar_count=0, provider_request_count=0, plan_sha256="a" * 64,
-            frequency=frequency, dependency_frequencies=("1m",), frequencies=("1m", frequency),
+            frequency=frequency,
+            dependency_frequencies=dependencies,
+            frequencies=frequencies,
         ),
         applied=0, blocked=0, failed=0, provider_requests=0,
     )
 
     assert data_commands.contract_warmup_payload(result)["frequency"] == frequency
-    assert data_commands.contract_warmup_payload(result)["dependency_frequencies"] == ["1m"]
-    assert data_commands.contract_warmup_payload(result)["frequencies"] == ["1m", frequency]
+    assert data_commands.contract_warmup_payload(result)["dependency_frequencies"] == list(
+        dependencies
+    )
+    assert data_commands.contract_warmup_payload(result)["frequencies"] == list(frequencies)
 
 
 def test_contract_warmup_apply_failure_is_non_readonly_and_does_not_leak_details(

@@ -226,7 +226,7 @@ class _ChangingSnapshotProvider(FakeProvider):
     def _batch(self, key: DatasetKey, expected: tuple[datetime, ...], revision: int) -> BarBatch:
         if key == self.daily:
             return BarBatch(tuple(
-                _daily_with_volume(value.day, 100 + value.day, revision)
+                _daily_on(value.date(), 100 + value.day, revision)
                 for value in expected
             ))
         if key == self.weekly:
@@ -1342,9 +1342,29 @@ def test_contract_warmup_contracts_expose_only_the_frozen_public_fields() -> Non
     )
 
 
-@pytest.mark.parametrize("frequency", ("15m", "60m"))
-def test_contract_warmup_bounded_scope_plans_only_minute_dependency_and_selected_derivation(
-    session, tmp_path, frequency
+@pytest.mark.parametrize(
+    (
+        "frequency",
+        "dependency_frequencies",
+        "frequencies",
+        "direct_target_count",
+        "derived_target_count",
+    ),
+    (
+        ("1d", (), ("1d",), 1, 0),
+        ("1w", ("1d",), ("1d", "1w"), 2, 0),
+        ("15m", ("1m",), ("1m", "15m"), 1, 1),
+        ("60m", ("1m",), ("1m", "60m"), 1, 1),
+    ),
+)
+def test_contract_warmup_explicit_scope_is_precise_and_dry_run_is_readonly(
+    session,
+    tmp_path,
+    frequency,
+    dependency_frequencies,
+    frequencies,
+    direct_target_count,
+    derived_target_count,
 ) -> None:
     manager, _coverage, provider = _single_day_contract_warmup_manager(session, tmp_path)
 
@@ -1354,33 +1374,177 @@ def test_contract_warmup_bounded_scope_plans_only_minute_dependency_and_selected
 
     assert result.status == "planned"
     assert result.plan.frequency == frequency
-    assert result.plan.dependency_frequencies == ("1m",)
-    assert result.plan.frequencies == ("1m", frequency)
-    assert {target["dataset"][3] for target in result.plan.target_windows} == {"1m", frequency}
-    assert result.plan.direct_target_count == result.plan.provider_request_count == 1
-    assert result.plan.derived_target_count == 1
+    assert result.plan.dependency_frequencies == dependency_frequencies
+    assert result.plan.frequencies == frequencies
+    assert {target["dataset"][3] for target in result.plan.target_windows} == set(
+        frequencies
+    )
+    assert result.plan.direct_target_count == direct_target_count
+    assert result.plan.provider_request_count == direct_target_count
+    assert result.plan.derived_target_count == derived_target_count
+    assert result.readonly is True
     assert provider.calls == []
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+    assert tuple(tmp_path.rglob("*.parquet")) == ()
 
 
-@pytest.mark.parametrize("frequency", ("15m", "60m"))
-def test_contract_warmup_bounded_scope_hash_cannot_be_reused_by_empty_default_scope(
-    session, tmp_path, frequency
+def test_contract_warmup_explicit_daily_empty_apply_is_noop_without_side_effects(
+    session, tmp_path
+) -> None:
+    manager, _coverage, provider = _single_day_contract_warmup_manager(
+        session, tmp_path
+    )
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    bar = _daily_on(date(2025, 1, 2), 100, 1)
+    _publish_existing(manager, daily, (bar,))
+    plan = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", date(2025, 1, 2), frequency="1d"
+        )
+    ).plan
+    partitions_before = tuple(session.scalars(select(MarketPartition)))
+
+    result = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf",
+            "PF2611",
+            date(2025, 1, 2),
+            plan.plan_sha256,
+            True,
+            "1d",
+        )
+    )
+
+    assert plan.target_windows == ()
+    assert result.status == "noop"
+    assert result.applied == result.blocked == result.failed == 0
+    assert result.provider_requests == 0
+    assert provider.calls == []
+    assert tuple(session.scalars(select(MarketPartition))) == partitions_before
+
+
+def test_contract_warmup_explicit_daily_stops_after_first_failed_month_without_retry(
+    session, tmp_path
+) -> None:
+    listed = date(2025, 1, 3)
+    through = date(2025, 2, 3)
+    _add_contract(
+        session,
+        symbol="pf",
+        contract="PF2611",
+        listed_date=listed,
+        expired_date=date(2025, 3, 1),
+    )
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    january = _daily_on(listed, 100, 1)
+    february = _daily_on(through, 101, 2)
+    coverage = FakeCoverage(
+        {daily.as_tuple(): (january.bar_end, february.bar_end)}
+    )
+    coverage.latest_day = through
+    provider = FakeProvider({daily.as_tuple(): (february,)})
+    manager = _manager(session, tmp_path, coverage, provider)
+    plan = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", through, frequency="1d"
+        )
+    ).plan
+
+    result = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", through, plan.plan_sha256, True, "1d"
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.applied == 0
+    assert result.failed == result.provider_requests == 1
+    assert provider.calls == [(daily, (january.bar_end,))]
+    assert tuple(session.scalars(select(MarketPartition))) == ()
+
+
+def test_contract_warmup_explicit_weekly_groups_cross_month_daily_companions(
+    session, tmp_path
+) -> None:
+    listed = date(2025, 3, 31)
+    through = date(2025, 4, 4)
+    _add_contract(
+        session,
+        symbol="pf",
+        contract="PF2611",
+        listed_date=listed,
+        expired_date=date(2025, 5, 1),
+    )
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    weekly = DatasetKey("contract", "pf", "PF2611", "1w")
+    daily_ends = tuple(
+        datetime.combine(day, time(7), tzinfo=UTC)
+        for day in (
+            date(2025, 3, 31),
+            date(2025, 4, 1),
+            date(2025, 4, 2),
+            date(2025, 4, 3),
+            date(2025, 4, 4),
+        )
+    )
+    coverage = FakeCoverage(
+        {daily.as_tuple(): daily_ends, weekly.as_tuple(): (daily_ends[-1],)}
+    )
+    coverage.latest_day = through
+    provider = _ChangingSnapshotProvider(daily, weekly)
+    manager = _manager(session, tmp_path, coverage, provider)
+    plan = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", through, frequency="1w"
+        )
+    ).plan
+
+    result = manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", through, plan.plan_sha256, True, "1w"
+        )
+    )
+
+    assert result.status == "passed"
+    assert result.applied == result.provider_requests == 3
+    assert provider.batch_calls == [(daily, daily, weekly)]
+    stored_daily = (
+        *manager.store.read_month(daily, 2025, 3),
+        *manager.store.read_month(daily, 2025, 4),
+    )
+    stored_weekly = manager.store.read_month(weekly, 2025, 4)
+    assert tuple(bar.trading_day for bar in stored_daily) == tuple(
+        item.date() for item in daily_ends
+    )
+    assert {bar.volume for bar in stored_daily} == {Decimal("1")}
+    assert stored_weekly[0].volume == Decimal("5")
+    assert manager.contract_warmup(
+        historical.ContractWarmupRequest(
+            "pf", "PF2611", through, frequency="1w"
+        )
+    ).plan.target_windows == ()
+
+
+def test_contract_warmup_empty_plan_hash_isolated_by_every_scope(
+    session, tmp_path
 ) -> None:
     manager, coverage, _provider = _single_day_contract_warmup_manager(session, tmp_path)
     coverage.ends = {}
 
-    all_frequencies = manager.contract_warmup(
-        historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2))
-    )
-    scoped = manager.contract_warmup(
-        historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2), frequency=frequency)
-    )
+    plans = {
+        frequency: manager.contract_warmup(
+            historical.ContractWarmupRequest(
+                "pf", "PF2611", date(2025, 1, 2), frequency=frequency
+            )
+        ).plan
+        for frequency in (None, "1d", "1w", "15m", "60m")
+    }
 
-    assert all_frequencies.plan.target_windows == scoped.plan.target_windows == ()
-    assert all_frequencies.plan.plan_sha256 != scoped.plan.plan_sha256
+    assert all(plan.target_windows == () for plan in plans.values())
+    assert len({plan.plan_sha256 for plan in plans.values()}) == len(plans)
 
 
-@pytest.mark.parametrize("frequency", ("1m", "5m", "30m", "1d", "1w", "invalid"))
+@pytest.mark.parametrize("frequency", ("1m", "5m", "30m", "invalid"))
 def test_contract_warmup_rejects_unsupported_frequency_scope_before_planning(
     session, tmp_path, frequency
 ) -> None:
@@ -1580,7 +1744,17 @@ def _hourly_contract_warmup_manager(session, tmp_path):
     return _manager(session, tmp_path, coverage, provider), minute, hour, bars, provider
 
 
-@pytest.mark.parametrize("approved,requested", ((None, "60m"), ("15m", "60m"), ("60m", None), ("60m", "15m")))
+@pytest.mark.parametrize(
+    ("approved", "requested"),
+    (
+        (None, "1d"),
+        ("1d", "1w"),
+        ("1w", "15m"),
+        ("15m", "60m"),
+        ("60m", None),
+        ("60m", "1d"),
+    ),
+)
 @pytest.mark.parametrize("empty", (False, True))
 def test_contract_warmup_rejects_cross_scope_hash_before_side_effects(
     session, tmp_path, approved, requested, empty
