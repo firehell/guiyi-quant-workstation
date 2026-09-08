@@ -273,3 +273,9 @@ release、Runtime ready、formal rank1 reconciliation 或生产验证。
 
 active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
 `data/universe/retired_products.txt`，与 active 互斥。
+
+## 批量 Session 读取的可信边界
+
+读取成本优化只改变 SQL 批次，不改变行情事实：Calendar 完整性、精确 provider/active Session、
+合约生命周期、夜盘前一交易日、重叠校验与完整预期端点必须保留。批量读取的 Session 事实仅在
+请求内使用；缓存命中不能跳过 Catalog、物理分区和输入依赖验证，也不能裁剪同合约 warm-up。

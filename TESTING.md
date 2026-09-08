@@ -24,6 +24,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   services/quant-api/tests/newow/test_product_service.py \
   services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/newow/test_historical_snapshot.py \
   services/quant-api/tests/newow/test_product_source_facts.py \
   services/quant-api/tests/newow/test_product_snapshot_cache.py \
   services/quant-api/tests/newow/test_product_resource_gate.py \
@@ -32,6 +33,27 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/newow/test_product_readonly_compatibility.py \
   services/quant-api/tests/newow/test_market_newow_api.py
 ```
+
+照妖镜专用绘图规则与生命周期定向验证（确定性显示输入，不代表真实行情或当前在线牛哇）：
+
+```bash
+pnpm -C apps/quant-web exec node --test \
+  tests/newowZhaoyaoMirrorPrimitive.test.ts tests/NewowProductChartStage.test.ts
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
+  e2e/newow-chart-panes.spec.mjs e2e/newow-product.spec.mjs
+```
+
+批量 Session 读取保留端点与交易日关联、缺失失败及查询数量有界：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py
+```
+
+真实性能验收须另行使用隔离开发 API 和显式只读数据连接，对相同固定历史快照采集至少五组新进程结果缓存未命中/同进程命中请求；记录 DB 数、读取/计算/序列化、字节与浏览器点击到绘制完成时间，声明未清除 OS/磁盘缓存，并比较完整稳定业务字段。不得借验收下载数据、修改 Canonical、清理系统缓存或切换现役服务。
 
 隔离 fake MDS 的 P4 后端冷/热/长前缀复测入口（不代表浏览器或真实工作站验收）：
 

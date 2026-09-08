@@ -27,6 +27,8 @@
 - 五窗口页面比较器保持独立页面身份；其同 Bar Close、样本末理论平仓或参数排名不能写入三策略 ReferenceTrade、主动作或正式图表参数。照妖镜保持 `repainting=true / formal_signal_eligible=false`，只供回看，不进入交易、收益或历史当时可知事实。
 - 证据状态与策略结果分离为 `ACTIVE_CODE_VERIFIED / RESEARCH_EVIDENCE_ONLY / EVIDENCE_REQUIRED / OUT_OF_SCOPE`。缺精确证据的功能 fail-closed；现有 D1 兼容入口、其他已验证能力和 HTDY/SuBing/Free 不因此改写。
 
+Newow 提供显式历史快照入口：当前数据缺失时可主动选择已验证完整的历史主图与照妖镜，持续显示截止时间并可返回当前；其他面板独立报告证据或数据不足。历史快照不代表当日输入恢复。
+
 ## 指标
 
 - EMA、MACD、ATR 与 Range Detector 是通用指标，不拥有策略、下单或 Alert 语义。

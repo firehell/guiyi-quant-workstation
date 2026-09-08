@@ -63,6 +63,7 @@ flowchart LR
 - `MarketDataService` 是唯一 Historical Bar reader；`actual_dominant` 只通过 `MainContractMap rank=1` 解析，identity、coverage 或物理可读性异常 fail-closed。
 - Web 只消费 typed Market/Alert API，不计算策略、建仓或清仓。
 - Newow P1–P5 active 代码路径在图中以实线表示：`MarketDataService` 后的 completed `1w/1d/60m` reader 取得物理 owner 区段和同合约 warm-up，typed adapter 输出主状态、`BUILD/CLEAR` Action 与 `quantity_effect=none` Hint，sectioned product service 负责统计截止、来源事实、snapshot/cursor 验证、有限进程内复用和有界重型执行，`GET /api/v1/market/newow/strategy-detail` 只做 typed 序列化；Newow Web 逐 section 消费并显示九组合、参考历史、解释与独立比较器。这些代码事实不等于 develop 已集成、Release、Runtime、OOS、P6 或真实工作站验收。
+- Newow 的只读历史快照解析沿用同一 reader 与 MarketDataService：只有用户显式请求才检查最近完成交易日的有限候选，验证主图/照妖镜输入后返回截止时间；Web 全部面板随该截止时间切换，当前日期缺数不触发自动历史回退。
 - `ReferenceTradeProjector` 是无网络、无 DB、无 Redis 的纯 Decimal 投影，只按同策略、周期、物理合约、区段及版本精确配对主动作。它输出 OPEN/CLOSED/ROLLOVER_INTERRUPTED、明确统计窗口和乐观摘要，不创建或代表 Position、Order、Account、Execution、Fill、AlertEvent、PnL 或 Ledger。
 - Newow 解释层显式携带各输入周期 `bar_end`、请求 `as_of`、规则身份和证据状态；解释与 Hint 不得反向改变主动作。照妖镜重绘图层、五窗口页面比较器及其样本末理论平仓与 ReferenceTrade authority 隔离。
 - `/market/chart?view=newow` 以单一 Newow 控制器消费趋势、震荡、主升浪 × `1w/1d/60m`；请求切换使用 generation/Abort 隔离，资源按 section 独立呈现，兼容事实不足时显式降级。既有 `view=trend` 与 `GET /api/v1/market/newow/trend-detail` 保持固定 `actual_dominant + 1d` 兼容语义，并经同一趋势公式路径提供结果，不保留第二套算法。HTDY、SuBing 与 Free 的读取和 Marker authority 不变。
