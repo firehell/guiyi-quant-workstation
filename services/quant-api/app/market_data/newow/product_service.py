@@ -798,14 +798,11 @@ class NewowProductService:
             if has_more and selected
             else None
         )
-        selected_ids = {frame.bar.bar.bar_end for frame in selected}
         visible = StrategyReplay(
             identity,
             selected,
-            tuple(
-                action for action in replay.actions if action.bar_end in selected_ids
-            ),
-            tuple(hint for hint in replay.hints if hint.bar_end in selected_ids),
+            tuple(action for frame in selected for action in frame.actions),
+            tuple(hint for frame in selected for hint in frame.hints),
             replay.diagnostics,
         )
         status = (

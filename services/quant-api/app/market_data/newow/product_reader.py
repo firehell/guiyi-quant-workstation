@@ -39,6 +39,7 @@ from .product_query import NewowProductQuery, ProductReadWindow
 
 _PAGE_SIZE = 2000
 _MICROSECOND = timedelta(microseconds=1)
+_HISTORICAL_CANDIDATE_BATCH = timedelta(days=59)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _CANONICAL_SOURCE = "market_data_service:canonical_v2"
 _OWNER_SOURCE = "main_contract_map:rank1:calendar_session_v1"
@@ -181,6 +182,72 @@ class NewowProductReader:
         self._now = now or (lambda: datetime.now(UTC))
         self._cancelled = cancelled
 
+    def historical_snapshot_candidates(
+        self,
+        product: str,
+        *,
+        as_of: datetime,
+        limit: int = 20,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> tuple[tuple[date, datetime], ...]:
+        """Return newest completed authoritative day cutoffs for explicit recovery."""
+        cutoff = utc_timestamp(as_of)
+        if (
+            product not in self._active_products
+            or type(limit) is not int
+            or not 1 <= limit <= 20
+        ):
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        if cutoff > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+
+        def check() -> None:
+            self._check_cancelled()
+            if cancelled is not None and cancelled():
+                raise NewowProductReadCancelled("NEWOW_READ_CANCELLED")
+
+        check()
+        product_start = self._coverage.product_start(product)
+        batch_end = cutoff.astimezone(_SHANGHAI).date()
+        candidates: list[tuple[date, datetime]] = []
+        while batch_end >= product_start and len(candidates) < limit:
+            check()
+            batch_start = max(product_start, batch_end - _HISTORICAL_CANDIDATE_BATCH)
+            batch_as_of = min(
+                cutoff,
+                datetime.combine(batch_end + timedelta(days=1), time.min, _SHANGHAI),
+            )
+            batch = self._market_data.completed_trading_days(
+                symbol=product,
+                start=datetime.combine(batch_start, time.min, _SHANGHAI),
+                as_of=batch_as_of,
+                latest=batch_end,
+            )
+            if (
+                any(current <= previous for previous, current in zip(batch, batch[1:]))
+                or any(not batch_start <= day <= batch_end for day in batch)
+            ):
+                raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
+            for day in reversed(batch):
+                check()
+                session_cutoff = utc_timestamp(
+                    max(
+                        window.end
+                        for window in self._market_data.session_windows(
+                            symbol=product, trading_day=day
+                        )
+                    )
+                    + _MICROSECOND
+                )
+                if session_cutoff <= cutoff:
+                    candidates.append((day, session_cutoff))
+                    if len(candidates) == limit:
+                        break
+            if batch_start == product_start:
+                break
+            batch_end = batch_start - timedelta(days=1)
+        return tuple(candidates)
+
     def resolve_performance_window(
         self,
         product: str,
@@ -206,9 +273,7 @@ class NewowProductReader:
         start = datetime.combine(
             min(since, cutoff.astimezone(_SHANGHAI).date()), time.min, _SHANGHAI
         )
-        requested_end = datetime.combine(
-            requested_through, time.max, _SHANGHAI
-        )
+        requested_end = datetime.combine(requested_through, time.max, _SHANGHAI)
         days = self._market_data.trading_days_overlapping_window(
             symbol=product, start=start, end=max(cutoff + _MICROSECOND, requested_end)
         )

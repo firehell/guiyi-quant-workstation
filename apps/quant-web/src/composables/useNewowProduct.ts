@@ -1,6 +1,6 @@
 import { computed, readonly, shallowRef, watch, type Ref, type ShallowRef } from 'vue'
 
-import { getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
+import { getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
 import type { MarketDetailIdentity } from '../types/marketDetail.ts'
 import {
   NEWOW_PRODUCT_FREQUENCIES,
@@ -8,6 +8,7 @@ import {
 } from '../types/newowProduct.ts'
 import type {
   NewowAuxiliaryComponent,
+  NewowHistoricalSnapshot,
   NewowChartValue,
   NewowProductIdentity,
   NewowProductRequest,
@@ -29,6 +30,7 @@ export interface UseNewowProductOptions {
   readonly identity: Readonly<Ref<MarketDetailIdentity | null>>
   readonly fetchSection?: FetchSection
   readonly now?: () => Date
+  readonly fetchHistoricalSnapshot?: (identity: NewowProductIdentity, signal: AbortSignal) => Promise<NewowHistoricalSnapshot>
 }
 
 interface SectionResource {
@@ -56,6 +58,10 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const now = options.now ?? (() => new Date())
   const currentIdentity = shallowRef<NewowProductIdentity | null>(null)
   const asOf = shallowRef<string | null>(null)
+  const historicalSnapshot = shallowRef<NewowHistoricalSnapshot | null>(null)
+  const historicalError = shallowRef<string | null>(null)
+  const historicalLoading = shallowRef(false)
+  let resolverController: AbortController | null = null
   const resources = Object.fromEntries(
     (['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const)
       .map((section) => [section, createResource()]),
@@ -83,9 +89,54 @@ export function useNewowProduct(options: UseNewowProductOptions) {
 
   function replaceIdentity(): void {
     generation += 1
+    resolverController?.abort()
+    resolverController = null
+    historicalLoading.value = false
     abortAll()
     resetAll()
+    historicalSnapshot.value = null
+    historicalError.value = null
     currentIdentity.value = validatedIdentity(options.identity.value)
+    asOf.value = currentIdentity.value === null ? null : validNow(now())
+    if (!disposed && currentIdentity.value !== null) void loadChart()
+  }
+
+  async function switchToHistorical(): Promise<void> {
+    if (disposed || currentIdentity.value === null) return
+    resolverController?.abort()
+    const controller = new AbortController()
+    resolverController = controller
+    const requestedIdentity = currentIdentity.value
+    const resolverGeneration = generation
+    historicalLoading.value = true
+    historicalError.value = null
+    try {
+      const fetchHistorical = options.fetchHistoricalSnapshot ?? ((identity, signal) => getNewowHistoricalSnapshot(identity, { signal }))
+      const resolved = await fetchHistorical(requestedIdentity, controller.signal)
+      if (disposed || controller.signal.aborted || resolverController !== controller || generation !== resolverGeneration || currentIdentity.value !== requestedIdentity) return
+      generation += 1
+      abortAll()
+      resetAll()
+      historicalSnapshot.value = resolved
+      // Preserve the server's exact microsecond cutoff; Date.toISOString() truncates it.
+      asOf.value = resolved.as_of
+      await loadChart()
+    } catch (error) {
+      if (!controller.signal.aborted && resolverController === controller && generation === resolverGeneration) historicalError.value = error instanceof NewowProductRequestError ? error.code : 'NEWOW_API_UNAVAILABLE'
+    } finally {
+      if (resolverController === controller) { resolverController = null; historicalLoading.value = false }
+    }
+  }
+
+  function returnToCurrent(): void {
+    resolverController?.abort()
+    resolverController = null
+    generation += 1
+    abortAll()
+    resetAll()
+    historicalSnapshot.value = null
+    historicalError.value = null
+    historicalLoading.value = false
     asOf.value = currentIdentity.value === null ? null : validNow(now())
     if (!disposed && currentIdentity.value !== null) void loadChart()
   }
@@ -438,6 +489,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     if (disposed) return
     disposed = true
     generation += 1
+    resolverController?.abort()
+    resolverController = null
     abortAll()
     stopWatch()
     resetAll()
@@ -464,9 +517,12 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     explanationChartCompatible: readonly(explanationChartCompatible),
     identity: readonly(currentIdentity),
     asOf: readonly(asOf),
+    historicalSnapshot: readonly(historicalSnapshot),
+    historicalError: readonly(historicalError),
+    historicalLoading: readonly(historicalLoading),
     sections: resources,
     referenceChartCompatible: readonly(referenceChartCompatible),
-    loadChart, loadNextChartPage, loadAuxiliary, loadReference, loadNextReferencePage, loadExplanation, loadComparator, dispose,
+    loadChart, loadNextChartPage, loadAuxiliary, loadReference, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, dispose,
   }
 
   function abortAll(): void { for (const controller of controllers.values()) controller.abort(); controllers.clear(); inFlightSnapshotTokens.clear() }

@@ -7,6 +7,17 @@ export {
 export type NewowProductStrategy = NewowStrategy
 export type NewowProductFrequency = NewowFrequency
 
+export interface NewowHistoricalSnapshot {
+  readonly schema_version: 'newow_historical_snapshot_v1'
+  readonly product: string
+  readonly strategy: NewowProductStrategy
+  readonly frequency: NewowProductFrequency
+  readonly series_kind: 'actual_dominant'
+  readonly trading_day: string
+  readonly as_of: string
+  readonly validated_sections: readonly ['chart', 'zhaoyao_mirror']
+}
+
 export const NEWOW_PRODUCT_SECTIONS = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const
 export type NewowProductSection = (typeof NEWOW_PRODUCT_SECTIONS)[number]
 export type NewowAuxiliaryComponent = 'macd' | 'main_force_control' | 'up_down_energy' | 'zhaoyao_mirror' | 'cup_handle'

@@ -133,6 +133,37 @@ def test_chart_does_not_call_reference_or_auxiliary(monkeypatch, product_cases):
     assert reader.loads[-1].performance_since == reader.loads[-1].since
 
 
+def test_chart_projection_does_not_mix_same_timestamp_events_across_physical_segments(product_cases):
+    case = product_cases.primitive_input("trend", "1d")
+    second = tuple(
+        replace(
+            item,
+            bar=replace(
+                item.bar,
+                physical_contract="RB2705",
+                segment_id="rb:RB2705:segment-2",
+                source_identity=f"segment-2:{item.bar.source_identity}",
+            ),
+        )
+        for item in case.bars
+    )
+    bars = (*case.bars, *second)
+    reader = _Reader(bars, bars[-1].bar.bar_end, bars[-1].bar.bar_end)
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: bars[-1].bar.bar_end,
+    )
+
+    result = service.query(
+        ProductServiceQuery("rb", "trend", "1d", as_of=bars[-1].bar.bar_end, chart_limit=10)
+    )
+
+    assert result.chart.value is not None
+    assert {frame.bar.bar.segment_id for frame in result.chart.value.replay.frames} == {"rb:RB2705:segment-2"}
+    assert {action.segment_id for action in result.chart.value.replay.actions} <= {"rb:RB2705:segment-2"}
+    assert {hint.segment_id for hint in result.chart.value.replay.hints} <= {"rb:RB2705:segment-2"}
+
+
 def test_identical_service_misses_share_reader_and_calculation(product_cases):
     service, reader, _build, clear = _service(product_cases)
     original = reader.load

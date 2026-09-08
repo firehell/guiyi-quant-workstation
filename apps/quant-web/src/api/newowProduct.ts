@@ -1,4 +1,5 @@
 import type {
+  NewowHistoricalSnapshot,
   NewowProductRequest,
   NewowProductSectionResponse,
 } from '../types/newowProduct.ts'
@@ -27,6 +28,43 @@ export class NewowProductRequestError extends Error {
     this.code = code
     this.classification = classification
   }
+}
+
+export async function getNewowHistoricalSnapshot(
+  identity: NewowProductRequest['identity'],
+  options: NewowProductRequestOptions = {},
+): Promise<NewowHistoricalSnapshot> {
+  const transport = options.request ?? defaultRequest
+  let payload: unknown
+  try {
+    payload = await transport('/market/newow/historical-snapshot', {
+      params: { product: identity.product, strategy: identity.strategy, frequency: identity.frequency },
+      signal: options.signal,
+    })
+  } catch (error) {
+    if (error instanceof NewowProductRequestError) throw error
+    throw classifyTransportError(error)
+  }
+  if (!isHistoricalSnapshot(payload, identity)) throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
+  return payload
+}
+
+function isHistoricalSnapshot(value: unknown, identity: NewowProductRequest['identity']): value is NewowHistoricalSnapshot {
+  return isRecord(value) && value.schema_version === 'newow_historical_snapshot_v1'
+    && value.product === identity.product && value.strategy === identity.strategy
+    && value.frequency === identity.frequency && value.series_kind === 'actual_dominant'
+    && typeof value.trading_day === 'string' && validCalendarDate(value.trading_day)
+    && typeof value.as_of === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value.as_of) && Number.isFinite(Date.parse(value.as_of))
+    && Array.isArray(value.validated_sections) && value.validated_sections.length === 2
+    && value.validated_sections[0] === 'chart' && value.validated_sections[1] === 'zhaoyao_mirror'
+}
+
+function validCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (match === null) return false
+  const year = Number(match[1]); const month = Number(match[2]); const day = Number(match[3])
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day
 }
 
 interface ProductRequestConfig {

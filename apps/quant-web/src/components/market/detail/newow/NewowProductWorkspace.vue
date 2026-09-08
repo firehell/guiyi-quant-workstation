@@ -6,12 +6,13 @@ import type { NewowAuxiliaryComponent, NewowResourceLifecycle, NewowProductSecti
 import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
 import { projectNewowDetail, newowDisplayLabel, shortNewowTime, referencePercentDisplay } from '@/utils/newowDetailPresentation'
 import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, newowChartSnapshotKey } from './newowProductChartPrimitives'
+import { formatChartTimeInShanghai } from '@/utils/barTime'
 import NewowProductChartStage from './NewowProductChartStage.vue'
 import NewowExplanationPanel from './NewowExplanationPanel.vue'
 import NewowReferencePanel from './NewowReferencePanel.vue'
 import NewowDetailDialog from './NewowDetailDialog.vue'
 const props = defineProps<{ identity: MarketDetailIdentity }>()
-const emit = defineEmits<{ 'focus-resolved': [barEnd: string] }>()
+const emit = defineEmits<{ 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null] }>()
 const identity = computed(() => props.identity)
 const identityKey = computed(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency].join(':'))
 const loader = useNewowProduct({ identity })
@@ -73,6 +74,7 @@ const summary = computed(() => projectNewowDetail(chartResponse.value, loader.se
   referenceResponse.value, loader.sections.reference.state.value, loader.referenceChartCompatible.value))
 const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '60m', currentAuxiliaryLifecycle.value))
 const auxiliaryOptions = [{ id: 'macd', label: 'MACD' }, { id: 'zhaoyao_mirror', label: '照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }] as const
+const historicalAsOfLabel = computed(() => loader.historicalSnapshot.value ? formatChartTimeInShanghai(loader.historicalSnapshot.value.as_of) : '')
 const dialogTitle = computed(() => ({ explanation: '策略解释', action: '历史主动作事实', hint: '历史过程提示', indicator: '指标解读', comparator: '页面比较说明', cup_handle: '杯柄说明' }[dialogKind.value ?? 'explanation']))
 async function loadExplanation() { if (loader.sections.explanation.state.value === 'not_requested') await loader.loadExplanation() }
 async function toggleDetails() { detailsOpen.value = !detailsOpen.value; if (detailsOpen.value) await loadExplanation() }
@@ -139,6 +141,12 @@ watch(identityKey, async () => {
   selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null; selectedAuxiliary.value = 'macd'; detailsOpen.value = false; dialogKind.value = null; locateMessage.value = null
   await nextTick(); observeReference()
 }, { flush: 'sync' })
+watch(loader.historicalSnapshot, async () => {
+  emit('snapshot-mode', loader.historicalSnapshot.value?.as_of ?? null)
+  selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
+  detailsOpen.value = false; dialogKind.value = null; locateMessage.value = null
+  await nextTick(); observeReference()
+}, { flush: 'sync' })
 // The single loader's invalidation also revokes display retention, even when the chart proof is unchanged.
 watch(loader.sections.auxiliary.state, state => {
   if (state === 'input_conflict' || state === 'not_requested') retainedPane.value = null
@@ -163,6 +171,16 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
 <template>
   <section class="newow-product-workspace" data-detail-workspace="newow" :data-strategy="identity.strategy" :data-frequency="identity.frequency" :data-chart-state="loader.sections.chart.state.value" :data-auxiliary-state="loader.sections.auxiliary.state.value">
     <section class="newow-summary" aria-label="策略概览">
+      <div class="newow-product-workspace__snapshot-controls" :data-as-of="loader.historicalSnapshot.value?.as_of">
+        <template v-if="loader.historicalSnapshot.value">
+          <span :title="loader.historicalSnapshot.value.as_of">历史快照截至 {{ historicalAsOfLabel }}（交易日 {{ loader.historicalSnapshot.value.trading_day }}）</span>
+          <button @click="loader.returnToCurrent">返回当前</button>
+        </template>
+        <template v-else>
+          <button :disabled="loader.historicalLoading.value" @click="loader.switchToHistorical">查看最近可用历史快照</button>
+          <span v-if="loader.historicalError.value" role="status">{{ loader.historicalError.value }}</span>
+        </template>
+      </div>
       <div class="newow-summary__main">
         <strong>策略概览</strong>
         <button class="newow-status" :data-state="summary.status.state" @click="openDialog('explanation')"><span>{{ ({ BUILD: '▲', HOLD: '✓', CLEAR: '▼', FLAT: '×', UNAVAILABLE: '?' })[summary.status.state] }}</span>{{ summary.status.label }}</button>
@@ -223,6 +241,7 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
 <style scoped>
 .newow-product-workspace { display:grid; min-width:0; gap:12px; }
 .newow-summary { padding:16px 0; border-bottom:1px solid #ebedf0; }
+.newow-product-workspace__snapshot-controls { display:flex; align-items:center; gap:12px; padding-bottom:10px; color:#667085; font-size:12px; }
 .newow-summary__main,.newow-summary__facts { display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px; }
 .newow-summary__facts { font-size:12px; color:#667085; }
 .newow-summary button,.newow-product-workspace__auxiliary-controls button,.newow-product-workspace__research > button { border:0; background:#fff; color:inherit; padding:4px 12px; }
