@@ -76,7 +76,7 @@ def test_readiness_has_one_readonly_transaction_and_always_rolls_back(fails):
     )
     assert code == (1 if fails else 0)
     assert len(rolled_back) == 1
-    assert statements[0] == "PRAGMA query_only = ON"
+    assert statements[:2] == ["PRAGMA query_only", "PRAGMA query_only = ON"]
     assert "private backend detail" not in output.getvalue()
 
 
@@ -139,3 +139,49 @@ def test_shared_readonly_transaction_rejects_writes_and_rolls_back():
             )
             == 0
         )
+
+
+@pytest.mark.parametrize("original", [0, 1])
+@pytest.mark.parametrize("fails", [False, True])
+def test_sqlite_guard_restores_original_connection_state_before_reuse(original, fails):
+    from app.db.readonly import readonly_transaction
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.connect() as connection:
+        connection.exec_driver_sql(f"PRAGMA query_only = {original}")
+    with Session(engine) as session:
+        try:
+            with readonly_transaction(session):
+                assert session.scalar(text("PRAGMA query_only")) == 1
+                if fails:
+                    raise RuntimeError("fixture stop")
+        except RuntimeError:
+            assert fails
+    with Session(engine) as next_session:
+        assert next_session.scalar(text("PRAGMA query_only")) == original
+        if original == 0:
+            next_session.execute(text("CREATE TABLE ordinary (id integer)"))
+            assert next_session.scalar(text("SELECT count(*) FROM ordinary")) == 0
+
+
+def test_sqlite_restore_failure_discards_connection_instead_of_leaking_state():
+    from app.db.readonly import readonly_transaction, ReadOnlyTransactionError
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    invalidations = []
+    event.listen(engine.pool, "invalidate", lambda *_args: invalidations.append(True))
+
+    def fail_restore(_conn, _cursor, statement, *_rest):
+        if statement == "PRAGMA query_only = OFF":
+            raise RuntimeError("fixture restoration error")
+
+    event.listen(engine, "before_cursor_execute", fail_restore)
+    with Session(engine) as session:
+        with pytest.raises(ReadOnlyTransactionError):
+            with readonly_transaction(session):
+                assert session.scalar(text("PRAGMA query_only")) == 1
+    assert invalidations == [True]
+    event.remove(engine, "before_cursor_execute", fail_restore)
+    with Session(engine) as other:
+        assert other.scalar(text("PRAGMA query_only")) == 0
+        other.execute(text("CREATE TABLE usable (id integer)"))

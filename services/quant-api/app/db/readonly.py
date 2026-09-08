@@ -25,6 +25,7 @@ def readonly_transaction(
         or session.deleted
     ):
         raise ReadOnlyTransactionError
+    sqlite_state: int | None = None
     try:
         dialect = session.get_bind().dialect.name
         if dialect == "postgresql":
@@ -38,6 +39,9 @@ def readonly_transaction(
             if session.scalar(text("SHOW transaction_read_only")) != "on":
                 raise ReadOnlyTransactionError
         elif dialect == "sqlite":
+            sqlite_state = session.scalar(text("PRAGMA query_only"))
+            if sqlite_state not in (0, 1):
+                raise ReadOnlyTransactionError
             session.execute(text("PRAGMA query_only = ON"))
             if session.scalar(text("PRAGMA query_only")) != 1:
                 raise ReadOnlyTransactionError
@@ -48,4 +52,21 @@ def readonly_transaction(
             if session.new or session.dirty or session.deleted:
                 raise ReadOnlyTransactionError
     finally:
-        session.rollback()
+        try:
+            if sqlite_state is not None:
+                # Restore while the Session still owns this connection, before
+                # rollback can return it to the pool for an unrelated consumer.
+                session.execute(
+                    text(
+                        "PRAGMA query_only = ON"
+                        if sqlite_state
+                        else "PRAGMA query_only = OFF"
+                    )
+                )
+                if session.scalar(text("PRAGMA query_only")) != sqlite_state:
+                    raise ReadOnlyTransactionError
+        except Exception as exc:
+            session.invalidate()
+            raise ReadOnlyTransactionError from exc
+        finally:
+            session.rollback()

@@ -300,6 +300,7 @@ def test_contract_warmup_dry_run_builds_active_request_and_fixed_public_payload(
         "expected_bar_count": 7,
         "provider_request_count": 1,
         "plan_sha256": "a" * 64,
+        "scope_diagnostics": [],
         "applied": 0,
         "blocked": 0,
         "failed": 0,

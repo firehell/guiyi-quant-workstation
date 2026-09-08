@@ -117,6 +117,9 @@ MainContractMap、Redis Live、Rule、Scope、Event 或 notification。任一显
 必须立刻停止该 contract 的后续 target。仅当同族同月存在待补 `1m` 目标时，才在开始派生前推迟到源发布后；
 已经开始的派生/发布失败不得按缺源错误码推迟重试。额度耗尽返回 `partial`，不得报告 `passed`。分区失败可明确部分成功，不能自动重试。
 
+warm-up 只读结果的 `scope_diagnostics` 保留整个 frequency scope 的逐分区有界原因及是否为计划目标，
+包括不缺 endpoint 但含原始非正价格的 source companion。该诊断不改变维护目标、apply 规则或既有 plan hash。
+
 ### 当日 Live 缺口恢复
 
 `GUIYI_LIVE_RECOVERY_ENABLED` 默认关闭，只有精确值 `1` 才组合恢复 worker。启用必须单独确认同一
@@ -259,6 +262,9 @@ deadline 均有界。metadata 不足时返回 `UNKNOWN` 与 bounded metadata rep
 `MetadataSynchronizer` 来补 Calendar。审计只组合 MDS/Catalog/Canonical reader/coverage/planner，
 不构造 provider、Redis、metadata writer 或维护 apply pipeline；DB 使用 fresh read-only transaction、
 no-autoflush、statement timeout 和 finally rollback。
+审计必须检查整个 planner scope（含 W1 的 D1、60m 的 1m），任一 source/integrity finding 都使候选成为
+`REVIEW_REQUIRED`，不提供 plan hash 或总下载请求数；不能借缺 W1/60m 重新纳入已排除的损坏/非正源输入。
+SQLite 的 connection-level `query_only` 必须在 rollback 归还连接池前恢复原值；恢复或回读失败即丢弃该连接。
 
 matrix 模式保留 active 60 × 三策略 × 三周期的 540 main cases，同时独立运行实际 section service，
 保留 `EVIDENCE_REQUIRED`、`NOT_APPLICABLE`、`WARMING` 等业务状态。`complete=true/status=audited`

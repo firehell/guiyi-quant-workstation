@@ -67,6 +67,7 @@ def test_collects_all_contract_frequency_failures_and_deduplicates_provenance():
             "expected_bar_count": 3,
             "provider_request_count": 1,
             "targets": [],
+            "scope_diagnostics": (),
         }
 
     audit = module.NewowReadinessAudit(reader=AuditReader(), plan=plan)
@@ -388,3 +389,68 @@ def test_short_owner_without_completed_weekly_bar_is_not_a_download_gap(product_
         "reason": "OWNER_HAS_NO_COMPLETED_BAR",
     }
     assert source.physical_page_requests == []
+
+
+@pytest.mark.parametrize("frequency,companion", [("1w", "1d"), ("60m", "1m")])
+@pytest.mark.parametrize(
+    "reason", ["DATA_INTEGRITY_INVALID", "SOURCE_NONPOSITIVE_PRICE"]
+)
+def test_entire_planner_scope_cannot_reintroduce_excluded_companion(
+    frequency, companion, reason
+):
+    module = _audit_module()
+
+    def plan(request):
+        return {
+            "plan_sha256": "a" * 64,
+            "expected_bar_count": 4,
+            "provider_request_count": 2,
+            "frequencies": (companion, frequency),
+            "scope_diagnostics": (
+                {
+                    "dataset": ("contract", "rb", request.contract, companion),
+                    "year": 2026,
+                    "month": 9,
+                    "reason_codes": (reason,),
+                },
+            ),
+        }
+
+    report = module.NewowReadinessAudit(reader=AuditReader(), plan=plan).run(
+        module.ReadinessRequest(("rb",), datetime(2026, 9, 4, 8, tzinfo=UTC))
+    )
+    target = next(
+        row for row in report["repair_targets"] if row["frequency"] == frequency
+    )
+    assert target["status"] == "REVIEW_REQUIRED"
+    assert target["plan_sha256"] is None
+    assert target["provider_request_count"] is None
+    assert target["scope_diagnostics"][0]["reason_codes"] == (reason,)
+
+
+def test_known_daily_integrity_cannot_be_hidden_by_weekly_missing_candidate():
+    module = _audit_module()
+
+    class Reader(AuditReader):
+        def check_dependency(self, product, frequency, owner, as_of):
+            if frequency == "1d":
+                raise MarketDataError(
+                    "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                    reason="REPLAY_ENDPOINTS_EXTRA",
+                )
+            return super().check_dependency(product, frequency, owner, as_of)
+
+    def plan(request):
+        return {
+            "plan_sha256": "a" * 64,
+            "provider_request_count": 2,
+            "scope_diagnostics": (),
+            "frequencies": ("1d", "1w"),
+        }
+
+    report = module.NewowReadinessAudit(reader=Reader(), plan=plan).run(
+        module.ReadinessRequest(("rb",), datetime(2026, 9, 4, 8, tzinfo=UTC))
+    )
+    weekly = [row for row in report["repair_targets"] if row["frequency"] == "1w"]
+    assert weekly and all(row["status"] == "REVIEW_REQUIRED" for row in weekly)
+    assert all(row["scope_conflicts"][0]["frequency"] == "1d" for row in weekly)

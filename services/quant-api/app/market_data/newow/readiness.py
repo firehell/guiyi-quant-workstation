@@ -314,7 +314,7 @@ class NewowReadinessAudit:
                 if self.plan is None:
                     repair.update(status="UNKNOWN", reason="PLANNER_UNAVAILABLE")
                     continue
-                result = self.plan(
+                plan_result = self.plan(
                     ContractWarmupRequest(
                         symbol=repair_key[0],
                         contract=repair_key[1],
@@ -323,12 +323,63 @@ class NewowReadinessAudit:
                     )
                 )
                 budget.checkpoint()
-                repair.update(result)
-                repair["status"] = "PROPOSED"
+                repair.update(plan_result)
+                diagnostics = plan_result.get("scope_diagnostics")
+                if diagnostics is None:
+                    repair.update(
+                        status="UNKNOWN",
+                        reason="PLANNER_SCOPE_DIAGNOSTICS_MISSING",
+                        plan_sha256=None,
+                        expected_bar_count=None,
+                        provider_request_count=None,
+                    )
+                    continue
+                scope_conflicts = [
+                    item
+                    for item in dependencies.values()
+                    if item["symbol"] == repair_key[0]
+                    and item["contract"] == repair_key[1]
+                    and item["frequency"] in plan_result.get("frequencies", ())
+                    and item["_owner"].end_trading_day <= repair_key[3]
+                    and item["status"] in {"SOURCE_EXCEPTION", "INTEGRITY_ERROR"}
+                ]
+                if scope_conflicts or any(
+                    set(item["reason_codes"])
+                    & (INTEGRITY_REASONS | {"SOURCE_NONPOSITIVE_PRICE"})
+                    for item in diagnostics
+                ):
+                    repair.update(
+                        status="REVIEW_REQUIRED",
+                        reason="REPAIR_SCOPE_SOURCE_OR_INTEGRITY",
+                        plan_sha256=None,
+                        expected_bar_count=None,
+                        provider_request_count=None,
+                    )
+                    repair["scope_conflicts"] = [
+                        {
+                            key: row.get(key)
+                            for key in (
+                                "symbol",
+                                "contract",
+                                "frequency",
+                                "through",
+                                "status",
+                                "reason",
+                            )
+                        }
+                        for row in scope_conflicts
+                    ]
+                else:
+                    repair["status"] = "PROPOSED"
             except AuditBudgetExceeded:
                 continue
             except Exception as exc:
                 repair.update(_failure(exc))
+                repair.update(
+                    plan_sha256=None,
+                    expected_bar_count=None,
+                    provider_request_count=None,
+                )
                 if repair.get("reason") in _METADATA:
                     metadata.append(
                         {

@@ -131,6 +131,7 @@ def contract_warmup_payload(result: ContractWarmupResult) -> dict[str, object]:
         "blocked": result.blocked,
         "failed": result.failed,
         "targets": [dict(item) for item in plan.target_windows],
+        "scope_diagnostics": [dict(item) for item in plan.scope_diagnostics],
         "failures": [dict(item) for item in result.failures],
     }
 

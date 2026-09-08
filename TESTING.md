@@ -44,6 +44,7 @@ uv run --project services/quant-api guiyi data newow-readiness \
 `status=incomplete` 或异常退出 1，非法参数退出 2。退出 0 表示审计完成而非所有数据/业务 ready；
 必须读取 dependencies、repair_targets、metadata_proposals、main_ready_count 和逐 case section 状态。
 fixture 的 540-case 枚举不构成真实 540-case 验收。后续下载/生产数据写入仍需独立明确授权。
+定向测试同时覆盖完整 warm-up scope 的 source/integrity 阻断、SQLite 原只读状态恢复及恢复失败时连接丢弃。
 
 Newow P4 分区编排、typed API、统计截止、来源事实、快照/资源边界、旧 D1 兼容与只读保护：
 

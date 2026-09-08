@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 import hashlib
 import json
-from typing import Protocol
+from typing import Protocol, cast
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -205,6 +205,7 @@ class ContractWarmupPlan:
     frequency: str | None = None
     dependency_frequencies: tuple[str, ...] = ()
     frequencies: tuple[str, ...] = ()
+    scope_diagnostics: tuple[Mapping[str, object], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -433,6 +434,7 @@ class ContractWarmupPlanner:
             request.frequency
         )
         targets: list[_Target] = []
+        diagnostics: dict[tuple[DatasetKey, int, int], dict[str, object]] = {}
         for target_frequency in planned_frequencies:
             key = DatasetKey(
                 DatasetKind.CONTRACT,
@@ -456,6 +458,9 @@ class ContractWarmupPlanner:
                     continue
                 existing, physical_reason = self._existing_partition(key, year, month)
                 if physical_reason is not None:
+                    diagnostics[key, year, month] = self._scope_diagnostic(
+                        key, year, month, existing, physical_reason=physical_reason,
+                    )
                     targets.append(_Target(key, year, month, expected, expected, ()))
                     continue
                 classification = self._classify_contract_partition(
@@ -465,6 +470,9 @@ class ContractWarmupPlanner:
                     expected,
                     existing,
                     effective_through,
+                )
+                diagnostics[key, year, month] = self._scope_diagnostic(
+                    key, year, month, existing, classification=classification,
                 )
                 if classification.outside_lifecycle:
                     targets.append(
@@ -493,6 +501,7 @@ class ContractWarmupPlanner:
             targets,
             fact,
             effective_through,
+            diagnostics,
         )
         target_windows = tuple(_contract_warmup_target_payload(item) for item in targets)
         plan_identity: Mapping[str, object] = {
@@ -529,6 +538,7 @@ class ContractWarmupPlanner:
         direct_target_count = sum(
             target.key.frequency in PROVIDER_FETCH_FREQUENCIES for target in targets
         )
+        target_keys = {(target.key, target.year, target.month) for target in targets}
         self._planning_check()
         return (
             ContractWarmupPlan(
@@ -548,9 +558,34 @@ class ContractWarmupPlanner:
                 frequency=frequency,
                 dependency_frequencies=dependency_frequencies,
                 frequencies=frequencies,
+                scope_diagnostics=tuple(
+                    {**diagnostic, "planned": key in target_keys}
+                    for key, diagnostic in diagnostics.items()
+                ),
             ),
             tuple(targets),
         )
+
+    @staticmethod
+    def _scope_diagnostic(
+        key: DatasetKey, year: int, month: int, existing: tuple[CanonicalBar, ...],
+        *, physical_reason: str | None = None,
+        classification: _ContractPartitionClassification | None = None,
+    ) -> dict[str, object]:
+        """Bounded read evidence only; does not change maintenance targets or hash."""
+        reasons: list[str] = []
+        if physical_reason is not None:
+            reasons.append("DATA_INTEGRITY_INVALID")
+        if classification is not None:
+            if classification.outside_lifecycle:
+                reasons.append("REPLAY_ENDPOINTS_EXTRA")
+            if classification.missing_mapped:
+                reasons.append("REPLAY_ENDPOINTS_MISSING")
+        if any(not price.is_finite() or price <= 0 for bar in existing
+               for price in (bar.open, bar.high, bar.low, bar.close)):
+            reasons.append("SOURCE_NONPOSITIVE_PRICE")
+        return {"dataset": key.as_tuple(), "year": year, "month": month,
+                "reason_codes": tuple(reasons)}
 
     def _classify_contract_partition(
         self,
@@ -602,6 +637,7 @@ class ContractWarmupPlanner:
         targets: list[_Target],
         fact: ContractFact,
         through: date,
+        diagnostics: dict[tuple[DatasetKey, int, int], dict[str, object]],
     ) -> list[_Target]:
         """将缺失周线需要的 exact-lifecycle 日线刷新并入 warm-up 计划。"""
         refresh_by_partition: dict[
@@ -643,6 +679,14 @@ class ContractWarmupPlanner:
             target = by_partition.get((key, year, month))
             if target is None:
                 existing, physical_reason = self._existing_partition(key, year, month)
+                if (key, year, month) not in diagnostics:
+                    classification = None if physical_reason else self._classify_contract_partition(
+                        key, year, month, tuple(sorted(refresh)), existing, through,
+                    )
+                    diagnostics[key, year, month] = self._scope_diagnostic(
+                        key, year, month, existing, physical_reason=physical_reason,
+                        classification=classification,
+                    )
                 if physical_reason is not None:
                     expected = tuple(sorted(refresh))
                     target = _Target(key, year, month, expected, expected, ())
@@ -666,6 +710,8 @@ class ContractWarmupPlanner:
                     target.existing,
                 )
             by_partition[(key, year, month)] = target
+            diagnostic = diagnostics[key, year, month]
+            diagnostic["reason_codes"] = (*cast(tuple[str, ...], diagnostic["reason_codes"]), "WEEKLY_DAILY_CONTEXT")
         frequency_order = {
             frequency: index for index, frequency in enumerate(_FREQUENCY_ORDER)
         }

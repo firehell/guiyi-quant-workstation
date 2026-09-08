@@ -17,6 +17,10 @@ auxiliary, reference and three-frequency explanation inputs, preserving owner se
 Missing metadata SHALL retain UNKNOWN enumeration and null counts, with only bounded repair proposals.
 Exact repair requests SHALL be deduplicated and use the same read-only contract warm-up planner as maintenance;
 source nonpositive rows and integrity errors MUST NOT become blind download targets.
+This exclusion SHALL cover the complete planner frequency scope, including daily inputs for weekly targets
+and minute inputs for hourly targets, even if those source partitions have no missing endpoints. The shared
+planner SHALL expose bounded per-partition reasons without changing maintenance target/hash semantics.
+Any source/integrity finding in that scope SHALL yield REVIEW_REQUIRED with no ordinary candidate hash.
 
 The audit SHALL require fixed timezone-aware as_of, an active symbol or mutually exclusive active universe,
 serial work and deadline budgets. Budget interruption MUST retain UNSTARTED cases and explicit incomplete
@@ -27,6 +31,8 @@ READY result may count as main ready. Completed auditing MUST NOT imply all depe
 Composition SHALL contain only read authorities and the pure planner, never a provider, metadata writer,
 maintenance apply pipeline or Redis. A fresh read-only database transaction SHALL use no-autoflush and always
 rollback; real connections and any future repair remain separate authorized operations.
+SQLite connection-level read-only state SHALL be restored before returning the connection to its pool;
+restoration failure SHALL invalidate the connection rather than leak uncertain state to the next consumer.
 
 #### Scenario: The first physical owner lacks its prefix
 

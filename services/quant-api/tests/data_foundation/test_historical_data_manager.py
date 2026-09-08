@@ -468,6 +468,49 @@ def test_pure_warmup_planner_matches_maintenance_without_apply_capabilities(sess
     assert provider.calls == []
 
 
+@pytest.mark.parametrize("frequency,companion", [("1w", "1d"), ("60m", "1m")])
+def test_warmup_scope_diagnostics_preserve_integrity_reason_from_companion(
+    session, tmp_path, monkeypatch, frequency, companion,
+):
+    manager, _coverage, provider = _single_day_contract_warmup_manager(session, tmp_path)
+    original = manager._existing_partition
+    def read(key, year, month):
+        if key.frequency.value == companion:
+            return (), "PARTITION_CATALOG_MISMATCH"
+        return original(key, year, month)
+    monkeypatch.setattr(manager, "_existing_partition", read)
+    plan = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", date(2025, 1, 2), frequency=frequency)).plan
+    diagnostics = getattr(plan, "scope_diagnostics", ())
+    assert diagnostics
+    source = next(row for row in diagnostics if row["dataset"][3] == companion)
+    assert "DATA_INTEGRITY_INVALID" in source["reason_codes"]
+    assert provider.calls == []
+
+
+@pytest.mark.parametrize("frequency,companion", [("1w", "1d"), ("60m", "1m")])
+@pytest.mark.parametrize("issue,reason", [("extra", "REPLAY_ENDPOINTS_EXTRA"),
+                                         ("zero", "SOURCE_NONPOSITIVE_PRICE")])
+def test_scope_diagnostics_inspect_companion_rows_even_without_missing_endpoints(
+    session, tmp_path, monkeypatch, frequency, companion, issue, reason,
+):
+    manager, coverage, _provider = _single_day_contract_warmup_manager(session, tmp_path)
+    key = DatasetKey("contract", "pf", "PF2611", companion)
+    expected_end = coverage.ends[key.as_tuple()][0]
+    bar = CanonicalBar(expected_end + (timedelta(minutes=1) if issue == "extra" else timedelta()),
+                       date(2025, 1, 2), *(Decimal(0 if issue == "zero" else 1) for _ in range(4)),
+                       Decimal(0), None, None)
+    original = manager._existing_partition
+    monkeypatch.setattr(manager, "_existing_partition", lambda k, y, m:
+                        ((bar,), None) if k == key else original(k, y, m))
+    plan = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", date(2025, 1, 2), frequency=frequency)).plan
+    row = next(item for item in plan.scope_diagnostics if item["dataset"][3] == companion)
+    assert reason in row["reason_codes"]
+    if frequency == "60m" and issue == "zero":
+        assert row["planned"] is False
+
+
 def test_contract_warmup_dry_run_has_exact_month_targets_stable_hash_and_no_writes(
     session, tmp_path
 ) -> None:
@@ -1345,6 +1388,7 @@ def test_contract_warmup_contracts_expose_only_the_frozen_public_fields() -> Non
         "frequency",
         "dependency_frequencies",
         "frequencies",
+        "scope_diagnostics",
     )
     assert tuple(field.name for field in fields(historical.ContractWarmupResult)) == (
         "status",
