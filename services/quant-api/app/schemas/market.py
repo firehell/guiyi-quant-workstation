@@ -156,12 +156,24 @@ class MarketHomeOverviewResponse(BaseModel):
 
     @model_validator(mode="after")
     def validate_price_summary_partition(self) -> "MarketHomeOverviewResponse":
-        if (
-            self.summary.price_up_count
-            + self.summary.price_down_count
-            + self.summary.price_flat_count
-            + self.summary.price_unavailable_count
-            != self.participant_count
-        ):
-            raise ValueError("price summary does not partition participants")
+        expected_counts = (
+            sum(
+                item.price_change_1d is not None and item.price_change_1d > 0
+                for item in self.items
+            ),
+            sum(
+                item.price_change_1d is not None and item.price_change_1d < 0
+                for item in self.items
+            ),
+            sum(item.price_change_1d == 0 for item in self.items),
+            sum(item.price_change_1d is None for item in self.items),
+        )
+        actual_counts = (
+            self.summary.price_up_count,
+            self.summary.price_down_count,
+            self.summary.price_flat_count,
+            self.summary.price_unavailable_count,
+        )
+        if self.participant_count != len(self.items) or actual_counts != expected_counts:
+            raise ValueError("price summary does not match participants")
         return self

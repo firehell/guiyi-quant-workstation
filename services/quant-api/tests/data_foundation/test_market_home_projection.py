@@ -211,6 +211,60 @@ def test_projection_read_rejects_v1_and_falls_back_without_writing(tmp_path: Pat
     assert path.read_text(encoding="utf-8") == v1
 
 
+def test_projection_read_rejects_price_bucket_contradiction_and_falls_back(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    payload = market_home_response(_snapshot())
+    store.publish(
+        IDENTITY,
+        payload,
+        generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    contradictory = json.loads(path.read_text(encoding="utf-8"))
+    contradictory["payload"]["items"][0]["price_change_1d"] = None
+    contradictory["payload"]["summary"].update(
+        price_up_count=0,
+        price_flat_count=1,
+        price_unavailable_count=0,
+    )
+    encoded = json.dumps(contradictory)
+    path.write_text(encoded, encoding="utf-8")
+    service = _Service()
+
+    response = MarketHomeProjection(service=service, store=store).read()
+
+    assert response == payload
+    assert service.snapshot_calls == 1
+    assert path.read_text(encoding="utf-8") == encoded
+
+
+def test_projection_read_rejects_participant_item_count_contradiction(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "market-home-overview.json"
+    store = MarketHomeProjectionStore(path)
+    payload = market_home_response(_snapshot())
+    store.publish(
+        IDENTITY,
+        payload,
+        generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+    )
+    contradictory = json.loads(path.read_text(encoding="utf-8"))
+    contradictory["payload"].update(participant_count=2)
+    contradictory["payload"]["summary"].update(price_up_count=2)
+    encoded = json.dumps(contradictory)
+    path.write_text(encoded, encoding="utf-8")
+    service = _Service()
+
+    response = MarketHomeProjection(service=service, store=store).read()
+
+    assert response == payload
+    assert service.snapshot_calls == 1
+    assert path.read_text(encoding="utf-8") == encoded
+
+
 def test_projection_store_missing_symlink_empty_oversize_and_corrupt_are_misses(
     tmp_path: Path,
 ) -> None:
