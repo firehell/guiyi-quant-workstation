@@ -118,6 +118,10 @@ export function buildNewowProductQuery(request: NewowProductRequest): Record<str
     addWindow(common, request.from, request.through)
     if (request.chartLimit !== undefined) common.chart_limit = request.chartLimit
     if (request.chartBefore !== undefined) common.chart_before = request.chartBefore
+    if (request.chartOlderWindow !== undefined) {
+      if (request.chartBefore !== undefined || request.from !== undefined || request.snapshotToken === undefined) throw new NewowProductRequestError('NEWOW_SECTION_PARAMETER_INVALID', 'invalid')
+      common.chart_older_window = request.chartOlderWindow
+    }
   } else if (request.section === 'auxiliary') {
     common.component = request.component
     addWindow(common, request.from, request.through)

@@ -101,6 +101,7 @@ _PRODUCT_QUERY_FIELDS = frozenset(
         "as_of",
         "chart_limit",
         "chart_before",
+        "chart_older_window",
         "component",
         "history_limit",
         "history_before",
@@ -269,6 +270,7 @@ def newow_strategy_detail(
     as_of: datetime | None = Query(None),
     chart_limit: int = Query(500, ge=1, le=2000),
     chart_before: str | None = Query(None, min_length=1, max_length=2048),
+    chart_older_window: str | None = Query(None, min_length=1, max_length=256),
     component: Literal[
         "macd", "main_force_control", "up_down_energy", "zhaoyao_mirror", "cup_handle"
     ]
@@ -312,6 +314,7 @@ def newow_strategy_detail(
             series_kind=series_kind,
             chart_limit=chart_limit,
             chart_before=chart_before,
+            chart_older_window=chart_older_window,
             component=AuxiliaryComponent(component) if component is not None else None,
             history_limit=history_limit,
             history_before=history_before,
@@ -491,6 +494,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             ],
             "diagnostics": list(value.diagnostics),
             "next_before": value.next_before,
+            "next_older_window": value.next_older_window,
             "repainting": False,
             "formal_signal_eligible": True,
             "allowed_uses": ["product_chart", "reference_input"],

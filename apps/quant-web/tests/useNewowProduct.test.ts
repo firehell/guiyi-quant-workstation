@@ -11,6 +11,114 @@ import { resolveNewowPanelRenderState } from '../src/utils/newowProductViewModel
 
 const AS_OF = '2026-08-15T07:00:00.000Z'
 
+test('older windows append under the same snapshot after page exhaustion and preserve reference', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  const first = normalizedChartPage(pending[0]!.request, '2026-08-14', 'within') as NewowProductSectionResponse<'chart'>
+  pending[0]!.resolve(first); await flush()
+  const within = state.loadNextChartPage()
+  assert.equal((pending[1]!.request as any).chartBefore, 'within')
+  const last = normalizedChartPage(pending[1]!.request, '2026-08-13', null) as NewowProductSectionResponse<'chart'>
+  pending[1]!.resolve({ ...last, value: { ...last.value!, next_older_window: 'older-window' } } as any)
+  await within
+  const reference = state.loadReference()
+  pending[2]!.resolve(normalizedReference(pending[2]!.request)); await reference
+  const referenceBefore = state.sections.reference.data.value
+  const older = state.loadNextChartPage()
+  assert.equal(pending.length, 4)
+  assert.equal((pending[3]!.request as any).chartOlderWindow, 'older-window')
+  assert.equal((pending[3]!.request as any).from, undefined)
+  assert.equal((pending[3]!.request as any).chartBefore, undefined)
+  const previous = normalizedChartPage(pending[3]!.request, '2026-07-31', null) as NewowProductSectionResponse<'chart'>
+  pending[3]!.resolve({ ...previous, meta: { ...previous.meta, input_content_sha256: 'b'.repeat(64) }, value: { ...previous.value!, chart_from: '2026-07-01', chart_through: '2026-07-31', page_identity: 'c'.repeat(64), next_older_window: null } } as any)
+  await older
+  const chart = state.sections.chart.data.value as NewowProductSectionResponse<'chart'>
+  assert.deepEqual(chart.value!.bars.map(bar => bar.trading_day), ['2026-07-31', '2026-08-13', '2026-08-14'])
+  assert.equal(state.sections.reference.data.value, referenceBefore)
+  state.dispose()
+})
+
+test('HTTP parser accepts the separate bounded older cursor and request serializes it', async () => {
+  const request = { identity: { product: 'jm', strategy: 'trend', frequency: '1d', seriesKind: 'actual_dominant' }, asOf: AS_OF, section: 'chart', snapshotToken: 'snapshot-a', chartOlderWindow: 'older-window' } as any
+  const wire = chartWire() as any
+  wire.chart.value.next_older_window = 'next-window'
+  const response = await getNewowProductSection(request, { request: async (_path, config) => {
+    assert.equal(config.params.chart_older_window, 'older-window')
+    return wire
+  } })
+  assert.equal((response.value as any).next_older_window, 'next-window')
+})
+
+for (const conflict of ['token', 'range', 'overlap', 'fingerprint'] as const) {
+  test(`older navigation rejects ${conflict} without appending unverified bars`, async () => {
+    const pending: Pending[] = []
+    const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+    await nextTick()
+    const initial = normalizedChartPage(pending[0]!.request, '2026-08-14', null) as NewowProductSectionResponse<'chart'>
+    pending[0]!.resolve({ ...initial, value: { ...initial.value!, next_older_window: 'older-window' } })
+    await flush()
+    const older = state.loadNextChartPage()
+    const response = normalizedChartPage(pending[1]!.request, conflict === 'overlap' ? '2026-08-14' : '2026-07-31', conflict === 'fingerprint' ? 'within-older' : null) as NewowProductSectionResponse<'chart'>
+    const changed = { ...response, meta: { ...response.meta, snapshot_token: conflict === 'token' ? 'changed' : response.meta.snapshot_token }, value: { ...response.value!, chart_from: '2026-07-01', chart_through: conflict === 'range' ? '2026-08-01' : '2026-07-31', page_identity: 'b'.repeat(64) } }
+    pending[1]!.resolve(changed)
+    await older
+    if (conflict === 'fingerprint') {
+      const within = state.loadNextChartPage()
+      pending[2]!.resolve({ ...changed, meta: { ...changed.meta, input_content_sha256: 'c'.repeat(64) } })
+      await within
+    }
+    assert.equal(state.sections.chart.data.value, null)
+    assert.equal(state.sections.chart.state.value, 'input_conflict')
+    state.dispose()
+  })
+}
+
+test('identity switch aborts older-window work and ignores its late result', async () => {
+  const identity = ref(newowIdentity('trend', '1d'))
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity, now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  const initial = normalizedChart(pending[0]!.request) as NewowProductSectionResponse<'chart'>
+  pending[0]!.resolve({ ...initial, value: { ...initial.value!, next_older_window: 'older-window' } }); await flush()
+  const older = state.loadNextChartPage()
+  identity.value = newowIdentity('oscillation', '60m')
+  assert.equal(pending[1]!.signal.aborted, true)
+  pending[1]!.resolve(initial)
+  await older
+  assert.equal(state.sections.chart.data.value, null)
+  state.dispose()
+})
+
+test('accumulated older windows stop at 3000 rows and suppress both cursor kinds', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  const first = bulkChart(pending[0]!.request, 0, 2000, null)
+  const firstDay = first.value!.bars[0]!.trading_day
+  pending[0]!.resolve({ ...first, value: { ...first.value!, chart_from: firstDay, next_older_window: 'older' } }); await flush()
+  const older = state.loadNextChartPage()
+  const response = bulkChart(pending[1]!.request, 2000, 2000, null)
+  pending[1]!.resolve({ ...response, value: { ...response.value!, chart_through: response.value!.bars.at(-1)!.trading_day, next_older_window: 'even-older' } })
+  await older
+  const chart = state.sections.chart.data.value as NewowProductSectionResponse<'chart'>
+  assert.equal(chart.value!.bars.length, 3000)
+  assert.equal(chart.value!.next_before, null)
+  assert.equal(chart.value!.next_older_window, null)
+  await state.loadNextChartPage()
+  assert.equal(pending.length, 2)
+  state.dispose()
+})
+
+test('wire older cursor cannot coexist with a page cursor or absent snapshot proof', () => {
+  for (const token of [null, 'snapshot-a']) {
+    const wire = chartWire({ token }) as any
+    wire.chart.value.next_older_window = 'older'
+    if (token !== null) wire.chart.value.next_before = 'within'
+    assert.throws(() => normalizeNewowProductResponse(wire, { product: 'jm', strategy: 'trend', frequency: '1d', seriesKind: 'actual_dominant', section: 'chart', asOf: AS_OF } as any))
+  }
+})
+
 test('explicit historical switch resets requests and preserves the exact server cutoff', async () => {
   const pending: Pending[] = []
   let resolveHistorical!: (value: any) => void

@@ -76,6 +76,7 @@ class SnapshotCache:
         *,
         token: str | None = None,
         proof: dict[str, str] | None = None,
+        related_values: Mapping[tuple[object, ...], object] | None = None,
     ) -> str | None:
         if (
             not self._enabled
@@ -101,6 +102,7 @@ class SnapshotCache:
             merged_proof = dict(previous.proof) if compatible and previous else {}
             merged_proof.update(normalized_proof)
             values[normalized_section] = value
+            values.update(related_values or {})
             candidate = _Entry(
                 fact_key,
                 previous.token if compatible and previous else token_urlsafe(24),

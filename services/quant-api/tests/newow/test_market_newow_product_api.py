@@ -65,6 +65,7 @@ def test_strategy_detail_returns_only_requested_typed_section(
         body["chart"]["value"]["chart_from"] <= body["chart"]["value"]["chart_through"]
     )
     assert len(body["chart"]["value"]["page_identity"]) == 64
+    assert body["chart"]["value"]["next_older_window"] is None
     assert body["chart"]["value"]["formal_signal_eligible"] is True
     assert all(
         isinstance(action["sequence"], int)
@@ -107,6 +108,36 @@ def test_historical_snapshot_strict_query_and_exact_cutoff(monkeypatch):
     assert ok.json()["as_of"].endswith(".000001Z")
     assert ok.json()["validated_sections"] == ["chart", "zhaoyao_mirror"]
     assert duplicate.status_code == unknown.status_code == 422
+
+
+def test_older_chart_window_round_trip_and_invalid_binding(monkeypatch, product_cases):
+    from newow.test_older_chart_windows import setup_service
+
+    service, _, facts = setup_service(product_cases)
+    monkeypatch.setattr(market_newow, "_build_product_service", lambda *_args: service)
+    app.dependency_overrides[get_db] = lambda: object()
+    params = {"product": "rb", "strategy": "trend", "frequency": "1d",
+              "as_of": facts.as_of.isoformat()}
+    try:
+        with TestClient(app) as client:
+            first = client.get("/api/v1/market/newow/strategy-detail", params=params)
+            assert first.status_code == 200
+            body = first.json()
+            older_params = {**params, "snapshot_token": body["meta"]["snapshot_token"],
+                            "chart_older_window": body["chart"]["value"]["next_older_window"]}
+            older = client.get("/api/v1/market/newow/strategy-detail", params=older_params)
+            forged = client.get("/api/v1/market/newow/strategy-detail",
+                params={**older_params, "chart_older_window": "not-issued"})
+            mixed = client.get("/api/v1/market/newow/strategy-detail",
+                params={**older_params, "chart_before": "another-cursor"})
+        assert older.status_code == 200
+        assert older.json()["meta"]["snapshot_token"] == body["meta"]["snapshot_token"]
+        assert older.json()["chart"]["value"]["bars"][-1]["bar_end"] < body["chart"]["value"]["bars"][0]["bar_end"]
+        assert forged.status_code == 409
+        assert forged.json()["detail"] == {"code": "NEWOW_CHART_CURSOR_INVALID"}
+        assert mixed.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_historical_resolver_reuses_shared_resource_controls(monkeypatch):

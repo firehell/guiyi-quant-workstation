@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 from hashlib import sha256
 import json
+from secrets import token_urlsafe
 
 from guiyi_quant.newow.composite_explanation import calculate_composite_explanation
 from guiyi_quant.newow.context_alignment import ContextSnapshot
@@ -101,6 +102,7 @@ class ProductServiceQuery:
     series_kind: str = "actual_dominant"
     chart_limit: int = 500
     chart_before: str | None = None
+    chart_older_window: str | None = None
     component: AuxiliaryComponent | None = None
     history_limit: int = 50
     history_before: str | None = None
@@ -143,6 +145,12 @@ class ProductServiceQuery:
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         if self.section is not ProductSection.CHART and self.chart_before is not None:
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
+        if self.chart_older_window is not None and (
+            self.section is not ProductSection.CHART
+            or self.chart_before is not None or self.since is not None
+            or self.snapshot_token is None
+        ):
+            raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         if self.section is not ProductSection.CHART and self.chart_limit != 500:
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
         if self.section is not ProductSection.REFERENCE and (
@@ -171,6 +179,15 @@ class ChartSectionValue:
     diagnostics: tuple[str, ...]
     actual_window: ProductReadWindow
     page_identity: str
+    next_older_window: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _ChartNavigation:
+    window: ProductReadWindow
+    limit: int
+    fingerprint: str
+    oldest_bar_end: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -517,8 +534,43 @@ class NewowProductService:
             else ()
         )
         reader = self._reader_factory(context, cancelled)
+        identity = build_product_identity(request.product, request.strategy, request.frequency)
+        common_key = _snapshot_namespace(identity, as_of)
+        prior_navigation: _ChartNavigation | None = None
+        anchor_proof: dict[str, str] = {}
+        if request.chart_older_window is not None:
+            candidate = self._cache.get_by_token(
+                request.snapshot_token or "", common_key,
+                ("older_window", request.chart_older_window),
+            )
+            if not isinstance(candidate, _ChartNavigation) or candidate.limit != request.chart_limit:
+                raise NewowProductServiceError("NEWOW_CHART_CURSOR_INVALID")
+            prior_navigation = candidate
+            # Re-read the preceding accepted bounded window through the same
+            # authoritative reader. This bridges disjoint physical-owner inputs;
+            # cached proof alone cannot establish that the anchor is still true.
+            anchor = reader.load(NewowProductQuery(
+                request.product, request.strategy, request.frequency,
+                candidate.window.since, candidate.window.through,
+                candidate.window.since, candidate.window.through, as_of,
+            ), as_of)
+            anchor_proof = _dependency_proof(anchor)
+            if (_fingerprint(anchor, identity) != candidate.fingerprint
+                or not self._cache.token_is_compatible(
+                    request.snapshot_token or "", common_key, anchor_proof
+                )):
+                raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
         resolved: ResolvedPerformanceWindow | None = None
-        if request.section is ProductSection.REFERENCE:
+        if prior_navigation is not None:
+            older = reader.resolve_older_chart_window(
+                request.product, request.frequency, request.chart_limit, as_of,
+                prior_navigation.window.since,
+            )
+            if older is None or older.through >= prior_navigation.window.since:
+                raise NewowProductServiceError("NEWOW_CHART_CURSOR_INVALID")
+            window = older
+            read_as_of = as_of
+        elif request.section is ProductSection.REFERENCE:
             resolved = reader.resolve_performance_window(
                 request.product,
                 request.frequency,
@@ -573,16 +625,23 @@ class NewowProductService:
                     None if weekly_complete else "NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL"
                 ),
             )
-        identity = build_product_identity(
-            request.product, request.strategy, request.frequency
-        )
         fact_key = _fingerprint(read, identity)
-        common_key = _snapshot_namespace(identity, as_of)
         proof = _dependency_proof(read)
+        if any(proof[key] != anchor_proof[key] for key in proof.keys() & anchor_proof.keys()):
+            raise NewowProductServiceError("NEWOW_SNAPSHOT_GENERATION_CONFLICT")
+        proof.update(anchor_proof)
         page_identity = self._page_identity(request, window, resolved, as_of)
+        navigable = request.section is ProductSection.CHART and (
+            request.since is None or (
+                request.chart_before is not None and request.snapshot_token is not None
+                and isinstance(self._cache.get_by_token(
+                    request.snapshot_token, common_key, ("chart_window", page_identity)
+                ), _ChartNavigation)
+            )
+        )
         section_key = self._section_key(
             request, window, resolved, fact_key, page_identity
-        )
+        ) + (navigable,)
         if request.snapshot_token is not None:
             if not self._cache.token_is_compatible(
                 request.snapshot_token, common_key, proof
@@ -603,6 +662,21 @@ class NewowProductService:
             cancelled,
             as_of,
         )
+        chart = result.chart.value
+        if prior_navigation is not None and isinstance(chart, ChartSectionValue):
+            if (chart.bars and prior_navigation.oldest_bar_end is not None
+                and chart.bars[-1].bar.bar_end >= prior_navigation.oldest_bar_end):
+                raise NewowProductServiceError("NEWOW_CHART_CURSOR_INVALID")
+        # Complete every authoritative read before retaining any result. A
+        # failed navigation read must not leave a cached truncated success.
+        has_older_window = (
+            navigable and isinstance(chart, ChartSectionValue)
+            and chart.next_before is None and self._cacheable(result)
+            and reader.resolve_older_chart_window(
+                request.product, request.frequency, request.chart_limit, as_of, window.since
+            ) is not None
+        )
+        self._check_cancelled(cancelled)
         token = None
         if self._cacheable(result):
             token = self._cache.put(
@@ -630,14 +704,31 @@ class NewowProductService:
                 result.explanation,
                 result.comparator,
             )
+            related: dict[tuple[object, ...], object] = {}
+            if navigable and isinstance(chart, ChartSectionValue):
+                navigation = _ChartNavigation(
+                    window, request.chart_limit, fact_key,
+                    chart.bars[0].bar.bar_end if chart.bars else None,
+                )
+                related[("chart_window", page_identity)] = navigation
+                if has_older_window:
+                    cursor = token_urlsafe(24)
+                    related[("older_window", cursor)] = navigation
+                    result = replace(result, chart=replace(
+                        result.chart, value=replace(chart, next_older_window=cursor)
+                    ))
             if self._cache.put(
                 common_key,
                 section_key,
                 result,
                 token=token,
                 proof=proof,
+                related_values=related,
             ) is None:
                 result = replace(result, meta=replace(result.meta, snapshot_token=None))
+                if isinstance(result.chart.value, ChartSectionValue):
+                    result = replace(result, chart=replace(result.chart,
+                        value=replace(result.chart.value, next_older_window=None)))
         return result
 
     @staticmethod
@@ -664,6 +755,7 @@ class NewowProductService:
             resolved.requested_through.isoformat() if resolved else None,
             request.chart_limit,
             request.chart_before,
+            request.chart_older_window,
             request.history_limit,
             request.history_before,
         )

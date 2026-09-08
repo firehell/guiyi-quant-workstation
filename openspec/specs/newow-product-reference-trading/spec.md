@@ -569,3 +569,42 @@ shared Bar逐事实冲突、真实token替换、409不兼容或来源版本改�
 - **GIVEN** reference统计窗口未变且服务端接受同一snapshot token
 - **WHEN** 用户定位历史记录，重新加载不同chart窗口及其输入hash
 - **THEN** 保留reference统计、列表与cursor；同窗口分页身份和无token严格指纹校验仍独立生效
+
+### Requirement: Older chart windows are server issued and bounded
+
+默认图表 SHALL 只选择最近的有界 completed trading-day viewport；窗口内 `next_before=null`
+仅表示该窗口分页耗尽，不得据此声称权威历史已耗尽。服务端 SHALL 通过同一个 ProductReader /
+MarketDataService completed-day resolver 查找严格早于当前窗口的前一有界窗口；客户端不得猜日期。
+每页 `chart_limit` 为 1–2000，默认 500；Web 累积最多 3000 根并同时停止两种游标。
+固定公式所需同物理合约 lifecycle prefix 仍完整读取，不用 viewport 限制截断 warm-up。
+
+只有窗口内分页耗尽且权威 completed days 仍有更早历史时，服务端 MAY 返回独立
+`next_older_window`；客户端只在用户请求更早历史时提交 `chart_older_window` 和同一
+`snapshot_token`，不得同时提交 `from/through` 或 `chart_before`。显式选择的窗口保持有界；
+只有来自服务端默认/更早窗口的已验证窗口内分页可延续更早导航。缓存禁用、未保留、过期、
+淘汰或容量拒绝时不得宣称有可用的更早游标；缺少游标不证明数据湖没有历史。
+
+更早游标 SHALL 是随机不透明值，绑定规范化 product/strategy/frequency/series/as-of、
+原窗口、page limit、输入指纹与 snapshot。状态、窗口注册和结果 MUST 一起计入既有
+32 entry / 128 MiB total / 32 MiB entry / TTL 300s 缓存预算，并原子接受或拒绝，
+不得建立第二个无界游标 registry。重启、失效、篡改或身份不匹配返回可分类 409。
+
+跨窗口 SHALL 重新通过权威 reader 读取前一个已接受的有界窗口作为 anchor，验证其完整输入
+指纹及共同逐值事实，再读取前一窗口并合并无冲突 proof。即使窗口位于不同物理 owner、
+没有自然共享 lifecycle prefix，也不得跳过共同 Bar 校验或仅信任旧缓存。
+更早窗口和新帧 MUST 严格更早且不与旧帧重叠。窗口间允许不同输入 hash/page identity，
+但必须保持同一服务端验证的 snapshot 及来源版本；窗口内 `chart_before` 继续严格匹配
+原输入 hash/page identity，不得用 token 一致代替。generation switch、abort、冲突和
+最多一次快照重建继续隔离旧响应。分页不改变 ReferenceTrade identity、公式或统计窗口。
+
+#### Scenario: Default viewport ends while earlier authoritative history exists
+
+- **GIVEN** 真实 resolver 选择的默认窗口已耗尽，但权威 completed days 仍有更早交易日
+- **WHEN** 用户加载更早主图
+- **THEN** 服务端验证 anchor 后返回严格更早的有界窗口，并保持参考统计和快照兼容
+
+#### Scenario: Hourly window contains more bars than one page
+
+- **GIVEN** 一个已解析交易日窗口包含超过 chart_limit 的 completed 60m Bar
+- **WHEN** 用户继续向左加载
+- **THEN** 先耗尽同窗口 chart_before，再发 next_older_window；两类指纹校验不混用

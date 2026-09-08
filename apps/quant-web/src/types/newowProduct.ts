@@ -120,6 +120,7 @@ export interface NewowChartValue {
   readonly hints: readonly NewowProductHint[]
   readonly diagnostics: readonly string[]
   readonly next_before: string | null
+  readonly next_older_window: string | null
   readonly repainting: false
   readonly formal_signal_eligible: true
   readonly allowed_uses: readonly ['product_chart', 'reference_input']
@@ -565,7 +566,7 @@ interface NewowRequestCommon {
 }
 
 export type NewowProductRequest =
-  | (NewowRequestCommon & { readonly section: 'chart'; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string })
+  | (NewowRequestCommon & { readonly section: 'chart'; readonly from?: string; readonly through?: string; readonly chartLimit?: number; readonly chartBefore?: string; readonly chartOlderWindow?: string })
   | (NewowRequestCommon & { readonly section: 'auxiliary'; readonly component: NewowAuxiliaryComponent; readonly from?: string; readonly through?: string })
   | (NewowRequestCommon & { readonly section: 'reference'; readonly performanceSince?: string; readonly performanceThrough?: string; readonly historyLimit?: number; readonly historyBefore?: string })
   | (NewowRequestCommon & { readonly section: 'explanation' })

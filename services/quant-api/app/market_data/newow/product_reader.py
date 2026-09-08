@@ -336,12 +336,29 @@ class NewowProductReader:
     ) -> ProductReadWindow:
         """Choose a bounded authoritative trading-day viewport for recent Bars."""
 
+        window = self._resolve_chart_window(product, frequency, limit, as_of)
+        if window is None:
+            raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
+        return window
+
+    def resolve_older_chart_window(
+        self, product: str, frequency: ProductFrequency, limit: int,
+        as_of: datetime, before: date,
+    ) -> ProductReadWindow | None:
+        """Use the same completed-day authority, strictly before a verified window."""
+        return self._resolve_chart_window(product, frequency, limit, as_of, before)
+
+    def _resolve_chart_window(
+        self, product: str, frequency: ProductFrequency, limit: int,
+        as_of: datetime, before: date | None = None,
+    ) -> ProductReadWindow | None:
+
         cutoff = utc_timestamp(as_of)
         if cutoff > utc_timestamp(self._now()):
             raise NewowProductReadError("NEWOW_INVALID_AS_OF")
         if product not in self._active_products:
             raise NewowProductReadError("NEWOW_INVALID_PRODUCT")
-        if type(limit) is not int or limit <= 0:
+        if type(limit) is not int or not 1 <= limit <= 2000:
             raise NewowProductReadError("NEWOW_INVALID_CHART_LIMIT")
         self._check_cancelled()
         start_day = self._coverage.product_start(product)
@@ -355,6 +372,10 @@ class NewowProductReader:
             current <= previous for previous, current in zip(days, days[1:])
         ):
             raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
+        if before is not None:
+            days = tuple(day for day in days if day < before)
+            if not days:
+                return None
         bars_per_day = (
             4 if ProductFrequency(frequency) is ProductFrequency.HOURLY else 1
         )

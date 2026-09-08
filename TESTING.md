@@ -24,6 +24,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   services/quant-api/tests/newow/test_product_service.py \
   services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/newow/test_older_chart_windows.py \
   services/quant-api/tests/newow/test_historical_snapshot.py \
   services/quant-api/tests/newow/test_data_diagnostics.py \
   services/quant-api/tests/newow/test_product_source_facts.py \

@@ -25,6 +25,9 @@ from app.market_data.newow.product_service import (
 
 
 class _Reader:
+    def resolve_older_chart_window(self, *_args):
+        return None
+
     def __init__(self, bars, boundary_cutoff, extended_cutoff):
         self.bars = bars
         self.boundary_cutoff = boundary_cutoff
@@ -556,6 +559,9 @@ def test_chart_4001_prefix_pages_strictly_left_without_changing_fingerprint(
 
 
 class _MultiReader:
+    def resolve_older_chart_window(self, *_args):
+        return None
+
     def __init__(self, bars_by_frequency):
         self.bars_by_frequency = bars_by_frequency
 
