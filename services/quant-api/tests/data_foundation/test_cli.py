@@ -877,6 +877,7 @@ def test_runtime_parser_exposes_active_runtime_commands() -> None:
         "acknowledge-alert-notification",
         "subing-ths-scope",
         "subing-readiness",
+        "recover-live-captured",
     }
 
 

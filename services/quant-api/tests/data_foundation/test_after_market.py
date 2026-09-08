@@ -4,6 +4,9 @@ import json
 import logging
 import io
 import os
+import multiprocessing
+from types import SimpleNamespace
+from contextlib import contextmanager, nullcontext
 from datetime import date, datetime
 
 import pytest
@@ -173,6 +176,7 @@ def _updater(
     results: list[MaintenanceResult],
     metadata_day: date | None = None,
     notification_error: Exception | None = None,
+    recovery_guard_factory=None,
 ):
     manager = _Manager(trading_day, results, metadata_day=metadata_day)
     rqdata = _RQData(readiness)
@@ -190,8 +194,139 @@ def _updater(
             error=notification_error,
         ),
         now=lambda: datetime(2026, 8, 10, 17, 0),
+        recovery_guard_factory=recovery_guard_factory or nullcontext,
     )
     return updater, manager, rqdata, sleeps, notices, live_store
+
+
+def _after_market_guard_process(root, connection):
+    from app.market_data.live_recovery_guard import after_market_recovery_guard
+
+    @contextmanager
+    def guard():
+        connection.send("guard_attempt")
+        with after_market_recovery_guard(root=root / "guards", wait=True):
+            connection.send("guard_acquired")
+            yield
+
+    updater, manager, rqdata, *_ = _updater(
+        root, trading_day=date(2026, 8, 10), readiness=[True],
+        results=[_result("passed")], recovery_guard_factory=guard,
+    )
+    original_start = updater._write_current_run
+    original_provider = rqdata.is_future_data_ready
+    original_update = manager.update
+
+    def start(*args):
+        connection.send("current_run")
+        original_start(*args)
+
+    def provider(*args):
+        connection.send("provider")
+        return original_provider(*args)
+
+    def canonical(*args, **kwargs):
+        connection.send("canonical")
+        assert connection.recv() == "finish"
+        return original_update(*args, **kwargs)
+
+    updater._write_current_run = start
+    rqdata.is_future_data_ready = provider
+    manager.update = canonical
+    connection.send(updater.run().status)
+
+
+def test_global_guard_serializes_after_market_before_any_status_or_provider_write(tmp_path):
+    from app.market_data.live_recovery_guard import after_market_recovery_guard
+
+    context = multiprocessing.get_context("spawn")
+    parent, child = context.Pipe()
+    process = context.Process(target=_after_market_guard_process, args=(tmp_path, child))
+    try:
+        with after_market_recovery_guard(root=tmp_path / "guards"):
+            process.start()
+            assert parent.poll(10)
+            assert parent.recv() == "guard_attempt"
+            assert not parent.poll(0.2)
+            assert not (tmp_path / "after-market-status.json").exists()
+        for expected in ("guard_acquired", "current_run", "provider", "canonical"):
+            assert parent.poll(10)
+            assert parent.recv() == expected
+        with pytest.raises(RuntimeError, match="LIVE_RECOVERY_BUSY"):
+            with after_market_recovery_guard(root=tmp_path / "guards"):
+                pytest.fail("captured recovery must reject an active after-market job")
+        parent.send("finish")
+        assert parent.poll(10)
+        assert parent.recv() == "passed"
+        process.join(10)
+        assert process.exitcode == 0
+        assert _status(tmp_path / "after-market-status.json")["current_run"] is None
+        with after_market_recovery_guard(root=tmp_path / "guards"):
+            pass
+    finally:
+        if process.pid is not None and process.is_alive():
+            process.terminate()
+            process.join(10)
+        parent.close()
+        child.close()
+
+
+def test_global_guard_is_held_through_bounded_retry_and_final_status(tmp_path):
+    from app.market_data.live_recovery_guard import after_market_recovery_guard
+
+    updater, manager, *_ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True, True], results=[],
+        recovery_guard_factory=lambda: after_market_recovery_guard(root=tmp_path / "guards"),
+    )
+    stages = []
+
+    def verify_held(stage):
+        with pytest.raises(RuntimeError, match="LIVE_RECOVERY_BUSY"):
+            with after_market_recovery_guard(root=tmp_path / "guards"):
+                pytest.fail("whole after-market job must retain the lock")
+        stages.append(stage)
+
+    def fail_update(*args, **kwargs):
+        verify_held("update")
+        raise InfrastructureError("NEXT_TRADING_SESSION_NOT_READY")
+
+    original_status = updater._write_status
+
+    def status(*args):
+        verify_held("status")
+        original_status(*args)
+
+    manager.update = fail_update
+    updater.sleep = lambda seconds: verify_held("retry")
+    updater._write_status = status
+    assert updater.run().status == "failed"
+    assert stages == ["update", "retry", "update", "status"]
+
+
+def test_production_builder_always_composes_waiting_after_market_guard(tmp_path, monkeypatch):
+    import app.market_data.after_market as module
+    import app.redis_connections as redis_connections
+    from app.market_data.live_recovery_guard import after_market_recovery_guard
+
+    calls = []
+
+    def guard(*, wait):
+        calls.append(wait)
+        return after_market_recovery_guard(root=tmp_path / "guards", wait=wait)
+
+    monkeypatch.delenv("GUIYI_LIVE_RECOVERY_ENABLED", raising=False)
+    monkeypatch.setattr(module, "after_market_recovery_guard", guard)
+    monkeypatch.setattr(module, "_market_home_projection_refresh_enabled", lambda: False)
+    monkeypatch.setattr(redis_connections, "get_redis_connection", lambda: object())
+    manager = SimpleNamespace(provider=SimpleNamespace(client=object()),
+                              catalog=SimpleNamespace(canonical_root=tmp_path))
+    updater = module.build_after_market_updater(manager, failure_notification=False)
+    assert calls == []
+    with updater.recovery_guard_factory():
+        with pytest.raises(RuntimeError, match="LIVE_RECOVERY_BUSY"):
+            with after_market_recovery_guard(root=tmp_path / "guards"):
+                pytest.fail("production updater must exclude captured recovery")
+    assert calls == [True]
 
 
 def _status(path):

@@ -8,17 +8,17 @@
 
 | 项目 | 当前事实 |
 |---|---|
-| 正式 Release | `v1.10.1@8e3df5c0bf6ced6712f76941bcf08065f1015188` 是最新正式 release；发布 tree 为 `abfce0787fd504a24d5c6965cc6c6b674f5c9c79`，annotated tag object 为 `2b62400c5edb7aa5050961623ba8ffec0fb2f6c1`，GitHub Release 为 non-draft、non-prerelease，已于 `2026-09-08T05:36:54Z` 发布。 |
-| `main` | `main@8e3df5c0bf6ced6712f76941bcf08065f1015188` 与 `v1.10.1` peeled commit 一致，对应 tree `abfce0787fd504a24d5c6965cc6c6b674f5c9c79`。 |
-| `v1.10.3` Release candidate | 本轮按用户请求合并 `develop@6529b56ea2e43ef3216bcdf9106af9db2f97266d` 与未发布的 `codex/release-v1.10.2@2111395f650ac10c008e56638ebe5be98fa2d6a5`；API/Web 身份统一为 `1.10.3`。包括 Market Home 四桶汇总、nullable 涨跌展示、照妖镜分类彩柱、批量权威读取、显式历史快照及 section 独立缺数处理。v1.10.2 候选被本候选吸收，不单独发布。候选 `83e9e291f68981cf4ae02752d333d83749b28345` 的独立 Standards 与 Spec Review 均 PASS、0 findings；发布矩阵已通过；尚未执行 main/tag/GitHub Release。用户授权发布 v1.10.3，明确停在服务部署之前。 |
-| Runtime | `2026-09-08 12:18 CST` 按当时用户部署请求完成一次服务切换：API/Web/Live/After-market/Alert 五项均加载 clean、detached `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.0-r1@f8f7d91765122c33cf5e82ed425b6c44f41ad0b1`。API/Web 保持原已加载的该版本，Market 与 Alert 安装器分别成功返回 `services=2` / `services=1`；两个 activation marker 均已启用。Market preflight 为 `snapshot_ready / operational_count=60 / snapshot_count=60`。身份切换完成，但完整健康验收为 `PARTIAL / EXTERNAL_GATE_PENDING`：`local-services-status.sh overall=failed, failures=1`，Runtime API 为 `degraded`，不得声明 `RUNTIME_READY`。未重试或回滚。 |
-| Runtime root 核对 | `guiyi-quant-runtime-v1.10.0-r1@f8f7d917...` 与 `guiyi-quant-runtime-v1.9.15-r1@36fef039...` 均为 clean、detached；五项服务已全部引用前者，后者保留供后续明确批准的恢复操作使用。本轮只删除了 clean、已合并、未被服务引用的 `p6-trusted-closure`、`v1.10.0-release` 与 `v1.10.1-release` 三个 task/RC worktree，保留主 develop 与两个 Runtime root。 |
+| 正式 Release | `v1.10.3@dd9f3fa0fa332d433e4409dd657d35174b2b371c` 是最新正式 release；PR #357 于 `2026-09-08T09:31:21Z` 合入 main。发布 tree 为 `e8d81d08be57abe30034b9db9982ac6ce26263b0`，annotated tag object 为 `411502b0c9543192e0844c0034b75788fea29d11`，GitHub Release 为 non-draft、non-prerelease，已于 `2026-09-08T09:32:17Z` 发布。v1.10.2 候选已完整吸收，未单独发布。 |
+| `main` | `main@dd9f3fa0fa332d433e4409dd657d35174b2b371c` 与 `v1.10.3` peeled commit、GitHub Release target 一致；tree 与已双审候选 `9f22847cfa39d7318d039fc645697ba9da9f3fc0` 一致。发布合并结果已回流 develop；之后仅在 develop 更新本文发布/清理事实，不改已发布 tag。 |
+| 发布与部署边界 | 用户明确授权继续一次本机五服务部署、失败即停且不自动回滚后，`v1.10.3@dd9f3fa0fa332d433e4409dd657d35174b2b371c` 已完成一次实际服务切换。API/Web/Live/After-market/Alert 均加载同一 clean detached 新根；发布与加载身份一致。完整健康验收为 `PARTIAL / EXTERNAL_GATE_PENDING`：部署前已有 SuBing `evaluation_failed` 仍保留，尚不能声明 `RUNTIME_READY`。未自动重试或回滚。 |
+| Runtime | `2026-09-08 17:50 CST` 只读核对五项服务均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.3-r1@dd9f3fa0fa332d433e4409dd657d35174b2b371c`。三个安装器步骤均成功：API/Web/既有日志轮转 `services=3`、Live/After-market `services=2`、Alert `services=1`；Market preflight 为 `snapshot_ready / operational_count=60 / snapshot_count=60`，Market/Alert activation marker 均为 enabled、0600。After-market 为已加载、等待自然 18:05 调度，未手工触发；API/Web/Live/Alert 为 running。 |
+| Runtime root 核对 | 当前保留主 develop、clean detached v1.10.3 现役根、clean detached `v1.10.0@f8f7d91765122c33cf5e82ed425b6c44f41ad0b1` 切换前恢复根，以及 clean detached `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6` 旧恢复根。此前两个 RC 工作树与分支已清理；本轮未删除恢复目录。五服务 root/loaded commit 均只引用 v1.10.3。 |
 | Database 与 Canonical | 最近 production 只读 readback 为 Alembic `20260903_0045`；RQData session anchor repair 已发布并保留 D1/W1 原始事实。此前全库 Canonical 快照为 8,801 个 Dataset、42,575 个分区、44,629,532 行；该快照不是当前全库总量；PF2611 与本轮 60 合约历史 15m 的最新验收分别见下行及后文。 |
 | PF2611 physical warm-up | 2026-09-05 从 clean detached `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6`，以 `symbol=pf`、`contract=PF2611`、`through=2026-09-04`、plan SHA-256 `7a51886988ff0508f6b3295d40665cef11ff54bc7b0b63ab79aee4fec5544f19` 完成唯一一次真实 RQData/Canonical apply：76 个目标全部 applied，blocked/failed 均为 0。只读 audit finding 为 0；MarketDataService exact physical 15m 读回 4,491 根，交易日窗口为 `2025-11-17..2026-09-04`，七周期最终共 77 个分区、89,280 行（含原已完整且未改写的 1w 分区 1 行）。Rule/Scope/Event、非目标 Catalog、pf 其他合约与 continuous 文件、MainContractMap 及五项 Runtime 的前后基线一致；状态为 `PF2611_WARMUP_APPLIED_AND_VERIFIED`。 |
 | Market Runtime Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | `2026-09-07T06:49:43Z` 只读审计：HTDY 仅 `jm × 5m/15m`，其余59品种Scope为空；SuBing为全部60品种 × 15m，两Rule均enabled。HTDY“焦煤继续15m和5m，其他所有品种统一60m”共61对仅为目标，尚未应用。 |
-| 当前 Runtime health | `2026-09-08T04:18:52Z` 与 `04:19:20Z` 两次只读读回：API/Web 为 200，DB/Redis/Live/After-market 为 `ok`；Live 与 Alert 心跳持续推进。当前为午间 `BREAK × 60`，Live `subscribed_count=0 / last_bar_at=null`，尚无切换后的自然 completed Bar。Alert 为 `degraded`，直接阻塞项是 SuBing Rule 在切换前 `11:30:29.323468 CST` 留下的 `evaluation_failed`；HTDY Rule `error_type=null`。旧 `09:45:11.327787 CST` 的 `notification_transport_failed` 与 `notification_acknowledged_at=null` 仍保留，但 `11:30:28.766734 CST` 已有后续 provider acceptance，当前 `notification_state=provider_accepted`，该旧通知失败不直接造成当前 degraded，也不要求为健康状态执行 acknowledgment。两 Rule enabled、Scope product count=60；这不证明逐品种输入全部 ready。只读 health 的三项 would-side-effect 均为 false；本地隧道检查 `overall=passed`。 |
-| 最近自然 After-market | 2026-09-07 的自然 18:05 任务于 `19:30:30 Asia/Shanghai` 完成，`status=passed`、`attempts=1`、`last_successful_trading_day=2026-09-07`、`last_failure=null`、`current_run=null`。本轮在 schema v2、60 品种顺序、owner/mode 校验后，将原状态字节原样带入 v1.10.0 根，SHA-256 为 `e98f09a39ded99fe4b566b9e6616455929155a9e6619dd99c284d3578431e610`，mode=0600，目标原不存在。该记录仍是 v1.9.15 历史事实，不是 v1.10.0 自然盘后验收；新盘后服务已加载、按计划待运行。 |
+| 当前 Runtime health | `2026-09-08 19:26:57 CST` 只读核对：DB/Redis/Live/After-market 均 ok；60 品种 CLOSED，Live 当日订阅已清理，新进程 last_bar_at=null。Alert 仍 degraded，SuBing 保留 `evaluation_failed@2026-09-08T07:00:29.336273Z`；通用 processing success 已自然推进至 `11:05:52.775687Z`，这不是 RS 新 completed Bar 的苏冰评估证据。未清除故障、确认通知或补发，尚不能声明 `RUNTIME_READY`。 |
+| 最近自然 After-market | `v1.10.3` 于 2026-09-08 自然运行：18:05:05 开始、19:05:52 完成，passed、attempts=1、60 品种顺序有效，last_failure/current_run 均 null。19:26 CST 通过现役 API health 与状态文件读回确认；Canonical 发布和当日 Live 清理已完成。本轮没有手工触发盘后任务。 |
 
 Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
@@ -28,9 +28,51 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 已吸收但未单独发布的 `v1.10.2` 候选，其全量发布矩阵在已对齐 main、已统一版本身份的 RC `8e79bfcfc03793c2b090e1c67b31ffdfef4fbcc9` 上完成：backend `2398 passed, 5 skipped, 15 deselected`、Mypy 134 个源文件、Ruff、engineering `74 passed`、OpenSpec `9/9`、secret scan `0`、Web `468 passed, 1 skipped`、Alert Rule ownership、build/topology 与 Playwright `141 passed`。Market Home P0 的独立实现双轴 Review 已 PASS、0 findings；最终 RC Review 绑定 `4276207f48f958c07f22d249737709763e34841d`、tree `2b0aab6b05e8dad91dd3ca97fce4744f60446f82`，独立 Standards 与 Spec Review 均 PASS、0 findings。本轮没有连接或写入生产 Canonical/Catalog/PostgreSQL/Redis，没有修改 MainContractMap、Scope、通知或 Runtime，也未合入 main、创建 tag 或发布 GitHub Release。
 
-`v1.10.3` 发布矩阵绑定 `83e9e291f68981cf4ae02752d333d83749b28345`：backend `2415 passed, 5 skipped, 15 deselected`、engineering `74 passed`、Web `478 passed, 1 skipped`、Playwright `141 passed`、Mypy 135 个源文件、Ruff、Alert Rule ownership、build/topology、OpenSpec `9/9`、secret scan `0` 与 diff check 均通过。独立 Standards / Spec Review 覆盖 `v1.10.1@8e3df5c0...` 到该候选的 62 个文件，均 PASS、0 findings。最初 pnpm 自动安装受网络沙箱限制、浏览器监听受沙箱限制以及临时端口 5193 不匹配 fixture 白名单的尝试未通过；最终复用既有依赖、关闭 pnpm 自动安装，在默认 5182 隔离运行的完整矩阵通过，没有修改测试白名单或截图基线。此后仅补充本文验证事实。2026-09-08 17:22 CST 只读核对五项 launchd 均引用现役 `v1.10.0@f8f7d917...`；本轮明确不部署、不切换 Runtime、不连接 RQData、不写生产数据、DB、Scope 或通知。
+`v1.10.3` 发布矩阵绑定 `83e9e291f68981cf4ae02752d333d83749b28345`：backend `2415 passed, 5 skipped, 15 deselected`、engineering `74 passed`、Web `478 passed, 1 skipped`、Playwright `141 passed`、Mypy 135 个源文件、Ruff、Alert Rule ownership、build/topology、OpenSpec `9/9`、secret scan `0` 与 diff check 均通过。独立 Standards / Spec Review 覆盖 `v1.10.1@8e3df5c0...` 到该候选的 62 个文件，均 PASS、0 findings。最初 pnpm 自动安装受网络沙箱限制、浏览器监听受沙箱限制以及临时端口 5193 不匹配 fixture 白名单的尝试未通过；最终复用既有依赖、关闭 pnpm 自动安装，在默认 5182 隔离运行的完整矩阵通过，没有修改测试白名单或截图基线。此后仅补充本文验证事实。2026-09-08 17:22 CST 只读核对五项 launchd 均引用现役 `v1.10.0@f8f7d917...`；该发布轮次明确不部署、不切换 Runtime、不连接 RQData、不写生产数据、DB、Scope 或通知；后续部署事实见上表。
+
+`v1.10.3` 首次部署准备的 exact-tag 定向回归为 `90 passed in 65.45s`（Market/Alert launchd 与 promotion），新根独立 Web typecheck/build/topology 与 render-only 通过；只读 promotion preflight 为 `snapshot_ready / operational_count=60 / snapshot_count=60`。盘后状态复制在 mutation 前因错误的 `config/universe/operational_products.txt` 路径退出；随后只读核验已改用唯一 `load_operational_products()`，确认源 public schema v2、60 品种顺序、无 current run、passed 与源 SHA-256 `e98f09a39ded99fe4b566b9e6616455929155a9e6619dd99c284d3578431e610` 均有效，目标仍不存在。用户随后给出新的明确授权，本轮已按修正校验 create-only 带入该状态并完成一次五服务切换；各安装器成功，无自动重试或回滚。部署前 API/Web 为 200、DB/Redis/Live/After-market 为 ok，60 品种处于 CLOSED；Alert 已 degraded，SuBing `evaluation_failed` 的最新失败时间为 `2026-09-08T07:00:29.336273+00:00`。该故障是切换前基线；未清除故障、改 Scope、补数或补发通知。
+
+## v1.10.4 候选与盘后复核
+
+用户已确认新候选版本为 `v1.10.4`；API/Web、Python 项目/lock 与 health 测试版本同步准备，
+候选包含 `4b55a4189` 的 captured-source 恢复及盘后互斥修复。正式发布和本机五服务切换仍未执行，
+现役保持 `v1.10.3`。候选完整验证已通过：backend `2563 passed, 16 skipped, 15 deselected`、
+engineering `74 passed`、Web `478 passed, 1 skipped`、Playwright `141 passed`、Mypy `138` 源文件、
+Ruff、Alert Rule ownership、build/topology、OpenSpec `9/9`、secret scan `0` 与 diff check。
+工程检查首次发现固定版本断言尚为 1.10.3，同步至 1.10.4 后完整重跑通过。
+独立 Standards/Spec Review 绑定 `dfa5523ce11f877496daa2193b6dc872639224dd`、tree
+`dd25d5fc65634a02728b90535490916a86513057`，均 PASS、0 findings；五项服务的 render-only
+配置 root/commit 核对通过，未加载服务。状态为 `RELEASE_CANDIDATE / EXTERNAL_GATE_PENDING`；
+此后的文档提交仅记录这些验证与 Review 事实。
+
+2026-09-08 19:26:46..19:26:57 CST 从现役 exact v1.10.3，只读 PostgreSQL 事务及统一
+MarketDataService/Redis/API 复核：RS2609 当日 Canonical 的 1m/5m/15m/30m/60m 分别为
+225/45/15/8/5 根，均与权威 Session 期望精确一致；旧五根目标 09:01/09:05/09:15/09:30/10:00
+全部存在。60 个当日 rank1 合约从上市日至当日收盘的 physical 15m 前缀均 `coverage_exact=true`，
+RS2609 为 3,570/3,570 根；本次 JD 的当前主力为 JD2611，不能沿用旧 JD2610 身份。
+自然盘后已清理当日 Live bars 和订阅，RS recovery watermark/circuit 均 null，下午 provider
+attempt count 仍为 3；没有清零预算或补写水位。旧日内 event reader 因订阅已清理返回
+`MARKET_READ_CONTRACT_UNAVAILABLE`，属于已结束的 Live 生命周期，不能重新解释为 Canonical 缺口。
+
+结论：原五根缺口已由自然盘后维护解决，本轮不再生成或执行这五根 Live 恢复计划；旧计划失效，
+不能为完成步骤而重建过期 Live 数据。剩余为新版本发布/部署以及后续自然 completed Bar 的苏冰
+评估与健康验收。通用盘后 processing success、完整历史数据或旧 Rule 最新评估时间均不能替代
+RS 的自然评估成功证据；不手工清除 `evaluation_failed`。
 
 ## 苏冰 60 品种输入恢复候选
+
+2026-09-08 新增 captured-source 受控恢复入口，状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
+默认只读计划，显式 apply 绑定源/计划哈希、当日同合约与精确五根增量；零 provider 调用，保留已耗尽预算，
+在共享提交边界检查预算/circuit/序列/TTL 后原子写五根和恢复水位。新增实际共享锁心跳证据及与盘后维护
+互斥的全局 OS 锁。独立 Standards/Spec 初审发现的盘后检查竞态和源数值别名冲突均已修正，复审均 PASS、0 findings。
+最终后端回归 `2563 passed, 16 skipped, 15 deselected`；恢复/CLI/Runtime/盘后/Alert/SuBing 定向回归
+`327 passed`（包含真实隔离 Redis 验证）；工程 `74 passed`，Mypy `138` 源文件、Ruff、OpenSpec `9/9`、
+secret scan `0` 与 diff check 通过。既有 225 行 RS2609 源快照经新严格解析器离线通过。
+本轮只实现并验证代码，没有生产读取/恢复、RQData 请求、配置变更、通知、release 或 Runtime 切换；
+现役仍为上表 v1.10.3，五根生产 Bar 与旧 `evaluation_failed` 未由本轮处理。
+采用新入口须另行完成发布/部署授权与 exact-version 核对，再生成当前仍有效的恢复计划并取得单次执行授权；
+旧 2026-09-08 候选跨日即失效。不得由代码验收声明 `RUNTIME_READY`。
+
 
 - 当前开发候选为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：新增只读 `runtime subing-readiness`、默认关闭的当日 Live 缺口恢复、原子数据与恢复水位提交、跨进程 Alert/recovery 互斥及日志丢失后安全重开。恢复窗口和旧触发不创建 Event 或补发；恢复后的新 completed Bar 才允许按既有 Rule 评估与 one-shot transport。苏冰公式、版本、60 × 15m Scope 与 HTDY Scope 均未改变。
 - 2026-09-07 以 `as_of=2026-09-07T07:00:00Z` 对全部 60 品种做只读输入检查：Scope 全部启用，`ready_count=0`。a/ag/al/ao/ap/au/b/pf 的历史物理 15m 前缀完整；其余 52 个中，51 个有历史缺口，RS 历史输入不可读。全部 60 品种缺少当日 13:31 的 1m 和 13:45 的 15m；FG、RS、SH 另有当日缺失分钟。代码检查不能把这些生产输入变为完整。

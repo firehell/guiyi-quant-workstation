@@ -42,3 +42,27 @@ def test_guard_rejects_linked_or_unbounded_names(tmp_path):
         with recovery_guard("jm", root=tmp_path):
             pass
     assert target.read_text() == "keep"
+
+
+def test_after_market_guard_is_global_and_uses_existing_safe_directory(tmp_path):
+    from app.market_data.live_recovery_guard import after_market_recovery_guard, recovery_guard
+
+    with after_market_recovery_guard(root=tmp_path):
+        with pytest.raises(RuntimeError, match="LIVE_RECOVERY_BUSY"):
+            with after_market_recovery_guard(root=tmp_path):
+                pytest.fail("captured operation must not race after-market")
+        with recovery_guard("jm", root=tmp_path):
+            pass  # Global guard and symbol guard are separate locks with fixed ordering.
+    assert (tmp_path / "after-market.lock").stat().st_mode & 0o777 == 0o600
+
+
+def test_after_market_guard_rejects_symlink(tmp_path):
+    from app.market_data.live_recovery_guard import after_market_recovery_guard
+
+    target = tmp_path / "target"
+    target.write_text("keep")
+    (tmp_path / "after-market.lock").symlink_to(target)
+    with pytest.raises(ValueError, match="LIVE_RECOVERY_GUARD_UNSAFE"):
+        with after_market_recovery_guard(root=tmp_path):
+            pass
+    assert target.read_text() == "keep"

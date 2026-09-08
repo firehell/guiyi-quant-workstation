@@ -75,6 +75,53 @@ class LiveRecoveryRequest:
         return ends
 
 
+def _recovery_additions(request, source, existing):
+    """Single coverage, overlap and aggregation path for online and captured input."""
+    ends = request.endpoints()
+    missing = set(ends) - existing[0].keys()
+    if len(source) != len(ends) or tuple(v.bar_end for v in source) != ends:
+        raise ValueError("LIVE_RECOVERY_COVERAGE_INVALID")
+    if any(v.trading_day != request.trading_day for v in source):
+        raise ValueError("LIVE_RECOVERY_TRADING_DAY_INVALID")
+    if any(v.bar_end in existing[0] and existing[0][v.bar_end] != v for v in source):
+        raise ValueError("LIVE_BAR_CONFLICT")
+    additions: list[list[CanonicalBar]] = [[v for v in source if v.bar_end in missing]]
+    by_end = {v.bar_end: v for v in source}
+    for index, frequency in enumerate(_FREQUENCIES[1:], 1):
+        derived = []
+        valid_ends = set()
+        for session in request.sessions:
+            buckets = {
+                bucket_window_for_bar(session, frequency, end)
+                for end in ends
+                if session.start < end <= session.end
+            }
+            for bucket in sorted(buckets, key=lambda v: v.start):
+                bucket_ends = tuple(
+                    bucket.start + timedelta(minutes=i)
+                    for i in range(
+                        1, int((bucket.end - bucket.start).total_seconds() // 60) + 1
+                    )
+                )
+                if any(end not in by_end for end in bucket_ends):
+                    continue
+                bar = aggregate_from_1m(
+                    tuple(by_end[end] for end in bucket_ends),
+                    target_frequency=frequency,
+                    sessions=(bucket,),
+                )[0]
+                valid_ends.add(bar.bar_end)
+                previous = existing[index].get(bar.bar_end)
+                if previous is not None and previous != bar:
+                    raise ValueError("LIVE_BAR_CONFLICT")
+                if previous is None:
+                    derived.append(bar)
+        if any(end not in valid_ends for end in existing[index]):
+            raise ValueError("LIVE_RECOVERY_SESSION_INVALID")
+        additions.append(derived)
+    return additions
+
+
 def recover_product(
     store: RedisLiveStore,
     request: LiveRecoveryRequest,
@@ -158,42 +205,7 @@ def recover_product(
             if str(exc) in ("PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED"):
                 redis.set(circuit_key, "STOPPED", ex=_LIVE_TTL_SECONDS)
             raise
-    if len(source) != len(ends) or tuple(v.bar_end for v in source) != ends:
-        raise ValueError("LIVE_RECOVERY_COVERAGE_INVALID")
-    if any(v.trading_day != request.trading_day for v in source):
-        raise ValueError("LIVE_RECOVERY_TRADING_DAY_INVALID")
-    if any(v.bar_end in existing[0] and existing[0][v.bar_end] != v for v in source):
-        raise ValueError("LIVE_BAR_CONFLICT")
-    additions: list[list[CanonicalBar]] = [[v for v in source if v.bar_end in missing]]
-    by_end = {v.bar_end: v for v in source}
-    for index, frequency in enumerate(_FREQUENCIES[1:], 1):
-        derived = []
-        for session in request.sessions:
-            buckets = {
-                bucket_window_for_bar(session, frequency, end)
-                for end in ends
-                if session.start < end <= session.end
-            }
-            for bucket in sorted(buckets, key=lambda v: v.start):
-                bucket_ends = tuple(
-                    bucket.start + timedelta(minutes=i)
-                    for i in range(
-                        1, int((bucket.end - bucket.start).total_seconds() // 60) + 1
-                    )
-                )
-                if any(end not in by_end for end in bucket_ends):
-                    continue
-                bar = aggregate_from_1m(
-                    tuple(by_end[end] for end in bucket_ends),
-                    target_frequency=frequency,
-                    sessions=(bucket,),
-                )[0]
-                previous = existing[index].get(bar.bar_end)
-                if previous is not None and previous != bar:
-                    raise ValueError("LIVE_BAR_CONFLICT")
-                if previous is None:
-                    derived.append(bar)
-        additions.append(derived)
+    additions = _recovery_additions(request, source, existing)
     if not any(additions):
         return "NO_GAP"
     with commit_guard():

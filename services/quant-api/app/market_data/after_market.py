@@ -14,6 +14,7 @@ import stat
 import tempfile
 import time
 from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -29,6 +30,7 @@ from app.core.env import PROJECT_ROOT
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import HistoricalDataManager, UpdateRequest
 from app.market_data.live_market import RedisLiveStore
+from app.market_data.live_recovery_guard import after_market_recovery_guard
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.rqdata_adapter import RQDataClient
 from app.market_data.session_clock import SHANGHAI
@@ -96,6 +98,7 @@ class AfterMarketUpdater:
         now: Callable[[], datetime],
         market_home_projection_invalidate: Callable[[], None] | None = None,
         market_home_projection_refresh: Callable[[], object] | None = None,
+        recovery_guard_factory: Callable[[], AbstractContextManager] | None = None,
     ) -> None:
         self.manager = manager
         self.rqdata = rqdata
@@ -106,9 +109,14 @@ class AfterMarketUpdater:
         self.now = now
         self.market_home_projection_invalidate = market_home_projection_invalidate
         self.market_home_projection_refresh = market_home_projection_refresh
+        self.recovery_guard_factory = recovery_guard_factory or nullcontext
 
     def run(self) -> AfterMarketResult:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
+        with self.recovery_guard_factory():
+            return self._run_guarded()
+
+    def _run_guarded(self) -> AfterMarketResult:
         started_at = _local_timestamp(self.now())
         products = load_operational_products()
         self._write_current_run(started_at, products)
@@ -437,6 +445,7 @@ def build_after_market_updater(
         now=lambda: datetime.now(SHANGHAI),
         market_home_projection_invalidate=projection_store.invalidate,
         market_home_projection_refresh=projection_refresh,
+        recovery_guard_factory=lambda: after_market_recovery_guard(wait=True),
     )
 
 

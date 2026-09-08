@@ -142,6 +142,45 @@ Event commit 与 one-shot send 持有同一锁，因此水位不能穿过 Event/
 MainContractMap，盘中使用既有冻结 rank1 Live snapshot；当日 MainContractMap 尚未由盘后发布不构成
 新的隐藏 Gate。分别报告历史 15m、当日 1m/15m 缺口；不可读历史保持未知，不能假装缺失数为零。
 
+### 已捕获源数据的五根 Live 恢复
+
+显式人工入口 `runtime recover-live-captured` 默认只读规划；`--apply` 必须携带新计划及精确计划哈希，
+每次真实写入仍需 owner 对目标、环境、范围的一次执行意图。计划与源哈希仅绑定内容，不授予执行权限。
+该入口不是后台 worker 的 retry/fallback，不改变正常 CLOSED 调度限制，也不扩大持续 Runtime 授权。
+
+范围限同一自然日/交易日、operational 冻结 rank1 物理合约、收盘后完整 completed 1m 前缀，
+捕获文件至多 512 KiB、225 行；增量必须恰为 1m/5m/15m/30m/60m 各一根。
+CLI 读取显式绝对路径的当前用户普通文件，拒绝符号链接、硬链接、超限和读取期间变化；
+源内容以 SHA-256 固定，复用 RQData 行规范化、Session/Calendar 与正式聚合。
+额外行、缺行、重复、身份/日期、OHLCV/OI、完整桶及任一重叠事实冲突全部拒绝。
+源文件来自先前经授权的真实查询；该入口无 provider/callback 能力，不能为了补齐输入重新下载。
+
+provider 已耗尽的三次预算保持原值；零下载模式不 claim、不重置或借用其他 Session 预算。
+计划冻结各 Session 预算及当日 circuit；权限/额度 circuit 非空、已记录预算消失或并发变化都停止。
+在既有提交 Lua 中核对这些原值以及订阅、所有原序列/score、key 类型、有效 TTL、恢复 revision 后，
+才允许一次追加五根并写实际提交时间的单调恢复水位。已有键不得过期后重建。
+五个 ZSET 及恢复水位沿用 3 天 TTL，成功时会刷新，预算 TTL 不刷新；水位同时绑定源和计划哈希供只读 NOOP 证明。
+这六个键的修改与共享锁文件使用均须包含在实际执行范围中。
+
+CLI 仅从 clean detached annotated exact-tag Runtime 运行，Live/Alert/After-market 已加载 root/commit 必须匹配；
+两条独立心跳须新鲜且明确证明该进程实际组合了恢复共享锁。缺字段的旧版本不合格；不能仅凭 shell
+开关推断另一进程状态。心跳新增 `runtime_root`、`runtime_commit`、`recovery_guard_enabled`，
+不改变 `alert:runtime-status` schema v6 或 Rule health 语义。未运行/已过期/未来心跳均拒绝。
+盘后任务正在运行、同日盘后维护已尝试或状态不可证明时，要求重新诊断消费者与 Canonical/Live 边界。
+使用既有 OS 锁协议的 `.run/live-recovery-guards/after-market.lock` 串行化盘后维护与人工恢复：
+恢复先非阻塞获取此全局锁，再取品种锁，在两把锁内检查盘后状态并提交；盘后任务先获取全局锁，
+从写 current_run 前一直持有到终态（含既有受限 retry），避免检查和提交之间启动维护。
+该有界锁文件是新增的运行副作用，随新版本部署和后续 apply 分别确认；dry-run 不创建锁文件。
+
+apply 重新解析权威身份并生成当前 cutoff，锁内提交时钟必须在 cutoff 后 60 秒内。
+跨日、订阅/版本/源/预算/数据变化使计划失效；已有五根全一致且对应恢复水位可证明时仅只读 NOOP，
+不重复刷新 TTL 或 revision。部分写入、Lua 错误、网络响应不确定均停止，不自动重试或回滚；人工入口专用 Redis client 关闭底层重试，连接/读写超时分别为 3/5 秒。
+Lua 隔离不是错误回滚保证；结果未知后仅只读核对五根及水位，再由 owner 决定新处置。
+
+恢复不发布历史消息、不调用 evaluator、不改游标/Scope/AlertEvent、不清健康故障或 acknowledgment、
+不补发通知。输入恢复与自然 completed Bar 评估、通知实际送达及 RUNTIME_READY 分别验收。
+具体命令和隔离测试入口只见 `TESTING.md`。
+
 ### 盘后 Runtime 状态合同
 
 `.run/after-market-status.json` 写 schema v2；读取兼容旧 schema v1。schema v2 在受监督自然盘后运行开始、任何
