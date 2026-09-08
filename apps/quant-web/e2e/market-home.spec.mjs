@@ -187,7 +187,7 @@ test('keeps 60 target-day D1 participants visible when RS2609 price change is un
 
   await expect(page.locator('tbody tr')).toHaveCount(60)
   await expect(page.getByText('涨跌不可用 1', { exact: true })).toBeVisible()
-  await expect(page.locator('tbody tr[data-symbol="rs"]')).toContainText('—')
+  await expect(page.locator('tbody tr[data-symbol="rs"] .change-badge')).toHaveText('—')
   for (const label of ['牛哇', '火天大有', '苏冰预警', '更多']) {
     const menu = page.locator('.market-home-header details').filter({ has: page.locator('summary', { hasText: label }) })
     await menu.locator('summary').click()
