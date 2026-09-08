@@ -45,7 +45,7 @@ export function useNewowDailyQuote(options: {
   const fetchPage = options.fetchPage ?? (async (request, signal) => (await import('../api/market.ts')).getMarketBarsPage(request, signal))
   let generation = 0
   let controller: AbortController | null = null
-  const stop = watch(options.symbol, async symbol => {
+  async function load(symbol: string | null): Promise<void> {
     const current = ++generation
     controller?.abort(); page.value = null
     if (!symbol) { state.value = 'unavailable'; return }
@@ -55,10 +55,16 @@ export function useNewowDailyQuote(options: {
       if (generation !== current) return
       page.value = response; state.value = 'ready'
     } catch { if (generation === current) state.value = 'unavailable' }
-  }, { immediate: true, flush: 'sync' })
+  }
+  const stop = watch(options.symbol, symbol => { void load(symbol) }, { immediate: true, flush: 'sync' })
   const quote = computed(() => {
     if (!page.value || !options.symbol.value || !options.contract.value) return null
     try { return projectNewowDailyQuote(page.value, options.symbol.value, options.contract.value) } catch { return null }
   })
-  return { quote, state: readonly(state), dispose() { ++generation; controller?.abort(); stop(); page.value = null } }
+  return {
+    quote,
+    state: readonly(state),
+    refresh() { void load(options.symbol.value) },
+    dispose() { ++generation; controller?.abort(); stop(); page.value = null },
+  }
 }

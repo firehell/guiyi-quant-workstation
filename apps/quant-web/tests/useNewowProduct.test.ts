@@ -262,6 +262,60 @@ test('same-identity busy and cancelled refreshes retain the last success as stal
   firstCancelled.dispose()
 })
 
+test('main-chart retry keeps the pinned as_of while refresh-current resets the whole generation', async () => {
+  const pending: Pending[] = []
+  let clock = 0
+  const refreshedAsOf = '2026-08-15T08:00:00.000Z'
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(clock++ === 0 ? AS_OF : refreshedAsOf),
+    fetchSection: controlled(pending),
+  })
+  await nextTick()
+  pending[0]!.reject(new NewowProductRequestError('NEWOW_DATA_UNAVAILABLE', 'unavailable'))
+  await flush()
+
+  const retry = state.loadChart()
+  assert.equal(pending[1]!.request.asOf, AS_OF)
+  pending[1]!.resolve(normalizedChart(pending[1]!.request))
+  await retry
+
+  const oldReference = state.loadReference()
+  const refreshCurrent = (state as typeof state & { refreshCurrent: () => void }).refreshCurrent
+  assert.equal(typeof refreshCurrent, 'function')
+  refreshCurrent()
+  assert.equal(pending[2]!.signal.aborted, true)
+  assert.equal(state.sections.chart.data.value, null)
+  assert.equal(state.sections.reference.data.value, null)
+  assert.equal(pending[3]!.request.asOf, refreshedAsOf)
+
+  pending[2]!.reject(new DOMException('aborted', 'AbortError'))
+  pending[3]!.resolve(normalizedChart(pending[3]!.request))
+  await oldReference
+  await flush()
+  assert.equal(state.asOf.value, refreshedAsOf)
+  assert.equal(state.sections.chart.state.value, 'ready')
+  state.dispose()
+})
+
+test('ordinary other-panel failure preserves an accepted main chart', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request))
+  await flush()
+  const acceptedChart = state.sections.chart.data.value
+
+  const auxiliary = state.loadAuxiliary('main_force_control')
+  pending[1]!.reject(new NewowProductRequestError('NEWOW_DATA_UNAVAILABLE', 'unavailable'))
+  await auxiliary
+
+  assert.equal(state.sections.chart.data.value, acceptedChart)
+  assert.equal(state.sections.chart.state.value, 'ready')
+  assert.equal(state.sections.auxiliary.state.value, 'unavailable')
+  state.dispose()
+})
+
 test('historical reference data unavailable stays section-local and preserves the validated chart and mirror', async () => {
   const pending: Pending[] = []
   const historicalAsOf = '2026-08-14T07:00:00.000001Z'

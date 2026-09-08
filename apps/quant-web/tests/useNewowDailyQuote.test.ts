@@ -6,7 +6,7 @@ const bar = (day, close) => ({ bar_end: `${day}T07:00:00Z`, trading_day: day, op
 const page = () => ({ request: { series_kind: 'actual_dominant', symbol: 'rb', frequency: '1d', limit: 2, before: null, contract: null }, bars: [bar('2026-09-02', 100), bar('2026-09-03', 105)], canonical_coverage: { start: '2026-09-02', end: '2026-09-03' }, page: { has_more_before: true, next_before: 'cursor' }, resolved_contract_segments: [{contract:'RB2605',start_trading_day:'2026-01-01',end_trading_day:'2026-12-31'}] })
 test('bounded daily quote validates request, prices, order, coverage and unique ownership', () => {
   assert.equal(projectNewowDailyQuote(page(), 'rb', 'RB2605').pct, 5)
-  for (const mutate of [p => p.request.frequency = '60m', p => p.request.limit = 3, p => p.bars.reverse(), p => p.bars[0].close = NaN, p => p.canonical_coverage.end = '2026-09-02', p => p.resolved_contract_segments.push({...p.resolved_contract_segments[0]})]) {
+  for (const mutate of [p => p.request.frequency = '60m', p => p.request.limit = 3, p => p.bars.reverse(), p => p.bars[0].close = NaN, p => p.bars[0].close = 0, p => p.canonical_coverage.end = '2026-09-02', p => p.resolved_contract_segments.push({...p.resolved_contract_segments[0]})]) {
     const p = page(); mutate(p); assert.throws(() => projectNewowDailyQuote(p, 'rb', 'RB2605'))
   }
   assert.throws(() => projectNewowDailyQuote(page(), 'rb', 'RB2610'))
@@ -25,6 +25,18 @@ test('product switch cancels pending quote and rejects late response; same produ
   assert.equal(q.quote.value, null)
   symbol.value = 'ag'; await nextTick(); assert.equal(pending.length, 2)
   q.dispose(); assert.equal(pending[1].signal.aborted, true)
+})
+test('explicit same-product refresh retries an unavailable daily quote', async () => {
+  const symbol = ref('rb'); const contract = ref('RB2605'); const pending = []
+  const q = useNewowDailyQuote({ symbol, contract, fetchPage: (request, signal) => new Promise((resolve, reject) => pending.push({request, signal, resolve, reject})) })
+  pending[0].reject(new Error('fixture unavailable')); await nextTick(); await nextTick()
+  assert.equal(q.quote.value, null)
+  assert.equal(typeof (q as typeof q & { refresh?: () => void }).refresh, 'function')
+  ;(q as typeof q & { refresh: () => void }).refresh()
+  assert.equal(pending.length, 2)
+  pending[1].resolve(page()); await nextTick(); await nextTick()
+  assert.equal(q.quote.value?.close, 105)
+  q.dispose()
 })
 test('D1 timestamps must agree with Shanghai trading day and exact timestamp coverage', () => {
   const future = page(); future.bars[1].bar_end = '2099-09-03T07:00:00Z'

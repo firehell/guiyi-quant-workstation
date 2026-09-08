@@ -129,6 +129,14 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   function returnToCurrent(): void {
+    resetCurrentGeneration()
+  }
+
+  function refreshCurrent(): void {
+    resetCurrentGeneration()
+  }
+
+  function resetCurrentGeneration(): void {
     resolverController?.abort()
     resolverController = null
     generation += 1
@@ -522,7 +530,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     historicalLoading: readonly(historicalLoading),
     sections: resources,
     referenceChartCompatible: readonly(referenceChartCompatible),
-    loadChart, loadNextChartPage, loadAuxiliary, loadReference, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, dispose,
+    loadChart, loadNextChartPage, loadAuxiliary, loadReference, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, refreshCurrent, dispose,
   }
 
   function abortAll(): void { for (const controller of controllers.values()) controller.abort(); controllers.clear(); inFlightSnapshotTokens.clear() }

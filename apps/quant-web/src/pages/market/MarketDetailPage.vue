@@ -217,6 +217,7 @@ onBeforeUnmount(() => { dailyQuote.dispose(); controller.dispose() })
             :identity="routeResult.identity"
             @focus-resolved="resolveFocus"
             @snapshot-mode="newowHistoricalAsOf = $event"
+            @refresh-current="dailyQuote.refresh"
           />
           <FreeChartWorkspace
             v-else-if="routeResult.identity.view === 'free' && header"
