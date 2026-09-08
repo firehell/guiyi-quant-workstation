@@ -16,6 +16,12 @@
 现场 compute 时 Bar 查询 MUST 为每个 active product 至多一次 `actual_dominant` D1 和一次 W1；
 dominant summary MUST 只读取一次。该 service MUST NOT 建立 provider、Redis Live 或写服务。
 
+每个 participant 都是有统一 target day completed D1、并通过 dominant identity 校验的 product；它不要求
+`price_change_1d` 可计算。summary 的 `price_up_count`、`price_down_count`、`price_flat_count` 与
+必填、非负整数 `price_unavailable_count` MUST 精确分割 `participant_count`。`price_change_1d=null`
+仅计入 `price_unavailable_count`，不得视为 flat；这包括已保留的 authoritative all-zero、zero-volume
+D1 predecessor 使 target-day 变动率不可计算的情况。
+
 `GET /api/v1/market/research/home-overview` SHALL 先读取 exact-identity derived projection；projection
 缺失、损坏或 identity 不匹配时，MUST 回退上述 authoritative compute。HTTP endpoint 本身 MUST NOT
 创建、更新、失效或修复 projection。
@@ -65,7 +71,7 @@ Projection SHALL 固定存放在 active Canonical root 下：
 该文件 MUST NOT 被视为 Canonical Bar、Catalog row、MainContractMap 或策略事实。文件删除后，
 系统 MUST 能完全依赖 authoritative compute 返回同一 HTTP contract。
 
-Projection envelope MUST 使用 schema version 1，并绑定：
+Projection envelope MUST 使用 schema version 2，并绑定：
 
 - timezone-aware `generated_at`；
 - `target_as_of`；
@@ -74,6 +80,8 @@ Projection envelope MUST 使用 schema version 1，并绑定：
 
 `payload.target_as_of` 与 `payload.data_as_of` MUST 等于 envelope target day。文件 MUST 为普通文件，
 不得通过 symlink 读取或写出 Canonical root 的 `.derived` 边界；文件大小 MUST 大于 0 且不超过 2 MiB。
+v1 或其他 schema version 的 envelope MUST 作为 projection miss；`MarketHomeProjection.read()` MUST
+只回退 authoritative compute，且不得因该 fallback 写入或升级旧文件。
 
 Natural after-market refresh MUST default closed. The factory MAY compose a refresh callback only
 when the owner-created local activation marker contains the exact enabled value; no API request,

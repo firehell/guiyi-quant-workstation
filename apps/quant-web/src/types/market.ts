@@ -57,6 +57,7 @@ export interface MarketHomeOverviewResponse {
     price_up_count: number
     price_down_count: number
     price_flat_count: number
+    price_unavailable_count: number
     daily_up_count: number
     daily_down_count: number
     daily_neutral_count: number

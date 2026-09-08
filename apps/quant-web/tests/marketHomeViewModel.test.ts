@@ -8,7 +8,18 @@ function overview(items = [item('ag', 'up', 'up'), item('jm', 'down', 'down')], 
     status: 'ready' as const,
     target_as_of: '2026-09-02', data_as_of: '2026-09-02', freshness: 'fresh' as const,
     active_count: items.length, participant_count: items.length, stale_count: 0, unavailable_count: 0,
-    summary: { price_up_count: 1, price_down_count: 1, price_flat_count: 0, daily_up_count: 1, daily_down_count: 1, daily_neutral_count: 0, daily_unavailable_count: 0, aligned_up_count: 1, aligned_down_count: 1 },
+    summary: {
+      price_up_count: items.filter((item) => item.price_change_1d !== null && item.price_change_1d > 0).length,
+      price_down_count: items.filter((item) => item.price_change_1d !== null && item.price_change_1d < 0).length,
+      price_flat_count: items.filter((item) => item.price_change_1d === 0).length,
+      price_unavailable_count: items.filter((item) => item.price_change_1d === null).length,
+      daily_up_count: items.filter((item) => item.daily_trend === 'up').length,
+      daily_down_count: items.filter((item) => item.daily_trend === 'down').length,
+      daily_neutral_count: items.filter((item) => item.daily_trend === 'neutral').length,
+      daily_unavailable_count: items.filter((item) => item.daily_trend === 'unavailable').length,
+      aligned_up_count: items.filter((item) => item.daily_trend === 'up' && item.weekly_trend === 'up').length,
+      aligned_down_count: items.filter((item) => item.daily_trend === 'down' && item.weekly_trend === 'down').length,
+    },
     items,
     sectors: [{ sector: 'black', active_count: items.length, participant_count: items.length, median_price_change_1d: 0.01 }],
     ...overrides,
@@ -16,7 +27,8 @@ function overview(items = [item('ag', 'up', 'up'), item('jm', 'down', 'down')], 
 }
 
 function item(symbol: string, dailyTrend: 'up' | 'down' | 'neutral' | 'unavailable', weeklyTrend: 'up' | 'down' | 'neutral' | 'unavailable') {
-  return { symbol, product_name: symbol, sector: 'black', exchange: 'DCE', actual_contract: `${symbol.toUpperCase()}2601`, dominant_mapping_date: '2026-09-02', data_as_of: '2026-09-02', close: 100, price_change_1d: null, price_change_5d: null, volume_ratio20: null, oi_change_1d: null, atr14_percentile252: null, daily_trend: dailyTrend, weekly_trend: weeklyTrend, reason_codes: [] }
+  const priceChange = dailyTrend === 'up' ? 0.01 : dailyTrend === 'down' ? -0.01 : dailyTrend === 'neutral' ? 0 : null
+  return { symbol, product_name: symbol, sector: 'black', exchange: 'DCE', actual_contract: `${symbol.toUpperCase()}2601`, dominant_mapping_date: '2026-09-02', data_as_of: '2026-09-02', close: 100, price_change_1d: priceChange, price_change_5d: null, volume_ratio20: null, oi_change_1d: null, atr14_percentile252: null, daily_trend: dailyTrend, weekly_trend: weeklyTrend, reason_codes: [] }
 }
 
 const runtime = { status: 'degraded', generated_at: '2026-09-02T01:00:00Z' }
@@ -29,6 +41,7 @@ test('maps D1 and W1 only into the approved alignment states', () => {
   })
 
   assert.deepEqual(value.rows.map((row) => row.alignment), ['aligned-up', 'aligned-down', 'neutral', 'mixed', 'unavailable'])
+  assert.deepEqual(value.rows.map((row) => row.price_change_1d), [0.01, -0.01, 0, 0.01, 0.01])
   assert.equal(value.events.availability, 'empty')
   assert.equal(value.runtime.status, 'degraded')
 })

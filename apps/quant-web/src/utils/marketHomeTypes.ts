@@ -76,8 +76,8 @@ function normalizeItem(payload: unknown, index: number): MarketHomeOverviewRespo
 
 function normalizeSummary(payload: unknown, participantCount: number): MarketHomeOverviewResponse['summary'] {
   const value = record(payload, 'summary')
-  const summary = { price_up_count: count(value.price_up_count, 'price_up_count'), price_down_count: count(value.price_down_count, 'price_down_count'), price_flat_count: count(value.price_flat_count, 'price_flat_count'), daily_up_count: count(value.daily_up_count, 'daily_up_count'), daily_down_count: count(value.daily_down_count, 'daily_down_count'), daily_neutral_count: count(value.daily_neutral_count, 'daily_neutral_count'), daily_unavailable_count: count(value.daily_unavailable_count, 'daily_unavailable_count'), aligned_up_count: count(value.aligned_up_count, 'aligned_up_count'), aligned_down_count: count(value.aligned_down_count, 'aligned_down_count') }
-  if (summary.price_up_count + summary.price_down_count + summary.price_flat_count !== participantCount || summary.daily_up_count + summary.daily_down_count + summary.daily_neutral_count + summary.daily_unavailable_count !== participantCount || summary.aligned_up_count + summary.aligned_down_count > participantCount) throw new Error('market home summary is inconsistent')
+  const summary = { price_up_count: count(value.price_up_count, 'price_up_count'), price_down_count: count(value.price_down_count, 'price_down_count'), price_flat_count: count(value.price_flat_count, 'price_flat_count'), price_unavailable_count: count(value.price_unavailable_count, 'price_unavailable_count'), daily_up_count: count(value.daily_up_count, 'daily_up_count'), daily_down_count: count(value.daily_down_count, 'daily_down_count'), daily_neutral_count: count(value.daily_neutral_count, 'daily_neutral_count'), daily_unavailable_count: count(value.daily_unavailable_count, 'daily_unavailable_count'), aligned_up_count: count(value.aligned_up_count, 'aligned_up_count'), aligned_down_count: count(value.aligned_down_count, 'aligned_down_count') }
+  if (summary.price_up_count + summary.price_down_count + summary.price_flat_count + summary.price_unavailable_count !== participantCount || summary.daily_up_count + summary.daily_down_count + summary.daily_neutral_count + summary.daily_unavailable_count !== participantCount || summary.aligned_up_count + summary.aligned_down_count > participantCount) throw new Error('market home summary is inconsistent')
   return summary
 }
 
@@ -86,6 +86,7 @@ function validateSummaryItems(summary: MarketHomeOverviewResponse['summary'], it
     price_up_count: items.filter((item) => item.price_change_1d !== null && item.price_change_1d > 0).length,
     price_down_count: items.filter((item) => item.price_change_1d !== null && item.price_change_1d < 0).length,
     price_flat_count: items.filter((item) => item.price_change_1d === 0).length,
+    price_unavailable_count: items.filter((item) => item.price_change_1d === null).length,
     daily_up_count: items.filter((item) => item.daily_trend === 'up').length,
     daily_down_count: items.filter((item) => item.daily_trend === 'down').length,
     daily_neutral_count: items.filter((item) => item.daily_trend === 'neutral').length,

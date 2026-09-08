@@ -42,6 +42,7 @@ def _response() -> MarketHomeOverviewResponse:
             price_up_count=1,
             price_down_count=0,
             price_flat_count=0,
+            price_unavailable_count=0,
             daily_up_count=1,
             daily_down_count=0,
             daily_neutral_count=0,
