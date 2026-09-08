@@ -23,3 +23,10 @@ export function marketHomeUnifiedProductChartQuery(symbol: string) {
 export function marketHomeUnifiedEventChartQuery(event: AlertEvent) {
   return serializeMarketDetailIdentity(marketDetailEventIdentity(event))
 }
+
+export function marketHomeViewChartQuery(view: 'newow' | 'htdy' | 'subing' | 'free', symbol: string) {
+  return serializeMarketDetailIdentity({
+    view, symbol, ...(view === 'newow' ? { strategy: 'trend' as const } : {}),
+    seriesKind: 'actual_dominant', frequency: view === 'subing' ? '15m' : '1d',
+  })
+}

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import * as primitives from '../src/components/market/detail/newow/newowProductChartPrimitives.ts'
 import test from 'node:test'
 
 import {
@@ -230,3 +231,68 @@ type MutableChartResponse = {
     : NewowProductSectionResponse<'chart'>[K]
 }
 type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly (infer U)[] ? Mutable<U>[] : T[K] extends object ? Mutable<T[K]> : T[K] }
+
+
+test('missing and warming main values break runs and trend band, including an absent frame', () => {
+  const response = chartResponse('trend', '60m')
+  const value = response.value!
+  const third = bar('2026-08-16T07:00:00Z', '2026-08-16', '102')
+  value.bars.push(third)
+  value.frames.push({ ...structuredClone(value.frames[1]!), bar_end: third.bar_end })
+  value.frames[1]!.main_values.a = null
+  let model = buildNewowProductChartModel(response)
+  assert.deepEqual(model.mainLines.filter(line => line.key === 'a').map(line => line.points.length), [1, 1])
+  assert.equal(model.bandAreas.length, 0)
+  value.frames.splice(1, 1)
+  model = buildNewowProductChartModel(response)
+  assert.deepEqual(model.mainLines.filter(line => line.key === 'b').map(line => line.points.length), [1, 1])
+  value.frames[1]!.status.status = 'warming'
+  assert.equal(buildNewowProductChartModel(response).mainLines.filter(line => line.key === 'b').length, 1)
+})
+
+test('MACD uses point times, preserves signed zero and splits invalid or warming points', () => {
+  const times = ['2026-08-14T07:00:00Z', '2026-08-15T07:00:00Z', '2026-08-16T07:00:00Z']
+  const points = times.map((bar_end, index) => ({ bar_end, value: index - 1, ready: index !== 1, valid: true, reason: index === 1 ? 'WARMING' : null }))
+  const value = { component: 'macd', segments: [{ physical_contract: 'JM2601', segment_id: 'segment-1', bar_ends: times, data: { dif: points, dea: points, histogram: points.map(point => ({ ...point, ready: true, reason: null })) } }] } as NewowAuxiliaryValue
+  const model = buildNewowAuxiliaryChartModel(value)
+  assert.deepEqual(model.series.filter(series => series.key === 'dif').map(series => series.points.map(point => point.value)), [[-1], [1]])
+  assert.deepEqual(model.series.find(series => series.key === 'histogram')!.points.map(point => point.value), [-1, 0, 1])
+})
+
+test('aligns auxiliary by chart owner and exact time, never auxiliary array index or snapshot mismatch', () => {
+  assert.equal(typeof primitives.alignNewowAuxiliaryChartModel, 'function')
+  const { alignNewowAuxiliaryChartModel, newowChartSnapshotKey } = primitives
+  const chart = chartResponse('trend', '1w')
+  const value = auxiliaryValue('main_force_control', { kongpan: [20, 30], status: [], current_status: 'weak', formula_version: 'test' })
+  const auxiliary = { meta: { ...chart.meta, input_content_sha256: 'c'.repeat(64) }, section: 'auxiliary', status: chart.status, value } as NewowProductSectionResponse<'auxiliary'>
+  let aligned = alignNewowAuxiliaryChartModel(chart, auxiliary)
+  assert.deepEqual(aligned!.series[0]!.points.map(point => point.time), [{ year: 2026, month: 8, day: 14 }, { year: 2026, month: 8, day: 15 }])
+  assert.equal(newowChartSnapshotKey(chart), newowChartSnapshotKey(auxiliary))
+  chart.value!.bars[0]!.physical_contract = 'JM2605'
+  aligned = alignNewowAuxiliaryChartModel(chart, auxiliary)
+  assert.deepEqual(aligned!.series[0]!.points.map(point => point.value), [30])
+  assert.equal(alignNewowAuxiliaryChartModel(chart, { ...auxiliary, meta: { ...auxiliary.meta, snapshot_token: 'other' } }), null)
+  assert.equal(alignNewowAuxiliaryChartModel(chart, { ...auxiliary, meta: { ...auxiliary.meta, snapshot_token: null } }), null)
+})
+
+
+test('band primitive paints authoritative coordinates and releases attachment on detach', async () => {
+  const { NewowProductBandPrimitive } = await import('../src/components/market/detail/newow/newowProductBandPrimitive.ts')
+  const model = buildNewowProductChartModel(chartResponse('trend', '1d'))
+  assert.equal(model.bandAreas.length, 1)
+  const primitive = new NewowProductBandPrimitive()
+  const coordinates: unknown[] = []
+  const polygons: number[][] = []
+  let updates = 0
+  const target = { useMediaCoordinateSpace(callback: (scope: { context: object }) => void) { callback({ context: { save() {}, restore() {}, beginPath() {}, closePath() {}, fill() {}, moveTo(x: number, y: number) { polygons.push([x, y]) }, lineTo(x: number, y: number) { polygons.push([x, y]) } } }) } }
+  primitive.attached({ chart: { timeScale: () => ({ timeToCoordinate(time: unknown) { coordinates.push(time); return coordinates.length * 10 } }) }, series: { priceToCoordinate: (price: number) => price }, requestUpdate: () => { updates++ } } as never)
+  primitive.setData(model.bandAreas)
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.equal(updates, 1)
+  assert.deepEqual(coordinates, [{ year: 2026, month: 8, day: 14 }, { year: 2026, month: 8, day: 15 }])
+  assert.deepEqual(polygons, [[10, 99], [20, 100], [20, 102], [10, 101]])
+  primitive.detached(); primitive.setData(model.bandAreas)
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.equal(updates, 1)
+  assert.equal(polygons.length, 4)
+})

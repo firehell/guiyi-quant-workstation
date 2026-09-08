@@ -241,6 +241,20 @@ def test_contract_warmup_parser_requires_apply_hash_and_rejects_abbreviations() 
             parser.parse_args(missing)
 
 
+def test_contract_warmup_parser_accepts_only_explicit_15m_scope() -> None:
+    parser = build_parser()
+    common = [
+        "data", "contract-warmup", "--symbol", "pf", "--contract", "PF2611",
+        "--through", "2026-09-03",
+    ]
+
+    parsed = parser.parse_args([*common, "--frequency", "15m"])
+
+    assert parsed.frequency == "15m"
+    with pytest.raises(CliUsageError):
+        parser.parse_args([*common, "--frequency", "1m"])
+
+
 def test_contract_warmup_dry_run_builds_active_request_and_fixed_public_payload() -> None:
     manager = FakeManager()
     stdout = io.StringIO()
@@ -276,6 +290,9 @@ def test_contract_warmup_dry_run_builds_active_request_and_fixed_public_payload(
         "expired_date": "2026-11-13",
         "requested_window": {"start": "2025-11-17", "through": "2026-09-03"},
         "effective_window": {"start": "2025-11-17", "through": "2026-09-03"},
+        "frequency": None,
+        "dependency_frequencies": [],
+        "frequencies": [],
         "direct_target_count": 1,
         "derived_target_count": 2,
         "expected_bar_count": 7,
@@ -303,6 +320,7 @@ def test_contract_warmup_dry_run_builds_active_request_and_fixed_public_payload(
     assert request.through == date(2026, 9, 3)
     assert request.expected_plan_sha256 is None
     assert request.apply is False
+    assert request.frequency is None
     assert manager.calls[0][2] is None
     assert len(manager.calls) == 1
 
@@ -361,6 +379,26 @@ def test_contract_warmup_payload_exposes_requested_and_effective_windows() -> No
         "through": "2026-11-12",
     }
     assert "through" not in payload
+
+
+def test_contract_warmup_payload_binds_15m_scope_and_minute_dependency() -> None:
+    result = ContractWarmupResult(
+        status="planned",
+        readonly=True,
+        plan=ContractWarmupPlan(
+            symbol="pf", contract="PF2611", provider="rqdata",
+            listed_date=date(2025, 11, 17), expired_date=date(2026, 11, 13),
+            requested_through=date(2026, 9, 3), effective_through=date(2026, 9, 3),
+            target_windows=(), direct_target_count=0, derived_target_count=0,
+            expected_bar_count=0, provider_request_count=0, plan_sha256="a" * 64,
+            frequency="15m", dependency_frequencies=("1m",), frequencies=("1m", "15m"),
+        ),
+        applied=0, blocked=0, failed=0, provider_requests=0,
+    )
+
+    assert data_commands.contract_warmup_payload(result)["frequency"] == "15m"
+    assert data_commands.contract_warmup_payload(result)["dependency_frequencies"] == ["1m"]
+    assert data_commands.contract_warmup_payload(result)["frequencies"] == ["1m", "15m"]
 
 
 def test_contract_warmup_apply_failure_is_non_readonly_and_does_not_leak_details(

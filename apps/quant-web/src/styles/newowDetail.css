@@ -1,0 +1,58 @@
+/* Explicit route-local palette: other detail workspaces retain their theme. */
+.market-detail-page.newow-detail-light.newow-detail-light {
+  --gy-bg-panel:#fff; --gy-bg-app:#fff; --gy-bg-elevated:#f8f9fb; --gy-bg-overlay:#fff;
+  --gy-text-primary:#20242b; --gy-text-secondary:#667085; --gy-text-muted:#667085;
+  --gy-border:#ebedf0; --gy-border-subtle:#ebedf0; --gy-accent:#ff6b2c; --gy-detail-accent:#ff6b2c;
+  --gy-border-focus:#365af5; --gy-up:#ff403a; --gy-down:#22b95d; --gy-bg-hover:#fff4ee;
+  --gy-detail-page-bg:#fff; --gy-detail-section-bg:#f8f9fb; --gy-detail-accent-soft:#fff4ee;
+  padding:0 24px 32px; background:#fff; color:#20242b; font-variant-numeric:tabular-nums;
+  display:flex; flex-direction:column; min-width:0;
+}
+.newow-detail-light > .detail-view-nav { display:contents; }
+.newow-detail-light .detail-view-nav__views { order:-3; }
+.newow-detail-light > .quote-header { order:-2; }
+.newow-detail-light .detail-view-nav__controls { order:-1; padding:12px 0; border-bottom:1px solid #ebedf0; }
+.newow-detail-light .detail-view-nav { padding:0 0 12px; }
+.newow-detail-light .detail-view-nav__views { min-height:56px; border-bottom:1px solid #ebedf0; }
+.newow-detail-light .detail-view-nav__views a { color:inherit; text-decoration:none; padding:12px; white-space:nowrap; }
+.newow-detail-light .newow-brand { font-size:24px; font-weight:700; }
+.newow-detail-light .detail-view-nav__views button.is-active { border:0; border-bottom:3px solid #ff6b2c; border-radius:0; background:#fff; color:#ff6b2c; }
+.newow-detail-light select { min-height:44px; max-width:200px; padding:0 12px; background:#fff; color:#20242b; border:1px solid #ebedf0; border-radius:7px; }
+.newow-detail-light .quote-header--newow { display:flex; align-items:center; flex-wrap:wrap; gap:24px; padding:16px 0; }
+.newow-detail-light .quote-header__price { margin:0; }
+.newow-detail-light .quote-header__price span { padding:5px 10px; border-radius:7px; background:#f8f9fb; }
+.newow-detail-light .quote-header__price--up span { background:#fff0ef; }
+.newow-detail-light .quote-header__price--down span { background:#eaf8ef; }
+.newow-detail-light .quote-header__facts { flex:1; min-width:320px; }
+.newow-detail-light .quote-header__asof { margin:0; font-size:12px; }
+.newow-detail-light .quote-header__status { font-size:12px; }
+.newow-detail-light .market-detail-page__workspace { padding:0; min-width:0; }
+.newow-detail-light button { cursor:pointer; min-height:44px; }
+.newow-detail-light :focus-visible { outline:2px solid #365af5; outline-offset:2px; }
+.newow-detail-light code { overflow-wrap:anywhere; }
+@media(max-width:640px) { .market-detail-page.newow-detail-light.newow-detail-light { padding-inline:12px; } .newow-detail-light .quote-header__facts { min-width:0; flex-basis:100%; } }
+
+.newow-detail-light .quote-header__price--up strong { color:#ff403a; }
+.newow-detail-light .quote-header__price--down strong { color:#22b95d; }
+.newow-detail-light .quote-header__price--neutral strong { color:#20242b; }
+
+@media(min-width: 641px) {
+  .newow-detail-light .quote-header--newow { gap:16px; padding:8px 0; }
+  .newow-detail-light .quote-header__identity > div { display:grid; grid-template-columns:auto auto; align-items:center; column-gap:10px; }
+  .newow-detail-light .quote-header__identity h1 { grid-column:1 / -1; grid-row:1; font-size:22px; margin:0 0 4px; }
+  .newow-detail-light .quote-header__identity p { font-size:12px; }
+  .newow-detail-light .quote-header__identity { align-items:center; gap:10px; }
+  .newow-detail-light .quote-header__price { gap:8px; }
+  .newow-detail-light .quote-header__price strong { font-size:28px; }
+  .newow-detail-light .quote-header__facts { display:flex; justify-content:space-around; gap:12px; min-width:300px; order:3; }
+  .newow-detail-light .quote-header__facts div { display:flex; align-items:center; gap:8px; padding:0; background:none; }
+  .newow-detail-light .quote-header__facts dd { margin:0; }
+  .newow-detail-light .quote-header__asof { order:4; }
+  .newow-detail-light .detail-view-nav__controls { padding:6px 0; }
+  .newow-detail-light .newow-summary { padding:8px 0; }
+  .newow-detail-light .newow-summary__facts button { min-height:32px; padding-inline:4px; }
+}
+
+.newow-detail-light .newow-return-badge { display:inline-block; padding:3px 9px; border-radius:7px; font-variant-numeric:tabular-nums; color:#667085; background:#f3f4f6; }
+.newow-detail-light .newow-return-badge[data-direction="up"] { color:#ff403a; background:#fff0ef; }
+.newow-detail-light .newow-return-badge[data-direction="down"] { color:#22b95d; background:#eaf8ef; }

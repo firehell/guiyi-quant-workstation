@@ -1,5 +1,7 @@
 # Newow 桌面工作站 Engineering Spec V1
 
+> 当前实现入口为 [白色 V2 设计](2026-09-07-newow-detail-light-design.md) 与 [实施计划](2026-09-07-newow-detail-light-implementation-plan.md)。它们替代本文深色/右栏/底部解释 tab/参考宽表；MACD 内核复用、身份、时间与证据边界继续按未冲突部分约束，不将本历史设计视作实现完成记录。
+
 日期：2026-09-07
 阶段：Stage 5；文档设计与自审，不执行产品代码。
 读取基线：`98a834d9674c51117d911f5c9df0c9f2cc5dce7a`（develop）。

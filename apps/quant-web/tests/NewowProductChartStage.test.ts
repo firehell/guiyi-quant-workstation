@@ -85,7 +85,7 @@ test('emits stable signal selection and preserves an established viewport and fo
   assert.equal(clickListener, undefined)
 })
 
-test('renders action IDs, hint source and confirmation facts without owning a product or period selector', async () => {
+test('dense same-Bar hints stay queryable by exact ID without adding native markers or anchor series', async () => {
   const Stage = await loadComponent()
   const source = readFileSync(componentUrl, 'utf8')
   assert.doesNotMatch(source, /defineModel|strategy-options|frequency-options|select-symbol/)
@@ -96,37 +96,111 @@ test('renders action IDs, hint source and confirmation facts without owning a pr
     timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
     subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
   }
-  const Host = defineComponent({ setup: () => () => h(Stage, { response: chartResponse(), selectedSignalId: null }) })
+  const response = chartResponse()
+  const value = response.value!
+  value.hints = Array.from({ length: 24 }, (_, index) => ({ ...value.hints[0]!, hint_id: `hint-${index}`, sequence: index + 2 }))
+  value.frames[0]!.hint_ids = value.hints.map(hint => hint.hint_id)
+  value.actions[0]!.sequence = 1
+  value.actions.unshift({ ...value.actions[0]!, signal_id: 'clear-stable', kind: 'CLEAR', sequence: 0 })
+  value.frames[0]!.action_ids.unshift('clear-stable')
+  const selected: string[] = []
+  const Host = defineComponent({ setup: () => () => h(Stage, { response, selectedSignalId: null, 'onSelect-hint': (id: string) => selected.push(id) }) })
   const app = createRenderer(nodeOperations()).createApp(Host)
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart, markerSets))
   const root = element('root')
   app.mount(root)
   await nextTick()
 
-  assert.deepEqual(markerSets.flatMap((items) => items.map((marker) => marker.id)), ['build-stable', 'hint-stable'])
+  assert.deepEqual(markerSets.flatMap((items) => items.map((marker) => marker.id)), ['clear-stable', 'build-stable'])
   assert.equal(seriesData.some((items) => items.some((item) => (
     typeof item === 'object' && item !== null && 'value' in item && item.value === 88
-  ))), true, 'the Hint marker series must use anchor_price instead of candle/reference price')
-  assert.ok(findNode(root, (node) => node.text.includes('来源 canonical:jm:JM2601:60m')))
-  assert.ok(findNode(root, (node) => node.text.includes('响应公式 newow_hhv_llv_channel_page_v1')))
-  assert.ok(findNode(root, (node) => node.text.includes('owner JM2601 · segment-1')))
-  assert.ok(findNode(root, (node) => node.text.includes('2026-08-15 16:30')))
+  ))), false, 'hidden Hint anchors must not affect the native price scale')
+  for (const hint of value.hints) {
+    const button = findNode(root, (node) => node.props['data-hint-id'] === hint.hint_id)
+    assert.ok(button, `complete Hint entry remains available: ${hint.hint_id}`)
+    ;(button.props.onClick as () => void)()
+  }
+  assert.deepEqual(selected, value.hints.map(hint => hint.hint_id), 'same-kind same-Bar entries retain distinct selection IDs')
+  assert.doesNotMatch(source, /<ul[\s\S]*来源/)
   app.unmount()
 })
 
-test('wires three visible auxiliary sequences and renders lifecycle before a retained preview', () => {
-  const source = readFileSync(workspaceUrl, 'utf8')
-  for (const label of ['主力控盘', '涨跌动能', '主力照妖镜']) assert.match(source, new RegExp(label))
-  assert.match(source, /<svg[\s\S]*<polyline[\s\S]*series\.points/)
-  const lifecycle = source.indexOf('v-if="auxiliaryPresentation.message"')
-  const retained = source.indexOf('v-if="auxiliaryPresentation.showRetainedValue')
-  assert.ok(lifecycle >= 0 && retained > lifecycle, 'loading/error/stale status must render before retained data')
-  assert.match(source, /selectedAuxiliary === 'cup_handle'/)
+test('creates three native panes with volume zero/color and releases resources', async () => {
+  const Stage = await loadComponent()
+  const records: Array<{ definition: { type: string }; options: Record<string, unknown>; pane: number; data: Array<{ value: number; color: string }> }> = []
+  let removed = false
+  let disconnected = false
+  const resizeCalls: unknown[][] = []
+  const panes = [pane(), pane(), pane()]
+  let paneCount = 1
+  const fakeChart = {
+    addPane: () => panes[paneCount++], panes: () => panes.slice(0, paneCount),
+    addSeries(definition: { type: string }, options: Record<string, unknown>, index = 0) {
+      const record = { definition, options, pane: index, data: [] as Array<{ value: number; color: string }> }; records.push(record)
+      return { setData(data: typeof record.data) { record.data = data }, attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {} }
+    }, removeSeries() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize(...args: unknown[]) { resizeCalls.push(args) }, remove() { removed = true },
+  }
+  const response = chartResponse()
+  response.value!.bars[0]!.volume = 0
+  response.value!.bars.push({ ...bar('2026-08-15T08:00:00Z', '2026-08-15'), close: '99', volume: 9 })
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, { response, selectedSignalId: null }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, { ...adapter(fakeChart), createResizeObserver: () => ({ observe() {}, disconnect() { disconnected = true } }) })
+  app.mount(element('root')); await nextTick()
+  assert.equal(paneCount, 3)
+  const volume = records.find(record => record.pane === 1 && record.definition.type === 'Histogram')!
+  assert.equal(volume.data[0]!.value, 0)
+  assert.equal(volume.data[0]!.color, '#FF403A')
+  assert.deepEqual(volume.data.map(point => [point.value, point.color]), [[0, '#FF403A'], [9, '#22B95D']])
+  assert.equal(records.filter(record => record.pane === 2).length > 0, true, 'keep empty auxiliary pane without manufacturing an indicator zero')
+  assert.equal(resizeCalls.at(-1)?.[2], true, 'pane labels require completed native layout before reading pane heights')
+  app.unmount()
+  assert.equal(removed, true); assert.equal(disconnected, true)
 })
+
+test('signed MACD bars share pane 2 and switch/invalidated snapshots remove every old series', async () => {
+  const Stage = await loadComponent()
+  const records: Array<{ definition: { type: string }; pane: number; data: Array<{ value?: number; color?: string; time: unknown }>; removed: boolean }> = []
+  const chart = ref<NewowProductSectionResponse<'chart'> | null>(prependBar(chartResponse()))
+  const times = chart.value!.value!.bars.map(bar => bar.bar_end)
+  const points = times.map((bar_end, index) => ({ bar_end, value: index === 0 ? -2 : 3, ready: true, valid: true, reason: null }))
+  const auxiliary = ref({ section: 'auxiliary', meta: chart.value!.meta, status: ready(), value: { component: 'macd', segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, data: { dif: points, dea: points, histogram: points } }] } })
+  const fakeChart = {
+    addSeries(definition: { type: string }, _options: unknown, pane = 0) {
+      const record = { definition, pane, data: [] as Array<{ value?: number; color?: string; time: unknown }>, removed: false }; records.push(record)
+      return { record, setData(data: typeof record.data) { record.data = data } }
+    }, removeSeries(series: { record: typeof records[number] }) { series.record.removed = true },
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, { response: chart.value, auxiliaryResponse: auxiliary.value, auxiliaryLifecycle: 'ready', selectedSignalId: null }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+  const histogram = records.find(record => record.pane === 2 && record.definition.type === 'Histogram')!
+  assert.deepEqual(histogram.data.map(point => [point.value, point.color]), [[-2, '#22B95D'], [3, '#FF403A']])
+  const candleTimes = records.find(record => record.definition.type === 'Candlestick')!.data.map(point => point.time)
+  assert.deepEqual(histogram.data.map(point => point.time), candleTimes)
+  auxiliary.value = { ...auxiliary.value, meta: { ...auxiliary.value.meta, snapshot_token: 'invalidated' } }
+  await nextTick()
+  assert.equal(records.filter(record => record.pane === 2 && record.data.some(point => point.value !== undefined) && !record.removed).length, 0)
+  chart.value = null; await nextTick()
+  assert.equal(records.filter(record => !record.removed && record.data.length > 0).length, 0, 'price, volume and auxiliary clear together')
+  app.unmount()
+})
+
+function pane() { return { getHeight: () => 100, setStretchFactor() {}, setHeight() {}, setPreserveEmptyPane() {} } }
 
 function adapter(fakeChart: object, markerSets: Array<Array<{ id: string; text: string }>> = []): NewowProductChartAdapter {
   return {
-    createChart: () => fakeChart as never,
+    createChart: () => {
+      const chart = fakeChart as { addSeries: (...args: unknown[]) => object; panes?: () => unknown[]; addPane?: () => unknown }
+      const add = chart.addSeries.bind(chart)
+      chart.addSeries = (...args) => ({ attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {}, ...add(...args) })
+      chart.panes ??= () => [pane(), pane(), pane()]
+      chart.addPane ??= () => pane()
+      return chart as never
+    },
     createSeriesMarkers: () => ({ setMarkers(markers: Array<{ id: string; text: string }>) { markerSets.push(markers) } }) as never,
     createResizeObserver: () => ({ observe() {}, disconnect() {} }),
   }

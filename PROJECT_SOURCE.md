@@ -1,6 +1,6 @@
 # 归一量化稳定产品面
 
-更新时间：2026-09-05
+更新时间：2026-09-07
 
 归一量化是本地、单用户的国内期货研究工作站。稳定产品边界允许可信行情、Market Web、Newow 只读策略与参考交易、通用指标、HTDY/苏冰研究观察、Alert 与人工判断；不做自动交易、实盘下单、账户/委托/持仓管理、SaaS、多用户权限或 AI 自动晋升。所有图表、参考交易和通知都是研究观察，`auto_order=false`。具体代码、Release 与 Runtime 是否已经具备这些能力，仍以代码、测试和 `STATUS.md` 为准。
 
@@ -8,6 +8,7 @@
 
 - 唯一 Web 产品为 Market，route 仅 `/market` 与 `/market/chart`。
 - Market 首页以三个 O(1) bulk、只读资源展示 Runtime health、active completed D1/W1 generic overview 与当前 immutable Alert Events；浏览器不按品种请求、不重算指标或策略。人工点击品种或 Event 后进入 `/market/chart` 复核。
+- 首页采用白色全宽桌面布局、期货板块本地筛选与收盘/涨跌幅/量比/增仓率表头三态排序；研究观察默认收起，偏好可恢复。目标参考价未接入同身份 bulk authority，固定不可用且不可排序；增仓率按比例百分比展示，不能解释为做多。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 只显示 Event-backed `S↑/S↓` marker，不新增 overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
 - Market 详情的已接受产品合同使用 `Newow / HTDY / SuBing / Free` 四个视角。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；旧 `view=trend` 与 `/api/v1/market/newow/trend-detail` 仅保留固定 `actual_dominant + 1d` 兼容语义。其他视角不得消费或复制这些 Newow 事实。
@@ -17,6 +18,8 @@
 
 - 本节冻结允许实现的稳定产品合同，不声明 Newow 三策略 × 三周期、ReferenceTrade 或新 Workspace 已发布、已部署或通过生产验收。
 - Newow 主产品范围为趋势、震荡、主升浪 × `1w/1d/60m` 九个独立组合，全部只消费 completed Canonical `actual_dominant`，并继续通过 `MarketDataService`、Catalog 与 `MainContractMap` 取得行情和物理 owner。浏览器不聚合周期、不重算公式、不配对交易。
+- Newow 详情采用局部白色全宽 Shell、两行策略摘要、原位展开解释与原生弹窗；K 线、成交量和单一副图共享时间轴。默认 MACD 为既有内核的只读显示（12/26/9、sma_window、histogram×2），不声明牛哇 MACD 原站 parity；其他副图替换同一 pane。
+- 日线收盘报价通过有界 `actual_dominant + 1d + limit=2` 独立读取并标记时间/非实时。参考记录随文档纵向滚动，首次可见读取一次、cursor 手动加载更多；解释和独立比较器按需读取。长身份/原始时间仍可在来源和详情中查询，缺失或不兼容证据不填示例值。
 - 主动作只有各策略自己的 `BUILD/CLEAR`；J、D1–D6、4/7/11、阶段、风险和结构信息是 `quantity_effect=none` 的 Hint。无主动作是有效策略结果，不能与 `EVIDENCE_REQUIRED`、`NOT_APPLICABLE` 或照妖镜重绘混写成“无信号”。
 - ReferenceTrade 是可从固定输入与版本重算的只读投影，不是 Position、Order、Account、Execution、Fill 或 AlertEvent。趋势使用慢线 B、震荡使用 BUILD Low/CLEAR High、主升浪使用 MA45 作为语义参考价；价格与收益使用 Decimal，零手续费、零滑点，不推断手数、资金或真实可成交性。
 - 未清仓记录保持 `OPEN`；主力区段结束但没有 CLEAR 时为 `ROLLOVER_INTERRUPTED`，只使用旧物理合约、旧区段、同周期最后 completed Close 单列参考浮动，不伪造 CLEAR、不跨合约或跨频补价、不计入 CLOSED 统计。

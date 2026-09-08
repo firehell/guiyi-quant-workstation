@@ -1,4 +1,5 @@
 import { performance } from 'node:perf_hooks'
+import richMacd from './fixtures/newow-rich-macd.json' with { type: 'json' }
 
 export const NEWOW_AS_OF = '2026-09-03T08:00:00.000Z'
 export const NEWOW_PATH = '/market/chart?symbol=rb&view=newow&strategy=trend&frequency=1d&series_kind=actual_dominant'
@@ -43,9 +44,9 @@ export function newowRoute(strategy = 'trend', frequency = '1d', extra = '') {
   return `/market/chart?symbol=rb&view=newow&strategy=${strategy}&frequency=${frequency}&series_kind=actual_dominant${extra}`
 }
 
-export function buildNewowFixtureEnvelopeForTest(section = 'reference', strategy = 'trend', frequency = '1d', cursor = false, locateFrom = null) {
+export function buildNewowFixtureEnvelopeForTest(section = 'reference', strategy = 'trend', frequency = '1d', cursor = false, locateFrom = null, options = {}) {
   const url = fixtureValidationUrl(section, strategy, frequency, cursor, locateFrom)
-  const payload = envelope(url, section, strategy, frequency, {})
+  const payload = envelope(url, section, strategy, frequency, options)
   validateFixtureEnvelope(payload, section, strategy, frequency, url)
   return payload
 }
@@ -170,7 +171,7 @@ export async function installNewowProductFixtures(page, options = {}) {
     if (url.pathname === '/api/v1/market/bars/page') {
       if (options.genericSeries === 'pending') return new Promise(() => {})
       if (options.genericSeries === 'failed') return route.abort('failed')
-      return route.fulfill({ json: genericBarsPage(url) })
+      return route.fulfill({ json: genericBarsPage(url, options) })
     }
     if (url.pathname === '/api/v1/market/newow/trend-detail') {
       return route.abort('failed')
@@ -231,7 +232,7 @@ function validateProductQuery(url, section, strategy, frequency) {
     comparator: ['', 'snapshot_token'],
   }
   if (!allowedShapes[section].includes(optionalShape)) return `invalid Newow ${section} query shape ${url.search}`
-  if (section === 'auxiliary' && !['main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
+  if (section === 'auxiliary' && !['macd', 'main_force_control', 'up_down_energy', 'zhaoyao_mirror', 'cup_handle'].includes(url.searchParams.get('component'))) return `invalid auxiliary query ${url.search}`
   if (url.searchParams.has('chart_limit') && url.searchParams.get('chart_limit') !== '500') return `invalid chart limit ${url.search}`
   if (url.searchParams.has('history_limit') && url.searchParams.get('history_limit') !== '50') return `invalid reference limit ${url.search}`
   if (url.searchParams.has('chart_before') && url.searchParams.get('chart_before') !== 'chart-page-2') return `invalid chart cursor ${url.search}`
@@ -382,7 +383,7 @@ function envelope(url, section, strategy, frequency, options) {
     if (options.auxiliaryState?.[component]) {
       status = options.auxiliaryState[component]
       value = null
-    } else value = auxiliaryValue(component, frequency)
+    } else value = auxiliaryValue(component, frequency, options, strategy)
   } else if (section === 'explanation') value = explanationValue(strategy, frequency, url.searchParams.get('as_of') || NEWOW_AS_OF)
   else value = comparatorValue(strategy, frequency, url.searchParams.get('as_of') || NEWOW_AS_OF)
   wrappers[section] = delivered(status, value)
@@ -438,9 +439,14 @@ function chartValue(url, strategy, frequency, options) {
   const before = url.searchParams.get('chart_before')
   const locateFrom = url.searchParams.has('snapshot_token') && !before ? url.searchParams.get('from') : null
   const long = options.longHistory === `${strategy}:${frequency}`
-  const count = long ? (before ? 360 : 480) : 24
-  const offset = before ? (long ? -360 : 0) : long ? 0 : 40
+  const count = options.visualRich && !before ? (frequency === '1d' ? 95 : 64) : long ? (before ? 360 : 480) : 24
+  const offset = before ? (long ? -360 : 0) : long || options.visualRich ? 0 : 40
   let bars = Array.from({ length: count }, (_, index) => productBar(frequency, index + offset, long))
+  if (options.visualRich) bars = bars.map((bar, index) => {
+    const close = 98 + index * 0.09 + Math.sin(index / 5) * 2.1
+    const open = close + Math.sin(index * 1.9) * 0.7
+    return { ...bar, close: close.toFixed(4), open: open.toFixed(4), high: (Math.max(open, close) + .7).toFixed(4), low: (Math.min(open, close) - .7).toFixed(4), volume: 800 + Math.round((1 + Math.sin(index * 2.3)) * 700) }
+  })
   if (before && options.sharedBarConflict) {
     const conflict = { ...productBar(frequency, long ? 0 : 40, long), close: '999.0000', high: '1000.0000' }
     bars = [...bars, conflict]
@@ -453,6 +459,12 @@ function chartValue(url, strategy, frequency, options) {
   let actions = before ? [] : facts.standardActions
   if (locateFrom !== null) actions = [facts.interrupted.entry, facts.initial.entry, facts.initial.exit].filter((item) => item.trading_day === locateFrom)
   if (options.noAction) actions = []
+  if (options.visualRich) bars = bars.map(bar => {
+    const atBar = actions.find(item => item.bar_end === bar.bar_end)
+    if (atBar) return actionOwnerBar(atBar, strategy, frequency)
+    if (bar.bar_end === facts.open.mark.bar_end) return facts.open.mark
+    return bar
+  })
   if (strategy === 'oscillation') {
     bars = bars.map((bar) => {
       const atBar = actions.filter((item) => item.bar_end === bar.bar_end)
@@ -466,7 +478,7 @@ function chartValue(url, strategy, frequency, options) {
   return {
     chart_from: locateFrom ?? '2025-01-01', chart_through: locateFrom ?? '2026-09-03', page_identity: HASH.page,
     bars,
-    frames: bars.map((bar) => ({ bar_end: bar.bar_end, main_state: actions.some((item) => item.bar_end === bar.bar_end && item.kind === 'BUILD') ? 'BUILD' : 'HOLD', main_values: frameMainValues(strategy, actions.filter((item) => item.bar_end === bar.bar_end), bar), status: ready(), action_ids: actions.filter((item) => item.bar_end === bar.bar_end).map((item) => item.signal_id), hint_ids: hints.filter((item) => item.bar_end === bar.bar_end).map((item) => item.hint_id) })),
+    frames: bars.map((bar) => ({ bar_end: bar.bar_end, main_state: actions.some((item) => item.bar_end === bar.bar_end && item.kind === 'BUILD') ? 'BUILD' : 'HOLD', main_values: frameMainValues(strategy, actions.filter((item) => item.bar_end === bar.bar_end), bar, options.visualRich), status: ready(), action_ids: actions.filter((item) => item.bar_end === bar.bar_end).map((item) => item.signal_id), hint_ids: hints.filter((item) => item.bar_end === bar.bar_end).map((item) => item.hint_id) })),
     actions,
     hints,
     diagnostics: options.noAction ? ['NO_MAIN_ACTION_IS_VALID'] : [], next_before: before || locateFrom ? null : 'chart-page-2',
@@ -520,21 +532,37 @@ function actionOwnerBar(item, strategy, frequency) {
   return fixtureActionBar(strategy, item.kind, frequency, item.bar_end, item.trading_day, item.reference_price, item.physical_contract, item.segment_id)
 }
 
-function frameMainValues(strategy, actions, bar) {
-  const values = { ...MAIN_VALUES[strategy] }
+function frameMainValues(strategy, actions, bar, visualRich = false) {
+  const close = Number(bar.close)
+  const values = visualRich ? (strategy === 'trend' ? { a: String(close - .3), b: String(close - 1.2) } : strategy === 'main_rise' ? { ma35: String(close - .3), ma45: String(close - 1.2) } : { upper: String(Number(bar.high) + 1), lower: String(Number(bar.low) - 1) }) : { ...MAIN_VALUES[strategy] }
   const actionAtBar = actions[0]
   if (strategy === 'trend' && actionAtBar) values.b = actionAtBar.reference_price
   if (strategy === 'main_rise' && actionAtBar) values.ma45 = actionAtBar.reference_price
   return values
 }
 
-function auxiliaryValue(component, frequency) {
+function auxiliaryValue(component, frequency, options = {}, strategy = 'trend') {
   const base = { component, segments: [], repainting: false, formal_signal_eligible: true, page_parity: false, source_category: 'guiyi_product_auxiliary_adapter', allowed_uses: ['product_display'] }
+  if (component === 'macd') {
+    if (options.visualRich) return richMacdFixture(base, strategy, frequency, options)
+    const barEnds = [productBar(frequency, 62).bar_end, productBar(frequency, 63).bar_end]
+    const points = barEnds.map((bar_end, index) => ({ bar_end, value: index === 0 ? 0 : 0.5, ready: true, valid: true, reason: null }))
+    return { ...base, formal_signal_eligible: false, formula_version: 'v1-draft', display_adapter_version: 'guiyi_newow_macd_display_v1', parameters: { fast: 12, slow: 26, signal: 9, ema_seed_policy: 'sma_window', histogram_scale: 2, round_digits: 6 }, parameters_hash: '5dd0ebd25122eea6', allowed_uses: ['research_display'], segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { dif: points, dea: points.map(point => ({ ...point, value: point.value / 2 })), histogram: points } }] }
+  }
   if (component === 'cup_handle') return { ...base, formula_version: 'newow_cup_handle_v1', segments: frequency === '1d' ? [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: ['2026-09-03T07:00:00.000Z'], status: ready(), data: [] }] : [] }
   const barEnds = ['2026-09-02T07:00:00.000Z', '2026-09-03T07:00:00.000Z']
   if (component === 'main_force_control') return { ...base, formula_version: 'newow_main_force_control_page_v1', segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { kongpan: [10, 12], status: ['HOLD', 'BUILD'], current_status: 'BUILD', formula_version: 'newow_main_force_control_page_v1' } }] }
   if (component === 'up_down_energy') return { ...base, formula_version: 'newow_up_down_energy_page_v1', segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { var4: [1, 2], ma10: [1, 1.5], band_entry: [0, 1], rebound_entry: [0, 0], oversold_entry: [0, 0], var3: [1, 2], ma120: [1, 1], formula_version: 'newow_up_down_energy_page_v1' } }] }
   return { ...base, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1', repainting: true, formal_signal_eligible: false, segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { entry: [0, 1], wash: [1, 0], distribution: [0, 0], markup: [1, 2], exit: [0, 0], inducement: [0, 0], peaks: [1, 2], caution: [0, 1], repainting: true, formal_signal_eligible: false, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1' } }] }
+}
+
+// Precomputed by the existing Python macd_series kernel over these exact fixture
+// closes; fixture-only rendering evidence, never external market or formula parity.
+function richMacdFixture(base, strategy, frequency, options) {
+  const { fixture_input, ...wire } = structuredClone(richMacd[`${strategy}:${frequency}`])
+  const bars = chartValue(fixtureValidationUrl('chart', strategy, frequency, false, null), strategy, frequency, options).bars
+  if (JSON.stringify(fixture_input) !== JSON.stringify(bars.map(bar => [bar.bar_end, bar.physical_contract, bar.segment_id, bar.close]))) throw new Error('rich MACD fixture input drift; regenerate through the Python kernel')
+  return { ...base, ...wire }
 }
 
 function explanationValue(strategy, frequency, asOf) {
@@ -589,7 +617,7 @@ function productBarAt(frequency, barEnd, tradingDay, close, contract = CONTRACT,
     ...overrides,
   }
 }
-function genericBarsPage(url) { const frequency = url.searchParams.get('frequency') || '15m'; const bars = [0, 1].map((index) => { const bar = productBar(frequency === '1w' || frequency === '1d' || frequency === '60m' ? frequency : '60m', 60 + index); return { ...bar, open: Number(bar.open), high: Number(bar.high), low: Number(bar.low), close: Number(bar.close), turnover: 10000 } }); return { request: { series_kind: url.searchParams.get('series_kind'), symbol: url.searchParams.get('symbol'), contract: url.searchParams.get('contract'), frequency, before: url.searchParams.get('before'), limit: Number(url.searchParams.get('limit') || 500) }, bars, canonical_coverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end }, page: { has_more_before: false, next_before: null }, resolved_contract_segments: [{ contract: CONTRACT, start_trading_day: bars[0].trading_day, end_trading_day: bars.at(-1).trading_day }] } }
+function genericBarsPage(url, options = {}) { const frequency = url.searchParams.get('frequency') || '15m'; const bars = [0, 1].map((index) => { const bar = options.visualRich && frequency === '1d' ? chartValue(fixtureValidationUrl('chart', 'trend', '1d', false, null), 'trend', '1d', options).bars.slice(-2)[index] : productBar(frequency === '1w' || frequency === '1d' || frequency === '60m' ? frequency : '60m', 60 + index); return { ...bar, open: Number(bar.open), high: Number(bar.high), low: Number(bar.low), close: Number(bar.close), turnover: 10000 } }); return { request: { series_kind: url.searchParams.get('series_kind'), symbol: url.searchParams.get('symbol'), contract: url.searchParams.get('contract'), frequency, before: url.searchParams.get('before'), limit: Number(url.searchParams.get('limit') || 500) }, bars, canonical_coverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end }, page: { has_more_before: false, next_before: null }, resolved_contract_segments: [{ contract: CONTRACT, start_trading_day: bars[0].trading_day, end_trading_day: bars.at(-1).trading_day }] } }
 function researchProduct() { return { symbol: 'rb', product_name: '螺纹钢', sector: '黑色', exchange: 'SHFE', series_kind: 'actual_dominant', contract: null, as_of: NEWOW_AS_OF, current_dominant: CONTRACT, dominant_mapping_date: '2026-09-03', daily_trend: 'neutral', weekly_trend: 'neutral', position20: null, distance_to_20d_high: null, distance_to_20d_low: null, volume_ratio20: null, oi_change_1d: null, turnover_change_5d: null, atr14_percentile252: null, recent_daily: [] } }
 function marketState(url) { return { symbol: url.searchParams.get('symbol') || 'rb', series_kind: url.searchParams.get('series_kind') || 'actual_dominant', frequency: url.searchParams.get('frequency') || '15m', operational: true, phase: 'CLOSED', trading_day: '2026-09-03', live_eligible: false, live_available: false, live_contract: null, canonical_end: NEWOW_AS_OF, after_market: { last_successful_trading_day: '2026-09-03' } } }
 function runtimeHealth() { return { status: 'ok', generated_at: NEWOW_AS_OF, readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: { alert: { status: 'ok', enabled_rule_count: 0, rule_status: { htdy_original_15m: { last_evaluated_bar_at: null, last_event_at: null, last_failure_at: null, error_type: null }, subing_ths_alert_15m_v1: { last_evaluated_bar_at: null, last_event_at: null, last_failure_at: null, error_type: null } } } } } }

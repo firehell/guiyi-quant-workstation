@@ -141,7 +141,7 @@ test('explanation component renders evidence gaps and comparator in a separate t
     reason_code: 'NEWOW_COMPOSITE_SOURCE_UNPROVEN',
   }
   const Host = defineComponent({ setup: () => () => h(Panel, {
-    response: explanation, lifecycle: 'evidence_required', error: null,
+    response: explanation, lifecycle: 'evidence_required', error: null, chartState: { state: 'HOLD', barEnd: '2026-01-05T07:00:00Z', historical: true },
     comparatorResponse: comparatorResponse(), comparatorLifecycle: 'ready', comparatorError: null,
   }) })
   const root = element('root')
@@ -153,6 +153,17 @@ test('explanation component renders evidence gaps and comparator in a separate t
   const comparatorPanel = findNode(root, (node) => node.props['data-testid'] === 'newow-comparator-panel')!
   assert.ok(explanationPanel)
   assert.ok(comparatorPanel)
+  const historicalState = findNode(root, node => node.props['data-testid'] === 'newow-window-state')!
+  assert.match(nodeText(historicalState), /所示历史.*持有/)
+  assert.doesNotMatch(nodeText(historicalState), /当前/)
+  assert.doesNotMatch(nodeText(explanationPanel), /策略当前为持有状态|历史 Bar 的策略状态为/)
+  assert.match(nodeText(explanationPanel), /当前快照截至/)
+  const readable = findNode(root, node => node.props['data-testid'] === 'newow-readable-facts')!
+  assert.doesNotMatch(nodeText(readable), /LONG_BIAS|WAIT_CONFIRM|NEWOW_/)
+  const sources = findNode(root, node => node.type === 'details' && node.props.class === 'newow-explanation__sources')!
+  assert.match(nodeText(sources), /NEWOW_COMPOSITE_SOURCE_UNPROVEN/)
+  assert.match(nodeText(sources), /as_of/)
+
   assert.match(nodeText(explanationPanel), /NEWOW_COMPOSITE_SOURCE_UNPROVEN/)
   assert.match(nodeText(explanationPanel), /NEWOW_WEEKLY_FACT_UNAVAILABLE/)
   assert.match(nodeText(explanationPanel), /NEWOW_PRIVATE_SCORE_UNPROVEN/)
@@ -164,14 +175,12 @@ test('explanation component renders evidence gaps and comparator in a separate t
   app.unmount()
 })
 
-test('workspace uses native tab buttons and keeps one selected signal authority for chart and history', () => {
+test('workspace uses a disclosure and dialog while keeping one selected signal authority', () => {
   const source = readFileSync(workspaceUrl, 'utf8')
-  assert.match(source, /role="tablist"/)
-  assert.match(source, /role="tab"/)
-  assert.match(source, /:tabindex="researchTab === 'reference' \? 0 : -1"/)
-  assert.match(source, /:tabindex="researchTab === 'explanation' \? 0 : -1"/)
-  assert.match(source, /@keydown\.left/)
-  assert.match(source, /@keydown\.right/)
+  assert.match(source, /:aria-expanded="detailsOpen"/)
+  assert.match(source, /aria-controls="newow-details"/)
+  assert.match(source, /<NewowDetailDialog/)
+  assert.doesNotMatch(source, /role="tablist"|researchTab/)
   assert.match(source, /<NewowReferencePanel/)
   assert.match(source, /<NewowExplanationPanel/)
   assert.match(source, /@locate="locateReferenceTrade"/)

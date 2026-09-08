@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
+import { type DominantContractItem, MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
 import {
   NEWOW_FREQUENCIES,
   NEWOW_STRATEGIES,
@@ -13,6 +13,7 @@ import {
 import { resolveViewSwitchIdentity } from '@/utils/marketDetailRoute'
 
 const props = withDefaults(defineProps<{
+  products?: readonly DominantContractItem[]
   identity: MarketDetailIdentity
   restore: MarketDetailViewRestore
   seriesKinds?: readonly SeriesKind[]
@@ -20,6 +21,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   seriesKinds: () => ['actual_dominant', 'continuous', 'contract'],
   frequencies: () => MARKET_FREQUENCIES,
+  products: () => [],
 })
 
 const emit = defineEmits<{
@@ -89,6 +91,7 @@ function chooseSymbol() {
 }
 
 function periodLabel(value: MarketFrequency) {
+  if (props.identity.view === 'newow') return value
   return value === '1d' ? '日K' : value === '1w' ? '周K' : value
 }
 </script>
@@ -96,6 +99,7 @@ function periodLabel(value: MarketFrequency) {
 <template>
   <nav class="detail-view-nav" aria-label="分析视角" data-detail-section="view-nav">
     <div class="detail-view-nav__views" role="tablist" aria-label="分析视角">
+      <template v-if="identity.view === 'newow'"><RouterLink class="newow-brand" to="/market">归一量化</RouterLink><RouterLink to="/market">市场</RouterLink></template>
       <button
         v-for="view in views"
         :key="view.value"
@@ -104,14 +108,17 @@ function periodLabel(value: MarketFrequency) {
         :aria-selected="identity.view === view.value"
         :class="{ 'is-active': identity.view === view.value }"
         @click="chooseView(view.value)"
-      >{{ view.label }}</button>
+      >{{ identity.view === 'newow' ? ({ newow: '牛哇', htdy: '火天大有', subing: '苏冰预警', free: '更多' }[view.value as 'newow' | 'htdy' | 'subing' | 'free']) : view.label }}</button>
     </div>
 
     <div class="detail-view-nav__controls">
       <span v-if="identity.view === 'trend'" class="detail-view-nav__fixed">固定日K</span>
       <span v-else-if="identity.view === 'subing'" class="detail-view-nav__fixed">固定15m</span>
       <div v-if="identity.view === 'newow'" class="detail-view-nav__group" role="group" aria-label="Newow策略">
-        <input v-model="symbol" aria-label="品种代码" @change="chooseSymbol">
+        <select v-model="symbol" aria-label="全部品种" @change="chooseSymbol">
+          <option v-if="!products.some(item => item.product.toLowerCase() === symbol)" :value="symbol">{{ symbol.toUpperCase() }} · 目录未读取</option>
+          <option v-for="product in products" :key="product.product" :value="product.product.toLowerCase()">{{ product.product_name }} {{ product.product.toUpperCase() }}</option>
+        </select>
         <button
           v-for="strategy in NEWOW_STRATEGIES"
           :key="strategy"

@@ -9,7 +9,7 @@ export type NewowProductFrequency = NewowFrequency
 
 export const NEWOW_PRODUCT_SECTIONS = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const
 export type NewowProductSection = (typeof NEWOW_PRODUCT_SECTIONS)[number]
-export type NewowAuxiliaryComponent = 'main_force_control' | 'up_down_energy' | 'zhaoyao_mirror' | 'cup_handle'
+export type NewowAuxiliaryComponent = 'macd' | 'main_force_control' | 'up_down_energy' | 'zhaoyao_mirror' | 'cup_handle'
 
 export interface NewowProductIdentity {
   readonly product: string
@@ -244,8 +244,8 @@ export interface NewowAuxiliarySegment {
   readonly data: NewowAuxiliaryData | null
 }
 
-export interface NewowAuxiliaryValue {
-  readonly component: NewowAuxiliaryComponent
+export interface NewowLegacyAuxiliaryValue {
+  readonly component: Exclude<NewowAuxiliaryComponent, 'macd'>
   readonly formula_version: string
   readonly segments: readonly NewowAuxiliarySegment[]
   readonly repainting: boolean
@@ -254,6 +254,33 @@ export interface NewowAuxiliaryValue {
   readonly source_category: 'guiyi_product_auxiliary_adapter'
   readonly allowed_uses: readonly string[]
 }
+
+export interface NewowMacdPoint {
+  readonly bar_end: string
+  readonly value: number | null
+  readonly ready: boolean
+  readonly valid: boolean
+  readonly reason: string | null
+}
+
+export interface NewowMacdData {
+  readonly dif: readonly NewowMacdPoint[]
+  readonly dea: readonly NewowMacdPoint[]
+  readonly histogram: readonly NewowMacdPoint[]
+}
+
+export interface NewowMacdValue extends Omit<NewowLegacyAuxiliaryValue, 'component' | 'segments' | 'repainting' | 'formal_signal_eligible' | 'page_parity'> {
+  readonly component: 'macd'
+  readonly display_adapter_version: 'guiyi_newow_macd_display_v1'
+  readonly parameters: { readonly fast: 12; readonly slow: 26; readonly signal: 9; readonly ema_seed_policy: 'sma_window'; readonly histogram_scale: 2; readonly round_digits: 6 }
+  readonly parameters_hash: string
+  readonly segments: readonly (Omit<NewowAuxiliarySegment, 'data'> & { readonly data: NewowMacdData })[]
+  readonly repainting: false
+  readonly formal_signal_eligible: false
+  readonly page_parity: false
+}
+
+export type NewowAuxiliaryValue = NewowLegacyAuxiliaryValue | NewowMacdValue
 
 export interface NewowContextSlot {
   readonly frequency: NewowProductFrequency

@@ -8,6 +8,7 @@ import {
 import type {
   BarData,
   DominantContractListResponse,
+  DominantContractItem,
   MarketOverlaySource,
   MarketReadState,
   ProductResearchResponse,
@@ -77,6 +78,7 @@ export function useMarketDetailController(
   dependencies: MarketDetailControllerDependencies = {},
 ): {
   state: Readonly<Ref<MarketDetailControllerState>>
+  productCatalog: Readonly<Ref<readonly DominantContractItem[]>>
   bars: Readonly<Ref<BarData[]>>
   mutation: Readonly<Ref<MarketSeriesMutation>>
   hasMoreBefore: Readonly<Ref<boolean>>
@@ -99,6 +101,7 @@ export function useMarketDetailController(
     loading: false,
     error: null,
   })
+  const productCatalog = ref<DominantContractItem[]>([])
   let currentDominants: DominantContractListResponse = { items: [] }
   const currentResearch = ref<ProductResearchResponse | null>(null)
   const researchError = ref(false)
@@ -181,6 +184,7 @@ export function useMarketDetailController(
         return
       }
       currentDominants = metadata.value
+      productCatalog.value = metadata.value.items
       headerGeneration = generation
       rebuildHeader(identity)
       state.value.loading = false
@@ -216,6 +220,7 @@ export function useMarketDetailController(
 
   return {
     state: readonly(state),
+    productCatalog: readonly(productCatalog),
     bars: publicBars,
     mutation: publicMutation,
     hasMoreBefore: readonly(series.hasMoreBefore),

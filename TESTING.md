@@ -105,7 +105,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 Canonical、写 production DB/Redis 或停止 Runtime。`prepare/publish --apply` 不是测试命令，分别需要新的单次
 真实数据/维护授权。
 
-Physical-contract warm-up、同合约 Canonical + Live replay、CLI plan hash 与 projection invalidation：
+Physical-contract warm-up（含 `--frequency 15m` 的 1m dependency、scope hash 隔离与 fail-stop）、同合约 Canonical + Live replay、CLI plan hash 与 projection invalidation：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -220,7 +220,7 @@ pnpm --dir apps/quant-web build
 pnpm --dir apps/quant-web test:e2e
 ```
 
-Market Home targeted contracts、四个截图视口与三资源请求约束：
+Market Home targeted contracts、1280/1440/1920/2560 桌面与390兼容截图、60品种本地排序及三资源请求约束（受控 fixture，不连接生产）。`newow-product` fixture 严格限制默认 origin `http://127.0.0.1:5182`，与其合跑时不覆盖端口；仅首页/详情可使用独立测试端口：
 
 ```bash
 pnpm -C apps/quant-web exec node --test \
@@ -230,11 +230,43 @@ pnpm -C apps/quant-web exec node --test \
   tests/marketHomeResource.test.ts \
   tests/marketHomeWorkspace.test.ts \
   tests/marketHomePreferences.test.ts \
+  tests/marketHomePresentation.test.ts \
+  tests/marketHomePageRoute.test.ts \
   tests/marketHomeRoute.test.ts
 pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-home.spec.mjs
 ```
 
 ## 工程一致性与静态检查
+
+Newow 白色详情 V2 的 MACD 只读适配、同身份图表和交互验收（内存 fixture，不连接生产）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/newow/test_product_macd.py \
+  services/quant-api/tests/newow/test_market_newow_product_api.py \
+  services/quant-api/tests/newow/test_product_readonly_compatibility.py \
+  services/quant-api/tests/newow/test_product_snapshot_cache.py
+pnpm -C apps/quant-web exec node --test \
+  tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts \
+  tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts \
+  tests/newowReferencePanel.test.ts tests/newowExplanationPanel.test.ts \
+  tests/newowDetailPresentation.test.ts tests/useNewowDailyQuote.test.ts
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
+  e2e/newow-product.spec.mjs e2e/newow-detail-light.spec.mjs e2e/newow-chart-panes.spec.mjs \
+  e2e/market-home.spec.mjs e2e/market-detail.spec.mjs
+```
+
+上述 V2 测试入口已随实现提供；实际通过状态以本次命令结果为准，不代表发布或 Runtime 验收。
+MACD 视觉 fixture 通过既有 Python 内核预生成，保留真实参数 hash 与同区段 Bar 输入；修改受控
+输入后先去掉 `--check` 重新生成，再运行下述一致性检查与浏览器截图复核：
+
+```bash
+PYTHONPATH=packages/quant-core uv run --project services/quant-api python \
+  apps/quant-web/e2e/fixtures/generate_newow_macd.py --check
+```
+
+浏览器原站观察只用于设计依据；受控截图与 API fixture 不证明真实工作站或原站完整 parity。
 
 苏冰当日缺口、恢复水位、只读诊断及日志：
 
@@ -255,7 +287,9 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 逐品种诊断命令为 `guiyi runtime subing-readiness --trading-day YYYY-MM-DD --as-of OFFSET_DATETIME`；
 `as-of` 必须带时区且不晚于执行时刻。命令只读 PostgreSQL/Redis/Canonical，逐品种报告当前输入与 Scope，
 非全部 ready 时退出 1；参数错误退出 2。该结果不证明 provider acceptance 或实际收件，真实连接仍须
-位于用户明确授权的只读诊断范围。
+位于用户明确授权的只读诊断范围。生产只读执行还必须使用与现役服务启动器相同的 authenticated
+`REDIS_URL` 解析结果；只加载未提供该连接结果的 `project.env` 会在订阅快照读取处产生 Redis
+authentication failure，此时外层的 `INPUT_DIAGNOSIS_UNAVAILABLE` 不是行情缺口或逐品种 readiness 结论。
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \

@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   marketHomeEventChartQuery,
+  marketHomeViewChartQuery,
   marketHomeProductChartQuery,
   marketHomeUnifiedEventChartQuery,
   marketHomeUnifiedProductChartQuery,
@@ -39,4 +40,14 @@ test('sends the ordinary unified product entry to Newow while preserving Event i
     view: 'subing', symbol: 'jm', series_kind: 'actual_dominant', contract: undefined,
     frequency: '15m', focus_bar_end: '2026-09-02T02:45:00Z',
   })
+})
+
+
+test('explicit Home view choices preserve symbol and fixed view frequency', () => {
+  for (const [view, frequency] of [['newow', '1d'], ['htdy', '1d'], ['subing', '15m'], ['free', '1d']] as const) {
+    assert.deepEqual(marketHomeViewChartQuery(view, 'ag'), {
+      view, symbol: 'ag', ...(view === 'newow' ? { strategy: 'trend' } : {}),
+      series_kind: 'actual_dominant', contract: undefined, frequency, focus_bar_end: undefined,
+    })
+  }
 })

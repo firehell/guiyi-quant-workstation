@@ -202,7 +202,9 @@ class RQDataMarketAdapter:
                     if trading_day in seen:
                         raise InfrastructureError("RQDATA_EXCHANGE_DAILY_DUPLICATE")
                     seen.add(trading_day)
-                    active_cache[(contract, trading_day)] = row
+                    active_cache[(contract, trading_day)] = (
+                        _normalize_exchange_daily_zero_volume_row(row)
+                    )
             for trading_day in contract_days:
                 cached_row = active_cache.get((contract, trading_day))
                 if cached_row is None:
@@ -717,6 +719,40 @@ def _canonical_bar(
             _row_value(row, "open_interest", "open_oi", "close_oi", required=False)
         ),
     )
+
+
+def _normalize_exchange_daily_zero_volume_row(
+    row: dict[str, Any],
+) -> dict[str, Any]:
+    """将 RQData 零量日的全空 O/H/L 规范为同一行 close，不借用 settlement。"""
+    open_value = _optional_decimal(_row_value(row, "open", required=False))
+    high_value = _optional_decimal(_row_value(row, "high", required=False))
+    low_value = _optional_decimal(_row_value(row, "low", required=False))
+    close_value = _optional_decimal(_row_value(row, "close", required=False))
+    volume = _optional_decimal(_row_value(row, "volume", required=False))
+    missing_ohl = open_value is None and high_value is None and low_value is None
+    zero_ohl = open_value == high_value == low_value == Decimal(0)
+    has_zero_ohl = any(
+        value == Decimal(0) for value in (open_value, high_value, low_value)
+    )
+    if has_zero_ohl and not zero_ohl:
+        raise InfrastructureError("RQDATA_ZERO_OHL_INVALID")
+    if zero_ohl:
+        if volume == 0 and close_value == 0:
+            return row
+        if volume != 0 or close_value is None or close_value <= 0:
+            raise InfrastructureError("RQDATA_ZERO_OHL_INVALID")
+    if volume == 0 and close_value is not None and close_value > 0 and (
+        missing_ohl or zero_ohl
+    ):
+        normalized = dict(row)
+        normalized.update(
+            open=close_value,
+            high=close_value,
+            low=close_value,
+        )
+        return normalized
+    return row
 
 
 def _decimal(row: dict[str, Any], field: str) -> Decimal:
