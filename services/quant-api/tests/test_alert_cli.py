@@ -46,6 +46,7 @@ def test_parser_exposes_only_active_runtime_domains_and_commands() -> None:
         "acknowledge-alert-notification",
         "subing-ths-scope",
         "subing-readiness",
+        "recover-live-captured",
     }
 
 

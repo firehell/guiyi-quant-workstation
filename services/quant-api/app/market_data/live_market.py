@@ -14,6 +14,7 @@ from typing import Any, ContextManager, Mapping, Protocol
 from zoneinfo import ZoneInfo
 
 from app.market_data.aggregation import SessionWindow, aggregate_from_1m, bucket_window_for_bar
+from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
 from app.market_data.domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 
@@ -532,6 +533,9 @@ class LiveMarketService:
         self.next_provider_retry_at: datetime | None = None
         self.rejections: list[str] = []
         self._recovery_sessions = recovery_sessions
+        self._recovery_guard_enabled = (
+            recovery_fetch_factory is not None and recovery_guard_factory is not None
+        )
         self._recovery_worker = None
         if recovery_fetch_factory is not None:
             if recovery_sessions is None:
@@ -978,6 +982,8 @@ class LiveMarketService:
         self._store.set_heartbeat(
             {
                 "generated_at": now.astimezone(UTC).isoformat(),
+                **runtime_heartbeat_identity(),
+                "recovery_guard_enabled": self._recovery_guard_enabled,
                 "operational_count": len(self._products),
                 "subscribed_count": len(self._channels),
                 "last_bar_at": None if self._last_bar_at is None else self._last_bar_at.isoformat(),

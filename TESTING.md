@@ -335,3 +335,35 @@ uv run --project tools/docs python scripts/docs/build_newow_replication_manual.p
 ```
 
 Runtime health、data audit 与 alert status 是只读入口，不能推导 Runtime promotion、自然 evidence 或外部操作授权。`guiyi runtime acknowledge-alert-notification --failure-at <exact ISO timestamp>` 是受控 Redis 写入，普通验证只运行对应 pytest，不执行该命令。
+
+
+## 捕获源文件的有界 Live 恢复
+
+代码验证在独立 worktree 的 `services/quant-api` 执行。测试使用合成 fixture、临时目录及内存 SQLite，
+不读取生产配置、不调用 RQData、不写生产数据；实际 Lua 测试须显式设置 `GUIYI_TEST_REDIS_PORT`
+指向本次创建、无持久卷且非 6379 的一次性 Redis，不得使用生产连接。
+
+```bash
+.venv/bin/python -m pytest tests/data_foundation/test_captured_live_recovery.py tests/data_foundation/test_live_recovery.py tests/test_live_recovery_guard.py tests/test_captured_recovery_cli.py tests/test_captured_recovery_runtime.py tests/test_alert_cli.py tests/test_subing_readiness.py tests/test_subing_ths_kernel.py -q
+```
+
+以下为人工操作语法，普通测试不得执行。CLI 默认只读，但连接生产前仍须明确只读范围。
+须先部署通过审查的新 exact tag，证明 Live/Alert/After-market 同根同 commit、共享锁已启用、Live/Alert 心跳新鲜；开发 worktree
+和 v1.10.3 的旧心跳不满足该 Gate。源文件必须来自已授权查询，不能为了运行此命令临时下载。
+
+```text
+guiyi runtime recover-live-captured --trading-day YYYY-MM-DD --symbol rs --contract RS2609 --source /absolute/captured-source.json --source-sha256 SOURCE_SHA256
+```
+
+将上述完整 JSON 输出保存为计划文件后，重新核对五根目标及水位/TTL 副作用，并取得一次明确 apply
+授权；下列命令不构成授权，也不会部署/切换 Runtime：
+
+```text
+guiyi runtime recover-live-captured --trading-day YYYY-MM-DD --symbol rs --contract RS2609 --source /absolute/captured-source.json --source-sha256 SOURCE_SHA256 --apply --plan /absolute/plan.json --plan-sha256 PLAN_SHA256
+```
+
+日期、两种哈希和路径均须替换为当前仍有效的精确计划值，不允许沿用已过期的 2026-09-08 候选。
+源和计划读取均有 512 KiB 上限；每次至多 225 行源数据，必须恰好五根增量。
+成功返回 `passed`，证明已修复的重复调用仅只读 `noop`；错误非零退出，禁止自动重试。
+验收核对五根/原值、恢复水位、provider 请求为零、预算/circuit 未变，再走独立只读 readiness；
+不调用历史 evaluator、不重置错误或游标、不发送测试通知，不能由恢复成功宣称 RUNTIME_READY。

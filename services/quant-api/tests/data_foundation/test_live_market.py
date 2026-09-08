@@ -52,22 +52,43 @@ class FakeRedis:
             self.set(keys[0], json.dumps({'count': state['count'] + 1, 'last_at': int(argv[0])}), ex=argv[1])
             return 1
         if script.startswith('-- live-recovery-v1'):
-            snapshot, state, plan, cutoff, payload, ttl = argv
+            snapshot, state, plan, cutoff, payload, ttl = argv[:6]
+            frozen = json.loads(argv[6]) if len(argv) > 6 else None
+            if frozen:
+                for index, key in enumerate(keys):
+                    kind = self.type(key)
+                    if kind != frozen['types'][index] or (kind != 'none' and not 0 < self.ttl(key) <= 259200):
+                        return -4
+                    if not 2 <= index < 7 and self.get(key) != frozen['values'][index]:
+                        return -4
             if self.get(keys[0]) != snapshot:
                 return -1
             if (self.get(keys[1]) or '') != state:
                 return -2
             parsed = json.loads(plan)
-            for key, series in zip(keys[2:], parsed, strict=True):
+            for key, series in zip(keys[2:7], parsed, strict=True):
+                if frozen and [score for _, score in self.zrange(key, 0, -1, withscores=True)] != series['before_scores']:
+                    return -3
                 if self.zrangebyscore(key, '-inf', cutoff) != series['before']:
                     return -3
-            for key, series in zip(keys[2:], parsed, strict=True):
+            for key, series in zip(keys[2:7], parsed, strict=True):
                 for bar in series['add']:
                     self.zadd(key, {bar['payload']: bar['score']})
                 self.expire(key, ttl)
             self.set(keys[1], payload, ex=ttl)
             return 1
         raise AssertionError('Unknown test Redis script')
+
+    def type(self, key):
+        return 'zset' if key in self.zsets else 'string' if key in self.values else 'none'
+
+    def ttl(self, key):
+        return self.ttls.get(key, -1) if self.type(key) != 'none' else -2
+
+    def zrange(self, key, start, stop, *, withscores=False):
+        values = sorted(self.zsets.get(key, {}).items(), key=lambda row: (row[1], row[0]))
+        values = values[start:] if stop == -1 else values[start:stop+1]
+        return values if withscores else [value for value, _ in values]
 
     def zadd(self, key: str, mapping: dict[str, int]) -> int:
         if self.fail_zadd:
@@ -721,8 +742,11 @@ def test_trading_heartbeat_becomes_unavailable_when_completed_bars_are_stale() -
     assert json.loads(fake.values["live:heartbeat"])["available"] is False
 
 
-def test_first_completed_bar_is_published_only_after_live_heartbeat_is_ready() -> None:
+def test_first_completed_bar_is_published_only_after_live_heartbeat_is_ready(monkeypatch) -> None:
     """The Alert consumer must never observe a completed Bar before readiness."""
+    from app.core.env import PROJECT_ROOT
+
+    monkeypatch.delenv("GUIYI_RUNTIME_COMMIT", raising=False)
     module = importlib.import_module("app.market_data.live_market")
     day = date(2025, 1, 2)
     window = SessionWindow(
@@ -759,6 +783,9 @@ def test_first_completed_bar_is_published_only_after_live_heartbeat_is_ready() -
     assert fake.heartbeat_at_completed_bar_publish == [
         {
             "generated_at": (bar.bar_end + timedelta(seconds=2)).isoformat(),
+            "runtime_root": str(PROJECT_ROOT),
+            "runtime_commit": None,
+            "recovery_guard_enabled": False,
             "operational_count": 1,
             "subscribed_count": 1,
             "last_bar_at": bar.bar_end.isoformat(),

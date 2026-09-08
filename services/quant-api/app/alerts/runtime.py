@@ -34,6 +34,7 @@ from app.alerts.registry import (
     get_alert_rule_definition,
 )
 from app.alerts.service import AlertEventCreate, AlertService
+from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
@@ -168,6 +169,7 @@ class AlertRuntime:
         stop_requested: Callable[[], bool] | None = None,
         live_processing_guard: Callable[[str], AbstractContextManager] | None = None,
     ) -> None:
+        self._recovery_guard_enabled = live_processing_guard is not None
         self._live_processing_guard = live_processing_guard or (lambda symbol: nullcontext())
         self._session_factory = session_factory
         self._market_read_factory = market_read_factory
@@ -574,6 +576,8 @@ class AlertRuntime:
         self.heartbeat_store.write(
             {
                 "generated_at": now.astimezone(UTC).isoformat(),
+                **runtime_heartbeat_identity(),
+                "recovery_guard_enabled": self._recovery_guard_enabled,
                 "available": True,
                 "enabled_rule_count": len(enabled),
                 "scope_product_count": len(scope),

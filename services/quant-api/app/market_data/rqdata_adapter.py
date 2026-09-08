@@ -959,7 +959,6 @@ class RQDataLiveRecoveryAdapter:
         self._client = client
 
     def __call__(self, request) -> tuple[CanonicalBar, ...]:
-        expected = set(request.endpoints())
         try:
             if self._client is None:
                 self._client = RQDataClient()
@@ -973,26 +972,58 @@ class RQDataLiveRecoveryAdapter:
             if any(term in text for term in ('denied', 'permission', 'not authorized', 'forbidden')):
                 raise InfrastructureError('PROVIDER_ACCESS_DENIED') from exc
             raise InfrastructureError('PROVIDER_UNAVAILABLE') from exc
-        bars = []
-        for row in rows:
-            # Explicit contract identity is mandatory, never inferred from request.
-            if row.get('order_book_id') != request.contract:
-                raise InfrastructureError('LIVE_RECOVERY_CONTRACT_INVALID')
-            if _row_date(row) != request.trading_day:
-                raise InfrastructureError('LIVE_RECOVERY_TRADING_DAY_INVALID')
-            end = _row_datetime(row)
-            # Public day queries can contain the current unfinished minute. Only
-            # authoritative completed endpoints are admitted to the recovery batch.
-            if end in expected:
-                bars.append(_canonical_bar(row, end, request.trading_day))
-            elif end <= request.cutoff:
-                legal_unfinalized = (
-                    end + timedelta(seconds=2) > request.cutoff
-                    and end.second == 0 and end.microsecond == 0
-                    and any(window.start < end <= window.end
-                            and (end - window.start).total_seconds() % 60 == 0
-                            for window in request.sessions)
-                )
-                if not legal_unfinalized:
-                    raise InfrastructureError('LIVE_RECOVERY_SESSION_INVALID')
-        return tuple(sorted(bars, key=lambda item: item.bar_end))
+        return normalize_live_recovery_rows(request, rows)
+
+
+def _validate_captured_numeric_aliases(row: dict[str, Any]) -> None:
+    """Every supplied optional numeric alias must be valid and agree in value."""
+    for fields in (
+        ("turnover", "total_turnover", "amount"),
+        ("open_interest", "open_oi", "close_oi"),
+    ):
+        supplied = []
+        for field in fields:
+            if row.get(field) is None:
+                continue
+            value = _optional_decimal(row[field])
+            if value is None or not value.is_finite() or value < 0:
+                raise InfrastructureError("LIVE_RECOVERY_SOURCE_INVALID")
+            supplied.append(value)
+        if supplied and any(value != supplied[0] for value in supplied[1:]):
+            raise InfrastructureError("LIVE_RECOVERY_SOURCE_INVALID")
+
+
+def normalize_live_recovery_rows(request, rows, *, strict=False):
+    """Pure row conversion shared by provider and bounded captured input."""
+    expected = set(request.endpoints())
+    bars = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise InfrastructureError("LIVE_RECOVERY_SOURCE_INVALID")
+        # Explicit contract identity is mandatory, never inferred from request.
+        if row.get('order_book_id') != request.contract:
+            raise InfrastructureError('LIVE_RECOVERY_CONTRACT_INVALID')
+        if _row_date(row) != request.trading_day:
+            raise InfrastructureError('LIVE_RECOVERY_TRADING_DAY_INVALID')
+        if strict:
+            _validate_captured_numeric_aliases(row)
+            if pd.Timestamp(row.get('datetime')).nanosecond:
+                raise InfrastructureError('LIVE_RECOVERY_SESSION_INVALID')
+        end = _row_datetime(row)
+        # Public day queries can contain the current unfinished minute. Only
+        # authoritative completed endpoints are admitted to the recovery batch.
+        if end in expected:
+            bars.append(_canonical_bar(row, end, request.trading_day))
+        elif strict:
+            raise InfrastructureError("LIVE_RECOVERY_SESSION_INVALID")
+        elif end <= request.cutoff:
+            legal_unfinalized = (
+                end + timedelta(seconds=2) > request.cutoff
+                and end.second == 0 and end.microsecond == 0
+                and any(window.start < end <= window.end
+                        and (end - window.start).total_seconds() % 60 == 0
+                        for window in request.sessions)
+            )
+            if not legal_unfinalized:
+                raise InfrastructureError('LIVE_RECOVERY_SESSION_INVALID')
+    return tuple(sorted(bars, key=lambda item: item.bar_end))

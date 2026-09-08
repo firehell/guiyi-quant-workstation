@@ -37,6 +37,7 @@ from app.guiyi_cli.data_parser import (
     JsonArgumentParser,
     add_data_commands,
 )
+from app.guiyi_cli.captured_recovery import run_captured_recovery, validate_captured_arguments
 from app.guiyi_cli.output import (
     argument_error_payload,
     exception_error_payload,
@@ -68,7 +69,7 @@ def _execution_is_readonly(args: argparse.Namespace) -> bool:
     if args.domain == "runtime":
         if args.runtime_command in {"status", "subing-readiness"}:
             return True
-        if args.runtime_command == "subing-ths-scope":
+        if args.runtime_command in {"subing-ths-scope", "recover-live-captured"}:
             return not args.apply
         return False
     return not bool(getattr(args, "apply", False))
@@ -76,7 +77,7 @@ def _execution_is_readonly(args: argparse.Namespace) -> bool:
 
 def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
     if len(raw) >= 2 and raw[0] == "runtime":
-        if raw[1] == "subing-ths-scope":
+        if raw[1] in {"subing-ths-scope", "recover-live-captured"}:
             return "--apply" not in raw[2:]
         if raw[1] in {
             "live",
@@ -101,6 +102,15 @@ def build_parser() -> argparse.ArgumentParser:
     readiness = runtime_commands.add_parser("subing-readiness", allow_abbrev=False)
     readiness.add_argument("--trading-day", type=date.fromisoformat, required=True)
     readiness.add_argument("--as-of", required=True)
+    captured = runtime_commands.add_parser("recover-live-captured", allow_abbrev=False)
+    captured.add_argument("--trading-day", type=date.fromisoformat, required=True)
+    captured.add_argument("--symbol", required=True)
+    captured.add_argument("--contract", required=True)
+    captured.add_argument("--source", required=True)
+    captured.add_argument("--source-sha256", required=True)
+    captured.add_argument("--apply", action="store_true")
+    captured.add_argument("--plan")
+    captured.add_argument("--plan-sha256")
     runtime_commands.add_parser("live")
     runtime_commands.add_parser("alert")
     subing_scope = runtime_commands.add_parser(
@@ -140,6 +150,7 @@ def main(
     session_anchor_repair_factory: SessionAnchorRepairFactory | None = None,
     runtime_health_builder=build_runtime_health,
     subing_readiness_builder=build_subing_readiness,
+    captured_recovery_runner=run_captured_recovery,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
@@ -150,6 +161,8 @@ def main(
         args = build_parser().parse_args(raw)
         if args.domain == "data":
             build_request(args)
+        elif args.runtime_command == "recover-live-captured":
+            validate_captured_arguments(args)
         elif args.runtime_command == "subing-readiness":
             args.as_of = datetime.fromisoformat(args.as_of.replace("Z", "+00:00"))
             if args.as_of.tzinfo is None or args.as_of.utcoffset() is None or args.as_of > datetime.now(UTC):
@@ -171,6 +184,8 @@ def main(
                 stderr,
                 session_anchor_repair_factory,
             )
+        elif args.runtime_command == "recover-live-captured":
+            payload = captured_recovery_runner(args, session_factory=session_factory)
         elif args.runtime_command == "subing-readiness":
             with session_factory() as session:
                 payload = subing_readiness_builder(session, trading_day=args.trading_day, as_of=args.as_of)

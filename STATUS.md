@@ -34,6 +34,19 @@ Alert transport 为 PushPlus；provider accepted 不等于微信送达。
 
 ## 苏冰 60 品种输入恢复候选
 
+2026-09-08 新增 captured-source 受控恢复入口，状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
+默认只读计划，显式 apply 绑定源/计划哈希、当日同合约与精确五根增量；零 provider 调用，保留已耗尽预算，
+在共享提交边界检查预算/circuit/序列/TTL 后原子写五根和恢复水位。新增实际共享锁心跳证据及与盘后维护
+互斥的全局 OS 锁。独立 Standards/Spec 初审发现的盘后检查竞态和源数值别名冲突均已修正，复审均 PASS、0 findings。
+最终后端回归 `2563 passed, 16 skipped, 15 deselected`；恢复/CLI/Runtime/盘后/Alert/SuBing 定向回归
+`327 passed`（包含真实隔离 Redis 验证）；工程 `74 passed`，Mypy `138` 源文件、Ruff、OpenSpec `9/9`、
+secret scan `0` 与 diff check 通过。既有 225 行 RS2609 源快照经新严格解析器离线通过。
+本轮只实现并验证代码，没有生产读取/恢复、RQData 请求、配置变更、通知、release 或 Runtime 切换；
+现役仍为上表 v1.10.3，五根生产 Bar 与旧 `evaluation_failed` 未由本轮处理。
+采用新入口须另行完成发布/部署授权与 exact-version 核对，再生成当前仍有效的恢复计划并取得单次执行授权；
+旧 2026-09-08 候选跨日即失效。不得由代码验收声明 `RUNTIME_READY`。
+
+
 - 当前开发候选为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`：新增只读 `runtime subing-readiness`、默认关闭的当日 Live 缺口恢复、原子数据与恢复水位提交、跨进程 Alert/recovery 互斥及日志丢失后安全重开。恢复窗口和旧触发不创建 Event 或补发；恢复后的新 completed Bar 才允许按既有 Rule 评估与 one-shot transport。苏冰公式、版本、60 × 15m Scope 与 HTDY Scope 均未改变。
 - 2026-09-07 以 `as_of=2026-09-07T07:00:00Z` 对全部 60 品种做只读输入检查：Scope 全部启用，`ready_count=0`。a/ag/al/ao/ap/au/b/pf 的历史物理 15m 前缀完整；其余 52 个中，51 个有历史缺口，RS 历史输入不可读。全部 60 品种缺少当日 13:31 的 1m 和 13:45 的 15m；FG、RS、SH 另有当日缺失分钟。代码检查不能把这些生产输入变为完整。
 - 针对上述 52 个阻塞合约的只读执行清单固定为 `through=2026-09-04`，初始批次 SHA-256 为 `f19338ea0d4540e69fc9f90e5c00b5141701228b0c82ad9d08cdaac1fefb1b00`，共 1,454 个 direct 和 1,948 个 derived 目标。用户于 2026-09-07 明确授权逐合约串行 production apply，并要求任一失败、partial、blocked 或 quota 立即停止且不重试。
