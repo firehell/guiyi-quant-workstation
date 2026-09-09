@@ -5,7 +5,7 @@
 ## Newow 新版参考卡片定向验证
 
 ```bash
-pnpm -C apps/quant-web exec node --test tests/newowReferencePanel.test.ts tests/newowDetailPresentation.test.ts
+pnpm -C apps/quant-web exec node --test tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts tests/newowDetailPresentation.test.ts
 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/newow-detail-light.spec.mjs --grep 'current FLAT waiting card'
 PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
   services/quant-api/tests/newow/test_reference_trades.py \

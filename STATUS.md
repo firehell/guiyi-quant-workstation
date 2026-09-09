@@ -108,6 +108,15 @@
 
 ## Newow 产品证据与开发候选
 
+- 2026-09-09 新版牛哇盘点与参考卡片工程完成，代码候选 `c1d03c6d8`；公开观察、版本来源与缺口见
+  [当前复核](docs/research/newow-current-review.md)。当前 FLAT 等待卡使用已接受的当前窗口身份，
+  不创建参考交易或借用分页历史收益；日内时间增加时分并保留跨年信息。旧手册及派生 PDF 已同步纠正过时实现状态。
+  Web `507 passed, 1 skipped`、定向 backend + engineering `275 passed, 1 skipped`、build 通过；
+  等待卡浏览器 2 项、既有交互 4 项通过，1440/390px fixture 已视觉检查；9 项 OpenSpec、secret/diff 通过。
+  独立 Standards/Spec 复审通过，复审分别实跑 59/69 项；工程为 `CODE_COMPLETE`、`TEST_COMPLETE`、`REVIEW_COMPLETE`。
+  外站完整九组合、问题个股与收盘标签仍 `EXTERNAL_GATE_PENDING`，后续浏览器核查受 Mac 锁屏阻塞；
+  fixture 与旧版证据不证明新版 parity。本轮未发布、切换 Runtime 或修改策略公式、收益口径、生产数据与通知。
+
 - 2026-09-09 黄金元数据接力已完成五合约 `AU2304/AU2306/AU2308/AU2310/AU2312` 的本批缺口修复。
   新来源审计于 `04:02:05..04:02:20Z` 独立完成 613 次 public metadata API（42 Calendar、571 Session），
   SDK RPC dispatch 575 次；无 retry、OHLCV、DB 或 Canonical 写入。source evidence hash
