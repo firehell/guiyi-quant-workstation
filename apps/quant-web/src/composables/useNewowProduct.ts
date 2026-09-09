@@ -2,6 +2,7 @@ import { computed, readonly, shallowRef, watch, type Ref, type ShallowRef } from
 
 import { getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
 import { candidatePreview } from '../utils/candidatePreview.ts'
+import { previewInstant } from '../utils/candidatePreviewInstant.ts'
 import type { MarketDetailIdentity } from '../types/marketDetail.ts'
 import {
   NEWOW_PRODUCT_FREQUENCIES,
@@ -30,7 +31,7 @@ const NEWOW_FREQUENCY_SET = new Set<string>(NEWOW_PRODUCT_FREQUENCIES)
 export interface UseNewowProductOptions {
   readonly identity: Readonly<Ref<MarketDetailIdentity | null>>
   readonly fetchSection?: FetchSection
-  readonly now?: () => Date
+  readonly now?: () => Date | string
   readonly fetchHistoricalSnapshot?: (identity: NewowProductIdentity, signal: AbortSignal) => Promise<NewowHistoricalSnapshot>
 }
 
@@ -56,7 +57,7 @@ interface ChartLoadOptions {
 export function useNewowProduct(options: UseNewowProductOptions) {
   const fetchSection: FetchSection = options.fetchSection
     ?? ((request, signal) => getNewowProductSection(request, { signal }))
-  const now = options.now ?? (() => candidatePreview.enabled ? new Date(candidatePreview.asOf) : new Date())
+  const now = options.now ?? (() => candidatePreview.enabled ? candidatePreview.asOf : new Date())
   const currentIdentity = shallowRef<NewowProductIdentity | null>(null)
   const asOf = shallowRef<string | null>(null)
   const historicalSnapshot = shallowRef<NewowHistoricalSnapshot | null>(null)
@@ -602,7 +603,8 @@ function validatedIdentity(identity: MarketDetailIdentity | null): NewowProductI
   return { product: identity.symbol, strategy: identity.strategy, frequency: identity.frequency as NewowProductIdentity['frequency'], seriesKind: 'actual_dominant' }
 }
 
-function validNow(value: Date): string {
+function validNow(value: Date | string): string {
+  if (typeof value === 'string' && previewInstant(value) !== null) return value
   if (!(value instanceof Date) || !Number.isFinite(value.getTime())) throw new Error('Newow generation clock is invalid')
   return value.toISOString()
 }

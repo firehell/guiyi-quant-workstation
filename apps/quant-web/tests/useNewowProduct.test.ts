@@ -11,6 +11,23 @@ import { resolveNewowPanelRenderState } from '../src/utils/newowProductViewModel
 
 const AS_OF = '2026-08-15T07:00:00.000Z'
 
+test('fixed preview cutoff retains microseconds through every current generation', async () => {
+  const cutoff = '2026-09-08T07:00:00.000001+00:00'
+  const pending: Pending[] = []
+  const identity = ref(newowIdentity('trend', '1d'))
+  const state = useNewowProduct({ identity, now: () => cutoff, fetchSection: controlled(pending) })
+  await nextTick()
+  assert.equal(state.asOf.value, cutoff)
+  assert.equal(pending[0]!.request.asOf, cutoff)
+  state.refreshCurrent()
+  assert.equal(pending.at(-1)!.request.asOf, cutoff)
+  state.returnToCurrent()
+  assert.equal(pending.at(-1)!.request.asOf, cutoff)
+  identity.value = newowIdentity('oscillation', '60m')
+  assert.equal(pending.at(-1)!.request.asOf, cutoff)
+  state.dispose()
+})
+
 test('older windows append under the same snapshot after page exhaustion and preserve reference', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })

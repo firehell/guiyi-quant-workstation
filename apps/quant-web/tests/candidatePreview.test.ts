@@ -37,6 +37,51 @@ test('browser preview identity must match code, cutoff and both fixed origins', 
   }
 })
 
+test('candidate config keeps the exact exclusive cutoff string', async (context) => {
+  context.mock.method(Date, 'now', () => Date.parse('2026-09-09T00:00:00Z'))
+  const original = process.env.GUIYI_PREVIEW_AS_OF
+  const cutoff = '2026-09-08T07:00:00.000001+00:00'
+  process.env.GUIYI_PREVIEW_AS_OF = cutoff
+  try {
+    const { default: config } = await import('../vite.config.ts')
+    const result = (config as Function)({ mode: 'candidate-preview', command: 'serve' })
+    assert.equal(JSON.parse(result.define['import.meta.env.VITE_PREVIEW_AS_OF']), cutoff)
+  } finally {
+    if (original === undefined) delete process.env.GUIYI_PREVIEW_AS_OF
+    else process.env.GUIYI_PREVIEW_AS_OF = original
+  }
+})
+
+test('candidate cutoff validation rejects invalid dates and a future microsecond', async (context) => {
+  context.mock.method(Date, 'now', () => Date.parse('2026-09-08T07:00:00Z'))
+  const original = process.env.GUIYI_PREVIEW_AS_OF
+  try {
+    const { default: config } = await import('../vite.config.ts')
+    for (const cutoff of ['2026-09-08T07:00:00.000001Z', '2026-02-30T07:00:00Z', '2026-09-08T07:00:00']) {
+      process.env.GUIYI_PREVIEW_AS_OF = cutoff
+      assert.throws(() => (config as Function)({ mode: 'candidate-preview', command: 'serve' }), /PREVIEW_CUTOFF_INVALID/)
+    }
+    process.env.GUIYI_PREVIEW_AS_OF = '2026-09-08T07:00:00.000000Z'
+    assert.doesNotThrow(() => (config as Function)({ mode: 'candidate-preview', command: 'serve' }))
+    assert.throws(() => (config as Function)({ mode: 'candidate-preview', command: 'build' }), /PREVIEW_CUTOFF_INVALID/)
+  } finally {
+    if (original === undefined) delete process.env.GUIYI_PREVIEW_AS_OF
+    else process.env.GUIYI_PREVIEW_AS_OF = original
+  }
+})
+
+test('preview identity distinguishes microseconds but accepts equivalent timezones', async () => {
+  const { matchesPreviewIdentity } = await import('../src/utils/candidatePreview.ts')
+  const config = { enabled: true, codeSha: 'a'.repeat(40), asOf: '2026-09-08T07:00:00.000001Z' }
+  const payload = { mode: 'local_candidate_readonly', code_sha: config.codeSha,
+    as_of: '2026-09-08T15:00:00.000001+08:00', realtime: false,
+    candidate_origin: 'http://127.0.0.1:8010', status_origin: 'http://127.0.0.1:8000' }
+  assert.equal(matchesPreviewIdentity(payload, config), true)
+  for (const as_of of ['2026-09-08T07:00:00.000000Z', '2026-09-08T07:00:00.000002Z', 'invalid']) {
+    assert.equal(matchesPreviewIdentity({ ...payload, as_of }, config), false)
+  }
+})
+
 test('server middleware denies management before proxy and destroys API upgrades', async () => {
   const { candidatePreviewPlugin, candidatePreviewProxy } = await import('../previewProxy.ts')
   const middleware: Function[] = []
