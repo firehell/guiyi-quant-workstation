@@ -316,7 +316,24 @@
   来源日期 `2022-08-01..2026-05-25`。已保存 AU2306 的 12 个窗口和本次 AU2308 窗口均排除；
   原始来源使用明确类型标签保存，检查复用原生全空/全零零量日规则；其他异常仍停止。
   新来源脚本离线与独立 Review 各 `62 passed`；计数、范围、保留源 hash、失败停止及无写入路径复核通过。
-  新 218 次查询、后续正式日/周分区写入均未执行，分别需要新的单次明确意图；完整矩阵和本地浏览器验收仍未完成。
+  当时新 218 次查询尚未执行，后续获准结果见下文；正式日/周分区写入、完整矩阵和本地浏览器验收仍未完成。
+- `2026-09-09T07:22:02..07:22:08Z` 在 `1ab61e8ce` 获准执行一次剩余来源查询，计划
+  `2f126f4bfb7ac93ef61a707c387025899f153e258c17fbd40bde73c05855b234`。
+  218 API / 220 SDK RPC attempted/completed（218 日行情、quota/type-list 各 1），全部完成；
+  新 218 文件保留 3,766 个合约日期，DB connections/writes、Canonical writes、Redis connections、retry 均为 0。
+  新 4 个来源发现均为 AU2310 `2022-09-16/20/22、2022-10-21` 的 O/H/L 全 NaN、volume=0、同一行 close>0，
+  只按现有 adapter 规则检查，原始值未改写。result 位于 `/private/tmp/newow-au-daily-source-resume-20260909/fetch-result.json`，
+  SHA256 `cfb31ffedebeb0f3fbab06cda6ee1d63d87b230d78c67780dd8042d737eb20a7`。
+  独立 Review 核验全部文件 hash、事件计数和来源顺序：新 3,766 日 + 已保存 AU2306 202 日 + 独立 AU2308 诊断 10 日
+  = 3,978 个唯一合约日期，精确覆盖原计划 231 窗口；失去的原第 13 次响应不被替代、补写或推定。
+  剩余 20 合约 D1/W1 来源已齐，10 个全空/全零零量日规范化候选均保留源值；这不代表 Canonical 数据或页面已恢复。
+  后续只读候选准备在 `/private/tmp/newow-au-remaining-candidates-20260909/`：重新核对原生 20 合约/430 分区计划，
+  使用保留的 231 响应复用原生 adapter、完整 ISO 周聚合和 existing Bar 合并，每个已有 Bar 必须逐值保留；
+  只在临时目录生成 Parquet 并完整回读，同时记录 Catalog 前像与既有不可变文件 hash。
+  新脚本在执行前修正了 FrozenSource 间接导入引擎早于配置的问题，并补充真实调用链的禁网子进程回归；未进行真实数据库尝试。
+  离线及独立 Review 各 `51 passed`；只读事务、临时发布路径、来源身份、已有 Bar 保留与失败停止核验通过。
+  当前 `EXTERNAL_GATE_PENDING`：该次只读 PostgreSQL/Canonical 候选准备尚未执行，需新的明确连接意图；
+  正式发布需候选、影响与恢复范围确认后的独立单次意图，不新增 RQData、Scope、通知或 Runtime 切换。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
