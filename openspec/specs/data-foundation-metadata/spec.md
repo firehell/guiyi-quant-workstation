@@ -34,8 +34,8 @@ RQData 1m Session 的 provider start 是首根 `bar_end` 标签；MetadataSynchr
 ### Requirement: 最小月度 Catalog
 `market_datasets` SHALL 对四字段 DatasetKey 唯一；`market_partitions` SHALL 对
 `(dataset_id,year,month)` 唯一，只保存 coverage、file URI、row count 和创建时间。查询和维护 MUST
-以 Catalog identity、coverage 与物理可读性判断可用月。
+以 Catalog identity、coverage 与物理可读性判断可用月；唯一性约束表示 active pointer 唯一，不限制保留的不可变物理文件数量。
 
 #### Scenario: 原子月替换
 - **WHEN** 校验通过的新月文件发布
-- **THEN** Catalog 只发现该 Dataset 的唯一当前月分区
+- **THEN** Catalog 只发现该 Dataset 的唯一当前月分区；新 URI 只在现有事务 register/flush、真实 MarketDataService strict-read 后 commit 才可见

@@ -29,6 +29,19 @@ bounded nonnegative counts; exception text, storage paths, SQL and adapter sampl
 - **WHEN** physical replay coverage is validated
 - **THEN** the service reports `REPLAY_ENDPOINTS_EXTRA` without classifying it as recoverable missing data
 
+### Requirement: Catalog URI byte integrity
+Historical reader MUST 只打开 Catalog 精确引用的 URI，不得 glob、自选最新文件或回退固定路径。
+`part.<sha256>.parquet` MUST 校验实际文件 bytes SHA-256，并从同一份 bytes 解析 Parquet，随后执行
+既有 strict validation。旧 `part.parquet` MUST 仅在 Catalog 明确引用时兼容。
+
+#### Scenario: Hash URI bytes mismatch
+- **WHEN** 精确 Catalog URI 的文件 bytes 与文件名 SHA-256 不符
+- **THEN** 查询 fail-closed，不尝试旧路径或其他月文件
+
+#### Scenario: Reader holds the previous URI
+- **WHEN** 新 pointer 已提交，而 reader 已取得旧 URI
+- **THEN** reader 仍可读取保留的旧不可变文件，不把该行为表述为全局 snapshot
+
 ### Requirement: 三种 SeriesQuery
 查询 SHALL 接受 `continuous|actual_dominant|contract`、symbol、frequency、start、end；contract
 模式必须有 contract，其他模式不得提供 contract。连续/真实合约查询直接读取同频 Catalog 月分区；

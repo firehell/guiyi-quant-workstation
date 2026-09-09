@@ -300,7 +300,7 @@ class SessionAnchorRepairService:
                 merged = tuple(
                     (current_by_end | fetched)[bar_end] for bar_end in expected
                 )
-                published = shadow_store.publish(PublishRequest(
+                published = shadow_store.publish_legacy_shadow(PublishRequest(
                     item.key,
                     item.year,
                     item.month,
@@ -337,7 +337,7 @@ class SessionAnchorRepairService:
                         sessions=sessions,
                     )
                     derived_expected = _derived_ends(sessions, frequency)
-                    derived_published = shadow_store.publish(PublishRequest(
+                    derived_published = shadow_store.publish_legacy_shadow(PublishRequest(
                         derived_key,
                         item.year,
                         item.month,

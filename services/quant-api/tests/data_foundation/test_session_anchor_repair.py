@@ -226,7 +226,7 @@ def repair_context(tmp_path: Path):
             target_frequency=frequency,
             sessions=(wrong_window,),
         )
-        published = store.publish(PublishRequest(
+        published = store.publish_legacy_shadow(PublishRequest(
             key,
             2026,
             9,
@@ -279,7 +279,7 @@ def test_plan_rejects_a_non_anchor_gap_instead_of_expanding_repair_scope(
     store = CanonicalMonthlyStore(root)
     current = store.read_month(key, 2026, 9)
     with_gap = tuple(bar for bar in current if bar.bar_end.minute != 10)
-    store.publish(PublishRequest(
+    store.publish_legacy_shadow(PublishRequest(
         key,
         2026,
         9,

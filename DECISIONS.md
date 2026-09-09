@@ -9,6 +9,7 @@
 | 产品 | 本地、单用户的国内期货研究工作站 | 当前研究观察阶段 `auto_order=false`；不做 SaaS，不跳过人工 Gate 进入无人值守真实下单 |
 | 分阶段演进 | 研究观察 → Paper → Shadow → Broker Read-only → 订单草稿 → 人工确认 → 半自动 → 受控自动 | AI 可以自动研究但不能自动晋升；每阶段独立人工 Gate，当前不新增账户或执行能力 |
 | 数据事实链 | `RQData -> Canonical Parquet -> 八表 Catalog + MainContractMap -> MarketDataService` | Historical consumer 不得 glob、自选 active、自判主力、绕过质量或跨频回退 |
+| Canonical 月发布 | 每 DatasetKey 每月唯一 active Catalog pointer，指向不可变 `part.<sha256>.parquet` | 完整校验与文件 durability 先于既有事务 register/flush/真实 MDS strict-read；commit 为单 partition 可见点；commit 异常停批并以独立只读事务核实；保留旧文件，无 GC/version table/global snapshot；legacy 固定 URI 只按 Catalog 明确引用兼容 |
 | Live/Historical | Redis Live 仅为当日 observation，Canonical 是治理后的 Historical fact | Live 不直接晋升 Canonical；未确认 Bar 不进入正式历史或正式信号 |
 | Session 锚点 | RQData 1m 首根标签在 adapter 边界减一分钟，统一为 `SessionWindow(start, end]` 的排他 start | 不在聚合器或 consumer 分散补偿；分钟对齐、跨午夜、无效区间与重叠 fail-closed；Canonical V2 原地替换，不新增 data-version |
 | Universe | `active_products.txt` 定义研究能力，`operational_products.txt` 定义持续 Runtime 授权 | 即使文件内容相同也不合并授权边界 |

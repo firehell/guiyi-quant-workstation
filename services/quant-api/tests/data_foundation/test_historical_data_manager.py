@@ -62,6 +62,12 @@ def session() -> Session:
         yield value
 
 
+def _read_committed_month(manager, key, year, month):
+    partition = next(item for item in manager.catalog.all_partitions(key)
+                     if (item.year, item.month) == (year, month))
+    return manager.store.read_catalog_partition(partition)
+
+
 class FakeCoverage:
     def __init__(self, ends: dict[tuple[str, str, str, str], tuple[datetime, ...]]) -> None:
         self.ends = ends
@@ -1015,7 +1021,7 @@ def test_contract_warmup_apply_publishes_only_exact_family_and_derives_from_1m(
         for frequency in keys
     }
     for frequency, key in keys.items():
-        bars = manager.store.read_month(key, 2025, 1)
+        bars = _read_committed_month(manager, key, 2025, 1)
         assert bars
         if frequency in {
             BarFrequency.M5,
@@ -1072,8 +1078,8 @@ def test_contract_warmup_batches_exact_lifecycle_daily_with_weekly_snapshot(
         )
     )
 
-    stored_daily = manager.store.read_month(daily, 2025, 1)
-    stored_weekly = manager.store.read_month(weekly, 2025, 1)
+    stored_daily = _read_committed_month(manager, daily, 2025, 1)
+    stored_weekly = _read_committed_month(manager, weekly, 2025, 1)
     assert result.status == "passed"
     assert result.applied == result.provider_requests == 2
     assert provider.batch_calls == [(daily, weekly)]
@@ -1172,7 +1178,7 @@ def test_contract_warmup_merges_existing_valid_bars_and_readback_matches_catalog
     assert result.applied == 1
     assert result.provider_requests == 1
     assert provider.calls == [(key, tuple(bar.bar_end for bar in bars[2:]))]
-    assert manager.store.read_month(key, 2025, 1) == bars
+    assert _read_committed_month(manager, key, 2025, 1) == bars
     partition = manager.catalog.all_partitions(key)[0]
     assert partition.coverage_start == bars[0].bar_end - timedelta(minutes=1)
     assert partition.coverage_end == bars[-1].bar_end
@@ -1227,7 +1233,7 @@ def test_contract_warmup_provider_quota_is_partial_without_retry_and_resumes_gap
         (key, (january.bar_end,)),
         (key, (february.bar_end,)),
     ]
-    assert manager.store.read_month(key, 2025, 1) == (january,)
+    assert _read_committed_month(manager, key, 2025, 1) == (january,)
     assert [(item.year, item.month) for item in manager.catalog.all_partitions(key)] == [
         (2025, 1)
     ]
@@ -1283,7 +1289,7 @@ def test_contract_warmup_partition_failure_keeps_successful_month_and_reason_cod
             "reason_code": "TARGET_WINDOW_INCOMPLETE",
         },
     )
-    assert manager.store.read_month(key, 2025, 2) == (february,)
+    assert _read_committed_month(manager, key, 2025, 2) == (february,)
     assert [(item.year, item.month) for item in manager.catalog.all_partitions(key)] == [
         (2025, 2)
     ]
@@ -1356,7 +1362,7 @@ def test_ordinary_non_quota_failure_remains_failed_when_another_month_succeeds(
     assert result.status == "failed"
     assert result.applied == result.failed == 1
     assert result.stop_reason is None
-    assert manager.store.read_month(key, 2025, 2) == (february,)
+    assert _read_committed_month(manager, key, 2025, 2) == (february,)
     assert [(item.year, item.month) for item in manager.catalog.all_partitions(key)] == [
         (2025, 2)
     ]
@@ -1569,10 +1575,10 @@ def test_contract_warmup_explicit_weekly_groups_cross_month_daily_companions(
     assert result.applied == result.provider_requests == 3
     assert provider.batch_calls == [(daily, daily, weekly)]
     stored_daily = (
-        *manager.store.read_month(daily, 2025, 3),
-        *manager.store.read_month(daily, 2025, 4),
+        *_read_committed_month(manager, daily, 2025, 3),
+        *_read_committed_month(manager, daily, 2025, 4),
     )
-    stored_weekly = manager.store.read_month(weekly, 2025, 4)
+    stored_weekly = _read_committed_month(manager, weekly, 2025, 4)
     assert tuple(bar.trading_day for bar in stored_daily) == tuple(
         item.date() for item in daily_ends
     )
@@ -1688,7 +1694,7 @@ def test_contract_warmup_bounded_scope_quota_partial_never_reports_passed(
         (minute, tuple(bar.bar_end for bar in bars)), (minute, (february.bar_end,))
     ]
     assert {(p.year, p.month) for p in session.scalars(select(MarketPartition))} == {(2025, 1)}
-    assert len(manager.store.read_month(selected, 2025, 1)) == (4 if frequency == "15m" else 1)
+    assert len(_read_committed_month(manager, selected, 2025, 1)) == (4 if frequency == "15m" else 1)
 
 
 @pytest.mark.parametrize("frequency", ("15m", "60m"))
@@ -1745,7 +1751,7 @@ def test_contract_warmup_60m_publishes_only_its_scope_and_reuses_complete_source
     manager, minute, hour, bars, provider = _hourly_contract_warmup_manager(session, tmp_path)
     if source_present:
         _publish_existing(manager, minute, bars)
-    original_source = tuple(manager.store.read_month(minute, 2025, 1)) if source_present else ()
+    original_source = tuple(_read_committed_month(manager, minute, 2025, 1)) if source_present else ()
     request = historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2), frequency="60m")
     plan = manager.contract_warmup(request).plan
 
@@ -1763,8 +1769,8 @@ def test_contract_warmup_60m_publishes_only_its_scope_and_reuses_complete_source
     assert result.applied == (1 if source_present else 2)
     assert result.provider_requests == (0 if source_present else 1)
     assert provider.calls == ([] if source_present else [(minute, tuple(b.bar_end for b in bars))])
-    assert manager.store.read_month(minute, 2025, 1) == (original_source or bars)
-    assert manager.store.read_month(hour, 2025, 1) == (
+    assert _read_committed_month(manager, minute, 2025, 1) == (original_source or bars)
+    assert _read_committed_month(manager, hour, 2025, 1) == (
         CanonicalBar(datetime(2025, 1, 2, 2, tzinfo=UTC), date(2025, 1, 2),
                      Decimal(101), Decimal(160), Decimal(101), Decimal(160),
                      Decimal(60), Decimal(600), Decimal(20)),
@@ -1992,8 +1998,8 @@ def test_update_refreshes_complete_daily_week_from_same_snapshot_as_new_weekly_b
 
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
 
-    stored_daily = manager.store.read_month(daily, 2025, 1)
-    stored_weekly = manager.store.read_month(weekly, 2025, 1)
+    stored_daily = _read_committed_month(manager, daily, 2025, 1)
+    stored_weekly = _read_committed_month(manager, weekly, 2025, 1)
     assert result.status == "passed"
     assert tuple(bar.volume for bar in stored_daily) == (
         Decimal("10"),
@@ -2030,8 +2036,8 @@ def test_update_publishes_daily_and_weekly_from_one_provider_batch(
 
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
 
-    stored_daily = manager.store.read_month(daily, 2025, 1)
-    stored_weekly = manager.store.read_month(weekly, 2025, 1)
+    stored_daily = _read_committed_month(manager, daily, 2025, 1)
+    stored_weekly = _read_committed_month(manager, weekly, 2025, 1)
     assert result.status == "passed"
     assert stored_weekly[0].volume == sum(
         (bar.volume for bar in stored_daily), start=Decimal("0")
@@ -2090,7 +2096,7 @@ def test_weekly_owner_refresh_preserves_valid_contract_daily_warmup(
 
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
 
-    stored_daily = manager.store.read_month(daily, 2025, 1)
+    stored_daily = _read_committed_month(manager, daily, 2025, 1)
     assert result.status == "passed"
     assert tuple(bar.trading_day for bar in stored_daily) == (
         date(2025, 1, 6),
@@ -2140,7 +2146,7 @@ def test_contract_update_preserves_valid_later_bar_at_fixed_through(
 
     assert result.status == "passed"
     assert provider.calls == [(key, (mapped.bar_end,))]
-    assert manager.store.read_month(key, 2025, 1) == (mapped, later)
+    assert _read_committed_month(manager, key, 2025, 1) == (mapped, later)
 
 
 def test_contract_update_since_uses_trading_day_for_night_mapped_gap(
@@ -2217,7 +2223,7 @@ def test_contract_update_rebuilds_partition_with_lifecycle_invalid_extra(
 
     assert result.status == "passed"
     assert provider.calls == [(key, (warmup.bar_end, mapped.bar_end))]
-    assert manager.store.read_month(key, 2025, 1) == (warmup, mapped)
+    assert _read_committed_month(manager, key, 2025, 1) == (warmup, mapped)
 
 
 def test_contract_refresh_refetches_mapped_and_valid_warmup_timestamps(
@@ -2240,7 +2246,7 @@ def test_contract_refresh_refetches_mapped_and_valid_warmup_timestamps(
 
     assert result.status == "passed"
     assert provider.calls == [(key, (old_warmup.bar_end, mapped.bar_end))]
-    assert manager.store.read_month(key, 2025, 1) == (refreshed_warmup, mapped)
+    assert _read_committed_month(manager, key, 2025, 1) == (refreshed_warmup, mapped)
 
 
 def test_contract_refresh_refetches_pure_warmup_month_without_rank1_day(
@@ -2271,7 +2277,7 @@ def test_contract_refresh_refetches_pure_warmup_month_without_rank1_day(
         (key, (old_warmup.bar_end,)),
         (key, (mapped.bar_end,)),
     ]
-    assert manager.store.read_month(key, 2025, 1) == (refreshed_warmup,)
+    assert _read_committed_month(manager, key, 2025, 1) == (refreshed_warmup,)
 
 
 def test_contract_audit_checks_invalid_extra_in_pure_warmup_month(
@@ -2341,7 +2347,7 @@ def test_contract_refresh_preserves_but_does_not_refetch_after_through_bar(
     assert provider.calls == [
         (key, (old_warmup.bar_end, old_mapped.bar_end)),
     ]
-    assert manager.store.read_month(key, 2025, 1) == (
+    assert _read_committed_month(manager, key, 2025, 1) == (
         refreshed_warmup,
         refreshed_mapped,
         later,
@@ -2376,7 +2382,7 @@ def test_incomplete_weekly_batch_does_not_publish_companion_daily_refresh(
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
 
     assert result.status == "failed"
-    assert manager.store.read_month(daily, 2025, 1) == old_daily
+    assert _read_committed_month(manager, daily, 2025, 1) == old_daily
     assert not manager.catalog.all_partitions(weekly)
 
 
@@ -2420,8 +2426,8 @@ def test_daily_failure_blocks_weekly_publish_until_next_update(
     second = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 10), True))
 
     assert second.status == "passed"
-    assert manager.store.read_month(daily, 2025, 1) == daily_bars
-    assert manager.store.read_month(weekly, 2025, 1) == (weekly_bar,)
+    assert _read_committed_month(manager, daily, 2025, 1) == daily_bars
+    assert _read_committed_month(manager, weekly, 2025, 1) == (weekly_bar,)
 
 
 def test_update_dry_run_exposes_daily_refresh_required_by_missing_weekly_bar(
@@ -2503,10 +2509,10 @@ def test_weekly_refresh_updates_daily_partitions_on_both_sides_of_month_boundary
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 4, 4), True))
 
     stored_daily = (
-        *manager.store.read_month(daily, 2025, 3),
-        *manager.store.read_month(daily, 2025, 4),
+        *_read_committed_month(manager, daily, 2025, 3),
+        *_read_committed_month(manager, daily, 2025, 4),
     )
-    stored_weekly = manager.store.read_month(weekly, 2025, 4)
+    stored_weekly = _read_committed_month(manager, weekly, 2025, 4)
     assert result.status == "passed"
     assert tuple(bar.volume for bar in stored_daily) == tuple(
         Decimal(value) for value in (10, 20, 30, 40, 50)
@@ -2872,7 +2878,7 @@ def test_derived_reads_canonical_1m_and_never_calls_provider(session, tmp_path) 
 
     assert result.applied == 2
     assert [call[0].frequency.value for call in provider.calls] == ["1m"]
-    assert manager.store.read_month(derived_key, 2025, 1)[0].close == Decimal("105")
+    assert _read_committed_month(manager, derived_key, 2025, 1)[0].close == Decimal("105")
 
 
 def test_derived_limits_session_lookup_to_target_coverage(session, tmp_path) -> None:
@@ -2915,7 +2921,7 @@ def test_derived_ignores_later_same_month_1m_outside_target_sessions(session, tm
         )
     )
 
-    assert manager.store.read_month(derived_key, 2025, 1)[0].bar_end == source[4].bar_end
+    assert _read_committed_month(manager, derived_key, 2025, 1)[0].bar_end == source[4].bar_end
 
 
 def test_fixed_through_update_preserves_later_same_month_canonical_bars(session, tmp_path) -> None:
@@ -2930,7 +2936,7 @@ def test_fixed_through_update_preserves_later_same_month_canonical_bars(session,
 
     assert result.status == "passed"
     assert tuple(
-        bar.bar_end for bar in manager.store.read_month(key, 2025, 1)
+        bar.bar_end for bar in _read_committed_month(manager, key, 2025, 1)
     ) == (earlier.bar_end, later.bar_end)
 
 
@@ -2955,7 +2961,7 @@ def test_fixed_through_rebuilds_night_bar_from_future_trading_day(session, tmp_p
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 2), True))
 
     assert result.status == "passed"
-    assert manager.store.read_month(key, 2025, 1) == (earlier,)
+    assert _read_committed_month(manager, key, 2025, 1) == (earlier,)
 
 
 def test_existing_complete_1m_rebuilds_derived_before_provider_quota(session, tmp_path) -> None:
@@ -2976,7 +2982,7 @@ def test_existing_complete_1m_rebuilds_derived_before_provider_quota(session, tm
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
 
     assert result.status == "partial"
-    assert manager.store.read_month(derived, 2025, 1)[0].close == Decimal("105")
+    assert _read_committed_month(manager, derived, 2025, 1)[0].close == Decimal("105")
     assert [call[0].frequency for call in provider.calls] == [BarFrequency.D1]
 
 
@@ -3014,7 +3020,7 @@ def test_catalog_invalid_1m_is_repaired_before_derived_publish(session, tmp_path
 
     assert result.status == "passed"
     assert [call[0].frequency for call in provider.calls] == [BarFrequency.M1]
-    assert manager.store.read_month(derived, 2025, 1)[0].close == Decimal("205")
+    assert _read_committed_month(manager, derived, 2025, 1)[0].close == Decimal("205")
 
 
 def test_dry_run_plans_without_metadata_provider_or_writes(session, tmp_path) -> None:
@@ -3030,7 +3036,7 @@ def test_dry_run_plans_without_metadata_provider_or_writes(session, tmp_path) ->
     assert result.planned == 1
     assert metadata.calls == []
     assert provider.calls == []
-    assert not tuple(tmp_path.rglob("part.parquet"))
+    assert not tuple(tmp_path.rglob("part.*.parquet"))
     assert result.as_payload()["targets"] == [
         {
             "dataset": key.as_tuple(),
@@ -3056,7 +3062,7 @@ def test_refresh_replaces_an_existing_direct_month(session, tmp_path) -> None:
 
     assert result.status == "passed"
     assert result.provider_requests == 1
-    assert manager.store.read_month(key, 2025, 1) == (replacement,)
+    assert _read_committed_month(manager, key, 2025, 1) == (replacement,)
 
 
 def test_refresh_mid_month_rebuilds_the_complete_intersecting_month(session, tmp_path) -> None:
@@ -3069,7 +3075,7 @@ def test_refresh_mid_month_rebuilds_the_complete_intersecting_month(session, tmp
     manager.refresh(RefreshRequest("jm", date(2025, 1, 3), date(2025, 1, 3), True))
 
     assert provider.calls[0][1] == tuple(bar.bar_end for bar in bars)
-    assert manager.store.read_month(key, 2025, 1) == bars
+    assert _read_committed_month(manager, key, 2025, 1) == bars
 
 
 def test_update_rebuilds_a_partition_with_extra_bar(session, tmp_path) -> None:
@@ -3084,7 +3090,7 @@ def test_update_rebuilds_a_partition_with_extra_bar(session, tmp_path) -> None:
 
     assert result.status == "passed"
     assert provider.calls[0][1] == tuple(bar.bar_end for bar in expected)
-    assert manager.store.read_month(key, 2025, 1) == expected
+    assert _read_committed_month(manager, key, 2025, 1) == expected
 
 
 def test_audit_and_update_rebuild_when_catalog_uri_is_stale(session, tmp_path) -> None:
@@ -3128,7 +3134,7 @@ def test_quota_partial_preserves_completed_months_and_next_update_resumes(sessio
     assert partial.stop_reason == "provider_quota_exhausted"
     assert partial.provider_requests == 3
     assert partial.applied == 1
-    assert manager.store.read_month(daily, 2025, 1) == (daily_bar,)
+    assert _read_committed_month(manager, daily, 2025, 1) == (daily_bar,)
     assert not manager.catalog.all_partitions(weekly)
     provider.quota_after = None
     resumed = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
@@ -3195,7 +3201,7 @@ def test_refresh_holds_maintenance_lock_until_provider_fetch_completes(
     assert lease.released
 
 
-def test_update_since_rebuilds_an_unreadable_intersecting_month(session, tmp_path) -> None:
+def test_update_since_rejects_corrupt_immutable_candidate_without_overwrite(session, tmp_path) -> None:
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
     bars = (_daily(2, 200), _daily(3, 201))
     coverage = FakeCoverage({key.as_tuple(): tuple(bar.bar_end for bar in bars)})
@@ -3206,9 +3212,10 @@ def test_update_since_rebuilds_an_unreadable_intersecting_month(session, tmp_pat
 
     result = manager.update(UpdateRequest(("jm",), date(2025, 1, 3), date(2025, 1, 3), True))
 
-    assert result.status == "passed"
+    assert result.status == "failed"
+    assert result.failures[0]["reason_code"] == "IMMUTABLE_PARTITION_CONFLICT"
     assert provider.calls[0][1] == tuple(bar.bar_end for bar in bars)
-    assert manager.store.read_month(key, 2025, 1) == bars
+    assert manager.catalog.all_partitions(key)[0].file_path.read_bytes() == b"invalid"
 
 
 def test_refresh_apply_fails_closed_when_rank1_map_is_missing(session, tmp_path) -> None:
@@ -3255,29 +3262,58 @@ def test_dataset_failure_is_isolated(session, tmp_path) -> None:
     assert result.failed == 1
 
 
-def test_catalog_commit_failure_leaves_published_file_for_later_repair(
-    session, tmp_path, monkeypatch
+@pytest.mark.parametrize("failure", ["register", "flush", "strict", "commit", "committed_then_error"])
+def test_refresh_failure_preserves_committed_pointer_and_old_reader(
+    session, tmp_path, monkeypatch, failure
 ) -> None:
-    key = DatasetKey("continuous", "jm", "MAIN", "1d")
-    old_bar = _daily(2, 100)
-    new_bar = _daily(3, 101)
-    coverage = FakeCoverage({key.as_tuple(): (old_bar.bar_end, new_bar.bar_end)})
-    provider = FakeProvider({key.as_tuple(): (new_bar,)})
-    manager = _manager(session, tmp_path, coverage, provider)
-    _publish_existing(manager, key, (old_bar,))
-    partition = manager.catalog.all_partitions(key)[0]
-    old_parquet = partition.file_path.read_bytes()
+    from app.market_data.domain import SeriesQuery
+    from app.market_data.market_data_service import MarketDataService
+    from app.market_data.storage import StorageError
 
-    def fail_commit() -> None:
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    old_bar, new_bar = _daily(2, 100), _daily(2, 200)
+    manager = _manager(session, tmp_path, FakeCoverage({key.as_tuple(): (new_bar.bar_end,)}),
+                       FakeProvider({key.as_tuple(): (new_bar,)}))
+    _publish_existing(manager, key, (old_bar,))
+    old_pointer = manager.catalog.all_partitions(key)[0]
+    old_bytes = old_pointer.file_path.read_bytes()
+    real_commit = session.commit
+
+    def fail(*_args, **_kwargs):
+        if failure == "committed_then_error":
+            real_commit()
         raise SQLAlchemyError("injected")
 
-    monkeypatch.setattr(session, "commit", fail_commit)
-    with pytest.raises(SQLAlchemyError, match="injected"):
-        manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
+    if failure == "register":
+        monkeypatch.setattr(manager.catalog, "register_partition", fail)
+    elif failure == "flush":
+        register = manager.catalog.register_partition
 
-    assert partition.file_path.read_bytes() != old_parquet
-    assert manager.store.read_month(key, 2025, 1) == (old_bar, new_bar)
-    assert not tuple(tmp_path.rglob("*.bak"))
+        def register_with_failed_flush(partition):
+            monkeypatch.setattr(session, "flush", fail)
+            with session.no_autoflush:
+                return register(partition)
+
+        monkeypatch.setattr(manager.catalog, "register_partition", register_with_failed_flush)
+    elif failure == "strict":
+        monkeypatch.setattr(manager, "_strict_verify", fail)
+    else:
+        monkeypatch.setattr(session, "commit", fail)
+    error = StorageError if "commit" in failure else SQLAlchemyError
+    with pytest.raises(error, match="COMMIT_OUTCOME_UNKNOWN" if "commit" in failure else "injected"):
+        manager.refresh(RefreshRequest("jm", date(2025, 1, 1), date(2025, 1, 3), True))
+
+    assert old_pointer.file_path.read_bytes() == old_bytes
+    assert manager.store.read_catalog_partition(old_pointer) == (old_bar,)
+    # A separate transaction resolves even an exception raised AFTER commit.
+    with Session(session.get_bind()) as reader:
+        catalog = MarketCatalog(reader, tmp_path)
+        query = SeriesQuery(series_kind="continuous", symbol="jm", frequency="1d",
+                            start=old_bar.bar_end - timedelta(microseconds=1), end=old_bar.bar_end)
+        result = MarketDataService(catalog, manager.store).query(query)
+        assert result.bars == ((new_bar,) if failure == "committed_then_error" else (old_bar,))
+        assert (catalog.all_partitions(key)[0] == old_pointer) == (failure != "committed_then_error")
+    assert len(tuple(tmp_path.rglob("part.*.parquet"))) == 2
 
 
 def test_strict_read_failure_leaves_partition_for_next_update(
@@ -3293,12 +3329,13 @@ def test_strict_read_failure_leaves_partition_for_next_update(
 
         raise StorageError("PARTITION_UNREADABLE")
 
-    monkeypatch.setattr(manager.store, "read_month", unreadable)
+    monkeypatch.setattr(manager.store, "read_catalog_partition", unreadable)
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), True))
 
     assert result.status == "failed"
     assert result.failures[0]["reason_code"] == "STRICT_READ_VERIFICATION_FAILED"
-    assert tuple(tmp_path.rglob("part.parquet"))
+    assert manager.catalog.all_partitions(key) == ()
+    assert tuple(tmp_path.rglob("part.*.parquet"))
     assert not tuple(tmp_path.rglob("manifest.json"))
     assert not tuple(tmp_path.rglob("*.bak"))
 
@@ -3466,7 +3503,7 @@ def test_audit_preserves_unreadable_partition_reason(session, tmp_path) -> None:
     result = manager.audit(AuditRequest(("jm",)))
 
     assert [(item.code, item.category) for item in result.findings] == [
-        ("PARTITION_UNREADABLE", "physical")
+        ("PARTITION_CONTENT_HASH_MISMATCH", "physical")
     ]
 
 
@@ -3573,3 +3610,69 @@ def _publish_existing(
     ))
     manager.catalog.register_partition(published)
     manager.catalog.session.commit()
+
+
+@pytest.mark.parametrize("fail_stop", [False, True])
+def test_unknown_commit_stops_before_later_partition(session, tmp_path, monkeypatch, fail_stop):
+    from app.market_data.storage import StorageError
+
+    manager = _manager(session, tmp_path, FakeCoverage({}), FakeProvider({}))
+    first = _Target(DatasetKey("continuous", "jm", "MAIN", "5m"), 2025, 1, (), (), ())
+    second = _Target(DatasetKey("continuous", "jm", "MAIN", "15m"), 2025, 1, (), (), ())
+    attempted = []
+
+    def unknown(target):
+        attempted.append(target)
+        raise StorageError("COMMIT_OUTCOME_UNKNOWN")
+
+    monkeypatch.setattr(manager, "_publish_derived", unknown)
+    with pytest.raises(StorageError, match="COMMIT_OUTCOME_UNKNOWN"):
+        manager._execute_apply("update", (), (first, second), None,
+                               weekly_daily_companions=False, fail_stop=fail_stop)
+    assert attempted == [first]
+
+
+def test_unknown_commit_survives_lease_release_error(session, tmp_path, monkeypatch):
+    from app.market_data.storage import StorageError
+
+    bar = _daily(2, 100)
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    manager = _manager(session, tmp_path, FakeCoverage({key.as_tuple(): (bar.bar_end,)}),
+                       FakeProvider({key.as_tuple(): (bar,)}))
+
+    class FailingLease:
+        def release(self):
+            raise SQLAlchemyError("release failed")
+
+    def fail_commit():
+        raise SQLAlchemyError("commit failed")
+
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: FailingLease())
+    monkeypatch.setattr(session, "commit", fail_commit)
+    with pytest.raises(StorageError, match="COMMIT_OUTCOME_UNKNOWN"):
+        manager.refresh(RefreshRequest("jm", date(2025, 1, 1), date(2025, 1, 3), True))
+
+
+@pytest.mark.parametrize("fail_before_commit", [False, True])
+def test_legacy_pointer_transitions_only_on_success(session, tmp_path, monkeypatch, fail_before_commit):
+    from app.market_data.storage import StorageError
+
+    key = DatasetKey("continuous", "jm", "MAIN", "1d")
+    old, new = _daily(2, 100), _daily(2, 200)
+    manager = _manager(session, tmp_path, FakeCoverage({key.as_tuple(): (new.bar_end,)}),
+                       FakeProvider({key.as_tuple(): (new,)}))
+    legacy = manager.store.publish_legacy_shadow(PublishRequest(key, 2025, 1, (old,), (old.bar_end,)))
+    manager.catalog.register_partition(legacy)
+    session.commit()
+    old_pointer = manager.catalog.all_partitions(key)[0]
+
+    if fail_before_commit:
+        def fail(*args):
+            raise StorageError("STRICT_READ_VERIFICATION_FAILED")
+        monkeypatch.setattr(manager, "_strict_verify", fail)
+    result = manager.refresh(RefreshRequest("jm", date(2025, 1, 1), date(2025, 1, 3), True))
+    assert result.status == ("failed" if fail_before_commit else "passed")
+    current = manager.catalog.all_partitions(key)[0]
+    assert (current.file_path == legacy.parquet_path) == fail_before_commit
+    assert _read_committed_month(manager, key, 2025, 1) == ((old,) if fail_before_commit else (new,))
+    assert manager.store.read_catalog_partition(old_pointer) == (old,)

@@ -69,6 +69,7 @@ flowchart LR
 
 ## Consumer boundaries
 
+- Canonical publication 先完成校验、不可变 hash 文件和 durability，再在既有 Catalog 事务 register/flush、真实 `MarketDataService` strict-read 后 commit 单月 active pointer；不引入全局 snapshot 或新表。reader 对精确 Catalog URI 的同一份 bytes 校验 hash 并解析，保留旧文件供已有 reader 使用。
 - `MarketDataService` 是唯一 Historical Bar reader；`actual_dominant` 只通过 `MainContractMap rank=1` 解析，identity、coverage 或物理可读性异常 fail-closed。
 - 默认关闭的 `app.preview` 只组合 Market/Newow routers 与共享 read-only transaction，固定 code SHA / cutoff；不导入正常 app 或创建 Live/Alert/EOD/provider。候选 Web 精确白名单代理到 8010，只有既有 health/current-events 两项 GET 到受监督的 8000，并显示独立来源与时间口径；启动入口与 fixture 验证见 `TESTING.md`。
 - Web 只消费 typed Market/Alert API，不计算策略、建仓或清仓。

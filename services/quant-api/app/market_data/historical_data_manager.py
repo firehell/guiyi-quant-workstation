@@ -8,8 +8,8 @@ RQData 拉取组装成可审计的维护流程。消费者（MarketDataService�
 --------
 HistoricalDataManager
     唯一维护入口：规划目标月分区、区分经 BarSource 获取的 base/weekly 目标与日内 1m 派生目标、
-    调用 store.publish 完成 staging 六项硬校验与 part.parquet 原子替换，再 register_partition
-    并 strict_verify 读回。apply=False 时只返回 planned 窗口，不写库与文件。
+    调用 store.publish 完成校验与不可变候选安装，再 register_partition
+    并 strict_verify 读回；Catalog commit 是单分区可见点。apply=False 时只返回 planned 窗口，不写库与文件。
 
 CoverageSource（Protocol，实现见 coverage_source.DatabaseCoverageSource）
     从交易所日历、会话模板与品种窗口推导「应有 bar_end」序列；不读 Parquet、不拉行情。
@@ -34,12 +34,13 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 import hashlib
 import json
+import sys
 from typing import Protocol, cast
 
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.market_data.aggregation import AggregationError, aggregate_from_1m
-from app.market_data.catalog import ContractFact, MarketCatalog
+from app.market_data.catalog import ContractFact, MaintenanceLease, MarketCatalog
 from app.market_data.domain import (
     INTRADAY_DERIVED_FREQUENCIES,
     PROVIDER_FETCH_FREQUENCIES,
@@ -730,7 +731,7 @@ class ContractWarmupPlanner:
         year: int,
         month: int,
     ) -> tuple[tuple[CanonicalBar, ...], str | None]:
-        """检查 catalog 与 part.parquet 一致性；返回物理问题码以支持 audit 分类。"""
+        """检查 Catalog 指针与对应 Parquet 一致性；返回物理问题码以支持 audit 分类。"""
         rows = tuple(
             item
             for item in self.catalog.all_partitions(key)
@@ -824,7 +825,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     through,
                 )
             finally:
-                lease.release()
+                _release_maintenance_lease(lease)
         through = request.through or self.coverage.latest_complete_day(request.products)
         if request.since is not None and request.since > through:
             raise ValueError("UPDATE_WINDOW_INVALID")
@@ -873,7 +874,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 )
                 return self._execute("refresh", targets, request.through, apply=True)
             finally:
-                lease.release()
+                _release_maintenance_lease(lease)
         targets = tuple(
             self._iter_targets(
                 products,
@@ -954,7 +955,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 failures=maintenance.failures,
             )
         finally:
-            lease.release()
+            _release_maintenance_lease(lease)
 
 
     def audit(
@@ -1414,6 +1415,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
             try:
                 self._publish_derived(target)
             except (AggregationError, StorageError) as exc:
+                if _is_global_failure(exc):
+                    raise
                 # 源 1m 尚未就绪时跳过，留待 direct 补齐同月 1m 后再聚合。
                 if not fail_stop and getattr(exc, "code", "") in {
                     "SOURCE_1M_INCOMPLETE",
@@ -1666,7 +1669,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
     def _publish_fetched(self, target: _Target, batches: tuple[BarBatch, ...]) -> None:
         """合并 existing 与 provider 批次，经 store.publish 六项校验后注册分区。"""
         bars = self._merged_fetched_bars(target, batches)
-        # publish 内部：schema/顺序/月界/会话边界校验 → tmp.parquet → os.replace 原子替换。
+        # publish 内部：schema/顺序/月界/会话边界校验 → 临时文件回读 → 不可变候选安装。
         partition = self.store.publish(
             PublishRequest(
                 target.key,
@@ -1740,14 +1743,23 @@ class HistoricalDataManager(ContractWarmupPlanner):
         self._commit_partition(partition, target)
 
     def _commit_partition(self, partition, target: _Target) -> None:
-        """注册 catalog 分区行并 strict 读回验证；任一步失败 rollback，不留下半提交状态。"""
+        """候选文件不可变；Catalog commit 是单分区唯一可见点。"""
         try:
             self.catalog.register_partition(partition)
             self._strict_verify(target)
-            self.catalog.session.commit()
         except Exception:
             self.catalog.session.rollback()
             raise
+        try:
+            self.catalog.session.commit()
+        except Exception as exc:
+            # commit 可能已在服务端成功；rollback 仅释放本地事务，不能证明未提交。
+            # 保留全部候选与旧文件，停止整批，结果须由独立只读事务确认。
+            try:
+                self.catalog.session.rollback()
+            except Exception:
+                pass
+            raise StorageError("COMMIT_OUTCOME_UNKNOWN") from exc
 
     def _strict_verify(self, target: _Target) -> None:
         """发布后经 MarketDataService 读回，确保消费者路径与 expected 完全一致（fail-closed）。"""
@@ -1915,7 +1927,18 @@ def _is_global_failure(exc: Exception) -> bool:
         return True
     return getattr(exc, "code", None) in {
         "ATOMIC_PUBLISH_FAILED",
+        "COMMIT_OUTCOME_UNKNOWN",
         "CANONICAL_ROOT_ESCAPE",
         "PARTITION_URI_ESCAPE",
         "PARTITION_OUTSIDE_CANONICAL_ROOT",
     }
+
+
+def _release_maintenance_lease(lease: MaintenanceLease) -> None:
+    """锁释放失败不得掩盖已发生的提交结果不确定。"""
+    pending = sys.exception()
+    try:
+        lease.release()
+    except Exception:
+        if getattr(pending, "code", None) != "COMMIT_OUTCOME_UNKNOWN":
+            raise

@@ -229,7 +229,7 @@ class MarketDataset(Base):
 
 
 class MarketPartition(Base):
-    """数据集月分区物理指针（Canonical Parquet part.parquet）。
+    """数据集月分区物理指针（Canonical Parquet immutable URI; legacy part.parquet readable）。
 
     V2 角色：记录 coverage 窗口、行数与 file_uri；MarketDataService 按分区
     读取并校验物理完整性；月粒度与 staging 发布原子替换策略对齐。

@@ -14,6 +14,7 @@
 分区、预计缺失首分钟与稳定 scope hash；`prepare --apply` 只在外部 shadow root 使用真实 RQData 重建完整
 Canonical；`publish --apply` 只在五项 Runtime 全部停止、manifest/基线/hash 未漂移时切换 root、reconcile
 Catalog、执行精确 0045 并清理 publish 执行时由 operational phase authority 唯一解析的当前交易日旧锚点 Live Bar；此 repair cleanup MUST 保留 after-market reconciliation 所需的不可变 rank1 subscription snapshot。
+0044→0045 legacy repair MUST 保持原合同；固定 `part.parquet` 写入仅隔离在 shadow prepare，不用于普通 maintenance 发布。
 
 #### Scenario: 已退出动作
 - **WHEN** 用户调用任何已退出的维护操作

@@ -1179,3 +1179,25 @@ def test_public_status_rejects_any_present_invalid_v2_public_field(mutate) -> No
     mutate(raw)
 
     assert public_after_market_status(raw) == {}
+
+
+def test_commit_outcome_unknown_is_public_and_never_retried(tmp_path, monkeypatch):
+    from app.market_data.storage import StorageError
+
+    updater, manager, _, sleeps, notices, live_store = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True, True], results=[])
+    calls = []
+
+    def unknown(*args, **kwargs):
+        calls.append(1)
+        raise StorageError("COMMIT_OUTCOME_UNKNOWN")
+
+    monkeypatch.setattr(manager, "update", unknown)
+    result = updater.run()
+    assert result.error_code == "COMMIT_OUTCOME_UNKNOWN"
+    assert result.attempts == 1
+    assert calls == [1]
+    assert sleeps == []
+    assert live_store.published == []
+    assert _notice_error_codes(notices) == ["COMMIT_OUTCOME_UNKNOWN"]
+    assert public_after_market_status(_status(tmp_path / "after-market-status.json"))["last_failure"]["error_code"] == "COMMIT_OUTCOME_UNKNOWN"

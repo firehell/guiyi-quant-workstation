@@ -1,6 +1,6 @@
 # Canonical 数据基础
 
-更新时间：2026-09-04
+更新时间：2026-09-09
 
 ## 1. 唯一 active 数据语言
 
@@ -36,15 +36,27 @@ canonical/
   frequency={1m|5m|15m|30m|60m|1d|1w}/
   year=YYYY/
   month=MM/
-  part.parquet
+  part.<sha256>.parquet
 ```
 
 行字段为 `bar_end`、`trading_day`、`open`、`high`、`low`、`close`、`volume`、`turnover` 和
 `open_interest`。价格和金额用 Decimal，`bar_end` 是 UTC timestamp，identity 不在行内重复。
 
 发布前必须完成 schema、主键单调唯一、OHLCV、交易日/session/frequency、coverage 和物理可读性
-校验。发布成功的月通过 Catalog 的 `coverage_start`、`coverage_end`、`row_count` 与可读
-`file_uri` 表示；没有旁路的内容摘要、发布清单或缺口状态。
+校验。新发布文件以实际 Parquet bytes 的全小写 SHA-256 命名为 `part.<sha256>.parquet`，不可变、
+无覆盖，先完成文件与目录 durability，再在既有 DB 事务内 register/flush，并通过真实
+`MarketDataService` strict-read 校验候选 Catalog URI。事务 commit 是该月新指针唯一可见点。
+每 DatasetKey 每月只有一个 active Catalog pointer，记录 `coverage_start`、`coverage_end`、
+`row_count` 与精确 `file_uri`；不要求目录中只有一个物理文件，不新增 schema、version table、
+history API、sidecar 或发布清单。
+
+提交前失败必须保持旧 pointer 与旧文件不变。commit 异常必须报告 `COMMIT_OUTCOME_UNKNOWN` 并停止
+本批次，不自动重试、删除候选文件或回滚可能已提交的指针；必须另开独立只读事务确认提交结果。
+旧文件保留以支持已经取得旧 URI 的 reader；本阶段没有 GC。原子单位是单个 partition，
+不是多月、多周期或 metadata 的全局 snapshot。
+
+真实更新前必须完成所有 consumer 升级并停止旧 writer；新 URI 发布后，不得盲目回退到无法读取新 URI
+的旧 Runtime。代码集成不授权生产迁移、真实更新、release 或 Runtime promotion。
 
 `contract` partition 必须包含全部 rank1 required Bar，同时其中每一条 Bar 都必须在该 Contract 的 active
 lifecycle、TradingCalendar 与 TradingSession 内。这个 superset 合同允许保留同物理合约、上市有效期内的真实
@@ -96,7 +108,7 @@ identity 冲突时重建相交整月。明确的 RQData 额度异常映射为 `P
 
 缺失完整 ISO 周的 `1w` 时，同一 maintenance 批次会把该周对应的 `1d` 作为 refresh context；
 RQData adapter 先读取完整周日行情，并在调用内按 `(contract, trading_day)` 复用同一 source
-snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d 月分区、1w 月分区顺序原子替换；
+snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d 月分区、1w 月分区顺序分别提交 active Catalog pointer；不提供整组 snapshot 原子性；
 跨月周会刷新两侧日线月分区。`continuous` 日线仍按每日 rank1 拼接；最终 owner 合约用于
 `actual_dominant 1w` 整周聚合时，非 rank1 日只作为该周内部 source context，不进入
 `actual_dominant 1d` 的可读结果。dry-run 会显式列出由缺失周线带动的日线 refresh 窗口。
@@ -208,6 +220,8 @@ expected day 才是 `degraded/missed`。`current_run` age 不超过 2h 为 `pend
 通知使用固定脱敏内容，含 trading day、公开 error code、attempts 与“系统运维提醒，非交易指令”；
 不用 Topic、`AlertEvent`、DB、retry、replay 或 fallback。provider accepted 不等于送达；通知失败只记录
 `failure_notification=failed`，不改写或重试主 after-market 结果。`missed/stuck` 只是 health，不会发送。
+Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN`，本次停止且不重试，
+不发布 `canonical_updated` 或执行成功后的 Live 清理；须用独立只读事务确认 Catalog 结果。
 
 ## 5. 唯一查询入口
 
@@ -219,6 +233,10 @@ frequency
 start
 end
 ```
+
+Historical reader 只打开 Catalog 精确引用的 URI。对于 hash 文件名，必须校验实际 bytes SHA-256，
+并从同一份 bytes 解析 Parquet，避免 hash 与 parse 间文件变化；不 glob、自选最新文件或回退固定路径。
+旧 `part.parquet` 仅在 Catalog 明确引用时兼容读取，仍执行既有 strict validation。
 
 `continuous` 读取 Canonical `SYMBOL.MAIN`（`1m` 由 RQData `{SYMBOL}88` 构建，`1d/1w` 由 rank1
 真实合约的交易所日行情构建）；`contract` 读取指定真实合约；`actual_dominant` 由 rank1
@@ -340,7 +358,8 @@ Dataset/partition、预计缺失首分钟与稳定 scope hash，不调用 RQData
 coverage/row_count、执行精确 0045，再清理 publish 执行时由 operational phase authority 唯一解析的当前交易日旧锚点 Redis Live Bar。该 repair cleanup 只删除
 `live:bars:<trading-day>:*`，必须保留同日不可变 rank1 subscription snapshot；它不清理其他交易日，且不得把
 snapshot 改写为 Canonical 或合成的事实。0045 成功后失败只能保持维护状态继续 forward recovery，不能恢复错误
-session。修复继续使用唯一 Canonical V2，不创建并行 data-version。
+session。修复继续使用唯一 Canonical V2，不创建并行 data-version。该 legacy repair 的原合同保持不变，
+固定 `part.parquet` 写入仅隔离在 shadow prepare，不得作为普通 update/refresh 的发布路径。
 
 自然 after-market 是与 repair 分离的严格边界：Canonical 更新后必须用既有 immutable subscription snapshot 对
 formal rank1 做 strict reconciliation。snapshot 缺失、格式错误、不完整或 identity 不匹配均失败关闭，不能以 repair、

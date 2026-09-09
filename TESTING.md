@@ -224,6 +224,27 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 `guiyi data contract-warmup --apply`；即使 dry-run 得到 plan hash，真实 RQData/Canonical apply 仍需
 引用该 exact hash 的单次明确授权。
 
+Canonical 不可变月发布的 storage、Catalog strict-read 与 manager 失败回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -m "not isolated_postgresql" \
+  services/quant-api/tests/data_foundation/test_storage.py \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py \
+  services/quant-api/tests/data_foundation/test_historical_data_manager.py
+```
+
+真实 PostgreSQL 的提交前不可见、commit/rollback 与旧 reader 保留测试使用独立变量
+`GUIYI_ISOLATED_PUBLICATION_DATABASE_URL`。运行前必须显式配置一次性隔离 PostgreSQL；仅允许
+loopback、非 5432 端口与精确 database `guiyi_canonical_isolated_test`，不得使用生产连接或读取 `.env`。
+测试在随机专用 schema 创建和清理测试表，不执行 production migration；变量未提供时 skip 不算验收通过。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -m isolated_postgresql \
+  services/quant-api/tests/data_foundation/test_catalog_publication_postgresql.py
+```
+
 Isolated PostgreSQL 测试只能指向专用、空白、可销毁的数据库；未设置变量时不得运行：
 
 ```bash
