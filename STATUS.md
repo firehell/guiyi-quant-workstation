@@ -256,7 +256,29 @@
   覆盖真实 SQLite flush/commit 事件、越界/更新/删除拒绝、候选与旧 Runtime 身份拒绝，以及原生
   `COMMIT_OUTCOME_UNKNOWN` 停止后续分区。SQL/Catalog 只允许目标单行 INSERT；逐分区提交，全成功后
   新开只读事务经 MDS 读回。失败保留成功分区与候选，无自动 retry、指针反转或旧 v1.10.4 回退。
-  当前为 `EXTERNAL_GATE_PENDING`：首批正式写入尚未获准或执行；真实矩阵与浏览器仍未恢复验收。
+  当时为 `EXTERNAL_GATE_PENDING`：首批尚未执行，后续获准结果见下文。
+- `2026-09-09T06:27:22..06:27:27Z` 在 `955d3f016` 执行获准的唯一首批发布，execution-plan
+  `1505d96db5c2a5ef1849310cfcd2c62705c2cb64fa65573c1bf25ae9972c321f`：exit 0、passed，AU2304
+  2022-03..12 的 1d/1w 共 20 分区全部完成。锁内重查、五项现役消费者 v1.10.5 身份及 P1 源码核对通过；
+  20 个精确文件目标原不存在，新增 20 个 immutable 文件及 20 条 Catalog 记录，20 次唯一 commit，
+  无 Dataset/Calendar/Session/Scope/Redis 写入或通知。0 次新 RQData 请求、10 次保存来源读取、
+  20 个 native logical provider targets 分开计数，无 retry。
+  同次执行完成后的独立只读事务经 MDS 核验 20 个 URI/hash/全部 Bar 通过；readback SHA256
+  `0bf9bde5e8481c1432ff8812ddf8fbea265442ec6aaf9cc51bec1bef69e6aaa4`，为 196 D1 + 41 W1。
+  本地独立 Review 另按 exact manifest 读取正式文件确认全部 hash、237 端点、20 个唯一提交事件及来源 hash；
+  evidence 位于 `/private/tmp/newow-au-publish-once-20260909/`。本批状态 `COMPLETED`，不代表完整矩阵恢复；
+  已消费计划不得重跑。保留候选与已提交文件，不自动回收或回退旧 Runtime。
+- `2026-09-09T06:35:26..06:35:43Z` 一次仅 AU 的剩余日/周只读规划通过；AU2304 D1/W1 剩余目标为 0，
+  其余 AU2306..AU2608 的 20 个物理合约 native plan hash 逐一与原审计相同，合并 D1/W1 后尚有
+  430 个分区（217 D1、213 W1）。按原生分组与当前 Calendar 逐窗口枚举为 231 次 `futures.get_exchange_daily`，
+  3978 个不重复 contract-date，整体源日期范围 2022-05-17..2026-05-25；逐合约范围、请求与目标见
+  `/private/tmp/newow-au-remaining-daily-plan-20260909/plan.json`，文件 SHA256
+  `ae6834bf6036b340a8e5ce4598716efed1c50b317012f86c20105dad11ee0b8d`。本次 provider requests、DB/Canonical writes、Redis connections 均为 0。
+  新 captured-source 查询脚本与计划位于 `/private/tmp/newow-au-remaining-daily-source-20260909/`，
+  离线及独立 Review 各 `40 passed`；SDK 最多 231 次数据 RPC + 3 次初始化元数据 RPC，关闭 retry/pool/fallback。
+  原始响应不改写，已批零量全零 O/H/L 且同 close>0 规则仅用于校验例外；其他价格、数值、覆盖、身份或
+  来源错误立即停。当前仅准备，新的 231 次来源查询与随后 430 分区正式写入分别仍需独立单次意图。
+  60m 所需 1m/60m 历史依赖、完整真实矩阵和 8010/5174 浏览器验收仍未完成，不能以此日/周计划替代。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
