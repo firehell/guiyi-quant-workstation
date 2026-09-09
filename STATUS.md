@@ -10,6 +10,22 @@
 长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。已完成的计划、逐次操作、旧候选矩阵及
 逐合约结果从 Git history、tag、PR 和原 evidence 追溯；历史授权不授权重跑。
 
+## v1.10.5 候选（尚未发布）
+
+- 独立候选分支 `codex/subing-input-release-candidate` 基于 `0eca85209008e036626b37eb5563fc504dba12bc`；
+  本次只收尾 API/Web/Python/lock 版本身份与版本一致性断言，目标版本提案为 `1.10.5`。
+- 本次新跑验证：直接相关 `357 passed`；backend + engineering `2967 passed, 16 skipped, 28 deselected`；
+  隔离 PostgreSQL publication `6 passed`；Web `504 passed, 1 skipped`、typecheck/build 通过。
+  浏览器首轮 89 passed / 60 failed / 3 skipped：60 项源于运行端口 5192 与 fixture 固定 5182 不一致；
+  使用正确端口复跑这 60 项全部通过，candidate-preview 专用 3 项另跑全部通过。
+  Ruff、Mypy（150 source files）、9 项 OpenSpec 与 secret scan 通过；代码基线独立 Standards/Spec Review 无阻塞。
+  版本收尾后的 engineering + health `80 passed`、离线 `uv lock --check` 与 Web build 通过；版本增量独立复核无阻塞。
+- 该候选包含已集成的 Canonical P1、captured Runtime 身份解析、WebSocket 资源边界、统一详情页、
+  SuBing 历史参考与 Newow 只读相关改进，不是仅两合约数据修复的最小代码补丁。
+- AO2701/OI2701 的真实下载与 1m→15m 发布尚未执行。发布 main/tag/release、统一消费者升级和
+  Runtime 切换分别为独立 Gate；新 hash URI 产生后不得回退只支持固定 URI 的 v1.10.4。
+  最终执行版本上须重新生成两合约 dry-run，旧 36 目标计划及旧 hash 不自动授权真实 apply。
+
 ## Release、Runtime 与 Scope
 
 | 项目 | 最近已记录事实 |
