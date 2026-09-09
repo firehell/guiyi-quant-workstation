@@ -10,10 +10,10 @@
 长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。已完成的计划、逐次操作、旧候选矩阵及
 逐合约结果从 Git history、tag、PR 和原 evidence 追溯；历史授权不授权重跑。
 
-## v1.10.5 候选（尚未发布）
+## v1.10.5 已发布（Runtime 尚未切换）
 
 - 独立候选分支 `codex/subing-input-release-candidate` 基于 `0eca85209008e036626b37eb5563fc504dba12bc`；
-  本次只收尾 API/Web/Python/lock 版本身份与版本一致性断言，目标版本提案为 `1.10.5`。
+  API/Web/Python/lock 版本身份与版本一致性断言为 `1.10.5`；已审候选为 `0d2273445637a6dd5cfef2a45c4f1242276952c5`。
 - 本次新跑验证：直接相关 `357 passed`；backend + engineering `2967 passed, 16 skipped, 28 deselected`；
   隔离 PostgreSQL publication `6 passed`；Web `504 passed, 1 skipped`、typecheck/build 通过。
   浏览器首轮 89 passed / 60 failed / 3 skipped：60 项源于运行端口 5192 与 fixture 固定 5182 不一致；
@@ -22,18 +22,18 @@
   版本收尾后的 engineering + health `80 passed`、离线 `uv lock --check` 与 Web build 通过；版本增量独立复核无阻塞。
 - 该候选包含已集成的 Canonical P1、captured Runtime 身份解析、WebSocket 资源边界、统一详情页、
   SuBing 历史参考与 Newow 只读相关改进，不是仅两合约数据修复的最小代码补丁。
-- AO2701/OI2701 的真实下载与 1m→15m 发布尚未执行。发布 main/tag/release、统一消费者升级和
-  Runtime 切换分别为独立 Gate；新 hash URI 产生后不得回退只支持固定 URI 的 v1.10.4。
+- 本轮批准的 main/tag/release 已执行并读回；AO2701/OI2701 的真实下载与 1m→15m 发布尚未执行。
+  统一消费者升级、Runtime 切换与数据 apply 尚待对应执行意图；新 hash URI 产生后不得回退只支持固定 URI 的 v1.10.4。
   最终执行版本上须重新生成两合约 dry-run，旧 36 目标计划及旧 hash 不自动授权真实 apply。
 
 ## Release、Runtime 与 Scope
 
 | 项目 | 最近已记录事实 |
 |---|---|
-| 正式 Release | `v1.10.4@43797a5c1ddf581c9381dead9273df8a34375dfa`，PR #358 于 `2026-09-08T11:53:33Z` 合入 main；tree `8f930282dffcc296e3244cc376bebee37ab43076`，annotated tag object `a709ca4117a2062c716a8b0ad67c340e83f9aa93`。GitHub Release 于 `2026-09-08T11:55:42Z` 发布，non-draft、non-prerelease。API/Web/Python/lock 为 1.10.4。 |
-| 发布验收 | reviewed candidate `9dd47427269acc2c11ec845976081a816a8925e4` 与发布 tree 一致。候选矩阵 backend `2563 passed, 16 skipped, 15 deselected`、engineering `74 passed`、Web `478 passed, 1 skipped`、Playwright `141 passed`，Mypy/Ruff/build/OpenSpec/secret/diff 通过，独立 Standards/Spec Review clean。这是已记录的发布证据，不是本次新跑结果。 |
+| 正式 Release | `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`，PR #359 于 `2026-09-09T03:53:57Z` 合入 main；tree `11704da35b2eccf62bdddc330eb0e42ea5930247`，annotated tag object `71bad4102a9be883ba341c7dd27f0e98f59dab41`。GitHub Release 于 `2026-09-09T03:55:28Z` 发布，non-draft、non-prerelease；远端 main、peeled tag 与 Release target 一致。API/Web/Python/lock 为 1.10.5。 |
+| 发布验收 | 已审候选 `0d2273445637a6dd5cfef2a45c4f1242276952c5` 与发布 tree 完全一致；验证矩阵见上节。本轮重新核验四处版本、远端 main、annotated tag 及 Release target；未重复运行已通过且输入未变的全套测试。 |
 | Runtime | `2026-09-08 20:15:29 CST`：五项 launchd 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.4-r1@43797a5c1ddf581c9381dead9273df8a34375dfa`；API/Web/Live/Alert running，After-market idle；Market/Alert marker enabled，Live/Alert 同根同 commit 且 `recovery_guard_enabled=true`。部署状态 `PARTIAL`，不声明 `RUNTIME_READY`。 |
-| Runtime 工作树 | 2026-09-09 Git worktree 登记保留上述 detached v1.10.4 根；旧根是否仍在文件系统、是否有进程引用不从 Git 登记推断。本次没有清理 Runtime 根或切换服务。 |
+| Runtime 工作树 | 2026-09-09 保留现役 detached v1.10.4 根；已准备 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1@cdd72d7501227d8e7f905ea0b8a54c038b521a09`，只执行 render-only，五项模板 root/commit 校验通过、工作树干净；未安装或切换服务，也未清理旧根。 |
 | 最近 health | `2026-09-08 20:15:29 CST`：DB/Redis/Live/After-market ok，Alert degraded；SuBing `evaluation_failed@2026-09-08T07:00:29.336273Z` 未关闭。60 品种 CLOSED、`last_bar_at=null`；新版本自然 completed Bar 尚未验收。captured recovery 身份校验另报 `CAPTURED_RECOVERY_RUNTIME_SERVICE_IDENTITY_INVALID`。 |
 | Database | 最近已记录 production readback 为 Alembic `20260903_0045`；session anchor repair 已发布。旧全库 Dataset/分区/行数快照不作为当前总量。 |
 | Market Scope | `operational_products.txt` 的 60 个品种。 |
@@ -64,7 +64,7 @@
 - `f08d86d88` 已在 develop 修复纯解析器并保留层级、重复字段、身份与括号校验；已记录验证为身份模块
   `76 passed`、调用链 `249 passed / 11 skipped`、engineering `18 passed`，两轴独立 Review clean。
   同份实机脱敏输出旧解析器失败、新解析器通过；未从开发根绕过 exact-tag Gate 运行恢复入口。
-- 修复尚未进入已记录的现役 v1.10.4。状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；后续发布、
+- 修复已发布于 v1.10.5，但尚未进入现役 v1.10.4。状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；后续
   再次部署与自然苏冰评估验收分别等待明确授权/真实证据，不热改运行根，不清除旧 failure。
 - 2026-09-08 19:26:46..19:26:57 CST 只读确认 RS2609 当日 Canonical 五周期
   `1m/5m/15m/30m/60m` 为 `225/45/15/8/5` 根，原五根日内目标均存在。
