@@ -17,6 +17,25 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 
 等待卡片验证覆盖同快照当前 FLAT、空/分页历史、筛选、stale/历史窗口、跨身份与 OPEN 冲突；日期覆盖日周、同日时分与跨年夜盘。浏览器用本地 fixture，1440/390px 截图只证明显示，不证明原站新版 parity、真实数据恢复或生产启用。沿用测试默认 5182 端口，不接入生产服务。源码-only 隔离 worktree 可使用已存在的 Python 环境并显式设置上述 PYTHONPATH，避免为定向验证重新安装依赖。
 
+## Newow 公式、参考交易与显示合同专项复核
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/newow/test_trend_band.py \
+  services/quant-api/tests/newow/test_trend_band_page_v2.py \
+  services/quant-api/tests/newow/test_oscillation_channel.py \
+  services/quant-api/tests/newow/test_main_rise_page_v1.py \
+  services/quant-api/tests/newow/test_product_adapters.py \
+  services/quant-api/tests/newow/test_reference_trades.py \
+  services/quant-api/tests/newow/test_target_absorb_display.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
+  tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts tests/newowDetailPresentation.test.ts \
+  tests/newowProductChartPrimitives.test.ts tests/newowProductTypes.test.ts tests/NewowProductChartStage.test.ts
+```
+
+只使用现有依赖与本地测试输入；`pnpm_config_verify_deps_before_run=false` 防止新版 pnpm 在复核时自动安装依赖。
+这些测试证明当前代码合同，不等于新原站版本的同输入逐值验证。可见收益舍入核查的输入、公式及限制见当前研究复核。
+
 ## 苏冰历史参考交易
 
 ```bash
