@@ -26,6 +26,7 @@ const props = defineProps<{
   identityWarning?: string | null
 }>()
 const emit = defineEmits<{
+  'focus-resolved': [focusBarEnd: string]
   updatePreferences: [preferences: FlexibleDetailPreferences]
 }>()
 
@@ -126,7 +127,7 @@ function loadEarlier() { void props.loadEarlier() }
 </script>
 
 <template>
-  <section class="free-workspace" data-detail-workspace="free" :data-range-detector-warmup="rangeState">
+  <section class="free-workspace" data-detail-workspace="free" :data-range-detector-warmup="rangeState" :data-range-detector-anchor="rangeWarmup.anchorTime.value" :data-range-detector-source-identity="sourceIdentity">
     <div class="free-workspace__indicators">
       <details open>
         <summary>指标设置</summary>
@@ -150,6 +151,7 @@ function loadEarlier() { void props.loadEarlier() }
       :range-detector-anchor-time="rangeState === 'ready' ? rangeWarmup.anchorTime.value : null"
       :identity-key="sourceIdentity"
       :focus-bar-end="identity.focusBarEnd"
+      @focus-resolved="emit('focus-resolved', $event)"
       @load-earlier="loadEarlier"
     />
     <MarketDetailInsightDeck :identity-key="sourceIdentity" :sections="backgroundSections" :default-open="false" />

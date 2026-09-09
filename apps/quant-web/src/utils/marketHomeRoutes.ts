@@ -2,16 +2,9 @@ import type { AlertEvent } from '../types/market.ts'
 import { isHtdyAlertEvent, isSubingThsAlertEvent } from './alertRules.ts'
 import { marketDetailEventIdentity, serializeMarketDetailIdentity } from './marketDetailRoute.ts'
 
-export function marketHomeProductChartQuery(symbol: string) {
-  return { symbol, series_kind: 'actual_dominant', frequency: '1d' as const }
-}
-
 export function marketHomeEventChartQuery(event: AlertEvent) {
-  if (isSubingThsAlertEvent(event)) return marketHomeUnifiedEventChartQuery(event)
-  if (isHtdyAlertEvent(event)) {
-    return { symbol: event.symbol, series_kind: 'actual_dominant', frequency: event.frequency, overlay: 'htdy' as const }
-  }
-  throw new Error('unsupported AlertEvent identity')
+  if (!isHtdyAlertEvent(event) && !isSubingThsAlertEvent(event)) throw new Error('unsupported AlertEvent identity')
+  return marketHomeUnifiedEventChartQuery(event)
 }
 
 export function marketHomeUnifiedProductChartQuery(symbol: string) {

@@ -16,7 +16,6 @@ const emit = defineEmits<{
   'select-symbol': []
   'open-history': []
   'open-alert': []
-  'open-more': []
 }>()
 </script>
 
@@ -53,9 +52,7 @@ const emit = defineEmits<{
         <MarketDetailIcon name="alert" />
         <span>预警</span>
       </button>
-      <button class="detail-topbar__icon-button" type="button" aria-label="更多" @click="emit('open-more')">
-        <MarketDetailIcon name="more" />
-      </button>
+
     </div>
   </header>
 </template>

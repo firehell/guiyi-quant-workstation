@@ -8,9 +8,9 @@ import {
   serializeMarketDetailIdentity,
 } from '../src/utils/marketDetailRoute.ts'
 
-test('keeps a no-view route on the Legacy transition path', () => {
+test('migrates an omitted view deterministically to Free', () => {
   assert.deepEqual(parseMarketDetailRoute({ symbol: 'jm' }), {
-    kind: 'missing-view', symbol: 'jm',
+    kind: 'valid', identity: { view: 'free', symbol: 'jm', seriesKind: 'actual_dominant', frequency: '15m' },
   })
 })
 
@@ -72,7 +72,7 @@ test('fails closed for unknown values and malformed route fields', () => {
     { view: 'free', symbol: 'jm', series_kind: 'actual_dominant', frequency: '2h' },
     { view: 'htdy', symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', focus_bar_end: '2026-02-30T02:45:00Z' },
     { view: 'trend', symbol: 'jm', focus_bar_end: 'not-an-instant' },
-    { view: 'free', symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', focus_bar_end: '2026-09-02T02:45:00Z' },
+    { view: 'free', symbol: 'jm', series_kind: 'continuous', frequency: '15m', focus_bar_end: '2026-09-02T02:45:00Z' },
   ]) assert.equal(parseMarketDetailRoute(query).kind, 'invalid')
 })
 
@@ -142,4 +142,22 @@ test('events enter their exact view and bar', () => {
     view: 'subing', symbol: 'jm', seriesKind: 'actual_dominant', frequency: '15m',
     focusBarEnd: '2026-09-02T02:45:00Z',
   })
+})
+
+ test('migration preserves physical identities and HTDY focus, rejects malformed and conflicting fields', () => {
+  for (const overlay of [undefined, 'none', 'htdy']) {
+    const view = overlay === 'htdy' ? 'htdy' : 'free'
+    const query = { symbol: 'jm', series_kind: 'contract', contract: 'JM2601', frequency: '60m', overlay }
+    assert.deepEqual(parseMarketDetailRoute(query), { kind: 'valid', identity: { view, symbol: 'jm', seriesKind: 'contract', contract: 'JM2601', frequency: '60m' } })
+    const focus = { symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', overlay, focus_bar_end: '2026-09-02T02:45:00Z' }
+    const parsed = parseMarketDetailRoute(focus)
+    assert.equal(parsed.kind, 'valid')
+    if (parsed.kind === 'valid') assert.equal(parsed.identity.focusBarEnd, focus.focus_bar_end)
+  }
+  for (const query of [
+    { symbol: 'jm', overlay: 'unknown' }, { symbol: 'jm', view: ['free'] },
+    { symbol: 'jm', contract: ['JM2601'] }, { symbol: 'jm', frequency: ['15m'] },
+    { symbol: 'jm', series_kind: 'contract', contract: 'RB2601' },
+    { symbol: 'jm', view: 'newow', overlay: 'htdy' },
+  ]) assert.equal(parseMarketDetailRoute(query).kind, 'invalid')
 })

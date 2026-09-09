@@ -37,12 +37,12 @@ test('all Slice A shell primitives are valid typed Vue components', () => {
 
 test('top bar keeps text semantics and capability-gates alert actions', () => {
   const { source, template } = parsedComponent('MarketDetailTopBar')
-  for (const event of ['back', 'select-symbol', 'open-history', 'open-alert', 'open-more']) {
+  for (const event of ['back', 'select-symbol', 'open-history', 'open-alert']) {
     assert.match(source, new RegExp(`(?:'${event}'|${event}):`))
   }
   assert.match(template, /aria-label="返回"/)
   assert.match(template, /aria-label="历史记录"/)
-  assert.match(template, /aria-label="更多"/)
+  assert.doesNotMatch(template, /aria-label="更多"/)
   assert.match(template, /role="group" aria-label="详情页操作"/)
   assert.match(template, /canManageAlert/)
   assert.match(template, />\s*预警\s*</)

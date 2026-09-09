@@ -41,6 +41,8 @@ const showFrequencyControls = computed(() => props.identity.view === 'newow' || 
 const availableFrequencies = computed(() => props.identity.view === 'newow' ? NEWOW_FREQUENCIES : props.frequencies)
 const availableSeriesKinds = computed(() => props.seriesKinds.filter((kind) => kind !== 'contract'))
 const allowsContract = computed(() => (props.identity.view === 'free' || props.identity.view === 'htdy') && props.seriesKinds.includes('contract'))
+const symbolControl = ref<HTMLInputElement | HTMLSelectElement | null>(null)
+defineExpose({ focusSymbol: () => symbolControl.value?.focus() })
 const symbol = ref(props.identity.symbol)
 const contract = ref(props.identity.contract ?? '')
 
@@ -115,7 +117,7 @@ function periodLabel(value: MarketFrequency) {
       <span v-if="identity.view === 'trend'" class="detail-view-nav__fixed">固定日K</span>
       <span v-else-if="identity.view === 'subing'" class="detail-view-nav__fixed">固定15m</span>
       <div v-if="identity.view === 'newow'" class="detail-view-nav__group" role="group" aria-label="Newow策略">
-        <select v-model="symbol" aria-label="全部品种" @change="chooseSymbol">
+        <select ref="symbolControl" v-model="symbol" aria-label="全部品种" @change="chooseSymbol">
           <option v-if="!products.some(item => item.product.toLowerCase() === symbol)" :value="symbol">{{ symbol.toUpperCase() }} · 目录未读取</option>
           <option v-for="product in products" :key="product.product" :value="product.product.toLowerCase()">{{ product.product_name }} {{ product.product.toUpperCase() }}</option>
         </select>
@@ -128,8 +130,8 @@ function periodLabel(value: MarketFrequency) {
           @click="chooseStrategy(strategy)"
         >{{ strategy === 'trend' ? '趋势' : strategy === 'oscillation' ? '震荡' : '主升浪' }}</button>
       </div>
+      <input v-if="identity.view !== 'newow'" ref="symbolControl" v-model="symbol" class="detail-view-nav__symbol" aria-label="品种代码" @change="chooseSymbol">
       <div v-if="showSeriesControls" class="detail-view-nav__group" role="group" aria-label="序列">
-        <input v-model="symbol" aria-label="品种代码" @change="chooseSymbol">
         <button
           v-for="kind in availableSeriesKinds"
           :key="kind"
@@ -175,6 +177,7 @@ function periodLabel(value: MarketFrequency) {
 .detail-view-nav__controls { display: flex; align-items: center; gap: var(--gy-space-2); min-width: 0; }
 .detail-view-nav__group { min-width: 0; }
 .detail-view-nav__group button { min-height: 36px; padding: 0 var(--gy-space-2); border-color: var(--gy-border); border-radius: var(--gy-radius-md); font-size: var(--gy-font-size-sm); }
+.detail-view-nav__symbol,
 .detail-view-nav__group input { min-width: 0; min-height: 36px; max-width: 128px; padding: 0 var(--gy-space-2); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); color: var(--gy-text-primary); background: var(--gy-bg-panel); font: inherit; }
 .detail-view-nav__group button.is-active { border-color: var(--gy-accent); color: var(--gy-text-on-accent); background: var(--gy-accent); }
 .detail-view-nav__fixed { display: inline-flex; align-items: center; min-height: 32px; border-color: var(--gy-border); background: var(--gy-detail-section-bg); font-size: var(--gy-font-size-sm); }
