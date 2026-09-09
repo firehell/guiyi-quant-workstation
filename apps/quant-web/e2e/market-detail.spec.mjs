@@ -60,12 +60,13 @@ async function mockReadyTrend(page, options = {}) {
   })
 }
 
-test('missing view keeps the complete legacy detail page', async ({ page }) => {
+test('missing view migrates to the unified Free identity', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto('/market/chart?symbol=jm&series_kind=actual_dominant&frequency=15m')
 
-  await expect(page.getByTestId('product-status-strip')).toBeVisible()
-  await expect(page.locator('[data-detail-ready]')).toHaveCount(0)
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  expect(new URL(page.url()).searchParams.get('view')).toBe('free')
+  expect(new URL(page.url()).searchParams.get('frequency')).toBe('15m')
 })
 
 test('Newow route mounts its chart while its bounded independent daily quote is pending', async ({ page }) => {
@@ -801,69 +802,19 @@ test('HTDY keeps last successful immutable Event evidence when a later Event ref
   await expect(page.getByText(/Bar 2026-09-03T02:45:00.000Z/)).toBeVisible()
 })
 
-test('HTDY consumes a resolved 30m focus once before returning to legacy', async ({ page }) => {
+test('HTDY focus resolves and keyboard product selection stays in the unified identity', async ({ page }) => {
   await mockMarketDetail(page)
-  const focus = '2026-09-03T02:30:00Z'
-  await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=30m&focus_bar_end=${encodeURIComponent(focus)}`)
-  await page.evaluate(async () => {
-    const { router } = await import('/src/app/router.ts')
-    window.__legacyNavigationQuery = null
-    router.beforeEach((to) => {
-      if (to.path === '/market/chart' && to.query.view === undefined) {
-        window.__legacyNavigationQuery = { ...to.query }
-      }
-    })
-  })
-
+  await page.goto('/market/chart?symbol=jm&overlay=htdy&series_kind=actual_dominant&frequency=30m&focus_bar_end=2026-09-03T02%3A30%3A00Z')
   await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
-  await page.getByRole('button', { name: '更多', exact: true }).click()
-  await page.getByRole('menuitem', { name: '返回旧版详情' }).click()
-  await expect(page.getByTestId('product-status-strip')).toBeVisible()
-  const legacyUrl = new URL(page.url())
-  expect(legacyUrl.searchParams.has('view')).toBe(false)
-  expect(legacyUrl.searchParams.get('overlay')).toBe('htdy')
-  expect(await page.evaluate(() => window.__legacyNavigationQuery.focus_bar_end)).toBeUndefined()
-})
-
-test('returning a daily HTDY event only consumes focus after locating its trading day', async ({ page }) => {
-  await mockMarketDetail(page)
-  const focus = '2026-09-03T02:45:00Z'
-  await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=1d&focus_bar_end=${encodeURIComponent(focus)}`)
-
-  await page.getByRole('button', { name: '更多', exact: true }).click()
-  await page.getByRole('menuitem', { name: '返回旧版详情' }).click()
-  await expect(page.getByTestId('product-status-strip')).toBeVisible()
-  await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
-})
-
-test('returning a fixed view to legacy makes its parsed identity explicit', async ({ page }) => {
-  await mockMarketDetail(page)
-  for (const expected of [
-    { path: '/market/chart?symbol=jm&view=trend', frequency: '1d', mounted: true },
-    { path: '/market/chart?symbol=jm&view=subing', frequency: '15m', mounted: true },
-  ]) {
-    await page.goto(expected.path)
-    await page.evaluate(async () => {
-      const { router } = await import('/src/app/router.ts')
-      window.__legacyNavigationQuery = null
-      router.beforeEach((to) => {
-        if (to.path === '/market/chart' && to.query.view === undefined) {
-          window.__legacyNavigationQuery = { ...to.query }
-        }
-      })
-    })
-
-    if (expected.mounted) {
-      await page.getByRole('button', { name: '更多', exact: true }).click()
-      await page.getByRole('menuitem', { name: '返回旧版详情' }).click()
-    } else {
-      await page.getByRole('button', { name: '返回旧版详情' }).click()
-    }
-    await expect(page.getByTestId('product-status-strip')).toBeVisible()
-    const transferred = await page.evaluate(() => window.__legacyNavigationQuery)
-    expect(transferred.series_kind).toBe('actual_dominant')
-    expect(transferred.frequency).toBe(expected.frequency)
-  }
+  await page.getByRole('button', { name: '切换品种或合约' }).click()
+  const symbol = page.getByRole('textbox', { name: '品种代码' })
+  await expect(symbol).toBeFocused()
+  await symbol.fill('rb')
+  await symbol.press('Tab')
+  await expect.poll(() => new URL(page.url()).searchParams.get('symbol')).toBe('rb')
+  expect(new URL(page.url()).searchParams.get('view')).toBe('htdy')
+  expect(new URL(page.url()).searchParams.get('frequency')).toBe('30m')
+  await expect(page.getByText('返回旧版详情')).toHaveCount(0)
 })
 
 test('a late JM response cannot overwrite a newer RB identity', async ({ page }) => {
@@ -954,4 +905,66 @@ test('mobile history drawer traps focus, closes with Escape, and restores its tr
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await expect(trigger).toBeFocused()
+})
+
+for (const width of [1440, 390]) {
+  test(`unified migrated Free preview and keyboard at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await mockMarketDetail(page, { barsPage() {
+      const bars = Array.from({ length: 300 }, (_, index) => {
+        const close = 100 + index * 0.03 + Math.sin(index / 9) * 5 + Math.sin(index / 3) * 1.5
+        const open = close + Math.cos(index / 4) * 1.2
+        return { ...detailBar('jm', index, close), open, high: Math.max(open, close) + 0.8, low: Math.min(open, close) - 0.8 }
+      })
+      return { bars, page: { has_more_before: false, next_before: null } }
+    } })
+    await page.goto('/market/chart?symbol=jm&series_kind=contract&contract=JM2601&frequency=60m')
+    await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+    expect(new URL(page.url()).searchParams.get('contract')).toBe('JM2601')
+    await page.getByRole('button', { name: '切换品种或合约' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('textbox', { name: '品种代码' })).toBeFocused()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-chart-viewport-ready', 'true')
+    await page.locator('[data-detail-section="topbar"]').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: `/tmp/market-convergence-free-${width}-top.png`, fullPage: true })
+    await page.getByTestId('kline-shell').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: `/tmp/market-convergence-free-${width}.png`, fullPage: true })
+  })
+}
+
+test('unavailable bars still permit keyboard product recovery inside the unified page', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.route('**/api/v1/market/bars/page**', async route => {
+    await route.fulfill({ status: 409, json: { detail: { code: 'QUERY_WINDOW_EMPTY' } } })
+  })
+  await page.goto(freeJm)
+  await expect(page.getByText('行情事实不可用', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '切换品种或合约' }).click()
+  const symbol = page.getByRole('textbox', { name: '品种代码' })
+  await expect(symbol).toBeFocused()
+  await symbol.fill('rb')
+  await symbol.press('Tab')
+  await expect.poll(() => new URL(page.url()).searchParams.get('symbol')).toBe('rb')
+  expect(new URL(page.url()).searchParams.get('view')).toBe('free')
+})
+
+test('cancelled older migration cannot activate its identity after a newer route', async ({ page }) => {
+  const requests = await mockMarketDetail(page)
+  await page.goto('/market/chart?symbol=rb&view=free&series_kind=actual_dominant&frequency=15m')
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await page.evaluate(async () => {
+    const { router } = await import('/src/app/router.ts')
+    window.__releaseMigration = null
+    router.beforeEach(to => {
+      if (to.query.symbol === 'jm' && to.query.view === 'free') return new Promise(resolve => { window.__releaseMigration = resolve })
+    })
+    await router.push('/market/chart?symbol=jm&frequency=15m')
+  })
+  await expect.poll(() => page.evaluate(() => typeof window.__releaseMigration)).toBe('function')
+  await navigateClient(page, '/market/chart?symbol=rb&view=free&series_kind=actual_dominant&frequency=60m')
+  await page.evaluate(() => window.__releaseMigration(true))
+  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '品种代码' })).toHaveValue('rb')
+  expect(requests.filter(url => url.pathname.endsWith('/bars/page') && url.searchParams.get('symbol') === 'jm')).toHaveLength(0)
 })

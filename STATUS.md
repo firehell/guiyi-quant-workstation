@@ -1,7 +1,8 @@
 # 当前状态
 
-文档核对：2026-09-09，开发代码基线 `a6317cde262a14317e8db1f5fed962f94cd6e18d`。
-本次验证使用临时数据与隔离 PostgreSQL，没有连接生产 PostgreSQL/Redis/RQData 或重新验收 Runtime。
+文档核对：2026-09-09，develop 代码基线 `fd6f566cc`；统一详情页本轮修复已通过 owner 视觉接受，允许集成 develop。
+本日 P1 验证使用临时数据与隔离 PostgreSQL；后续 WebSocket/详情页验证使用离线测试与浏览器 fixture。
+没有连接生产 PostgreSQL/Redis/RQData 或重新验收 Runtime。
 以下生产结论保留原采集时间，不能当作今天的实时健康状态。
 
 本文件只保留 release、Runtime、Scope、关键验收事实与未完成 Gate。稳定产品面见 `PROJECT_SOURCE.md`，
@@ -23,6 +24,15 @@
 | 最近自然 After-market | v1.10.3 于 2026-09-08 自然运行，18:05:05 开始、19:05:52 完成，passed、attempts=1、60 品种，last_failure/current_run null。该状态经校验 create-only 带入 v1.10.4，hash `cece65929ba734c37cf91ee47af1b0d23b5dc3dd413c9d703888f669428347d5`；它不是 v1.10.4 自然盘后证据。 |
 
 ## Runtime 验收阻塞与开发差异
+
+- WebSocket 阻塞读取修复 `fd6f566cc` 已合入 develop：同步读取进入最多四个并行 worker，
+  每次独立创建与关闭 Session/Redis，取消不提前释放仍在执行的容量。backend 全量
+  `2859 passed, 16 skipped, 21 deselected`、engineering `74 passed`，Ruff/Mypy 与独立 Review 通过。
+- 统一详情页候选已删除旧页面及专用代码，保留旧链接的确定性迁移、Event 精确定位、
+  失败态品种选择和盘后失败披露。Web `504 passed, 1 skipped`；完整浏览器 `149 passed, 3 skipped`
+  （candidate-preview 专用场景）；build/typecheck、OpenSpec/secret/diff 与独立 Review 通过。
+  工程状态为 `CODE_COMPLETE`、`TEST_COMPLETE`、`REVIEW_COMPLETE`；owner 已接受桌面/390px fixture 截图并明确允许合入 develop。
+  本轮不发布、不切换 Runtime，fixture 不证明生产数据或自然业务闭环。
 
 - Canonical P1 修复 `a6317cde262a14317e8db1f5fed962f94cd6e18d` 已完成不可变文件与 Catalog
   单分区原子指针发布；提交失败不再覆盖旧文件，结果不确定时明确停批。实际验证：backend
@@ -94,7 +104,7 @@
 1. 发布并部署已审的身份解析修复后，重新完成exact-tag身份验收；自然completed Bar评估、当前60品种
    readiness及新版本自然盘后证据仍需独立核验。现有旧failure不得手工清除来制造通过。
 2. Newow在当前权威owner/coverage完整后完成真实成功请求矩阵；原站parity与期货OOS/Walk-forward缺口独立处理。
-3. Market最终切换未完成：`chart.vue`的无view入口仍挂载`LegacyMarketChart.vue`，新页面仍有返回旧页入口。
-   [剩余切换合同](docs/tasks/2026-09-03-market-detail-v1-remaining-design.md)保留精确旧链接迁移和验收要求；本次不改页面架构。
+3. Market 统一详情页实现、测试、独立 Review 与 owner 桌面/390px 视觉接受已完成；
+   本轮仅授权 develop 集成，发布及 Runtime 切换仍不在授权范围。
 4. HTDY目标61对Scope未应用；BU/BZ D1/W1异常未关闭。数据修复、Scope、真实通知、main/tag/release与Runtime
    操作均需新的目标/环境/范围明确的单次意图，不沿用本文历史授权。

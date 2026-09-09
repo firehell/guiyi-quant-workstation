@@ -67,6 +67,7 @@ export function buildMarketDetailHeaderModel(input: MarketDetailHeaderInput): Ma
     phase: state?.phase ?? 'UNKNOWN',
     displaySource: displaySource(input.overlaySource),
     freshness,
+    afterMarketFailed: state?.after_market?.last_failure != null,
     extendedSections: marketDisclosure(input, latest!, freshness, displayContract, product, state),
   }
 }
@@ -96,6 +97,7 @@ function unavailableHeader(
     phase: state?.phase ?? 'UNKNOWN',
     displaySource: displaySource(input.overlaySource),
     freshness: 'unavailable',
+    afterMarketFailed: state?.after_market?.last_failure != null,
     extendedSections: marketDisclosure(input, null, 'unavailable', null, product, state),
   }
 }
@@ -204,9 +206,9 @@ function marketDisclosure(
     {
       id: 'data-trust',
       title: '数据可信',
-      summary: unavailableSummary,
+      summary: state?.after_market?.last_failure != null ? '最近盘后更新失败' : unavailableSummary,
       updatedAt: latest?.time ?? null,
-      tone,
+      tone: state?.after_market?.last_failure != null ? 'warning' : tone,
       rows: [
         { label: '数据覆盖', value: input.canonicalCoverage ? `${input.canonicalCoverage.start} 至 ${input.canonicalCoverage.end}` : '不可用', source: 'market' },
         { label: '更早历史', value: input.hasMoreBefore ? '可继续加载' : '已到当前加载边界', source: 'market' },
@@ -214,7 +216,7 @@ function marketDisclosure(
         { label: '市场阶段', value: phaseText(state?.phase), source: 'market' },
         { label: '可接入Live', value: yesNo(state?.live_eligible), source: 'market' },
         { label: 'Live可用', value: yesNo(state?.live_available), source: 'market' },
-        { label: '当前状态', value: freshness === 'fresh' ? '数据正常' : freshness === 'stale' ? '旧快照' : '不可用', source: 'market' },
+        { label: '当前状态', value: state?.after_market?.last_failure != null ? '最近盘后更新失败' : freshness === 'fresh' ? '数据正常' : freshness === 'stale' ? '旧快照' : '不可用', source: 'market' },
       ],
     },
   ]

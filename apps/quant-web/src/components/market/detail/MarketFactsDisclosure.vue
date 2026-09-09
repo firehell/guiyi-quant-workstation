@@ -8,17 +8,18 @@ const props = defineProps<{
   identityKey: string
   sections: readonly MarketDetailDisclosureSection[]
   freshness: MarketDetailHeaderModel['freshness']
+  afterMarketFailed?: boolean
 }>()
 
 const open = ref(false)
 const contentId = `market-facts-${useId()}`
-const freshnessLabel = computed(() => props.freshness === 'fresh' ? '正常' : props.freshness === 'stale' ? '旧快照' : '不可用')
+const freshnessLabel = computed(() => props.afterMarketFailed ? '最近盘后更新失败' : props.freshness === 'fresh' ? '正常' : props.freshness === 'stale' ? '旧快照' : '不可用')
 
 watch(() => props.identityKey, () => { open.value = false })
 </script>
 
 <template>
-  <div class="facts-disclosure" :class="`facts-disclosure--${freshness}`">
+  <div class="facts-disclosure" :class="`facts-disclosure--${afterMarketFailed ? 'stale' : freshness}`">
     <button
       type="button"
       :aria-expanded="open"

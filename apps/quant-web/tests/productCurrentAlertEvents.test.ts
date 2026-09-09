@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { ref } from 'vue'
 import { useProductCurrentAlertEvents } from '../src/composables/useProductCurrentAlertEvents.ts'
@@ -10,8 +9,6 @@ import {
   alertEventRuleShortLabel,
 } from '../src/utils/alertRules.ts'
 
-const legacyChartSource = readFileSync(new URL('../src/pages/market/LegacyMarketChart.vue', import.meta.url), 'utf-8')
-const sidebarSource = readFileSync(new URL('../src/components/market/ProductCheckSidebar.vue', import.meta.url), 'utf-8')
 
 test('current events refresh only on an explicit call', async () => {
   const symbol = ref('ag')
@@ -69,14 +66,6 @@ test('HTDY labels and combined direction remain observation-only', () => {
   assert.equal(alertEventDirectionalTone(single, single.result_codes), 'buy')
   assert.equal(alertEventResultLabel(combined, combined.result_codes), '买入/卖出观察')
   assert.equal(alertEventDirectionalTone(combined, combined.result_codes), null)
-})
-
-test('sidebar observation is derived from the latest HTDY marker', () => {
-  assert.match(legacyChartSource, /selectedOverlay\.value !== 'htdy'/)
-  assert.match(legacyChartSource, /buildKlineDerivedData\(bars\.value, \['htdy'\]\)/)
-  assert.match(legacyChartSource, /htdy\?\.markers\.at\(-1\) \?\? null/)
-  assert.match(sidebarSource, /htdyObservation: KlineMarker \| null/)
-  assert.match(sidebarSource, /v-if="htdyObservation"/)
 })
 
 function event(id: number): AlertEvent {

@@ -182,3 +182,17 @@ test('is deterministic and does not mutate source bars', async () => {
   assert.deepEqual(buildMarketDetailHeaderModel(fixture), buildMarketDetailHeaderModel(fixture))
   assert.deepEqual(fixture.bars, originalBars)
 })
+
+test('after-market failure remains separate from valid completed Canonical quotes', async () => {
+  const { buildMarketDetailHeaderModel } = await import('../src/utils/marketDetailViewModel.ts')
+  const source = input()
+  const model = buildMarketDetailHeaderModel({ ...source, marketState: { ...source.marketState, after_market: { last_failure: { code: 'UPDATE_FAILED' } } } })
+  assert.equal(model.close, 110)
+  assert.equal(model.freshness, 'fresh')
+  assert.equal(model.afterMarketFailed, true)
+  const trust = model.extendedSections.find(section => section.id === 'data-trust')!
+  assert.equal(trust.tone, 'warning')
+  assert.equal(trust.rows.find(row => row.label === '当前状态')!.value, '最近盘后更新失败')
+  const recovered = buildMarketDetailHeaderModel({ ...source, marketState: { ...source.marketState, after_market: { last_failure: null } } })
+  assert.equal(recovered.afterMarketFailed, false)
+})

@@ -50,15 +50,8 @@ async function mockRangeWorkspace(page, { total = 540 } = {}) {
   return { requests, all }
 }
 
-async function openSettings(page) {
-  await page.getByRole('button', { name: '图表设置', exact: true }).click()
-}
-
 async function enableRangeDetector(page) {
-  await openSettings(page)
-  const toggle = page.getByRole('switch', { name: '显示箱体识别', exact: true })
-  if (!(await toggle.isChecked())) await toggle.click()
-  await page.keyboard.press('Escape')
+  await page.getByRole('checkbox', { name: '箱体识别（Range）', exact: true }).check()
 }
 
 test.describe('Range Detector chart overlay', () => {
@@ -66,9 +59,8 @@ test.describe('Range Detector chart overlay', () => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
-    await openSettings(page)
-    await expect(page.getByRole('switch', { name: '显示箱体识别', exact: true })).toHaveCount(1)
-    await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-range-detector-enabled', 'false')
+    await expect(page.getByRole('checkbox', { name: '箱体识别（Range）', exact: true })).toHaveCount(1)
+    await expect(page.locator('.free-workspace')).toHaveAttribute('data-range-detector-warmup', 'disabled')
   })
 
   test('enabling loads earlier pages through the fixed warm-up boundary', async ({ page }) => {
@@ -76,20 +68,21 @@ test.describe('Range Detector chart overlay', () => {
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
     await enableRangeDetector(page)
 
-    const kline = page.locator('.product-workspace__kline')
+    const kline = page.locator('.free-workspace')
     await expect.poll(() => requests.length).toBeGreaterThanOrEqual(2)
-    await expect(page.getByTestId('product-status-strip')).toContainText('540 bars')
+    expect(requests.some(request => request.before)).toBe(true)
     await expect(kline).toHaveAttribute('data-range-detector-warmup', 'ready')
-    await expect(kline).toHaveAttribute('data-range-detector-anchor', /T/)
   })
 
   test('freezes its anchor after warm-up', async ({ page }) => {
     const { requests } = await mockRangeWorkspace(page, { total: 720 })
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
     await enableRangeDetector(page)
-    const kline = page.locator('.product-workspace__kline')
+    const kline = page.locator('.free-workspace')
     await expect(kline).toHaveAttribute('data-range-detector-warmup', 'ready')
     const anchor = await kline.getAttribute('data-range-detector-anchor')
+    expect(anchor).toMatch(/T/)
+    await page.locator('.chart').scrollIntoViewIfNeeded()
     const chartBox = await page.locator('.chart').boundingBox()
     for (let index = 0; index < 2; index += 1) {
       await page.mouse.move(chartBox.x + chartBox.width * 0.08, chartBox.y + chartBox.height * 0.5)
@@ -104,7 +97,7 @@ test.describe('Range Detector chart overlay', () => {
   test('renders ranges only after anchor readiness', async ({ page }) => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
-    const kline = page.locator('.product-workspace__kline')
+    const kline = page.locator('.free-workspace')
     const shell = page.getByTestId('kline-shell')
     await expect(shell).toHaveAttribute('data-range-detector-range-count', '0')
     await enableRangeDetector(page)
@@ -116,34 +109,37 @@ test.describe('Range Detector chart overlay', () => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
     await enableRangeDetector(page)
+    await page.getByTestId('kline-shell').scrollIntoViewIfNeeded()
     const box = await page.getByTestId('kline-shell').boundingBox()
     await page.mouse.move(box.x + box.width * 0.86, box.y + 220)
-    await expect(page.getByText('箱体起点为回画展示；策略自确认时刻起才可使用')).toBeVisible()
+    await expect(page.getByText(/Range Detector 只读回画展示；确认前不可用于策略判断。/)).toBeVisible()
   })
 
-  test('persists the enabled switch through v9 localStorage', async ({ page }) => {
+  test('persists the enabled switch through unified Free preferences', async ({ page }) => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
     await enableRangeDetector(page)
     await page.reload()
-    await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-range-detector-enabled', 'true')
+    await expect(page.locator('.free-workspace')).toHaveAttribute('data-range-detector-warmup', 'ready')
   })
 
   test('switching frequency replaces the deterministic Range source identity', async ({ page }) => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
     await enableRangeDetector(page)
-    const kline = page.locator('.product-workspace__kline')
+    const kline = page.locator('.free-workspace')
     const prior = await kline.getAttribute('data-range-detector-source-identity')
     await page.getByRole('group', { name: '周期' }).getByRole('button', { name: '5m', exact: true }).click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('frequency')).toBe('5m')
     await expect(kline).toHaveAttribute('data-range-detector-source-identity', /:5m$/)
     expect(await kline.getAttribute('data-range-detector-source-identity')).not.toBe(prior)
+    await expect(kline).toHaveAttribute('data-range-detector-warmup', 'ready')
   })
 
   test('keeps the HTDY observation path available', async ({ page }) => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
-    await page.getByRole('group', { name: 'Overlay' }).getByRole('button', { name: '火天大有', exact: true }).click()
+    await page.getByRole('tab', { name: '火天大有', exact: true }).click()
     await expect(page.getByTestId('htdy-chart-legend')).toBeVisible()
   })
 
@@ -152,9 +148,9 @@ test.describe('Range Detector chart overlay', () => {
     await page.goto('/market/chart?symbol=ag&series_kind=continuous&frequency=30m')
     await enableRangeDetector(page)
 
-    const kline = page.locator('.product-workspace__kline')
+    const kline = page.locator('.free-workspace')
     await expect(kline).toHaveAttribute('data-range-detector-warmup', 'ready')
-    await expect(kline).toHaveAttribute('data-visible-main-indicators', 'range_detector')
+    await expect(page.getByRole('checkbox', { name: 'EMA21', exact: true })).not.toBeChecked()
     await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-range-detector-range-count', /[1-9]/)
   })
 
@@ -163,17 +159,17 @@ test.describe('Range Detector chart overlay', () => {
     await page.setViewportSize({ width: 820, height: 720 })
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
     await enableRangeDetector(page)
-    await page.getByRole('button', { name: '全屏', exact: true }).click()
-    await expect(page.locator('.product-workspace__kline')).toHaveAttribute('data-range-detector-warmup', 'ready')
+    await page.getByRole('button', { name: '全屏图表', exact: true }).click()
+    await expect(page.locator('.free-workspace')).toHaveAttribute('data-range-detector-warmup', 'ready')
   })
 
   test('marks insufficient history without drawing fabricated ranges', async ({ page }) => {
     await mockRangeWorkspace(page, { total: 420 })
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
     await enableRangeDetector(page)
-    const kline = page.locator('.product-workspace__kline')
+    const kline = page.locator('.free-workspace')
     await expect(kline).toHaveAttribute('data-range-detector-warmup', 'insufficient')
     await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-range-detector-range-count', '0')
-    await expect(page.getByText('箱体历史预载不足')).toBeVisible()
+    await expect(page.getByText(/箱体历史预载不足/)).toBeVisible()
   })
 })

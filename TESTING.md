@@ -19,6 +19,21 @@ pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-
 上述浏览器截图使用 route-intercept fixture，只证明视觉与交互，不代表生产历史收益或自然预警。
 真实历史读取、发布和 Runtime 验收单独报告；测试不授权生产数据库连接或外部写入。
 
+## Market WebSocket 与统一详情页
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_market_websocket.py \
+  services/quant-api/tests/data_foundation/test_market_read.py
+pnpm -C apps/quant-web test
+pnpm -C apps/quant-web build
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-detail.spec.mjs
+```
+
+WebSocket 验证使用 fake clients 和受控阻塞，不访问生产；浏览器使用 route fixtures。桌面与390px
+截图、键盘操作用于工程验收，不能替代用户关键页面视觉审查，也不授权发布或 Runtime 切换。
+
 ## 后端
 
 ```bash
@@ -339,7 +354,7 @@ pnpm -C apps/quant-web exec node --test \
   tests/NewowTrendChartStage.test.ts \
   tests/marketDetailController.test.ts \
   tests/marketDetailMarkers.test.ts \
-  tests/marketChartEntry.test.ts \
+  tests/marketDetailRoute.test.ts \
   tests/marketDetailShellComponents.test.ts
 pnpm --dir apps/quant-web run check:alert-rules
 pnpm --dir apps/quant-web test
