@@ -124,8 +124,24 @@
   的 AU 真实矩阵审计返回 `PREFLIGHT_FAILED`，结果文件为空，仅保留通用错误码，不能声称矩阵已完成或定位真实原因。
   失败证据 `/private/tmp/newow-au-post-metadata-20260909-one/baseline.jsonl`；已停止外部操作、未重试。
   离线复现旧包装器不能序列化有效计划的 date 对象；预备入口增加类型序列化与安全 phase/error-type 记录，
-  离线 3 passed，尚未执行。后续须新的单次只读审计意图，再据完整依赖冻结行情范围；黄金历史行情补齐、
-  真实矩阵与 8010/5174 浏览器验收仍未完成，未启动预览。所有临时 evidence 使用前须检查存在与完整性。
+  离线 3 passed；新的单次只读审计随后获准并完成，结果见下文。黄金历史行情补齐、
+  真实矩阵验收与 8010/5174 浏览器验收仍未完成，未启动预览。所有临时 evidence 使用前须检查存在与完整性。
+
+- `2026-09-09T04:32:40..04:34:19Z` 按新的单次批准在 `1f0ff619e` 完整执行黄金只读审计：
+  `status=audited / complete=true`，12 个 section 窗口、132 项依赖全部完成，126 项
+  `REPLAY_PREFIX_MISSING`、6 项 `DATA_READY`（AU2610 三周期在两个 as_of 边界），metadata proposal 为 0，
+  无 source/integrity finding；主图仍为 0/9 ready，不能宣称页面恢复。provider、DB/Canonical writes、Redis、retry 均为 0。
+  `/private/tmp/newow-au-audit-recovery-20260909-prepared/readiness.json` 文件 hash
+  `1faddc07183e664bf861d410b79edab2c5f3b6a722eebdb72ec6ee12b3aeb0d5`。此成功不证明旧通用错误的真实原因。
+  离线合并 21 合约的 63 个候选为 42 个 W1/60m 计划、904 个唯一物理分区；227 个独立 D1 窗口
+  与 W1 伴随窗口逐项相同，故不重复执行。原生 provider target 计数 677 不是 public API 或 RPC 请求数。
+  全部计划与 consumer provenance 见 `/private/tmp/newow-au-history-plan-20260909/consolidated.json`。
+- 首批来源方案限定 `AU2304`，10 条精确交易所日行情请求覆盖 `2022-03-16..2022-12-30`，
+  对应 2022-03..12 的 20 个 D1/W1 分区、196 根日线和 41 根周线。完整端点重建与原生 plan hash
+  `9f4f789fc3cb0569bb43216c39d16f2b9f5cd8e60f1cb358ca4b14bf34853fad` 一致；独立 Review 已核验范围、
+  日周去重与哈希。10 次调用仅是完整来源响应下的成功路径，必须用严格守卫拒绝缺日后的补充查询和越界调用。
+  来源捕获守卫的 9 项离线测试通过，含缺日/重复/错合约及 timeout/GatewayError/PermissionDenied 单次派发，独立 Review 无代码阻塞；
+  首批来源捕获尚未执行，Canonical 发布、补齐后矩阵与浏览器验收仍待完成。后续真实操作须新的精确单次意图。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
