@@ -10,7 +10,7 @@
 长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。已完成的计划、逐次操作、旧候选矩阵及
 逐合约结果从 Git history、tag、PR 和原 evidence 追溯；历史授权不授权重跑。
 
-## v1.10.5 已发布并切换（两合约补齐待执行）
+## v1.10.5 已发布并切换（AO/OI 历史输入缺失已关闭）
 
 - 独立候选分支 `codex/subing-input-release-candidate` 基于 `0eca85209008e036626b37eb5563fc504dba12bc`；
   API/Web/Python/lock 版本身份与版本一致性断言为 `1.10.5`；已审候选为 `0d2273445637a6dd5cfef2a45c4f1242276952c5`。
@@ -22,13 +22,20 @@
   版本收尾后的 engineering + health `80 passed`、离线 `uv lock --check` 与 Web build 通过；版本增量独立复核无阻塞。
 - 该候选包含已集成的 Canonical P1、captured Runtime 身份解析、WebSocket 资源边界、统一详情页、
   SuBing 历史参考与 Newow 只读相关改进，不是仅两合约数据修复的最小代码补丁。
-- 本轮批准的 main/tag/release 已执行并读回；AO2701/OI2701 的真实下载与 1m→15m 发布尚未执行。
-  五项 Runtime 已获准切换并读回。12:07:40 CST 在现役 v1.10.5 重新 dry-run：各 9 个 1m + 9 个 15m，
-  合计 36 目标、预计 18 次行情请求；两个 CLI exit 0、readonly=true、applied/blocked/failed=0。
+- 本轮对两个精确 hash 的各一次真实 apply 已完成，执行版本为现役 v1.10.5；
+  AO2701 先执行并严格读回通过后才执行 OI2701。两个 CLI 均 exit 0、passed、applied=18、blocked=failed=0，
+  各 9 个 direct + 9 个 derived 目标，无重试。只发布各合约 2026 年 1～9 月的 `1m + 15m`，through=2026-09-08。
   AO2701 plan hash `602821c7195a11c35a2b44b6a18c4b6d806d8e7b9eb98b1be1cc15e0d9e5f504`；
   OI2701 plan hash `a7431d8eac813486181e2c773f43b1a99b01f30c9469bd25be66d1d6cd7a1a4f`。
-  两者仍限定 through=2026-09-08、15m（仅依赖 1m），与旧计划 hash 一致；真实 apply 尚待对应单次执行意图。
-  新 hash URI 产生后不得回退只支持固定 URI 的 v1.10.4。
+  12:33:58 / 12:47:22 CST 的独立只读事务经 MDS 严格读回均 18/18 通过：AO 为 72,045 根 1m、4,803 根 15m；
+  OI 为 53,340 根 1m、3,556 根 15m。逐月身份、URI/file SHA-256、行数、端点、完整 lifecycle/session 覆盖
+  与公开 MDS 查询一致；44,210 个非目标分区的 Catalog 指纹未变。36 个目标本地独立证据复核通过。
+  两合约随后只读重算均 exit 0、剩余目标为 0；13:00:24 CST 的 SuBing readiness exit 0、passed、60/60 ready，
+  AO2701/OI2701 各自 historical_15m_gap、live_1m_gap、live_15m_gap 均为 0，error_codes 为空、scope_enabled=true。
+  本次限定历史输入缺失已关闭；自然 Event/通知与整体 `RUNTIME_READY` 仍是独立验收，不补评、不补发。
+  首次 readiness 临时命令遗漏 launcher 的 Redis 认证归一化，返回 60 个 INPUT_DIAGNOSIS_UNAVAILABLE；
+  本地确认客户端缺少认证后，仅按既有 launcher 方式修正临时调用环境并通过只读检查，未修改生产配置或重跑 apply。
+  已产生新 hash URI，不得回退只支持固定 URI 的 v1.10.4。
 
 ## Release、Runtime 与 Scope
 
@@ -38,7 +45,7 @@
 | 发布验收 | 已审候选 `0d2273445637a6dd5cfef2a45c4f1242276952c5` 与发布 tree 完全一致；验证矩阵见上节。本轮重新核验四处版本、远端 main、annotated tag 及 Release target；未重复运行已通过且输入未变的全套测试。 |
 | Runtime | `2026-09-09 12:09:27 CST` 严格读回：五项 launchd 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；API/Web/Live/Alert running，After-market idle；Market/Alert marker enabled，Live/Alert 新鲜心跳同根同 commit 且 `recovery_guard_enabled=true`。切换完成、未使用回退；自然 completed Bar 验收待完成，不声明 `RUNTIME_READY`。 |
 | Runtime 工作树 | 现役 detached v1.10.5 根与原 v1.10.4 根均保留且干净。新根离线安装锁定 Python/Web 依赖并 build；render-only 与三个 installer 模式均一次通过，未重试。旧根目前无五项 launchd 引用；未清理，新格式数据发布后不可将其作为兼容回退根。 |
-| 最近 health | `2026-09-09 12:09:27 CST`：API 1.10.5；API/Web HTTP 200，Runtime health ok/readonly，Live/Alert 心跳新鲜，60 品种 BREAK、subscribed_count=0、last_bar_at=null；本地隧道通过。严格 captured Runtime 身份 verifier 通过。SuBing 保留切换前 `last_failure_at=2026-09-09T03:30:05.449850Z`；Rule error_type=null 不证明两合约输入恢复，历史缺失仍未关闭。 |
+| 最近 health | `2026-09-09 12:49:21 CST`：补齐后 API 1.10.5、Runtime health ok/readonly，Live/Alert 新鲜心跳仍为现役 exact root/commit，recovery guard 开启，严格 captured Runtime 身份 verifier 通过。60 品种 BREAK、subscribed_count=0、last_bar_at=null；SuBing 保留切换前 `last_failure_at=2026-09-09T03:30:05.449850Z`。13:00:24 的独立 readiness 60/60 通过，两合约历史输入缺失关闭；旧 failure 时间戳未清除，不以 Rule error_type=null 冒充自然验收。 |
 | Database | 最近已记录 production readback 为 Alembic `20260903_0045`；session anchor repair 已发布。旧全库 Dataset/分区/行数快照不作为当前总量。 |
 | Market Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | `2026-09-07T06:49:43Z` 审计：HTDY 仅 `jm × 5m/15m`；SuBing 全部60品种 × 15m，两 Rule enabled。HTDY“焦煤15m和5m，其余59品种60m”共61对仍仅是未应用目标。 |
@@ -69,7 +76,7 @@
   `76 passed`、调用链 `249 passed / 11 skipped`、engineering `18 passed`，两轴独立 Review clean。
   同份实机脱敏输出旧解析器失败、新解析器通过；未从开发根绕过 exact-tag Gate 运行恢复入口。
 - 修复已发布并进入现役 v1.10.5；本轮真实 launchd、exact annotated tag 与新鲜双心跳的严格身份校验通过。
-  自然苏冰评估与两合约历史输入修复仍待真实证据，不清除旧 failure，不将身份 Gate 通过视为业务闭环完成。
+  两合约历史输入修复已按上节真实证据关闭；自然苏冰评估仍待证据，不清除旧 failure，不将身份 Gate 通过视为业务闭环完成。
 - 2026-09-08 19:26:46..19:26:57 CST 只读确认 RS2609 当日 Canonical 五周期
   `1m/5m/15m/30m/60m` 为 `225/45/15/8/5` 根，原五根日内目标均存在。
   当日 Live 已由自然盘后清理，恢复水位/circuit null，provider attempt count 仍为3。
