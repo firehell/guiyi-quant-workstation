@@ -50,6 +50,21 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 
 实跑离线比较通过；119个归一前缀检查通过；重复重放4个输出哈希一致；定向测试32 passed。比较覆盖趋势周线页面kernel及未舍入收益函数；不声称股票行情是期货completed Bar，也不证明产品API、完整参考交易投影、回撤、其他组合或Runtime通过。原始第三方响应及提取代码只保存在Git外。
 
+## Newow 震荡60分钟固定快照差异复现
+
+从仓库根执行，先核对下列目录的 `manifest.json` 文件/源码哈希。命令不联网，临时快照缺失时停止，不能替换成新输入。
+
+```bash
+TZ=Asia/Shanghai node /private/tmp/newow-osc60-snapshot-20260909-x56a03g5/replay_page.mjs
+PYTHONPATH=packages/quant-core services/quant-api/.venv/bin/python /private/tmp/newow-osc60-snapshot-20260909-x56a03g5/compare_kernel.py
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/newow/test_oscillation_channel.py \
+  services/quant-api/tests/newow/test_product_adapters.py \
+  services/quant-api/tests/newow/test_reference_trades.py
+```
+
+实跑结果：比较器输出 `MISMATCH_CONFIRMED_SAME_BAR_REBUILD`，退出0表示已复现并核实差异，**不表示parity通过**；444个归一前缀、4输出哈希重放一致，73项既有合同测试通过。435对成熟通道值及共同26个Marker初始评分/价格一致；归一多4个Marker、2笔交易。源码两种灰度路径相同，原站允许重建的参数对照与归一30个Marker完全一致。详情及边界见[当前复核](docs/research/newow-current-review.md)，不执行选股或生产链。
+
 ## 苏冰历史参考交易
 
 ```bash
