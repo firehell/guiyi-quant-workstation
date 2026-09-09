@@ -270,7 +270,9 @@ class NewowProductReader:
         self._check_cancelled()
         since = performance_since or self._coverage.product_start(product)
         latest = self._coverage.latest_complete_day((product,))
-        requested_through = performance_through or latest
+        requested_through = performance_through or min(
+            latest, cutoff.astimezone(_SHANGHAI).date()
+        )
         if since > requested_through:
             raise NewowProductReadError("NEWOW_INVALID_PERFORMANCE_WINDOW")
         start = datetime.combine(

@@ -530,6 +530,8 @@ or Alert. The client SHALL reject malformed, non-finite, misaligned or contradic
 ### Requirement: Reference cutoff is authoritative and independent of chart data
 
 `performance_since / performance_through` SHALL 表示用户明确选择的统计 membership 窗口，并必须成对。
+省略统计窗口时，默认 `performance_through` MUST 不晚于请求 `as_of` 对应的上海日期，不能跟随
+服务端墙钟推进到历史快照之后；实际可用截止仍由权威 Calendar/Session 解析。
 Reference 的实际估值/状态截止 MUST 由所选 `performance_through`、权威 Calendar/Session 与请求 `as_of`
 共同解析，且不得晚于 `as_of`。服务 MUST 返回请求统计窗口、实际 `reference_cutoff`、实际可用 through
 及其 availability；数据不完整、节假日、非交易日、夜盘跨自然日和未完成 W1 不得用自然日午夜、服务端
@@ -646,6 +648,10 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 input hash及page identity，不能以token相同跳过分页合同。无token时仍须严格校验指纹；
 shared Bar逐事实冲突、真实token替换、409不兼容或来源版本改变时，MUST 失效相关旧结果、
 取消旧在途请求并阻止晚到响应污染重建快照。
+
+共享 Bar proof MUST 比较 Bar 数值、physical contract、segment 与已验证 owner membership，
+不得把查询窗口裁剪的 owner 终点或该窗口未包含的前任边界当作 Bar 差异。
+边界 MUST 保持独立 proof；两个资源共同读取的同一边界身份或来源变化仍须拒绝兼容。
 
 #### Scenario: Locating a historical trade changes only the chart window
 

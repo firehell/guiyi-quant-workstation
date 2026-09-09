@@ -400,15 +400,9 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                 ),
                 None,
             )
-            boundary = next(
-                (
-                    candidate
-                    for candidate in reversed(read.boundaries)
-                    if candidate.new_contract == bar.physical_contract
-                    and candidate.effective_trading_day <= bar.trading_day
-                ),
-                None,
-            )
+            # A section may start at this owner or end partway through it.
+            # Its clipped end and optional predecessor are not per-Bar facts.
+            # Shared boundary facts are compared independently below.
             value = "|".join(
                 (
                     bar.trading_day.isoformat(),
@@ -421,14 +415,6 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                     bar.source_identity,
                     str(bar.observation_eligible),
                     "" if owner is None else owner.start_trading_day.isoformat(),
-                    "" if owner is None else owner.end_trading_day.isoformat(),
-                    "" if boundary is None else boundary.old_segment_id,
-                    "" if boundary is None else boundary.new_segment_id,
-                    ""
-                    if boundary is None
-                    else boundary.effective_trading_day.isoformat(),
-                    "" if boundary is None else boundary.effective_at.isoformat(),
-                    "" if boundary is None else boundary.source_identity,
                 )
             )
             proof[key] = sha256(value.encode()).hexdigest()
@@ -437,12 +423,12 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
             (
                 "boundary",
                 boundary.effective_at.isoformat(),
-                boundary.old_contract,
                 boundary.new_contract,
             )
         )
         value = "|".join(
             (
+                boundary.old_contract,
                 boundary.old_segment_id,
                 boundary.new_segment_id,
                 boundary.effective_trading_day.isoformat(),
@@ -472,7 +458,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                 REFERENCE_MODEL_VERSION,
                 SOURCE_FACT_ADAPTER_VERSION,
                 "main_contract_map:rank1:calendar_session_v1",
-                "newow_product_dependency_proof_v2",
+                "newow_product_dependency_proof_v3",
             )
         ).encode()
     ).hexdigest()
