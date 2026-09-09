@@ -99,7 +99,8 @@ daily 按品种、数据族、月份展开目标并使用既有校验与原子�
 查询。派生源仅在当前 family-month 内复用已验证的 1m，Catalog pointer 改变立即失效，离开批次即丢弃。
 可选 `MaintenanceObserver` 只报告 planning/reading/provider/publishing/aggregation 的有界身份、
 计数和耗时，不决定处理范围。completed 是各阶段成功操作累计数，provider 按 fetch_many 批次计，
-publishing 只在单分区 Catalog commit 后计数；total 未知为 null。observer 失败停止本轮，不能当作
+publishing 只在单分区 Catalog commit 后计数；这些数字不是去重分区数。total 未知时字段缺席，不伪造百分比。
+阶段可嵌套，`stage_durations` 不得相加推导本轮墙钟时间。observer 失败停止本轮，不能当作
 单族 provider 故障继续。无 observer 的既有调用保持兼容，last-success/status 文件不是进度权威。
 
 `effective_start(symbol)=max(product_window_start(symbol), active_history_floor)`，其中
@@ -126,7 +127,8 @@ RQData adapter 先读取完整周日行情，并在调用内按 `(contract, trad
 snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d 月分区、1w 月分区顺序分别提交 active Catalog pointer；不提供整组 snapshot 原子性；
 跨月周会刷新两侧日线月分区。`continuous` 日线仍按每日 rank1 拼接；最终 owner 合约用于
 `actual_dominant 1w` 整周聚合时，非 rank1 日只作为该周内部 source context，不进入
-`actual_dominant 1d` 的可读结果。dry-run 会显式列出由缺失周线带动的日线 refresh 窗口。
+`actual_dominant 1d` 的可读结果。physical contract 的完整 ISO 周可因此包含成为 rank1 之前的 D1 日期，
+但仍以 Contract lifecycle 为硬边界，不构成完整 lifecycle warm-up。dry-run 会显式列出由缺失周线带动的日线 refresh 窗口。
 
 `refresh --symbol --since --through --apply` 强制重建窗口相交月中的 continuous 与所涉 rank1
 contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四个日内派生周期。它不接受 repair plan，
@@ -220,10 +222,13 @@ Lua 隔离不是错误回滚保证；结果未知后仅只读核对五根及水�
 
 ### 盘后 Runtime 状态合同
 
-`.run/after-market-status.json` 写 schema v2；读取兼容旧 schema v1。schema v2 在受监督自然盘后运行开始、任何
-coverage/RQData/update 尝试之前写入
-`current_run={scheduled_date,started_at,products}`，只在 run 完成终态写入时清除。每次写入都在同目录创建
-临时文件后 `os.replace`；中途崩溃保留 `current_run`，不冒充已完成。`last_run.failure_notification`
+`.run/after-market-status.json` 写 schema v3；读取兼容旧 schema v1/v2。schema v3 在受监督自然盘后运行开始、任何
+coverage/RQData/update 尝试之前写入 `current_run`，白名单化保留 `attempt/stage/updated_at/stage_started_at/elapsed_seconds`、
+`current_symbol/current_partition/counters/stage_durations/retry_at`。阶段转换立即写，普通进度最多每 5 秒写一次；
+中途崩溃保留 `current_run`，进度不续传也不是 checkpoint。建立新 run 前，writer 先有界读取旧摘要，
+再安全地将同一自有普通文件 truncate/fsync 持久失效，然后原子发布初始 v3。初始、中间或终态权威写失败都以
+`AFTER_MARKET_PROGRESS_UNAVAILABLE` 停止；已成功失效后不得重新暴露旧 passed。若连同文件失效都无法产生任何持久变化，
+启动在新 run 建立前被拒绝；纯文件 reader 物理上无法观测这次未留下任何字节变化的尝试。`last_run.failure_notification`
 只允许 `{attempted_at,state=provider_accepted|failed,error_type}` 公开字段，不保存 provider reference。
 
 只读 Runtime health 从 `operational_products.txt` 对应的 `Instrument.exchange_code` 与权威
@@ -231,8 +236,9 @@ coverage/RQData/update 尝试之前写入
 起当日可成为 expected day；交易所结果不唯一、产品/日历事实不完整或 chronology 无效时均
 fail-closed。从未产生过状态时，只有当日为交易日且上海时间已到 18:20、当日已 due 才是
 `degraded/missed`；周末/节假日和首次应执行时点前仍是 `pending`。已有状态时，最后成功日落后于
-expected day 才是 `degraded/missed`。`current_run` age 不超过 2h 为 `pending/running`，超过 2h 为
-`degraded/stuck`。
+expected day 才是 `degraded/missed`。合法 `current_run` 也只是已持久的未验证摘要，不能证明 writer 存活或后续写会成功；
+`updated_at` age 不超过 2h 为 `degraded/running`，超过 2h 为 `degraded/stuck`。无效、损坏或不可读状态一律 fail-closed 为 degraded。
+与 expected day 匹配的终态失败保持 `failed/failed`，不能由旧成功日覆盖。
 
 盘后失败通知是与 Alert Rule/Application Domain 分离的运维能力。公共手工 `guiyi data after-market`
 不启用该能力；只有受监督自然执行的主业务失败才向 owner 发起最多一次 PushPlus 请求。
@@ -241,6 +247,19 @@ expected day 才是 `degraded/missed`。`current_run` age 不超过 2h 为 `pend
 `failure_notification=failed`，不改写或重试主 after-market 结果。`missed/stuck` 只是 health，不会发送。
 Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN`，本次停止且不重试，
 不发布 `canonical_updated` 或执行成功后的 Live 清理；须用独立只读事务确认 Catalog 结果。
+
+### 每周 operational 全历史只读审计
+
+`data.weekly-audit` 固定使用 `operational_products.txt` 的 `operational_full_history` scope，不借用可变的 active 研究范围。
+它复用 `HistoricalDataManager.audit`、八表 Catalog/metadata、Canonical reader 与既有 maintenance lock：先原子写 running，再非阻塞取锁，
+获锁后才打开 fresh read-only transaction。忙时记录 `skipped_busy`，不等待、抢占或重试；审计不调用 provider/
+metadata writer/Redis，`provider_requests=0`、`data_writes=0`，只报告 finding，不修复、不通知。
+
+`.run/weekly-audit-status.json` 是单份原子替换的最新审计状态，不是 checkpoint 或 active data selector。
+它绑定 exact Runtime root/40 位 commit、operational 顺序、scope 和 `through`；运行超过 2h 映射 `stuck`，终态超过 8 天映射
+`stale`，身份、计数、时序或只读计数不符合合同则映射 `invalid`，缺文件是 `not_run`。`passed` 必须有已审计 cutoff、全部品种完成且 finding 为零。
+Runtime health 先独立计算现有服务 overall，再附加可选 `components.weekly_audit`摘要；旧状态缺字段不得推导历史健康，
+历史 finding 也不改写当前数据新鲜度或 Runtime overall。
 
 ## 5. 唯一查询入口
 
@@ -364,7 +383,7 @@ main ready count 只计算实际主图 READY，不把其他 section 的证据状
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}] [--expected-plan-sha256 HASH] [--apply]
-guiyi data audit (--symbol X | --universe active) [--through DATE] [--progress]
+guiyi data audit (--symbol X | --universe {active,operational}) [--through DATE] [--progress]
 guiyi data session-anchor-repair --phase plan
 guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply

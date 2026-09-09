@@ -83,6 +83,48 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
+### 盘后每日增量、进度与每周只读审计
+
+以下定向命令覆盖 Catalog-bounded daily 规划/发布、schema-v3 进度持久化与 fail-closed health、
+`operational_full_history` 审计、HTTP schema 保留、launchd 渲染/安装防护和只读状态输出。它们使用 fake provider、
+临时 SQLite/Parquet/路径和复制的 shell fixture；不连接真实 RQData、production DB/Redis、Runtime 或通知服务，也不安装 LaunchAgent。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q --tb=short \
+  services/quant-api/tests/data_foundation/test_daily_maintenance.py \
+  services/quant-api/tests/data_foundation/test_after_market.py \
+  services/quant-api/tests/data_foundation/test_weekly_audit.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/data_foundation/test_market_home_projection_after_market.py \
+  services/quant-api/tests/data_foundation/test_runtime_promotion.py \
+  services/quant-api/tests/test_runtime_entry.py \
+  services/quant-api/tests/test_runtime_logging.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/test_captured_recovery_cli.py \
+  tests/engineering/test_market_runtime_launchd.py
+
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
+  tests/runtimeStatus.test.ts tests/marketHomePageRoute.test.ts \
+  tests/marketHomePresentation.test.ts tests/marketHomeResource.test.ts
+env -u NO_COLOR -u FORCE_COLOR pnpm_config_verify_deps_before_run=false \
+  pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
+  e2e/market-home.spec.mjs -g 'maintenance v3'
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web build
+```
+
+真实 PostgreSQL 只读事务与 advisory lock 合同仅允许在显式的一次性隔离数据库中验证：必须是
+loopback、非 5432 端口、精确数据库名 `guiyi_canonical_isolated_test`；未设变量时 skip 不算验收通过。
+
+```bash
+GUIYI_ISOLATED_PUBLICATION_DATABASE_URL='postgresql+psycopg://USER@127.0.0.1:15447/guiyi_canonical_isolated_test' \
+  PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/data_foundation/test_daily_maintenance_postgresql.py \
+  services/quant-api/tests/data_foundation/test_weekly_audit_postgresql.py
+```
+
+这些工程验证不证明每周调度已安装、真实全历史无 finding、盘后自然运行耗时、release 或 Runtime promotion。
+实际安装语法和前置 Gate 仅见 `deploy/README.md`。
+
 有界 metadata fixture 与既有同步/provider/CLI 回归（全部隔离，无生产连接）：
 
 ```bash
