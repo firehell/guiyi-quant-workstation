@@ -89,3 +89,16 @@ completed筛选必须使用精确session end≤as-of以及coverage上限；周�
 - **GIVEN** 960个权威交易日覆盖且只请求最新1根或500根图表
 - **WHEN** 解析默认viewport
 - **THEN** Session/Calendar数据库查询次数保持有界，不随逐日重复查询线性增长，窗口结果与既有completed语义一致
+
+
+### Requirement: WebSocket reads are bounded and isolated from the event loop
+WebSocket SHALL subscribe before reading its initial snapshot. Synchronous Catalog, Parquet and Redis
+reads, including Session and client construction and cleanup, MUST run on a worker thread. Each read
+MUST own a fresh resource scope; no Session may be shared across worker calls. Admission SHALL be
+bounded to four outstanding reads per process, without an unbounded queue. Saturation MUST close the
+connection as unavailable; it MUST NOT bypass Live eligibility, snapshot deduplication or state reset.
+
+#### Scenario: A read is slow or its caller disconnects
+- **WHEN** a synchronous read blocks or the awaiting connection is cancelled
+- **THEN** the event loop remains responsive and admission remains held until the actual worker finishes
+- **AND** all per-read clients close on their owning worker, while all asynchronous Pub/Sub clients close on exit
