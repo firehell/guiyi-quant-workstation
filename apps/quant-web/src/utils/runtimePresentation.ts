@@ -147,6 +147,7 @@ export function afterMarketDetail(afterMarket: RuntimeHealthResponse['components
       return count ? `本次${label} ${count.completed} 次操作${count.total === undefined ? '' : ` / ${count.total} 次`}` : null
     }
     return [
+      afterMarket.run_state === 'running' && afterMarket.status === 'degraded' ? '运行结果待确认' : null,
       `第 ${current.attempt ?? 0} 次`, labels[current.stage] ?? '状态未知', current.current_symbol,
       partition ? `${partition.dataset[0]}/${partition.dataset[2]} · ${partition.dataset[3]} · ${partition.year}-${String(partition.month).padStart(2, '0')}` : null,
       typeof current.elapsed_seconds === 'number' && Number.isFinite(current.elapsed_seconds) && current.elapsed_seconds >= 0

@@ -1173,6 +1173,80 @@ def test_progress_persistence_failure_stops_before_live_and_notification(tmp_pat
     assert _status(updater.status_path)["current_run"] is not None
 
 
+@pytest.mark.parametrize("failure_stage", ["initial", "intermediate", "terminal"])
+def test_status_persistence_failure_is_not_healthy_to_independent_consumer(tmp_path, monkeypatch, failure_stage):
+    from app.market_data import after_market
+    from app.market_data.operational_universe import load_operational_products
+    from app.market_data.session_clock import SHANGHAI
+    from app.services import runtime_health
+    updater, manager, _, sleeps, notices, _ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True], results=[_result("passed")])
+    updater._write_current_run(datetime(2026, 8, 10, 16, 0, tzinfo=SHANGHAI), load_operational_products())
+    updater._write_status(AfterMarketResult("passed", date(2026, 8, 10), 1, None),
+                          datetime(2026, 8, 10, 16, 0, tzinfo=SHANGHAI), load_operational_products())
+    monkeypatch.setattr(runtime_health, "_expected_after_market_day", lambda *a, **k: (date(2026, 8, 10), True))
+    def health():
+        component = runtime_health._collect_after_market_health(None, now=datetime(2026, 8, 10, 18, 0, tzinfo=SHANGHAI),
+            configured_enabled=True, status_path=updater.status_path)
+        return component, runtime_health._overall_status([{"status": "ok"}, component])
+    assert health()[1] == "ok"
+    real_write = after_market._atomic_write_status
+    def write(path, payload):
+        current = payload.get("current_run")
+        fail = ((failure_stage == "initial" and current and current["stage"] == "calendar")
+                or (failure_stage == "intermediate" and current and current["stage"] == "rqdata_readiness")
+                or (failure_stage == "terminal" and current is None))
+        if fail:
+            raise OSError("private status detail")
+        real_write(path, payload)
+    monkeypatch.setattr(after_market, "_atomic_write_status", write)
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE"):
+        updater.run()
+    component, overall = health()
+    assert overall != "ok"
+    assert component["run_state"] != "completed"
+    assert not sleeps and not notices
+    if failure_stage == "initial":
+        assert not manager.coverage.metadata_day_calls
+
+
+@pytest.mark.parametrize("unsafe", ["symlink", "parent_symlink", "fifo", "hardlink"])
+def test_status_invalidation_rejects_unsafe_path_before_start(tmp_path, unsafe):
+    import os
+    updater, manager, *_ = _updater(tmp_path, trading_day=date(2026, 8, 10), readiness=[], results=[])
+    target = tmp_path / "untouched"
+    target.write_text("must remain unchanged")
+    if unsafe == "symlink":
+        updater.status_path.symlink_to(target)
+    elif unsafe == "parent_symlink":
+        actual = tmp_path / "actual"
+        actual.mkdir()
+        linked = tmp_path / "linked"
+        linked.symlink_to(actual, target_is_directory=True)
+        updater.status_path = linked / "status.json"
+    elif unsafe == "fifo":
+        os.mkfifo(updater.status_path)
+    else:
+        os.link(target, updater.status_path)
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE"):
+        updater.run()
+    assert target.read_text() == "must remain unchanged"
+    assert not manager.coverage.metadata_day_calls
+
+
+def test_failed_invalidation_rejects_start_without_claiming_a_new_run(tmp_path, monkeypatch):
+    from app.market_data import after_market
+    updater, manager, rqdata, sleeps, notices, _ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[], results=[])
+    updater.status_path.write_text('{"previous":"unchanged"}')
+    monkeypatch.setattr(after_market.os, "ftruncate", lambda *args: (_ for _ in ()).throw(OSError("private")))
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE"):
+        updater.run()
+    assert updater._current == {}
+    assert updater.status_path.read_text() == '{"previous":"unchanged"}'
+    assert not manager.coverage.metadata_day_calls and not rqdata.calls and not sleeps and not notices
+
+
 def test_v3_health_uses_last_progress_and_rejects_future_updates(tmp_path, monkeypatch):
     from app.services import runtime_health
     from datetime import timedelta

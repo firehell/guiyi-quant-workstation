@@ -579,7 +579,9 @@ def _collect_after_market_health(
         age_seconds = (now - updated_at).total_seconds()
         if age_seconds <= 7200:
             return {
-                "status": RUNTIME_STATUS_PENDING,
+                # A persisted running snapshot is unverified, not proof the
+                # writer is alive or its next/terminal state write succeeded.
+                "status": RUNTIME_STATUS_DEGRADED,
                 **base,
                 "run_state": "running",
                 "current_run": current_run,

@@ -89,9 +89,9 @@ for (const width of [1440, 390]) {
   test(`maintenance v3 and weekly history summary are visible at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 })
     const requests = []
-    const health = runtime('ok')
+    const health = runtime('degraded')
     health.components = {
-      after_market: { status: 'pending', run_state: 'running', expected_trading_day: '2026-09-02',
+      after_market: { status: 'degraded', run_state: 'running', expected_trading_day: '2026-09-02',
         current_run: { scheduled_date: '2026-09-02', started_at: '2026-09-02T10:05:00Z', products: ['jm'],
           attempt: 1, stage: 'reading', current_symbol: 'jm', updated_at: '2026-09-02T10:06:00Z',
           current_partition: { dataset: ['contract', 'jm', 'JM2609', '1m'], year: 2026, month: 9 },
@@ -104,6 +104,8 @@ for (const width of [1440, 390]) {
     await expect(page.getByText(/盘后维护.*读取校验.*7 次操作/)).toBeVisible()
     await expect(page.getByText(/盘后维护.*contract\/JM2609.*1m.*2026-09.*累计 64.2 秒/)).toBeVisible()
     await expect(page.getByText(/盘后维护.*已提交发布 2 次操作/)).toBeVisible()
+    await expect(page.getByText(/盘后维护.*运行结果待确认/)).toBeVisible()
+    await expect(page.getByText('Runtime 降级', { exact: true })).toBeVisible()
     await expect(page.getByText(width === 390 ? /每周历史审计.*发现历史问题.*2026-08-28/ : /每周历史审计.*审计通过.*2026-08-28/)).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     expectHomeReads(requests)

@@ -1248,7 +1248,7 @@ def test_after_market_stale_success_is_degraded_missed(monkeypatch, tmp_path) ->
             "2026-08-24T18:05:00+08:00",
             datetime(2026, 8, 24, 11, 0, tzinfo=UTC),
             "running",
-            "pending",
+            "degraded",
             None,
         ),
         (
@@ -1327,6 +1327,7 @@ def test_after_market_current_run_age_is_fail_closed(
     assert after_market["status"] == status
     assert after_market["run_state"] == run_state
     assert after_market["error_type"] == error_type
+    assert payload["status"] != "ok"
     assert after_market["current_run"] == (
         None
         if started_at == "invalid"

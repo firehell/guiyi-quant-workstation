@@ -81,13 +81,19 @@ def run_weekly_audit(
         "provider_requests": 0, "data_writes": 0,
     }
     # Status is a local diagnostic output; no Catalog, DB, provider, or data lake write.
-    lease = manager.catalog.acquire_maintenance_lock()
+    _atomic_write_status(status_path, payload)
+    try:
+        lease = manager.catalog.acquire_maintenance_lock()
+    except Exception:
+        payload.update(status="failed", error_code="WEEKLY_AUDIT_FAILED",
+                       finished_at=_local_timestamp(now()).isoformat(), updated_at=_local_timestamp(now()).isoformat())
+        _atomic_write_status(status_path, payload)
+        return payload
     if lease is None:
         payload.update(status="skipped_busy", finished_at=started)
         _atomic_write_status(status_path, payload)
         return payload
     try:
-        _atomic_write_status(status_path, payload)
         def observe(event: AuditProgressEvent) -> None:
             payload.update(current_symbol=event.symbol, completed=event.completed,
                            updated_at=_local_timestamp(now()).isoformat())

@@ -92,6 +92,29 @@ def test_real_audit_composition_never_initializes_provider(tmp_path, session, mo
     assert not (tmp_path / "canonical").exists()
 
 
+def test_weekly_lock_error_replaces_previous_passed_with_latest_failed(tmp_path, session):
+    from app.market_data.weekly_audit import run_weekly_audit, weekly_audit_health
+    path = tmp_path / "status.json"
+    manager = SimpleNamespace(catalog=SimpleNamespace(session=session,
+        acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None)),
+        audit=lambda *args, **kwargs: MaintenanceResult("audit", "passed", NOW.date(), 0, 0, 0, 0, 0))
+    run_weekly_audit(manager, status_path=path, products=("au",), identity=IDENTITY, now=lambda: NOW)
+    assert weekly_audit_health(path, identity=IDENTITY, products=("au",), now=NOW)["status"] == "passed"
+    def acquire():
+        assert not session.in_transaction()
+        assert json.loads(path.read_text())["status"] == "running"
+        raise OSError("private database detail")
+    manager.catalog.acquire_maintenance_lock = acquire
+    manager.audit = lambda *args, **kwargs: pytest.fail("lock failure must not audit")
+    result = run_weekly_audit(manager, status_path=path, products=("au",), identity=IDENTITY,
+                              now=lambda: NOW + timedelta(minutes=1))
+    assert result["status"] == "failed" and result["error_code"] == "WEEKLY_AUDIT_FAILED"
+    assert result["completed"] == 0 and result["through"] is None
+    assert weekly_audit_health(path, identity=IDENTITY, products=("au",), now=NOW + timedelta(minutes=1))["status"] == "failed"
+    assert "private" not in path.read_text()
+    assert not session.in_transaction()
+
+
 def test_public_audit_operational_selection_and_readonly(tmp_path, session):
     import io
     from contextlib import nullcontext

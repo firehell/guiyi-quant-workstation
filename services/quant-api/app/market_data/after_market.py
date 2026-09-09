@@ -409,7 +409,7 @@ class AfterMarketUpdater:
                 "trading_day": result.trading_day.isoformat(),
                 "error_code": result.error_code,
             }
-        _atomic_write_status(self.status_path, payload)
+        self._write_required_status(payload)
 
     def _write_failure_notification(self, notification: Mapping[str, object]) -> None:
         payload = _load_status(self.status_path)
@@ -424,7 +424,13 @@ class AfterMarketUpdater:
         started_at: datetime,
         products: tuple[str, ...],
     ) -> None:
-        previous = _load_status(self.status_path)
+        # Establish negative evidence on the SAME file before this run can start.
+        # If atomic initial publication fails, readers see invalid/unknown, not old success.
+        try:
+            previous = _invalidate_status_before_run(self.status_path)
+        except Exception:
+            self._progress_failed = True
+            raise _ProgressPersistenceError() from None
         previous_schema_version = (
             int(previous["schema_version"])
             if previous.get("schema_version") in {2, 3}
@@ -453,9 +459,16 @@ class AfterMarketUpdater:
             ),
             "last_failure": _public_last_failure(previous.get("last_failure")),
         }
-        _atomic_write_status(self.status_path, payload)
+        self._write_required_status(payload)
         self._last_progress_write = self.monotonic()
         self._log_progress()
+
+    def _write_required_status(self, payload: Mapping[str, object]) -> None:
+        try:
+            _atomic_write_status(self.status_path, payload)
+        except Exception:
+            self._progress_failed = True
+            raise _ProgressPersistenceError() from None
 
     def _log_progress(self) -> None:
         # A diagnostic copy of successfully persisted progress, never a checkpoint.
@@ -633,6 +646,47 @@ def _load_status(path: Path) -> dict[str, Any]:
     except (OSError, ValueError, TypeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _invalidate_status_before_run(path: Path) -> dict[str, Any]:
+    """Retain prior summary in memory, then durably invalidate only this owned file.
+
+    No alias traversal, special files or hardlinks. Failure before invalidation is
+    a rejected startup, not an established run; a file-only reader cannot observe
+    an attempt that produced no durable change at all.
+    """
+    path = path.absolute()
+    if ".." in path.parts:
+        raise ValueError
+    directory = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    descriptor = None
+    try:
+        for part in path.parts[1:-1]:
+            try:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            except FileNotFoundError:
+                os.mkdir(part, mode=0o700, dir_fd=directory)
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        descriptor = os.open(path.name, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
+                             0o600, dir_fd=directory)
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise ValueError
+        content = os.read(descriptor, 1024 * 1024 + 1)
+        try:
+            previous = json.loads(content) if len(content) <= 1024 * 1024 else {}
+        except (ValueError, TypeError):
+            previous = {}
+        os.ftruncate(descriptor, 0)
+        os.fsync(descriptor)
+        os.fsync(directory)
+        return previous if isinstance(previous, dict) else {}
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory)
 
 
 def _atomic_write_status(path: Path, payload: Mapping[str, object]) -> None:

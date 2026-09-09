@@ -57,6 +57,8 @@ test('after-market v3 displays attempt, phase and operation counts without a fab
   assert.match(item.detail, /contract\/AU2612.*1m.*2026-08/)
   assert.match(item.detail, /累计 64.2 秒/)
   assert.match(item.detail, /已提交发布 2 次操作/)
+  payload.components.after_market.run_state = 'running'
+  assert.match(runtimeStatusPresentation(payload).find(item => item.key === 'after_market')!.detail, /运行结果待确认/)
 })
 
 test('optional weekly history audit shows unknown and the audited cutoff independently', async () => {
