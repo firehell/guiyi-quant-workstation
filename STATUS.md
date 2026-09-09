@@ -239,7 +239,24 @@
   未输出凭据、未修改 `.env` 或 Runtime。禁止网络的 fresh subprocess 用合成配置复现旧顺序缺认证、
   新顺序有认证；新 runner 先加载既有配置和校验目标/认证存在，再检查模块来源，连接前再次校验 engine。
   `/private/tmp/newow-au-auth-order-fix-20260909/` 中范围、归一、错误脱敏与初始化回归测试 `13 passed`；
-  新 runner 仅准备，尚未执行连接。需新的单次 AU2304 只读执行意图，成功后才提交 20 分区正式写入意图。
+  当时新 runner 仅准备，等待新的单次 AU2304 只读执行意图；后续结果见下文。
+- `2026-09-09T06:13:05..06:13:07Z` 在 `a88546307` 获准执行修正后唯一只读核对，plan
+  `6da1eb2b633bd63d525fca8de6a03ae18939cba0976b61c1c868e3d9d4248bb0`，exit 0、passed；
+  认证初始化阻塞关闭。native plan 仍为 `9f4f789fc3cb0569bb43216c39d16f2b9f5cd8e60f1cb358ca4b14bf34853fad`，
+  fresh snapshot 确认 Dataset 1670/1671 已有，AU2304 的 2022-03..12、1d/1w 共 20 个 Catalog 键完全缺失。
+  原生 adapter 仅读取 10 个保存的来源响应，4 行按获批规则规范化；196 D1、41 W1 经当前 Calendar/Session
+  边界校验，20 个临时 Parquet 严格回读通过，字节 hash 与此前离线候选一致。provider requests、
+  DB/Canonical writes、Redis connections 与 retry 均为 0，不能把 adapter 的本地来源读取计成新 RQData 请求。
+  结果 `/private/tmp/newow-au-auth-order-fix-20260909/result.json`；fresh-plan 文件 SHA256
+  `e4279976155fd8d26456e71e91b7acc580a2aa40afcbfe1a0c99f81e4842fa1b`；publication-plan 文件 SHA256
+  `b63662b6db119c4d973095a61c7af48be32d66996a1adca9119ecddcdd3f9fac`。独立本地证据复核通过，未重复连接 DB。
+  首批下一步仅规划新增上述 20 条 Catalog 分区记录与最多 20 个 immutable hash 文件，既有两个 Dataset 不变；
+  精确 URI 本地扫描当前 20 个文件均不存在，执行仍须在原生维护锁内重查计划、缺失键、文件与消费者身份。
+  `/private/tmp/newow-au-publish-once-20260909/` 已准备 captured-source 原生发布 wrapper；离线及独立 Review 各 `20 passed`，
+  覆盖真实 SQLite flush/commit 事件、越界/更新/删除拒绝、候选与旧 Runtime 身份拒绝，以及原生
+  `COMMIT_OUTCOME_UNKNOWN` 停止后续分区。SQL/Catalog 只允许目标单行 INSERT；逐分区提交，全成功后
+  新开只读事务经 MDS 读回。失败保留成功分区与候选，无自动 retry、指针反转或旧 v1.10.4 回退。
+  当前为 `EXTERNAL_GATE_PENDING`：首批正式写入尚未获准或执行；真实矩阵与浏览器仍未恢复验收。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
