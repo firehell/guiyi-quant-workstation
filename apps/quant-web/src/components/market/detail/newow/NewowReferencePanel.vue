@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { formatChartTimeInShanghai } from '@/utils/barTime'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 
 import type {
@@ -20,7 +19,7 @@ const props = defineProps<{
   chartResponse: NewowProductSectionResponse<'chart'> | null
   crossSectionCompatible: boolean
   chartLifecycle?: NewowResourceLifecycle
-  historicalSnapshot?: boolean
+  currentChartWindow?: boolean
   lifecycle: NewowResourceLifecycle
   error: string | null
   selectedSignalId: string | null
@@ -50,16 +49,14 @@ const visibleModel = computed(() => model.value === null ? null : filterNewowRef
 const waiting = computed(() => {
   const chart = props.chartResponse
   const reference = props.response
-  if (props.lifecycle !== 'ready' || props.chartLifecycle !== 'ready' || props.historicalSnapshot !== false
+  if (props.lifecycle !== 'ready' || props.chartLifecycle !== 'ready' || props.currentChartWindow !== true
     || !props.crossSectionCompatible || chart?.status.status !== 'ready' || reference?.status.status !== 'ready'
     || !chart.value || !reference.value || chart.meta.as_of !== reference.meta.as_of
     || JSON.stringify(chart.meta.identity) !== JSON.stringify(reference.meta.identity)) return null
   const bar = chart.value.bars.at(-1)
   const frame = chart.value.frames.find(item => item.bar_end === bar?.bar_end)
-  const asOfDay = formatChartTimeInShanghai(chart.meta.as_of).slice(0, 10)
   if (!bar?.completed || !bar.observation_eligible || frame?.status.status !== 'ready'
     || frame.status.evidence_status !== 'ACTIVE_CODE_VERIFIED' || frame.main_state !== 'FLAT'
-    || chart.value.chart_through < asOfDay || bar.trading_day !== chart.value.chart_through
     || Date.parse(bar.bar_end) > Date.parse(chart.meta.as_of)
     || reference.value.items.some(item => item.status === 'OPEN' && item.physical_contract === bar.physical_contract && item.segment_id === bar.segment_id)) return null
   return bar

@@ -73,6 +73,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const auxiliaryCache = new Map<string, NewowProductSectionResponse<'auxiliary'>>()
   let generation = 0
   let disposed = false
+  const acceptedCurrentChartWindow = shallowRef(false)
   let chartWindow: { from: string; through: string } | null = null
   let chartFingerprint: string | null = null
   let acceptedChartGenerationSignature: string | null = null
@@ -305,6 +306,12 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       if (accepted === null) return
       const nextGeneration = chartGenerationSignature(response.meta)
       if (acceptedChartGenerationSignature !== null && acceptedChartGenerationSignature !== nextGeneration) invalidateChartDependents()
+      // Only accepted request provenance can identify the current completed-day viewport.
+      // Paging within it preserves provenance; explicit/older windows cannot claim current.
+      if (request.section === 'chart' && request.chartBefore === undefined) {
+        acceptedCurrentChartWindow.value = request.from === undefined && request.through === undefined
+          && request.chartOlderWindow === undefined && historicalSnapshot.value === null
+      }
       resource.data.value = accepted
       acceptedChartGenerationSignature = nextGeneration
     } else if (section === 'reference' && response.section === 'reference' && response.value !== null) {
@@ -495,6 +502,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
 
   function resetPagination(section: 'chart' | 'reference'): void {
     if (section === 'chart') {
+      acceptedCurrentChartWindow.value = false
       chartWindow = null
       chartFingerprint = null
       acceptedChartGenerationSignature = null
@@ -538,7 +546,12 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       && chartGenerationSignature(chart.meta) === chartGenerationSignature(explanation.meta)
   })
 
+  const currentChartWindow = computed(() => acceptedCurrentChartWindow.value
+    && historicalSnapshot.value === null && resources.chart.state.value === 'ready'
+    && resources.chart.data.value?.section === 'chart' && resources.chart.data.value.value !== null)
+
   return {
+    currentChartWindow: readonly(currentChartWindow),
     explanationChartCompatible: readonly(explanationChartCompatible),
     identity: readonly(currentIdentity),
     asOf: readonly(asOf),
@@ -552,7 +565,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
 
   function abortAll(): void { for (const controller of controllers.values()) controller.abort(); controllers.clear(); inFlightSnapshotTokens.clear() }
   function resetAll(): void { for (const section of ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const) clearResource(section); invalidateAuxiliaryCache(); chartWindow = null; chartFingerprint = null; acceptedChartGenerationSignature = null; chartPageLimit = null; referenceWindow = null; referenceFingerprint = null; referencePageLimit = null }
-  function clearResource(section: NewowProductSection): void { resources[section].data.value = null; resources[section].state.value = 'not_requested'; resources[section].error.value = null }
+  function clearResource(section: NewowProductSection): void { if (section === 'chart') acceptedCurrentChartWindow.value = false; resources[section].data.value = null; resources[section].state.value = 'not_requested'; resources[section].error.value = null }
   function cacheAuxiliary(response: NewowProductSectionResponse<'auxiliary'>, request: Extract<NewowProductRequest, { section: 'auxiliary' }>): void {
     if (response.value?.component === undefined) return
     const key = auxiliaryCacheKey(request)

@@ -226,7 +226,7 @@ test('waiting card requires current ready compatible FLAT evidence and is indepe
   response.value.summary.open_count = 0
   const chart = chartResponse()
   chart.value.frames = [{ bar_end: '2026-08-15T07:00:00Z', main_state: 'FLAT', main_values: {}, status: ready(), action_ids: [], hint_ids: [] }]
-  const inputs = ref({ response, chartResponse: chart, crossSectionCompatible: true, lifecycle: 'ready', chartLifecycle: 'ready', historicalSnapshot: false })
+  const inputs = ref({ response, chartResponse: chart, crossSectionCompatible: true, lifecycle: 'ready', chartLifecycle: 'ready', currentChartWindow: true })
   const root = element('root')
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
     ...inputs.value, error: null, selectedSignalId: null, locateMessage: null, loadingPage: false,
@@ -241,7 +241,7 @@ test('waiting card requires current ready compatible FLAT evidence and is indepe
   ;(filter.props.onChange as Function)({ target: { value: 'closed' } })
   await nextTick()
   assert.ok(waiting(), 'history filter does not invent or hide current strategy state')
-  for (const patch of [{ chartLifecycle: 'stale' }, { lifecycle: 'stale' }, { historicalSnapshot: true }, { crossSectionCompatible: false }]) {
+  for (const patch of [{ chartLifecycle: 'stale' }, { lifecycle: 'stale' }, { currentChartWindow: false }, { crossSectionCompatible: false }]) {
     const before = inputs.value
     inputs.value = { ...before, ...patch }
     await nextTick()
@@ -268,9 +268,27 @@ test('waiting card requires current ready compatible FLAT evidence and is indepe
   await nextTick()
   assert.equal(waiting(), undefined, 'a compatibility flag cannot override an identity mismatch')
   inputs.value.chartResponse.meta.identity = priorIdentity
-  inputs.value.chartResponse.value.chart_through = '2026-08-14'
-  await nextTick()
-  assert.equal(waiting(), undefined, 'historical chart viewport is not current')
+  for (const [frequency, asOf, barEnd, day] of [
+    ['1d', '2026-08-16T07:00:00Z', '2026-08-14T07:00:00Z', '2026-08-14'],
+    ['1d', '2026-08-17T02:00:00Z', '2026-08-14T07:00:00Z', '2026-08-14'],
+    ['1w', '2026-08-19T07:00:00Z', '2026-08-14T07:00:00Z', '2026-08-14'],
+  ]) {
+    inputs.value.chartResponse.meta.identity.frequency = frequency
+    inputs.value.response.meta.identity.frequency = frequency
+    inputs.value.chartResponse.meta.as_of = asOf
+    inputs.value.response.meta.as_of = asOf
+    inputs.value.chartResponse.value.chart_through = day
+    inputs.value.chartResponse.value.bars = [bar(barEnd, day)]
+    inputs.value.chartResponse.value.frames[0]!.bar_end = barEnd
+    await nextTick()
+    assert.ok(waiting(), `${frequency} authority latest completed window remains current at ${asOf}`)
+    inputs.value.currentChartWindow = false
+    await nextTick()
+    assert.equal(waiting(), undefined, 'explicit historical viewport provenance suppresses the card')
+    inputs.value.currentChartWindow = true
+    await nextTick()
+    assert.ok(waiting(), 'accepted default window restores waiting')
+  }
   app.unmount()
 })
 

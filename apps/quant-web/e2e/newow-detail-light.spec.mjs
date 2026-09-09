@@ -231,14 +231,12 @@ test('old backend MACD rejection and reference failure stay explicit and retry o
 for (const width of [1440, 390]) {
   test(`current FLAT waiting card is independent from paged returns at ${width}`, async ({ page }, testInfo) => {
     const fixture = await installNewowProductFixtures(page, {
-      onProductRequest: async ({ route, section, strategy, frequency }) => {
+      onProductRequest: async ({ route, url, section, strategy, frequency }) => {
         if (!['chart', 'reference'].includes(section)) return
         const payload = buildNewowFixtureEnvelopeForTest(section, strategy, frequency, false, null, { noAction: true, zeroClosed: true })
+        payload.meta.as_of = url.searchParams.get('as_of')
         if (section === 'chart') {
-          const bar = { ...payload.chart.value.bars.at(-1), bar_end: '2026-09-03T07:00:00.000Z', trading_day: '2026-09-03' }
-          payload.chart.value.bars.push(bar)
           payload.chart.value.frames.forEach(frame => { frame.main_state = 'FLAT' })
-          payload.chart.value.frames.push({ ...payload.chart.value.frames.at(-1), bar_end: bar.bar_end, main_state: 'FLAT' })
         } else {
           payload.reference.value.items = []
           payload.reference.value.summary.open_count = 0
@@ -255,7 +253,7 @@ for (const width of [1440, 390]) {
     await page.locator('.newow-reference').scrollIntoViewIfNeeded()
     const waiting = page.getByTestId('newow-reference-waiting')
     await expect(waiting).toContainText('空仓等待中')
-    await expect(waiting).toContainText('状态时间 2026-09-03')
+    await expect(waiting).toContainText('状态时间 2026-08-03')
     await expect(waiting).not.toContainText('%')
     await expect(waiting).toHaveCSS('border-left-color', 'rgb(57, 123, 209)')
     await page.getByLabel('筛选参考历史').selectOption('interrupted')

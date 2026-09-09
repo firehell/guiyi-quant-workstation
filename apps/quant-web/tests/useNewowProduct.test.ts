@@ -17,11 +17,13 @@ test('older windows append under the same snapshot after page exhaustion and pre
   await nextTick()
   const first = normalizedChartPage(pending[0]!.request, '2026-08-14', 'within') as NewowProductSectionResponse<'chart'>
   pending[0]!.resolve(first); await flush()
+  assert.equal(state.currentChartWindow?.value, true)
   const within = state.loadNextChartPage()
   assert.equal((pending[1]!.request as any).chartBefore, 'within')
   const last = normalizedChartPage(pending[1]!.request, '2026-08-13', null) as NewowProductSectionResponse<'chart'>
   pending[1]!.resolve({ ...last, value: { ...last.value!, next_older_window: 'older-window' } } as any)
   await within
+  assert.equal(state.currentChartWindow.value, true, 'same-window pagination keeps current provenance')
   const reference = state.loadReference()
   pending[2]!.resolve(normalizedReference(pending[2]!.request)); await reference
   const referenceBefore = state.sections.reference.data.value
@@ -33,10 +35,45 @@ test('older windows append under the same snapshot after page exhaustion and pre
   const previous = normalizedChartPage(pending[3]!.request, '2026-07-31', null) as NewowProductSectionResponse<'chart'>
   pending[3]!.resolve({ ...previous, meta: { ...previous.meta, input_content_sha256: 'b'.repeat(64) }, value: { ...previous.value!, chart_from: '2026-07-01', chart_through: '2026-07-31', page_identity: 'c'.repeat(64), next_older_window: null } } as any)
   await older
+  assert.equal(state.currentChartWindow.value, false, 'older navigation suppresses a current claim')
   const chart = state.sections.chart.data.value as NewowProductSectionResponse<'chart'>
   assert.deepEqual(chart.value!.bars.map(bar => bar.trading_day), ['2026-07-31', '2026-08-13', '2026-08-14'])
   assert.equal(state.sections.reference.data.value, referenceBefore)
   state.dispose()
+})
+
+test('current chart provenance follows accepted default requests, ignoring calendar dates and late responses', async () => {
+  const pending: Pending[] = []
+  const identity = ref(newowIdentity('trend', '1d'))
+  const state = useNewowProduct({ identity, now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  assert.equal(state.currentChartWindow?.value, false)
+  pending[0]!.resolve(normalizedChart(pending[0]!.request)); await flush()
+  assert.equal(state.currentChartWindow.value, true)
+  const locate = state.loadChart({ from: '2026-08-01', through: '2026-08-02' })
+  assert.equal(state.currentChartWindow.value, false, 'loading cannot retain a current claim')
+  pending[1]!.resolve(normalizedChart(pending[1]!.request)); await locate
+  assert.equal(state.currentChartWindow.value, false)
+  const latest = state.loadChart()
+  pending[2]!.resolve(normalizedChart(pending[2]!.request)); await latest
+  assert.equal(state.currentChartWindow.value, true)
+  const lateHistorical = state.loadChart({ from: '2026-08-01', through: '2026-08-02' })
+  const newerDefault = state.loadChart()
+  pending[4]!.resolve(normalizedChart(pending[4]!.request)); await newerDefault
+  pending[3]!.resolve(normalizedChart(pending[3]!.request)); await lateHistorical
+  assert.equal(state.currentChartWindow.value, true, 'late historical result must not change accepted provenance')
+  const stale = state.loadChart()
+  pending[5]!.reject(new Error('fixture unavailable')); await stale
+  assert.equal(state.currentChartWindow.value, false)
+  const rebuilding = state.loadChart()
+  pending[6]!.reject(new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')); await flush()
+  assert.equal(state.currentChartWindow.value, false, 'token rebuild cannot retain accepted provenance')
+  pending[7]!.resolve(normalizedChart(pending[7]!.request)); await rebuilding
+  assert.equal(state.currentChartWindow.value, true)
+  identity.value = newowIdentity('oscillation', '1d')
+  assert.equal(state.currentChartWindow.value, false, 'identity reset clears accepted provenance immediately')
+  state.dispose()
+  assert.equal(state.currentChartWindow.value, false)
 })
 
 test('HTTP parser accepts the separate bounded older cursor and request serializes it', async () => {
@@ -134,6 +171,7 @@ test('explicit historical switch resets requests and preserves the exact server 
   assert.equal(pending[1]!.request.asOf, '2026-08-14T07:00:00.000001Z')
   pending[1]!.resolve(normalizedChart(pending[1]!.request)); await switching
   assert.equal(state.historicalSnapshot.value?.trading_day, '2026-08-14')
+  assert.equal(state.currentChartWindow.value, false)
   state.returnToCurrent()
   assert.equal(state.historicalSnapshot.value, null)
   assert.equal(pending[2]!.request.asOf, AS_OF)

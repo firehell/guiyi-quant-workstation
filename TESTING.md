@@ -1,5 +1,7 @@
 # 测试与验证命令
 
+以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
+
 ## Newow 新版参考卡片定向验证
 
 ```bash
@@ -14,9 +16,6 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 ```
 
 等待卡片验证覆盖同快照当前 FLAT、空/分页历史、筛选、stale/历史窗口、跨身份与 OPEN 冲突；日期覆盖日周、同日时分与跨年夜盘。浏览器用本地 fixture，1440/390px 截图只证明显示，不证明原站新版 parity、真实数据恢复或生产启用。沿用测试默认 5182 端口，不接入生产服务。源码-only 隔离 worktree 可使用已存在的 Python 环境并显式设置上述 PYTHONPATH，避免为定向验证重新安装依赖。
-
-
-以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
 
 ## 苏冰历史参考交易
 

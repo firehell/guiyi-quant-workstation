@@ -701,6 +701,13 @@ viewport, stale/loading/conflicting sections, identity mismatch or a same-owner 
 SHALL suppress that card. Its state time and physical segment SHALL remain visible or inspectable.
 The card SHALL NOT create a ReferenceTrade, infer the latest CLOSED trade from a paginated subset,
 copy an old-owner interruption return, or invent a return when exact association is unavailable.
+Current-window provenance SHALL come from an accepted default chart request in the current loader
+snapshot generation, not a comparison with the natural calendar day. The authoritative completed-day
+window may end before as-of on weekends, before close or midweek for weekly inputs. Same-window
+pagination SHALL preserve provenance; explicit historical windows, older-window navigation and
+historical snapshot mode SHALL suppress it. Default reload SHALL restore it only after acceptance.
+Loading/stale, token rebuild, identity reset and dispose SHALL suppress the current claim; late or
+rejected responses MUST NOT restore it.
 History filters SHALL affect only history rows and SHALL preserve the server summary and waiting state.
 
 Reference-card intraday labels SHALL show Shanghai MM-DD HH:mm; cross-year comparisons SHALL retain
