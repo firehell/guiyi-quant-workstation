@@ -31,6 +31,8 @@ from app.alerts.runtime import empty_alert_runtime_status, validate_alert_runtim
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
+from app.market_data.weekly_audit import weekly_audit_health
+from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.session_clock import SHANGHAI
 from app.models import Instrument, TradingCalendar
@@ -58,6 +60,7 @@ def build_runtime_health(
     notification_transport_configured: bool | None = None,
     alert_freshness_seconds: int = 30,
     after_market_status_path: Path | None = DEFAULT_AFTER_MARKET_STATUS_PATH,
+    weekly_audit_status_path: Path | None = PROJECT_ROOT / ".run" / "weekly-audit-status.json",
 ) -> dict[str, Any]:
     """构建 Runtime 健康快照字典（供 HTTP 与 CLI 共用）。
 
@@ -133,8 +136,12 @@ def build_runtime_health(
         freshness_seconds=alert_freshness_seconds,
     )
 
+    overall = _overall_status(components.values())
+    # Historical audit is optional and does not redefine operational service health.
+    components["weekly_audit"] = weekly_audit_health(weekly_audit_status_path,
+        identity=runtime_heartbeat_identity(), products=load_operational_products(), now=current_time)
     return {
-        "status": _overall_status(components.values()),
+        "status": overall,
         "generated_at": _iso(current_time),
         "readonly": True,
         "would_start_services": False,
@@ -549,6 +556,7 @@ def _collect_after_market_health(
     if isinstance(current_run, Mapping):
         try:
             started_at = _required_timestamp(current_run.get("started_at"))
+            updated_at = _required_timestamp(current_run.get("updated_at", current_run.get("started_at")))
             scheduled_date = date.fromisoformat(str(current_run.get("scheduled_date")))
             products = current_run.get("products")
             expected_products = load_operational_products()
@@ -557,6 +565,7 @@ def _collect_after_market_health(
                 or tuple(products) != expected_products
                 or scheduled_date > now.astimezone(SHANGHAI).date()
                 or started_at > now
+                or not started_at <= updated_at <= now
             ):
                 raise ValueError
         except (TypeError, ValueError):
@@ -567,7 +576,7 @@ def _collect_after_market_health(
                 "current_run": current_run,
                 "error_type": "after_market_current_run_invalid",
             }
-        age_seconds = (now - started_at).total_seconds()
+        age_seconds = (now - updated_at).total_seconds()
         if age_seconds <= 7200:
             return {
                 "status": RUNTIME_STATUS_PENDING,
@@ -643,7 +652,7 @@ def _collect_after_market_health(
 
 def _raw_current_run_is_invalid(raw: Mapping[str, object]) -> bool:
     schema_version = raw.get("schema_version")
-    if schema_version != 2 or raw.get("current_run") is None:
+    if schema_version not in {2, 3} or raw.get("current_run") is None:
         return False
     current_only = public_after_market_status(
         {

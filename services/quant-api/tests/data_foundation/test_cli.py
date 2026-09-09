@@ -24,6 +24,7 @@ from app.market_data.historical_data_manager import (
 class FakeManager:
     def __init__(self) -> None:
         self.calls = []
+        self.catalog = SimpleNamespace(acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None))
 
     def update(self, request):
         self.calls.append(("update", request))
@@ -122,10 +123,15 @@ def _run(
 
 class _NullContext:
     def __enter__(self):
-        return object()
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+        self.engine = create_engine("sqlite://")
+        self.session = Session(self.engine)
+        return self.session
 
     def __exit__(self, *_args):
-        return None
+        self.session.close()
+        self.engine.dispose()
 
 
 class _ProgressEvent:
@@ -194,6 +200,7 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         "refresh",
         "audit",
         "after-market",
+        "weekly-audit",
         "session-anchor-repair",
         "contract-warmup",
         "newow-readiness",

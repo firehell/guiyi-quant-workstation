@@ -85,6 +85,32 @@ function expectHomeReads(requests, count = 1) {
   expect(requests.filter(path => path === '/api/alerts/current-events')).toHaveLength(count)
 }
 
+for (const width of [1440, 390]) {
+  test(`maintenance v3 and weekly history summary are visible at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 })
+    const requests = []
+    const health = runtime('ok')
+    health.components = {
+      after_market: { status: 'pending', run_state: 'running', expected_trading_day: '2026-09-02',
+        current_run: { scheduled_date: '2026-09-02', started_at: '2026-09-02T10:05:00Z', products: ['jm'],
+          attempt: 1, stage: 'reading', current_symbol: 'jm', updated_at: '2026-09-02T10:06:00Z',
+          current_partition: { dataset: ['contract', 'jm', 'JM2609', '1m'], year: 2026, month: 9 },
+          elapsed_seconds: 64.2, counters: { reading: { completed: 7 }, publishing: { completed: 2 } } } },
+      weekly_audit: { status: width === 390 ? 'findings' : 'passed', readonly: true, scope: 'operational_full_history',
+        through: '2026-08-28', finding_count: width === 390 ? 2 : 0, updated_at: '2026-08-29T01:02:00Z' },
+    }
+    await mockMarketHomeApi(page, requests, events(), overview(), health)
+    await page.goto('/market')
+    await expect(page.getByText(/盘后维护.*读取校验.*7 次操作/)).toBeVisible()
+    await expect(page.getByText(/盘后维护.*contract\/JM2609.*1m.*2026-09.*累计 64.2 秒/)).toBeVisible()
+    await expect(page.getByText(/盘后维护.*已提交发布 2 次操作/)).toBeVisible()
+    await expect(page.getByText(width === 390 ? /每周历史审计.*发现历史问题.*2026-08-28/ : /每周历史审计.*审计通过.*2026-08-28/)).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    expectHomeReads(requests)
+    await page.screenshot({ path: testInfo.outputPath(`maintenance-${width}.png`), fullPage: true })
+  })
+}
+
 test('white full-width home uses exactly three reads and keeps observations collapsed until opened', async ({ page }) => {
   const requests = []
   await mockMarketHomeApi(page, requests, events(), overview(), runtime('ready'))

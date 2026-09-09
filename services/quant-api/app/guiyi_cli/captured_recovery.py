@@ -61,7 +61,7 @@ def _after_market_preflight(trading_day) -> None:
     try:
         raw = json.loads(read_captured_file(PROJECT_ROOT / '.run' / 'after-market-status.json'))
         public = public_after_market_status(raw)
-        if not public or public.get('schema_version') != 2 or 'current_run' not in raw:
+        if not public or public.get('schema_version') not in {2, 3} or 'current_run' not in raw:
             raise ValueError
         # A running or already attempted same-day publication needs a new input
         # diagnosis. Do not repair a stale Live view after its consumer has changed.

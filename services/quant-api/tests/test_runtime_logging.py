@@ -1,8 +1,37 @@
 from __future__ import annotations
 
 import logging
+import json
 
 import pytest
+
+
+def test_after_market_structured_progress_reopens_rotated_log_and_bounds_fields(tmp_path):
+    from app.runtime_logging import runtime_diagnostic_handler
+    path = tmp_path / "after-market.log"
+    handler = runtime_diagnostic_handler(path)
+    progress = {
+        "scheduled_date": "2026-08-10", "started_at": "2026-08-10T18:05:00+08:00",
+        "products": ["au"], "stage": "publishing", "attempt": 1,
+        "updated_at": "2026-08-10T18:06:00+08:00", "stage_started_at": "2026-08-10T18:06:00+08:00",
+        "current_symbol": "au", "current_partition": {"dataset": ["continuous", "au", "MAIN", "1m"], "year": 2026, "month": 8},
+        "counters": {"reading": {"completed": 2}, "publishing": {"completed": 1}},
+        "stage_durations": {"reading": .5}, "elapsed_seconds": 60., "retry_at": None,
+    }
+    record = logging.LogRecord("app.test", logging.INFO, "", 0, "AFTER_MARKET_PROGRESS", (), None)
+    record.diagnostic_fields = {"progress": {**progress, "untrusted": "password=secret"}}
+    try:
+        handler.handle(record)
+        assert json.loads(path.read_text())["progress"] == progress
+        path.rename(tmp_path / "rotated.log")
+        handler.handle(record)
+        assert json.loads(path.read_text())["progress"] == progress
+        record.diagnostic_fields["progress"]["current_partition"]["dataset"][2] = "password=secret"
+        handler.handle(record)
+        assert "progress" not in json.loads(path.read_text().splitlines()[-1])
+        assert "secret" not in path.read_text()
+    finally:
+        handler.close()
 
 
 def test_runtime_log_reopens_removed_file_and_redacts_untrusted_exception(tmp_path):

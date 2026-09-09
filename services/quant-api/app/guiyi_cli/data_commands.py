@@ -25,13 +25,13 @@ from app.market_data.market_home_projection import (
     MarketHomeProjectionStore,
     market_home_projection_path,
 )
-from app.market_data.operational_universe import load_active_products
+from app.market_data.operational_universe import load_active_products, load_operational_products
 from app.market_data.product_retirement import assert_not_retired
 
 
 def build_request(args: argparse.Namespace):
     """根据 data_command 分支构造对应的维护请求对象。"""
-    if args.data_command in {"after-market", "session-anchor-repair", "metadata-repair", "au-calendar-correction"}:
+    if args.data_command in {"after-market", "weekly-audit", "session-anchor-repair", "metadata-repair", "au-calendar-correction"}:
         return None
     if args.data_command == "newow-readiness":
         from app.market_data.newow.readiness import ReadinessRequest
@@ -207,6 +207,8 @@ def _products(symbol: str | None, universe: str | None) -> tuple[str, ...]:
     """解析品种列表：--universe active 或单个 --symbol。"""
     if universe == "active":
         return load_active_products()
+    if universe == "operational":
+        return load_operational_products()
     normalized = str(symbol or "").strip().lower()
     if not normalized:
         raise ValueError("CLI_SYMBOL_REQUIRED")

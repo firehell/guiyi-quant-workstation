@@ -76,7 +76,7 @@ class _Manager:
         self.metadata = _Metadata()
         self.catalog = _Catalog(trading_day)
 
-    def update(self, request, *, before_apply=None):
+    def update(self, request, *, before_apply=None, observer=None):
         if before_apply is not None:
             before_apply()
         self.calls.append(request)
@@ -484,7 +484,7 @@ def test_updates_once_when_first_attempt_is_ready(tmp_path) -> None:
     assert notices == []
 
 
-def test_schema_v2_persists_current_run_before_business_attempt_and_clears_on_finish(
+def test_schema_v3_persists_current_run_before_business_attempt_and_clears_on_finish(
     tmp_path,
 ) -> None:
     status_path = tmp_path / "after-market-status.json"
@@ -507,11 +507,21 @@ def test_schema_v2_persists_current_run_before_business_attempt_and_clears_on_fi
 
     assert observed == [
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "current_run": {
                 "scheduled_date": "2026-08-10",
                 "started_at": "2026-08-10T17:00:00+08:00",
                 "products": list(_ACTIVE_PRODUCTS),
+                "attempt": 0,
+                "stage": "calendar",
+                "updated_at": "2026-08-10T17:00:00+08:00",
+                "current_partition": None,
+                "current_symbol": None,
+                "stage_started_at": "2026-08-10T17:00:00+08:00",
+                "elapsed_seconds": 0.0,
+                "counters": {},
+                "stage_durations": {},
+                "retry_at": None,
             },
             "last_run": None,
             "last_successful_trading_day": None,
@@ -519,7 +529,7 @@ def test_schema_v2_persists_current_run_before_business_attempt_and_clears_on_fi
         }
     ]
     finalized = _status(status_path)
-    assert finalized["schema_version"] == 2
+    assert finalized["schema_version"] == 3
     assert finalized["current_run"] is None
     assert finalized["last_run"]["status"] == "passed"
 
@@ -601,7 +611,7 @@ def test_every_status_write_uses_same_directory_atomic_replace(
 
     updater.run()
 
-    assert len(replacements) == 2
+    assert len(replacements) >= 2
     assert all(
         os.fspath(target) == os.fspath(status_path) for _, target in replacements
     )
@@ -793,7 +803,7 @@ def test_update_exception_logs_only_sanitized_stage_diagnostics(
         results=[],
     )
 
-    def fail_update(_request, *, before_apply=None):
+    def fail_update(_request, *, before_apply=None, observer=None):
         raise RuntimeError("credential-secret-provider-message")
 
     manager.update = fail_update
@@ -821,7 +831,7 @@ def test_next_trading_session_not_ready_is_retried_with_stable_public_code(
         results=[],
     )
 
-    def fail_update(_request, *, before_apply=None):
+    def fail_update(_request, *, before_apply=None, observer=None):
         raise InfrastructureError("NEXT_TRADING_SESSION_NOT_READY")
 
     manager.update = fail_update
@@ -1094,10 +1104,120 @@ def test_public_status_rejects_boolean_attempt_count() -> None:
     assert payload == {}
 
 
-def test_public_status_rejects_removed_schema_v3() -> None:
+def test_daily_progress_persists_stage_changes_throttles_counts_and_omits_unknown_total(tmp_path, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="app.market_data.after_market")
+    from app.market_data.historical_data_manager import MaintenanceProgressEvent
+    updater, manager, *_ = _updater(tmp_path, trading_day=date(2026, 8, 10),
+                                   readiness=[True], results=[])
+    snapshots = []
+    ticks = [0.0]
+    updater.monotonic = lambda: ticks[0]
+
+    def update(request, *, before_apply=None, observer=None):
+        assert request.mode == "daily"
+        assert observer is not None
+        for phase, state, count, elapsed, tick in [
+            ("reading", "started", 0, 0., 0.),
+            ("reading", "completed", 1, .2, 1.),
+            ("reading", "completed", 2, .3, 5.),
+            ("publishing", "completed", 1, .4, 5.1),
+        ]:
+            ticks[0] = tick
+            observer(MaintenanceProgressEvent(phase, state, "au", ("continuous", "au", "MAIN", "1m"),
+                                              2026, 8, count, None, elapsed))
+            snapshots.append(_status(updater.status_path)["current_run"])
+        return _result("passed")
+
+    manager.update = update
+    assert updater.run().status == "passed"
+    assert snapshots[0]["stage"] == "reading"
+    assert snapshots[1]["counters"]["reading"] == {"completed": 0}
+    assert snapshots[2]["counters"]["reading"] == {"completed": 2}
+    assert snapshots[3]["stage"] == "publishing"
+    assert snapshots[3]["stage_durations"]["reading"] == .5
+    assert snapshots[3]["attempt"] == 1
+    assert public_after_market_status({"schema_version": 3, "current_run": snapshots[3]})
+    progress = [record.diagnostic_fields["progress"] for record in caplog.records
+                if record.msg == "AFTER_MARKET_PROGRESS"]
+    reading = [item for item in progress if item["stage"] == "reading"]
+    assert reading == [snapshots[0], snapshots[2]]
+    assert next(item for item in progress if item["stage"] == "publishing") == snapshots[3]
+
+
+def test_progress_persistence_failure_stops_before_live_and_notification(tmp_path, monkeypatch):
+    from app.market_data import after_market
+    from app.market_data.historical_data_manager import MaintenanceProgressEvent
+    updater, manager, _, sleeps, notices, live = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True], results=[])
+    real_write = after_market._atomic_write_status
+
+    def write(path, payload):
+        if (payload.get("current_run") or {}).get("stage") == "publishing":
+            raise OSError("private path")
+        real_write(path, payload)
+
+    monkeypatch.setattr(after_market, "_atomic_write_status", write)
+
+    def update(request, *, before_apply=None, observer=None):
+        observer(MaintenanceProgressEvent("publishing", "started", "au", None,
+                                          None, None, 0, None, 0.))
+        pytest.fail("must stop at progress persistence failure")
+
+    manager.update = update
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE") as failure:
+        updater.run()
+    from app.guiyi_cli.output import exception_error_payload
+    assert exception_error_payload(command="data.after-market", exc=failure.value)["error"]["code"] == "AFTER_MARKET_PROGRESS_UNAVAILABLE"
+    assert not sleeps and not notices and not live.published and not live.cleaned
+    assert _status(updater.status_path)["current_run"] is not None
+
+
+def test_v3_health_uses_last_progress_and_rejects_future_updates(tmp_path, monkeypatch):
+    from app.services import runtime_health
+    from datetime import timedelta
+    updater, *_ = _updater(tmp_path, trading_day=date(2026, 8, 10), readiness=[], results=[])
+    start = datetime.fromisoformat("2026-08-10T17:00:00+08:00")
+    updater._write_current_run(start, _ACTIVE_PRODUCTS)
+    monkeypatch.setattr(runtime_health, "_expected_after_market_day", lambda *a, **k: (start.date(), True))
+    payload = _status(updater.status_path)
+    payload["current_run"]["updated_at"] = (start + timedelta(hours=3)).isoformat()
+    updater.status_path.write_text(json.dumps(payload))
+    def read(at):
+        return runtime_health._collect_after_market_health(None, updater.status_path, now=at, configured_enabled=True)
+    assert read(start + timedelta(hours=3, minutes=1))["run_state"] == "running"
+    assert read(start + timedelta(hours=2))["run_state"] == "degraded"
+    assert read(start + timedelta(hours=6))["run_state"] == "stuck"
+
+
+def test_logging_failure_cannot_change_business_failure_or_retry(tmp_path, monkeypatch):
+    from app.market_data import after_market
+    updater, _, _, sleeps, notices, _ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True],
+        results=[_result("failed", stop_reason="PROVIDER_QUOTA_EXHAUSTED")])
+    monkeypatch.setattr(after_market._LOGGER, "warning", lambda *a, **k: (_ for _ in ()).throw(OSError("private")))
+    monkeypatch.setattr(after_market._LOGGER, "info", lambda *a, **k: (_ for _ in ()).throw(OSError("private")))
+    assert updater.run().error_code == "PROVIDER_QUOTA_EXHAUSTED"
+    assert not sleeps and len(notices) == 1
+
+
+@pytest.mark.parametrize("failure_type", [ValueError, InfrastructureError])
+def test_missing_daily_baseline_is_explicit_history_maintenance_required(tmp_path, failure_type):
+    updater, manager, _, sleeps, notices, live = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True], results=[])
+    def update(request, **kwargs):
+        raise failure_type("HISTORICAL_MAINTENANCE_REQUIRED")
+    manager.update = update
+    result = updater.run()
+    assert result.error_code == "HISTORICAL_MAINTENANCE_REQUIRED"
+    assert public_after_market_status(_status(updater.status_path))["last_failure"]["error_code"] == result.error_code
+    assert not sleeps and not live.cleaned and len(notices) == 1
+
+
+def test_public_status_rejects_unknown_schema_v4() -> None:
     payload = public_after_market_status(
         {
-            "schema_version": 3,
+            "schema_version": 4,
             "current_run": None,
             "last_run": {
                 "trading_day": "2026-08-10",

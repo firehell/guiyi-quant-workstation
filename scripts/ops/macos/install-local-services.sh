@@ -56,10 +56,20 @@ fi
 base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
 market_runtime_labels=(com.guiyi.quant-live com.guiyi.quant-after-market)
 alert_runtime_labels=(com.guiyi.quant-alert)
-render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}")
+weekly_audit_labels=(com.guiyi.quant-weekly-audit)
+render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}" "${weekly_audit_labels[@]}")
 load_labels=("${base_labels[@]}")
 
-[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime]\n' "$0" >&2; exit 2; }
+[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" || "$MODE" == "--confirm-weekly-audit" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-weekly-audit]\n' "$0" >&2; exit 2; }
+if [[ "$MODE" == "--confirm-weekly-audit" ]]; then
+  api_plist="$AGENT_DIR/com.guiyi.quant-api.plist"
+  if [[ ! -f "$api_plist" || -L "$api_plist" ]] \
+    || [[ "$(plutil -extract EnvironmentVariables.GUIYI_PROJECT_ROOT raw -o - "$api_plist" 2>/dev/null)" != "$PROJECT_ROOT" ]] \
+    || [[ "$(plutil -extract EnvironmentVariables.GUIYI_RUNTIME_COMMIT raw -o - "$api_plist" 2>/dev/null)" != "$RUNTIME_COMMIT" ]]; then
+    printf '[install-local-services] weekly audit runtime identity mismatch\n' >&2
+    exit 1
+  fi
+fi
 if [[ "$MODE" == "--confirm-alert-runtime" ]]; then
   notification_config_ready || {
     printf '[install-local-services] alert notification config not ready\n' >&2
@@ -97,6 +107,8 @@ if [[ "$MODE" == "--confirm-market-runtime" ]]; then
   load_labels=("${market_runtime_labels[@]}")
 elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
   load_labels=("${alert_runtime_labels[@]}")
+elif [[ "$MODE" == "--confirm-weekly-audit" ]]; then
+  load_labels=("${weekly_audit_labels[@]}")
 fi
 
 if [[ "$MODE" == "--confirm-market-runtime" ]]; then
@@ -111,10 +123,12 @@ fi
 
 mkdir -p "$AGENT_DIR" "$RUNTIME_DIR" "$LOG_DIR"
 chmod 700 "$RUNTIME_DIR" "$LOG_DIR"
+if [[ "$MODE" != "--confirm-weekly-audit" ]]; then
 cp "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh"
 chmod 700 "$RUNTIME_DIR/run-local-service.sh"
 cp "$PROJECT_ROOT/scripts/ops/macos/rotate-local-service-logs.sh" "$RUNTIME_DIR/rotate-local-service-logs.sh"
 chmod 700 "$RUNTIME_DIR/rotate-local-service-logs.sh"
+fi
 
 reload_launch_agent() {
   local label="$1"

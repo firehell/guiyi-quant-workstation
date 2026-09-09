@@ -155,13 +155,14 @@ def test_absent_snapshot_after_start_requires_live_snapshot() -> None:
     assert decision.reason == PROMOTION_LIVE_SNAPSHOT_REQUIRED
 
 
-def test_absent_snapshot_after_same_day_passed_after_market_allows_promotion() -> None:
+@pytest.mark.parametrize("schema_version", [2, 3])
+def test_absent_snapshot_after_same_day_passed_after_market_allows_promotion(schema_version) -> None:
     decision = evaluate_market_runtime_promotion(
         products=PRODUCTS,
         phases=_phases(MarketPhase.CLOSED),
         now=NOW,
         snapshot=None,
-        after_market_status=_passed_status(),
+        after_market_status={**_passed_status(), "schema_version": schema_version},
         first_session_starts=_first_session_starts(),
     )
 

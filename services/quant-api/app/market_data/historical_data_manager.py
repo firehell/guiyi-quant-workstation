@@ -397,6 +397,7 @@ def _contract_warmup_scope(
     )
 
 _AUDIT_METADATA_CATEGORIES = {
+    "HISTORICAL_SESSION_FACT_MISSING": ("metadata_session", "session"),
     "TRADING_SESSION_MISSING": ("metadata_session", "session"),
     "PREVIOUS_TRADING_DAY_MISSING": ("metadata_session", "session"),
     "TRADING_CALENDAR_MISSING": ("metadata_calendar", "calendar"),
@@ -1055,7 +1056,11 @@ class HistoricalDataManager(ContractWarmupPlanner):
             finding_start = len(findings)
             try:
                 through = request.through or self.coverage.latest_complete_day((symbol,))
+                throughs.append(through)
                 start = self.coverage.product_start(symbol)
+                # Full audit validates the authoritative Calendar/Session domain,
+                # including days absent from both Calendar and rank1 partition selection.
+                self.coverage.require_historical_session_facts((symbol,), through)
                 missing_map = self.catalog.missing_main_map_days(symbol, start, through)
                 if missing_map:
                     first = missing_map[0]
@@ -1125,7 +1130,6 @@ class HistoricalDataManager(ContractWarmupPlanner):
                                 month,
                             )
                         )
-                throughs.append(through)
             except Exception as exc:  # noqa: BLE001 - recognized metadata gaps isolate one product
                 finding = _audit_metadata_finding(exc, symbol)
                 if finding is None:
