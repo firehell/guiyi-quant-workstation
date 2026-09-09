@@ -203,8 +203,17 @@
   10 个源文件哈希不变。报告 `/private/tmp/newow-au-publication-prepare-20260909/offline-candidates.json`
   SHA256 `4dbc6b94d4822d26688d519daa9e4a2c8e52717d08a93fb67cf5db60fc05ec79`。
   该结果不含 fresh Catalog/Session 核对、正式发布或页面验收；本批发布准备仍被在线核对失败阻塞。
-  下一步仅申请一次带安全错误分类的本地 AU2304 只读诊断与相同精确计划核对，不重试旧脚本、不重查来源；
-  新诊断失败仍停，成功后才提交 20 分区的正式写入单次意图。
+  随后获得一次新的精确只读诊断批准，`2026-09-09T06:06:03..06:06:04Z` 在 `4701c993e` 执行
+  plan `e5cfd0e9a3706ae85b123effcb209b6684122ac8038200f4f36b71b55d342494`，仍在连接/只读事务阶段停止：
+  `OperationalError / authentication_missing`，SQLSTATE 未提供；未进入 fresh planner，未重试，
+  provider requests、DB/Canonical writes、Redis connections 均为 0。新结果单独保留在
+  `/private/tmp/newow-au-publication-diagnostic-20260909/result.json`，不覆盖前次失败。
+  离线定位为临时 runner 的初始化顺序错误：`find_spec(app.db.readonly)` 经 `app.db.__init__`
+  提前导入 session 并创建缺认证 engine，随后加载 dotenv 不会更新既有 engine。配置本身存在所需认证，
+  未输出凭据、未修改 `.env` 或 Runtime。禁止网络的 fresh subprocess 用合成配置复现旧顺序缺认证、
+  新顺序有认证；新 runner 先加载既有配置和校验目标/认证存在，再检查模块来源，连接前再次校验 engine。
+  `/private/tmp/newow-au-auth-order-fix-20260909/` 中范围、归一、错误脱敏与初始化回归测试 `13 passed`；
+  新 runner 仅准备，尚未执行连接。需新的单次 AU2304 只读执行意图，成功后才提交 20 分区正式写入意图。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
