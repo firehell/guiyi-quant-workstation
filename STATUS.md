@@ -1,8 +1,9 @@
 # 当前状态
 
-文档核对：2026-09-09，develop 代码基线 `fd6f566cc`；统一详情页本轮修复已通过 owner 视觉接受，允许集成 develop。
+文档核对：2026-09-09，develop 代码基线 `79c59ccb4`；统一详情页本轮修复已通过 owner 视觉接受并集成 develop。
 本日 P1 验证使用临时数据与隔离 PostgreSQL；后续 WebSocket/详情页验证使用离线测试与浏览器 fixture。
-没有连接生产 PostgreSQL/Redis/RQData 或重新验收 Runtime。
+上述工程验证没有连接生产 PostgreSQL/Redis/RQData 或重新验收 Runtime。
+另有本日获准的 AU 来源查询与单键生产 Calendar 更正，具体事实及边界见 Newow 小节；没有切换 Runtime。
 以下生产结论保留原采集时间，不能当作今天的实时健康状态。
 
 本文件只保留 release、Runtime、Scope、关键验收事实与未完成 Gate。稳定产品面见 `PROJECT_SOURCE.md`，
@@ -81,12 +82,17 @@
 ## Newow 产品证据与开发候选
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
-  id=46796 却为 `has_night_session=false`。单键更正入口与真实只读 dry-run 已完成，状态
-  `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；未执行生产 apply，不代表 Session 或行情缺口已关闭。
+  id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
+  消费：使用 `79c59ccb4` 受限入口，仅将该行夜盘标志更正为 `true`，其他字段不变，提交后独立只读核验通过。
+  本次 `database_writes=1`，`provider_requests=0`、`session_writes=0`、`canonical_writes=0`，无重试。
+  精确 plan hash `2384a9cc382c94fb1616d0f508006fd374b3a6b6c6673c5823ff301e574749a7`；
+  原结果 `/private/tmp/au-calendar-apply-20260909-zQDruw/result.json`（临时 evidence 不保证长期存在）。
+  单键更正为 `COMPLETED`，不代表 Newow 整体恢复：缺失 Calendar/Session 插入与历史行情补齐尚未开始。
   独立规范/需求 Review 无剩余阻塞；完整后端与 engineering 非隔离回归合计
   `2967 passed, 16 skipped, 28 deselected`，另有单键隔离 PostgreSQL `7 passed`，
-  Ruff/Mypy/OpenSpec/secret/diff 通过。真实写入仅允许在新的单次意图下按最新精确 hash 执行；
-  不授权其他日期、RQData、Canonical、发布或 Runtime 切换。具体边界见 `docs/DATA_CENTER.md`。
+  Ruff/Mypy/OpenSpec/secret/diff 通过。旧批次计划已因前像变化失效，其他 173 个候选日期尚未确认冲突；
+  后续查询或写入须重新核对范围并取得新的单次执行意图，不自动重跑旧 613 次查询。
+  不授权其他日期、RQData、Canonical、发布或 Runtime 切换，也不自动逆向恢复旧标志。具体边界见 `docs/DATA_CENTER.md`。
 
 - P6工程已集成并发布，产品仍为 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`。
   [P6历史只读证据](docs/research/newow-v3.2.82/P6_TRUSTED_CLOSURE.md)归属v1.10.0：首30品种两轮及rb45项
