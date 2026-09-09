@@ -376,9 +376,32 @@
   下一次只读矩阵与剩余 1m/60m 提案准备在 `/private/tmp/newow-au-post-daily-audit-20260909/`：
   保持修复前 `2026-09-08T07:00:00.000001Z` 截点，AU 三策略 × 1d/1w/60m，覆盖 chart/auxiliary/reference/explanation；
   使用共享 Reader/MDS 和原生 planner，从新结果提出剩余 1m 请求窗口与 60m 分区，保留任何未解决日/周问题。
-  新审计与提案脚本离线及独立 Review 各 `12 passed`，未执行新审计、来源查询或任何数据写入。
-  当前 `EXTERNAL_GATE_PENDING`：新的只读审计尚未执行，需要明确连接意图；任何新 RQData、Canonical 写入仍另行确认。
-  旧发布计划授权已消费，禁止重跑；最终 8010/5174 本地浏览器验收和保留预览进程仍待完成。
+  新审计与提案脚本离线及独立 Review 各 `12 passed`；当时仅准备，后续获准执行结果见下文。
+  旧发布计划授权已消费，禁止重跑。
+- `2026-09-09T08:05:10..08:07:32Z` 在 `0b405e5a3` 按新的单次批准完成上述只读审计，计划
+  `082f8670823cf1997e98848b372aba644a335a4cf152e3eb1799d7457dbc45f5`；结果 `passed`、审计完整。
+  保持修复前截点 `2026-09-08T07:00:00.000001Z`：三策略 D1/W1 主图及适用副图均 `READY`，主图由 0/9 升至 6/9；
+  三策略 D1 参考交易 `READY`，W1 参考交易仍 `WARMING / NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL`；
+  震荡 W1 comparator 仍 `UNAVAILABLE / NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS`。
+  三个 60m 主图及相关面板仍 `DATA_UNAVAILABLE`；九个解释层都因 60m 历史缺口不可用，不能宣称全页面恢复。
+  12 个枚举完整，132 个依赖中 90 个 `DATA_READY`（44 D1 + 44 W1 + 2 H1），42 个缺口均为 H1；
+  元数据提案为空。剩余提案覆盖 21 个 AU 物理合约、454 分区（227 M1 + 227 H1），
+  2,280,600 根缺失分钟 Bar、227 次拟议 `get_price(1m, adjust_type=none)`；提案未执行任何来源调用。
+  `unresolved_other_frequencies=[]` 不表示周线参考交易或 comparator 已可用。
+  本次 RQData=0、DB/Canonical 写入=0、Redis=0、retry=0；审计授权已消费，禁止重跑。
+  `/private/tmp/newow-au-post-daily-audit-20260909/result.json` SHA256
+  `4d415c633f2e52fa90cd4366199b7e7d9159f84f622e7b1e64a85ba3ac1dfb76`；readiness SHA256
+  `7b1b39d05f6f3b97dd1e9a5e6822d0ac66ff53a2bc3aad624b74dd527ffd879a`；intraday-plan SHA256
+  `7aec69d8a3e0746c35bcde5b6c93933654535f9f3f9b97a09c1fefc890772dcb`。
+  下一步仅准备 `/private/tmp/newow-au2304-minute-diagnostic-20260909/` 的首窗口来源诊断：
+  `AU2304 / get_price / 1m / none / 2022-03-15..2022-03-31`，一次行情 API、最多五次 SDK RPC
+  （额度、合约索引、Future 元数据、当前交易日、分钟行情各至多一次）；既有 planner 预期缺失 6,660 Bar，
+  此数不作为实际返回行数或覆盖通过声明。保存 SDK 转换前 RPC 响应及转换后逐行来源；分钟零价/NaN 不填充、
+  不套用日线零成交规范化。禁用 SDK 重试；失败立即停止；DB/Canonical/Redis=0。
+  新来源诊断离线与独立 Review 均 `31 passed`，包含禁网下真实 SDK 五次 RPC 模拟路由、精确范围、
+  额度拒绝、失败锁止和不填补异常来源测试；这些离线结果不证明分钟真实行情已恢复。
+  新来源诊断当前 `EXTERNAL_GATE_PENDING`，等待新的单次明确查询意图。随后仍需分钟来源质量/覆盖验证、
+  分批 Canonical 1m 发布与合格 60m 聚合、全矩阵和周线剩余问题核对，最后完成 8010/5174 本地真实浏览器验收并保留进程。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
