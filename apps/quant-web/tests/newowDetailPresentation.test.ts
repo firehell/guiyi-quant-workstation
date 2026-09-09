@@ -75,3 +75,13 @@ test('reference percentage display preserves server decimals and never treats mi
   assert.equal(referenceInterruptionLabel('OWNER_BOUNDARY'), '物理合约区段结束')
   assert.equal(referenceInterruptionLabel('UNVERIFIED'), '中断原因待确认（见详情）')
 })
+
+test('reference dates preserve night-session clock, daily density and cross-year identity', async () => {
+  const { referenceTimeDisplay } = await import('../src/utils/newowDetailPresentation.ts')
+  assert.equal(referenceTimeDisplay('2026-09-03T14:00:00Z', '60m', ['2026-09-04T07:00:00Z']), '09-03 22:00')
+  assert.equal(referenceTimeDisplay('2026-09-03T07:00:00Z', '1d', []), '2026-09-03')
+  assert.equal(referenceTimeDisplay('2026-09-04T07:00:00Z', '1w', []), '2026-09-04')
+  assert.equal(referenceTimeDisplay('2025-12-31T14:00:00Z', '60m', ['2026-01-02T07:00:00Z']), '2025-12-31 22:00')
+  assert.equal(referenceTimeDisplay('2026-01-02T07:00:00Z', '60m', ['2025-12-31T14:00:00Z']), '2026-01-02 15:00')
+  assert.equal(referenceTimeDisplay(null, '60m', []), '—')
+})

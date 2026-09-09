@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { shortNewowTime, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
+import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 
 import type {
   NewowProductSectionResponse,
@@ -18,6 +18,8 @@ const props = defineProps<{
   response: NewowProductSectionResponse<'reference'> | null
   chartResponse: NewowProductSectionResponse<'chart'> | null
   crossSectionCompatible: boolean
+  chartLifecycle?: NewowResourceLifecycle
+  currentChartWindow?: boolean
   lifecycle: NewowResourceLifecycle
   error: string | null
   selectedSignalId: string | null
@@ -42,6 +44,27 @@ const model = computed(() => (
     : null
 ))
 const visibleModel = computed(() => model.value === null ? null : filterNewowReferenceRows(model.value, filter.value))
+
+// Current FLAT is a chart fact, never a synthetic trade or a guess from a history page.
+const waiting = computed(() => {
+  const chart = props.chartResponse
+  const reference = props.response
+  if (props.lifecycle !== 'ready' || props.chartLifecycle !== 'ready' || props.currentChartWindow !== true
+    || !props.crossSectionCompatible || chart?.status.status !== 'ready' || reference?.status.status !== 'ready'
+    || !chart.value || !reference.value || chart.meta.as_of !== reference.meta.as_of
+    || JSON.stringify(chart.meta.identity) !== JSON.stringify(reference.meta.identity)) return null
+  const bar = chart.value.bars.at(-1)
+  const frame = chart.value.frames.find(item => item.bar_end === bar?.bar_end)
+  if (!bar?.completed || !bar.observation_eligible || frame?.status.status !== 'ready'
+    || frame.status.evidence_status !== 'ACTIVE_CODE_VERIFIED' || frame.main_state !== 'FLAT'
+    || Date.parse(bar.bar_end) > Date.parse(chart.meta.as_of)
+    || reference.value.items.some(item => item.status === 'OPEN' && item.physical_contract === bar.physical_contract && item.segment_id === bar.segment_id)) return null
+  return bar
+})
+function rowTime(trade: NewowReferenceTrade, time: string | null): string {
+  return referenceTimeDisplay(time, trade.frequency, [trade.entry_bar_end, trade.exit_bar_end,
+    trade.mark_bar_end, trade.interrupted_at, props.response?.meta.as_of])
+}
 
 watch(() => props.response?.value, (value) => {
   if (value === null || value === undefined) {
@@ -105,6 +128,12 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
         <details><summary>统计时间与来源</summary><p>Performance window {{ model.performanceWindow.since }} → {{ model.performanceWindow.through }}</p><p>实际可用至 {{ model.actualAvailableThrough }} · reference cutoff {{ model.performanceWindow.cutoff }}</p></details>
       </section>
 
+      <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">
+        <header><strong>空仓等待中</strong><span>策略空仓 · {{ waiting.physical_contract }}</span></header>
+        <p :title="waiting.bar_end">状态时间 {{ referenceTimeDisplay(waiting.bar_end, chartResponse!.meta.identity.frequency, [chartResponse!.meta.as_of]) }} · 截至所示已完成 Bar，仅作页面参考。</p>
+        <details><summary>状态来源</summary><p>{{ waiting.bar_end }} · {{ waiting.segment_id }}</p><p>{{ chartResponse!.meta.identity.profile_id }} · {{ chartResponse!.meta.identity.formula_versions.join(' / ') }} · as-of {{ chartResponse!.meta.as_of }}</p></details>
+      </article>
+
       <div class="newow-reference__tools">
         <label>
           记录筛选
@@ -121,10 +150,10 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 
       <div class="newow-reference__cards">
         <article v-for="row in visibleModel?.rows ?? []" :key="row.id" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id">
-          <header :title="`${row.trade.entry_bar_end} → ${row.trade.exit_bar_end ?? row.trade.mark_bar_end ?? row.trade.interrupted_at}`"><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : '换月中断' }}</strong><span>{{ row.trade.physical_contract }} · {{ shortNewowTime(row.trade.entry_bar_end) }} → {{ row.trade.exit_bar_end ? shortNewowTime(row.trade.exit_bar_end) : row.category === 'open' ? '至估值日' : shortNewowTime(row.trade.interrupted_at) }}</span><span v-if="row.initial">期初已有</span></header>
+          <header :title="`${row.trade.entry_bar_end} → ${row.trade.exit_bar_end ?? row.trade.mark_bar_end ?? row.trade.interrupted_at}`"><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : '换月中断' }}</strong><span>{{ row.trade.physical_contract }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.trade.exit_bar_end ? rowTime(row.trade, row.trade.exit_bar_end) : row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.interrupted_at) }}</span><span v-if="row.initial">期初已有</span></header>
           <div class="newow-reference__card-body">
-            <p>▲ 参考建仓 {{ row.trade.entry_reference_price }} · {{ shortNewowTime(row.trade.entry_bar_end) }} <template v-if="row.category === 'closed'">　▼ 参考清仓 {{ row.trade.exit_reference_price }} · {{ shortNewowTime(row.trade.exit_bar_end) }}</template><template v-else-if="row.category === 'interrupted'">　换月中断 · {{ referenceInterruptionLabel(row.trade.interruption_reason) }}</template></p>
-            <p class="newow-reference__return">{{ row.category === 'open' ? '参考浮动' : row.category === 'closed' ? '已清仓收益' : '中断浮动' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</span><small v-if="row.category !== 'closed'" :title="row.valuationText"> · 估值 {{ shortNewowTime(row.trade.mark_bar_end) }}</small></p>
+            <p>▲ 参考建仓 {{ row.trade.entry_reference_price }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} <template v-if="row.category === 'closed'">　▼ 参考清仓 {{ row.trade.exit_reference_price }} · {{ rowTime(row.trade, row.trade.exit_bar_end) }}</template><template v-else-if="row.category === 'interrupted'">　换月中断 · {{ referenceInterruptionLabel(row.trade.interruption_reason) }}</template></p>
+            <p class="newow-reference__return">{{ row.category === 'open' ? '参考浮动' : row.category === 'closed' ? '已清仓收益' : '中断浮动' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</span><small v-if="row.category !== 'closed'" :title="row.valuationText"> · 估值 {{ rowTime(row.trade, row.trade.mark_bar_end) }}</small></p>
             <button type="button" :aria-label="`定位参考记录 ${row.id} 的建仓信号`" @click="emit('locate', row.trade)">定位</button>
             <button type="button" :aria-label="`展开参考记录 ${row.id}`" :aria-expanded="expanded.includes(row.id)" @click="toggle(row.id)">详情</button>
           </div>
@@ -160,6 +189,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference__cards { display:grid; gap:8px; }
 .newow-reference__card { padding:12px 16px; border:1px solid var(--gy-border); border-radius:7px; background:var(--gy-bg-panel); min-width:0; }
 .newow-reference__card[data-reference-category="open"] { background:#fff8f2; border-left:4px solid #ff6b2c; }
+.newow-reference__waiting { background:#f1f7ff; border-left:4px solid #397bd1; }
 .newow-reference__card[data-selected="true"] { outline:2px solid var(--gy-border-focus); }
 .newow-reference__card header,.newow-reference__card-body { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 .newow-reference__card header { margin-bottom:6px; }
