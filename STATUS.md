@@ -101,17 +101,43 @@
 
 ## Newow 产品证据与开发候选
 
+- 2026-09-09 黄金元数据接力已完成五合约 `AU2304/AU2306/AU2308/AU2310/AU2312` 的本批缺口修复。
+  新来源审计于 `04:02:05..04:02:20Z` 独立完成 613 次 public metadata API（42 Calendar、571 Session），
+  SDK RPC dispatch 575 次；无 retry、OHLCV、DB 或 Canonical 写入。source evidence hash
+  `32c49db5713229aa290e1e4db734cc770390c6e8a96d62ac7634c3eb9b5a0a77`，目录
+  `/private/tmp/newow-au-source-isolated-20260909-re136gmd/`。这不是旧失败批次的逐请求轨迹；旧批次已执行数仍未知。
+  173 个候选中 168 个日期获得夜盘正证据；其余 `2022-04-06/05-05/06-06/09-13/10-10` 未更正。
+  `04:14:31..04:14:32Z` 精确将 168 个 SHFE Calendar 的 `has_night_session` false→true，一次 commit、
+  独立只读 readback verified，其他字段不变；不重复原 id46796 更正。plan hash
+  `23c252c9d5d779ad3342b2bd768a6878c3edb33e7600a7420896b90a89406978`，结果
+  `/private/tmp/newow-au-calendar-batch-20260909-9tu4f_4f/apply-result.json`。
+- 更正后 fresh plan 与保存响应逐项核对，通过原生 snapshot 校验；`04:22:16..04:22:18Z` 再一次提交
+  102 条 SHFE 非交易日 Calendar 与黄金 196 天的 779 条 Session，共 881 行，保留既有 200 天 Session。
+  本次无 Calendar UPDATE、RQData 或 Canonical 写入、无 retry；独立只读回读一致，五合约本批范围的
+  Calendar/Session 缺口均为 0。plan `aa8c8e3148181c54dfbb140083a60ff5757177ff14f45a590fb45e0c015e28b8`，
+  snapshot `cd497e3249ba674b5a7a5d281f6e166bd94b59eff98e05758bb5961ff07e1af0`，结果
+  `/private/tmp/newow-au-metadata-insert-20260909-one/apply-result.json`。
+  上述两次 mutation 执行代码基线 `951d310df7bba7ac95597f1c77c658afac231be6`；168 更正包装器隔离测试
+  9 passed，原生 bounded metadata 本轮 60 passed，独立 Review 通过。这些测试不证明页面恢复。
+- 本轮只读核实五项 installed/loaded Runtime 同为 `v1.10.5@cdd72d750`，API/Web/Live/Alert running、
+  After-market loaded、当前 not running，未发现旧 v1.10.4 根进程引用；本任务未重复切换。随后截至 `2026-09-08T07:00:00.000001Z`
+  的 AU 真实矩阵审计返回 `PREFLIGHT_FAILED`，结果文件为空，仅保留通用错误码，不能声称矩阵已完成或定位真实原因。
+  失败证据 `/private/tmp/newow-au-post-metadata-20260909-one/baseline.jsonl`；已停止外部操作、未重试。
+  离线复现旧包装器不能序列化有效计划的 date 对象；预备入口增加类型序列化与安全 phase/error-type 记录，
+  离线 3 passed，尚未执行。后续须新的单次只读审计意图，再据完整依赖冻结行情范围；黄金历史行情补齐、
+  真实矩阵与 8010/5174 浏览器验收仍未完成，未启动预览。所有临时 evidence 使用前须检查存在与完整性。
+
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
   消费：使用 `79c59ccb4` 受限入口，仅将该行夜盘标志更正为 `true`，其他字段不变，提交后独立只读核验通过。
   本次 `database_writes=1`，`provider_requests=0`、`session_writes=0`、`canonical_writes=0`，无重试。
   精确 plan hash `2384a9cc382c94fb1616d0f508006fd374b3a6b6c6673c5823ff301e574749a7`；
   原结果 `/private/tmp/au-calendar-apply-20260909-zQDruw/result.json`（临时 evidence 不保证长期存在）。
-  单键更正为 `COMPLETED`，不代表 Newow 整体恢复：缺失 Calendar/Session 插入与历史行情补齐尚未开始。
+  单键更正为 `COMPLETED`，不代表 Newow 整体恢复；其后本批 Calendar/Session 进展见上文，历史行情补齐仍未开始。
   独立规范/需求 Review 无剩余阻塞；完整后端与 engineering 非隔离回归合计
   `2967 passed, 16 skipped, 28 deselected`，另有单键隔离 PostgreSQL `7 passed`，
-  Ruff/Mypy/OpenSpec/secret/diff 通过。旧批次计划已因前像变化失效，其他 173 个候选日期尚未确认冲突；
-  后续查询或写入须重新核对范围并取得新的单次执行意图，不自动重跑旧 613 次查询。
+  Ruff/Mypy/OpenSpec/secret/diff 通过。旧批次计划已因前像变化失效；当时剩余的 173 个候选日期已由上文新来源审计区分。
+  旧 613 次查询与旧单键更正授权均已消费，后续操作仍须重新核对范围，不自动重跑。
   不授权其他日期、RQData、Canonical、发布或 Runtime 切换，也不自动逆向恢复旧标志。具体边界见 `docs/DATA_CENTER.md`。
 
 - P6工程已集成并发布，产品仍为 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`。
