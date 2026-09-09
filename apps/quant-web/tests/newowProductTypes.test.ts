@@ -343,6 +343,57 @@ test('validates explanation context identities and comparator result identities 
   assert.throws(() => normalizeNewowProductResponse(nonFinite, { ...expected, section: 'comparator' }), /integer/)
 })
 
+test('preserves unavailable comparator owner segments with fewer than 20 bars and no computed windows', () => {
+  const wire = insufficientComparatorWire()
+  const response = normalizeNewowProductResponse(wire, { ...expected, section: 'comparator' })
+  assert.equal(response.status.status, 'unavailable')
+  assert.equal(response.value?.result?.value?.segments[0]?.source_bars.count, 6)
+  assert.deepEqual(response.value?.result?.value?.segments[0]?.results, [])
+  const panel = resolveNewowPanelRenderState('unavailable', response, null)
+  assert.equal(panel.showValue, false)
+  assert.match(panel.message, /当前物理合约区段不足 20 根 Bar/)
+  assert.match(panel.message, /NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS/)
+  assert.doesNotMatch(panel.message, /DATA_CONFLICT|NEWOW_RESPONSE_INVALID|加载失败/)
+})
+
+test('insufficient comparator status cannot hide computed values, a full source, or malformed identity', () => {
+  for (const mutate of [
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.source_bars.count = 20 },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.status.status = 'ready' },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.status.evidence_status = 'ACTIVE_CODE_VERIFIED' },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.status.reason_code = 'NEWOW_OTHER_UNAVAILABLE' },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.ranked_windows.push(4) },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.results.push(comparatorWire().comparator.value.result.value.segments[0]!.results[0]!) },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.identity.product = 'rb' },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.source_bars.count = Infinity },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.frequency = '60m' },
+  ]) {
+    const wire = insufficientComparatorWire()
+    mutate(wire)
+    assert.throws(() => normalizeNewowProductResponse(wire, { ...expected, section: 'comparator' }))
+  }
+  const ready = comparatorWire()
+  ready.comparator.value.result.value.segments[0]!.results = []
+  assert.throws(() => normalizeNewowProductResponse(ready, { ...expected, section: 'comparator' }), /candidate_windows/)
+})
+
+function insufficientComparatorWire() {
+  const wire = comparatorWire()
+  const result = wire.comparator.value.result
+  const status = { status: 'unavailable', evidence_status: 'RESEARCH_EVIDENCE_ONLY', reason_code: 'NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS' }
+  const segment = result.value.segments[0]!
+  return {
+    ...wire,
+    comparator: { ...wire.comparator, status, value: {
+      ...wire.comparator.value,
+      result: { ...result, ...status, value: { ...result.value, segments: [{
+        ...segment, status, source_bars: { ...segment.source_bars, count: 6 },
+        results: [] as typeof segment.results, ranked_windows: [] as number[],
+      }] } },
+    } },
+  }
+}
+
 export function expectedIdentity(strategy: 'trend' | 'oscillation' | 'main_rise' = 'trend', frequency: '1w' | '1d' | '60m' = '1d') {
   return { product: 'jm', strategy, frequency, seriesKind: 'actual_dominant' as const }
 }

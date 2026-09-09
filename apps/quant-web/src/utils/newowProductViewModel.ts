@@ -353,6 +353,10 @@ export function resolveNewowPanelRenderState(
         staleAt: null,
       }
     case 'unavailable':
+      if (error === null && responseReason === 'NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS') {
+        return { showValue: false, message: `${reason}。`, staleAt: null }
+      }
+      return failedPanelState(reason)
     case 'busy':
     case 'cancelled':
       return failedPanelState(reason)

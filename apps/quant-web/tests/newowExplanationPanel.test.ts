@@ -175,6 +175,31 @@ test('explanation component renders evidence gaps and comparator in a separate t
   app.unmount()
 })
 
+test('comparator renders a natural insufficient-owner boundary without a conflict or computed table', async () => {
+  const Panel = await loadComponent()
+  const comparator = comparatorResponse()
+  comparator.status = { status: 'unavailable', evidence_status: 'RESEARCH_EVIDENCE_ONLY', reason_code: 'NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS' }
+  Object.assign(comparator.value!.result!, comparator.status)
+  const segment = comparator.value!.result!.value!.segments[0]!
+  segment.status = comparator.status
+  segment.source_bars.count = 6
+  segment.results = []
+  segment.ranked_windows = []
+  const Host = defineComponent({ setup: () => () => h(Panel, {
+    response: null, lifecycle: 'not_requested', error: null,
+    comparatorResponse: comparator, comparatorLifecycle: 'unavailable', comparatorError: null,
+  }) })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  await nextTick()
+  const panel = findNode(root, node => node.props['data-testid'] === 'newow-comparator-panel')!
+  assert.match(nodeText(panel), /当前物理合约区段不足 20 根 Bar/)
+  assert.doesNotMatch(nodeText(panel), /DATA_CONFLICT|RESPONSE_INVALID|加载失败/)
+  assert.equal(findNode(panel, node => node.type === 'table'), undefined)
+  app.unmount()
+})
+
 test('workspace uses a disclosure and dialog while keeping one selected signal authority', () => {
   const source = readFileSync(workspaceUrl, 'utf8')
   assert.match(source, /:aria-expanded="detailsOpen"/)
