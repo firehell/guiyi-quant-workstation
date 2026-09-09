@@ -456,13 +456,23 @@ class DatabaseCoverageSource:
         through: date | None = None,
     ) -> tuple[SessionWindow, ...]:
         """返回月内 SessionWindow 列表，供 derived 聚合对齐会话边界。"""
-        lower = max(date(year, month, 1), self.dataset_start(key))
+        lower = date(year, month, 1)
         upper = _month_end(year, month)
         if through is not None:
             upper = min(upper, through)
+        if key.kind is DatasetKind.CONTRACT:
+            fact = MarketCatalog(self.session, PROJECT_ROOT).contract_fact(
+                key.symbol, key.series_or_contract
+            )
+            if key.frequency in INTRADAY_FREQUENCIES:
+                lower = max(lower, RQDATA_INTRADAY_HISTORY_START)
+            days = self.contract_trading_days(fact, lower, upper)
+        else:
+            lower = max(lower, self.dataset_start(key))
+            days = self._trading_days(key.symbol, lower, upper)
         return tuple(
             window
-            for day in self._trading_days(key.symbol, lower, upper)
+            for day in days
             for window in self._sessions_for_day(key.symbol, day)
         )
 

@@ -73,6 +73,12 @@ Event 或通知。月分区仍依次经过 staging 与完整发布校验。任�
 - **WHEN** operator 指定 `--frequency 60m`，且目标月的同 physical contract Canonical `1m` 完整
 - **THEN** 计划只包含缺失 `60m` 派生目标；获准 apply 从这些 `1m` 聚合，零 provider 请求，不修改其它周期或合约
 
+#### Scenario: Contract warm-up sessions precede the active history floor
+
+- **WHEN** 同 physical contract 的合法分钟来源早于 active history floor
+- **THEN** 派生 Session 查询 MUST 按该合约生命周期、`through` 与 `RQDATA_INTRADAY_HISTORY_START` 解析完整逐日 Calendar/Session，不因 active history floor 丢弃这些窗口
+- **AND** 缺失逐日 metadata MUST fail closed；`continuous` 的 Session 查询仍使用既有维护起点
+
 #### Scenario: Bounded scope cannot reuse another scope hash
 
 - **WHEN** operator 对 `60m` apply 提供默认七周期或 `15m` 的 plan hash，即使两计划均无目标

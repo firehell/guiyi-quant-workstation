@@ -129,6 +129,10 @@ MainContractMap、Redis Live、Rule、Scope、Event 或 notification。任一显
 必须立刻停止该 contract 的后续 target。仅当同族同月存在待补 `1m` 目标时，才在开始派生前推迟到源发布后；
 已经开始的派生/发布失败不得按缺源错误码推迟重试。额度耗尽返回 `partial`，不得报告 `passed`。分区失败可明确部分成功，不能自动重试。
 
+同物理合约派生使用的 Session 窗口与 warm-up coverage 一致：按上市日、到期日前一日和 `through`
+限制，日内数据另受 `RQDATA_INTRADAY_HISTORY_START` 限制，不套用 active history floor。
+Calendar/Session 必须具备逐日权威事实，缺失即失败；`continuous` Session 查询仍保留既有维护起点。
+
 warm-up 只读结果的 `scope_diagnostics` 保留整个 frequency scope 的逐分区有界原因及是否为计划目标，
 包括不缺 endpoint 但含原始非正价格的 source companion。该诊断不改变维护目标、apply 规则或既有 plan hash。
 

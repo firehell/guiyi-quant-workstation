@@ -2028,3 +2028,81 @@ def test_calendar_context_start_is_previous_natural_month() -> None:
     assert _calendar_context_start(date(2023, 1, 1)) == date(2022, 12, 1)
     assert _calendar_context_start(date(2023, 6, 19)) == date(2023, 5, 1)
     assert _calendar_context_start(date(2025, 7, 8)) == date(2025, 6, 1)
+
+
+def _contract_session_coverage(tmp_path, listed, expired, metadata_start):
+    session, starts = _session(tmp_path)
+    contract = session.scalar(select(Contract).where(Contract.contract_code == "JM2509"))
+    assert contract is not None
+    contract.listed_date = listed
+    contract.expired_date = expired
+    for model in (TradingCalendar, TradingSession):
+        for row in session.scalars(select(model)):
+            session.delete(row)
+    session.flush()
+    through = expired - timedelta(days=1)
+    _add_provider_calendar_facts(session, metadata_start, through)
+    days = tuple(
+        metadata_start + timedelta(days=offset)
+        for offset in range((through - metadata_start).days + 1)
+        if (metadata_start + timedelta(days=offset)).weekday() < 5
+    )
+    _add_date_scoped_session_facts(session, days)
+    session.commit()
+    starts.write_text("product,window_start,note\njm,2000-01-01,test\n")
+    floor = tmp_path / "floor.txt"
+    floor.write_text("2023-01-01\n")
+    return session, DatabaseCoverageSource(session, starts, history_floor_path=floor)
+
+
+@pytest.mark.parametrize("through, expected_days", [
+    (date(2022, 3, 14), ()),
+    (date(2022, 3, 16), (date(2022, 3, 15), date(2022, 3, 16))),
+    (None, (date(2022, 3, 15), date(2022, 3, 16), date(2022, 3, 17))),
+])
+def test_contract_sessions_before_history_floor_use_lifecycle(
+    tmp_path, through, expected_days
+) -> None:
+    session, coverage = _contract_session_coverage(
+        tmp_path, date(2022, 3, 15), date(2022, 3, 18), date(2022, 3, 15)
+    )
+    key = DatasetKey("contract", "jm", "JM2509", "60m")
+
+    windows = coverage.sessions(key, 2022, 3, through)
+
+    assert tuple(window.end for window in windows) == tuple(
+        datetime.combine(day, time(9, 5), SHANGHAI) for day in expected_days
+    )
+    assert coverage.sessions(DatasetKey("continuous", "jm", "MAIN", "60m"), 2022, 3) == ()
+    session.close()
+
+
+def test_contract_sessions_respect_provider_intraday_history_start(tmp_path) -> None:
+    session, coverage = _contract_session_coverage(
+        tmp_path, date(2009, 12, 31), date(2010, 1, 6), date(2010, 1, 4)
+    )
+
+    windows = coverage.sessions(DatasetKey("contract", "jm", "JM2509", "60m"), 2010, 1)
+
+    assert tuple(window.end for window in windows) == (
+        datetime(2010, 1, 4, 9, 5, tzinfo=SHANGHAI),
+        datetime(2010, 1, 5, 9, 5, tzinfo=SHANGHAI),
+    )
+    session.close()
+
+
+@pytest.mark.parametrize("missing_model", [TradingCalendar, TradingSession])
+def test_contract_sessions_before_history_floor_reject_missing_metadata(
+    tmp_path, missing_model
+) -> None:
+    session, coverage = _contract_session_coverage(
+        tmp_path, date(2022, 3, 15), date(2022, 3, 18), date(2022, 3, 15)
+    )
+    missing = session.scalars(select(missing_model)).first()
+    assert missing is not None
+    session.delete(missing)
+    session.commit()
+
+    with pytest.raises(InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
+        coverage.sessions(DatasetKey("contract", "jm", "JM2509", "60m"), 2022, 3)
+    session.close()
