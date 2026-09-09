@@ -66,8 +66,8 @@
   单分区原子指针发布；提交失败不再覆盖旧文件，结果不确定时明确停批。实际验证：backend
   `2855 passed, 16 skipped, 21 deselected`、隔离 PostgreSQL `6 passed`（含进程退出与事务可见性）、
   engineering `74 passed`，Ruff/Mypy/OpenSpec/secret/diff 通过，独立 Standards/Spec Review 无剩余阻塞。
-  状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；尚未在生产发布 hash URI。首次生产使用前须统一升级
-  消费者、停止旧 writer，并分别取得发布及 Runtime 切换授权；新指针产生后不得盲目回退旧读取代码。
+  工程已随 v1.10.5 发布并切换消费者；本日 AO/OI 已获准发布生产 hash URI，详见上节。
+  后续每批 Canonical 写入仍须独立单次意图及现役消费者/旧 writer 核对；不得回退旧读取代码。
   旧文件保留支持已有 reader，本次不执行文件回收或数据迁移。合同与命令分别见 `docs/DATA_CENTER.md`、`TESTING.md`。
 
 - v1.10.4 的 captured-source 恢复入口误解析 launchd `event triggers` 中的 `=> {` 嵌套块，
@@ -185,7 +185,26 @@
   Parquet 写入/物理回读或页面验收。完整离线报告
   `/private/tmp/newow-au-complete-source-20260909/validation.json` SHA256
   `ddae25495bf8e6dacc70973ad0edc4e22480256d49d0061b58ea1ffb60079fe2`。
-  首批全部源响应均已保留，后续不重查这 196 天；先决定新零成交日的口径，再规划受控 Canonical 发布及真实矩阵验收。
+  首批全部源响应均已保留，后续不重查这 196 天；当时等待新增零成交日口径，后续批准见下文。
+- Owner 随后明确允许本次黄金恢复的交易所日行情统一采用现行零成交日规则：仅 volume=0、
+  O/H/L 全零且同一行 close>0 时，用该 close 规范化 O/H/L；原始响应保持不变，其他异常仍停批。
+  该批准覆盖 AU2304 的 03-16、17、18、31 四日，不授权 Canonical/Catalog 正式写入。
+  来源范围/失败锁定/归一离线测试 `5 passed`，只读准备脚本独立 Review 完成。
+  `2026-09-09T05:35:49..05:35:50Z` 在 `a31962af3` 执行一次 fresh readonly preflight，
+  `fresh_readonly_plan` 阶段返回 `OperationalError / PREPARATION_STOPPED`，立即停止、未重试；
+  provider requests、DB/Canonical writes、Redis connections 均为 0。未保存异常原文，根因尚不确定，
+  不能把本机 5432 端口存在监听当成 DB 连接成功。失败结果与审查版本脚本保留在
+  `/private/tmp/newow-au-publication-prepare-20260909/result.json`、`prepare.py`。
+  同轮 launchd 只读检查五项 installed/loaded root+commit 均为 v1.10.5/cdd72d750，旧 v1.10.4 根
+  无相关进程 PID；After-market 为 not running、无 PID，不单凭此声明 idle 或整体 Runtime Ready。
+  随后仅离线构建获批候选：196 D1、41 W1、2022-03..12 的 20 个临时 Parquet 严格写入/读回通过，
+  完整 expected endpoints 来自已捕获 Calendar，重建 native plan hash 仍为
+  `9f4f789fc3cb0569bb43216c39d16f2b9f5cd8e60f1cb358ca4b14bf34853fad`；不是从候选 Bar 自证覆盖。
+  10 个源文件哈希不变。报告 `/private/tmp/newow-au-publication-prepare-20260909/offline-candidates.json`
+  SHA256 `4dbc6b94d4822d26688d519daa9e4a2c8e52717d08a93fb67cf5db60fc05ec79`。
+  该结果不含 fresh Catalog/Session 核对、正式发布或页面验收；本批发布准备仍被在线核对失败阻塞。
+  下一步仅申请一次带安全错误分类的本地 AU2304 只读诊断与相同精确计划核对，不重试旧脚本、不重查来源；
+  新诊断失败仍停，成功后才提交 20 分区的正式写入单次意图。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
