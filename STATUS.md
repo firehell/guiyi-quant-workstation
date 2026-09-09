@@ -141,7 +141,19 @@
   `9f4f789fc3cb0569bb43216c39d16f2b9f5cd8e60f1cb358ca4b14bf34853fad` 一致；独立 Review 已核验范围、
   日周去重与哈希。10 次调用仅是完整来源响应下的成功路径，必须用严格守卫拒绝缺日后的补充查询和越界调用。
   来源捕获守卫的 9 项离线测试通过，含缺日/重复/错合约及 timeout/GatewayError/PermissionDenied 单次派发，独立 Review 无代码阻塞；
-  首批来源捕获尚未执行，Canonical 发布、补齐后矩阵与浏览器验收仍待完成。后续真实操作须新的精确单次意图。
+  首批来源捕获随后按单次批准执行并停止，详见下文；Canonical 发布、补齐后矩阵与浏览器验收仍待完成。
+- `2026-09-09T04:57:42..04:57:43Z` 在 `a54c51476` 执行 source-only 计划
+  `e05dd542e8c35662a9cf0937bea5102ce7df350cc3bfd39089c2db7ac0107b91`，首个
+  `AU2304 / 2022-03-16..2022-03-25` 请求完整返回 8 个源交易日后触发 `SOURCE_NONPOSITIVE_PRICE`，立即停批。
+  实际 public API attempted/completed 均为 1，SDK RPC attempted/completed 均为 3（quota、type-list、日行情各 1）；
+  原计划剩余 9 次行情请求未开始，无 retry，DB/Canonical writes 与 Redis connections 均为 0。
+  结果 `/private/tmp/newow-au-history-plan-20260909/fetch-result.json`，逐请求事件同目录 `fetch-events.jsonl`；
+  原始 `source-01.json` SHA256 为 `345ac234c465cb17e4e420e51fe5122e62f876038a550be29c1248b13ac17e17`。
+  `2022-03-16/17/18` 三天均为 volume=0、open/high/low=0、close=400.12；其余五行 OHLC 均为正。
+  现行 DATA_CENTER 零成交日规则允许用同一行有效 close 规范化全零 O/H/L，但本任务明确禁止填补原始零价，
+  因而不能自动套用该规则写入或继续下载。仅离线生成三行前后对照并核验原响应未改动，见同目录
+  `zero-volume-comparison.json`；该对照不是授权、真实修复或页面恢复。原捕获计划的执行意图已消费，
+  后续须先明确这类零成交日的处理口径，再冻结尚未调用的范围；不重跑已取得的首个响应，不自动补取或发布。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
