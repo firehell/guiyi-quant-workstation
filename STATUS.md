@@ -418,14 +418,26 @@
   不套用日线零成交规范化。禁用 SDK 重试；失败立即停止；DB/Canonical/Redis=0。
   新来源诊断离线与独立 Review 均 `31 passed`，包含禁网下真实 SDK 五次 RPC 模拟路由、精确范围、
   额度拒绝、失败锁止和不填补异常来源测试；这些离线结果不证明分钟真实行情已恢复。
-  后续获准连续恢复已完成全部 227 个来源窗口捕获，共 2,361,630 行、0 重试，首窗已复用，不得重新查询。
-  18 合约 392 分区 staging 通过，其中 AU2306 的 22 分区已发布并独立回读；其余 17 合约 370 分区
-  被 automatic approval review 拒绝继续写入，未执行写入尝试。另 AU2304/AU2308/AU2310 共 62 分区
-  因 14 行 `total_turnover` 无法无损表示为 `Decimal(38,18)` 暂停，未执行修约。
-  536 个日/周分区的 before/after hash 一致；主图仍为 6/9，九个解释仍缺分钟输入，整体 `PARTIAL`。
-  统一证据为 `/private/tmp/au-newow-minute-recovery-20260909/execution-summary.json`，精确修约提案见同目录
-  `turnover-precision-proposal.json`。下一步完成本地预览故障修复与真实浏览器部分验收，并保留进程；
-  剩余发布待拒绝后的明确执行授权，修约待独立决策，不能宣称全页面或浏览器验收完成。
+  后续获准连续恢复完成全部 227 个来源窗口捕获，共 2,361,630 行、0 重试，首窗复用，不重新查询。
+  AU2306 的 22 个分区先行发布并回读；其余目标曾因审批拒绝、14 行成交额精度和一次零提交维护锁冲突暂停。
+  这些历史暂停已由下述明确批准后的续传关闭；不抹去原始执行记录。
+
+- 2026-09-10 黄金牛哇本地真实预览恢复 `COMPLETED`：owner 明确批准清单内 14 行 `total_turnover`
+  按 `ROUND_HALF_EVEN` 保留 18 位小数，并连续发布剩余 432 个分区及页面复验；本轮零新增来源查询、零重试。
+  原始来源保留，OHLC、成交量、持仓量及交易日不变；20 合约 432 分区均提交并独立回读通过。
+  加上 AU2306 的 22 分区，原提案 21 合约共 454 分区（227个1m＋227个60m）全量严格MDS回读通过：
+  1m 2,394,930 根、60m 47,526 根；21合约native剩余目标为0。454个原始源文件、536个日周分区及36个原目标文件不变。
+  数据回读 SHA `acdc6f5320b796f641057b86b3fe13f67f372f6f717546e3be2eb353f241aae6`。
+  本轮另修复 Web 把共享 trend 综合上下文误当所选策略身份的解码错误，消除解释请求清空主图并使参考定位失败的问题；
+  部分解释证据不足有真实综合值时不再误报整层不可用。两个修复均先失败回归后验证，独立Review通过；
+  全Web 518 passed/1 skipped，typecheck/build、OpenSpec 9项、secret scan0及diff检查通过。
+  干净候选 `e79e82f42a174fb6fa7dd93e9a73c7f12a8f8118` 的 API8010/Web5174 使用固定历史截点 `2026-09-08T07:00:00.000001Z`，非实时；
+  无mock业务请求的真实浏览器逐一完成九组合主图、四副图、解释、参考统计窗口、历史展开/定位及比较器操作，技术与视觉验收通过。
+  周线默认本周未完成保留，最近完整周2026-09-04参考交易可查看；震荡周线AU2610仅6根完整周Bar，比较器明确不足20根。
+  九组合共享综合解释的三周期上下文与六项结果可用，目标/吸筹及原页面oracle等既有原始证据缺口仍保持 `EVIDENCE_REQUIRED`，
+  本次不宣称所有解释证据或全产品精确parity完成。统一证据 `/private/tmp/au-newow-minute-recovery-20260909/delivery.md`、
+  `completed-data-readback.json`、`browser-acceptance.json` 及 `browser-completed/`；预览进程身份/停止方式见 `preview-processes-accepted.json`。
+  本任务无剩余补数或浏览器Gate，停在本地预览；不涉及 Calendar/Session/MainContractMap、Redis、Scope、通知、账户、main/tag/release或正式Runtime变更。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
