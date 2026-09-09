@@ -156,7 +156,7 @@
   显示值分别为日23.48/20.85、周24.96/18.68。batch虽返回prev_close=21.5，详情页复制字段未保留它，
   因此previous-close activation、原页面时序及期货owner/segment仍为`EVIDENCE_REQUIRED`，现有公式无需修改。
   两项固定输入7个输出连续两轮哈希一致，原始证据仅存Git外；84项定向测试、18项工程一致性、
-  9项OpenSpec、secret scan与diff check通过，独立Review待本条提交后执行。
+  9项OpenSpec、secret scan与diff check通过；独立Standards/Spec复审均无发现，允许仅文档集成develop。
   其他组合、综合解释逐值parity、旧版个股bug因果修复及无刷新自动隐藏仍 `EXTERNAL_GATE_PENDING`。
   fixture 与旧版证据不证明新版 parity。本轮未发布、切换 Runtime 或修改策略公式、收益口径、生产数据与通知。
 
