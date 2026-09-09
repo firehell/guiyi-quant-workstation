@@ -10,7 +10,7 @@
 长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。已完成的计划、逐次操作、旧候选矩阵及
 逐合约结果从 Git history、tag、PR 和原 evidence 追溯；历史授权不授权重跑。
 
-## v1.10.5 已发布并切换（AO/OI 历史输入缺失已关闭）
+## v1.10.5 已发布并切换（苏冰历史输入故障与自然推送已闭环）
 
 - 独立候选分支 `codex/subing-input-release-candidate` 基于 `0eca85209008e036626b37eb5563fc504dba12bc`；
   API/Web/Python/lock 版本身份与版本一致性断言为 `1.10.5`；已审候选为 `0d2273445637a6dd5cfef2a45c4f1242276952c5`。
@@ -32,10 +32,26 @@
   与公开 MDS 查询一致；44,210 个非目标分区的 Catalog 指纹未变。36 个目标本地独立证据复核通过。
   两合约随后只读重算均 exit 0、剩余目标为 0；13:00:24 CST 的 SuBing readiness exit 0、passed、60/60 ready，
   AO2701/OI2701 各自 historical_15m_gap、live_1m_gap、live_15m_gap 均为 0，error_codes 为空、scope_enabled=true。
-  本次限定历史输入缺失已关闭；自然 Event/通知与整体 `RUNTIME_READY` 仍是独立验收，不补评、不补发。
+  本次限定历史输入缺失已关闭；修复后的自然评估、Event 与 owner 微信收件已完成下述验收。
+  整体 `RUNTIME_READY` 的现版本自然盘后验收仍独立保留，不补评、不补发。
   首次 readiness 临时命令遗漏 launcher 的 Redis 认证归一化，返回 60 个 INPUT_DIAGNOSIS_UNAVAILABLE；
   本地确认客户端缺少认证后，仅按既有 launcher 方式修正临时调用环境并通过只读检查，未修改生产配置或重跑 apply。
   已产生新 hash URI，不得回退只支持固定 URI 的 v1.10.4。
+- 2026-09-09 午后自然验收及 owner 收件确认完成，状态为 `COMPLETED`，
+  `SUBING_WECHAT_DELIVERY_CONFIRMED / SUBING_NATURAL_CLOSURE_COMPLETE`，归属 exact
+  `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`。14:03:17 CST 的只读核验中，
+  严格 Runtime 身份与双心跳通过，60 品种 TRADING/subscribed，苏冰自然评估已到 14:00；
+  `last_failure_at` 仍为 `2026-09-09T03:30:05.449850Z`，本轮观察未新增失败，旧记录未清除。
+  14:03:46 CST 的 readiness exit 0、passed、60/60 ready；AO2701/OI2701 截至 14:00 的
+  historical_15m_gap、live_1m_gap、live_15m_gap 均为 0，error_codes 为空、scope_enabled=true。
+  补齐后已自然生成四条苏冰 Event：#143 EC2610 sell（13:45），#144 EG2610 sell、#145 L2701 sell、
+  #146 PT2610 buy（后三条 bar_end 均为 14:00 CST）。#146 的 detected_at/notification_attempted_at
+  为 `2026-09-09T06:00:16.478341Z`，与 Runtime `last_provider_accepted_at` 精确匹配；
+  owner 在本任务针对该 PT2610 14:00 买入提醒明确回复“收到了，你可以闭环了，更新下文档”。
+  该确认只证明 owner 收到这条通知，不声明另外三条或 Topic 其他成员实际送达。
+  只读证据索引为 `/private/tmp/subing-fail-review-20260909-1403-{runtime,readiness,events}.json`；
+  以上保存关键事实，临时文件再次使用前须检查存在与完整性。本次仅更新文档，未执行生产 failure acknowledgment、
+  修改 Scope、重跑补齐或补发通知；苏冰本次故障闭环不替代 v1.10.5 自然盘后验收。
 
 ## Release、Runtime 与 Scope
 
@@ -43,9 +59,9 @@
 |---|---|
 | 正式 Release | `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`，PR #359 于 `2026-09-09T03:53:57Z` 合入 main；tree `11704da35b2eccf62bdddc330eb0e42ea5930247`，annotated tag object `71bad4102a9be883ba341c7dd27f0e98f59dab41`。GitHub Release 于 `2026-09-09T03:55:28Z` 发布，non-draft、non-prerelease；远端 main、peeled tag 与 Release target 一致。API/Web/Python/lock 为 1.10.5。 |
 | 发布验收 | 已审候选 `0d2273445637a6dd5cfef2a45c4f1242276952c5` 与发布 tree 完全一致；验证矩阵见上节。本轮重新核验四处版本、远端 main、annotated tag 及 Release target；未重复运行已通过且输入未变的全套测试。 |
-| Runtime | `2026-09-09 12:09:27 CST` 严格读回：五项 launchd 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；API/Web/Live/Alert running，After-market idle；Market/Alert marker enabled，Live/Alert 新鲜心跳同根同 commit 且 `recovery_guard_enabled=true`。切换完成、未使用回退；自然 completed Bar 验收待完成，不声明 `RUNTIME_READY`。 |
+| Runtime | `2026-09-09 12:09:27 CST` 严格读回：五项 launchd 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；API/Web/Live/Alert running，After-market idle；Market/Alert marker enabled，Live/Alert 新鲜心跳同根同 commit 且 `recovery_guard_enabled=true`。切换完成、未使用回退；本日 14:03 的自然 completed Bar 核验通过，随后 owner 确认苏冰微信收件，详见上节；现版本自然盘后验收仍待完成，不声明整体 `RUNTIME_READY`。 |
 | Runtime 工作树 | 现役 detached v1.10.5 根与原 v1.10.4 根均保留且干净。新根离线安装锁定 Python/Web 依赖并 build；render-only 与三个 installer 模式均一次通过，未重试。旧根目前无五项 launchd 引用；未清理，新格式数据发布后不可将其作为兼容回退根。 |
-| 最近 health | `2026-09-09 12:49:21 CST`：补齐后 API 1.10.5、Runtime health ok/readonly，Live/Alert 新鲜心跳仍为现役 exact root/commit，recovery guard 开启，严格 captured Runtime 身份 verifier 通过。60 品种 BREAK、subscribed_count=0、last_bar_at=null；SuBing 保留切换前 `last_failure_at=2026-09-09T03:30:05.449850Z`。13:00:24 的独立 readiness 60/60 通过，两合约历史输入缺失关闭；旧 failure 时间戳未清除，不以 Rule error_type=null 冒充自然验收。 |
+| 最近 health | `2026-09-09 14:03:17 CST`：API 1.10.5、Runtime health ok/readonly，严格 captured Runtime 身份 verifier 通过；Live/Alert 新鲜心跳同现役 exact root/commit，recovery guard 开启。60 品种 TRADING、subscribed_count=60，Live 与处理水位到 14:03，苏冰自然评估到 14:00。14:03:46 的 readiness 60/60 通过，AO/OI 三类输入缺口均为 0。最新 #146 自然 Event 与 provider acceptance 匹配，owner 已确认对应微信收件；苏冰旧 failure 时间戳保留，无新增失败记录。本次结论以这些带时间证据为准。 |
 | Database | 最近已记录 production readback 为 Alembic `20260903_0045`；session anchor repair 已发布。旧全库 Dataset/分区/行数快照不作为当前总量。 |
 | Market Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | `2026-09-07T06:49:43Z` 审计：HTDY 仅 `jm × 5m/15m`；SuBing 全部60品种 × 15m，两 Rule enabled。HTDY“焦煤15m和5m，其余59品种60m”共61对仍仅是未应用目标。 |
@@ -76,7 +92,8 @@
   `76 passed`、调用链 `249 passed / 11 skipped`、engineering `18 passed`，两轴独立 Review clean。
   同份实机脱敏输出旧解析器失败、新解析器通过；未从开发根绕过 exact-tag Gate 运行恢复入口。
 - 修复已发布并进入现役 v1.10.5；本轮真实 launchd、exact annotated tag 与新鲜双心跳的严格身份校验通过。
-  两合约历史输入修复已按上节真实证据关闭；自然苏冰评估仍待证据，不清除旧 failure，不将身份 Gate 通过视为业务闭环完成。
+  两合约历史输入修复及修复后的自然苏冰评估、Event/provider acceptance、owner 微信收件
+  均已按上节证据闭环；旧 failure 保留，整体现版本自然盘后验收仍独立待完成。
 - 2026-09-08 19:26:46..19:26:57 CST 只读确认 RS2609 当日 Canonical 五周期
   `1m/5m/15m/30m/60m` 为 `225/45/15/8/5` 根，原五根日内目标均存在。
   当日 Live 已由自然盘后清理，恢复水位/circuit null，provider attempt count 仍为3。
