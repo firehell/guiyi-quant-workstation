@@ -39,3 +39,18 @@ RQData 1m Session 的 provider start 是首根 `bar_end` 标签；MetadataSynchr
 #### Scenario: 原子月替换
 - **WHEN** 校验通过的新月文件发布
 - **THEN** Catalog 只发现该 Dataset 的唯一当前月分区；新 URI 只在现有事务 register/flush、真实 MarketDataService strict-read 后 commit 才可见
+
+### Requirement: 已确认 AU 单键 Calendar 冲突更正
+系统 SHALL 提供默认只读、零 provider 的受限入口，只允许已核实的 SHFE／2022-03-16 Calendar
+id=46796 的 `has_night_session` 从 false 更正为 true。源响应内容、来源合约/日期、输入文件与
+旧事实 MUST 精确绑定；不得扩展为任意日期/交易所编辑，不得修改其他 Calendar 字段或补入 Session。
+Apply MUST 另获单次授权、匹配 dry-run hash、锁内核对旧事实，一次提交后独立只读验证。
+任何提交不确定 MUST 明确停止、不自动重试；已有事实或证据变化 MUST 使旧计划失效。
+
+#### Scenario: 单键冲突处理
+- **WHEN** 已获准捕获的 AU2304 时段证明该日期有夜盘，而本地已核实前像为无夜盘
+- **THEN** dry-run 仅规划一个字段更正，零数据库写入；真正 apply 仍等待新的单次执行意图
+
+#### Scenario: 已有事实漂移
+- **WHEN** apply 时 Calendar、来源身份或当日 Session 与计划不一致
+- **THEN** 在任何写入前拒绝，不覆盖并发事实，也不重新请求 RQData

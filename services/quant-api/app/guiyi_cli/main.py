@@ -298,6 +298,10 @@ def _run_data(
     newow_readiness_builder=None,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
+    if args.data_command == "au-calendar-correction":
+        from app.market_data.au_calendar_correction import run_correction
+
+        return run_correction(args, session_factory)
     if args.data_command == "metadata-repair":
         return run_metadata_repair(args, session_factory)
     if args.data_command == "newow-readiness":

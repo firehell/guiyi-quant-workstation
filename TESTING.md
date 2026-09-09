@@ -65,6 +65,29 @@ uv run --project services/quant-api guiyi data metadata-repair --phase apply \
 未知夜盘证据的 snapshot 为 blocked（退出 1），不能 apply。成功 apply 后旧 plan 失效，必须只读 replan，
 不自动重试、覆盖或删除。已有 Session 日期只保留，不把未验证的完整性计为修复通过。
 
+AU 已确认单键 Calendar 更正（独立于 insert-only metadata-repair）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_au_calendar_correction.py
+# 仅显式本机隔离库 guiyi_calendar_isolated_test，端口不得为生产 5432；不读取 DATABASE_URL。
+GUIYI_ISOLATED_CALENDAR_DATABASE_URL='postgresql+psycopg://postgres@127.0.0.1:15436/guiyi_calendar_isolated_test' \
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -m isolated_postgresql \
+  services/quant-api/tests/data_foundation/test_au_calendar_correction_postgresql.py
+# 真实只读连接也须在本轮授权内。输入是已保存的诊断 JSON（source_response），不是新查询。
+uv run --project services/quant-api guiyi data au-calendar-correction \
+  --evidence /absolute/source-response.json --expected-evidence-sha256 EXACT_FILE_SHA256
+# 下面仅是用法；未取得新的单次生产写入意图时禁止执行。
+uv run --project services/quant-api guiyi data au-calendar-correction \
+  --evidence /absolute/source-response.json --expected-evidence-sha256 EXACT_FILE_SHA256 \
+  --expected-plan-sha256 EXACT_DRY_RUN_SHA256 --apply
+```
+
+隔离验证覆盖范围/旧值/来源哈希/身份/Session 漂移、只读事务、失败回滚、提交不确定、独立读回，
+PostgreSQL 验证增加真实 writer 锁和事务可见性。真实 dry-run 不执行 apply；不带 provider 重试能力。
+
 Newow dependency/readiness 定向 fixture 验证（不连接生产数据库，不下载）：
 
 ```bash

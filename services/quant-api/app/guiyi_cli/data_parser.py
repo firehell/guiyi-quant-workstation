@@ -25,6 +25,14 @@ class JsonArgumentParser(argparse.ArgumentParser):
 
     def parse_args(self, args=None, namespace=None):
         result = super().parse_args(args, namespace)
+        if getattr(result, "data_command", None) == "au-calendar-correction":
+            if re.fullmatch(r"[0-9a-f]{64}", result.expected_evidence_sha256) is None:
+                self.error("exact evidence hash required")
+            if result.apply:
+                if not isinstance(result.expected_plan_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", result.expected_plan_sha256) is None:
+                    self.error("apply requires exact plan hash")
+            elif result.expected_plan_sha256 is not None:
+                self.error("dry-run does not accept apply hash")
         if getattr(result, "data_command", None) == "metadata-repair":
             if result.phase == "plan":
                 if not result.targets or result.plan or result.snapshot or result.apply or result.expected_plan_sha256 or result.expected_snapshot_sha256:
@@ -103,6 +111,12 @@ def add_data_commands(
     readiness.add_argument("--timeout-seconds", type=int, default=300)
 
     commands.add_parser("after-market")
+
+    correction = commands.add_parser("au-calendar-correction", allow_abbrev=False)
+    correction.add_argument("--evidence", required=True)
+    correction.add_argument("--expected-evidence-sha256", required=True)
+    correction.add_argument("--expected-plan-sha256")
+    correction.add_argument("--apply", action="store_true")
 
     metadata = commands.add_parser("metadata-repair", allow_abbrev=False)
     metadata.add_argument("--phase", choices=("plan", "fetch", "apply"), default="plan")

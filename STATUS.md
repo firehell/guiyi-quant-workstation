@@ -70,6 +70,14 @@
 
 ## Newow 产品证据与开发候选
 
+- 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
+  id=46796 却为 `has_night_session=false`。单键更正入口与真实只读 dry-run 已完成，状态
+  `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；未执行生产 apply，不代表 Session 或行情缺口已关闭。
+  独立规范/需求 Review 无剩余阻塞；完整后端与 engineering 非隔离回归合计
+  `2967 passed, 16 skipped, 28 deselected`，另有单键隔离 PostgreSQL `7 passed`，
+  Ruff/Mypy/OpenSpec/secret/diff 通过。真实写入仅允许在新的单次意图下按最新精确 hash 执行；
+  不授权其他日期、RQData、Canonical、发布或 Runtime 切换。具体边界见 `docs/DATA_CENTER.md`。
+
 - P6工程已集成并发布，产品仍为 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`。
   [P6历史只读证据](docs/research/newow-v3.2.82/P6_TRUSTED_CLOSURE.md)归属v1.10.0：首30品种两轮及rb45项
   均HTTP500，`REAL_WORKSTATION_MDS_REQUEST_PATH=MEASURED`，成功路径性能未验收。

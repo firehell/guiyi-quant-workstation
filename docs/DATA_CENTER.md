@@ -265,6 +265,27 @@ segment identity 与换月状态隔离，不得根据未来 `end_trading_day` �
 
 ## 6. CLI 与外部操作
 
+`au-calendar-correction` 是单键来源冲突的显式例外，不是通用 Calendar 编辑器，也不改变下面
+`metadata-repair` 的 insert-only 语义。它只接受先前获准取得的 AU2304／2022-03-16 交易时段响应，
+以代码冻结的源内容 SHA-256 和 CLI 显式文件 SHA-256 双重绑定；本地输入限当前用户普通文件、
+64 KiB，不接受链接、重复 JSON 键或读取期间变化。复用既有 Session 规范化，绝不查询 provider。
+唯一目标是 `trading_calendars(id=46796, exchange_code=SHFE, trade_date=2022-03-16)` 的
+`has_night_session: false → true`。旧 Calendar 全字段必须匹配已核实的前像，AU2304 生命周期、
+AU/SHFE 身份、活动状态和时区须有效，且该日期仍无 SHFE Session；不插入 Session 或其他元数据。
+
+默认 dry-run 使用 fresh read-only 事务、60 秒预算、finally rollback，plan hash 绑定输入证据、
+数据库身份及相关 Calendar/Contract/Instrument/Exchange 完整前像。`--apply` 还须精确 plan hash 和
+新的单次真实写入意图；在新事务中以 5 秒 lock timeout 锁定上述五张 metadata 表、重新规划比对，
+只修改这一字段，flush/核对后一次 commit。短事务会暂时阻塞这五表的其他 writer，不阻塞普通读取；
+必须在执行计划中向 owner 明示共享 SHFE 历史 Calendar 消费者影响，不把它表述成 AU 私有数据。
+
+提交前失败 rollback；进入 commit 后任意异常一律 `COMMIT_OUTCOME_UNKNOWN`，不重试或自动逆向
+恢复。commit 返回后使用独立只读事务核对前像仅该字段改变；读回失败为
+`COMMITTED_READBACK_UNVERIFIED`，不能报成功。已更正旧值使旧计划失效，不提供自动 NOOP 或撤销。
+如需纠正错误执行，须另行只读核对并批准新的前向处置，不能把已证实错误的 false 自动写回。
+该入口无 RQData、Canonical、MainContractMap、Runtime、Scope、通知写入；完成单键更正不意味着
+其他历史日期、Session 或 Newow 历史行情已修复。
+
 `metadata-repair` 是独立的 missing-key 三阶段入口：默认 plan 只读 Catalog；fetch 和 apply 分别要求
 显式 phase、对应内容 hash 与单次外部执行意图。范围只来自最多 64 个明确的 active
 `symbol/contract/through` 目标，Contract、Instrument、Exchange 和生命周期必须已有权威事实；
