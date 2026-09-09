@@ -17,6 +17,52 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 NOTIFICATION_CONFIG_ENV = "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"
 
 
+def test_weekly_render_is_saturday_and_install_only_loads_weekly_without_shared_launcher_write(tmp_path):
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text('#!/bin/sh\n[ "$1" = print ] && exit 1\nprintf "%s\\n" "$*" >> "$HOME/calls"\nexit 0\n')
+    launchctl.chmod(0o755)
+    _run_installer(repo, home, fake_bin, "--render-only")
+    rendered = repo / ".run/launchd/com.guiyi.quant-weekly-audit.plist"
+    payload = plistlib.loads(rendered.read_bytes())
+    assert payload["StartCalendarInterval"] == {"Weekday": 6, "Hour": 9, "Minute": 0}
+    assert not payload.get("RunAtLoad") and not payload.get("KeepAlive")
+    assert payload["ProgramArguments"][-1] == "weekly-audit"
+    assert not (home / "calls").exists()
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    api = agents / "com.guiyi.quant-api.plist"
+    api.write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": str(repo), "GUIYI_RUNTIME_COMMIT": "1" * 40}}))
+    shared = home / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+    shared.parent.mkdir(parents=True)
+    shared.write_text("original shared launcher")
+    _run_installer(repo, home, fake_bin, "--confirm-weekly-audit")
+    assert shared.read_text() == "original shared launcher"
+    calls = (home / "calls").read_text().splitlines()
+    assert all("quant-weekly-audit" in call for call in calls)
+    assert not any("kickstart" in call for call in calls)
+    assert not (repo / ".run/market-runtime-enabled").exists()
+
+
+def test_weekly_install_rejects_different_runtime_identity_before_launchctl(tmp_path):
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home, fake_bin = tmp_path / "home", tmp_path / "bin"
+    fake_bin.mkdir()
+    _run_installer(repo, home, fake_bin, "--render-only")
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    (agents / "com.guiyi.quant-api.plist").write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": "/different/runtime", "GUIYI_RUNTIME_COMMIT": "1" * 40}}))
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-weekly-audit")
+    assert result.returncode != 0
+    assert "weekly audit runtime identity mismatch" in result.stderr
+    assert not (agents / "com.guiyi.quant-weekly-audit.plist").exists()
+
+
 def test_standalone_preflight_resolves_supervised_path_with_real_parser(
     tmp_path: Path,
 ) -> None:
@@ -656,7 +702,7 @@ def test_runtime_services_launch_the_thin_internal_module(tmp_path: Path) -> Non
         "POSTGRES_PASSWORD": "test-only",
     }
 
-    for service in ("live", "alert", "after-market"):
+    for service in ("live", "alert", "after-market", "weekly-audit"):
         result = subprocess.run(
             [str(repo / "scripts/ops/macos/run-local-service.sh"), service],
             cwd=repo,
@@ -686,6 +732,22 @@ def test_local_status_is_read_only_and_accepts_idle_after_market(tmp_path: Path)
     assert "external.pushplus_config=ready" in result.stdout
     assert "alert.notification_audience_count=2" in result.stdout
     assert "external.openclaw" not in result.stdout
+    assert "overall=passed" in result.stdout
+    assert not calls.exists()
+
+
+def test_status_shows_safe_after_market_progress_and_independent_weekly_summary(tmp_path):
+    repo, home, fake_bin, calls = _status_fixture(tmp_path)
+    payload = {"status": "ok", "readonly": True, "components": {
+        "after_market": {"current_run": {"stage": "reading", "attempt": 1, "current_symbol": "jm",
+            "counters": {"reading": {"completed": 7}}, "untrusted": "credential-do-not-show"}},
+        "weekly_audit": {"status": "stale", "through": "2026-08-21", "finding_count": 0}}}
+    (fake_bin / "curl").write_text('#!/bin/sh\ncase "$*" in\n*api/runtime/health*) printf \'%s\\n\' \' '
+        + json.dumps(payload) + "' ;;\n*) echo 200 ;;\nesac\n")
+    result = _run_status(repo, home, fake_bin)
+    assert "after_market stage=reading attempt=1 symbol=jm completed_operations=7" in result.stdout
+    assert "weekly_audit status=stale through=2026-08-21 findings=0" in result.stdout
+    assert "credential-do-not-show" not in result.stdout + result.stderr
     assert "overall=passed" in result.stdout
     assert not calls.exists()
 

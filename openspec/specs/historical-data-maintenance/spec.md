@@ -8,7 +8,7 @@
 
 ### Requirement: 公开维护面
 系统 SHALL 公开 `update`、`refresh`、`audit` 与 `contract-warmup`。`audit` SHALL 接受
-`(--symbol X | --universe active)` 的互斥选择器。无 `--apply` 的 update/refresh MUST 只计划，
+`(--symbol X | --universe {active,operational})` 的互斥选择器。无 `--apply` 的 update/refresh MUST 只计划，
 不得写 PostgreSQL/Parquet；audit MUST 只读。
 系统还 SHALL 公开一次性 `session-anchor-repair` 三阶段 seam：`plan` 只读输出精确 session、Dataset、
 分区、预计缺失首分钟与稳定 scope hash；`prepare --apply` 只在外部 shadow root 使用真实 RQData 重建完整
@@ -134,6 +134,80 @@ Catalog/Parquet 物理一致性问题 MUST 分别使用 `main_contract_map`、`p
 #### Scenario: same-T NOOP
 - **WHEN** 所有预期月完整且再次运行相同 fixed through update
 - **THEN** 结果为零目标、零 provider request、零写入
+
+### Requirement: Daily maintenance is Catalog-bounded
+`UpdateRequest` SHALL default to `full`; optional `daily` MUST reject `since` and require existing continuous
+1m/D1 Catalog baseline, complete Calendar and gap-free rank1 mapping. It SHALL select current months,
+Catalog-identifiable missing months and exact endpoint gaps, including mapped new dominant contracts.
+Missing contract W1 MUST refresh same-contract D1 for its exact complete ISO week within valid lifecycle,
+including pre-rank1 dates, in the same provider batch; other valid persisted D1 rows MUST be preserved.
+It MUST NOT open other historical Parquet or automatically bootstrap historical metadata or contract lifecycle.
+Missing baseline or indeterminate mapping/boundaries MUST fail closed with historical maintenance required.
+Daily groups MUST be bounded by product, family and month and reuse the shared validation, provider and atomic
+publication path. Complete ISO-week D1/W1 context and natural quota/restart semantics MUST remain unchanged.
+Calendar/Session checks MUST use batch queries. Validated source reuse MUST be limited to one group and
+invalidate on Catalog pointer change. Optional typed progress MUST carry bounded identities, stage counters
+and durations; completed values MUST count successful operations rather than distinct partitions, unknown totals
+MUST be absent, and nested phase durations MUST NOT be added as wall-clock time. Publishing counts MUST follow
+successful commit, and observer failure MUST stop the attempt.
+
+#### Scenario: Old physical corruption is outside daily scope
+- **WHEN** an old partition has complete Catalog edges but damaged Parquet
+- **THEN** daily does not open that partition or claim its integrity; full update/audit remains responsible
+
+#### Scenario: Derived partition missing after restart
+- **WHEN** a mapped derived month is missing while its 1m source is complete
+- **THEN** daily rebuilds that month from validated 1m without a provider request or success-checkpoint dependency
+
+### Requirement: After-market progress is observable but never resumable authority
+
+Supervised after-market MUST publish schema v3 `current_run` before Calendar/provider/maintenance work and
+MUST whitelist attempt, stage, timestamps, current product/partition, per-stage counters/durations and retry time.
+Stage transitions MUST publish immediately; ordinary progress MAY be throttled to five seconds. A valid running
+snapshot MUST degrade Runtime health until a terminal result is durably published; after two hours without an
+updated snapshot it MUST be `stuck`. Invalid, unreadable, failed initial/intermediate/terminal status publication
+MUST fail closed with `AFTER_MARKET_PROGRESS_UNAVAILABLE`, never retain an old success as current health.
+A terminal failed result for the expected day MUST remain `status=failed, run_state=failed`.
+
+Before establishing a run, the writer MUST safely invalidate and sync the same owned regular status file before
+atomically publishing v3. If invalidation cannot produce any durable byte change, startup MUST be rejected before
+a run is established; a file-only reader is not required to claim an unobservable attempt occurred. Progress,
+status and log copies MUST NOT become a checkpoint or change maintenance results.
+
+#### Scenario: A current run was persisted but not finalized
+
+- **WHEN** schema v3 contains a valid `current_run` updated within two hours
+- **THEN** Runtime health reports `status=degraded, run_state=running` and exposes bounded progress without asserting the writer is alive
+
+#### Scenario: Initial publication fails after durable invalidation
+
+- **WHEN** the old summary was durably invalidated but the initial atomic v3 write fails
+- **THEN** readers observe invalid/unknown state rather than the old passed result, and no Calendar/provider work starts
+
+### Requirement: Weekly operational full-history audit remains optional and read-only
+
+The weekly adapter MUST select the exact ordered `operational_products.txt` scope with identity
+`operational_full_history`, atomically persist running before acquiring the shared maintenance lock, and open a
+fresh read-only transaction only after the nonblocking lock succeeds. Busy MUST become `skipped_busy`; no status
+MAY cause wait, retry, provider access, metadata/data write, repair or notification. The audit MUST cover the
+existing full-history Calendar/Session, rank1, expected partition, Catalog pointer and physical integrity checks.
+
+Its latest-result file MUST bind exact Runtime root/40-hex commit, scope/products, timestamps, progress, findings,
+`provider_requests=0` and `data_writes=0`. Health MUST map absence to `not_run`, unchanged running older than two
+hours to `stuck`, terminal older than eight days to `stale`, and malformed identity/scope/counts/chronology/counters
+to `invalid`. `passed` MUST require a resolved audited `through`, all products complete and zero findings. This
+optional component MUST be appended after existing operational overall is calculated; old or missing audit fields
+MUST NOT imply historical health, current freshness, release acceptance or Runtime readiness.
+
+#### Scenario: Historical findings coexist with healthy services
+
+- **WHEN** operational service components are healthy and the latest valid weekly audit has findings
+- **THEN** Runtime overall remains the independently calculated service result while `components.weekly_audit.status=findings` remains visible
+
+#### Scenario: Weekly audit conflicts with maintenance
+
+- **WHEN** the shared maintenance lock is busy
+- **THEN** the audit records `skipped_busy`, performs no database audit/provider/data write/notification, and exits without retry
 
 ### Requirement: quota 中止和续传
 明确的 provider quota/limit 异常 SHALL 映射为 `PROVIDER_QUOTA_EXHAUSTED`；该轮 MUST 立即停止后续

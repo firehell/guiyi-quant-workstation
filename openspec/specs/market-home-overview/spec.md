@@ -188,6 +188,12 @@ product dominants、发起 per-product 请求、WebSocket 或任何写请求。
 - **WHEN** overview、Runtime 或 current Event 任一刷新失败
 - **THEN** 页面保留该资源的最后成功快照并仅将该资源标为 stale；其他两项事实保持独立
 
+#### Scenario: Maintenance progress and historical audit remain distinct
+
+- **WHEN** the existing Runtime response contains schema-v3 after-market progress and optional `weekly_audit`
+- **THEN** the mounted trust strip uses that same Runtime request to show attempt/stage/product/partition/elapsed, successful read and committed-publish operation counts, optional known totals/retry time, plus a separately labelled `operational` full-history audit cutoff/findings summary
+- **AND** unverified running is visibly degraded, unknown totals do not become percentages, cached Runtime remains marked stale, and weekly findings do not imply current Runtime failure or healthy history
+
 ### Requirement: Market Home uses frozen non-trading visual semantics
 
 共享图标默认色值 SHALL 为上行 `#E63935`、周期同向 `#FF9601`、下行 `#35C759`、中性 `#017AFF`、数据不足

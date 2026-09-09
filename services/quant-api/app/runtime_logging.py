@@ -15,7 +15,8 @@ import sys
 
 class _SafeFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        code = record.msg if isinstance(record.msg, str) else ""
+        code = getattr(record, "diagnostic_code", record.msg)
+        code = code if isinstance(code, str) else ""
         if record.args or re.fullmatch(r"[A-Z][A-Z0-9_]{0,95}", code) is None:
             code = "RUNTIME_DIAGNOSTIC_REDACTED"
         payload: dict[str, object] = {
@@ -24,8 +25,25 @@ class _SafeFormatter(logging.Formatter):
         }
         fields = getattr(record, "diagnostic_fields", {})
         if isinstance(fields, dict):
-            for key in ("symbol", "contract", "bar_end", "trading_day", "missing_count", "attempt"):
+            if code == "AFTER_MARKET_PROGRESS":
+                from app.market_data.after_market import _public_current_run
+                try:
+                    progress = _public_current_run(fields.get("progress"), schema_version=3)
+                    if progress is not None and len(json.dumps(progress, ensure_ascii=True)) <= 8192:
+                        payload["progress"] = progress
+                except (ValueError, TypeError, OverflowError):
+                    pass
+            for key in ("symbol", "contract", "bar_end", "trading_day", "missing_count", "attempt", "stage", "detail_code"):
                 value = fields.get(key)
+                if key in {"stage", "detail_code"}:
+                    from app.market_data.after_market import _AFTER_MARKET_STAGES, _PUBLIC_ERROR_CODES
+                    allowed = (_AFTER_MARKET_STAGES | {"metadata_readiness", "canonical_update", "canonical_update_result"}
+                               if key == "stage" else _PUBLIC_ERROR_CODES | {
+                                   "RQDATA_READY_RESPONSE_INVALID", "UNEXPECTED_PROVIDER_EXCEPTION",
+                                   "UNEXPECTED_UPDATE_EXCEPTION", "UNEXPECTED_LIVE_EXCEPTION"})
+                    if isinstance(value, str) and value in allowed:
+                        payload[key] = value
+                    continue
                 if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 100000:
                     payload[key] = value
                 elif isinstance(value, str) and re.fullmatch(r"[a-zA-Z0-9:+.\-]{1,40}", value):
@@ -46,7 +64,10 @@ class _SafeWatchedHandler(WatchedFileHandler):
 
     def handleError(self, record: logging.LogRecord) -> None:
         # logging's default handler prints the original message/args and traceback.
-        print("RUNTIME_LOG_UNAVAILABLE", file=sys.stderr)
+        try:
+            print("RUNTIME_LOG_UNAVAILABLE", file=sys.stderr)
+        except Exception:
+            pass
 
     def _open(self):
         parent = Path(self.baseFilename).parent
@@ -71,7 +92,8 @@ def runtime_diagnostic_handler(path: Path) -> logging.Handler:
 
 
 def install_runtime_diagnostics(service: str) -> logging.Handler:
-    filename = {"live": "live-market.log", "alert": "alert-runtime.log"}[service]
+    filename = {"live": "live-market.log", "alert": "alert-runtime.log",
+                "after-market": "after-market.log", "weekly-audit": "weekly-audit.log"}[service]
     root = Path(os.environ.get("GUIYI_LOG_DIR", str(Path.home() / "Library/Logs/GuiyiQuant")))
     handler = runtime_diagnostic_handler(root / filename)
     logger = logging.getLogger("app")

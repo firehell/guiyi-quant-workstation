@@ -31,11 +31,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 import hashlib
 import json
 import sys
-from typing import Protocol, cast
+from time import monotonic
+from typing import Literal, Protocol, cast
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -51,6 +53,7 @@ from app.market_data.domain import (
     SeriesKind,
     SeriesQuery,
 )
+from app.market_data.errors import InfrastructureError
 from app.market_data.product_retirement import assert_products_not_retired
 from app.market_data.operational_universe import load_active_products
 from app.market_data.session_clock import SHANGHAI
@@ -158,6 +161,29 @@ class UpdateRequest:
     through: date | None
     apply: bool = False
     sync_current_day_metadata: bool = False
+    mode: Literal["full", "daily"] = "full"
+
+
+@dataclass(frozen=True, slots=True)
+class MaintenanceProgressEvent:
+    """Bounded, credential-free progress; counters never determine maintenance scope."""
+
+    phase: Literal["planning", "reading", "provider", "publishing", "aggregation"]
+    state: Literal["started", "completed"]
+    symbol: str | None
+    dataset: tuple[str, str, str, str] | None
+    year: int | None
+    month: int | None
+    completed: int
+    total: int | None
+    elapsed_seconds: float
+
+
+MaintenanceObserver = Callable[[MaintenanceProgressEvent], None]
+
+
+class _ObserverFailure(RuntimeError):
+    """Status persistence failure must escape family-level failure isolation."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -371,6 +397,7 @@ def _contract_warmup_scope(
     )
 
 _AUDIT_METADATA_CATEGORIES = {
+    "HISTORICAL_SESSION_FACT_MISSING": ("metadata_session", "session"),
     "TRADING_SESSION_MISSING": ("metadata_session", "session"),
     "PREVIOUS_TRADING_DAY_MISSING": ("metadata_session", "session"),
     "TRADING_CALENDAR_MISSING": ("metadata_calendar", "calendar"),
@@ -769,12 +796,52 @@ class HistoricalDataManager(ContractWarmupPlanner):
         self.provider = provider
         # 同进程内已同步过的 (products, through) 不再重复拉 metadata，减少 RQData 调用。
         self._metadata_watermarks: set[tuple[tuple[str, ...], date]] = set()
+        self._observer: MaintenanceObserver | None = None
+        self._progress_counts: dict[str, int] = {}
+        self._source_cache: dict[tuple[DatasetKey, int, int, str], tuple[CanonicalBar, ...]] | None = None
 
     def update(
         self,
         request: UpdateRequest,
         *,
         before_apply: Callable[[], None] | None = None,
+        observer: MaintenanceObserver | None = None,
+    ) -> MaintenanceResult:
+        if request.mode not in {"full", "daily"}:
+            raise ValueError("UPDATE_MODE_INVALID")
+        if request.mode == "daily" and request.since is not None:
+            raise ValueError("DAILY_UPDATE_SINCE_UNSUPPORTED")
+        self._observer = observer
+        self._progress_counts = {}
+        try:
+            return self._update(request, before_apply=before_apply)
+        finally:
+            self._observer = None
+            self._source_cache = None
+
+    @contextmanager
+    def _progress(self, phase, key=None, year=None, month=None, *, symbol=None):
+        started = monotonic()
+
+        def emit(state):
+            if self._observer is not None:
+                try:
+                    self._observer(MaintenanceProgressEvent(
+                        phase, state, key.symbol if key else symbol,
+                        key.as_tuple() if key else None, year, month,
+                        self._progress_counts.get(phase, 0), None,
+                        max(0.0, monotonic() - started),
+                    ))
+                except Exception as exc:
+                    raise _ObserverFailure("MAINTENANCE_OBSERVER_FAILED") from exc
+
+        emit("started")
+        yield
+        self._progress_counts[phase] = self._progress_counts.get(phase, 0) + 1
+        emit("completed")
+
+    def _update(
+        self, request: UpdateRequest, *, before_apply: Callable[[], None] | None,
     ) -> MaintenanceResult:
         """增量更新：缺省 through 为各品种最近完整交易日；apply 时持锁并先补齐元数据再写分区。"""
         assert_products_not_retired(request.products)
@@ -800,6 +867,9 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         request.products,
                         metadata_through,
                     )
+                if request.mode == "daily":
+                    through = request.through or self.coverage.latest_complete_day(request.products)
+                    return self._execute_daily(request.products, through, apply=True)
                 watermark = (request.products, metadata_through)
                 # 日历/会话/主力映射不齐时先 synchronize；失败则不会进入拉 bar。
                 if (
@@ -829,6 +899,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
         through = request.through or self.coverage.latest_complete_day(request.products)
         if request.since is not None and request.since > through:
             raise ValueError("UPDATE_WINDOW_INVALID")
+        if request.mode == "daily":
+            return self._execute_daily(request.products, through, apply=False)
         targets = self._plan(request.products, request.since, through)
         return self._execute("update", targets, through, apply=False)
 
@@ -984,7 +1056,11 @@ class HistoricalDataManager(ContractWarmupPlanner):
             finding_start = len(findings)
             try:
                 through = request.through or self.coverage.latest_complete_day((symbol,))
+                throughs.append(through)
                 start = self.coverage.product_start(symbol)
+                # Full audit validates the authoritative Calendar/Session domain,
+                # including days absent from both Calendar and rank1 partition selection.
+                self.coverage.require_historical_session_facts((symbol,), through)
                 missing_map = self.catalog.missing_main_map_days(symbol, start, through)
                 if missing_map:
                     first = missing_map[0]
@@ -1054,7 +1130,6 @@ class HistoricalDataManager(ContractWarmupPlanner):
                                 month,
                             )
                         )
-                throughs.append(through)
             except Exception as exc:  # noqa: BLE001 - recognized metadata gaps isolate one product
                 finding = _audit_metadata_finding(exc, symbol)
                 if finding is None:
@@ -1082,6 +1157,186 @@ class HistoricalDataManager(ContractWarmupPlanner):
             findings=tuple(findings),
         )
 
+    def _daily_groups(self, products: tuple[str, ...], through: date):
+        """Select from Catalog edges, not file contents or a last-success checkpoint.
+
+        Old interior corruption intentionally belongs to full update/audit. Missing
+        months and short mapped tails remain discoverable after arbitrarily long downtime.
+        """
+        for symbol in dict.fromkeys(item.strip().lower() for item in products):
+            with self._progress("planning", symbol=symbol):
+                partitions = self.catalog.product_partitions(symbol)
+                baseline = {
+                    row.dataset.frequency for row in partitions
+                    if row.dataset.kind is DatasetKind.CONTINUOUS
+                    and row.dataset.series_or_contract == "MAIN"
+                    and row.row_count > 0
+                    and (row.year, row.month) <= (through.year, through.month)
+                }
+                if not {BarFrequency.D1, BarFrequency.M1}.issubset(baseline):
+                    raise ValueError("HISTORICAL_MAINTENANCE_REQUIRED")
+                start = self.coverage.product_start(symbol)
+                mapping = self.catalog.main_map(symbol, start, through)
+                calendar_end = through + timedelta(days=7 - through.isoweekday())
+                days = (
+                    self.coverage.maintenance_trading_days(symbol, start, calendar_end)
+                    if hasattr(self.coverage, "maintenance_trading_days")
+                    else self.catalog.trading_days(symbol, start, calendar_end)
+                )
+                if not mapping or tuple(row.trade_date for row in mapping) != tuple(
+                    day for day in days if day <= through
+                ):
+                    raise ValueError("HISTORICAL_MAINTENANCE_REQUIRED")
+                by_identity = {
+                    (row.dataset, row.year, row.month): row for row in partitions
+                }
+                last_week_days = {
+                    (day.isocalendar().year, day.isocalendar().week): day for day in days
+                }
+                mapped: dict[tuple[str, int, int], list[date]] = {}
+                for row in mapping:
+                    mapped.setdefault(
+                        (row.contract, row.trade_date.year, row.trade_date.month), []
+                    ).append(row.trade_date)
+                candidates = []
+                for frequency in _FREQUENCY_ORDER:
+                    key = DatasetKey(DatasetKind.CONTINUOUS, symbol, "MAIN", frequency)
+                    lower = self.coverage.dataset_start(key) if hasattr(
+                        self.coverage, "dataset_start"
+                    ) else start
+                    for year, month in _months(lower, through):
+                        candidates.append((key, year, month, tuple(
+                            day for day in days
+                            if lower <= day <= through and (day.year, day.month) == (year, month)
+                        )))
+                checked_contracts = set()
+                for (contract, year, month), mapped_days in mapped.items():
+                    # New rank1 contracts use only proven mapped days, never lifecycle bootstrap.
+                    if contract not in checked_contracts:
+                        self.catalog.contract_fact(symbol, contract)
+                        checked_contracts.add(contract)
+                    for frequency in _FREQUENCY_ORDER:
+                        key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
+                        lower = self.coverage.dataset_start(key) if hasattr(
+                            self.coverage, "dataset_start"
+                        ) else start
+                        candidates.append((key, year, month, tuple(
+                            day for day in mapped_days if day >= lower
+                        )))
+                # Existing warm-up-only months do not create a daily repair obligation.
+                boundary_days: dict[BarFrequency, set[date]] = {}
+                eligible = []
+                for key, year, month, required_days in candidates:
+                    endpoint_days = required_days
+                    if key.frequency is BarFrequency.W1:
+                        endpoint_days = tuple(day for day in required_days if last_week_days.get(
+                            (day.isocalendar().year, day.isocalendar().week)
+                        ) == day)
+                    if endpoint_days:
+                        boundary_days.setdefault(key.frequency, set()).update(
+                            (endpoint_days[0], endpoint_days[-1])
+                        )
+                        eligible.append((key, year, month, required_days, endpoint_days))
+                # Resolve both exact endpoint instants in seven bounded batch queries,
+                # not one Session query per historical date or one full minute expansion.
+                edges: dict[tuple[BarFrequency, date], tuple[datetime, datetime]] = {}
+                for frequency, dates in boundary_days.items():
+                    key = DatasetKey(DatasetKind.CONTINUOUS, symbol, "MAIN", frequency)
+                    ordered = tuple(sorted(dates))
+                    try:
+                        pairs = (
+                            self.coverage.expected_bar_end_pairs_for_trading_days(key, ordered)
+                            if hasattr(self.coverage, "expected_bar_end_pairs_for_trading_days")
+                            else tuple((end, end.astimezone(SHANGHAI).date()) for end in
+                                self.coverage.expected_bar_ends_for_trading_days(key, ordered))
+                        )
+                    except InfrastructureError as exc:
+                        raise ValueError("HISTORICAL_MAINTENANCE_REQUIRED") from exc
+                    for end, day in pairs:
+                        identity = (frequency, day)
+                        stamp = end.astimezone(UTC)
+                        previous = edges.get(identity, (stamp, stamp))
+                        edges[identity] = (min(previous[0], stamp), max(previous[1], stamp))
+                groups: dict[tuple[tuple[str, str, str], int, int], list] = {}
+                for key, year, month, required_days, endpoint_days in eligible:
+                    first = edges.get((key.frequency, endpoint_days[0]))
+                    last = edges.get((key.frequency, endpoint_days[-1]))
+                    if first is None or last is None:
+                        raise ValueError("HISTORICAL_MAINTENANCE_REQUIRED")
+                    partition_row = by_identity.get((key, year, month))
+                    selected = (
+                        (year, month) == (through.year, through.month)
+                        or partition_row is None or partition_row.row_count <= 0
+                        or partition_row.coverage_start.astimezone(UTC) > first[0]
+                        or partition_row.coverage_end.astimezone(UTC) < last[1]
+                    )
+                    if selected:
+                        groups.setdefault((_family(key), year, month), []).append(
+                            (key, year, month, required_days)
+                        )
+            for (_family_id, year, month), descriptors in sorted(groups.items()):
+                if hasattr(self.coverage, "require_session_facts_window"):
+                    self.coverage.require_session_facts_window(
+                        symbol, date(year, month, 1), min(through, _month_last(year, month))
+                    )
+                yield tuple(descriptors)
+
+    def _execute_daily(self, products, through, *, apply):
+        totals = dict(planned=0, applied=0, blocked=0, failed=0, provider_requests=0)
+        failures = []
+        windows = []
+        failed_families = set()
+        for descriptors in self._daily_groups(products, through):
+            # Source rows live only for this family-month. Pointer identity is rechecked
+            # on every reuse; no cross-run or cross-product Parquet cache exists.
+            self._source_cache = {}
+            desired = (
+                (key, year, month, tuple(end.astimezone(UTC) for end in
+                    self.coverage.expected_bar_ends_for_trading_days(key, days)), days)
+                for key, year, month, days in descriptors
+            )
+            targets = tuple(self._iter_targets(
+                products, None, through, desired_months=desired,
+            ))
+            family = _family(descriptors[0][0])
+            if family in failed_families and apply:
+                totals["planned"] += len(targets)
+                totals["blocked"] += len(targets)
+                continue
+            if not apply:
+                expanded = []
+                for target in targets:
+                    if target.key.frequency is BarFrequency.W1:
+                        expanded.extend(self._weekly_daily_companions(target, through))
+                    expanded.append(target)
+                result = self._execute("update", tuple(expanded), through, apply=False)
+            else:
+                result = self._execute_apply(
+                    "update",
+                    tuple(t for t in targets if t.key.frequency in PROVIDER_FETCH_FREQUENCIES),
+                    tuple(t for t in targets if t.key.frequency in INTRADAY_DERIVED_FREQUENCIES),
+                    through, weekly_daily_companions=True,
+                )
+            self._source_cache = None
+            for name in totals:
+                totals[name] += getattr(result, name)
+            failures.extend(result.failures)
+            windows.extend(result.target_windows)
+            if result.failed:
+                failed_families.add(family)
+            if result.stop_reason:
+                return MaintenanceResult(
+                    "update", "partial", through, **totals,
+                    stop_reason=result.stop_reason, failures=tuple(failures),
+                )
+        status = "noop" if not totals["planned"] else (
+            "failed" if totals["failed"] or totals["blocked"] else "passed" if apply else "planned"
+        )
+        return MaintenanceResult(
+            "update", status, through, **totals,
+            failures=tuple(failures), target_windows=tuple(windows),
+        )
+
     def _plan(
         self,
         products: tuple[str, ...],
@@ -1104,17 +1359,20 @@ class HistoricalDataManager(ContractWarmupPlanner):
         *,
         frequencies: frozenset[BarFrequency] | None = None,
         force: bool = False,
+        desired_months=None,
     ):
         """遍历应处理的月分区；force 时 missing=整段 expected（refresh 重写语义）。"""
         latest_complete_by_symbol: dict[str, date] = {}
-        for key, year, month, expected, mapped_days in self._desired_months(
+        desired = desired_months if desired_months is not None else self._desired_months(
             products,
             through,
             frequencies=frequencies,
-        ):
+        )
+        for key, year, month, expected, mapped_days in desired:
             if not expected and key.kind is not DatasetKind.CONTRACT:
                 continue
-            existing, physical_reason = self._existing_partition(key, year, month)
+            with self._progress("reading", key, year, month):
+                existing, physical_reason = self._existing_partition(key, year, month)
             if physical_reason is not None:
                 if not expected:
                     continue
@@ -1410,7 +1668,9 @@ class HistoricalDataManager(ContractWarmupPlanner):
         # 已有完整 1m 的日内派生可先发布（例如 refresh 只涉及日内派生频度）。
         for target in tuple(remaining_derived):
             # 有界 warm-up 仅推迟明确待补的源月份；已开始的派生失败不得重试。
-            if fail_stop and (*_family(target.key), target.year, target.month) in pending_minute_months:
+            if (fail_stop or self._source_cache is not None) and (
+                *_family(target.key), target.year, target.month
+            ) in pending_minute_months:
                 continue
             try:
                 self._publish_derived(target)
@@ -1471,10 +1731,11 @@ class HistoricalDataManager(ContractWarmupPlanner):
             try:
                 planned += len(fetch_targets)
                 provider_requests += len(fetch_targets)
-                batches = self.provider.fetch_many(tuple(
-                    BarFetchRequest(fetch_target.key, fetch_target.missing)
-                    for fetch_target in fetch_targets
-                ))
+                with self._progress("provider", target.key, target.year, target.month):
+                    batches = self.provider.fetch_many(tuple(
+                        BarFetchRequest(fetch_target.key, fetch_target.missing)
+                        for fetch_target in fetch_targets
+                    ))
                 if len(batches) != len(fetch_targets):
                     raise StorageError("PROVIDER_BATCH_COUNT_MISMATCH")
                 paired = tuple(zip(fetch_targets, batches, strict=True))
@@ -1615,18 +1876,18 @@ class HistoricalDataManager(ContractWarmupPlanner):
             monday = trading_day - timedelta(days=trading_day.isoweekday() - 1)
             sunday = min(monday + timedelta(days=6), through)
             if daily_key.kind is DatasetKind.CONTRACT:
-                mapped_days = tuple(
-                    fact.trade_date
-                    for fact in self.catalog.main_map(
-                        daily_key.symbol,
-                        monday,
-                        sunday,
-                    )
-                    if fact.contract == daily_key.series_or_contract
+                fact = self.catalog.contract_fact(
+                    daily_key.symbol, daily_key.series_or_contract,
+                )
+                # W1 is computed from the physical owner's entire valid ISO week,
+                # including days before it became rank1. Publish D1 from that same
+                # provider batch so Canonical can reproduce the weekly snapshot.
+                week_days = self.coverage.contract_trading_days(
+                    fact, monday, sunday,
                 )
                 expected = self.coverage.expected_bar_ends_for_trading_days(
                     daily_key,
-                    mapped_days,
+                    week_days,
                 )
                 for item in expected:
                     local_day = item.astimezone(SHANGHAI).date()
@@ -1668,6 +1929,10 @@ class HistoricalDataManager(ContractWarmupPlanner):
 
     def _publish_fetched(self, target: _Target, batches: tuple[BarBatch, ...]) -> None:
         """合并 existing 与 provider 批次，经 store.publish 六项校验后注册分区。"""
+        with self._progress("publishing", target.key, target.year, target.month):
+            self._publish_fetched_partition(target, batches)
+
+    def _publish_fetched_partition(self, target, batches):
         bars = self._merged_fetched_bars(target, batches)
         # publish 内部：schema/顺序/月界/会话边界校验 → 临时文件回读 → 不可变候选安装。
         partition = self.store.publish(
@@ -1698,13 +1963,29 @@ class HistoricalDataManager(ContractWarmupPlanner):
 
     def _publish_derived(self, target: _Target) -> None:
         """从当月 1m 源分区聚合 derived 频度；会话窗口须覆盖 target.expected。"""
+        with self._progress("aggregation", target.key, target.year, target.month):
+            self._publish_derived_partition(target)
+
+    def _publish_derived_partition(self, target):
         source_key = DatasetKey(
             target.key.kind,
             target.key.symbol,
             target.key.series_or_contract,
             BarFrequency.M1,
         )
-        source = self._read_existing(source_key, target.year, target.month)
+        source_rows = tuple(row for row in self.catalog.all_partitions(source_key)
+                            if (row.year, row.month) == (target.year, target.month))
+        cache_key = (source_key, target.year, target.month, str(source_rows[0])) if (
+            len(source_rows) == 1
+        ) else None
+        source = self._source_cache.get(cache_key) if (
+            self._source_cache is not None and cache_key is not None
+        ) else None
+        if source is None:
+            with self._progress("reading", source_key, target.year, target.month):
+                source = self._read_existing(source_key, target.year, target.month)
+            if self._source_cache is not None and cache_key is not None and source:
+                self._source_cache[cache_key] = source
         if not source:
             raise StorageError("SOURCE_1M_INCOMPLETE")
         sessions = tuple(
@@ -1731,16 +2012,17 @@ class HistoricalDataManager(ContractWarmupPlanner):
         )
         if tuple(bar.bar_end for bar in bars) != target.expected:
             raise StorageError("TARGET_WINDOW_INCOMPLETE")
-        partition = self.store.publish(
-            PublishRequest(
-                target.key,
-                target.year,
-                target.month,
-                bars,
-                target.expected,
+        with self._progress("publishing", target.key, target.year, target.month):
+            partition = self.store.publish(
+                PublishRequest(
+                    target.key,
+                    target.year,
+                    target.month,
+                    bars,
+                    target.expected,
+                )
             )
-        )
-        self._commit_partition(partition, target)
+            self._commit_partition(partition, target)
 
     def _commit_partition(self, partition, target: _Target) -> None:
         """候选文件不可变；Catalog commit 是单分区唯一可见点。"""
@@ -1811,6 +2093,11 @@ def _months(start: date, end: date):
             month = 1
         else:
             month += 1
+
+
+def _month_last(year: int, month: int) -> date:
+    following = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return following - timedelta(days=1)
 
 
 def _family(key: DatasetKey) -> tuple[str, str, str]:
@@ -1923,7 +2210,7 @@ def _contract_warmup_fetch_groups(
 
 def _is_global_failure(exc: Exception) -> bool:
     """须立即中止整次维护的全局错误（DB 或原子发布/路径逃逸），不可按族隔离。"""
-    if isinstance(exc, SQLAlchemyError):
+    if isinstance(exc, (SQLAlchemyError, _ObserverFailure)):
         return True
     return getattr(exc, "code", None) in {
         "ATOMIC_PUBLISH_FAILED",

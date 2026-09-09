@@ -150,13 +150,14 @@ def test_cli_roundtrip_plan_apply_noop_has_no_provider_or_database_writes(tmp_pa
 
 
 @pytest.mark.parametrize('unsafe', ['running', 'same_day_attempt', 'invalid', 'missing'])
-def test_after_market_rejects_unstable_or_changed_consumer(tmp_path, monkeypatch, unsafe):
+@pytest.mark.parametrize('schema_version', [2, 3])
+def test_after_market_rejects_unstable_or_changed_consumer(tmp_path, monkeypatch, unsafe, schema_version):
     from datetime import date
     from app.guiyi_cli.captured_recovery import _after_market_preflight
     monkeypatch.setattr('app.guiyi_cli.captured_recovery.PROJECT_ROOT', tmp_path)
     directory = tmp_path / '.run'
     directory.mkdir()
-    payload = {'schema_version': 2, 'current_run': None,
+    payload = {'schema_version': schema_version, 'current_run': None,
                'last_successful_trading_day': '2026-09-07'}
     if unsafe == 'running':
         payload['current_run'] = {'scheduled_date': '2026-09-08',
@@ -169,6 +170,17 @@ def test_after_market_rejects_unstable_or_changed_consumer(tmp_path, monkeypatch
         (directory / 'after-market-status.json').write_text(json.dumps(payload))
     with pytest.raises(ValueError, match='CAPTURED_AFTER_MARKET_REVIEW_REQUIRED'):
         _after_market_preflight(date(2026, 9, 8))
+
+
+@pytest.mark.parametrize('schema_version', [2, 3])
+def test_after_market_preflight_accepts_known_finalized_prior_day_schemas(tmp_path, monkeypatch, schema_version):
+    from datetime import date
+    from app.guiyi_cli.captured_recovery import _after_market_preflight
+    monkeypatch.setattr('app.guiyi_cli.captured_recovery.PROJECT_ROOT', tmp_path)
+    (tmp_path / '.run').mkdir()
+    (tmp_path / '.run/after-market-status.json').write_text(json.dumps({
+        'schema_version': schema_version, 'current_run': None, 'last_successful_trading_day': '2026-09-07'}))
+    _after_market_preflight(date(2026, 9, 8))
 
 
 @pytest.mark.parametrize('failure', [None, 'expired', 'wrong_contract', 'holiday', 'scope', 'session', 'day'])

@@ -97,7 +97,7 @@ def add_data_commands(
     audit = commands.add_parser("audit")
     selector = audit.add_mutually_exclusive_group(required=True)
     selector.add_argument("--symbol")
-    selector.add_argument("--universe", choices=("active",))
+    selector.add_argument("--universe", choices=("active", "operational"))
     audit.add_argument("--through")
     audit.add_argument("--progress", action="store_true")
 
@@ -111,6 +111,7 @@ def add_data_commands(
     readiness.add_argument("--timeout-seconds", type=int, default=300)
 
     commands.add_parser("after-market")
+    commands.add_parser("weekly-audit")
 
     correction = commands.add_parser("au-calendar-correction", allow_abbrev=False)
     correction.add_argument("--evidence", required=True)

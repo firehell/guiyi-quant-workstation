@@ -248,6 +248,37 @@ else
   record_failure
 fi
 
+# Only bounded API health fields are printed; arbitrary JSON/exception text is never logged.
+python3 - "$runtime_payload" <<'PY'
+import json
+import re
+import sys
+try:
+    components = json.loads(sys.argv[1]).get("components", {})
+    current = components.get("after_market", {}).get("current_run") or {}
+    stage = current.get("stage")
+    stages = {"calendar", "rqdata_readiness", "planning", "reading", "provider", "publishing", "aggregation",
+              "canonical_updated", "live_reconciliation", "live_cleanup", "projection", "retry_wait"}
+    if isinstance(stage, str) and stage in stages:
+        attempt = current.get("attempt")
+        symbol = current.get("current_symbol")
+        count = current.get("counters", {}).get(stage, {}).get("completed")
+        attempt = attempt if type(attempt) is int and attempt in {0, 1, 2} else "unknown"
+        symbol = symbol if isinstance(symbol, str) and re.fullmatch(r"[a-z]{1,4}", symbol) else "unknown"
+        count = count if type(count) is int and count >= 0 else "unknown"
+        print(f"[local-services-status] after_market stage={stage} attempt={attempt} symbol={symbol} completed_operations={count}")
+    weekly = components.get("weekly_audit") or {}
+    status = weekly.get("status", "not_run")
+    statuses = {"not_run", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"}
+    status = status if isinstance(status, str) and status in statuses else "invalid"
+    through, findings = weekly.get("through"), weekly.get("finding_count")
+    through = through if isinstance(through, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", through) else "unknown"
+    findings = findings if type(findings) is int and findings >= 0 else "unknown"
+    print(f"[local-services-status] weekly_audit status={status} through={through} findings={findings}")
+except (ValueError, TypeError, AttributeError):
+    print("[local-services-status] maintenance_diagnostics=invalid")
+PY
+
 if [[ "$failed" -eq 0 ]]; then
   printf '[local-services-status] overall=passed\n'
   exit 0

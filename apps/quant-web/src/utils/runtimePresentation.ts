@@ -3,7 +3,7 @@ import type { RuntimeHealthResponse } from '../api/runtime.ts'
 export type RuntimeStatusTone = 'normal' | 'neutral' | 'warning' | 'danger'
 
 export interface RuntimeStatusPresentationItem {
-  key: 'overall' | 'live' | 'alert' | 'after_market'
+  key: 'overall' | 'live' | 'alert' | 'after_market' | 'weekly_audit'
   label: string
   state: string
   detail: string
@@ -61,7 +61,7 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
         ? '处理失败'
         : '未获自然验证'
 
-  return [
+  const items: RuntimeStatusPresentationItem[] = [
     {
       key: 'overall',
       label: '运行概况',
@@ -96,7 +96,9 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
       state: afterMarketRunLabel(afterMarket.run_state),
       detail: afterMarketDetail(afterMarket),
       timestamp: afterMarket.current_run
-        ? `开始 ${formatRuntimeTimestamp(afterMarket.current_run.started_at)}`
+        ? afterMarket.current_run.updated_at
+          ? `更新 ${formatRuntimeTimestamp(afterMarket.current_run.updated_at)}`
+          : `开始 ${formatRuntimeTimestamp(afterMarket.current_run.started_at)}`
         : afterMarket.last_run
           ? `完成 ${formatRuntimeTimestamp(afterMarket.last_run.finished_at)}`
           : afterMarket.last_successful_trading_day
@@ -105,9 +107,57 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
       tone: statusTone(afterMarket.status),
     },
   ]
+  const audit = snapshot.components.weekly_audit
+  if (audit) {
+    items.push({
+      key: 'weekly_audit', label: '每周历史审计', state: weeklyAuditLabel(audit.status),
+      detail: weeklyAuditDetail(audit),
+      timestamp: `更新 ${formatRuntimeTimestamp(audit.updated_at)}`,
+      tone: audit.status === 'passed' ? 'normal' : ['not_run', 'running', 'skipped_busy'].includes(audit.status) ? 'neutral' : 'warning',
+    })
+  }
+  return items
 }
 
-function afterMarketDetail(afterMarket: RuntimeHealthResponse['components']['after_market']): string {
+export function weeklyAuditLabel(status: string): string {
+  const labels: Record<string, string> = {
+    not_run: '尚未审计', running: '审计中', passed: '审计通过', findings: '发现历史问题',
+    failed: '审计失败', skipped_busy: '维护忙，已跳过', stuck: '审计卡住', stale: '审计已过期', invalid: '审计身份或状态无效',
+  }
+  return labels[status] ?? '状态未知'
+}
+
+export function weeklyAuditDetail(audit: NonNullable<RuntimeHealthResponse['components']['weekly_audit']>): string {
+  return `operational 全历史 · 截至 ${audit.through ?? '未知'}${audit.finding_count == null ? '' : ` · ${audit.finding_count} 项发现`}`
+}
+
+export function afterMarketDetail(afterMarket: RuntimeHealthResponse['components']['after_market']): string {
+  const current = afterMarket.current_run
+  if (current?.stage) {
+    const labels: Record<string, string> = {
+      calendar: '交易日核对', rqdata_readiness: '数据就绪检查', planning: '制定更新范围',
+      reading: '读取校验', provider: '获取数据', publishing: '发布', aggregation: '聚合',
+      canonical_updated: '更新通知', live_reconciliation: '实时快照核对',
+      live_cleanup: '当日实时清理', projection: '首页投影', retry_wait: '等待一次重试',
+    }
+    const counter = current.counters?.[current.stage]
+    const partition = current.current_partition
+    const operationCount = (phase: string, label: string) => {
+      const count = current.counters?.[phase]
+      return count ? `本次${label} ${count.completed} 次操作${count.total === undefined ? '' : ` / ${count.total} 次`}` : null
+    }
+    return [
+      afterMarket.run_state === 'running' && afterMarket.status === 'degraded' ? '运行结果待确认' : null,
+      `第 ${current.attempt ?? 0} 次`, labels[current.stage] ?? '状态未知', current.current_symbol,
+      partition ? `${partition.dataset[0]}/${partition.dataset[2]} · ${partition.dataset[3]} · ${partition.year}-${String(partition.month).padStart(2, '0')}` : null,
+      typeof current.elapsed_seconds === 'number' && Number.isFinite(current.elapsed_seconds) && current.elapsed_seconds >= 0
+        ? `累计 ${Number(current.elapsed_seconds.toPrecision(6))} 秒` : null,
+      operationCount('reading', '读取校验'), operationCount('publishing', '已提交发布'),
+      counter && !['reading', 'publishing'].includes(current.stage)
+        ? `本次已完成 ${counter.completed} 次操作${counter.total === undefined ? '' : ` / ${counter.total} 次`}` : null,
+      current.retry_at ? `重试 ${formatRuntimeTimestamp(current.retry_at)}` : null,
+    ].filter(Boolean).join(' · ')
+  }
   const notification = afterMarket.last_run?.failure_notification
   if (notification?.state === 'provider_accepted') {
     return '失败通知：服务商已接受（不代表送达）'

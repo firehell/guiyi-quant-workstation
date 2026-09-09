@@ -27,7 +27,7 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 ## 配置与变更 Gate
 
-- [`deploy/launchd/`](launchd/)：Mac API/Web/Live/after-market/Alert 与日志轮转模板；安装器模式见
+- [`deploy/launchd/`](launchd/)：Mac API/Web/Live/after-market/Alert、默认未安装的 weekly audit 与日志轮转模板；验证命令见
   `TESTING.md`。
 - API 与 Alert 模板只共享一个 Git 外 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`；PushPlus token 与 Topic code
   不进入 plist、仓库或状态输出。
@@ -39,6 +39,28 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 `--render-only` 可用于本地无副作用验证。任何 launchd 加载/重载、Runtime switch、腾讯云配置应用或
 Nginx reload 都是独立受控外部操作，必须在执行前取得与目标相符的一次性明确意图。
+
+### Weekly operational full-history audit
+
+`com.guiyi.quant-weekly-audit.plist.template` 固定每周六 09:00（launchd `Weekday=6`）运行一次
+`operational_full_history` 只读审计，不含 `RunAtLoad/KeepAlive`，也没有 retry、provider/data write 或通知能力。
+`--render-only` 会渲染该模板，但不安装或启用它。
+
+每周 label 只能在获得该次安装的明确外部操作意图后，从目标 exact Runtime checkout 执行：
+
+```bash
+./scripts/ops/macos/install-local-services.sh --confirm-weekly-audit
+```
+
+安装器在任何外部 mutation 前要求已安装 API plist 是非 symlink 普通文件，其
+`GUIYI_PROJECT_ROOT` 与当前 checkout 完全相同，`GUIYI_RUNTIME_COMMIT` 与当前 40 位 Git SHA 完全相同。
+此模式只替换/加载 `com.guiyi.quant-weekly-audit`：不 bootout/kickstart 其他 label，不写 Market/Alert marker，
+不替换共享 launcher/log rotator。weekly plist 直接指向该 exact checkout 中的
+`scripts/ops/macos/run-local-service.sh weekly-audit`，避免使用其他 checkout 的启动器。
+
+`local-services-status.sh` 只从既有 Runtime health 打印有界的盘后 stage/attempt/symbol/成功操作数，
+及独立 weekly status/through/findings。weekly label 不是现有 operational health 的 required service；安装成功也不证明
+首次自然审计已通过、release 或 Runtime promotion。
 
 ### Market Runtime promotion preflight
 

@@ -248,30 +248,53 @@ class DatabaseCoverageSource:
             )
             missing = observed_calendar_days != expected_calendar_days
             if not missing:
-                for trading_day in self._trading_days(
-                    symbol, self.product_start(symbol), through
-                ):
-                    fact = self.session.scalar(
-                        select(TradingSession.id)
-                        .where(
-                            TradingSession.exchange_code == exchange,
-                            TradingSession.instrument_symbol == symbol,
-                            TradingSession.provider == "rqdata",
-                            TradingSession.is_active.is_(True),
-                            TradingSession.effective_from == trading_day,
-                            TradingSession.effective_to == trading_day,
-                        )
-                        .limit(1)
-                    )
-                    if fact is None:
-                        missing = True
-                        break
+                required = set(self._trading_days(symbol, self.product_start(symbol), through))
+                observed = set(self.session.scalars(
+                    select(TradingSession.effective_from).where(
+                        TradingSession.exchange_code == exchange,
+                        TradingSession.instrument_symbol == symbol,
+                        TradingSession.provider == "rqdata",
+                        TradingSession.is_active.is_(True),
+                        TradingSession.effective_from >= self.product_start(symbol),
+                        TradingSession.effective_from <= through,
+                        TradingSession.effective_to == TradingSession.effective_from,
+                    ).distinct()
+                ))
+                missing = not required.issubset(observed)
             if missing and len(samples) < 20:
                 samples.append(_session_coverage_sample(symbol, context_start, through))
         if samples:
             raise InfrastructureError(
                 "HISTORICAL_SESSION_FACT_MISSING", samples=tuple(samples)
             )
+
+    def maintenance_trading_days(self, symbol: str, start: date, end: date) -> tuple[date, ...]:
+        """Batch Calendar proof for daily inventory, including closed dates and week context."""
+        count = self.session.scalar(select(func.count()).select_from(TradingCalendar).where(
+            TradingCalendar.exchange_code == self._exchange(symbol),
+            TradingCalendar.trade_date >= start,
+            TradingCalendar.trade_date <= end,
+            TradingCalendar.provider == "rqdata",
+        ))
+        if count != (end - start).days + 1:
+            raise InfrastructureError("HISTORICAL_MAINTENANCE_REQUIRED")
+        return self._trading_days(symbol, start, end)
+
+    def require_session_facts_window(self, symbol: str, start: date, end: date) -> None:
+        """Only selected month Session facts; query count is independent of day count."""
+        days = self.maintenance_trading_days(symbol, start, _iso_week_end(end))
+        required = {day for day in days if day <= end}
+        observed = set(self.session.scalars(select(TradingSession.effective_from).where(
+            TradingSession.exchange_code == self._exchange(symbol),
+            TradingSession.instrument_symbol == symbol,
+            TradingSession.provider == "rqdata",
+            TradingSession.is_active.is_(True),
+            TradingSession.effective_from >= start,
+            TradingSession.effective_from <= end,
+            TradingSession.effective_to == TradingSession.effective_from,
+        ).distinct()))
+        if not required.issubset(observed):
+            raise InfrastructureError("HISTORICAL_MAINTENANCE_REQUIRED")
 
     def expected_bar_ends(
         self,
@@ -470,11 +493,14 @@ class DatabaseCoverageSource:
         else:
             lower = max(lower, self.dataset_start(key))
             days = self._trading_days(key.symbol, lower, upper)
-        return tuple(
-            window
-            for day in days
-            for window in self._sessions_for_day(key.symbol, day)
+        batch = SessionWindowBatch(
+            self.session, exchange=self._exchange(key.symbol), symbol=key.symbol,
+            trading_days=days,
         )
+        try:
+            return tuple(window for day in days for window in batch.windows(day))
+        except SessionClockError as exc:
+            raise InfrastructureError(exc.code) from exc
 
     def valid_boundary(self, key: DatasetKey, bar: CanonicalBar) -> bool:
         """单 bar 是否落在 coverage 期望边界内（store 发布时的 boundary_validator）。"""
