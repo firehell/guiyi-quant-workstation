@@ -90,7 +90,7 @@ uv run --project services/quant-api python -m ruff check \
 临时 SQLite/Parquet/路径和复制的 shell fixture；不连接真实 RQData、production DB/Redis、Runtime 或通知服务，也不安装 LaunchAgent。
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q --tb=short \
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q --tb=short \
   services/quant-api/tests/data_foundation/test_daily_maintenance.py \
   services/quant-api/tests/data_foundation/test_after_market.py \
   services/quant-api/tests/data_foundation/test_weekly_audit.py \
@@ -117,7 +117,7 @@ loopback、非 5432 端口、精确数据库名 `guiyi_canonical_isolated_test`�
 
 ```bash
 GUIYI_ISOLATED_PUBLICATION_DATABASE_URL='postgresql+psycopg://USER@127.0.0.1:15447/guiyi_canonical_isolated_test' \
-  PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_daily_maintenance_postgresql.py \
   services/quant-api/tests/data_foundation/test_weekly_audit_postgresql.py
 ```
