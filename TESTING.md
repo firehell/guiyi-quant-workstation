@@ -65,6 +65,25 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 
 实跑结果：比较器输出 `MISMATCH_CONFIRMED_SAME_BAR_REBUILD`，退出0表示已复现并核实差异，**不表示parity通过**；444个归一前缀、4输出哈希重放一致，73项既有合同测试通过。435对成熟通道值及共同26个Marker初始评分/价格一致；归一多4个Marker、2笔交易。源码两种灰度路径相同，原站允许重建的参数对照与归一30个Marker完全一致。详情及边界见[当前复核](docs/research/newow-current-review.md)，不执行选股或生产链。
 
+## Newow 主升浪与目标/吸筹固定快照验证
+
+从仓库根执行，使用同一个Git外固定公开响应集合。先核对目录内`manifest.json`；临时目录缺失时停止，不能联网补成另一快照。
+
+```bash
+TZ=Asia/Shanghai node /private/tmp/newow-mainrise-target-snapshot-20260909-rz7ib4a6/replay_mainrise.mjs
+PYTHONPATH=packages/quant-core services/quant-api/.venv/bin/python \
+  /private/tmp/newow-mainrise-target-snapshot-20260909-rz7ib4a6/compare_mainrise.py
+TZ=Asia/Shanghai node /private/tmp/newow-mainrise-target-snapshot-20260909-rz7ib4a6/replay_target.mjs
+PYTHONPATH=packages/quant-core services/quant-api/.venv/bin/python \
+  /private/tmp/newow-mainrise-target-snapshot-20260909-rz7ib4a6/compare_target.py
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/newow/test_main_rise_page_v1.py \
+  services/quant-api/tests/newow/test_oscillation_channel.py \
+  services/quant-api/tests/newow/test_target_absorb_display.py
+```
+
+离线比较实跑通过：主升浪444根指标与全部Marker一致、444个前缀稳定、6笔未舍入配对一致；目标/吸筹日线600根与周线119根HHV10/LLV10逐项相等，三态选择、状态卡和趋势面一致。7个输出文件连续两轮SHA-256不变。比较对象明确标为外部股票页面算术输入；不证明正式期货DTO/API、previous-close activation、owner/segment、回撤、OOS或Runtime。
+
 ## 苏冰历史参考交易
 
 ```bash
