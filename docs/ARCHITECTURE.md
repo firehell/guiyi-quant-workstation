@@ -114,5 +114,6 @@ Canonical/Catalog、`DatasetKey`、Trading Calendar/Session、`MainContractMap`�
 品种选择位于统一导航，数据失败时仍可用；更换品种清除不兼容 contract 和 focus。
 成功态保留 TopBar → Quote → ViewNav → workspace 顺序。盘后 last_failure 独立披露为最近盘后更新失败，
 不隐藏最后有效 Canonical 报价，不将盘后失败误报为数据正常。
-旧页、专用 toolbar/sidebar、旧路由构造器及其偏好读写已删除。统一详情偏好中的一次性旧值迁移保留，
-只用于 Free 指标设置，不选择旧页、不决定旧 URL 行情身份。
+旧页、专用 toolbar/sidebar、旧路由构造器及其偏好读写已删除。统一详情偏好保留旧值迁移：
+旧 chart v9 值迁移为 Free 周期与指标偏好；已有详情 v1 偏好按既有路径升级，
+不选择旧页、不决定旧无 view URL 行情身份。
