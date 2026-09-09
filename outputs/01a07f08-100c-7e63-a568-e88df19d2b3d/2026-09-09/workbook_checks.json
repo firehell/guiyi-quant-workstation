@@ -1,0 +1,50 @@
+{
+  "records": 141,
+  "rollup_rows": 128,
+  "rollups_match": true,
+  "detail_formulas_match": true,
+  "recalculation_verified": true,
+  "error_scan": "{\"kind\":\"notice\",\"message\":\"Cell search matched 0 entries.\"}",
+  "sections": [
+    {
+      "name": "当日策略表现",
+      "first": 8,
+      "last": 11
+    },
+    {
+      "name": "本周累计策略表现（按交易日，包含周初夜盘）",
+      "first": 15,
+      "last": 18
+    },
+    {
+      "name": "当日多空表现",
+      "first": 22,
+      "last": 27
+    },
+    {
+      "name": "当日品种表现",
+      "first": 31,
+      "last": 76
+    },
+    {
+      "name": "本周品种表现",
+      "first": 80,
+      "last": 131
+    },
+    {
+      "name": "按交易日比较",
+      "first": 135,
+      "last": 143
+    },
+    {
+      "name": "本周多空表现",
+      "first": 147,
+      "last": 153
+    },
+    {
+      "name": "新增、此前已有与周初夜盘补入",
+      "first": 157,
+      "last": 164
+    }
+  ]
+}

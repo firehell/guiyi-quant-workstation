@@ -1,0 +1,32 @@
+{
+  "api": {
+    "read_ok": true,
+    "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+    "pid": 76757,
+    "state": "running"
+  },
+  "web": {
+    "read_ok": true,
+    "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+    "pid": 76790,
+    "state": "running"
+  },
+  "live": {
+    "read_ok": true,
+    "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+    "pid": 76904,
+    "state": "running"
+  },
+  "alert": {
+    "read_ok": true,
+    "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+    "pid": 76975,
+    "state": "running"
+  },
+  "after-market": {
+    "read_ok": true,
+    "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+    "pid": null,
+    "state": "not running"
+  }
+}
