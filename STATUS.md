@@ -281,8 +281,25 @@
   新 captured-source 查询脚本与计划位于 `/private/tmp/newow-au-remaining-daily-source-20260909/`，
   离线及独立 Review 各 `40 passed`；SDK 最多 231 次数据 RPC + 3 次初始化元数据 RPC，关闭 retry/pool/fallback。
   原始响应不改写，已批零量全零 O/H/L 且同 close>0 规则仅用于校验例外；其他价格、数值、覆盖、身份或
-  来源错误立即停。当前仅准备，新的 231 次来源查询与随后 430 分区正式写入分别仍需独立单次意图。
+  来源错误立即停。当时仅准备；随后查询结果见下文，430 分区正式写入仍未执行。
   60m 所需 1m/60m 历史依赖、完整真实矩阵和 8010/5174 浏览器验收仍未完成，不能以此日/周计划替代。
+- `2026-09-09T06:51:32..06:51:34Z` 在 `e0c9719c4` 获准执行唯一来源查询计划
+  `bdf1fe1524f8bf7e85cbf8376cd634ee13c45972564d0dca442304d3d372c72d`，第 13 次 API 后失败停止，
+  `SOURCE_CAPTURE_STOPPED`，无 retry。实际为 13 API attempted/completed、15 SDK RPC attempted/completed
+  （quota/type-list 各 1、日行情 13），不是执行全部 231 次；218 次尚未开始。DB/Canonical writes、Redis connections 均为 0。
+  AU2306 的前 12 个响应已按 hash 保存，202 个源日期完整；唯一非正价格记录为 2022-05-17 的已批准
+  零量全零 O/H/L、正 close 例外，原始值未改写。该合约来源已齐，但 22 个分区的完整候选与写入未完成；
+  新来源对应 missing D1 202 / W1 41，完整候选还须保留已有 14 D1 / 3 W1，不能仅以新来源替换完整月份。
+  第 13 个请求为 `AU2308 / 2022-07-18..2022-07-29`，返回 10 行并通过合约与日期检查；
+  随后在响应转换/编码/落盘范围内失败，`source-13.json` 未生成，具体异常类型及原响应未保留。
+  不得推断前次实际含 NaN，也不得把后续新查询当成该次未保存响应。result 文件
+  `/private/tmp/newow-au-remaining-daily-source-20260909/fetch-result.json` SHA256
+  `86a64346317a10e4784ce2fdf55f7981221b4a5effae2926de6f2596cb979daf`；原始文件与逐请求事件保留在同目录。
+  新单窗口诊断准备在 `/private/tmp/newow-au2308-source-diagnostic-20260909/`，仅 AU2308 上述 10 个日期，
+  1 API、最多 4 SDK RPC；显式类型标签保存 NaN/Infinity/missing 等值，不替换为 0/null，不规范化或发布。
+  增加安全 phase、error type/code、OS errno；离线及独立 Review 各 `12 passed`，未执行新查询。
+  当前 `EXTERNAL_GATE_PENDING`：失败批次授权已消费，新单窗口诊断需新明确意图；不重查已保存 AU2306，
+  不自动启动余下 218 次请求，不写生产数据。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
