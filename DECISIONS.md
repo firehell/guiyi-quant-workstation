@@ -1,12 +1,13 @@
 # 架构决策记录
 
-更新时间：2026-09-05
+更新时间：2026-09-09
 
 本文件只记录长期决策；当前版本、部署、Scope、evidence 与 Gate 只看 `STATUS.md`，历史过程从 Git history 追溯。
 
 | 主题 | 长期决策 | 不变量 |
 |---|---|---|
-| 产品 | 本地、单用户的国内期货研究工作站 | 不做自动交易、SaaS 或无人值守下单；`auto_order=false` |
+| 产品 | 本地、单用户的国内期货研究工作站 | 当前研究观察阶段 `auto_order=false`；不做 SaaS，不跳过人工 Gate 进入无人值守真实下单 |
+| 分阶段演进 | 研究观察 → Paper → Shadow → Broker Read-only → 订单草稿 → 人工确认 → 半自动 → 受控自动 | AI 可以自动研究但不能自动晋升；每阶段独立人工 Gate，当前不新增账户或执行能力 |
 | 数据事实链 | `RQData -> Canonical Parquet -> 八表 Catalog + MainContractMap -> MarketDataService` | Historical consumer 不得 glob、自选 active、自判主力、绕过质量或跨频回退 |
 | Live/Historical | Redis Live 仅为当日 observation，Canonical 是治理后的 Historical fact | Live 不直接晋升 Canonical；未确认 Bar 不进入正式历史或正式信号 |
 | Session 锚点 | RQData 1m 首根标签在 adapter 边界减一分钟，统一为 `SessionWindow(start, end]` 的排他 start | 不在聚合器或 consumer 分散补偿；分钟对齐、跨午夜、无效区间与重叠 fail-closed；Canonical V2 原地替换，不新增 data-version |

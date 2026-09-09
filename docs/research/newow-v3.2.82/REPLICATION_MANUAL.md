@@ -1,6 +1,6 @@
 # 归一量化｜牛哇策略复刻手册
 
-版本：Newow v3.2.82 研究基线 / 2026-09-05
+版本：Newow v3.2.82 研究基线 / 2026-09-05；工程边界校订：2026-09-09
 定位：公开可验证策略的 clean-room 复刻、股票页面一致性证据与期货迁移说明
 边界：研究观察；不是交易建议；不是模拟成交；不是实盘成交
 
@@ -20,9 +20,9 @@
 → 综合决策给出行动、确定性、仓位区间和第一原则
 ```
 
-研究现场已经完成公开可证部分的公式复刻，并用 3 个指数、6 只股票、3 个周期完成页面逐值比对，再用 rb/sc/m 三类期货验证迁移合同。当前 `develop` 仍保留趋势、S/D、4/7/11、震荡、主升浪、杯柄、副图与因果回测内核；目标/吸筹显示选择、参数比较、综合决策等以冻结 parity 证据存在，尚未作为 active 产品重新接入。
+研究现场已经完成公开可证部分的公式复刻，并用 3 个指数、6 只股票、3 个周期完成页面逐值比对，再用 rb/sc/m 三类期货验证迁移合同。本手册的公式与历史研究结论固定在上述研究基线。当前代码已提供三策略九组合、参考交易与分区解释；各功能仍独立携带证据状态，active 代码不等于原站完整 parity 或生产验收。
 
-尚未完成的是产品闭环：ReferenceTrade、详情页接入、完整可重放 OOS 冻结包和周线执行合同。六种私有服务端选股公式不再反推，永久保持 `UNKNOWN / OUT_OF_SCOPE`，除非未来出现新的公开、合法、可验证规格。
+ReferenceTrade 与详情页已进入 active 产品；完整可重放 OOS 冻结包、周线执行事实和全产品真实成功路径仍须独立证据。当前状态只看 STATUS.md，正文历史结果不作为实时 Gate 清单。六种私有服务端选股公式不再反推，永久保持 `UNKNOWN / OUT_OF_SCOPE`，除非未来出现新的公开、合法、可验证规格。
 
 <!-- PDF_PAGE -->
 
@@ -624,19 +624,17 @@ NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT
 
 ## 40｜落地路线：从手册到个人期货闭环
 
-当前完成：趋势/震荡/主升浪等研究内核、股票 27 点页面一致性证据、三类期货 owner/换月验证、18 个成本 OOS 运行结果、证据与版本身份。目标/综合决策等部分能力是“证据已冻结、active 实现待恢复”；稳定 Market Web 尚未展示 Newow。
+截至2026-09-09的代码核对：三策略九组合、ReferenceTrade、详情页、MACD显示和按需解释已接入。已实现的页面闭环不重复规划；研究基线的股票27点、18个成本OOS结果及9个W1阻塞单元不因此升级验收。
 
-下一阶段按顺序推进：
+后续仍按独立证据与人工 Gate 推进：
 
-1. `Strategy Frame / Marker → ReferenceTradeProjector`，严格配对 BUILD/CLEAR；
-2. 在 Newow 详情页同时展示 OPEN/CLOSED/ROLLOVER_INTERRUPTED；
-3. 冻结完整 Canonical 输入与无数据库重放脚本；
-4. 补齐周线 next-execution-day limit 合同，再跑 9 个 blocked 单元；
-5. 独立 Review 后才评估 60 品种观察与推送；
-6. 再进入 StrategyDecision、TargetPosition、风险与 Paper；
-7. Shadow、Broker Read-only、人工确认与受控自动交易分别经过独立人工 Gate。
+1. 在完整权威owner/coverage下完成真实MDS成功请求矩阵，并分别核验原站诊断、目标/评分与比较器原件；
+2. 冻结完整Canonical输入与可独立重放的研究包；
+3. 补齐周线next-execution-day limit事实，再验证原阻塞单元；
+4. 独立Review后才评估60品种观察与推送；
+5. StrategyDecision、TargetPosition、风险、Paper、Shadow和Broker接入分阶段另行批准，AI不能自动晋升。
 
-本阶段不新增 Alert、Runtime、Scope、通知、订单、Ledger 或生产数据写入。
+本手册不授权新增Alert、Runtime、Scope、通知、订单、Ledger或生产数据写入；当前release与未完成Gate只见STATUS.md。
 
 <!-- PDF_PAGE -->
 
