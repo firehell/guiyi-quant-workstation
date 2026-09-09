@@ -357,10 +357,28 @@
   本机加强后的只读扫描通过，runner 与 exact v1.10.5 源码 SHA256 均为
   `c0a6526c582cf414712833a7e2727df8ffdfc4e9c20a66a27ee3fa806af415d2`。
   发布脚本离线与独立 Review 各 `55 passed`，已覆盖旧 Bar 保留、399/31 精确 ORM 变更、前像漂移、
-  Runtime 启动参数漂移及未知 commit 整批停止；没有执行真实发布。
-  当前 `EXTERNAL_GATE_PENDING`：正式发布尚未执行，需新的精确单次写入意图。发布入口须持原生维护锁、
+  Runtime 启动参数漂移及未知 commit 整批停止；当时没有执行真实发布。
+  当时正式发布尚未执行，随后获准结果见下文。发布入口须持原生维护锁、
   重查全部计划与前像并逐合约核对 Runtime/消费者，逐分区提交及独立 MDS 回读；失败或 commit 结果不确定即整批停止，
   保留已提交分区和文件，不自动 retry、回滚指针、删除旧文件或恢复旧 writer。1m/60m、真实矩阵与浏览器验收仍未完成。
+- `2026-09-09T07:53:06..07:54:38Z` 在 `30bb207cb` 获准完成唯一一次 20 合约 D1/W1 正式写入，
+  计划 `4a6c1b0aeb6cda1936fa3ce623330b5c8953f789962d7e53bda0589002774085`；结果 `passed`，该批 `COMPLETED`。
+  430 个新不可变分区、430 次唯一 Catalog commit（399 INSERT + 31 UPDATE），Dataset INSERT=0；
+  20 个原生 contract_warmup 结果全部 passed，无 blocked/failed。`native_logical_provider_targets=430` 只表示原生逻辑目标，
+  真实 RQData 请求=0，读取保留响应 231 次，Redis=0、retry=0；没有 Scope、通知、release 或 Runtime 切换。
+  首写前与逐合约锁内 Runtime/前像/计划/来源校验通过，另一个只读 Session 的 Catalog URI + MDS 全 Bar 回读通过。
+  原结果 `/private/tmp/newow-au-remaining-publish-20260909/result.json` SHA256
+  `48c549cf7caeef0035f315a228b9d4c4fd54a565b56957c69ad50bd618a7d727`；readback SHA256
+  `ce24cbb5f3059e485cc8485803e7ef9165b83df43294f9257be8a240d6c8f482`。
+  独立 Review 已核验 1,740 个顺序事件、430 个唯一提交、20 个 native 结果和 Runtime preflight、430 个真实 Parquet hash；
+  5,053 根 Bar（4,184 D1 + 869 W1）与候选及回读一致，31 个旧文件、239 根已有 Bar、231 份源文件均原样保留。
+  此前已完成的 AU2304 20 分区不重跑。本批完成不代表九组合、解释/参考交易或浏览器已经恢复。
+  下一次只读矩阵与剩余 1m/60m 提案准备在 `/private/tmp/newow-au-post-daily-audit-20260909/`：
+  保持修复前 `2026-09-08T07:00:00.000001Z` 截点，AU 三策略 × 1d/1w/60m，覆盖 chart/auxiliary/reference/explanation；
+  使用共享 Reader/MDS 和原生 planner，从新结果提出剩余 1m 请求窗口与 60m 分区，保留任何未解决日/周问题。
+  新审计与提案脚本离线及独立 Review 各 `12 passed`，未执行新审计、来源查询或任何数据写入。
+  当前 `EXTERNAL_GATE_PENDING`：新的只读审计尚未执行，需要明确连接意图；任何新 RQData、Canonical 写入仍另行确认。
+  旧发布计划授权已消费，禁止重跑；最终 8010/5174 本地浏览器验收和保留预览进程仍待完成。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
