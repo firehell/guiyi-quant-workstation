@@ -321,6 +321,30 @@ test('binds reference performance windows to the exact section request', () => {
   )
 })
 
+test('shared trend explanation context remains valid on oscillation and main-rise pages', () => {
+  for (const strategy of ['oscillation', 'main_rise'] as const) {
+    const original = explanationWire()
+    const formula_versions = strategy === 'oscillation'
+      ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
+      : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
+    const wire = { ...original, meta: { ...original.meta, identity: {
+      ...original.meta.identity, strategy, profile_id: `newow_product_${strategy}_1d_v1`, formula_versions,
+    } } }
+    const request = { ...expected, strategy, section: 'explanation' as const }
+    const explanation = normalizeNewowProductResponse(wire, request)
+    assert.equal(explanation.meta.identity.strategy, strategy)
+    assert.equal(explanation.value?.context.daily.identity?.strategy, 'trend')
+    for (const [field, wrong] of Object.entries({
+      product: 'au', strategy, frequency: '60m', profile_id: 'newow_product_oscillation_1d_v1', formula_versions: ['unknown_formula'],
+    })) {
+      const invalid = structuredClone(wire)
+      Object.assign(invalid.explanation.value.context.daily.identity!, { [field]: wrong })
+      assert.throws(() => normalizeNewowProductResponse(invalid, request), new RegExp(field))
+    }
+    assert.throws(() => normalizeNewowProductResponse(wire, { ...request, strategy: 'trend' }), /strategy/)
+  }
+})
+
 test('validates explanation context identities and comparator result identities through the full P4 shape', () => {
   const explanation = normalizeNewowProductResponse(explanationWire(), { ...expected, section: 'explanation' })
   assert.equal(explanation.section, 'explanation')

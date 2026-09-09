@@ -621,7 +621,8 @@ function normalizeContextSlot(payload: unknown, expectedFrequency: NewowProductM
   const field = `explanation.context.${expectedFrequency}`
   const value = exactRecord(payload, field, ['frequency', 'as_of', 'availability', 'confirmation_status', 'identity', 'bar_end', 'source_identity', 'physical_contract', 'segment_id', 'formula_versions', 'main_state'])
   requireExact(value.frequency, expectedFrequency, `${field}.frequency`)
-  const identity = value.identity === null ? null : normalizeWireIdentity(value.identity, `${field}.identity`, { ...meta.identity, frequency: expectedFrequency })
+  // Composite context is supplied by trend replay, regardless of the selected page strategy.
+  const identity = value.identity === null ? null : normalizeWireIdentity(value.identity, `${field}.identity`, { product: meta.identity.product, strategy: 'trend', frequency: expectedFrequency })
   const formulas = stringArray(value.formula_versions, `${field}.formula_versions`)
   if (identity !== null && !sameStrings(formulas, identity.formula_versions)) throw new Error(`${field}.formula_versions conflict with identity`)
   return { frequency: expectedFrequency, as_of: sameInstant(value.as_of, meta.as_of, `${field}.as_of`), availability: normalizeStatus(value.availability, `${field}.availability`), confirmation_status: normalizeStatus(value.confirmation_status, `${field}.confirmation_status`), identity, bar_end: nullableInstant(value.bar_end, `${field}.bar_end`), source_identity: nullableText(value.source_identity, `${field}.source_identity`), physical_contract: value.physical_contract === null ? null : contract(value.physical_contract, `${field}.physical_contract`), segment_id: nullableText(value.segment_id, `${field}.segment_id`), formula_versions: formulas, main_state: value.main_state === null ? null : literal(value.main_state, ['BUILD', 'HOLD', 'CLEAR', 'FLAT', 'UNAVAILABLE'] as const, `${field}.main_state`) }

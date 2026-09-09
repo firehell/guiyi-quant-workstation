@@ -44,7 +44,7 @@ const comparator = computed(() => comparatorPresentation.value.showValue && prop
         <p :title="response?.meta.as_of">当前快照截至 {{ shortNewowTime(response?.meta.as_of) }}</p>
         <p>以下综合事实来自当前快照，不作为所示历史窗口当时的解释。</p>
       </header>
-      <p v-if="presentation.message" class="newow-explanation__state" role="status">
+      <p v-if="presentation.message && !(lifecycle === 'evidence_required' && model && response?.value?.composite.value)" class="newow-explanation__state" role="status">
         {{ lifecycle === 'stale' ? '解释已过期，请重新读取。' : lifecycle === 'loading' ? '正在读取解释…' : lifecycle === 'not_requested' ? '解释尚未读取。' : '解释暂不可用，请重试或查看来源。' }}
       </p>
       <template v-if="model">

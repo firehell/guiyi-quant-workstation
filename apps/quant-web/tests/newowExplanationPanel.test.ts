@@ -158,6 +158,8 @@ test('explanation component renders evidence gaps and comparator in a separate t
   assert.doesNotMatch(nodeText(historicalState), /当前/)
   assert.doesNotMatch(nodeText(explanationPanel), /策略当前为持有状态|历史 Bar 的策略状态为/)
   assert.match(nodeText(explanationPanel), /当前快照截至/)
+  assert.doesNotMatch(nodeText(explanationPanel), /解释暂不可用/)
+  assert.match(nodeText(explanationPanel), /部分解释证据不足/)
   const readable = findNode(root, node => node.props['data-testid'] === 'newow-readable-facts')!
   assert.doesNotMatch(nodeText(readable), /LONG_BIAS|WAIT_CONFIRM|NEWOW_/)
   const sources = findNode(root, node => node.type === 'details' && node.props.class === 'newow-explanation__sources')!
@@ -173,6 +175,24 @@ test('explanation component renders evidence gaps and comparator in a separate t
   assert.match(nodeText(comparatorPanel), /10/)
   assert.match(nodeText(comparatorPanel), /52/)
   app.unmount()
+})
+
+test('missing composite facts and failed explanation requests retain the unavailable notice', async () => {
+  const Panel = await loadComponent()
+  for (const lifecycle of ['evidence_required', 'unavailable'] as const) {
+    const explanation = explanationResponse()
+    explanation.value!.composite = { ...explanation.value!.composite, value: null }
+    const Host = defineComponent({ setup: () => () => h(Panel, {
+      mode: 'explanation', response: explanation, lifecycle, error: null,
+      comparatorResponse: null, comparatorLifecycle: 'not_requested', comparatorError: null,
+    }) })
+    const root = element('root')
+    const app = createRenderer(nodeOperations()).createApp(Host)
+    app.mount(root)
+    await nextTick()
+    assert.match(nodeText(root), /解释暂不可用/)
+    app.unmount()
+  }
 })
 
 test('comparator renders a natural insufficient-owner boundary without a conflict or computed table', async () => {

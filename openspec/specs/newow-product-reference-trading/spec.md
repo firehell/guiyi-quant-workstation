@@ -640,6 +640,13 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 - **WHEN** 请求 `section=explanation`
 - **THEN** 仅对应子功能返回准确 evidence status/reason/source，不能用 0、空数组、neutral 或“暂无信号”掩盖
 
+#### Scenario: Shared explanation context is independent of the selected strategy
+
+- **GIVEN** 趋势、震荡或主升浪页面请求共享综合解释
+- **WHEN** 校验 `context.weekly/daily/hourly` 的来源身份
+- **THEN** 各槽保持同品种、对应周期的 `trend` replay 身份及其 profile/formula，外层响应仍绑定所选页面策略
+- **AND** composite 有实际值且仅部分子功能 evidence_required 时，页面展示已验证解释与证据缺口，不提示整层“解释暂不可用”；无值、失败及 stale 状态仍明确展示
+
 ### Requirement: Compatible chart windows retain reference state
 
 服务端 snapshot token MUST 决定已验证共同事实的兼容关系。定位历史记录重新加载不同chart窗口时，
