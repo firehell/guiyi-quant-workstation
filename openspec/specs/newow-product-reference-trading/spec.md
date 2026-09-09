@@ -691,3 +691,31 @@ MarketDataService completed-day resolver 查找严格早于当前窗口的前一
 - **GIVEN** 一个已解析交易日窗口包含超过 chart_limit 的 completed 60m Bar
 - **WHEN** 用户继续向左加载
 - **THEN** 先耗尽同窗口 chart_before，再发 next_older_window；两类指纹校验不混用
+
+
+### Requirement: Reference waiting state and dates remain display-only
+
+The reference panel MAY show a blue waiting card only from the latest completed, observation-eligible,
+ready FLAT frame of a compatible ready current chart snapshot. Explicit historical mode, historical
+viewport, stale/loading/conflicting sections, identity mismatch or a same-owner OPEN contradiction
+SHALL suppress that card. Its state time and physical segment SHALL remain visible or inspectable.
+The card SHALL NOT create a ReferenceTrade, infer the latest CLOSED trade from a paginated subset,
+copy an old-owner interruption return, or invent a return when exact association is unavailable.
+History filters SHALL affect only history rows and SHALL preserve the server summary and waiting state.
+
+Reference-card intraday labels SHALL show Shanghai MM-DD HH:mm; cross-year comparisons SHALL retain
+the year. Daily and weekly labels SHALL show YYYY-MM-DD without a clock. Full original timestamps,
+physical contract, segment, signal and formula identities SHALL remain available in title/details.
+All prices and returns SHALL remain server Decimal strings; no frontend return formula is permitted.
+
+#### Scenario: Current FLAT exists with no proven latest trade
+
+- **GIVEN** a compatible ready current FLAT chart and an empty or partial reference page
+- **WHEN** the reference section is ready
+- **THEN** the waiting card shows the state time without an associated trade or return
+- **AND** OPEN, CLOSED and interruption statistics remain the independent server result
+
+#### Scenario: A night-session trade spans calendar years
+
+- **WHEN** the user reads an intraday reference spanning two Shanghai calendar years
+- **THEN** both endpoint labels retain the year and clock, with full raw times in the details

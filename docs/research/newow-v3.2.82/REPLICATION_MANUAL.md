@@ -676,18 +676,20 @@ NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT
 
 | 模块 | 怎么采集 | 当前实现/证据 | 期货修改与效果 |
 |---|---|---|---|
-| 目标/吸筹 | 27 点比较 HHV/LLV 与显示选择 | parity evidence；active restore pending | 位置参考；不预测未来价 |
-| 参数比较 | 5 窗口排名、收益、回撤、胜率比对 | evidence snapshot；active restore pending | 必须 next-open + cost；尚待恢复 |
+| 目标/吸筹 | 27 点比较 HHV/LLV 与显示选择 | active 实现；昨收/时序/owner 证据待补 | 位置参考；不预测未来价 |
+| 参数比较 | 5 窗口排名、收益、回撤、胜率比对 | active 独立比较器；browser/tie 证据待补 | 页面理论结果与 ReferenceTrade 分离；因果研究另验 |
 | 主力控盘 | 副图状态与页面脚本重算 | `calculate_main_force_control` | 只解释价格强弱，不代表席位资金 |
 | 照妖镜 | 复刻峰值与警示控制流 | `calculate_zhaoyao_mirror` | repainting；禁止进入正式信号/OOS |
 | 涨跌动能 | VAR4/VAR3 与低位标记比对 | `calculate_up_down_energy` | segment 重算；短段 unavailable |
-| 综合决策 | 枚举 13 键并对 27 个页面点逐值比较 | parity evidence；3 warning 键不可达 | active restore pending；不是仓位事实 |
+| 综合决策 | 枚举 13 键并对 27 个页面点逐值比较 | parity evidence；3 warning 键不可达 | active 解释；token/六组合证据待补；不是仓位事实 |
 | AI 诊股 | 保存模板分支与文本 hash | facts/token 设计；自然语言 unavailable | AI 只改写，不改变状态或仓位 |
 | 私有选股 | 只读请求与当日返回集合 | `UNKNOWN / OUT_OF_SCOPE` | 不迁移；自建透明 OpportunityRanker |
 
 <!-- PDF_PAGE -->
 
 ## 附录 D｜验收、限制与证据入口
+
+以下数字仅为冻结的 v3.2.82 历史研究结果，不覆盖新版。新版盘点见 [2026-09-09 功能差异](../newow-current-review.md)。
 
 页面一致性：27 cases；16 个可比较 feature 全部 27/27 matched；0 mismatch。
 期货迁移：rb/sc/m × 1d/1w/60m，9/9 series 通过。

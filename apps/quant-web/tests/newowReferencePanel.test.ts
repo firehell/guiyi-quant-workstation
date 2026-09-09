@@ -219,6 +219,61 @@ test('reference date drafts clear when a new identity has no retained response',
   app.unmount()
 })
 
+test('waiting card requires current ready compatible FLAT evidence and is independent of history filtering', async () => {
+  const Panel = await loadComponent()
+  const response = referenceResponse()
+  response.value.items = []
+  response.value.summary.open_count = 0
+  const chart = chartResponse()
+  chart.value.frames = [{ bar_end: '2026-08-15T07:00:00Z', main_state: 'FLAT', main_values: {}, status: ready(), action_ids: [], hint_ids: [] }]
+  const inputs = ref({ response, chartResponse: chart, crossSectionCompatible: true, lifecycle: 'ready', chartLifecycle: 'ready', historicalSnapshot: false })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Panel, {
+    ...inputs.value, error: null, selectedSignalId: null, locateMessage: null, loadingPage: false,
+  }) }))
+  app.mount(root)
+  await nextTick()
+  const waiting = () => findNode(root, node => node.props['data-testid'] === 'newow-reference-waiting')
+  assert.ok(waiting())
+  assert.match(nodeText(waiting()!), /空仓等待中/)
+  assert.doesNotMatch(nodeText(waiting()!), /%|收益|参考建仓/)
+  const filter = findNode(root, node => node.props['aria-label'] === '筛选参考历史')!
+  ;(filter.props.onChange as Function)({ target: { value: 'closed' } })
+  await nextTick()
+  assert.ok(waiting(), 'history filter does not invent or hide current strategy state')
+  for (const patch of [{ chartLifecycle: 'stale' }, { lifecycle: 'stale' }, { historicalSnapshot: true }, { crossSectionCompatible: false }]) {
+    const before = inputs.value
+    inputs.value = { ...before, ...patch }
+    await nextTick()
+    assert.equal(waiting(), undefined)
+    inputs.value = before
+    await nextTick()
+  }
+  for (const state of ['HOLD', 'CLEAR', 'UNAVAILABLE']) {
+    inputs.value.chartResponse.value.frames[0]!.main_state = state
+    await nextTick()
+    assert.equal(waiting(), undefined)
+  }
+  inputs.value.chartResponse.value.frames[0]!.main_state = 'FLAT'
+  inputs.value.response.value.items = [trade('old-owner', { status: 'ROLLOVER_INTERRUPTED', physical_contract: 'JM2509', segment_id: 'old', interrupted_at: '2026-08-01T07:00:00Z' })]
+  await nextTick()
+  assert.ok(waiting(), 'old-owner interruption is not turned into a current trade or return')
+  assert.doesNotMatch(nodeText(waiting()!), /%/)
+  inputs.value.response.value.items = [trade('contradiction', { status: 'OPEN' })]
+  await nextTick()
+  assert.equal(waiting(), undefined, 'same-owner OPEN contradicts the waiting display')
+  inputs.value.response.value.items = []
+  const priorIdentity = inputs.value.chartResponse.meta.identity
+  inputs.value.chartResponse.meta.identity = { ...priorIdentity, product: 'rb' }
+  await nextTick()
+  assert.equal(waiting(), undefined, 'a compatibility flag cannot override an identity mismatch')
+  inputs.value.chartResponse.meta.identity = priorIdentity
+  inputs.value.chartResponse.value.chart_through = '2026-08-14'
+  await nextTick()
+  assert.equal(waiting(), undefined, 'historical chart viewport is not current')
+  app.unmount()
+})
+
 function referenceResponse(): Mutable<NewowProductSectionResponse<'reference'>> {
   return {
     meta: meta(), section: 'reference', status: ready(), value: {
