@@ -10,7 +10,7 @@
 长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。已完成的计划、逐次操作、旧候选矩阵及
 逐合约结果从 Git history、tag、PR 和原 evidence 追溯；历史授权不授权重跑。
 
-## v1.10.5 已发布（Runtime 尚未切换）
+## v1.10.5 已发布并切换（两合约补齐待执行）
 
 - 独立候选分支 `codex/subing-input-release-candidate` 基于 `0eca85209008e036626b37eb5563fc504dba12bc`；
   API/Web/Python/lock 版本身份与版本一致性断言为 `1.10.5`；已审候选为 `0d2273445637a6dd5cfef2a45c4f1242276952c5`。
@@ -23,8 +23,12 @@
 - 该候选包含已集成的 Canonical P1、captured Runtime 身份解析、WebSocket 资源边界、统一详情页、
   SuBing 历史参考与 Newow 只读相关改进，不是仅两合约数据修复的最小代码补丁。
 - 本轮批准的 main/tag/release 已执行并读回；AO2701/OI2701 的真实下载与 1m→15m 发布尚未执行。
-  统一消费者升级、Runtime 切换与数据 apply 尚待对应执行意图；新 hash URI 产生后不得回退只支持固定 URI 的 v1.10.4。
-  最终执行版本上须重新生成两合约 dry-run，旧 36 目标计划及旧 hash 不自动授权真实 apply。
+  五项 Runtime 已获准切换并读回。12:07:40 CST 在现役 v1.10.5 重新 dry-run：各 9 个 1m + 9 个 15m，
+  合计 36 目标、预计 18 次行情请求；两个 CLI exit 0、readonly=true、applied/blocked/failed=0。
+  AO2701 plan hash `602821c7195a11c35a2b44b6a18c4b6d806d8e7b9eb98b1be1cc15e0d9e5f504`；
+  OI2701 plan hash `a7431d8eac813486181e2c773f43b1a99b01f30c9469bd25be66d1d6cd7a1a4f`。
+  两者仍限定 through=2026-09-08、15m（仅依赖 1m），与旧计划 hash 一致；真实 apply 尚待对应单次执行意图。
+  新 hash URI 产生后不得回退只支持固定 URI 的 v1.10.4。
 
 ## Release、Runtime 与 Scope
 
@@ -32,13 +36,13 @@
 |---|---|
 | 正式 Release | `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`，PR #359 于 `2026-09-09T03:53:57Z` 合入 main；tree `11704da35b2eccf62bdddc330eb0e42ea5930247`，annotated tag object `71bad4102a9be883ba341c7dd27f0e98f59dab41`。GitHub Release 于 `2026-09-09T03:55:28Z` 发布，non-draft、non-prerelease；远端 main、peeled tag 与 Release target 一致。API/Web/Python/lock 为 1.10.5。 |
 | 发布验收 | 已审候选 `0d2273445637a6dd5cfef2a45c4f1242276952c5` 与发布 tree 完全一致；验证矩阵见上节。本轮重新核验四处版本、远端 main、annotated tag 及 Release target；未重复运行已通过且输入未变的全套测试。 |
-| Runtime | `2026-09-08 20:15:29 CST`：五项 launchd 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.4-r1@43797a5c1ddf581c9381dead9273df8a34375dfa`；API/Web/Live/Alert running，After-market idle；Market/Alert marker enabled，Live/Alert 同根同 commit 且 `recovery_guard_enabled=true`。部署状态 `PARTIAL`，不声明 `RUNTIME_READY`。 |
-| Runtime 工作树 | 2026-09-09 保留现役 detached v1.10.4 根；已准备 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1@cdd72d7501227d8e7f905ea0b8a54c038b521a09`，只执行 render-only，五项模板 root/commit 校验通过、工作树干净；未安装或切换服务，也未清理旧根。 |
-| 最近 health | `2026-09-08 20:15:29 CST`：DB/Redis/Live/After-market ok，Alert degraded；SuBing `evaluation_failed@2026-09-08T07:00:29.336273Z` 未关闭。60 品种 CLOSED、`last_bar_at=null`；新版本自然 completed Bar 尚未验收。captured recovery 身份校验另报 `CAPTURED_RECOVERY_RUNTIME_SERVICE_IDENTITY_INVALID`。 |
+| Runtime | `2026-09-09 12:09:27 CST` 严格读回：五项 launchd 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；API/Web/Live/Alert running，After-market idle；Market/Alert marker enabled，Live/Alert 新鲜心跳同根同 commit 且 `recovery_guard_enabled=true`。切换完成、未使用回退；自然 completed Bar 验收待完成，不声明 `RUNTIME_READY`。 |
+| Runtime 工作树 | 现役 detached v1.10.5 根与原 v1.10.4 根均保留且干净。新根离线安装锁定 Python/Web 依赖并 build；render-only 与三个 installer 模式均一次通过，未重试。旧根目前无五项 launchd 引用；未清理，新格式数据发布后不可将其作为兼容回退根。 |
+| 最近 health | `2026-09-09 12:09:27 CST`：API 1.10.5；API/Web HTTP 200，Runtime health ok/readonly，Live/Alert 心跳新鲜，60 品种 BREAK、subscribed_count=0、last_bar_at=null；本地隧道通过。严格 captured Runtime 身份 verifier 通过。SuBing 保留切换前 `last_failure_at=2026-09-09T03:30:05.449850Z`；Rule error_type=null 不证明两合约输入恢复，历史缺失仍未关闭。 |
 | Database | 最近已记录 production readback 为 Alembic `20260903_0045`；session anchor repair 已发布。旧全库 Dataset/分区/行数快照不作为当前总量。 |
 | Market Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | `2026-09-07T06:49:43Z` 审计：HTDY 仅 `jm × 5m/15m`；SuBing 全部60品种 × 15m，两 Rule enabled。HTDY“焦煤15m和5m，其余59品种60m”共61对仍仅是未应用目标。 |
-| 最近自然 After-market | v1.10.3 于 2026-09-08 自然运行，18:05:05 开始、19:05:52 完成，passed、attempts=1、60 品种，last_failure/current_run null。该状态经校验 create-only 带入 v1.10.4，hash `cece65929ba734c37cf91ee47af1b0d23b5dc3dd413c9d703888f669428347d5`；它不是 v1.10.4 自然盘后证据。 |
+| 最近自然 After-market | v1.10.3 于 2026-09-08 自然运行，18:05:05 开始、19:05:52 完成，passed、attempts=1、60 品种，last_failure/current_run null。该状态经校验 create-only 先带入 v1.10.4，本轮以相同 bytes 带入 v1.10.5，hash `cece65929ba734c37cf91ee47af1b0d23b5dc3dd413c9d703888f669428347d5`；它不是 v1.10.5 自然盘后证据。 |
 
 ## Runtime 验收阻塞与开发差异
 
@@ -64,8 +68,8 @@
 - `f08d86d88` 已在 develop 修复纯解析器并保留层级、重复字段、身份与括号校验；已记录验证为身份模块
   `76 passed`、调用链 `249 passed / 11 skipped`、engineering `18 passed`，两轴独立 Review clean。
   同份实机脱敏输出旧解析器失败、新解析器通过；未从开发根绕过 exact-tag Gate 运行恢复入口。
-- 修复已发布于 v1.10.5，但尚未进入现役 v1.10.4。状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；后续
-  再次部署与自然苏冰评估验收分别等待明确授权/真实证据，不热改运行根，不清除旧 failure。
+- 修复已发布并进入现役 v1.10.5；本轮真实 launchd、exact annotated tag 与新鲜双心跳的严格身份校验通过。
+  自然苏冰评估与两合约历史输入修复仍待真实证据，不清除旧 failure，不将身份 Gate 通过视为业务闭环完成。
 - 2026-09-08 19:26:46..19:26:57 CST 只读确认 RS2609 当日 Canonical 五周期
   `1m/5m/15m/30m/60m` 为 `225/45/15/8/5` 根，原五根日内目标均存在。
   当日 Live 已由自然盘后清理，恢复水位/circuit null，provider attempt count 仍为3。
