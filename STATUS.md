@@ -297,9 +297,26 @@
   `86a64346317a10e4784ce2fdf55f7981221b4a5effae2926de6f2596cb979daf`；原始文件与逐请求事件保留在同目录。
   新单窗口诊断准备在 `/private/tmp/newow-au2308-source-diagnostic-20260909/`，仅 AU2308 上述 10 个日期，
   1 API、最多 4 SDK RPC；显式类型标签保存 NaN/Infinity/missing 等值，不替换为 0/null，不规范化或发布。
-  增加安全 phase、error type/code、OS errno；离线及独立 Review 各 `12 passed`，未执行新查询。
-  当前 `EXTERNAL_GATE_PENDING`：失败批次授权已消费，新单窗口诊断需新明确意图；不重查已保存 AU2306，
+  增加安全 phase、error type/code、OS errno；离线及独立 Review 各 `12 passed`，当时未执行新查询。
+  该阶段等待新的单窗口诊断意图，后续获准结果见下文；失败批次授权已消费，不重查已保存 AU2306，
   不自动启动余下 218 次请求，不写生产数据。
+- `2026-09-09T07:10:32..07:10:34Z` 在 `042272852` 获准执行一次独立 AU2308
+  `2022-07-18..2022-07-29` 诊断，计划 `da20b1f0833fa6ea53cde846243aaf5935db9b6d3f1b0727845291658782f1b7`。
+  结果 `captured_with_findings`，1 API / 3 SDK RPC attempted/completed（quota、type-list、日行情各 1），
+  10 个日期全部保留，DB connections/writes、Canonical writes、Redis connections、retry 均为 0。
+  `2022-07-18/19/22/25/26` 五日的 O/H/L 均明确为 float NaN，volume=0、同一行 close>0；
+  现有 DATA_CENTER 与原生 adapter 的同时全空 O/H/L 规则覆盖该形态，未改变合同、原始值或发布数据。
+  本次新响应不能证明此前未保存的第 13 次响应内容，也不能被补写为此前失败轨迹。
+  独立 Review 已核验计数、日期、原始类型与 hash。证据目录
+  `/private/tmp/newow-au2308-source-diagnostic-20260909/`：typed-raw-source SHA256
+  `6c2bbdc422fe1c43b32cf99a818ff9039936df0d16efad50fa0348881eede65d`；result SHA256
+  `b4f38b8f954c77ec126e63b273bd87e4db37267b25e230af7ddc252ba7a50562`。
+  剩余新计划在 `/private/tmp/newow-au-daily-source-resume-20260909/`：严格为原只读计划 public_requests[13:]，
+  AU2308..AU2608 的 19 个合约、218 次日行情 API、最多 221 次 SDK RPC，3,766 个唯一合约日期，
+  来源日期 `2022-08-01..2026-05-25`。已保存 AU2306 的 12 个窗口和本次 AU2308 窗口均排除；
+  原始来源使用明确类型标签保存，检查复用原生全空/全零零量日规则；其他异常仍停止。
+  新来源脚本离线与独立 Review 各 `62 passed`；计数、范围、保留源 hash、失败停止及无写入路径复核通过。
+  新 218 次查询、后续正式日/周分区写入均未执行，分别需要新的单次明确意图；完整矩阵和本地浏览器验收仍未完成。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
@@ -307,7 +324,7 @@
   本次 `database_writes=1`，`provider_requests=0`、`session_writes=0`、`canonical_writes=0`，无重试。
   精确 plan hash `2384a9cc382c94fb1616d0f508006fd374b3a6b6c6673c5823ff301e574749a7`；
   原结果 `/private/tmp/au-calendar-apply-20260909-zQDruw/result.json`（临时 evidence 不保证长期存在）。
-  单键更正为 `COMPLETED`，不代表 Newow 整体恢复；其后本批 Calendar/Session 进展见上文，历史行情补齐仍未开始。
+  单键更正为 `COMPLETED`，不代表 Newow 整体恢复；其后 Calendar/Session 与首批历史行情进展见上文，整体恢复仍未完成。
   独立规范/需求 Review 无剩余阻塞；完整后端与 engineering 非隔离回归合计
   `2967 passed, 16 skipped, 28 deselected`，另有单键隔离 PostgreSQL `7 passed`，
   Ruff/Mypy/OpenSpec/secret/diff 通过。旧批次计划已因前像变化失效；当时剩余的 173 个候选日期已由上文新来源审计区分。
