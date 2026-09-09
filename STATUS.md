@@ -336,8 +336,31 @@
   只在临时目录生成 Parquet 并完整回读，同时记录 Catalog 前像与既有不可变文件 hash。
   新脚本在执行前修正了 FrozenSource 间接导入引擎早于配置的问题，并补充真实调用链的禁网子进程回归；未进行真实数据库尝试。
   离线及独立 Review 各 `51 passed`；只读事务、临时发布路径、来源身份、已有 Bar 保留与失败停止核验通过。
-  当前 `EXTERNAL_GATE_PENDING`：该次只读 PostgreSQL/Canonical 候选准备尚未执行，需新的明确连接意图；
-  正式发布需候选、影响与恢复范围确认后的独立单次意图，不新增 RQData、Scope、通知或 Runtime 切换。
+  当时只读 PostgreSQL/Canonical 候选准备尚未执行，随后获准结果见下文；正式发布仍需独立单次意图，
+  不新增 RQData、Scope、通知或 Runtime 切换。
+- `2026-09-09T07:34:51..07:35:41Z` 在 `94ed51345` 获准完成一次只读候选准备，计划
+  `979660f595b9d308b0a3c78ba8f6e3b69790e81dd154881e058e8cd449dbd3f1`；结果 `passed`。
+  20 个 AU 合约的原生 D1/W1 计划未漂移；231 个保留响应提供 3,978 个合约日期，按现有规则规范化 10 个零量日候选，
+  原始来源全部保留。临时 Parquet 430 个全部完整回读：217 D1 / 4,184 Bar，213 W1 / 869 Bar，共 5,053 Bar。
+  31 个 Catalog 前像的 239 根已有 Bar（206 D1 + 33 W1）逐值保留；正式文件与 DB 未写入，RQData、Redis、retry 均为 0。
+  结果 `/private/tmp/newow-au-remaining-candidates-20260909/result.json` SHA256
+  `df347d1b25164e01550443607e3fbfcaf6bc2e8ac14d9a0ca0f6bedeca6956ed`；publication-plan 文件 SHA256
+  `809462e9210b0f0c8baa9931fc4c9b7b9d0d0a0ee7f7575fc7ca6406ef60ac5f`；fresh-plans SHA256
+  `bd5565b5db49a1775c2ee74bbee32ea5dfc9029d3fdea85d5d94067a628910a2`。
+  独立 Review 已逐文件核验哈希、端点与计数，来源对应 D1 逐值相等，独立重算 836 条新增 W1 相等；
+  所有已有 Bar、旧文件与来源 hash 均一致。候选完成不等于正式发布或页面恢复。
+  下一批精确发布范围在 `/private/tmp/newow-au-remaining-publish-20260909/`：430 个新不可变文件，
+  Catalog 399 INSERT + 31 UPDATE，Dataset INSERT=0；保留所有旧文件，不改已有 239 Bar。
+  本地只读核对五个 installed/loaded Runtime 服务均为 v1.10.5 root / `cdd72d750`，未发现旧 v1.10.4 进程，
+  P1 storage/catalog/MDS 代码一致；精确目标 URI 扫描 430 个均尚不存在。无 Runtime 重启或切换。
+  独立 Review 要求加强启动身份检查后，已补齐五个 installed/loaded Label、程序、参数、工作目录及固定 runner hash；
+  本机加强后的只读扫描通过，runner 与 exact v1.10.5 源码 SHA256 均为
+  `c0a6526c582cf414712833a7e2727df8ffdfc4e9c20a66a27ee3fa806af415d2`。
+  发布脚本离线与独立 Review 各 `55 passed`，已覆盖旧 Bar 保留、399/31 精确 ORM 变更、前像漂移、
+  Runtime 启动参数漂移及未知 commit 整批停止；没有执行真实发布。
+  当前 `EXTERNAL_GATE_PENDING`：正式发布尚未执行，需新的精确单次写入意图。发布入口须持原生维护锁、
+  重查全部计划与前像并逐合约核对 Runtime/消费者，逐分区提交及独立 MDS 回读；失败或 commit 结果不确定即整批停止，
+  保留已提交分区和文件，不自动 retry、回滚指针、删除旧文件或恢复旧 writer。1m/60m、真实矩阵与浏览器验收仍未完成。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
