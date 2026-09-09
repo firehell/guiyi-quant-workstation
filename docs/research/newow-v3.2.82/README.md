@@ -20,6 +20,8 @@
 
 ## 阅读入口
 
+- [2026-09-09 新版功能差异与后续任务](../newow-current-review.md)（App/Web 分别记录，不覆盖旧公式基线）
+
 - [归一量化｜牛哇策略复刻手册（Markdown 源稿）](REPLICATION_MANUAL.md)
 - [归一量化｜牛哇策略复刻手册（A4 PDF）](../../../output/pdf/newow-v3.2.82-futures-replication-manual.pdf)
 - [完整策略与指标报告](REPORT.md)
