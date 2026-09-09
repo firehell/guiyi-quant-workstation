@@ -168,11 +168,24 @@
   `945f2a26ec96494bfd5a294ca7c70d5f4333cda2cf213fcee1ea172943d3e5a9`；本步 provider、DB 与 Canonical 写入均为 0。
   本次例外不扩展到其他日期或合约，不等于 Canonical 发布授权。离线 21 passed，覆盖精确三行、原始响应保留、
   其他零价仅记录、OHLC 与其余五个来源数值字段的非有限值拒绝及剩余请求精确排除首个已完成窗口。
-  新待批准来源审计只包含原计划尚未启动的 9 个窗口、188 个源日期，范围 `2022-03-28..2022-12-30`，
-  首批方案详见 `/private/tmp/newow-au-remaining-source-20260909/first-batch.json`。拟作为 raw source audit
+  新来源审计只包含原计划尚未启动的 9 个窗口、188 个源日期，范围 `2022-03-28..2022-12-30`，
+  首批方案详见 `/private/tmp/newow-au-remaining-source-20260909/first-batch.json`。作为 raw source audit
   保留非正 OHLC 并列为 findings，不自动规范化或发布；连接、格式、身份、重复或覆盖错误仍立即停止且无 retry。
-  此诊断用途与旧遇非正价格停批的捕获不同，须新的精确单次意图，尚未执行。其后根据完整来源另行规划受控
-  Canonical 发布，再完成真实矩阵与本地浏览器验收。
+  此诊断用途与旧遇非正价格停批的捕获不同，随后取得新的精确单次批准，执行结果见下文。
+- `2026-09-09T05:16:22..05:16:23Z` 在 `ccc93c1c7` 执行剩余来源审计，plan
+  `d63b37c3f95c8be30fb3e24638aea6559b22d2c8343492915c0a2619620e4cc8`：9 次 public API、11 次 SDK RPC
+  全部完成（quota/type-list 各 1、日行情 9），188 个日期完整，`captured_with_source_findings`；
+  provider 操作无 retry，DB/Canonical writes、Redis connections 均为 0。逐文件哈希与事件见
+  `/private/tmp/newow-au-remaining-source-20260909/fetch-result.json` 和 `fetch-events.jsonl`。
+  唯一新增非正价格记录为 `AU2304 / 2022-03-31`：volume=0、open/high/low=0、close=397.26、open_interest=12。
+  此日期不在已批准的三条例外中，保持原值，不自动规范化或发布。
+  两批合并后 196 个源交易日与已捕获 Calendar 日期逐项相等、无重复；仅应用三条例外时 195 行通过原生
+  CanonicalBar 校验，03-31 因 OHLC 包络失败。仅在内存假设增加 03-31 例外时，196 D1、41 W1 的原生
+  构造与 20 个分区的离线范围校验通过；该对照不是授权或真实发布，未进行 fresh Catalog recheck、
+  Parquet 写入/物理回读或页面验收。完整离线报告
+  `/private/tmp/newow-au-complete-source-20260909/validation.json` SHA256
+  `ddae25495bf8e6dacc70973ad0edc4e22480256d49d0061b58ea1ffb60079fe2`。
+  首批全部源响应均已保留，后续不重查这 196 天；先决定新零成交日的口径，再规划受控 Canonical 发布及真实矩阵验收。
 
 - 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
   id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
