@@ -131,7 +131,11 @@
   Web `507 passed, 1 skipped`、定向 backend + engineering `275 passed, 1 skipped`、build 通过；
   等待卡浏览器 2 项、既有交互 4 项通过，1440/390px fixture 已视觉检查；9 项 OpenSpec、secret/diff 通过。
   独立 Standards/Spec 复审通过，复审分别实跑 59/69 项；工程为 `CODE_COMPLETE`、`TEST_COMPLETE`、`REVIEW_COMPLETE`。
-  外站完整九组合、问题个股与收盘标签仍 `EXTERNAL_GATE_PENDING`，后续浏览器核查受 Mac 锁屏阻塞；
+  owner 解锁后于 14:16–14:32 CST 完成招商银行三策略 × 日/周/60分的单标的可见行为采样，
+  并观察顺灏日周目标/吸筹、金钼周线清仓标记及14:30前后卡片变化；锁屏阻塞已解除，详见当前复核。
+  新版五项解释拆分与现有四项 certainty 合同有明确展示差异，待独立版本设计和规则取证；未变更公式。
+  未刷新页在14:30后仍留待确认文字，刷新后顺灏清仓变持仓，不能把盘中预览固化为正式交易。
+  逐Bar parity、旧版个股bug因果修复、15:00收盘后及自动隐藏仍 `EXTERNAL_GATE_PENDING`。
   fixture 与旧版证据不证明新版 parity。本轮未发布、切换 Runtime 或修改策略公式、收益口径、生产数据与通知。
 
 - 2026-09-09 黄金元数据接力已完成五合约 `AU2304/AU2306/AU2308/AU2310/AU2312` 的本批缺口修复。
