@@ -272,6 +272,22 @@ class MarketCatalog:
         )
         return tuple(self._partition(key, row) for row in rows)
 
+    def product_partitions(self, symbol: str) -> tuple[CatalogPartition, ...]:
+        """One metadata-only inventory for bounded maintenance; never reads files."""
+        rows = self.session.execute(
+            select(MarketDataset, MarketPartition)
+            .join(MarketPartition, MarketPartition.dataset_id == MarketDataset.id)
+            .where(MarketDataset.symbol == symbol.strip().lower())
+            .order_by(MarketPartition.year, MarketPartition.month)
+        )
+        return tuple(
+            self._partition(DatasetKey(
+                DatasetKind(dataset.kind), dataset.symbol,
+                dataset.series_or_contract, BarFrequency(dataset.frequency),
+            ), partition)
+            for dataset, partition in rows
+        )
+
     def partitions_before(
         self,
         key: DatasetKey,

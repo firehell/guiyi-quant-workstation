@@ -135,6 +135,26 @@ Catalog/Parquet 物理一致性问题 MUST 分别使用 `main_contract_map`、`p
 - **WHEN** 所有预期月完整且再次运行相同 fixed through update
 - **THEN** 结果为零目标、零 provider request、零写入
 
+### Requirement: Daily maintenance is Catalog-bounded
+`UpdateRequest` SHALL default to `full`; optional `daily` MUST reject `since` and require existing continuous
+1m/D1 Catalog baseline, complete Calendar and gap-free rank1 mapping. It SHALL select current months,
+Catalog-identifiable missing months and exact endpoint gaps, including mapped-only new dominant contracts.
+It MUST NOT open other historical Parquet or automatically bootstrap historical metadata or contract lifecycle.
+Missing baseline or indeterminate mapping/boundaries MUST fail closed with historical maintenance required.
+Daily groups MUST be bounded by product, family and month and reuse the shared validation, provider and atomic
+publication path. Complete ISO-week D1/W1 context and natural quota/restart semantics MUST remain unchanged.
+Calendar/Session checks MUST use batch queries. Validated source reuse MUST be limited to one group and
+invalidate on Catalog pointer change. Optional typed progress MUST carry bounded identities, stage counters
+and durations; publishing counts MUST follow successful commit, and observer failure MUST stop the attempt.
+
+#### Scenario: Old physical corruption is outside daily scope
+- **WHEN** an old partition has complete Catalog edges but damaged Parquet
+- **THEN** daily does not open that partition or claim its integrity; full update/audit remains responsible
+
+#### Scenario: Derived partition missing after restart
+- **WHEN** a mapped derived month is missing while its 1m source is complete
+- **THEN** daily rebuilds that month from validated 1m without a provider request or success-checkpoint dependency
+
 ### Requirement: quota 中止和续传
 明确的 provider quota/limit 异常 SHALL 映射为 `PROVIDER_QUOTA_EXHAUSTED`；该轮 MUST 立即停止后续
 provider 调用，保留已发布月且不发布当前未完成月，并返回 `status=partial` 和

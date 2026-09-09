@@ -87,6 +87,20 @@ adapter 在唯一 metadata 边界将其减一分钟后写入 DB，因此 active 
 
 ## 4. 更新、刷新与自然续传
 
+`UpdateRequest.mode` 默认 `full`，公开 update 继续全历史核查；内部 `daily` 模式不接受 `since`。
+daily 要求已有 continuous `1m/1d` Catalog baseline，并以完整 Calendar、连续 rank1 映射及 Catalog
+分区索引选择当月、缺月、精确首尾落后月；新主力仅补已证明的 mapped 日期，不自动执行 lifecycle warm-up。
+缺 baseline、映射断裂或无法确定边界时要求显式历史维护，不执行广域 metadata bootstrap；受限当天/下一
+交易日 metadata seam 保留。旧月内部损坏由 full update/audit 检出，daily 不以 row count 或首尾完好声明
+全月物理完整。完整 ISO 周仍通过既有 D1/W1 同源批次补齐，必要时读取跨月的 D1 context。
+
+daily 按品种、数据族、月份展开目标并使用既有校验与原子发布入口；Calendar/Session 校验使用 batch
+查询。派生源仅在当前 family-month 内复用已验证的 1m，Catalog pointer 改变立即失效，离开批次即丢弃。
+可选 `MaintenanceObserver` 只报告 planning/reading/provider/publishing/aggregation 的有界身份、
+计数和耗时，不决定处理范围。completed 是各阶段成功操作累计数，provider 按 fetch_many 批次计，
+publishing 只在单分区 Catalog commit 后计数；total 未知为 null。observer 失败停止本轮，不能当作
+单族 provider 故障继续。无 observer 的既有调用保持兼容，last-success/status 文件不是进度权威。
+
 `effective_start(symbol)=max(product_window_start(symbol), active_history_floor)`，其中
 `active_history_floor=2023-01-01`。`update` 使用显式 `--through` 固定水位，先同步 metadata，后
 优先完成基础 provider 日线 `1d` 与由其聚合的 `1w`，再按 active universe、Dataset、年月顺序续传基础
