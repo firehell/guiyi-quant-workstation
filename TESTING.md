@@ -36,6 +36,20 @@ pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test
 只使用现有依赖与本地测试输入；`pnpm_config_verify_deps_before_run=false` 防止新版 pnpm 在复核时自动安装依赖。
 这些测试证明当前代码合同，不等于新原站版本的同输入逐值验证。可见收益舍入核查的输入、公式及限制见当前研究复核。
 
+## Newow 固定公开快照离线逐值验证
+
+以下命令从仓库根执行，仅使用本机已冻结文件；不重新请求外站。临时目录缺失时不能复现，不可静默用新行情替换该快照。先核对目录内 `manifest.json` 的文件与源码哈希；具体采集身份、容差和119行/18个Marker结果见[当前复核](docs/research/newow-current-review.md)。
+
+```bash
+TZ=Asia/Shanghai node /private/tmp/newow-same-input-20260909-pjncal43/replay_page.mjs
+PYTHONPATH=packages/quant-core services/quant-api/.venv/bin/python /private/tmp/newow-same-input-20260909-pjncal43/compare_kernel.py
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/newow/test_trend_band_page_v2.py \
+  services/quant-api/tests/newow/test_reference_trades.py
+```
+
+实跑离线比较通过；119个归一前缀检查通过；重复重放4个输出哈希一致；定向测试32 passed。比较覆盖趋势周线页面kernel及未舍入收益函数；不声称股票行情是期货completed Bar，也不证明产品API、完整参考交易投影、回撤、其他组合或Runtime通过。原始第三方响应及提取代码只保存在Git外。
+
 ## 苏冰历史参考交易
 
 ```bash
