@@ -191,7 +191,7 @@ def test_daily_new_dominant_downloads_only_proven_rank1_days(daily_manager):
         listed_date=date(2025, 1, 1), expired_date=date(2026, 2, 1), provider="rqdata",
     ))
     db.execute(update(MainContractMap).where(
-        MainContractMap.trade_date >= date(2025, 3, 3),
+        MainContractMap.trade_date >= date(2025, 3, 5),
     ).values(contract_code="JM2601"))
     db.commit()
     for key, bars in tuple(manager.provider.bars.items()):
@@ -204,7 +204,10 @@ def test_daily_new_dominant_downloads_only_proven_rank1_days(daily_manager):
     new_calls = [(key, ends) for key, ends in manager.provider.calls
                  if key.series_or_contract == "JM2601"]
     assert new_calls
-    assert all(end.date() >= date(2025, 3, 3) for _key, ends in new_calls for end in ends)
+    assert all(end.date() >= date(2025, 3, 5) for key, ends in new_calls
+               if key.frequency is BarFrequency.M1 for end in ends)
+    assert {end.date() for key, ends in new_calls if key.frequency is BarFrequency.D1
+            for end in ends} == {date(2025, 3, day) for day in range(3, 8)}
     assert all(row.month == 3 for row in manager.catalog.product_partitions("jm")
                if row.dataset.series_or_contract == "JM2601")
 
@@ -471,17 +474,66 @@ def test_daily_weekly_refresh_keeps_cross_month_and_year_daily_context(daily_man
         ) for stamp in ends)
     prior = through - timedelta(days=7)
     assert manager.update(UpdateRequest(("jm",), None, prior, apply=True)).status == "passed"
+    # Switch on Wednesday with stale same-contract D1 already present before rank1.
+    monday = through - timedelta(days=4)
+    db.add(Contract(
+        contract_code="JM2601", instrument_symbol="jm", exchange_code="DCE",
+        listed_date=date(2025, 1, 1), expired_date=date(2026, 2, 1), provider="rqdata",
+    ))
+    db.execute(update(MainContractMap).where(
+        MainContractMap.trade_date >= monday + timedelta(days=2),
+    ).values(contract_code="JM2601"))
+    db.commit()
+    for key, bars in tuple(manager.provider.bars.items()):
+        if key[0] == "contract":
+            manager.provider.bars[(key[0], key[1], "JM2601", key[3])] = bars
+    daily_key = DatasetKey(DatasetKind.CONTRACT, "jm", "JM2601", BarFrequency.D1)
+    stale = tuple(bar for bar in manager.provider.bars[daily_key.as_tuple()]
+                  if bar.trading_day in (prior, monday))
+    for year, month in {(bar.trading_day.year, bar.trading_day.month) for bar in stale}:
+        month_bars = tuple(bar for bar in stale if (bar.trading_day.year, bar.trading_day.month) == (year, month))
+        manager.catalog.register_partition(manager.store.publish(PublishRequest(
+            daily_key, year, month, month_bars, tuple(bar.bar_end for bar in month_bars),
+        )))
+    db.commit()
+    original_fetch = manager.provider.fetch_many
+    snapshots = []
+
+    def fetch(requests):
+        batches = original_fetch(requests)
+        if not any(request.key.series_or_contract == "JM2601" for request in requests):
+            return batches
+        from app.market_data.historical_data_manager import BarBatch
+        revision = Decimal(len(snapshots) + 10)
+        snapshots.append(requests)
+        return tuple(BarBatch(tuple(replace(
+            bar, volume=revision * (5 if request.key.frequency is BarFrequency.W1 else 1),
+        ) for bar in batch.bars)) for request, batch in zip(requests, batches, strict=True))
+
+    manager.provider.fetch_many = fetch
     manager.provider.calls.clear()
     result = manager.update(UpdateRequest(
         ("jm",), None, through, mode="daily", apply=True,
     ))
     assert result.status == "passed"
-    monday = through - timedelta(days=4)
     daily_context = {stamp.date() for key, stamps in manager.provider.calls
                      if key.kind is DatasetKind.CONTINUOUS and key.frequency is BarFrequency.D1
                      for stamp in stamps}
     assert {monday + timedelta(days=offset) for offset in range(5)} <= daily_context
     assert (monday.year, monday.month) != (through.year, through.month)
+    stored_daily = tuple(bar for row in manager.catalog.all_partitions(daily_key)
+                         for bar in manager.store.read_catalog_partition(row))
+    week_daily = tuple(bar for bar in stored_daily if monday <= bar.trading_day <= through)
+    weekly_key = DatasetKey(DatasetKind.CONTRACT, "jm", "JM2601", BarFrequency.W1)
+    weekly = tuple(bar for row in manager.catalog.all_partitions(weekly_key)
+                   for bar in manager.store.read_catalog_partition(row))
+    assert len(week_daily) == 5
+    assert sum(bar.volume for bar in week_daily) == weekly[-1].volume
+    assert next(bar for bar in stored_daily if bar.trading_day == prior).volume == Decimal(1)
+    week_batch = next(requests for requests in snapshots
+                      if any(request.key.frequency is BarFrequency.W1 for request in requests))
+    assert {stamp.date() for request in week_batch if request.key.frequency is BarFrequency.D1
+            for stamp in request.expected} == {monday + timedelta(days=n) for n in range(5)}
     assert manager.update(UpdateRequest(
         ("jm",), None, through, mode="daily", apply=True,
     )).status == "noop"
@@ -521,3 +573,42 @@ def test_within_batch_source_reuse_invalidates_on_catalog_pointer_change(daily_m
     assert source_reads == [source_key, source_key]
     row = manager.catalog.all_partitions(derived_key)[0]
     assert all(bar.close == Decimal(12) for bar in manager.store.read_catalog_partition(row))
+
+
+@pytest.mark.parametrize("missing", ["calendar", "session"])
+def test_physical_week_context_missing_metadata_fails_before_fetch(daily_manager, missing):
+    from sqlalchemy import delete
+    from app.market_data.errors import InfrastructureError
+    from app.market_data.historical_data_manager import _Target
+    manager = daily_manager
+    day = date(2025, 3, 4)
+    table = TradingCalendar if missing == "calendar" else TradingSession
+    field = table.trade_date if missing == "calendar" else table.effective_from
+    manager.catalog.session.execute(delete(table).where(field == day))
+    manager.catalog.session.commit()
+    end = datetime(2025, 3, 7, 1, 5, tzinfo=UTC)
+    target = _Target(DatasetKey("contract", "jm", "JM2509", "1w"), 2025, 3,
+                     (end,), (end,), ())
+    before = manager.catalog.product_partitions("jm")
+    with pytest.raises(InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
+        manager._weekly_daily_companions(target, date(2025, 3, 7))
+    assert manager.provider.calls == []
+    assert manager.catalog.product_partitions("jm") == before
+
+
+def test_physical_week_context_starts_at_contract_listing(daily_manager):
+    from app.models import Contract
+    from app.market_data.historical_data_manager import _Target
+    manager = daily_manager
+    manager.catalog.session.add(Contract(
+        contract_code="JM2601", instrument_symbol="jm", exchange_code="DCE",
+        listed_date=date(2025, 3, 5), expired_date=date(2026, 2, 1), provider="rqdata",
+    ))
+    manager.catalog.session.commit()
+    end = datetime(2025, 3, 7, 1, 5, tzinfo=UTC)
+    target = _Target(DatasetKey("contract", "jm", "JM2601", "1w"), 2025, 3,
+                     (end,), (end,), ())
+    companions = manager._weekly_daily_companions(target, date(2025, 3, 7))
+    assert {stamp.date() for companion in companions for stamp in companion.missing} == {
+        date(2025, 3, 5), date(2025, 3, 6), date(2025, 3, 7),
+    }

@@ -1872,18 +1872,18 @@ class HistoricalDataManager(ContractWarmupPlanner):
             monday = trading_day - timedelta(days=trading_day.isoweekday() - 1)
             sunday = min(monday + timedelta(days=6), through)
             if daily_key.kind is DatasetKind.CONTRACT:
-                mapped_days = tuple(
-                    fact.trade_date
-                    for fact in self.catalog.main_map(
-                        daily_key.symbol,
-                        monday,
-                        sunday,
-                    )
-                    if fact.contract == daily_key.series_or_contract
+                fact = self.catalog.contract_fact(
+                    daily_key.symbol, daily_key.series_or_contract,
+                )
+                # W1 is computed from the physical owner's entire valid ISO week,
+                # including days before it became rank1. Publish D1 from that same
+                # provider batch so Canonical can reproduce the weekly snapshot.
+                week_days = self.coverage.contract_trading_days(
+                    fact, monday, sunday,
                 )
                 expected = self.coverage.expected_bar_ends_for_trading_days(
                     daily_key,
-                    mapped_days,
+                    week_days,
                 )
                 for item in expected:
                     local_day = item.astimezone(SHANGHAI).date()

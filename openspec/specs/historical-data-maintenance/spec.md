@@ -138,7 +138,9 @@ Catalog/Parquet 物理一致性问题 MUST 分别使用 `main_contract_map`、`p
 ### Requirement: Daily maintenance is Catalog-bounded
 `UpdateRequest` SHALL default to `full`; optional `daily` MUST reject `since` and require existing continuous
 1m/D1 Catalog baseline, complete Calendar and gap-free rank1 mapping. It SHALL select current months,
-Catalog-identifiable missing months and exact endpoint gaps, including mapped-only new dominant contracts.
+Catalog-identifiable missing months and exact endpoint gaps, including mapped new dominant contracts.
+Missing contract W1 MUST refresh same-contract D1 for its exact complete ISO week within valid lifecycle,
+including pre-rank1 dates, in the same provider batch; other valid persisted D1 rows MUST be preserved.
 It MUST NOT open other historical Parquet or automatically bootstrap historical metadata or contract lifecycle.
 Missing baseline or indeterminate mapping/boundaries MUST fail closed with historical maintenance required.
 Daily groups MUST be bounded by product, family and month and reuse the shared validation, provider and atomic
