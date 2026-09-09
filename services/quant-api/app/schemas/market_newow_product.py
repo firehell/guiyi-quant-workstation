@@ -114,6 +114,7 @@ class ChartValueOut(_Out):
     hints: list[ProductHintOut]
     diagnostics: list[str]
     next_before: str | None
+    next_older_window: str | None
     repainting: bool
     formal_signal_eligible: bool
     allowed_uses: list[str]

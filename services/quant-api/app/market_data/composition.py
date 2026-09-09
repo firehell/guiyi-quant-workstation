@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Callable, ContextManager, cast
@@ -10,6 +12,7 @@ from typing import Callable, ContextManager, cast
 from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
+from app.db.session import SessionLocal
 from app.market_data.catalog import MarketCatalog
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import HistoricalDataManager
@@ -155,15 +158,26 @@ def build_market_home_projection(session: Session) -> MarketHomeProjection:
     )
 
 
-def build_market_read_service(session: Session) -> MarketReadService:
+def build_market_read_service(session: Session, *, redis: RedisClient | None = None) -> MarketReadService:
     """Compose Market reads with an optional transient Redis Live overlay."""
 
     return MarketReadService(
         market_data=build_market_data_service(session),
         phase_resolver=MarketPhaseResolver(session),
         operational_products=load_operational_products(),
-        live_store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
+        live_store=RedisLiveStore(redis if redis is not None else cast(RedisClient, get_redis_connection())),
     )
+
+
+@contextmanager
+def open_market_read_service() -> Iterator[MarketReadService]:
+    """One synchronous read owns all clients; open/use/close on its worker thread."""
+    with SessionLocal() as session:
+        redis = get_redis_connection()
+        try:
+            yield build_market_read_service(session, redis=cast(RedisClient, redis))
+        finally:
+            redis.close()
 
 
 def build_live_market_service(session: Session) -> LiveMarketService:

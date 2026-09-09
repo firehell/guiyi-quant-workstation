@@ -140,6 +140,18 @@ class ActualDominantResearchSegmentLoader:
     ) -> None:
         self._market_data = market_data
 
+    def owner_segments(
+        self, *, symbol: str, since: date, through: date,
+    ) -> tuple[ResolvedContractSegment, ...]:
+        """Enumerate and validate rank1 owners independently of physical reads."""
+        segments = self._market_data.actual_dominant_segments(symbol, since, through)
+        if not segments:
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 segment identity is missing or inconsistent"
+            )
+        self._validate_authoritative_segments(segments, since=since, through=through)
+        return segments
+
     def load(
         self,
         *,
@@ -166,19 +178,8 @@ class ActualDominantResearchSegmentLoader:
                 "rank1 empty-frequency identity is invalid"
             )
 
-        authoritative_segments = self._market_data.actual_dominant_segments(
-            symbol,
-            since,
-            through,
-        )
-        if not authoritative_segments:
-            raise ActualDominantResearchSegmentIdentityError(
-                "rank1 segment identity is missing or inconsistent"
-            )
-        self._validate_authoritative_segments(
-            authoritative_segments,
-            since=since,
-            through=through,
+        authoritative_segments = self.owner_segments(
+            symbol=symbol, since=since, through=through,
         )
 
         full = {

@@ -22,11 +22,16 @@ const FIXED_IDENTITIES: Record<Extract<MarketDetailView, 'trend' | 'subing'>, Pi
 }
 
 export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDetailRouteResult {
-  const viewValue = scalar(query.view)
+  const omittedView = query.view === undefined
+  const viewValue = omittedView ? (query.overlay === 'htdy' ? 'htdy' : 'free') : scalar(query.view)
   const symbol = normalizeSymbol(query.symbol)
-  if (viewValue === undefined) return { kind: 'missing-view', symbol }
-  if (!isView(viewValue)) return invalid('DETAIL_VIEW_UNKNOWN', symbol, null)
+  if (viewValue === undefined || !isView(viewValue)) return invalid('DETAIL_VIEW_UNKNOWN', symbol, null)
   if (!symbol) return invalid('DETAIL_SYMBOL_INVALID', null, null)
+
+  if (query.overlay !== undefined && query.overlay !== (viewValue === 'htdy' ? 'htdy' : 'none')) {
+    return invalid('DETAIL_OVERLAY_INVALID', symbol, recoveryFor(viewValue, symbol))
+  }
+  if (omittedView) query = { ...query, series_kind: query.series_kind === undefined ? 'actual_dominant' : query.series_kind, frequency: query.frequency === undefined ? '15m' : query.frequency }
 
   const isNewow = viewValue === 'newow'
   const strategy = isNewow
@@ -62,13 +67,13 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
   }
   if (seriesKind === 'contract') {
     const contract = normalizeContract(rawContract)
-    if (!contract) return invalid('DETAIL_CONTRACT_REQUIRED', symbol, recoveryFor(viewValue, symbol))
+    if (!contract || contract.replace(/\d+$/, '').toLowerCase() !== symbol) return invalid('DETAIL_CONTRACT_REQUIRED', symbol, recoveryFor(viewValue, symbol))
     if (hasFocus(query) && !allowsFocus(viewValue, seriesKind, frequency)) {
       return invalid('DETAIL_FOCUS_INVALID', symbol, recoveryFor(viewValue, symbol))
     }
     return valid(viewValue, symbol, seriesKind, frequency, contract, query.focus_bar_end, strategy ?? undefined)
   }
-  if (rawContract !== undefined) return invalid('DETAIL_SERIES_KIND_INVALID', symbol, recoveryFor(viewValue, symbol))
+  if (query.contract !== undefined) return invalid('DETAIL_SERIES_KIND_INVALID', symbol, recoveryFor(viewValue, symbol))
   return valid(viewValue, symbol, seriesKind, frequency, undefined, query.focus_bar_end, strategy ?? undefined)
 }
 
@@ -222,7 +227,8 @@ function hasFocus(query: Record<string, unknown>): boolean {
 }
 
 function allowsFocus(view: MarketDetailView, seriesKind: SeriesKind, frequency: MarketFrequency): boolean {
-  return (view === 'htdy' && seriesKind === 'actual_dominant')
+  return (view === 'free' && seriesKind === 'actual_dominant' && frequency === '15m')
+    || (view === 'htdy' && seriesKind === 'actual_dominant')
     || (view === 'subing' && seriesKind === 'actual_dominant' && frequency === '15m')
     || (view === 'trend' && seriesKind === 'actual_dominant' && frequency === '1d')
 }

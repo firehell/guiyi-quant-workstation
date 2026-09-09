@@ -1,6 +1,6 @@
 # Canonical 数据基础
 
-更新时间：2026-09-04
+更新时间：2026-09-09
 
 ## 1. 唯一 active 数据语言
 
@@ -36,15 +36,27 @@ canonical/
   frequency={1m|5m|15m|30m|60m|1d|1w}/
   year=YYYY/
   month=MM/
-  part.parquet
+  part.<sha256>.parquet
 ```
 
 行字段为 `bar_end`、`trading_day`、`open`、`high`、`low`、`close`、`volume`、`turnover` 和
 `open_interest`。价格和金额用 Decimal，`bar_end` 是 UTC timestamp，identity 不在行内重复。
 
 发布前必须完成 schema、主键单调唯一、OHLCV、交易日/session/frequency、coverage 和物理可读性
-校验。发布成功的月通过 Catalog 的 `coverage_start`、`coverage_end`、`row_count` 与可读
-`file_uri` 表示；没有旁路的内容摘要、发布清单或缺口状态。
+校验。新发布文件以实际 Parquet bytes 的全小写 SHA-256 命名为 `part.<sha256>.parquet`，不可变、
+无覆盖，先完成文件与目录 durability，再在既有 DB 事务内 register/flush，并通过真实
+`MarketDataService` strict-read 校验候选 Catalog URI。事务 commit 是该月新指针唯一可见点。
+每 DatasetKey 每月只有一个 active Catalog pointer，记录 `coverage_start`、`coverage_end`、
+`row_count` 与精确 `file_uri`；不要求目录中只有一个物理文件，不新增 schema、version table、
+history API、sidecar 或发布清单。
+
+提交前失败必须保持旧 pointer 与旧文件不变。commit 异常必须报告 `COMMIT_OUTCOME_UNKNOWN` 并停止
+本批次，不自动重试、删除候选文件或回滚可能已提交的指针；必须另开独立只读事务确认提交结果。
+旧文件保留以支持已经取得旧 URI 的 reader；本阶段没有 GC。原子单位是单个 partition，
+不是多月、多周期或 metadata 的全局 snapshot。
+
+真实更新前必须完成所有 consumer 升级并停止旧 writer；新 URI 发布后，不得盲目回退到无法读取新 URI
+的旧 Runtime。代码集成不授权生产迁移、真实更新、release 或 Runtime promotion。
 
 `contract` partition 必须包含全部 rank1 required Bar，同时其中每一条 Bar 都必须在该 Contract 的 active
 lifecycle、TradingCalendar 与 TradingSession 内。这个 superset 合同允许保留同物理合约、上市有效期内的真实
@@ -96,7 +108,7 @@ identity 冲突时重建相交整月。明确的 RQData 额度异常映射为 `P
 
 缺失完整 ISO 周的 `1w` 时，同一 maintenance 批次会把该周对应的 `1d` 作为 refresh context；
 RQData adapter 先读取完整周日行情，并在调用内按 `(contract, trading_day)` 复用同一 source
-snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d 月分区、1w 月分区顺序原子替换；
+snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d 月分区、1w 月分区顺序分别提交 active Catalog pointer；不提供整组 snapshot 原子性；
 跨月周会刷新两侧日线月分区。`continuous` 日线仍按每日 rank1 拼接；最终 owner 合约用于
 `actual_dominant 1w` 整周聚合时，非 rank1 日只作为该周内部 source context，不进入
 `actual_dominant 1d` 的可读结果。dry-run 会显式列出由缺失周线带动的日线 refresh 窗口。
@@ -108,13 +120,17 @@ contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四�
 `contract-warmup` 只维护一个已验证 identity 的 physical contract：请求窗口从 `listed_date` 到不晚于最近完整
 交易日的 `requested_window.through`；计划的 `effective_window.through` 再按 `expired_date - 1 day` 截断，获取该
 contract 的 `1m/1d` 基础事实。CLI schema v2 必须同时公开两个窗口，不使用含义不明的单一 `through`；两者也进入
-plan hash identity。省略 `--frequency` 时维持七周期；显式 `--frequency 15m` 或 `--frequency 60m` 的有界 warm-up 只规划/执行同 contract
-`1m` 基础与所选的 `15m` 或 `60m` 派生，且 payload 与 plan hash 同时绑定所选频率、完整 frequency scope 和 `1m` 依赖，即使没有
-target 也不得跨 scope 复用 hash。其它显式 frequency 均 fail-closed。`1w` 只由同一交易所完整日行情聚合，四个日内派生周期只由同 contract `1m` 生成。dry-run
+plan hash identity。省略 `--frequency` 时维持七周期；显式 `1d` 只规划/执行 `1d`，显式 `1w`
+只规划/执行同源 `1d + 1w`，显式 `15m` 或 `60m` 仍只规划/执行同 contract `1m` 基础与所选
+日内派生。payload 与 plan hash 必须同时绑定所选频率、完整 frequency scope 及其依赖，即使没有 target
+也不得跨 scope 复用 hash。其它显式 frequency 均 fail-closed。`1w` 只由同一交易所完整日行情聚合，四个日内派生周期只由同 contract `1m` 生成。dry-run
 只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
-MainContractMap、Redis Live、Rule、Scope、Event 或 notification。显式 15m/60m scope 的任一 provider、发布或派生失败
+MainContractMap、Redis Live、Rule、Scope、Event 或 notification。任一显式 scope 的 provider、发布或派生失败
 必须立刻停止该 contract 的后续 target。仅当同族同月存在待补 `1m` 目标时，才在开始派生前推迟到源发布后；
 已经开始的派生/发布失败不得按缺源错误码推迟重试。额度耗尽返回 `partial`，不得报告 `passed`。分区失败可明确部分成功，不能自动重试。
+
+warm-up 只读结果的 `scope_diagnostics` 保留整个 frequency scope 的逐分区有界原因及是否为计划目标，
+包括不缺 endpoint 但含原始非正价格的 source companion。该诊断不改变维护目标、apply 规则或既有 plan hash。
 
 ### 当日 Live 缺口恢复
 
@@ -163,6 +179,8 @@ provider 已耗尽的三次预算保持原值；零下载模式不 claim、不�
 这六个键的修改与共享锁文件使用均须包含在实际执行范围中。
 
 CLI 仅从 clean detached annotated exact-tag Runtime 运行，Live/Alert/After-market 已加载 root/commit 必须匹配；
+launchd 身份读取须保持块层级：识别 `= {` 与嵌套定时触发块 `=> {`，但 root/commit 只取
+服务直接 `environment = {`，state/PID/WorkingDirectory 只取服务顶层；重复字段与不平衡块仍拒绝。
 两条独立心跳须新鲜且明确证明该进程实际组合了恢复共享锁。缺字段的旧版本不合格；不能仅凭 shell
 开关推断另一进程状态。心跳新增 `runtime_root`、`runtime_commit`、`recovery_guard_enabled`，
 不改变 `alert:runtime-status` schema v6 或 Rule health 语义。未运行/已过期/未来心跳均拒绝。
@@ -202,6 +220,8 @@ expected day 才是 `degraded/missed`。`current_run` age 不超过 2h 为 `pend
 通知使用固定脱敏内容，含 trading day、公开 error code、attempts 与“系统运维提醒，非交易指令”；
 不用 Topic、`AlertEvent`、DB、retry、replay 或 fallback。provider accepted 不等于送达；通知失败只记录
 `failure_notification=failed`，不改写或重试主 after-market 结果。`missed/stuck` 只是 health，不会发送。
+Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN`，本次停止且不重试，
+不发布 `canonical_updated` 或执行成功后的 Live 清理；须用独立只读事务确认 Catalog 结果。
 
 ## 5. 唯一查询入口
 
@@ -213,6 +233,10 @@ frequency
 start
 end
 ```
+
+Historical reader 只打开 Catalog 精确引用的 URI。对于 hash 文件名，必须校验实际 bytes SHA-256，
+并从同一份 bytes 解析 Parquet，避免 hash 与 parse 间文件变化；不 glob、自选最新文件或回退固定路径。
+旧 `part.parquet` 仅在 Catalog 明确引用时兼容读取，仍执行既有 strict validation。
 
 `continuous` 读取 Canonical `SYMBOL.MAIN`（`1m` 由 RQData `{SYMBOL}88` 构建，`1d/1w` 由 rank1
 真实合约的交易所日行情构建）；`contract` 读取指定真实合约；`actual_dominant` 由 rank1
@@ -241,10 +265,86 @@ segment identity 与换月状态隔离，不得根据未来 `end_trading_day` �
 
 ## 6. CLI 与外部操作
 
+`au-calendar-correction` 是单键来源冲突的显式例外，不是通用 Calendar 编辑器，也不改变下面
+`metadata-repair` 的 insert-only 语义。它只接受先前获准取得的 AU2304／2022-03-16 交易时段响应，
+以代码冻结的源内容 SHA-256 和 CLI 显式文件 SHA-256 双重绑定；本地输入限当前用户普通文件、
+64 KiB，不接受链接、重复 JSON 键或读取期间变化。复用既有 Session 规范化，绝不查询 provider。
+唯一目标是 `trading_calendars(id=46796, exchange_code=SHFE, trade_date=2022-03-16)` 的
+`has_night_session: false → true`。旧 Calendar 全字段必须匹配已核实的前像，AU2304 生命周期、
+AU/SHFE 身份、活动状态和时区须有效，且该日期仍无 SHFE Session；不插入 Session 或其他元数据。
+
+默认 dry-run 使用 fresh read-only 事务、60 秒预算、finally rollback，plan hash 绑定输入证据、
+数据库身份及相关 Calendar/Contract/Instrument/Exchange 完整前像。`--apply` 还须精确 plan hash 和
+新的单次真实写入意图；在新事务中以 5 秒 lock timeout 锁定上述五张 metadata 表、重新规划比对，
+只修改这一字段，flush/核对后一次 commit。短事务会暂时阻塞这五表的其他 writer，不阻塞普通读取；
+必须在执行计划中向 owner 明示共享 SHFE 历史 Calendar 消费者影响，不把它表述成 AU 私有数据。
+
+提交前失败 rollback；进入 commit 后任意异常一律 `COMMIT_OUTCOME_UNKNOWN`，不重试或自动逆向
+恢复。commit 返回后使用独立只读事务核对前像仅该字段改变；读回失败为
+`COMMITTED_READBACK_UNVERIFIED`，不能报成功。已更正旧值使旧计划失效，不提供自动 NOOP 或撤销。
+如需纠正错误执行，须另行只读核对并批准新的前向处置，不能把已证实错误的 false 自动写回。
+该入口无 RQData、Canonical、MainContractMap、Runtime、Scope、通知写入；完成单键更正不意味着
+其他历史日期、Session 或 Newow 历史行情已修复。
+
+`metadata-repair` 是独立的 missing-key 三阶段入口：默认 plan 只读 Catalog；fetch 和 apply 分别要求
+显式 phase、对应内容 hash 与单次外部执行意图。范围只来自最多 64 个明确的 active
+`symbol/contract/through` 目标，Contract、Instrument、Exchange 和生命周期必须已有权威事实；
+未知身份保持 `IDENTITY_UNKNOWN`。Calendar 上下文沿用上市月起点前一个自然月到 effective through 后
+七天，按 exchange/date 去重；Session 只规划已被 Calendar 确认为交易日且整个日期无既有行的
+product/date。任何已有 Session 日期都保留并单列 `existing_session_dates_preserved`，不把部分日
+拼补或宣称其完整；冲突身份、非权威行和重叠 template 显式阻断。
+
+plan hash 绑定 source targets、生命周期、相关既有事实、缺键、classification 来源和固定 provider 参数；
+自然日期键数、Session 日期数、尚未知的 Session 行数与精确请求次数分开公开。未知 Calendar 只允许对
+连续缺键组做 `get_trading_dates` 分类，不猜周末，也不在同次 fetch 自动增加 Session 请求。分类快照
+只能经新的显式 plan 纳入新增 Session 日期并重算 hash。Calendar `has_night_session=true` 必须有当日
+精确历史夜盘正证据；非交易日可为 false，单品种仅日盘不能证明交易所无夜盘，此时保留
+`NIGHT_SESSION_EVIDENCE_REQUIRED`，整个 blocked snapshot 不可 apply。
+
+上市前等 Calendar 上下文允许可选显式 `evidence_sources`（symbol/contract/date）：只给原缺键集合中
+已分类为交易日的精确日期提供 Session 证据，必须独立通过 Catalog identity/lifecycle 校验并进入
+request/hash；不自动搜寻合约，不从供证合约上市日再扩建 Calendar 范围，也不写供证 Session。
+同 product/date 的多个物理来源必须一致。fetch 串行执行固定请求，每次响应立即校验，首次失败停止，
+无 retry/fallback/补充调用。Session 复用中性 source-contract/day 纯转换与 start-exclusive 规范化，
+不伪造或写入 MainContractMap。
+
+apply 不构造 provider，在一个新事务锁定相关五张 metadata 表后重读计划，再只插入缺失 Calendar
+和完整 Session 日期，一次 commit，失败 rollback；不覆盖、删除或合并已有行，不写 Contract、
+Instrument、Exchange、MainContractMap、Dataset、Parquet、Redis 或 Runtime。重复旧 snapshot 遇到
+已插入事实要求 replan，不能把相似行冒充同一 prior result 的 NOOP。commit 前失败可回滚；commit 后
+保留新事实并只读 replan，不自动删除。命令与 fixture 验证入口见 `TESTING.md`。
+
+Newow dependency audit 复用 `NewowProductReader`、共享 rank1 owner validator 和 MDS 的生命周期
+endpoint authority：先枚举各 section 必需的 owner，再独立验证每个物理合约/周期的完整 prefix，
+一个缺失合约不能阻止发现后续独立合约。chart/auxiliary 使用权威近期窗口，reference 使用独立统计
+窗口，explanation 使用三周期输入；每个依赖保留 owner 区间及 strategy/frequency/section consumer provenance。
+W1 合法零 Bar owner 标为 `NOT_APPLICABLE`，不得填 Bar 或计入 data-ready。
+
+`newow-readiness` 只接受互斥的单 active symbol 或 active universe，必须固定带时区 `as_of`；串行工作量和
+deadline 均有界。metadata 不足时返回 `UNKNOWN` 与 bounded metadata repair proposal，预计根数/请求数
+为 null；预算耗尽明确 `incomplete`，保留未启动枚举/依赖/case，不能报告完整覆盖。未知异常仅公开固定内部
+错误，原始非正价格单列 `SOURCE_EXCEPTION`，完整性错误单列 `INTEGRITY_ERROR`，两者不生成盲目下载目标。
+
+仅已证明缺 replay/partition 的依赖进入精确去重的候选请求；纯 `ContractWarmupPlanner` 与
+`HistoricalDataManager` 共用同一规划规则、频率 scope、计数、日周 companion 与 hash。metadata 不足或
+规划未完成不得提供有效 hash/计数。该候选不执行 apply，不能调用会替换更大 Session/Map 集合的
+`MetadataSynchronizer` 来补 Calendar。审计只组合 MDS/Catalog/Canonical reader/coverage/planner，
+不构造 provider、Redis、metadata writer 或维护 apply pipeline；DB 使用 fresh read-only transaction、
+no-autoflush、statement timeout 和 finally rollback。
+审计必须检查整个 planner scope（含 W1 的 D1、60m 的 1m），任一 source/integrity finding 都使候选成为
+`REVIEW_REQUIRED`，不提供 plan hash 或总下载请求数；不能借缺 W1/60m 重新纳入已排除的损坏/非正源输入。
+SQLite 的 connection-level `query_only` 必须在 rollback 归还连接池前恢复原值；恢复或回读失败即丢弃该连接。
+
+matrix 模式保留 active 60 × 三策略 × 三周期的 540 main cases，同时独立运行实际 section service，
+保留 `EVIDENCE_REQUIRED`、`NOT_APPLICABLE`、`WARMING` 等业务状态。`complete=true/status=audited`
+仅表示本次限定审计已完成，不表示全部数据 ready、原站 parity、Release 或 Runtime acceptance；
+main ready count 只计算实际主图 READY，不把其他 section 的证据状态算作数据成功。真实只读连接亦须位于
+用户授权范围，fixture 验证与命令存在不构成真实连接或数据修复授权。用法与定向测试见 `TESTING.md`。
+
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
-guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {15m,60m}] [--expected-plan-sha256 HASH] [--apply]
+guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}] [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe active) [--through DATE] [--progress]
 guiyi data session-anchor-repair --phase plan
 guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
@@ -279,7 +379,8 @@ Dataset/partition、预计缺失首分钟与稳定 scope hash，不调用 RQData
 coverage/row_count、执行精确 0045，再清理 publish 执行时由 operational phase authority 唯一解析的当前交易日旧锚点 Redis Live Bar。该 repair cleanup 只删除
 `live:bars:<trading-day>:*`，必须保留同日不可变 rank1 subscription snapshot；它不清理其他交易日，且不得把
 snapshot 改写为 Canonical 或合成的事实。0045 成功后失败只能保持维护状态继续 forward recovery，不能恢复错误
-session。修复继续使用唯一 Canonical V2，不创建并行 data-version。
+session。修复继续使用唯一 Canonical V2，不创建并行 data-version。该 legacy repair 的原合同保持不变，
+固定 `part.parquet` 写入仅隔离在 shadow prepare，不得作为普通 update/refresh 的发布路径。
 
 自然 after-market 是与 repair 分离的严格边界：Canonical 更新后必须用既有 immutable subscription snapshot 对
 formal rank1 做 strict reconciliation。snapshot 缺失、格式错误、不完整或 identity 不匹配均失败关闭，不能以 repair、

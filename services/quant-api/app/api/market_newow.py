@@ -22,30 +22,24 @@ from app.market_data.composition import (
     build_database_coverage_source,
     build_market_data_service,
 )
-from app.market_data.market_data_service import MarketDataError
 from app.market_data.newow.product_reader import (
-    NewowProductReadCancelled,
-    NewowProductReadError,
     NewowProductReader,
 )
 from app.market_data.newow.historical_snapshot import (
-    HistoricalSnapshotError,
     NewowHistoricalSnapshotResolver,
-    is_historical_candidate_unavailable,
 )
+from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.inflight import (
     InFlightCoordinator,
-    NewowComputationCancelled,
 )
 from app.market_data.newow.product_service import (
     NewowProductResult,
     NewowProductService,
-    NewowProductServiceError,
     ProductServiceQuery,
     ProductSection,
     AuxiliaryComponent,
 )
-from app.market_data.newow.resource_gate import HeavyResourceGate, NewowResourceBusy
+from app.market_data.newow.resource_gate import HeavyResourceGate
 from app.market_data.newow.snapshot_cache import SnapshotCache
 from app.market_data.operational_universe import (
     ActiveUniverseError,
@@ -107,6 +101,7 @@ _PRODUCT_QUERY_FIELDS = frozenset(
         "as_of",
         "chart_limit",
         "chart_before",
+        "chart_older_window",
         "component",
         "history_limit",
         "history_before",
@@ -234,7 +229,7 @@ def newow_historical_snapshot(
         except RuntimeError:
             return False
 
-    now = datetime.now(UTC)
+    now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         result = _build_historical_resolver(session, cancelled, lambda: now).resolve(
             product, ProductStrategy(strategy), ProductFrequency(frequency)
@@ -247,29 +242,15 @@ def newow_historical_snapshot(
             as_of=result.as_of,
             validated_sections=list(result.validated_sections),
         )
-    except HistoricalSnapshotError as exc:
-        status = 429 if exc.code == "NEWOW_HISTORICAL_RESOLUTION_TIMEOUT" else 409
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
-    except NewowResourceBusy as exc:
-        raise HTTPException(status_code=429, detail={"code": exc.code}) from exc
-    except NewowProductServiceError as exc:
-        status = 409 if "CONFLICT" in exc.code else 422
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
-    except (NewowProductReadCancelled, NewowComputationCancelled) as exc:
-        raise HTTPException(
-            status_code=429, detail={"code": "NEWOW_REQUEST_CANCELLED"}
-        ) from exc
-    except NewowProductReadError as exc:
-        status = 422 if exc.code.startswith("NEWOW_INVALID_") else 409
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
     except (ActiveUniverseError, ProductTaxonomyError) as exc:
         raise HTTPException(
             status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
         ) from exc
-    except MarketDataError as exc:
-        status = 409 if is_historical_candidate_unavailable(exc.code) else 500
-        code = "NEWOW_DATA_UNAVAILABLE" if status == 409 else "NEWOW_INTERNAL_ERROR"
-        raise HTTPException(status_code=status, detail={"code": code}) from exc
+    except Exception as exc:
+        status, detail = public_product_error(
+            exc, context={"symbol": product, "frequency": frequency}
+        )
+        raise HTTPException(status_code=status, detail=detail) from exc
 
 
 @router.get("/strategy-detail", response_model=NewowProductResponse)
@@ -289,6 +270,7 @@ def newow_strategy_detail(
     as_of: datetime | None = Query(None),
     chart_limit: int = Query(500, ge=1, le=2000),
     chart_before: str | None = Query(None, min_length=1, max_length=2048),
+    chart_older_window: str | None = Query(None, min_length=1, max_length=256),
     component: Literal[
         "macd", "main_force_control", "up_down_energy", "zhaoyao_mirror", "cup_handle"
     ]
@@ -332,6 +314,7 @@ def newow_strategy_detail(
             series_kind=series_kind,
             chart_limit=chart_limit,
             chart_before=chart_before,
+            chart_older_window=chart_older_window,
             component=AuxiliaryComponent(component) if component is not None else None,
             history_limit=history_limit,
             history_before=history_before,
@@ -339,44 +322,15 @@ def newow_strategy_detail(
         )
         result = _build_product_service(session, cancelled).query(product_query)
         return _product_response(result)
-    except NewowResourceBusy as exc:
-        raise HTTPException(status_code=429, detail={"code": exc.code}) from exc
-    except (NewowComputationCancelled, NewowProductReadCancelled) as exc:
-        raise HTTPException(
-            status_code=429, detail={"code": "NEWOW_REQUEST_CANCELLED"}
-        ) from exc
-    except NewowProductServiceError as exc:
-        status = 409 if "CONFLICT" in exc.code else 422
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
-    except NewowProductReadError as exc:
-        status = 422 if exc.code.startswith("NEWOW_INVALID_") else 409
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from exc
-    except MarketDataError as exc:
-        raise HTTPException(
-            status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
-        ) from exc
     except (ActiveUniverseError, ProductTaxonomyError) as exc:
         raise HTTPException(
             status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
         ) from exc
-    except ValueError as exc:
-        code = str(exc)
-        if not code.startswith("NEWOW_"):
-            raise HTTPException(
-                status_code=500, detail={"code": "NEWOW_INTERNAL_ERROR"}
-            ) from exc
-        status = (
-            422
-            if code.startswith("NEWOW_INVALID_")
-            or "REQUIRED" in code
-            or "PARAMETER" in code
-            else 409
-        )
-        raise HTTPException(status_code=status, detail={"code": code}) from exc
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail={"code": "NEWOW_INTERNAL_ERROR"}
-        ) from exc
+        status, detail = public_product_error(
+            exc, context={"symbol": product, "frequency": frequency}
+        )
+        raise HTTPException(status_code=status, detail=detail) from exc
 
 
 def _status(value) -> dict[str, object] | None:
@@ -540,6 +494,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             ],
             "diagnostics": list(value.diagnostics),
             "next_before": value.next_before,
+            "next_older_window": value.next_older_window,
             "repainting": False,
             "formal_signal_eligible": True,
             "allowed_uses": ["product_chart", "reference_input"],

@@ -4,6 +4,7 @@ import type {
   NewowProductSectionResponse,
 } from '../types/newowProduct.ts'
 import { normalizeNewowProductResponse } from '../utils/newowProductTypes.ts'
+import { formatNewowDataDiagnostic, parseNewowDataDiagnostic, type NewowDataDiagnostic } from '../utils/newowDataDiagnostics.ts'
 
 export type NewowProductErrorClassification = 'invalid' | 'conflict' | 'busy' | 'cancelled' | 'unavailable' | 'response_invalid'
 
@@ -17,17 +18,19 @@ const CONFLICT_CODES = new Set([
   'NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'NEWOW_CURSOR_GENERATION_CONFLICT', 'NEWOW_CURSOR_INVALID',
   'NEWOW_REFERENCE_PAIRING_CONFLICT', 'NEWOW_PAGE_COMPARATOR_CONFLICTING_FACT',
 ])
-const UNAVAILABLE_CODES = new Set(['NEWOW_DATA_UNAVAILABLE'])
+const UNAVAILABLE_CODES = new Set(['NEWOW_DATA_UNAVAILABLE', 'NEWOW_SOURCE_NONPOSITIVE_PRICE', 'NEWOW_COMPLETE_TRADING_DAY_MISSING', 'NEWOW_COMPLETE_PERIOD_MISSING', 'NEWOW_HISTORICAL_SNAPSHOT_UNAVAILABLE'])
 
 export class NewowProductRequestError extends Error {
   readonly code: string
   readonly classification: NewowProductErrorClassification
+  readonly diagnostic: NewowDataDiagnostic | null
 
-  constructor(code: string, classification: NewowProductErrorClassification) {
-    super(code)
+  constructor(code: string, classification: NewowProductErrorClassification, diagnostic: NewowDataDiagnostic | null = null) {
+    super(diagnostic === null ? code : formatNewowDataDiagnostic(diagnostic))
     this.name = 'NewowProductRequestError'
     this.code = code
     this.classification = classification
+    this.diagnostic = diagnostic
   }
 }
 
@@ -115,6 +118,10 @@ export function buildNewowProductQuery(request: NewowProductRequest): Record<str
     addWindow(common, request.from, request.through)
     if (request.chartLimit !== undefined) common.chart_limit = request.chartLimit
     if (request.chartBefore !== undefined) common.chart_before = request.chartBefore
+    if (request.chartOlderWindow !== undefined) {
+      if (request.chartBefore !== undefined || request.from !== undefined || request.snapshotToken === undefined) throw new NewowProductRequestError('NEWOW_SECTION_PARAMETER_INVALID', 'invalid')
+      common.chart_older_window = request.chartOlderWindow
+    }
   } else if (request.section === 'auxiliary') {
     common.component = request.component
     addWindow(common, request.from, request.through)
@@ -146,16 +153,16 @@ function classifyTransportError(error: unknown): NewowProductRequestError {
   const detail = httpDetail(error)
   if (detail?.status === 429 && detail.code === 'NEWOW_RESOURCE_BUSY') return new NewowProductRequestError(detail.code, 'busy')
   if (detail?.status === 429 && detail.code === 'NEWOW_REQUEST_CANCELLED') return new NewowProductRequestError(detail.code, 'cancelled')
-  if (detail?.status === 409 && UNAVAILABLE_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'unavailable')
+  if (detail?.status === 409 && UNAVAILABLE_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'unavailable', detail.diagnostic)
   if (detail?.status === 409 && CONFLICT_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'conflict')
   if (detail?.status === 422 && INVALID_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'invalid')
   return new NewowProductRequestError('NEWOW_API_UNAVAILABLE', 'unavailable')
 }
 
-function httpDetail(error: unknown): { status: number; code: string } | null {
+function httpDetail(error: unknown): { status: number; code: string; diagnostic: NewowDataDiagnostic | null } | null {
   try {
     if (!isRecord(error) || !isRecord(error.response) || typeof error.response.status !== 'number' || !isRecord(error.response.data) || !isRecord(error.response.data.detail) || typeof error.response.data.detail.code !== 'string') return null
-    return { status: error.response.status, code: error.response.data.detail.code }
+    return { status: error.response.status, code: error.response.data.detail.code, diagnostic: parseNewowDataDiagnostic(error.response.data.detail.diagnostic) }
   } catch { return null }
 }
 

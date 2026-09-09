@@ -76,6 +76,8 @@ class SnapshotCache:
         *,
         token: str | None = None,
         proof: dict[str, str] | None = None,
+        related_values: Mapping[tuple[object, ...], object] | None = None,
+        value_factory: Callable[[str], object] | None = None,
     ) -> str | None:
         if (
             not self._enabled
@@ -100,10 +102,16 @@ class SnapshotCache:
             values = dict(previous.values) if compatible and previous else {}
             merged_proof = dict(previous.proof) if compatible and previous else {}
             merged_proof.update(normalized_proof)
-            values[normalized_section] = value
+            candidate_token = previous.token if compatible and previous else token_urlsafe(24)
+            # A response may contain its own snapshot token. Bind it before
+            # measuring the complete candidate, never via a second cache write.
+            values[normalized_section] = (
+                value_factory(candidate_token) if value_factory is not None else value
+            )
+            values.update(related_values or {})
             candidate = _Entry(
                 fact_key,
-                previous.token if compatible and previous else token_urlsafe(24),
+                candidate_token,
                 self._now() + self._ttl,
                 values,
                 0,
@@ -138,27 +146,33 @@ class SnapshotCache:
             self._bytes = retained_bytes
             return candidate.token
 
-    def get(self, fact_key: str, section_key: tuple[object, ...]) -> object | None:
+    def get(
+        self, fact_key: str, section_key: tuple[object, ...], *, touch: bool = True
+    ) -> object | None:
         with self._lock:
             self._expire()
             entry = self._entries.get(fact_key)
             if entry is None:
                 return None
-            self._entries.move_to_end(fact_key)
-            return entry.values.get(tuple(section_key))
+            value = entry.values.get(tuple(section_key))
+            if value is not None and touch:
+                self._entries.move_to_end(fact_key)
+            return value
 
     def get_by_token(
         self,
         token: str,
         fact_key: str,
         section_key: tuple[object, ...],
+        *,
+        touch: bool = True,
     ) -> object | None:
         with self._lock:
             self._expire()
             bound_fact_key = self._tokens.get(token)
             if bound_fact_key != fact_key:
                 return None
-            return self.get(fact_key, section_key)
+            return self.get(fact_key, section_key, touch=touch)
 
     def fact_key_for_token(self, token: str) -> str | None:
         with self._lock:

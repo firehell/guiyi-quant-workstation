@@ -2,6 +2,38 @@
 
 以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
 
+## 苏冰历史参考交易
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/test_subing_ths_kernel.py \
+  services/quant-api/tests/test_subing_reference_projection.py \
+  services/quant-api/tests/test_subing_reference_service.py \
+  services/quant-api/tests/test_subing_reference_api.py \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py
+pnpm -C apps/quant-web exec node --test tests/subingReference.test.ts
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-reference.spec.mjs
+```
+
+上述浏览器截图使用 route-intercept fixture，只证明视觉与交互，不代表生产历史收益或自然预警。
+真实历史读取、发布和 Runtime 验收单独报告；测试不授权生产数据库连接或外部写入。
+
+## Market WebSocket 与统一详情页
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_market_websocket.py \
+  services/quant-api/tests/data_foundation/test_market_read.py
+pnpm -C apps/quant-web test
+pnpm -C apps/quant-web build
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-detail.spec.mjs
+```
+
+WebSocket 验证使用 fake clients 和受控阻塞，不访问生产；浏览器使用 route fixtures。桌面与390px
+截图、键盘操作用于工程验收，不能替代用户关键页面视觉审查，也不授权发布或 Runtime 切换。
+
 ## 后端
 
 ```bash
@@ -17,6 +49,89 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
+有界 metadata fixture 与既有同步/provider/CLI 回归（全部隔离，无生产连接）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_bounded_metadata.py \
+  services/quant-api/tests/data_foundation/test_metadata.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
+  services/quant-api/tests/data_foundation/test_cli.py
+```
+
+以下为用法，非外部执行授权。`targets.json` 是明确的
+`[{"symbol":"au","contract":"AU2304","through":"2023-03-13"}]`；输出为普通 JSON，由 operator 保存。
+fetch 和 apply 各自需要新的单次执行意图，不能在一个获准 fetch 后自动 apply。
+
+```bash
+uv run --project services/quant-api guiyi data metadata-repair --targets /absolute/targets.json
+uv run --project services/quant-api guiyi data metadata-repair --phase fetch \
+  --plan /absolute/plan.json --expected-plan-sha256 EXACT_PLAN_SHA256 --apply
+uv run --project services/quant-api guiyi data metadata-repair --targets /absolute/targets.json \
+  --classification /absolute/classification-snapshot.json --evidence-sources /absolute/evidence-sources.json
+uv run --project services/quant-api guiyi data metadata-repair --phase apply \
+  --snapshot /absolute/snapshot.json --expected-plan-sha256 EXACT_PLAN_SHA256 \
+  --expected-snapshot-sha256 EXACT_SNAPSHOT_SHA256 --apply
+```
+
+`--classification` 与 `--evidence-sources` 均为可选 plan 输入；供证列表仅含显式
+`symbol/contract/date`，不扩写入范围。新 plan 如有新增 Session 请求，需要对其 hash 另行批准 fetch。
+未知夜盘证据的 snapshot 为 blocked（退出 1），不能 apply。成功 apply 后旧 plan 失效，必须只读 replan，
+不自动重试、覆盖或删除。已有 Session 日期只保留，不把未验证的完整性计为修复通过。
+
+AU 已确认单键 Calendar 更正（独立于 insert-only metadata-repair）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_au_calendar_correction.py
+# 仅显式本机隔离库 guiyi_calendar_isolated_test，端口不得为生产 5432；不读取 DATABASE_URL。
+GUIYI_ISOLATED_CALENDAR_DATABASE_URL='postgresql+psycopg://postgres@127.0.0.1:15436/guiyi_calendar_isolated_test' \
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -m isolated_postgresql \
+  services/quant-api/tests/data_foundation/test_au_calendar_correction_postgresql.py
+# 真实只读连接也须在本轮授权内。输入是已保存的诊断 JSON（source_response），不是新查询。
+uv run --project services/quant-api guiyi data au-calendar-correction \
+  --evidence /absolute/source-response.json --expected-evidence-sha256 EXACT_FILE_SHA256
+# 下面仅是用法；未取得新的单次生产写入意图时禁止执行。
+uv run --project services/quant-api guiyi data au-calendar-correction \
+  --evidence /absolute/source-response.json --expected-evidence-sha256 EXACT_FILE_SHA256 \
+  --expected-plan-sha256 EXACT_DRY_RUN_SHA256 --apply
+```
+
+隔离验证覆盖范围/旧值/来源哈希/身份/Session 漂移、只读事务、失败回滚、提交不确定、独立读回，
+PostgreSQL 验证增加真实 writer 锁和事务可见性。真实 dry-run 不执行 apply；不带 provider 重试能力。
+
+Newow dependency/readiness 定向 fixture 验证（不连接生产数据库，不下载）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/newow/test_readiness.py \
+  services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/data_foundation/test_newow_readiness_cli.py \
+  services/quant-api/tests/data_foundation/test_historical_data_manager.py \
+  services/quant-api/tests/data_foundation/test_cli.py
+```
+
+已获真实只读连接授权时，可在 exact 代码副本执行以下用法；`--as-of` 必须为本次选定的固定截止时间。
+
+```bash
+uv run --project services/quant-api guiyi data newow-readiness \
+  --symbol rb --as-of 2026-09-04T08:00:00Z --max-work 10000 --timeout-seconds 300
+uv run --project services/quant-api guiyi data newow-readiness \
+  --universe active --as-of 2026-09-04T08:00:00Z --matrix --max-work 10000 --timeout-seconds 300
+```
+
+没有 `--apply` 或自动修复开关；symbol/universe 互斥。`max-work` 为串行枚举/依赖验证/候选规划/section
+调用次数上限（1–100000），deadline 为 1–3600 秒并在 reader 分页、planner 月循环之间检查；单条 PG
+查询受 statement timeout 约束，进行中的文件读取返回后才检查 deadline。审计完成退出 0，
+`status=incomplete` 或异常退出 1，非法参数退出 2。退出 0 表示审计完成而非所有数据/业务 ready；
+必须读取 dependencies、repair_targets、metadata_proposals、main_ready_count 和逐 case section 状态。
+fixture 的 540-case 枚举不构成真实 540-case 验收。后续下载/生产数据写入仍需独立明确授权。
+定向测试同时覆盖完整 warm-up scope 的 source/integrity 阻断、SQLite 原只读状态恢复及恢复失败时连接丢弃。
+
 Newow P4 分区编排、typed API、统计截止、来源事实、快照/资源边界、旧 D1 兼容与只读保护：
 
 ```bash
@@ -24,7 +139,9 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   services/quant-api/tests/newow/test_product_service.py \
   services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/newow/test_older_chart_windows.py \
   services/quant-api/tests/newow/test_historical_snapshot.py \
+  services/quant-api/tests/newow/test_data_diagnostics.py \
   services/quant-api/tests/newow/test_product_source_facts.py \
   services/quant-api/tests/newow/test_product_snapshot_cache.py \
   services/quant-api/tests/newow/test_product_resource_gate.py \
@@ -127,7 +244,9 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 Canonical、写 production DB/Redis 或停止 Runtime。`prepare/publish --apply` 不是测试命令，分别需要新的单次
 真实数据/维护授权。
 
-Physical-contract warm-up（含 `--frequency 15m` / `--frequency 60m` 的 1m dependency、scope hash 隔离与 fail-stop）、同合约 Canonical + Live replay、CLI plan hash 与 projection invalidation：
+Physical-contract warm-up（含 `--frequency 1d` 的 D1-only、`--frequency 1w` 的同源 D1 + W1、
+`--frequency 15m` / `--frequency 60m` 的 1m dependency、空计划 scope hash 隔离、跨月日周整组发布与 fail-stop）、
+同合约 Canonical + Live replay、CLI plan hash 与 projection invalidation：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -142,6 +261,27 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 该组测试仅使用 fake provider、临时 Catalog/Parquet 与临时路径。它不授权也不执行真实
 `guiyi data contract-warmup --apply`；即使 dry-run 得到 plan hash，真实 RQData/Canonical apply 仍需
 引用该 exact hash 的单次明确授权。
+
+Canonical 不可变月发布的 storage、Catalog strict-read 与 manager 失败回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -m "not isolated_postgresql" \
+  services/quant-api/tests/data_foundation/test_storage.py \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py \
+  services/quant-api/tests/data_foundation/test_historical_data_manager.py
+```
+
+真实 PostgreSQL 的提交前不可见、commit/rollback 与旧 reader 保留测试使用独立变量
+`GUIYI_ISOLATED_PUBLICATION_DATABASE_URL`。运行前必须显式配置一次性隔离 PostgreSQL；仅允许
+loopback、非 5432 端口与精确 database `guiyi_canonical_isolated_test`，不得使用生产连接或读取 `.env`。
+测试在随机专用 schema 创建和清理测试表，不执行 production migration；变量未提供时 skip 不算验收通过。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -m isolated_postgresql \
+  services/quant-api/tests/data_foundation/test_catalog_publication_postgresql.py
+```
 
 Isolated PostgreSQL 测试只能指向专用、空白、可销毁的数据库；未设置变量时不得运行：
 
@@ -187,6 +327,36 @@ pnpm -C apps/quant-web exec node --test \
 
 ## Web
 
+候选只读预览的隔离 fixture Gate（不启动 8010/5174，不连接真实数据或正式 API）：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -p no:cacheprovider -q \
+  services/quant-api/tests/newow/test_candidate_preview.py
+pnpm -C apps/quant-web exec node --test tests/candidatePreview.test.ts tests/marketSeries.test.ts tests/useNewowProduct.test.ts
+PLAYWRIGHT_CANDIDATE_PREVIEW=1 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/candidate-preview.spec.mjs
+```
+
+浏览器 fixture 固定 5182，拦截业务请求并故意设置错误的旧 API/WS override，以验证隔离。
+普通 dev/build 不启用预览；候选模式只供 dev server，禁止构建成 production bundle。
+实际预览仅在本次明确启动/只读连接授权后，由 controller 确认干净 exact commit、共享 Catalog/Canonical
+配置与无端口占用，再在同一候选代码根、沿用既有配置加载运行下面两个入口。时间值仅是用法示例，
+须替换为本次选定值且两进程完全一致；不得创建第二份 Canonical 或修改 `.env`、launchd、正式服务。
+
+```bash
+GUIYI_CANDIDATE_PREVIEW=1 GUIYI_PREVIEW_AS_OF=2026-09-03T08:00:00Z \
+  PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m app.preview
+GUIYI_PREVIEW_AS_OF=2026-09-03T08:00:00Z pnpm -C apps/quant-web dev:candidate
+```
+
+API 固定只绑定 `127.0.0.1:8010`，Web 固定 `127.0.0.1:5174`，端口占用直接失败。
+启动后核对 `/api/preview/identity` 与横幅的 SHA/cutoff；改变代码后须停止候选进程并重新核对启动。
+K线 `before` 是排他上界，牛哇保留既有 `as_of` completed 语义；首页投影/主力元数据与正式
+Runtime health/当前事件不伪装成同一历史快照，各自保留响应时间戳。页面身份不匹配时不加载业务查询。
+代理只允许既有两项正式 GET，其他请求返回 `PREVIEW_ROUTE_FORBIDDEN`，无 Live subscription。
+停止候选进程即关闭预览；没有数据写入需要回滚，正式 Runtime 与 release Gate 不因预览通过而改变。
+
 Newow P5 路由/偏好、typed section consumer、九组合图层、参考历史与解释面板定向回归：
 
 ```bash
@@ -207,7 +377,7 @@ pnpm -C apps/quant-web exec node --test \
   tests/NewowTrendChartStage.test.ts \
   tests/marketDetailController.test.ts \
   tests/marketDetailMarkers.test.ts \
-  tests/marketChartEntry.test.ts \
+  tests/marketDetailRoute.test.ts \
   tests/marketDetailShellComponents.test.ts
 pnpm --dir apps/quant-web run check:alert-rules
 pnpm --dir apps/quant-web test
@@ -349,7 +519,9 @@ Runtime health、data audit 与 alert status 是只读入口，不能推导 Runt
 
 以下为人工操作语法，普通测试不得执行。CLI 默认只读，但连接生产前仍须明确只读范围。
 须先部署通过审查的新 exact tag，证明 Live/Alert/After-market 同根同 commit、共享锁已启用、Live/Alert 心跳新鲜；开发 worktree
-和 v1.10.3 的旧心跳不满足该 Gate。源文件必须来自已授权查询，不能为了运行此命令临时下载。
+和 v1.10.3 的旧心跳不满足该 Gate。`test_captured_recovery_runtime.py` 包含 launchd 定时触发
+`=> {` 与 `= {` 混合嵌套回归，验证 idle/waiting/running、字段层级、重复身份和括号不平衡拒绝。
+源文件必须来自已授权查询，不能为了运行此命令临时下载。
 
 ```text
 guiyi runtime recover-live-captured --trading-day YYYY-MM-DD --symbol rs --contract RS2609 --source /absolute/captured-source.json --source-sha256 SOURCE_SHA256

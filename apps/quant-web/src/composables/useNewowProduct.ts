@@ -1,6 +1,7 @@
 import { computed, readonly, shallowRef, watch, type Ref, type ShallowRef } from 'vue'
 
 import { getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
+import { candidatePreview } from '../utils/candidatePreview.ts'
 import type { MarketDetailIdentity } from '../types/marketDetail.ts'
 import {
   NEWOW_PRODUCT_FREQUENCIES,
@@ -55,7 +56,7 @@ interface ChartLoadOptions {
 export function useNewowProduct(options: UseNewowProductOptions) {
   const fetchSection: FetchSection = options.fetchSection
     ?? ((request, signal) => getNewowProductSection(request, { signal }))
-  const now = options.now ?? (() => new Date())
+  const now = options.now ?? (() => candidatePreview.enabled ? new Date(candidatePreview.asOf) : new Date())
   const currentIdentity = shallowRef<NewowProductIdentity | null>(null)
   const asOf = shallowRef<string | null>(null)
   const historicalSnapshot = shallowRef<NewowHistoricalSnapshot | null>(null)
@@ -122,13 +123,21 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       asOf.value = resolved.as_of
       await loadChart()
     } catch (error) {
-      if (!controller.signal.aborted && resolverController === controller && generation === resolverGeneration) historicalError.value = error instanceof NewowProductRequestError ? error.code : 'NEWOW_API_UNAVAILABLE'
+      if (!controller.signal.aborted && resolverController === controller && generation === resolverGeneration) historicalError.value = error instanceof NewowProductRequestError ? error.message : 'NEWOW_API_UNAVAILABLE'
     } finally {
       if (resolverController === controller) { resolverController = null; historicalLoading.value = false }
     }
   }
 
   function returnToCurrent(): void {
+    resetCurrentGeneration()
+  }
+
+  function refreshCurrent(): void {
+    resetCurrentGeneration()
+  }
+
+  function resetCurrentGeneration(): void {
     resolverController?.abort()
     resolverController = null
     generation += 1
@@ -164,10 +173,14 @@ export function useNewowProduct(options: UseNewowProductOptions) {
 
   async function loadNextChartPage(): Promise<void> {
     const current = resources.chart.data.value
-    if (current?.section !== 'chart' || current.value === null || current.value.next_before === null || chartWindow === null) return
+    if (current?.section !== 'chart' || current.value === null || chartWindow === null || current.value.bars.length >= MAX_ACCUMULATED_CHART_ROWS) return
     const common = requestCommon('chart')
     if (common === null) return
-    await run({ ...common, section: 'chart', from: chartWindow.from, through: chartWindow.through, chartLimit: chartPageLimit ?? 500, chartBefore: current.value.next_before })
+    if (current.value.next_before !== null) {
+      await run({ ...common, section: 'chart', from: chartWindow.from, through: chartWindow.through, chartLimit: chartPageLimit ?? 500, chartBefore: current.value.next_before })
+    } else if (current.value.next_older_window != null && current.meta.snapshot_token !== null) {
+      await run({ ...common, section: 'chart', snapshotToken: current.meta.snapshot_token, chartLimit: chartPageLimit ?? 500, chartOlderWindow: current.value.next_older_window })
+    }
   }
 
   async function loadReference(load: ReferenceLoadOptions = {}): Promise<void> {
@@ -315,13 +328,24 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     const prior = existing?.section === 'chart' ? existing : null
     const priorValue = prior?.value ?? null
     const isPage = request.section === 'chart' && request.chartBefore !== undefined
+    const isOlder = request.section === 'chart' && request.chartOlderWindow !== undefined
     if (isPage && chartFingerprint !== fingerprint) {
       failConflict('chart', 'NEWOW_CHART_FINGERPRINT_CONFLICT')
       return null
     }
+    if (isOlder && (prior === null || priorValue === null || priorValue.next_before !== null
+      || priorValue.next_older_window !== request.chartOlderWindow
+      || request.snapshotToken !== prior.meta.snapshot_token || prior.meta.snapshot_token === null
+      || chartGenerationSignature(prior.meta) !== chartGenerationSignature(response.meta)
+      || value.chart_through >= priorValue.chart_from
+      || (value.frames.length > 0 && priorValue.frames.length > 0
+        && Date.parse(value.frames.at(-1)!.bar_end) >= Date.parse(priorValue.frames[0]!.bar_end)))) {
+      failConflict('chart', 'NEWOW_CHART_WINDOW_CONFLICT')
+      return null
+    }
     chartWindow = { from: value.chart_from, through: value.chart_through }
     chartFingerprint = fingerprint
-    if (!isPage || priorValue === null) {
+    if ((!isPage && !isOlder) || priorValue === null) {
       chartPageLimit = request.section === 'chart' ? request.chartLimit ?? 500 : 500
       return response
     }
@@ -349,6 +373,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
         bars: boundedBars, frames: boundedFrames, actions: boundedActions, hints: boundedHints,
         diagnostics: [...new Set([...priorValue.diagnostics, ...value.diagnostics])],
         next_before: bars!.length >= MAX_ACCUMULATED_CHART_ROWS ? null : value.next_before,
+        next_older_window: bars!.length >= MAX_ACCUMULATED_CHART_ROWS ? null : value.next_older_window,
       },
     }
   }
@@ -396,7 +421,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     const requestError = error instanceof NewowProductRequestError
       ? error
       : new NewowProductRequestError('NEWOW_API_UNAVAILABLE', 'unavailable')
-    resource.error.value = requestError.code
+    resource.error.value = requestError.message
     if (requestError.classification === 'conflict' || requestError.classification === 'response_invalid') {
       failConflict(section, requestError.code)
       return
@@ -522,7 +547,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     historicalLoading: readonly(historicalLoading),
     sections: resources,
     referenceChartCompatible: readonly(referenceChartCompatible),
-    loadChart, loadNextChartPage, loadAuxiliary, loadReference, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, dispose,
+    loadChart, loadNextChartPage, loadAuxiliary, loadReference, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, refreshCurrent, dispose,
   }
 
   function abortAll(): void { for (const controller of controllers.values()) controller.abort(); controllers.clear(); inFlightSnapshotTokens.clear() }
@@ -580,6 +605,7 @@ function withoutGenerationBindings(request: NewowProductRequest): NewowProductRe
   delete copy.snapshotToken
   delete copy.historyBefore
   delete copy.chartBefore
+  delete copy.chartOlderWindow
   return copy as unknown as NewowProductRequest
 }
 

@@ -9,18 +9,6 @@ import type {
   SeriesKind,
 } from '@/types/market'
 
-export const MAIN_CHART_PREFERENCES_KEY = 'guiyi.market.chart.preferences.v9'
-export const MAIN_CHART_PREFERENCES_VERSION = 9
-const LEGACY_KEYS = [
-  'guiyi.market.chart.preferences.v1',
-  'guiyi.market.chart.preferences.v2',
-  'guiyi.market.chart.preferences.v3',
-  'guiyi.market.chart.preferences.v4',
-  'guiyi.market.chart.preferences.v5',
-  'guiyi.market.chart.preferences.v6',
-  'guiyi.market.chart.preferences.v7',
-  'guiyi.market.chart.preferences.v8',
-] as const
 export const HTDY_REPAINT_SCAN_ZONE_BARS = 27
 export const HTDY_WEB_OBSERVATION_METADATA = {
   indicator_code: 'huotian_dayou_original_v0',
@@ -34,15 +22,6 @@ export const HTDY_WEB_OBSERVATION_METADATA = {
   xma_rule: 'symmetric_clipped_finite_mean; even_period_normalizes_to_next_odd',
   xma6_oracle_status: 'externally_unresolved',
 } as const
-
-export interface MainChartPreferences {
-  version: 9
-  selectedOverlay: ResearchOverlayId
-  optionalEmaIndicators: OptionalEmaIndicatorId[]
-  showRangeDetector: boolean
-  period?: string | null
-  realtimeFollow?: boolean
-}
 
 const OPTIONAL_EMA_INDICATORS: OptionalEmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
 
@@ -135,67 +114,4 @@ export function visibleMainIndicatorsForOverlay(
     ...(showRangeDetector ? ['range_detector' as const] : []),
     ...definition.mainIndicators,
   ]
-}
-
-export function resolveEffectiveSeriesIdentity(input: {
-  overlay: ResearchOverlayId
-  userSeriesKind: SeriesKind
-  userContract?: string
-  dominantContract?: string
-}): { seriesKind: SeriesKind; contract?: string } {
-  return {
-    seriesKind: input.userSeriesKind,
-    contract: input.userSeriesKind === 'contract' ? input.userContract : undefined,
-  }
-}
-
-export function defaultMainChartPreferences(): MainChartPreferences {
-  return { version: 9, selectedOverlay: 'none', optionalEmaIndicators: [], showRangeDetector: false, period: null, realtimeFollow: false }
-}
-
-export function loadMainChartPreferences(
-  storage: Pick<Storage, 'getItem'> & Partial<Pick<Storage, 'setItem' | 'removeItem'>> | null = browserStorage(),
-): MainChartPreferences {
-  if (!storage) return defaultMainChartPreferences()
-  try {
-    purgeLegacy(storage)
-    const current = storage.getItem(MAIN_CHART_PREFERENCES_KEY)
-    if (current) {
-      const parsed = JSON.parse(current) as Record<string, unknown>
-      if (parsed.version === 9) return normalizePreferences(parsed)
-    }
-  } catch {
-    return defaultMainChartPreferences()
-  }
-  return defaultMainChartPreferences()
-}
-
-export function saveMainChartPreferences(
-  preferences: MainChartPreferences,
-  storage: Pick<Storage, 'setItem'> | null = browserStorage(),
-) {
-  if (!storage) return
-  try { storage.setItem(MAIN_CHART_PREFERENCES_KEY, JSON.stringify(normalizePreferences(preferences as unknown as Record<string, unknown>))) } catch { /* noop */ }
-}
-
-function normalizePreferences(value: Record<string, unknown>): MainChartPreferences {
-  return {
-    version: 9,
-    selectedOverlay: value.selectedOverlay === 'htdy' ? 'htdy' : 'none',
-    optionalEmaIndicators: normalizeOptionalEmaIndicators(value.optionalEmaIndicators),
-    showRangeDetector: Boolean(value.showRangeDetector),
-    period: typeof value.period === 'string' ? value.period : null,
-    realtimeFollow: Boolean(value.realtimeFollow),
-  }
-}
-
-function purgeLegacy(storage: Partial<Pick<Storage, 'removeItem'>>) {
-  for (const key of LEGACY_KEYS) {
-    try { storage.removeItem?.(key) } catch { /* noop */ }
-  }
-}
-
-function browserStorage(): Storage | null {
-  if (typeof window === 'undefined') return null
-  try { return window.localStorage } catch { return null }
 }

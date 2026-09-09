@@ -87,11 +87,14 @@ def _verify_loaded_service(
         "commit": r"GUIYI_RUNTIME_COMMIT => (.*)",
     }
     fields: dict[str, str] = {}
-    scopes: list[str] = []
+    scopes: list[tuple[str, str]] = []
     for line in output.splitlines():
         line = line.strip()
-        if line.endswith(" = {"):
-            scopes.append(line[:-4])
+        if line.endswith((" = {", " => {")):
+            name, operator, _brace = line.rsplit(" ", 2)
+            if not scopes and operator != "=":
+                _reject("SERVICE_IDENTITY_INVALID")
+            scopes.append((name, operator))
             continue
         if line == "}":
             if not scopes:
@@ -99,7 +102,8 @@ def _verify_loaded_service(
             scopes.pop()
             continue
         for key, pattern in patterns.items():
-            in_environment = len(scopes) == 2 and scopes[-1] == "environment"
+            # Only the service's direct `environment = {` block is authoritative.
+            in_environment = len(scopes) == 2 and scopes[-1] == ("environment", "=")
             if (key in {"root", "commit"} and not in_environment
                     or key not in {"root", "commit"} and len(scopes) != 1):
                 continue

@@ -6,17 +6,17 @@ withDefaults(defineProps<{
   message: string
   recoveryLabel?: string
   canRecover?: boolean
-  canReturnLegacy?: boolean
+  canReturnMarket?: boolean
 }>(), {
   title: '当前视角不可用',
   recoveryLabel: '恢复安全设置',
   canRecover: false,
-  canReturnLegacy: true,
+  canReturnMarket: true,
 })
 
 const emit = defineEmits<{
   recover: []
-  'return-legacy': []
+  'return-market': []
 }>()
 </script>
 
@@ -28,7 +28,7 @@ const emit = defineEmits<{
       <p>{{ message }}</p>
       <div class="detail-unavailable__actions">
         <button v-if="canRecover" type="button" @click="emit('recover')">{{ recoveryLabel }}</button>
-        <button v-if="canReturnLegacy" type="button" @click="emit('return-legacy')">返回旧版详情</button>
+        <button v-if="canReturnMarket" type="button" @click="emit('return-market')">返回市场</button>
       </div>
     </div>
   </section>

@@ -1,10 +1,11 @@
 {
   "name": "quant-web",
   "private": true,
-  "version": "1.10.4",
+  "version": "1.10.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:candidate": "vite --mode candidate-preview --host 127.0.0.1 --port 5174 --strictPort",
     "build": "vue-tsc -b && vite build && node scripts/checkProductionBundleTopology.mjs dist",
     "check:alert-rules": "node scripts/checkAlertRuleOwnership.mjs",
     "test": "node --test tests/*.test.ts",

@@ -20,7 +20,7 @@ import {
 import { NewowProductBandPrimitive } from '@/components/market/detail/newow/newowProductBandPrimitive'
 import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
 import { resolveChartTheme } from '@/styles/chartTheme'
-import type { NewowProductSectionResponse } from '@/types/newowProduct'
+import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { initialChartLogicalRange } from '@/utils/chartViewport'
 import {
@@ -37,6 +37,7 @@ import {
 
 const props = withDefaults(defineProps<{
   response: NewowProductSectionResponse<'chart'> | null
+  strategy: NewowProductStrategy
   auxiliaryResponse?: NewowProductSectionResponse<'auxiliary'> | null
   auxiliaryLifecycle?: import('@/types/newowProduct').NewowResourceLifecycle
   auxiliaryError?: string | null
@@ -66,6 +67,7 @@ const auxiliaryModel = computed(() => alignNewowAuxiliaryChartModel(props.respon
 const auxiliaryPresentation = computed(() => resolveNewowAuxiliaryRenderState(props.auxiliaryLifecycle ?? 'not_requested', auxiliaryModel.value !== null, props.auxiliaryError ?? null))
 const mainLineColors: Record<string, string> = { b: '#F59E0B', a: '#2563EB', upper: '#DC2626', lower: '#16A34A', ma35: '#F59E0B', ma45: '#7C3AED' }
 const legend = computed(() => [...new Map(model.value?.mainLines.map(line => [line.key, line]) ?? []).values()])
+const mainLegendLabel = computed(() => ({ trend: '趋势带', oscillation: '震荡区间', main_rise: '主升浪' })[props.strategy])
 const adapter = inject(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
   createChart,
   createSeriesMarkers: (series) => createSeriesMarkers(series),
@@ -351,13 +353,13 @@ defineExpose({ revealSignal, scrollToLatest })
     :data-auxiliary-state="auxiliaryPresentation.mode"
     :data-band-area-count="model?.bandAreas.length ?? 0"
     data-testid="newow-product-chart-stage"
-    :data-strategy="model?.identity.strategy ?? ''"
+    :data-strategy="strategy"
     :data-frequency="model?.identity.frequency ?? ''"
     :data-selected-signal-id="selectedSignalId ?? ''"
     :data-action-ids="model?.actions.map((action) => action.id).join(',') ?? ''"
   >
     <div class="newow-product-chart-stage__toolbar">
-    <div class="newow-product-chart-stage__legend" aria-label="Newow 主图图例"><button class="newow-product-chart-stage__main-legend" type="button" @click="emit('explain-main')">{{ model?.identity.strategy === 'trend' ? '趋势带' : model?.identity.strategy === 'oscillation' ? '震荡区间' : '主升浪' }}<span v-for="line in legend" :key="line.key" :style="{ color: mainLineColors[line.key] }">{{ line.label }}</span>ⓘ</button><details v-if="model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" @click="emit('select-hint', hint.id)">{{ hint.kind }} · {{ hint.barEnd }}</button></details></div>
+    <div class="newow-product-chart-stage__legend" aria-label="Newow 主图图例"><button class="newow-product-chart-stage__main-legend" type="button" @click="emit('explain-main')">{{ mainLegendLabel }}<span v-for="line in legend" :key="line.key" :style="{ color: mainLineColors[line.key] }">{{ line.label }}</span>ⓘ</button><details v-if="model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" @click="emit('select-hint', hint.id)">{{ hint.kind }} · {{ hint.barEnd }}</button></details></div>
     <div class="newow-product-chart-stage__controls">
       <button v-if="hasMoreBefore" type="button" data-testid="newow-load-earlier" :disabled="loading" @click="emit('loadEarlier')">加载更早</button>
       <button v-if="!followLatest" type="button" @click="scrollToLatest">回到最新</button>

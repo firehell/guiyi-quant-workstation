@@ -31,6 +31,7 @@ from app.guiyi_cli.data_commands import (
     build_request,
     contract_warmup_payload,
     run_data_command,
+    run_metadata_repair,
 )
 from app.guiyi_cli.data_parser import (
     CliUsageError,
@@ -150,6 +151,7 @@ def main(
     session_anchor_repair_factory: SessionAnchorRepairFactory | None = None,
     runtime_health_builder=build_runtime_health,
     subing_readiness_builder=build_subing_readiness,
+    newow_readiness_builder=None,
     captured_recovery_runner=run_captured_recovery,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
@@ -183,6 +185,7 @@ def main(
                 after_market_factory,
                 stderr,
                 session_anchor_repair_factory,
+                newow_readiness_builder,
             )
         elif args.runtime_command == "recover-live-captured":
             payload = captured_recovery_runner(args, session_factory=session_factory)
@@ -278,6 +281,7 @@ def main(
                 "skipped",
                 "accepted",
                 "acknowledged",
+                "audited",
             }
         )
         else 1
@@ -291,8 +295,23 @@ def _run_data(
     after_market_factory: AfterMarketFactory,
     stderr: TextIO,
     session_anchor_repair_factory: SessionAnchorRepairFactory | None = None,
+    newow_readiness_builder=None,
 ) -> dict[str, object]:
     """在 DB 会话内执行 data 子命令并返回 as_payload 字典。"""
+    if args.data_command == "au-calendar-correction":
+        from app.market_data.au_calendar_correction import run_correction
+
+        return run_correction(args, session_factory)
+    if args.data_command == "metadata-repair":
+        return run_metadata_repair(args, session_factory)
+    if args.data_command == "newow-readiness":
+        from app.db.readonly import readonly_transaction
+        from app.market_data.newow.readiness_composition import build_newow_readiness
+
+        request = build_request(args)
+        with session_factory() as session:
+            with readonly_transaction(session, timeout_seconds=request.timeout_seconds):
+                return (newow_readiness_builder or build_newow_readiness)(session, request=request)
     if args.data_command == "after-market":
         return run_after_market(
             session_factory=session_factory,

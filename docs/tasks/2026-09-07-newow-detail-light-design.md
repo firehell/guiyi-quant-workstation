@@ -1,7 +1,7 @@
-# Newow 白色详情页 V2 设计规范
+# Newow 白色详情页 V2 显示合同
 
 日期：2026-09-07；代码基线 `7ba649ad1b79e3fda765f49e30a1b8d7e208810a`。
-用户已批准 V2 视觉，并授权设计文档 → 实施计划 → 独立 Review/修正 → 文档提交 develop → 独立 worktree 开发。本规范描述批准的实现目标，不声明产品已完成或上线。
+本文保留批准的视觉来源、显示细节与证据边界。实施步骤已完成，历史见 `12c844d360ce14f4c6ff7f19d25cabf4fbe92742` 与集成提交 `2cde4a734c18a5340e0828c8fe9a3dee3585ca60`；业务协议以 `openspec/specs/newow-product-reference-trading/spec.md` 为准，Release 与 Runtime 以 `STATUS.md` 为准。
 
 ## 1. 来源、范围与优先级
 
@@ -9,13 +9,13 @@
 
 本次 Chrome 只读观察：牛哇首页标题 v3.3.02；`stock_detail.html?code=600519.SH&period=day&strategy=huanglantai` 的贵州茅台个股详情标题 v3.2.64。实际观察了综合决策原位展开/收起、指标解读居中白色弹窗及遮罩、“知道了”关闭、页面向下滚动的逐笔参考记录。首页版本不代表详情版本；本次图像在会话工具结果中，未作为原站 PNG 原件入库。另参考仓库 `docs/research/newow-v3.2.82/screenshots/600519-SH-day-trend.png`；不把历史派生截图当作此次原站原件。
 
-本规范替代旧 [交互设计](2026-09-07-newow-desktop-visual-interaction.md) 与 [工程规格](2026-09-07-newow-desktop-engineering-spec.md) 中的深色、右栏、底部解释 tab 和参考宽表方向。其他已核实的数据身份、时间、MACD 接入、单一副图和未知证据边界继续适用；冲突以本规范为准。旧文档中不属于本次图形实现的更广泛原站 parity 目标不得被宣布完成。
+白色全宽、图上摘要、原位解释与逐笔参考记录已替代深色、右栏、底部解释 tab 和参考宽表草案。身份、时间、MACD 与证据边界收敛到本文及 active OpenSpec；删除旧草案不关闭原站完整 parity Gate。
 
 实现范围为 `/market/chart?view=newow` 的三策略 × `1w/1d/60m`；共享 Shell 只通过显式 light/Newow 变体复用，保持 HTDY、SuBing、Free 和旧 trend 行为。首页不改。无新页面、搜索栏、移动底部导航、订单、账户或通知功能。
 
 ## 2. 信息布局
 
-**DL-01 白色全宽 Shell。** 顶部归一量化、市场、牛哇、火天大有、苏冰预警、更多（自由看盘）。导航保留当前合法品种和既有视角频率偏好；不新增选择结果未知的快捷品种。全部品种使用既有产品目录和 route serializer，换品种清理不兼容合约与历史焦点；不额外加载首页三个 bulk 资源以画快捷栏。收盘报价复用既有 Market Bar authority，不拿 Newow 当前频率或 hover 值填充不可用报价。代码复核发现现有 Newow controller 只读元数据，原页头价格全部为空；因此增加独立、有界的现有 `/market/bars/page` 读取，固定 `actual_dominant + 1d + limit=2`，不启用通用图表流/WS/research。按产品 identity/generation 隔离，切策略、周期与历史定位不重复读取；最近 Bar 必须匹配返回请求及唯一物理 owner/元数据主力，跨物理合约两根不计算涨跌。明确显示“最近日线收盘”和时间，不冒充实时。失败独立显示 unavailable，不阻止主图；产品目录复用同次 dominants 元数据。
+**DL-01 白色全宽 Shell。** 顶部归一量化、市场、牛哇、火天大有、苏冰预警、更多（自由看盘）。导航保留当前合法品种和既有视角频率偏好；不新增选择结果未知的快捷品种。全部品种使用既有产品目录和 route serializer，换品种清理不兼容合约与历史焦点；不额外加载首页三个 bulk 资源以画快捷栏。收盘报价复用既有 Market Bar authority，不拿 Newow 当前频率或 hover 值填充不可用报价。代码复核发现现有 Newow controller 只读元数据，原页头价格全部为空；因此增加独立、有界的现有 `/market/bars/page` 读取，固定 `actual_dominant + 1d + limit=2`，不启用通用图表流/WS/research。按产品 identity/generation 与可信截止隔离；同一截止下切策略、周期与历史定位不重复读取，候选预览截止变化时重新读取；最近 Bar 必须匹配返回请求及唯一物理 owner/元数据主力，跨物理合约两根不计算涨跌。明确显示“最近日线收盘”和时间，不冒充实时。失败独立显示 unavailable，不阻止主图；产品目录复用同次 dominants 元数据。
 
 **DL-02 图上方摘要。** 移除常驻右栏与重复技术介绍。默认两行：策略状态圆标/信息入口、目标/吸筹参考价、展开详情；最近主动作、当前参考交易、参考浮动、状态截至。只显示已核实资源；空缺为 `—` 并标注未读取/不可用/证据不足。Newow section 初次仅 chart + 默认 MACD（页头上述独立两根日线读取除外）；reference 区进入视口时按需读取，explanation 仅用户展开或点击时读取。不能为摘要自动触发 comparator 重型计算。
 
@@ -66,4 +66,28 @@ Newow 局部 token：白 `#FFFFFF`，正文 `#20242B`，次级 `#667085`，分�
 | AC07 | 九组合、四桌面尺寸及390兼容，真实浏览器截图目视复核；生成图不作为数值或像素 golden。 |
 | AC08 | 定向测试、Web unit/build、相关 E2E、MACD 后端定向、工程/OpenSpec/secret/diff、独立 Review 通过。 |
 
-命令入口为 `TESTING.md`。文档先独立 Review/修正后 commit/push develop，之后从精确 docs commit 创建 `codex/newow-detail-light` worktree。实现按任务提交、Review 并以 Git history 记录，不建立重复治理资产。普通 Lane 2 可集成 develop；main/tag/release、Runtime、DB/Redis/Canonical/RQData、真实通知均不在范围。回滚仅 revert 本任务提交。外部页面原件不足、真实工作站性能和既有证据 Gate 不由视觉验收关闭。
+命令入口为 `TESTING.md`。后续修改按当前工程流程测试和独立 Review，过程从 Git history 追溯，不重跑已完成的实施计划。普通 Lane 2 可集成 develop；main/tag/release、Runtime、DB/Redis/Canonical/RQData、真实通知均不在范围。回滚仅 revert 本任务提交。外部页面原件不足、真实工作站性能和既有证据 Gate 不由视觉验收关闭。
+
+
+## 6. 保留的原站证据边界
+
+旧桌面草案中的 E01–E14 不因删除文档自动验收。归一批准界面与原站 parity 分别判断：
+
+| 证据项 | 仍须核验的范围 |
+|---|---|
+| E01 当前版本/DOM | 明确具体详情页版本与原件；首页版本不可替代。 |
+| E02 切品种/策略/周期 | 原站操作前后、加载及状态保留；归一测试不证明原站过程。 |
+| E03 十字线/tooltip | 同一数据点的原站联动与可重放操作。 |
+| E04 Marker/Legend | 原站选择、取消、重叠；归一适配必须有明确身份。 |
+| E05 副图 | MACD 为通用内核显示；照妖镜有界绘图证据不等于所有副图/全页面 parity。 |
+| E06 展开/弹层 | 本文只读观察范围有限，不推及未观察交互。 |
+| E07 异常状态 | 归一加载/空/错误验收与原站异常态 parity 分开。 |
+| E08 resize/手机 | 保留桌面与390px非回归；不声称手机专项 parity。 |
+| E09 persistence | reload/back/forward 的原站过程与归一偏好测试分开。 |
+| E10 历史/统计定位 | 精确定位、分页边界、独立统计窗口均需同身份对照。 |
+| E11 旧素材原件 | 仅有索引的素材不能支持视觉/公式结论；原件与 hash 须可核验。 |
+| E12 当前截图 | fixture 截图只证明其固定输入/视口/代码，不能代替真实数据。 |
+| E13 产品真值 | 诊断、目标/吸筹、评分、比较器各自原件缺口不由 UI 验收关闭。 |
+| E14 真实 MDS | 需独立工作站成功请求与性能证据，单一历史样本不代表全产品。 |
+
+证据的实际完成状态集中在 `STATUS.md` 与 `docs/research/newow-v3.2.82/P6_TRUSTED_CLOSURE.md`；本表不新增运行授权。

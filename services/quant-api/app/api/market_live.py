@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from threading import BoundedSemaphore
+
+import anyio
 from datetime import UTC, datetime
 import json
 from typing import cast
@@ -12,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.market_data.composition import build_market_read_service
+from app.market_data.composition import build_market_read_service, open_market_read_service
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
@@ -22,12 +26,15 @@ from app.market_data.domain import (
     parse_rfc3339_instant,
 )
 from app.market_data.live_market import LIVE_STATE_CHANNEL, live_bar_channel
-from app.market_data.market_read_service import MarketReadState
+from app.market_data.market_read_service import MarketReadService, MarketReadState
 from app.redis_connections import get_async_redis_connection
 from app.schemas.market import MarketReadStateResponse
 
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
+# Admission precedes submit: no unbounded executor queue, including cancellation.
+_READ_SLOTS = BoundedSemaphore(4)
+_READ_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="market-ws-read")
 
 
 @router.get("/state", response_model=MarketReadStateResponse)
@@ -48,10 +55,7 @@ def market_state(
 
 
 @router.websocket("/ws")
-async def market_websocket(
-    websocket: WebSocket,
-    session: Session = Depends(get_db),
-) -> None:
+async def market_websocket(websocket: WebSocket) -> None:
     """先订阅 Pub/Sub、再读快照，杜绝 REST 到 WebSocket 的 Live bar 空窗。"""
     try:
         identity = _identity(
@@ -65,15 +69,13 @@ async def market_websocket(
         await websocket.close(code=1008, reason="MARKET_DATA_CONTRACT_INVALID")
         return
 
-    read_service = build_market_read_service(session)
     redis = get_async_redis_connection()
     pubsub = redis.pubsub()
     channels = (live_bar_channel(identity.symbol, identity.frequency), LIVE_STATE_CHANNEL)
     try:
         await pubsub.subscribe(*channels)
-        display = _read_and_release_session(
-            session,
-            lambda: read_service.display_snapshot(identity, after, datetime.now(UTC)),
+        display = await _read_in_worker(
+            lambda service: service.display_snapshot(identity, after, datetime.now(UTC)),
         )
         initial_state = display.state
         await websocket.accept()
@@ -110,9 +112,8 @@ async def market_websocket(
                 continue
             channel = _text(message.get("channel"))
             if channel == LIVE_STATE_CHANNEL:
-                next_state = _read_and_release_session(
-                    session,
-                    lambda: read_service.state(identity, datetime.now(UTC)),
+                next_state = await _read_in_worker(
+                    lambda service: service.state(identity, datetime.now(UTC)),
                 )
                 if (
                     next_state.trading_day != current_state.trading_day
@@ -148,20 +149,32 @@ async def market_websocket(
         if websocket.client_state.name != "DISCONNECTED":
             await websocket.close(code=1013, reason="LIVE_UNAVAILABLE")
     finally:
-        await pubsub.unsubscribe(*channels)
-        await pubsub.aclose()
-        await redis.aclose()
+        with anyio.CancelScope(shield=True):
+            try:
+                await pubsub.unsubscribe(*channels)
+            finally:
+                try:
+                    await pubsub.aclose()
+                finally:
+                    await redis.aclose()
 
 
-def _read_and_release_session[T](
-    session: Session,
-    operation: Callable[[], T],
-) -> T:
-    """Release any checked-out DB connection immediately after one read."""
+async def _read_in_worker[T](operation: Callable[[MarketReadService], T]) -> T:
+    """Keep admission until the actual worker exits, even if its caller cancels."""
+    if not _READ_SLOTS.acquire(blocking=False):
+        raise RuntimeError("MARKET_READ_BUSY")
+
+    def read() -> T:
+        with open_market_read_service() as service:
+            return operation(service)
+
     try:
-        return operation()
-    finally:
-        session.close()
+        future = _READ_EXECUTOR.submit(read)
+    except BaseException:
+        _READ_SLOTS.release()
+        raise
+    future.add_done_callback(lambda _: _READ_SLOTS.release())
+    return await asyncio.wrap_future(future)
 
 
 def _identity(

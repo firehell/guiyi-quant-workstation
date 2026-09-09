@@ -44,9 +44,9 @@ export type MarketDetailRouteErrorCode =
   | 'DETAIL_FREQUENCY_INVALID'
   | 'DETAIL_CONTRACT_REQUIRED'
   | 'DETAIL_FOCUS_INVALID'
+  | 'DETAIL_OVERLAY_INVALID'
 
 export type MarketDetailRouteResult =
-  | { kind: 'missing-view'; symbol: string | null }
   | { kind: 'invalid'; code: MarketDetailRouteErrorCode; recovery: MarketDetailIdentity | null }
   | { kind: 'valid'; identity: MarketDetailIdentity }
 
@@ -104,6 +104,7 @@ export interface MarketDetailHeaderModel {
   phase: string
   displaySource: string
   freshness: 'fresh' | 'stale' | 'unavailable'
+  afterMarketFailed?: boolean
   extendedSections: readonly MarketDetailDisclosureSection[]
 }
 

@@ -453,6 +453,8 @@ class MarketCatalog:
         symbol: str,
         start: datetime,
         end: datetime,
+        *,
+        latest: date | None = None,
     ) -> tuple[tuple[date, tuple[SessionWindow, ...]], ...]:
         """Resolve Calendar/Session once and retain windows for completion checks."""
         exchange = self.exchange_for_symbol(symbol)
@@ -471,7 +473,8 @@ class MarketCatalog:
         )
         if next_day is not None:
             candidates.append(next_day)
-        candidate_days = tuple(dict.fromkeys(candidates))
+        # Completed historical requests need no Session facts beyond their horizon.
+        candidate_days = tuple(day for day in dict.fromkeys(candidates) if latest is None or day <= latest)
         batch = SessionWindowBatch(
             self.session, exchange=exchange, symbol=symbol, trading_days=candidate_days
         )
@@ -520,7 +523,9 @@ class MarketCatalog:
 
     def _relative_uri(self, path: Path) -> str:
         """绝对路径必须位于 ``canonical_root`` 下，存库为 POSIX 相对 URI。"""
-        resolved = path.resolve()
+        resolved = path
+        if ".." in path.parts or any(parent.is_symlink() for parent in (path, *path.parents)):
+            raise CatalogError("PARTITION_URI_ESCAPE")
         try:
             return resolved.relative_to(self.canonical_root).as_posix()
         except ValueError as exc:
@@ -530,7 +535,9 @@ class MarketCatalog:
         """解析库内相对 URI 为绝对路径；禁止绝对 URI 与 ``..`` 逃逸 canonical 根。"""
         if Path(uri).is_absolute():
             raise CatalogError("ABSOLUTE_PARTITION_URI_FORBIDDEN")
-        path = (self.canonical_root / uri).resolve()
+        if ".." in Path(uri).parts:
+            raise CatalogError("PARTITION_URI_ESCAPE")
+        path = self.canonical_root / uri
         if self.canonical_root not in path.parents:
             raise CatalogError("PARTITION_URI_ESCAPE")
         return path

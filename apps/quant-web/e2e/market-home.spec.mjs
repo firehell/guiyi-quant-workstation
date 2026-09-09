@@ -98,7 +98,7 @@ test('white full-width home uses exactly three reads and keeps observations coll
   await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toBeVisible()
   expectHomeReads(requests)
   await page.getByText('AG · 火天大有 · 买观察 · 15m').click()
-  await expect(page).toHaveURL(/symbol=ag.*series_kind=actual_dominant.*frequency=15m.*overlay=htdy/)
+  await expect(page).toHaveURL(/view=htdy.*symbol=ag.*series_kind=actual_dominant.*frequency=15m/)
 })
 
 test('mixed immutable Events preserve SuBing route and never request a second home source', async ({ page }) => {

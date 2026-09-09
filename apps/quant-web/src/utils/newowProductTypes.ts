@@ -208,9 +208,10 @@ function normalizeSectionValue(section: NewowProductSection, payload: unknown, m
 }
 
 function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartValue {
-  const value = exactRecord(payload, 'chart.value', [
+  const source = record(payload, 'chart.value')
+  const value = exactRecord({ next_older_window: null, ...source }, 'chart.value', [
     'chart_from', 'chart_through', 'page_identity', 'bars', 'frames', 'actions', 'hints',
-    'diagnostics', 'next_before', 'repainting', 'formal_signal_eligible', 'allowed_uses',
+    'diagnostics', 'next_before', 'next_older_window', 'repainting', 'formal_signal_eligible', 'allowed_uses',
   ])
   const chartFrom = day(value.chart_from, 'chart_from')
   const chartThrough = day(value.chart_through, 'chart_through')
@@ -228,10 +229,13 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
   requireExact(value.repainting, false, 'chart.repainting')
   requireExact(value.formal_signal_eligible, true, 'chart.formal_signal_eligible')
   const allowed = exactStringArray(value.allowed_uses, ['product_chart', 'reference_input'] as const, 'chart.allowed_uses')
+  const older = nullableText(value.next_older_window, 'chart.next_older_window')
+  if (older !== null && (older.length > 256 || meta.snapshot_token === null || value.next_before !== null)) throw new Error('older window requires an exhausted snapshot window')
   return {
     chart_from: chartFrom, chart_through: chartThrough, page_identity: sha256(value.page_identity, 'chart.page_identity'),
     bars, frames, actions, hints, diagnostics: stringArray(value.diagnostics, 'chart.diagnostics'),
     next_before: nullableText(value.next_before, 'chart.next_before'), repainting: false,
+    next_older_window: older,
     formal_signal_eligible: true, allowed_uses: allowed,
   }
 }

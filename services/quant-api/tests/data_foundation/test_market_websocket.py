@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import deque
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -141,12 +142,23 @@ class FakeAsyncRedis:
         self.closed = True
 
 
+def _mock_read_scope(monkeypatch, service, session=None):
+    @contextmanager
+    def scope():
+        owned = session or TrackingSession()
+        try:
+            yield service
+        finally:
+            owned.close()
+    monkeypatch.setattr("app.api.market_live.open_market_read_service", scope)
+
+
 def test_market_websocket_subscribes_before_snapshot_dedupes_race_and_resets(monkeypatch) -> None:
     """Catches a REST-to-WS gap, duplicate race bar, or missing rank1/trading-day reset."""
     read_service = FakeReadService()
     pubsub = FakePubSub(read_service)
     redis = FakeAsyncRedis(pubsub)
-    monkeypatch.setattr("app.api.market_live.build_market_read_service", lambda _session: read_service)
+    _mock_read_scope(monkeypatch, read_service)
     monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
 
     with TestClient(app).websocket_connect(
@@ -245,7 +257,7 @@ def test_market_websocket_never_forwards_bars_when_live_state_disallows_overlay(
     """Catches Pub/Sub bypassing the MarketReadService live eligibility and availability gate."""
     pubsub = ClosingPubSub()
     redis = FakeAsyncRedis(pubsub)  # type: ignore[arg-type]
-    monkeypatch.setattr("app.api.market_live.build_market_read_service", lambda _session: StaticReadService(state))
+    _mock_read_scope(monkeypatch, StaticReadService(state))
     monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
 
     with TestClient(app).websocket_connect(f"/api/v1/market/ws?{query}") as websocket:
@@ -307,10 +319,10 @@ async def test_idle_websocket_detects_client_disconnect_and_closes_pubsub(monkey
     redis = FakeAsyncRedis(pubsub)  # type: ignore[arg-type]
     websocket = DisconnectingWebSocket()
     session = TrackingSession()
-    monkeypatch.setattr("app.api.market_live.build_market_read_service", lambda _session: StaticReadService(_state()))
+    _mock_read_scope(monkeypatch, StaticReadService(_state()), session)
     monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
 
-    await asyncio.wait_for(market_websocket(websocket, session), timeout=0.05)  # type: ignore[arg-type]
+    await asyncio.wait_for(market_websocket(websocket), timeout=0.05)  # type: ignore[arg-type]
 
     assert pubsub.closed is True
     assert redis.closed is True
@@ -421,7 +433,7 @@ def test_rank1_subscription_change_publishes_state_that_resets_websocket(monkeyp
     read_service = FakeReadService()
     read_service.race_bar = _bar(1)
     read_service.subscribed = True
-    monkeypatch.setattr("app.api.market_live.build_market_read_service", lambda _session: read_service)
+    _mock_read_scope(monkeypatch, read_service)
     monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
 
     with TestClient(app).websocket_connect(
@@ -433,3 +445,139 @@ def test_rank1_subscription_change_publishes_state_that_resets_websocket(monkeyp
     assert bridge.values["live:subscription:2025-01-03"] == '{"j":"J2509"}'
     assert bridge.published == [("market:state", '{"trading_day":"2025-01-03"}')]
     assert messages[2] == {"type": "reset", "trading_day": "2025-01-03", "contract": "J2509"}
+
+
+@pytest.mark.asyncio
+async def test_slow_snapshot_does_not_block_event_loop(monkeypatch):
+    from threading import Event, Thread, get_ident
+    from contextlib import contextmanager
+    from app.api import market_live
+
+    started, release = Event(), Event()
+    loop_thread = get_ident()
+    phases = []
+
+    class SlowService(StaticReadService):
+        def display_snapshot(self, *args):
+            phases.append(("read", get_ident()))
+            started.set()
+            assert release.wait(2)
+            return super().display_snapshot(*args)
+
+    service = SlowService(_state())
+    @contextmanager
+    def scope():
+        phases.append(("open", get_ident()))
+        try:
+            yield service
+        finally:
+            phases.append(("close", get_ident()))
+
+    # A watchdog prevents an old synchronous implementation from hanging pytest.
+    watchdog = Thread(target=lambda: (started.wait(2), release.wait(0.5), release.set()), daemon=True)
+    watchdog.start()
+    monkeypatch.setattr(market_live, "open_market_read_service", scope, raising=False)
+    monkeypatch.setattr(market_live, "build_market_read_service", lambda _: service)
+    monkeypatch.setattr(market_live, "get_async_redis_connection", lambda: FakeAsyncRedis(IdlePubSub()))
+    websocket = DisconnectingWebSocket()
+    task = asyncio.create_task(market_websocket(websocket))
+    try:
+        while not started.is_set():
+            await asyncio.sleep(0)
+        assert not release.is_set(), "synchronous snapshot blocked the event loop until watchdog fired"
+    finally:
+        release.set()
+        await task
+        watchdog.join(1)
+    assert [name for name, _ in phases] == ["open", "read", "close"]
+    assert len({thread for _, thread in phases}) == 1
+    assert phases[0][1] != loop_thread
+
+
+@pytest.mark.asyncio
+async def test_cancelled_read_keeps_capacity_until_worker_releases_resources(monkeypatch):
+    from threading import BoundedSemaphore, Event
+    from app.api import market_live
+
+    slots = BoundedSemaphore(1)
+    entered, release, closed = Event(), Event(), Event()
+    @contextmanager
+    def scope():
+        try:
+            yield object()
+        finally:
+            closed.set()
+    def slow(_service):
+        entered.set()
+        assert release.wait(2)
+    monkeypatch.setattr(market_live, "_READ_SLOTS", slots)
+    monkeypatch.setattr(market_live, "open_market_read_service", scope)
+    task = asyncio.create_task(market_live._read_in_worker(slow))
+    try:
+        while not entered.is_set():
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        with pytest.raises(RuntimeError, match="MARKET_READ_BUSY"):
+            await market_live._read_in_worker(lambda _: None)
+        assert not closed.is_set()
+    finally:
+        release.set()
+        while not closed.is_set():
+            await asyncio.sleep(0)
+        # The future releases admission after the resource scope has exited.
+        while not slots.acquire(blocking=False):
+            await asyncio.sleep(0)
+        slots.release()
+    assert await market_live._read_in_worker(lambda _: 42) == 42
+
+
+@pytest.mark.asyncio
+async def test_worker_owns_session_and_sync_redis_on_success_and_error(monkeypatch):
+    from threading import get_ident
+    from app.api import market_live
+    from app.market_data import composition
+
+    loop_thread = get_ident()
+    resources = []
+    class Resource:
+        def __init__(self):
+            self.created = get_ident()
+            self.closed = None
+            resources.append(self)
+        def __enter__(self):
+            assert get_ident() == self.created
+            return self
+        def __exit__(self, *args):
+            self.close()
+        def close(self):
+            self.closed = get_ident()
+    def build(session, *, redis):
+        assert session.created == redis.created == get_ident()
+        assert session.closed is None and redis.closed is None
+        return session
+    monkeypatch.setattr(composition, "SessionLocal", Resource)
+    monkeypatch.setattr(composition, "get_redis_connection", Resource)
+    monkeypatch.setattr(composition, "build_market_read_service", build)
+    assert await market_live._read_in_worker(lambda service: service.created) != loop_thread
+    def fail(service):
+        raise ValueError("isolated failure")
+    with pytest.raises(ValueError, match="isolated failure"):
+        await market_live._read_in_worker(fail)
+    assert len(resources) == 4
+    assert all(item.created == item.closed != loop_thread for item in resources)
+
+
+@pytest.mark.asyncio
+async def test_pubsub_cleanup_failure_still_closes_all_clients(monkeypatch):
+    class FailingUnsubscribe(IdlePubSub):
+        async def unsubscribe(self, *channels):
+            raise RuntimeError("unsubscribe failed")
+    pubsub = FailingUnsubscribe()
+    redis = FakeAsyncRedis(pubsub)
+    _mock_read_scope(monkeypatch, StaticReadService(_state()))
+    monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
+    with pytest.raises(RuntimeError, match="unsubscribe failed"):
+        await market_websocket(DisconnectingWebSocket())
+    assert pubsub.closed and redis.closed

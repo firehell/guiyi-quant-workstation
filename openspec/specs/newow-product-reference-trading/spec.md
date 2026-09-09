@@ -9,6 +9,89 @@ ReferenceTrade、乐观参考摘要、多周期解释、证据状态和回看图
 
 ## Requirements
 
+### Requirement: Local candidate preview is explicitly enabled and read-only
+
+Candidate preview SHALL be default-off, local API `127.0.0.1:8010` and development Web
+`127.0.0.1:5174`, sharing the configured authoritative Catalog/Canonical through existing
+Market/Newow readers. It MUST NOT import the normal application, construct workers/providers,
+enable Runtime, write projections/data, or connect Redis. Each database request SHALL use the shared
+fresh read-only transaction and always rollback. Validation and unexpected failures SHALL be sanitized.
+
+Preview SHALL bind the current repository commit and an explicitly supplied timezone-aware cutoff.
+Market bars SHALL clamp the exclusive `before` cursor to that cutoff; Newow SHALL clamp `as_of`
+to the cutoff, preserving earlier historical snapshots and existing completed/owner validation.
+The historical resolver SHALL use the same upper-bound clock. Home overview and dominant metadata
+SHALL retain their independent authoritative timestamps, without implying that all rows or panels
+share a last Bar or a historical database revision.
+The independent candidate daily quote SHALL explicitly request the trusted configured `before`,
+require the echoed cutoff to match that instant without discarding sub-millisecond precision, and
+reject Bars at or after this exclusive bound. Normal mode SHALL retain its unbounded request and
+null-echo contract. Decimal, physical-owner, coverage and rollover validation SHALL remain unchanged.
+
+Only exact existing GET paths for preview identity, bars, dominants, home overview, strategy detail
+and historical snapshot SHALL reach the candidate API. Legacy queries without a safe cutoff seam
+SHALL return `PREVIEW_ROUTE_FORBIDDEN`. Web proxy SHALL permit only exact GET `/api/runtime/health`
+and `/api/alerts/current-events?limit=30` on the supervised formal API `127.0.0.1:8000`; all other
+management methods/routes and business WebSocket forwarding SHALL be rejected. Existing frontend
+API/WS environment overrides MUST NOT bypass preview isolation; no Live state request or subscription
+SHALL start. Normal development behavior SHALL remain unchanged.
+
+The visible banner SHALL identify candidate versus supervised status origins, code SHA, cutoff scope,
+non-realtime behavior and unsupported routes. Candidate page queries SHALL wait for matching API code
+identity and cutoff; mismatch or unavailable identity SHALL fail closed. Actual process startup and
+database connections remain separately authorized operations, not a consequence of fixture tests.
+
+#### Scenario: A later date is supplied to the preview
+
+- **GIVEN** the preview is explicitly bound to a fixed cutoff
+- **WHEN** a browser supplies a later bars cursor or Newow as-of
+- **THEN** the existing authoritative reader receives the bounded cutoff, not the later date
+- **AND** supervised status and home metadata retain their separately labeled source timestamps
+
+#### Scenario: A management request uses an encoded or trailing path
+
+- **WHEN** preview receives a management method, encoded/trailing API path or business WebSocket
+- **THEN** it rejects the request before any proxy forwarding or database access
+
+### Requirement: Read-only readiness enumerates independent dependencies
+
+Readiness audit SHALL use the existing reader and shared validated MDS rank1 owner enumeration before
+reading physical prefixes. It SHALL collect every independent contract/frequency failure across chart,
+auxiliary, reference and three-frequency explanation inputs, preserving owner segments and consumer provenance.
+Missing metadata SHALL retain UNKNOWN enumeration and null counts, with only bounded repair proposals.
+Exact repair requests SHALL be deduplicated and use the same read-only contract warm-up planner as maintenance;
+source nonpositive rows and integrity errors MUST NOT become blind download targets.
+This exclusion SHALL cover the complete planner frequency scope, including daily inputs for weekly targets
+and minute inputs for hourly targets, even if those source partitions have no missing endpoints. The shared
+planner SHALL expose bounded per-partition reasons without changing maintenance target/hash semantics.
+Any source/integrity finding in that scope SHALL yield REVIEW_REQUIRED with no ordinary candidate hash.
+
+The audit SHALL require fixed timezone-aware as_of, an active symbol or mutually exclusive active universe,
+serial work and deadline budgets. Budget interruption MUST retain UNSTARTED cases and explicit incomplete
+coverage. The 60-product matrix SHALL contain 540 main strategy/frequency cases and preserve actual section
+EVIDENCE_REQUIRED/NOT_APPLICABLE/WARMING states independently of readiness counts. Only a real section service
+READY result may count as main ready. Completed auditing MUST NOT imply all dependencies are ready.
+
+Composition SHALL contain only read authorities and the pure planner, never a provider, metadata writer,
+maintenance apply pipeline or Redis. A fresh read-only database transaction SHALL use no-autoflush and always
+rollback; real connections and any future repair remain separate authorized operations.
+SQLite connection-level read-only state SHALL be restored before returning the connection to its pool;
+restoration failure SHALL invalidate the connection rather than leak uncertain state to the next consumer.
+
+#### Scenario: The first physical owner lacks its prefix
+
+- **GIVEN** two authoritative owner contracts have independently missing replay prefixes
+- **WHEN** the dependency audit runs
+- **THEN** both failures are collected, with one repair request per exact contract/frequency/through scope
+- **AND** all affected consumers remain visible; no download or metadata synchronization occurs
+
+#### Scenario: The matrix deadline is reached
+
+- **GIVEN** an active-universe matrix has 540 planned main cases
+- **WHEN** the serial budget expires
+- **THEN** the report is incomplete and every remaining main case stays UNSTARTED
+- **AND** missing section evidence is never relabeled READY
+
 ### Requirement: Parallel development without production promotion
 
 Newow 产品 SHALL 以趋势、震荡、主升浪 × `1w / 1d / 60m` 九个独立组合提供只读主状态、
@@ -341,6 +424,11 @@ identity 与确认时间语义；`pivot_at` 不得冒充首次可知时间，其
 候选 as_of 为该日最后 Session 结束后一个微秒且不得晚于当前时间。
 返回候选前 MUST 使用既有 reader 验证主图和照妖镜所需完整输入，包括同合约 warm-up 和物理可读性。
 只有可证明为缺失的数据错误允许检查更早日期；身份、完整性或截止时间冲突、未知错误、取消或超时 MUST 停止。
+`CONTRACT_REPLAY_COVERAGE_UNAVAILABLE` 旧 code 本身 MUST NOT 授权历史回退；只有结构化
+`REPLAY_PREFIX_MISSING` / `REPLAY_ENDPOINTS_MISSING` 或明确缺失的 Calendar、Session、合约元数据
+等 reason 允许继续既有限定候选搜索。额外 Bar、重复/乱序、截止不一致以及无已知 reason 的基础设施失败
+必须立即停止。原始非正价格使用 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不得跳行、填充或改变 warm-up；
+该来源限制不授权更早候选回退或重复下载。
 候选日期 SHALL 分批读取，不能另加自然日截止而缩短最近 20 个完成交易日的范围；
 解析器 SHALL 使用 30 秒单调时钟预算并在读取边界检查取消，超时后不得返回成功。
 
@@ -538,6 +626,11 @@ repainting、formal-signal eligibility、允许用途、实际图表/统计窗�
 顶层 ready 不得掩盖子功能 `evidence_required`，也不得把参考交易资格表达成真实下单授权。
 旧 `/trend-detail` 的参数、profile、marker 和响应语义 MUST 保持不变。未预期内部错误使用固定
 `500 {"detail":{"code":"NEWOW_INTERNAL_ERROR"}}`，不得返回异常文本、SQL、内部路径、stack 或凭据。
+当前与历史快照端点 SHALL 共用有限公开错误码映射，不得信任任意 `NEWOW_` 前缀的异常文本。
+已知数据不可用返回 409，并可附加 `diagnostic`：有限 `reason`、只含已验证品种/合约/周期/日期/时间/数量的
+`context` 与 `historical_candidate_recoverable`。后者只表示本次错误可检查下一历史候选，不证明历史快照存在。
+Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置及重试/历史入口提示；未知 reason
+不得透传文本或诱导历史回退。其他面板缺失不得清除已验证主图。
 
 #### Scenario: A requested explanation has an evidence gap
 
@@ -559,3 +652,42 @@ shared Bar逐事实冲突、真实token替换、409不兼容或来源版本改�
 - **GIVEN** reference统计窗口未变且服务端接受同一snapshot token
 - **WHEN** 用户定位历史记录，重新加载不同chart窗口及其输入hash
 - **THEN** 保留reference统计、列表与cursor；同窗口分页身份和无token严格指纹校验仍独立生效
+
+### Requirement: Older chart windows are server issued and bounded
+
+默认图表 SHALL 只选择最近的有界 completed trading-day viewport；窗口内 `next_before=null`
+仅表示该窗口分页耗尽，不得据此声称权威历史已耗尽。服务端 SHALL 通过同一个 ProductReader /
+MarketDataService completed-day resolver 查找严格早于当前窗口的前一有界窗口；客户端不得猜日期。
+每页 `chart_limit` 为 1–2000，默认 500；Web 累积最多 3000 根并同时停止两种游标。
+固定公式所需同物理合约 lifecycle prefix 仍完整读取，不用 viewport 限制截断 warm-up。
+
+只有窗口内分页耗尽且权威 completed days 仍有更早历史时，服务端 MAY 返回独立
+`next_older_window`；客户端只在用户请求更早历史时提交 `chart_older_window` 和同一
+`snapshot_token`，不得同时提交 `from/through` 或 `chart_before`。显式选择的窗口保持有界；
+只有来自服务端默认/更早窗口的已验证窗口内分页可延续更早导航。缓存禁用、未保留、过期、
+淘汰或容量拒绝时不得宣称有可用的更早游标；缺少游标不证明数据湖没有历史。
+
+更早游标 SHALL 是随机不透明值，绑定规范化 product/strategy/frequency/series/as-of、
+原窗口、page limit、输入指纹与 snapshot。状态、窗口注册和结果 MUST 一起计入既有
+32 entry / 128 MiB total / 32 MiB entry / TTL 300s 缓存预算，并原子接受或拒绝，
+不得建立第二个无界游标 registry。重启、失效、篡改或身份不匹配返回可分类 409。
+
+跨窗口 SHALL 重新通过权威 reader 读取前一个已接受的有界窗口作为 anchor，验证其完整输入
+指纹及共同逐值事实，再读取前一窗口并合并无冲突 proof。即使窗口位于不同物理 owner、
+没有自然共享 lifecycle prefix，也不得跳过共同 Bar 校验或仅信任旧缓存。
+更早窗口和新帧 MUST 严格更早且不与旧帧重叠。窗口间允许不同输入 hash/page identity，
+但必须保持同一服务端验证的 snapshot 及来源版本；窗口内 `chart_before` 继续严格匹配
+原输入 hash/page identity，不得用 token 一致代替。generation switch、abort、冲突和
+最多一次快照重建继续隔离旧响应。分页不改变 ReferenceTrade identity、公式或统计窗口。
+
+#### Scenario: Default viewport ends while earlier authoritative history exists
+
+- **GIVEN** 真实 resolver 选择的默认窗口已耗尽，但权威 completed days 仍有更早交易日
+- **WHEN** 用户加载更早主图
+- **THEN** 服务端验证 anchor 后返回严格更早的有界窗口，并保持参考统计和快照兼容
+
+#### Scenario: Hourly window contains more bars than one page
+
+- **GIVEN** 一个已解析交易日窗口包含超过 chart_limit 的 completed 60m Bar
+- **WHEN** 用户继续向左加载
+- **THEN** 先耗尽同窗口 chart_before，再发 next_older_window；两类指纹校验不混用

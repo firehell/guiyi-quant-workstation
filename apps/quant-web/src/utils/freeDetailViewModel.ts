@@ -33,7 +33,7 @@ export function buildFreeDetailViewModel(input: {
     facts: [
       fact('series', '当前序列', seriesKindText(input.identity.seriesKind), 'market'),
       fact('frequency', '当前周期', frequencyText(input.identity.frequency), 'market'),
-      fact('data-status', '数据状态', dataStatusText(dataStatus), dataStatus === 'ready' ? 'market' : 'market', dataStatus === 'ready' ? 'default' : dataStatus === 'stale' ? 'warning' : 'unavailable'),
+      fact('data-status', '数据状态', input.header.afterMarketFailed ? '最近盘后更新失败' : dataStatusText(dataStatus), dataStatus === 'ready' ? 'market' : 'market', input.header.afterMarketFailed ? 'warning' : dataStatus === 'ready' ? 'default' : dataStatus === 'stale' ? 'warning' : 'unavailable'),
     ],
     disclosureSections: input.header.extendedSections,
     history: [],

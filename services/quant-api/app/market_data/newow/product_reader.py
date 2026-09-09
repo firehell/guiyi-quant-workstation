@@ -46,8 +46,11 @@ _OWNER_SOURCE = "main_contract_map:rank1:calendar_session_v1"
 
 
 class NewowProductReadError(ValueError):
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, *, context: dict[str, object] | None = None) -> None:
+        from app.market_data.diagnostics import safe_context
+
         self.code = code
+        self.context = safe_context(context)
         super().__init__(code)
 
 
@@ -333,12 +336,29 @@ class NewowProductReader:
     ) -> ProductReadWindow:
         """Choose a bounded authoritative trading-day viewport for recent Bars."""
 
+        window = self._resolve_chart_window(product, frequency, limit, as_of)
+        if window is None:
+            raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
+        return window
+
+    def resolve_older_chart_window(
+        self, product: str, frequency: ProductFrequency, limit: int,
+        as_of: datetime, before: date,
+    ) -> ProductReadWindow | None:
+        """Use the same completed-day authority, strictly before a verified window."""
+        return self._resolve_chart_window(product, frequency, limit, as_of, before)
+
+    def _resolve_chart_window(
+        self, product: str, frequency: ProductFrequency, limit: int,
+        as_of: datetime, before: date | None = None,
+    ) -> ProductReadWindow | None:
+
         cutoff = utc_timestamp(as_of)
         if cutoff > utc_timestamp(self._now()):
             raise NewowProductReadError("NEWOW_INVALID_AS_OF")
         if product not in self._active_products:
             raise NewowProductReadError("NEWOW_INVALID_PRODUCT")
-        if type(limit) is not int or limit <= 0:
+        if type(limit) is not int or not 1 <= limit <= 2000:
             raise NewowProductReadError("NEWOW_INVALID_CHART_LIMIT")
         self._check_cancelled()
         start_day = self._coverage.product_start(product)
@@ -352,6 +372,10 @@ class NewowProductReader:
             current <= previous for previous, current in zip(days, days[1:])
         ):
             raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
+        if before is not None:
+            days = tuple(day for day in days if day < before)
+            if not days:
+                return None
         bars_per_day = (
             4 if ProductFrequency(frequency) is ProductFrequency.HOURLY else 1
         )
@@ -543,16 +567,7 @@ class NewowProductReader:
                     for bar in prefix
                 )
             for contract, prefix in prefixes.items():
-                self._check_cancelled()
-                self._market_data.validate_contract_replay_coverage(
-                    symbol=query.product,
-                    contract=contract,
-                    frequency=BarFrequency(frequency),
-                    trading_day=prefix[-1].trading_day,
-                    cutoff=prefix[-1].bar_end,
-                    after=None,
-                    bars=prefix,
-                )
+                self._validate_prefix(query.product, contract, frequency, prefix[-1].bar_end, prefix)
             grouped[frequency] = tuple(output)
             sources[frequency] = ProductReadSource(
                 frequency,
@@ -570,6 +585,70 @@ class NewowProductReader:
             performance,
             MappingProxyType(sources),
             cutoff,
+        )
+
+    def dependency_owners(
+        self, product: str, since: date, through: date,
+    ) -> tuple[ResolvedContractSegment, ...]:
+        """Shared rank1 identity validation before any physical prefix is read."""
+        self._check_cancelled()
+        if product not in self._active_products:
+            raise NewowProductReadError("NEWOW_INVALID_PRODUCT")
+        owners = ActualDominantResearchSegmentLoader(self._market_data).owner_segments(
+            symbol=product, since=since, through=through,
+        )
+        if any(normalize_contract_for_symbol(product, owner.contract) != owner.contract
+               for owner in owners):
+            raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
+        self._check_cancelled()
+        return tuple(replace(owner, end_trading_day=min(owner.end_trading_day, through))
+                     for owner in owners)
+
+    def check_dependency(
+        self, product: str, frequency: ProductFrequency,
+        owner: ResolvedContractSegment, as_of: datetime,
+    ) -> dict[str, object]:
+        """Check one owner independently using MDS lifecycle endpoint authority."""
+        self._check_cancelled()
+        cutoff = utc_timestamp(as_of)
+        if product not in self._active_products or cutoff > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        expected = self._market_data.expected_contract_replay_endpoints(
+            symbol=product, contract=owner.contract, frequency=BarFrequency(frequency),
+            trading_day=owner.end_trading_day, cutoff=cutoff,
+        )
+        self._check_cancelled()
+        owned = tuple(point for point in expected
+                      if owner.start_trading_day <= point[1] <= owner.end_trading_day)
+        if not owned:
+            if frequency is ProductFrequency.WEEKLY:
+                return {"status": "NOT_APPLICABLE", "reason": "OWNER_HAS_NO_COMPLETED_BAR"}
+            raise NewowProductReadError("NEWOW_COMPLETE_PERIOD_MISSING")
+        prefix = self._read_prefix(product, owner.contract, frequency, owned[-1][0])
+        self._validate_prefix(product, owner.contract, frequency, owned[-1][0], prefix,
+                              trading_day=owned[-1][1])
+        if prefix[-1].bar_end != owned[-1][0]:
+            from app.market_data.market_data_service import MarketDataError
+            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                                  reason="REPLAY_ENDPOINTS_MISSING")
+        # Reuse the product numeric/identity boundary; do not skip original zero rows.
+        segment = build_segment_id(product, owner.contract, owned[0][0])
+        for bar in prefix:
+            self._check_cancelled()
+            _product_bar(product, frequency, owner.contract, segment, bar,
+                         bar.trading_day >= owner.start_trading_day)
+        return {"status": "DATA_READY", "expected_bar_count": len(expected),
+                "actual_bar_count": len(prefix), "cutoff": owned[-1][0].isoformat()}
+
+    def _validate_prefix(
+        self, product: str, contract: str, frequency: ProductFrequency, cutoff: datetime,
+        prefix: tuple[CanonicalBar, ...],
+        *, trading_day: date | None = None,
+    ) -> None:
+        self._check_cancelled()
+        self._market_data.validate_contract_replay_coverage(
+            symbol=product, contract=contract, frequency=BarFrequency(frequency),
+            trading_day=trading_day or prefix[-1].trading_day, cutoff=cutoff, after=None, bars=prefix,
         )
 
     def _check_cancelled(self) -> None:
@@ -679,4 +758,10 @@ def _product_bar(
             frequency,
         )
     except ValueError as exc:
+        if str(exc) == "NEWOW_BAR_NONPOSITIVE_PRICE":
+            raise NewowProductReadError(
+                "NEWOW_SOURCE_NONPOSITIVE_PRICE",
+                context={"symbol": product, "contract": contract, "frequency": frequency,
+                         "trading_day": bar.trading_day, "cutoff": bar.bar_end},
+            ) from exc
         raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID") from exc

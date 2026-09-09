@@ -820,14 +820,29 @@ def _historical_session_rows(
     *,
     allow_missing_after: date | None = None,
 ) -> tuple[dict[str, object], ...]:
-    """将 get_trading_periods 结果转为按日 TradingSession 行。
+    """Preserve the existing broad snapshot's source mapping semantics."""
+    return historical_session_rows(
+        periods, main_contracts, symbol_exchanges, allow_missing_after=allow_missing_after,
+    )
 
-    历史快照必须与主力映射日全集一致；Runtime 快照可保留
+
+def historical_session_rows(
+    periods: tuple[dict[str, Any], ...],
+    source_contract_days: list[tuple[str, date, str]],
+    symbol_exchanges: Mapping[str, str],
+    *,
+    allow_missing_after: date | None = None,
+    reject_extra: bool = False,
+) -> tuple[dict[str, object], ...]:
+    """将 get_trading_periods 的物理合约/日期来源转为按日 TradingSession 行。
+
+    source_contract_days 只标注来源，不创建或代表主力映射。历史快照仍由调用者传入
+    主力映射日全集；Runtime 快照可保留
     ``allow_missing_after`` 之后尚未发布的 Session，交由 MetadataSynchronizer
     在先验证当天 rank1 后唯一分类为可重试时点。
     """
     expected: dict[tuple[str, date], str] = {}
-    for symbol, day, contract in main_contracts:
+    for symbol, day, contract in source_contract_days:
         key = (contract, day)
         if key in expected and allow_missing_after is None:
             raise InfrastructureError("RQDATA_TRADING_SESSIONS_MISSING")
@@ -838,6 +853,8 @@ def _historical_session_rows(
         trading_day = _row_date(row)
         key = (contract, trading_day)
         if key not in expected:
+            if reject_extra:
+                raise InfrastructureError("RQDATA_TRADING_SESSIONS_INVALID")
             continue
         hours = _optional_text(row.get("trading_hours"))
         if hours is None or key in values:
@@ -874,6 +891,36 @@ def _historical_session_rows(
                 }
             )
     return tuple(rows)
+
+
+def fetch_bounded_metadata_request(api: Any, request: dict) -> list:
+    """One frozen metadata request; no broad snapshot, retry or supplementary call."""
+    start, end = date.fromisoformat(request["start_date"]), date.fromisoformat(request["end_date"])
+    if request["method"] == "get_trading_dates":
+        return [_bounded_metadata_date(value) for value in api.get_trading_dates(start_date=start, end_date=end)]
+    if request["method"] != "get_trading_periods" or request["frequency"] != "1m" or start != end:
+        raise InfrastructureError("RQDATA_METADATA_SCOPE_INVALID")
+    rows = _records(api.get_trading_periods((request["contract"],), start_date=start, end_date=end, frequency="1m"))
+    result = []
+    for row in rows:
+        identities = [row[key] for key in ("order_book_id", "level_0") if key in row]
+        dates = [_bounded_metadata_date(row[key]) for key in ("trading_date", "trade_date", "date", "index") if key in row]
+        if not identities or any(value != request["contract"] for value in identities) or not dates or len(set(dates)) != 1:
+            raise InfrastructureError("RQDATA_METADATA_SCOPE_INVALID")
+        result.append({"order_book_id": identities[0], "date": dates[0], "trading_hours": row.get("trading_hours")})
+    return result
+
+
+def _bounded_metadata_date(value: Any) -> str:
+    if isinstance(value, datetime):
+        if value.time() != time(0) or value.tzinfo is not None:
+            raise InfrastructureError("RQDATA_TRADING_DAY_INVALID")
+        return value.date().isoformat()
+    if type(value) is date:
+        return value.isoformat()
+    if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return date.fromisoformat(value).isoformat()
+    raise InfrastructureError("RQDATA_TRADING_DAY_INVALID")
 
 
 def _normalized_historical_session_periods(

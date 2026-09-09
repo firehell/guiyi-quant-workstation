@@ -100,17 +100,18 @@ export async function installNewowProductFixtures(page, options = {}) {
     }
     window.Date = FrozenDate
     window.__newowBrowserClock = { installedAt: performance.now() }
+    window.__newowFixtureWebSockets = []
     class FixtureWebSocket {
       static OPEN = 1
       static CLOSED = 3
       readyState = FixtureWebSocket.OPEN
       onopen = null
       onclose = null
-      constructor(url) { this.url = url; queueMicrotask(() => this.onopen?.()) }
+      constructor(url) { this.url = url; window.__newowFixtureWebSockets.push(url); queueMicrotask(() => this.onopen?.()) }
       close() { this.readyState = FixtureWebSocket.CLOSED; this.onclose?.() }
     }
     window.WebSocket = FixtureWebSocket
-  }, { frozenNow: NEWOW_AS_OF })
+  }, { frozenNow: options.frozenNow ?? NEWOW_AS_OF })
 
   await page.route('**/*', async (route) => {
     const request = route.request()
@@ -171,6 +172,7 @@ export async function installNewowProductFixtures(page, options = {}) {
     if (url.pathname === '/api/v1/market/bars/page') {
       if (options.genericSeries === 'pending') return new Promise(() => {})
       if (options.genericSeries === 'failed') return route.abort('failed')
+      if (options.genericSeries === 'failed-once' && state.requests.filter(item => item.url.pathname === url.pathname).length === 1) return route.abort('failed')
       return route.fulfill({ json: genericBarsPage(url, options) })
     }
     if (url.pathname === '/api/v1/market/newow/trend-detail') {
@@ -617,7 +619,7 @@ function productBarAt(frequency, barEnd, tradingDay, close, contract = CONTRACT,
     ...overrides,
   }
 }
-function genericBarsPage(url, options = {}) { const frequency = url.searchParams.get('frequency') || '15m'; const bars = [0, 1].map((index) => { const bar = options.visualRich && frequency === '1d' ? chartValue(fixtureValidationUrl('chart', 'trend', '1d', false, null), 'trend', '1d', options).bars.slice(-2)[index] : productBar(frequency === '1w' || frequency === '1d' || frequency === '60m' ? frequency : '60m', 60 + index); return { ...bar, open: Number(bar.open), high: Number(bar.high), low: Number(bar.low), close: Number(bar.close), turnover: 10000 } }); return { request: { series_kind: url.searchParams.get('series_kind'), symbol: url.searchParams.get('symbol'), contract: url.searchParams.get('contract'), frequency, before: url.searchParams.get('before'), limit: Number(url.searchParams.get('limit') || 500) }, bars, canonical_coverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end }, page: { has_more_before: false, next_before: null }, resolved_contract_segments: [{ contract: CONTRACT, start_trading_day: bars[0].trading_day, end_trading_day: bars.at(-1).trading_day }] } }
+function genericBarsPage(url, options = {}) { const frequency = url.searchParams.get('frequency') || '15m'; const bars = [0, 1].map((index) => { const bar = options.visualRich && frequency === '1d' ? chartValue(fixtureValidationUrl('chart', 'trend', '1d', false, null), 'trend', '1d', options).bars.slice(-2)[index] : productBar(frequency === '1w' || frequency === '1d' || frequency === '60m' ? frequency : '60m', 60 + index); return { ...bar, open: String(bar.open), high: String(bar.high), low: String(bar.low), close: String(bar.close), volume: String(bar.volume), turnover: '10000', open_interest: bar.open_interest == null ? null : String(bar.open_interest) } }); return { request: { series_kind: url.searchParams.get('series_kind'), symbol: url.searchParams.get('symbol'), contract: url.searchParams.get('contract'), frequency, before: url.searchParams.get('before'), limit: Number(url.searchParams.get('limit') || 500) }, bars, canonical_coverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end }, page: { has_more_before: false, next_before: null }, resolved_contract_segments: [{ contract: CONTRACT, start_trading_day: bars[0].trading_day, end_trading_day: bars.at(-1).trading_day }] } }
 function researchProduct() { return { symbol: 'rb', product_name: '螺纹钢', sector: '黑色', exchange: 'SHFE', series_kind: 'actual_dominant', contract: null, as_of: NEWOW_AS_OF, current_dominant: CONTRACT, dominant_mapping_date: '2026-09-03', daily_trend: 'neutral', weekly_trend: 'neutral', position20: null, distance_to_20d_high: null, distance_to_20d_low: null, volume_ratio20: null, oi_change_1d: null, turnover_change_5d: null, atr14_percentile252: null, recent_daily: [] } }
 function marketState(url) { return { symbol: url.searchParams.get('symbol') || 'rb', series_kind: url.searchParams.get('series_kind') || 'actual_dominant', frequency: url.searchParams.get('frequency') || '15m', operational: true, phase: 'CLOSED', trading_day: '2026-09-03', live_eligible: false, live_available: false, live_contract: null, canonical_end: NEWOW_AS_OF, after_market: { last_successful_trading_day: '2026-09-03' } } }
 function runtimeHealth() { return { status: 'ok', generated_at: NEWOW_AS_OF, readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: { alert: { status: 'ok', enabled_rule_count: 0, rule_status: { htdy_original_15m: { last_evaluated_bar_at: null, last_event_at: null, last_failure_at: null, error_type: null }, subing_ths_alert_15m_v1: { last_evaluated_bar_at: null, last_event_at: null, last_failure_at: null, error_type: null } } } } } }

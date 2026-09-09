@@ -73,7 +73,7 @@ test('historical Newow mode hides the independent current quote and contract hea
   const { source, template } = page()
   const workspace = readFileSync(newowWorkspaceUrl, 'utf8')
   assert.match(source, /const newowHistoricalAsOf = ref<string \| null>\(null\)/)
-  assert.match(template, /MarketDetailQuoteHeader v-if="header && !\(isNewowView && newowHistoricalAsOf\)"/)
+  assert.match(template, /MarketDetailQuoteHeader v-if="!controller.state.value.loading && !controller.state.value.error && header && !\(isNewowView && newowHistoricalAsOf\)"/)
   assert.match(template, /@snapshot-mode="newowHistoricalAsOf = \$event"/)
   assert.match(workspace, /查看最近可用历史快照/)
   assert.match(workspace, /返回当前/)

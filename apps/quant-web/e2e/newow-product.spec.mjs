@@ -83,6 +83,55 @@ for (const strategy of NEWOW_STRATEGIES) {
   }
 }
 
+test('empty chart fixture keeps all three selected-strategy legends with the real Decimal quote wire', async ({ browser }) => {
+  const labels = { trend: '趋势带', oscillation: '震荡区间', main_rise: '主升浪' }
+  for (const strategy of NEWOW_STRATEGIES) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    const page = await context.newPage()
+    const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, section }) => {
+      if (section !== 'chart') return
+      await route.fulfill({ status: 500, json: { detail: { code: 'NEWOW_INTERNAL_ERROR' } } })
+      return 'handled'
+    } })
+    await page.goto(newowRoute(strategy, '1d'))
+    await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'unavailable')
+    await expect(page.locator('.quote-header__price strong')).toHaveText('106.10')
+    await expect(page.getByTestId('newow-product-chart-stage').getByRole('button', { name: new RegExp(`^${labels[strategy]}`) })).toBeVisible()
+    assertNoUnexpectedRequests(fixture)
+    await context.close()
+  }
+})
+
+test('main chart exposes same-as_of retry and explicit refresh-current without collateral clearing', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, {
+    busy: 'trend:1d:reference',
+    genericSeries: 'failed-once',
+    onProductRequest: async ({ route, section, count }) => {
+      if (section !== 'chart' || count !== 1) return
+      await route.fulfill({ status: 500, json: { detail: { code: 'NEWOW_INTERNAL_ERROR' } } })
+      return 'handled'
+    },
+  })
+  await page.goto(newowRoute())
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'unavailable')
+  await expect(page.locator('.quote-header__price strong')).toHaveText('—')
+  await page.getByRole('button', { name: '重试主图', exact: true }).click()
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  expect(productRequests(fixture, 'chart')).toHaveLength(2)
+  expect(productRequests(fixture, 'chart').map(item => item.url.searchParams.get('as_of'))).toEqual([NEWOW_AS_OF, NEWOW_AS_OF])
+
+  await showReference(page)
+  await expect(page.locator('.newow-reference')).toContainText('NEWOW_RESOURCE_BUSY')
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  await page.getByRole('button', { name: '刷新当前', exact: true }).click()
+  await expect.poll(() => productRequests(fixture, 'chart').length).toBe(3)
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  await expect(page.locator('.quote-header__price strong')).toHaveText('106.10')
+  expect(fixture.requests.filter(item => item.url.pathname === '/api/v1/market/bars/page')).toHaveLength(2)
+  expect(productRequests(fixture, 'chart').at(-1).url.searchParams.get('as_of')).toBe(NEWOW_AS_OF)
+  assertNoUnexpectedRequests(fixture)
+})
+
 test('dense same-Bar hints use the disclosure and exact historical facts while native actions remain clickable', async ({ page }) => {
   await page.addInitScript(() => {
     window.__newowPaintedMarkerText = []

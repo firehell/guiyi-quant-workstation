@@ -81,6 +81,21 @@ export interface CanonicalBarDto {
   open_interest: number | null
 }
 
+/** Raw transport shape; the backend serializes Decimal values as strings. */
+export type MarketNumericWire = number | string
+
+export interface MarketBarWireDto {
+  bar_end: string
+  trading_day: string
+  open: MarketNumericWire
+  high: MarketNumericWire
+  low: MarketNumericWire
+  close: MarketNumericWire
+  volume: MarketNumericWire
+  turnover: MarketNumericWire | null
+  open_interest: MarketNumericWire | null
+}
+
 export interface BarData {
   time: string
   trading_day?: string
@@ -124,6 +139,10 @@ export interface MarketBarsPageResponse {
   canonical_coverage: { start: string; end: string } | null
   page: MarketPageMeta
   resolved_contract_segments: ResolvedContractSegment[]
+}
+
+export interface MarketBarsPageWireResponse extends Omit<MarketBarsPageResponse, 'bars'> {
+  bars: MarketBarWireDto[]
 }
 
 export interface ProductResearchResponse {

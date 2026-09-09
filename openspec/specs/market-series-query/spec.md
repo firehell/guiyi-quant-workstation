@@ -6,6 +6,42 @@
 
 ## Requirements
 
+### Requirement: Replay diagnostics preserve stable codes and distinguish missing facts
+
+`MarketDataError.code` MUST remain backward compatible. Physical contract replay validation SHALL
+add a bounded reason and sanitized context without changing accepted Bars or the lifecycle/session authority.
+Missing prefix or interior/suffix endpoints SHALL be distinguished from extra endpoints, order/duplicates,
+cutoff mismatch and metadata identity failures. Known missing Calendar/Session/contract metadata SHALL retain
+their missing classification; unknown infrastructure exceptions MUST NOT become recoverable gaps.
+Diagnostic context SHALL contain only validated symbol, physical contract, frequency, dates/instants and
+bounded nonnegative counts; exception text, storage paths, SQL and adapter samples MUST NOT be public.
+
+#### Scenario: A replay lacks its lifecycle prefix
+
+- **GIVEN** the authoritative lifecycle endpoints include earlier Bars absent from a valid ordered suffix
+- **WHEN** physical replay coverage is validated
+- **THEN** the service preserves `CONTRACT_REPLAY_COVERAGE_UNAVAILABLE` and reports `REPLAY_PREFIX_MISSING`
+- **AND** it includes only safe contract/frequency/time/count context and returns no partial replay
+
+#### Scenario: A replay contains an extra endpoint
+
+- **GIVEN** a replay contains an endpoint outside the authoritative lifecycle/session facts
+- **WHEN** physical replay coverage is validated
+- **THEN** the service reports `REPLAY_ENDPOINTS_EXTRA` without classifying it as recoverable missing data
+
+### Requirement: Catalog URI byte integrity
+Historical reader MUST 只打开 Catalog 精确引用的 URI，不得 glob、自选最新文件或回退固定路径。
+`part.<sha256>.parquet` MUST 校验实际文件 bytes SHA-256，并从同一份 bytes 解析 Parquet，随后执行
+既有 strict validation。旧 `part.parquet` MUST 仅在 Catalog 明确引用时兼容。
+
+#### Scenario: Hash URI bytes mismatch
+- **WHEN** 精确 Catalog URI 的文件 bytes 与文件名 SHA-256 不符
+- **THEN** 查询 fail-closed，不尝试旧路径或其他月文件
+
+#### Scenario: Reader holds the previous URI
+- **WHEN** 新 pointer 已提交，而 reader 已取得旧 URI
+- **THEN** reader 仍可读取保留的旧不可变文件，不把该行为表述为全局 snapshot
+
 ### Requirement: 三种 SeriesQuery
 查询 SHALL 接受 `continuous|actual_dominant|contract`、symbol、frequency、start、end；contract
 模式必须有 contract，其他模式不得提供 contract。连续/真实合约查询直接读取同频 Catalog 月分区；
@@ -53,3 +89,16 @@ completed筛选必须使用精确session end≤as-of以及coverage上限；周�
 - **GIVEN** 960个权威交易日覆盖且只请求最新1根或500根图表
 - **WHEN** 解析默认viewport
 - **THEN** Session/Calendar数据库查询次数保持有界，不随逐日重复查询线性增长，窗口结果与既有completed语义一致
+
+
+### Requirement: WebSocket reads are bounded and isolated from the event loop
+WebSocket SHALL subscribe before reading its initial snapshot. Synchronous Catalog, Parquet and Redis
+reads, including Session and client construction and cleanup, MUST run on a worker thread. Each read
+MUST own a fresh resource scope; no Session may be shared across worker calls. Admission SHALL be
+bounded to four outstanding reads per process, without an unbounded queue. Saturation MUST close the
+connection as unavailable; it MUST NOT bypass Live eligibility, snapshot deduplication or state reset.
+
+#### Scenario: A read is slow or its caller disconnects
+- **WHEN** a synchronous read blocks or the awaiting connection is cancelled
+- **THEN** the event loop remains responsive and admission remains held until the actual worker finishes
+- **AND** all per-read clients close on their owning worker, while all asynchronous Pub/Sub clients close on exit

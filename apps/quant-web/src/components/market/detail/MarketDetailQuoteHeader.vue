@@ -13,7 +13,7 @@ const props = defineProps<{
 }>()
 
 const direction = computed(() => priceDirection(props.header.change))
-const statusLabel = computed(() => ({ fresh: '数据正常', stale: '数据可能过时', unavailable: '数据不可用' })[props.header.freshness])
+const statusLabel = computed(() => props.header.afterMarketFailed ? '最近盘后更新失败' : ({ fresh: '数据正常', stale: '数据可能过时', unavailable: '数据不可用' })[props.header.freshness])
 const phaseLabel = computed(() => ({ TRADING: '交易中', BREAK: '盘中休市', CLOSED: '已收盘', UNKNOWN: '状态未知' })[props.header.phase] ?? '状态未知')
 const seriesLabel = computed(() => ({ actual_dominant: '真实主力', continuous: '主连', contract: '指定合约' })[props.header.seriesKind])
 const displaySourceLabel = computed(() => ({ 实时观察: 'Live', 盘后观察: '收盘快照', Canonical: 'Historical' })[props.header.displaySource] ?? 'Historical')
@@ -35,8 +35,8 @@ function integer(value: number | null): string {
         <h1>{{ header.productName }}</h1>
         <p>{{ header.displayContract || (header.seriesKind === 'continuous' ? '主连序列' : header.symbol.toUpperCase()) }}</p>
       </div>
-      <span class="quote-header__status" :class="`quote-header__status--${header.freshness}`">
-        <MarketDetailIcon :name="header.freshness === 'fresh' ? 'data' : 'warning'" :size="16" />
+      <span class="quote-header__status" :class="`quote-header__status--${header.afterMarketFailed ? 'stale' : header.freshness}`">
+        <MarketDetailIcon :name="!header.afterMarketFailed && header.freshness === 'fresh' ? 'data' : 'warning'" :size="16" />
         {{ statusLabel }}
       </span>
     </div>
@@ -68,6 +68,7 @@ function integer(value: number | null): string {
       :identity-key="identityKey"
       :sections="header.extendedSections"
       :freshness="header.freshness"
+      :after-market-failed="header.afterMarketFailed"
     />
   </section>
 </template>

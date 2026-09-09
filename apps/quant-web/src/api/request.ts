@@ -6,6 +6,7 @@ import {
 } from '@/utils/errorRedaction'
 import { normalizeApiBaseURL } from '@/utils/network'
 import { purgeLegacyWebCredentials } from '@/utils/settings'
+import { candidatePreview } from '../utils/candidatePreview.ts'
 
 interface RequestMetadata {
   startTime: number
@@ -17,6 +18,7 @@ type TimedAxiosRequestConfig = InternalAxiosRequestConfig & {
 
 /** 解析 API 根地址：只接受 Vite 环境变量，否则使用同源默认值。 */
 function resolveBaseURL() {
+  if (candidatePreview.enabled) return '/api/v1'
   return normalizeApiBaseURL(import.meta.env.VITE_API_BASE_URL?.trim())
 }
 
@@ -41,6 +43,10 @@ request.interceptors.request.use(
   (config) => {
     const timedConfig = config as TimedAxiosRequestConfig
     const url = timedConfig.url || ''
+    if (candidatePreview.enabled && ((timedConfig.method || 'get').toLowerCase() !== 'get'
+      || !url.startsWith('/') || url.startsWith('//') || url.includes('\\'))) {
+      throw new Error('PREVIEW_ROUTE_FORBIDDEN')
+    }
     // /api/*（非 /api/v1/*）走同源相对路径，避免重复拼接 baseURL
     timedConfig.baseURL = url.startsWith('/api/') && !url.startsWith('/api/v1/') ? '' : resolveBaseURL()
     timedConfig.metadata = { startTime: Date.now() }

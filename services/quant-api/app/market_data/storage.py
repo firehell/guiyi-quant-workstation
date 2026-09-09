@@ -1,11 +1,7 @@
-"""Canonical Parquet 月分区存储（数据核心 V2 物理层）。
+"""Canonical month storage with immutable content-addressed candidates.
 
-``CanonicalMonthlyStore`` 负责 canonical 根目录下的读写：
-- 目录布局由 ``DatasetKey.relative_root`` + ``year=YYYY/month=MM/part.parquet`` 决定；
-- 发布采用「写临时文件 → 校验 schema/行数 → ``os.replace`` 原子替换」，失败不覆盖旧分区；
-- 读取时校验 schema 与 Catalog 登记一致，由 ``MarketDataService`` 再比对 ``row_count``。
-
-本层不关心 RQData 或 SQL，只保证物理文件形态与发布前完整性校验。
+Catalog alone selects the active URI. Legacy fixed-path writes are restricted to
+an explicitly selected offline repair shadow; normal publication never replaces.
 """
 
 from __future__ import annotations
@@ -13,7 +9,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import hashlib
 import os
+import re
+import stat
 from pathlib import Path
 from typing import Protocol
 import uuid
@@ -21,7 +20,7 @@ import uuid
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey
+from app.market_data.domain import BarFrequency, CanonicalBar, ContractError, DatasetKey
 
 
 CANONICAL_COLUMNS = ("bar_end", "trading_day", "open", "high", "low", "close", "volume", "turnover", "open_interest")
@@ -95,64 +94,147 @@ class CanonicalMonthlyStore:
     """Canonical 月分区 Parquet 存储：原子发布与严格 schema 读取。"""
 
     def __init__(self, root: Path, *, boundary_validator: BoundaryValidator | None = None) -> None:
-        self.root = root.resolve()
+        self.root = root.absolute()
+        if ".." in self.root.parts:
+            raise StorageError("CANONICAL_ROOT_ESCAPE")
         # 可选：按交易 session 边界拒绝越界 bar（维护管道注入）
         self.boundary_validator = boundary_validator
 
     def publish(self, request: PublishRequest) -> PublishedPartition:
-        """校验后写入月分区；仅在校验通过时用 ``os.replace`` 替换 ``part.parquet``。
+        """Install a validated immutable candidate without changing any Catalog pointer."""
+        return self._publish(request, legacy_shadow=False)
 
-        失败时删除临时文件，保留上一版有效 canonical（V2 原子发布要求）。
-        """
+    def publish_legacy_shadow(self, request: PublishRequest) -> PublishedPartition:
+        """Only for the offline 0045 shadow; caller must validate its authorized root."""
+        return self._publish(request, legacy_shadow=True)
+
+    def _publish(self, request: PublishRequest, *, legacy_shadow: bool) -> PublishedPartition:
         self._validate(request)
         directory = self._month_directory(request.dataset, request.year, request.month)
-        directory.mkdir(parents=True, exist_ok=True)
-        path = directory / "part.parquet"
-        temporary = directory / f"part.{uuid.uuid4().hex}.tmp"
+        temporary = f"part.{uuid.uuid4().hex}.tmp"
+        directory_fd = self._directory_fd(directory, create=True)
         try:
-            pq.write_table(pa.Table.from_pylist([bar.as_record() for bar in request.bars], schema=CANONICAL_SCHEMA), temporary, compression="zstd", use_dictionary=False, version="2.6")
-            # 写后回读：防止 pyarrow 写出与预期 schema/行数不一致的静默损坏
-            physical = pq.ParquetFile(temporary).read()
-            if not physical.schema.equals(CANONICAL_SCHEMA, check_metadata=False) or physical.num_rows != len(request.bars):
+            expected = pa.Table.from_pylist([bar.as_record() for bar in request.bars], schema=CANONICAL_SCHEMA)
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd)
+            with os.fdopen(fd, "wb") as stream:
+                pq.write_table(expected, stream, compression="zstd", use_dictionary=False, version="2.6")
+                stream.flush()
+                os.fsync(stream.fileno())
+            payload = self._read_bytes(directory_fd, temporary)
+            physical = pq.ParquetFile(pa.BufferReader(payload)).read()
+            if not physical.equals(expected, check_metadata=False):
                 raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
-            os.replace(temporary, path)
-            return PublishedPartition(request.dataset, request.year, request.month, path, request.bars[0].bar_end - _frequency_delta(request.dataset.frequency), request.bars[-1].bar_end, len(request.bars))
+            name = "part.parquet" if legacy_shadow else f"part.{hashlib.sha256(payload).hexdigest()}.parquet"
+            if legacy_shadow:
+                os.replace(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+            else:
+                try:
+                    os.link(temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd, follow_symlinks=False)
+                except FileExistsError:
+                    if self._read_bytes(directory_fd, name) != payload:
+                        raise StorageError("IMMUTABLE_PARTITION_CONFLICT") from None
+            if self._read_bytes(directory_fd, name) != payload:
+                raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
+            os.fsync(directory_fd)
+            return PublishedPartition(request.dataset, request.year, request.month, directory / name, request.bars[0].bar_end - _frequency_delta(request.dataset.frequency), request.bars[-1].bar_end, len(request.bars))
         except StorageError:
             raise
         except Exception as exc:
             raise StorageError("ATOMIC_PUBLISH_FAILED") from exc
         finally:
-            temporary.unlink(missing_ok=True)
+            try:
+                os.unlink(temporary, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+            finally:
+                os.close(directory_fd)
+
+    def _directory_fd(self, directory: Path, *, create: bool = False) -> int:
+        """Walk every component without following links; sync each created entry.
+
+        Missing root ancestors belong to the explicitly requested root path. Open
+        existing ancestors read-only and create only missing path components,
+        syncing every parent before proceeding, including existing entries from
+        an interrupted or concurrent creation. Read-only access never fsyncs.
+        """
+        try:
+            parts = directory.relative_to(self.root).parts
+            if ".." in parts:
+                raise StorageError("CANONICAL_ROOT_ESCAPE")
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            fd = os.open(self.root.anchor, flags)
+            try:
+                for part in (*self.root.parts[1:], *parts):
+                    try:
+                        child = os.open(part, flags, dir_fd=fd)
+                    except FileNotFoundError:
+                        if not create:
+                            raise
+                        try:
+                            os.mkdir(part, dir_fd=fd)
+                        except FileExistsError:
+                            # A concurrent publisher may have created this entry.
+                            pass
+                        child = os.open(part, flags, dir_fd=fd)
+                    if create:
+                        try:
+                            # Existing entries may come from an interrupted or
+                            # concurrent mkdir whose parent was never synced.
+                            os.fsync(fd)
+                        except BaseException:
+                            os.close(child)
+                            raise
+                    os.close(fd)
+                    fd = child
+                return fd
+            except BaseException:
+                os.close(fd)
+                raise
+        except (ValueError, OSError) as exc:
+            raise StorageError("PARTITION_UNREADABLE") from exc
+
+    @staticmethod
+    def _read_bytes(directory_fd: int, name: str) -> bytes:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory_fd)
+        with os.fdopen(fd, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise StorageError("PARTITION_UNREADABLE")
+            return stream.read()
+
+    def _read_path(self, path: Path) -> tuple[CanonicalBar, ...]:
+        try:
+            fd = self._directory_fd(path.parent)
+            try:
+                payload = self._read_bytes(fd, path.name)
+            finally:
+                os.close(fd)
+            if path.name != "part.parquet":
+                if path.name != f"part.{hashlib.sha256(payload).hexdigest()}.parquet":
+                    raise StorageError("PARTITION_CONTENT_HASH_MISMATCH")
+            table = pq.ParquetFile(pa.BufferReader(payload)).read()
+            if not table.schema.equals(CANONICAL_SCHEMA, check_metadata=False):
+                raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
+            return tuple(CanonicalBar(**record) for record in table.to_pylist())
+        except (OSError, pa.ArrowException, ContractError, TypeError, ValueError) as exc:
+            raise StorageError("PARTITION_UNREADABLE") from exc
 
     def read_month(self, dataset: DatasetKey, year: int, month: int) -> tuple[CanonicalBar, ...]:
         """读取指定月 ``part.parquet``；schema 不符或 IO 失败映射为 ``StorageError``。"""
-        try:
-            table = pq.ParquetFile(self._month_directory(dataset, year, month) / "part.parquet").read()
-        except (OSError, pa.ArrowException) as exc:
-            raise StorageError("PARTITION_UNREADABLE") from exc
-        if not table.schema.equals(CANONICAL_SCHEMA, check_metadata=False):
-            raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
-        return tuple(CanonicalBar(**record) for record in table.to_pylist())
+        return self._read_path(self.month_path(dataset, year, month))
 
     def read_catalog_partition(
         self,
         partition: CatalogPartitionLike,
     ) -> tuple[CanonicalBar, ...]:
         """Read one Catalog partition only when URI, rows and coverage match disk."""
-        expected_path = self.month_path(
-            partition.dataset,
-            partition.year,
-            partition.month,
-        )
-        if partition.file_path != expected_path or not expected_path.is_file():
+        directory = self._month_directory(partition.dataset, partition.year, partition.month)
+        path = partition.file_path
+        if path.parent != directory or not re.fullmatch(r"part(?:\.[0-9a-f]{64})?\.parquet", path.name):
             raise StorageError("PARTITION_CATALOG_MISMATCH")
-        values = self.read_month(
-            partition.dataset,
-            partition.year,
-            partition.month,
-        )
+        values = self._read_path(path)
         if not values:
             raise StorageError("PARTITION_EMPTY")
+        self._validate(PublishRequest(partition.dataset, partition.year, partition.month, values, tuple(bar.bar_end for bar in values)))
         if partition.row_count != len(values):
             raise StorageError("PARTITION_ROW_COUNT_MISMATCH")
         if (
@@ -164,12 +246,12 @@ class CanonicalMonthlyStore:
         return values
 
     def month_path(self, dataset: DatasetKey, year: int, month: int) -> Path:
-        """Return the authoritative physical path for a month partition."""
+        """Return only the legacy fixed path; active readers must use the Catalog URI."""
         return self._month_directory(dataset, year, month) / "part.parquet"
 
     def _month_directory(self, dataset: DatasetKey, year: int, month: int) -> Path:
         """拼接月分区目录并校验仍在 ``canonical_root`` 内（防路径注入）。"""
-        path = self.root.joinpath(*dataset.relative_root.parts, f"year={year:04d}", f"month={month:02d}").resolve()
+        path = self.root.joinpath(*dataset.relative_root.parts, f"year={year:04d}", f"month={month:02d}")
         if path != self.root and self.root not in path.parents:
             raise StorageError("CANONICAL_ROOT_ESCAPE")
         return path

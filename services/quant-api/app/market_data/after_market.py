@@ -34,6 +34,7 @@ from app.market_data.live_recovery_guard import after_market_recovery_guard
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.rqdata_adapter import RQDataClient
 from app.market_data.session_clock import SHANGHAI
+from app.market_data.storage import StorageError
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ _PUBLIC_ERROR_CODES = frozenset(
         "RQDATA_NOT_READY",
         "RQDATA_READY_CHECK_FAILED",
         "UPDATE_FAILED",
+        "COMMIT_OUTCOME_UNKNOWN",
     }
 )
 _PUBLIC_PRODUCT_CODE = re.compile(r"[a-z]{1,4}\Z")
@@ -257,6 +259,8 @@ class AfterMarketUpdater:
             )
             return "UPDATE_FAILED"
         except Exception as exc:  # noqa: BLE001 - provider/catalog detail stays private
+            if isinstance(exc, StorageError) and exc.code == "COMMIT_OUTCOME_UNKNOWN":
+                return exc.code
             _LOGGER.warning(
                 "after_market_attempt_failed stage=canonical_update attempt=%s "
                 "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=%s",

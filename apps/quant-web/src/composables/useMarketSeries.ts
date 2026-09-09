@@ -1,6 +1,8 @@
 import { ref } from 'vue'
+import { candidatePreview } from '../utils/candidatePreview.ts'
 import { resolveWsURL } from '../utils/network.ts'
 import { normalizeBarSeries } from '../utils/barSeries.ts'
+import { normalizeMarketBarWire } from '../api/marketWire.ts'
 import type {
   BarData,
   CanonicalBarDto,
@@ -88,19 +90,19 @@ export function resolveHistoricalPhysicalContract(
   return contract
 }
 
-/** Maps the canonical page DTO once at the HTTP boundary. */
+/** Maps an already-normalized display DTO without repeating wire coercion. */
 function toBarData(item: CanonicalBarDto, physicalContract?: string): BarData {
   return {
     time: item.bar_end,
     trading_day: item.trading_day,
     physicalContract,
-    open: Number(item.open),
-    high: Number(item.high),
-    low: Number(item.low),
-    close: Number(item.close),
-    volume: Number(item.volume),
-    turnover: item.turnover === null ? undefined : Number(item.turnover),
-    openInterest: item.open_interest === null ? undefined : Number(item.open_interest),
+    open: item.open,
+    high: item.high,
+    low: item.low,
+    close: item.close,
+    volume: item.volume,
+    turnover: item.turnover === null ? undefined : item.turnover,
+    openInterest: item.open_interest === null ? undefined : item.open_interest,
   }
 }
 
@@ -211,10 +213,20 @@ function shouldAwaitAfterMarketSeam(
   return state.after_market.last_successful_trading_day !== state.trading_day
 }
 
-function isMarketWsMessage(value: unknown): value is MarketWsMessage {
-  if (!value || typeof value !== 'object' || !('type' in value)) return false
+function normalizeMarketWsMessage(value: unknown): MarketWsMessage | null {
+  if (!value || typeof value !== 'object' || !('type' in value)) return null
   const type = (value as { type?: unknown }).type
-  return type === 'state' || type === 'snapshot' || type === 'bar' || type === 'reset'
+  if (type === 'state' || type === 'reset') return value as MarketWsMessage
+  if (type === 'bar') {
+    const message = value as { type: 'bar'; bar: unknown }
+    return { type, bar: normalizeMarketBarWire(message.bar, 'websocket.bar') }
+  }
+  if (type === 'snapshot') {
+    const message = value as { type: 'snapshot'; source: MarketOverlaySource; trading_day: string | null; contract: string | null; bars: unknown }
+    if (!Array.isArray(message.bars)) return null
+    return { ...message, bars: message.bars.map((bar, index) => normalizeMarketBarWire(bar, `websocket.bars[${index}]`)) }
+  }
+  return null
 }
 
 export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
@@ -351,18 +363,19 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   }
 
   function openSocket(requestGeneration: number, nextIdentity: MarketSeriesIdentity): void {
+    if (candidatePreview.enabled) return
     if (!isCurrentGeneration(requestGeneration, generation) || !marketState.value || !shouldKeepStateSocket(nextIdentity, marketState.value)) return
     const socket = createWebSocket(socketUrl(getWsURL(), nextIdentity, latestEnd(liveBars)))
     activeSocket = socket
     socket.onmessage = (event) => {
       if (!isCurrentGeneration(requestGeneration, generation) || socket !== activeSocket) return
-      let payload: unknown
+      let payload: MarketWsMessage | null
       try {
-        payload = JSON.parse(event.data)
+        payload = normalizeMarketWsMessage(JSON.parse(event.data))
       } catch {
         return
       }
-      if (!isMarketWsMessage(payload)) return
+      if (payload === null) return
       if (payload.type === 'snapshot') {
         liveUnavailable.value = false
         if (payload.source === 'none') {
@@ -477,6 +490,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
       publishMerged({ kind: 'replace' })
       try {
+        if (candidatePreview.enabled) return
         const nextState = await fetchState(nextIdentity)
         if (!isCurrentGeneration(requestGeneration, generation)) return
         marketState.value = nextState

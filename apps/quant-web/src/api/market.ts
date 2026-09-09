@@ -2,13 +2,16 @@ import request from './request'
 import type {
   DominantContractListResponse,
   MarketBarsPageRequest,
-  MarketBarsPageResponse,
+  MarketBarsPageWireResponse,
   MarketFrequency,
   MarketReadState,
   ProductResearchResponse,
   SeriesKind,
 } from '@/types/market'
 import { normalizeMarketHomeOverviewResponse } from '@/utils/marketHomeTypes'
+import { normalizeMarketBarsPageResponse } from './marketWire.ts'
+
+export { normalizeMarketBarsPageResponse } from './marketWire.ts'
 
 export function getMarketDominants() {
   return request.get<never, DominantContractListResponse>('/market/dominants')
@@ -48,7 +51,8 @@ function toNumber(value: number | string | null): number | null {
 }
 
 export function getMarketBarsPage(params: MarketBarsPageRequest, signal?: AbortSignal) {
-  return request.get<never, MarketBarsPageResponse>('/market/bars/page', { params, signal })
+  return request.get<never, MarketBarsPageWireResponse>('/market/bars/page', { params, signal })
+    .then(normalizeMarketBarsPageResponse)
 }
 
 export interface MarketStateRequest {

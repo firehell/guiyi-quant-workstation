@@ -6,6 +6,7 @@ import type {
   NewowReferenceTrade,
   NewowResourceLifecycle,
 } from '../types/newowProduct.ts'
+import { newowErrorDisplay } from './newowDataDiagnostics.ts'
 
 export interface NewowProductSectionViewModel {
   readonly section: NewowProductSection
@@ -313,7 +314,7 @@ export function resolveNewowPanelRenderState(
   error: string | null,
 ): NewowPanelRenderState {
   const responseReason = response !== null && 'status' in response ? response.status.reason_code : null
-  const reason = error ?? responseReason
+  const reason = newowErrorDisplay(error ?? responseReason)
   switch (lifecycle) {
     case 'stale':
       return response === null

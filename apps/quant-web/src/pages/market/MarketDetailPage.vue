@@ -28,7 +28,7 @@ import { parseMarketDetailRoute, serializeMarketDetailIdentity } from '@/utils/m
 const route = useRoute()
 const router = useRouter()
 const preferences = ref(loadMarketDetailPreferences())
-const moreOpen = ref(false)
+const viewNav = ref<InstanceType<typeof MarketDetailViewNav> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
@@ -65,43 +65,22 @@ const identityKey = computed(() => {
     ? [identity.view, identity.symbol, identity.strategy ?? '', identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
     : 'invalid'
 })
+let activationGeneration = 0
 async function activateRoute() {
+  const generation = ++activationGeneration
   newowHistoricalAsOf.value = null
-  moreOpen.value = false
   hasHtdyHistory.value = false
   hasTrendHistory.value = false
   hasSubingHistory.value = false
   const result = routeResult.value
   if (result.kind !== 'valid' || !['newow', 'free', 'htdy', 'trend', 'subing'].includes(result.identity.view)) return
+  if (route.query.view === undefined) {
+    const failure = await router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(result.identity) })
+    if (failure) return
+  }
+  if (generation !== activationGeneration || routeResult.value.kind !== 'valid'
+    || JSON.stringify(routeResult.value.identity) !== JSON.stringify(result.identity)) return
   await controller.switchIdentity(result.identity)
-}
-
-function legacyQuery(identity: MarketDetailIdentity | null) {
-  if (routeResult.value.kind === 'valid') {
-    const { view: _view, ...query } = route.query
-    const identity = routeResult.value.identity
-    return {
-      ...query,
-      symbol: identity.symbol,
-      series_kind: identity.seriesKind,
-      frequency: identity.frequency,
-      contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
-      ...(identity.view === 'htdy' ? { overlay: 'htdy' } : {}),
-    }
-  }
-  if (!identity) {
-    const symbol = typeof route.query.symbol === 'string' ? route.query.symbol : ''
-    return symbol ? { symbol } : {}
-  }
-  const { view: _view, ...query } = serializeMarketDetailIdentity(identity)
-  return {
-    ...query,
-    ...(identity.view === 'htdy' ? { overlay: 'htdy' } : {}),
-  }
-}
-
-function returnLegacy() {
-  void router.push({ path: '/market/chart', query: legacyQuery(explicitIdentity.value ?? (routeResult.value.kind === 'invalid' ? routeResult.value.recovery : null)) })
 }
 
 function recover() {
@@ -143,7 +122,7 @@ function updateHtdyPreferences(htdy: FlexibleDetailPreferences) {
 
 function resolveFocus(focusBarEnd: string) {
   const identity = explicitIdentity.value
-  if ((identity?.view !== 'newow' && identity?.view !== 'htdy' && identity?.view !== 'subing' && identity?.view !== 'trend') || identity.focusBarEnd !== focusBarEnd) return
+  if ((identity?.view !== 'free' && identity?.view !== 'newow' && identity?.view !== 'htdy' && identity?.view !== 'subing' && identity?.view !== 'trend') || identity.focusBarEnd !== focusBarEnd) return
   const { focusBarEnd: _focus, ...next } = identity
   void router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(next) })
 }
@@ -160,7 +139,7 @@ function goBack() {
 }
 
 watch(identityKey, () => { void activateRoute() }, { immediate: true })
-onBeforeUnmount(() => { dailyQuote.dispose(); controller.dispose() })
+onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); controller.dispose() })
 </script>
 
 <template>
@@ -170,9 +149,9 @@ onBeforeUnmount(() => { dailyQuote.dispose(); controller.dispose() })
         title="详情页地址无效"
         message="当前地址与统一详情页身份合同不一致，已拒绝静默修正。"
         :can-recover="routeResult.recovery !== null"
-        :can-return-legacy="true"
+        :can-return-market="true"
         @recover="recover"
-        @return-legacy="returnLegacy"
+        @return-market="goBack"
       />
     </template>
 
@@ -184,14 +163,9 @@ onBeforeUnmount(() => { dailyQuote.dispose(); controller.dispose() })
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"
         :actions="{ canOpenHistory: routeResult.identity.view === 'trend' ? hasTrendHistory : routeResult.identity.view === 'htdy' ? hasHtdyHistory : routeResult.identity.view === 'subing' ? hasSubingHistory : false, canManageAlert: false }"
         @back="goBack"
-        @select-symbol="returnLegacy"
-        @open-more="moreOpen = !moreOpen"
+        @select-symbol="viewNav?.focusSymbol()"
         @open-history="openHistory"
       />
-      <div v-if="moreOpen" class="market-detail-page__more" role="menu" aria-label="更多操作">
-        <button type="button" role="menuitem" @click="returnLegacy">返回旧版详情</button>
-      </div>
-
       <p v-if="controller.state.value.loading" class="market-detail-page__loading" role="status">
         {{ routeResult.identity.view === 'newow' ? '正在加载品种元数据…' : '正在加载行情事实…' }}
       </p>
@@ -199,24 +173,26 @@ onBeforeUnmount(() => { dailyQuote.dispose(); controller.dispose() })
         v-else-if="controller.state.value.error || !header"
         :title="routeResult.identity.view === 'newow' ? '品种元数据不可用' : '行情事实不可用'"
         :message="controller.state.value.error || '当前身份没有可用的已完成 Bar。'"
-        :can-return-legacy="true"
-        @return-legacy="returnLegacy"
+        :can-return-market="true"
+        @return-market="goBack"
       />
-      <template v-if="routeResult.identity.view === 'newow' || (!controller.state.value.loading && !controller.state.value.error && header)">
-        <MarketDetailQuoteHeader v-if="header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :newow="isNewowView" />
+        <MarketDetailQuoteHeader v-if="!controller.state.value.loading && !controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :newow="isNewowView" />
         <MarketDetailViewNav
+          ref="viewNav"
           :identity="routeResult.identity"
           :products="controller.productCatalog.value"
           :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
           @select="selectIdentity"
           @contract-cleared="selectContractCleared"
         />
+      <template v-if="routeResult.identity.view === 'newow' || (!controller.state.value.loading && !controller.state.value.error && header)">
         <section class="market-detail-page__workspace" data-detail-section="workspace-slot">
           <NewowProductWorkspace
             v-if="routeResult.identity.view === 'newow'"
             :identity="routeResult.identity"
             @focus-resolved="resolveFocus"
             @snapshot-mode="newowHistoricalAsOf = $event"
+            @refresh-current="dailyQuote.refresh"
           />
           <FreeChartWorkspace
             v-else-if="routeResult.identity.view === 'free' && header"
@@ -233,6 +209,7 @@ onBeforeUnmount(() => { dailyQuote.dispose(); controller.dispose() })
             :load-earlier="controller.loadMoreBefore"
             :identity-warning="identityWarning"
             @update-preferences="updateFreePreferences"
+            @focus-resolved="resolveFocus"
           />
           <HtdyDetailWorkspace
             v-else-if="routeResult.identity.view === 'htdy' && header"
@@ -305,34 +282,7 @@ onBeforeUnmount(() => { dailyQuote.dispose(); controller.dispose() })
   padding: var(--gy-space-5) 0;
 }
 
-.market-detail-page__more {
-  position: absolute;
-  z-index: 10;
-  top: 52px;
-  right: clamp(16px, 4vw, 64px);
-  padding: var(--gy-space-1);
-  border: 1px solid var(--gy-border);
-  border-radius: var(--gy-radius-md);
-  background: var(--gy-bg-overlay);
-  box-shadow: var(--gy-shadow-overlay);
-}
-
-.market-detail-page__more button {
-  min-height: 44px;
-  padding: 0 var(--gy-space-3);
-  border: 0;
-  border-radius: var(--gy-radius-sm);
-  color: var(--gy-text-primary);
-  background: transparent;
-  font: inherit;
-  cursor: pointer;
-}
-
-.market-detail-page__more button:hover { background: var(--gy-bg-hover); }
-.market-detail-page__more button:focus-visible { outline: 2px solid var(--gy-border-focus); outline-offset: 2px; }
-
 @media (max-width: 480px) {
   .market-detail-page { padding-inline: var(--gy-space-3); }
-  .market-detail-page__more { right: var(--gy-space-3); }
 }
 </style>

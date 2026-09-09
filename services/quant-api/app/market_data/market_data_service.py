@@ -19,6 +19,7 @@ from sqlalchemy import select
 from app.core.env import PROJECT_ROOT
 from app.market_data.coverage_source import DatabaseCoverageSource
 from app.market_data.errors import InfrastructureError
+from app.market_data.diagnostics import DATA_REASONS, data_reason, safe_context
 
 from app.market_data.catalog import (
     CatalogError,
@@ -64,8 +65,13 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 class MarketDataError(RuntimeError):
     """服务层业务失败：以稳定 ``code`` 字符串标识，不含存储内部细节。"""
 
-    def __init__(self, code: str) -> None:
+    def __init__(
+        self, code: str, *, reason: str | None = None,
+        context: dict[str, object] | None = None,
+    ) -> None:
         self.code = code
+        self.reason = reason if reason in DATA_REASONS else data_reason(code)
+        self.context = safe_context(context)
         super().__init__(code)
 
 
@@ -172,12 +178,19 @@ class MarketDataService:
         start: datetime,
         as_of: datetime,
         latest: date,
+        calendar_since: date | None = None,
     ) -> tuple[date, ...]:
-        """Resolve completed days using one batch of authoritative session facts."""
+        """Resolve completed days; optionally prove the entire Calendar horizon."""
+        if calendar_since is not None:
+            if type(calendar_since) is not date or calendar_since > latest:
+                raise MarketDataError("TRADING_CALENDAR_MISSING")
+            self._exact_calendar(symbol, calendar_since, latest)
         try:
             assert_not_retired(symbol)
-            windows = self.catalog.session_windows_overlapping_window(
-                symbol, start, as_of + timedelta(microseconds=1)
+            windows = (
+                self.catalog.session_windows_overlapping_window(symbol, start, as_of + timedelta(microseconds=1), latest=latest)
+                if calendar_since is not None
+                else self.catalog.session_windows_overlapping_window(symbol, start, as_of + timedelta(microseconds=1))
             )
         except ProductRetiredError as exc:
             raise MarketDataError("PRODUCT_RETIRED") from exc
@@ -309,12 +322,35 @@ class MarketDataService:
             cutoff=cutoff,
             after=after,
         )
-        if (
-            not expected
-            or expected[-1] != (cutoff, trading_day)
-            or tuple((bar.bar_end, bar.trading_day) for bar in bars) != expected
-        ):
-            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
+        actual = tuple((bar.bar_end, bar.trading_day) for bar in bars)
+        if expected and expected[-1] == (cutoff, trading_day) and actual == expected:
+            return
+        context: dict[str, object] = {
+            "symbol": symbol, "contract": contract, "frequency": frequency,
+            "trading_day": trading_day, "cutoff": cutoff,
+            "expected_count": len(expected), "actual_count": len(actual),
+        }
+        if not expected or expected[-1] != (cutoff, trading_day):
+            reason = "REPLAY_CUTOFF_MISMATCH"
+        elif any(b[0] <= a[0] or b[1] < a[1] for a, b in zip(actual, actual[1:])):
+            reason = "REPLAY_ORDER_INVALID"
+        elif set(actual) - set(expected):
+            reason = "REPLAY_ENDPOINTS_EXTRA"
+        else:
+            actual_set = set(actual)
+            missing = tuple(point for point in expected if point not in actual_set)
+            reason = (
+                "REPLAY_PREFIX_MISSING"
+                if actual and actual == expected[-len(actual):]
+                else "REPLAY_ENDPOINTS_MISSING"
+            )
+            context.update(
+                missing_count=len(missing), first_missing_at=missing[0][0],
+                first_missing_day=missing[0][1],
+            )
+        raise MarketDataError(
+            "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason=reason, context=context
+        )
 
     def expected_contract_replay_endpoints(
         self,
@@ -352,7 +388,11 @@ class MarketDataService:
                 if bar_end <= cutoff and (after is None or bar_end > after)
             )
         except (CatalogError, InfrastructureError) as exc:
-            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE") from exc
+            raise MarketDataError(
+                "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason=data_reason(exc.code),
+                context={"symbol": symbol, "contract": contract, "frequency": frequency,
+                         "trading_day": trading_day, "cutoff": cutoff},
+            ) from exc
 
     def _trading_day_window(
         self,

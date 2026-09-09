@@ -21,6 +21,7 @@ import {
 import {
   buildNewowProductSectionViewModel,
   formatDecimalString,
+  resolveNewowPanelRenderState,
 } from '../src/utils/newowProductViewModel.ts'
 
 const AS_OF = '2026-08-15T07:00:00Z'
@@ -237,6 +238,44 @@ test('view models distinguish no action, legal zero CLOSED, warming, stale, and 
   assert.equal(buildNewowProductSectionViewModel({ section: 'chart', response: chart, lifecycle: 'stale' }).state, 'stale')
   assert.equal(buildNewowProductSectionViewModel({ section: 'chart', response: null, lifecycle: 'input_conflict' }).state, 'input_conflict')
   assert.equal(formatDecimalString('12345678901234567890.5000', 2), '12,345,678,901,234,567,890.50')
+})
+
+test('structured missing diagnostics keep safe locations and Chinese recovery guidance', async () => {
+  await assert.rejects(getNewowProductSection({ identity: expectedIdentity(), section: 'chart', asOf: AS_OF }, {
+    request: async () => { throw { response: { status: 409, data: { detail: {
+      code: 'NEWOW_DATA_UNAVAILABLE', diagnostic: { reason: 'REPLAY_PREFIX_MISSING', historical_candidate_recoverable: true,
+        context: { symbol: 'rb', contract: 'RB2701', frequency: '60m', trading_day: '2026-09-07', missing_count: 12, path: '/private/fixture', cutoff: 'invalid', actual_count: -1 } },
+    } } } } },
+  }), (error: unknown) => {
+    assert.ok(error instanceof NewowProductRequestError)
+    assert.equal(error.code, 'NEWOW_DATA_UNAVAILABLE')
+    assert.equal(error.diagnostic?.reason, 'REPLAY_PREFIX_MISSING')
+    assert.match(error.message, /预热历史缺失/)
+    assert.match(error.message, /RB2701/)
+    assert.match(error.message, /历史快照/)
+    assert.doesNotMatch(error.message, /private|invalid|-1/)
+    return true
+  })
+})
+
+test('unknown diagnostic reasons cannot advertise historical recovery or reflect text', async () => {
+  await assert.rejects(getNewowProductSection({ identity: expectedIdentity(), section: 'chart', asOf: AS_OF }, {
+    request: async () => { throw { response: { status: 409, data: { detail: {
+      code: 'NEWOW_DATA_UNAVAILABLE', diagnostic: { reason: 'private unknown', historical_candidate_recoverable: true, context: { contract: '/private/fixture' } },
+    } } } } },
+  }), (error: unknown) => {
+    assert.ok(error instanceof NewowProductRequestError)
+    assert.equal(error.diagnostic, null)
+    assert.doesNotMatch(error.message, /private|历史快照/)
+    return true
+  })
+})
+
+test('legacy data unavailable errors have a Chinese panel message without claiming missing history', () => {
+  const message = resolveNewowPanelRenderState('unavailable', null, 'NEWOW_DATA_UNAVAILABLE').message
+  assert.match(message, /数据暂不可用/)
+  assert.match(message, /重试本面板/)
+  assert.doesNotMatch(message, /历史快照/)
 })
 
 test('keeps runtime and evidence states independent and accepts validated partial value while warming', () => {

@@ -6,10 +6,12 @@
 
 ## Requirements
 
-### Requirement: 四字段 DatasetKey 与单月 Parquet
+### Requirement: 四字段 DatasetKey 与单月 active Catalog pointer
 物理 DatasetKey SHALL 精确为 `(kind, symbol, series_or_contract, frequency)`；kind 仅允许
-`continuous|contract`，frequency 仅允许七个正式周期。每 Dataset 每自然月 SHALL 只保存一个
-`part.parquet`，不得保存 active overlay、data version、内容清单或旁路发布文件。
+`continuous|contract`，frequency 仅允许七个正式周期。每 Dataset 每自然月 SHALL 只有一个 active
+Catalog pointer。新文件 SHALL 以实际 Parquet bytes 的 SHA-256 命名 `part.<sha256>.parquet`，
+不可变且不得覆盖；旧物理文件 SHALL 保留供已取得旧 URI 的 reader 使用。本阶段 MUST NOT 新增 GC、
+history API、schema、version table、active overlay、sidecar 或内容清单。
 
 #### Scenario: 非法物理身份
 - **WHEN** 输入 actual_dominant、未支持周期或 kind/series 不匹配
@@ -42,6 +44,25 @@ schema、identity、主键单调唯一、OHLCV、session/frequency、coverage �
 - **WHEN** 候选月未覆盖 TargetWindow 的预期 bars
 - **THEN** 该月不发布，后续 update 将其仍视为待处理目标
 
+### Requirement: Immutable publication uses Catalog commit as its visibility point
+候选 MUST 完成全部发布校验，再完成不可变文件及目录 durability，随后在既有 DB 事务内
+register/flush，并由真实 MarketDataService strict-read 校验候选 Catalog URI。commit SHALL 是
+新 pointer 唯一可见点；原子单位 SHALL 是 partition，不保证跨月、跨周期或 metadata 全局 snapshot。
+
+#### Scenario: Failure before commit
+- **WHEN** validation、文件发布、register/flush 或 strict-read 失败且尚未尝试 commit
+- **THEN** 旧 Catalog pointer 和旧文件保持不变
+
+#### Scenario: Commit outcome is uncertain
+- **WHEN** commit 抛出异常
+- **THEN** 返回 `COMMIT_OUTCOME_UNKNOWN` 并停批，不自动重试、删除文件或回滚可能已提交的 pointer
+- **AND** 结果必须通过新的独立只读事务确认
+
+#### Scenario: Production writers and consumers transition
+- **WHEN** 即将真实发布 hash URI
+- **THEN** 所有 consumer 必须已升级且旧 writer 已停止；不得盲目回退不支持新 URI 的旧 Runtime
+- **AND** 工程集成不授权生产迁移、真实写入、release 或 Runtime promotion
+
 ### Requirement: 基础 provider 与派生周期边界
 `1m/1d` SHALL 是 RQData 的基础 provider 周期；`1w` SHALL 只由完整同源交易所日行情聚合。
 `5m/15m/30m/60m` SHALL 只从质量通过的同 Dataset Canonical 1m 按实际 Session 聚合，且 MUST NOT
@@ -63,7 +84,7 @@ RQData `1m` session 的首根标签 SHALL 在 adapter 边界减一分钟，转�
 
 #### Scenario: 修复既有错误锚点
 - **WHEN** 受控 repair 以真实缺失 1m 重建并发布既有日内分区
-- **THEN** 唯一 Canonical V2 的分区内容、coverage 与 row count 被替换，不创建并行 data-version；D1/W1 hash 不变
+- **THEN** 唯一 Canonical V2 的分区内容、coverage 与 row count 被替换，不创建并行 data-version；D1/W1 hash 不变；0044→0045 legacy repair 原合同不变，固定路径写入仅隔离在 shadow prepare
 
 #### Scenario: continuous 日周事实
 - **WHEN** 系统构建 `continuous/MAIN` 的 `1d` 或 `1w`

@@ -18,6 +18,27 @@ const componentUrl = new URL('../src/components/market/detail/newow/NewowProduct
 const workspaceUrl = new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue', import.meta.url)
 const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url))
 
+test('empty main chart legend follows the selected strategy instead of defaulting to main rise', async () => {
+  const Stage = await loadComponent()
+  const expected = { trend: '趋势带', oscillation: '震荡区间', main_rise: '主升浪' } as const
+  for (const [strategy, label] of Object.entries(expected)) {
+    const fakeChart = {
+      addSeries: () => ({ setData() {} }), removeSeries() {},
+      timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+      subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+    }
+    const app = createRenderer(nodeOperations()).createApp(defineComponent({
+      setup: () => () => h(Stage, { response: null, strategy, selectedSignalId: null }),
+    }))
+    app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+    const root = element('root')
+    app.mount(root); await nextTick()
+    const legend = findNode(root, (node) => node.props.class === 'newow-product-chart-stage__main-legend')
+    assert.equal(textContent(legend!), `${label}ⓘ`)
+    app.unmount()
+  }
+})
+
 test('emits stable signal selection and preserves an established viewport and focus when earlier data arrives', async () => {
   const Stage = await loadComponent()
   let range = { from: 0, to: 1 }
@@ -43,7 +64,8 @@ test('emits stable signal selection and preserves an established viewport and fo
   const selectedSignalId = ref<string | null>('build-stable')
   const stage = ref<{ revealSignal: (id: string) => boolean } | null>(null)
   const Host = defineComponent({ setup: () => () => h(Stage, {
-    ref: stage, response: response.value, selectedSignalId: selectedSignalId.value,
+    ref: stage, response: response.value, strategy: response.value.meta.identity.strategy,
+    selectedSignalId: selectedSignalId.value,
     hasMoreBefore: true, loading: false,
     onLoadEarlier: () => { loads += 1 },
     'onSelect-signal': (id: string) => selected.push(id),
@@ -104,7 +126,12 @@ test('dense same-Bar hints stay queryable by exact ID without adding native mark
   value.actions.unshift({ ...value.actions[0]!, signal_id: 'clear-stable', kind: 'CLEAR', sequence: 0 })
   value.frames[0]!.action_ids.unshift('clear-stable')
   const selected: string[] = []
-  const Host = defineComponent({ setup: () => () => h(Stage, { response, selectedSignalId: null, 'onSelect-hint': (id: string) => selected.push(id) }) })
+  const Host = defineComponent({ setup: () => () => h(Stage, {
+    response,
+    strategy: response.meta.identity.strategy,
+    selectedSignalId: null,
+    'onSelect-hint': (id: string) => selected.push(id),
+  }) })
   const app = createRenderer(nodeOperations()).createApp(Host)
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart, markerSets))
   const root = element('root')
@@ -145,7 +172,11 @@ test('creates three native panes with volume zero/color and releases resources',
   const response = chartResponse()
   response.value!.bars[0]!.volume = 0
   response.value!.bars.push({ ...bar('2026-08-15T08:00:00Z', '2026-08-15'), close: '99', volume: 9 })
-  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, { response, selectedSignalId: null }) }))
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response,
+    strategy: response.meta.identity.strategy,
+    selectedSignalId: null,
+  }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, { ...adapter(fakeChart), createResizeObserver: () => ({ observe() {}, disconnect() { disconnected = true } }) })
   app.mount(element('root')); await nextTick()
   assert.equal(paneCount, 3)
@@ -174,7 +205,13 @@ test('signed MACD bars share pane 2 and switch/invalidated snapshots remove ever
     timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
     subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
   }
-  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, { response: chart.value, auxiliaryResponse: auxiliary.value, auxiliaryLifecycle: 'ready', selectedSignalId: null }) }))
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: chart.value,
+    strategy: chart.value?.meta.identity.strategy ?? 'oscillation',
+    auxiliaryResponse: auxiliary.value,
+    auxiliaryLifecycle: 'ready',
+    selectedSignalId: null,
+  }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   app.mount(element('root')); await nextTick()
   const histogram = records.find(record => record.pane === 2 && record.definition.type === 'Histogram')!
@@ -210,7 +247,13 @@ test('zhaoyao mirror uses one dedicated primitive and no generic value series', 
     timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
     subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
   }
-  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, { response: chart, auxiliaryResponse: auxiliary, auxiliaryLifecycle: 'ready', selectedSignalId: null }) }))
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: chart,
+    strategy: chart.meta.identity.strategy,
+    auxiliaryResponse: auxiliary,
+    auxiliaryLifecycle: 'ready',
+    selectedSignalId: null,
+  }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   app.mount(element('root')); await nextTick()
   assert.equal(attached.some(value => value.constructor.name === 'NewowZhaoyaoMirrorPrimitive'), true)
@@ -304,6 +347,7 @@ function findNode(node: TestNode, match: (candidate: TestNode) => boolean): Test
   for (const child of node.children) { const found = findNode(child, match); if (found) return found }
   return undefined
 }
+function textContent(node: TestNode): string { return `${node.text}${node.children.map(textContent).join('')}` }
 function nodeOperations() {
   return {
     patchProp(node: TestNode, key: string, _previous: unknown, next: unknown) { node.props[key] = next },
