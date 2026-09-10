@@ -686,3 +686,212 @@ def test_future_evidence_requires_trading_classification_and_authoritative_lifec
     with pytest.raises(repair.MetadataRepairError):
         plan(db, targets, classification=classified,
              evidence_sources=[{"symbol": "au", "contract": contract, "date": evidence_day.isoformat()}])
+
+
+@pytest.fixture
+def exchange_universe_case(future_context_db):
+    db, through, day = future_context_db
+    with Session(db) as session:
+        session.add(Instrument(symbol="ag", name="silver", exchange_code="SHFE"))
+        session.add(Contract(contract_code="AG2701", instrument_symbol="ag", exchange_code="SHFE",
+                             listed_date=through, expired_date=day + timedelta(days=60), provider="rqdata"))
+        session.commit()
+    targets = [{"symbol": "au", "contract": "AU2701", "through": through.isoformat()}]
+    classified = fetch(plan(db, targets), Provider(trading=[day]))
+    universe = {"exchange": "SHFE", "date": day.isoformat(), "products": ["ag", "au"],
+                "sources": [{"symbol": symbol, "contract": symbol.upper() + "2701", "date": day.isoformat()}
+                            for symbol in ("ag", "au")]}
+    return db, targets, classified, universe
+
+
+def inventory_for(case):
+    day = date.fromisoformat(case[3]["date"])
+    return {"identity": {"method": "all_instruments_by_type", "args": [],
+                         "kwargs": {"instrument_type": "Future", "market": "cn"}},
+            "response": [{"exchange": "SHFE", "underlying_symbol": symbol.upper(),
+                          "order_book_id": symbol.upper() + "2701",
+                          "listed_date": case[1][0]["through"],
+                          "de_listed_date": (day + timedelta(days=60)).isoformat()}
+                         for symbol in ("ag", "au")]}
+
+
+def universe_plan(case, universe=None, classification=True, inventory="default"):
+    db, targets, classified, original = case
+    with Session(db) as session:
+        return repair.plan_metadata(session, targets, classification=classified if classification else None,
+                                    exchange_universes=[original if universe is None else universe],
+                                    exchange_inventory_evidence=inventory_for(case) if inventory == "default" else inventory)
+
+
+@pytest.mark.parametrize("night", [False, True])
+def test_complete_exchange_universe_resolves_day_only_or_any_night(exchange_universe_case, night):
+    case = exchange_universe_case
+    value = universe_plan(case)
+    assert value["targets"] == case[1]
+    assert value["missing_sessions"] == []
+    assert {q["contract"] for q in value["requests"]} == {"AG2701", "AU2701"}
+
+    class MixedProvider(Provider):
+        def get_trading_periods(self, contracts, **kwargs):
+            self.hours = HOURS if night and contracts == ("AG2701",) else "09:01-15:00"
+            return super().get_trading_periods(contracts, **kwargs)
+
+    snapshot = fetch(value, MixedProvider())
+    assert snapshot["blockers"] == []
+    assert snapshot["sessions"] == []  # Cross-batch witnesses are never Session insert targets.
+    assert snapshot["calendars"][0]["has_night_session"] is night
+    # JSON persistence preserves the full scope and fresh-recheck contract.
+    import json
+    snapshot = json.loads(json.dumps(snapshot))
+    with Session(case[0]) as session:
+        repair.recheck_plan(session, snapshot["plan"], expected_plan_sha256=value["plan_sha256"])
+    assert apply(case[0], snapshot)["calendar_rows"] == 1
+    with Session(case[0]) as session:
+        assert session.scalars(select(TradingSession)).all() == []
+
+
+@pytest.mark.parametrize("case", ["partial", "duplicate", "mismatch", "extra", "exchange", "date", "empty", "inactive", "unclassified"])
+def test_exchange_universe_rejects_partial_mismatched_or_outside_scope(exchange_universe_case, case):
+    import copy
+    universe = copy.deepcopy(exchange_universe_case[3])
+    if case == "partial":
+        universe["sources"].pop()
+    elif case == "duplicate":
+        universe["sources"].append(universe["sources"][0])
+    elif case == "mismatch":
+        universe["sources"][0]["symbol"] = "au"
+    elif case == "extra":
+        universe["unexpected"] = True
+    elif case == "exchange":
+        universe["exchange"] = "GFEX"
+    elif case == "date":
+        universe["date"] = "2020-01-01"
+    elif case == "empty":
+        universe["products"] = []
+    elif case == "inactive":
+        universe["products"][0] = "nonactive"
+    with pytest.raises(repair.MetadataRepairError):
+        universe_plan(exchange_universe_case, universe, classification=case != "unclassified")
+
+
+@pytest.mark.parametrize("change", ["provider", "expired", "not_listed", "exchange", "inactive"])
+def test_exchange_universe_sources_require_live_catalog_identity(exchange_universe_case, change):
+    db, _, _, universe = exchange_universe_case
+    with Session(db) as session:
+        contract = session.scalar(select(Contract).where(Contract.contract_code == "AG2701"))
+        if change == "provider":
+            contract.provider = "other"
+        elif change == "expired":
+            contract.expired_date = date.fromisoformat(universe["date"])
+        elif change == "not_listed":
+            contract.listed_date = date.fromisoformat(universe["date"]) + timedelta(days=1)
+        elif change == "exchange":
+            contract.exchange_code = "GFEX"
+        else:
+            session.scalar(select(Instrument).where(Instrument.symbol == "ag")).is_active = False
+        session.commit()
+    with pytest.raises(repair.MetadataRepairError):
+        universe_plan(exchange_universe_case)
+
+
+def test_exchange_universe_tamper_and_source_drift_stop_before_insert(exchange_universe_case):
+    import copy
+    db = exchange_universe_case[0]
+    value = universe_plan(exchange_universe_case)
+    snapshot = fetch(value, Provider(hours="09:01-15:00"))
+    tampered = copy.deepcopy(value)
+    tampered["exchange_universes"][0]["sources"].pop()
+    tampered = repair._sealed({k: v for k, v in tampered.items() if k != "plan_sha256"}, "plan_sha256")
+    with pytest.raises(repair.MetadataRepairError):
+        fetch(tampered)
+    with Session(db) as session:
+        session.scalar(select(Contract).where(Contract.contract_code == "AG2701")).expired_date += timedelta(days=1)
+        session.commit()
+    with pytest.raises(repair.MetadataRepairError, match="PLAN_DRIFT"):
+        apply(db, snapshot)
+
+
+def test_complete_universe_missing_actual_row_cannot_be_negative(exchange_universe_case):
+    value = universe_plan(exchange_universe_case)
+    class MissingProvider(Provider):
+        def get_trading_periods(self, contracts, **kwargs):
+            if contracts == ("AG2701",):
+                return pd.DataFrame(columns=["order_book_id", "date", "trading_hours"])
+            return super().get_trading_periods(contracts, **kwargs)
+    with pytest.raises(repair.MetadataRepairError):
+        fetch(value, MissingProvider(hours="09:01-15:00"))
+
+
+def test_exchange_universe_simultaneous_shrink_cannot_claim_complete(exchange_universe_case):
+    import copy
+    universe = copy.deepcopy(exchange_universe_case[3])
+    universe["products"] = ["au"]
+    universe["sources"] = [source for source in universe["sources"] if source["symbol"] == "au"]
+    with pytest.raises(repair.MetadataRepairError):
+        universe_plan(exchange_universe_case, universe)
+
+
+@pytest.mark.parametrize("change", ["missing", "method", "args", "kwargs", "omitted_row", "invalid_other_exchange", "row_identity", "duplicate", "extra_field"])
+def test_exchange_inventory_requires_exact_unfiltered_identity_and_lifecycle(exchange_universe_case, change):
+    inventory = inventory_for(exchange_universe_case)
+    if change == "missing":
+        inventory = None
+    elif change == "method":
+        inventory["identity"]["method"] = "all_instruments"
+    elif change == "args":
+        inventory["identity"]["args"] = ["AG"]
+    elif change == "kwargs":
+        inventory["identity"]["kwargs"]["date"] = "2026-09-14"
+    elif change == "omitted_row":
+        inventory["response"].pop()
+    elif change == "invalid_other_exchange":
+        inventory["response"].append({"exchange": "DCE", "underlying_symbol": "A", "order_book_id": "A2701",
+                                      "listed_date": None, "de_listed_date": "2027-01-01"})
+    elif change == "row_identity":
+        inventory["response"][0]["order_book_id"] = "WRONG2701"
+    elif change == "duplicate":
+        inventory["response"].append(inventory["response"][0])
+    else:
+        inventory["identity"]["extra"] = True
+    with pytest.raises(repair.MetadataRepairError):
+        universe_plan(exchange_universe_case, inventory=inventory)
+
+
+def test_inventory_raw_response_is_hash_bound_and_recomputed(exchange_universe_case):
+    import copy
+    value = universe_plan(exchange_universe_case)
+    assert value["exchange_inventory_evidence"] == inventory_for(exchange_universe_case)
+    changed = copy.deepcopy(value)
+    changed["exchange_inventory_evidence"]["response"].pop()
+    with pytest.raises(repair.MetadataRepairError, match="HASH_INVALID"):
+        fetch(changed)
+    changed = repair._sealed({k: v for k, v in changed.items() if k != "plan_sha256"}, "plan_sha256")
+    with pytest.raises(repair.MetadataRepairError, match="INVENTORY"):
+        fetch(changed)
+
+
+def test_inventory_source_contract_must_exist_in_full_response(exchange_universe_case):
+    inventory = inventory_for(exchange_universe_case)
+    inventory["response"][0]["order_book_id"] = "AG2702"
+    with pytest.raises(repair.MetadataRepairError):
+        universe_plan(exchange_universe_case, inventory=inventory)
+
+
+def test_cli_plan_accepts_inventory_and_universe_files(exchange_universe_case, tmp_path):
+    import io
+    import json
+    from app.guiyi_cli.main import main
+
+    db, targets, classified, universe = exchange_universe_case
+    files = {"targets": targets, "classification": classified, "exchange-universes": [universe],
+             "exchange-inventory-evidence": inventory_for(exchange_universe_case)}
+    args = ["data", "metadata-repair"]
+    for name, value in files.items():
+        path = tmp_path / (name + ".json")
+        path.write_text(json.dumps(value))
+        args += ["--" + name, str(path)]
+    output = io.StringIO()
+    assert main(args, session_factory=lambda: Session(db), stdout=output) == 0
+    value = json.loads(output.getvalue())
+    assert value["exchange_inventory_evidence"] == files["exchange-inventory-evidence"]
+    assert len(value["requests"]) == 2

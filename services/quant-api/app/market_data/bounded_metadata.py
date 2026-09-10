@@ -104,13 +104,83 @@ def _validate_evidence_source(source: Any) -> dict:
     return {**source, "date": _day(source["date"]).isoformat()}
 
 
+def _validate_exchange_universes(value: Any) -> list[dict]:
+    """Validate bounded universe declarations before checking the full inventory."""
+    if not isinstance(value, list) or len(value) > 256:
+        raise MetadataRepairError("SCOPE_INVALID")
+    normalized, seen = [], set()
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"exchange", "date", "products", "sources"}:
+            raise MetadataRepairError("UNIVERSE_INVALID")
+        exchange, products, sources = item["exchange"], item["products"], item["sources"]
+        if (not isinstance(exchange, str) or exchange not in {"SHFE", "DCE", "CZCE", "CFFEX", "INE", "GFEX"}
+                or not isinstance(products, (list, tuple)) or not 1 <= len(products) <= 64
+                or any(not isinstance(p, str) or p not in load_active_products() for p in products)
+                or list(products) != sorted(set(products))
+                or not isinstance(sources, list) or len(sources) != len(products)):
+            raise MetadataRepairError("UNIVERSE_INVALID")
+        day = _day(item["date"]).isoformat()
+        witnesses = [_validate_evidence_source(source) for source in sources]
+        if (sorted(s["symbol"] for s in witnesses) != list(products)
+                or any(s["date"] != day for s in witnesses) or (exchange, day) in seen):
+            raise MetadataRepairError("UNIVERSE_INVALID")
+        seen.add((exchange, day))
+        normalized.append({"exchange": exchange, "date": day, "products": list(products),
+                           "sources": sorted(witnesses, key=_json)})
+    if sum(len(item["sources"]) for item in normalized) > 4096:
+        raise MetadataRepairError("SCOPE_INVALID")
+    return sorted(normalized, key=_json)
+
+
+def _validate_exchange_inventory(evidence: Any, universes: list[dict]) -> dict | None:
+    """Recompute complete exchange/day products from the bound unfiltered response."""
+    from app.market_data.rqdata_adapter import _exchange_day_products, _optional_date
+
+    if not universes and evidence is None:
+        return None
+    identity = {"method": "all_instruments_by_type", "args": [],
+                "kwargs": {"instrument_type": "Future", "market": "cn"}}
+    if (not universes or not isinstance(evidence, dict) or set(evidence) != {"identity", "response"}
+            or evidence["identity"] != identity or not isinstance(evidence["response"], list)
+            or not 1 <= len(evidence["response"]) <= 100000):
+        raise MetadataRepairError("INVENTORY_INVALID")
+    try:
+        if len(_json(evidence).encode()) > 16 * 1024 * 1024:
+            raise MetadataRepairError("INVENTORY_INVALID")
+        rows = evidence["response"]
+        if any(not isinstance(row, dict) or not isinstance(row.get("order_book_id"), str) for row in rows):
+            raise MetadataRepairError("INVENTORY_INVALID")
+        by_contract = {row["order_book_id"]: row for row in rows}
+        if len(by_contract) != len(rows):
+            raise MetadataRepairError("INVENTORY_INVALID")
+        for universe in universes:
+            day = _day(universe["date"])
+            products = _exchange_day_products(rows, universe["exchange"], day)
+            if not products or products != tuple(universe["products"]):
+                raise MetadataRepairError("INVENTORY_UNIVERSE_MISMATCH")
+            for source in universe["sources"]:
+                row = by_contract.get(source["contract"])
+                if (row is None or row.get("underlying_symbol") != source["symbol"].upper()
+                        or row.get("exchange", row.get("exchange_code")) != universe["exchange"]
+                        or not _optional_date(row.get("listed_date")) <= day < _optional_date(row.get("de_listed_date"))):
+                    raise MetadataRepairError("INVENTORY_SOURCE_MISMATCH")
+        # Own a JSON snapshot; caller mutation cannot alter a returned plan's evidence.
+        return json.loads(_json(evidence))
+    except MetadataRepairError:
+        raise
+    except (ValueError, TypeError, AttributeError):
+        raise MetadataRepairError("INVENTORY_INVALID") from None
+
+
 def _row(row: Any) -> dict:
     return json.loads(_json({column.name: getattr(row, column.name)
                             for column in row.__table__.columns}))
 
 
 def plan_metadata(session: Session, targets: list[dict], *, classification: dict | None = None,
-                  evidence_sources: list[dict] | None = None) -> dict:
+                  evidence_sources: list[dict] | None = None,
+                  exchange_universes: list[dict] | None = None,
+                  exchange_inventory_evidence: dict | None = None) -> dict:
     """Read relevant Catalog facts; no provider or writer construction."""
     targets = validate_targets(targets)
     classified: list[dict] = []
@@ -122,7 +192,8 @@ def plan_metadata(session: Session, targets: list[dict], *, classification: dict
         classified = classification["classified"]
         source_hash = classification["snapshot_sha256"]
     return _plan(session, targets, classified, source_hash,
-                 evidence_sources if evidence_sources is not None else [])
+                 evidence_sources if evidence_sources is not None else [],
+                 exchange_universes if exchange_universes is not None else [], exchange_inventory_evidence)
 
 
 def _identity(session: Session, target: dict) -> tuple[Contract, Instrument, Exchange]:
@@ -141,7 +212,10 @@ def _identity(session: Session, target: dict) -> tuple[Contract, Instrument, Exc
 
 
 def _plan(session: Session, targets: list[dict], classified: list[dict], source_hash: str | None,
-          evidence_sources: list[dict]) -> dict:
+          evidence_sources: list[dict], exchange_universes: list[dict] | None = None,
+          exchange_inventory_evidence: dict | None = None) -> dict:
+    universes = _validate_exchange_universes(exchange_universes if exchange_universes is not None else [])
+    inventory = _validate_exchange_inventory(exchange_inventory_evidence, universes)
     if session.new or session.dirty or session.deleted:
         raise MetadataRepairError("SESSION_NOT_CLEAN")
     # A reusable Session may retain identity-map objects after an earlier commit.
@@ -235,7 +309,8 @@ def _plan(session: Session, targets: list[dict], classified: list[dict], source_
     source_values, evidence_resolved = [], []
     if not isinstance(evidence_sources, list) or len(evidence_sources) > 4096:
         raise MetadataRepairError("SCOPE_INVALID")
-    for source in evidence_sources:
+    all_sources = [*evidence_sources, *(source for item in universes for source in item["sources"])]
+    for source in all_sources:
         source = _validate_evidence_source(source)
         source_contract, source_instrument, source_exchange = _identity(session, source)
         source_day = _day(source["date"])
@@ -251,6 +326,13 @@ def _plan(session: Session, targets: list[dict], classified: list[dict], source_
         facts.extend((_row(source_contract), _row(source_instrument), _row(source_exchange)))
     source_values = sorted({_json(r): r for r in source_values}.values(), key=_json)
     evidence_resolved = sorted({_json(r): r for r in evidence_resolved}.values(), key=_json)
+    for universe in universes:
+        if any(not any(r["contract"] == source["contract"] and r["date"] == source["date"]
+                       and r["exchange"] == universe["exchange"] for r in evidence_resolved)
+               for source in universe["sources"]):
+            raise MetadataRepairError("UNIVERSE_INVALID")
+    if len(source_values) > 4096:
+        raise MetadataRepairError("SCOPE_INVALID")
     requests = _requests(missing_calendars, missing_sessions, classifications, evidence_resolved)
     return _sealed({"version": 1, "command": "data.metadata-repair", "status": "planned", "readonly": True,
                     "targets": targets, "resolved_targets": resolved,
@@ -260,6 +342,7 @@ def _plan(session: Session, targets: list[dict], classified: list[dict], source_
                     "existing_session_days": [{"exchange": exchange, "date": day}
                                               for exchange, day in sorted(existing_session_days)],
                     "evidence_sources": source_values, "resolved_evidence_sources": evidence_resolved,
+                    **({"exchange_universes": universes, "exchange_inventory_evidence": inventory} if universes else {}),
                     "session_calendars": [_row(row) for row in sorted(calendars, key=lambda r: (r.exchange_code, r.trade_date))
                                           if any(r["exchange"] == row.exchange_code and r["date"] == row.trade_date.isoformat() for r in missing_sessions)],
                     "existing_night_evidence": sorted([_row(row) for row in sessions
@@ -312,6 +395,16 @@ def _validate_plan(plan: dict, expected: str | None = None) -> None:
             or [{key: source[key] for key in ("symbol", "contract", "date")}
                 for source in plan["resolved_evidence_sources"]] != evidence):
         raise MetadataRepairError("EVIDENCE_SCOPE_INVALID")
+    universes = _validate_exchange_universes(plan.get("exchange_universes", []))
+    _validate_exchange_inventory(plan.get("exchange_inventory_evidence"), universes)
+    if universes != plan.get("exchange_universes", []):
+        raise MetadataRepairError("UNIVERSE_INVALID")
+    for universe in universes:
+        for source in universe["sources"]:
+            if source not in evidence or not any(
+                    all(resolved[k] == source[k] for k in ("symbol", "contract", "date"))
+                    and resolved["exchange"] == universe["exchange"] for resolved in plan["resolved_evidence_sources"]):
+                raise MetadataRepairError("UNIVERSE_INVALID")
     classifications = {(r["exchange"], r["date"]): r["is_trading_day"] for r in plan["classification"]}
     if plan["requests"] != _requests(plan["missing_calendars"], plan["missing_sessions"], classifications, plan["resolved_evidence_sources"]):
         raise MetadataRepairError("SCOPE_INVALID")
@@ -344,7 +437,7 @@ def _validate_plan(plan: dict, expected: str | None = None) -> None:
 def recheck_plan(session: Session, plan: dict, *, expected_plan_sha256: str) -> None:
     """Refresh Catalog prerequisites before any provider construction."""
     _validate_plan(plan, expected_plan_sha256)
-    fresh = _plan(session, plan["targets"], plan["classification"], plan["classification_source_sha256"], plan["evidence_sources"])
+    fresh = _plan(session, plan["targets"], plan["classification"], plan["classification_source_sha256"], plan["evidence_sources"], plan.get("exchange_universes", []), plan.get("exchange_inventory_evidence"))
     if fresh != plan:
         raise MetadataRepairError("PLAN_DRIFT")
 
@@ -420,27 +513,32 @@ def _snapshot(plan: dict, responses: list) -> dict:
     source_sessions = [row for key in sorted(sessions_by_key) for row in sessions_by_key[key]]
     writable_keys = {(r["symbol"], r["date"]) for r in plan["missing_sessions"]}
     sessions = [row for row in source_sessions if (row["instrument_symbol"], row["effective_from"]) in writable_keys]
+    from app.market_data.metadata import calendar_night_fact
+
+    exact_evidence = [{**row, "effective_from": _day(row["effective_from"]),
+                       "effective_to": _day(row["effective_to"]),
+                       "start_time": time.fromisoformat(row["start_time"])}
+                      for row in (*source_sessions, *plan["existing_night_evidence"])]
+    universes = {(u["exchange"], u["date"]): tuple(u["products"])
+                 for u in plan.get("exchange_universes", [])}
     calendars, blockers = [], []
     for missing in plan["missing_calendars"]:
         key = (missing["exchange"], missing["date"])
         item = classified.get(key)
         if item is None or type(item.get("is_trading_day")) is not bool:
             raise MetadataRepairError("CLASSIFICATION_INVALID")
-        # Positive evidence proves exchange night existence. Absence in one product
-        # cannot prove exchange-wide absence; this bounded operation must stop there.
-        night = any(row["exchange_code"] == missing["exchange"]
-                    and row["effective_from"] == missing["date"]
-                    and (row["start_time"] >= "18:00:00" or row["crosses_midnight"])
-                    for row in (*source_sessions, *plan["existing_night_evidence"]))
+        values = {"exchange_code": missing["exchange"], "trade_date": _day(missing["date"]),
+                  "is_trading_day": True, "night_session_products": universes.get(key, ())}
+        night = calendar_night_fact(values, exact_evidence)
         if not item["is_trading_day"] and (
             night or {"exchange": missing["exchange"], "date": missing["date"]} in plan["existing_session_days"]
         ):
             raise MetadataRepairError("CALENDAR_CONFLICT")
-        if item["is_trading_day"] and not night:
+        if item["is_trading_day"] and night is None:
             blockers.append({**missing, "code": "NIGHT_SESSION_EVIDENCE_REQUIRED"})
         else:
             calendars.append({"exchange_code": missing["exchange"], "trade_date": missing["date"],
-                              "is_trading_day": item["is_trading_day"], "has_night_session": night,
+                              "is_trading_day": item["is_trading_day"], "has_night_session": night if item["is_trading_day"] else False,
                               "provider": "rqdata"})
     return _sealed({"version": 1, "command": "data.metadata-repair", "status": "blocked" if blockers else "prepared",
                     "readonly": False, "database_writes": 0, "provider_request_count": len(responses),
@@ -487,7 +585,7 @@ def apply_metadata(session: Session, snapshot: dict, *, expected_plan_sha256: st
             session.execute(text("BEGIN IMMEDIATE"))
         else:
             raise MetadataRepairError("DIALECT_UNSUPPORTED")
-        fresh = _plan(session, plan["targets"], plan["classification"], plan["classification_source_sha256"], plan["evidence_sources"])
+        fresh = _plan(session, plan["targets"], plan["classification"], plan["classification_source_sha256"], plan["evidence_sources"], plan.get("exchange_universes", []), plan.get("exchange_inventory_evidence"))
         if fresh != plan:
             raise MetadataRepairError("PLAN_DRIFT")
         for row in snapshot["calendars"]:

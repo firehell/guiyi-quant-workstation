@@ -38,7 +38,7 @@ class JsonArgumentParser(argparse.ArgumentParser):
                 if not result.targets or result.plan or result.snapshot or result.apply or result.expected_plan_sha256 or result.expected_snapshot_sha256:
                     self.error("plan requires only targets and optional classification")
             else:
-                if result.targets or result.classification or result.evidence_sources or not result.apply:
+                if result.targets or result.classification or result.evidence_sources or result.exchange_universes or result.exchange_inventory_evidence or not result.apply:
                     self.error("fetch/apply require an explicit phase and --apply")
                 if not isinstance(result.expected_plan_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", result.expected_plan_sha256) is None:
                     self.error("expected plan hash required")
@@ -129,6 +129,8 @@ def add_data_commands(
     metadata.add_argument("--targets")
     metadata.add_argument("--classification")
     metadata.add_argument("--evidence-sources")
+    metadata.add_argument("--exchange-universes")
+    metadata.add_argument("--exchange-inventory-evidence")
     metadata.add_argument("--plan")
     metadata.add_argument("--snapshot")
     metadata.add_argument("--expected-plan-sha256")

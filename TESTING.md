@@ -245,6 +245,10 @@ uv run --project services/quant-api guiyi data metadata-repair --phase fetch \
   --plan /absolute/plan.json --expected-plan-sha256 EXACT_PLAN_SHA256 --apply
 uv run --project services/quant-api guiyi data metadata-repair --targets /absolute/targets.json \
   --classification /absolute/classification-snapshot.json --evidence-sources /absolute/evidence-sources.json
+uv run --project services/quant-api guiyi data metadata-repair --targets /absolute/targets.json \
+  --classification /absolute/classification-snapshot.json \
+  --exchange-universes /absolute/exchange-universes.json \
+  --exchange-inventory-evidence /absolute/exchange-inventory-evidence.json
 uv run --project services/quant-api guiyi data metadata-repair --phase apply \
   --snapshot /absolute/snapshot.json --expected-plan-sha256 EXACT_PLAN_SHA256 \
   --expected-snapshot-sha256 EXACT_SNAPSHOT_SHA256 --apply
@@ -252,6 +256,13 @@ uv run --project services/quant-api guiyi data metadata-repair --phase apply \
 
 `--classification` 与 `--evidence-sources` 均为可选 plan 输入；供证列表仅含显式
 `symbol/contract/date`，不扩写入范围。新 plan 如有新增 Session 请求，需要对其 hash 另行批准 fetch。
+完整交易所负证据另需两份 plan 输入文件：`--exchange-universes` 内容为
+`[{"exchange":"GFEX","date":"2026-09-14","products":["lc","pd","ps","pt","si"],"sources":[...]}]`，
+每个 source 为 `symbol/contract/date`；`--exchange-inventory-evidence` 内容严格为
+`{"identity":{"method":"all_instruments_by_type","args":[],"kwargs":{"instrument_type":"Future","market":"cn"}},"response":[...]}`。
+response 必须来自已获准并持久化的未过滤完整 RQData futures inventory，不能填品种子集；plan
+只读重算完整集合和所有物理来源的身份/生命周期，绑定原始响应，不执行 inventory 请求。每个输入
+文件上限 16 MiB。fetch/apply 不接收上述 plan 参数，只接收已冻结 plan/snapshot 和精确 hash。
 未知夜盘证据的 snapshot 为 blocked（退出 1），不能 apply。成功 apply 后旧 plan 失效，必须只读 replan，
 不自动重试、覆盖或删除。已有 Session 日期只保留，不把未验证的完整性计为修复通过。
 

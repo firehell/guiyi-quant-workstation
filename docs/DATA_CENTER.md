@@ -388,6 +388,20 @@ request/hash；不自动搜寻合约，不从供证合约上市日再扩建 Cale
 供证 `date` 不等于 target `through`：target 仍必须早于今天；原计划 through 后七天上下文中的
 未来缺键可显式供证，但该键必须已分类为交易日、保持在原 exchange/date 范围内，且供证合约在
 该日期满足 `[listed_date, expired_date)`。供证身份仍须为 active 品种及已有 RQData Catalog 合约。
+完整交易所负证据可显式传入 `exchange_universes`：每项严格为 exchange/date/products/sources，
+必须同时提供单份 `exchange_inventory_evidence`，严格包含 identity/response：identity 为
+`{method: all_instruments_by_type, args: [], kwargs: {instrument_type: Future, market: cn}}`，response 为
+该请求未经品种/交易所过滤的完整原始 futures inventory 行。原生 `_exchange_day_products` 按每个
+exchange/date 重算 products，与声明集合及 source symbols 精确一致；任何 inventory 行身份或生命周期
+异常（包括其他交易所）均阻断。每个物理 source 还须存在于该原文且当日有效，不能用 caller hash、
+target 子集、active_products 或部分 Catalog 合约代替完整响应。原始 identity/response 只存一份，
+进入 plan/hash/recheck/apply；最多 100000 行、16 MiB，不新增隐式 provider 查询。每键最多 64 个
+active 品种，每品种恰好一个 symbol/contract/date 来源，最多 256 个键、4096 个唯一来源。
+每个来源均须在相同交易所通过 Catalog identity/provider/lifecycle 校验，且键仅限原计划已分类为
+交易日的 missing Calendar；允许来源属于另一 batch，但不得扩大 target cutoff 或 Session 写入范围。
+集合、来源、基线与固定请求均进入 plan/hash/recheck/snapshot；沿用 `calendar_night_fact`：任一当日
+精确来源夜盘为 true，仅完整集合全部精确来源覆盖且均为日盘才为 false，部分来源仍阻断；provider
+缺行或错键直接拒绝。原有 `evidence_sources` 保持仅正证据语义，不把单品种日盘升级为负证据。
 同 product/date 的多个物理来源必须一致。fetch 串行执行固定请求，每次响应立即校验，首次失败停止，
 无 retry/fallback/补充调用。Session 复用中性 source-contract/day 纯转换与 start-exclusive 规范化，
 不伪造或写入 MainContractMap。
