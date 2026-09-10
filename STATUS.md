@@ -506,7 +506,7 @@
   不授权其他日期、RQData、Canonical、发布或 Runtime 切换，也不自动逆向恢复旧标志。具体边界见 `docs/DATA_CENTER.md`。
 
 - P6工程已集成并发布，产品仍为 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`。
-  [P6历史只读证据](docs/research/newow-v3.2.82/P6_TRUSTED_CLOSURE.md)归属v1.10.0：首30品种两轮及rb45项
+  2026-09-08的历史只读证据归属v1.10.0：首30品种两轮及rb45项
   均HTTP500，`REAL_WORKSTATION_MDS_REQUEST_PATH=MEASURED`，成功路径性能未验收。
   MDS缺失映射转typed `NEWOW_DATA_UNAVAILABLE / HTTP409`的修复已包含在v1.10.4代码中；错误分类修复不补数据。
 - 缺少截至as_of已生效owner时必须fail-closed。把owner窗口缩到最后completed display/performance日的方案

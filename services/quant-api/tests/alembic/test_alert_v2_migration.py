@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 import importlib.util
-import os
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -12,14 +10,8 @@ import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 import sqlalchemy as sa
-from sqlalchemy import create_engine, inspect as sa_inspect
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.engine import Engine
-
-from app.db.migration_test_guard import (
-    MigrationTestDatabaseSafetyError,
-    probe_database_identity,
-    require_isolated_migration_database_url,
-)
 
 
 QUANT_API_ROOT = Path(__file__).resolve().parents[2]
@@ -269,26 +261,6 @@ def test_alert_v2_downgrade_fails_closed() -> None:
 
     with pytest.raises(RuntimeError, match="^ALERT_V2_DOWNGRADE_UNSUPPORTED$"):
         migration.downgrade()
-
-
-@pytest.fixture
-def isolated_postgres_engine() -> Iterator[Engine]:
-    configured_url = os.getenv("GUIYI_ISOLATED_MIGRATION_DATABASE_URL", "").strip()
-    if not configured_url:
-        pytest.skip("GUIYI_ISOLATED_MIGRATION_DATABASE_URL is required")
-    try:
-        url = require_isolated_migration_database_url(
-            os.environ,
-            identity_probe=probe_database_identity,
-        )
-    except MigrationTestDatabaseSafetyError as exc:
-        pytest.fail(str(exc))
-
-    engine = create_engine(url, pool_pre_ping=True)
-    try:
-        yield engine
-    finally:
-        engine.dispose()
 
 
 def test_alert_v2_upgrade_makes_notification_attempt_nullable_in_isolated_postgres(
