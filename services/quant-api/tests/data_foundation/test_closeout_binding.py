@@ -136,6 +136,27 @@ def test_binding_accepts_known_inert_legacy_settings_without_exposing_them(targe
     assert not binding.settings.keys() & set(inert_names)
 
 
+@pytest.mark.parametrize("setting", ["APP_ENV", "CORS_ORIGINS"])
+def test_binding_discards_ignored_value_without_parsing_or_expanding_it(target, tmp_path, setting):
+    marker = tmp_path / "must-not-exist"
+    target.config.write_text(
+        target.config.read_text()
+        + f"{setting}=$(touch {marker}) # ignored value is opaque to closeout\n"
+    )
+
+    binding = target.create()
+
+    assert setting not in binding.settings
+    assert not marker.exists()
+
+
+def test_binding_rejects_duplicate_ignored_setting(target):
+    target.config.write_text(target.config.read_text() + "APP_ENV=one\nAPP_ENV=two\n")
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
 def test_binding_drops_active_settings_that_closeout_does_not_consume(target):
     ignored_names = (
         "CORS_ORIGINS", "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",

@@ -9,11 +9,13 @@
 ### Requirement: Interrupted after-market closeout is explicit and never success
 
 Target database, Redis, Canonical and universe dependencies MUST be composed from pinned target sources, not
-the executing checkout. The private configuration MUST be an owned 0600 file in an owned 0700 parent, with
-allowlisted literal assignments only. Repository-enumerated retired keys with no active consumer MAY remain only
+the executing checkout. The private configuration MUST be an owned 0600 file in an owned 0700 parent. Assignment
+names MUST use an exact allowlist and closeout dependency values MUST use literal assignments only.
+Repository-enumerated retired keys with no active consumer MAY remain only
 when they match an exact inert-key allowlist. Exact settings consumed by another active process but irrelevant to
-closeout MAY also remain on a separate enumerated allowlist. Both classes MUST be removed before closeout dependency
-composition, and neither MAY directly or indirectly expand into a dependency value. Only exact enumerated dependency
+closeout MAY also remain on a separate enumerated allowlist. Both classes' right-hand sides MUST remain opaque and
+MUST NOT be parsed, executed or retained. Both classes MUST be removed before closeout dependency composition, and
+neither MAY directly or indirectly expand into a dependency value. Only exact enumerated dependency
 source keys MAY participate in dependency expansion. Unknown keys MUST still block; prefixes and wildcards MUST NOT
 expand any allowlist. Launcher arguments and installed/loaded
 environments MUST exclude unsupported shell, HOME and libpq overrides; executing PG* overrides and any target
