@@ -174,6 +174,39 @@ def test_binding_rejects_dependency_value_expanded_from_inert_setting(target, de
         target.create()
 
 
+@pytest.mark.parametrize(("source", "intermediate", "dependency"), [
+    ("APP_SECRET_KEY", "POSTGRES_USER", "DATABASE_URL"),
+    ("CORS_ORIGINS", "POSTGRES_USER", "DATABASE_URL"),
+])
+def test_binding_rejects_ignored_value_indirectly_expanded_into_dependency(
+        target, source, intermediate, dependency):
+    lines = target.config.read_text().splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith(f"{dependency}="):
+            lines[index] = (
+                f"{dependency}=postgresql+psycopg://${{{intermediate}}}@127.0.0.1:15448/test"
+            )
+            break
+    else:
+        pytest.fail(f"missing fixture dependency {dependency}")
+    target.config.write_text(
+        f"{source}=fixture\n{intermediate}=${source}\n" + "\n".join(lines) + "\n"
+    )
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
+def test_binding_rejects_optional_redis_password_expanded_from_inert_setting(target):
+    target.config.write_text(
+        "APP_SECRET_KEY=fixture-only\nREDIS_PASSWORD=$APP_SECRET_KEY\n"
+        + target.config.read_text()
+    )
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
 def test_binding_allows_dependency_sources_to_build_dependency_values(target):
     target.config.write_text(
         "POSTGRES_USER=fixture\nPOSTGRES_DB=test\nPOSTGRES_PORT=15448\n"
