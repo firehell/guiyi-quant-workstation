@@ -156,6 +156,71 @@ def test_binding_rejects_target_dotenv_without_reading_it(target, symlink):
         target.create()
 
 
+def test_real_launchd_sanitized_environment_and_schedule_shape(target):
+    # 2026-09-10 local launchctl shape; all values below are synthetic.
+    # API/Alert carry notification config; EOD has non-environment => descriptors.
+    for name in ("api", "alert"):
+        path = Path.home() / "Library/LaunchAgents" / f"com.guiyi.quant-{name}.plist"
+        payload = plistlib.loads(path.read_bytes())
+        payload["EnvironmentVariables"]["GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"] = "/fixture/notification.json"
+        path.write_bytes(plistlib.dumps(payload))
+        target.outputs[f"com.guiyi.quant-{name}"] = target.outputs[f"com.guiyi.quant-{name}"].replace(
+            "environment = {", "environment = {\nGUIYI_ALERT_NOTIFICATION_CONFIG_PATH => /fixture/notification.json")
+    tail = '''inherited environment = {
+SSH_AUTH_SOCK => /fixture/socket
+}
+default environment = {
+PATH => /usr/bin:/bin
+}
+event triggers = {
+com.apple.launchd.calendarinterval => {
+descriptor = {
+Hour => 18
+Minute => 5
+}
+}
+}
+'''
+    output = target.outputs["com.guiyi.quant-after-market"]
+    target.outputs["com.guiyi.quant-after-market"] = output.rsplit("}", 1)[0] + tail + "}\n"
+    assert target.create().products == ("au",)
+
+
+@pytest.mark.parametrize("scope", ["environment", "inherited environment", "default environment"])
+@pytest.mark.parametrize("key", ["BASH_ENV", "PGOPTIONS", "DATABASE_URL"])
+def test_overrides_in_every_environment_scope_still_block(target, scope, key):
+    output = target.outputs["com.guiyi.quant-live"]
+    if scope == "environment":
+        output = output.replace("environment = {", f"environment = {{\n{key} => fixture-only")
+    else:
+        output = output.rsplit("}", 1)[0] + f"{scope} = {{\n{key} => fixture-only\n}}\n}}\n"
+    target.outputs["com.guiyi.quant-live"] = output
+    with pytest.raises(ValueError):
+        target.create()
+
+
+@pytest.mark.parametrize("fragment", [
+    "environment = {\nHOME => /fixture\nHOME => /other\n}\n",
+    "environment = {\nBASH_ENV => {\n}\n}\n",
+    "environment = {\nmalformed\n}\n",
+    "environment = {\n}\nenvironment = {\n}\n",
+    "event triggers = {\nenvironment = {\nPGOPTIONS => bad\n}\n}\n",
+])
+def test_environment_parser_rejects_ambiguous_structure(fragment):
+    from app.market_data.closeout_binding import _environments
+    with pytest.raises(ValueError):
+        _environments("service = {\n" + fragment + "}\n")
+
+
+@pytest.mark.parametrize("service,value", [("api", "relative.json"), ("alert", "/fixture/../other"),
+                                           ("live", "/fixture/notification.json")])
+def test_notification_path_exception_is_narrow(target, service, value):
+    target.outputs[f"com.guiyi.quant-{service}"] = target.outputs[f"com.guiyi.quant-{service}"].replace(
+        "environment = {", f"environment = {{\nGUIYI_ALERT_NOTIFICATION_CONFIG_PATH => {value}")
+    with pytest.raises(ValueError):
+        target.create()
+
+
 def test_binding_validates_target_active_not_current_active(target):
     (target.root / "data/universe/active_products.txt").write_text("au\n")
     with pytest.raises(ValueError):
