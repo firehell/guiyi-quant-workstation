@@ -56,16 +56,23 @@ _RETIRED_INERT_SETTINGS = {
 }
 
 
-def literal_settings(content: bytes, *, dependency_sources: set[str] | None = None) -> dict[str, str]:
+def literal_settings(
+        content: bytes, *, dependency_sources: set[str] | None = None,
+        discarded_settings: set[str] | None = None) -> dict[str, str]:
     """A deliberately narrow subset of launcher assignments; unsupported shell fails closed."""
     values: dict[str, str] = {}
+    seen: set[str] = set()
     for line in content.decode("utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         match = re.fullmatch(r"(?:export )?([A-Z][A-Z0-9_]*)=(.*)", line)
-        if match is None or match[1] in values:
+        if match is None or match[1] in seen:
             raise ValueError
+        name = match[1]
+        seen.add(name)
+        if discarded_settings is not None and name in discarded_settings:
+            continue
         value = match[2]
         single = value.startswith("'")
         if value.startswith(("'", '"')):
@@ -81,14 +88,13 @@ def literal_settings(content: bytes, *, dependency_sources: set[str] | None = No
             def expand(match):
                 key = match[1] or match[2]
                 if (key not in values or dependency_sources is not None
-                        and match_name in dependency_sources and key not in dependency_sources):
+                        and name in dependency_sources and key not in dependency_sources):
                     raise ValueError
                 return values[key]
-            match_name = match[1]
             value = re.sub(r"\$\{([A-Z][A-Z0-9_]*)\}|\$([A-Z][A-Z0-9_]*)", expand, value)
             if "$" in value:
                 raise ValueError
-        values[match[1]] = value
+        values[name] = value
     return values
 
 
@@ -241,6 +247,7 @@ class RuntimeDataBinding:
         self._validate_age()
         parsed_settings = literal_settings(
             self._sources[self.config_path][0], dependency_sources=_DEPENDENCY_SOURCE_SETTINGS,
+            discarded_settings=_CLOSEOUT_IGNORED_SETTINGS | _RETIRED_INERT_SETTINGS,
         )
         if (parsed_settings.keys() - _DEPENDENCY_SOURCE_SETTINGS - _CLOSEOUT_IGNORED_SETTINGS
                 - _RETIRED_INERT_SETTINGS):
