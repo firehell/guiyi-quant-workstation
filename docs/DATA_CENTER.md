@@ -264,12 +264,19 @@ Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN
 共享恢复保护开启、盘后进程明确 idle。只处理先前自然日的合法 `current_run`，不停止进程、不创建缺失锁。
 数据依赖只能由目标 Runtime 的固定外部 `project.env` 与目标 universe 文件显式构造，不能使用执行 CLI 的开发配置。
 配置仅接受白名单字面赋值与先前赋值展开，不执行 shell；文件须自有 0600、父目录自有 0700。
+现场历史配置中仓库已明确识别且当前无 active consumer 的退役变量名可以存在，但必须命中精确的 inert
+键白名单。另外，已有活跃进程仍可消费、但本收尾命令不消费的已列举配置键也可以存在。这两类键都必须在收尾依赖组合前
+剔除；只有精确列举的 dependency source 键可参与 PostgreSQL、Redis、Canonical 和恢复开关的变量展开，
+退役键或收尾忽略键的值不得直接或间接进入这些依赖。任何未识别键仍 fail-closed，不能用前缀或通配规则扩大任何集合。
 installed/loaded 启动参数必须指向相同受审 launcher；环境白名单拒绝 HOME 改址、shell startup、数据源与 libpq 覆盖。
 loaded 变量仅从直接的 environment、inherited environment、default environment 块读取；
 event triggers/descriptor 的 `=>` 不是环境赋值。重复块/键、畸形或嵌套环境块均拒绝。
 API/Alert 可保留既有绝对、无父路径跳转的 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`，只核验路径形状，不读取配置或发送通知。
 执行进程中的 PG* 覆盖亦拒绝。配置、launcher、五服务 plist 和 universe 的 inode/content/mtime/ctime 必须保持不变，
-且源文件早于原运行及当前消费者进程启动；连接 URL、Redis 连接参数、Canonical root 和 coverage 配置须匹配。
+且全部源必须早于原运行。`project.env`、exact-tag launcher、universe 与目标根目录元数据还必须早于
+最早当前消费者进程；分阶段安装可重写共享 launcher 副本与各服务 plist，但只有在共享 launcher
+字节与 exact-tag 源完全一致，且 installed plist 的参数、工作目录和所有显式环境项均与 loaded job 一致时才合格。
+连接 URL、Redis 连接参数、Canonical root 和 coverage 配置须匹配。
 目标 `.env` 必须不存在（含悬空链接），目标根目录也纳入早于进程的元数据检查，防止事后删除第二配置来源掩盖覆盖。
 这些检查及 fresh Live/Alert identity 在读取历史数据前和状态替换前重验；来源无法证明时停止，不回退到 `.env`。
 先非阻塞获取该 Runtime 的既有 after-market OS guard，再取得 Catalog maintenance lease；在新的

@@ -68,7 +68,8 @@ def target(tmp_path, monkeypatch):
         label = f"com.guiyi.quant-{name}"
         args = ["/bin/bash", str(runtime_dir / "run-local-service.sh"), name]
         cwd = home if name in {"api", "web"} else root
-        env = {"GUIYI_PROJECT_ROOT": str(root), "GUIYI_RUNTIME_COMMIT": "a" * 40}
+        env = {"PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "GUIYI_PROJECT_ROOT": str(root), "GUIYI_RUNTIME_COMMIT": "a" * 40}
         (plists / f"{label}.plist").write_bytes(plistlib.dumps({"Label": label, "WorkingDirectory": str(cwd),
             "ProgramArguments": args, "EnvironmentVariables": env}))
         fields = 'state = not running\n' if name == "after-market" else f'state = running\npid = {100 + index}\n'
@@ -105,6 +106,121 @@ def test_binding_constructs_target_dependencies_not_executing_environment(target
         client.close()
 
 
+def test_binding_accepts_known_inert_legacy_settings_without_exposing_them(target):
+    inert_names = (
+        "APP_ENV", "APP_PORT", "APP_SECRET_KEY", "BACKTEST_DATA_PATH", "BACKTEST_MAX_WORKERS",
+        "BACKTEST_RESULT_PATH", "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED",
+        "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH", "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET",
+        "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED", "GUIYI_DATA_CORE_V2_EOD_ENABLED",
+        "GUIYI_DATA_CORE_V2_LIVE_DECISION_ENABLED", "GUIYI_DATA_CORE_V2_RETENTION_SCHEDULER_ENABLED",
+        "GUIYI_DATA_CORE_V2_REVIEW_ENABLED", "GUIYI_DATA_SOURCE_FALLBACKS", "GUIYI_DATA_SOURCE_PRIMARY",
+        "GUIYI_HTDY_S610_ACTIVATION_RECEIPT", "GUIYI_HTDY_S610_APPROVAL_C2_HASH",
+        "GUIYI_HTDY_S610_APPROVAL_C2_RECEIPT", "GUIYI_HTDY_S610_APPROVAL_C2_SIGNATURE",
+        "GUIYI_HTDY_S610_APPROVAL_C_BUNDLE", "GUIYI_HTDY_S610_APPROVAL_C_HASH",
+        "GUIYI_HTDY_S610_APPROVAL_C_RECEIPT", "GUIYI_HTDY_S610_APPROVAL_C_SIGNATURE",
+        "GUIYI_HTDY_S610_APPROVED_SIGNERS", "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED",
+        "GUIYI_HTDY_S610_OUTPUT_DIR", "GUIYI_HTDY_S610_PHASE", "GUIYI_HTDY_S610_REQUIRED",
+        "GUIYI_LIVE_RUNTIME_ENABLED", "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH",
+        "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET", "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+        "GUIYI_SUBING_OBSERVATION_ROOT", "GUIYI_WECHAT_AUTOSEND_ENABLED", "LOG_FILE", "LOG_LEVEL",
+        "QYWX_WEBHOOK_URL", "RISK_MAX_DAILY_LOSS", "RISK_MAX_DRAWDOWN", "RISK_MAX_POSITION_RATIO",
+        "VITE_WS_URL",
+    )
+    assert target.module._RETIRED_INERT_SETTINGS == set(inert_names)
+    target.config.write_text(
+        target.config.read_text() + "".join(f"{name}=fixture-only\n" for name in inert_names)
+    )
+
+    binding = target.create()
+
+    assert not binding.settings.keys() & set(inert_names)
+
+
+def test_binding_drops_active_settings_that_closeout_does_not_consume(target):
+    ignored_names = (
+        "CORS_ORIGINS", "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",
+        "RQDATA_ADDR", "RQDATA_LICENSE_KEY", "RQDATA_PASSWORD", "RQDATA_USERNAME", "VITE_API_BASE_URL",
+        "VITE_MARKET_WS_URL", "VITE_PROXY_API_TARGET", "VITE_PROXY_WS_TARGET",
+    )
+    assert target.module._CLOSEOUT_IGNORED_SETTINGS == set(ignored_names)
+    target.config.write_text(
+        target.config.read_text() + "".join(f"{name}=fixture-only\n" for name in ignored_names)
+    )
+
+    binding = target.create()
+
+    assert not binding.settings.keys() & set(ignored_names)
+
+
+@pytest.mark.parametrize(("dependency", "inert_value"), [
+    ("DATABASE_URL", "postgresql+psycopg://fixture@127.0.0.1:15448/test"),
+    ("REDIS_URL", "redis://127.0.0.1:15449/0"),
+    ("POSTGRES_PASSWORD", "fixture-only"),
+    ("GUIYI_CANONICAL_DATA_ROOT", "/fixture/canonical"),
+    ("GUIYI_LIVE_RECOVERY_ENABLED", "1"),
+])
+def test_binding_rejects_dependency_value_expanded_from_inert_setting(target, dependency, inert_value):
+    lines = target.config.read_text().splitlines()
+    replaced = False
+    for index, line in enumerate(lines):
+        if line.startswith(f"{dependency}="):
+            lines[index] = f"{dependency}=$APP_SECRET_KEY"
+            replaced = True
+            break
+    assert replaced
+    target.config.write_text(f"APP_SECRET_KEY={inert_value}\n" + "\n".join(lines) + "\n")
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
+@pytest.mark.parametrize(("source", "intermediate", "dependency"), [
+    ("APP_SECRET_KEY", "POSTGRES_USER", "DATABASE_URL"),
+    ("CORS_ORIGINS", "POSTGRES_USER", "DATABASE_URL"),
+])
+def test_binding_rejects_ignored_value_indirectly_expanded_into_dependency(
+        target, source, intermediate, dependency):
+    lines = target.config.read_text().splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith(f"{dependency}="):
+            lines[index] = (
+                f"{dependency}=postgresql+psycopg://${{{intermediate}}}@127.0.0.1:15448/test"
+            )
+            break
+    else:
+        pytest.fail(f"missing fixture dependency {dependency}")
+    target.config.write_text(
+        f"{source}=fixture\n{intermediate}=${source}\n" + "\n".join(lines) + "\n"
+    )
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
+def test_binding_rejects_optional_redis_password_expanded_from_inert_setting(target):
+    target.config.write_text(
+        "APP_SECRET_KEY=fixture-only\nREDIS_PASSWORD=$APP_SECRET_KEY\n"
+        + target.config.read_text()
+    )
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
+def test_binding_allows_dependency_sources_to_build_dependency_values(target):
+    target.config.write_text(
+        "POSTGRES_USER=fixture\nPOSTGRES_DB=test\nPOSTGRES_PORT=15448\n"
+        "DATABASE_URL=postgresql+psycopg://$POSTGRES_USER@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB\n"
+        "REDIS_URL=redis://127.0.0.1:15449/0\nPOSTGRES_PASSWORD=fixture-only\n"
+        f"GUIYI_CANONICAL_DATA_ROOT={target.root}/canonical\nGUIYI_LIVE_RECOVERY_ENABLED=1\n"
+    )
+
+    binding = target.create()
+
+    assert binding.settings["DATABASE_URL"] == "postgresql+psycopg://fixture@127.0.0.1:15448/test"
+    assert not binding.settings.keys() & {"POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PORT"}
+
+
 def test_binding_rejects_missing_explicit_configuration_and_loaded_override(target):
     target.config.write_text(target.config.read_text().replace("REDIS_URL=redis://127.0.0.1:15449/0\n", ""))
     with pytest.raises(ValueError):
@@ -114,6 +230,57 @@ def test_binding_rejects_missing_explicit_configuration_and_loaded_override(targ
 def test_binding_rejects_data_override_in_loaded_service(target):
     target.outputs["com.guiyi.quant-live"] = target.outputs["com.guiyi.quant-live"].replace(
         "environment = {", "environment = {\nGUIYI_RUNTIME_ENV => /different/environment")
+    with pytest.raises(ValueError):
+        target.create()
+
+
+@pytest.mark.parametrize("field", ["root", "commit", "working_directory", "notification"])
+def test_binding_rejects_installed_plist_identity_that_differs_from_loaded_service(target, field):
+    path = Path.home() / "Library/LaunchAgents/com.guiyi.quant-live.plist"
+    payload = plistlib.loads(path.read_bytes())
+    if field == "root":
+        payload["EnvironmentVariables"]["GUIYI_PROJECT_ROOT"] = "/different/runtime"
+    elif field == "commit":
+        payload["EnvironmentVariables"]["GUIYI_RUNTIME_COMMIT"] = "b" * 40
+    elif field == "working_directory":
+        payload["WorkingDirectory"] = "/different/runtime"
+    else:
+        path = Path.home() / "Library/LaunchAgents/com.guiyi.quant-api.plist"
+        payload = plistlib.loads(path.read_bytes())
+        payload["EnvironmentVariables"]["GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"] = "/different/notification.json"
+    path.write_bytes(plistlib.dumps(payload))
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
+@pytest.mark.parametrize("service", ["live", "after-market"])
+@pytest.mark.parametrize("installed_label", [None, "com.guiyi.quant-other"])
+def test_binding_rejects_missing_or_wrong_installed_plist_label(target, service, installed_label):
+    path = Path.home() / "Library/LaunchAgents" / f"com.guiyi.quant-{service}.plist"
+    payload = plistlib.loads(path.read_bytes())
+    if installed_label is None:
+        payload.pop("Label")
+    else:
+        payload["Label"] = installed_label
+    path.write_bytes(plistlib.dumps(payload))
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
+@pytest.mark.parametrize("loaded_only", ["path", "notification"])
+def test_binding_rejects_behavior_environment_only_in_loaded_service(target, loaded_only):
+    label = "com.guiyi.quant-api"
+    path = Path.home() / "Library/LaunchAgents" / f"{label}.plist"
+    if loaded_only == "path":
+        payload = plistlib.loads(path.read_bytes())
+        payload["EnvironmentVariables"].pop("PATH")
+        path.write_bytes(plistlib.dumps(payload))
+    else:
+        target.outputs[label] = target.outputs[label].replace(
+            "environment = {", "environment = {\nGUIYI_ALERT_NOTIFICATION_CONFIG_PATH => /loaded/notification.json")
+
     with pytest.raises(ValueError):
         target.create()
 
@@ -132,8 +299,9 @@ def test_binding_rejects_non_private_config_parent(target):
         target.create()
 
 
-def test_binding_rejects_launcher_variable_in_config(target):
-    target.config.write_text(target.config.read_text() + "PROJECT_ROOT=/different/runtime\n")
+@pytest.mark.parametrize("key", ["PROJECT_ROOT", "GUIYI_HTDY_S610_UNREVIEWED"])
+def test_binding_rejects_unknown_config_without_prefix_allowance(target, key):
+    target.config.write_text(target.config.read_text() + f"{key}=fixture-only\n")
     with pytest.raises(ValueError):
         target.create()
 
@@ -233,6 +401,89 @@ def test_binding_rejects_sources_newer_than_interrupted_run(target):
     status.write_bytes(raw)
     with pytest.raises(ValueError):
         target.module.RuntimeDataBinding(target.root, "a" * 40, hashlib.sha256(raw).hexdigest())
+
+
+def _chronology_binding(tmp_path, *, stable_changed_at=100, install_changed_at=250):
+    from app.market_data.closeout_binding import RuntimeDataBinding
+
+    binding = object.__new__(RuntimeDataBinding)
+    binding.root = tmp_path / "runtime"
+    binding.runtime_dir = tmp_path / "home/Library/Application Support/GuiyiQuant"
+    binding.agent_dir = tmp_path / "home/Library/LaunchAgents"
+    binding.config_path = binding.runtime_dir / "project.env"
+    binding.started_ns = 300
+    binding._processes = {
+        name: (str(100 + index), 200)
+        for index, name in enumerate(("api", "web", "live", "alert"))
+    }
+
+    def snapshot(changed_at):
+        return b"", (1, 1, 1, changed_at, changed_at)
+
+    stable_paths = [
+        binding.config_path,
+        binding.root / "scripts/ops/macos/run-local-service.sh",
+        binding.root / "data/universe/operational_products.txt",
+        binding.root / "data/universe/active_products.txt",
+        binding.root / "data/universe/retired_products.txt",
+        binding.root / "data/universe/product_window_starts.csv",
+        binding.root / "data/universe/active_history_floor.txt",
+        binding.root,
+    ]
+    install_paths = [binding.runtime_dir / "run-local-service.sh"] + [
+        binding.agent_dir / f"com.guiyi.quant-{name}.plist"
+        for name in ("api", "web", "live", "alert", "after-market")
+    ]
+    binding._sources = {
+        **{path: snapshot(stable_changed_at) for path in stable_paths},
+        **{path: snapshot(install_changed_at) for path in install_paths},
+    }
+    return binding
+
+
+def test_binding_accepts_same_release_staged_install_artifacts_after_earliest_consumer(tmp_path):
+    binding = _chronology_binding(tmp_path)
+
+    binding._validate_age()
+
+
+def _set_changed_at(binding, path, changed_at):
+    content, metadata = binding._sources[path]
+    binding._sources[path] = content, (*metadata[:3], changed_at, changed_at)
+
+
+@pytest.mark.parametrize("source", ["config", "exact_launcher", "universe", "runtime_root"])
+def test_binding_rejects_stable_source_changed_after_earliest_consumer(tmp_path, source):
+    binding = _chronology_binding(tmp_path)
+    paths = {
+        "config": binding.config_path,
+        "exact_launcher": binding.root / "scripts/ops/macos/run-local-service.sh",
+        "universe": binding.root / "data/universe/operational_products.txt",
+        "runtime_root": binding.root,
+    }
+    _set_changed_at(binding, paths[source], 250)
+
+    with pytest.raises(ValueError):
+        binding._validate_age()
+
+
+@pytest.mark.parametrize("source", ["shared_launcher", "after_market_plist"])
+def test_binding_rejects_install_artifact_changed_at_interrupted_run(tmp_path, source):
+    binding = _chronology_binding(tmp_path)
+    path = (binding.runtime_dir / "run-local-service.sh" if source == "shared_launcher"
+            else binding.agent_dir / "com.guiyi.quant-after-market.plist")
+    _set_changed_at(binding, path, binding.started_ns)
+
+    with pytest.raises(ValueError):
+        binding._validate_age()
+
+
+def test_binding_rejects_shared_launcher_content_that_differs_from_exact_release(target):
+    path = Path.home() / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+    path.write_text("different launcher")
+
+    with pytest.raises(ValueError):
+        target.create()
 
 
 def test_binding_rejects_source_replacement_even_with_same_mtime(target):
