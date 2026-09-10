@@ -55,6 +55,16 @@
 
 ## 中断盘后收尾入口：工程完成，生产执行待 Gate
 
+- 2026-09-10 实机解析兼容修正：只读取三个直接环境块，忽略 event descriptor；API/Alert 允许既有通知路径。
+  实机层级脱敏回归先失败再通过；收尾/身份 `144 passed`，盘后/health/promotion/CLI `212 passed`，
+  独立 Review 无阻塞。用户批准后执行一次默认只读核验，exit 1、`AFTER_MARKET_CLOSEOUT_BINDING_UNAVAILABLE`，
+  最后阶段为 `source_age`；无 provider/data/state 写入，状态 SHA-256 仍为
+  `08d63356c9978423431fe7db2a926d655a159ffb5c8f64b1237c2c7f5c79ee57`。
+  五服务身份核验及环境解析已越过；当前全来源年龄检查以最早 API 启动 `2026-09-09 12:05:55 CST` 为界，
+  但分阶段安装后的共享 launcher 在 `12:06:18.570019` 更新，Web/Live/Alert/盘后 plist 也晚于该界。
+  这些来源均早于中断运行 `18:05:06.737372`，仍不足以通过现有“早于全部当前消费者”的来源证明。
+  没有放宽 Gate、修改文件时间、重启服务或重试；数据一致性核验尚未开始，实际收尾与部署继续阻塞。
+
 - 新增默认只读的 `data close-interrupted-after-market`，绑定现役 root/commit/状态字节、五服务、
   私有配置与实际数据依赖；持共享锁检查全部已提交 Catalog/Canonical 与原日 rank1/Live snapshot。
   显式 apply 只可记录 `interrupted`，不记成功、不修复行情、不通知、不放宽 promotion。
