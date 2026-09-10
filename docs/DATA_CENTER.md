@@ -248,6 +248,37 @@ expected day 才是 `degraded/missed`。合法 `current_run` 也只是已持久�
 Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN`，本次停止且不重试，
 不发布 `canonical_updated` 或执行成功后的 Live 清理；须用独立只读事务确认 Catalog 结果。
 
+### 中断盘后运行的显式收尾
+
+`data.close-interrupted-after-market` 默认只读；必须绑定现役 Runtime root、40 位 commit 和原状态字节 SHA-256。
+它要求五服务 installed/loaded 身份一致、现役 checkout 为干净 detached annotated release，Live/Alert 声明
+共享恢复保护开启、盘后进程明确 idle。只处理先前自然日的合法 `current_run`，不停止进程、不创建缺失锁。
+数据依赖只能由目标 Runtime 的固定外部 `project.env` 与目标 universe 文件显式构造，不能使用执行 CLI 的开发配置。
+配置仅接受白名单字面赋值与先前赋值展开，不执行 shell；文件须自有 0600、父目录自有 0700。
+installed/loaded 启动参数必须指向相同受审 launcher；环境白名单拒绝 HOME 改址、shell startup、数据源与 libpq 覆盖。
+执行进程中的 PG* 覆盖亦拒绝。配置、launcher、五服务 plist 和 universe 的 inode/content/mtime/ctime 必须保持不变，
+且源文件早于原运行及当前消费者进程启动；连接 URL、Redis 连接参数、Canonical root 和 coverage 配置须匹配。
+目标 `.env` 必须不存在（含悬空链接），目标根目录也纳入早于进程的元数据检查，防止事后删除第二配置来源掩盖覆盖。
+这些检查及 fresh Live/Alert identity 在读取历史数据前和状态替换前重验；来源无法证明时停止，不回退到 `.env`。
+先非阻塞获取该 Runtime 的既有 after-market OS guard，再取得 Catalog maintenance lease；在新的
+repeatable-read/read-only 事务中，通过 Catalog inventory 和既有 Canonical reader 检查 operational 全部已提交指针，
+包括预期窗口外的文件，并复用 audit 检查中断日 metadata、rank1 和目标窗口。只允许确认为有效子集的
+`EXPECTED_PARTITION_MISSING` 留作待维护；额外端点、其他 finding、未知异常均阻断。待维护计数不证明缺失由这次中断造成。
+原交易日不可变 Live snapshot 必须仍在且与 rank1 一致；缺失、过期或不一致均阻断，不使用当前日快照代替。
+
+显式 `--apply` 在同一锁窗口重新校验身份与原状态字节，使用 pinned directory FD 原子替换并 fsync。
+唯一写入是原盘后状态文件：收尾写 schema v4、`last_run.status=interrupted`、`error_code=AFTER_MARKET_INTERRUPTED`，
+清除 `current_run`，保留原开始时间与最后成功日；旧 schema v2 未记录的 attempts 保持 null，v3 保留已记录次数。
+不发送通知、不发布 canonical_updated、不清理 Live，不调用 provider 或写行情/DB/Redis；不自动重试。
+替换前失败保留原状态；替换或其后 fsync 的结果不确定返回 `AFTER_MARKET_CLOSEOUT_OUTCOME_UNKNOWN`、
+`status_written=null` 和锁内只读 readback 分类，不能假称未写入或直接重试。
+
+reader 兼容 v1-v4；v4 与 v3 的进度字段相同，仅增加中断终态与未知 attempts 表达。
+新自然运行可暂时保留 v4 的中断摘要，正常终态仍写 v3。Runtime health 保持 `degraded/interrupted`，
+Web 显示收尾而非完成；promotion 仍独立检查 phase/snapshot，不把 interrupted 当作 after_market_complete。
+旧 reader 不认识 v4 时应降级，不能当健康；本入口不授权部署。它确认当前已提交视图，不能还原旧 writer
+每次 commit 的执行轨迹，不是 checkpoint，也不替代每日完成或每周历史审计。
+
 ### 每周 operational 全历史只读审计
 
 `data.weekly-audit` 固定使用 `operational_products.txt` 的 `operational_full_history` scope，不借用可变的 active 研究范围。

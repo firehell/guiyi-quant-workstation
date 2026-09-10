@@ -53,6 +53,18 @@
   以上保存关键事实，临时文件再次使用前须检查存在与完整性。本次仅更新文档，未执行生产 failure acknowledgment、
   修改 Scope、重跑补齐或补发通知；苏冰本次故障闭环不替代 v1.10.5 自然盘后验收。
 
+## 中断盘后收尾入口：工程完成，生产执行待 Gate
+
+- 新增默认只读的 `data close-interrupted-after-market`，绑定现役 root/commit/状态字节、五服务、
+  私有配置与实际数据依赖；持共享锁检查全部已提交 Catalog/Canonical 与原日 rank1/Live snapshot。
+  显式 apply 只可记录 `interrupted`，不记成功、不修复行情、不通知、不放宽 promotion。
+- 后端及 engineering 全量 `3089 passed, 16 skipped, 31 deselected`；最后来源拒绝路径及收尾回归
+  `126 passed`；隔离 PostgreSQL 实测 `1 passed`。Web `519 passed, 1 skipped`，类型检查/build、
+  Ruff、Mypy（154 source files）、9 项 OpenSpec、secret scan 与独立 Review 通过。
+- 状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。本轮没有生产收尾、真实下载、发布 v1.10.6、
+  Runtime 切换或周审计安装；旧 Runtime 未清理。实际收尾须重新绑定现场并取得一次执行意图，
+  其成功也不替代发布预检、五服务部署或自然每日/每周验收。
+
 ## Release、Runtime 与 Scope
 
 | 项目 | 最近已记录事实 |

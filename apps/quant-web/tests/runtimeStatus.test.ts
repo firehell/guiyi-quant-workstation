@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+test('interrupted closeout is not displayed as completed maintenance', async () => {
+  const { runtimeStatusPresentation } = await import('../src/utils/runtimePresentation.ts')
+  const payload = runtimeHealth()
+  Object.assign(payload.components.after_market, {
+    status: 'degraded', run_state: 'interrupted', current_run: null,
+    last_run: { status: 'interrupted', attempts: null, finished_at: '2026-09-10T00:00:00Z' },
+  })
+  const item = runtimeStatusPresentation(payload).find(item => item.key === 'after_market')!
+  assert.equal(item.state, '运行已中断')
+  assert.match(item.timestamp, /收尾/)
+  assert.doesNotMatch(item.timestamp, /完成/)
+  assert.match(item.detail, /未证明更新完成.*次数未知/)
+  assert.equal(item.tone, 'warning')
+})
+
 function runtimeHealth(overrides: Record<string, unknown> = {}) {
   return {
     status: 'degraded',

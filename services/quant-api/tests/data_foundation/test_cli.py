@@ -196,6 +196,7 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
     )
 
     assert set(command_action.choices) == {
+        "close-interrupted-after-market",
         "update",
         "refresh",
         "audit",

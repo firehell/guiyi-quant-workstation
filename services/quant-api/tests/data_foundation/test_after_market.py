@@ -1288,10 +1288,10 @@ def test_missing_daily_baseline_is_explicit_history_maintenance_required(tmp_pat
     assert not sleeps and not live.cleaned and len(notices) == 1
 
 
-def test_public_status_rejects_unknown_schema_v4() -> None:
+def test_public_status_rejects_unknown_schema_v5() -> None:
     payload = public_after_market_status(
         {
-            "schema_version": 4,
+            "schema_version": 5,
             "current_run": None,
             "last_run": {
                 "trading_day": "2026-08-10",

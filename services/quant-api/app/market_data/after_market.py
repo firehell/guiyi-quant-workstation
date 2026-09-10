@@ -55,6 +55,7 @@ _PUBLIC_ERROR_CODES = frozenset(
         "UPDATE_FAILED",
         "COMMIT_OUTCOME_UNKNOWN",
         "HISTORICAL_MAINTENANCE_REQUIRED",
+        "AFTER_MARKET_INTERRUPTED",
     }
 )
 _PUBLIC_PRODUCT_CODE = re.compile(r"[a-z]{1,4}\Z")
@@ -433,10 +434,10 @@ class AfterMarketUpdater:
             raise _ProgressPersistenceError() from None
         previous_schema_version = (
             int(previous["schema_version"])
-            if previous.get("schema_version") in {2, 3}
+            if previous.get("schema_version") in {2, 3, 4}
             else 1
         )
-        schema_version = 3
+        schema_version = 4 if previous_schema_version == 4 else 3
         self._progress_failed = False
         self._current = {
             "scheduled_date": started_at.date().isoformat(),
@@ -512,7 +513,7 @@ class AfterMarketUpdater:
         ).total_seconds())
         try:
             payload = _load_status(self.status_path)
-            if payload.get("schema_version") != 3 or not payload.get("current_run"):
+            if payload.get("schema_version") not in {3, 4} or not payload.get("current_run"):
                 raise ValueError
             payload["current_run"] = self._current
             _atomic_write_status(self.status_path, payload)
@@ -779,7 +780,7 @@ def public_after_market_status(value: object) -> dict[str, object]:
     if not isinstance(value, Mapping):
         return {}
     raw_schema_version = value.get("schema_version", 1)
-    if type(raw_schema_version) is not int or raw_schema_version not in {1, 2, 3}:
+    if type(raw_schema_version) is not int or raw_schema_version not in {1, 2, 3, 4}:
         return {}
     schema_version = raw_schema_version
     current_run = (
@@ -862,6 +863,10 @@ def _public_last_run(
         )
         or (status == "skipped" and attempts == 0 and error_code == "NON_TRADING_DAY")
     )
+    if schema_version == 4 and status == "interrupted":
+        valid_outcome = (error_code == "AFTER_MARKET_INTERRUPTED"
+                         and (attempts is None or valid_attempts and attempts in {0, 1, 2})
+                         and value.get("failure_notification") is None)
     if (
         trading_day is None
         or started_at is None
@@ -924,7 +929,7 @@ def _public_current_run(value: object, *, schema_version: int = 2) -> dict[str, 
         "started_at": started_at,
         "products": normalized_products,
     }
-    if schema_version == 3:
+    if schema_version >= 3:
         progress = _public_progress(value)
         if progress is None:
             return None

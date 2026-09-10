@@ -77,14 +77,17 @@ def _verify_markers(root: Path) -> None:
 
 
 def _verify_loaded_service(
-    output: str, *, root: Path, commit: str, allow_idle: bool = False,
-) -> None:
+    output: str, *, root: Path, commit: str, allow_idle: bool = False, require_idle: bool = False,
+    require_guard: bool = False,
+    working_directory: Path | None = None,
+) -> dict[str, str]:
     # Never retain or report unrelated launchd environment keys or raw output.
     patterns = {
         "state": r"state = (.*)", "pid": r"pid = (.*)",
         "directory": r"working directory = (.*)",
         "root": r"GUIYI_PROJECT_ROOT => (.*)",
         "commit": r"GUIYI_RUNTIME_COMMIT => (.*)",
+        "guard": r"GUIYI_LIVE_RECOVERY_ENABLED => (.*)",
     }
     fields: dict[str, str] = {}
     scopes: list[tuple[str, str]] = []
@@ -104,8 +107,8 @@ def _verify_loaded_service(
         for key, pattern in patterns.items():
             # Only the service's direct `environment = {` block is authoritative.
             in_environment = len(scopes) == 2 and scopes[-1] == ("environment", "=")
-            if (key in {"root", "commit"} and not in_environment
-                    or key not in {"root", "commit"} and len(scopes) != 1):
+            if (key in {"root", "commit", "guard"} and not in_environment
+                    or key not in {"root", "commit", "guard"} and len(scopes) != 1):
                 continue
             match = re.fullmatch(pattern, line)
             if match is not None:
@@ -115,15 +118,21 @@ def _verify_loaded_service(
     state = fields.get("state")
     allowed_states = {"running", "waiting", "not running"} if allow_idle else {"running"}
     if (scopes or state not in allowed_states
+            or require_idle and (state != "not running" or "pid" in fields)
+            or require_guard and fields.get("guard") != "1"
             or state == "running" and re.fullmatch(r"[1-9][0-9]{0,9}", fields.get("pid", "")) is None
-            or fields.get("directory") != str(root) or fields.get("root") != str(root)
+            or fields.get("directory") != str(working_directory or root) or fields.get("root") != str(root)
             or fields.get("commit") != commit):
         _reject("SERVICE_IDENTITY_INVALID")
+    return fields
 
 
-def _verify_after_market_plist(*, root: Path, commit: str) -> None:
+def _verify_after_market_plist(*, root: Path, commit: str,
+                               label: str = "com.guiyi.quant-after-market") -> None:
     """Require the installed schedule to retain the same guarded after-market code root."""
-    path = Path.home() / "Library" / "LaunchAgents" / "com.guiyi.quant-after-market.plist"
+    if label not in {f"com.guiyi.quant-{name}" for name in ("api", "web", "live", "alert", "after-market")}:
+        _reject("SERVICE_CONFIGURATION_INVALID")
+    path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
     try:
         parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
@@ -146,8 +155,8 @@ def _verify_after_market_plist(*, root: Path, commit: str) -> None:
     if not isinstance(payload, dict):
         _reject("SERVICE_CONFIGURATION_INVALID")
     environment = payload.get("EnvironmentVariables")
-    if (payload.get("Label") != "com.guiyi.quant-after-market"
-            or payload.get("WorkingDirectory") != str(root)
+    if (payload.get("Label") != label
+            or payload.get("WorkingDirectory") != str(Path.home() if label in {"com.guiyi.quant-api", "com.guiyi.quant-web"} else root)
             or not isinstance(environment, dict)
             or environment.get("GUIYI_PROJECT_ROOT") != str(root)
             or environment.get("GUIYI_RUNTIME_COMMIT") != commit):

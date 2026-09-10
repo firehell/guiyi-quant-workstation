@@ -158,6 +158,21 @@ uv run --project services/quant-api python -m ruff check \
 
 ### 盘后每日增量、进度与每周只读审计
 
+中断收尾的隔离验证（不连接生产，不修改现役状态）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_after_market_closeout.py \
+  services/quant-api/tests/data_foundation/test_closeout_binding.py \
+  services/quant-api/tests/test_captured_recovery_runtime.py
+```
+
+真实锁和只读事务另用下文同一防误连变量、精确隔离库执行
+`services/quant-api/tests/data_foundation/test_after_market_closeout_postgresql.py`；未配置时 skip 不算通过。
+测试包括旧次数未知、中断 health、默认只读、部分完成、窗口外损坏、额外端点、锁冲突、危险文件类型、
+CAS 漂移、时钟倒退和替换后 fsync 不确定；还覆盖目标配置/实际依赖一致性、源替换、PID 变化、
+shell/libpq 覆盖、第二 dotenv 来源和私有文件权限；所有 apply 只写临时状态文件。
+
 以下定向命令覆盖 Catalog-bounded daily 规划/发布、schema-v3 进度持久化与 fail-closed health、
 `operational_full_history` 审计、HTTP schema 保留、launchd 渲染/安装防护和只读状态输出。它们使用 fake provider、
 临时 SQLite/Parquet/路径和复制的 shell fixture；不连接真实 RQData、production DB/Redis、Runtime 或通知服务，也不安装 LaunchAgent。
