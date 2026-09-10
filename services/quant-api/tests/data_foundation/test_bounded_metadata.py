@@ -189,6 +189,37 @@ def test_failed_commit_rolls_back_all_inserted_rows(db):
         assert session.scalars(select(TradingSession)).all() == []
 
 
+def test_commit_acknowledgment_loss_is_unknown_and_never_retried(db, monkeypatch):
+    snapshot = fetch(plan(db))
+    attempts = []
+    with Session(db) as session:
+        real_commit = session.commit
+        def uncertain_commit():
+            attempts.append('commit')
+            real_commit()
+            raise RuntimeError('acknowledgment unavailable')
+        monkeypatch.setattr(session, 'commit', uncertain_commit)
+        with pytest.raises(repair.MetadataRepairError, match='COMMIT_OUTCOME_UNKNOWN'):
+            repair.apply_metadata(session, snapshot,
+                                  expected_plan_sha256=snapshot['plan']['plan_sha256'],
+                                  expected_snapshot_sha256=snapshot['snapshot_sha256'])
+    assert attempts == ['commit']
+    with Session(db) as independent:
+        assert len(independent.scalars(select(TradingSession)).all()) == len(snapshot['sessions'])
+
+
+def test_precommit_flush_failure_remains_apply_failed(db):
+    snapshot = fetch(plan(db))
+    with Session(db) as session:
+        event.listen(session, 'before_flush', lambda *_: (_ for _ in ()).throw(RuntimeError('flush failed')))
+        with pytest.raises(repair.MetadataRepairError, match='APPLY_FAILED'):
+            repair.apply_metadata(session, snapshot,
+                                  expected_plan_sha256=snapshot['plan']['plan_sha256'],
+                                  expected_snapshot_sha256=snapshot['snapshot_sha256'])
+    with Session(db) as independent:
+        assert independent.scalars(select(TradingSession)).all() == []
+
+
 @pytest.mark.parametrize("hours", ["09:00-15:00", "09:01-10:15,10:01-11:30", "garbage"])
 def test_malformed_provider_periods_fail_without_snapshot_or_apply(db, hours):
     with pytest.raises(repair.MetadataRepairError):

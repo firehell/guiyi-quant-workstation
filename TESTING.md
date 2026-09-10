@@ -2,6 +2,17 @@
 
 以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
 
+## Newow 历史恢复通用边界
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/data_foundation \
+  services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/newow/test_readiness.py
+```
+
+覆盖周五夜盘首边界、未完成尾周、逐日交易所夜盘证据、来源全集身份和生命周期、局部无夜盘不得覆盖共享 Calendar，以及元数据提交结果不明时停止并独立回读。隔离工作树可显式使用既有 Python 环境；这些离线检查不代表实际历史补齐、未来 Calendar 自动扩展或浏览器验收。
+
 ## Newow 新版参考卡片定向验证
 
 ```bash

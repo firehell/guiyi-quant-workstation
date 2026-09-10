@@ -113,6 +113,15 @@ provider 分钟线 `1m`。每完成一个 1m dataset-month，立即生成四个�
 尚未同步的当天 TradingSession 判定 `NON_TRADING_DAY`。受限 metadata 同步准备 operational 60 品种：
 Calendar 覆盖当天至 ISO 周日或下一交易日（取较晚者），TradingSession 精确替换当天与下一交易日，
 MainContractMap 仍只发布当天 rank1。
+共享 Calendar 的夜盘字段只用同交易所、同交易日的 Session 正证据；不得把某日夜盘扩散到整个
+请求区间，也不得从请求品种子集仅有日盘推导交易所无夜盘。交易日 false 必须由原始
+`all_instruments(type="Future")` 完整合约集合及逐日生命周期确定当日品种全集，并由该全集每个
+品种的当日 Session 完整覆盖且均无夜盘；缺失生命周期或任一品种 Session 时为 UNKNOWN。
+该全集在筛选请求品种之前取得，不增加 provider 请求。非交易日可直接确定 false。
+UNKNOWN 仅可保留 trading-day 身份一致的已有 Calendar；缺键报 `CALENDAR_NIGHT_AUTHORITY_MISSING`。
+有证据的源事实与已有 Calendar 任一布尔字段冲突则整事务 `CALENDAR_SOURCE_CONFLICT`，不得自动
+覆盖已更正的共享历史；实际纠正仍需绑定源证据、精确前像和独立执行意图。首次 bootstrap 或未来
+交易日缺键不能靠猜测填充，必须补齐上述逐日权威证据后再同步。
 下一交易日 Session 尚未由 provider 发布时精确返回 `NEXT_TRADING_SESSION_NOT_READY`，最多一小时后再
 尝试一次；格式、重复或身份异常仍 fail-closed。这样夜盘 phase resolver 在夜盘前取得下一交易日 Session
 事实，同时不会提前发布未来主力映射，也不写 Dataset、Partition 或 Parquet。

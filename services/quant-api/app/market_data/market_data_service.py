@@ -757,13 +757,14 @@ class MarketDataService:
         - 映射指向的合约分区缺失或交易日缺 bar 时整体失败，不部分返回。
         """
         try:
-            trading_days = self.catalog.trading_days_overlapping_window(
+            session_windows = self.catalog.session_windows_overlapping_window(
                 request.symbol,
                 request.start,
                 request.end,
             )
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
+        trading_days = tuple(day for day, _ in session_windows)
         if not trading_days:
             raise MarketDataError("TRADING_CALENDAR_MISSING")
         mappings = self.catalog.main_map(
@@ -777,7 +778,12 @@ class MarketDataService:
             raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
         selected_mappings = tuple(mapping_by_day[day] for day in trading_days)
         if request.frequency is BarFrequency.W1:
-            selected = self._weekly_mappings(request, selected_mappings)
+            completed_mappings = tuple(
+                mapping_by_day[day]
+                for day, windows in session_windows
+                if max(window.end for window in windows) <= request.end
+            )
+            selected = self._weekly_mappings(request, completed_mappings)
         else:
             selected = selected_mappings
         segments = _segments(selected)
@@ -1147,11 +1153,12 @@ class MarketDataService:
         不完整周（节假日导致周内最后一个交易日不是周五对应日）整周跳过；
         若窗口内无任何完整周，抛出 ``COMPLETE_WEEK_MISSING``。
         """
-        request_days = self.catalog.trading_days(
-            request.symbol,
-            _local_date(request.start),
-            _local_date(request.end),
-        )
+        # ``mappings`` already represents the authoritative Session-overlapping
+        # trading days resolved by ``_actual_dominant``.  Re-expanding the raw
+        # local-date window can pull in the preceding Friday when ``start`` is
+        # that Friday's night-session boundary, even though that session belongs
+        # to Monday and the Friday owner is outside the query.
+        request_days = tuple(row.trade_date for row in mappings)
         grouped: dict[tuple[int, int], list[date]] = {}
         for day in request_days:
             iso = day.isocalendar()

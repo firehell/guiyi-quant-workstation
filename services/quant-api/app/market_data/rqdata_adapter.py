@@ -23,7 +23,11 @@ from app.market_data.coverage_source import (
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import BarBatch, BarFetchRequest
-from app.market_data.metadata import MetadataSnapshot
+from app.market_data.metadata import (
+    MetadataSnapshot,
+    calendar_night_fact,
+    calendar_session_index,
+)
 from app.market_data.session_clock import SHANGHAI
 from app.models import Instrument, MainContractMap, TradingCalendar
 
@@ -461,6 +465,7 @@ class RQDataClient:
         product_set = {item.upper() for item in products}
         if "underlying_symbol" not in frame.columns:
             raise InfrastructureError("RQDATA_INSTRUMENT_SCHEMA_INVALID")
+        exchange_contracts = tuple(frame.to_dict("records"))
         frame = frame[
             frame["underlying_symbol"].astype(str).str.upper().isin(product_set)
         ]
@@ -558,26 +563,28 @@ class RQDataClient:
             symbol_exchanges,
             allow_missing_after=(min(starts.values()) if current_day_only else None),
         )
-        # 有夜盘或跨日的交易所，日历行标记 has_night_session。
-        night_exchanges = {
-            str(row["exchange_code"])
-            for row in sessions
-            if (isinstance(row["start_time"], time) and row["start_time"] >= time(18))
-            or bool(row["crosses_midnight"])
-        }
+        # Calendar is shared by exchange: a subset's absent night is not negative evidence.
         trading_day_set = set(trading_dates)
-        calendars = tuple(
-            {
-                "exchange_code": exchange,
-                "trade_date": day,
-                "is_trading_day": day in trading_day_set,
-                "has_night_session": exchange in night_exchanges
-                and day in trading_day_set,
-                "provider": "rqdata",
-            }
-            for exchange in exchanges
-            for day in _days(calendar_start, calendar_end)
-        )
+        calendar_rows = []
+        session_days = calendar_session_index(sessions)
+        for exchange in exchanges:
+            for day in _days(calendar_start, calendar_end):
+                values = {
+                    "exchange_code": exchange,
+                    "trade_date": day,
+                    "is_trading_day": day in trading_day_set,
+                    "provider": "rqdata",
+                }
+                evidence = session_days.get((exchange, day), ())
+                fact = calendar_night_fact(values, evidence)
+                if fact is None:
+                    values["night_session_products"] = _exchange_day_products(
+                        exchange_contracts, exchange, day
+                    )
+                    fact = calendar_night_fact(values, evidence)
+                values["has_night_session"] = fact
+                calendar_rows.append(values)
+        calendars = tuple(calendar_rows)
         return MetadataSnapshot(
             exchanges=tuple(exchanges.values()),
             instruments=tuple(instruments.values()),
@@ -615,6 +622,37 @@ class RQDataClient:
             starts,
             current_day_only=True,
         )
+
+
+def _exchange_day_products(rows, exchange: str, day: date) -> tuple[str, ...]:
+    """Complete provider instrument universe before request filtering, bounded by lifecycle.
+
+    Missing lifecycle cannot establish exhaustive day coverage and yields no negative proof.
+    """
+    products = set()
+    for row in rows:
+        owner = row.get("exchange", row.get("exchange_code"))
+        symbol = row.get("underlying_symbol")
+        contract = row.get("order_book_id")
+        if (owner not in {"SHFE", "DCE", "CZCE", "CFFEX", "INE", "GFEX"}
+                or not isinstance(symbol, str) or not re.fullmatch(r"[A-Z]+(?:_F)?", symbol)
+                or not isinstance(contract, str)):
+            return ()
+        # Same synthetic series excluded by RQData futures instrument inventory;
+        # their absent lifecycle is not a missing physical contract fact.
+        if contract in {symbol + suffix for suffix in ("88", "99", "888", "889", "88A2", "88A3")}:
+            continue
+        identity_pattern = (re.escape(symbol[:-2]) + r"\d{3,4}F"
+                            if symbol.endswith("_F") else re.escape(symbol) + r"\d{3,4}")
+        if not re.fullmatch(identity_pattern, contract):
+            return ()
+        listed = _optional_date(row.get("listed_date"))
+        expired = _optional_date(row.get("de_listed_date"))
+        if listed is None or expired is None or listed >= expired:
+            return ()
+        if owner == exchange and listed <= day < expired:
+            products.add(symbol.lower())
+    return tuple(sorted(products))
 
 
 def _records(value: Any) -> tuple[dict[str, Any], ...]:

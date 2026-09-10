@@ -483,12 +483,21 @@ def apply_metadata(session: Session, snapshot: dict, *, expected_plan_sha256: st
                                           "start_time": time.fromisoformat(row["start_time"]),
                                           "end_time": time.fromisoformat(row["end_time"])}))
         session.flush()
-        session.commit()
     except Exception as exc:
         session.rollback()
         if isinstance(exc, MetadataRepairError):
             raise
         raise MetadataRepairError("APPLY_FAILED") from None
+    try:
+        session.commit()
+    except Exception:
+        # Cleanup cannot establish whether the server committed. A new read-only
+        # transaction must reconcile the exact rows before any further apply.
+        try:
+            session.rollback()
+        except Exception:
+            pass
+        raise MetadataRepairError("COMMIT_OUTCOME_UNKNOWN") from None
     return {"command": "data.metadata-repair", "status": "passed", "readonly": False,
             "plan_sha256": expected_plan_sha256, "snapshot_sha256": expected_snapshot_sha256,
             "calendar_rows": len(snapshot["calendars"]), "session_rows": len(snapshot["sessions"])}
