@@ -1667,8 +1667,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
         failed_families: set[tuple[str, str, str]] = set()
         # 已有完整 1m 的日内派生可先发布（例如 refresh 只涉及日内派生频度）。
         for target in tuple(remaining_derived):
-            # 有界 warm-up 仅推迟明确待补的源月份；已开始的派生失败不得重试。
-            if (fail_stop or self._source_cache is not None) and (
+            # 同族同月待更新的 1m 必须先发布；旧来源完整也不能提前派生。
+            if (
                 *_family(target.key), target.year, target.month
             ) in pending_minute_months:
                 continue
