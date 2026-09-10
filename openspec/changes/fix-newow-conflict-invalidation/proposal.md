@@ -23,4 +23,4 @@ Newow `failConflict` 清空页面结果，但未取消关联请求或推进 sect
 
 主要涉及 `apps/quant-web/src/composables/useNewowProduct.ts`、其 unit test 与现有 `e2e/newow-product.spec.mjs`。API schema、策略公式、token 服务端语义不变。
 
-本 change 当前只有设计。实施验收使用固定 fixture 和隔离页面，不代表生产行情或 Runtime 验收。
+本 change 已完成实现与独立 Review。定向测试及新增浏览器回归通过；完整浏览器文件仍有两项精确复现的既有失败，不声明完整浏览器 Gate 通过。验证使用固定 fixture 和隔离页面，不代表生产行情或 Runtime 验收。
