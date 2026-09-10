@@ -1,24 +1,23 @@
 # 当前状态
 
 文档核对：2026-09-10。正式代码基线 `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；
-develop 代码基线 `c0abb16f3e81b2443200f9f5591194afe793b3e9`。本文件只保留当前版本、已证明事实、
+develop 代码基线 `a28775b28bb8ef1d390e53aa0a93a753e50e6880`。本文件只保留当前版本、已证明事实、
 尚缺证据、本轮冻结范围与唯一下一步。操作过程、逐次授权和旧候选矩阵从 Git history、tag、PR
 与原 evidence 追溯；历史授权不授权重跑。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见
 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
-本轮工作 1 只整理范围。没有连接生产 PostgreSQL/Redis/RQData，没有重新验收 Runtime，
-没有发布、切换或写入。
+工作 2 已用当前 develop CLI 对现役 v1.10.5 做一次只读 closeout，未 apply、未补行情、未切换 Runtime。
 
 ## 当前阶段
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.5`，PR #359 合入 main |
-| 现役 Runtime | 已切换，未声明 `RUNTIME_READY` | 五服务加载 v1.10.5；现版本自然盘后验收未完成 |
-| 中断盘后收尾 | `CODE_COMPLETE` / `EXTERNAL_GATE_PENDING` | develop 已有收尾入口与来源时间修正；现场尚未用当前 develop 代码重跑只读核验 |
+| 现役 Runtime | 已切换，未声明 `RUNTIME_READY` | API/Web/Live/Alert 加载 v1.10.5；after-market 已安装但未加载；现版本自然盘后验收未完成 |
+| 中断盘后收尾 | `CODE_COMPLETE` / `EXTERNAL_GATE_PENDING` | 2026-09-10 用 develop 代码一次只读停在身份绑定；未 apply；状态字节未变 |
 | 盘后生命周期修复 | 待精确基线复现 | 不把上轮线索直接写成生产根因 |
 | 牛哇加载一致性 | 待精确基线复现 | 黄金固定截点本地预览已完成，不代替当前全品种验收 |
-| 本轮稳定版 | 范围已冻结，候选未冻结 | 不等待工作 6、7 |
+| 本轮稳定版 | 范围已接受全量 develop，候选 commit 未冻结 | owner 已接受相对 v1.10.5 的全部 develop diff；精确冻结仍留工作 5 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 
@@ -28,8 +27,8 @@ develop 代码基线 `c0abb16f3e81b2443200f9f5591194afe793b3e9`。本文件只�
 |---|---|
 | 正式 Release | `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；PR #359 于 `2026-09-09T03:53:57Z` 合入 main；tree `11704da35b2eccf62bdddc330eb0e42ea5930247`；annotated tag object `71bad4102a9be883ba341c7dd27f0e98f59dab41`。GitHub Release 同日 `03:55:28Z`，non-draft、non-prerelease。API/Web/Python/lock 为 1.10.5。 |
 | 发布验收 | 已审候选 `0d2273445637a6dd5cfef2a45c4f1242276952c5` 与发布 tree 一致。该候选不是“只修两合约数据”的最小补丁，还含 Canonical P1、captured Runtime 身份解析、WebSocket 资源边界、统一详情页、苏冰历史参考与 Newow 只读相关改进。 |
-| Runtime | `2026-09-09 12:09:27 CST` 严格读回：五项 launchd 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；API/Web/Live/Alert running，After-market idle；Market/Alert marker enabled，Live/Alert 新鲜心跳同根同 commit 且 `recovery_guard_enabled=true`。未使用回退。现版本自然盘后验收仍待完成。 |
-| Runtime 工作树 | 现役 detached v1.10.5 根与原 v1.10.4 根均保留且当时干净。旧根无五项 launchd 引用，未清理。生产已产生 hash URI，不得把只支持固定 URI 的 v1.10.4 当作通用回退。 |
+| Runtime | 2026-09-10 现场重绑：已加载 API/Web/Live/Alert 均为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1` / `cdd72d7501227d8e7f905ea0b8a54c038b521a09`，state=running。`com.guiyi.quant-after-market` 已安装且 domain enabled，但 `launchctl print` 返回 113 not found，不是 idle。现役根干净 detached `v1.10.5`。2026-09-09 12:09 的五项均加载读回不能当作今晚仍成立。未使用回退。现版本自然盘后验收仍待完成。 |
+| Runtime 工作树 | 现役根为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1`；原 v1.10.4 根仍保留。旧根无五项 launchd 引用，未清理。生产已产生 hash URI，不得把只支持固定 URI 的 v1.10.4 当作通用回退。 |
 | 最近 health | `2026-09-09 14:03:17 CST`：API 1.10.5、Runtime health ok/readonly，严格 captured 身份通过；60 品种 TRADING、subscribed_count=60；苏冰自然评估到 14:00。该结论保留原采集时间，不是 2026-09-10 的实时健康。 |
 | Database | 最近生产 readback 为 Alembic `20260903_0045`。 |
 | Market Scope | `operational_products.txt` 的 60 个品种。 |
@@ -48,7 +47,8 @@ develop 代码基线 `c0abb16f3e81b2443200f9f5591194afe793b3e9`。本文件只�
 
 | 缺口 | 类型 | 当前证据边界 |
 |---|---|---|
-| 用当前 develop 收尾代码重跑现场只读 closeout | 现场验收 | 2026-09-10 一次默认只读停在 `source_age`，`AFTER_MARKET_CLOSEOUT_BINDING_UNAVAILABLE`，状态 SHA-256 仍为 `08d63356c9978423431fe7db2a926d655a159ffb5c8f64b1237c2c7f5c79ee57`。当时五服务身份与环境解析已越过；分阶段安装后的 launcher/plist 晚于最早 API 启动 `2026-09-09 12:05:55 CST`，但早于中断运行 `18:05:06.737372`。该次核验早于后续来源时间代码修复，不能当作新代码已失败。数据一致性检查尚未形成现场证据。 |
+| 用当前 develop 收尾代码重跑现场只读 closeout | 现场验收 | 2026-09-10 晚间一次只读：执行基线 `a28775b28`，`--runtime-root` 为已加载四服务的 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1`，commit `cdd72d7501227d8e7f905ea0b8a54c038b521a09`，状态 SHA-256 仍为 `08d63356c9978423431fe7db2a926d655a159ffb5c8f64b1237c2c7f5c79ee57`。`current_run` 仍是 `2026-09-09T18:05:06.737372+08:00` / schema v2。CLI 返回 `status=blocked`、`error_code=AFTER_MARKET_CLOSEOUT_BINDING_UNAVAILABLE`、`status_written=false`、`data_writes=0`、`provider_requests=0`。公开错误码无 `last_stage`；现场已见 after-market 未加载，身份合同要求其 loaded 且 idle。数据一致性与 `source_age` 未形成本次证据。更早一次只读停在 `source_age` 的记录早于来源时间代码修复，不能当作本次失败原因。未 apply。 |
+| 收尾后部署预检 | 现场验收 | 未写入 interrupted。现役 `run-local-service.sh market-runtime-preflight` 返回 `blocked` / `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。未跑 installer、未 promotion。 |
 | v1.10.5 自然盘后 | 现场验收 | 不得用 v1.10.3 成功记录或旧状态字节代替。 |
 | 盘后日历未知、异常退出、副作用报告 | 代码缺陷 | 上轮线索见下节；须在任务精确基线复现。已实现的日常增量与独立 weekly-audit 不得被包装成“全历史已完整”。 |
 | 现有牛哇旧请求回写、面板冲突、分页定位 | 代码缺陷 | `useNewowProduct.ts` 已有代次/取消/冲突处理；隔离脚本只是线索。黄金固定截点九组合可作为回归基础，不得改截点或冒充当前全品种。 |
@@ -76,7 +76,7 @@ develop 代码基线 `c0abb16f3e81b2443200f9f5591194afe793b3e9`。本文件只�
 - 原件缺口继续 `EVIDENCE_REQUIRED`：诊断 token、六组合评分/排序、AI 逐字 copy、目标/吸筹权威昨收与期货 owner parity、比较器 browser-final/tie golden。
 - 旧苏冰 failure 时间戳、Topic 其他成员送达人数。
 
-`develop` 相对 `v1.10.5` 已包含中断收尾、来源时间、closeout 配置、日常增量/weekly-audit、牛哇显示与黄金/59 品种数据记录等，不是口头上的“只修盘后”。工作 5 必须显式接受该 diff 并覆盖验收，或按正式流程拆分候选；不能假装额外改动不存在。此项保留为待裁决，不在本文猜测关闭。
+`develop` 相对 `v1.10.5` 已包含中断收尾、来源时间、closeout 配置、日常增量/weekly-audit、牛哇显示与黄金/59 品种数据记录等。owner 已接受该全量 diff 作为下一稳定版范围；工作 5 仍须在发布前冻结精确 commit 并覆盖验收，不能把范围接受写成已经发布。
 
 ## 待办分类
 
@@ -86,9 +86,9 @@ develop 代码基线 `c0abb16f3e81b2443200f9f5591194afe793b3e9`。本文件只�
 
 | 项 | 既有记录 | 下一步 |
 |---|---|---|
-| 旧盘后中断收尾 | `docs/DATA_CENTER.md` 收尾合同；OpenSpec `historical-data-maintenance`；develop 收尾提交自 `4dfa9133d` 起 | 取得现场只读授权后，用当前 develop 代码重绑身份并核对 `source_age` 与数据一致性 |
+| 旧盘后中断收尾 | `docs/DATA_CENTER.md` 收尾合同；OpenSpec `historical-data-maintenance` | 本次只读授权已消费且失败。下一步先使 after-market loaded 且 idle，再取得新的只读 closeout 意图；不重用本次命令、不加载服务冒充 idle |
 | 现版本自然盘后 | 本文件 Runtime 表；不得使用 `cece65929…` 旧成功字节 | 工作 5 发布并切换后再验收 |
-| 收尾后部署预检 | `deploy/README.md`；promotion 不把 `interrupted` 当作 `after_market_complete` | 工作 2 闭环后单独做 |
+| 收尾后部署预检 | `deploy/README.md`；今晚 preflight 为 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` | 工作 2 写入 interrupted 之后再预检；当前部署仍阻塞 |
 
 ### 代码缺陷
 
@@ -119,10 +119,10 @@ develop 代码基线 `c0abb16f3e81b2443200f9f5591194afe793b3e9`。本文件只�
 | 编号 | 工作 | 类型 | 目标 | 范围 | 前置 | 验收 | 阻塞对象 | 下一步 |
 |---|---|---|---|---|---|---|---|---|
 | 1 | 状态和范围收敛 | 文档 | 能直接看出现在做哪一项、还差什么 | 只改当前状态表述与任务对应；不改公式、产品边界、业务代码 | 无 | 打开本文件即可区分已完成/待验证/待修复/新需求 | 不阻塞发布本身；阻塞“继续混成一个大任务” | 本项随本文完成；下一项为工作 2 |
-| 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单独批准 apply 记 `interrupted` | 现场只读授权；使用已审收尾代码，不沿用过期计划 | 通过到哪一步、失败在哪一步、还要什么证据都写明 | 可能阻塞 Runtime 切换，不因此改已冻结候选 | 先只读重跑；禁止删状态文件、改时间、伪造成功、绕过预检 |
+| 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单独批准 apply 记 `interrupted` | 现场只读授权已消费 | 通过到身份绑定后失败；状态未写；部署仍阻塞且原因为 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` | 继续阻塞 Runtime 切换 | 不重试本次；after-market 加载与下一次 closeout 均需新意图 |
 | 3 | 盘后运行生命周期与错误判断 | 代码缺陷 | 降低下次故障恢复成本 | `coverage_source`/`after_market`/`runtime_entry`；日常增量与 weekly-audit 保持独立 | 工作 2 的生产写入不得与本项生产操作并行 | 隔离故障注入：日历未知不假跳过、普通异常不留可避免假运行、部分提交不假成功、未知结果不假只读、不自动重试 | 本轮稳定版后端主任务 | 先复现再修；不新增队列、不放宽写入、不重写数据中心 |
 | 4 | 现有牛哇加载与显示一致性 | 代码缺陷 | 现有公式下页面可靠 | 请求取消/代次/在途快照/面板/分页；策略/周期切换、历史分页、参考定位、冲突恢复 | 独立前端任务；与盘后生产写入解耦 | 旧响应不能恢复失效数据；分页和定位不改变参考统计口径 | 仅在合入同一候选时阻塞该稳定版 | 精确基线复现；不改三策略主动作、新版评分或参考价格口径 |
-| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2 未闭环可能阻塞切换，不回改已冻结候选 | 发布了哪个精确版本、部署了哪个版本、哪些自然 Gate 已完成/仍待验证全部清楚 | 本轮里程碑 | 先裁决是否接受当前 develop 全量 diff |
+| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2 未闭环可能阻塞切换；范围已接受全量 develop | 发布了哪个精确版本、部署了哪个版本、哪些自然 Gate 已完成/仍待验证全部清楚 | 本轮里程碑 | 工作 2 闭环后冻结精确 commit；本步不发布 |
 | 6 | 其他品种可用性与分批补数 | 数据缺口 | 事先知道可用范围和缺口 | 复用 readiness；按真实依赖去重；每批 MDS 读回和对应页面 | 稳定交付恢复后；每批真实查询/写入另需单次意图 | 每批有输入范围、结果和未关闭问题；未恢复品种明确披露 | 不阻塞无共享完整性问题的盘后稳定版 | 先出可用性清单，不边跑边扩范围 |
 | 7 | 牛哇新版综合解释 | 新版需求 | 把规则适配从显示修复中分开 | 新版本身份；先内核固定输入，再接口和页面 | 先批准新合同，含 `certExtra` | 同输入能解释新旧差异；分项与总分可核对；不改变主动作、参考交易或正式通知 | 独立后续候选 | Plan-only；本轮安排不构成实现或发布批准 |
 
@@ -130,15 +130,15 @@ develop 代码基线 `c0abb16f3e81b2443200f9f5591194afe793b3e9`。本文件只�
 
 ## 仍待人工裁决
 
-1. **稳定版候选范围**：当前 develop 相对 v1.10.5 已有盘后收尾、weekly-audit、牛哇显示和数据记录等额外改动。是接受该全量 diff 作为下一稳定版，还是拆出盘后最小候选，本文不猜测关闭。
+1. **稳定版候选范围**：owner 已接受当前 develop 全量 diff。精确冻结 commit 与验收矩阵仍属工作 5。
 2. **工作 4 是否进入本轮稳定版**：仅当范围与验收已满足同一候选条件时合入；否则独立后续版本。
 3. **上轮四项代码问题的生产归因**：在精确基线复现前，不写成现役 v1.10.5 故障根因。
-4. **并行 worktree `codex/repository-convergence-a`** 正在删除部分 `docs/tasks` 与 P6 证据文件。工作 1 不跟随这些删除；若要收敛历史文档，须另项审查，不能 quietly 并进本轮稳定版。
+4. **并行 worktree `codex/repository-convergence-a`** 仍存在。工作 2 不跟随其删除；若要收敛历史文档，须另项审查。
 
 证据不足的条目保持待裁决。临时 evidence 路径再次使用前须检查存在与完整性。
 
 ## 唯一下一步
 
-工作 1 范围整理完成。下一项是 **工作 2：用当前 develop 收尾代码做现场只读 closeout 核验**。该操作需要新的、范围明确的现场只读授权；本文件不构成该授权，也不构成 apply、发布或 Runtime promotion 批准。
+工作 2 本次只读已失败并停止：after-market 未加载，closeout 未越过身份绑定，旧运行仍是 2026-09-09 `current_run`，部署预检为 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。下一步是使现役 `com.guiyi.quant-after-market` loaded 且 idle，再取得 **新的** 只读 closeout 意图。本次授权已消费；不加载服务、不重跑本次命令、不 apply。
 
-工作 2、3、5、7 中涉及 Lane 3 的部分先 Plan-only。工作 3 的隔离复现可与工作 2 的现场只读分开排期，但两者都不得在未授权时连接生产或写入。
+工作 3 隔离复现仍可另开，但不得与下一次生产 closeout 并行。本文件不构成 launchctl load、apply、发布或 Runtime promotion 批准。
