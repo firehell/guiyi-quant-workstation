@@ -1,0 +1,3518 @@
+{
+  "cutoff": "2026-09-10T07:12:18.230379+00:00",
+  "today": "2026-09-10",
+  "week_start": "2026-09-07",
+  "runtime_roots": {
+    "api": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+    "web": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+    "live": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+    "alert": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+    "after-market": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1"
+  },
+  "loaded": {
+    "api": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+      "running": true
+    },
+    "web": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+      "running": true
+    },
+    "live": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+      "running": true
+    },
+    "alert": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+      "running": true
+    },
+    "after-market": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1",
+      "running": false
+    }
+  },
+  "runtime_head": "cdd72d7501227d8e7f905ea0b8a54c038b521a09",
+  "calendar": [
+    {
+      "exchange": "CZCE",
+      "day": "2026-09-10",
+      "is_trading_day": true,
+      "has_night_session": true
+    },
+    {
+      "exchange": "DCE",
+      "day": "2026-09-10",
+      "is_trading_day": true,
+      "has_night_session": true
+    },
+    {
+      "exchange": "GFEX",
+      "day": "2026-09-10",
+      "is_trading_day": true,
+      "has_night_session": false
+    },
+    {
+      "exchange": "INE",
+      "day": "2026-09-10",
+      "is_trading_day": true,
+      "has_night_session": true
+    },
+    {
+      "exchange": "SHFE",
+      "day": "2026-09-10",
+      "is_trading_day": true,
+      "has_night_session": true
+    }
+  ],
+  "events": [
+    {
+      "id": 27,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-07",
+      "frequency": "5m",
+      "bar_end": "2026-09-04T13:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-04T13:15:07.514240+00:00",
+      "notification_attempted_at": "2026-09-04T13:15:07.514240+00:00",
+      "created_at": "2026-09-04T13:15:07.543598+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：买入观察\nBar：2026-09-04T13:15:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 28,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-07",
+      "frequency": "5m",
+      "bar_end": "2026-09-07T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-07T01:15:21.783416+00:00",
+      "notification_attempted_at": "2026-09-07T01:15:21.783416+00:00",
+      "created_at": "2026-09-07T01:15:21.834784+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：买入观察\nBar：2026-09-07T01:15:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 29,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-07",
+      "frequency": "15m",
+      "bar_end": "2026-09-07T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-07T01:45:23.198706+00:00",
+      "notification_attempted_at": "2026-09-07T01:45:23.198706+00:00",
+      "created_at": "2026-09-07T01:45:23.223282+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：15m\n观察：买入观察\nBar：2026-09-07T01:45:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 30,
+      "symbol": "pf",
+      "contract": "PF2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-07T13:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-07T13:15:08.693295+00:00",
+      "notification_attempted_at": "2026-09-07T13:15:08.693295+00:00",
+      "created_at": "2026-09-07T13:15:09.202933+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "短纤",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】短纤（PF）\n合约：PF2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-07T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 31,
+      "symbol": "ag",
+      "contract": "AG2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-07T13:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-07T13:15:15.222713+00:00",
+      "notification_attempted_at": "2026-09-07T13:15:15.222713+00:00",
+      "created_at": "2026-09-07T13:15:16.135825+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "白银",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】白银（AG）\n合约：AG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-07T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 32,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-07T13:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-07T13:30:13.536867+00:00",
+      "notification_attempted_at": "2026-09-07T13:30:13.536867+00:00",
+      "created_at": "2026-09-07T13:30:14.053160+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-07T13:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 33,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-07T14:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-07T14:00:12.964963+00:00",
+      "notification_attempted_at": "2026-09-07T14:00:12.964963+00:00",
+      "created_at": "2026-09-07T14:00:13.465953+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-07T14:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 34,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-08",
+      "frequency": "5m",
+      "bar_end": "2026-09-07T14:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-07T14:45:26.741886+00:00",
+      "notification_attempted_at": "2026-09-07T14:45:26.741886+00:00",
+      "created_at": "2026-09-07T14:45:26.807233+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：卖出观察\nBar：2026-09-07T14:45:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 35,
+      "symbol": "ni",
+      "contract": "NI2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-07T17:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-07T17:00:06.906684+00:00",
+      "notification_attempted_at": "2026-09-07T17:00:06.906684+00:00",
+      "created_at": "2026-09-07T17:00:07.402429+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "镍",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】镍（NI）\n合约：NI2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-07T17:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 36,
+      "symbol": "ag",
+      "contract": "AG2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-07T18:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-07T18:00:03.685702+00:00",
+      "notification_attempted_at": "2026-09-07T18:00:03.685702+00:00",
+      "created_at": "2026-09-07T18:00:04.211436+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "白银",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】白银（AG）\n合约：AG2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-07T18:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 37,
+      "symbol": "sc",
+      "contract": "SC2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-07T18:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-07T18:15:03.897540+00:00",
+      "notification_attempted_at": "2026-09-07T18:15:03.897540+00:00",
+      "created_at": "2026-09-07T18:15:04.407823+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "原油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】原油（SC）\n合约：SC2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-07T18:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 38,
+      "symbol": "au",
+      "contract": "AU2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-07T18:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-07T18:15:04.503024+00:00",
+      "notification_attempted_at": "2026-09-07T18:15:04.503024+00:00",
+      "created_at": "2026-09-07T18:15:05.072883+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "黄金",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】黄金（AU）\n合约：AU2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-07T18:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 39,
+      "symbol": "sr",
+      "contract": "SR2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:15:10.646931+00:00",
+      "notification_attempted_at": "2026-09-08T01:15:10.646931+00:00",
+      "created_at": "2026-09-08T01:15:11.106749+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "白糖",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】白糖（SR）\n合约：SR2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 40,
+      "symbol": "ag",
+      "contract": "AG2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:15:12.500846+00:00",
+      "notification_attempted_at": "2026-09-08T01:15:12.500846+00:00",
+      "created_at": "2026-09-08T01:15:12.993313+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "白银",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】白银（AG）\n合约：AG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 41,
+      "symbol": "au",
+      "contract": "AU2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:15:14.571045+00:00",
+      "notification_attempted_at": "2026-09-08T01:15:14.571045+00:00",
+      "created_at": "2026-09-08T01:15:15.061340+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "黄金",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】黄金（AU）\n合约：AU2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 42,
+      "symbol": "eg",
+      "contract": "EG2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T01:15:22.692038+00:00",
+      "notification_attempted_at": "2026-09-08T01:15:22.692038+00:00",
+      "created_at": "2026-09-08T01:15:23.314200+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "乙二醇",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】乙二醇（EG）\n合约：EG2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 43,
+      "symbol": "pt",
+      "contract": "PT2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:15:29.536236+00:00",
+      "notification_attempted_at": "2026-09-08T01:15:29.536236+00:00",
+      "created_at": "2026-09-08T01:15:29.939364+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铂金",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铂金（PT）\n合约：PT2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 44,
+      "symbol": "rm",
+      "contract": "RM2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T01:30:08.129028+00:00",
+      "notification_attempted_at": "2026-09-08T01:30:08.129028+00:00",
+      "created_at": "2026-09-08T01:30:08.555336+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "菜粕",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】菜粕（RM）\n合约：RM2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 45,
+      "symbol": "sc",
+      "contract": "SC2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T01:30:19.724509+00:00",
+      "notification_attempted_at": "2026-09-08T01:30:19.724509+00:00",
+      "created_at": "2026-09-08T01:30:20.236490+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "原油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】原油（SC）\n合约：SC2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 46,
+      "symbol": "cu",
+      "contract": "CU2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:30:24.934808+00:00",
+      "notification_attempted_at": "2026-09-08T01:30:24.934808+00:00",
+      "created_at": "2026-09-08T01:30:25.444115+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铜",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铜（CU）\n合约：CU2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 47,
+      "symbol": "sn",
+      "contract": "SN2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:30:28.316441+00:00",
+      "notification_attempted_at": "2026-09-08T01:30:28.316441+00:00",
+      "created_at": "2026-09-08T01:30:28.786205+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "锡",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】锡（SN）\n合约：SN2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 48,
+      "symbol": "zn",
+      "contract": "ZN2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:30:30.339970+00:00",
+      "notification_attempted_at": "2026-09-08T01:30:30.339970+00:00",
+      "created_at": "2026-09-08T01:30:30.836946+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "锌",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】锌（ZN）\n合约：ZN2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 49,
+      "symbol": "pg",
+      "contract": "PG2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T01:30:34.154202+00:00",
+      "notification_attempted_at": "2026-09-08T01:30:34.154202+00:00",
+      "created_at": "2026-09-08T01:30:34.604180+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "液化石油气",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】液化石油气（PG）\n合约：PG2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 50,
+      "symbol": "pd",
+      "contract": "PD2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:30:36.076672+00:00",
+      "notification_attempted_at": "2026-09-08T01:30:36.076672+00:00",
+      "created_at": "2026-09-08T01:30:36.397471+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "钯金",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】钯金（PD）\n合约：PD2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 51,
+      "symbol": "cj",
+      "contract": "CJ2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:30:37.941657+00:00",
+      "notification_attempted_at": "2026-09-08T01:30:37.941657+00:00",
+      "created_at": "2026-09-08T01:30:38.264965+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "红枣",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】红枣（CJ）\n合约：CJ2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 52,
+      "symbol": "pk",
+      "contract": "PK2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:30:38.385680+00:00",
+      "notification_attempted_at": "2026-09-08T01:30:38.385680+00:00",
+      "created_at": "2026-09-08T01:30:38.812462+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "花生",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】花生（PK）\n合约：PK2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 53,
+      "symbol": "lh",
+      "contract": "LH2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T01:30:40.579445+00:00",
+      "notification_attempted_at": "2026-09-08T01:30:40.579445+00:00",
+      "created_at": "2026-09-08T01:30:41.050670+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "生猪",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】生猪（LH）\n合约：LH2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 54,
+      "symbol": "sa",
+      "contract": "SA2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:45:03.830590+00:00",
+      "notification_attempted_at": "2026-09-08T01:45:03.830590+00:00",
+      "created_at": "2026-09-08T01:45:04.199279+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "纯碱",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】纯碱（SA）\n合约：SA2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 55,
+      "symbol": "pf",
+      "contract": "PF2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:45:06.003573+00:00",
+      "notification_attempted_at": "2026-09-08T01:45:06.003573+00:00",
+      "created_at": "2026-09-08T01:45:06.434870+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "短纤",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】短纤（PF）\n合约：PF2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 56,
+      "symbol": "px",
+      "contract": "PX2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:45:06.514691+00:00",
+      "notification_attempted_at": "2026-09-08T01:45:06.514691+00:00",
+      "created_at": "2026-09-08T01:45:06.941831+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "对二甲苯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】对二甲苯（PX）\n合约：PX2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 57,
+      "symbol": "pr",
+      "contract": "PR2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:45:08.603464+00:00",
+      "notification_attempted_at": "2026-09-08T01:45:08.603464+00:00",
+      "created_at": "2026-09-08T01:45:08.966589+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "丙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】丙烯（PR）\n合约：PR2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 58,
+      "symbol": "sc",
+      "contract": "SC2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:45:10.769635+00:00",
+      "notification_attempted_at": "2026-09-08T01:45:10.769635+00:00",
+      "created_at": "2026-09-08T01:45:11.260655+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "原油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】原油（SC）\n合约：SC2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 59,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:45:11.327787+00:00",
+      "notification_attempted_at": "2026-09-08T01:45:11.327787+00:00",
+      "created_at": "2026-09-08T01:45:11.838528+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 60,
+      "symbol": "eg",
+      "contract": "EG2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:45:18.828792+00:00",
+      "notification_attempted_at": "2026-09-08T01:45:18.828792+00:00",
+      "created_at": "2026-09-08T01:45:19.282886+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "乙二醇",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】乙二醇（EG）\n合约：EG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 61,
+      "symbol": "m",
+      "contract": "M2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T01:45:20.854241+00:00",
+      "notification_attempted_at": "2026-09-08T01:45:20.854241+00:00",
+      "created_at": "2026-09-08T01:45:21.208870+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆粕",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆粕（M）\n合约：M2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 62,
+      "symbol": "v",
+      "contract": "V2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T01:45:22.477332+00:00",
+      "notification_attempted_at": "2026-09-08T01:45:22.477332+00:00",
+      "created_at": "2026-09-08T01:45:22.837249+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "pvc",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】pvc（V）\n合约：V2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 63,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-08",
+      "frequency": "5m",
+      "bar_end": "2026-09-08T01:55:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T01:55:04.179975+00:00",
+      "notification_attempted_at": "2026-09-08T01:55:04.179975+00:00",
+      "created_at": "2026-09-08T01:55:04.231784+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：卖出观察\nBar：2026-09-08T01:55:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 64,
+      "symbol": "sh",
+      "contract": "SH2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T02:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T02:00:04.480512+00:00",
+      "notification_attempted_at": "2026-09-08T02:00:04.480512+00:00",
+      "created_at": "2026-09-08T02:00:04.879653+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "烧碱",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】烧碱（SH）\n合约：SH2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T02:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 65,
+      "symbol": "b",
+      "contract": "B2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T02:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T02:00:22.006099+00:00",
+      "notification_attempted_at": "2026-09-08T02:00:22.006099+00:00",
+      "created_at": "2026-09-08T02:00:22.443603+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆二",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆二（B）\n合约：B2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T02:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 66,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-08",
+      "frequency": "5m",
+      "bar_end": "2026-09-08T02:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T02:00:36.862179+00:00",
+      "notification_attempted_at": "2026-09-08T02:00:36.862179+00:00",
+      "created_at": "2026-09-08T02:00:36.911607+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：卖出观察\nBar：2026-09-08T02:00:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 67,
+      "symbol": "si",
+      "contract": "SI2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T02:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T02:00:41.732333+00:00",
+      "notification_attempted_at": "2026-09-08T02:00:41.732333+00:00",
+      "created_at": "2026-09-08T02:00:42.147992+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "工业硅",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】工业硅（SI）\n合约：SI2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T02:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 68,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-08",
+      "frequency": "5m",
+      "bar_end": "2026-09-08T02:05:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T02:05:03.970761+00:00",
+      "notification_attempted_at": "2026-09-08T02:05:03.970761+00:00",
+      "created_at": "2026-09-08T02:05:04.005339+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：卖出观察\nBar：2026-09-08T02:05:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 69,
+      "symbol": "sn",
+      "contract": "SN2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T02:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T02:15:16.131625+00:00",
+      "notification_attempted_at": "2026-09-08T02:15:16.131625+00:00",
+      "created_at": "2026-09-08T02:15:16.595472+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "锡",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】锡（SN）\n合约：SN2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T02:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 70,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-08",
+      "frequency": "5m",
+      "bar_end": "2026-09-08T02:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T02:15:19.819646+00:00",
+      "notification_attempted_at": "2026-09-08T02:15:19.819646+00:00",
+      "created_at": "2026-09-08T02:15:19.850378+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：卖出观察\nBar：2026-09-08T02:15:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 71,
+      "symbol": "y",
+      "contract": "Y2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T02:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T02:15:22.579996+00:00",
+      "notification_attempted_at": "2026-09-08T02:15:22.579996+00:00",
+      "created_at": "2026-09-08T02:15:22.922412+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆油（Y）\n合约：Y2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T02:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 72,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-08",
+      "frequency": "5m",
+      "bar_end": "2026-09-08T02:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T02:45:23.898153+00:00",
+      "notification_attempted_at": "2026-09-08T02:45:23.898153+00:00",
+      "created_at": "2026-09-08T02:45:23.937363+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：卖出观察\nBar：2026-09-08T02:45:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 73,
+      "symbol": "pd",
+      "contract": "PD2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T02:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T02:45:27.753485+00:00",
+      "notification_attempted_at": "2026-09-08T02:45:27.753485+00:00",
+      "created_at": "2026-09-08T02:45:28.154644+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "钯金",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】钯金（PD）\n合约：PD2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T02:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 74,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T03:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T03:00:19.943951+00:00",
+      "notification_attempted_at": "2026-09-08T03:00:19.943951+00:00",
+      "created_at": "2026-09-08T03:00:19.962633+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：15m\n观察：卖出观察\nBar：2026-09-08T03:00:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 75,
+      "symbol": "ec",
+      "contract": "EC2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T03:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T03:00:27.534367+00:00",
+      "notification_attempted_at": "2026-09-08T03:00:27.534367+00:00",
+      "created_at": "2026-09-08T03:00:27.966194+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "集运欧线",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】集运欧线（EC）\n合约：EC2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T03:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 76,
+      "symbol": "rm",
+      "contract": "RM2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T03:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T03:15:07.126688+00:00",
+      "notification_attempted_at": "2026-09-08T03:15:07.126688+00:00",
+      "created_at": "2026-09-08T03:15:07.548739+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "菜粕",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】菜粕（RM）\n合约：RM2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T03:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 77,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T03:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T03:15:20.793637+00:00",
+      "notification_attempted_at": "2026-09-08T03:15:20.793637+00:00",
+      "created_at": "2026-09-08T03:15:20.811259+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：15m\n观察：卖出观察\nBar：2026-09-08T03:15:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 78,
+      "symbol": "lh",
+      "contract": "LH2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T03:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T03:30:28.766734+00:00",
+      "notification_attempted_at": "2026-09-08T03:30:28.766734+00:00",
+      "created_at": "2026-09-08T03:30:29.201851+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "生猪",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】生猪（LH）\n合约：LH2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T03:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 79,
+      "symbol": "b",
+      "contract": "B2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T05:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T05:45:11.691815+00:00",
+      "notification_attempted_at": "2026-09-08T05:45:11.691815+00:00",
+      "created_at": "2026-09-08T05:45:12.279332+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆二",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆二（B）\n合约：B2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T05:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 80,
+      "symbol": "bz",
+      "contract": "BZ2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T05:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T05:45:12.412082+00:00",
+      "notification_attempted_at": "2026-09-08T05:45:12.412082+00:00",
+      "created_at": "2026-09-08T05:45:13.007783+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "纯苯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】纯苯（BZ）\n合约：BZ2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T05:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 81,
+      "symbol": "bu",
+      "contract": "BU2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T05:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T05:45:17.781903+00:00",
+      "notification_attempted_at": "2026-09-08T05:45:17.781903+00:00",
+      "created_at": "2026-09-08T05:45:18.443413+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "沥青",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】沥青（BU）\n合约：BU2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T05:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 82,
+      "symbol": "fu",
+      "contract": "FU2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T05:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T05:45:19.320236+00:00",
+      "notification_attempted_at": "2026-09-08T05:45:19.320236+00:00",
+      "created_at": "2026-09-08T05:45:19.938263+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "燃料油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】燃料油（FU）\n合约：FU2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T05:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 83,
+      "symbol": "eb",
+      "contract": "EB2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T05:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T05:45:25.227185+00:00",
+      "notification_attempted_at": "2026-09-08T05:45:25.227185+00:00",
+      "created_at": "2026-09-08T05:45:25.843925+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "苯乙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】苯乙烯（EB）\n合约：EB2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T05:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 84,
+      "symbol": "m",
+      "contract": "M2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T05:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T05:45:28.443680+00:00",
+      "notification_attempted_at": "2026-09-08T05:45:28.443680+00:00",
+      "created_at": "2026-09-08T05:45:28.921301+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆粕",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆粕（M）\n合约：M2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T05:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 85,
+      "symbol": "ap",
+      "contract": "AP2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T05:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T05:45:33.657902+00:00",
+      "notification_attempted_at": "2026-09-08T05:45:33.657902+00:00",
+      "created_at": "2026-09-08T05:45:34.044735+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "苹果",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】苹果（AP）\n合约：AP2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T05:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 86,
+      "symbol": "au",
+      "contract": "AU2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T06:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T06:00:12.809033+00:00",
+      "notification_attempted_at": "2026-09-08T06:00:12.809033+00:00",
+      "created_at": "2026-09-08T06:00:13.334345+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "黄金",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】黄金（AU）\n合约：AU2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T06:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 87,
+      "symbol": "i",
+      "contract": "I2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T06:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T06:15:18.688061+00:00",
+      "notification_attempted_at": "2026-09-08T06:15:18.688061+00:00",
+      "created_at": "2026-09-08T06:15:19.053387+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铁矿石",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铁矿石（I）\n合约：I2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T06:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 88,
+      "symbol": "pg",
+      "contract": "PG2610",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T06:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T06:15:21.181319+00:00",
+      "notification_attempted_at": "2026-09-08T06:15:21.181319+00:00",
+      "created_at": "2026-09-08T06:15:21.656967+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "液化石油气",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】液化石油气（PG）\n合约：PG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T06:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 89,
+      "symbol": "b",
+      "contract": "B2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T06:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T06:30:08.790144+00:00",
+      "notification_attempted_at": "2026-09-08T06:30:08.790144+00:00",
+      "created_at": "2026-09-08T06:30:09.225940+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆二",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆二（B）\n合约：B2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T06:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 90,
+      "symbol": "cj",
+      "contract": "CJ2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T06:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T06:30:25.003591+00:00",
+      "notification_attempted_at": "2026-09-08T06:30:25.003591+00:00",
+      "created_at": "2026-09-08T06:30:25.349468+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "红枣",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】红枣（CJ）\n合约：CJ2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T06:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 91,
+      "symbol": "m",
+      "contract": "M2701",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T06:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T06:45:20.617623+00:00",
+      "notification_attempted_at": "2026-09-08T06:45:20.617623+00:00",
+      "created_at": "2026-09-08T06:45:20.976499+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆粕",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆粕（M）\n合约：M2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T06:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 92,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-08",
+      "frequency": "5m",
+      "bar_end": "2026-09-08T07:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T07:00:20.175511+00:00",
+      "notification_attempted_at": "2026-09-08T07:00:20.175511+00:00",
+      "created_at": "2026-09-08T07:00:20.206351+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：卖出观察\nBar：2026-09-08T07:00:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 93,
+      "symbol": "ps",
+      "contract": "PS2611",
+      "trading_day": "2026-09-08",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T07:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T07:00:24.213894+00:00",
+      "notification_attempted_at": "2026-09-08T07:00:24.213894+00:00",
+      "created_at": "2026-09-08T07:00:24.589844+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "多晶硅",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】多晶硅（PS）\n合约：PS2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T07:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 94,
+      "symbol": "rm",
+      "contract": "RM2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:15:05.338066+00:00",
+      "notification_attempted_at": "2026-09-08T13:15:05.338066+00:00",
+      "created_at": "2026-09-08T13:15:05.596916+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "菜粕",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】菜粕（RM）\n合约：RM2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 95,
+      "symbol": "bu",
+      "contract": "BU2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:15:10.239788+00:00",
+      "notification_attempted_at": "2026-09-08T13:15:10.239788+00:00",
+      "created_at": "2026-09-08T13:15:10.531883+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "沥青",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】沥青（BU）\n合约：BU2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 96,
+      "symbol": "cu",
+      "contract": "CU2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T13:15:10.596744+00:00",
+      "notification_attempted_at": "2026-09-08T13:15:10.596744+00:00",
+      "created_at": "2026-09-08T13:15:11.012254+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铜",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铜（CU）\n合约：CU2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 97,
+      "symbol": "sn",
+      "contract": "SN2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T13:15:12.607303+00:00",
+      "notification_attempted_at": "2026-09-08T13:15:12.607303+00:00",
+      "created_at": "2026-09-08T13:15:13.023749+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "锡",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】锡（SN）\n合约：SN2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 98,
+      "symbol": "i",
+      "contract": "I2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:15:14.980277+00:00",
+      "notification_attempted_at": "2026-09-08T13:15:14.980277+00:00",
+      "created_at": "2026-09-08T13:15:15.184379+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铁矿石",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铁矿石（I）\n合约：I2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 99,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:15:15.443672+00:00",
+      "notification_attempted_at": "2026-09-08T13:15:15.443672+00:00",
+      "created_at": "2026-09-08T13:15:15.484392+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：15m\n观察：卖出观察\nBar：2026-09-08T13:15:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 100,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T13:30:06.096882+00:00",
+      "notification_attempted_at": "2026-09-08T13:30:06.096882+00:00",
+      "created_at": "2026-09-08T13:30:06.196018+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T13:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 101,
+      "symbol": "fu",
+      "contract": "FU2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:30:06.940392+00:00",
+      "notification_attempted_at": "2026-09-08T13:30:06.940392+00:00",
+      "created_at": "2026-09-08T13:30:07.044389+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "燃料油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】燃料油（FU）\n合约：FU2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 102,
+      "symbol": "hc",
+      "contract": "HC2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:30:07.105067+00:00",
+      "notification_attempted_at": "2026-09-08T13:30:07.105067+00:00",
+      "created_at": "2026-09-08T13:30:07.217424+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "热轧卷板",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】热轧卷板（HC）\n合约：HC2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 103,
+      "symbol": "rb",
+      "contract": "RB2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:30:07.525928+00:00",
+      "notification_attempted_at": "2026-09-08T13:30:07.525928+00:00",
+      "created_at": "2026-09-08T13:30:07.646527+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "螺纹钢",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】螺纹钢（RB）\n合约：RB2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 104,
+      "symbol": "l",
+      "contract": "L2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:30:08.894939+00:00",
+      "notification_attempted_at": "2026-09-08T13:30:08.894939+00:00",
+      "created_at": "2026-09-08T13:30:08.993056+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "聚乙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】聚乙烯（L）\n合约：L2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 105,
+      "symbol": "v",
+      "contract": "V2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:30:09.539872+00:00",
+      "notification_attempted_at": "2026-09-08T13:30:09.539872+00:00",
+      "created_at": "2026-09-08T13:30:09.638364+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "pvc",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】pvc（V）\n合约：V2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 106,
+      "symbol": "pr",
+      "contract": "PR2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:45:04.848298+00:00",
+      "notification_attempted_at": "2026-09-08T13:45:04.848298+00:00",
+      "created_at": "2026-09-08T13:45:04.937547+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "丙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】丙烯（PR）\n合约：PR2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 107,
+      "symbol": "sn",
+      "contract": "SN2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:45:07.499732+00:00",
+      "notification_attempted_at": "2026-09-08T13:45:07.499732+00:00",
+      "created_at": "2026-09-08T13:45:07.610096+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "锡",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】锡（SN）\n合约：SN2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 108,
+      "symbol": "eg",
+      "contract": "EG2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T13:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T13:45:08.218620+00:00",
+      "notification_attempted_at": "2026-09-08T13:45:08.218620+00:00",
+      "created_at": "2026-09-08T13:45:08.310378+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "乙二醇",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】乙二醇（EG）\n合约：EG2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T13:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 109,
+      "symbol": "eb",
+      "contract": "EB2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T14:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T14:00:07.956428+00:00",
+      "notification_attempted_at": "2026-09-08T14:00:07.956428+00:00",
+      "created_at": "2026-09-08T14:00:08.052863+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "苯乙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】苯乙烯（EB）\n合约：EB2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T14:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 110,
+      "symbol": "c",
+      "contract": "C2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T14:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T14:15:07.450066+00:00",
+      "notification_attempted_at": "2026-09-08T14:15:07.450066+00:00",
+      "created_at": "2026-09-08T14:15:07.574027+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "玉米",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】玉米（C）\n合约：C2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T14:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 111,
+      "symbol": "v",
+      "contract": "V2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T14:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-08T14:30:08.975626+00:00",
+      "notification_attempted_at": "2026-09-08T14:30:08.975626+00:00",
+      "created_at": "2026-09-08T14:30:09.077215+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "pvc",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】pvc（V）\n合约：V2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-08T14:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 112,
+      "symbol": "ss",
+      "contract": "SS2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T16:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T16:30:03.908132+00:00",
+      "notification_attempted_at": "2026-09-08T16:30:03.908132+00:00",
+      "created_at": "2026-09-08T16:30:04.017511+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "不锈钢",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】不锈钢（SS）\n合约：SS2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T16:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 113,
+      "symbol": "au",
+      "contract": "AU2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-08T17:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-08T17:45:03.471010+00:00",
+      "notification_attempted_at": "2026-09-08T17:45:03.471010+00:00",
+      "created_at": "2026-09-08T17:45:03.627775+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "黄金",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】黄金（AU）\n合约：AU2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-08T17:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 114,
+      "symbol": "fg",
+      "contract": "FG2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T01:15:04.877610+00:00",
+      "notification_attempted_at": "2026-09-09T01:15:04.877610+00:00",
+      "created_at": "2026-09-09T01:15:05.127936+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "玻璃",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】玻璃（FG）\n合约：FG2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 115,
+      "symbol": "ag",
+      "contract": "AG2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T01:15:08.645639+00:00",
+      "notification_attempted_at": "2026-09-09T01:15:08.645639+00:00",
+      "created_at": "2026-09-09T01:15:09.173149+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "白银",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】白银（AG）\n合约：AG2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 116,
+      "symbol": "sc",
+      "contract": "SC2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:15:09.241188+00:00",
+      "notification_attempted_at": "2026-09-09T01:15:09.241188+00:00",
+      "created_at": "2026-09-09T01:15:09.781999+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "原油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】原油（SC）\n合约：SC2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 117,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T01:15:09.858891+00:00",
+      "notification_attempted_at": "2026-09-09T01:15:09.858891+00:00",
+      "created_at": "2026-09-09T01:15:10.300720+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 118,
+      "symbol": "bz",
+      "contract": "BZ2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:15:11.009968+00:00",
+      "notification_attempted_at": "2026-09-09T01:15:11.009968+00:00",
+      "created_at": "2026-09-09T01:15:11.309213+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "纯苯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】纯苯（BZ）\n合约：BZ2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 119,
+      "symbol": "fu",
+      "contract": "FU2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:15:12.171331+00:00",
+      "notification_attempted_at": "2026-09-09T01:15:12.171331+00:00",
+      "created_at": "2026-09-09T01:15:12.484410+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "燃料油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】燃料油（FU）\n合约：FU2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 120,
+      "symbol": "eb",
+      "contract": "EB2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:15:15.832609+00:00",
+      "notification_attempted_at": "2026-09-09T01:15:15.832609+00:00",
+      "created_at": "2026-09-09T01:15:16.161036+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "苯乙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】苯乙烯（EB）\n合约：EB2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 121,
+      "symbol": "pp",
+      "contract": "PP2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:15:18.469173+00:00",
+      "notification_attempted_at": "2026-09-09T01:15:18.469173+00:00",
+      "created_at": "2026-09-09T01:15:18.702197+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "聚丙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】聚丙烯（PP）\n合约：PP2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 122,
+      "symbol": "ps",
+      "contract": "PS2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:15:19.707452+00:00",
+      "notification_attempted_at": "2026-09-09T01:15:19.707452+00:00",
+      "created_at": "2026-09-09T01:15:19.907525+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "多晶硅",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】多晶硅（PS）\n合约：PS2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 123,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-09",
+      "frequency": "5m",
+      "bar_end": "2026-09-09T01:20:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:20:04.398635+00:00",
+      "notification_attempted_at": "2026-09-09T01:20:04.398635+00:00",
+      "created_at": "2026-09-09T01:20:04.472404+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：买入观察\nBar：2026-09-09T01:20:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 124,
+      "symbol": "sa",
+      "contract": "SA2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T01:30:05.047355+00:00",
+      "notification_attempted_at": "2026-09-09T01:30:05.047355+00:00",
+      "created_at": "2026-09-09T01:30:05.172594+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "纯碱",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】纯碱（SA）\n合约：SA2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 125,
+      "symbol": "pl",
+      "contract": "PL2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:30:13.207026+00:00",
+      "notification_attempted_at": "2026-09-09T01:30:13.207026+00:00",
+      "created_at": "2026-09-09T01:30:13.297727+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "瓶片",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】瓶片（PL）\n合约：PL2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 126,
+      "symbol": "l",
+      "contract": "L2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:30:21.689465+00:00",
+      "notification_attempted_at": "2026-09-09T01:30:21.689465+00:00",
+      "created_at": "2026-09-09T01:30:21.785103+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "聚乙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】聚乙烯（L）\n合约：L2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 127,
+      "symbol": "pg",
+      "contract": "PG2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:30:25.357032+00:00",
+      "notification_attempted_at": "2026-09-09T01:30:25.357032+00:00",
+      "created_at": "2026-09-09T01:30:25.470025+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "液化石油气",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】液化石油气（PG）\n合约：PG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 128,
+      "symbol": "y",
+      "contract": "Y2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T01:45:07.895592+00:00",
+      "notification_attempted_at": "2026-09-09T01:45:07.895592+00:00",
+      "created_at": "2026-09-09T01:45:07.988159+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆油（Y）\n合约：Y2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 129,
+      "symbol": "sf",
+      "contract": "SF2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T01:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T01:45:08.934162+00:00",
+      "notification_attempted_at": "2026-09-09T01:45:08.934162+00:00",
+      "created_at": "2026-09-09T01:45:09.049696+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "硅铁",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】硅铁（SF）\n合约：SF2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 130,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-09",
+      "frequency": "5m",
+      "bar_end": "2026-09-09T02:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T02:00:08.729169+00:00",
+      "notification_attempted_at": "2026-09-09T02:00:08.729169+00:00",
+      "created_at": "2026-09-09T02:00:08.755551+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：买入观察\nBar：2026-09-09T02:00:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 131,
+      "symbol": "y",
+      "contract": "Y2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T02:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T02:00:23.962859+00:00",
+      "notification_attempted_at": "2026-09-09T02:00:23.962859+00:00",
+      "created_at": "2026-09-09T02:00:24.056341+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆油（Y）\n合约：Y2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T02:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 132,
+      "symbol": "lh",
+      "contract": "LH2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T02:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T02:00:28.687205+00:00",
+      "notification_attempted_at": "2026-09-09T02:00:28.687205+00:00",
+      "created_at": "2026-09-09T02:00:28.792557+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "生猪",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】生猪（LH）\n合约：LH2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T02:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 133,
+      "symbol": "bu",
+      "contract": "BU2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T02:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T02:15:05.122809+00:00",
+      "notification_attempted_at": "2026-09-09T02:15:05.122809+00:00",
+      "created_at": "2026-09-09T02:15:05.220945+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "沥青",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】沥青（BU）\n合约：BU2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T02:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 134,
+      "symbol": "si",
+      "contract": "SI2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T02:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T02:15:08.611106+00:00",
+      "notification_attempted_at": "2026-09-09T02:15:08.611106+00:00",
+      "created_at": "2026-09-09T02:15:08.716694+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "工业硅",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】工业硅（SI）\n合约：SI2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T02:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 135,
+      "symbol": "b",
+      "contract": "B2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T02:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T02:45:04.868639+00:00",
+      "notification_attempted_at": "2026-09-09T02:45:04.868639+00:00",
+      "created_at": "2026-09-09T02:45:04.973722+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆二",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆二（B）\n合约：B2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T02:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 136,
+      "symbol": "rm",
+      "contract": "RM2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T03:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T03:00:04.031111+00:00",
+      "notification_attempted_at": "2026-09-09T03:00:04.031111+00:00",
+      "created_at": "2026-09-09T03:00:04.145381+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "菜粕",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】菜粕（RM）\n合约：RM2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T03:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 137,
+      "symbol": "ag",
+      "contract": "AG2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T03:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T03:00:08.162452+00:00",
+      "notification_attempted_at": "2026-09-09T03:00:08.162452+00:00",
+      "created_at": "2026-09-09T03:00:08.304168+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "白银",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】白银（AG）\n合约：AG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T03:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 138,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T03:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T03:00:13.397988+00:00",
+      "notification_attempted_at": "2026-09-09T03:00:13.397988+00:00",
+      "created_at": "2026-09-09T03:00:13.416465+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：15m\n观察：买入观察\nBar：2026-09-09T03:00:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 139,
+      "symbol": "m",
+      "contract": "M2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T03:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T03:00:14.479231+00:00",
+      "notification_attempted_at": "2026-09-09T03:00:14.479231+00:00",
+      "created_at": "2026-09-09T03:00:14.576684+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆粕",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆粕（M）\n合约：M2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T03:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 140,
+      "symbol": "eg",
+      "contract": "EG2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T03:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T03:15:07.069551+00:00",
+      "notification_attempted_at": "2026-09-09T03:15:07.069551+00:00",
+      "created_at": "2026-09-09T03:15:07.173530+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "乙二醇",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】乙二醇（EG）\n合约：EG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T03:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 141,
+      "symbol": "lc",
+      "contract": "LC2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T03:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T03:15:08.482487+00:00",
+      "notification_attempted_at": "2026-09-09T03:15:08.482487+00:00",
+      "created_at": "2026-09-09T03:15:08.599704+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "碳酸锂",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】碳酸锂（LC）\n合约：LC2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T03:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 142,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-09",
+      "frequency": "5m",
+      "bar_end": "2026-09-09T05:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T05:45:16.291424+00:00",
+      "notification_attempted_at": "2026-09-09T05:45:16.291424+00:00",
+      "created_at": "2026-09-09T05:45:16.327783+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：买入观察\nBar：2026-09-09T05:45:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 143,
+      "symbol": "ec",
+      "contract": "EC2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T05:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T05:45:20.065034+00:00",
+      "notification_attempted_at": "2026-09-09T05:45:20.065034+00:00",
+      "created_at": "2026-09-09T05:45:20.232164+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "集运欧线",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】集运欧线（EC）\n合约：EC2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T05:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 144,
+      "symbol": "eg",
+      "contract": "EG2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T06:00:07.950445+00:00",
+      "notification_attempted_at": "2026-09-09T06:00:07.950445+00:00",
+      "created_at": "2026-09-09T06:00:08.039339+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "乙二醇",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】乙二醇（EG）\n合约：EG2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T06:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 145,
+      "symbol": "l",
+      "contract": "L2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T06:00:13.596891+00:00",
+      "notification_attempted_at": "2026-09-09T06:00:13.596891+00:00",
+      "created_at": "2026-09-09T06:00:13.686035+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "聚乙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】聚乙烯（L）\n合约：L2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T06:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 146,
+      "symbol": "pt",
+      "contract": "PT2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:00:16.478341+00:00",
+      "notification_attempted_at": "2026-09-09T06:00:16.478341+00:00",
+      "created_at": "2026-09-09T06:00:16.568320+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铂金",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铂金（PT）\n合约：PT2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 147,
+      "symbol": "zn",
+      "contract": "ZN2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:15:08.208438+00:00",
+      "notification_attempted_at": "2026-09-09T06:15:08.208438+00:00",
+      "created_at": "2026-09-09T06:15:08.331975+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "锌",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】锌（ZN）\n合约：ZN2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 148,
+      "symbol": "eg",
+      "contract": "EG2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:15:08.910732+00:00",
+      "notification_attempted_at": "2026-09-09T06:15:08.910732+00:00",
+      "created_at": "2026-09-09T06:15:09.047322+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "乙二醇",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】乙二醇（EG）\n合约：EG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 149,
+      "symbol": "i",
+      "contract": "I2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:15:09.113626+00:00",
+      "notification_attempted_at": "2026-09-09T06:15:09.113626+00:00",
+      "created_at": "2026-09-09T06:15:09.235005+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铁矿石",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铁矿石（I）\n合约：I2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 150,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:15:09.448824+00:00",
+      "notification_attempted_at": "2026-09-09T06:15:09.448824+00:00",
+      "created_at": "2026-09-09T06:15:09.471731+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：15m\n观察：买入观察\nBar：2026-09-09T06:15:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 151,
+      "symbol": "cf",
+      "contract": "CF2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:30:04.634946+00:00",
+      "notification_attempted_at": "2026-09-09T06:30:04.634946+00:00",
+      "created_at": "2026-09-09T06:30:04.753883+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "棉花",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】棉花（CF）\n合约：CF2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 152,
+      "symbol": "pf",
+      "contract": "PF2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:30:05.470010+00:00",
+      "notification_attempted_at": "2026-09-09T06:30:05.470010+00:00",
+      "created_at": "2026-09-09T06:30:05.588280+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "短纤",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】短纤（PF）\n合约：PF2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 153,
+      "symbol": "hc",
+      "contract": "HC2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:30:08.679806+00:00",
+      "notification_attempted_at": "2026-09-09T06:30:08.679806+00:00",
+      "created_at": "2026-09-09T06:30:08.792709+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "热轧卷板",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】热轧卷板（HC）\n合约：HC2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 154,
+      "symbol": "ni",
+      "contract": "NI2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:30:08.928648+00:00",
+      "notification_attempted_at": "2026-09-09T06:30:08.928648+00:00",
+      "created_at": "2026-09-09T06:30:09.111740+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "镍",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】镍（NI）\n合约：NI2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 155,
+      "symbol": "rb",
+      "contract": "RB2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:30:09.378374+00:00",
+      "notification_attempted_at": "2026-09-09T06:30:09.378374+00:00",
+      "created_at": "2026-09-09T06:30:09.505158+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "螺纹钢",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】螺纹钢（RB）\n合约：RB2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 156,
+      "symbol": "l",
+      "contract": "L2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:30:11.026094+00:00",
+      "notification_attempted_at": "2026-09-09T06:30:11.026094+00:00",
+      "created_at": "2026-09-09T06:30:11.177336+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "聚乙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】聚乙烯（L）\n合约：L2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 157,
+      "symbol": "pg",
+      "contract": "PG2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:30:11.720595+00:00",
+      "notification_attempted_at": "2026-09-09T06:30:11.720595+00:00",
+      "created_at": "2026-09-09T06:30:11.832313+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "液化石油气",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】液化石油气（PG）\n合约：PG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 158,
+      "symbol": "fg",
+      "contract": "FG2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:45:04.456866+00:00",
+      "notification_attempted_at": "2026-09-09T06:45:04.456866+00:00",
+      "created_at": "2026-09-09T06:45:04.551813+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "玻璃",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】玻璃（FG）\n合约：FG2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 159,
+      "symbol": "pr",
+      "contract": "PR2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:45:05.032387+00:00",
+      "notification_attempted_at": "2026-09-09T06:45:05.032387+00:00",
+      "created_at": "2026-09-09T06:45:05.145671+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "丙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】丙烯（PR）\n合约：PR2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 160,
+      "symbol": "sa",
+      "contract": "SA2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:45:05.581165+00:00",
+      "notification_attempted_at": "2026-09-09T06:45:05.581165+00:00",
+      "created_at": "2026-09-09T06:45:05.682662+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "纯碱",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】纯碱（SA）\n合约：SA2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 161,
+      "symbol": "ta",
+      "contract": "TA2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:45:05.742653+00:00",
+      "notification_attempted_at": "2026-09-09T06:45:05.742653+00:00",
+      "created_at": "2026-09-09T06:45:05.842728+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "pta",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】pta（TA）\n合约：TA2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 162,
+      "symbol": "fu",
+      "contract": "FU2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:45:07.392758+00:00",
+      "notification_attempted_at": "2026-09-09T06:45:07.392758+00:00",
+      "created_at": "2026-09-09T06:45:07.521640+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "燃料油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】燃料油（FU）\n合约：FU2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 163,
+      "symbol": "ru",
+      "contract": "RU2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:45:08.186343+00:00",
+      "notification_attempted_at": "2026-09-09T06:45:08.186343+00:00",
+      "created_at": "2026-09-09T06:45:08.286937+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "天然橡胶",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】天然橡胶（RU）\n合约：RU2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 164,
+      "symbol": "v",
+      "contract": "V2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T06:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T06:45:09.918868+00:00",
+      "notification_attempted_at": "2026-09-09T06:45:09.918868+00:00",
+      "created_at": "2026-09-09T06:45:10.048613+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "pvc",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】pvc（V）\n合约：V2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T06:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 165,
+      "symbol": "a",
+      "contract": "A2611",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T07:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T07:00:05.970388+00:00",
+      "notification_attempted_at": "2026-09-09T07:00:05.970388+00:00",
+      "created_at": "2026-09-09T07:00:06.072682+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆一",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆一（A）\n合约：A2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T07:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 166,
+      "symbol": "cu",
+      "contract": "CU2610",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T07:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T07:00:11.367104+00:00",
+      "notification_attempted_at": "2026-09-09T07:00:11.367104+00:00",
+      "created_at": "2026-09-09T07:00:11.515128+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铜",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铜（CU）\n合约：CU2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T07:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 167,
+      "symbol": "cj",
+      "contract": "CJ2701",
+      "trading_day": "2026-09-09",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T07:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T07:00:16.564108+00:00",
+      "notification_attempted_at": "2026-09-09T07:00:16.564108+00:00",
+      "created_at": "2026-09-09T07:00:16.661518+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "红枣",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】红枣（CJ）\n合约：CJ2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T07:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 168,
+      "symbol": "fg",
+      "contract": "FG2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T13:15:03.187536+00:00",
+      "notification_attempted_at": "2026-09-09T13:15:03.187536+00:00",
+      "created_at": "2026-09-09T13:15:03.297019+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "玻璃",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】玻璃（FG）\n合约：FG2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 169,
+      "symbol": "px",
+      "contract": "PX2611",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T13:15:03.758800+00:00",
+      "notification_attempted_at": "2026-09-09T13:15:03.758800+00:00",
+      "created_at": "2026-09-09T13:15:03.862984+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "对二甲苯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】对二甲苯（PX）\n合约：PX2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 170,
+      "symbol": "ta",
+      "contract": "TA2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T13:15:04.614611+00:00",
+      "notification_attempted_at": "2026-09-09T13:15:04.614611+00:00",
+      "created_at": "2026-09-09T13:15:04.724235+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "pta",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】pta（TA）\n合约：TA2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 171,
+      "symbol": "hc",
+      "contract": "HC2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T13:15:06.131238+00:00",
+      "notification_attempted_at": "2026-09-09T13:15:06.131238+00:00",
+      "created_at": "2026-09-09T13:15:06.232499+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "热轧卷板",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】热轧卷板（HC）\n合约：HC2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 172,
+      "symbol": "rb",
+      "contract": "RB2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T13:15:06.796929+00:00",
+      "notification_attempted_at": "2026-09-09T13:15:06.796929+00:00",
+      "created_at": "2026-09-09T13:15:06.889048+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "螺纹钢",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】螺纹钢（RB）\n合约：RB2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 173,
+      "symbol": "i",
+      "contract": "I2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T13:15:07.520405+00:00",
+      "notification_attempted_at": "2026-09-09T13:15:07.520405+00:00",
+      "created_at": "2026-09-09T13:15:07.626442+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铁矿石",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铁矿石（I）\n合约：I2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 174,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-10",
+      "frequency": "5m",
+      "bar_end": "2026-09-09T13:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T13:15:07.780547+00:00",
+      "notification_attempted_at": "2026-09-09T13:15:07.780547+00:00",
+      "created_at": "2026-09-09T13:15:07.807040+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：5m\n观察：买入观察\nBar：2026-09-09T13:15:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 175,
+      "symbol": "pp",
+      "contract": "PP2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T13:15:08.416858+00:00",
+      "notification_attempted_at": "2026-09-09T13:15:08.416858+00:00",
+      "created_at": "2026-09-09T13:15:08.531943+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "聚丙烯",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】聚丙烯（PP）\n合约：PP2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 176,
+      "symbol": "v",
+      "contract": "V2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T13:15:08.566650+00:00",
+      "notification_attempted_at": "2026-09-09T13:15:08.566650+00:00",
+      "created_at": "2026-09-09T13:15:08.660384+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "pvc",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】pvc（V）\n合约：V2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T13:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 177,
+      "symbol": "pl",
+      "contract": "PL2611",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T13:30:07.061802+00:00",
+      "notification_attempted_at": "2026-09-09T13:30:07.061802+00:00",
+      "created_at": "2026-09-09T13:30:07.166541+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "瓶片",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】瓶片（PL）\n合约：PL2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T13:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 178,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T13:30:10.538803+00:00",
+      "notification_attempted_at": "2026-09-09T13:30:10.538803+00:00",
+      "created_at": "2026-09-09T13:30:10.644648+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T13:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 179,
+      "symbol": "c",
+      "contract": "C2611",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T13:30:13.330424+00:00",
+      "notification_attempted_at": "2026-09-09T13:30:13.330424+00:00",
+      "created_at": "2026-09-09T13:30:13.429463+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "玉米",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】玉米（C）\n合约：C2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T13:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 180,
+      "symbol": "cf",
+      "contract": "CF2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T13:45:03.283122+00:00",
+      "notification_attempted_at": "2026-09-09T13:45:03.283122+00:00",
+      "created_at": "2026-09-09T13:45:03.447125+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "棉花",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】棉花（CF）\n合约：CF2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T13:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 181,
+      "symbol": "sa",
+      "contract": "SA2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T13:45:04.299339+00:00",
+      "notification_attempted_at": "2026-09-09T13:45:04.299339+00:00",
+      "created_at": "2026-09-09T13:45:04.395128+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "纯碱",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】纯碱（SA）\n合约：SA2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T13:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 182,
+      "symbol": "p",
+      "contract": "P2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T13:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T13:45:08.590712+00:00",
+      "notification_attempted_at": "2026-09-09T13:45:08.590712+00:00",
+      "created_at": "2026-09-09T13:45:08.688563+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "棕榈油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】棕榈油（P）\n合约：P2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T13:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 183,
+      "symbol": "rm",
+      "contract": "RM2611",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T14:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T14:00:03.758832+00:00",
+      "notification_attempted_at": "2026-09-09T14:00:03.758832+00:00",
+      "created_at": "2026-09-09T14:00:03.866189+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "菜粕",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】菜粕（RM）\n合约：RM2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T14:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 184,
+      "symbol": "a",
+      "contract": "A2611",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T14:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T14:00:08.015640+00:00",
+      "notification_attempted_at": "2026-09-09T14:00:08.015640+00:00",
+      "created_at": "2026-09-09T14:00:08.123198+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆一",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆一（A）\n合约：A2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T14:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 185,
+      "symbol": "b",
+      "contract": "B2611",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T14:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T14:00:09.027727+00:00",
+      "notification_attempted_at": "2026-09-09T14:00:09.027727+00:00",
+      "created_at": "2026-09-09T14:00:09.176186+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆二",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆二（B）\n合约：B2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T14:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 186,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T14:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T14:00:09.818194+00:00",
+      "notification_attempted_at": "2026-09-09T14:00:09.818194+00:00",
+      "created_at": "2026-09-09T14:00:09.917953+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T14:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 187,
+      "symbol": "ru",
+      "contract": "RU2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T14:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T14:00:11.472620+00:00",
+      "notification_attempted_at": "2026-09-09T14:00:11.472620+00:00",
+      "created_at": "2026-09-09T14:00:11.560100+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "天然橡胶",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】天然橡胶（RU）\n合约：RU2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T14:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 188,
+      "symbol": "y",
+      "contract": "Y2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T14:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T14:00:13.040805+00:00",
+      "notification_attempted_at": "2026-09-09T14:00:13.040805+00:00",
+      "created_at": "2026-09-09T14:00:13.136186+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆油（Y）\n合约：Y2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T14:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 189,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T14:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T14:15:05.878223+00:00",
+      "notification_attempted_at": "2026-09-09T14:15:05.878223+00:00",
+      "created_at": "2026-09-09T14:15:05.977398+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T14:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 190,
+      "symbol": "m",
+      "contract": "M2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T14:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T14:15:08.563706+00:00",
+      "notification_attempted_at": "2026-09-09T14:15:08.563706+00:00",
+      "created_at": "2026-09-09T14:15:08.663113+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "豆粕",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】豆粕（M）\n合约：M2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T14:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 191,
+      "symbol": "ma",
+      "contract": "MA2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T14:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T14:30:04.290318+00:00",
+      "notification_attempted_at": "2026-09-09T14:30:04.290318+00:00",
+      "created_at": "2026-09-09T14:30:04.399424+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "甲醇",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】甲醇（MA）\n合约：MA2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T14:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 192,
+      "symbol": "jm",
+      "contract": "JM2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T14:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T14:30:08.692561+00:00",
+      "notification_attempted_at": "2026-09-09T14:30:08.692561+00:00",
+      "created_at": "2026-09-09T14:30:08.710354+00:00",
+      "rule_code": "htdy_original_15m",
+      "product_name": "焦煤",
+      "strategy": "火天大有",
+      "content": "火天大有：焦煤（JM）\n合约：JM2701　周期：15m\n观察：买入观察\nBar：2026-09-09T14:30:00+00:00\n仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 193,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T15:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T15:15:04.206085+00:00",
+      "notification_attempted_at": "2026-09-09T15:15:04.206085+00:00",
+      "created_at": "2026-09-09T15:15:04.315621+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T15:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 194,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T15:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T15:30:05.251051+00:00",
+      "notification_attempted_at": "2026-09-09T15:30:05.251051+00:00",
+      "created_at": "2026-09-09T15:30:05.361383+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T15:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 195,
+      "symbol": "au",
+      "contract": "AU2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T15:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-09T15:30:05.626219+00:00",
+      "notification_attempted_at": "2026-09-09T15:30:05.626219+00:00",
+      "created_at": "2026-09-09T15:30:05.752036+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "黄金",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】黄金（AU）\n合约：AU2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-09T15:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 196,
+      "symbol": "ag",
+      "contract": "AG2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T17:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T17:15:04.223313+00:00",
+      "notification_attempted_at": "2026-09-09T17:15:04.223313+00:00",
+      "created_at": "2026-09-09T17:15:04.384690+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "白银",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】白银（AG）\n合约：AG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T17:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 197,
+      "symbol": "au",
+      "contract": "AU2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-09T17:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-09T17:30:03.623534+00:00",
+      "notification_attempted_at": "2026-09-09T17:30:03.623534+00:00",
+      "created_at": "2026-09-09T17:30:03.786486+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "黄金",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】黄金（AU）\n合约：AU2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-09T17:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 198,
+      "symbol": "sa",
+      "contract": "SA2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T01:15:04.471412+00:00",
+      "notification_attempted_at": "2026-09-10T01:15:04.471412+00:00",
+      "created_at": "2026-09-10T01:15:04.595252+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "纯碱",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】纯碱（SA）\n合约：SA2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 199,
+      "symbol": "sh",
+      "contract": "SH2611",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T01:15:04.761437+00:00",
+      "notification_attempted_at": "2026-09-10T01:15:04.761437+00:00",
+      "created_at": "2026-09-10T01:15:04.950766+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "烧碱",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】烧碱（SH）\n合约：SH2611　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 200,
+      "symbol": "ta",
+      "contract": "TA2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T01:15:05.386483+00:00",
+      "notification_attempted_at": "2026-09-10T01:15:05.386483+00:00",
+      "created_at": "2026-09-10T01:15:05.494646+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "pta",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】pta（TA）\n合约：TA2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 201,
+      "symbol": "ag",
+      "contract": "AG2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-10T01:15:05.818598+00:00",
+      "notification_attempted_at": "2026-09-10T01:15:05.818598+00:00",
+      "created_at": "2026-09-10T01:15:05.969222+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "白银",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】白银（AG）\n合约：AG2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-10T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 202,
+      "symbol": "pg",
+      "contract": "PG2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T01:15:09.403085+00:00",
+      "notification_attempted_at": "2026-09-10T01:15:09.403085+00:00",
+      "created_at": "2026-09-10T01:15:09.527697+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "液化石油气",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】液化石油气（PG）\n合约：PG2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 203,
+      "symbol": "v",
+      "contract": "V2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T01:15:09.712756+00:00",
+      "notification_attempted_at": "2026-09-10T01:15:09.712756+00:00",
+      "created_at": "2026-09-10T01:15:09.824674+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "pvc",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】pvc（V）\n合约：V2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 204,
+      "symbol": "cj",
+      "contract": "CJ2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-10T01:15:10.675592+00:00",
+      "notification_attempted_at": "2026-09-10T01:15:10.675592+00:00",
+      "created_at": "2026-09-10T01:15:10.801778+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "红枣",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】红枣（CJ）\n合约：CJ2701　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-10T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 205,
+      "symbol": "sf",
+      "contract": "SF2611",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-10T01:15:10.963173+00:00",
+      "notification_attempted_at": "2026-09-10T01:15:10.963173+00:00",
+      "created_at": "2026-09-10T01:15:11.074788+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "硅铁",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】硅铁（SF）\n合约：SF2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-10T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 206,
+      "symbol": "ec",
+      "contract": "EC2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T01:15:11.349032+00:00",
+      "notification_attempted_at": "2026-09-10T01:15:11.349032+00:00",
+      "created_at": "2026-09-10T01:15:11.446589+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "集运欧线",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】集运欧线（EC）\n合约：EC2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T01:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 207,
+      "symbol": "sr",
+      "contract": "SR2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T01:30:05.889317+00:00",
+      "notification_attempted_at": "2026-09-10T01:30:05.889317+00:00",
+      "created_at": "2026-09-10T01:30:05.990369+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "白糖",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】白糖（SR）\n合约：SR2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 208,
+      "symbol": "al",
+      "contract": "AL2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-10T01:30:17.861610+00:00",
+      "notification_attempted_at": "2026-09-10T01:30:17.861610+00:00",
+      "created_at": "2026-09-10T01:30:17.976071+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "铝",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】铝（AL）\n合约：AL2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-10T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 209,
+      "symbol": "sm",
+      "contract": "SM2611",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:30:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-10T01:30:27.428207+00:00",
+      "notification_attempted_at": "2026-09-10T01:30:27.428207+00:00",
+      "created_at": "2026-09-10T01:30:27.549826+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "锰硅",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】锰硅（SM）\n合约：SM2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-10T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 210,
+      "symbol": "ur",
+      "contract": "UR2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:30:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T01:30:28.551324+00:00",
+      "notification_attempted_at": "2026-09-10T01:30:28.551324+00:00",
+      "created_at": "2026-09-10T01:30:28.720305+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "尿素",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】尿素（UR）\n合约：UR2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T01:30:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 211,
+      "symbol": "sc",
+      "contract": "SC2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:45:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T01:45:06.417943+00:00",
+      "notification_attempted_at": "2026-09-10T01:45:06.417943+00:00",
+      "created_at": "2026-09-10T01:45:06.530390+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "原油",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】原油（SC）\n合约：SC2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 212,
+      "symbol": "ps",
+      "contract": "PS2611",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T01:45:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-10T01:45:09.972608+00:00",
+      "notification_attempted_at": "2026-09-10T01:45:09.972608+00:00",
+      "created_at": "2026-09-10T01:45:10.072784+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "多晶硅",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】多晶硅（PS）\n合约：PS2611　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-10T01:45:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 213,
+      "symbol": "fg",
+      "contract": "FG2701",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T02:00:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T02:00:05.227955+00:00",
+      "notification_attempted_at": "2026-09-10T02:00:05.227955+00:00",
+      "created_at": "2026-09-10T02:00:05.326455+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "玻璃",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】玻璃（FG）\n合约：FG2701　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T02:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 214,
+      "symbol": "ss",
+      "contract": "SS2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T02:00:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-10T02:00:16.829895+00:00",
+      "notification_attempted_at": "2026-09-10T02:00:16.829895+00:00",
+      "created_at": "2026-09-10T02:00:16.930264+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "不锈钢",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】不锈钢（SS）\n合约：SS2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-10T02:00:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 215,
+      "symbol": "bu",
+      "contract": "BU2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T02:15:00+00:00",
+      "result_codes": [
+        "sell"
+      ],
+      "detected_at": "2026-09-10T02:15:05.888266+00:00",
+      "notification_attempted_at": "2026-09-10T02:15:05.888266+00:00",
+      "created_at": "2026-09-10T02:15:05.997664+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "沥青",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】沥青（BU）\n合约：BU2610　周期：15m\n空头预警：MACD 死叉，收盘价位于 EMA21 下方\nBar：2026-09-10T02:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    },
+    {
+      "id": 216,
+      "symbol": "ss",
+      "contract": "SS2610",
+      "trading_day": "2026-09-10",
+      "frequency": "15m",
+      "bar_end": "2026-09-10T02:15:00+00:00",
+      "result_codes": [
+        "buy"
+      ],
+      "detected_at": "2026-09-10T02:15:06.784120+00:00",
+      "notification_attempted_at": "2026-09-10T02:15:06.784120+00:00",
+      "created_at": "2026-09-10T02:15:06.910651+00:00",
+      "rule_code": "subing_ths_alert_15m_v1",
+      "product_name": "不锈钢",
+      "strategy": "苏冰预警",
+      "content": "【苏冰预警】不锈钢（SS）\n合约：SS2610　周期：15m\n多头预警：MACD 金叉，收盘价位于 EMA21 上方\nBar：2026-09-10T02:15:00+00:00\n请打开图表复核；仅供研究观察，不是交易指令。"
+    }
+  ],
+  "runtime_status": {
+    "schema_version": 6,
+    "last_processed_bar_at": "2026-09-10T02:15:00+00:00",
+    "last_processing_success_at": "2026-09-10T02:15:11.059377+00:00",
+    "last_processing_failure_at": "2026-09-04T18:30:02.865088+00:00",
+    "processing_error_type": null,
+    "last_event_at": "2026-09-10T02:15:06.784120+00:00",
+    "last_transport_attempt_at": "2026-09-10T02:15:06.784120+00:00",
+    "last_provider_accepted_at": "2026-09-10T02:15:06.784120+00:00",
+    "last_notification_failure_at": "2026-09-10T01:15:11.349032+00:00",
+    "notification_acknowledged_at": null,
+    "notification_error_type": "notification_transport_failed",
+    "consecutive_notification_failures": 0,
+    "rule_status": {
+      "htdy_original_15m": {
+        "last_evaluated_bar_at": "2026-09-10T02:15:00+00:00",
+        "last_event_at": "2026-09-09T14:30:08.692561+00:00",
+        "last_failure_at": null,
+        "error_type": null
+      },
+      "subing_ths_alert_15m_v1": {
+        "last_evaluated_bar_at": "2026-09-10T02:15:00+00:00",
+        "last_event_at": "2026-09-10T02:15:06.784120+00:00",
+        "last_failure_at": "2026-09-10T02:15:10.948426+00:00",
+        "error_type": "evaluation_failed"
+      }
+    }
+  },
+  "control_count": 190
+}
