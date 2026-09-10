@@ -269,7 +269,10 @@ loaded 变量仅从直接的 environment、inherited environment、default envir
 event triggers/descriptor 的 `=>` 不是环境赋值。重复块/键、畸形或嵌套环境块均拒绝。
 API/Alert 可保留既有绝对、无父路径跳转的 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`，只核验路径形状，不读取配置或发送通知。
 执行进程中的 PG* 覆盖亦拒绝。配置、launcher、五服务 plist 和 universe 的 inode/content/mtime/ctime 必须保持不变，
-且源文件早于原运行及当前消费者进程启动；连接 URL、Redis 连接参数、Canonical root 和 coverage 配置须匹配。
+且全部源必须早于原运行。`project.env`、exact-tag launcher、universe 与目标根目录元数据还必须早于
+最早当前消费者进程；分阶段安装可重写共享 launcher 副本与各服务 plist，但只有在共享 launcher
+字节与 exact-tag 源完全一致，且 installed plist 的参数、工作目录和所有显式环境项均与 loaded job 一致时才合格。
+连接 URL、Redis 连接参数、Canonical root 和 coverage 配置须匹配。
 目标 `.env` 必须不存在（含悬空链接），目标根目录也纳入早于进程的元数据检查，防止事后删除第二配置来源掩盖覆盖。
 这些检查及 fresh Live/Alert identity 在读取历史数据前和状态替换前重验；来源无法证明时停止，不回退到 `.env`。
 先非阻塞获取该 Runtime 的既有 after-market OS guard，再取得 Catalog maintenance lease；在新的

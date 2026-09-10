@@ -195,6 +195,7 @@ class RuntimeDataBinding:
             raise ValueError
         self.started_ns = int(started.timestamp() * 1_000_000_000)
         self.runtime_dir = Path.home() / "Library/Application Support/GuiyiQuant"
+        self.agent_dir = Path.home() / "Library/LaunchAgents"
         self.config_path = self.runtime_dir / "project.env"
         self._sources = self._read_sources()
         self._processes = self._read_processes()
@@ -224,7 +225,7 @@ class RuntimeDataBinding:
         paths += [self.root / "data/universe" / name for name in (
             "operational_products.txt", "active_products.txt", "retired_products.txt",
             "product_window_starts.csv", "active_history_floor.txt")]
-        paths += [Path.home() / "Library/LaunchAgents" / f"com.guiyi.quant-{name}.plist"
+        paths += [self.agent_dir / f"com.guiyi.quant-{name}.plist"
                   for name in ("api", "web", "live", "alert", "after-market")]
         result = {path: _snapshot(path, private=path == self.config_path) for path in paths}
         with _directory(self.root) as directory:
@@ -251,19 +252,40 @@ class RuntimeDataBinding:
         for name in ("api", "web", "live", "alert", "after-market"):
             label = f"com.guiyi.quant-{name}"
             arguments = ("/bin/bash", str(self.runtime_dir / "run-local-service.sh"), name)
-            path = Path.home() / "Library/LaunchAgents" / f"{label}.plist"
+            working_directory = Path.home() if name in {"api", "web"} else self.root
+            path = self.agent_dir / f"{label}.plist"
             payload = plistlib.loads(self._sources[path][0])
-            validate_environment(payload.get("EnvironmentVariables", {}), name)
-            if tuple(payload.get("ProgramArguments", ())) != arguments:
+            if not isinstance(payload, dict) or payload.get("Label") != label:
+                raise ValueError
+            installed_environment = payload.get("EnvironmentVariables", {})
+            validate_environment(installed_environment, name)
+            if (tuple(payload.get("ProgramArguments", ())) != arguments
+                    or payload.get("WorkingDirectory") != str(working_directory)
+                    or installed_environment.get("GUIYI_PROJECT_ROOT") != str(self.root)
+                    or installed_environment.get("GUIYI_RUNTIME_COMMIT") != self.commit):
                 raise ValueError
             output = _read_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{label}"], root=self.root)
-            for environment in _environments(output):
+            environments = _environments(output)
+            for environment in environments:
                 validate_environment(environment, name)
             if _arguments(output) != arguments:
                 raise ValueError
             fields = _verify_loaded_service(output, root=self.root, commit=self.commit,
                 allow_idle=name == "after-market", require_idle=name == "after-market",
-                working_directory=Path.home() if name in {"api", "web"} else self.root)
+                working_directory=working_directory)
+            matching_environments = [environment for environment in environments
+                if environment.get("GUIYI_PROJECT_ROOT") == str(self.root)
+                and environment.get("GUIYI_RUNTIME_COMMIT") == self.commit]
+            behavior_keys = {"PATH", "GUIYI_PROJECT_ROOT", "GUIYI_RUNTIME_COMMIT",
+                             "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"}
+            if (len(matching_environments) != 1
+                    or {key: value for key, value in matching_environments[0].items()
+                        if key in behavior_keys}
+                    != {key: value for key, value in installed_environment.items()
+                        if key in behavior_keys}
+                    or any(matching_environments[0].get(key) != value
+                           for key, value in installed_environment.items())):
+                raise ValueError
             if name != "after-market":
                 pid = fields["pid"]
                 start = _read_command(["/usr/bin/env", "TZ=UTC", "/bin/ps", "-p", pid, "-o", "lstart="], root=self.root)
@@ -272,8 +294,20 @@ class RuntimeDataBinding:
         return result
 
     def _validate_age(self):
-        cutoff = min(self.started_ns, *(item[1] for item in self._processes.values()))
-        if any(max(metadata[3:]) >= cutoff for _, metadata in self._sources.values()):
+        changed_at = {path: max(metadata[3:]) for path, (_, metadata) in self._sources.items()}
+        # Every source must precede the interrupted run. The staged installer may
+        # recopy only its shared launcher and individual plists after an earlier
+        # service started; their exact bytes/loaded definitions are checked above.
+        if any(timestamp >= self.started_ns for timestamp in changed_at.values()):
+            raise ValueError
+        install_artifacts = {self.runtime_dir / "run-local-service.sh"}
+        install_artifacts.update(
+            self.agent_dir / f"com.guiyi.quant-{name}.plist"
+            for name in ("api", "web", "live", "alert", "after-market")
+        )
+        consumer_started = min(item[1] for item in self._processes.values())
+        if any(timestamp >= consumer_started for path, timestamp in changed_at.items()
+               if path not in install_artifacts):
             raise ValueError
 
     def check(self, manager, session, redis, store, now) -> None:

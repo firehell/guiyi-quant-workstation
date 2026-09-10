@@ -68,7 +68,8 @@ def target(tmp_path, monkeypatch):
         label = f"com.guiyi.quant-{name}"
         args = ["/bin/bash", str(runtime_dir / "run-local-service.sh"), name]
         cwd = home if name in {"api", "web"} else root
-        env = {"GUIYI_PROJECT_ROOT": str(root), "GUIYI_RUNTIME_COMMIT": "a" * 40}
+        env = {"PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "GUIYI_PROJECT_ROOT": str(root), "GUIYI_RUNTIME_COMMIT": "a" * 40}
         (plists / f"{label}.plist").write_bytes(plistlib.dumps({"Label": label, "WorkingDirectory": str(cwd),
             "ProgramArguments": args, "EnvironmentVariables": env}))
         fields = 'state = not running\n' if name == "after-market" else f'state = running\npid = {100 + index}\n'
@@ -114,6 +115,57 @@ def test_binding_rejects_missing_explicit_configuration_and_loaded_override(targ
 def test_binding_rejects_data_override_in_loaded_service(target):
     target.outputs["com.guiyi.quant-live"] = target.outputs["com.guiyi.quant-live"].replace(
         "environment = {", "environment = {\nGUIYI_RUNTIME_ENV => /different/environment")
+    with pytest.raises(ValueError):
+        target.create()
+
+
+@pytest.mark.parametrize("field", ["root", "commit", "working_directory", "notification"])
+def test_binding_rejects_installed_plist_identity_that_differs_from_loaded_service(target, field):
+    path = Path.home() / "Library/LaunchAgents/com.guiyi.quant-live.plist"
+    payload = plistlib.loads(path.read_bytes())
+    if field == "root":
+        payload["EnvironmentVariables"]["GUIYI_PROJECT_ROOT"] = "/different/runtime"
+    elif field == "commit":
+        payload["EnvironmentVariables"]["GUIYI_RUNTIME_COMMIT"] = "b" * 40
+    elif field == "working_directory":
+        payload["WorkingDirectory"] = "/different/runtime"
+    else:
+        path = Path.home() / "Library/LaunchAgents/com.guiyi.quant-api.plist"
+        payload = plistlib.loads(path.read_bytes())
+        payload["EnvironmentVariables"]["GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"] = "/different/notification.json"
+    path.write_bytes(plistlib.dumps(payload))
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
+@pytest.mark.parametrize("service", ["live", "after-market"])
+@pytest.mark.parametrize("installed_label", [None, "com.guiyi.quant-other"])
+def test_binding_rejects_missing_or_wrong_installed_plist_label(target, service, installed_label):
+    path = Path.home() / "Library/LaunchAgents" / f"com.guiyi.quant-{service}.plist"
+    payload = plistlib.loads(path.read_bytes())
+    if installed_label is None:
+        payload.pop("Label")
+    else:
+        payload["Label"] = installed_label
+    path.write_bytes(plistlib.dumps(payload))
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
+@pytest.mark.parametrize("loaded_only", ["path", "notification"])
+def test_binding_rejects_behavior_environment_only_in_loaded_service(target, loaded_only):
+    label = "com.guiyi.quant-api"
+    path = Path.home() / "Library/LaunchAgents" / f"{label}.plist"
+    if loaded_only == "path":
+        payload = plistlib.loads(path.read_bytes())
+        payload["EnvironmentVariables"].pop("PATH")
+        path.write_bytes(plistlib.dumps(payload))
+    else:
+        target.outputs[label] = target.outputs[label].replace(
+            "environment = {", "environment = {\nGUIYI_ALERT_NOTIFICATION_CONFIG_PATH => /loaded/notification.json")
+
     with pytest.raises(ValueError):
         target.create()
 
@@ -233,6 +285,89 @@ def test_binding_rejects_sources_newer_than_interrupted_run(target):
     status.write_bytes(raw)
     with pytest.raises(ValueError):
         target.module.RuntimeDataBinding(target.root, "a" * 40, hashlib.sha256(raw).hexdigest())
+
+
+def _chronology_binding(tmp_path, *, stable_changed_at=100, install_changed_at=250):
+    from app.market_data.closeout_binding import RuntimeDataBinding
+
+    binding = object.__new__(RuntimeDataBinding)
+    binding.root = tmp_path / "runtime"
+    binding.runtime_dir = tmp_path / "home/Library/Application Support/GuiyiQuant"
+    binding.agent_dir = tmp_path / "home/Library/LaunchAgents"
+    binding.config_path = binding.runtime_dir / "project.env"
+    binding.started_ns = 300
+    binding._processes = {
+        name: (str(100 + index), 200)
+        for index, name in enumerate(("api", "web", "live", "alert"))
+    }
+
+    def snapshot(changed_at):
+        return b"", (1, 1, 1, changed_at, changed_at)
+
+    stable_paths = [
+        binding.config_path,
+        binding.root / "scripts/ops/macos/run-local-service.sh",
+        binding.root / "data/universe/operational_products.txt",
+        binding.root / "data/universe/active_products.txt",
+        binding.root / "data/universe/retired_products.txt",
+        binding.root / "data/universe/product_window_starts.csv",
+        binding.root / "data/universe/active_history_floor.txt",
+        binding.root,
+    ]
+    install_paths = [binding.runtime_dir / "run-local-service.sh"] + [
+        binding.agent_dir / f"com.guiyi.quant-{name}.plist"
+        for name in ("api", "web", "live", "alert", "after-market")
+    ]
+    binding._sources = {
+        **{path: snapshot(stable_changed_at) for path in stable_paths},
+        **{path: snapshot(install_changed_at) for path in install_paths},
+    }
+    return binding
+
+
+def test_binding_accepts_same_release_staged_install_artifacts_after_earliest_consumer(tmp_path):
+    binding = _chronology_binding(tmp_path)
+
+    binding._validate_age()
+
+
+def _set_changed_at(binding, path, changed_at):
+    content, metadata = binding._sources[path]
+    binding._sources[path] = content, (*metadata[:3], changed_at, changed_at)
+
+
+@pytest.mark.parametrize("source", ["config", "exact_launcher", "universe", "runtime_root"])
+def test_binding_rejects_stable_source_changed_after_earliest_consumer(tmp_path, source):
+    binding = _chronology_binding(tmp_path)
+    paths = {
+        "config": binding.config_path,
+        "exact_launcher": binding.root / "scripts/ops/macos/run-local-service.sh",
+        "universe": binding.root / "data/universe/operational_products.txt",
+        "runtime_root": binding.root,
+    }
+    _set_changed_at(binding, paths[source], 250)
+
+    with pytest.raises(ValueError):
+        binding._validate_age()
+
+
+@pytest.mark.parametrize("source", ["shared_launcher", "after_market_plist"])
+def test_binding_rejects_install_artifact_changed_at_interrupted_run(tmp_path, source):
+    binding = _chronology_binding(tmp_path)
+    path = (binding.runtime_dir / "run-local-service.sh" if source == "shared_launcher"
+            else binding.agent_dir / "com.guiyi.quant-after-market.plist")
+    _set_changed_at(binding, path, binding.started_ns)
+
+    with pytest.raises(ValueError):
+        binding._validate_age()
+
+
+def test_binding_rejects_shared_launcher_content_that_differs_from_exact_release(target):
+    path = Path.home() / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+    path.write_text("different launcher")
+
+    with pytest.raises(ValueError):
+        target.create()
 
 
 def test_binding_rejects_source_replacement_even_with_same_mtime(target):

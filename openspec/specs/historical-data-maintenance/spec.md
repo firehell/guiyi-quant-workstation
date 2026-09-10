@@ -12,8 +12,12 @@ Target database, Redis, Canonical and universe dependencies MUST be composed fro
 the executing checkout. The private configuration MUST be an owned 0600 file in an owned 0700 parent, with
 allowlisted literal assignments only. Launcher arguments and installed/loaded environments MUST exclude
 unsupported shell, HOME and libpq overrides; executing PG* overrides and any target dotenv file/link MUST block.
-Source files and target-directory identity/ctime/mtime MUST predate the interrupted run and current processes,
-remain unchanged, and be rechecked with actual dependency and fresh heartbeat identity before reads and replacement.
+All source files and target-directory identity/ctime/mtime MUST predate the interrupted run and remain unchanged.
+The private configuration, exact-tag launcher, universe sources and target-directory metadata MUST additionally
+predate the earliest current consumer process. A staged installer MAY recopy only the shared launcher and individual
+service plists after an earlier consumer started, provided that the shared launcher bytes equal the exact-tag source
+and each installed plist's arguments, working directory and explicit environment entries match the loaded job.
+These facts MUST be rechecked with actual dependency and fresh heartbeat identity before reads and replacement.
 
 The close-interrupted-after-market command MUST default to read-only and bind the exact existing Runtime root,
 commit and status-byte SHA-256. Five installed/loaded service identities, clean detached annotated release,
