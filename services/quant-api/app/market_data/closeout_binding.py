@@ -146,6 +146,38 @@ def _arguments(output: str) -> tuple[str, ...]:
     return tuple(values)
 
 
+def _environments(output: str) -> tuple[dict[str, str], ...]:
+    """Read only direct launchd environment scopes, never event descriptors."""
+    names = {"environment", "inherited environment", "default environment"}
+    scopes: list[tuple[str, str]] = []
+    result: dict[str, dict[str, str]] = {}
+    for raw in output.splitlines():
+        line = raw.strip()
+        if line.endswith((" = {", " => {")):
+            name, operator, _ = line.rsplit(" ", 2)
+            if not scopes and operator != "=":
+                raise ValueError
+            if len(scopes) == 2 and scopes[-1][0] in names:
+                raise ValueError
+            if name in names:
+                if len(scopes) != 1 or operator != "=" or name in result:
+                    raise ValueError
+                result[name] = {}
+            scopes.append((name, operator))
+        elif line == "}":
+            if not scopes:
+                raise ValueError
+            scopes.pop()
+        elif len(scopes) == 2 and scopes[-1][0] in names:
+            match = re.fullmatch(r"([^\s]+) => (.*)", line)
+            if match is None or match[1] in result[scopes[-1][0]]:
+                raise ValueError
+            result[scopes[-1][0]][match[1]] = match[2]
+    if scopes or "environment" not in result:
+        raise ValueError
+    return tuple(result.values())
+
+
 class RuntimeDataBinding:
     """Pins source identity in memory. No configuration or digest is publicly returned."""
 
@@ -208,22 +240,25 @@ class RuntimeDataBinding:
         allowed = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_CTYPE",
                    "XPC_SERVICE_NAME", "XPC_FLAGS", "OSLogRateLimit", "MallocSpaceEfficient",
                    "__CF_USER_TEXT_ENCODING", "SSH_AUTH_SOCK", "GUIYI_PROJECT_ROOT", "GUIYI_RUNTIME_COMMIT"}
-        def validate_environment(values):
-            if values.keys() - allowed or values.get("HOME", str(Path.home())) != str(Path.home()):
+        def validate_environment(values, service):
+            supported = allowed | ({"GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"} if service in {"api", "alert"} else set())
+            if values.keys() - supported or values.get("HOME", str(Path.home())) != str(Path.home()):
+                raise ValueError
+            notification = values.get("GUIYI_ALERT_NOTIFICATION_CONFIG_PATH")
+            if notification is not None and (not isinstance(notification, str) or not Path(notification).is_absolute()
+                    or ".." in Path(notification).parts or any(c in notification for c in "\n\r\t")):
                 raise ValueError
         for name in ("api", "web", "live", "alert", "after-market"):
             label = f"com.guiyi.quant-{name}"
             arguments = ("/bin/bash", str(self.runtime_dir / "run-local-service.sh"), name)
             path = Path.home() / "Library/LaunchAgents" / f"{label}.plist"
             payload = plistlib.loads(self._sources[path][0])
-            validate_environment(payload.get("EnvironmentVariables", {}))
+            validate_environment(payload.get("EnvironmentVariables", {}), name)
             if tuple(payload.get("ProgramArguments", ())) != arguments:
                 raise ValueError
             output = _read_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{label}"], root=self.root)
-            # Inspect every printed environment scope, including inherited values.
-            entries = re.findall(r"^\s*([^\s]+) => (.*)$", output, re.M)
-            for key, value in entries:
-                validate_environment({key: value})
+            for environment in _environments(output):
+                validate_environment(environment, name)
             if _arguments(output) != arguments:
                 raise ValueError
             fields = _verify_loaded_service(output, root=self.root, commit=self.commit,

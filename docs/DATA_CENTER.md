@@ -256,6 +256,9 @@ Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN
 数据依赖只能由目标 Runtime 的固定外部 `project.env` 与目标 universe 文件显式构造，不能使用执行 CLI 的开发配置。
 配置仅接受白名单字面赋值与先前赋值展开，不执行 shell；文件须自有 0600、父目录自有 0700。
 installed/loaded 启动参数必须指向相同受审 launcher；环境白名单拒绝 HOME 改址、shell startup、数据源与 libpq 覆盖。
+loaded 变量仅从直接的 environment、inherited environment、default environment 块读取；
+event triggers/descriptor 的 `=>` 不是环境赋值。重复块/键、畸形或嵌套环境块均拒绝。
+API/Alert 可保留既有绝对、无父路径跳转的 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`，只核验路径形状，不读取配置或发送通知。
 执行进程中的 PG* 覆盖亦拒绝。配置、launcher、五服务 plist 和 universe 的 inode/content/mtime/ctime 必须保持不变，
 且源文件早于原运行及当前消费者进程启动；连接 URL、Redis 连接参数、Canonical root 和 coverage 配置须匹配。
 目标 `.env` 必须不存在（含悬空链接），目标根目录也纳入早于进程的元数据检查，防止事后删除第二配置来源掩盖覆盖。
