@@ -10,9 +10,12 @@
 
 Target database, Redis, Canonical and universe dependencies MUST be composed from pinned target sources, not
 the executing checkout. The private configuration MUST be an owned 0600 file in an owned 0700 parent, with
-allowlisted literal assignments only. Repository-enumerated legacy keys with no active consumer MAY remain, but
-they MUST match an exact inert-key allowlist and MUST be removed before dependency composition. Unknown keys MUST
-still block; prefixes and wildcards MUST NOT expand the inert set. Launcher arguments and installed/loaded
+allowlisted literal assignments only. Repository-enumerated retired keys with no active consumer MAY remain only
+when they match an exact inert-key allowlist. Exact settings consumed by another active process but irrelevant to
+closeout MAY also remain on a separate enumerated allowlist. Both classes MUST be removed before closeout dependency
+composition, and neither MAY directly or indirectly expand into a dependency value. Only exact enumerated dependency
+source keys MAY participate in dependency expansion. Unknown keys MUST still block; prefixes and wildcards MUST NOT
+expand any allowlist. Launcher arguments and installed/loaded
 environments MUST exclude unsupported shell, HOME and libpq overrides; executing PG* overrides and any target
 dotenv file/link MUST block.
 All source files and target-directory identity/ctime/mtime MUST predate the interrupted run and remain unchanged.

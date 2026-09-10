@@ -126,6 +126,7 @@ def test_binding_accepts_known_inert_legacy_settings_without_exposing_them(targe
         "QYWX_WEBHOOK_URL", "RISK_MAX_DAILY_LOSS", "RISK_MAX_DRAWDOWN", "RISK_MAX_POSITION_RATIO",
         "VITE_WS_URL",
     )
+    assert target.module._RETIRED_INERT_SETTINGS == set(inert_names)
     target.config.write_text(
         target.config.read_text() + "".join(f"{name}=fixture-only\n" for name in inert_names)
     )
@@ -133,6 +134,58 @@ def test_binding_accepts_known_inert_legacy_settings_without_exposing_them(targe
     binding = target.create()
 
     assert not binding.settings.keys() & set(inert_names)
+
+
+def test_binding_drops_active_settings_that_closeout_does_not_consume(target):
+    ignored_names = (
+        "CORS_ORIGINS", "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",
+        "RQDATA_ADDR", "RQDATA_LICENSE_KEY", "RQDATA_PASSWORD", "RQDATA_USERNAME", "VITE_API_BASE_URL",
+        "VITE_MARKET_WS_URL", "VITE_PROXY_API_TARGET", "VITE_PROXY_WS_TARGET",
+    )
+    assert target.module._CLOSEOUT_IGNORED_SETTINGS == set(ignored_names)
+    target.config.write_text(
+        target.config.read_text() + "".join(f"{name}=fixture-only\n" for name in ignored_names)
+    )
+
+    binding = target.create()
+
+    assert not binding.settings.keys() & set(ignored_names)
+
+
+@pytest.mark.parametrize(("dependency", "inert_value"), [
+    ("DATABASE_URL", "postgresql+psycopg://fixture@127.0.0.1:15448/test"),
+    ("REDIS_URL", "redis://127.0.0.1:15449/0"),
+    ("POSTGRES_PASSWORD", "fixture-only"),
+    ("GUIYI_CANONICAL_DATA_ROOT", "/fixture/canonical"),
+    ("GUIYI_LIVE_RECOVERY_ENABLED", "1"),
+])
+def test_binding_rejects_dependency_value_expanded_from_inert_setting(target, dependency, inert_value):
+    lines = target.config.read_text().splitlines()
+    replaced = False
+    for index, line in enumerate(lines):
+        if line.startswith(f"{dependency}="):
+            lines[index] = f"{dependency}=$APP_SECRET_KEY"
+            replaced = True
+            break
+    assert replaced
+    target.config.write_text(f"APP_SECRET_KEY={inert_value}\n" + "\n".join(lines) + "\n")
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
+def test_binding_allows_dependency_sources_to_build_dependency_values(target):
+    target.config.write_text(
+        "POSTGRES_USER=fixture\nPOSTGRES_DB=test\nPOSTGRES_PORT=15448\n"
+        "DATABASE_URL=postgresql+psycopg://$POSTGRES_USER@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB\n"
+        "REDIS_URL=redis://127.0.0.1:15449/0\nPOSTGRES_PASSWORD=fixture-only\n"
+        f"GUIYI_CANONICAL_DATA_ROOT={target.root}/canonical\nGUIYI_LIVE_RECOVERY_ENABLED=1\n"
+    )
+
+    binding = target.create()
+
+    assert binding.settings["DATABASE_URL"] == "postgresql+psycopg://fixture@127.0.0.1:15448/test"
+    assert not binding.settings.keys() & {"POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PORT"}
 
 
 def test_binding_rejects_missing_explicit_configuration_and_loaded_override(target):
