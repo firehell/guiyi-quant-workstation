@@ -84,6 +84,31 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 
 离线比较实跑通过：主升浪444根指标与全部Marker一致、444个前缀稳定、6笔未舍入配对一致；目标/吸筹日线600根与周线119根HHV10/LLV10逐项相等，三态选择、状态卡和趋势面一致。7个输出文件连续两轮SHA-256不变。比较对象明确标为外部股票页面算术输入；不证明正式期货DTO/API、previous-close activation、owner/segment、回撤、OOS或Runtime。
 
+## Newow 综合解释 v2 固定同输入验证
+
+从仓库根执行，仅使用Git外已冻结的公开页面、三组`batch/quote`、18份趋势/震荡多周期响应和牛哇原内核。临时目录缺失时停止，不可联网补成另一快照。原始输入和DOM哈希见目录内`manifest.json`及[当前复核](docs/research/newow-current-review.md)。
+
+```bash
+snapshot=/private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2
+test "$(shasum -a 256 "$snapshot/manifest.json" | awk '{print $1}')" = \
+  6c4370142580e9b367c11d0a7980f407bff98d3ced827822cacd220a214215ff
+shasum -c "$snapshot/sha256.txt"
+test "$(shasum -a 256 "$snapshot/replay_composite.mjs" | awk '{print $1}')" = \
+  b04d4bcd466080bb2e361c1e204cbb59977a5c9066a12ff3219037c9e12e4a91
+test "$(shasum -a 256 "$snapshot/verify_and_compare.py" | awk '{print $1}')" = \
+  d5c9f588ddd00534fa41a1b94d6a21910cc0f9429e5f2fc42d00962eade5a4bc
+TZ=Asia/Shanghai node \
+  /private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2/replay_composite.mjs
+PYTHONPATH=packages/quant-core python3 \
+  /private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2/verify_and_compare.py
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/newow/test_composite_explanation.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
+  tests/newowExplanationPanel.test.ts tests/newowProductTypes.test.ts
+```
+
+离线原内核与独立检查通过：三个真实样本五项算术、MM1/R2、两例R3、`已清7根`逐值闭合；MM1的2/3根门槛、MM2-MM4及signalIndex降级见证通过。归一当前合同同输入0/3精确一致，确认是待版本化实现的规则差异；测试绿只证明旧合同未被本次文档任务破坏。另有固定见证证明`certExtra=-5`时页面五项82但总分77，后续实现不得隐藏该差值。
+
 ## 苏冰历史参考交易
 
 ```bash
