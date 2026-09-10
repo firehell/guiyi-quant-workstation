@@ -19,7 +19,44 @@ from app.market_data.coverage_source import DatabaseCoverageSource
 from app.market_data.operational_universe import load_operational_products
 
 
-def literal_settings(content: bytes) -> dict[str, str]:
+_DEPENDENCY_SETTINGS = {
+    "DATABASE_URL", "POSTGRES_PASSWORD", "REDIS_URL", "REDIS_PASSWORD",
+    "GUIYI_CANONICAL_DATA_ROOT", "GUIYI_LIVE_RECOVERY_ENABLED",
+}
+
+_DEPENDENCY_SOURCE_SETTINGS = _DEPENDENCY_SETTINGS | {
+    "POSTGRES_DB", "POSTGRES_PORT", "POSTGRES_USER", "REDIS_PORT",
+}
+
+_CLOSEOUT_IGNORED_SETTINGS = {
+    "CORS_ORIGINS", "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",
+    "RQDATA_ADDR", "RQDATA_LICENSE_KEY", "RQDATA_PASSWORD", "RQDATA_USERNAME", "VITE_API_BASE_URL",
+    "VITE_MARKET_WS_URL", "VITE_PROXY_API_TARGET", "VITE_PROXY_WS_TARGET",
+}
+
+_RETIRED_INERT_SETTINGS = {
+    "APP_ENV", "APP_PORT", "APP_SECRET_KEY", "BACKTEST_DATA_PATH", "BACKTEST_MAX_WORKERS",
+    "BACKTEST_RESULT_PATH", "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED",
+    "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH", "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET",
+    "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED", "GUIYI_DATA_CORE_V2_EOD_ENABLED",
+    "GUIYI_DATA_CORE_V2_LIVE_DECISION_ENABLED",
+    "GUIYI_DATA_CORE_V2_RETENTION_SCHEDULER_ENABLED", "GUIYI_DATA_CORE_V2_REVIEW_ENABLED",
+    "GUIYI_DATA_SOURCE_FALLBACKS", "GUIYI_DATA_SOURCE_PRIMARY", "GUIYI_HTDY_S610_ACTIVATION_RECEIPT",
+    "GUIYI_HTDY_S610_APPROVAL_C2_HASH", "GUIYI_HTDY_S610_APPROVAL_C2_RECEIPT",
+    "GUIYI_HTDY_S610_APPROVAL_C2_SIGNATURE", "GUIYI_HTDY_S610_APPROVAL_C_BUNDLE",
+    "GUIYI_HTDY_S610_APPROVAL_C_HASH", "GUIYI_HTDY_S610_APPROVAL_C_RECEIPT",
+    "GUIYI_HTDY_S610_APPROVAL_C_SIGNATURE", "GUIYI_HTDY_S610_APPROVED_SIGNERS",
+    "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED", "GUIYI_HTDY_S610_OUTPUT_DIR",
+    "GUIYI_HTDY_S610_PHASE", "GUIYI_HTDY_S610_REQUIRED", "GUIYI_LIVE_RUNTIME_ENABLED",
+    "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH", "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET",
+    "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+    "GUIYI_SUBING_OBSERVATION_ROOT", "GUIYI_WECHAT_AUTOSEND_ENABLED", "LOG_FILE", "LOG_LEVEL",
+    "QYWX_WEBHOOK_URL", "RISK_MAX_DAILY_LOSS", "RISK_MAX_DRAWDOWN", "RISK_MAX_POSITION_RATIO",
+    "VITE_WS_URL",
+}
+
+
+def literal_settings(content: bytes, *, dependency_sources: set[str] | None = None) -> dict[str, str]:
     """A deliberately narrow subset of launcher assignments; unsupported shell fails closed."""
     values: dict[str, str] = {}
     for line in content.decode("utf-8").splitlines():
@@ -43,9 +80,11 @@ def literal_settings(content: bytes) -> dict[str, str]:
         if not single:
             def expand(match):
                 key = match[1] or match[2]
-                if key not in values:
+                if (key not in values or dependency_sources is not None
+                        and match_name in dependency_sources and key not in dependency_sources):
                     raise ValueError
                 return values[key]
+            match_name = match[1]
             value = re.sub(r"\$\{([A-Z][A-Z0-9_]*)\}|\$([A-Z][A-Z0-9_]*)", expand, value)
             if "$" in value:
                 raise ValueError
@@ -200,15 +239,15 @@ class RuntimeDataBinding:
         self._sources = self._read_sources()
         self._processes = self._read_processes()
         self._validate_age()
-        self.settings = literal_settings(self._sources[self.config_path][0])
-        allowed_settings = {"DATABASE_URL", "POSTGRES_PASSWORD", "REDIS_URL", "REDIS_PASSWORD",
-            "GUIYI_CANONICAL_DATA_ROOT", "GUIYI_LIVE_RECOVERY_ENABLED", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",
-            "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "RQDATA_LICENSE_KEY", "RQDATA_USERNAME", "RQDATA_PASSWORD",
-            "RQDATA_ADDR", "CORS_ORIGINS", "VITE_API_BASE_URL", "VITE_MARKET_WS_URL", "VITE_PROXY_API_TARGET",
-            "VITE_PROXY_WS_TARGET", "POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PORT", "REDIS_PORT"}
-        if self.settings.keys() - allowed_settings:
+        parsed_settings = literal_settings(
+            self._sources[self.config_path][0], dependency_sources=_DEPENDENCY_SOURCE_SETTINGS,
+        )
+        if (parsed_settings.keys() - _DEPENDENCY_SOURCE_SETTINGS - _CLOSEOUT_IGNORED_SETTINGS
+                - _RETIRED_INERT_SETTINGS):
             raise ValueError
-        required = {"DATABASE_URL", "REDIS_URL", "POSTGRES_PASSWORD", "GUIYI_CANONICAL_DATA_ROOT", "GUIYI_LIVE_RECOVERY_ENABLED"}
+        self.settings = {key: value for key, value in parsed_settings.items() if key in _DEPENDENCY_SETTINGS}
+        required = {"DATABASE_URL", "REDIS_URL", "POSTGRES_PASSWORD", "GUIYI_CANONICAL_DATA_ROOT",
+                    "GUIYI_LIVE_RECOVERY_ENABLED"}
         if (not required <= self.settings.keys() or not self.settings["POSTGRES_PASSWORD"]
                 or self.settings["GUIYI_LIVE_RECOVERY_ENABLED"] != "1"):
             raise ValueError
