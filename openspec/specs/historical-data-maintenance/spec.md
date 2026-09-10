@@ -10,8 +10,11 @@
 
 Target database, Redis, Canonical and universe dependencies MUST be composed from pinned target sources, not
 the executing checkout. The private configuration MUST be an owned 0600 file in an owned 0700 parent, with
-allowlisted literal assignments only. Launcher arguments and installed/loaded environments MUST exclude
-unsupported shell, HOME and libpq overrides; executing PG* overrides and any target dotenv file/link MUST block.
+allowlisted literal assignments only. Repository-enumerated legacy keys with no active consumer MAY remain, but
+they MUST match an exact inert-key allowlist and MUST be removed before dependency composition. Unknown keys MUST
+still block; prefixes and wildcards MUST NOT expand the inert set. Launcher arguments and installed/loaded
+environments MUST exclude unsupported shell, HOME and libpq overrides; executing PG* overrides and any target
+dotenv file/link MUST block.
 All source files and target-directory identity/ctime/mtime MUST predate the interrupted run and remain unchanged.
 The private configuration, exact-tag launcher, universe sources and target-directory metadata MUST additionally
 predate the earliest current consumer process. A staged installer MAY recopy only the shared launcher and individual

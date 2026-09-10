@@ -106,6 +106,35 @@ def test_binding_constructs_target_dependencies_not_executing_environment(target
         client.close()
 
 
+def test_binding_accepts_known_inert_legacy_settings_without_exposing_them(target):
+    inert_names = (
+        "APP_ENV", "APP_PORT", "APP_SECRET_KEY", "BACKTEST_DATA_PATH", "BACKTEST_MAX_WORKERS",
+        "BACKTEST_RESULT_PATH", "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED",
+        "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH", "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET",
+        "GUIYI_AFTER_MARKET_AUTOMATION_ENABLED", "GUIYI_DATA_CORE_V2_EOD_ENABLED",
+        "GUIYI_DATA_CORE_V2_LIVE_DECISION_ENABLED", "GUIYI_DATA_CORE_V2_RETENTION_SCHEDULER_ENABLED",
+        "GUIYI_DATA_CORE_V2_REVIEW_ENABLED", "GUIYI_DATA_SOURCE_FALLBACKS", "GUIYI_DATA_SOURCE_PRIMARY",
+        "GUIYI_HTDY_S610_ACTIVATION_RECEIPT", "GUIYI_HTDY_S610_APPROVAL_C2_HASH",
+        "GUIYI_HTDY_S610_APPROVAL_C2_RECEIPT", "GUIYI_HTDY_S610_APPROVAL_C2_SIGNATURE",
+        "GUIYI_HTDY_S610_APPROVAL_C_BUNDLE", "GUIYI_HTDY_S610_APPROVAL_C_HASH",
+        "GUIYI_HTDY_S610_APPROVAL_C_RECEIPT", "GUIYI_HTDY_S610_APPROVAL_C_SIGNATURE",
+        "GUIYI_HTDY_S610_APPROVED_SIGNERS", "GUIYI_HTDY_S610_BOUNDED_WECOM_ENABLED",
+        "GUIYI_HTDY_S610_OUTPUT_DIR", "GUIYI_HTDY_S610_PHASE", "GUIYI_HTDY_S610_REQUIRED",
+        "GUIYI_LIVE_RUNTIME_ENABLED", "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_HASH",
+        "GUIYI_LIVE_SIGNAL_EVENTS_APPROVAL_PACKET", "GUIYI_LIVE_SIGNAL_EVENTS_ENABLED",
+        "GUIYI_SUBING_OBSERVATION_ROOT", "GUIYI_WECHAT_AUTOSEND_ENABLED", "LOG_FILE", "LOG_LEVEL",
+        "QYWX_WEBHOOK_URL", "RISK_MAX_DAILY_LOSS", "RISK_MAX_DRAWDOWN", "RISK_MAX_POSITION_RATIO",
+        "VITE_WS_URL",
+    )
+    target.config.write_text(
+        target.config.read_text() + "".join(f"{name}=fixture-only\n" for name in inert_names)
+    )
+
+    binding = target.create()
+
+    assert not binding.settings.keys() & set(inert_names)
+
+
 def test_binding_rejects_missing_explicit_configuration_and_loaded_override(target):
     target.config.write_text(target.config.read_text().replace("REDIS_URL=redis://127.0.0.1:15449/0\n", ""))
     with pytest.raises(ValueError):
@@ -184,8 +213,9 @@ def test_binding_rejects_non_private_config_parent(target):
         target.create()
 
 
-def test_binding_rejects_launcher_variable_in_config(target):
-    target.config.write_text(target.config.read_text() + "PROJECT_ROOT=/different/runtime\n")
+@pytest.mark.parametrize("key", ["PROJECT_ROOT", "GUIYI_HTDY_S610_UNREVIEWED"])
+def test_binding_rejects_unknown_config_without_prefix_allowance(target, key):
+    target.config.write_text(target.config.read_text() + f"{key}=fixture-only\n")
     with pytest.raises(ValueError):
         target.create()
 

@@ -264,6 +264,9 @@ Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN
 共享恢复保护开启、盘后进程明确 idle。只处理先前自然日的合法 `current_run`，不停止进程、不创建缺失锁。
 数据依赖只能由目标 Runtime 的固定外部 `project.env` 与目标 universe 文件显式构造，不能使用执行 CLI 的开发配置。
 配置仅接受白名单字面赋值与先前赋值展开，不执行 shell；文件须自有 0600、父目录自有 0700。
+现场历史配置中仓库已明确识别且当前无 active consumer 的旧变量名可以存在，但必须命中精确的 inert
+键白名单，并在依赖组合前全部剔除；其值不得进入 PostgreSQL、Redis、Canonical、provider 或 Runtime
+构造。任何未识别键仍 fail-closed，不能用前缀或通配规则扩大该集合。
 installed/loaded 启动参数必须指向相同受审 launcher；环境白名单拒绝 HOME 改址、shell startup、数据源与 libpq 覆盖。
 loaded 变量仅从直接的 environment、inherited environment、default environment 块读取；
 event triggers/descriptor 的 `=>` 不是环境赋值。重复块/键、畸形或嵌套环境块均拒绝。
