@@ -206,6 +206,18 @@
   `/private/tmp/newow-au-metadata-insert-20260909-one/apply-result.json`。
   上述两次 mutation 执行代码基线 `951d310df7bba7ac95597f1c77c658afac231be6`；168 更正包装器隔离测试
   9 passed，原生 bounded metadata 本轮 60 passed，独立 Review 通过。这些测试不证明页面恢复。
+- 2026-09-10 其余 59 品种的 Calendar/Session 元数据恢复 `COMPLETED`。在
+  `a53389cc51338b47c06fc44bdf1d060a08c8ce87`，完整 RQData Future inventory 的 11,272 行原文进入
+  plan/hash/recheck；GFEX `2026-09-14/15` 由 LC/PD/PS/PT/SI 全品种同日证据确认无夜盘。
+  精确计划 `fadb78b7adc3677187bd9129e158fbe45dc9deec49b7b92dc88e26184522e876` 仅新增 8 个逻辑请求、
+  4 个来源窗口且无重试；59 批实际插入 683 个 Calendar、8,863 个 Session 品种日期、33,841 条
+  Session 行，并逐批独立回读。最终 59/59 fresh native plan 的 Calendar/Session 剩余唯一缺口均为 0；
+  累计 2,052 个 Calendar 冲突修复、1,179 个 Contract 身份、AU Session、MainContractMap、全
+  Dataset/Partition 行 hash 与 Canonical stat 指纹均未漂移，无 halt/unknown。最终结果
+  `/private/tmp/newow-59-metadata-recovery-v6-20260910/execution/readbacks/v6-20260910T051819509504.json`
+  SHA256 `004edb82e5a16590cd3e1ddd64ad16bdde4a9dd9bb48a4cbefc8eb7f53b2a3c9`；独立生产只读复核
+  `2cf43f0f5eb13ccc5c120ffb645bfe845d507e8797935040d490f4c9958da0de`，执行 3,734 次 SELECT、
+  0 SQL 写入、0 provider 调用。本结论只关闭元数据恢复，不证明分钟历史或九组合页面已经恢复。
 - 本轮只读核实五项 installed/loaded Runtime 同为 `v1.10.5@cdd72d750`，API/Web/Live/Alert running、
   After-market loaded、当前 not running，未发现旧 v1.10.4 根进程引用；本任务未重复切换。随后截至 `2026-09-08T07:00:00.000001Z`
   的 AU 真实矩阵审计返回 `PREFLIGHT_FAILED`，结果文件为空，仅保留通用错误码，不能声称矩阵已完成或定位真实原因。
