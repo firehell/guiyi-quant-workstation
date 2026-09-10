@@ -25,4 +25,4 @@
 
 涉及 `storage.py`、`coverage_source.py`、`composition.py`、`closeout_binding.py` 和相关测试。当前 closeout 源码及测试已有其他任务的未提交修改；实施前必须接续其已完成基线，不能覆盖或顺手重构。
 
-本 change 当前只有设计。性能验收只使用隔离 DB 和临时目录，不授权生产连接、数据写入、closeout apply 或 Runtime 切换。
+本 change 已完成实现、定向验证与独立 Review；全量类型检查仍有两份未改文件的既有错误。查询计数验收只使用隔离 DB 和临时目录，不代表生产墙钟性能，不授权生产连接、数据写入、closeout apply 或 Runtime 切换。
