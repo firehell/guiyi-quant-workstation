@@ -20,6 +20,7 @@ from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
     INTRADAY_DERIVED_FREQUENCIES,
+    sum_decimal_exact,
 )
 
 
@@ -162,11 +163,11 @@ def aggregate_bucket(
         high=max(bar.high for bar in bars),
         low=min(bar.low for bar in bars),
         close=last.close,
-        volume=sum((bar.volume for bar in bars), start=Decimal(0)),
+        volume=sum_decimal_exact(tuple(bar.volume for bar in bars)),
         turnover=(
             None
             if all(value is None for value in turnovers)
-            else sum((value or Decimal(0) for value in turnovers), start=Decimal(0))
+            else sum_decimal_exact(tuple(value or Decimal(0) for value in turnovers))
         ),
         open_interest=last.open_interest,
     )

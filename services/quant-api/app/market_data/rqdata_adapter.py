@@ -20,7 +20,13 @@ from app.market_data.coverage_source import (
     _iso_week_end,
     _product_trading_days,
 )
-from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
+from app.market_data.domain import (
+    BarFrequency,
+    CanonicalBar,
+    DatasetKey,
+    DatasetKind,
+    sum_decimal_exact,
+)
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import BarBatch, BarFetchRequest
 from app.market_data.metadata import (
@@ -726,11 +732,15 @@ def _aggregate_daily_rows(
         high=max(_decimal(row, "high") for row in rows),
         low=min(_decimal(row, "low") for row in rows),
         close=_decimal(last_row, "close"),
-        volume=sum((_decimal(row, "volume") for row in rows), start=Decimal(0)),
+        volume=sum_decimal_exact(
+            tuple(_decimal(row, "volume") for row in rows)
+        ),
         turnover=(
             None
             if all(value is None for value in turnovers)
-            else sum((value or Decimal(0) for value in turnovers), start=Decimal(0))
+            else sum_decimal_exact(
+                tuple(value or Decimal(0) for value in turnovers)
+            )
         ),
         open_interest=_optional_decimal(
             _row_value(last_row, "open_interest", "open_oi", "close_oi", required=False)

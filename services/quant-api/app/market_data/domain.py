@@ -102,6 +102,25 @@ _SYMBOL = re.compile(r"[A-Z]+\Z")
 _CONTRACT = re.compile(r"([A-Z]+)[0-9]{3,4}\Z")
 
 
+def sum_decimal_exact(values: tuple[Decimal, ...]) -> Decimal:
+    """Sum market facts without inheriting the caller's Decimal context."""
+    if not values:
+        return Decimal(0)
+    if any(not value.is_finite() for value in values):
+        raise InvalidOperation
+    exponent = min(value.as_tuple().exponent for value in values)
+    total = 0
+    for value in values:
+        sign, digits, value_exponent = value.as_tuple()
+        coefficient = int("".join(str(digit) for digit in digits)) if digits else 0
+        if sign:
+            coefficient = -coefficient
+        total += coefficient * 10 ** (value_exponent - exponent)
+    sign = int(total < 0)
+    digits = tuple(int(digit) for digit in str(abs(total))) or (0,)
+    return Decimal((sign, digits, exponent))
+
+
 def normalize_contract_for_symbol(symbol: str, value: object) -> str | None:
     """规范化真实期货合约，并拒绝跨品种、非法月份和非字符串输入。"""
     if not isinstance(value, str):

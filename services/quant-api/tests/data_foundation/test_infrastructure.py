@@ -1028,6 +1028,41 @@ def test_rqdata_weekly_adapter_aggregates_exchange_daily_facts(tmp_path) -> None
     session.close()
 
 
+def test_rqdata_weekly_adapter_sums_decimal_facts_without_context_rounding(
+    tmp_path,
+) -> None:
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 10, 1, 5, tzinfo=UTC)
+    turnover = Decimal("123456789012.123456789012345678")
+    rows = [
+        {
+            "date": date(2025, 1, day),
+            "open": Decimal("100"),
+            "high": Decimal("101"),
+            "low": Decimal("99"),
+            "close": Decimal("100"),
+            "volume": Decimal("1.000000000000000001"),
+            "total_turnover": turnover,
+            "open_interest": Decimal("20"),
+        }
+        for day in range(6, 11)
+    ]
+    adapter = RQDataMarketAdapter(
+        session=session,
+        client=ExchangeDailyClient({"JM2509": pd.DataFrame(rows)}),
+    )
+
+    batch = _fetch(
+        adapter,
+        DatasetKey("contract", "jm", "JM2509", "1w"),
+        (expected,),
+    )
+
+    assert batch.bars[0].volume == Decimal("5.000000000000000005")
+    assert batch.bars[0].turnover == Decimal("617283945060.617283945061728390")
+    session.close()
+
+
 @pytest.mark.parametrize(
     ("provider", "expired_date", "error_code"),
     [

@@ -40,7 +40,8 @@ canonical/
 ```
 
 行字段为 `bar_end`、`trading_day`、`open`、`high`、`low`、`close`、`volume`、`turnover` 和
-`open_interest`。价格和金额用 Decimal，`bar_end` 是 UTC timestamp，identity 不在行内重复。
+`open_interest`。价格和金额用 Decimal，量额聚合必须精确求和且不得继承进程 Decimal context；
+无法无损表示为 Canonical Decimal 的来源必须在发布前拒绝。`bar_end` 是 UTC timestamp，identity 不在行内重复。
 
 发布前必须完成 schema、主键单调唯一、OHLCV、交易日/session/frequency、coverage 和物理可读性
 校验。新发布文件以实际 Parquet bytes 的全小写 SHA-256 命名为 `part.<sha256>.parquet`，不可变、
