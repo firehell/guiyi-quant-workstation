@@ -31,7 +31,7 @@ class OperationalUniverseError(ValueError):
         super().__init__(self.code)
 
 
-def load_active_products(path: Path | None = None) -> tuple[str, ...]:
+def load_active_products(path: Path | None = None, *, retired_path: Path | None = None) -> tuple[str, ...]:
     """按文件顺序加载 active 60，并校验唯一性及退役互斥。"""
     try:
         products = tuple(
@@ -39,7 +39,7 @@ def load_active_products(path: Path | None = None) -> tuple[str, ...]:
             for item in (path or _ACTIVE_PATH).read_text(encoding="utf-8").splitlines()
             if item.strip()
         )
-        retired = load_retired_products()
+        retired = load_retired_products(retired_path)
     except (OSError, ValueError) as exc:
         raise ActiveUniverseError() from exc
     if (
@@ -51,7 +51,8 @@ def load_active_products(path: Path | None = None) -> tuple[str, ...]:
     return products
 
 
-def load_operational_products(path: Path | None = None) -> tuple[str, ...]:
+def load_operational_products(path: Path | None = None, *, active_path: Path | None = None,
+                              retired_path: Path | None = None) -> tuple[str, ...]:
     """按文件顺序加载运行品种，并校验为 active universe 的非退役子集。"""
     try:
         products = tuple(
@@ -59,8 +60,8 @@ def load_operational_products(path: Path | None = None) -> tuple[str, ...]:
             for item in (path or _OPERATIONAL_PATH).read_text(encoding="utf-8").splitlines()
             if item.strip()
         )
-        active = load_active_products()
-        retired = load_retired_products()
+        active = load_active_products(active_path, retired_path=retired_path)
+        retired = load_retired_products(retired_path)
     except (OSError, ValueError) as exc:
         raise OperationalUniverseError() from exc
 

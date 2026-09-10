@@ -24,6 +24,7 @@ export function afterMarketRunLabel(state: string): string {
     running: '运行中',
     completed: '已完成',
     failed: '运行失败',
+    interrupted: '运行已中断',
     missed: '未按时运行',
     stuck: '运行卡住',
     degraded: '状态异常',
@@ -100,7 +101,7 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
           ? `更新 ${formatRuntimeTimestamp(afterMarket.current_run.updated_at)}`
           : `开始 ${formatRuntimeTimestamp(afterMarket.current_run.started_at)}`
         : afterMarket.last_run
-          ? `完成 ${formatRuntimeTimestamp(afterMarket.last_run.finished_at)}`
+          ? `${afterMarket.last_run.status === 'interrupted' ? '收尾' : '完成'} ${formatRuntimeTimestamp(afterMarket.last_run.finished_at)}`
           : afterMarket.last_successful_trading_day
             ? `最近成功 ${afterMarket.last_successful_trading_day}`
             : '时点不可用',
@@ -132,6 +133,9 @@ export function weeklyAuditDetail(audit: NonNullable<RuntimeHealthResponse['comp
 }
 
 export function afterMarketDetail(afterMarket: RuntimeHealthResponse['components']['after_market']): string {
+  if (afterMarket.last_run?.status === 'interrupted' && !afterMarket.current_run) {
+    return `未证明更新完成 · ${afterMarket.last_run.attempts == null ? '尝试次数未知' : `已记录 ${afterMarket.last_run.attempts} 次尝试`}`
+  }
   const current = afterMarket.current_run
   if (current?.stage) {
     const labels: Record<string, string> = {

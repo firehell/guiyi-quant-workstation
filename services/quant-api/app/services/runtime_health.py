@@ -595,6 +595,10 @@ def _collect_after_market_health(
         }
     last_run = public["last_run"]
     last_successful_day = public["last_successful_trading_day"]
+    if isinstance(last_run, Mapping) and last_run.get("status") == "interrupted":
+        return {"status": RUNTIME_STATUS_DEGRADED, **base, "run_state": "interrupted",
+                "last_run": last_run, "last_successful_trading_day": last_successful_day,
+                "last_failure": public["last_failure"], "error_type": "after_market_interrupted"}
     if (
         configured_enabled
         and expected_day is not None
@@ -654,7 +658,7 @@ def _collect_after_market_health(
 
 def _raw_current_run_is_invalid(raw: Mapping[str, object]) -> bool:
     schema_version = raw.get("schema_version")
-    if schema_version not in {2, 3} or raw.get("current_run") is None:
+    if schema_version not in {2, 3, 4} or raw.get("current_run") is None:
         return False
     current_only = public_after_market_status(
         {

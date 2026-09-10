@@ -64,6 +64,23 @@ Nginx reload 都是独立受控外部操作，必须在执行前取得与目标�
 
 ### Market Runtime promotion preflight
 
+#### Interrupted-run closeout before promotion
+
+先使用已审查的新 CLI 对现役 root/commit 和原状态字节 SHA-256 执行一次只读核验：
+
+```bash
+guiyi data close-interrupted-after-market --runtime-root /absolute/current-runtime \
+  --runtime-commit EXACT_40_HEX_COMMIT --expected-status-sha256 EXACT_64_HEX_SHA256
+```
+
+只有获得针对相同身份的一次实际收尾执行意图后才追加 `--apply`。该操作只将原运行记录为 interrupted，
+不证明更新完成，不修复行情、不安装调度。blocked/结果不确定立即停止，不删 JSON、不重跑；明确写入不确定时
+须重新只读核实。旧 Runtime reader 不认识 schema v4 会降级；新候选 reader 可以读取，但 promotion 的
+phase/Live snapshot Gate 完全保留。安全收尾、发布、五服务同步和周审计安装仍是各自受控操作。
+旧 Runtime 在五服务解除引用前不得清理。
+
+#### Read-only promotion predicate
+
 `install-local-services.sh --confirm-market-runtime` 只会执行一次
 `run-local-service.sh market-runtime-preflight`。该 preflight 是只读检查，发生在外部 activation marker 准备、
 runtime script 写入、已安装 LaunchAgent plist 替换以及任何 `launchctl` mutation 之前；仓库内 plist render

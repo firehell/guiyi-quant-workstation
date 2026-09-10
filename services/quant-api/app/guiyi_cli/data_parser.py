@@ -112,6 +112,11 @@ def add_data_commands(
 
     commands.add_parser("after-market")
     commands.add_parser("weekly-audit")
+    closeout = commands.add_parser("close-interrupted-after-market", allow_abbrev=False)
+    closeout.add_argument("--runtime-root", required=True)
+    closeout.add_argument("--runtime-commit", required=True)
+    closeout.add_argument("--expected-status-sha256", required=True)
+    closeout.add_argument("--apply", action="store_true")
 
     correction = commands.add_parser("au-calendar-correction", allow_abbrev=False)
     correction.add_argument("--evidence", required=True)

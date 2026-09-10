@@ -32,7 +32,7 @@ export interface RuntimeAfterMarketFailureNotification {
 export interface RuntimeAfterMarketRun {
   trading_day: string
   status: string
-  attempts: number
+  attempts: number | null
   started_at: string
   finished_at: string
   products: string[]

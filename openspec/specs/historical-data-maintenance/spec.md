@@ -6,6 +6,41 @@
 
 ## Requirements
 
+### Requirement: Interrupted after-market closeout is explicit and never success
+
+Target database, Redis, Canonical and universe dependencies MUST be composed from pinned target sources, not
+the executing checkout. The private configuration MUST be an owned 0600 file in an owned 0700 parent, with
+allowlisted literal assignments only. Launcher arguments and installed/loaded environments MUST exclude
+unsupported shell, HOME and libpq overrides; executing PG* overrides and any target dotenv file/link MUST block.
+Source files and target-directory identity/ctime/mtime MUST predate the interrupted run and current processes,
+remain unchanged, and be rechecked with actual dependency and fresh heartbeat identity before reads and replacement.
+
+The close-interrupted-after-market command MUST default to read-only and bind the exact existing Runtime root,
+commit and status-byte SHA-256. Five installed/loaded service identities, clean detached annotated release,
+enabled Live/Alert recovery guard and an idle after-market process MUST be verified. The existing OS guard
+and Catalog maintenance lease MUST be acquired nonblocking before a fresh read-only transaction. Missing
+guard files MUST NOT be created. Only a previous natural day's valid current_run may be closed.
+
+All operational Catalog pointers MUST pass the shared physical reader, including pointers outside the audit
+window. Existing audit MUST verify metadata, rank1 and expected windows through the interrupted date. Only
+proven missing valid subsets may remain pending; extra endpoints, other findings or unknown results MUST block.
+The original day's immutable Live snapshot MUST match rank1; absence MUST block without synthesis or fallback.
+
+Explicit apply MUST recheck identity and status bytes under both locks and atomically replace only the original
+status file via its pinned directory descriptor. Schema v4 MUST express interrupted, not passed, retain the old
+successful day, and preserve unknown legacy attempts as null. It MUST NOT send notifications, publish an update
+event, clean Live, call a provider, write market data or retry. A post-replacement uncertainty MUST report unknown
+write outcome and bounded readback, never claim unchanged state. Readers MUST accept v1-v4, health MUST remain
+degraded/interrupted, and promotion MUST NOT use this terminal as after_market_complete.
+
+#### Scenario: Legitimately partial interrupted maintenance
+- **WHEN** committed pointers and metadata are valid but expected partitions remain missing
+- **THEN** closeout may record interrupted and pending findings without claiming the update or weekly audit passed
+
+#### Scenario: Filesystem sync fails after replacement
+- **WHEN** replacement may have occurred but durability cannot be established
+- **THEN** report AFTER_MARKET_CLOSEOUT_OUTCOME_UNKNOWN and status_written null, perform no retry or rollback
+
 ### Requirement: 公开维护面
 系统 SHALL 公开 `update`、`refresh`、`audit` 与 `contract-warmup`。`audit` SHALL 接受
 `(--symbol X | --universe {active,operational})` 的互斥选择器。无 `--apply` 的 update/refresh MUST 只计划，

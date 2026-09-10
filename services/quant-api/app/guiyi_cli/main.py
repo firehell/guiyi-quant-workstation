@@ -283,6 +283,7 @@ def main(
                 "accepted",
                 "acknowledged",
                 "audited",
+                "closed_interrupted",
             }
         )
         else 1
@@ -323,6 +324,9 @@ def _run_data(
     if args.data_command == "weekly-audit":
         from app.runtime_entry import run_weekly_audit_service
         return run_weekly_audit_service(session_factory=session_factory, manager_factory=manager_factory)
+    if args.data_command == "close-interrupted-after-market":
+        from app.guiyi_cli.after_market_closeout import run_closeout_command
+        return run_closeout_command(args, session_factory=session_factory, manager_factory=manager_factory)
     if args.data_command == "session-anchor-repair":
         with session_factory() as session:
             factory = session_anchor_repair_factory

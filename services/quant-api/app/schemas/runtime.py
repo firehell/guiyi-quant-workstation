@@ -43,7 +43,7 @@ class RuntimeAfterMarketRun(BaseModel):
 
     trading_day: str
     status: str
-    attempts: int
+    attempts: int | None
     started_at: str
     finished_at: str
     products: list[str] = Field(default_factory=list)
