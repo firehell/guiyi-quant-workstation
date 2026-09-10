@@ -91,12 +91,12 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 ```bash
 snapshot=/private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2
 test "$(shasum -a 256 "$snapshot/manifest.json" | awk '{print $1}')" = \
-  407cc7584a40f4250d604c5bbd69c09bb71b4714efff307eddb19c9ff1fdb2f3
+  6c4370142580e9b367c11d0a7980f407bff98d3ced827822cacd220a214215ff
 shasum -c "$snapshot/sha256.txt"
 test "$(shasum -a 256 "$snapshot/replay_composite.mjs" | awk '{print $1}')" = \
-  4d9853e67a4bd2d5be28cb1c7802ca94dec99d29e31ee3176a94eddf81eae990
+  b04d4bcd466080bb2e361c1e204cbb59977a5c9066a12ff3219037c9e12e4a91
 test "$(shasum -a 256 "$snapshot/verify_and_compare.py" | awk '{print $1}')" = \
-  e613e77ba979687eaf7776bff3232df693027e2a03f34afd86ab8c4fc3d5ee44
+  d5c9f588ddd00534fa41a1b94d6a21910cc0f9429e5f2fc42d00962eade5a4bc
 TZ=Asia/Shanghai node \
   /private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2/replay_composite.mjs
 PYTHONPATH=packages/quant-core python3 \

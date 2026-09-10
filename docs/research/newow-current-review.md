@@ -287,17 +287,17 @@
 - 归一对照基线为 `65d774f81256d0ea24c6902acb5ec7c2d07cfdf8`。牛哇详情页标题为v3.3.05，保存的HTML metadata及资源参数为v3.2.64，公开内核自报`CDV2.VERSION=1.2.0`；继续以文件哈希和函数行为作为精确身份。
 - 冻结招商银行`600036.SH`、顺灏股份`002565.SZ`、金钼股份`601958.SH`各自的`batch`、`quote`，以及趋势`huanglantai`和震荡`xichou-lagao`的周/日/60分共18份K线响应。各请求不是服务端原子快照，但随后离线重放；招商和顺灏的真实 DOM 显示与对应冻结结果完全一致。
 - 页面日期为9月10日，三个样本末根K线均为9月9日，综合卡明确显示“收盘终值·已收盘 K 线”。只使用匿名公开HTTPS，未读取Cookie、账号或私有服务端代码。
-- Git外证据目录为`/private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2/`；临时目录可能被系统清理。`manifest.json` SHA-256为`407cc7584a40f4250d604c5bbd69c09bb71b4714efff307eddb19c9ff1fdb2f3`，其中固定HTML、内核、检查脚本、重放和比较结果哈希如下。
+- Git外证据目录为`/private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2/`；临时目录可能被系统清理。`manifest.json` SHA-256为`6c4370142580e9b367c11d0a7980f407bff98d3ced827822cacd220a214215ff`，其中固定HTML、内核、检查脚本、重放和比较结果哈希如下。
 
 | 文件 | SHA-256 |
 |---|---|
 | stock-detail.html | `3aa8ce00ea7d0a798fdcd2464ac7f76d219ce41a274f77bad06ce0a0356ea338` |
 | composite-decision-v2.js | `68c634c05bddc7191de884a37ae5c8877dfd8416a43e53d93c66838ea8585fbb` |
 | captured input hash list | `fef5084fe739a2495b81ffc96612509c216d2ea93b12cbf6321815803a26e42b` |
-| replay_composite.mjs | `4d9853e67a4bd2d5be28cb1c7802ca94dec99d29e31ee3176a94eddf81eae990` |
-| verify_and_compare.py | `e613e77ba979687eaf7776bff3232df693027e2a03f34afd86ab8c4fc3d5ee44` |
-| page-replay.json | `067921f6c0314d02d550a33863cac556e1e6b65d4128e99f8c1ccff390f05d75` |
-| comparison.json | `bbb0bcb10005c1ec28dcd9b80e524b60f11aa7ceb2c99bd40e1c169125158446` |
+| replay_composite.mjs | `b04d4bcd466080bb2e361c1e204cbb59977a5c9066a12ff3219037c9e12e4a91` |
+| verify_and_compare.py | `d5c9f588ddd00534fa41a1b94d6a21910cc0f9429e5f2fc42d00962eade5a4bc` |
+| page-replay.json | `958b22a27c62920e4184fca14cde046cfdb3bda3e2378b6d589e6b80c0e58a80` |
+| comparison.json | `7966d69046fc453ea4c7aa7ec2d7b1e45071440a678aa7ef16945508cfd1d49e` |
 | 招商展开态 DOM | `7bc539cec8cd827856bdd848a1da6320f174b20f058a93b23272b171f58e066d` |
 | 顺灏展开态 DOM | `0b3d5ab35db45b0a0a3dac127591fdcae043d5164aab492f89284fddbe4b3848` |
 
