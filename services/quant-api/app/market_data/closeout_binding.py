@@ -129,7 +129,7 @@ def assert_dependencies(settings, *, root: Path, manager, session, redis, produc
         raise ValueError
     if (manager.catalog.session is not session or manager.catalog.canonical_root != canonical
             or manager.store.root != canonical or manager.coverage.session is not session
-            or manager.store.boundary_validator != manager.coverage.valid_boundary):
+            or manager.store.boundary_validator != manager.coverage.valid_boundaries):
         raise ValueError
     target = DatabaseCoverageSource(session, root / "data/universe/product_window_starts.csv",
         history_floor_path=root / "data/universe/active_history_floor.txt")

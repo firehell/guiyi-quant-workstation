@@ -287,7 +287,7 @@ def test_database_coverage_uses_actual_exchange_sessions_and_complete_iso_week(t
         weekly_key,
         tuple(date(2025, 1, day) for day in range(6, 11)),
     ) == ((daily_ends[-1], date(2025, 1, 10)),)
-    assert coverage.valid_boundary(minute_key, _bar(minute_ends[0], date(2025, 1, 6)))
+    assert coverage.valid_boundaries(minute_key, (_bar(minute_ends[0], date(2025, 1, 6)),))
     session.close()
 
 
@@ -393,7 +393,7 @@ def test_contract_expected_intraday_ends_respect_rqdata_history_floor(tmp_path) 
     session.close()
 
 
-def test_contract_valid_boundary_requires_exact_identity_lifecycle_and_session(
+def test_contract_valid_boundaries_requires_exact_identity_lifecycle_and_session(
     tmp_path,
 ) -> None:
     session, starts = _session(tmp_path)
@@ -421,22 +421,22 @@ def test_contract_valid_boundary_requires_exact_identity_lifecycle_and_session(
         date(2025, 1, 9),
     )[1]
 
-    assert coverage.valid_boundary(key, _bar(valid_end, date(2025, 1, 8)))
-    assert not coverage.valid_boundary(
+    assert coverage.valid_boundaries(key, (_bar(valid_end, date(2025, 1, 8)),))
+    assert not coverage.valid_boundaries(
         DatasetKey("contract", "jm", "JM2511", "1d"),
-        _bar(valid_end, date(2025, 1, 8)),
+        (_bar(valid_end, date(2025, 1, 8)),),
     )
-    assert not coverage.valid_boundary(
+    assert not coverage.valid_boundaries(
         key,
-        _bar(datetime(2025, 1, 6, 1, 5, tzinfo=UTC), date(2025, 1, 6)),
+        (_bar(datetime(2025, 1, 6, 1, 5, tzinfo=UTC), date(2025, 1, 6)),),
     )
-    assert not coverage.valid_boundary(
+    assert not coverage.valid_boundaries(
         key,
-        _bar(datetime(2025, 1, 10, 1, 5, tzinfo=UTC), date(2025, 1, 10)),
+        (_bar(datetime(2025, 1, 10, 1, 5, tzinfo=UTC), date(2025, 1, 10)),),
     )
-    assert not coverage.valid_boundary(
+    assert not coverage.valid_boundaries(
         key,
-        _bar(datetime(2025, 1, 8, 1, 4, tzinfo=UTC), date(2025, 1, 8)),
+        (_bar(datetime(2025, 1, 8, 1, 4, tzinfo=UTC), date(2025, 1, 8)),),
     )
     session.close()
 

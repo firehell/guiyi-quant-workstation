@@ -502,40 +502,54 @@ class DatabaseCoverageSource:
         except SessionClockError as exc:
             raise InfrastructureError(exc.code) from exc
 
-    def valid_boundary(self, key: DatasetKey, bar: CanonicalBar) -> bool:
-        """单 bar 是否落在 coverage 期望边界内（store 发布时的 boundary_validator）。"""
+    def valid_boundaries(self, key: DatasetKey, bars: tuple[CanonicalBar, ...]) -> bool:
+        """Validate partition pairs using fresh, call-local authoritative facts."""
+        if not bars:
+            return False
+        days = tuple(sorted({bar.trading_day for bar in bars}))
         if key.kind is DatasetKind.CONTRACT:
             try:
                 fact = MarketCatalog(self.session, PROJECT_ROOT).contract_fact(
-                    key.symbol,
-                    key.series_or_contract,
+                    key.symbol, key.series_or_contract,
                 )
             except CatalogError:
                 return False
-            if not (fact.listed_date <= bar.trading_day < fact.expired_date):
+            if any(not (fact.listed_date <= day < fact.expired_date) for day in days):
                 return False
-            try:
-                trading_days = self.contract_trading_days(
-                    fact,
-                    bar.trading_day,
-                    bar.trading_day,
+            # Only candidate dates require exact provider proof. A sparse
+            # partition must not acquire requirements for unrelated gap dates.
+            calendar_days = set(self.session.scalars(
+                select(TradingCalendar.trade_date).where(
+                    TradingCalendar.exchange_code == fact.exchange,
+                    TradingCalendar.trade_date.in_(days),
+                    TradingCalendar.is_trading_day.is_(True),
+                    TradingCalendar.provider == "rqdata",
                 )
-            except InfrastructureError:
+            ))
+            if calendar_days != set(days):
                 return False
-            if trading_days != (bar.trading_day,):
+            session_days = set(self.session.scalars(
+                select(TradingSession.effective_from).where(
+                    TradingSession.exchange_code == fact.exchange,
+                    TradingSession.instrument_symbol == fact.symbol,
+                    TradingSession.provider == "rqdata",
+                    TradingSession.is_active.is_(True),
+                    TradingSession.effective_from.in_(days),
+                    TradingSession.effective_to == TradingSession.effective_from,
+                ).distinct()
+            ))
+            if session_days != set(days):
                 return False
-            return bar.bar_end in self.expected_bar_ends_for_trading_days(
-                key,
-                trading_days,
-            )
-        expected = self.expected_bar_ends(
-            key,
-            bar.trading_day.year,
-            bar.trading_day.month,
-            bar.trading_day,
-            bar.trading_day,
-        )
-        return bar.bar_end in expected
+        else:
+            if days[0] < self.dataset_start(key):
+                return False
+            trading_days = set(self._trading_days(key.symbol, days[0], days[-1]))
+            if not set(days).issubset(trading_days):
+                return False
+        # The existing endpoint expansion owns SessionWindowBatch, night
+        # anchors and complete ISO-week context. Keep trading-day ownership.
+        expected = set(self.expected_bar_end_pairs_for_trading_days(key, days))
+        return all((bar.bar_end, bar.trading_day) in expected for bar in bars)
 
     def previous_trading_day(self, symbol: str, trading_day: date) -> date:
         """从正式 TradingCalendar 解析品种指定日的上一交易日。"""

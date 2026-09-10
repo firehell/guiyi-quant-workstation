@@ -80,7 +80,7 @@ def build_historical_data_manager(session: Session, *, data_root: Path | None = 
     )
     return HistoricalDataManager(
         catalog=catalog,
-        store=CanonicalMonthlyStore(root, boundary_validator=coverage.valid_boundary),
+        store=CanonicalMonthlyStore(root, boundary_validator=coverage.valid_boundaries),
         coverage=coverage,
         metadata=build_metadata_synchronizer(session, adapter=adapter, catalog=catalog),
         provider=adapter,

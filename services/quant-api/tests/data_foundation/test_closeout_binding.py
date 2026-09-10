@@ -546,3 +546,44 @@ def test_binding_rejects_different_redis_endpoint_without_connecting(target):
                 session=db, redis=client, products=binding.products)
         assert not db.in_transaction()
         client.close()
+
+
+@pytest.mark.parametrize("mismatch", [None, "missing", "other_coverage", "scalar", "other_session", "root"])
+def test_binding_requires_exact_partition_validator_and_dependency_identity(target, mismatch):
+    from app.market_data.composition import build_historical_data_manager
+    from app.market_data.coverage_source import DatabaseCoverageSource
+
+    binding = target.create()
+    engine = create_engine(binding.settings["DATABASE_URL"])
+    with Session(engine) as db, Session(engine) as other_db:
+        manager = build_historical_data_manager(db,
+            data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]), config_root=binding.root)
+        client = Redis.from_url(binding.settings["REDIS_URL"])
+        if mismatch == "missing":
+            manager.store.boundary_validator = None
+        elif mismatch == "other_coverage":
+            other = DatabaseCoverageSource(db, binding.root / "data/universe/product_window_starts.csv",
+                history_floor_path=binding.root / "data/universe/active_history_floor.txt")
+            manager.store.boundary_validator = other.valid_boundaries
+        elif mismatch == "scalar":
+            class OldCoverage:
+                def valid_boundary(self, key, bar):
+                    raise AssertionError("A scalar validator must never be invoked")
+            manager.store.boundary_validator = OldCoverage().valid_boundary
+        elif mismatch == "other_session":
+            manager.coverage.session = other_db
+        elif mismatch == "root":
+            manager.store.root = target.root / "different-canonical"
+        try:
+            if mismatch is None:
+                target.module.assert_dependencies(binding.settings, root=binding.root, manager=manager,
+                    session=db, redis=client, products=binding.products)
+            else:
+                with pytest.raises(ValueError):
+                    target.module.assert_dependencies(binding.settings, root=binding.root, manager=manager,
+                        session=db, redis=client, products=binding.products)
+            assert not db.in_transaction()
+            assert not other_db.in_transaction()
+        finally:
+            client.close()
+    engine.dispose()
