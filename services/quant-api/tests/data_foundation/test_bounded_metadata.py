@@ -598,3 +598,91 @@ def test_unknown_calendar_can_wait_for_classification_but_not_contradict_existin
         fetch(value, Provider(trading=[]))
     classified = fetch(value, Provider(trading=[DAY]))
     assert classified["blockers"][0]["code"] == "NIGHT_SESSION_EVIDENCE_REQUIRED"
+
+
+@pytest.fixture
+def future_context_db():
+    """A completed target whose seven-day Calendar context reaches the future."""
+    from app.market_data.coverage_source import _calendar_context_start
+
+    through = date.today() - timedelta(days=1)
+    evidence_day = date.today() + timedelta(days=4)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all([
+            Exchange(code="SHFE", name="SHFE"),
+            Instrument(symbol="au", name="gold", exchange_code="SHFE"),
+            Contract(contract_code="AU2701", instrument_symbol="au", exchange_code="SHFE",
+                     listed_date=through, expired_date=through + timedelta(days=60), provider="rqdata"),
+        ])
+        start = _calendar_context_start(through)
+        for offset in range((through + timedelta(days=7) - start).days + 1):
+            day = start + timedelta(days=offset)
+            if day != evidence_day:
+                session.add(TradingCalendar(exchange_code="SHFE", trade_date=day,
+                                            is_trading_day=False, has_night_session=False))
+        session.commit()
+    yield engine, through, evidence_day
+    engine.dispose()
+
+
+def test_future_context_evidence_uses_source_date_without_expanding_target_or_session_scope(future_context_db):
+    db, through, evidence_day = future_context_db
+    targets = [{"symbol": "au", "contract": "AU2701", "through": through.isoformat()}]
+    original = plan(db, targets)
+    classified = fetch(original, Provider(trading=[evidence_day]))
+    source = {"symbol": "au", "contract": "AU2701", "date": evidence_day.isoformat()}
+    value = plan(db, targets, classification=classified, evidence_sources=[source])
+    assert value["targets"] == original["targets"]
+    assert value["missing_calendars"] == original["missing_calendars"]
+    assert value["missing_sessions"] == []
+    assert value["requests"] == [{"method": "get_trading_periods", "symbol": "au", "contract": "AU2701",
+        "exchange": "SHFE", "start_date": evidence_day.isoformat(), "end_date": evidence_day.isoformat(),
+        "frequency": "1m"}]
+    snapshot = fetch(value)
+    assert snapshot["blockers"] == []
+    assert snapshot["sessions"] == []
+    assert snapshot["calendars"][0]["has_night_session"] is True
+    assert apply(db, snapshot)["calendar_rows"] == 1
+
+
+@pytest.mark.parametrize("offset", [0, 4])
+def test_target_through_today_or_future_remains_forbidden(future_context_db, offset):
+    db, _, _ = future_context_db
+    with pytest.raises(repair.MetadataRepairError, match="SCOPE_INVALID"):
+        plan(db, [{"symbol": "au", "contract": "AU2701",
+                   "through": (date.today() + timedelta(days=offset)).isoformat()}])
+
+
+@pytest.mark.parametrize("change", [
+    {"symbol": "inactive_product"}, {"contract": "AU2701/escape"}, {"extra": "forbidden"},
+    {"date": "not-a-date"}, {"date": (date.today() + timedelta(days=7)).isoformat()},
+])
+def test_future_evidence_retains_structure_identity_and_calendar_scope_guards(future_context_db, change):
+    db, through, evidence_day = future_context_db
+    targets = [{"symbol": "au", "contract": "AU2701", "through": through.isoformat()}]
+    classified = fetch(plan(db, targets), Provider(trading=[evidence_day]))
+    source = {"symbol": "au", "contract": "AU2701", "date": evidence_day.isoformat(), **change}
+    with pytest.raises(repair.MetadataRepairError):
+        plan(db, targets, classification=classified, evidence_sources=[source])
+
+
+@pytest.mark.parametrize("case", ["unclassified", "nontrading", "expired", "before_listing", "provider"])
+def test_future_evidence_requires_trading_classification_and_authoritative_lifecycle(future_context_db, case):
+    db, through, evidence_day = future_context_db
+    targets = [{"symbol": "au", "contract": "AU2701", "through": through.isoformat()}]
+    classified = None if case == "unclassified" else fetch(
+        plan(db, targets), Provider(trading=[] if case == "nontrading" else [evidence_day]))
+    contract = "AU2701"
+    if case in {"expired", "before_listing", "provider"}:
+        contract = "AU2702"
+        with Session(db) as session:
+            session.add(Contract(contract_code=contract, instrument_symbol="au", exchange_code="SHFE",
+                listed_date=evidence_day + timedelta(days=1) if case == "before_listing" else through,
+                expired_date=evidence_day if case == "expired" else evidence_day + timedelta(days=60),
+                provider="other" if case == "provider" else "rqdata"))
+            session.commit()
+    with pytest.raises(repair.MetadataRepairError):
+        plan(db, targets, classification=classified,
+             evidence_sources=[{"symbol": "au", "contract": contract, "date": evidence_day.isoformat()}])

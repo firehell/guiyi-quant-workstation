@@ -92,6 +92,18 @@ def validate_targets(targets: Any) -> list[dict]:
     return [unique[key] for key in sorted(unique)]
 
 
+def _validate_evidence_source(source: Any) -> dict:
+    """Validate a witness identity/date without treating it as a target cutoff."""
+    if not isinstance(source, dict) or set(source) != {"symbol", "contract", "date"}:
+        raise MetadataRepairError("SCOPE_INVALID")
+    symbol, contract = source["symbol"], source["contract"]
+    if (not isinstance(symbol, str) or symbol not in load_active_products()
+            or not isinstance(contract, str)
+            or re.fullmatch(re.escape(symbol.upper()) + r"\d{3,4}", contract) is None):
+        raise MetadataRepairError("IDENTITY_INVALID")
+    return {**source, "date": _day(source["date"]).isoformat()}
+
+
 def _row(row: Any) -> dict:
     return json.loads(_json({column.name: getattr(row, column.name)
                             for column in row.__table__.columns}))
@@ -224,9 +236,7 @@ def _plan(session: Session, targets: list[dict], classified: list[dict], source_
     if not isinstance(evidence_sources, list) or len(evidence_sources) > 4096:
         raise MetadataRepairError("SCOPE_INVALID")
     for source in evidence_sources:
-        if not isinstance(source, dict) or set(source) != {"symbol", "contract", "date"}:
-            raise MetadataRepairError("SCOPE_INVALID")
-        validate_targets([{ "symbol": source["symbol"], "contract": source["contract"], "through": source["date"]}])
+        source = _validate_evidence_source(source)
         source_contract, source_instrument, source_exchange = _identity(session, source)
         source_day = _day(source["date"])
         assert source_contract.listed_date is not None and source_contract.expired_date is not None
@@ -297,6 +307,11 @@ def _validate_plan(plan: dict, expected: str | None = None) -> None:
     _check(plan, "plan_sha256", expected)
     if plan.get("version") != 1 or validate_targets(plan["targets"]) != plan["targets"]:
         raise MetadataRepairError("PLAN_INVALID")
+    evidence = [_validate_evidence_source(source) for source in plan["evidence_sources"]]
+    if (evidence != plan["evidence_sources"]
+            or [{key: source[key] for key in ("symbol", "contract", "date")}
+                for source in plan["resolved_evidence_sources"]] != evidence):
+        raise MetadataRepairError("EVIDENCE_SCOPE_INVALID")
     classifications = {(r["exchange"], r["date"]): r["is_trading_day"] for r in plan["classification"]}
     if plan["requests"] != _requests(plan["missing_calendars"], plan["missing_sessions"], classifications, plan["resolved_evidence_sources"]):
         raise MetadataRepairError("SCOPE_INVALID")

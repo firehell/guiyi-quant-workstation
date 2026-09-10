@@ -385,6 +385,9 @@ plan hash 绑定 source targets、生命周期、相关既有事实、缺键、c
 上市前等 Calendar 上下文允许可选显式 `evidence_sources`（symbol/contract/date）：只给原缺键集合中
 已分类为交易日的精确日期提供 Session 证据，必须独立通过 Catalog identity/lifecycle 校验并进入
 request/hash；不自动搜寻合约，不从供证合约上市日再扩建 Calendar 范围，也不写供证 Session。
+供证 `date` 不等于 target `through`：target 仍必须早于今天；原计划 through 后七天上下文中的
+未来缺键可显式供证，但该键必须已分类为交易日、保持在原 exchange/date 范围内，且供证合约在
+该日期满足 `[listed_date, expired_date)`。供证身份仍须为 active 品种及已有 RQData Catalog 合约。
 同 product/date 的多个物理来源必须一致。fetch 串行执行固定请求，每次响应立即校验，首次失败停止，
 无 retry/fallback/补充调用。Session 复用中性 source-contract/day 纯转换与 start-exclusive 规范化，
 不伪造或写入 MainContractMap。
