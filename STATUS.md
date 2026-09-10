@@ -55,6 +55,19 @@
 
 ## 中断盘后收尾入口：工程完成，生产执行待 Gate
 
+- 2026-09-10 来源时间模型修正已通过独立 Review，并由 reviewed head `4cd08ff19` 合入
+  `develop@00c7fec60`。所有来源的 `max(mtime, ctime)` 仍必须严格早于旧运行开始；`project.env`、
+  exact-tag launcher、五份 universe 与 Runtime 根元数据还必须早于最早常驻消费者启动。分阶段安装会
+  重写的共享 launcher 副本与五份 installed plist 不再错误地受无关服务的最早启动时间约束，改由同版本
+  launcher 字节一致性、installed/loaded launchd 的 Label、参数、工作目录和行为环境一致性，以及早于旧运行
+  共同证明。Review 发现的 plist 内部 Label 与 loaded-only 行为环境缺口均已按 RED/GREEN 修复；两位 Reviewer
+  最终均无 Critical、Important 或 Minor 项并允许集成。合并后后端为 `3076 passed, 16 skipped,
+  31 deselected`；收尾三文件 `162 passed`，盘后/health/promotion/CLI/launchd 回归 `305 passed`；
+  Ruff、Mypy（154 source files）、engineering `18 passed`、OpenSpec `9 passed`、secret scan 与 diff 检查通过。
+  原 `source_age` 代码冲突已修复，但现场只读 closeout 尚未用新代码重跑，因此不声明已越过该 Gate，历史
+  数据一致性检查也仍未形成现场证据。本次没有执行 apply、生产写入、发布、Runtime 切换、调度安装或旧根清理；
+  状态保持 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
+
 - 2026-09-10 实机解析兼容修正：只读取三个直接环境块，忽略 event descriptor；API/Alert 允许既有通知路径。
   实机层级脱敏回归先失败再通过；收尾/身份 `144 passed`，盘后/health/promotion/CLI `212 passed`，
   独立 Review 无阻塞。用户批准后执行一次默认只读核验，exit 1、`AFTER_MARKET_CLOSEOUT_BINDING_UNAVAILABLE`，
