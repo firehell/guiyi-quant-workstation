@@ -276,7 +276,13 @@ class RuntimeDataBinding:
             matching_environments = [environment for environment in environments
                 if environment.get("GUIYI_PROJECT_ROOT") == str(self.root)
                 and environment.get("GUIYI_RUNTIME_COMMIT") == self.commit]
+            behavior_keys = {"PATH", "GUIYI_PROJECT_ROOT", "GUIYI_RUNTIME_COMMIT",
+                             "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"}
             if (len(matching_environments) != 1
+                    or {key: value for key, value in matching_environments[0].items()
+                        if key in behavior_keys}
+                    != {key: value for key, value in installed_environment.items()
+                        if key in behavior_keys}
                     or any(matching_environments[0].get(key) != value
                            for key, value in installed_environment.items())):
                 raise ValueError

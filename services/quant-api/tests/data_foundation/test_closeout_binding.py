@@ -154,6 +154,22 @@ def test_binding_rejects_missing_or_wrong_installed_plist_label(target, service,
         target.create()
 
 
+@pytest.mark.parametrize("loaded_only", ["path", "notification"])
+def test_binding_rejects_behavior_environment_only_in_loaded_service(target, loaded_only):
+    label = "com.guiyi.quant-api"
+    path = Path.home() / "Library/LaunchAgents" / f"{label}.plist"
+    if loaded_only == "path":
+        payload = plistlib.loads(path.read_bytes())
+        payload["EnvironmentVariables"].pop("PATH")
+        path.write_bytes(plistlib.dumps(payload))
+    else:
+        target.outputs[label] = target.outputs[label].replace(
+            "environment = {", "environment = {\nGUIYI_ALERT_NOTIFICATION_CONFIG_PATH => /loaded/notification.json")
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
 @pytest.mark.parametrize("key,value", [("HOME", "/other/home"), ("BASH_ENV", "/other/startup"), ("ENV", "/other/startup")])
 def test_binding_rejects_shell_config_redirection(target, key, value):
     target.outputs["com.guiyi.quant-live"] = target.outputs["com.guiyi.quant-live"].replace(
