@@ -95,7 +95,6 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     resolverController?.abort()
     resolverController = null
     historicalLoading.value = false
-    abortAll()
     resetAll()
     historicalSnapshot.value = null
     historicalError.value = null
@@ -118,7 +117,6 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       const resolved = await fetchHistorical(requestedIdentity, controller.signal)
       if (disposed || controller.signal.aborted || resolverController !== controller || generation !== resolverGeneration || currentIdentity.value !== requestedIdentity) return
       generation += 1
-      abortAll()
       resetAll()
       historicalSnapshot.value = resolved
       // Preserve the server's exact microsecond cutoff; Date.toISOString() truncates it.
@@ -143,7 +141,6 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     resolverController?.abort()
     resolverController = null
     generation += 1
-    abortAll()
     resetAll()
     historicalSnapshot.value = null
     historicalError.value = null
@@ -192,10 +189,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       ? referenceWindow
       : { since: load.performanceSince ?? '', through: load.performanceThrough ?? '' }
     if (referenceWindow !== null && requestedWindow !== null && (referenceWindow.since !== requestedWindow.since || referenceWindow.through !== requestedWindow.through)) {
-      clearResource('reference')
-      referenceFingerprint = null
-      referenceWindow = null
-      referencePageLimit = null
+      invalidateSection('reference')
     }
     await run({
       ...common,
@@ -266,13 +260,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
           if (!rebuilt && isRebuildable(error)) {
             rebuilt = true
             const rejectedToken = request.snapshotToken ?? resource.data.value?.meta.snapshot_token ?? undefined
-            invalidateAuxiliaryCache()
             invalidateTokenDependents(rejectedToken, section)
-            if (section === 'reference' || section === 'chart' || section === 'auxiliary') {
-              clearResource(section)
-              if (section === 'reference' || section === 'chart') resetPagination(section)
-              resources[section].state.value = 'loading'
-            }
             request = withoutGenerationBindings(request)
             continue
           }
@@ -395,7 +383,6 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       failConflict('reference', 'NEWOW_REFERENCE_FINGERPRINT_CONFLICT')
       return null
     }
-    if (!isPage && referenceFingerprint !== null && referenceFingerprint !== fingerprint) clearResource('reference')
     const priorValue = existing?.section === 'reference' ? existing.value : null
     if (priorValue !== null && referenceFingerprint === fingerprint) {
       const duplicateConflict = duplicateReferenceConflict(priorValue.items, value.items)
@@ -444,15 +431,9 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   function failConflict(section: NewowProductSection, code: string): void {
     invalidateAuxiliaryCache()
     const dependent = section === 'chart' || section === 'reference' || section === 'explanation'
-      ? (['chart', 'reference', 'explanation'] as const)
+      ? (['chart', 'reference', 'explanation', 'auxiliary', 'comparator'] as const)
       : ([section] as const)
-    for (const candidate of dependent) {
-      clearResource(candidate)
-      resources[candidate].state.value = 'input_conflict'
-      resources[candidate].error.value = code
-    }
-    if (dependent.some((candidate) => candidate === 'reference')) { referenceWindow = null; referenceFingerprint = null; referencePageLimit = null }
-    if (dependent.some((candidate) => candidate === 'chart')) { chartWindow = null; chartFingerprint = null; chartPageLimit = null }
+    for (const candidate of dependent) invalidateSection(candidate, { state: 'input_conflict', error: code })
   }
 
   function compatibleToken(section: NewowProductSection): string | null {
@@ -465,40 +446,42 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   function invalidateTokenDependents(token: string | undefined, currentSection: NewowProductSection): void {
-    invalidateAuxiliaryCache()
-    if (currentSection !== 'auxiliary') {
-      controllers.get('auxiliary')?.abort()
-      sectionGenerations.set('auxiliary', (sectionGenerations.get('auxiliary') ?? 0) + 1)
-      controllers.delete('auxiliary')
-      inFlightSnapshotTokens.delete('auxiliary')
-      clearResource('auxiliary')
-    }
-    if (token === undefined) return
-    for (const section of ['chart', 'reference', 'explanation', 'auxiliary', 'comparator'] as const) {
-      const inFlightMatches = section !== currentSection && inFlightSnapshotTokens.get(section) === token
-      const loadedMatches = resources[section].data.value?.meta.snapshot_token === token
-      if (!inFlightMatches && !loadedMatches) continue
-      if (inFlightMatches) {
-        controllers.get(section)?.abort()
-        sectionGenerations.set(section, (sectionGenerations.get(section) ?? 0) + 1)
-        controllers.delete(section)
-        inFlightSnapshotTokens.delete(section)
+    // Collect before clearing tokens/data: a loaded match invalidates the whole section,
+    // including a replacement request that may already carry a different token.
+    const affected = new Set<NewowProductSection>([currentSection, 'auxiliary'])
+    if (token !== undefined) {
+      for (const section of ['chart', 'reference', 'explanation', 'auxiliary', 'comparator'] as const) {
+        if (inFlightSnapshotTokens.get(section) === token || resources[section].data.value?.meta.snapshot_token === token) affected.add(section)
       }
-      clearResource(section)
-      if (section === 'chart' || section === 'reference') resetPagination(section)
+    }
+    invalidateAuxiliaryCache()
+    for (const section of affected) {
+      invalidateSection(section, section === currentSection ? { state: 'loading', preserveRebuildRequest: true } : {})
     }
   }
 
   function invalidateChartDependents(): void {
     invalidateAuxiliaryCache()
-    for (const section of ['auxiliary', 'reference', 'explanation', 'comparator'] as const) {
-      controllers.get(section)?.abort()
+    for (const section of ['auxiliary', 'reference', 'explanation', 'comparator'] as const) invalidateSection(section)
+  }
+
+  function invalidateSection(section: NewowProductSection, options: {
+    state?: NewowResourceLifecycle
+    error?: string
+    preserveRebuildRequest?: boolean
+  } = {}): void {
+    // Only the current, once-only 409 rebuild may retain its request identity.
+    // Generation and controller identity also guard fetch implementations that ignore abort.
+    if (!options.preserveRebuildRequest) {
       sectionGenerations.set(section, (sectionGenerations.get(section) ?? 0) + 1)
+      controllers.get(section)?.abort()
       controllers.delete(section)
-      inFlightSnapshotTokens.delete(section)
-      clearResource(section)
     }
-    resetPagination('reference')
+    inFlightSnapshotTokens.delete(section)
+    resources[section].data.value = null
+    if (section === 'chart' || section === 'reference') resetPagination(section)
+    resources[section].state.value = options.state ?? 'not_requested'
+    resources[section].error.value = options.error ?? null
   }
 
   function resetPagination(section: 'chart' | 'reference'): void {
@@ -525,7 +508,6 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     generation += 1
     resolverController?.abort()
     resolverController = null
-    abortAll()
     stopWatch()
     resetAll()
     currentIdentity.value = null
@@ -564,9 +546,10 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     loadChart, loadNextChartPage, loadAuxiliary, loadReference, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, refreshCurrent, dispose,
   }
 
-  function abortAll(): void { for (const controller of controllers.values()) controller.abort(); controllers.clear(); inFlightSnapshotTokens.clear() }
-  function resetAll(): void { for (const section of ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const) clearResource(section); invalidateAuxiliaryCache(); chartWindow = null; chartFingerprint = null; acceptedChartGenerationSignature = null; chartPageLimit = null; referenceWindow = null; referenceFingerprint = null; referencePageLimit = null }
-  function clearResource(section: NewowProductSection): void { if (section === 'chart') acceptedCurrentChartWindow.value = false; resources[section].data.value = null; resources[section].state.value = 'not_requested'; resources[section].error.value = null }
+  function resetAll(): void {
+    for (const section of ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const) invalidateSection(section)
+    invalidateAuxiliaryCache()
+  }
   function cacheAuxiliary(response: NewowProductSectionResponse<'auxiliary'>, request: Extract<NewowProductRequest, { section: 'auxiliary' }>): void {
     if (response.value?.component === undefined) return
     const key = auxiliaryCacheKey(request)
@@ -579,10 +562,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
   function restoreCachedAuxiliary(response: NewowProductSectionResponse<'auxiliary'>): void {
     const section = 'auxiliary' as const
-    sectionGenerations.set(section, (sectionGenerations.get(section) ?? 0) + 1)
-    controllers.get(section)?.abort()
-    controllers.delete(section)
-    inFlightSnapshotTokens.delete(section)
+    invalidateSection(section)
     resources[section].data.value = response
     resources[section].state.value = response.status.status
     resources[section].error.value = null

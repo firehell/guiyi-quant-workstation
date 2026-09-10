@@ -5,7 +5,7 @@ import { nextTick, ref } from 'vue'
 import { getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../src/api/newowProduct.ts'
 import { useNewowProduct } from '../src/composables/useNewowProduct.ts'
 import type { MarketDetailIdentity } from '../src/types/marketDetail.ts'
-import type { NewowProductRequest, NewowProductSectionResponse } from '../src/types/newowProduct.ts'
+import type { NewowProductRequest, NewowProductSection, NewowProductSectionResponse } from '../src/types/newowProduct.ts'
 import { normalizeNewowProductResponse } from '../src/utils/newowProductTypes.ts'
 import { resolveNewowPanelRenderState } from '../src/utils/newowProductViewModel.ts'
 
@@ -1212,6 +1212,209 @@ test('transport-normalized auxiliary identity conflict invalidates ready reuse',
   assert.equal(state.sections.auxiliary.data.value?.section === 'auxiliary' && state.sections.auxiliary.data.value.value?.component, 'main_force_control')
   state.dispose()
 })
+
+
+for (const completion of ['resolve', 'reject'] as const) {
+  test(`shared chart close conflict ignores a late explanation ${completion} even if fetch ignores abort`, async () => {
+    const pending: Pending[] = []
+    const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+    resolveTestSection(pending[0]!)
+    await flush()
+    const explanation = state.loadExplanation()
+    const late = pending.at(-1)!
+    const chart = state.loadChart()
+    pending.at(-1)!.resolve(normalizedChart(pending.at(-1)!.request, { close: '100.000' }))
+    await chart
+    assert.equal(state.sections.explanation.state.value, 'input_conflict')
+    if (completion === 'resolve') resolveTestSection(late)
+    else late.reject(new Error('late failure'))
+    await explanation
+    assert.equal(state.sections.explanation.data.value, null)
+    assert.equal(state.sections.explanation.state.value, 'input_conflict')
+    assert.equal(state.sections.explanation.error.value, 'NEWOW_SHARED_BAR_CONFLICT')
+    assert.equal(late.signal.aborted, true)
+    state.dispose()
+  })
+}
+
+const ALL_SECTIONS = ['chart', 'reference', 'explanation', 'auxiliary', 'comparator'] as const
+
+for (const conflictSection of ['chart', 'reference', 'explanation'] as const) {
+  for (const completion of ['resolve', 'reject'] as const) {
+    test(`${conflictSection} conflict revokes all sections before late ${completion} ignoring abort`, async () => {
+      const pending: Pending[] = []
+      const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+      pending[0]!.resolve(normalizedChartPage(pending[0]!.request, '2026-08-14', 'old-chart-cursor'))
+      await flush()
+      for (const section of ALL_SECTIONS.slice(1)) {
+        const loaded = loadTestSection(state, section)
+        resolveTestSection(pending.at(-1)!)
+        await loaded
+      }
+      assert.equal(state.currentChartWindow.value, true)
+      const oldRequests = ALL_SECTIONS.filter(section => section !== conflictSection).map(section => {
+        const promise = loadTestSection(state, section, 'up_down_energy')
+        return { promise, pending: pending.at(-1)! }
+      })
+      const conflict = loadTestSection(state, conflictSection)
+      const bad = pending.at(-1)!
+      if (conflictSection === 'chart') bad.resolve(normalizedChart(bad.request, { close: '100.000' }))
+      else if (conflictSection === 'reference') bad.resolve(normalizedReference(bad.request, { items: [referenceItem('same-trade', '2.0000')], nextBefore: 'old-reference-cursor' }))
+      else bad.reject(new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid'))
+      await conflict
+      const assertInvalidated = () => {
+        for (const section of ALL_SECTIONS) {
+          assert.equal(state.sections[section].data.value, null, `${section} data`)
+          assert.equal(state.sections[section].state.value, 'input_conflict', `${section} lifecycle`)
+          assert.ok(state.sections[section].error.value, `${section} error`)
+        }
+        assert.equal(state.currentChartWindow.value, false)
+      }
+      assertInvalidated()
+      for (const old of oldRequests) {
+        assert.equal(old.pending.signal.aborted, true, `${old.pending.request.section} signal`)
+        if (completion === 'resolve') resolveTestSection(old.pending)
+        else old.pending.reject(new Error('late transport failure'))
+      }
+      await Promise.all(oldRequests.map(old => old.promise))
+      assertInvalidated()
+      const count = pending.length
+      await state.loadNextChartPage()
+      await state.loadNextReferencePage()
+      assert.equal(pending.length, count, 'cleared cursors cannot issue another page')
+      const fresh = state.loadAuxiliary('main_force_control')
+      assert.equal(pending.length, count + 1, 'old auxiliary cache must not restore a result')
+      assert.equal(pending.at(-1)!.request.snapshotToken, undefined, 'no invalidated section may lend its token')
+      pending.at(-1)!.resolve(normalizedAuxiliary(pending.at(-1)!.request, 'snapshot-new'))
+      await fresh
+      const chart = state.loadChart()
+      pending.at(-1)!.resolve(normalizedChart(pending.at(-1)!.request, { token: 'snapshot-new' }))
+      await chart
+      assert.equal(state.currentChartWindow.value, true)
+      assert.equal(state.sections.auxiliary.state.value, 'ready', 'cleared chart provenance must not invalidate newly accepted auxiliary')
+      const reference = state.loadReference()
+      const request = pending.at(-1)!.request
+      assert.equal(request.section === 'reference' && request.performanceSince, undefined, 'old reference window is cleared')
+      assert.equal(request.section === 'reference' && request.historyBefore, undefined)
+      resolveTestSection(pending.at(-1)!)
+      await reference
+      state.dispose()
+    })
+  }
+}
+
+for (const section of ['auxiliary', 'comparator'] as const) {
+  test(`${section} response conflict stays local while clearing auxiliary reuse`, async () => {
+    const pending: Pending[] = []
+    const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+    resolveTestSection(pending[0]!)
+    await flush()
+    const cache = state.loadAuxiliary('main_force_control')
+    resolveTestSection(pending.at(-1)!)
+    await cache
+    const explanation = state.loadExplanation()
+    const late = pending.at(-1)!
+    const conflict = loadTestSection(state, section, 'up_down_energy')
+    pending.at(-1)!.reject(new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid'))
+    await conflict
+    assert.equal(state.sections[section].state.value, 'input_conflict')
+    assert.equal(state.sections.chart.state.value, 'ready')
+    assert.equal(late.signal.aborted, false)
+    resolveTestSection(late)
+    await explanation
+    assert.equal(state.sections.explanation.state.value, 'warming')
+    const count = pending.length
+    const reload = state.loadAuxiliary('main_force_control')
+    assert.equal(pending.length, count + 1)
+    resolveTestSection(pending.at(-1)!)
+    await reload
+    state.dispose()
+  })
+}
+
+for (const completion of ['resolve', 'reject'] as const) {
+  test(`invalidated ${completion} finally cannot erase a later explanation controller or token`, async () => {
+    const pending: Pending[] = []
+    const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+    resolveTestSection(pending[0]!)
+    await flush()
+    const old = state.loadExplanation()
+    const oldRequest = pending.at(-1)!
+    const conflict = state.loadChart()
+    pending.at(-1)!.resolve(normalizedChart(pending.at(-1)!.request, { close: '100.000' }))
+    await conflict
+    const recoveredChart = state.loadChart()
+    resolveTestSection(pending.at(-1)!)
+    await recoveredChart
+    const fresh = state.loadExplanation()
+    const freshRequest = pending.at(-1)!
+    if (completion === 'resolve') resolveTestSection(oldRequest)
+    else oldRequest.reject(new Error('late failure'))
+    await old
+    assert.equal(state.sections.explanation.state.value, 'loading')
+    assert.equal(freshRequest.signal.aborted, false)
+    // The reference 409 must still find the fresh in-flight token and controller.
+    const reference = state.loadReference()
+    pending.at(-1)!.reject(new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'))
+    await flush()
+    assert.equal(freshRequest.signal.aborted, true)
+    resolveTestSection(freshRequest)
+    await fresh
+    resolveTestSection(pending.at(-1)!)
+    await reference
+    const latest = state.loadExplanation()
+    resolveTestSection(pending.at(-1)!)
+    await latest
+    assert.equal(state.sections.explanation.state.value, 'warming')
+    assert.ok(state.sections.explanation.data.value)
+    state.dispose()
+  })
+}
+
+test('409 cancels a matching loaded section even when its replacement requests a different token', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'chart-token' }))
+  await flush()
+  const loaded = state.loadExplanation()
+  pending.at(-1)!.resolve(normalizedStatus(pending.at(-1)!.request, 'old-explanation-token'))
+  await loaded
+  const replacement = state.loadExplanation()
+  const late = pending.at(-1)!
+  assert.equal(late.request.snapshotToken, 'chart-token')
+  // Chart picks the loaded explanation token; only the loaded match identifies explanation.
+  const chart = state.loadChart()
+  assert.equal(pending.at(-1)!.request.snapshotToken, 'old-explanation-token')
+  pending.at(-1)!.reject(new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'))
+  await flush()
+  assert.equal(late.signal.aborted, true)
+  assert.equal(state.sections.explanation.state.value, 'not_requested')
+  assert.equal(pending.at(-1)!.signal.aborted, false)
+  assert.equal(pending.at(-1)!.request.snapshotToken, undefined)
+  resolveTestSection(late)
+  await replacement
+  resolveTestSection(pending.at(-1)!)
+  await chart
+  assert.equal(state.sections.explanation.data.value, null)
+  assert.equal(state.sections.chart.state.value, 'ready')
+  state.dispose()
+})
+
+function loadTestSection(state: ReturnType<typeof useNewowProduct>, section: NewowProductSection, component: 'main_force_control' | 'up_down_energy' = 'main_force_control') {
+  if (section === 'chart') return state.loadChart()
+  if (section === 'reference') return state.loadReference()
+  if (section === 'explanation') return state.loadExplanation()
+  if (section === 'auxiliary') return state.loadAuxiliary(component)
+  return state.loadComparator()
+}
+
+function resolveTestSection(pending: Pending): void {
+  const request = pending.request
+  if (request.section === 'chart') pending.resolve(normalizedChart(request))
+  else if (request.section === 'reference') pending.resolve(normalizedReference(request, { items: [referenceItem('same-trade', '1.0000')], nextBefore: 'old-reference-cursor' }))
+  else if (request.section === 'auxiliary') pending.resolve(normalizedAuxiliary(request))
+  else pending.resolve(normalizedStatus(request, 'snapshot-a'))
+}
 
 interface Pending {
   request: NewowProductRequest
