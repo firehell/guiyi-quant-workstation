@@ -1,535 +1,142 @@
 # 当前状态
 
-文档核对：2026-09-09，develop 代码基线 `79c59ccb4`；统一详情页本轮修复已通过 owner 视觉接受并集成 develop。
-本日 P1 验证使用临时数据与隔离 PostgreSQL；后续 WebSocket/详情页验证使用离线测试与浏览器 fixture。
-上述工程验证没有连接生产 PostgreSQL/Redis/RQData 或重新验收 Runtime。
-另有本日获准的 AU 来源查询与单键生产 Calendar 更正，具体事实及边界见 Newow 小节；没有切换 Runtime。
-以下生产结论保留原采集时间，不能当作今天的实时健康状态。
+文档核对：2026-09-10。正式代码基线 `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；
+develop 代码基线 `c0abb16f3e81b2443200f9f5591194afe793b3e9`。本文件只保留当前版本、已证明事实、
+尚缺证据、本轮冻结范围与唯一下一步。操作过程、逐次授权和旧候选矩阵从 Git history、tag、PR
+与原 evidence 追溯；历史授权不授权重跑。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见
+`DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
-本文件只保留 release、Runtime、Scope、关键验收事实与未完成 Gate。稳定产品面见 `PROJECT_SOURCE.md`，
-长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。已完成的计划、逐次操作、旧候选矩阵及
-逐合约结果从 Git history、tag、PR 和原 evidence 追溯；历史授权不授权重跑。
+本轮工作 1 只整理范围。没有连接生产 PostgreSQL/Redis/RQData，没有重新验收 Runtime，
+没有发布、切换或写入。
 
-## v1.10.5 已发布并切换（苏冰历史输入故障与自然推送已闭环）
+## 当前阶段
 
-- 独立候选分支 `codex/subing-input-release-candidate` 基于 `0eca85209008e036626b37eb5563fc504dba12bc`；
-  API/Web/Python/lock 版本身份与版本一致性断言为 `1.10.5`；已审候选为 `0d2273445637a6dd5cfef2a45c4f1242276952c5`。
-- 本次新跑验证：直接相关 `357 passed`；backend + engineering `2967 passed, 16 skipped, 28 deselected`；
-  隔离 PostgreSQL publication `6 passed`；Web `504 passed, 1 skipped`、typecheck/build 通过。
-  浏览器首轮 89 passed / 60 failed / 3 skipped：60 项源于运行端口 5192 与 fixture 固定 5182 不一致；
-  使用正确端口复跑这 60 项全部通过，candidate-preview 专用 3 项另跑全部通过。
-  Ruff、Mypy（150 source files）、9 项 OpenSpec 与 secret scan 通过；代码基线独立 Standards/Spec Review 无阻塞。
-  版本收尾后的 engineering + health `80 passed`、离线 `uv lock --check` 与 Web build 通过；版本增量独立复核无阻塞。
-- 该候选包含已集成的 Canonical P1、captured Runtime 身份解析、WebSocket 资源边界、统一详情页、
-  SuBing 历史参考与 Newow 只读相关改进，不是仅两合约数据修复的最小代码补丁。
-- 本轮对两个精确 hash 的各一次真实 apply 已完成，执行版本为现役 v1.10.5；
-  AO2701 先执行并严格读回通过后才执行 OI2701。两个 CLI 均 exit 0、passed、applied=18、blocked=failed=0，
-  各 9 个 direct + 9 个 derived 目标，无重试。只发布各合约 2026 年 1～9 月的 `1m + 15m`，through=2026-09-08。
-  AO2701 plan hash `602821c7195a11c35a2b44b6a18c4b6d806d8e7b9eb98b1be1cc15e0d9e5f504`；
-  OI2701 plan hash `a7431d8eac813486181e2c773f43b1a99b01f30c9469bd25be66d1d6cd7a1a4f`。
-  12:33:58 / 12:47:22 CST 的独立只读事务经 MDS 严格读回均 18/18 通过：AO 为 72,045 根 1m、4,803 根 15m；
-  OI 为 53,340 根 1m、3,556 根 15m。逐月身份、URI/file SHA-256、行数、端点、完整 lifecycle/session 覆盖
-  与公开 MDS 查询一致；44,210 个非目标分区的 Catalog 指纹未变。36 个目标本地独立证据复核通过。
-  两合约随后只读重算均 exit 0、剩余目标为 0；13:00:24 CST 的 SuBing readiness exit 0、passed、60/60 ready，
-  AO2701/OI2701 各自 historical_15m_gap、live_1m_gap、live_15m_gap 均为 0，error_codes 为空、scope_enabled=true。
-  本次限定历史输入缺失已关闭；修复后的自然评估、Event 与 owner 微信收件已完成下述验收。
-  整体 `RUNTIME_READY` 的现版本自然盘后验收仍独立保留，不补评、不补发。
-  首次 readiness 临时命令遗漏 launcher 的 Redis 认证归一化，返回 60 个 INPUT_DIAGNOSIS_UNAVAILABLE；
-  本地确认客户端缺少认证后，仅按既有 launcher 方式修正临时调用环境并通过只读检查，未修改生产配置或重跑 apply。
-  已产生新 hash URI，不得回退只支持固定 URI 的 v1.10.4。
-- 2026-09-09 午后自然验收及 owner 收件确认完成，状态为 `COMPLETED`，
-  `SUBING_WECHAT_DELIVERY_CONFIRMED / SUBING_NATURAL_CLOSURE_COMPLETE`，归属 exact
-  `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`。14:03:17 CST 的只读核验中，
-  严格 Runtime 身份与双心跳通过，60 品种 TRADING/subscribed，苏冰自然评估已到 14:00；
-  `last_failure_at` 仍为 `2026-09-09T03:30:05.449850Z`，本轮观察未新增失败，旧记录未清除。
-  14:03:46 CST 的 readiness exit 0、passed、60/60 ready；AO2701/OI2701 截至 14:00 的
-  historical_15m_gap、live_1m_gap、live_15m_gap 均为 0，error_codes 为空、scope_enabled=true。
-  补齐后已自然生成四条苏冰 Event：#143 EC2610 sell（13:45），#144 EG2610 sell、#145 L2701 sell、
-  #146 PT2610 buy（后三条 bar_end 均为 14:00 CST）。#146 的 detected_at/notification_attempted_at
-  为 `2026-09-09T06:00:16.478341Z`，与 Runtime `last_provider_accepted_at` 精确匹配；
-  owner 在本任务针对该 PT2610 14:00 买入提醒明确回复“收到了，你可以闭环了，更新下文档”。
-  该确认只证明 owner 收到这条通知，不声明另外三条或 Topic 其他成员实际送达。
-  只读证据索引为 `/private/tmp/subing-fail-review-20260909-1403-{runtime,readiness,events}.json`；
-  以上保存关键事实，临时文件再次使用前须检查存在与完整性。本次仅更新文档，未执行生产 failure acknowledgment、
-  修改 Scope、重跑补齐或补发通知；苏冰本次故障闭环不替代 v1.10.5 自然盘后验收。
-
-## 中断盘后收尾入口：工程完成，生产执行待 Gate
-
-- 2026-09-10 来源时间模型修正已通过独立 Review，并由 reviewed head `4cd08ff19` 合入
-  `develop@00c7fec60`。所有来源的 `max(mtime, ctime)` 仍必须严格早于旧运行开始；`project.env`、
-  exact-tag launcher、五份 universe 与 Runtime 根元数据还必须早于最早常驻消费者启动。分阶段安装会
-  重写的共享 launcher 副本与五份 installed plist 不再错误地受无关服务的最早启动时间约束，改由同版本
-  launcher 字节一致性、installed/loaded launchd 的 Label、参数、工作目录和行为环境一致性，以及早于旧运行
-  共同证明。Review 发现的 plist 内部 Label 与 loaded-only 行为环境缺口均已按 RED/GREEN 修复；两位 Reviewer
-  最终均无 Critical、Important 或 Minor 项并允许集成。合并后后端为 `3076 passed, 16 skipped,
-  31 deselected`；收尾三文件 `162 passed`，盘后/health/promotion/CLI/launchd 回归 `305 passed`；
-  Ruff、Mypy（154 source files）、engineering `18 passed`、OpenSpec `9 passed`、secret scan 与 diff 检查通过。
-  原 `source_age` 代码冲突已修复，但现场只读 closeout 尚未用新代码重跑，因此不声明已越过该 Gate，历史
-  数据一致性检查也仍未形成现场证据。本次没有执行 apply、生产写入、发布、Runtime 切换、调度安装或旧根清理；
-  状态保持 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。
-
-- 2026-09-10 实机解析兼容修正：只读取三个直接环境块，忽略 event descriptor；API/Alert 允许既有通知路径。
-  实机层级脱敏回归先失败再通过；收尾/身份 `144 passed`，盘后/health/promotion/CLI `212 passed`，
-  独立 Review 无阻塞。用户批准后执行一次默认只读核验，exit 1、`AFTER_MARKET_CLOSEOUT_BINDING_UNAVAILABLE`，
-  最后阶段为 `source_age`；无 provider/data/state 写入，状态 SHA-256 仍为
-  `08d63356c9978423431fe7db2a926d655a159ffb5c8f64b1237c2c7f5c79ee57`。
-  五服务身份核验及环境解析已越过；当前全来源年龄检查以最早 API 启动 `2026-09-09 12:05:55 CST` 为界，
-  但分阶段安装后的共享 launcher 在 `12:06:18.570019` 更新，Web/Live/Alert/盘后 plist 也晚于该界。
-  这些来源均早于中断运行 `18:05:06.737372`，仍不足以通过现有“早于全部当前消费者”的来源证明。
-  没有放宽 Gate、修改文件时间、重启服务或重试；数据一致性核验尚未开始，实际收尾与部署继续阻塞。
-
-- 新增默认只读的 `data close-interrupted-after-market`，绑定现役 root/commit/状态字节、五服务、
-  私有配置与实际数据依赖；持共享锁检查全部已提交 Catalog/Canonical 与原日 rank1/Live snapshot。
-  显式 apply 只可记录 `interrupted`，不记成功、不修复行情、不通知、不放宽 promotion。
-- 后端及 engineering 全量 `3089 passed, 16 skipped, 31 deselected`；最后来源拒绝路径及收尾回归
-  `126 passed`；隔离 PostgreSQL 实测 `1 passed`。Web `519 passed, 1 skipped`，类型检查/build、
-  Ruff、Mypy（154 source files）、9 项 OpenSpec、secret scan 与独立 Review 通过。
-- 状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。本轮没有生产收尾、真实下载、发布 v1.10.6、
-  Runtime 切换或周审计安装；旧 Runtime 未清理。实际收尾须重新绑定现场并取得一次执行意图，
-  其成功也不替代发布预检、五服务部署或自然每日/每周验收。
+| 项目 | 阶段 | 说明 |
+|---|---|---|
+| 正式 Release | `RELEASED` | `v1.10.5`，PR #359 合入 main |
+| 现役 Runtime | 已切换，未声明 `RUNTIME_READY` | 五服务加载 v1.10.5；现版本自然盘后验收未完成 |
+| 中断盘后收尾 | `CODE_COMPLETE` / `EXTERNAL_GATE_PENDING` | develop 已有收尾入口与来源时间修正；现场尚未用当前 develop 代码重跑只读核验 |
+| 盘后生命周期修复 | 待精确基线复现 | 不把上轮线索直接写成生产根因 |
+| 牛哇加载一致性 | 待精确基线复现 | 黄金固定截点本地预览已完成，不代替当前全品种验收 |
+| 本轮稳定版 | 范围已冻结，候选未冻结 | 不等待工作 6、7 |
+| 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
+| 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 
 ## Release、Runtime 与 Scope
 
 | 项目 | 最近已记录事实 |
 |---|---|
-| 正式 Release | `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`，PR #359 于 `2026-09-09T03:53:57Z` 合入 main；tree `11704da35b2eccf62bdddc330eb0e42ea5930247`，annotated tag object `71bad4102a9be883ba341c7dd27f0e98f59dab41`。GitHub Release 于 `2026-09-09T03:55:28Z` 发布，non-draft、non-prerelease；远端 main、peeled tag 与 Release target 一致。API/Web/Python/lock 为 1.10.5。 |
-| 发布验收 | 已审候选 `0d2273445637a6dd5cfef2a45c4f1242276952c5` 与发布 tree 完全一致；验证矩阵见上节。本轮重新核验四处版本、远端 main、annotated tag 及 Release target；未重复运行已通过且输入未变的全套测试。 |
-| Runtime | `2026-09-09 12:09:27 CST` 严格读回：五项 launchd 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；API/Web/Live/Alert running，After-market idle；Market/Alert marker enabled，Live/Alert 新鲜心跳同根同 commit 且 `recovery_guard_enabled=true`。切换完成、未使用回退；本日 14:03 的自然 completed Bar 核验通过，随后 owner 确认苏冰微信收件，详见上节；现版本自然盘后验收仍待完成，不声明整体 `RUNTIME_READY`。 |
-| Runtime 工作树 | 现役 detached v1.10.5 根与原 v1.10.4 根均保留且干净。新根离线安装锁定 Python/Web 依赖并 build；render-only 与三个 installer 模式均一次通过，未重试。旧根目前无五项 launchd 引用；未清理，新格式数据发布后不可将其作为兼容回退根。 |
-| 最近 health | `2026-09-09 14:03:17 CST`：API 1.10.5、Runtime health ok/readonly，严格 captured Runtime 身份 verifier 通过；Live/Alert 新鲜心跳同现役 exact root/commit，recovery guard 开启。60 品种 TRADING、subscribed_count=60，Live 与处理水位到 14:03，苏冰自然评估到 14:00。14:03:46 的 readiness 60/60 通过，AO/OI 三类输入缺口均为 0。最新 #146 自然 Event 与 provider acceptance 匹配，owner 已确认对应微信收件；苏冰旧 failure 时间戳保留，无新增失败记录。本次结论以这些带时间证据为准。 |
-| Database | 最近已记录 production readback 为 Alembic `20260903_0045`；session anchor repair 已发布。旧全库 Dataset/分区/行数快照不作为当前总量。 |
+| 正式 Release | `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；PR #359 于 `2026-09-09T03:53:57Z` 合入 main；tree `11704da35b2eccf62bdddc330eb0e42ea5930247`；annotated tag object `71bad4102a9be883ba341c7dd27f0e98f59dab41`。GitHub Release 同日 `03:55:28Z`，non-draft、non-prerelease。API/Web/Python/lock 为 1.10.5。 |
+| 发布验收 | 已审候选 `0d2273445637a6dd5cfef2a45c4f1242276952c5` 与发布 tree 一致。该候选不是“只修两合约数据”的最小补丁，还含 Canonical P1、captured Runtime 身份解析、WebSocket 资源边界、统一详情页、苏冰历史参考与 Newow 只读相关改进。 |
+| Runtime | `2026-09-09 12:09:27 CST` 严格读回：五项 launchd 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；API/Web/Live/Alert running，After-market idle；Market/Alert marker enabled，Live/Alert 新鲜心跳同根同 commit 且 `recovery_guard_enabled=true`。未使用回退。现版本自然盘后验收仍待完成。 |
+| Runtime 工作树 | 现役 detached v1.10.5 根与原 v1.10.4 根均保留且当时干净。旧根无五项 launchd 引用，未清理。生产已产生 hash URI，不得把只支持固定 URI 的 v1.10.4 当作通用回退。 |
+| 最近 health | `2026-09-09 14:03:17 CST`：API 1.10.5、Runtime health ok/readonly，严格 captured 身份通过；60 品种 TRADING、subscribed_count=60；苏冰自然评估到 14:00。该结论保留原采集时间，不是 2026-09-10 的实时健康。 |
+| Database | 最近生产 readback 为 Alembic `20260903_0045`。 |
 | Market Scope | `operational_products.txt` 的 60 个品种。 |
-| Alert Scope | `2026-09-07T06:49:43Z` 审计：HTDY 仅 `jm × 5m/15m`；SuBing 全部60品种 × 15m，两 Rule enabled。HTDY“焦煤15m和5m，其余59品种60m”共61对仍仅是未应用目标。 |
-| 最近自然 After-market | v1.10.3 于 2026-09-08 自然运行，18:05:05 开始、19:05:52 完成，passed、attempts=1、60 品种，last_failure/current_run null。该状态经校验 create-only 先带入 v1.10.4，本轮以相同 bytes 带入 v1.10.5，hash `cece65929ba734c37cf91ee47af1b0d23b5dc3dd413c9d703888f669428347d5`；它不是 v1.10.5 自然盘后证据。 |
+| Alert Scope | `2026-09-07T06:49:43Z` 审计：HTDY 仅 `jm × 5m/15m`；苏冰 60 品种 × 15m；两 Rule enabled。HTDY“焦煤 15m/5m，其余 59 品种 60m”共 61 对仍是未应用目标。 |
+| 最近自然 After-market | v1.10.3 于 2026-09-08 自然运行，18:05:05 开始、19:05:52 完成，passed、attempts=1、60 品种。该状态字节随后带入 v1.10.4/v1.10.5，hash `cece65929ba734c37cf91ee47af1b0d23b5dc3dd413c9d703888f669428347d5`。它不是 v1.10.5 自然盘后证据。 |
 
-## Runtime 验收阻塞与开发差异
+## 已证明事实（不得重新打开，也不得扩大解释）
 
-- WebSocket 阻塞读取修复 `fd6f566cc` 已合入 develop：同步读取进入最多四个并行 worker，
-  每次独立创建与关闭 Session/Redis，取消不提前释放仍在执行的容量。backend 全量
-  `2859 passed, 16 skipped, 21 deselected`、engineering `74 passed`，Ruff/Mypy 与独立 Review 通过。
-- 统一详情页候选已删除旧页面及专用代码，保留旧链接的确定性迁移、Event 精确定位、
-  失败态品种选择和盘后失败披露。Web `504 passed, 1 skipped`；完整浏览器 `149 passed, 3 skipped`
-  （candidate-preview 专用场景）；build/typecheck、OpenSpec/secret/diff 与独立 Review 通过。
-  工程状态为 `CODE_COMPLETE`、`TEST_COMPLETE`、`REVIEW_COMPLETE`；owner 已接受桌面/390px fixture 截图并明确允许合入 develop。
-  本轮不发布、不切换 Runtime，fixture 不证明生产数据或自然业务闭环。
+1. **苏冰本次自然推送已闭环**，归属 exact `v1.10.5@cdd72d750`。补齐 AO2701/OI2701 后，2026-09-09 自然生成 Event #143–#146；#146 PT2610 14:00 买入与 `last_provider_accepted_at` 匹配，owner 确认该条微信收件。该确认不声明另外三条或 Topic 其他成员送达，也不替代现版本自然盘后验收。旧 `last_failure_at=2026-09-09T03:30:05.449850Z` 保留，不得手工清除来制造通过。更早的 v1.9.15 G11/G12 闭环见 Issue #307，只归属当时版本。
+2. **黄金牛哇固定历史截点本地预览已完成**。截点 `2026-09-08T07:00:00.000001Z`，候选 `e79e82f42`；九组合主图/副图/解释/参考统计/历史定位在 API8010/Web5174 真实浏览器通过。周线默认本周未完成保留；震荡周线 AU2610 比较器明确不足 20 根。这不是当前时点或全品种生产验收。目标/吸筹 previous-close、原页面时序、期货 owner/segment 仍为 `EVIDENCE_REQUIRED`。
+3. **Calendar/Session 元数据恢复已完成**：黄金五合约夜盘/Session 缺口关闭；其余 59 品种在 `a53389cc5` 后 Calendar/Session 剩余唯一缺口为 0。这不证明分钟历史或九组合页面已恢复。
+4. **中断盘后收尾入口在 develop 已是代码完成**。来源时间模型 `4cd08ff19` 已合入 `develop@00c7fec60`；其后又合入 launchd 环境解析、inert 配置剔除与依赖来源保护。`data close-interrupted-after-market` 默认只读；`--apply` 只可将旧运行记为 `interrupted`，不能记成功、补行情或放宽 promotion。合同见 `docs/DATA_CENTER.md` 与 `openspec/specs/historical-data-maintenance/spec.md`。
+5. **统一详情页、Canonical P1、captured 身份解析已随 v1.10.5 发布或已集成 develop**。详情页 owner 视觉接受只授权 develop 集成；fixture 不证明生产数据。Canonical 后续每批写入仍须独立单次意图。
 
-- Canonical P1 修复 `a6317cde262a14317e8db1f5fed962f94cd6e18d` 已完成不可变文件与 Catalog
-  单分区原子指针发布；提交失败不再覆盖旧文件，结果不确定时明确停批。实际验证：backend
-  `2855 passed, 16 skipped, 21 deselected`、隔离 PostgreSQL `6 passed`（含进程退出与事务可见性）、
-  engineering `74 passed`，Ruff/Mypy/OpenSpec/secret/diff 通过，独立 Standards/Spec Review 无剩余阻塞。
-  工程已随 v1.10.5 发布并切换消费者；本日 AO/OI 已获准发布生产 hash URI，详见上节。
-  后续每批 Canonical 写入仍须独立单次意图及现役消费者/旧 writer 核对；不得回退旧读取代码。
-  旧文件保留支持已有 reader，本次不执行文件回收或数据迁移。合同与命令分别见 `docs/DATA_CENTER.md`、`TESTING.md`。
+## 尚缺证据
 
-- v1.10.4 的 captured-source 恢复入口误解析 launchd `event triggers` 中的 `=> {` 嵌套块，
-  After-market 身份 Gate 失败。部署后的只读核对确认实际 root、commit、WorkingDirectory 与 idle 状态正确。
-- `f08d86d88` 已在 develop 修复纯解析器并保留层级、重复字段、身份与括号校验；已记录验证为身份模块
-  `76 passed`、调用链 `249 passed / 11 skipped`、engineering `18 passed`，两轴独立 Review clean。
-  同份实机脱敏输出旧解析器失败、新解析器通过；未从开发根绕过 exact-tag Gate 运行恢复入口。
-- 修复已发布并进入现役 v1.10.5；本轮真实 launchd、exact annotated tag 与新鲜双心跳的严格身份校验通过。
-  两合约历史输入修复及修复后的自然苏冰评估、Event/provider acceptance、owner 微信收件
-  均已按上节证据闭环；旧 failure 保留，整体现版本自然盘后验收仍独立待完成。
-- 2026-09-08 19:26:46..19:26:57 CST 只读确认 RS2609 当日 Canonical 五周期
-  `1m/5m/15m/30m/60m` 为 `225/45/15/8/5` 根，原五根日内目标均存在。
-  当日 Live 已由自然盘后清理，恢复水位/circuit null，provider attempt count 仍为3。
-  旧日内恢复计划已失效，不能为了完成步骤重建过期 Live 数据；以后恢复须另取当日精确计划和单次授权。
+| 缺口 | 类型 | 当前证据边界 |
+|---|---|---|
+| 用当前 develop 收尾代码重跑现场只读 closeout | 现场验收 | 2026-09-10 一次默认只读停在 `source_age`，`AFTER_MARKET_CLOSEOUT_BINDING_UNAVAILABLE`，状态 SHA-256 仍为 `08d63356c9978423431fe7db2a926d655a159ffb5c8f64b1237c2c7f5c79ee57`。当时五服务身份与环境解析已越过；分阶段安装后的 launcher/plist 晚于最早 API 启动 `2026-09-09 12:05:55 CST`，但早于中断运行 `18:05:06.737372`。该次核验早于后续来源时间代码修复，不能当作新代码已失败。数据一致性检查尚未形成现场证据。 |
+| v1.10.5 自然盘后 | 现场验收 | 不得用 v1.10.3 成功记录或旧状态字节代替。 |
+| 盘后日历未知、异常退出、副作用报告 | 代码缺陷 | 上轮线索见下节；须在任务精确基线复现。已实现的日常增量与独立 weekly-audit 不得被包装成“全历史已完整”。 |
+| 现有牛哇旧请求回写、面板冲突、分页定位 | 代码缺陷 | `useNewowProduct.ts` 已有代次/取消/冲突处理；隔离脚本只是线索。黄金固定截点九组合可作为回归基础，不得改截点或冒充当前全品种。 |
+| 其他品种物理历史与页面可用性 | 数据缺口 | 元数据不得再列为待修。须按品种/周期/面板区分元数据缺失、物理历史缺失、质量异常、正常样本不足和原站证据不足。 |
+| 牛哇新版综合解释 | 新版需求 | 同输入已确认新版五项/`R0–R4`/`MM1–MM4`/计龄与当前 v3.2.59 四项/13 格合同 3/3 不一致；总分含未展示 `certExtra`。详见 [当前复核](docs/research/newow-current-review.md) N09。震荡 60 分钟图表差异为 `KNOWN_DIFFERENCE_ACCEPTED`。 |
 
-## 历史输入与自然闭环
+## 本轮稳定版边界（冻结）
 
-- PF2611 于 2026-09-05 使用 exact v1.9.15 完成截至 `2026-09-04` 的 warm-up：76目标 applied，
-  physical 15m 为4,491根，audit无finding；plan hash
-  `7a51886988ff0508f6b3295d40665cef11ff54bc7b0b63ab79aee4fec5544f19`。该批准已消费。
-- 苏冰截至 `2026-09-04` 的历史物理15m已完成 `60_OF_60_HISTORICAL_PHYSICAL_15M_VERIFIED`。
-  2026-09-08 02:27:44..02:28:20 CST 经 MDS/Catalog/Canonical 全量读回259,183根、640个月分区，
-  每项 actual=expected、`coverage_exact=true`。新增50合约为465 direct 1m + 465 derived 15m，930全部 applied，
-  无partial/failed/blocked/unstarted或retry；批次hash `c181453a449c95ec711ac80cfee365ae6cec0cb3e6f89fa89572b6458a2e31c1`。
-  原 `verify-last-run.json` hash `2d4afc3f714538a94758cc7af9e65e5618c282f35e6f8bfafecdbde9de1089d3`，
-  evidence目录 `/private/tmp/subing-physical15m-20260907/`；保留索引不保证临时文件当前仍存在。
-- 2026-09-08 盘后再次确认当日60个rank1合约上市日至收盘的physical15m前缀均exact；JD当时主力为JD2611。
-  历史输入完整不能替代当前 Live readiness 或自然 Event 验收。
-- BU/BZ旧七周期warm-up的D1/W1缺口仍未关闭。BZ `2026-03-20` 有 `volume=2`、O/H/L全0、close=7811，
-  不能用close、settlement或1m填补；该问题不否定已完成的限定1m→15m历史验收。
-- exact `v1.9.15@36fef03923a168145e6fd2eab023dc1d2b411ad6` 于2026-09-07夜盘自然生成
-  AG2610 Event id=31，bar_end=`2026-09-07T13:15:00Z`，buy，detected_at=`2026-09-07T13:15:15.222713Z`；
-  AL2610另在13:30Z/14:00Z形成sell/buy Event，均记录one-shot provider acceptance。
-  Owner于2026-09-08确认收到对应沪银/沪铝微信通知，G11/G12完成，
-  `SUBING_WECHAT_DELIVERY_CONFIRMED / SUBING_NATURAL_CLOSURE_COMPLETE`。Issue #307八项Gate已完成。
-  这只归属v1.9.15历史闭环，不证明Topic其他成员送达或v1.10.4当前健康；provider accepted仍不等于送达。
-- 早期自然Event为0、2026-09-03盘后`LIVE_DOMINANT_MISMATCH`失败等历史观察从Git history追溯；
-  后续成功不改写这些历史失败，也不授权补评/补发。
+近期里程碑是：交付一个盘后结果可信、失败可诊断、部署可验收的稳定版本。工作 1–5 服务该里程碑；工作 6、7 不是同一任务，不要求完成后才能发布。
 
-## Newow 产品证据与开发候选
+**本轮阻塞**
 
-- 2026-09-09 新版牛哇盘点与参考卡片工程完成，代码候选 `c1d03c6d8`；公开观察、版本来源与缺口见
-  [当前复核](docs/research/newow-current-review.md)。当前 FLAT 等待卡使用已接受的当前窗口身份，
-  不创建参考交易或借用分页历史收益；日内时间增加时分并保留跨年信息。旧手册及派生 PDF 已同步纠正过时实现状态。
-  Web `507 passed, 1 skipped`、定向 backend + engineering `275 passed, 1 skipped`、build 通过；
-  等待卡浏览器 2 项、既有交互 4 项通过，1440/390px fixture 已视觉检查；9 项 OpenSpec、secret/diff 通过。
-  独立 Standards/Spec 复审通过，复审分别实跑 59/69 项；工程为 `CODE_COMPLETE`、`TEST_COMPLETE`、`REVIEW_COMPLETE`。
-  owner 解锁后于 14:16–14:32 CST 完成招商银行三策略 × 日/周/60分的单标的可见行为采样，
-  并观察顺灏日周目标/吸筹、金钼周线清仓标记及14:30前后卡片变化；锁屏阻塞已解除，详见当前复核。
-  新版五项解释拆分与现有四项 certainty 合同有明确展示差异；9月10日固定同输入取证已确认是规则变化，未变更公式。
-  未刷新页在14:30后仍留待确认文字，刷新后顺灏清仓变持仓，不能把盘中预览固化为正式交易。
-  15:11收盘后刷新实查：顺灏恢复当天清仓且无待确认文字，解释转为收盘终值；金钼周线建仓/清仓
-  十字线日期08-28/09-04与卡片价格收益一致。完整入口可直接展开金钼8笔，6/8胜率75%、单笔收益合计130.19与页面一致；
-  去重17笔收益舍入区间核查相容，但仅5笔显示价直接重算一致。
-  当前primitive39项、adapter/参考交易/目标吸筹135项、Web显示/loader69项、图形/类型37项通过。
-  19:59固定公开快照新增金钼趋势周线逐值验证：118根原始行情经页面报价叠加为119根；
-  MA7/MA10各119项在1e-12价格容差内、状态119/119及Marker日期方向18/18一致，9笔精确配对收益在1e-10个百分点容差内。
-  对齐原站初始化窗口后8笔、6胜，未舍入收益合计130.193579…个百分点；独立固定输入重放4个文件哈希不变，归一119前缀检查及32项定向测试通过。
-  此证据仅覆盖该页面算术kernel与收益函数，不经过正式产品DTO/API/ReferenceTradeProjector；
-  20:23金钼震荡60分钟固定快照验证完成，图表parity未通过：444根输入、成熟HHV/LLV各435项一致，
-  初始评分/参考价一致的共同Marker26个；归一额外4个来自两次同根清仓后重建，造成5根持有状态差异。
-  图表13笔与归一15笔有两笔差异，完整图表Marker派生合计33.141879…与归一56.861370…个百分点；
-  原站历史回测仍重建并统计15笔/56.86%，不能以此替代图表一致性。两种原站灰度路径输出相同，公开参数对照定位同根规则。
-  444前缀、4文件确定重放及73项现有合同测试通过；当前公式未改。Owner决定忽略该图表差异，状态为
-  `KNOWN_DIFFERENCE_ACCEPTED`，不再列入当前修正任务。
-  23:23–23:32再冻结金钼主升浪60分及目标/吸筹日周公开输入。主升浪444根的MA35/45、状态、J/Z/VAR4/VAR41
-  全量一致；13个建清仓、26个减仓、27个D1–D6、41个11周期Marker及238根计数线全部一致，444前缀通过。
-  6笔未舍入参考收益合计38.020639…个百分点，与页面38.02%、6笔、83%一致；页面27.9回撤未作归一口径对照。
-  目标/吸筹日线600根、周线119根HHV10/LLV10逐项一致；共享三态选择、日周状态卡和趋势价格线全部相等，
-  显示值分别为日23.48/20.85、周24.96/18.68。batch虽返回prev_close=21.5，详情页复制字段未保留它，
-  因此previous-close activation、原页面时序及期货owner/segment仍为`EVIDENCE_REQUIRED`，现有公式无需修改。
-  两项固定输入7个输出连续两轮哈希一致，原始证据仅存Git外；84项定向测试、18项工程一致性、
-  9项OpenSpec、secret scan与diff check通过；独立Standards/Spec复审均无发现，允许仅文档集成develop。
-  其他组合、旧版个股bug因果修复及无刷新自动隐藏仍 `EXTERNAL_GATE_PENDING`；综合解释不再是未知证据Gate，而是已确认的新版本实现缺口。
-  9月10日08:11–08:23固定招商、顺灏、金钼三组公开多周期输入，执行牛哇`CDV2 1.2.0`原内核并核对两个真实DOM：
-  招商为MM1/R2、`249-1-241=7`根、`30+30+10+12+0=82`；顺灏为R3、`30+30+14+12-3=83`；
-  金钼为R3、`30+30+14+12-8=78`。MM1的2/3根门槛、MM2/MM3/MM4、signalIndex降级见证均通过。
-  归一当前v3.2.59族13格/四项封顶合同同输入得42/49/53分，3/3不一致；缺R0-R4、MM1-MM4、计龄和新版五项。
-  另确认牛哇总分会加未展示的`certExtra`：招商输入仅启用J减仓时五项仍82而总分77；后续合同必须显式展示或禁用该扣分，
-  不得引入隐藏Gate。证据仅在Git外，未修改策略/解释源码、生产数据、Runtime或通知；状态为`RESEARCH_EVIDENCE_COMPLETE / IMPLEMENTATION_PENDING`。
-  fixture 与旧版证据不证明新版 parity。本轮未发布、切换 Runtime 或修改策略公式、收益口径、生产数据与通知。
+- 工作 2：旧中断运行未得到有证据的归类，或收尾后部署预检仍失败且原因不明。
+- 工作 3：若进入本轮候选，则日历未知假跳过、普通异常假运行状态、部分提交假成功、未知结果假只读必须先有隔离故障注入证明。
+- 工作 5：候选相对 `v1.10.5` 的真实 diff 未冻结、未审查；发布与 Runtime promotion 未分别批准；新版本自然盘后未验收。
+- 工作 4 仅当主动合入同一候选时，才成为该候选的阻塞项。
 
-- 2026-09-09 黄金元数据接力已完成五合约 `AU2304/AU2306/AU2308/AU2310/AU2312` 的本批缺口修复。
-  新来源审计于 `04:02:05..04:02:20Z` 独立完成 613 次 public metadata API（42 Calendar、571 Session），
-  SDK RPC dispatch 575 次；无 retry、OHLCV、DB 或 Canonical 写入。source evidence hash
-  `32c49db5713229aa290e1e4db734cc770390c6e8a96d62ac7634c3eb9b5a0a77`，目录
-  `/private/tmp/newow-au-source-isolated-20260909-re136gmd/`。这不是旧失败批次的逐请求轨迹；旧批次已执行数仍未知。
-  173 个候选中 168 个日期获得夜盘正证据；其余 `2022-04-06/05-05/06-06/09-13/10-10` 未更正。
-  `04:14:31..04:14:32Z` 精确将 168 个 SHFE Calendar 的 `has_night_session` false→true，一次 commit、
-  独立只读 readback verified，其他字段不变；不重复原 id46796 更正。plan hash
-  `23c252c9d5d779ad3342b2bd768a6878c3edb33e7600a7420896b90a89406978`，结果
-  `/private/tmp/newow-au-calendar-batch-20260909-9tu4f_4f/apply-result.json`。
-- 更正后 fresh plan 与保存响应逐项核对，通过原生 snapshot 校验；`04:22:16..04:22:18Z` 再一次提交
-  102 条 SHFE 非交易日 Calendar 与黄金 196 天的 779 条 Session，共 881 行，保留既有 200 天 Session。
-  本次无 Calendar UPDATE、RQData 或 Canonical 写入、无 retry；独立只读回读一致，五合约本批范围的
-  Calendar/Session 缺口均为 0。plan `aa8c8e3148181c54dfbb140083a60ff5757177ff14f45a590fb45e0c015e28b8`，
-  snapshot `cd497e3249ba674b5a7a5d281f6e166bd94b59eff98e05758bb5961ff07e1af0`，结果
-  `/private/tmp/newow-au-metadata-insert-20260909-one/apply-result.json`。
-  上述两次 mutation 执行代码基线 `951d310df7bba7ac95597f1c77c658afac231be6`；168 更正包装器隔离测试
-  9 passed，原生 bounded metadata 本轮 60 passed，独立 Review 通过。这些测试不证明页面恢复。
-- 2026-09-10 其余 59 品种的 Calendar/Session 元数据恢复 `COMPLETED`。在
-  `a53389cc51338b47c06fc44bdf1d060a08c8ce87`，完整 RQData Future inventory 的 11,272 行原文进入
-  plan/hash/recheck；GFEX `2026-09-14/15` 由 LC/PD/PS/PT/SI 全品种同日证据确认无夜盘。
-  精确计划 `fadb78b7adc3677187bd9129e158fbe45dc9deec49b7b92dc88e26184522e876` 仅新增 8 个逻辑请求、
-  4 个来源窗口且无重试；59 批实际插入 683 个 Calendar、8,863 个 Session 品种日期、33,841 条
-  Session 行，并逐批独立回读。最终 59/59 fresh native plan 的 Calendar/Session 剩余唯一缺口均为 0；
-  累计 2,052 个 Calendar 冲突修复、1,179 个 Contract 身份、AU Session、MainContractMap、全
-  Dataset/Partition 行 hash 与 Canonical stat 指纹均未漂移，无 halt/unknown。最终结果
-  `/private/tmp/newow-59-metadata-recovery-v6-20260910/execution/readbacks/v6-20260910T051819509504.json`
-  SHA256 `004edb82e5a16590cd3e1ddd64ad16bdde4a9dd9bb48a4cbefc8eb7f53b2a3c9`；独立生产只读复核
-  `2cf43f0f5eb13ccc5c120ffb645bfe845d507e8797935040d490f4c9958da0de`，执行 3,734 次 SELECT、
-  0 SQL 写入、0 provider 调用。本结论只关闭元数据恢复，不证明分钟历史或九组合页面已经恢复。
-- 本轮只读核实五项 installed/loaded Runtime 同为 `v1.10.5@cdd72d750`，API/Web/Live/Alert running、
-  After-market loaded、当前 not running，未发现旧 v1.10.4 根进程引用；本任务未重复切换。随后截至 `2026-09-08T07:00:00.000001Z`
-  的 AU 真实矩阵审计返回 `PREFLIGHT_FAILED`，结果文件为空，仅保留通用错误码，不能声称矩阵已完成或定位真实原因。
-  失败证据 `/private/tmp/newow-au-post-metadata-20260909-one/baseline.jsonl`；已停止外部操作、未重试。
-  离线复现旧包装器不能序列化有效计划的 date 对象；预备入口增加类型序列化与安全 phase/error-type 记录，
-  离线 3 passed；新的单次只读审计随后获准并完成，结果见下文。黄金历史行情补齐、
-  真实矩阵验收与 8010/5174 浏览器验收仍未完成，未启动预览。所有临时 evidence 使用前须检查存在与完整性。
+**本轮不阻塞（已披露限制）**
 
-- `2026-09-09T04:32:40..04:34:19Z` 按新的单次批准在 `1f0ff619e` 完整执行黄金只读审计：
-  `status=audited / complete=true`，12 个 section 窗口、132 项依赖全部完成，126 项
-  `REPLAY_PREFIX_MISSING`、6 项 `DATA_READY`（AU2610 三周期在两个 as_of 边界），metadata proposal 为 0，
-  无 source/integrity finding；主图仍为 0/9 ready，不能宣称页面恢复。provider、DB/Canonical writes、Redis、retry 均为 0。
-  `/private/tmp/newow-au-audit-recovery-20260909-prepared/readiness.json` 文件 hash
-  `1faddc07183e664bf861d410b79edab2c5f3b6a722eebdb72ec6ee12b3aeb0d5`。此成功不证明旧通用错误的真实原因。
-  离线合并 21 合约的 63 个候选为 42 个 W1/60m 计划、904 个唯一物理分区；227 个独立 D1 窗口
-  与 W1 伴随窗口逐项相同，故不重复执行。原生 provider target 计数 677 不是 public API 或 RPC 请求数。
-  全部计划与 consumer provenance 见 `/private/tmp/newow-au-history-plan-20260909/consolidated.json`。
-- 首批来源方案限定 `AU2304`，10 条精确交易所日行情请求覆盖 `2022-03-16..2022-12-30`，
-  对应 2022-03..12 的 20 个 D1/W1 分区、196 根日线和 41 根周线。完整端点重建与原生 plan hash
-  `9f4f789fc3cb0569bb43216c39d16f2b9f5cd8e60f1cb358ca4b14bf34853fad` 一致；独立 Review 已核验范围、
-  日周去重与哈希。10 次调用仅是完整来源响应下的成功路径，必须用严格守卫拒绝缺日后的补充查询和越界调用。
-  来源捕获守卫的 9 项离线测试通过，含缺日/重复/错合约及 timeout/GatewayError/PermissionDenied 单次派发，独立 Review 无代码阻塞；
-  首批来源捕获随后按单次批准执行并停止，详见下文；Canonical 发布、补齐后矩阵与浏览器验收仍待完成。
-- `2026-09-09T04:57:42..04:57:43Z` 在 `a54c51476` 执行 source-only 计划
-  `e05dd542e8c35662a9cf0937bea5102ce7df350cc3bfd39089c2db7ac0107b91`，首个
-  `AU2304 / 2022-03-16..2022-03-25` 请求完整返回 8 个源交易日后触发 `SOURCE_NONPOSITIVE_PRICE`，立即停批。
-  实际 public API attempted/completed 均为 1，SDK RPC attempted/completed 均为 3（quota、type-list、日行情各 1）；
-  原计划剩余 9 次行情请求未开始，无 retry，DB/Canonical writes 与 Redis connections 均为 0。
-  结果 `/private/tmp/newow-au-history-plan-20260909/fetch-result.json`，逐请求事件同目录 `fetch-events.jsonl`；
-  原始 `source-01.json` SHA256 为 `345ac234c465cb17e4e420e51fe5122e62f876038a550be29c1248b13ac17e17`。
-  `2022-03-16/17/18` 三天均为 volume=0、open/high/low=0、close=400.12；其余五行 OHLC 均为正。
-  现行 DATA_CENTER 零成交日规则允许用同一行有效 close 规范化全零 O/H/L，但本任务明确禁止填补原始零价，
-  因而不能自动套用该规则写入或继续下载。仅离线生成三行前后对照并核验原响应未改动，见同目录
-  `zero-volume-comparison.json`；该对照不是授权、真实修复或页面恢复。原捕获计划的执行意图已消费，
-  当时停止等待零成交日处理口径；后续批准与剩余范围见下文，不重跑已取得的首个响应，不自动补取或发布。
-- Owner 随后明确允许仅 `AU2304 / 2022-03-16、17、18` 三条零成交记录采用同一行 close 规范化 O/H/L。
-  已通过现有原生纯函数生成独立本地候选，精确三行的 O/H/L 为 400.12，其他字段不变；原始来源 hash 保持
-  `345ac234c465cb17e4e420e51fe5122e62f876038a550be29c1248b13ac17e17`。候选文件
-  `/private/tmp/newow-au-remaining-source-20260909/approved-candidate.json` SHA256
-  `945f2a26ec96494bfd5a294ca7c70d5f4333cda2cf213fcee1ea172943d3e5a9`；本步 provider、DB 与 Canonical 写入均为 0。
-  本次例外不扩展到其他日期或合约，不等于 Canonical 发布授权。离线 21 passed，覆盖精确三行、原始响应保留、
-  其他零价仅记录、OHLC 与其余五个来源数值字段的非有限值拒绝及剩余请求精确排除首个已完成窗口。
-  新来源审计只包含原计划尚未启动的 9 个窗口、188 个源日期，范围 `2022-03-28..2022-12-30`，
-  首批方案详见 `/private/tmp/newow-au-remaining-source-20260909/first-batch.json`。作为 raw source audit
-  保留非正 OHLC 并列为 findings，不自动规范化或发布；连接、格式、身份、重复或覆盖错误仍立即停止且无 retry。
-  此诊断用途与旧遇非正价格停批的捕获不同，随后取得新的精确单次批准，执行结果见下文。
-- `2026-09-09T05:16:22..05:16:23Z` 在 `ccc93c1c7` 执行剩余来源审计，plan
-  `d63b37c3f95c8be30fb3e24638aea6559b22d2c8343492915c0a2619620e4cc8`：9 次 public API、11 次 SDK RPC
-  全部完成（quota/type-list 各 1、日行情 9），188 个日期完整，`captured_with_source_findings`；
-  provider 操作无 retry，DB/Canonical writes、Redis connections 均为 0。逐文件哈希与事件见
-  `/private/tmp/newow-au-remaining-source-20260909/fetch-result.json` 和 `fetch-events.jsonl`。
-  唯一新增非正价格记录为 `AU2304 / 2022-03-31`：volume=0、open/high/low=0、close=397.26、open_interest=12。
-  此日期不在已批准的三条例外中，保持原值，不自动规范化或发布。
-  两批合并后 196 个源交易日与已捕获 Calendar 日期逐项相等、无重复；仅应用三条例外时 195 行通过原生
-  CanonicalBar 校验，03-31 因 OHLC 包络失败。仅在内存假设增加 03-31 例外时，196 D1、41 W1 的原生
-  构造与 20 个分区的离线范围校验通过；该对照不是授权或真实发布，未进行 fresh Catalog recheck、
-  Parquet 写入/物理回读或页面验收。完整离线报告
-  `/private/tmp/newow-au-complete-source-20260909/validation.json` SHA256
-  `ddae25495bf8e6dacc70973ad0edc4e22480256d49d0061b58ea1ffb60079fe2`。
-  首批全部源响应均已保留，后续不重查这 196 天；当时等待新增零成交日口径，后续批准见下文。
-- Owner 随后明确允许本次黄金恢复的交易所日行情统一采用现行零成交日规则：仅 volume=0、
-  O/H/L 全零且同一行 close>0 时，用该 close 规范化 O/H/L；原始响应保持不变，其他异常仍停批。
-  该批准覆盖 AU2304 的 03-16、17、18、31 四日，不授权 Canonical/Catalog 正式写入。
-  来源范围/失败锁定/归一离线测试 `5 passed`，只读准备脚本独立 Review 完成。
-  `2026-09-09T05:35:49..05:35:50Z` 在 `a31962af3` 执行一次 fresh readonly preflight，
-  `fresh_readonly_plan` 阶段返回 `OperationalError / PREPARATION_STOPPED`，立即停止、未重试；
-  provider requests、DB/Canonical writes、Redis connections 均为 0。未保存异常原文，根因尚不确定，
-  不能把本机 5432 端口存在监听当成 DB 连接成功。失败结果与审查版本脚本保留在
-  `/private/tmp/newow-au-publication-prepare-20260909/result.json`、`prepare.py`。
-  同轮 launchd 只读检查五项 installed/loaded root+commit 均为 v1.10.5/cdd72d750，旧 v1.10.4 根
-  无相关进程 PID；After-market 为 not running、无 PID，不单凭此声明 idle 或整体 Runtime Ready。
-  随后仅离线构建获批候选：196 D1、41 W1、2022-03..12 的 20 个临时 Parquet 严格写入/读回通过，
-  完整 expected endpoints 来自已捕获 Calendar，重建 native plan hash 仍为
-  `9f4f789fc3cb0569bb43216c39d16f2b9f5cd8e60f1cb358ca4b14bf34853fad`；不是从候选 Bar 自证覆盖。
-  10 个源文件哈希不变。报告 `/private/tmp/newow-au-publication-prepare-20260909/offline-candidates.json`
-  SHA256 `4dbc6b94d4822d26688d519daa9e4a2c8e52717d08a93fb67cf5db60fc05ec79`。
-  该结果不含 fresh Catalog/Session 核对、正式发布或页面验收；本批发布准备仍被在线核对失败阻塞。
-  随后获得一次新的精确只读诊断批准，`2026-09-09T06:06:03..06:06:04Z` 在 `4701c993e` 执行
-  plan `e5cfd0e9a3706ae85b123effcb209b6684122ac8038200f4f36b71b55d342494`，仍在连接/只读事务阶段停止：
-  `OperationalError / authentication_missing`，SQLSTATE 未提供；未进入 fresh planner，未重试，
-  provider requests、DB/Canonical writes、Redis connections 均为 0。新结果单独保留在
-  `/private/tmp/newow-au-publication-diagnostic-20260909/result.json`，不覆盖前次失败。
-  离线定位为临时 runner 的初始化顺序错误：`find_spec(app.db.readonly)` 经 `app.db.__init__`
-  提前导入 session 并创建缺认证 engine，随后加载 dotenv 不会更新既有 engine。配置本身存在所需认证，
-  未输出凭据、未修改 `.env` 或 Runtime。禁止网络的 fresh subprocess 用合成配置复现旧顺序缺认证、
-  新顺序有认证；新 runner 先加载既有配置和校验目标/认证存在，再检查模块来源，连接前再次校验 engine。
-  `/private/tmp/newow-au-auth-order-fix-20260909/` 中范围、归一、错误脱敏与初始化回归测试 `13 passed`；
-  当时新 runner 仅准备，等待新的单次 AU2304 只读执行意图；后续结果见下文。
-- `2026-09-09T06:13:05..06:13:07Z` 在 `a88546307` 获准执行修正后唯一只读核对，plan
-  `6da1eb2b633bd63d525fca8de6a03ae18939cba0976b61c1c868e3d9d4248bb0`，exit 0、passed；
-  认证初始化阻塞关闭。native plan 仍为 `9f4f789fc3cb0569bb43216c39d16f2b9f5cd8e60f1cb358ca4b14bf34853fad`，
-  fresh snapshot 确认 Dataset 1670/1671 已有，AU2304 的 2022-03..12、1d/1w 共 20 个 Catalog 键完全缺失。
-  原生 adapter 仅读取 10 个保存的来源响应，4 行按获批规则规范化；196 D1、41 W1 经当前 Calendar/Session
-  边界校验，20 个临时 Parquet 严格回读通过，字节 hash 与此前离线候选一致。provider requests、
-  DB/Canonical writes、Redis connections 与 retry 均为 0，不能把 adapter 的本地来源读取计成新 RQData 请求。
-  结果 `/private/tmp/newow-au-auth-order-fix-20260909/result.json`；fresh-plan 文件 SHA256
-  `e4279976155fd8d26456e71e91b7acc580a2aa40afcbfe1a0c99f81e4842fa1b`；publication-plan 文件 SHA256
-  `b63662b6db119c4d973095a61c7af48be32d66996a1adca9119ecddcdd3f9fac`。独立本地证据复核通过，未重复连接 DB。
-  首批下一步仅规划新增上述 20 条 Catalog 分区记录与最多 20 个 immutable hash 文件，既有两个 Dataset 不变；
-  精确 URI 本地扫描当前 20 个文件均不存在，执行仍须在原生维护锁内重查计划、缺失键、文件与消费者身份。
-  `/private/tmp/newow-au-publish-once-20260909/` 已准备 captured-source 原生发布 wrapper；离线及独立 Review 各 `20 passed`，
-  覆盖真实 SQLite flush/commit 事件、越界/更新/删除拒绝、候选与旧 Runtime 身份拒绝，以及原生
-  `COMMIT_OUTCOME_UNKNOWN` 停止后续分区。SQL/Catalog 只允许目标单行 INSERT；逐分区提交，全成功后
-  新开只读事务经 MDS 读回。失败保留成功分区与候选，无自动 retry、指针反转或旧 v1.10.4 回退。
-  当时为 `EXTERNAL_GATE_PENDING`：首批尚未执行，后续获准结果见下文。
-- `2026-09-09T06:27:22..06:27:27Z` 在 `955d3f016` 执行获准的唯一首批发布，execution-plan
-  `1505d96db5c2a5ef1849310cfcd2c62705c2cb64fa65573c1bf25ae9972c321f`：exit 0、passed，AU2304
-  2022-03..12 的 1d/1w 共 20 分区全部完成。锁内重查、五项现役消费者 v1.10.5 身份及 P1 源码核对通过；
-  20 个精确文件目标原不存在，新增 20 个 immutable 文件及 20 条 Catalog 记录，20 次唯一 commit，
-  无 Dataset/Calendar/Session/Scope/Redis 写入或通知。0 次新 RQData 请求、10 次保存来源读取、
-  20 个 native logical provider targets 分开计数，无 retry。
-  同次执行完成后的独立只读事务经 MDS 核验 20 个 URI/hash/全部 Bar 通过；readback SHA256
-  `0bf9bde5e8481c1432ff8812ddf8fbea265442ec6aaf9cc51bec1bef69e6aaa4`，为 196 D1 + 41 W1。
-  本地独立 Review 另按 exact manifest 读取正式文件确认全部 hash、237 端点、20 个唯一提交事件及来源 hash；
-  evidence 位于 `/private/tmp/newow-au-publish-once-20260909/`。本批状态 `COMPLETED`，不代表完整矩阵恢复；
-  已消费计划不得重跑。保留候选与已提交文件，不自动回收或回退旧 Runtime。
-- `2026-09-09T06:35:26..06:35:43Z` 一次仅 AU 的剩余日/周只读规划通过；AU2304 D1/W1 剩余目标为 0，
-  其余 AU2306..AU2608 的 20 个物理合约 native plan hash 逐一与原审计相同，合并 D1/W1 后尚有
-  430 个分区（217 D1、213 W1）。按原生分组与当前 Calendar 逐窗口枚举为 231 次 `futures.get_exchange_daily`，
-  3978 个不重复 contract-date，整体源日期范围 2022-05-17..2026-05-25；逐合约范围、请求与目标见
-  `/private/tmp/newow-au-remaining-daily-plan-20260909/plan.json`，文件 SHA256
-  `ae6834bf6036b340a8e5ce4598716efed1c50b317012f86c20105dad11ee0b8d`。本次 provider requests、DB/Canonical writes、Redis connections 均为 0。
-  新 captured-source 查询脚本与计划位于 `/private/tmp/newow-au-remaining-daily-source-20260909/`，
-  离线及独立 Review 各 `40 passed`；SDK 最多 231 次数据 RPC + 3 次初始化元数据 RPC，关闭 retry/pool/fallback。
-  原始响应不改写，已批零量全零 O/H/L 且同 close>0 规则仅用于校验例外；其他价格、数值、覆盖、身份或
-  来源错误立即停。当时仅准备；随后查询结果见下文，430 分区正式写入仍未执行。
-  60m 所需 1m/60m 历史依赖、完整真实矩阵和 8010/5174 浏览器验收仍未完成，不能以此日/周计划替代。
-- `2026-09-09T06:51:32..06:51:34Z` 在 `e0c9719c4` 获准执行唯一来源查询计划
-  `bdf1fe1524f8bf7e85cbf8376cd634ee13c45972564d0dca442304d3d372c72d`，第 13 次 API 后失败停止，
-  `SOURCE_CAPTURE_STOPPED`，无 retry。实际为 13 API attempted/completed、15 SDK RPC attempted/completed
-  （quota/type-list 各 1、日行情 13），不是执行全部 231 次；218 次尚未开始。DB/Canonical writes、Redis connections 均为 0。
-  AU2306 的前 12 个响应已按 hash 保存，202 个源日期完整；唯一非正价格记录为 2022-05-17 的已批准
-  零量全零 O/H/L、正 close 例外，原始值未改写。该合约来源已齐，但 22 个分区的完整候选与写入未完成；
-  新来源对应 missing D1 202 / W1 41，完整候选还须保留已有 14 D1 / 3 W1，不能仅以新来源替换完整月份。
-  第 13 个请求为 `AU2308 / 2022-07-18..2022-07-29`，返回 10 行并通过合约与日期检查；
-  随后在响应转换/编码/落盘范围内失败，`source-13.json` 未生成，具体异常类型及原响应未保留。
-  不得推断前次实际含 NaN，也不得把后续新查询当成该次未保存响应。result 文件
-  `/private/tmp/newow-au-remaining-daily-source-20260909/fetch-result.json` SHA256
-  `86a64346317a10e4784ce2fdf55f7981221b4a5effae2926de6f2596cb979daf`；原始文件与逐请求事件保留在同目录。
-  新单窗口诊断准备在 `/private/tmp/newow-au2308-source-diagnostic-20260909/`，仅 AU2308 上述 10 个日期，
-  1 API、最多 4 SDK RPC；显式类型标签保存 NaN/Infinity/missing 等值，不替换为 0/null，不规范化或发布。
-  增加安全 phase、error type/code、OS errno；离线及独立 Review 各 `12 passed`，当时未执行新查询。
-  该阶段等待新的单窗口诊断意图，后续获准结果见下文；失败批次授权已消费，不重查已保存 AU2306，
-  不自动启动余下 218 次请求，不写生产数据。
-- `2026-09-09T07:10:32..07:10:34Z` 在 `042272852` 获准执行一次独立 AU2308
-  `2022-07-18..2022-07-29` 诊断，计划 `da20b1f0833fa6ea53cde846243aaf5935db9b6d3f1b0727845291658782f1b7`。
-  结果 `captured_with_findings`，1 API / 3 SDK RPC attempted/completed（quota、type-list、日行情各 1），
-  10 个日期全部保留，DB connections/writes、Canonical writes、Redis connections、retry 均为 0。
-  `2022-07-18/19/22/25/26` 五日的 O/H/L 均明确为 float NaN，volume=0、同一行 close>0；
-  现有 DATA_CENTER 与原生 adapter 的同时全空 O/H/L 规则覆盖该形态，未改变合同、原始值或发布数据。
-  本次新响应不能证明此前未保存的第 13 次响应内容，也不能被补写为此前失败轨迹。
-  独立 Review 已核验计数、日期、原始类型与 hash。证据目录
-  `/private/tmp/newow-au2308-source-diagnostic-20260909/`：typed-raw-source SHA256
-  `6c2bbdc422fe1c43b32cf99a818ff9039936df0d16efad50fa0348881eede65d`；result SHA256
-  `b4f38b8f954c77ec126e63b273bd87e4db37267b25e230af7ddc252ba7a50562`。
-  剩余新计划在 `/private/tmp/newow-au-daily-source-resume-20260909/`：严格为原只读计划 public_requests[13:]，
-  AU2308..AU2608 的 19 个合约、218 次日行情 API、最多 221 次 SDK RPC，3,766 个唯一合约日期，
-  来源日期 `2022-08-01..2026-05-25`。已保存 AU2306 的 12 个窗口和本次 AU2308 窗口均排除；
-  原始来源使用明确类型标签保存，检查复用原生全空/全零零量日规则；其他异常仍停止。
-  新来源脚本离线与独立 Review 各 `62 passed`；计数、范围、保留源 hash、失败停止及无写入路径复核通过。
-  当时新 218 次查询尚未执行，后续获准结果见下文；正式日/周分区写入、完整矩阵和本地浏览器验收仍未完成。
-- `2026-09-09T07:22:02..07:22:08Z` 在 `1ab61e8ce` 获准执行一次剩余来源查询，计划
-  `2f126f4bfb7ac93ef61a707c387025899f153e258c17fbd40bde73c05855b234`。
-  218 API / 220 SDK RPC attempted/completed（218 日行情、quota/type-list 各 1），全部完成；
-  新 218 文件保留 3,766 个合约日期，DB connections/writes、Canonical writes、Redis connections、retry 均为 0。
-  新 4 个来源发现均为 AU2310 `2022-09-16/20/22、2022-10-21` 的 O/H/L 全 NaN、volume=0、同一行 close>0，
-  只按现有 adapter 规则检查，原始值未改写。result 位于 `/private/tmp/newow-au-daily-source-resume-20260909/fetch-result.json`，
-  SHA256 `cfb31ffedebeb0f3fbab06cda6ee1d63d87b230d78c67780dd8042d737eb20a7`。
-  独立 Review 核验全部文件 hash、事件计数和来源顺序：新 3,766 日 + 已保存 AU2306 202 日 + 独立 AU2308 诊断 10 日
-  = 3,978 个唯一合约日期，精确覆盖原计划 231 窗口；失去的原第 13 次响应不被替代、补写或推定。
-  剩余 20 合约 D1/W1 来源已齐，10 个全空/全零零量日规范化候选均保留源值；这不代表 Canonical 数据或页面已恢复。
-  后续只读候选准备在 `/private/tmp/newow-au-remaining-candidates-20260909/`：重新核对原生 20 合约/430 分区计划，
-  使用保留的 231 响应复用原生 adapter、完整 ISO 周聚合和 existing Bar 合并，每个已有 Bar 必须逐值保留；
-  只在临时目录生成 Parquet 并完整回读，同时记录 Catalog 前像与既有不可变文件 hash。
-  新脚本在执行前修正了 FrozenSource 间接导入引擎早于配置的问题，并补充真实调用链的禁网子进程回归；未进行真实数据库尝试。
-  离线及独立 Review 各 `51 passed`；只读事务、临时发布路径、来源身份、已有 Bar 保留与失败停止核验通过。
-  当时只读 PostgreSQL/Canonical 候选准备尚未执行，随后获准结果见下文；正式发布仍需独立单次意图，
-  不新增 RQData、Scope、通知或 Runtime 切换。
-- `2026-09-09T07:34:51..07:35:41Z` 在 `94ed51345` 获准完成一次只读候选准备，计划
-  `979660f595b9d308b0a3c78ba8f6e3b69790e81dd154881e058e8cd449dbd3f1`；结果 `passed`。
-  20 个 AU 合约的原生 D1/W1 计划未漂移；231 个保留响应提供 3,978 个合约日期，按现有规则规范化 10 个零量日候选，
-  原始来源全部保留。临时 Parquet 430 个全部完整回读：217 D1 / 4,184 Bar，213 W1 / 869 Bar，共 5,053 Bar。
-  31 个 Catalog 前像的 239 根已有 Bar（206 D1 + 33 W1）逐值保留；正式文件与 DB 未写入，RQData、Redis、retry 均为 0。
-  结果 `/private/tmp/newow-au-remaining-candidates-20260909/result.json` SHA256
-  `df347d1b25164e01550443607e3fbfcaf6bc2e8ac14d9a0ca0f6bedeca6956ed`；publication-plan 文件 SHA256
-  `809462e9210b0f0c8baa9931fc4c9b7b9d0d0a0ee7f7575fc7ca6406ef60ac5f`；fresh-plans SHA256
-  `bd5565b5db49a1775c2ee74bbee32ea5dfc9029d3fdea85d5d94067a628910a2`。
-  独立 Review 已逐文件核验哈希、端点与计数，来源对应 D1 逐值相等，独立重算 836 条新增 W1 相等；
-  所有已有 Bar、旧文件与来源 hash 均一致。候选完成不等于正式发布或页面恢复。
-  下一批精确发布范围在 `/private/tmp/newow-au-remaining-publish-20260909/`：430 个新不可变文件，
-  Catalog 399 INSERT + 31 UPDATE，Dataset INSERT=0；保留所有旧文件，不改已有 239 Bar。
-  本地只读核对五个 installed/loaded Runtime 服务均为 v1.10.5 root / `cdd72d750`，未发现旧 v1.10.4 进程，
-  P1 storage/catalog/MDS 代码一致；精确目标 URI 扫描 430 个均尚不存在。无 Runtime 重启或切换。
-  独立 Review 要求加强启动身份检查后，已补齐五个 installed/loaded Label、程序、参数、工作目录及固定 runner hash；
-  本机加强后的只读扫描通过，runner 与 exact v1.10.5 源码 SHA256 均为
-  `c0a6526c582cf414712833a7e2727df8ffdfc4e9c20a66a27ee3fa806af415d2`。
-  发布脚本离线与独立 Review 各 `55 passed`，已覆盖旧 Bar 保留、399/31 精确 ORM 变更、前像漂移、
-  Runtime 启动参数漂移及未知 commit 整批停止；当时没有执行真实发布。
-  当时正式发布尚未执行，随后获准结果见下文。发布入口须持原生维护锁、
-  重查全部计划与前像并逐合约核对 Runtime/消费者，逐分区提交及独立 MDS 回读；失败或 commit 结果不确定即整批停止，
-  保留已提交分区和文件，不自动 retry、回滚指针、删除旧文件或恢复旧 writer。1m/60m、真实矩阵与浏览器验收仍未完成。
-- `2026-09-09T07:53:06..07:54:38Z` 在 `30bb207cb` 获准完成唯一一次 20 合约 D1/W1 正式写入，
-  计划 `4a6c1b0aeb6cda1936fa3ce623330b5c8953f789962d7e53bda0589002774085`；结果 `passed`，该批 `COMPLETED`。
-  430 个新不可变分区、430 次唯一 Catalog commit（399 INSERT + 31 UPDATE），Dataset INSERT=0；
-  20 个原生 contract_warmup 结果全部 passed，无 blocked/failed。`native_logical_provider_targets=430` 只表示原生逻辑目标，
-  真实 RQData 请求=0，读取保留响应 231 次，Redis=0、retry=0；没有 Scope、通知、release 或 Runtime 切换。
-  首写前与逐合约锁内 Runtime/前像/计划/来源校验通过，另一个只读 Session 的 Catalog URI + MDS 全 Bar 回读通过。
-  原结果 `/private/tmp/newow-au-remaining-publish-20260909/result.json` SHA256
-  `48c549cf7caeef0035f315a228b9d4c4fd54a565b56957c69ad50bd618a7d727`；readback SHA256
-  `ce24cbb5f3059e485cc8485803e7ef9165b83df43294f9257be8a240d6c8f482`。
-  独立 Review 已核验 1,740 个顺序事件、430 个唯一提交、20 个 native 结果和 Runtime preflight、430 个真实 Parquet hash；
-  5,053 根 Bar（4,184 D1 + 869 W1）与候选及回读一致，31 个旧文件、239 根已有 Bar、231 份源文件均原样保留。
-  此前已完成的 AU2304 20 分区不重跑。本批完成不代表九组合、解释/参考交易或浏览器已经恢复。
-  下一次只读矩阵与剩余 1m/60m 提案准备在 `/private/tmp/newow-au-post-daily-audit-20260909/`：
-  保持修复前 `2026-09-08T07:00:00.000001Z` 截点，AU 三策略 × 1d/1w/60m，覆盖 chart/auxiliary/reference/explanation；
-  使用共享 Reader/MDS 和原生 planner，从新结果提出剩余 1m 请求窗口与 60m 分区，保留任何未解决日/周问题。
-  新审计与提案脚本离线及独立 Review 各 `12 passed`；当时仅准备，后续获准执行结果见下文。
-  旧发布计划授权已消费，禁止重跑。
-- `2026-09-09T08:05:10..08:07:32Z` 在 `0b405e5a3` 按新的单次批准完成上述只读审计，计划
-  `082f8670823cf1997e98848b372aba644a335a4cf152e3eb1799d7457dbc45f5`；结果 `passed`、审计完整。
-  保持修复前截点 `2026-09-08T07:00:00.000001Z`：三策略 D1/W1 主图及适用副图均 `READY`，主图由 0/9 升至 6/9；
-  三策略 D1 参考交易 `READY`，W1 参考交易仍 `WARMING / NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL`；
-  震荡 W1 comparator 仍 `UNAVAILABLE / NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS`。
-  三个 60m 主图及相关面板仍 `DATA_UNAVAILABLE`；九个解释层都因 60m 历史缺口不可用，不能宣称全页面恢复。
-  12 个枚举完整，132 个依赖中 90 个 `DATA_READY`（44 D1 + 44 W1 + 2 H1），42 个缺口均为 H1；
-  元数据提案为空。剩余提案覆盖 21 个 AU 物理合约、454 分区（227 M1 + 227 H1），
-  2,280,600 根缺失分钟 Bar、227 次拟议 `get_price(1m, adjust_type=none)`；该次提案本身未执行来源调用。
-  `unresolved_other_frequencies=[]` 不表示周线参考交易或 comparator 已可用。
-  本次 RQData=0、DB/Canonical 写入=0、Redis=0、retry=0；审计授权已消费，禁止重跑。
-  `/private/tmp/newow-au-post-daily-audit-20260909/result.json` SHA256
-  `4d415c633f2e52fa90cd4366199b7e7d9159f84f622e7b1e64a85ba3ac1dfb76`；readiness SHA256
-  `7b1b39d05f6f3b97dd1e9a5e6822d0ac66ff53a2bc3aad624b74dd527ffd879a`；intraday-plan SHA256
-  `7aec69d8a3e0746c35bcde5b6c93933654535f9f3f9b97a09c1fefc890772dcb`。
-  当时仅准备 `/private/tmp/newow-au2304-minute-diagnostic-20260909/` 的首窗口来源诊断：
-  `AU2304 / get_price / 1m / none / 2022-03-15..2022-03-31`，一次行情 API、最多五次 SDK RPC
-  （额度、合约索引、Future 元数据、当前交易日、分钟行情各至多一次）；既有 planner 预期缺失 6,660 Bar，
-  此数不作为实际返回行数或覆盖通过声明。保存 SDK 转换前 RPC 响应及转换后逐行来源；分钟零价/NaN 不填充、
-  不套用日线零成交规范化。禁用 SDK 重试；失败立即停止；DB/Canonical/Redis=0。
-  新来源诊断离线与独立 Review 均 `31 passed`，包含禁网下真实 SDK 五次 RPC 模拟路由、精确范围、
-  额度拒绝、失败锁止和不填补异常来源测试；这些离线结果不证明分钟真实行情已恢复。
-  后续获准连续恢复完成全部 227 个来源窗口捕获，共 2,361,630 行、0 重试，首窗复用，不重新查询。
-  AU2306 的 22 个分区先行发布并回读；其余目标曾因审批拒绝、14 行成交额精度和一次零提交维护锁冲突暂停。
-  这些历史暂停已由下述明确批准后的续传关闭；不抹去原始执行记录。
+- 牛哇新版评分、`certExtra`、收益曲线、盘中确认时钟、Newow 真实推送。
+- 其他品种全部历史补齐、真实全品种九组合矩阵。
+- 已接受的原站差异，包括震荡 60 分钟同根重建。
+- 正常空仓、未完成周线、样本不足；不得改成“有结果”。
+- HTDY 61 对 Scope 未应用；BU/BZ D1/W1 异常。
+- 原件缺口继续 `EVIDENCE_REQUIRED`：诊断 token、六组合评分/排序、AI 逐字 copy、目标/吸筹权威昨收与期货 owner parity、比较器 browser-final/tie golden。
+- 旧苏冰 failure 时间戳、Topic 其他成员送达人数。
 
-- 2026-09-10 黄金牛哇本地真实预览恢复 `COMPLETED`：owner 明确批准清单内 14 行 `total_turnover`
-  按 `ROUND_HALF_EVEN` 保留 18 位小数，并连续发布剩余 432 个分区及页面复验；本轮零新增来源查询、零重试。
-  原始来源保留，OHLC、成交量、持仓量及交易日不变；20 合约 432 分区均提交并独立回读通过。
-  加上 AU2306 的 22 分区，原提案 21 合约共 454 分区（227个1m＋227个60m）全量严格MDS回读通过：
-  1m 2,394,930 根、60m 47,526 根；21合约native剩余目标为0。454个原始源文件、536个日周分区及36个原目标文件不变。
-  数据回读 SHA `acdc6f5320b796f641057b86b3fe13f67f372f6f717546e3be2eb353f241aae6`。
-  本轮另修复 Web 把共享 trend 综合上下文误当所选策略身份的解码错误，消除解释请求清空主图并使参考定位失败的问题；
-  部分解释证据不足有真实综合值时不再误报整层不可用。两个修复均先失败回归后验证，独立Review通过；
-  全Web 518 passed/1 skipped，typecheck/build、OpenSpec 9项、secret scan0及diff检查通过。
-  干净候选 `e79e82f42a174fb6fa7dd93e9a73c7f12a8f8118` 的 API8010/Web5174 使用固定历史截点 `2026-09-08T07:00:00.000001Z`，非实时；
-  无mock业务请求的真实浏览器逐一完成九组合主图、四副图、解释、参考统计窗口、历史展开/定位及比较器操作，技术与视觉验收通过。
-  周线默认本周未完成保留，最近完整周2026-09-04参考交易可查看；震荡周线AU2610仅6根完整周Bar，比较器明确不足20根。
-  九组合共享综合解释的三周期上下文与六项结果可用，目标/吸筹及原页面oracle等既有原始证据缺口仍保持 `EVIDENCE_REQUIRED`，
-  本次不宣称所有解释证据或全产品精确parity完成。统一证据 `/private/tmp/au-newow-minute-recovery-20260909/delivery.md`、
-  `completed-data-readback.json`、`browser-acceptance.json` 及 `browser-completed/`；预览进程身份/停止方式见 `preview-processes-accepted.json`。
-  本任务无剩余补数或浏览器Gate，停在本地预览；不涉及 Calendar/Session/MainContractMap、Redis、Scope、通知、账户、main/tag/release或正式Runtime变更。
+`develop` 相对 `v1.10.5` 已包含中断收尾、来源时间、closeout 配置、日常增量/weekly-audit、牛哇显示与黄金/59 品种数据记录等，不是口头上的“只修盘后”。工作 5 必须显式接受该 diff 并覆盖验收，或按正式流程拆分候选；不能假装额外改动不存在。此项保留为待裁决，不在本文猜测关闭。
 
-- 2026-09-09 AU2304／2022-03-16 的已获准单次时段查询确认：来源含夜盘，本地 SHFE Calendar
-  id=46796 原为 `has_night_session=false`。owner 新的单次批准已于 `2026-09-09T03:13:36Z`
-  消费：使用 `79c59ccb4` 受限入口，仅将该行夜盘标志更正为 `true`，其他字段不变，提交后独立只读核验通过。
-  本次 `database_writes=1`，`provider_requests=0`、`session_writes=0`、`canonical_writes=0`，无重试。
-  精确 plan hash `2384a9cc382c94fb1616d0f508006fd374b3a6b6c6673c5823ff301e574749a7`；
-  原结果 `/private/tmp/au-calendar-apply-20260909-zQDruw/result.json`（临时 evidence 不保证长期存在）。
-  单键更正为 `COMPLETED`，不代表 Newow 整体恢复；其后 Calendar/Session 与首批历史行情进展见上文，整体恢复仍未完成。
-  独立规范/需求 Review 无剩余阻塞；完整后端与 engineering 非隔离回归合计
-  `2967 passed, 16 skipped, 28 deselected`，另有单键隔离 PostgreSQL `7 passed`，
-  Ruff/Mypy/OpenSpec/secret/diff 通过。旧批次计划已因前像变化失效；当时剩余的 173 个候选日期已由上文新来源审计区分。
-  旧 613 次查询与旧单键更正授权均已消费，后续操作仍须重新核对范围，不自动重跑。
-  不授权其他日期、RQData、Canonical、发布或 Runtime 切换，也不自动逆向恢复旧标志。具体边界见 `docs/DATA_CENTER.md`。
+## 待办分类
 
-- P6工程已集成并发布，产品仍为 `P6_COMPLETE / PARTIAL_PRODUCT_EVIDENCE_REQUIRED`。
-  2026-09-08的历史只读证据归属v1.10.0：首30品种两轮及rb45项
-  均HTTP500，`REAL_WORKSTATION_MDS_REQUEST_PATH=MEASURED`，成功路径性能未验收。
-  MDS缺失映射转typed `NEWOW_DATA_UNAVAILABLE / HTTP409`的修复已包含在v1.10.4代码中；错误分类修复不补数据。
-- 缺少截至as_of已生效owner时必须fail-closed。把owner窗口缩到最后completed display/performance日的方案
-  已因破坏rollover与segment身份被拒绝，不能重试此“修复”。原2026-09-08只读repair计划已过期。
-  后续使用现有bounded readiness审计重新枚举当前依赖，再区分metadata与physical warm-up；不得重跑旧hash。
-- 2026-09-08获准的RB2701/RB2605/RB2610有界1m+60m补齐为39/39分区、15次RQData请求；
-  三合约60m读回1,084/1,509/1,502根。该批准已消费，不授权其他周期/合约。
-- 同一固定历史rb60m样本优化前后各五组新进程/同进程结果一致；DB语句2,433→89，冷/热HTTP中位数
-  2,210/2,167ms→536/488ms，未清除OS/磁盘缓存。照妖镜12组有界绘图对照像素差0，
-  不代表全产品、60品种SLA或在线全页面parity。该读取/显示改进已包含在v1.10.4代码中。
-- 原件缺口继续为 `EVIDENCE_REQUIRED`：诊断token、六组合评分/排序、AI逐字copy、目标/吸筹的权威昨收与
-  期货owner parity、比较器browser-final/tie golden；当前Core原包重放有接口漂移。
-  杯柄D1 clean-room不是原页面精确公式；18个D1/60m OOS及9个W1执行事实不足不升级为新的`OOS_PASSED`。
-- develop在v1.10.4之后另有有界旧窗口、快照/导航原子接受、只读readiness矩阵、分阶段metadata repair、
-  默认关闭的本地候选预览与可信报价截止修复。代码入口和验证命令分别见架构文档与`TESTING.md`；
-  这些代码没有因集成获得真实下载、DB/Canonical写入、release或Runtime授权。fixture不证明真实矩阵可用。
+上轮四项代码问题列为待精确基线复现，不直接认定为生产根因。已被后续提交修好的，只补验证，不重复修改。GitHub 当前无开放 Issue；不新建平行台账，统一挂到下表已有记录。
 
-## 剩余 Gate
+### 现场验收
 
-1. 发布并部署已审的身份解析修复后，重新完成exact-tag身份验收；自然completed Bar评估、当前60品种
-   readiness及新版本自然盘后证据仍需独立核验。现有旧failure不得手工清除来制造通过。
-2. Newow在当前权威owner/coverage完整后完成真实成功请求矩阵；原站parity与期货OOS/Walk-forward缺口独立处理。
-3. Market 统一详情页实现、测试、独立 Review 与 owner 桌面/390px 视觉接受已完成；
-   本轮仅授权 develop 集成，发布及 Runtime 切换仍不在授权范围。
-4. HTDY目标61对Scope未应用；BU/BZ D1/W1异常未关闭。数据修复、Scope、真实通知、main/tag/release与Runtime
-   操作均需新的目标/环境/范围明确的单次意图，不沿用本文历史授权。
+| 项 | 既有记录 | 下一步 |
+|---|---|---|
+| 旧盘后中断收尾 | `docs/DATA_CENTER.md` 收尾合同；OpenSpec `historical-data-maintenance`；develop 收尾提交自 `4dfa9133d` 起 | 取得现场只读授权后，用当前 develop 代码重绑身份并核对 `source_age` 与数据一致性 |
+| 现版本自然盘后 | 本文件 Runtime 表；不得使用 `cece65929…` 旧成功字节 | 工作 5 发布并切换后再验收 |
+| 收尾后部署预检 | `deploy/README.md`；promotion 不把 `interrupted` 当作 `after_market_complete` | 工作 2 闭环后单独做 |
+
+### 代码缺陷
+
+| 项 | 既有记录 | 下一步 |
+|---|---|---|
+| 交易日 / 非交易日 / 日历未知 | `coverage_source.py` `latest_metadata_day` 与 `after_market.py` 跳过 `NON_TRADING_DAY` 的连接 | 先证明“今天记录缺失、昨天存在”的触发路径，再按权威 Calendar 修复 |
+| 异常退出状态转换 | `after_market.py` 状态写入；禁止用一个 `finally` 清掉所有 `current_run` | 区分写入前失败、部分分区已提交、提交结果未知、进程中断 |
+| 副作用报告 | `runtime_entry.py` 对 after-market/weekly-audit 异常固定 `readonly=true` | 已写入时不得报未经证明的只读或零写入；错误码可诊断，不输出凭据/SQL/敏感异常 |
+| 牛哇旧请求回写与分页定位 | `apps/quant-web/src/composables/useNewowProduct.ts` 及其测试；黄金固定截点预览 | 用可控延迟在真实组合式函数/页面复现后，统一取消、代次、在途快照、面板与分页绑定 |
+
+### 数据缺口
+
+| 项 | 既有记录 | 下一步 |
+|---|---|---|
+| 59 品种元数据 | develop `e27ede9bd` / `a53389cc5` | 已完成，不再重开 |
+| 黄金日周分钟与本地九组合 | 本文件已证明事实 2；Git history 保留逐批 hash | 已完成本地预览；不把截点证据改写为当前生产矩阵 |
+| 其他品种物理历史 | 现有 bounded readiness / MDS 读回入口 | 稳定版之后按共享物理合约去重分批，先定范围再申请写入 |
+
+### 新版需求
+
+| 项 | 既有记录 | 下一步 |
+|---|---|---|
+| 牛哇新版综合解释 | [当前复核](docs/research/newow-current-review.md) N09；稳定合同仍见 `PROJECT_SOURCE.md` 与 OpenSpec `newow-product-reference-trading` | 先批准来源版本、计龄、五项、总分与 `certExtra` 显示或禁用；新版本身份，不改主动作/参考交易/通知 |
+| 收益曲线、嵌套路径、盘中确认、Newow 推送 | 同上 N03/N10/N11/N12，标为 P2 | 本轮不扩展 |
+
+## 七项工作对应
+
+| 编号 | 工作 | 类型 | 目标 | 范围 | 前置 | 验收 | 阻塞对象 | 下一步 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 状态和范围收敛 | 文档 | 能直接看出现在做哪一项、还差什么 | 只改当前状态表述与任务对应；不改公式、产品边界、业务代码 | 无 | 打开本文件即可区分已完成/待验证/待修复/新需求 | 不阻塞发布本身；阻塞“继续混成一个大任务” | 本项随本文完成；下一项为工作 2 |
+| 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单独批准 apply 记 `interrupted` | 现场只读授权；使用已审收尾代码，不沿用过期计划 | 通过到哪一步、失败在哪一步、还要什么证据都写明 | 可能阻塞 Runtime 切换，不因此改已冻结候选 | 先只读重跑；禁止删状态文件、改时间、伪造成功、绕过预检 |
+| 3 | 盘后运行生命周期与错误判断 | 代码缺陷 | 降低下次故障恢复成本 | `coverage_source`/`after_market`/`runtime_entry`；日常增量与 weekly-audit 保持独立 | 工作 2 的生产写入不得与本项生产操作并行 | 隔离故障注入：日历未知不假跳过、普通异常不留可避免假运行、部分提交不假成功、未知结果不假只读、不自动重试 | 本轮稳定版后端主任务 | 先复现再修；不新增队列、不放宽写入、不重写数据中心 |
+| 4 | 现有牛哇加载与显示一致性 | 代码缺陷 | 现有公式下页面可靠 | 请求取消/代次/在途快照/面板/分页；策略/周期切换、历史分页、参考定位、冲突恢复 | 独立前端任务；与盘后生产写入解耦 | 旧响应不能恢复失效数据；分页和定位不改变参考统计口径 | 仅在合入同一候选时阻塞该稳定版 | 精确基线复现；不改三策略主动作、新版评分或参考价格口径 |
+| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2 未闭环可能阻塞切换，不回改已冻结候选 | 发布了哪个精确版本、部署了哪个版本、哪些自然 Gate 已完成/仍待验证全部清楚 | 本轮里程碑 | 先裁决是否接受当前 develop 全量 diff |
+| 6 | 其他品种可用性与分批补数 | 数据缺口 | 事先知道可用范围和缺口 | 复用 readiness；按真实依赖去重；每批 MDS 读回和对应页面 | 稳定交付恢复后；每批真实查询/写入另需单次意图 | 每批有输入范围、结果和未关闭问题；未恢复品种明确披露 | 不阻塞无共享完整性问题的盘后稳定版 | 先出可用性清单，不边跑边扩范围 |
+| 7 | 牛哇新版综合解释 | 新版需求 | 把规则适配从显示修复中分开 | 新版本身份；先内核固定输入，再接口和页面 | 先批准新合同，含 `certExtra` | 同输入能解释新旧差异；分项与总分可核对；不改变主动作、参考交易或正式通知 | 独立后续候选 | Plan-only；本轮安排不构成实现或发布批准 |
+
+工作 2 处理旧事故，工作 3 防止同类事故再变成复杂恢复；可以分别推进，但不能同时进行会互相干扰的生产操作。同时最多一个盘后主任务和一个独立前端任务。生产写入、收尾和 Runtime 切换串行。测试建设嵌入工作 3、4、5，不再单开没有终点的全面测试重构。
+
+## 仍待人工裁决
+
+1. **稳定版候选范围**：当前 develop 相对 v1.10.5 已有盘后收尾、weekly-audit、牛哇显示和数据记录等额外改动。是接受该全量 diff 作为下一稳定版，还是拆出盘后最小候选，本文不猜测关闭。
+2. **工作 4 是否进入本轮稳定版**：仅当范围与验收已满足同一候选条件时合入；否则独立后续版本。
+3. **上轮四项代码问题的生产归因**：在精确基线复现前，不写成现役 v1.10.5 故障根因。
+证据不足的条目保持待裁决。临时 evidence 路径再次使用前须检查存在与完整性。
+
+## 唯一下一步
+
+工作 1 范围整理完成。下一项是 **工作 2：用当前 develop 收尾代码做现场只读 closeout 核验**。该操作需要新的、范围明确的现场只读授权；本文件不构成该授权，也不构成 apply、发布或 Runtime promotion 批准。
+
+工作 2、3、5、7 中涉及 Lane 3 的部分先 Plan-only。工作 3 的隔离复现可与工作 2 的现场只读分开排期，但两者都不得在未授权时连接生产或写入。

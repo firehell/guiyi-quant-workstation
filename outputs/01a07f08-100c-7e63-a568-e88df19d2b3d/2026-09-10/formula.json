@@ -1,0 +1,675 @@
+{
+  "27": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "buy"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "28": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "buy"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "29": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "buy"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "30": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "31": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "32": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "33": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "34": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "sell"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "35": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "36": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "37": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "38": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "39": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "40": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "41": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "42": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "43": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "44": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "45": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "46": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "47": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "48": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "49": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "50": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "51": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "52": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "53": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "54": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "55": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "56": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "57": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "58": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "59": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "60": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "61": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "62": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "63": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "sell"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "64": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "65": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "66": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "sell"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "67": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "68": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "sell"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "69": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "70": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "sell"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "71": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "72": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "sell"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "73": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "74": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "sell"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "75": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "76": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "77": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "sell"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "78": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "79": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "80": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "81": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "82": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "83": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "84": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "85": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "86": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "87": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "88": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "89": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "90": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "91": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "92": {
+    "status": "当前输入复算一致",
+    "codes": [
+      "sell"
+    ],
+    "basis": "Canonical前缀"
+  },
+  "93": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "94": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "95": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "96": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "97": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "98": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "99": {
+    "status": "公式复算数据不足",
+    "code": "FORMULA_PREFIX_COVERAGE_MISSING"
+  },
+  "100": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "101": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "102": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "103": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "104": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "105": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "106": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "107": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "108": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "109": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "110": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "111": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "112": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "113": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "114": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "115": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "116": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "117": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "118": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "119": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "120": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "121": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "122": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "123": {
+    "status": "公式复算数据不足",
+    "code": "FORMULA_PREFIX_COVERAGE_MISSING"
+  },
+  "124": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "125": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "126": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "127": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "128": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "129": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "130": {
+    "status": "公式复算数据不足",
+    "code": "FORMULA_PREFIX_COVERAGE_MISSING"
+  },
+  "131": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "132": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "133": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "134": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "135": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "136": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "137": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "138": {
+    "status": "公式复算数据不足",
+    "code": "FORMULA_PREFIX_COVERAGE_MISSING"
+  },
+  "139": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "140": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "141": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "142": {
+    "status": "公式复算数据不足",
+    "code": "FORMULA_PREFIX_COVERAGE_MISSING"
+  },
+  "143": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "144": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "145": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "146": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "147": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "148": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "149": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "150": {
+    "status": "公式复算数据不足",
+    "code": "FORMULA_PREFIX_COVERAGE_MISSING"
+  },
+  "151": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "152": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "153": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "154": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "155": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "156": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "157": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "158": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "159": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "160": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "161": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "162": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "163": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "164": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "165": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "166": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "167": {
+    "status": "前次复算一致，本次未重算"
+  },
+  "168": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "169": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "170": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "171": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "172": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "173": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "174": {
+    "status": "公式复算数据不足",
+    "code": "FORMULA_PREFIX_COVERAGE_MISSING"
+  },
+  "175": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "176": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "177": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "178": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "179": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "180": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "181": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "182": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "183": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "184": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "185": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "186": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "187": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "188": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "189": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "190": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "191": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "192": {
+    "status": "公式复算数据不足",
+    "code": "FORMULA_PREFIX_COVERAGE_MISSING"
+  },
+  "193": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "194": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "195": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "196": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "197": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "198": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "199": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "200": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "201": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "202": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "203": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "204": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "205": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "206": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "207": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "208": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "209": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "210": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "211": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "212": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "213": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "214": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "215": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  },
+  "216": {
+    "status": "公式复算数据不足",
+    "code": "ALERT_EVALUATION_FAILED"
+  }
+}
