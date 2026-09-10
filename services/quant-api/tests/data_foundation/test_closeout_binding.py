@@ -139,6 +139,21 @@ def test_binding_rejects_installed_plist_identity_that_differs_from_loaded_servi
         target.create()
 
 
+@pytest.mark.parametrize("service", ["live", "after-market"])
+@pytest.mark.parametrize("installed_label", [None, "com.guiyi.quant-other"])
+def test_binding_rejects_missing_or_wrong_installed_plist_label(target, service, installed_label):
+    path = Path.home() / "Library/LaunchAgents" / f"com.guiyi.quant-{service}.plist"
+    payload = plistlib.loads(path.read_bytes())
+    if installed_label is None:
+        payload.pop("Label")
+    else:
+        payload["Label"] = installed_label
+    path.write_bytes(plistlib.dumps(payload))
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
 @pytest.mark.parametrize("key,value", [("HOME", "/other/home"), ("BASH_ENV", "/other/startup"), ("ENV", "/other/startup")])
 def test_binding_rejects_shell_config_redirection(target, key, value):
     target.outputs["com.guiyi.quant-live"] = target.outputs["com.guiyi.quant-live"].replace(

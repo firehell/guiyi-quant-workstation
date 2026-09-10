@@ -255,6 +255,8 @@ class RuntimeDataBinding:
             working_directory = Path.home() if name in {"api", "web"} else self.root
             path = self.agent_dir / f"{label}.plist"
             payload = plistlib.loads(self._sources[path][0])
+            if not isinstance(payload, dict) or payload.get("Label") != label:
+                raise ValueError
             installed_environment = payload.get("EnvironmentVariables", {})
             validate_environment(installed_environment, name)
             if (tuple(payload.get("ProgramArguments", ())) != arguments
