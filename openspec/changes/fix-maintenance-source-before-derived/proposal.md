@@ -23,6 +23,6 @@
 
 预计修改 `services/quant-api/app/market_data/historical_data_manager.py` 与对应 data_foundation 测试。现有权威入口、公式、数据 schema、CLI 和分区事务边界不变。
 
-本 change 当前只有设计。后续实现仅使用隔离数据库、临时 Canonical 与 FakeProvider；生产 refresh、真实 RQData、Canonical 写入及 Runtime 切换均不在授权中。
+本 change 已完成实现与定向测试、独立 Review，最终整体集成仍待完成。验证仅使用隔离数据库、临时 Canonical 与 FakeProvider；生产 refresh、真实 RQData、Canonical 写入及 Runtime 切换均不在授权中。
 
 建议实施顺序：本项 → [前端失效修复](../fix-newow-conflict-invalidation/proposal.md) → [批量边界校验](../batch-canonical-boundary-validation/proposal.md)。三项分别验收，不合成一次大重构。
