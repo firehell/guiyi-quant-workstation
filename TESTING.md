@@ -89,6 +89,14 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 从仓库根执行，仅使用Git外已冻结的公开页面、三组`batch/quote`、18份趋势/震荡多周期响应和牛哇原内核。临时目录缺失时停止，不可联网补成另一快照。原始输入和DOM哈希见目录内`manifest.json`及[当前复核](docs/research/newow-current-review.md)。
 
 ```bash
+snapshot=/private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2
+test "$(shasum -a 256 "$snapshot/manifest.json" | awk '{print $1}')" = \
+  407cc7584a40f4250d604c5bbd69c09bb71b4714efff307eddb19c9ff1fdb2f3
+shasum -c "$snapshot/sha256.txt"
+test "$(shasum -a 256 "$snapshot/replay_composite.mjs" | awk '{print $1}')" = \
+  4d9853e67a4bd2d5be28cb1c7802ca94dec99d29e31ee3176a94eddf81eae990
+test "$(shasum -a 256 "$snapshot/verify_and_compare.py" | awk '{print $1}')" = \
+  e613e77ba979687eaf7776bff3232df693027e2a03f34afd86ab8c4fc3d5ee44
 TZ=Asia/Shanghai node \
   /private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2/replay_composite.mjs
 PYTHONPATH=packages/quant-core python3 \

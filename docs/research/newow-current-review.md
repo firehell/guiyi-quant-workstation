@@ -287,15 +287,17 @@
 - 归一对照基线为 `65d774f81256d0ea24c6902acb5ec7c2d07cfdf8`。牛哇详情页标题为v3.3.05，保存的HTML metadata及资源参数为v3.2.64，公开内核自报`CDV2.VERSION=1.2.0`；继续以文件哈希和函数行为作为精确身份。
 - 冻结招商银行`600036.SH`、顺灏股份`002565.SZ`、金钼股份`601958.SH`各自的`batch`、`quote`，以及趋势`huanglantai`和震荡`xichou-lagao`的周/日/60分共18份K线响应。各请求不是服务端原子快照，但随后离线重放；招商和顺灏的真实 DOM 显示与对应冻结结果完全一致。
 - 页面日期为9月10日，三个样本末根K线均为9月9日，综合卡明确显示“收盘终值·已收盘 K 线”。只使用匿名公开HTTPS，未读取Cookie、账号或私有服务端代码。
-- Git外证据目录为`/private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2/`；临时目录可能被系统清理。`manifest.json` SHA-256为`5bb03e4f328816429b4a1279e0d1e9496d2f081bd870eadf8939a1b7c92dd9e3`，其中固定HTML、内核、重放和比较结果哈希如下。
+- Git外证据目录为`/private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2/`；临时目录可能被系统清理。`manifest.json` SHA-256为`407cc7584a40f4250d604c5bbd69c09bb71b4714efff307eddb19c9ff1fdb2f3`，其中固定HTML、内核、检查脚本、重放和比较结果哈希如下。
 
 | 文件 | SHA-256 |
 |---|---|
 | stock-detail.html | `3aa8ce00ea7d0a798fdcd2464ac7f76d219ce41a274f77bad06ce0a0356ea338` |
 | composite-decision-v2.js | `68c634c05bddc7191de884a37ae5c8877dfd8416a43e53d93c66838ea8585fbb` |
 | captured input hash list | `fef5084fe739a2495b81ffc96612509c216d2ea93b12cbf6321815803a26e42b` |
-| page-replay.json | `197826690dbae17d4557bda5052e86b2175f089599a9371346eb08b98bbd72b9` |
-| comparison.json | `545bcb71604bc794e2277f719d99e30c6ed8adf89f305c158be70b5d76b8df07` |
+| replay_composite.mjs | `4d9853e67a4bd2d5be28cb1c7802ca94dec99d29e31ee3176a94eddf81eae990` |
+| verify_and_compare.py | `e613e77ba979687eaf7776bff3232df693027e2a03f34afd86ab8c4fc3d5ee44` |
+| page-replay.json | `067921f6c0314d02d550a33863cac556e1e6b65d4128e99f8c1ccff390f05d75` |
+| comparison.json | `bbb0bcb10005c1ec28dcd9b80e524b60f11aa7ceb2c99bd40e1c169125158446` |
 | 招商展开态 DOM | `7bc539cec8cd827856bdd848a1da6320f174b20f058a93b23272b171f58e066d` |
 | 顺灏展开态 DOM | `0b3d5ab35db45b0a0a3dac127591fdcae043d5164aab492f89284fddbe4b3848` |
 
@@ -318,7 +320,7 @@
 1. **五项评分**：`certTrend`按周/日/60分数据明确性计`12/12/6`，不因向下而少计；`certOsc`按`10/12/8`计明确性；`certResonance`为R4/R3/R2/R1/R0对应`20/14/10/4/0`；`certDir`按三周期同向程度取`20/12/6`，仅周线明确时取8；`certVolatility`按低/中/高取`0/-3/-8`。总分删除旧版60/85封顶并钳制在0～100。
 2. **R2**：命中MM1-MM4，或动作是`neutral-bullish`/`neutral-bearish`时为“错配预警”，共振分10、仓位上限30%。招商真实输入命中MM1/R2；四类MM均另用冻结输入派生的单变量分支见证执行通过。
 3. **R3**：趋势与震荡的最终bias同为明确多头或明确空头，但任一侧内部三周期不齐时为“基调共振”，共振分14、仓位上限60%。顺灏和金钼真实输入均为同向空头且内部不齐，命中R3。
-4. **错配优先级**：先判新鲜趋势下穿MM3、上穿MM4；再判震荡先转空MM1、先转多MM2。MM3/MM4接受`barsAgo<=2`；MM1/MM2要求震荡日线计龄至少3根。MM2还要求趋势bias不是bearish，即周线向上、日线回调的谨慎场景才允许“抄底信号”。
+4. **错配优先级**：先判新鲜趋势下穿MM3、上穿MM4；再判震荡先转空MM1、先转多MM2。MM3/MM4接受`barsAgo<=2`；MM1/MM2要求震荡日线计龄至少3根。MM2还要求趋势bias不是bearish；周线向上、日线回调时可命中，周线未知且日线向下时也可命中。冻结输入派生见证确认后者输出MM2/R2、64分、仓位上限30%。
 5. **“已清N根”**：`N = barCount - 1 - lastSignal.index`；信号Bar本身计0，只统计信号后到最新Bar的间隔。`lastSignal.index`缺失时使用页面预先计算的`signalIndex`，固定样本降级仍得到7。边界见证为2根不命中MM1、3根命中MM1/R2。
 
 ### 五项展示的隐藏加减分边界
