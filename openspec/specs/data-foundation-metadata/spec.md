@@ -31,6 +31,21 @@ RQData 1m Session 的 provider start 是首根 `bar_end` 标签；MetadataSynchr
 - **WHEN** RQData 返回 `09:01-10:15` 的 1m Session
 - **THEN** active metadata 保存 `09:00-10:15`，Historical expected bars 与 Live 首分钟都以同一边界解析
 
+### Requirement: 共享 Calendar 逐日夜盘证据
+MetadataSynchronizer SHALL 将 Calendar 视为交易所共享事实。夜盘 true MUST 由同日 provider
+Session 正证据支持；交易日 false MUST 由筛选请求品种之前的完整 provider 合约集合及逐日生命周期
+确定交易所当日品种全集，并验证每个品种的当日 Session 完整覆盖且均无夜盘。生命周期或覆盖缺失
+MUST 保持 UNKNOWN，非交易日可确定 false。UNKNOWN SHALL 只保留交易日身份一致的已有行，
+缺键 MUST fail closed；已证实事实与既有 Calendar 冲突 MUST 整事务回滚，纠正须走显式有界来源更正。
+
+#### Scenario: 子集仅日盘
+- **WHEN** 同交易所只请求无夜盘品种，无法证明该交易所当日完整 Session 覆盖
+- **THEN** 不把共享 Calendar 的已有 true 改为 false；缺键报 `CALENDAR_NIGHT_AUTHORITY_MISSING`
+
+#### Scenario: 节假日边界
+- **WHEN** 相邻日期有夜盘，而本日完整交易所品种 Session 均仅日盘
+- **THEN** 本日源证据为 false；已有 true 时报 `CALENDAR_SOURCE_CONFLICT` 而非静默覆盖
+
 ### Requirement: 最小月度 Catalog
 `market_datasets` SHALL 对四字段 DatasetKey 唯一；`market_partitions` SHALL 对
 `(dataset_id,year,month)` 唯一，只保存 coverage、file URI、row count 和创建时间。查询和维护 MUST
@@ -46,6 +61,10 @@ id=46796 的 `has_night_session` 从 false 更正为 true。源响应内容、�
 旧事实 MUST 精确绑定；不得扩展为任意日期/交易所编辑，不得修改其他 Calendar 字段或补入 Session。
 Apply MUST 另获单次授权、匹配 dry-run hash、锁内核对旧事实，一次提交后独立只读验证。
 任何提交不确定 MUST 明确停止、不自动重试；已有事实或证据变化 MUST 使旧计划失效。
+
+#### Scenario: 有界元数据插入提交确认丢失
+- **WHEN** 已验证的 insert-only metadata apply 在调用 commit 后抛出异常
+- **THEN** 系统报告 `METADATA_REPAIR_COMMIT_OUTCOME_UNKNOWN`，停止后续写入；仅凭本地 rollback 不得宣称服务端未提交，必须独立只读核对精确行后才能决定后续操作
 
 #### Scenario: 单键冲突处理
 - **WHEN** 已获准捕获的 AU2304 时段证明该日期有夜盘，而本地已核实前像为无夜盘

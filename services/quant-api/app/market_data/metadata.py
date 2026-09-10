@@ -89,6 +89,7 @@ class MetadataSynchronizer:
         floors = dict(starts or {symbol: through for symbol in normalized})
         snapshot = self.adapter.fetch_metadata(normalized, through, floors)
         session = self.catalog.session
+        session_days = calendar_session_index(snapshot.sessions)
         try:
             for values in snapshot.exchanges:
                 _upsert(session, Exchange, {"code": values["code"]}, values)
@@ -104,14 +105,10 @@ class MetadataSynchronizer:
                     values,
                 )
             for values in snapshot.calendars:
-                _upsert(
-                    session,
-                    TradingCalendar,
-                    {
-                        "exchange_code": values["exchange_code"],
-                        "trade_date": values["trade_date"],
-                    },
-                    values,
+                _upsert_calendar(
+                    session, values, session_days.get(
+                        (values["exchange_code"], values["trade_date"]), ()
+                    ),
                 )
             # 历史时段是「按生效日」的事实；先删后插，避免旧版当前时段模板误盖历史日
             session.execute(
@@ -170,6 +167,7 @@ class MetadataSynchronizer:
         assert_products_not_retired(normalized)
         snapshot = self.adapter.fetch_current_day_metadata(normalized, trading_day)
         session = self.catalog.session
+        session_days = calendar_session_index(snapshot.sessions)
         try:
             exchanges = _existing_product_exchanges(session, normalized)
             main_contracts = _current_day_main_contracts(
@@ -187,22 +185,18 @@ class MetadataSynchronizer:
             )
 
             for values in calendars:
-                _upsert(
-                    session,
-                    TradingCalendar,
-                    {
-                        "exchange_code": values["exchange_code"],
-                        "trade_date": values["trade_date"],
-                    },
-                    values,
+                _upsert_calendar(
+                    session, values, session_days.get(
+                        (values["exchange_code"], values["trade_date"]), ()
+                    ),
                 )
             for symbol in normalized:
-                session_days = (trading_day, next_trading_days[exchanges[symbol]])
+                replacement_days = (trading_day, next_trading_days[exchanges[symbol]])
                 session.execute(
                     delete(TradingSession).where(
                         TradingSession.instrument_symbol == symbol,
-                        TradingSession.effective_from.in_(session_days),
-                        TradingSession.effective_to.in_(session_days),
+                        TradingSession.effective_from.in_(replacement_days),
+                        TradingSession.effective_to.in_(replacement_days),
                         TradingSession.effective_from == TradingSession.effective_to,
                     )
                 )
@@ -232,6 +226,60 @@ class MetadataSynchronizer:
             session.rollback()
             raise
         return trading_day
+
+
+def calendar_session_index(sessions) -> dict[tuple[str, date], list[Mapping[str, Any]]]:
+    """Index source evidence once; broad historical snapshots may span many years."""
+    result: dict[tuple[str, date], list[Mapping[str, Any]]] = {}
+    for row in sessions:
+        result.setdefault((row["exchange_code"], row["effective_from"]), []).append(row)
+    return result
+
+
+def calendar_night_fact(values: Mapping[str, Any], sessions) -> bool | None:
+    """Resolve an exchange/day only from same-day positive or complete negative evidence.
+
+    night_session_products is the provider's complete active exchange product universe,
+    never merely the requested subset. It is transient source evidence, not a DB column.
+    """
+    if values["is_trading_day"] is False:
+        return False
+    day = values["trade_date"]
+    exact = tuple(row for row in sessions
+                  if row["exchange_code"] == values["exchange_code"]
+                  and row["effective_from"] == day and row["effective_to"] == day
+                  and row.get("is_active") is True and row.get("provider") == "rqdata")
+    if any(row["start_time"] >= time(18) or row["crosses_midnight"] for row in exact):
+        return True
+    universe = values.get("night_session_products", ())
+    if (isinstance(universe, tuple) and universe
+            and all(isinstance(symbol, str) and symbol for symbol in universe)
+            and set(universe) <= {row["instrument_symbol"] for row in exact}):
+        return False
+    return None
+
+
+def _upsert_calendar(session, values: Mapping[str, Any], sessions) -> None:
+    """Preserve unknown shared facts; reject missing authority and explicit conflicts."""
+    identity = {key: values[key] for key in ("exchange_code", "trade_date")}
+    row = session.scalar(select(TradingCalendar).where(
+        *(getattr(TradingCalendar, key) == value for key, value in identity.items())
+    ).with_for_update())
+    fact = calendar_night_fact(values, sessions)
+    claimed = values.get("has_night_session")
+    if claimed is not None and (type(claimed) is not bool or claimed is not fact):
+        raise ValueError("CALENDAR_NIGHT_AUTHORITY_MISSING")
+    if row is not None:
+        if row.is_trading_day != values["is_trading_day"] or (
+            fact is not None and row.has_night_session != fact
+        ):
+            raise ValueError("CALENDAR_SOURCE_CONFLICT")
+        return
+    if fact is None:
+        raise ValueError("CALENDAR_NIGHT_AUTHORITY_MISSING")
+    payload = {key: value for key, value in values.items() if key != "night_session_products"}
+    payload["has_night_session"] = fact
+    session.add(TradingCalendar(**payload))
 
 
 def _upsert(session, model, identity: Mapping[str, object], values: Mapping[str, Any]) -> None:
@@ -290,7 +338,8 @@ def _current_calendar_context(
             raise ValueError("CURRENT_DAY_CALENDAR_INVALID")
         if (
             not isinstance(raw.get("is_trading_day"), bool)
-            or not isinstance(raw.get("has_night_session"), bool)
+            or (raw.get("has_night_session") is not None
+                and not isinstance(raw.get("has_night_session"), bool))
             or (day == trading_day and raw["is_trading_day"] is not True)
         ):
             raise ValueError("CURRENT_DAY_CALENDAR_INVALID")

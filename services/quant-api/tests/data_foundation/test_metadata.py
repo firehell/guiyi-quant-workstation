@@ -87,14 +87,14 @@ def _session() -> Session:
             TradingCalendar(
                 exchange_code="DCE",
                 trade_date=_DAY,
-                is_trading_day=False,
-                has_night_session=False,
+                is_trading_day=True,
+                has_night_session=True,
             ),
             TradingCalendar(
                 exchange_code="DCE",
                 trade_date=_AFTER,
                 is_trading_day=True,
-                has_night_session=False,
+                has_night_session=True,
             ),
             TradingCalendar(
                 exchange_code="SHFE",
@@ -192,7 +192,7 @@ def _session_values(symbol: str, name: str) -> dict[str, object]:
         "exchange_code": "DCE",
         "instrument_symbol": symbol,
         "session_name": name,
-        "start_time": time(9),
+        "start_time": time(21) if symbol == "jm" else time(9),
         "end_time": time(15),
         "effective_from": _DAY,
         "effective_to": _DAY,
@@ -413,3 +413,22 @@ def test_current_day_sync_rejects_rank1_contract_owned_by_another_product() -> N
 
     assert _metadata_state(session) == before
     session.close()
+
+
+@pytest.mark.parametrize("current_only", [False, True])
+def test_calendar_source_conflict_rolls_back_all_metadata(current_only):
+    session = _session()
+    row = session.scalar(select(TradingCalendar).where(
+        TradingCalendar.exchange_code == "DCE", TradingCalendar.trade_date == _AFTER,
+    ))
+    row.has_night_session = False
+    session.commit()
+    before = _metadata_state(session)
+    synchronizer = MetadataSynchronizer(_Adapter(_snapshot()), MarketCatalog(session, Path(".")))
+    with pytest.raises(ValueError, match="CALENDAR_SOURCE_CONFLICT"):
+        if current_only:
+            synchronizer.synchronize_current_day(("j", "jm"), _DAY)
+        else:
+            synchronizer.synchronize(("j", "jm"), _DAY)
+    assert _metadata_state(session) == before
+    assert session.get(Exchange, 1).name == "preserved DCE"
