@@ -386,7 +386,7 @@ function envelope(url, section, strategy, frequency, options) {
       status = options.auxiliaryState[component]
       value = null
     } else value = auxiliaryValue(component, frequency, options, strategy)
-  } else if (section === 'explanation') value = explanationValue(strategy, frequency, url.searchParams.get('as_of') || NEWOW_AS_OF)
+  } else if (section === 'explanation') value = explanationValue(url.searchParams.get('as_of') || NEWOW_AS_OF)
   else value = comparatorValue(strategy, frequency, url.searchParams.get('as_of') || NEWOW_AS_OF)
   wrappers[section] = delivered(status, value)
   return { meta: meta(url, strategy, frequency, section, options), section, ...wrappers }
@@ -567,7 +567,9 @@ function richMacdFixture(base, strategy, frequency, options) {
   return { ...base, ...wire }
 }
 
-function explanationValue(strategy, frequency, asOf) {
+function explanationValue(asOf) {
+  // The API's composite context always replays trend, even on other strategy pages.
+  const strategy = 'trend'
   const slot = (slotFrequency, barEnd, state) => ({
     frequency: slotFrequency, as_of: asOf, availability: ready(), confirmation_status: ready(),
     identity: { product: 'rb', strategy, frequency: slotFrequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${slotFrequency}_v1`, formula_versions: formulas(strategy) },

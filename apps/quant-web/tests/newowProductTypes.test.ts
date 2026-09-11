@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import kernelMacdFixture from '../e2e/fixtures/newow-rich-macd.json' with { type: 'json' }
+import { buildNewowFixtureEnvelopeForTest, NEWOW_AS_OF } from '../e2e/newow-product.helpers.mjs'
 
 import {
   getNewowProductSection,
@@ -30,6 +31,29 @@ const expected = {
   product: 'jm', strategy: 'trend', frequency: '1d', seriesKind: 'actual_dominant',
   section: 'chart', asOf: AS_OF,
 } as const
+
+for (const strategy of NEWOW_PRODUCT_STRATEGIES) {
+  for (const frequency of NEWOW_PRODUCT_FREQUENCIES) {
+    test(`browser explanation fixture uses shared trend context on ${strategy}/${frequency}`, () => {
+      const raw = buildNewowFixtureEnvelopeForTest('explanation', strategy, frequency)
+      const response = normalizeNewowProductResponse(raw, {
+        product: 'rb', strategy, frequency, seriesKind: 'actual_dominant',
+        section: 'explanation', asOf: NEWOW_AS_OF,
+      })
+      assert.equal(response.meta.identity.strategy, strategy)
+      assert.equal(response.section, 'explanation')
+      const context = response.value!.context
+      for (const [name, sourceFrequency] of [['weekly', '1w'], ['daily', '1d'], ['hourly', '60m']]) {
+        assert.equal(context[name].identity.strategy, 'trend')
+        assert.equal(context[name].identity.frequency, sourceFrequency)
+        assert.deepEqual(context[name].formula_versions, FORMULAS)
+      }
+      assert.equal(context.recompute_mode, 'strict_before')
+      assert.equal(response.value!.target_absorb.reason_code, 'NEWOW_TARGET_SOURCE_UNPROVEN')
+      for (const source of response.value!.sources) assert.deepEqual(source.formula_versions, FORMULAS)
+    })
+  }
+}
 
 test('unwraps only the delivered requested section and preserves every Decimal as a string', () => {
   const result = normalizeNewowProductResponse(chartWire(), expected)
