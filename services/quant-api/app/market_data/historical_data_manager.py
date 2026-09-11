@@ -921,6 +921,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
         self._progress_counts = {}
         try:
             if request.apply:
+                if expected_plan_sha256 is None:
+                    raise ValueError("DAILY_RECOVERY_PLAN_HASH_INVALID")
                 lease = self.catalog.acquire_maintenance_lock()
                 if lease is None:
                     return DailyRecoveryResult(
@@ -1548,7 +1550,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         """Execute only the frozen target objects whose windows produced the CAS."""
 
         totals = dict(planned=0, applied=0, blocked=0, failed=0, provider_requests=0)
-        failures = []
+        failures: list[Mapping[str, object]] = []
         failed_families = set()
         for group in plan.groups:
             # Source rows live only for this family-month. Pointer identity is rechecked
@@ -1575,15 +1577,31 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 failed_families.add(group.family)
             if result.stop_reason:
                 return MaintenanceResult(
-                    "update", "partial", through, **totals,
-                    stop_reason=result.stop_reason, failures=tuple(failures),
+                    action="update",
+                    status="partial",
+                    through=through,
+                    planned=totals["planned"],
+                    applied=totals["applied"],
+                    blocked=totals["blocked"],
+                    failed=totals["failed"],
+                    provider_requests=totals["provider_requests"],
+                    stop_reason=result.stop_reason,
+                    failures=tuple(failures),
                 )
         status = "noop" if not totals["planned"] else (
             "failed" if totals["failed"] or totals["blocked"] else "passed"
         )
         return MaintenanceResult(
-            "update", status, through, **totals,
-            failures=tuple(failures), target_windows=plan.target_windows,
+            action="update",
+            status=status,
+            through=through,
+            planned=totals["planned"],
+            applied=totals["applied"],
+            blocked=totals["blocked"],
+            failed=totals["failed"],
+            provider_requests=totals["provider_requests"],
+            failures=tuple(failures),
+            target_windows=plan.target_windows,
         )
 
     def _execute_daily(self, products, through, *, apply):

@@ -88,7 +88,8 @@ def open_runtime_bound_historical_maintenance(
     redis = None
     try:
         redis = Redis.from_url(_redis_url(binding.settings))
-        store = RedisLiveStore(redis)
+        # redis-py accepts a broader value/key surface than the narrow Runtime port.
+        store = RedisLiveStore(cast(RedisClient, redis))
         with Session(engine, autoflush=False) as session:
             manager = build_historical_data_manager(
                 session,
