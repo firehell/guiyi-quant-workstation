@@ -106,6 +106,34 @@ def test_alert_confirmation_rejects_installed_api_path_mismatch_without_mutation
     assert not calls.exists()
 
 
+@pytest.mark.parametrize("web_concurrency", [None, "2", "8"])
+def test_api_launcher_uses_one_snapshot_owner(tmp_path: Path, web_concurrency: str | None) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n', encoding="utf-8")
+    python.chmod(0o700)
+    runtime_env = tmp_path / "project.env"
+    runtime_env.write_text("POSTGRES_PASSWORD=test-only\n", encoding="utf-8")
+    env = {
+        "PATH": os.environ["PATH"],
+        "HOME": str(tmp_path / "home"),
+        "GUIYI_PROJECT_ROOT": str(repo),
+        "GUIYI_RUNTIME_ENV": str(runtime_env),
+    }
+    if web_concurrency is not None:
+        env["WEB_CONCURRENCY"] = web_concurrency
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/run-local-service.sh"), "api"],
+        cwd=repo, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "-m", "uvicorn", "app.main:app", "--app-dir", str(repo / "services/quant-api"),
+        "--host", "127.0.0.1", "--port", "8000", "--workers", "1", "--no-access-log",
+    ]
+
+
 def test_run_local_service_preserves_launcher_config_over_runtime_env(
     tmp_path: Path,
 ) -> None:

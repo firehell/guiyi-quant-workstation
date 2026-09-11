@@ -346,6 +346,26 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/newow/test_market_newow_api.py
 ```
 
+单 API worker 部署契约回归（真实 loopback socket + 隔离 fake MDS，不接触生产数据）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  tests/engineering/test_alert_runtime_launchd.py \
+  services/quant-api/tests/newow/test_product_socket_http.py
+./scripts/ops/macos/install-local-services.sh --render-only
+```
+
+需允许本机 loopback bind；EPERM 是宿主执行限制，不得跳过后宣称通过。测试执行真实 launcher 验证
+单 worker 与 `WEB_CONCURRENCY`，并通过正式应用路由验证四个独立连接的 token、参考记录、副图、两种主图
+分页和历史定位，另验证两个进程计算相同事实仍拒绝彼此 token，以及重启后的旧 token/cursor 失效。
+已有缓存、门禁和去重测试继续覆盖 TTL、淘汰、共同事实修订、取消及 429；socket fixture 不证明工作站数据验收。
+真实验收使用隔离只读 API、固定品种/截点/窗口与真实 MDS，分别验证浏览器操作和正式 `/health`。
+至少五组新进程冷请求/同进程热请求；重型 reference/comparator 实际运行期间，health 与普通行情各至少
+100 次重叠采样，要求 p95 分别不超过 1 秒/3 秒且无超时。记录空闲对比、最大延迟、错误、输入身份与
+进程身份；不清除 OS/磁盘缓存。失败保持阻塞，不增加业务重试或降低快照校验。发布后现场进程和请求链路
+仍须独立验收，不能以 render-only 或候选预览代替 Runtime promotion。
+
 照妖镜专用绘图规则与生命周期定向验证（确定性显示输入，不代表真实行情或当前在线牛哇）：
 
 ```bash
