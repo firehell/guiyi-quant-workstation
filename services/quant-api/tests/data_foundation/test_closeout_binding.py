@@ -81,7 +81,32 @@ def target(tmp_path, monkeypatch):
         return "Mon Jan 01 00:00:00 2029"
     monkeypatch.setattr(module, "_read_command", read)
     return SimpleNamespace(root=root, config=config, module=module, outputs=outputs,
+        status=run / "after-market-status.json",
         create=lambda: module.RuntimeDataBinding(root, "a" * 40, hashlib.sha256(raw).hexdigest()))
+
+
+def _terminal_status(*, schema_version=5):
+    interruption = {
+        "trading_day": "2028-01-01", "started_at": "2028-01-01T00:00:00Z",
+        "closed_at": "2029-01-01T00:00:00Z",
+        "snapshot_checked_at": "2029-01-01T00:00:00Z",
+        "snapshot_classification": "not_verified_missing", "reconciliation_verified": False,
+    }
+    return {
+        "schema_version": schema_version, "last_interruption": interruption, "current_run": None,
+        "last_run": {"trading_day": "2028-01-01", "status": "interrupted", "attempts": None,
+            "started_at": "2028-01-01T00:00:00Z", "finished_at": "2029-01-01T00:00:00Z",
+            "products": ["au"], "error_code": "AFTER_MARKET_INTERRUPTED",
+            "failure_notification": None},
+        "last_successful_trading_day": "2027-12-31",
+        "last_failure": {"trading_day": "2028-01-01", "error_code": "AFTER_MARKET_INTERRUPTED"},
+    }
+
+
+def _write_status(path, payload):
+    content = (json.dumps(payload, ensure_ascii=False) + "\n").encode()
+    path.write_bytes(content)
+    return hashlib.sha256(content).hexdigest()
 
 
 def test_binding_constructs_target_dependencies_not_executing_environment(target, monkeypatch):
@@ -109,6 +134,50 @@ def test_binding_constructs_target_dependencies_not_executing_environment(target
             binding.check(manager, db, client, store, lambda: datetime(2029, 1, 1, tzinfo=UTC))
         assert not db.in_transaction()
         client.close()
+
+
+def test_running_binding_requires_explicit_exact_terminal_rebind(target, monkeypatch):
+    from app.market_data.composition import build_historical_data_manager
+
+    binding = target.create()
+    terminal = _terminal_status()
+    terminal_sha256 = _write_status(target.status, terminal)
+    with Session(create_engine(binding.settings["DATABASE_URL"])) as db:
+        manager = build_historical_data_manager(db,
+            data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]), config_root=binding.root)
+        client = Redis.from_url(binding.settings["REDIS_URL"])
+        heartbeat = {"runtime_root": str(target.root), "runtime_commit": "a" * 40,
+            "recovery_guard_enabled": True, "generated_at": "2029-01-01T00:00:00Z"}
+        monkeypatch.setattr(client, "get", lambda key: json.dumps(heartbeat))
+        store = SimpleNamespace(heartbeat=lambda: heartbeat)
+
+        with pytest.raises(ValueError):
+            binding.check(manager, db, client, store, lambda: datetime(2029, 1, 1, tzinfo=UTC))
+        with pytest.raises(ValueError):
+            binding.rebind_terminal_status("b" * 64)
+
+        binding.rebind_terminal_status(terminal_sha256)
+        binding.check(manager, db, client, store, lambda: datetime(2029, 1, 1, tzinfo=UTC))
+        assert binding.last_interruption == terminal["last_interruption"]
+
+        target.status.write_bytes(target.status.read_bytes() + b" ")
+        with pytest.raises(ValueError):
+            binding.check(manager, db, client, store, lambda: datetime(2029, 1, 1, tzinfo=UTC))
+        client.close()
+
+
+@pytest.mark.parametrize("schema_version", [1, 2, 3, 4, 5])
+def test_fresh_binding_accepts_only_exact_schema_v5_terminal_authority(target, schema_version):
+    terminal = _terminal_status(schema_version=schema_version)
+    terminal_sha256 = _write_status(target.status, terminal)
+
+    if schema_version < 5:
+        with pytest.raises(ValueError):
+            target.module.RuntimeDataBinding(target.root, "a" * 40, terminal_sha256)
+        return
+
+    binding = target.module.RuntimeDataBinding(target.root, "a" * 40, terminal_sha256)
+    assert binding.last_interruption == terminal["last_interruption"]
 
 
 def test_binding_accepts_known_inert_legacy_settings_without_exposing_them(target):

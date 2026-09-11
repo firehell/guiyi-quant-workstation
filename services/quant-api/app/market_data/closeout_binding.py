@@ -13,6 +13,7 @@ from redis import Redis
 from sqlalchemy.engine import make_url
 
 from app.db.url import normalize_database_url
+from app.market_data.after_market import public_after_market_status
 from app.market_data.after_market_closeout import _directory, _read, verify_closeout_identity
 from app.market_data.captured_recovery_runtime import _read_command, _verify_loaded_service, _verify_heartbeat
 from app.market_data.coverage_source import DatabaseCoverageSource
@@ -235,9 +236,11 @@ class RuntimeDataBinding:
             status = _read(directory, "after-market-status.json")
         if hashlib.sha256(status).hexdigest() != status_sha256:
             raise ValueError
-        started = datetime.fromisoformat(json.loads(status)["current_run"]["started_at"])
-        if started.utcoffset() is None:
-            raise ValueError
+        parsed, started, interruption = self._validate_status(status)
+        self._status = status
+        self._status_sha256 = status_sha256
+        self._status_payload = parsed
+        self.last_interruption = interruption
         self.started_ns = int(started.timestamp() * 1_000_000_000)
         self.runtime_dir = Path.home() / "Library/Application Support/GuiyiQuant"
         self.agent_dir = Path.home() / "Library/LaunchAgents"
@@ -259,6 +262,81 @@ class RuntimeDataBinding:
                 or self.settings["GUIYI_LIVE_RECOVERY_ENABLED"] != "1"):
             raise ValueError
         self.products = _products(root)
+
+    @staticmethod
+    def _validate_status(status: bytes):
+        try:
+            parsed = json.loads(status)
+            if not isinstance(parsed, dict):
+                raise ValueError
+            current = parsed.get("current_run")
+            if current is not None:
+                if not isinstance(current, dict) or not isinstance(current.get("started_at"), str):
+                    raise ValueError
+                started = datetime.fromisoformat(current["started_at"])
+                if started.utcoffset() is None:
+                    raise ValueError
+                return parsed, started, None
+            if type(parsed.get("schema_version")) is not int or parsed["schema_version"] != 5:
+                raise ValueError
+            public = public_after_market_status(parsed)
+            interruption = public.get("last_interruption")
+            last_run = public.get("last_run")
+            last_failure = public.get("last_failure")
+            if (not isinstance(interruption, dict) or not isinstance(last_run, dict)
+                    or last_run.get("status") != "interrupted"
+                    or last_run.get("error_code") != "AFTER_MARKET_INTERRUPTED"
+                    or not isinstance(last_failure, dict)
+                    or last_failure.get("error_code") != "AFTER_MARKET_INTERRUPTED"
+                    or last_run.get("trading_day") != interruption.get("trading_day")
+                    or last_run.get("started_at") != interruption.get("started_at")
+                    or last_run.get("finished_at") != interruption.get("closed_at")
+                    or last_failure.get("trading_day") != interruption.get("trading_day")):
+                raise ValueError
+            started = datetime.fromisoformat(interruption["started_at"])
+            if started.utcoffset() is None:
+                raise ValueError
+            return parsed, started, interruption
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            raise ValueError from None
+
+    def _read_status(self) -> bytes:
+        with _directory(self.root / ".run") as directory:
+            return _read(directory, "after-market-status.json")
+
+    def _verify_pinned_status(self) -> None:
+        status = self._read_status()
+        if status != self._status or hashlib.sha256(status).hexdigest() != self._status_sha256:
+            raise ValueError
+
+    def rebind_terminal_status(self, status_sha256: str) -> None:
+        """Explicitly replace a pinned running status with its exact schema-v5 terminal."""
+        if re.fullmatch(r"[0-9a-f]{64}", status_sha256) is None:
+            raise ValueError
+        current = self._status_payload.get("current_run")
+        if not isinstance(current, dict):
+            raise ValueError
+        verify_closeout_identity(self.root, self.commit)
+        if self._read_sources() != self._sources or self._read_processes() != self._processes:
+            raise ValueError
+        status = self._read_status()
+        if hashlib.sha256(status).hexdigest() != status_sha256:
+            raise ValueError
+        parsed, _, interruption = self._validate_status(status)
+        last_run = parsed["last_run"]
+        if (interruption is None or last_run["started_at"] != current["started_at"]
+                or current.get("scheduled_date", last_run["trading_day"]) != last_run["trading_day"]
+                or current.get("products", last_run["products"]) != last_run["products"]
+                or current.get("attempt", last_run["attempts"]) != last_run["attempts"]):
+            raise ValueError
+        verify_closeout_identity(self.root, self.commit)
+        if (self._read_sources() != self._sources or self._read_processes() != self._processes
+                or self._read_status() != status):
+            raise ValueError
+        self._status = status
+        self._status_sha256 = status_sha256
+        self._status_payload = parsed
+        self.last_interruption = interruption
 
     def _read_sources(self):
         # Target Python imports load dotenv without override. Even explicit main
@@ -358,6 +436,7 @@ class RuntimeDataBinding:
 
     def check(self, manager, session, redis, store, now) -> None:
         verify_closeout_identity(self.root, self.commit)
+        self._verify_pinned_status()
         if self._read_sources() != self._sources or self._read_processes() != self._processes:
             raise ValueError
         assert_dependencies(self.settings, root=self.root, manager=manager, session=session,
@@ -367,3 +446,4 @@ class RuntimeDataBinding:
         observed = now()
         _verify_heartbeat(live, now=observed, root=self.root, commit=self.commit)
         _verify_heartbeat(json.loads(raw) if raw is not None else None, now=observed, root=self.root, commit=self.commit)
+        self._verify_pinned_status()

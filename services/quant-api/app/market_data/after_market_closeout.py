@@ -290,6 +290,9 @@ def close_interrupted_run(
                               runtime_root=str(root), runtime_commit=expected_commit,
                               status_sha256=expected_status_sha256, trading_day=day.isoformat(),
                               pending_findings=pending, last_interruption=interruption)
+                if apply:
+                    terminal = (json.dumps(payload, ensure_ascii=False) + "\n").encode()
+                    result["terminal_status_sha256"] = hashlib.sha256(terminal).hexdigest()
             finally:
                 lease.release()
     except _WriteOutcomeUnknown as exc:

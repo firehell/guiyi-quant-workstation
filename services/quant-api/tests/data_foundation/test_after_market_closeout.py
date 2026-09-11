@@ -109,6 +109,7 @@ def test_closeout_apply_retains_failure_and_previous_success_without_notificatio
     assert public["last_run"]["attempts"] is None
     assert public["last_run"]["failure_notification"] is None
     assert public["last_successful_trading_day"] == "2026-09-08"
+    assert result["terminal_status_sha256"] == hashlib.sha256(case["path"].read_bytes()).hexdigest()
     assert close(case, apply=True)["status"] == "blocked"
 
 
