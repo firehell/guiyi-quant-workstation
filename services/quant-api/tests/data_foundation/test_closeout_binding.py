@@ -94,9 +94,14 @@ def test_binding_constructs_target_dependencies_not_executing_environment(target
         client = Redis.from_url(binding.settings["REDIS_URL"])
         heartbeat = {"runtime_root": str(target.root), "runtime_commit": "a" * 40,
             "recovery_guard_enabled": True, "generated_at": "2029-01-01T00:00:00Z"}
-        monkeypatch.setattr(client, "get", lambda key: json.dumps(heartbeat))
+        requested = []
+        def get(key):
+            requested.append(key)
+            return json.dumps(heartbeat) if key == "alert:heartbeat" else None
+        monkeypatch.setattr(client, "get", get)
         store = SimpleNamespace(heartbeat=lambda: heartbeat)
         binding.check(manager, db, client, store, lambda: datetime(2029, 1, 1, tzinfo=UTC))
+        assert requested == ["alert:heartbeat"]
         assert not db.in_transaction()
         assert manager.store.root == Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"])
         target.config.write_text(target.config.read_text() + "# later replacement\n")
