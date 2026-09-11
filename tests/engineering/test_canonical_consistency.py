@@ -184,46 +184,25 @@ BACKEND_ALERT_RULE_LITERAL_EXPECTED = {
     },
 }
 
-ALERT_CANONICAL_REQUIREMENTS = {
-    "AGENTS.md": (
-        "subing_ths_alert_15m_v1",
-        "completed actual_dominant 15m",
-        "schema v6",
-        "G10",
-        "G9",
-    ),
-    "PROJECT_SOURCE.md": (
-        "苏冰预警",
-        SUBING_THS_FORMULA_VERSION,
-        "EMA(CLOSE, 21)",
-        "completed actual_dominant 15m",
-        "零轴、Range、量能/OI、ATR、EMA 斜率与多周期共振都不是 V1 Gate",
-    ),
-    "DECISIONS.md": (
-        "subing_ths_alert_15m_v1",
-        SUBING_THS_FORMULA_VERSION,
-        "exact Event",
-        "Event 先提交",
-    ),
-    "docs/ARCHITECTURE.md": (
-        "SubingThs15mEvaluator",
-        "single Alert Runtime",
-        "S↑/S↓",
-        "no SuBing overlay",
-    ),
-    "TESTING.md": (
-        "test_subing_ths_kernel.py",
-        "test_subing_scope_activation.py",
-        "test_subing_ths_alert_migration.py",
-        "GUIYI_ISOLATED_MIGRATION_DATABASE_URL",
-    ),
-    "openspec/specs/subing-ths-alert/spec.md": (
-        "subing_ths_alert_15m_v1",
-        SUBING_THS_FORMULA_VERSION,
-        "EMA(CLOSE, 21)",
-        "G10",
-        "G9",
-    ),
+ALERT_CANONICAL_REQUIREMENTS = (
+    "subing_ths_alert_15m_v1",
+    SUBING_THS_FORMULA_VERSION,
+    "EMA(CLOSE, 21)",
+    "G10",
+    "G9",
+)
+AGENT_DOMAIN_ROUTES = (
+    "docs/DATA_CENTER.md",
+    "deploy/README.md",
+    "openspec/specs/subing-ths-alert/spec.md",
+)
+REQUIRED_PROJECT_SKILL_PATHS = {
+    ".agents/skills/futures-data/SKILL.md",
+    ".agents/skills/release-agent/SKILL.md",
+}
+REMOVED_NAVIGATION_SKILL_PATHS = {
+    ".agents/skills/quant-backend/SKILL.md",
+    ".agents/skills/quant-frontend/SKILL.md",
 }
 
 
@@ -548,24 +527,66 @@ def test_active_alert_canonical_matches_the_two_rule_code_contract() -> None:
     assert "retry" not in send_once.lower()
 
 
-def test_active_canonical_documents_the_rule_split_and_formula_gates() -> None:
-    for relative, required_terms in ALERT_CANONICAL_REQUIREMENTS.items():
-        path = ROOT / relative
-        assert path.is_file(), relative
-        source = path.read_text(encoding="utf-8")
-        for term in required_terms:
-            assert term in source, (relative, term)
+def test_root_agent_guidance_routes_domain_contracts_without_copying_them() -> None:
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    for relative in AGENT_DOMAIN_ROUTES:
+        assert f"`{relative}`" in agents, relative
+        assert (ROOT / relative).is_file(), relative
 
+    for domain_literal in ("subing_ths_alert_15m_v1", "schema v6", "G10", "G9"):
+        assert domain_literal not in agents
+
+
+def test_project_skill_inventory_and_frontmatter_are_narrow() -> None:
+    actual = {
+        path.relative_to(ROOT).as_posix()
+        for path in ROOT.glob(".agents/skills/*/SKILL.md")
+    }
+    assert REQUIRED_PROJECT_SKILL_PATHS <= actual
+    assert REMOVED_NAVIGATION_SKILL_PATHS.isdisjoint(actual)
+
+    for relative in sorted(actual):
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        match = re.match(r"\A---\n(?P<frontmatter>.*?)\n---\n", source, re.DOTALL)
+        assert match is not None, relative
+        fields = dict(
+            line.split(":", maxsplit=1)
+            for line in match.group("frontmatter").splitlines()
+            if ":" in line
+        )
+        skill_name = Path(relative).parent.name
+        assert fields.get("name", "").strip() == skill_name
+        assert fields.get("description", "").strip().startswith("Use when ")
+
+
+def test_project_codex_permission_mode_is_preserved() -> None:
+    config = tomllib.loads((ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
+    assert config["sandbox_mode"] == "danger-full-access"
+    assert config["approval_policy"] == "on-request"
+    assert config["approvals_reviewer"] == "auto_review"
+    assert config["model_reasoning_effort"] == "high"
+    assert config["sandbox_workspace_write"] == {
+        "network_access": True,
+        "exclude_slash_tmp": True,
+        "exclude_tmpdir_env_var": True,
+    }
+
+
+def test_alert_domain_canonical_documents_rule_identity_and_formula_gates() -> None:
+    subing_spec = (
+        ROOT / "openspec/specs/subing-ths-alert/spec.md"
+    ).read_text(encoding="utf-8")
+    for term in ALERT_CANONICAL_REQUIREMENTS:
+        assert term in subing_spec
+    assert subing_spec.index("G10") < subing_spec.index("G9")
+
+
+def test_market_home_canonical_documents_current_alert_events() -> None:
     market_home = (
         ROOT / "openspec/specs/market-home-overview/spec.md"
     ).read_text(encoding="utf-8")
     assert "current Alert Events" in market_home
     assert "Current Alert Events endpoint" in market_home
-
-    subing_spec = (
-        ROOT / "openspec/specs/subing-ths-alert/spec.md"
-    ).read_text(encoding="utf-8")
-    assert subing_spec.index("G10") < subing_spec.index("G9")
 
 
 def test_release_candidate_excludes_private_sources() -> None:

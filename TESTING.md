@@ -690,6 +690,20 @@ git diff --check
 
 上述 repository-hygiene 命令只检查 Git tree、canonical identity 和安全边界，不授权 branch 删除、Issue/PR 修改、Release、Runtime 或生产写入。
 
+项目 Codex 配置与危险 Git 前缀规则使用当前本机 CLI 做只读检查；`execpolicy check` 只解析参数，不执行命令：
+
+```bash
+codex --version
+codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push --force origin develop
+codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push --force-with-lease origin develop
+codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push -f origin develop
+codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push origin develop
+codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push origin develop --force
+```
+
+前三项必须为 `forbidden`，普通 push 与 flag 后置样例必须无匹配。该规则只覆盖列出的精确参数前缀，
+不声称识别 `git -c`、绝对 executable、wrapper 或所有语义等价写法；仓库规则也不覆盖宿主安全控制。
+
 Newow 复刻手册使用独立、锁定的文档工具环境重建：
 
 ```bash

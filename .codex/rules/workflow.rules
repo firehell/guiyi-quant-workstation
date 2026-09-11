@@ -1,20 +1,18 @@
-# Personal development mode: retain only narrow destructive Git protections.
-# Ordinary develop push/edit is allowed. Collaboration entrypoints are not required.
+# Narrow destructive Git protection. Rules match exact argument prefixes, not every
+# semantically equivalent spelling or wrapper. Ordinary non-force pushes do not match.
 
 prefix_rule(
-    pattern = ["git", "push", "--force"],
+    pattern = ["git", "push", ["--force", "--force-with-lease", "-f"]],
     decision = "forbidden",
-    justification = "禁止 force push；历史重写属于受控外部操作，需单独明确意图",
-)
-
-prefix_rule(
-    pattern = ["git", "push", "--force-with-lease"],
-    decision = "forbidden",
-    justification = "禁止 force-with-lease push；属于受控外部操作",
-)
-
-prefix_rule(
-    pattern = ["git", "push", "-f"],
-    decision = "forbidden",
-    justification = "禁止 -f force push；属于受控外部操作",
+    justification = "阻止 force push，不进入聊天确认后放行；请使用普通 push 和新的修正提交",
+    match = [
+        "git push --force origin develop",
+        "git push --force-with-lease origin develop",
+        "git push -f origin develop",
+    ],
+    not_match = [
+        "git push origin develop",
+        "git push origin develop --force",
+        "git -c push.default=current push --force origin develop",
+    ],
 )

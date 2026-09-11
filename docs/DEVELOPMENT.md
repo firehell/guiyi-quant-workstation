@@ -4,6 +4,15 @@
 `STATUS.md`；产品和数据边界见 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep
 canonical；可执行命令见 `TESTING.md`。
 
+## 讨论、开发与真实操作
+
+- “先讨论”“比较方案”“只读审计”或 Plan-only 只产出分析或计划，不提前修改。
+- 明确要求实现且目标、边界、验收已确定时，Codex 连续完成范围内的编辑、修复、相关测试、Review、
+  commit/push 和已授权的 develop 集成，不把进度更新变成新的批准 Gate。
+- 局部命名、组织方式和测试选择由实现者按现有模式与风险决定；发现本任务引入的失败时继续修复和重测。
+- 数据、策略、Alert、Runtime、发布等设计与真实 mutation 是两层边界：设计获批后可连续编码，但代码完成或
+  develop 集成不授予生产写入、main/tag/release 或 Runtime promotion。
+
 ## 日常 develop 流程
 
 ```text
@@ -12,7 +21,8 @@ develop
 -> 保留并避开其他任务或用户已有修改
 -> 只修改当前任务范围
 -> 按影响运行本地验证
--> 提交并按需要推送 develop
+-> 独立 Review（任务要求或风险需要时）
+-> 提交并按任务授权集成 develop
 ```
 
 普通源码、测试、文档和仓库内普通删除可按上述流程执行。删除前先关闭 active
@@ -24,8 +34,9 @@ references；历史恢复使用 Git，不建立 archive、backup 或 legacy-copy
 不在本页另存阶段完成状态或建立平行路线图。
 
 每个可独立交付的任务先固定目标、所属阶段、允许/禁止范围、输入依赖、验收及未完成 Gate。
-默认一个独立任务对应一个会话和 task branch/worktree，从 develop 创建，完成后集成 develop；
-保留用户已有修改，按任务风险选择 PR 或可追溯的集成记录。确认提交已进入 develop 后，
+小型、低冲突任务可在正确工作区 Direct；中等、Lane 3 或可能与其他工作冲突的任务从 develop 创建
+task branch/worktree。保留用户已有修改，按协作需要选择 PR 或可追溯的集成记录，不强制 Issue/PR 仪式。
+确认提交已进入 develop 后，
 才清理本任务的临时 worktree 和已合并 branch；不清理其他任务或 main/runtime 工作区。
 本页不另设权限，普通文档更新可沿用上述日常 develop 流程。
 
@@ -91,17 +102,19 @@ release 批准与 Runtime promotion 批准是两个独立人工 Gate，均不能
 测试、fake runner、route intercept、render-only、dry-run 和只读 health 都不授权真实
 RQData、Canonical、DB、Redis、Scope、Runtime、通知或发布操作。
 
-## 受控外部操作索引
+## 按任务定位
 
-以下操作必须在首次 mutation 前取得目标和范围明确的单次执行意图：
+- Web、Vue、图表或浏览器问题：从 `apps/quant-web/src/`、相关 Market API/OpenSpec 和现有 unit/E2E 定位。
+- FastAPI、Pydantic、应用数据库域、Redis、Alert、Runtime 或 CLI：从 `services/quant-api/app/`、
+  `docs/ARCHITECTURE.md` 和对应 OpenSpec 定位；Alembic 只有涉及 Market/Catalog 时才归入数据任务。
+- RQData、Canonical、Catalog、MainContractMap、数据质量或 `guiyi data`：使用项目 `futures-data` skill，
+  以 `docs/DATA_CENTER.md` 和相关 data OpenSpec 为合同。
+- release candidate、main/tag/Release、Runtime switch 或 worktree 清理：使用项目 `release-agent` skill，
+  并读取 `deploy/README.md`；发布和 Runtime promotion 始终分开。
+- 测试命令从 `TESTING.md` 选择，先定向、后按影响扩展；不为无关改动机械运行全仓库验证。
 
-- 真实 RQData 下载、正式 Canonical 或生产数据库写入/删除；
-- Runtime/live 启用、切换、promotion 或受控 Redis acknowledgment；
-- Alert Scope/transport 变更或真实通知；
-- main/tag/release、Git 历史重写、force update 或 GitHub rules 修改。
-
-执行边界与持续授权只看 `AGENTS.md`；当前 release、Runtime、Scope、evidence 和
-pending Gate 只看 `STATUS.md`。本页不复制业务合同。
+受控操作和持续授权的精确判断只看 `AGENTS.md` 及其指向的领域 canonical；当前状态只看
+`STATUS.md`。本页不复制权限清单或业务合同。
 
 ## 相关入口
 
