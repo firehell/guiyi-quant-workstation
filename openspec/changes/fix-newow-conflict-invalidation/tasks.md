@@ -27,6 +27,6 @@ pnpm --dir apps/quant-web build
 REAL_BACKEND=0 PLAYWRIGHT_PORT=5182 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5182 PLAYWRIGHT_CANDIDATE_PREVIEW=0 PLAYWRIGHT_SKIP_WEBSERVER= pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/newow-product.spec.mjs
 ```
 
-实施验证：定向 unit 109/109、完整 Web unit 532 passed / 1 skipped、build 与新增冲突/重新加载浏览器案例通过；独立 Spec/Quality Review 通过。完整 Newow fixture 为 36 passed / 2 failed，同环境修改前代码精确复现相同截图差异和 main_rise 60m explanation `NEWOW_RESPONSE_INVALID`。完整浏览器 Gate 未通过；不修改截图基线或放宽阈值。
+实施验证：定向 unit 109/109、完整 Web unit 532 passed / 1 skipped、build 与新增冲突/重新加载浏览器案例通过；独立 Spec/Quality Review 通过。完整 Newow fixture 为 36 passed / 2 failed，同环境修改前代码精确复现相同截图差异和 main_rise 60m explanation `NEWOW_RESPONSE_INVALID`。初次完整浏览器 Gate 未通过；后续 `20dcc4f29` 已按现有合同修复夹具并经视觉复核更新过期截图，未放宽阈值，最终验收结果见下文。
 
-最终整分支 Spec/Standards Review 已通过，无新增发现。owner 本轮明确要求先关闭两文件 Mypy 基线错误再集成 develop；12 项类型错误已关闭，全量 Mypy 154 个源码文件通过。两项已确认的浏览器基线失败仍为独立未关闭 Gate，不声明完整浏览器验收通过。补修后的完整后端 3248 passed / 16 skipped / 31 deselected，独立 Spec/Standards Review 无 P0–P3 发现；已按 owner 要求将源码提交 `17718f126` 集成 develop。验收边界见 `STATUS.md` 的三项修复候选记录。
+最终整分支 Spec/Standards Review 已通过，无新增发现。owner 本轮明确要求先关闭两文件 Mypy 基线错误再集成 develop；12 项类型错误已关闭，全量 Mypy 154 个源码文件通过。两项浏览器基线失败已在后续 `20dcc4f29` 专项修复中关闭：完整 Newow product 38 passed，扩展共享夹具浏览器 66 passed，candidate-preview 另 3 passed；不代表生产历史或 Runtime 验收。补修后的完整后端 3248 passed / 16 skipped / 31 deselected，独立 Spec/Standards Review 无 P0–P3 发现；已按 owner 要求将源码提交 `17718f126` 集成 develop。验收边界见 `STATUS.md` 的三项修复候选记录。
