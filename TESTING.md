@@ -2,6 +2,133 @@
 
 以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
 
+## Newow 历史恢复通用边界
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/data_foundation \
+  services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/newow/test_readiness.py
+```
+
+覆盖周五夜盘首边界、未完成尾周、逐日交易所夜盘证据、来源全集身份和生命周期、局部无夜盘不得覆盖共享 Calendar，以及元数据提交结果不明时停止并独立回读。隔离工作树可显式使用既有 Python 环境；这些离线检查不代表实际历史补齐、未来 Calendar 自动扩展或浏览器验收。
+
+## Newow 新版参考卡片定向验证
+
+共享浏览器夹具回归（九组合解释必须通过正式响应解析器，综合上下文使用趋势身份；日/周参考卡片保留完整日期）：
+
+```bash
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/newowProductTypes.test.ts tests/newowDetailPresentation.test.ts
+env -u VITE_API_BASE_URL -u VITE_MARKET_WS_URL REAL_BACKEND=0 PLAYWRIGHT_PORT=5182 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5182 PLAYWRIGHT_CANDIDATE_PREVIEW=0 PLAYWRIGHT_SKIP_WEBSERVER= pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/newow-product.spec.mjs e2e/newow-detail-light.spec.mjs e2e/newow-chart-panes.spec.mjs
+```
+
+使用独立 worktree 和既有依赖；5182 必须空闲，不能复用其他工作区服务。正常验收不带 `--update-snapshots`；截图变更须先核对规范与实际差异。fixture 通过不代表生产历史或 Runtime 验收。
+
+```bash
+pnpm -C apps/quant-web exec node --test tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts tests/newowDetailPresentation.test.ts
+pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/newow-detail-light.spec.mjs --grep 'current FLAT waiting card'
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/newow/test_reference_trades.py \
+  services/quant-api/tests/newow/test_product_adapters.py \
+  services/quant-api/tests/newow/test_target_absorb_display.py \
+  services/quant-api/tests/newow/test_composite_explanation.py \
+  services/quant-api/tests/newow/test_page_comparator.py
+```
+
+等待卡片验证覆盖同快照当前 FLAT、空/分页历史、筛选、stale/历史窗口、跨身份与 OPEN 冲突；日期覆盖日周、同日时分与跨年夜盘。浏览器用本地 fixture，1440/390px 截图只证明显示，不证明原站新版 parity、真实数据恢复或生产启用。沿用测试默认 5182 端口，不接入生产服务。源码-only 隔离 worktree 可使用已存在的 Python 环境并显式设置上述 PYTHONPATH，避免为定向验证重新安装依赖。
+
+## Newow 公式、参考交易与显示合同专项复核
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/newow/test_trend_band.py \
+  services/quant-api/tests/newow/test_trend_band_page_v2.py \
+  services/quant-api/tests/newow/test_oscillation_channel.py \
+  services/quant-api/tests/newow/test_main_rise_page_v1.py \
+  services/quant-api/tests/newow/test_product_adapters.py \
+  services/quant-api/tests/newow/test_reference_trades.py \
+  services/quant-api/tests/newow/test_target_absorb_display.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
+  tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts tests/newowDetailPresentation.test.ts \
+  tests/newowProductChartPrimitives.test.ts tests/newowProductTypes.test.ts tests/NewowProductChartStage.test.ts
+```
+
+只使用现有依赖与本地测试输入；`pnpm_config_verify_deps_before_run=false` 防止新版 pnpm 在复核时自动安装依赖。
+这些测试证明当前代码合同，不等于新原站版本的同输入逐值验证。可见收益舍入核查的输入、公式及限制见当前研究复核。
+
+## Newow 固定公开快照离线逐值验证
+
+以下命令从仓库根执行，仅使用本机已冻结文件；不重新请求外站。临时目录缺失时不能复现，不可静默用新行情替换该快照。先核对目录内 `manifest.json` 的文件与源码哈希；具体采集身份、容差和119行/18个Marker结果见[当前复核](docs/research/newow-current-review.md)。
+
+```bash
+TZ=Asia/Shanghai node /private/tmp/newow-same-input-20260909-pjncal43/replay_page.mjs
+PYTHONPATH=packages/quant-core services/quant-api/.venv/bin/python /private/tmp/newow-same-input-20260909-pjncal43/compare_kernel.py
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/newow/test_trend_band_page_v2.py \
+  services/quant-api/tests/newow/test_reference_trades.py
+```
+
+实跑离线比较通过；119个归一前缀检查通过；重复重放4个输出哈希一致；定向测试32 passed。比较覆盖趋势周线页面kernel及未舍入收益函数；不声称股票行情是期货completed Bar，也不证明产品API、完整参考交易投影、回撤、其他组合或Runtime通过。原始第三方响应及提取代码只保存在Git外。
+
+## Newow 震荡60分钟固定快照差异复现
+
+从仓库根执行，先核对下列目录的 `manifest.json` 文件/源码哈希。命令不联网，临时快照缺失时停止，不能替换成新输入。
+
+```bash
+TZ=Asia/Shanghai node /private/tmp/newow-osc60-snapshot-20260909-x56a03g5/replay_page.mjs
+PYTHONPATH=packages/quant-core services/quant-api/.venv/bin/python /private/tmp/newow-osc60-snapshot-20260909-x56a03g5/compare_kernel.py
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/newow/test_oscillation_channel.py \
+  services/quant-api/tests/newow/test_product_adapters.py \
+  services/quant-api/tests/newow/test_reference_trades.py
+```
+
+实跑结果：比较器输出 `MISMATCH_CONFIRMED_SAME_BAR_REBUILD`，退出0表示已复现并核实差异，**不表示parity通过**；444个归一前缀、4输出哈希重放一致，73项既有合同测试通过。435对成熟通道值及共同26个Marker初始评分/价格一致；归一多4个Marker、2笔交易。源码两种灰度路径相同，原站允许重建的参数对照与归一30个Marker完全一致。详情及边界见[当前复核](docs/research/newow-current-review.md)，不执行选股或生产链。
+
+## Newow 主升浪与目标/吸筹固定快照验证
+
+从仓库根执行，使用同一个Git外固定公开响应集合。先核对目录内`manifest.json`；临时目录缺失时停止，不能联网补成另一快照。
+
+```bash
+TZ=Asia/Shanghai node /private/tmp/newow-mainrise-target-snapshot-20260909-rz7ib4a6/replay_mainrise.mjs
+PYTHONPATH=packages/quant-core services/quant-api/.venv/bin/python \
+  /private/tmp/newow-mainrise-target-snapshot-20260909-rz7ib4a6/compare_mainrise.py
+TZ=Asia/Shanghai node /private/tmp/newow-mainrise-target-snapshot-20260909-rz7ib4a6/replay_target.mjs
+PYTHONPATH=packages/quant-core services/quant-api/.venv/bin/python \
+  /private/tmp/newow-mainrise-target-snapshot-20260909-rz7ib4a6/compare_target.py
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/newow/test_main_rise_page_v1.py \
+  services/quant-api/tests/newow/test_oscillation_channel.py \
+  services/quant-api/tests/newow/test_target_absorb_display.py
+```
+
+离线比较实跑通过：主升浪444根指标与全部Marker一致、444个前缀稳定、6笔未舍入配对一致；目标/吸筹日线600根与周线119根HHV10/LLV10逐项相等，三态选择、状态卡和趋势面一致。7个输出文件连续两轮SHA-256不变。比较对象明确标为外部股票页面算术输入；不证明正式期货DTO/API、previous-close activation、owner/segment、回撤、OOS或Runtime。
+
+## Newow 综合解释 v2 固定同输入验证
+
+从仓库根执行，仅使用Git外已冻结的公开页面、三组`batch/quote`、18份趋势/震荡多周期响应和牛哇原内核。临时目录缺失时停止，不可联网补成另一快照。原始输入和DOM哈希见目录内`manifest.json`及[当前复核](docs/research/newow-current-review.md)。
+
+```bash
+snapshot=/private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2
+test "$(shasum -a 256 "$snapshot/manifest.json" | awk '{print $1}')" = \
+  6c4370142580e9b367c11d0a7980f407bff98d3ced827822cacd220a214215ff
+shasum -c "$snapshot/sha256.txt"
+test "$(shasum -a 256 "$snapshot/replay_composite.mjs" | awk '{print $1}')" = \
+  b04d4bcd466080bb2e361c1e204cbb59977a5c9066a12ff3219037c9e12e4a91
+test "$(shasum -a 256 "$snapshot/verify_and_compare.py" | awk '{print $1}')" = \
+  d5c9f588ddd00534fa41a1b94d6a21910cc0f9429e5f2fc42d00962eade5a4bc
+TZ=Asia/Shanghai node \
+  /private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2/replay_composite.mjs
+PYTHONPATH=packages/quant-core python3 \
+  /private/tmp/newow-composite-v2-snapshot-20260910-m7q4p9x2/verify_and_compare.py
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/newow/test_composite_explanation.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
+  tests/newowExplanationPanel.test.ts tests/newowProductTypes.test.ts
+```
+
+离线原内核与独立检查通过：三个真实样本五项算术、MM1/R2、两例R3、`已清7根`逐值闭合；MM1的2/3根门槛、MM2-MM4及signalIndex降级见证通过。归一当前合同同输入0/3精确一致，确认是待版本化实现的规则差异；测试绿只证明旧合同未被本次文档任务破坏。另有固定见证证明`certExtra=-5`时页面五项82但总分77，后续实现不得隐藏该差值。
+
 ## 苏冰历史参考交易
 
 ```bash
@@ -49,6 +176,63 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
+### 盘后每日增量、进度与每周只读审计
+
+中断收尾的隔离验证（不连接生产，不修改现役状态）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_after_market_closeout.py \
+  services/quant-api/tests/data_foundation/test_closeout_binding.py \
+  services/quant-api/tests/test_captured_recovery_runtime.py
+```
+
+真实锁和只读事务另用下文同一防误连变量、精确隔离库执行
+`services/quant-api/tests/data_foundation/test_after_market_closeout_postgresql.py`；未配置时 skip 不算通过。
+测试包括旧次数未知、中断 health、默认只读、部分完成、窗口外损坏、额外端点、锁冲突、危险文件类型、
+CAS 漂移、时钟倒退和替换后 fsync 不确定；还覆盖目标配置/实际依赖一致性、源替换、PID 变化、
+shell/libpq 覆盖、第二 dotenv 来源和私有文件权限；所有 apply 只写临时状态文件。
+
+以下定向命令覆盖 Catalog-bounded daily 规划/发布、schema-v3 进度持久化与 fail-closed health、
+`operational_full_history` 审计、HTTP schema 保留、launchd 渲染/安装防护和只读状态输出。它们使用 fake provider、
+临时 SQLite/Parquet/路径和复制的 shell fixture；不连接真实 RQData、production DB/Redis、Runtime 或通知服务，也不安装 LaunchAgent。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q --tb=short \
+  services/quant-api/tests/data_foundation/test_daily_maintenance.py \
+  services/quant-api/tests/data_foundation/test_after_market.py \
+  services/quant-api/tests/data_foundation/test_weekly_audit.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/data_foundation/test_market_home_projection_after_market.py \
+  services/quant-api/tests/data_foundation/test_runtime_promotion.py \
+  services/quant-api/tests/test_runtime_entry.py \
+  services/quant-api/tests/test_runtime_logging.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/test_captured_recovery_cli.py \
+  tests/engineering/test_market_runtime_launchd.py
+
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
+  tests/runtimeStatus.test.ts tests/marketHomePageRoute.test.ts \
+  tests/marketHomePresentation.test.ts tests/marketHomeResource.test.ts
+env -u NO_COLOR -u FORCE_COLOR pnpm_config_verify_deps_before_run=false \
+  pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
+  e2e/market-home.spec.mjs -g 'maintenance v3'
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web build
+```
+
+真实 PostgreSQL 只读事务与 advisory lock 合同仅允许在显式的一次性隔离数据库中验证：必须是
+loopback、非 5432 端口、精确数据库名 `guiyi_canonical_isolated_test`；未设变量时 skip 不算验收通过。
+
+```bash
+GUIYI_ISOLATED_PUBLICATION_DATABASE_URL='postgresql+psycopg://USER@127.0.0.1:15447/guiyi_canonical_isolated_test' \
+  PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_daily_maintenance_postgresql.py \
+  services/quant-api/tests/data_foundation/test_weekly_audit_postgresql.py
+```
+
+这些工程验证不证明每周调度已安装、真实全历史无 finding、盘后自然运行耗时、release 或 Runtime promotion。
+实际安装语法和前置 Gate 仅见 `deploy/README.md`。
+
 有界 metadata fixture 与既有同步/provider/CLI 回归（全部隔离，无生产连接）：
 
 ```bash
@@ -70,6 +254,10 @@ uv run --project services/quant-api guiyi data metadata-repair --phase fetch \
   --plan /absolute/plan.json --expected-plan-sha256 EXACT_PLAN_SHA256 --apply
 uv run --project services/quant-api guiyi data metadata-repair --targets /absolute/targets.json \
   --classification /absolute/classification-snapshot.json --evidence-sources /absolute/evidence-sources.json
+uv run --project services/quant-api guiyi data metadata-repair --targets /absolute/targets.json \
+  --classification /absolute/classification-snapshot.json \
+  --exchange-universes /absolute/exchange-universes.json \
+  --exchange-inventory-evidence /absolute/exchange-inventory-evidence.json
 uv run --project services/quant-api guiyi data metadata-repair --phase apply \
   --snapshot /absolute/snapshot.json --expected-plan-sha256 EXACT_PLAN_SHA256 \
   --expected-snapshot-sha256 EXACT_SNAPSHOT_SHA256 --apply
@@ -77,6 +265,13 @@ uv run --project services/quant-api guiyi data metadata-repair --phase apply \
 
 `--classification` 与 `--evidence-sources` 均为可选 plan 输入；供证列表仅含显式
 `symbol/contract/date`，不扩写入范围。新 plan 如有新增 Session 请求，需要对其 hash 另行批准 fetch。
+完整交易所负证据另需两份 plan 输入文件：`--exchange-universes` 内容为
+`[{"exchange":"GFEX","date":"2026-09-14","products":["lc","pd","ps","pt","si"],"sources":[...]}]`，
+每个 source 为 `symbol/contract/date`；`--exchange-inventory-evidence` 内容严格为
+`{"identity":{"method":"all_instruments_by_type","args":[],"kwargs":{"instrument_type":"Future","market":"cn"}},"response":[...]}`。
+response 必须来自已获准并持久化的未过滤完整 RQData futures inventory，不能填品种子集；plan
+只读重算完整集合和所有物理来源的身份/生命周期，绑定原始响应，不执行 inventory 请求。每个输入
+文件上限 16 MiB。fetch/apply 不接收上述 plan 参数，只接收已冻结 plan/snapshot 和精确 hash。
 未知夜盘证据的 snapshot 为 blocked（退出 1），不能 apply。成功 apply 后旧 plan 失效，必须只读 replan，
 不自动重试、覆盖或删除。已有 Session 日期只保留，不把未验证的完整性计为修复通过。
 
@@ -494,6 +689,20 @@ git diff --check
 ```
 
 上述 repository-hygiene 命令只检查 Git tree、canonical identity 和安全边界，不授权 branch 删除、Issue/PR 修改、Release、Runtime 或生产写入。
+
+项目 Codex 配置与危险 Git 前缀规则使用当前本机 CLI 做只读检查；`execpolicy check` 只解析参数，不执行命令：
+
+```bash
+codex --version
+codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push --force origin develop
+codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push --force-with-lease origin develop
+codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push -f origin develop
+codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push origin develop
+codex execpolicy check --pretty --rules .codex/rules/workflow.rules -- git push origin develop --force
+```
+
+前三项必须为 `forbidden`，普通 push 与 flag 后置样例必须无匹配。该规则只覆盖列出的精确参数前缀，
+不声称识别 `git -c`、绝对 executable、wrapper 或所有语义等价写法；仓库规则也不覆盖宿主安全控制。
 
 Newow 复刻手册使用独立、锁定的文档工具环境重建：
 

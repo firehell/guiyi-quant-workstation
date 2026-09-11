@@ -499,6 +499,59 @@ def test_snapshot_token_allows_reference_with_compatible_common_facts(product_ca
     assert reference.meta.input_content_sha256 != chart.meta.input_content_sha256
 
 
+@pytest.mark.parametrize("shorter_reference", [False, True])
+@pytest.mark.parametrize("changed_boundary", ["source", "predecessor"])
+def test_snapshot_reference_extends_boundary_context_without_conflicting_bars(
+    product_cases, shorter_reference, changed_boundary
+):
+    from guiyi_quant.newow.product_contracts import OwnerBoundary
+
+    service, reader, build, clear = _service(product_cases)
+    original_load = reader.load
+    first = reader.bars[0].bar
+    boundary = OwnerBoundary(
+        "rb", "RB2509", first.physical_contract, "older-segment", first.segment_id,
+        first.trading_day, first.bar_end - timedelta(hours=1), "rank1-boundary",
+    )
+
+    def bounded_load(query, as_of):
+        read = original_load(query, as_of)
+        bars = tuple(item for item in read.replay_bars if item.bar.bar_end <= as_of)
+        return replace(
+            read,
+            bars_by_frequency={read.frequency: bars},
+            owners=(ResolvedContractSegment(
+                first.physical_contract, first.trading_day, bars[-1].bar.trading_day
+            ),),
+            boundaries=() if len(reader.loads) == 1 else (boundary,),
+        )
+
+    reader.load = bounded_load
+    cutoff = clear.bar_end + timedelta(microseconds=1)
+    chart = service.query(ProductServiceQuery("rb", "trend", "1d", as_of=cutoff))
+    reference = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", section="reference", as_of=cutoff,
+        performance_since=build.trading_day,
+        performance_through=build.trading_day if shorter_reference else clear.trading_day,
+        snapshot_token=chart.meta.snapshot_token,
+    ))
+
+    assert reference.meta.snapshot_token == chart.meta.snapshot_token
+    assert reference.reference.value.reference_cutoff <= cutoff
+    # A real change to an already shared boundary must still invalidate the token.
+    changed = (
+        replace(boundary, source_identity="changed-rank1-boundary")
+        if changed_boundary == "source"
+        else replace(boundary, old_contract="RB2701", old_segment_id="changed-older-segment")
+    )
+    reader.load = lambda query, as_of: replace(bounded_load(query, as_of), boundaries=(changed,))
+    with pytest.raises(NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"):
+        service.query(ProductServiceQuery(
+            "rb", "trend", "1d", as_of=cutoff,
+            snapshot_token=reference.meta.snapshot_token,
+        ))
+
+
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
 @pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
 def test_chart_supports_all_nine_product_combinations(

@@ -35,6 +35,7 @@ export function newowErrorDisplay(error: string | null): string | null {
     NEWOW_HISTORICAL_RESOLUTION_TIMEOUT: '历史快照检查超时，可重试',
     NEWOW_COMPLETE_TRADING_DAY_MISSING: '尚无已完成交易日数据，可重试本面板',
     NEWOW_COMPLETE_PERIOD_MISSING: '尚无已完成周期数据，可重试本面板',
+    NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS: '当前物理合约区段不足 20 根 Bar，暂不能进行窗口比较',
   }
   return Object.hasOwn(labels, error) ? `${labels[error]}（${error}）` : error
 }

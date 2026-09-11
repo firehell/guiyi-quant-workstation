@@ -25,13 +25,13 @@ from app.market_data.market_home_projection import (
     MarketHomeProjectionStore,
     market_home_projection_path,
 )
-from app.market_data.operational_universe import load_active_products
+from app.market_data.operational_universe import load_active_products, load_operational_products
 from app.market_data.product_retirement import assert_not_retired
 
 
 def build_request(args: argparse.Namespace):
     """根据 data_command 分支构造对应的维护请求对象。"""
-    if args.data_command in {"after-market", "session-anchor-repair", "metadata-repair", "au-calendar-correction"}:
+    if args.data_command in {"after-market", "weekly-audit", "close-interrupted-after-market", "session-anchor-repair", "metadata-repair", "au-calendar-correction"}:
         return None
     if args.data_command == "newow-readiness":
         from app.market_data.newow.readiness import ReadinessRequest
@@ -101,8 +101,11 @@ def run_metadata_repair(args: argparse.Namespace, session_factory) -> dict:
         targets = read(args.targets)
         classification = read(args.classification) if args.classification else None
         evidence_sources = read(args.evidence_sources) if args.evidence_sources else None
+        universes = read(args.exchange_universes) if args.exchange_universes else None
+        inventory = read(args.exchange_inventory_evidence) if args.exchange_inventory_evidence else None
         with session_factory() as session, readonly_transaction(session):
-            return plan_metadata(session, targets, classification=classification, evidence_sources=evidence_sources)
+            return plan_metadata(session, targets, classification=classification, evidence_sources=evidence_sources,
+                                 exchange_universes=universes, exchange_inventory_evidence=inventory)
     if args.phase == "fetch":
         plan = read(args.plan)
         with session_factory() as session, readonly_transaction(session):
@@ -207,6 +210,8 @@ def _products(symbol: str | None, universe: str | None) -> tuple[str, ...]:
     """解析品种列表：--universe active 或单个 --symbol。"""
     if universe == "active":
         return load_active_products()
+    if universe == "operational":
+        return load_operational_products()
     normalized = str(symbol or "").strip().lower()
     if not normalized:
         raise ValueError("CLI_SYMBOL_REQUIRED")

@@ -32,7 +32,7 @@ export interface RuntimeAfterMarketFailureNotification {
 export interface RuntimeAfterMarketRun {
   trading_day: string
   status: string
-  attempts: number
+  attempts: number | null
   started_at: string
   finished_at: string
   products: string[]
@@ -44,6 +44,16 @@ export interface RuntimeAfterMarketCurrentRun {
   scheduled_date: string
   started_at: string
   products: string[]
+  attempt?: number
+  stage?: string
+  updated_at?: string
+  stage_started_at?: string
+  elapsed_seconds?: number
+  current_symbol?: string | null
+  current_partition?: { dataset: string[]; year: number; month: number } | null
+  counters?: Record<string, { completed: number; total?: number }>
+  stage_durations?: Record<string, number>
+  retry_at?: string | null
 }
 
 export interface RuntimeAfterMarketHealth {
@@ -57,6 +67,20 @@ export interface RuntimeAfterMarketHealth {
   last_failure: Record<string, string> | null
   error_type: string | null
   error_message: string | null
+}
+
+export interface RuntimeWeeklyAuditHealth {
+  status: 'not_run' | 'running' | 'passed' | 'findings' | 'failed' | 'skipped_busy' | 'stuck' | 'stale' | 'invalid'
+  readonly: true
+  scope: 'operational_full_history'
+  through: string | null
+  finding_count: number | null
+  started_at: string | null
+  updated_at: string | null
+  finished_at: string | null
+  completed: number | null
+  total: number | null
+  current_symbol: string | null
 }
 
 export interface RuntimeAlertNotificationHealth {
@@ -102,6 +126,7 @@ export interface RuntimeHealthResponse {
     redis: RuntimeComponentHealth
     live_market: RuntimeLiveMarketHealth
     after_market: RuntimeAfterMarketHealth
+    weekly_audit?: RuntimeWeeklyAuditHealth
     alert: RuntimeAlertHealth
   }
 }

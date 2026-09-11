@@ -290,6 +290,7 @@ test('reference pagination exposes OPEN, CLOSED, interrupted, negative and initi
   await expect(page.locator('article[data-reference-category="interrupted"] .newow-return-badge')).toHaveText('-10.0000%')
   await expect(page.locator('article[data-reference-initial="true"]')).toBeVisible()
   const openRow = page.locator('article[data-reference-category="open"]')
+  await expect(openRow.locator('header')).toContainText('2026-08-03 → 至估值日')
   await openRow.getByRole('button', { name: /展开参考记录/ }).click()
   await expect(openRow).toContainText('trend-1d-build-open')
   await expect(openRow).toContainText('参考建仓 106.0000')
@@ -427,6 +428,35 @@ test('shared-bar conflict and repeated 409 stay fail-closed and bounded', async 
   await expect(repeatedPage.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'input_conflict')
   expect(productRequests(repeated, 'chart')).toHaveLength(2)
   await repeatedContext.close()
+})
+
+test('shared chart conflict keeps a late explanation invalid until an explicit reload', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, {
+    sharedBarConflict: true,
+    deferOnce: 'trend:1d:explanation',
+  })
+  await page.goto(newowRoute())
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  await page.getByRole('button', { name: '展开详情', exact: true }).click()
+  await expect.poll(() => productRequests(fixture, 'explanation').length).toBe(1)
+  const explanation = page.locator('#newow-details').getByTestId('newow-explanation-panel')
+  await expect(explanation).toContainText('正在读取解释')
+  await page.getByTestId('newow-load-earlier').click()
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'input_conflict')
+  await expect.poll(() => fixture.aborted.some(url => url.includes('section=explanation'))).toBe(true)
+  await releaseDeferred(fixture, 'trend:1d:explanation')
+  await expect(explanation).toContainText('解释暂不可用')
+  await expect(explanation.getByTestId('newow-readable-facts')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '重试解释', exact: true })).toBeVisible()
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-auxiliary-state', 'input_conflict')
+
+  await page.getByRole('button', { name: '重试主图', exact: true }).click()
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  expect(productRequests(fixture, 'chart').at(-1).url.searchParams.has('snapshot_token')).toBe(false)
+  await page.getByRole('button', { name: '重试解释', exact: true }).click()
+  await expect(explanation.getByTestId('newow-readable-facts')).toBeVisible()
+  expect(productRequests(fixture, 'explanation')).toHaveLength(2)
+  assertNoUnexpectedRequests(fixture)
 })
 
 test('reference cursor generation conflict rebuilds from an unbound first page once', async ({ page }) => {
@@ -574,7 +604,9 @@ test('explanation and comparator disclose multi-period facts, evidence gaps and 
   await expect(page.locator('#newow-details').getByTestId('newow-explanation-panel')).toContainText('NEWOW_PRIVATE_SCORE_UNPROVEN')
   await expect(page.locator('#newow-details').getByTestId('newow-explanation-panel')).toContainText(`快照 as_of ${NEWOW_AS_OF}`)
   await expect(page.locator('#newow-details').getByTestId('newow-explanation-panel')).toContainText('2026-08-28T07:00:00.000Z')
-  await expect(page.locator('#newow-details').getByTestId('newow-explanation-panel')).toContainText('newow_main_rise_ma35_ma45_page_v1')
+  // The page remains main-rise; composite explanation sources are shared trend replay.
+  await expect(chart).toHaveAttribute('data-strategy', 'main_rise')
+  await expect(page.locator('#newow-details').getByTestId('newow-explanation-panel')).toContainText('newow_trend_band_page_v2')
   await expect(page.locator('#newow-details').getByTestId('newow-explanation-panel')).toContainText('NEWOW_TARGET_SOURCE_UNPROVEN')
   await expect(page.locator('#newow-details').getByTestId('newow-explanation-panel')).toContainText('1w')
   await expect(page.locator('#newow-details').getByTestId('newow-explanation-panel')).toContainText('1d')

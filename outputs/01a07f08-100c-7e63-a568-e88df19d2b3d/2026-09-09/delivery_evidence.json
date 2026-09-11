@@ -1,0 +1,9 @@
+{
+  "146": {
+    "contract": "PT2610",
+    "bar_end": "2026-09-09T06:00:00+00:00",
+    "label": "owner收件确认（STATUS记录）",
+    "source": "STATUS.md 2026-09-09 午后自然验收及owner收件确认段落，runtime v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09",
+    "scope": "仅此Event的owner确认；不外推其他Event或Topic成员，不是本复盘重新检查微信"
+  }
+}

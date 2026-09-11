@@ -24,6 +24,7 @@ from app.market_data.historical_data_manager import (
 class FakeManager:
     def __init__(self) -> None:
         self.calls = []
+        self.catalog = SimpleNamespace(acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None))
 
     def update(self, request):
         self.calls.append(("update", request))
@@ -122,10 +123,15 @@ def _run(
 
 class _NullContext:
     def __enter__(self):
-        return object()
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+        self.engine = create_engine("sqlite://")
+        self.session = Session(self.engine)
+        return self.session
 
     def __exit__(self, *_args):
-        return None
+        self.session.close()
+        self.engine.dispose()
 
 
 class _ProgressEvent:
@@ -190,10 +196,12 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
     )
 
     assert set(command_action.choices) == {
+        "close-interrupted-after-market",
         "update",
         "refresh",
         "audit",
         "after-market",
+        "weekly-audit",
         "session-anchor-repair",
         "contract-warmup",
         "newow-readiness",
@@ -614,6 +622,27 @@ def test_after_market_non_trading_day_skip_exits_successfully() -> None:
     }
     assert stderr.getvalue() == ""
     assert manager.calls == []
+
+
+def test_manual_after_market_exception_never_claims_readonly() -> None:
+    manager = FakeManager()
+
+    def unavailable(_manager, *, failure_notification: bool):
+        assert failure_notification is False
+        raise RuntimeError("private maintenance details")
+
+    code, payload = _run(
+        ["data", "after-market"],
+        manager,
+        after_market_factory=unavailable,
+    )
+
+    assert code == 1
+    assert payload["readonly"] is False
+    assert payload["error"] == {
+        "code": "CLI_INTERNAL_ERROR",
+        "type": "RuntimeError",
+    }
 
 
 def test_refresh_requires_a_symbol_and_explicit_window() -> None:

@@ -38,7 +38,7 @@ class JsonArgumentParser(argparse.ArgumentParser):
                 if not result.targets or result.plan or result.snapshot or result.apply or result.expected_plan_sha256 or result.expected_snapshot_sha256:
                     self.error("plan requires only targets and optional classification")
             else:
-                if result.targets or result.classification or result.evidence_sources or not result.apply:
+                if result.targets or result.classification or result.evidence_sources or result.exchange_universes or result.exchange_inventory_evidence or not result.apply:
                     self.error("fetch/apply require an explicit phase and --apply")
                 if not isinstance(result.expected_plan_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", result.expected_plan_sha256) is None:
                     self.error("expected plan hash required")
@@ -97,7 +97,7 @@ def add_data_commands(
     audit = commands.add_parser("audit")
     selector = audit.add_mutually_exclusive_group(required=True)
     selector.add_argument("--symbol")
-    selector.add_argument("--universe", choices=("active",))
+    selector.add_argument("--universe", choices=("active", "operational"))
     audit.add_argument("--through")
     audit.add_argument("--progress", action="store_true")
 
@@ -111,6 +111,12 @@ def add_data_commands(
     readiness.add_argument("--timeout-seconds", type=int, default=300)
 
     commands.add_parser("after-market")
+    commands.add_parser("weekly-audit")
+    closeout = commands.add_parser("close-interrupted-after-market", allow_abbrev=False)
+    closeout.add_argument("--runtime-root", required=True)
+    closeout.add_argument("--runtime-commit", required=True)
+    closeout.add_argument("--expected-status-sha256", required=True)
+    closeout.add_argument("--apply", action="store_true")
 
     correction = commands.add_parser("au-calendar-correction", allow_abbrev=False)
     correction.add_argument("--evidence", required=True)
@@ -123,6 +129,8 @@ def add_data_commands(
     metadata.add_argument("--targets")
     metadata.add_argument("--classification")
     metadata.add_argument("--evidence-sources")
+    metadata.add_argument("--exchange-universes")
+    metadata.add_argument("--exchange-inventory-evidence")
     metadata.add_argument("--plan")
     metadata.add_argument("--snapshot")
     metadata.add_argument("--expected-plan-sha256")

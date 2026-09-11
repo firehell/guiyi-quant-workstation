@@ -340,6 +340,19 @@ def test_reference_window_does_not_call_future_requested_days_complete(product_c
     assert resolved.reason_code == "NEWOW_REFERENCE_WINDOW_PARTIAL"
 
 
+def test_default_reference_window_is_bounded_by_historical_as_of(product_cases):
+    reader, _query, _fake = product_cases.paged_reader(prefix_bars=5, frequency="1d")
+    cutoff = datetime(2023, 1, 4, 7, 0, 0, 1, tzinfo=UTC)
+
+    resolved = reader.resolve_performance_window(
+        "rb", ProductFrequency.DAILY, None, None, cutoff
+    )
+
+    assert resolved.requested_through == date(2023, 1, 4)
+    assert resolved.actual_through == date(2023, 1, 4)
+    assert resolved.complete is True
+
+
 @pytest.mark.parametrize(
     "field, value",
     [

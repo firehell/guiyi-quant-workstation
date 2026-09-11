@@ -287,7 +287,7 @@ def test_database_coverage_uses_actual_exchange_sessions_and_complete_iso_week(t
         weekly_key,
         tuple(date(2025, 1, day) for day in range(6, 11)),
     ) == ((daily_ends[-1], date(2025, 1, 10)),)
-    assert coverage.valid_boundary(minute_key, _bar(minute_ends[0], date(2025, 1, 6)))
+    assert coverage.valid_boundaries(minute_key, (_bar(minute_ends[0], date(2025, 1, 6)),))
     session.close()
 
 
@@ -393,7 +393,7 @@ def test_contract_expected_intraday_ends_respect_rqdata_history_floor(tmp_path) 
     session.close()
 
 
-def test_contract_valid_boundary_requires_exact_identity_lifecycle_and_session(
+def test_contract_valid_boundaries_requires_exact_identity_lifecycle_and_session(
     tmp_path,
 ) -> None:
     session, starts = _session(tmp_path)
@@ -421,22 +421,22 @@ def test_contract_valid_boundary_requires_exact_identity_lifecycle_and_session(
         date(2025, 1, 9),
     )[1]
 
-    assert coverage.valid_boundary(key, _bar(valid_end, date(2025, 1, 8)))
-    assert not coverage.valid_boundary(
+    assert coverage.valid_boundaries(key, (_bar(valid_end, date(2025, 1, 8)),))
+    assert not coverage.valid_boundaries(
         DatasetKey("contract", "jm", "JM2511", "1d"),
-        _bar(valid_end, date(2025, 1, 8)),
+        (_bar(valid_end, date(2025, 1, 8)),),
     )
-    assert not coverage.valid_boundary(
+    assert not coverage.valid_boundaries(
         key,
-        _bar(datetime(2025, 1, 6, 1, 5, tzinfo=UTC), date(2025, 1, 6)),
+        (_bar(datetime(2025, 1, 6, 1, 5, tzinfo=UTC), date(2025, 1, 6)),),
     )
-    assert not coverage.valid_boundary(
+    assert not coverage.valid_boundaries(
         key,
-        _bar(datetime(2025, 1, 10, 1, 5, tzinfo=UTC), date(2025, 1, 10)),
+        (_bar(datetime(2025, 1, 10, 1, 5, tzinfo=UTC), date(2025, 1, 10)),),
     )
-    assert not coverage.valid_boundary(
+    assert not coverage.valid_boundaries(
         key,
-        _bar(datetime(2025, 1, 8, 1, 4, tzinfo=UTC), date(2025, 1, 8)),
+        (_bar(datetime(2025, 1, 8, 1, 4, tzinfo=UTC), date(2025, 1, 8)),),
     )
     session.close()
 
@@ -477,6 +477,95 @@ def test_latest_complete_day_falls_back_when_current_session_metadata_is_pending
     )
 
     assert coverage.latest_complete_day(("jm",)) == date(2025, 1, 9)
+    session.close()
+
+
+def test_latest_metadata_day_rejects_unknown_current_calendar_day(tmp_path) -> None:
+    """Missing today's fact must not be mistaken for a known non-trading day."""
+    session, starts = _session(tmp_path)
+    current_day = session.scalar(
+        select(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == date(2025, 1, 10),
+        )
+    )
+    assert current_day is not None
+    session.delete(current_day)
+    session.commit()
+    coverage = DatabaseCoverageSource(
+        session,
+        starts,
+        now=lambda: datetime(2025, 1, 10, 18, 5, tzinfo=SHANGHAI),
+    )
+
+    with pytest.raises(InfrastructureError, match="^TRADING_CALENDAR_MISSING$"):
+        coverage.latest_metadata_day(("jm",))
+
+    session.close()
+
+
+def test_latest_metadata_day_requires_authoritative_current_calendar_fact(
+    tmp_path,
+) -> None:
+    session, starts = _session(tmp_path)
+    current_day = session.scalar(
+        select(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == date(2025, 1, 10),
+        )
+    )
+    assert current_day is not None
+    current_day.provider = None
+    session.commit()
+    coverage = DatabaseCoverageSource(
+        session,
+        starts,
+        now=lambda: datetime(2025, 1, 10, 18, 5, tzinfo=SHANGHAI),
+    )
+
+    with pytest.raises(InfrastructureError, match="^TRADING_CALENDAR_MISSING$"):
+        coverage.latest_metadata_day(("jm",))
+
+    session.close()
+
+
+def test_latest_metadata_day_rejects_cross_exchange_calendar_disagreement(
+    tmp_path,
+) -> None:
+    session, starts = _session(tmp_path)
+    session.add(Exchange(code="SHFE", name="SHFE"))
+    session.add(
+        Instrument(
+            symbol="au",
+            name="黄金",
+            exchange_code="SHFE",
+            is_active=True,
+        )
+    )
+    session.add_all(
+        (
+            TradingCalendar(
+                exchange_code="SHFE",
+                trade_date=date(2025, 1, 9),
+                is_trading_day=True,
+            ),
+            TradingCalendar(
+                exchange_code="SHFE",
+                trade_date=date(2025, 1, 10),
+                is_trading_day=False,
+            ),
+        )
+    )
+    session.commit()
+    coverage = DatabaseCoverageSource(
+        session,
+        starts,
+        now=lambda: datetime(2025, 1, 10, 18, 5, tzinfo=SHANGHAI),
+    )
+
+    with pytest.raises(InfrastructureError, match="^TRADING_CALENDAR_CONFLICT$"):
+        coverage.latest_metadata_day(("jm", "au"))
+
     session.close()
 
 
@@ -1025,6 +1114,41 @@ def test_rqdata_weekly_adapter_aggregates_exchange_daily_facts(tmp_path) -> None
     assert [(bar.open, bar.high, bar.low, bar.close, bar.volume, bar.turnover, bar.open_interest) for bar in batch.bars] == [
         (Decimal("101"), Decimal("115"), Decimal("91"), Decimal("110"), Decimal("15"), Decimal("1500"), Decimal("25"))
     ]
+    session.close()
+
+
+def test_rqdata_weekly_adapter_sums_decimal_facts_without_context_rounding(
+    tmp_path,
+) -> None:
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 10, 1, 5, tzinfo=UTC)
+    turnover = Decimal("123456789012.123456789012345678")
+    rows = [
+        {
+            "date": date(2025, 1, day),
+            "open": Decimal("100"),
+            "high": Decimal("101"),
+            "low": Decimal("99"),
+            "close": Decimal("100"),
+            "volume": Decimal("1.000000000000000001"),
+            "total_turnover": turnover,
+            "open_interest": Decimal("20"),
+        }
+        for day in range(6, 11)
+    ]
+    adapter = RQDataMarketAdapter(
+        session=session,
+        client=ExchangeDailyClient({"JM2509": pd.DataFrame(rows)}),
+    )
+
+    batch = _fetch(
+        adapter,
+        DatasetKey("contract", "jm", "JM2509", "1w"),
+        (expected,),
+    )
+
+    assert batch.bars[0].volume == Decimal("5.000000000000000005")
+    assert batch.bars[0].turnover == Decimal("617283945060.617283945061728390")
     session.close()
 
 
@@ -2028,3 +2152,81 @@ def test_calendar_context_start_is_previous_natural_month() -> None:
     assert _calendar_context_start(date(2023, 1, 1)) == date(2022, 12, 1)
     assert _calendar_context_start(date(2023, 6, 19)) == date(2023, 5, 1)
     assert _calendar_context_start(date(2025, 7, 8)) == date(2025, 6, 1)
+
+
+def _contract_session_coverage(tmp_path, listed, expired, metadata_start):
+    session, starts = _session(tmp_path)
+    contract = session.scalar(select(Contract).where(Contract.contract_code == "JM2509"))
+    assert contract is not None
+    contract.listed_date = listed
+    contract.expired_date = expired
+    for model in (TradingCalendar, TradingSession):
+        for row in session.scalars(select(model)):
+            session.delete(row)
+    session.flush()
+    through = expired - timedelta(days=1)
+    _add_provider_calendar_facts(session, metadata_start, through)
+    days = tuple(
+        metadata_start + timedelta(days=offset)
+        for offset in range((through - metadata_start).days + 1)
+        if (metadata_start + timedelta(days=offset)).weekday() < 5
+    )
+    _add_date_scoped_session_facts(session, days)
+    session.commit()
+    starts.write_text("product,window_start,note\njm,2000-01-01,test\n")
+    floor = tmp_path / "floor.txt"
+    floor.write_text("2023-01-01\n")
+    return session, DatabaseCoverageSource(session, starts, history_floor_path=floor)
+
+
+@pytest.mark.parametrize("through, expected_days", [
+    (date(2022, 3, 14), ()),
+    (date(2022, 3, 16), (date(2022, 3, 15), date(2022, 3, 16))),
+    (None, (date(2022, 3, 15), date(2022, 3, 16), date(2022, 3, 17))),
+])
+def test_contract_sessions_before_history_floor_use_lifecycle(
+    tmp_path, through, expected_days
+) -> None:
+    session, coverage = _contract_session_coverage(
+        tmp_path, date(2022, 3, 15), date(2022, 3, 18), date(2022, 3, 15)
+    )
+    key = DatasetKey("contract", "jm", "JM2509", "60m")
+
+    windows = coverage.sessions(key, 2022, 3, through)
+
+    assert tuple(window.end for window in windows) == tuple(
+        datetime.combine(day, time(9, 5), SHANGHAI) for day in expected_days
+    )
+    assert coverage.sessions(DatasetKey("continuous", "jm", "MAIN", "60m"), 2022, 3) == ()
+    session.close()
+
+
+def test_contract_sessions_respect_provider_intraday_history_start(tmp_path) -> None:
+    session, coverage = _contract_session_coverage(
+        tmp_path, date(2009, 12, 31), date(2010, 1, 6), date(2010, 1, 4)
+    )
+
+    windows = coverage.sessions(DatasetKey("contract", "jm", "JM2509", "60m"), 2010, 1)
+
+    assert tuple(window.end for window in windows) == (
+        datetime(2010, 1, 4, 9, 5, tzinfo=SHANGHAI),
+        datetime(2010, 1, 5, 9, 5, tzinfo=SHANGHAI),
+    )
+    session.close()
+
+
+@pytest.mark.parametrize("missing_model", [TradingCalendar, TradingSession])
+def test_contract_sessions_before_history_floor_reject_missing_metadata(
+    tmp_path, missing_model
+) -> None:
+    session, coverage = _contract_session_coverage(
+        tmp_path, date(2022, 3, 15), date(2022, 3, 18), date(2022, 3, 15)
+    )
+    missing = session.scalars(select(missing_model)).first()
+    assert missing is not None
+    session.delete(missing)
+    session.commit()
+
+    with pytest.raises(InfrastructureError, match="HISTORICAL_SESSION_FACT_MISSING"):
+        coverage.sessions(DatasetKey("contract", "jm", "JM2509", "60m"), 2022, 3)
+    session.close()

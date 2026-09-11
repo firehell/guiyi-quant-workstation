@@ -73,6 +73,8 @@ def _execution_is_readonly(args: argparse.Namespace) -> bool:
         if args.runtime_command in {"subing-ths-scope", "recover-live-captured"}:
             return not args.apply
         return False
+    if args.data_command == "after-market":
+        return False
     return not bool(getattr(args, "apply", False))
 
 
@@ -279,9 +281,11 @@ def main(
                 "ok",
                 "ready",
                 "skipped",
+                "skipped_busy",
                 "accepted",
                 "acknowledged",
                 "audited",
+                "closed_interrupted",
             }
         )
         else 1
@@ -319,6 +323,12 @@ def _run_data(
             after_market_factory=after_market_factory,
             failure_notification=False,
         )
+    if args.data_command == "weekly-audit":
+        from app.runtime_entry import run_weekly_audit_service
+        return run_weekly_audit_service(session_factory=session_factory, manager_factory=manager_factory)
+    if args.data_command == "close-interrupted-after-market":
+        from app.guiyi_cli.after_market_closeout import run_closeout_command
+        return run_closeout_command(args, session_factory=session_factory, manager_factory=manager_factory)
     if args.data_command == "session-anchor-repair":
         with session_factory() as session:
             factory = session_anchor_repair_factory
@@ -342,6 +352,16 @@ def _run_data(
             ).as_payload()
     with session_factory() as session:
         manager = manager_factory(session)
+        if args.data_command == "audit":
+            from app.db.readonly import readonly_transaction
+            lease = manager.catalog.acquire_maintenance_lock()
+            if lease is None:
+                return {"schema_version": 1, "action": "audit", "status": "skipped_busy", "readonly": True}
+            try:
+                with readonly_transaction(session):
+                    return run_data_command(args, manager, progress_stream=stderr).as_payload()
+            finally:
+                lease.release()
         result = run_data_command(args, manager, progress_stream=stderr)
         if args.data_command == "contract-warmup":
             return contract_warmup_payload(result)

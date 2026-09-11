@@ -1,95 +1,108 @@
 # 归一量化执行规则
 
-本文件只定义工程执行授权、受控外部操作、安全规则和不可破坏的工程边界。当前 release、Runtime、Scope、evidence 与 pending Gate 见 `STATUS.md`；稳定产品面见 `PROJECT_SOURCE.md`；active 依赖见 `docs/ARCHITECTURE.md`；业务语义见对应 deep canonical。
+本文件只定义全局工程授权、安全边界和跨模块不变量。领域 canonical 的约束效力与本文件相同；当前
+release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不得用聊天记忆替代仓库事实。
 
-## 执行授权
+## 项目定位与事实源
 
-- 用户本轮请求决定任务目标与授权范围；代码、测试和真实 evidence 决定实现事实；accepted canonical 与 ADR 决定长期约束；当前阶段状态以 `STATUS.md` 为准。发生冲突时必须指出，涉及数据、策略、发布、Runtime 或真实通知时 fail-closed。
-- 开始任务先检查 branch、worktree、dirty state、最近提交、相关实现与测试。保留并避开用户或其他任务的修改，不批量清理、覆盖、回滚或全量暂存无关内容。
-- `develop` 是日常集成分支。普通源码、测试、文档、仓库内普通删除、commit 与 push 可按任务范围执行；branch、worktree、PR、Review 与 CI 是协作工具，不授予外部操作权限。用户要求 Plan-only、只读或先审计时不得修改。
-- 普通仓库删除必须同时关闭 active references，并按影响运行验证；恢复只使用 Git history，不创建仓库内 archive、backup、legacy、rollback copy、packet 或 receipt。
-- 数据或指标语义变化时同步更新对应 deep canonical；阶段事实只写 `STATUS.md`，稳定产品边界只写 `PROJECT_SOURCE.md`，长期决策只写 `DECISIONS.md`，依赖关系只写 `docs/ARCHITECTURE.md`，命令只写 `TESTING.md`。
-- 必须区分 `CODE_COMPLETE`、`TEST_COMPLETE`、`EXTERNAL_GATE_PENDING`、`RELEASED` 与 `RUNTIME_READY`。只有真实命令输出或运行证据才能支持完成声明。
+归一量化是本地、单用户的国内期货研究与策略运行工作站，采用模块化单体。AI 可以自动研究和完成工程工作，
+但不能自动晋升策略、阶段或 Runtime；当前 `auto_order=false`，不得创建或提交真实订单。
+
+- 用户本轮目标和边界决定任务授权；代码、测试和真实 evidence 决定实现事实；accepted canonical 与
+  `DECISIONS.md` 决定长期合同；当前阶段以 `STATUS.md` 为准。
+- 开始任务先核对 branch、HEAD、worktree、dirty state、相关实现、测试和当前 develop 依赖。保留并避开
+  用户或其他任务修改，不覆盖、回滚、批量清理或全量暂存无关内容。
+- `PROJECT_SOURCE.md` 只定义稳定产品面，`docs/ARCHITECTURE.md` 只定义 active 依赖，业务语义由对应
+  OpenSpec/deep canonical 定义，命令只写入 `TESTING.md`。
+
+## 讨论前置，范围内开发自主
+
+- 用户要求讨论、比较方案、只读审计或 Plan-only 时，只分析并形成可审结果，不提前实施。讨论偏好、历史同意
+  或可行性结论不构成执行授权。
+- 用户明确要求实现，且目标、范围和验收清楚时，连续完成实现、修复本任务引入的问题、相关验证、Review、
+  commit/push，以及任务已授权且条件满足的 develop 集成；不在编码、测试或提交阶段重复申请同一批准。
+- 小任务可以 Direct；中等任务先给简短 Plan 后执行。命名、局部组织和按影响选择测试属于实现判断。
+  branch、worktree、PR 和多 agent 按隔离、协作与风险需要使用，不是每个任务的固定仪式。
+- Lane 3 的策略公式、撮合、成本、风险、仓位、Ledger、migration、Canonical、Runtime、通知、Broker、
+  main/tag/release 等重要设计先完成 Plan 和必要 Review；设计获批后，范围内编码仍可连续执行。
+- 必要验证失败必须继续定位或准确报告，不能因开发默认允许而跳过检查、降低断言或宣布完成。
+
+## 需要停止相关动作的条件
+
+只在受影响部分出现以下情况时停止并请 owner 决定；其余独立、安全且已授权的工作继续：
+
+- 仓库事实无法消除、会改变产品或架构的重要歧义；
+- 必须改变目标、验收、业务合同或真实操作范围；
+- 必须覆盖、删除或改写不属于本任务的用户修改；
+- 必须扩大工具权限、修改用户级/全局配置或绕过宿主安全控制；
+- 必须执行尚未明确授权的受控外部操作。
 
 ## 受控外部操作
 
-以下操作必须在首次 mutation 前取得目标、环境和范围明确的单次执行意图：
+下列 mutation 必须在首次执行前取得目标、环境和范围明确的单次执行意图：
 
-- 真实 RQData 下载或写入；
-- Canonical/primary 数据的覆盖、迁移或删除；
-- production PostgreSQL、Redis、Scope 或仓库外数据的写入/删除；
-- Runtime/live enable、switch、promotion 或生产 acknowledgment；
-- 真实通知；
-- main merge、tag、release、Git 历史重写、force update 或 GitHub rules 修改。
+- 真实 RQData 下载或写入，Canonical/primary 数据覆盖、迁移或删除；
+- production PostgreSQL、Redis、Scope 或仓库外数据写入/删除；
+- Runtime/live enable、switch、promotion 或 production acknowledgment；
+- 真实通知或收件范围变更；
+- main merge、tag、GitHub Release、历史重写、force update 或 GitHub rules 修改；
+- Broker 接入、订单草稿发送及任何真实下单、撤单或改单。
 
-单次意图只授权紧随其后的一次匹配尝试；范围变化、重试、失败后继续、跨会话继续都需要新的明确请求。dry-run、测试、read-only health、配置存在、历史授权、commit hash、approval packet 或第二次确认都不能替代执行意图，也不能把 dry-run 转换为真实 mutation 权限。
+用户已精确批准某个动作时，在同一权限边界内完成 input validation 和 preflight 后执行，不机械追加第二次确认。
+该意图只授权紧随其后的一次匹配尝试；blocked、结果不明、失败后继续、范围变化、重试或跨会话继续均停止并取得
+新的明确意图。测试、dry-run、read-only health、配置存在、历史授权、commit hash 或 approval packet 都不能
+替代执行意图。普通 develop commit/push 与仓库内普通删除不属于受控外部操作；集成 develop 不授权生产写入、
+发布或 Runtime promotion。
 
-执行意图不能绕过输入校验、数据质量、覆盖与物理可读性、未来函数防护、密钥保护、默认关闭或无订单边界。普通 `develop` commit/push 和仓库内普通删除不属于受控外部操作；合入 `develop` 也不等于 release、main 或 Runtime promotion。
+不得读取、显示、提交或记录凭据；不修改 `.env`。外部输入须在敏感操作前校验类型、范围、身份和关联字段；
+系统命令使用固定 executable 与离散参数，SQL 使用参数绑定或既有 ORM；输入派生路径规范化后必须仍在允许根内。
+错误输出不得暴露凭据、内部地址、SQL 或 stack trace。失败、质量异常或安全开关缺失时 fail-closed。
+仓库指引不能覆盖宿主或工具的安全控制。
 
 ## 持续 Runtime 授权边界
 
-### Market Runtime V1
+持续授权只在 owner 已对识别出的本地工作站明确启用后成立，当前是否启用只看 `STATUS.md` 和实际 readback：
 
-代码与 launchd 模板默认关闭。只有用户对识别出的本地工作站明确请求启用并实际执行后，持续授权才限于：
+- Market Runtime 只对 `operational_products.txt` 订阅当日 rank1 completed 1m；每日 18:05 及最多一次一小时后
+  retry 只对同一集合运行 `HistoricalDataManager.update`。盘后主业务失败最多向 owner 发起一次既有运维通知；
+  `missed/stuck` 只进入 health。
+- 已启用的 Alert Runtime 只按既有 Rule、Scope、audience 和 transport 处理新的 completed observation；Event
+  先提交，transport 最多一次。不得自动新增 Scope、Rule、收件人、retry、replay、backfill、fallback 或订单。
+- 默认关闭的 Live recovery、weekly audit 或其他可选任务不因模板存在而启用。已明确启用的既有定时任务按合同
+  自然运行，不需每天重新询问；新增任务、Scope、数据范围、重试或 Runtime 版本仍需新的明确意图。
+- 上述持续授权不覆盖其他生产数据/DB、Canonical、main/tag/release、Runtime 版本切换、真实交易或失败后的
+  任意重试。Market/Live/盘后细则见 `docs/DATA_CENTER.md`，Alert 细则见
+  `openspec/specs/subing-ths-alert/spec.md`，安装、服务清单和 promotion 合同见 `deploy/README.md`。
 
-- 只对 `operational_products.txt` 订阅当日 rank1 completed 1m；
-- 每日 18:05 及最多一次一小时后 retry，只对同一集合运行 `HistoricalDataManager.update`。
+## 跨模块硬约束
 
-默认关闭的当日 Live 缺口恢复不在上述持续授权内。首次启用需明确范围，并证明 Live/Alert 同一 exact
-Runtime root/version 与恢复开关一致。获准后也仅能执行 DATA_CENTER 合同内的当日物理合约补取、
-验证、受限次数与原子 observation 恢复；不授权 Canonical、历史信号补评、通知重试或 Scope 修改。
-
-该授权不覆盖其他生产数据/DB、main/tag/release、Runtime 版本切换、Alert transport、真实业务通知或订单。盘后状态和 health 只用于观察；只有受监督的自然盘后业务失败可向 owner 发起最多一次 PushPlus 运维通知，且不用 Alert Rule、Topic、`AlertEvent`、DB、retry 或 fallback；`missed/stuck` 只进入 health。
-
-### Alert Runtime V2
-
-Alert Runtime 的授权与 Market Runtime 独立。代码、launchd 模板与 enable marker 默认关闭；只有用户对识别出的本地工作站明确请求启用并实际执行后，才形成不超出既有 Rule、Scope、audience 与 transport 的持续授权。post-0044 稳定代码组合为同一 `single Alert Runtime` 内两条 observation Rule：
-
-```text
-htdy_original_15m × first_seen × scope_product_frequencies × htdy_observers
-subing_ths_alert_15m_v1 × exact × completed actual_dominant 15m × htdy_observers
-→ shared one-shot pushplus-wechat-topic transport
-```
-
-Migration `20260902_0043` forward-only 删除全部已退役策略 Event、Rule 与专用列，只保留 HTDY Rule/Event 事实；`20260902_0044` 只从该精确状态增加 disabled、empty-scope 的新 SuBing Rule，不启用或填充生产 Scope；`20260903_0045` 只把既有 RQData 1m session 首根标签规范化为 `(start, end]` 的排他边界。不得建立 archive、兼容 reader、replay 或 downgrade。当前 release、production migration、Runtime 与 enable 状态只以 `STATUS.md` 为准；任何一次状态变化都不能替代下一项受控操作的明确授权。
-
-- HTDY Scope 只能按 symbol × frequency。
-- SuBing 固定身份为 `subing_ths_alert_15m_v1` / `subing_ths_15m_v3`，只观察 completed `actual_dominant` 15m；公式为 MACD(12,26,9) CROSS + `EMA(CLOSE, 21)`，不得增加零轴、Range、量能/OI、ATR、斜率或多周期隐藏过滤。v3 不改变数学公式，只冻结修正 session 锚点后的正式输入 Bar、时间与 Candidate。
-- HTDY Event mode 为 forward-only `first_seen`；SuBing Event mode 为同一 Bar 事实一致才幂等的 `exact`。二者都必须 Event 先提交，再最多一次 transport；不得用其中一种去弱化另一种。
-- 通用 Scope API 必须拒绝 disabled Rule 的写入。SuBing 第一次启用只允许走专用原子 activation seam：dry-run 只读，apply 在精确 0045、两 Rule、SuBing disabled + empty scope 的 preflight 后锁定、一次提交并 readback；production apply 仍需单次明确授权。
-- 外部执行顺序必须先完成 Canonical 锚点修复与 exact-tag Runtime readback，再重新完成 `G10` 只读同花顺兼容性 evidence，最后才可执行 `G9` production Scope activation + Rule enable；G10 不授权 PushPlus、Rule enable、Scope、Runtime 或其他 mutation。
-- HTDY 最多发起一次 Topic 请求，Topic 成员由 PushPlus 外部人工管理且不超过 owner + 三位朋友。系统不读取成员清单，不声明精确送达人数。
-- Git 外通知配置只含 message token 与 HTDY Topic code；parent 必须为当前用户所有的 `0700` 目录，file 必须为当前用户所有的 `0600` 普通文件。结构 health 不联网、不发送。
-- `alert_rules` 与 `alert_events` 是独立 Application Domain。两条 Rule 均为研究观察；Event 先提交，再最多调用一次 transport；无逐收件人状态、retry、queue、replay、backfill、fallback 或订单。
-- HTDY 日内五周期只消费同周期 completed Live Bar；D1/W1 只响应 `market:state(reason=canonical_updated)` 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。
-- HTDY 使用 forward-only first-seen observation 语义：已有同周期 completed Live / `canonical_updated` 触发只比较 previous/current prefix，历史重绘候选只限于 kernel repaint zone。`AlertEvent.bar_end` 是观察 Bar 时间，`detected_at` 是 Runtime 首次识别时间；Event 冻结后，重绘消失、重现或方向变化都不改写、不重发。startup、repair、replay、backfill 与 EOD recalculation 不创建历史 HTDY Event 或通知。
-- `alert:runtime-status` 写 schema v6，只保留通用 Alert 状态与两条固定 Rule 各四个 bounded health 字段；兼容读取 v1-v5 时丢弃已退役策略字段并为空缺 Rule health 填充空状态。notification acknowledgment 必须精确匹配当前 failure timestamp 做一次 CAS；保留原失败、公开分类与计数，不重放、不补发。同一 timestamp 内的任何新 failure 都必须原子清空 acknowledgment；状态写失败或并发变化时 fail-closed。
-- provider accepted 只表示请求被接受，不表示微信送达。代码、测试、配置或历史 canary 不授权真实 send、Scope 变更或 Runtime switch。
-
-## 安全规则
-
-1. 外部输入在敏感操作前校验类型、格式、范围、允许值与关联字段。系统命令使用固定 executable 与离散参数，SQL 使用参数绑定或既有 ORM；输入派生路径规范化后必须仍在允许根目录内。
-2. 禁止读取、显示、提交或记录凭据；不修改 `.env`，不在代码、文档、测试、日志或错误输出中暴露 webhook、token、密码、cookie、license、私钥、内部地址、SQL 或 stack trace。认证、质量配置或安全开关缺失/异常时 fail-closed。
-3. 删除、迁移或覆盖前先只读解析精确目标、消费者、影响和恢复方式；不得使用宽泛路径、未解析变量或破坏性 Git 命令。
-4. 不连接 RQData、production PostgreSQL 或 Redis，不发送通知，不切换 Runtime，除非本轮明确授权且范围校验通过。
-5. `auto_order=false` 适用于所有研究与 Runtime；任何创建或提交真实订单的路径必须拒绝。
-
-## 工程硬约束
-
-1. 唯一 Historical 数据链为 `RQData -> staging + hard validation -> Canonical Parquet -> 八表 Catalog + MainContractMap -> MarketDataService`。不得删除或绕过 `MarketDataService`、`DatasetKey`、Calendar、Session、`MainContractMap`、Canonical 或 Catalog。
-2. 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 只能通过 rank1 有效区间拼接。consumer 不得 glob、自选 active、自判主力、绕过质量或跨频回退。
-3. `active_products.txt` 定义研究能力，`operational_products.txt` 定义持续 Runtime 授权；即使当前内容相同也不得合并。
-4. Historical Canonical 与 Live observation 必须隔离。未确认 Bar 只能用于 preview；Live 不得直接晋升 Canonical。
-5. RQData 必须先进入 staging，通过 schema/session/duplicate/OHLCV/coverage、identity、row-count 与物理可读性校验后再原子发布；失败保留最后有效 Canonical。
-6. 映射、分区、coverage 或物理完整性异常必须显式失败，不得静默填充、缩短、替换或另建第二套缺口事实。
-7. 策略与研究必须保护 causality、strict-before、future-leak、prefix invariance、golden parity、fail-closed、warm-up、合约切换、成交时序和 OOS/Walk-forward 边界。交易相关价格、成本、仓位、资金、盈亏和费用使用 `Decimal`。
-8. 已退役策略域不得保留 active API、CLI、Web、Runtime、Alert Rule、Scope、派生 cache 或兼容 reader。未来新策略必须使用新身份、新合同与新版本，不能恢复或复用已退役实现。
-9. EMA21 斜率只保留通用 10K primitive：恰好使用 10 个 EMA21 值，按首尾差除以 9 个 bar interval，再除以当前 EMA21 并换算为 bps/bar；不得恢复 5m/15m 正式因子或方向过滤。
-10. Alert 不属于八表 Market Catalog。HTDY 使用 symbol × frequency Scope；SuBing 只使用 operational × 15m Scope；repair、replay、backfill、migration 或 EOD recalculation 不补评、不补发历史通知。
-11. active 策略与指标的 causality、strict-before、prefix-invariance、future-leak、golden parity 与 fail-closed 测试不得删除；SuBing 还必须保留 exact CROSS、同物理合约 warm-up/rollover、completed-only 与无隐藏过滤测试。整体退役的实现及其专用测试应同步删除。已有 Alembic history 只作 lineage；新 migration 必须前向、可审计且真实 production 执行仍需独立授权。
+1. 唯一 Historical 链为 `RQData -> staging + hard validation -> Canonical Parquet -> 八表 Catalog +
+   MainContractMap -> MarketDataService`；consumer 不得 glob、自选 active、自判主力、绕过质量或跨频回退。
+2. Historical Canonical 与 Live observation 分离；未确认 Bar 只用于 preview，不进入正式历史、信号或决策，
+   Live 不直接晋升 Canonical。
+3. 映射、Session、分区、coverage、身份或物理完整性不能证明时显式失败；不造数、插值、缩窗、替代或建立
+   第二套缺口事实。`active_products.txt` 与 `operational_products.txt` 不合并。
+4. 策略与研究保留 causality、strict-before、future-leak、prefix invariance、golden parity、warm-up、
+   合约切换、成交时序和 OOS/Walk-forward 边界；回看重绘与历史当时可知事实必须分开。
+5. 已退役能力不恢复 active API、CLI、Web、Runtime、Scope 或兼容 reader；新策略使用新身份、合同和版本。
+6. 数据、策略、成交、成本、风险或账户语义变化时更新对应 canonical 和版本；交易数值使用 `Decimal`。
 
 ## 验证与交付
 
-- 按改动风险先运行定向测试，再扩展到模块测试、lint、typecheck、build、CLI/API/browser smoke；纯文档运行引用、OpenSpec、secret scan 与 diff 检查。
-- 必要验证失败时只报告失败，不声明完成；不能运行的检查说明阻塞原因。
-- 交付时说明状态、改动范围、实际命令与结果、未完成 Gate、风险和唯一最小下一步。
+- 按风险先跑定向测试，再扩展模块测试、lint、typecheck、build 或 smoke；不机械运行与改动无关的全量检查。
+  数据、策略、migration、Runtime、通知和发布保留各自必要 Gate。
+- 文档/指引改动运行引用与格式检查、适用工程测试、OpenSpec、secret scan 和 `git diff --check`；不得以重复
+  固定措辞代替业务行为验证。
+- 必须区分 `CODE_COMPLETE`、`TEST_COMPLETE`、`REVIEW_COMPLETE`、`EXTERNAL_GATE_PENDING`、
+  `RELEASED` 与 `RUNTIME_READY`；历史 evidence 不证明新版本，只有实际命令和运行证据支持完成声明。
+- 交付说明状态、改动范围、真实验证、Review、未完成 Gate、风险和唯一最小下一步。
+
+## 领域导航
+
+- 日常开发、任务定位和按影响验证：`docs/DEVELOPMENT.md`
+- 数据、Catalog、维护、Live 与盘后合同：`docs/DATA_CENTER.md` 及相关 data OpenSpec
+- HTDY 产品面与七周期入口：`PROJECT_SOURCE.md`、`DECISIONS.md`；共享 Alert Runtime、SuBing 身份、公式、
+  Event、Scope、migration 和兼容 Gate：`openspec/specs/subing-ths-alert/spec.md`
+- active 依赖与产品边界：`docs/ARCHITECTURE.md`、`PROJECT_SOURCE.md`、`DECISIONS.md`
+- release、服务、promotion 与 worktree：`.agents/skills/release-agent/SKILL.md`、`deploy/README.md`
+- 可执行验证命令：`TESTING.md`

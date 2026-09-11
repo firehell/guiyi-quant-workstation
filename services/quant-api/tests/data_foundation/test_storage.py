@@ -322,3 +322,22 @@ def test_parent_sync_failure_closes_both_directory_descriptors(tmp_path, monkeyp
     with pytest.raises(StorageError):
         CanonicalMonthlyStore(tmp_path).publish(_request((_bar(1),)))
     assert opened == set()
+
+
+def test_partition_structure_is_rejected_before_boundary_metadata(tmp_path):
+    from dataclasses import replace
+
+    def unexpected_metadata_query(_key, _bars):
+        raise AssertionError("Invalid partition structure must precede metadata validation")
+
+    store = CanonicalMonthlyStore(tmp_path, boundary_validator=unexpected_metadata_query)
+    first = _bar(1)
+    wrong_month = replace(_bar(2), trading_day=date(2025, 2, 2))
+    with pytest.raises(StorageError, match="PARTITION_MONTH_MISMATCH"):
+        store.publish(_request((first, wrong_month)))
+    with pytest.raises(StorageError, match="TARGET_WINDOW_INCOMPLETE"):
+        store.publish(_request((first,), expected=(first.bar_end, _bar(2).bar_end)))
+    with pytest.raises(StorageError, match="BAR_END_NOT_STRICTLY_INCREASING"):
+        store.publish(_request((first, first)))
+    with pytest.raises(StorageError, match="EMPTY_PARTITION"):
+        store.publish(_request(()))

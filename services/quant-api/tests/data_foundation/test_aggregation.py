@@ -162,3 +162,30 @@ def test_aggregate_bucket_preserves_canonical_ohlcv_semantics() -> None:
     assert result.volume == Decimal("3")
     assert result.turnover == Decimal("30")
     assert result.open_interest == Decimal("202")
+
+
+def test_aggregate_bucket_sums_decimal_facts_without_context_rounding() -> None:
+    start = datetime(2025, 1, 2, 1, 0, tzinfo=UTC)
+    turnover = Decimal("123456789012.123456789012345678")
+    bars = tuple(
+        CanonicalBar(
+            bar_end=start + timedelta(minutes=offset),
+            trading_day=date(2025, 1, 2),
+            open=Decimal("100"),
+            high=Decimal("101"),
+            low=Decimal("99"),
+            close=Decimal("100"),
+            volume=Decimal("1.000000000000000001"),
+            turnover=turnover,
+            open_interest=Decimal("20"),
+        )
+        for offset in range(1, 6)
+    )
+
+    result = aggregation.aggregate_bucket(
+        bars,
+        bucket_end=start + timedelta(minutes=5),
+    )
+
+    assert result.volume == Decimal("5.000000000000000005")
+    assert result.turnover == Decimal("617283945060.617283945061728390")

@@ -43,7 +43,7 @@ class RuntimeAfterMarketRun(BaseModel):
 
     trading_day: str
     status: str
-    attempts: int
+    attempts: int | None
     started_at: str
     finished_at: str
     products: list[str] = Field(default_factory=list)
@@ -57,6 +57,32 @@ class RuntimeAfterMarketCurrentRun(BaseModel):
     scheduled_date: str
     started_at: str
     products: list[str] = Field(default_factory=list)
+    attempt: int | None = None
+    stage: str | None = None
+    updated_at: str | None = None
+    stage_started_at: str | None = None
+    elapsed_seconds: float | None = None
+    current_symbol: str | None = None
+    current_partition: dict[str, object] | None = None
+    counters: dict[str, dict[str, int]] | None = None
+    stage_durations: dict[str, float] | None = None
+    retry_at: str | None = None
+
+
+class RuntimeWeeklyAuditHealth(BaseModel):
+    """Optional full-history observation; independent of operational service health."""
+
+    status: Literal["not_run", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"]
+    readonly: bool = True
+    scope: Literal["operational_full_history"] = "operational_full_history"
+    through: str | None = None
+    finding_count: int | None = None
+    started_at: str | None = None
+    updated_at: str | None = None
+    finished_at: str | None = None
+    completed: int | None = None
+    total: int | None = None
+    current_symbol: str | None = None
 
 
 class RuntimeAfterMarketHealth(BaseModel):
@@ -129,6 +155,7 @@ class RuntimeHealthComponents(BaseModel):
     redis: RuntimeComponentHealth
     live_market: RuntimeLiveMarketHealth
     after_market: RuntimeAfterMarketHealth
+    weekly_audit: RuntimeWeeklyAuditHealth | None = None
     alert: RuntimeAlertHealth
 
 

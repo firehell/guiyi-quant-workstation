@@ -63,23 +63,24 @@ def canonical_root() -> Path:
     return root.resolve()
 
 
-def build_historical_data_manager(session: Session) -> HistoricalDataManager:
+def build_historical_data_manager(session: Session, *, data_root: Path | None = None,
+                                  config_root: Path | None = None) -> HistoricalDataManager:
     """Compose the Historical maintenance boundary without starting a run."""
 
     from app.market_data.coverage_source import DatabaseCoverageSource
     from app.market_data.rqdata_adapter import RQDataMarketAdapter
 
-    root = canonical_root()
+    root = data_root if data_root is not None else canonical_root()
     catalog = MarketCatalog(session, root)
     adapter = RQDataMarketAdapter(session=session)
     coverage = DatabaseCoverageSource(
         session,
-        _PRODUCT_STARTS,
-        history_floor_path=_HISTORY_FLOOR,
+        config_root / "data/universe/product_window_starts.csv" if config_root is not None else _PRODUCT_STARTS,
+        history_floor_path=config_root / "data/universe/active_history_floor.txt" if config_root is not None else _HISTORY_FLOOR,
     )
     return HistoricalDataManager(
         catalog=catalog,
-        store=CanonicalMonthlyStore(root, boundary_validator=coverage.valid_boundary),
+        store=CanonicalMonthlyStore(root, boundary_validator=coverage.valid_boundaries),
         coverage=coverage,
         metadata=build_metadata_synchronizer(session, adapter=adapter, catalog=catalog),
         provider=adapter,

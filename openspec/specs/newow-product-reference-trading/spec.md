@@ -530,6 +530,8 @@ or Alert. The client SHALL reject malformed, non-finite, misaligned or contradic
 ### Requirement: Reference cutoff is authoritative and independent of chart data
 
 `performance_since / performance_through` SHALL 表示用户明确选择的统计 membership 窗口，并必须成对。
+省略统计窗口时，默认 `performance_through` MUST 不晚于请求 `as_of` 对应的上海日期，不能跟随
+服务端墙钟推进到历史快照之后；实际可用截止仍由权威 Calendar/Session 解析。
 Reference 的实际估值/状态截止 MUST 由所选 `performance_through`、权威 Calendar/Session 与请求 `as_of`
 共同解析，且不得晚于 `as_of`。服务 MUST 返回请求统计窗口、实际 `reference_cutoff`、实际可用 through
 及其 availability；数据不完整、节假日、非交易日、夜盘跨自然日和未完成 W1 不得用自然日午夜、服务端
@@ -638,6 +640,13 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 - **WHEN** 请求 `section=explanation`
 - **THEN** 仅对应子功能返回准确 evidence status/reason/source，不能用 0、空数组、neutral 或“暂无信号”掩盖
 
+#### Scenario: Shared explanation context is independent of the selected strategy
+
+- **GIVEN** 趋势、震荡或主升浪页面请求共享综合解释
+- **WHEN** 校验 `context.weekly/daily/hourly` 的来源身份
+- **THEN** 各槽保持同品种、对应周期的 `trend` replay 身份及其 profile/formula，外层响应仍绑定所选页面策略
+- **AND** composite 有实际值且仅部分子功能 evidence_required 时，页面展示已验证解释与证据缺口，不提示整层“解释暂不可用”；无值、失败及 stale 状态仍明确展示
+
 ### Requirement: Compatible chart windows retain reference state
 
 服务端 snapshot token MUST 决定已验证共同事实的兼容关系。定位历史记录重新加载不同chart窗口时，
@@ -646,6 +655,10 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 input hash及page identity，不能以token相同跳过分页合同。无token时仍须严格校验指纹；
 shared Bar逐事实冲突、真实token替换、409不兼容或来源版本改变时，MUST 失效相关旧结果、
 取消旧在途请求并阻止晚到响应污染重建快照。
+
+共享 Bar proof MUST 比较 Bar 数值、physical contract、segment 与已验证 owner membership，
+不得把查询窗口裁剪的 owner 终点或该窗口未包含的前任边界当作 Bar 差异。
+边界 MUST 保持独立 proof；两个资源共同读取的同一边界身份或来源变化仍须拒绝兼容。
 
 #### Scenario: Locating a historical trade changes only the chart window
 
@@ -691,3 +704,70 @@ MarketDataService completed-day resolver 查找严格早于当前窗口的前一
 - **GIVEN** 一个已解析交易日窗口包含超过 chart_limit 的 completed 60m Bar
 - **WHEN** 用户继续向左加载
 - **THEN** 先耗尽同窗口 chart_before，再发 next_older_window；两类指纹校验不混用
+
+
+### Requirement: Reference waiting state and dates remain display-only
+
+The reference panel MAY show a blue waiting card only from the latest completed, observation-eligible,
+ready FLAT frame of a compatible ready current chart snapshot. Explicit historical mode, historical
+viewport, stale/loading/conflicting sections, identity mismatch or a same-owner OPEN contradiction
+SHALL suppress that card. Its state time and physical segment SHALL remain visible or inspectable.
+The card SHALL NOT create a ReferenceTrade, infer the latest CLOSED trade from a paginated subset,
+copy an old-owner interruption return, or invent a return when exact association is unavailable.
+Current-window provenance SHALL come from an accepted default chart request in the current loader
+snapshot generation, not a comparison with the natural calendar day. The authoritative completed-day
+window may end before as-of on weekends, before close or midweek for weekly inputs. Same-window
+pagination SHALL preserve provenance; explicit historical windows, older-window navigation and
+historical snapshot mode SHALL suppress it. Default reload SHALL restore it only after acceptance.
+Loading/stale, token rebuild, identity reset and dispose SHALL suppress the current claim; late or
+rejected responses MUST NOT restore it.
+History filters SHALL affect only history rows and SHALL preserve the server summary and waiting state.
+
+Reference-card intraday labels SHALL show Shanghai MM-DD HH:mm; cross-year comparisons SHALL retain
+the year. Daily and weekly labels SHALL show YYYY-MM-DD without a clock. Full original timestamps,
+physical contract, segment, signal and formula identities SHALL remain available in title/details.
+All prices and returns SHALL remain server Decimal strings; no frontend return formula is permitted.
+
+#### Scenario: Current FLAT exists with no proven latest trade
+
+- **GIVEN** a compatible ready current FLAT chart and an empty or partial reference page
+- **WHEN** the reference section is ready
+- **THEN** the waiting card shows the state time without an associated trade or return
+- **AND** OPEN, CLOSED and interruption statistics remain the independent server result
+
+#### Scenario: A night-session trade spans calendar years
+
+- **WHEN** the user reads an intraday reference spanning two Shanghai calendar years
+- **THEN** both endpoint labels retain the year and clock, with full raw times in the details
+
+### Requirement: Conflict invalidation revokes asynchronous write eligibility
+
+客户端失效资源时 MUST 同步撤销旧请求的写入资格、取消在途请求、清除关联 token、数据及分页状态。旧请求即使忽略 abort，其成功、失败及 finally MUST NOT 修改失效后的状态或后续请求身份。chart/reference/explanation 的事实或响应冲突 MUST 失效全部五个 section 与 auxiliary cache，防止共享冲突快照再次通过 compatible token 被选用。auxiliary/comparator 自身局部响应错误 MAY 仅失效该 section 及 auxiliary cache。
+
+#### Scenario: An explanation arrives after shared chart conflict
+
+- **WHEN** explanation 仍在请求中而 chart 发现 shared Bar 冲突，随后旧 explanation 成功返回
+- **THEN** 旧请求已经被取消且失去写入资格，相关资源保持 input_conflict 且数据为空
+- **AND** 同样的保护适用于忽略 abort 的请求与晚到异常
+
+#### Scenario: A later request replaces an invalidated request
+
+- **WHEN** 冲突后新请求开始，旧请求再执行 finally
+- **THEN** 旧 finally 不得清除新 controller/token，新请求可以正常提交已验证结果
+
+#### Scenario: Rebuilding one incompatible snapshot
+
+- **WHEN** 当前请求遭遇允许重建的 409
+- **THEN** 关联旧资源与其他在途请求失效，当前请求可保留身份完成最多一次去除旧绑定的重建
+- **AND** 第二次失败不再重建，429 不得触发自动重试
+
+#### Scenario: Compatible navigation preserves independent reference state
+
+- **WHEN** 服务端接受同一 snapshot token 的不同 chart 窗口
+- **THEN** 客户端保留独立 reference 统计、列表及 cursor
+- **AND** 同窗口分页和无 token 情形仍执行既有严格身份验证
+
+#### Scenario: Conflict clears navigation and auxiliary provenance
+
+- **WHEN** 主要事实冲突导致全部 section 失效
+- **THEN** chart current-window provenance、分页与 generation signature 被清除，旧 auxiliary cache 不得恢复结果，后续 token 选择不能命中失效快照

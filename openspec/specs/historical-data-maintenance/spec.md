@@ -6,9 +6,56 @@
 
 ## Requirements
 
+### Requirement: Interrupted after-market closeout is explicit and never success
+
+Target database, Redis, Canonical and universe dependencies MUST be composed from pinned target sources, not
+the executing checkout. The private configuration MUST be an owned 0600 file in an owned 0700 parent. Assignment
+names MUST use an exact allowlist and closeout dependency values MUST use literal assignments only.
+Repository-enumerated retired keys with no active consumer MAY remain only
+when they match an exact inert-key allowlist. Exact settings consumed by another active process but irrelevant to
+closeout MAY also remain on a separate enumerated allowlist. Both classes' right-hand sides MUST remain opaque and
+MUST NOT be parsed, executed or retained. Both classes MUST be removed before closeout dependency composition, and
+neither MAY directly or indirectly expand into a dependency value. Only exact enumerated dependency
+source keys MAY participate in dependency expansion. Unknown keys MUST still block; prefixes and wildcards MUST NOT
+expand any allowlist. Launcher arguments and installed/loaded
+environments MUST exclude unsupported shell, HOME and libpq overrides; executing PG* overrides and any target
+dotenv file/link MUST block.
+All source files and target-directory identity/ctime/mtime MUST predate the interrupted run and remain unchanged.
+The private configuration, exact-tag launcher, universe sources and target-directory metadata MUST additionally
+predate the earliest current consumer process. A staged installer MAY recopy only the shared launcher and individual
+service plists after an earlier consumer started, provided that the shared launcher bytes equal the exact-tag source
+and each installed plist's arguments, working directory and explicit environment entries match the loaded job.
+These facts MUST be rechecked with actual dependency and fresh heartbeat identity before reads and replacement.
+
+The close-interrupted-after-market command MUST default to read-only and bind the exact existing Runtime root,
+commit and status-byte SHA-256. Five installed/loaded service identities, clean detached annotated release,
+enabled Live/Alert recovery guard and an idle after-market process MUST be verified. The existing OS guard
+and Catalog maintenance lease MUST be acquired nonblocking before a fresh read-only transaction. Missing
+guard files MUST NOT be created. Only a previous natural day's valid current_run may be closed.
+
+All operational Catalog pointers MUST pass the shared physical reader, including pointers outside the audit
+window. Existing audit MUST verify metadata, rank1 and expected windows through the interrupted date. Only
+proven missing valid subsets may remain pending; extra endpoints, other findings or unknown results MUST block.
+The original day's immutable Live snapshot MUST match rank1; absence MUST block without synthesis or fallback.
+
+Explicit apply MUST recheck identity and status bytes under both locks and atomically replace only the original
+status file via its pinned directory descriptor. Schema v4 MUST express interrupted, not passed, retain the old
+successful day, and preserve unknown legacy attempts as null. It MUST NOT send notifications, publish an update
+event, clean Live, call a provider, write market data or retry. A post-replacement uncertainty MUST report unknown
+write outcome and bounded readback, never claim unchanged state. Readers MUST accept v1-v4, health MUST remain
+degraded/interrupted, and promotion MUST NOT use this terminal as after_market_complete.
+
+#### Scenario: Legitimately partial interrupted maintenance
+- **WHEN** committed pointers and metadata are valid but expected partitions remain missing
+- **THEN** closeout may record interrupted and pending findings without claiming the update or weekly audit passed
+
+#### Scenario: Filesystem sync fails after replacement
+- **WHEN** replacement may have occurred but durability cannot be established
+- **THEN** report AFTER_MARKET_CLOSEOUT_OUTCOME_UNKNOWN and status_written null, perform no retry or rollback
+
 ### Requirement: 公开维护面
 系统 SHALL 公开 `update`、`refresh`、`audit` 与 `contract-warmup`。`audit` SHALL 接受
-`(--symbol X | --universe active)` 的互斥选择器。无 `--apply` 的 update/refresh MUST 只计划，
+`(--symbol X | --universe {active,operational})` 的互斥选择器。无 `--apply` 的 update/refresh MUST 只计划，
 不得写 PostgreSQL/Parquet；audit MUST 只读。
 系统还 SHALL 公开一次性 `session-anchor-repair` 三阶段 seam：`plan` 只读输出精确 session、Dataset、
 分区、预计缺失首分钟与稳定 scope hash；`prepare --apply` 只在外部 shadow root 使用真实 RQData 重建完整
@@ -73,6 +120,12 @@ Event 或通知。月分区仍依次经过 staging 与完整发布校验。任�
 - **WHEN** operator 指定 `--frequency 60m`，且目标月的同 physical contract Canonical `1m` 完整
 - **THEN** 计划只包含缺失 `60m` 派生目标；获准 apply 从这些 `1m` 聚合，零 provider 请求，不修改其它周期或合约
 
+#### Scenario: Contract warm-up sessions precede the active history floor
+
+- **WHEN** 同 physical contract 的合法分钟来源早于 active history floor
+- **THEN** 派生 Session 查询 MUST 按该合约生命周期、`through` 与 `RQDATA_INTRADAY_HISTORY_START` 解析完整逐日 Calendar/Session，不因 active history floor 丢弃这些窗口
+- **AND** 缺失逐日 metadata MUST fail closed；`continuous` 的 Session 查询仍使用既有维护起点
+
 #### Scenario: Bounded scope cannot reuse another scope hash
 
 - **WHEN** operator 对 `60m` apply 提供默认七周期或 `15m` 的 plan hash，即使两计划均无目标
@@ -129,6 +182,99 @@ Catalog/Parquet 物理一致性问题 MUST 分别使用 `main_contract_map`、`p
 - **WHEN** 所有预期月完整且再次运行相同 fixed through update
 - **THEN** 结果为零目标、零 provider request、零写入
 
+### Requirement: Daily maintenance is Catalog-bounded
+`UpdateRequest` SHALL default to `full`; optional `daily` MUST reject `since` and require existing continuous
+1m/D1 Catalog baseline, complete Calendar and gap-free rank1 mapping. It SHALL select current months,
+Catalog-identifiable missing months and exact endpoint gaps, including mapped new dominant contracts.
+Missing contract W1 MUST refresh same-contract D1 for its exact complete ISO week within valid lifecycle,
+including pre-rank1 dates, in the same provider batch; other valid persisted D1 rows MUST be preserved.
+It MUST NOT open other historical Parquet or automatically bootstrap historical metadata or contract lifecycle.
+Missing baseline or indeterminate mapping/boundaries MUST fail closed with historical maintenance required.
+Daily groups MUST be bounded by product, family and month and reuse the shared validation, provider and atomic
+publication path. Complete ISO-week D1/W1 context and natural quota/restart semantics MUST remain unchanged.
+Calendar/Session checks MUST use batch queries. Validated source reuse MUST be limited to one group and
+invalidate on Catalog pointer change. Optional typed progress MUST carry bounded identities, stage counters
+and durations; completed values MUST count successful operations rather than distinct partitions, unknown totals
+MUST be absent, and nested phase durations MUST NOT be added as wall-clock time. Publishing counts MUST follow
+successful commit, and observer failure MUST stop the attempt.
+
+#### Scenario: Old physical corruption is outside daily scope
+- **WHEN** an old partition has complete Catalog edges but damaged Parquet
+- **THEN** daily does not open that partition or claim its integrity; full update/audit remains responsible
+
+#### Scenario: Derived partition missing after restart
+- **WHEN** a mapped derived month is missing while its 1m source is complete
+- **THEN** daily rebuilds that month from validated 1m without a provider request or success-checkpoint dependency
+
+### Requirement: After-market progress is observable but never resumable authority
+
+Supervised after-market MUST publish schema v3 `current_run` before Calendar/provider/maintenance work and
+MUST whitelist attempt, stage, timestamps, current product/partition, per-stage counters/durations and retry time.
+Stage transitions MUST publish immediately; ordinary progress MAY be throttled to five seconds. A valid running
+snapshot MUST degrade Runtime health until a terminal result is durably published; after two hours without an
+updated snapshot it MUST be `stuck`. Invalid, unreadable, failed initial/intermediate/terminal status publication
+MUST fail closed with `AFTER_MARKET_PROGRESS_UNAVAILABLE`, never retain an old success as current health.
+A terminal failed result for the expected day MUST remain `status=failed, run_state=failed`.
+
+Before establishing a run, the writer MUST safely invalidate and sync the same owned regular status file before
+atomically publishing v3. If invalidation cannot produce any durable byte change, startup MUST be rejected before
+a run is established; a file-only reader is not required to claim an unobservable attempt occurred. Progress,
+status and log copies MUST NOT become a checkpoint or change maintenance results.
+
+Current-day classification MUST require an exact `provider=rqdata` Calendar fact for every relevant exchange.
+A missing or non-authoritative current-day row MUST terminate as `TRADING_CALENDAR_MISSING` with zero maintenance
+attempts and no provider/data work; only an exact authoritative non-trading-day fact MAY produce
+`NON_TRADING_DAY`. Relevant exchanges resolving to different maintenance days MUST terminate as
+`TRADING_CALENDAR_CONFLICT` rather than choosing the earliest day. Once `current_run` is established, an ordinary Calendar-stage exception MUST durably finalize
+the run as failed. Process interruption MUST remain observable as an unfinished run rather than being relabeled
+as success. Any unhandled after-market execution exception at the CLI or supervised Runtime boundary MUST report
+`readonly=false`; weekly audit exceptions remain read-only.
+
+#### Scenario: Current Calendar fact is unknown
+
+- **WHEN** yesterday has a trading Calendar row but any relevant exchange lacks today's exact authoritative row
+- **THEN** after-market records `failed / attempts=0 / TRADING_CALENDAR_MISSING`, performs no provider or data work, and does not report `NON_TRADING_DAY`
+
+#### Scenario: Mutation-capable boundary fails
+
+- **WHEN** an after-market process boundary receives an exception before the final side effects are known
+- **THEN** its sanitized error payload reports `readonly=false` and does not assert zero writes
+
+#### Scenario: A current run was persisted but not finalized
+
+- **WHEN** schema v3 contains a valid `current_run` updated within two hours
+- **THEN** Runtime health reports `status=degraded, run_state=running` and exposes bounded progress without asserting the writer is alive
+
+#### Scenario: Initial publication fails after durable invalidation
+
+- **WHEN** the old summary was durably invalidated but the initial atomic v3 write fails
+- **THEN** readers observe invalid/unknown state rather than the old passed result, and no Calendar/provider work starts
+
+### Requirement: Weekly operational full-history audit remains optional and read-only
+
+The weekly adapter MUST select the exact ordered `operational_products.txt` scope with identity
+`operational_full_history`, atomically persist running before acquiring the shared maintenance lock, and open a
+fresh read-only transaction only after the nonblocking lock succeeds. Busy MUST become `skipped_busy`; no status
+MAY cause wait, retry, provider access, metadata/data write, repair or notification. The audit MUST cover the
+existing full-history Calendar/Session, rank1, expected partition, Catalog pointer and physical integrity checks.
+
+Its latest-result file MUST bind exact Runtime root/40-hex commit, scope/products, timestamps, progress, findings,
+`provider_requests=0` and `data_writes=0`. Health MUST map absence to `not_run`, unchanged running older than two
+hours to `stuck`, terminal older than eight days to `stale`, and malformed identity/scope/counts/chronology/counters
+to `invalid`. `passed` MUST require a resolved audited `through`, all products complete and zero findings. This
+optional component MUST be appended after existing operational overall is calculated; old or missing audit fields
+MUST NOT imply historical health, current freshness, release acceptance or Runtime readiness.
+
+#### Scenario: Historical findings coexist with healthy services
+
+- **WHEN** operational service components are healthy and the latest valid weekly audit has findings
+- **THEN** Runtime overall remains the independently calculated service result while `components.weekly_audit.status=findings` remains visible
+
+#### Scenario: Weekly audit conflicts with maintenance
+
+- **WHEN** the shared maintenance lock is busy
+- **THEN** the audit records `skipped_busy`, performs no database audit/provider/data write/notification, and exits without retry
+
 ### Requirement: quota 中止和续传
 明确的 provider quota/limit 异常 SHALL 映射为 `PROVIDER_QUOTA_EXHAUSTED`；该轮 MUST 立即停止后续
 provider 调用，保留已发布月且不发布当前未完成月，并返回 `status=partial` 和
@@ -145,3 +291,29 @@ refresh SHALL 接受 symbol、since、through，并强制重建相交月份的 c
 #### Scenario: refresh dry-run
 - **WHEN** refresh 未传 `--apply`
 - **THEN** 输出计划的 month/series 范围且不调用 provider 或写入
+
+### Requirement: Pending minute source publication precedes dependent derivation
+
+同一 maintenance 调用中，若某物理 family/month 的 1m 属于待发布来源，依赖它的 5m、15m、30m、60m 目标 MUST 等待该来源按现有分区发布合同成功提交，不能因旧 1m 完整而提前派生。此规则 MUST 独立于 refresh/update 路径、fail_stop 与 source cache。成功派生 MUST 使用该次已发布来源；不得用旧来源结果消耗待处理目标。
+
+#### Scenario: Refresh replaces an already complete minute partition
+
+- **WHEN** 旧 1m 及派生分区完整，本次 refresh 将同一 family/month 的 1m 更新为不同值
+- **THEN** 派生分区在新来源成功发布之后计算，最终数值来自新来源
+- **AND** 普通无缓存路径与 streaming 路径遵守相同顺序
+
+#### Scenario: Pending source cannot be published
+
+- **WHEN** 待更新 1m 发生校验失败、quota interruption 或 commit outcome unknown
+- **THEN** 依赖目标不得使用旧 1m 标为成功，返回既有准确的失败或部分完成状态
+- **AND** commit outcome unknown 保持全局停批，不重试、不隐式回滚
+
+#### Scenario: Existing source is outside the current update set
+
+- **WHEN** 派生目标的 1m 完整有效且不在本次待更新集合中
+- **THEN** 它可保持既有提前派生行为，不必等待无关 family/month 的 provider 请求
+
+#### Scenario: Dependencies remain partition specific
+
+- **WHEN** 两个目标的物理 family 或月份不同
+- **THEN** 来源依赖不会错误关联两者，成功结果与失败传播仍遵守既有维护合同

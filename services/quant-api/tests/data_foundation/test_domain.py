@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, localcontext
 
 import pytest
 
@@ -20,6 +20,7 @@ from app.market_data.domain import (
     SeriesQuery,
     normalize_contract_for_symbol,
     parse_rfc3339_instant,
+    sum_decimal_exact,
 )
 
 
@@ -27,6 +28,27 @@ def test_frequency_lineage_keeps_weekly_out_of_provider_base_but_fetchable() -> 
     assert BASE_PROVIDER_FREQUENCIES == {BarFrequency.M1, BarFrequency.D1}
     assert BarFrequency.W1 in DERIVED_FREQUENCIES
     assert BarFrequency.W1 in PROVIDER_FETCH_FREQUENCIES
+
+
+def test_decimal_fact_sum_preserves_large_exponent_gap() -> None:
+    assert sum_decimal_exact((Decimal("1"), Decimal("1e-100"))) == Decimal(
+        "1." + "0" * 99 + "1"
+    )
+
+
+@pytest.mark.parametrize("special", ["NaN", "sNaN", "Infinity", "-Infinity"])
+def test_decimal_fact_sum_rejects_nonfinite_values(special: str) -> None:
+    with pytest.raises(InvalidOperation):
+        sum_decimal_exact((Decimal("1"), Decimal(special)))
+
+
+def test_decimal_fact_sum_preserves_scale_and_cancellation_under_small_context() -> None:
+    with localcontext() as context:
+        context.prec = 2
+        result = sum_decimal_exact((Decimal("12345.6789"), Decimal("-12345.6788")))
+        assert result.as_tuple() == Decimal("0.0001").as_tuple()
+        assert sum_decimal_exact((Decimal("1.00"), Decimal("-1"))).as_tuple() == Decimal("0.00").as_tuple()
+        assert sum_decimal_exact(()) == Decimal(0)
 
 
 def test_contract_normalizer_accepts_only_the_requested_symbol_and_real_month() -> None:

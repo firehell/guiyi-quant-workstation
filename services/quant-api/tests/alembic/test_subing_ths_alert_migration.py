@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 import importlib.util
-import os
 from pathlib import Path
 from types import ModuleType
 from uuid import uuid4
@@ -10,14 +8,8 @@ from uuid import uuid4
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 import pytest
-from sqlalchemy import create_engine, inspect as sa_inspect, text
+from sqlalchemy import inspect as sa_inspect, text
 from sqlalchemy.engine import Engine
-
-from app.db.migration_test_guard import (
-    MigrationTestDatabaseSafetyError,
-    probe_database_identity,
-    require_isolated_migration_database_url,
-)
 
 
 QUANT_API_ROOT = Path(__file__).resolve().parents[2]
@@ -38,24 +30,6 @@ def test_migration_is_forward_only_from_exact_0043_parent() -> None:
         match="^SUBING_THS_ALERT_DOWNGRADE_UNSUPPORTED$",
     ):
         migration.downgrade()
-
-
-@pytest.fixture
-def isolated_postgres_engine() -> Iterator[Engine]:
-    if not os.getenv("GUIYI_ISOLATED_MIGRATION_DATABASE_URL", "").strip():
-        pytest.skip("GUIYI_ISOLATED_MIGRATION_DATABASE_URL is required")
-    try:
-        url = require_isolated_migration_database_url(
-            os.environ,
-            identity_probe=probe_database_identity,
-        )
-    except MigrationTestDatabaseSafetyError as exc:
-        pytest.fail(str(exc))
-    engine = create_engine(url, pool_pre_ping=True)
-    try:
-        yield engine
-    finally:
-        engine.dispose()
 
 
 @pytest.mark.isolated_postgresql

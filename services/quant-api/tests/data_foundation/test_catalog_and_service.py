@@ -1383,6 +1383,194 @@ def test_actual_dominant_week_uses_last_trading_day_owner(session, tmp_path) -> 
     assert result.resolved_contract_segments[0].contract == "JM2509"
 
 
+def test_actual_dominant_week_does_not_require_previous_friday_owner_for_night_start(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    contract = DatasetKey("contract", "jm", "JM2509", "1w")
+    weekly_bar = CanonicalBar(
+        datetime(2024, 8, 2, 7, tzinfo=UTC),
+        date(2024, 8, 2),
+        Decimal("209"),
+        Decimal("210"),
+        Decimal("208"),
+        Decimal("209"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    _publish(catalog, store, contract, (weekly_bar,))
+    session.execute(update(TradingSession).values(effective_from=date(2024, 7, 26)))
+    session.add_all(
+        TradingCalendar(
+            exchange_code="DCE", trade_date=day, is_trading_day=True
+        )
+        for day in (
+            date(2024, 7, 26),
+            date(2024, 7, 29),
+            date(2024, 7, 30),
+            date(2024, 7, 31),
+            date(2024, 8, 1),
+            date(2024, 8, 2),
+        )
+    )
+    session.add(
+        TradingSession(
+            exchange_code="DCE",
+            instrument_symbol="jm",
+            session_name="night",
+            start_time=time(21),
+            end_time=time(23),
+            effective_from=date(2024, 7, 29),
+            is_active=True,
+        )
+    )
+    catalog.upsert_main_contracts(
+        tuple(
+            ("jm", day, "JM2509")
+            for day in (
+                date(2024, 7, 29),
+                date(2024, 7, 30),
+                date(2024, 7, 31),
+                date(2024, 8, 1),
+                date(2024, 8, 2),
+            )
+        )
+    )
+    session.commit()
+
+    result = MarketDataService(catalog, store).query(
+        SeriesQuery(
+            "actual_dominant",
+            "jm",
+            "1w",
+            datetime(2024, 7, 26, 13, tzinfo=UTC),
+            datetime(2024, 8, 2, 7, tzinfo=UTC),
+        )
+    )
+
+    assert [bar.close for bar in result.bars] == [Decimal("209")]
+    assert result.resolved_contract_segments == (
+        ResolvedContractSegment(
+            contract="JM2509",
+            start_trading_day=date(2024, 8, 2),
+            end_trading_day=date(2024, 8, 2),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("request_end", "last_trading_day"),
+    (
+        (datetime(2024, 8, 1, 13, 1, tzinfo=UTC), date(2024, 8, 2)),
+        (datetime(2024, 8, 2, 3, tzinfo=UTC), date(2024, 8, 2)),
+        (datetime(2024, 8, 1, 3, tzinfo=UTC), date(2024, 8, 1)),
+    ),
+    ids=("thursday-night", "friday-intraday", "holiday-short-week-intraday"),
+)
+def test_actual_dominant_week_omits_incomplete_tail_week(
+    session, tmp_path, request_end, last_trading_day
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    contract = DatasetKey("contract", "jm", "JM2509", "1w")
+    completed_bar = CanonicalBar(
+        datetime(2024, 7, 26, 7, tzinfo=UTC),
+        date(2024, 7, 26),
+        Decimal("109"),
+        Decimal("110"),
+        Decimal("108"),
+        Decimal("109"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    tail_bar = CanonicalBar(
+        datetime.combine(last_trading_day, time(7), UTC),
+        last_trading_day,
+        Decimal("209"),
+        Decimal("210"),
+        Decimal("208"),
+        Decimal("209"),
+        Decimal(1),
+        Decimal(10),
+        Decimal(20),
+    )
+    _publish(catalog, store, contract, (completed_bar,))
+    _publish(catalog, store, contract, (tail_bar,))
+    session.execute(update(TradingSession).values(effective_from=date(2024, 7, 22)))
+    trading_days = tuple(
+        day
+        for day in (
+            date(2024, 7, 22),
+            date(2024, 7, 23),
+            date(2024, 7, 24),
+            date(2024, 7, 25),
+            date(2024, 7, 26),
+            date(2024, 7, 29),
+            date(2024, 7, 30),
+            date(2024, 7, 31),
+            date(2024, 8, 1),
+            date(2024, 8, 2),
+        )
+        if day <= last_trading_day
+    )
+    session.add_all(
+        TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True)
+        for day in trading_days
+    )
+    session.add(
+        TradingCalendar(
+            exchange_code="DCE",
+            trade_date=date(2024, 7, 19),
+            is_trading_day=True,
+        )
+    )
+    if last_trading_day == date(2024, 8, 1):
+        session.add(
+            TradingCalendar(
+                exchange_code="DCE",
+                trade_date=date(2024, 8, 2),
+                is_trading_day=False,
+            )
+        )
+    session.add(
+        TradingSession(
+            exchange_code="DCE",
+            instrument_symbol="jm",
+            session_name="night",
+            start_time=time(21),
+            end_time=time(23),
+            effective_from=date(2024, 7, 22),
+            is_active=True,
+        )
+    )
+    catalog.upsert_main_contracts(
+        tuple(("jm", day, "JM2509") for day in trading_days)
+    )
+    session.commit()
+
+    result = MarketDataService(catalog, store).query(
+        SeriesQuery(
+            "actual_dominant",
+            "jm",
+            "1w",
+            datetime(2024, 7, 21, tzinfo=UTC),
+            request_end,
+        )
+    )
+
+    assert [bar.close for bar in result.bars] == [Decimal("109")]
+    assert result.resolved_contract_segments == (
+        ResolvedContractSegment(
+            contract="JM2509",
+            start_trading_day=date(2024, 7, 26),
+            end_trading_day=date(2024, 7, 26),
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     "failure",
     ("missing_partition", "unreadable", "row_count", "file_path", "coverage"),

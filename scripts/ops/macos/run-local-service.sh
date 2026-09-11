@@ -169,6 +169,10 @@ case "$SERVICE" in
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
     exec "$PYTHON_BIN" -m app.runtime_entry after-market
     ;;
+  weekly-audit)
+    [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable\n' >&2; exit 78; }
+    exec "$PYTHON_BIN" -m app.runtime_entry weekly-audit
+    ;;
   web)
     [[ -f "$PROJECT_ROOT/apps/quant-web/dist/index.html" ]] || { printf '[run-local-service] frontend dist missing; run pnpm --dir apps/quant-web build\n' >&2; exit 2; }
     [[ -f "$PROJECT_ROOT/apps/quant-web/node_modules/vite/bin/vite.js" ]] || { printf '[run-local-service] frontend vite entrypoint missing; run pnpm --dir apps/quant-web install\n' >&2; exit 2; }

@@ -40,7 +40,8 @@ canonical/
 ```
 
 行字段为 `bar_end`、`trading_day`、`open`、`high`、`low`、`close`、`volume`、`turnover` 和
-`open_interest`。价格和金额用 Decimal，`bar_end` 是 UTC timestamp，identity 不在行内重复。
+`open_interest`。价格和金额用 Decimal，量额聚合必须精确求和且不得继承进程 Decimal context；
+无法无损表示为 Canonical Decimal 的来源必须在发布前拒绝。`bar_end` 是 UTC timestamp，identity 不在行内重复。
 
 发布前必须完成 schema、主键单调唯一、OHLCV、交易日/session/frequency、coverage 和物理可读性
 校验。新发布文件以实际 Parquet bytes 的全小写 SHA-256 命名为 `part.<sha256>.parquet`，不可变、
@@ -87,19 +88,52 @@ adapter 在唯一 metadata 边界将其减一分钟后写入 DB，因此 active 
 
 ## 4. 更新、刷新与自然续传
 
+`UpdateRequest.mode` 默认 `full`，公开 update 继续全历史核查；内部 `daily` 模式不接受 `since`。
+daily 要求已有 continuous `1m/1d` Catalog baseline，并以完整 Calendar、连续 rank1 映射及 Catalog
+分区索引选择当月、缺月、精确首尾落后月；新主力补已证明的 mapped 日期及缺失 W1 所需的同合约完整
+ISO 周 D1 context（限制在有效生命周期内），不自动执行 lifecycle warm-up。
+缺 baseline、映射断裂或无法确定边界时要求显式历史维护，不执行广域 metadata bootstrap；受限当天/下一
+交易日 metadata seam 保留。旧月内部损坏由 full update/audit 检出，daily 不以 row count 或首尾完好声明
+全月物理完整。完整 ISO 周仍通过既有 D1/W1 同源批次补齐，必要时读取跨月的 D1 context。
+
+daily 按品种、数据族、月份展开目标并使用既有校验与原子发布入口；Calendar/Session 校验使用 batch
+查询。派生源仅在当前 family-month 内复用已验证的 1m，Catalog pointer 改变立即失效，离开批次即丢弃。
+可选 `MaintenanceObserver` 只报告 planning/reading/provider/publishing/aggregation 的有界身份、
+计数和耗时，不决定处理范围。completed 是各阶段成功操作累计数，provider 按 fetch_many 批次计，
+publishing 只在单分区 Catalog commit 后计数；这些数字不是去重分区数。total 未知时字段缺席，不伪造百分比。
+阶段可嵌套，`stage_durations` 不得相加推导本轮墙钟时间。observer 失败停止本轮，不能当作
+单族 provider 故障继续。无 observer 的既有调用保持兼容，last-success/status 文件不是进度权威。
+
 `effective_start(symbol)=max(product_window_start(symbol), active_history_floor)`，其中
 `active_history_floor=2023-01-01`。`update` 使用显式 `--through` 固定水位，先同步 metadata，后
 优先完成基础 provider 日线 `1d` 与由其聚合的 `1w`，再按 active universe、Dataset、年月顺序续传基础
 provider 分钟线 `1m`。每完成一个 1m dataset-month，立即生成四个日内派生月。
 
-18:05 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational 60)` 判断当天是否为交易日，
-再由持 maintenance lock 的 `HistoricalDataManager.update` 同步 metadata 后规划 coverage；不得先用可能
-尚未同步的当天 TradingSession 判定 `NON_TRADING_DAY`。受限 metadata 同步准备 operational 60 品种：
+18:05 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational 60)` 判断当天是否为交易日。
+该判断要求每个相关交易所存在当天精确的 `provider=rqdata` Calendar 行；缺行或非权威行返回
+`TRADING_CALENDAR_MISSING`，以 `attempts=0` 终止并保留失败事实，不能回退到昨天后伪装成
+`NON_TRADING_DAY`。相关交易所解析出的维护日期不一致时返回 `TRADING_CALENDAR_CONFLICT`，不能用
+最早日期跳过仍开市的交易所。只有所有相关交易所的权威结果一致且当天明确为非交易日时才允许跳过。
+交易日再由持 maintenance lock 的
+`HistoricalDataManager.update` 同步 metadata 后规划 coverage；不得先用可能尚未同步的当天
+TradingSession 判定 `NON_TRADING_DAY`。受限 metadata 同步准备 operational 60 品种：
 Calendar 覆盖当天至 ISO 周日或下一交易日（取较晚者），TradingSession 精确替换当天与下一交易日，
 MainContractMap 仍只发布当天 rank1。
+共享 Calendar 的夜盘字段只用同交易所、同交易日的 Session 正证据；不得把某日夜盘扩散到整个
+请求区间，也不得从请求品种子集仅有日盘推导交易所无夜盘。交易日 false 必须由原始
+`all_instruments(type="Future")` 完整合约集合及逐日生命周期确定当日品种全集，并由该全集每个
+品种的当日 Session 完整覆盖且均无夜盘；缺失生命周期或任一品种 Session 时为 UNKNOWN。
+该全集在筛选请求品种之前取得，不增加 provider 请求。非交易日可直接确定 false。
+UNKNOWN 仅可保留 trading-day 身份一致的已有 Calendar；缺键报 `CALENDAR_NIGHT_AUTHORITY_MISSING`。
+有证据的源事实与已有 Calendar 任一布尔字段冲突则整事务 `CALENDAR_SOURCE_CONFLICT`，不得自动
+覆盖已更正的共享历史；实际纠正仍需绑定源证据、精确前像和独立执行意图。首次 bootstrap 或未来
+交易日缺键不能靠猜测填充，必须补齐上述逐日权威证据后再同步。
 下一交易日 Session 尚未由 provider 发布时精确返回 `NEXT_TRADING_SESSION_NOT_READY`，最多一小时后再
 尝试一次；格式、重复或身份异常仍 fail-closed。这样夜盘 phase resolver 在夜盘前取得下一交易日 Session
 事实，同时不会提前发布未来主力映射，也不写 Dataset、Partition 或 Parquet。
+
+after-market 是可写命令。其进程边界若在会话、组装、状态持久化或维护阶段收到未处理异常，公开错误载荷
+必须使用 `readonly=false`，不得因最终结果未知而声称本轮只读；weekly-audit 仍保持 `readonly=true`。
 
 既有月等于 expected bars 时跳过；合法子集只下载缺失 bars 并重写完整月；不可读、extra bar 或
 identity 冲突时重建相交整月。明确的 RQData 额度异常映射为 `PROVIDER_QUOTA_EXHAUSTED`：本轮
@@ -111,7 +145,8 @@ RQData adapter 先读取完整周日行情，并在调用内按 `(contract, trad
 snapshot 生成 1d/1w。发布前先验证整组完整性，再按涉及的 1d 月分区、1w 月分区顺序分别提交 active Catalog pointer；不提供整组 snapshot 原子性；
 跨月周会刷新两侧日线月分区。`continuous` 日线仍按每日 rank1 拼接；最终 owner 合约用于
 `actual_dominant 1w` 整周聚合时，非 rank1 日只作为该周内部 source context，不进入
-`actual_dominant 1d` 的可读结果。dry-run 会显式列出由缺失周线带动的日线 refresh 窗口。
+`actual_dominant 1d` 的可读结果。physical contract 的完整 ISO 周可因此包含成为 rank1 之前的 D1 日期，
+但仍以 Contract lifecycle 为硬边界，不构成完整 lifecycle warm-up。dry-run 会显式列出由缺失周线带动的日线 refresh 窗口。
 
 `refresh --symbol --since --through --apply` 强制重建窗口相交月中的 continuous 与所涉 rank1
 contract 的基础 provider `1m/1d` 和日线派生 `1w`，再由 1m 重建四个日内派生周期。它不接受 repair plan，
@@ -128,6 +163,10 @@ plan hash identity。省略 `--frequency` 时维持七周期；显式 `1d` 只�
 MainContractMap、Redis Live、Rule、Scope、Event 或 notification。任一显式 scope 的 provider、发布或派生失败
 必须立刻停止该 contract 的后续 target。仅当同族同月存在待补 `1m` 目标时，才在开始派生前推迟到源发布后；
 已经开始的派生/发布失败不得按缺源错误码推迟重试。额度耗尽返回 `partial`，不得报告 `passed`。分区失败可明确部分成功，不能自动重试。
+
+同物理合约派生使用的 Session 窗口与 warm-up coverage 一致：按上市日、到期日前一日和 `through`
+限制，日内数据另受 `RQDATA_INTRADAY_HISTORY_START` 限制，不套用 active history floor。
+Calendar/Session 必须具备逐日权威事实，缺失即失败；`continuous` Session 查询仍保留既有维护起点。
 
 warm-up 只读结果的 `scope_diagnostics` 保留整个 frequency scope 的逐分区有界原因及是否为计划目标，
 包括不缺 endpoint 但含原始非正价格的 source companion。该诊断不改变维护目标、apply 规则或既有 plan hash。
@@ -201,10 +240,13 @@ Lua 隔离不是错误回滚保证；结果未知后仅只读核对五根及水�
 
 ### 盘后 Runtime 状态合同
 
-`.run/after-market-status.json` 写 schema v2；读取兼容旧 schema v1。schema v2 在受监督自然盘后运行开始、任何
-coverage/RQData/update 尝试之前写入
-`current_run={scheduled_date,started_at,products}`，只在 run 完成终态写入时清除。每次写入都在同目录创建
-临时文件后 `os.replace`；中途崩溃保留 `current_run`，不冒充已完成。`last_run.failure_notification`
+`.run/after-market-status.json` 写 schema v3；读取兼容旧 schema v1/v2。schema v3 在受监督自然盘后运行开始、任何
+coverage/RQData/update 尝试之前写入 `current_run`，白名单化保留 `attempt/stage/updated_at/stage_started_at/elapsed_seconds`、
+`current_symbol/current_partition/counters/stage_durations/retry_at`。阶段转换立即写，普通进度最多每 5 秒写一次；
+中途崩溃保留 `current_run`，进度不续传也不是 checkpoint。建立新 run 前，writer 先有界读取旧摘要，
+再安全地将同一自有普通文件 truncate/fsync 持久失效，然后原子发布初始 v3。初始、中间或终态权威写失败都以
+`AFTER_MARKET_PROGRESS_UNAVAILABLE` 停止；已成功失效后不得重新暴露旧 passed。若连同文件失效都无法产生任何持久变化，
+启动在新 run 建立前被拒绝；纯文件 reader 物理上无法观测这次未留下任何字节变化的尝试。`last_run.failure_notification`
 只允许 `{attempted_at,state=provider_accepted|failed,error_type}` 公开字段，不保存 provider reference。
 
 只读 Runtime health 从 `operational_products.txt` 对应的 `Instrument.exchange_code` 与权威
@@ -212,8 +254,9 @@ coverage/RQData/update 尝试之前写入
 起当日可成为 expected day；交易所结果不唯一、产品/日历事实不完整或 chronology 无效时均
 fail-closed。从未产生过状态时，只有当日为交易日且上海时间已到 18:20、当日已 due 才是
 `degraded/missed`；周末/节假日和首次应执行时点前仍是 `pending`。已有状态时，最后成功日落后于
-expected day 才是 `degraded/missed`。`current_run` age 不超过 2h 为 `pending/running`，超过 2h 为
-`degraded/stuck`。
+expected day 才是 `degraded/missed`。合法 `current_run` 也只是已持久的未验证摘要，不能证明 writer 存活或后续写会成功；
+`updated_at` age 不超过 2h 为 `degraded/running`，超过 2h 为 `degraded/stuck`。无效、损坏或不可读状态一律 fail-closed 为 degraded。
+与 expected day 匹配的终态失败保持 `failed/failed`，不能由旧成功日覆盖。
 
 盘后失败通知是与 Alert Rule/Application Domain 分离的运维能力。公共手工 `guiyi data after-market`
 不启用该能力；只有受监督自然执行的主业务失败才向 owner 发起最多一次 PushPlus 请求。
@@ -222,6 +265,62 @@ expected day 才是 `degraded/missed`。`current_run` age 不超过 2h 为 `pend
 `failure_notification=failed`，不改写或重试主 after-market 结果。`missed/stuck` 只是 health，不会发送。
 Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN`，本次停止且不重试，
 不发布 `canonical_updated` 或执行成功后的 Live 清理；须用独立只读事务确认 Catalog 结果。
+
+### 中断盘后运行的显式收尾
+
+`data.close-interrupted-after-market` 默认只读；必须绑定现役 Runtime root、40 位 commit 和原状态字节 SHA-256。
+它要求五服务 installed/loaded 身份一致、现役 checkout 为干净 detached annotated release，Live/Alert 声明
+共享恢复保护开启、盘后进程明确 idle。只处理先前自然日的合法 `current_run`，不停止进程、不创建缺失锁。
+数据依赖只能由目标 Runtime 的固定外部 `project.env` 与目标 universe 文件显式构造，不能使用执行 CLI 的开发配置。
+配置的变量名只接受精确白名单且不执行 shell；参与收尾依赖的值只接受字面赋值与先前 dependency source
+赋值展开。文件须自有 0600、父目录自有 0700。
+现场历史配置中仓库已明确识别且当前无 active consumer 的退役变量名可以存在，但必须命中精确的 inert
+键白名单。另外，已有活跃进程仍可消费、但本收尾命令不消费的已列举配置键也可以存在。这两类键都必须在收尾依赖组合前
+剔除，其右侧内容视为 opaque，不解析、不执行、不保存；只有精确列举的 dependency source 键可参与
+PostgreSQL、Redis、Canonical 和恢复开关的变量展开，
+退役键或收尾忽略键的值不得直接或间接进入这些依赖。任何未识别键仍 fail-closed，不能用前缀或通配规则扩大任何集合。
+installed/loaded 启动参数必须指向相同受审 launcher；环境白名单拒绝 HOME 改址、shell startup、数据源与 libpq 覆盖。
+loaded 变量仅从直接的 environment、inherited environment、default environment 块读取；
+event triggers/descriptor 的 `=>` 不是环境赋值。重复块/键、畸形或嵌套环境块均拒绝。
+API/Alert 可保留既有绝对、无父路径跳转的 `GUIYI_ALERT_NOTIFICATION_CONFIG_PATH`，只核验路径形状，不读取配置或发送通知。
+执行进程中的 PG* 覆盖亦拒绝。配置、launcher、五服务 plist 和 universe 的 inode/content/mtime/ctime 必须保持不变，
+且全部源必须早于原运行。`project.env`、exact-tag launcher、universe 与目标根目录元数据还必须早于
+最早当前消费者进程；分阶段安装可重写共享 launcher 副本与各服务 plist，但只有在共享 launcher
+字节与 exact-tag 源完全一致，且 installed plist 的参数、工作目录和所有显式环境项均与 loaded job 一致时才合格。
+连接 URL、Redis 连接参数、Canonical root 和 coverage 配置须匹配。
+目标 `.env` 必须不存在（含悬空链接），目标根目录也纳入早于进程的元数据检查，防止事后删除第二配置来源掩盖覆盖。
+这些检查及 fresh Live/Alert identity 在读取历史数据前和状态替换前重验；来源无法证明时停止，不回退到 `.env`。
+先非阻塞获取该 Runtime 的既有 after-market OS guard，再取得 Catalog maintenance lease；在新的
+repeatable-read/read-only 事务中，通过 Catalog inventory 和既有 Canonical reader 检查 operational 全部已提交指针，
+包括预期窗口外的文件，并复用 audit 检查中断日 metadata、rank1 和目标窗口。只允许确认为有效子集的
+`EXPECTED_PARTITION_MISSING` 留作待维护；额外端点、其他 finding、未知异常均阻断。待维护计数不证明缺失由这次中断造成。
+原交易日不可变 Live snapshot 必须仍在且与 rank1 一致；缺失、过期或不一致均阻断，不使用当前日快照代替。
+
+显式 `--apply` 在同一锁窗口重新校验身份与原状态字节，使用 pinned directory FD 原子替换并 fsync。
+唯一写入是原盘后状态文件：收尾写 schema v4、`last_run.status=interrupted`、`error_code=AFTER_MARKET_INTERRUPTED`，
+清除 `current_run`，保留原开始时间与最后成功日；旧 schema v2 未记录的 attempts 保持 null，v3 保留已记录次数。
+不发送通知、不发布 canonical_updated、不清理 Live，不调用 provider 或写行情/DB/Redis；不自动重试。
+替换前失败保留原状态；替换或其后 fsync 的结果不确定返回 `AFTER_MARKET_CLOSEOUT_OUTCOME_UNKNOWN`、
+`status_written=null` 和锁内只读 readback 分类，不能假称未写入或直接重试。
+
+reader 兼容 v1-v4；v4 与 v3 的进度字段相同，仅增加中断终态与未知 attempts 表达。
+新自然运行可暂时保留 v4 的中断摘要，正常终态仍写 v3。Runtime health 保持 `degraded/interrupted`，
+Web 显示收尾而非完成；promotion 仍独立检查 phase/snapshot，不把 interrupted 当作 after_market_complete。
+旧 reader 不认识 v4 时应降级，不能当健康；本入口不授权部署。它确认当前已提交视图，不能还原旧 writer
+每次 commit 的执行轨迹，不是 checkpoint，也不替代每日完成或每周历史审计。
+
+### 每周 operational 全历史只读审计
+
+`data.weekly-audit` 固定使用 `operational_products.txt` 的 `operational_full_history` scope，不借用可变的 active 研究范围。
+它复用 `HistoricalDataManager.audit`、八表 Catalog/metadata、Canonical reader 与既有 maintenance lock：先原子写 running，再非阻塞取锁，
+获锁后才打开 fresh read-only transaction。忙时记录 `skipped_busy`，不等待、抢占或重试；审计不调用 provider/
+metadata writer/Redis，`provider_requests=0`、`data_writes=0`，只报告 finding，不修复、不通知。
+
+`.run/weekly-audit-status.json` 是单份原子替换的最新审计状态，不是 checkpoint 或 active data selector。
+它绑定 exact Runtime root/40 位 commit、operational 顺序、scope 和 `through`；运行超过 2h 映射 `stuck`，终态超过 8 天映射
+`stale`，身份、计数、时序或只读计数不符合合同则映射 `invalid`，缺文件是 `not_run`。`passed` 必须有已审计 cutoff、全部品种完成且 finding 为零。
+Runtime health 先独立计算现有服务 overall，再附加可选 `components.weekly_audit`摘要；旧状态缺字段不得推导历史健康，
+历史 finding 也不改写当前数据新鲜度或 Runtime overall。
 
 ## 5. 唯一查询入口
 
@@ -304,6 +403,23 @@ plan hash 绑定 source targets、生命周期、相关既有事实、缺键、c
 上市前等 Calendar 上下文允许可选显式 `evidence_sources`（symbol/contract/date）：只给原缺键集合中
 已分类为交易日的精确日期提供 Session 证据，必须独立通过 Catalog identity/lifecycle 校验并进入
 request/hash；不自动搜寻合约，不从供证合约上市日再扩建 Calendar 范围，也不写供证 Session。
+供证 `date` 不等于 target `through`：target 仍必须早于今天；原计划 through 后七天上下文中的
+未来缺键可显式供证，但该键必须已分类为交易日、保持在原 exchange/date 范围内，且供证合约在
+该日期满足 `[listed_date, expired_date)`。供证身份仍须为 active 品种及已有 RQData Catalog 合约。
+完整交易所负证据可显式传入 `exchange_universes`：每项严格为 exchange/date/products/sources，
+必须同时提供单份 `exchange_inventory_evidence`，严格包含 identity/response：identity 为
+`{method: all_instruments_by_type, args: [], kwargs: {instrument_type: Future, market: cn}}`，response 为
+该请求未经品种/交易所过滤的完整原始 futures inventory 行。原生 `_exchange_day_products` 按每个
+exchange/date 重算 products，与声明集合及 source symbols 精确一致；任何 inventory 行身份或生命周期
+异常（包括其他交易所）均阻断。每个物理 source 还须存在于该原文且当日有效，不能用 caller hash、
+target 子集、active_products 或部分 Catalog 合约代替完整响应。原始 identity/response 只存一份，
+进入 plan/hash/recheck/apply；最多 100000 行、16 MiB，不新增隐式 provider 查询。每键最多 64 个
+active 品种，每品种恰好一个 symbol/contract/date 来源，最多 256 个键、4096 个唯一来源。
+每个来源均须在相同交易所通过 Catalog identity/provider/lifecycle 校验，且键仅限原计划已分类为
+交易日的 missing Calendar；允许来源属于另一 batch，但不得扩大 target cutoff 或 Session 写入范围。
+集合、来源、基线与固定请求均进入 plan/hash/recheck/snapshot；沿用 `calendar_night_fact`：任一当日
+精确来源夜盘为 true，仅完整集合全部精确来源覆盖且均为日盘才为 false，部分来源仍阻断；provider
+缺行或错键直接拒绝。原有 `evidence_sources` 保持仅正证据语义，不把单品种日盘升级为负证据。
 同 product/date 的多个物理来源必须一致。fetch 串行执行固定请求，每次响应立即校验，首次失败停止，
 无 retry/fallback/补充调用。Session 复用中性 source-contract/day 纯转换与 start-exclusive 规范化，
 不伪造或写入 MainContractMap。
@@ -345,7 +461,7 @@ main ready count 只计算实际主图 READY，不把其他 section 的证据状
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}] [--expected-plan-sha256 HASH] [--apply]
-guiyi data audit (--symbol X | --universe active) [--through DATE] [--progress]
+guiyi data audit (--symbol X | --universe {active,operational}) [--through DATE] [--progress]
 guiyi data session-anchor-repair --phase plan
 guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply

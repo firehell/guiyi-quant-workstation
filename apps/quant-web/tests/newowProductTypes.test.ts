@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import kernelMacdFixture from '../e2e/fixtures/newow-rich-macd.json' with { type: 'json' }
+import { buildNewowFixtureEnvelopeForTest, NEWOW_AS_OF } from '../e2e/newow-product.helpers.mjs'
 
 import {
   getNewowProductSection,
@@ -30,6 +31,29 @@ const expected = {
   product: 'jm', strategy: 'trend', frequency: '1d', seriesKind: 'actual_dominant',
   section: 'chart', asOf: AS_OF,
 } as const
+
+for (const strategy of NEWOW_PRODUCT_STRATEGIES) {
+  for (const frequency of NEWOW_PRODUCT_FREQUENCIES) {
+    test(`browser explanation fixture uses shared trend context on ${strategy}/${frequency}`, () => {
+      const raw = buildNewowFixtureEnvelopeForTest('explanation', strategy, frequency)
+      const response = normalizeNewowProductResponse(raw, {
+        product: 'rb', strategy, frequency, seriesKind: 'actual_dominant',
+        section: 'explanation', asOf: NEWOW_AS_OF,
+      })
+      assert.equal(response.meta.identity.strategy, strategy)
+      assert.equal(response.section, 'explanation')
+      const context = response.value!.context
+      for (const [name, sourceFrequency] of [['weekly', '1w'], ['daily', '1d'], ['hourly', '60m']]) {
+        assert.equal(context[name].identity.strategy, 'trend')
+        assert.equal(context[name].identity.frequency, sourceFrequency)
+        assert.deepEqual(context[name].formula_versions, FORMULAS)
+      }
+      assert.equal(context.recompute_mode, 'strict_before')
+      assert.equal(response.value!.target_absorb.reason_code, 'NEWOW_TARGET_SOURCE_UNPROVEN')
+      for (const source of response.value!.sources) assert.deepEqual(source.formula_versions, FORMULAS)
+    })
+  }
+}
 
 test('unwraps only the delivered requested section and preserves every Decimal as a string', () => {
   const result = normalizeNewowProductResponse(chartWire(), expected)
@@ -321,6 +345,30 @@ test('binds reference performance windows to the exact section request', () => {
   )
 })
 
+test('shared trend explanation context remains valid on oscillation and main-rise pages', () => {
+  for (const strategy of ['oscillation', 'main_rise'] as const) {
+    const original = explanationWire()
+    const formula_versions = strategy === 'oscillation'
+      ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
+      : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
+    const wire = { ...original, meta: { ...original.meta, identity: {
+      ...original.meta.identity, strategy, profile_id: `newow_product_${strategy}_1d_v1`, formula_versions,
+    } } }
+    const request = { ...expected, strategy, section: 'explanation' as const }
+    const explanation = normalizeNewowProductResponse(wire, request)
+    assert.equal(explanation.meta.identity.strategy, strategy)
+    assert.equal(explanation.value?.context.daily.identity?.strategy, 'trend')
+    for (const [field, wrong] of Object.entries({
+      product: 'au', strategy, frequency: '60m', profile_id: 'newow_product_oscillation_1d_v1', formula_versions: ['unknown_formula'],
+    })) {
+      const invalid = structuredClone(wire)
+      Object.assign(invalid.explanation.value.context.daily.identity!, { [field]: wrong })
+      assert.throws(() => normalizeNewowProductResponse(invalid, request), new RegExp(field))
+    }
+    assert.throws(() => normalizeNewowProductResponse(wire, { ...request, strategy: 'trend' }), /strategy/)
+  }
+})
+
 test('validates explanation context identities and comparator result identities through the full P4 shape', () => {
   const explanation = normalizeNewowProductResponse(explanationWire(), { ...expected, section: 'explanation' })
   assert.equal(explanation.section, 'explanation')
@@ -342,6 +390,57 @@ test('validates explanation context identities and comparator result identities 
   ;(nonFinite.comparator.value!.result!.value!.segments[0]!.source_bars as { count: number }).count = Number.POSITIVE_INFINITY
   assert.throws(() => normalizeNewowProductResponse(nonFinite, { ...expected, section: 'comparator' }), /integer/)
 })
+
+test('preserves unavailable comparator owner segments with fewer than 20 bars and no computed windows', () => {
+  const wire = insufficientComparatorWire()
+  const response = normalizeNewowProductResponse(wire, { ...expected, section: 'comparator' })
+  assert.equal(response.status.status, 'unavailable')
+  assert.equal(response.value?.result?.value?.segments[0]?.source_bars.count, 6)
+  assert.deepEqual(response.value?.result?.value?.segments[0]?.results, [])
+  const panel = resolveNewowPanelRenderState('unavailable', response, null)
+  assert.equal(panel.showValue, false)
+  assert.match(panel.message, /当前物理合约区段不足 20 根 Bar/)
+  assert.match(panel.message, /NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS/)
+  assert.doesNotMatch(panel.message, /DATA_CONFLICT|NEWOW_RESPONSE_INVALID|加载失败/)
+})
+
+test('insufficient comparator status cannot hide computed values, a full source, or malformed identity', () => {
+  for (const mutate of [
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.source_bars.count = 20 },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.status.status = 'ready' },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.status.evidence_status = 'ACTIVE_CODE_VERIFIED' },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.status.reason_code = 'NEWOW_OTHER_UNAVAILABLE' },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.ranked_windows.push(4) },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.results.push(comparatorWire().comparator.value.result.value.segments[0]!.results[0]!) },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.identity.product = 'rb' },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.source_bars.count = Infinity },
+    (wire: ReturnType<typeof insufficientComparatorWire>) => { wire.comparator.value.result.value.segments[0]!.frequency = '60m' },
+  ]) {
+    const wire = insufficientComparatorWire()
+    mutate(wire)
+    assert.throws(() => normalizeNewowProductResponse(wire, { ...expected, section: 'comparator' }))
+  }
+  const ready = comparatorWire()
+  ready.comparator.value.result.value.segments[0]!.results = []
+  assert.throws(() => normalizeNewowProductResponse(ready, { ...expected, section: 'comparator' }), /candidate_windows/)
+})
+
+function insufficientComparatorWire() {
+  const wire = comparatorWire()
+  const result = wire.comparator.value.result
+  const status = { status: 'unavailable', evidence_status: 'RESEARCH_EVIDENCE_ONLY', reason_code: 'NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS' }
+  const segment = result.value.segments[0]!
+  return {
+    ...wire,
+    comparator: { ...wire.comparator, status, value: {
+      ...wire.comparator.value,
+      result: { ...result, ...status, value: { ...result.value, segments: [{
+        ...segment, status, source_bars: { ...segment.source_bars, count: 6 },
+        results: [] as typeof segment.results, ranked_windows: [] as number[],
+      }] } },
+    } },
+  }
+}
 
 export function expectedIdentity(strategy: 'trend' | 'oscillation' | 'main_rise' = 'trend', frequency: '1w' | '1d' | '60m' = '1d') {
   return { product: 'jm', strategy, frequency, seriesKind: 'actual_dominant' as const }

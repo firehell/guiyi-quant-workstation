@@ -154,6 +154,37 @@ provider accepted MUST NOT 表述为微信实际送达。
 - **WHEN** Event 已持久化而 formatter 或 transport 失败
 - **THEN** Event 仍可由 Web 读取，Runtime 记录公开失败且不自动 retry
 
+### Requirement: Shared Alert transport and configuration stay bounded
+
+HTDY Topic audience SHALL 由 PushPlus 外部人工维护，范围不得超过 owner + 三位朋友；系统 MUST NOT 读取成员
+清单或声明精确送达人数。Git 外通知配置 SHALL 只包含 message token 与 HTDY Topic code；父目录 MUST 是当前
+用户所有的 `0700` 目录，配置文件 MUST 是当前用户所有的 `0600` 普通文件。结构 health MUST NOT 联网或发送。
+配置、所有权或权限不满足合同 MUST fail closed，不得借 fallback、retry 或其它 transport 放宽。
+
+#### Scenario: Notification configuration is structurally invalid
+
+- **WHEN** 配置包含额外通知身份、路径所有权不符、父目录不是 0700 或文件不是 0600 普通文件
+- **THEN** health 报告公开配置错误且不联网、不发送、不自动修复权限
+
+### Requirement: HTDY observation preserves frequency and forward-only facts
+
+HTDY 五个日内周期 SHALL 只消费同周期 completed Live Bar；D1/W1 SHALL 只响应
+`market:state(reason=canonical_updated)` 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。
+forward-only `first_seen` 只比较触发时的 previous/current prefix，历史重绘候选只限 Kernel repaint zone。
+`AlertEvent.bar_end` SHALL 是观察 Bar 时间，`detected_at` SHALL 是 Runtime 首次识别时间；Event 冻结后，
+重绘消失、重现或方向变化均不得改写或重发。startup、repair、replay、backfill 与 EOD recalculation MUST NOT
+创建历史 HTDY Event 或通知。
+
+#### Scenario: A daily or weekly Canonical update is observed
+
+- **WHEN** 收到 `canonical_updated` 且对应 D1/W1 completed Canonical 可读
+- **THEN** HTDY 只评估该周期的 current prefix，不聚合 Live、不补评更早 Candidate
+
+#### Scenario: A historical repaint candidate appears
+
+- **WHEN** retrospective Kernel 结果在 repaint zone 出现、消失或变向
+- **THEN** Web 可展示回看结果，但既有 Event 不改写且不创建历史通知
+
 ### Requirement: Web is Event-backed and adds no SuBing overlay
 
 Market Home 与 `/market/chart` 的正式 SuBing 预警 facts SHALL 只从 typed Alert Event API 获取。实际主力 15m 图上可显示
@@ -243,6 +274,18 @@ Rule的last_failure_at MUST 保留，现有全局失败事实继续按原合同�
 - **GIVEN** Rule保留last_failure_at，但成功eval已清空当前error_type
 - **WHEN** 计算聚合health
 - **THEN** 允许当前health为ok并继续呈现历史失败；若error_type仍存在则不能回绿
+
+### Requirement: Runtime status and acknowledgment stay bounded
+
+`alert:runtime-status` SHALL 写 schema v6，只保留通用 Alert 状态与两条固定 Rule 各四个 bounded health 字段；
+兼容读取 v1-v5 时 SHALL 丢弃已退役策略字段，并为空缺 Rule health 填充空状态。notification acknowledgment
+MUST 以当前 failure timestamp 做一次精确 CAS，保留原失败、公开分类与计数，不重放或补发；同一 timestamp
+内出现任何新 failure MUST 原子清空 acknowledgment。状态写失败或并发事实变化 MUST fail closed。
+
+#### Scenario: Acknowledgment races with a new failure
+
+- **WHEN** acknowledgment 的 failure timestamp 已不再精确匹配，或同一 timestamp 内出现新 failure
+- **THEN** CAS 不得掩盖新事实，acknowledgment 保持未应用或被原子清空，且不触发重放或补发
 
 
 ### Requirement: Historical reference uses the existing formula and an independent model

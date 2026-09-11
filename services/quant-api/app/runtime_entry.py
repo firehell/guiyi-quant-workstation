@@ -39,6 +39,7 @@ _COMMANDS = {
     "live": "runtime.live",
     "alert": "runtime.alert",
     "after-market": "data.after-market",
+    "weekly-audit": "data.weekly-audit",
 }
 
 
@@ -116,6 +117,8 @@ def main(
             )
         elif service == "alert":
             payload = run_alert(alert_runtime_factory=alert_runtime_factory)
+        elif service == "weekly-audit":
+            payload = run_weekly_audit_service(session_factory=session_factory, manager_factory=manager_factory)
         else:
             payload = run_after_market(
                 session_factory=session_factory,
@@ -128,31 +131,54 @@ def main(
             exception_error_payload(
                 command=command,
                 exc=exc,
-                readonly=service == "after-market",
+                readonly=service == "weekly-audit",
             ),
             stderr,
         )
         return 1
     print_json(payload, stdout)
-    return 0 if payload.get("status") in {"passed", "skipped", "ok"} else 1
+    return 0 if payload.get("status") in {"passed", "skipped", "skipped_busy", "ok"} else 1
+
+
+def run_weekly_audit_service(*, session_factory: SessionFactory, manager_factory: ManagerFactory) -> dict[str, object]:
+    from datetime import datetime
+    from app.core.env import PROJECT_ROOT
+    from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
+    from app.market_data.operational_universe import load_operational_products
+    from app.market_data.session_clock import SHANGHAI
+    from app.market_data.weekly_audit import run_weekly_audit
+
+    with session_factory() as session:
+        return run_weekly_audit(manager_factory(session),
+            status_path=PROJECT_ROOT / ".run" / "weekly-audit-status.json",
+            products=load_operational_products(), identity=runtime_heartbeat_identity(),
+            now=lambda: datetime.now(SHANGHAI))
 
 
 def entrypoint() -> None:
     handler = None
-    if len(sys.argv) == 2 and sys.argv[1] in {"live", "alert"}:
+    if len(sys.argv) == 2 and sys.argv[1] in {"live", "alert", "after-market", "weekly-audit"}:
         from app.runtime_logging import install_runtime_diagnostics
 
         try:
             handler = install_runtime_diagnostics(sys.argv[1])
         except Exception:
-            print("RUNTIME_LOG_UNAVAILABLE", file=sys.stderr)
-            raise SystemExit(1) from None
+            try:
+                print("RUNTIME_LOG_UNAVAILABLE", file=sys.stderr)
+            except Exception:
+                pass
+            if sys.argv[1] in {"live", "alert"}:
+                raise SystemExit(1) from None
     try:
         raise SystemExit(main())
     finally:
         if handler is not None:
             logging.getLogger("app").removeHandler(handler)
-            handler.close()
+            try:
+                handler.close()
+            except Exception:
+                if sys.argv[1] in {"live", "alert"}:
+                    raise
 
 
 if __name__ == "__main__":

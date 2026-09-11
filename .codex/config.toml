@@ -1,13 +1,14 @@
 # .codex/config.toml
 
-# 日常开发允许修改当前 workspace。
+# 命令执行不受 workspace 文件系统或网络 sandbox 限制；这不是 workspace-only 模式。
+# 实际可执行性仍受宿主权限、approval policy、rules 和更高层配置约束。
 sandbox_mode = "danger-full-access"
 
-# 需要越过 sandbox 边界时进入审批流程。
+# 对 eligible approval request 使用按需审批；不是每条命令都需要审批。
 approval_policy = "on-request"
 
-# 低中风险审批先交自动 Reviewer 判断，
-# 高风险操作仍可能要求用户批准或被拒绝。
+# 仅由自动 Reviewer 处理 on-request 下符合条件的 approval prompt；
+# 不表示所有操作都经过 Review，也不改变 sandbox 或仓库业务授权。
 approvals_reviewer = "auto_review"
 
 # 默认推理强度；具体 Terra / Sol 仍按每个任务选择。
@@ -16,10 +17,10 @@ model_reasoning_effort = "high"
 # web搜索
 web_search = "live"
 
-# git push、gh pr、依赖安装等需要网络。
+# 以下选项仅在 sandbox_mode="workspace-write" 时生效；为该受支持模式保留。
 [sandbox_workspace_write]
 network_access = true
 
-# 减少对系统临时目录的写权限。
+# workspace-write 模式下排除系统临时目录的 writable root。
 exclude_slash_tmp = true
 exclude_tmpdir_env_var = true

@@ -62,7 +62,7 @@ class PublishedPartition:
     row_count: int
 
 
-BoundaryValidator = Callable[[DatasetKey, CanonicalBar], bool]
+PartitionBoundaryValidator = Callable[[DatasetKey, tuple[CanonicalBar, ...]], bool]
 
 
 class CatalogPartitionLike(Protocol):
@@ -93,7 +93,7 @@ class CatalogPartitionLike(Protocol):
 class CanonicalMonthlyStore:
     """Canonical 月分区 Parquet 存储：原子发布与严格 schema 读取。"""
 
-    def __init__(self, root: Path, *, boundary_validator: BoundaryValidator | None = None) -> None:
+    def __init__(self, root: Path, *, boundary_validator: PartitionBoundaryValidator | None = None) -> None:
         self.root = root.absolute()
         if ".." in self.root.parts:
             raise StorageError("CANONICAL_ROOT_ESCAPE")
@@ -270,8 +270,8 @@ class CanonicalMonthlyStore:
         for bar in request.bars:
             if bar.trading_day.year != request.year or bar.trading_day.month != request.month:
                 raise StorageError("PARTITION_MONTH_MISMATCH")
-            if self.boundary_validator is not None and not self.boundary_validator(request.dataset, bar):
-                raise StorageError("SESSION_BOUNDARY_INVALID")
+        if self.boundary_validator is not None and not self.boundary_validator(request.dataset, request.bars):
+            raise StorageError("SESSION_BOUNDARY_INVALID")
 
 
 def _frequency_delta(frequency: BarFrequency) -> timedelta:

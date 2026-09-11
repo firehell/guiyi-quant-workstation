@@ -158,6 +158,8 @@ test('explanation component renders evidence gaps and comparator in a separate t
   assert.doesNotMatch(nodeText(historicalState), /当前/)
   assert.doesNotMatch(nodeText(explanationPanel), /策略当前为持有状态|历史 Bar 的策略状态为/)
   assert.match(nodeText(explanationPanel), /当前快照截至/)
+  assert.doesNotMatch(nodeText(explanationPanel), /解释暂不可用/)
+  assert.match(nodeText(explanationPanel), /部分解释证据不足/)
   const readable = findNode(root, node => node.props['data-testid'] === 'newow-readable-facts')!
   assert.doesNotMatch(nodeText(readable), /LONG_BIAS|WAIT_CONFIRM|NEWOW_/)
   const sources = findNode(root, node => node.type === 'details' && node.props.class === 'newow-explanation__sources')!
@@ -172,6 +174,49 @@ test('explanation component renders evidence gaps and comparator in a separate t
   assert.match(nodeText(comparatorPanel), /不改变 ReferenceTrade 的 OPEN\/CLEAR/)
   assert.match(nodeText(comparatorPanel), /10/)
   assert.match(nodeText(comparatorPanel), /52/)
+  app.unmount()
+})
+
+test('missing composite facts and failed explanation requests retain the unavailable notice', async () => {
+  const Panel = await loadComponent()
+  for (const lifecycle of ['evidence_required', 'unavailable'] as const) {
+    const explanation = explanationResponse()
+    explanation.value!.composite = { ...explanation.value!.composite, value: null }
+    const Host = defineComponent({ setup: () => () => h(Panel, {
+      mode: 'explanation', response: explanation, lifecycle, error: null,
+      comparatorResponse: null, comparatorLifecycle: 'not_requested', comparatorError: null,
+    }) })
+    const root = element('root')
+    const app = createRenderer(nodeOperations()).createApp(Host)
+    app.mount(root)
+    await nextTick()
+    assert.match(nodeText(root), /解释暂不可用/)
+    app.unmount()
+  }
+})
+
+test('comparator renders a natural insufficient-owner boundary without a conflict or computed table', async () => {
+  const Panel = await loadComponent()
+  const comparator = comparatorResponse()
+  comparator.status = { status: 'unavailable', evidence_status: 'RESEARCH_EVIDENCE_ONLY', reason_code: 'NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS' }
+  Object.assign(comparator.value!.result!, comparator.status)
+  const segment = comparator.value!.result!.value!.segments[0]!
+  segment.status = comparator.status
+  segment.source_bars.count = 6
+  segment.results = []
+  segment.ranked_windows = []
+  const Host = defineComponent({ setup: () => () => h(Panel, {
+    response: null, lifecycle: 'not_requested', error: null,
+    comparatorResponse: comparator, comparatorLifecycle: 'unavailable', comparatorError: null,
+  }) })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  await nextTick()
+  const panel = findNode(root, node => node.props['data-testid'] === 'newow-comparator-panel')!
+  assert.match(nodeText(panel), /当前物理合约区段不足 20 根 Bar/)
+  assert.doesNotMatch(nodeText(panel), /DATA_CONFLICT|RESPONSE_INVALID|加载失败/)
+  assert.equal(findNode(panel, node => node.type === 'table'), undefined)
   app.unmount()
 })
 

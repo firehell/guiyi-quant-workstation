@@ -67,3 +67,17 @@ export function referencePercentDisplay(value: string | null | undefined): { tex
 export function referenceInterruptionLabel(reason: string | null): string {
   return reason === 'OWNER_BOUNDARY' ? '物理合约区段结束' : '中断原因待确认（见详情）'
 }
+
+/** Reference-card labels only. Raw timestamps remain available in title/details. */
+export function referenceTimeDisplay(
+  value: string | null | undefined,
+  frequency: string,
+  relatedTimes: readonly (string | null | undefined)[],
+): string {
+  if (!value) return '—'
+  const full = formatChartTimeInShanghai(value)
+  if (!full) return '—'
+  if (frequency === '1d' || frequency === '1w') return full.slice(0, 10)
+  const crossYear = relatedTimes.some(time => time && formatChartTimeInShanghai(time).slice(0, 4) !== full.slice(0, 4))
+  return crossYear ? full : full.slice(5)
+}

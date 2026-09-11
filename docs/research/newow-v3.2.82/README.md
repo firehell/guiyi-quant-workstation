@@ -20,6 +20,8 @@
 
 ## 阅读入口
 
+- [2026-09-09 新版功能差异与后续任务](../newow-current-review.md)（App/Web 分别记录，不覆盖旧公式基线）
+
 - [归一量化｜牛哇策略复刻手册（Markdown 源稿）](REPLICATION_MANUAL.md)
 - [归一量化｜牛哇策略复刻手册（A4 PDF）](../../../output/pdf/newow-v3.2.82-futures-replication-manual.pdf)
 - [完整策略与指标报告](REPORT.md)
@@ -28,9 +30,9 @@
 - [AI 模板与周日矩阵证据](evidence/ai-template-evidence.json)
 - [期货迁移摘要](evidence/futures-validation-summary.json)
 - [OOS / 成本压力矩阵](evidence/oos-cost-stress-matrix.json)
-- [P6 可信收口与真实工作站 MDS 证据](P6_TRUSTED_CLOSURE.md)
 - [来源登记](evidence/source-registry.json)
 - [本地完整证据清单](evidence/full-local-evidence-manifest.json)
+- [Owner 外部素材索引](evidence/external-reference-index.json)
 
 ## 冻结来源与复算索引
 
@@ -38,7 +40,7 @@
 [STATUS](../../../STATUS.md)。旧设计/实施过程从Git history追溯，不再作为公式或发布授权源。
 
 初始owner材料包括真实详情页/指标弹层、D1–D3说明、v3.6杯柄说明截图、录屏和原始指南；
-[参考索引](../../tasks/fixtures/newow/reference-index.json)及[登记说明](../../tasks/fixtures/newow/README.md)保留原出处。
+[外部素材索引](evidence/external-reference-index.json)只保留类型、哈希、用途和来源说明，二进制原件不进入 Git。
 这些截图可以支持视觉观察，但未公开的数学公式必须维持clean-room身份；个股与指数证据均保留。
 
 以下相对路径属于[完整本地manifest](evidence/full-local-evidence-manifest.json)登记的逻辑根
@@ -88,6 +90,19 @@ source registry为96项（86 GET、10 POST），SHA-256为
 - 27 个 OOS 单元中 18 个日线/60 分钟单元有结果；9 个周线单元因执行事实不足而 fail-closed。
 - 页面一致性结果不得冒充因果研究、模拟账户或真实账户收益。
 
+## 可信期货验证合同
+
+历史任务文档中仍有效的研究边界收敛为以下长期合同：
+
+- 1d、1w、60m 必须分别通过 `MarketDataService` 读取 completed `actual_dominant`，每根 Bar 必须唯一匹配全局 `MainContractMap` owner；不得跨周期推断 owner 或回退 continuous。
+- 严格研究必须绑定带来源与生效区间的 Decimal 费用、multiplier、tick、slippage 及逐成交 Bar 涨跌停事实；缺失、重叠或持仓期间 multiplier 变化都 fail-closed。
+- 固定公式 Walk-forward 只用训练前缀做 causal warm-up，测试窗口空仓开始，不搜索参数；换月、拒绝成交、样本末意图和未平仓必须显式排除或记录。
+- 当前只能声明 `IMPLEMENTED / EVIDENCE_PARTIAL`：9/9 序列通过，18 个 D1/60m OOS 单元有结果，9 个 W1 单元因 `NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT` 阻断；完整 Canonical 输入与无数据库独立重放包仍缺失。
+
+具体公式、对照数值与历史反例见[REPORT](REPORT.md)和
+[REPLICATION_MANUAL](REPLICATION_MANUAL.md)；当前产品、Release、Runtime 与待验收仍只看
+`PROJECT_SOURCE.md`、active OpenSpec 和 `STATUS.md`。
+
 ## GitHub 分发边界
 
 本目录是从完整本地证据包整理出的 GitHub 安全版。为避免重新分发第三方完整网页/脚本以及 RQData/Canonical 行情原文，以下内容没有进入仓库：
@@ -131,6 +146,7 @@ newow-v3.2.82/
 └── evidence/
     ├── 页面一致性与决策证据
     ├── 期货/OOS 摘要
+    ├── Owner 外部素材哈希索引
     ├── 来源登记
     └── 本地完整证据 manifest
 ```

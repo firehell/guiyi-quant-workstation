@@ -2986,6 +2986,179 @@ def test_existing_complete_1m_rebuilds_derived_before_provider_quota(session, tm
     assert [call[0].frequency for call in provider.calls] == [BarFrequency.D1]
 
 
+class _MinuteRefreshCoverage(FakeCoverage):
+    def sessions(self, _key, year, month, through=None):
+        start = datetime(year, month, 2, 1, tzinfo=UTC)
+        return (SessionWindow(start, start + timedelta(hours=2)),)
+
+
+def _minute_refresh_case(session, tmp_path, kind="continuous", frequency="5m"):
+    series = "MAIN" if kind == "continuous" else "JM2509"
+    minute = DatasetKey(kind, "jm", series, "1m")
+    derived = DatasetKey(kind, "jm", series, frequency)
+    start = datetime(2025, 1, 2, 1, tzinfo=UTC)
+    old = tuple(_minute_at(start + timedelta(minutes=i), 100 + i) for i in range(1, 121))
+    new = tuple(_minute_at(bar.bar_end, int(bar.close) + 200) for bar in old)
+    width = int(frequency[:-1])
+    expected = tuple(bar.bar_end for bar in new[width - 1::width])
+    coverage = _MinuteRefreshCoverage({
+        minute.as_tuple(): tuple(bar.bar_end for bar in new),
+        derived.as_tuple(): expected,
+    })
+    provider = FakeProvider({minute.as_tuple(): new})
+    manager = _manager(session, tmp_path, coverage, provider)
+    manager.catalog.upsert_main_contracts((("jm", date(2025, 1, 2), "JM2509"),))
+    session.commit()
+    _publish_existing(manager, minute, old)
+    source_target = _Target(minute, 2025, 1, coverage.ends[minute.as_tuple()],
+                            coverage.ends[minute.as_tuple()], ())
+    derived_target = _Target(derived, 2025, 1, expected, expected, ())
+    manager._publish_derived(derived_target)
+    return manager, source_target, derived_target, old, new
+
+
+def _run_minute_refresh(manager, source, derived, mode):
+    if mode == "refresh":
+        return manager.refresh(RefreshRequest("jm", date(2025, 1, 2), date(2025, 1, 3), True))
+    return manager._execute_apply(
+        "update", iter((source,)), iter((derived,)), date(2025, 1, 3),
+        weekly_daily_companions=mode != "fail_stop", fail_stop=mode == "fail_stop",
+    )
+
+
+@pytest.mark.parametrize("kind", ["continuous", "contract"])
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
+@pytest.mark.parametrize("mode", ["refresh", "streaming", "cached", "fail_stop"])
+def test_pending_minute_refresh_derives_from_new_committed_source(
+    session, tmp_path, monkeypatch, kind, frequency, mode
+):
+    manager, source, derived, _old, new = _minute_refresh_case(
+        session, tmp_path, kind, frequency
+    )
+    if mode == "cached":
+        manager._source_cache = {}
+        manager._publish_derived(derived)
+    events = []
+    commit_partition = manager._commit_partition
+
+    def record_commit(partition, target):
+        commit_partition(partition, target)
+        events.append(target.key.frequency)
+
+    monkeypatch.setattr(manager, "_commit_partition", record_commit)
+    result = _run_minute_refresh(manager, source, derived, mode)
+
+    assert result.status == "passed"
+    assert result.applied == 2
+    assert _read_committed_month(manager, source.key, 2025, 1) == new
+    width = int(frequency[:-1])
+    expected_bars = tuple(
+        CanonicalBar(
+            group[-1].bar_end, group[-1].trading_day,
+            group[0].open, group[-1].high, group[0].low, group[-1].close,
+            sum(bar.volume for bar in group), sum(bar.turnover for bar in group),
+            group[-1].open_interest,
+        )
+        for offset in range(0, len(new), width)
+        for group in (new[offset:offset + width],)
+    )
+    assert _read_committed_month(manager, derived.key, 2025, 1) == expected_bars
+    assert events == [BarFrequency.M1, derived.key.frequency]
+    assert [key for key, _ends in manager.provider.calls] == [source.key]
+
+
+@pytest.mark.parametrize("mode", ["refresh", "streaming", "cached", "fail_stop"])
+@pytest.mark.parametrize("failure", ["validation", "quota", "commit_unknown"])
+def test_pending_minute_failure_never_publishes_stale_derived(
+    session, tmp_path, monkeypatch, mode, failure
+):
+    from app.market_data.storage import StorageError
+
+    manager, source, derived, old, _new = _minute_refresh_case(session, tmp_path)
+    old_pointer = manager.catalog.all_partitions(derived.key)[0]
+    old_derived = _read_committed_month(manager, derived.key, 2025, 1)
+    published = []
+    publish = manager.store.publish
+
+    def record_publish(request):
+        published.append(request.dataset)
+        return publish(request)
+
+    if mode == "cached":
+        manager._source_cache = {}
+        manager._publish_derived(derived)
+        old_pointer = manager.catalog.all_partitions(derived.key)[0]
+    monkeypatch.setattr(manager.store, "publish", record_publish)
+    if failure == "validation":
+        manager.provider.bars[source.key.as_tuple()] = ()
+    elif failure == "quota":
+        manager.provider.quota_after = 0
+    else:
+        def unknown_commit():
+            raise SQLAlchemyError("injected commit uncertainty")
+        monkeypatch.setattr(session, "commit", unknown_commit)
+
+    def execute():
+        return _run_minute_refresh(manager, source, derived, mode)
+
+    if failure == "commit_unknown":
+        with pytest.raises(StorageError, match="COMMIT_OUTCOME_UNKNOWN"):
+            execute()
+    else:
+        result = execute()
+        assert result.status == ("partial" if failure == "quota" else "failed")
+        assert result.applied == 0
+        assert result.failed == (0 if failure == "quota" else 1)
+        if failure == "quota":
+            assert result.stop_reason == "provider_quota_exhausted"
+        elif mode != "fail_stop":
+            assert result.blocked == 1
+    assert derived.key not in published
+    assert manager.catalog.all_partitions(derived.key)[0] == old_pointer
+    assert _read_committed_month(manager, derived.key, 2025, 1) == old_derived
+    assert _read_committed_month(manager, source.key, 2025, 1) == old
+    assert len(manager.provider.calls) == 1
+
+
+@pytest.mark.parametrize("independent", ["month", "kind", "contract"])
+def test_pending_minute_dependency_does_not_delay_independent_source(
+    session, tmp_path, independent
+):
+    manager, pending, dependent, _old, _new = _minute_refresh_case(
+        session, tmp_path, kind="contract" if independent == "contract" else "continuous"
+    )
+    month = 2 if independent == "month" else 1
+    kind = "continuous" if independent == "month" else "contract"
+    contract = "JM2512" if independent == "contract" else "JM2509"
+    if independent == "contract":
+        session.add(Contract(
+            contract_code=contract, instrument_symbol="jm", exchange_code="DCE",
+            listed_date=date(2025, 1, 1), expired_date=date(2026, 1, 1), provider="rqdata",
+        ))
+        session.commit()
+    source_key = DatasetKey(kind, "jm", "MAIN" if kind == "continuous" else contract, "1m")
+    derived_key = DatasetKey(kind, "jm", source_key.series_or_contract, "5m")
+    start = datetime(2025, month, 2, 1, tzinfo=UTC)
+    bars = tuple(_minute_at(start + timedelta(minutes=i), 500 + i) for i in range(1, 121))
+    _publish_existing(manager, source_key, bars)
+    ends = tuple(bar.bar_end for bar in bars[4::5])
+    independent_target = _Target(derived_key, 2025, month, ends, ends, ())
+    manager.provider.quota_after = 0
+
+    result = manager._execute_apply(
+        "update", (pending,), (dependent, independent_target), date(2025, month, 3),
+        weekly_daily_companions=True,
+    )
+
+    assert result.status == "partial"
+    assert result.applied == 1
+    assert result.stop_reason == "provider_quota_exhausted"
+    assert tuple(bar.close for bar in _read_committed_month(manager, derived_key, 2025, month)) == (
+        tuple(bar.close for bar in bars[4::5])
+    )
+    assert len(manager.provider.calls) == 1
+
+
 def test_catalog_invalid_1m_is_repaired_before_derived_publish(session, tmp_path) -> None:
     minute = DatasetKey("continuous", "jm", "MAIN", "1m")
     derived = DatasetKey("continuous", "jm", "MAIN", "5m")

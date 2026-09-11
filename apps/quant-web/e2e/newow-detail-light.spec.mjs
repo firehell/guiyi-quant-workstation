@@ -226,3 +226,40 @@ test('old backend MACD rejection and reference failure stay explicit and retry o
   expect(productRequests(fixture, 'reference')).toHaveLength(2)
   assertNoUnexpectedRequests(fixture)
 })
+
+
+for (const width of [1440, 390]) {
+  test(`current FLAT waiting card is independent from paged returns at ${width}`, async ({ page }, testInfo) => {
+    const fixture = await installNewowProductFixtures(page, {
+      onProductRequest: async ({ route, url, section, strategy, frequency }) => {
+        if (!['chart', 'reference'].includes(section)) return
+        const payload = buildNewowFixtureEnvelopeForTest(section, strategy, frequency, false, null, { noAction: true, zeroClosed: true })
+        payload.meta.as_of = url.searchParams.get('as_of')
+        if (section === 'chart') {
+          payload.chart.value.frames.forEach(frame => { frame.main_state = 'FLAT' })
+        } else {
+          payload.reference.value.items = []
+          payload.reference.value.summary.open_count = 0
+          payload.reference.value.summary.interrupted_count = 0
+          payload.reference.value.summary.initial_count = 0
+        }
+        await route.fulfill({ json: payload })
+        return 'handled'
+      },
+    })
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto(newowRoute())
+    await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+    await page.locator('.newow-reference').scrollIntoViewIfNeeded()
+    const waiting = page.getByTestId('newow-reference-waiting')
+    await expect(waiting).toContainText('空仓等待中')
+    await expect(waiting).toContainText('状态时间 2026-08-03')
+    await expect(waiting).not.toContainText('%')
+    await expect(waiting).toHaveCSS('border-left-color', 'rgb(57, 123, 209)')
+    await page.getByLabel('筛选参考历史').selectOption('interrupted')
+    await expect(waiting).toBeVisible()
+    await expect(page.getByTestId('newow-reference-summary')).toContainText('暂无已完成参考交易')
+    await page.locator('.newow-reference').screenshot({ path: testInfo.outputPath(`waiting-reference-${width}.png`) })
+    assertNoUnexpectedRequests(fixture)
+  })
+}

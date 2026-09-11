@@ -189,6 +189,37 @@ def test_failed_commit_rolls_back_all_inserted_rows(db):
         assert session.scalars(select(TradingSession)).all() == []
 
 
+def test_commit_acknowledgment_loss_is_unknown_and_never_retried(db, monkeypatch):
+    snapshot = fetch(plan(db))
+    attempts = []
+    with Session(db) as session:
+        real_commit = session.commit
+        def uncertain_commit():
+            attempts.append('commit')
+            real_commit()
+            raise RuntimeError('acknowledgment unavailable')
+        monkeypatch.setattr(session, 'commit', uncertain_commit)
+        with pytest.raises(repair.MetadataRepairError, match='COMMIT_OUTCOME_UNKNOWN'):
+            repair.apply_metadata(session, snapshot,
+                                  expected_plan_sha256=snapshot['plan']['plan_sha256'],
+                                  expected_snapshot_sha256=snapshot['snapshot_sha256'])
+    assert attempts == ['commit']
+    with Session(db) as independent:
+        assert len(independent.scalars(select(TradingSession)).all()) == len(snapshot['sessions'])
+
+
+def test_precommit_flush_failure_remains_apply_failed(db):
+    snapshot = fetch(plan(db))
+    with Session(db) as session:
+        event.listen(session, 'before_flush', lambda *_: (_ for _ in ()).throw(RuntimeError('flush failed')))
+        with pytest.raises(repair.MetadataRepairError, match='APPLY_FAILED'):
+            repair.apply_metadata(session, snapshot,
+                                  expected_plan_sha256=snapshot['plan']['plan_sha256'],
+                                  expected_snapshot_sha256=snapshot['snapshot_sha256'])
+    with Session(db) as independent:
+        assert independent.scalars(select(TradingSession)).all() == []
+
+
 @pytest.mark.parametrize("hours", ["09:00-15:00", "09:01-10:15,10:01-11:30", "garbage"])
 def test_malformed_provider_periods_fail_without_snapshot_or_apply(db, hours):
     with pytest.raises(repair.MetadataRepairError):
@@ -567,3 +598,318 @@ def test_unknown_calendar_can_wait_for_classification_but_not_contradict_existin
         fetch(value, Provider(trading=[]))
     classified = fetch(value, Provider(trading=[DAY]))
     assert classified["blockers"][0]["code"] == "NIGHT_SESSION_EVIDENCE_REQUIRED"
+
+
+@pytest.fixture
+def future_context_db():
+    """A completed target whose seven-day Calendar context reaches the future."""
+    from app.market_data.coverage_source import _calendar_context_start
+
+    through = date.today() - timedelta(days=1)
+    evidence_day = date.today() + timedelta(days=4)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all([
+            Exchange(code="SHFE", name="SHFE"),
+            Instrument(symbol="au", name="gold", exchange_code="SHFE"),
+            Contract(contract_code="AU2701", instrument_symbol="au", exchange_code="SHFE",
+                     listed_date=through, expired_date=through + timedelta(days=60), provider="rqdata"),
+        ])
+        start = _calendar_context_start(through)
+        for offset in range((through + timedelta(days=7) - start).days + 1):
+            day = start + timedelta(days=offset)
+            if day != evidence_day:
+                session.add(TradingCalendar(exchange_code="SHFE", trade_date=day,
+                                            is_trading_day=False, has_night_session=False))
+        session.commit()
+    yield engine, through, evidence_day
+    engine.dispose()
+
+
+def test_future_context_evidence_uses_source_date_without_expanding_target_or_session_scope(future_context_db):
+    db, through, evidence_day = future_context_db
+    targets = [{"symbol": "au", "contract": "AU2701", "through": through.isoformat()}]
+    original = plan(db, targets)
+    classified = fetch(original, Provider(trading=[evidence_day]))
+    source = {"symbol": "au", "contract": "AU2701", "date": evidence_day.isoformat()}
+    value = plan(db, targets, classification=classified, evidence_sources=[source])
+    assert value["targets"] == original["targets"]
+    assert value["missing_calendars"] == original["missing_calendars"]
+    assert value["missing_sessions"] == []
+    assert value["requests"] == [{"method": "get_trading_periods", "symbol": "au", "contract": "AU2701",
+        "exchange": "SHFE", "start_date": evidence_day.isoformat(), "end_date": evidence_day.isoformat(),
+        "frequency": "1m"}]
+    snapshot = fetch(value)
+    assert snapshot["blockers"] == []
+    assert snapshot["sessions"] == []
+    assert snapshot["calendars"][0]["has_night_session"] is True
+    assert apply(db, snapshot)["calendar_rows"] == 1
+
+
+@pytest.mark.parametrize("offset", [0, 4])
+def test_target_through_today_or_future_remains_forbidden(future_context_db, offset):
+    db, _, _ = future_context_db
+    with pytest.raises(repair.MetadataRepairError, match="SCOPE_INVALID"):
+        plan(db, [{"symbol": "au", "contract": "AU2701",
+                   "through": (date.today() + timedelta(days=offset)).isoformat()}])
+
+
+@pytest.mark.parametrize("change", [
+    {"symbol": "inactive_product"}, {"contract": "AU2701/escape"}, {"extra": "forbidden"},
+    {"date": "not-a-date"}, {"date": (date.today() + timedelta(days=7)).isoformat()},
+])
+def test_future_evidence_retains_structure_identity_and_calendar_scope_guards(future_context_db, change):
+    db, through, evidence_day = future_context_db
+    targets = [{"symbol": "au", "contract": "AU2701", "through": through.isoformat()}]
+    classified = fetch(plan(db, targets), Provider(trading=[evidence_day]))
+    source = {"symbol": "au", "contract": "AU2701", "date": evidence_day.isoformat(), **change}
+    with pytest.raises(repair.MetadataRepairError):
+        plan(db, targets, classification=classified, evidence_sources=[source])
+
+
+@pytest.mark.parametrize("case", ["unclassified", "nontrading", "expired", "before_listing", "provider"])
+def test_future_evidence_requires_trading_classification_and_authoritative_lifecycle(future_context_db, case):
+    db, through, evidence_day = future_context_db
+    targets = [{"symbol": "au", "contract": "AU2701", "through": through.isoformat()}]
+    classified = None if case == "unclassified" else fetch(
+        plan(db, targets), Provider(trading=[] if case == "nontrading" else [evidence_day]))
+    contract = "AU2701"
+    if case in {"expired", "before_listing", "provider"}:
+        contract = "AU2702"
+        with Session(db) as session:
+            session.add(Contract(contract_code=contract, instrument_symbol="au", exchange_code="SHFE",
+                listed_date=evidence_day + timedelta(days=1) if case == "before_listing" else through,
+                expired_date=evidence_day if case == "expired" else evidence_day + timedelta(days=60),
+                provider="other" if case == "provider" else "rqdata"))
+            session.commit()
+    with pytest.raises(repair.MetadataRepairError):
+        plan(db, targets, classification=classified,
+             evidence_sources=[{"symbol": "au", "contract": contract, "date": evidence_day.isoformat()}])
+
+
+@pytest.fixture
+def exchange_universe_case(future_context_db):
+    db, through, day = future_context_db
+    with Session(db) as session:
+        session.add(Instrument(symbol="ag", name="silver", exchange_code="SHFE"))
+        session.add(Contract(contract_code="AG2701", instrument_symbol="ag", exchange_code="SHFE",
+                             listed_date=through, expired_date=day + timedelta(days=60), provider="rqdata"))
+        session.commit()
+    targets = [{"symbol": "au", "contract": "AU2701", "through": through.isoformat()}]
+    classified = fetch(plan(db, targets), Provider(trading=[day]))
+    universe = {"exchange": "SHFE", "date": day.isoformat(), "products": ["ag", "au"],
+                "sources": [{"symbol": symbol, "contract": symbol.upper() + "2701", "date": day.isoformat()}
+                            for symbol in ("ag", "au")]}
+    return db, targets, classified, universe
+
+
+def inventory_for(case):
+    day = date.fromisoformat(case[3]["date"])
+    return {"identity": {"method": "all_instruments_by_type", "args": [],
+                         "kwargs": {"instrument_type": "Future", "market": "cn"}},
+            "response": [{"exchange": "SHFE", "underlying_symbol": symbol.upper(),
+                          "order_book_id": symbol.upper() + "2701",
+                          "listed_date": case[1][0]["through"],
+                          "de_listed_date": (day + timedelta(days=60)).isoformat()}
+                         for symbol in ("ag", "au")]}
+
+
+def universe_plan(case, universe=None, classification=True, inventory="default"):
+    db, targets, classified, original = case
+    with Session(db) as session:
+        return repair.plan_metadata(session, targets, classification=classified if classification else None,
+                                    exchange_universes=[original if universe is None else universe],
+                                    exchange_inventory_evidence=inventory_for(case) if inventory == "default" else inventory)
+
+
+@pytest.mark.parametrize("night", [False, True])
+def test_complete_exchange_universe_resolves_day_only_or_any_night(exchange_universe_case, night):
+    case = exchange_universe_case
+    value = universe_plan(case)
+    assert value["targets"] == case[1]
+    assert value["missing_sessions"] == []
+    assert {q["contract"] for q in value["requests"]} == {"AG2701", "AU2701"}
+
+    class MixedProvider(Provider):
+        def get_trading_periods(self, contracts, **kwargs):
+            self.hours = HOURS if night and contracts == ("AG2701",) else "09:01-15:00"
+            return super().get_trading_periods(contracts, **kwargs)
+
+    snapshot = fetch(value, MixedProvider())
+    assert snapshot["blockers"] == []
+    assert snapshot["sessions"] == []  # Cross-batch witnesses are never Session insert targets.
+    assert snapshot["calendars"][0]["has_night_session"] is night
+    # JSON persistence preserves the full scope and fresh-recheck contract.
+    import json
+    snapshot = json.loads(json.dumps(snapshot))
+    with Session(case[0]) as session:
+        repair.recheck_plan(session, snapshot["plan"], expected_plan_sha256=value["plan_sha256"])
+    assert apply(case[0], snapshot)["calendar_rows"] == 1
+    with Session(case[0]) as session:
+        assert session.scalars(select(TradingSession)).all() == []
+
+
+@pytest.mark.parametrize("case", ["partial", "duplicate", "mismatch", "extra", "exchange", "date", "empty", "inactive", "unclassified"])
+def test_exchange_universe_rejects_partial_mismatched_or_outside_scope(exchange_universe_case, case):
+    import copy
+    universe = copy.deepcopy(exchange_universe_case[3])
+    if case == "partial":
+        universe["sources"].pop()
+    elif case == "duplicate":
+        universe["sources"].append(universe["sources"][0])
+    elif case == "mismatch":
+        universe["sources"][0]["symbol"] = "au"
+    elif case == "extra":
+        universe["unexpected"] = True
+    elif case == "exchange":
+        universe["exchange"] = "GFEX"
+    elif case == "date":
+        universe["date"] = "2020-01-01"
+    elif case == "empty":
+        universe["products"] = []
+    elif case == "inactive":
+        universe["products"][0] = "nonactive"
+    with pytest.raises(repair.MetadataRepairError):
+        universe_plan(exchange_universe_case, universe, classification=case != "unclassified")
+
+
+@pytest.mark.parametrize("change", ["provider", "expired", "not_listed", "exchange", "inactive"])
+def test_exchange_universe_sources_require_live_catalog_identity(exchange_universe_case, change):
+    db, _, _, universe = exchange_universe_case
+    with Session(db) as session:
+        contract = session.scalar(select(Contract).where(Contract.contract_code == "AG2701"))
+        if change == "provider":
+            contract.provider = "other"
+        elif change == "expired":
+            contract.expired_date = date.fromisoformat(universe["date"])
+        elif change == "not_listed":
+            contract.listed_date = date.fromisoformat(universe["date"]) + timedelta(days=1)
+        elif change == "exchange":
+            contract.exchange_code = "GFEX"
+        else:
+            session.scalar(select(Instrument).where(Instrument.symbol == "ag")).is_active = False
+        session.commit()
+    with pytest.raises(repair.MetadataRepairError):
+        universe_plan(exchange_universe_case)
+
+
+def test_exchange_universe_tamper_and_source_drift_stop_before_insert(exchange_universe_case):
+    import copy
+    db = exchange_universe_case[0]
+    value = universe_plan(exchange_universe_case)
+    snapshot = fetch(value, Provider(hours="09:01-15:00"))
+    tampered = copy.deepcopy(value)
+    tampered["exchange_universes"][0]["sources"].pop()
+    tampered = repair._sealed({k: v for k, v in tampered.items() if k != "plan_sha256"}, "plan_sha256")
+    with pytest.raises(repair.MetadataRepairError):
+        fetch(tampered)
+    with Session(db) as session:
+        session.scalar(select(Contract).where(Contract.contract_code == "AG2701")).expired_date += timedelta(days=1)
+        session.commit()
+    with pytest.raises(repair.MetadataRepairError, match="PLAN_DRIFT"):
+        apply(db, snapshot)
+
+
+def test_complete_universe_missing_actual_row_cannot_be_negative(exchange_universe_case):
+    value = universe_plan(exchange_universe_case)
+    class MissingProvider(Provider):
+        def get_trading_periods(self, contracts, **kwargs):
+            if contracts == ("AG2701",):
+                return pd.DataFrame(columns=["order_book_id", "date", "trading_hours"])
+            return super().get_trading_periods(contracts, **kwargs)
+    with pytest.raises(repair.MetadataRepairError):
+        fetch(value, MissingProvider(hours="09:01-15:00"))
+
+
+def test_exchange_universe_simultaneous_shrink_cannot_claim_complete(exchange_universe_case):
+    import copy
+    universe = copy.deepcopy(exchange_universe_case[3])
+    universe["products"] = ["au"]
+    universe["sources"] = [source for source in universe["sources"] if source["symbol"] == "au"]
+    with pytest.raises(repair.MetadataRepairError):
+        universe_plan(exchange_universe_case, universe)
+
+
+@pytest.mark.parametrize("change", ["missing", "method", "args", "kwargs", "omitted_row", "invalid_other_exchange", "row_identity", "duplicate", "extra_field"])
+def test_exchange_inventory_requires_exact_unfiltered_identity_and_lifecycle(exchange_universe_case, change):
+    inventory = inventory_for(exchange_universe_case)
+    if change == "missing":
+        inventory = None
+    elif change == "method":
+        inventory["identity"]["method"] = "all_instruments"
+    elif change == "args":
+        inventory["identity"]["args"] = ["AG"]
+    elif change == "kwargs":
+        inventory["identity"]["kwargs"]["date"] = "2026-09-14"
+    elif change == "omitted_row":
+        inventory["response"].pop()
+    elif change == "invalid_other_exchange":
+        inventory["response"].append({"exchange": "DCE", "underlying_symbol": "A", "order_book_id": "A2701",
+                                      "listed_date": None, "de_listed_date": "2027-01-01"})
+    elif change == "row_identity":
+        inventory["response"][0]["order_book_id"] = "WRONG2701"
+    elif change == "duplicate":
+        inventory["response"].append(inventory["response"][0])
+    else:
+        inventory["identity"]["extra"] = True
+    with pytest.raises(repair.MetadataRepairError):
+        universe_plan(exchange_universe_case, inventory=inventory)
+
+
+@pytest.mark.parametrize("field", ["listed_date", "de_listed_date"])
+@pytest.mark.parametrize("value", [None, "0000-00-00", "not-a-date"])
+def test_inventory_missing_or_invalid_lifecycle_retains_error_classification(exchange_universe_case, field, value):
+    inventory = inventory_for(exchange_universe_case)
+    inventory["response"][0][field] = value
+    expected = "INVENTORY_INVALID" if value == "not-a-date" else "INVENTORY_UNIVERSE_MISMATCH"
+    with pytest.raises(repair.MetadataRepairError, match=expected):
+        universe_plan(exchange_universe_case, inventory=inventory)
+
+
+def test_inventory_source_outside_lifecycle_retains_source_mismatch(exchange_universe_case):
+    inventory = inventory_for(exchange_universe_case)
+    inventory["response"].append({**inventory["response"][0], "order_book_id": "AG2702"})
+    inventory["response"][0]["de_listed_date"] = exchange_universe_case[3]["date"]
+    with pytest.raises(repair.MetadataRepairError, match="INVENTORY_SOURCE_MISMATCH"):
+        universe_plan(exchange_universe_case, inventory=inventory)
+
+
+def test_inventory_raw_response_is_hash_bound_and_recomputed(exchange_universe_case):
+    import copy
+    value = universe_plan(exchange_universe_case)
+    assert value["exchange_inventory_evidence"] == inventory_for(exchange_universe_case)
+    changed = copy.deepcopy(value)
+    changed["exchange_inventory_evidence"]["response"].pop()
+    with pytest.raises(repair.MetadataRepairError, match="HASH_INVALID"):
+        fetch(changed)
+    changed = repair._sealed({k: v for k, v in changed.items() if k != "plan_sha256"}, "plan_sha256")
+    with pytest.raises(repair.MetadataRepairError, match="INVENTORY"):
+        fetch(changed)
+
+
+def test_inventory_source_contract_must_exist_in_full_response(exchange_universe_case):
+    inventory = inventory_for(exchange_universe_case)
+    inventory["response"][0]["order_book_id"] = "AG2702"
+    with pytest.raises(repair.MetadataRepairError):
+        universe_plan(exchange_universe_case, inventory=inventory)
+
+
+def test_cli_plan_accepts_inventory_and_universe_files(exchange_universe_case, tmp_path):
+    import io
+    import json
+    from app.guiyi_cli.main import main
+
+    db, targets, classified, universe = exchange_universe_case
+    files = {"targets": targets, "classification": classified, "exchange-universes": [universe],
+             "exchange-inventory-evidence": inventory_for(exchange_universe_case)}
+    args = ["data", "metadata-repair"]
+    for name, value in files.items():
+        path = tmp_path / (name + ".json")
+        path.write_text(json.dumps(value))
+        args += ["--" + name, str(path)]
+    output = io.StringIO()
+    assert main(args, session_factory=lambda: Session(db), stdout=output) == 0
+    value = json.loads(output.getvalue())
+    assert value["exchange_inventory_evidence"] == files["exchange-inventory-evidence"]
+    assert len(value["requests"]) == 2

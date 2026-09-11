@@ -1,0 +1,50 @@
+{
+  "records": 190,
+  "rollup_rows": 125,
+  "rollups_match": true,
+  "detail_formulas_match": true,
+  "recalculation_verified": true,
+  "error_scan": "{\"kind\":\"notice\",\"message\":\"Cell search matched 0 entries.\"}",
+  "sections": [
+    {
+      "name": "当日已存49条预警表现（不代表全天信号覆盖）",
+      "first": 8,
+      "last": 11
+    },
+    {
+      "name": "本周当前可重算子集（缺数据单列，不与昨日全样本直接比较）",
+      "first": 15,
+      "last": 18
+    },
+    {
+      "name": "当日多空表现",
+      "first": 22,
+      "last": 26
+    },
+    {
+      "name": "当日品种表现",
+      "first": 30,
+      "last": 67
+    },
+    {
+      "name": "本周品种：当前可重算子集",
+      "first": 71,
+      "last": 126
+    },
+    {
+      "name": "按交易日比较",
+      "first": 130,
+      "last": 141
+    },
+    {
+      "name": "本周多空表现",
+      "first": 145,
+      "last": 151
+    },
+    {
+      "name": "当日新增与此前已有",
+      "first": 155,
+      "last": 161
+    }
+  ]
+}

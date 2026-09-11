@@ -76,7 +76,7 @@ class _Manager:
         self.metadata = _Metadata()
         self.catalog = _Catalog(trading_day)
 
-    def update(self, request, *, before_apply=None):
+    def update(self, request, *, before_apply=None, observer=None):
         if before_apply is not None:
             before_apply()
         self.calls.append(request)
@@ -154,13 +154,18 @@ class _RecordingTransport:
         return ProviderAcceptance("provider-reference-must-not-persist")
 
 
-def _result(status: str, *, stop_reason: str | None = None) -> MaintenanceResult:
+def _result(
+    status: str,
+    *,
+    stop_reason: str | None = None,
+    applied: int = 0,
+) -> MaintenanceResult:
     return MaintenanceResult(
         action="update",
         status=status,
         through=date(2026, 8, 10),
         planned=0,
-        applied=0,
+        applied=applied,
         blocked=0,
         failed=0,
         provider_requests=0,
@@ -462,6 +467,49 @@ def test_uses_calendar_metadata_day_before_current_session_sync(tmp_path) -> Non
     assert notices == []
 
 
+@pytest.mark.parametrize(
+    "calendar_error_code",
+    ("TRADING_CALENDAR_MISSING", "TRADING_CALENDAR_CONFLICT"),
+)
+def test_calendar_classification_failure_finishes_without_provider_work(
+    tmp_path, calendar_error_code: str,
+) -> None:
+    updater, manager, rqdata, sleeps, notices, live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 9),
+        readiness=[],
+        results=[],
+    )
+
+    def unknown_calendar(_products: tuple[str, ...]) -> date:
+        raise InfrastructureError(calendar_error_code)
+
+    manager.coverage.latest_metadata_day = unknown_calendar
+
+    result = updater.run()
+    status = _status(tmp_path / "after-market-status.json")
+
+    assert result == AfterMarketResult(
+        status="failed",
+        trading_day=date(2026, 8, 10),
+        attempts=0,
+        error_code=calendar_error_code,
+    )
+    assert status["current_run"] is None
+    assert status["last_run"]["status"] == "failed"
+    assert status["last_failure"] == {
+        "trading_day": "2026-08-10",
+        "error_code": calendar_error_code,
+    }
+    assert public_after_market_status(status)["last_run"]["attempts"] == 0
+    assert rqdata.calls == []
+    assert manager.calls == []
+    assert sleeps == []
+    assert _notice_error_codes(notices) == [calendar_error_code]
+    assert live_store.published == []
+    assert live_store.cleaned == []
+
+
 def test_updates_once_when_first_attempt_is_ready(tmp_path) -> None:
     updater, manager, rqdata, sleeps, notices, _live_store = _updater(
         tmp_path,
@@ -484,7 +532,7 @@ def test_updates_once_when_first_attempt_is_ready(tmp_path) -> None:
     assert notices == []
 
 
-def test_schema_v2_persists_current_run_before_business_attempt_and_clears_on_finish(
+def test_schema_v3_persists_current_run_before_business_attempt_and_clears_on_finish(
     tmp_path,
 ) -> None:
     status_path = tmp_path / "after-market-status.json"
@@ -507,11 +555,21 @@ def test_schema_v2_persists_current_run_before_business_attempt_and_clears_on_fi
 
     assert observed == [
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "current_run": {
                 "scheduled_date": "2026-08-10",
                 "started_at": "2026-08-10T17:00:00+08:00",
                 "products": list(_ACTIVE_PRODUCTS),
+                "attempt": 0,
+                "stage": "calendar",
+                "updated_at": "2026-08-10T17:00:00+08:00",
+                "current_partition": None,
+                "current_symbol": None,
+                "stage_started_at": "2026-08-10T17:00:00+08:00",
+                "elapsed_seconds": 0.0,
+                "counters": {},
+                "stage_durations": {},
+                "retry_at": None,
             },
             "last_run": None,
             "last_successful_trading_day": None,
@@ -519,7 +577,7 @@ def test_schema_v2_persists_current_run_before_business_attempt_and_clears_on_fi
         }
     ]
     finalized = _status(status_path)
-    assert finalized["schema_version"] == 2
+    assert finalized["schema_version"] == 3
     assert finalized["current_run"] is None
     assert finalized["last_run"]["status"] == "passed"
 
@@ -601,7 +659,7 @@ def test_every_status_write_uses_same_directory_atomic_replace(
 
     updater.run()
 
-    assert len(replacements) == 2
+    assert len(replacements) >= 2
     assert all(
         os.fspath(target) == os.fspath(status_path) for _, target in replacements
     )
@@ -793,7 +851,7 @@ def test_update_exception_logs_only_sanitized_stage_diagnostics(
         results=[],
     )
 
-    def fail_update(_request, *, before_apply=None):
+    def fail_update(_request, *, before_apply=None, observer=None):
         raise RuntimeError("credential-secret-provider-message")
 
     manager.update = fail_update
@@ -821,7 +879,7 @@ def test_next_trading_session_not_ready_is_retried_with_stable_public_code(
         results=[],
     )
 
-    def fail_update(_request, *, before_apply=None):
+    def fail_update(_request, *, before_apply=None, observer=None):
         raise InfrastructureError("NEXT_TRADING_SESSION_NOT_READY")
 
     manager.update = fail_update
@@ -893,6 +951,68 @@ def test_preserves_whitelisted_maintenance_stop_code_on_final_failure(tmp_path) 
         "error_code": "PROVIDER_QUOTA_EXHAUSTED",
     }
     assert _notice_error_codes(notices) == ["PROVIDER_QUOTA_EXHAUSTED"]
+
+
+def test_partial_update_with_committed_partition_is_never_recorded_as_passed(
+    tmp_path,
+) -> None:
+    updater, _manager, _rqdata, sleeps, notices, live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[
+            _result(
+                "partial",
+                stop_reason="provider_quota_exhausted",
+                applied=1,
+            )
+        ],
+    )
+
+    result = updater.run()
+    status = public_after_market_status(
+        _status(tmp_path / "after-market-status.json")
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "PROVIDER_QUOTA_EXHAUSTED"
+    assert status["last_run"]["status"] == "failed"
+    assert status["last_successful_trading_day"] is None
+    assert sleeps == []
+    assert _notice_error_codes(notices) == ["PROVIDER_QUOTA_EXHAUSTED"]
+    assert live_store.published == []
+    assert live_store.cleaned == []
+
+
+def test_process_interruption_preserves_unfinished_current_run(tmp_path) -> None:
+    class SimulatedProcessInterruption(BaseException):
+        pass
+
+    updater, manager, _rqdata, sleeps, notices, live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[],
+    )
+
+    def interrupt(_request, *, before_apply=None, observer=None):
+        raise SimulatedProcessInterruption
+
+    manager.update = interrupt
+
+    with pytest.raises(SimulatedProcessInterruption):
+        updater.run()
+
+    status = public_after_market_status(
+        _status(tmp_path / "after-market-status.json")
+    )
+    assert status["current_run"]["attempt"] == 1
+    assert status["current_run"]["stage"] == "rqdata_readiness"
+    assert status["last_run"] is None
+    assert sleeps == []
+    assert notices == []
+    assert live_store.published == []
+    assert live_store.cleaned == []
 
 
 def test_success_clears_previous_last_failure(tmp_path) -> None:
@@ -1094,10 +1214,246 @@ def test_public_status_rejects_boolean_attempt_count() -> None:
     assert payload == {}
 
 
-def test_public_status_rejects_removed_schema_v3() -> None:
+def test_public_status_rejects_zero_attempt_post_apply_failure() -> None:
     payload = public_after_market_status(
         {
             "schema_version": 3,
+            "current_run": None,
+            "last_run": {
+                "trading_day": "2026-08-10",
+                "status": "failed",
+                "attempts": 0,
+                "started_at": "2026-08-10T17:00:00+08:00",
+                "finished_at": "2026-08-10T17:05:00+08:00",
+                "products": list(_ACTIVE_PRODUCTS),
+                "error_code": "COMMIT_OUTCOME_UNKNOWN",
+                "failure_notification": None,
+            },
+            "last_successful_trading_day": None,
+            "last_failure": {
+                "trading_day": "2026-08-10",
+                "error_code": "COMMIT_OUTCOME_UNKNOWN",
+            },
+        }
+    )
+
+    assert payload == {}
+
+
+def test_public_status_rejects_zero_attempt_failure_from_legacy_schema() -> None:
+    payload = public_after_market_status(
+        {
+            "schema_version": 2,
+            "current_run": None,
+            "last_run": {
+                "trading_day": "2026-08-10",
+                "status": "failed",
+                "attempts": 0,
+                "started_at": "2026-08-10T17:00:00+08:00",
+                "finished_at": "2026-08-10T17:05:00+08:00",
+                "products": list(_ACTIVE_PRODUCTS),
+                "error_code": "UPDATE_FAILED",
+                "failure_notification": None,
+            },
+            "last_successful_trading_day": None,
+            "last_failure": {
+                "trading_day": "2026-08-10",
+                "error_code": "UPDATE_FAILED",
+            },
+        }
+    )
+
+    assert payload == {}
+
+
+def test_daily_progress_persists_stage_changes_throttles_counts_and_omits_unknown_total(tmp_path, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="app.market_data.after_market")
+    from app.market_data.historical_data_manager import MaintenanceProgressEvent
+    updater, manager, *_ = _updater(tmp_path, trading_day=date(2026, 8, 10),
+                                   readiness=[True], results=[])
+    snapshots = []
+    ticks = [0.0]
+    updater.monotonic = lambda: ticks[0]
+
+    def update(request, *, before_apply=None, observer=None):
+        assert request.mode == "daily"
+        assert observer is not None
+        for phase, state, count, elapsed, tick in [
+            ("reading", "started", 0, 0., 0.),
+            ("reading", "completed", 1, .2, 1.),
+            ("reading", "completed", 2, .3, 5.),
+            ("publishing", "completed", 1, .4, 5.1),
+        ]:
+            ticks[0] = tick
+            observer(MaintenanceProgressEvent(phase, state, "au", ("continuous", "au", "MAIN", "1m"),
+                                              2026, 8, count, None, elapsed))
+            snapshots.append(_status(updater.status_path)["current_run"])
+        return _result("passed")
+
+    manager.update = update
+    assert updater.run().status == "passed"
+    assert snapshots[0]["stage"] == "reading"
+    assert snapshots[1]["counters"]["reading"] == {"completed": 0}
+    assert snapshots[2]["counters"]["reading"] == {"completed": 2}
+    assert snapshots[3]["stage"] == "publishing"
+    assert snapshots[3]["stage_durations"]["reading"] == .5
+    assert snapshots[3]["attempt"] == 1
+    assert public_after_market_status({"schema_version": 3, "current_run": snapshots[3]})
+    progress = [record.diagnostic_fields["progress"] for record in caplog.records
+                if record.msg == "AFTER_MARKET_PROGRESS"]
+    reading = [item for item in progress if item["stage"] == "reading"]
+    assert reading == [snapshots[0], snapshots[2]]
+    assert next(item for item in progress if item["stage"] == "publishing") == snapshots[3]
+
+
+def test_progress_persistence_failure_stops_before_live_and_notification(tmp_path, monkeypatch):
+    from app.market_data import after_market
+    from app.market_data.historical_data_manager import MaintenanceProgressEvent
+    updater, manager, _, sleeps, notices, live = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True], results=[])
+    real_write = after_market._atomic_write_status
+
+    def write(path, payload):
+        if (payload.get("current_run") or {}).get("stage") == "publishing":
+            raise OSError("private path")
+        real_write(path, payload)
+
+    monkeypatch.setattr(after_market, "_atomic_write_status", write)
+
+    def update(request, *, before_apply=None, observer=None):
+        observer(MaintenanceProgressEvent("publishing", "started", "au", None,
+                                          None, None, 0, None, 0.))
+        pytest.fail("must stop at progress persistence failure")
+
+    manager.update = update
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE") as failure:
+        updater.run()
+    from app.guiyi_cli.output import exception_error_payload
+    assert exception_error_payload(command="data.after-market", exc=failure.value)["error"]["code"] == "AFTER_MARKET_PROGRESS_UNAVAILABLE"
+    assert not sleeps and not notices and not live.published and not live.cleaned
+    assert _status(updater.status_path)["current_run"] is not None
+
+
+@pytest.mark.parametrize("failure_stage", ["initial", "intermediate", "terminal"])
+def test_status_persistence_failure_is_not_healthy_to_independent_consumer(tmp_path, monkeypatch, failure_stage):
+    from app.market_data import after_market
+    from app.market_data.operational_universe import load_operational_products
+    from app.market_data.session_clock import SHANGHAI
+    from app.services import runtime_health
+    updater, manager, _, sleeps, notices, _ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True], results=[_result("passed")])
+    updater._write_current_run(datetime(2026, 8, 10, 16, 0, tzinfo=SHANGHAI), load_operational_products())
+    updater._write_status(AfterMarketResult("passed", date(2026, 8, 10), 1, None),
+                          datetime(2026, 8, 10, 16, 0, tzinfo=SHANGHAI), load_operational_products())
+    monkeypatch.setattr(runtime_health, "_expected_after_market_day", lambda *a, **k: (date(2026, 8, 10), True))
+    def health():
+        component = runtime_health._collect_after_market_health(None, now=datetime(2026, 8, 10, 18, 0, tzinfo=SHANGHAI),
+            configured_enabled=True, status_path=updater.status_path)
+        return component, runtime_health._overall_status([{"status": "ok"}, component])
+    assert health()[1] == "ok"
+    real_write = after_market._atomic_write_status
+    def write(path, payload):
+        current = payload.get("current_run")
+        fail = ((failure_stage == "initial" and current and current["stage"] == "calendar")
+                or (failure_stage == "intermediate" and current and current["stage"] == "rqdata_readiness")
+                or (failure_stage == "terminal" and current is None))
+        if fail:
+            raise OSError("private status detail")
+        real_write(path, payload)
+    monkeypatch.setattr(after_market, "_atomic_write_status", write)
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE"):
+        updater.run()
+    component, overall = health()
+    assert overall != "ok"
+    assert component["run_state"] != "completed"
+    assert not sleeps and not notices
+    if failure_stage == "initial":
+        assert not manager.coverage.metadata_day_calls
+
+
+@pytest.mark.parametrize("unsafe", ["symlink", "parent_symlink", "fifo", "hardlink"])
+def test_status_invalidation_rejects_unsafe_path_before_start(tmp_path, unsafe):
+    import os
+    updater, manager, *_ = _updater(tmp_path, trading_day=date(2026, 8, 10), readiness=[], results=[])
+    target = tmp_path / "untouched"
+    target.write_text("must remain unchanged")
+    if unsafe == "symlink":
+        updater.status_path.symlink_to(target)
+    elif unsafe == "parent_symlink":
+        actual = tmp_path / "actual"
+        actual.mkdir()
+        linked = tmp_path / "linked"
+        linked.symlink_to(actual, target_is_directory=True)
+        updater.status_path = linked / "status.json"
+    elif unsafe == "fifo":
+        os.mkfifo(updater.status_path)
+    else:
+        os.link(target, updater.status_path)
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE"):
+        updater.run()
+    assert target.read_text() == "must remain unchanged"
+    assert not manager.coverage.metadata_day_calls
+
+
+def test_failed_invalidation_rejects_start_without_claiming_a_new_run(tmp_path, monkeypatch):
+    from app.market_data import after_market
+    updater, manager, rqdata, sleeps, notices, _ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[], results=[])
+    updater.status_path.write_text('{"previous":"unchanged"}')
+    monkeypatch.setattr(after_market.os, "ftruncate", lambda *args: (_ for _ in ()).throw(OSError("private")))
+    with pytest.raises(RuntimeError, match="AFTER_MARKET_PROGRESS_UNAVAILABLE"):
+        updater.run()
+    assert updater._current == {}
+    assert updater.status_path.read_text() == '{"previous":"unchanged"}'
+    assert not manager.coverage.metadata_day_calls and not rqdata.calls and not sleeps and not notices
+
+
+def test_v3_health_uses_last_progress_and_rejects_future_updates(tmp_path, monkeypatch):
+    from app.services import runtime_health
+    from datetime import timedelta
+    updater, *_ = _updater(tmp_path, trading_day=date(2026, 8, 10), readiness=[], results=[])
+    start = datetime.fromisoformat("2026-08-10T17:00:00+08:00")
+    updater._write_current_run(start, _ACTIVE_PRODUCTS)
+    monkeypatch.setattr(runtime_health, "_expected_after_market_day", lambda *a, **k: (start.date(), True))
+    payload = _status(updater.status_path)
+    payload["current_run"]["updated_at"] = (start + timedelta(hours=3)).isoformat()
+    updater.status_path.write_text(json.dumps(payload))
+    def read(at):
+        return runtime_health._collect_after_market_health(None, updater.status_path, now=at, configured_enabled=True)
+    assert read(start + timedelta(hours=3, minutes=1))["run_state"] == "running"
+    assert read(start + timedelta(hours=2))["run_state"] == "degraded"
+    assert read(start + timedelta(hours=6))["run_state"] == "stuck"
+
+
+def test_logging_failure_cannot_change_business_failure_or_retry(tmp_path, monkeypatch):
+    from app.market_data import after_market
+    updater, _, _, sleeps, notices, _ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True],
+        results=[_result("failed", stop_reason="PROVIDER_QUOTA_EXHAUSTED")])
+    monkeypatch.setattr(after_market._LOGGER, "warning", lambda *a, **k: (_ for _ in ()).throw(OSError("private")))
+    monkeypatch.setattr(after_market._LOGGER, "info", lambda *a, **k: (_ for _ in ()).throw(OSError("private")))
+    assert updater.run().error_code == "PROVIDER_QUOTA_EXHAUSTED"
+    assert not sleeps and len(notices) == 1
+
+
+@pytest.mark.parametrize("failure_type", [ValueError, InfrastructureError])
+def test_missing_daily_baseline_is_explicit_history_maintenance_required(tmp_path, failure_type):
+    updater, manager, _, sleeps, notices, live = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True], results=[])
+    def update(request, **kwargs):
+        raise failure_type("HISTORICAL_MAINTENANCE_REQUIRED")
+    manager.update = update
+    result = updater.run()
+    assert result.error_code == "HISTORICAL_MAINTENANCE_REQUIRED"
+    assert public_after_market_status(_status(updater.status_path))["last_failure"]["error_code"] == result.error_code
+    assert not sleeps and not live.cleaned and len(notices) == 1
+
+
+def test_public_status_rejects_unknown_schema_v5() -> None:
+    payload = public_after_market_status(
+        {
+            "schema_version": 5,
             "current_run": None,
             "last_run": {
                 "trading_day": "2026-08-10",

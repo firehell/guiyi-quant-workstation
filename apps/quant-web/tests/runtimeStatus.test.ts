@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+test('interrupted closeout is not displayed as completed maintenance', async () => {
+  const { runtimeStatusPresentation } = await import('../src/utils/runtimePresentation.ts')
+  const payload = runtimeHealth()
+  Object.assign(payload.components.after_market, {
+    status: 'degraded', run_state: 'interrupted', current_run: null,
+    last_run: { status: 'interrupted', attempts: null, finished_at: '2026-09-10T00:00:00Z' },
+  })
+  const item = runtimeStatusPresentation(payload).find(item => item.key === 'after_market')!
+  assert.equal(item.state, '运行已中断')
+  assert.match(item.timestamp, /收尾/)
+  assert.doesNotMatch(item.timestamp, /完成/)
+  assert.match(item.detail, /未证明更新完成.*次数未知/)
+  assert.equal(item.tone, 'warning')
+})
+
 function runtimeHealth(overrides: Record<string, unknown> = {}) {
   return {
     status: 'degraded',
@@ -39,6 +54,40 @@ function runtimeHealth(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+test('after-market v3 displays attempt, phase and operation counts without a fabricated percentage', async () => {
+  const { runtimeStatusPresentation } = await import('../src/utils/runtimePresentation.ts')
+  const payload = runtimeHealth()
+  Object.assign(payload.components.after_market.current_run, {
+    attempt: 2, stage: 'reading', current_symbol: 'au',
+    updated_at: '2026-08-24T10:14:00+00:00',
+    current_partition: { dataset: ['contract', 'au', 'AU2612', '1m'], year: 2026, month: 8 },
+    elapsed_seconds: 64.2,
+    counters: { reading: { completed: 7 }, publishing: { completed: 2 } },
+  })
+  const item = runtimeStatusPresentation(payload).find(item => item.key === 'after_market')!
+  assert.match(item.detail, /第 2 次.*读取.*au.*7 次/)
+  assert.doesNotMatch(item.detail, /%|分区已完成/)
+  assert.match(item.timestamp, /更新 2026-08-24 18:14/)
+  assert.match(item.detail, /contract\/AU2612.*1m.*2026-08/)
+  assert.match(item.detail, /累计 64.2 秒/)
+  assert.match(item.detail, /已提交发布 2 次操作/)
+  payload.components.after_market.run_state = 'running'
+  assert.match(runtimeStatusPresentation(payload).find(item => item.key === 'after_market')!.detail, /运行结果待确认/)
+})
+
+test('optional weekly history audit shows unknown and the audited cutoff independently', async () => {
+  const { runtimeStatusPresentation } = await import('../src/utils/runtimePresentation.ts')
+  const payload = runtimeHealth()
+  payload.components.weekly_audit = { status: 'not_run', through: null, finding_count: null,
+    updated_at: null, readonly: true, scope: 'operational_full_history' }
+  assert.equal(runtimeStatusPresentation(payload).at(-1)!.state, '尚未审计')
+  Object.assign(payload.components.weekly_audit, { status: 'passed', through: '2026-08-21', finding_count: 0 })
+  const audit = runtimeStatusPresentation(payload).at(-1)!
+  assert.equal(audit.state, '审计通过')
+  assert.match(audit.detail, /全历史.*2026-08-21/)
+  assert.doesNotMatch(audit.detail, /实时正常|今日完整/)
+})
 
 test('runtime presentation distinguishes accepted, unobserved, failed, running, missed and stuck states', async () => {
   const module = await import('../src/utils/runtimePresentation.ts').catch(() => null)

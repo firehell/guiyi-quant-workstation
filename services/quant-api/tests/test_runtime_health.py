@@ -17,6 +17,29 @@ from app.alerts.runtime import empty_alert_runtime_status
 from app.services.runtime_health import build_runtime_health
 
 
+def test_runtime_api_preserves_v3_progress_and_weekly_audit_fields(monkeypatch):
+    from fastapi import FastAPI
+    from app.api.runtime import router
+    api = FastAPI()
+    api.include_router(router)
+    api.dependency_overrides[get_db] = lambda: None
+    progress = {"scheduled_date": "2026-09-09", "started_at": "2026-09-09T18:05:00+08:00",
+        "products": ["au"], "stage": "reading", "attempt": 1,
+        "updated_at": "2026-09-09T18:06:00+08:00", "stage_started_at": "2026-09-09T18:05:20+08:00",
+        "elapsed_seconds": 60.0, "current_symbol": "au", "current_partition": None,
+        "counters": {"reading": {"completed": 7}}, "stage_durations": {"reading": 1.0}, "retry_at": None}
+    weekly = {"status": "not_run", "readonly": True, "scope": "operational_full_history", "through": None}
+    monkeypatch.setattr("app.api.runtime.build_runtime_health", lambda _: {
+        "status": "ok", "generated_at": "2026-09-09T18:06:00+08:00", "components": {
+            "db": {"status": "ok"}, "redis": {"status": "ok"}, "live_market": {"status": "ok"},
+            "after_market": {"status": "pending", "current_run": progress}, "weekly_audit": weekly,
+            "alert": {"status": "disabled", "notification": {"transport": "pushplus"}}}})
+    payload = TestClient(api).get("/api/runtime/health").json()
+    assert payload["components"]["after_market"]["current_run"] == progress
+    assert payload["components"]["weekly_audit"]["status"] == "not_run"
+    assert payload["components"]["weekly_audit"]["scope"] == "operational_full_history"
+
+
 def test_runtime_health_endpoint_exposes_market_runtime_components(
     monkeypatch, tmp_path
 ) -> None:
@@ -66,6 +89,7 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(
         "redis",
         "live_market",
         "after_market",
+        "weekly_audit",
         "alert",
     }
     assert payload["components"]["live_market"] == {
@@ -1224,7 +1248,7 @@ def test_after_market_stale_success_is_degraded_missed(monkeypatch, tmp_path) ->
             "2026-08-24T18:05:00+08:00",
             datetime(2026, 8, 24, 11, 0, tzinfo=UTC),
             "running",
-            "pending",
+            "degraded",
             None,
         ),
         (
@@ -1303,6 +1327,7 @@ def test_after_market_current_run_age_is_fail_closed(
     assert after_market["status"] == status
     assert after_market["run_state"] == run_state
     assert after_market["error_type"] == error_type
+    assert payload["status"] != "ok"
     assert after_market["current_run"] == (
         None
         if started_at == "invalid"
