@@ -99,7 +99,11 @@ full maintenance, bootstrap historical metadata, send a notification or synchron
 Without `--apply`, the command MUST validate the Runtime binding, perform only the existing daily read plan, construct
 no provider client/request and mutate no DB, Canonical, status, projection or Redis fact. It SHALL return the canonical
 target windows and `plan_sha256 = SHA256(UTF8(json.dumps(target_windows, sort_keys=True,
-separators=(",", ":"), ensure_ascii=False)))`. A dry-run MUST reject `--expected-plan-sha256`.
+separators=(",", ":"), ensure_ascii=False)))`. Each bounded target window MUST include dataset/year/month, inspectable
+expected and missing endpoints/counts, plus `expected_bar_ends_sha256` and `missing_bar_ends_sha256`. Each per-set hash
+MUST cover the complete sorted UTC ISO timestamp sequence using the same compact UTF-8 JSON encoding, so any internal
+expected or missing timestamp drift changes the outer plan hash even when endpoints and counts remain equal. A dry-run
+MUST reject `--expected-plan-sha256`.
 
 `--apply` MUST require the exact lowercase dry-run `--expected-plan-sha256`. It MUST acquire the shared maintenance
 lease before revalidating Runtime identity, pinned status and both Live/Alert heartbeats and recomputing the complete
@@ -124,6 +128,10 @@ provider-free apply 与 commit-unknown 合同由 `data-foundation-metadata` cano
 #### Scenario: Runtime or target identity drifts before apply
 - **WHEN** any pinned Runtime fact or recomputed target-window hash differs while the maintenance lease is held
 - **THEN** daily recovery fails closed before projection invalidation, provider access and data publication
+
+#### Scenario: An internal bar end drifts without changing target endpoints or count
+- **WHEN** a recomputed target has different expected or missing bar ends but the same dataset, month, first/last bar and count
+- **THEN** its per-set identity and outer plan hash differ, and apply stops before projection invalidation or provider/write work
 
 #### Scenario: One source attempt partially commits
 - **WHEN** one provider target fails after earlier targets committed through the formal publication path

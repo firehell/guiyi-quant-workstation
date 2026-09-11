@@ -118,9 +118,12 @@ guiyi data daily-recovery \
 它不接受 `--symbol/--universe/--since`，品种只取已验证 Runtime binding 的 operational P60；固定构造
 `since=None`、`mode=daily`、`sync_current_day_metadata=false`。默认 dry-run 不初始化 provider client，
 不发 provider 请求，也不写 DB、Canonical、status、projection 或 Redis；返回 canonical target windows，
-并按紧凑、键排序、UTF-8、`ensure_ascii=false` 的 target-windows JSON 计算 SHA-256。apply 必须提供同一
-lowercase plan hash，并在 maintenance lease 内重新核验 root/commit/status、依赖、Live/Alert heartbeat 与
-完整窗口 hash；漂移或锁冲突均在 projection invalidation 和 provider/写入前阻断。校验 hash 的冻结目标对象
+每个窗口除 dataset/year/month 和 expected/missing 起止及数量外，还携带完整排序 UTC ISO 时间戳序列的
+`expected_bar_ends_sha256`、`missing_bar_ends_sha256`。两个内层 hash 与外层 target-windows hash 都使用紧凑、
+键排序、UTF-8、`ensure_ascii=false` JSON；因此即使端点和数量相同，任一内部 expected/missing 时间戳漂移也会
+改变 plan hash，同时每个公开 target 仍保持常数大小。apply 必须提供同一 lowercase plan hash，并在
+maintenance lease 内重新核验 root/commit/status、依赖、Live/Alert heartbeat 与完整窗口 hash；漂移或锁冲突均
+在 projection invalidation 和 provider/写入前阻断。校验 hash 的冻结目标对象
 就是执行器消费的唯一计划，不能在失效 projection 后二次动态规划。RQData 配置只从已 pin 的目标 Runtime
 `project.env` 解析，并在锁内两次 binding check 中核对已组装的 lazy adapter；通过后才可创建 provider client，
 不得回退到执行 checkout 或 ambient provider 配置。随后只运行一次既有 daily manager 路径，不同步当天

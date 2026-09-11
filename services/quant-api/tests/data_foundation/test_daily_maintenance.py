@@ -47,6 +47,98 @@ def test_daily_recovery_plan_hash_uses_only_canonical_target_windows() -> None:
     )
 
 
+@pytest.mark.parametrize("drift_field", ("expected", "missing"))
+def test_daily_recovery_cas_binds_every_internal_target_timestamp(
+    daily_manager, monkeypatch, drift_field
+) -> None:
+    first = datetime(2026, 9, 1, 7, tzinfo=UTC)
+    approved_middle = datetime(2026, 9, 2, 7, tzinfo=UTC)
+    changed_middle = datetime(2026, 9, 3, 7, tzinfo=UTC)
+    last = datetime(2026, 9, 4, 7, tzinfo=UTC)
+    key = DatasetKey(DatasetKind.CONTINUOUS, "jm", "MAIN", BarFrequency.D1)
+    approved = historical._Target(
+        key=key,
+        year=2026,
+        month=9,
+        expected=(first, approved_middle, last),
+        missing=(first, approved_middle, last),
+        existing=(),
+    )
+    changed = historical._Target(
+        key=key,
+        year=2026,
+        month=9,
+        expected=(
+            (first, changed_middle, last)
+            if drift_field == "expected"
+            else approved.expected
+        ),
+        missing=(
+            (first, changed_middle, last)
+            if drift_field == "missing"
+            else approved.missing
+        ),
+        existing=(),
+    )
+    approved_windows = (historical._target_payload(approved),)
+    changed_windows = (historical._target_payload(changed),)
+
+    for field in (
+        "dataset",
+        "year",
+        "month",
+        "expected_start",
+        "expected_end",
+        "expected_bar_count",
+        "window_start",
+        "window_end",
+        "missing_bar_count",
+    ):
+        assert approved_windows[0][field] == changed_windows[0][field]
+    assert approved_windows != changed_windows
+    changed_identity = f"{drift_field}_bar_ends_sha256"
+    stable_identity = (
+        "missing_bar_ends_sha256"
+        if drift_field == "expected"
+        else "expected_bar_ends_sha256"
+    )
+    assert approved_windows[0][changed_identity] != changed_windows[0][changed_identity]
+    assert approved_windows[0][stable_identity] == changed_windows[0][stable_identity]
+    approved_sha256 = historical._daily_recovery_plan_sha256(approved_windows)
+    assert approved_sha256 != historical._daily_recovery_plan_sha256(changed_windows)
+
+    effects: list[str] = []
+    manager = daily_manager
+    monkeypatch.setattr(
+        manager,
+        "_plan_daily_recovery",
+        lambda *_args: SimpleNamespace(target_windows=changed_windows),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_execute_daily_recovery_plan",
+        lambda *_args, **_kwargs: effects.append("provider/write"),
+    )
+
+    with pytest.raises(ValueError, match="DAILY_RECOVERY_PLAN_CHANGED"):
+        manager.daily_recovery(
+            UpdateRequest(
+                ("jm",),
+                None,
+                date(2026, 9, 4),
+                apply=True,
+                sync_current_day_metadata=False,
+                mode="daily",
+            ),
+            expected_plan_sha256=approved_sha256,
+            verify_identity=lambda: effects.append("verify"),
+            before_apply=lambda: effects.append("invalidate"),
+        )
+
+    assert effects == ["verify"]
+    assert manager.provider.calls == []
+
+
 @pytest.fixture
 def daily_manager(session, tmp_path):  # noqa: F811
     starts = tmp_path / "starts.csv"
