@@ -202,6 +202,7 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
   services/quant-api/tests/data_foundation/test_daily_maintenance.py \
   services/quant-api/tests/data_foundation/test_after_market.py \
   services/quant-api/tests/data_foundation/test_weekly_audit.py \
+  services/quant-api/tests/data_foundation/test_weekly_audit_ownership.py \
   services/quant-api/tests/data_foundation/test_cli.py \
   services/quant-api/tests/data_foundation/test_market_home_projection_after_market.py \
   services/quant-api/tests/data_foundation/test_runtime_promotion.py \
@@ -229,6 +230,10 @@ GUIYI_ISOLATED_PUBLICATION_DATABASE_URL='postgresql+psycopg://USER@127.0.0.1:154
   services/quant-api/tests/data_foundation/test_daily_maintenance_postgresql.py \
   services/quant-api/tests/data_foundation/test_weekly_audit_postgresql.py
 ```
+
+周检状态归属测试使用 Pipe 屏障控制真实跨进程 A/B 交错，覆盖取维护锁前、审计中、终态发布及 lease 释放；
+验证竞争者不覆盖、旧成功被新独占 busy/failed 替换、进程中断/退出、guard 和状态写入故障，以及可选 health 不改变 overall。
+它只创建临时状态/锁文件，不安装或启动实际周检服务。
 
 这些工程验证不证明每周调度已安装、真实全历史无 finding、盘后自然运行耗时、release 或 Runtime promotion。
 实际安装语法和前置 Gate 仅见 `deploy/README.md`。

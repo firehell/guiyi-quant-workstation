@@ -253,12 +253,22 @@ as success. Any unhandled after-market execution exception at the CLI or supervi
 ### Requirement: Weekly operational full-history audit remains optional and read-only
 
 The weekly adapter MUST select the exact ordered `operational_products.txt` scope with identity
-`operational_full_history`, atomically persist running before acquiring the shared maintenance lock, and open a
-fresh read-only transaction only after the nonblocking lock succeeds. Busy MUST become `skipped_busy`; no status
+`operational_full_history`, acquire a nonblocking local writer guard for the status path, then atomically persist
+running before acquiring the shared maintenance lock, and open a fresh read-only transaction only after that lock
+succeeds. The writer guard MUST use a stable adjacent `.lock` inode, never the atomically replaced status inode;
+it MUST NOT be unlinked or replaced and MUST remain held through all status writes and maintenance lease cleanup.
+A competitor without status ownership MUST return `skipped_busy` only to its caller, without changing the owner's
+file or acquiring the maintenance lock. An exclusive attempt encountering a busy maintenance lock MUST persist
+its own `skipped_busy`; a maintenance-lock exception MUST persist sanitized `failed`, replacing any previous success.
+Unsafe or failed writer-guard setup MUST reject startup before establishing a run, without unlocked status writes
+or claiming that this attempt was persisted. Only guard acquisition contention MAY be classified as guard busy;
+audit or status-write exceptions MUST NOT be misclassified. Process interruption MUST retain the unfinished run,
+and process exit MUST release the writer guard. No status
 MAY cause wait, retry, provider access, metadata/data write, repair or notification. The audit MUST cover the
 existing full-history Calendar/Session, rank1, expected partition, Catalog pointer and physical integrity checks.
 
-Its latest-result file MUST bind exact Runtime root/40-hex commit, scope/products, timestamps, progress, findings,
+Its latest-result file represents the latest run established by a status owner, not every invocation. It MUST bind
+exact Runtime root/40-hex commit, scope/products, timestamps, progress, findings,
 `provider_requests=0` and `data_writes=0`. Health MUST map absence to `not_run`, unchanged running older than two
 hours to `stuck`, terminal older than eight days to `stale`, and malformed identity/scope/counts/chronology/counters
 to `invalid`. `passed` MUST require a resolved audited `through`, all products complete and zero findings. This
@@ -273,7 +283,17 @@ MUST NOT imply historical health, current freshness, release acceptance or Runti
 #### Scenario: Weekly audit conflicts with maintenance
 
 - **WHEN** the shared maintenance lock is busy
-- **THEN** the audit records `skipped_busy`, performs no database audit/provider/data write/notification, and exits without retry
+- **THEN** an audit holding status ownership records its own `skipped_busy`, performs no database audit/provider/data write/notification, and exits without retry
+
+#### Scenario: Concurrent weekly invocation cannot overwrite the owner
+
+- **WHEN** A owns the status path and B starts before A's maintenance acquisition, during audit, or during terminal publication/lease cleanup
+- **THEN** B returns `skipped_busy` without changing A's status bytes, timestamps or progress, and later health reads A's success, findings, failure or unfinished run
+
+#### Scenario: New exclusive attempt cannot reuse old success on lock failure
+
+- **WHEN** the previous run passed and a new status owner encounters a maintenance-lock exception
+- **THEN** the latest file and health report this attempt as failed with no previous cutoff or completed count, and no audit/provider/data work occurs
 
 ### Requirement: quota 中止和续传
 明确的 provider quota/limit 异常 SHALL 映射为 `PROVIDER_QUOTA_EXHAUSTED`；该轮 MUST 立即停止后续

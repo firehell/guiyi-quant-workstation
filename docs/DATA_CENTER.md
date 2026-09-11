@@ -312,11 +312,16 @@ Web 显示收尾而非完成；promotion 仍独立检查 phase/snapshot，不把
 ### 每周 operational 全历史只读审计
 
 `data.weekly-audit` 固定使用 `operational_products.txt` 的 `operational_full_history` scope，不借用可变的 active 研究范围。
-它复用 `HistoricalDataManager.audit`、八表 Catalog/metadata、Canonical reader 与既有 maintenance lock：先原子写 running，再非阻塞取锁，
-获锁后才打开 fresh read-only transaction。忙时记录 `skipped_busy`，不等待、抢占或重试；审计不调用 provider/
+它复用 `HistoricalDataManager.audit`、八表 Catalog/metadata、Canonical reader 与既有 maintenance lock：先非阻塞取得
+状态路径专属写入锁，再原子写 running、非阻塞获取 maintenance lock，获锁后才打开 fresh read-only transaction。
+写入锁使用状态文件旁固定的 `.lock` 文件，保持 inode，不删除或替换；一直持有到进度/终态写入和 maintenance lease
+释放完成。竞争者未取得写入权时只向调用方返回 `skipped_busy`，不改写持有者的状态、不获取 maintenance lock。
+独占的新尝试若遇到 maintenance lock 忙，持久化本次 `skipped_busy`；取锁异常则持久化脱敏的 `failed`，不沿用旧成功。
+写入锁无法安全建立时拒绝启动，不无锁改写状态或声称本次状态已持久化。中断仍保留未完成 running，进程退出释放锁。
+不等待、抢占或重试；审计不调用 provider/
 metadata writer/Redis，`provider_requests=0`、`data_writes=0`，只报告 finding，不修复、不通知。
 
-`.run/weekly-audit-status.json` 是单份原子替换的最新审计状态，不是 checkpoint 或 active data selector。
+`.run/weekly-audit-status.json` 是单份原子替换的、最近取得写入权并建立运行的审计状态，不是所有调用的尝试日志、checkpoint 或 active data selector。
 它绑定 exact Runtime root/40 位 commit、operational 顺序、scope 和 `through`；运行超过 2h 映射 `stuck`，终态超过 8 天映射
 `stale`，身份、计数、时序或只读计数不符合合同则映射 `invalid`，缺文件是 `not_run`。`passed` 必须有已审计 cutoff、全部品种完成且 finding 为零。
 Runtime health 先独立计算现有服务 overall，再附加可选 `components.weekly_audit`摘要；旧状态缺字段不得推导历史健康，

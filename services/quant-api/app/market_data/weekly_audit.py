@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+import fcntl
 import json
+import os
 from pathlib import Path
 import re
+import stat
 from typing import Any
 
 from app.db.readonly import readonly_transaction
@@ -25,6 +29,36 @@ _FINDING_CODES = frozenset(_AUDIT_METADATA_CATEGORIES) | {
     "CANONICAL_ROOT_ESCAPE", "EMPTY_PARTITION", "EXPECTED_BAR_END_INVALID", "TARGET_WINDOW_INCOMPLETE",
 }
 _CATEGORIES = {"partition", "physical", "main_contract_map", "metadata_session", "metadata_calendar", "metadata_window"}
+
+
+@contextmanager
+def _status_writer_guard(path: Path) -> Iterator[bool]:
+    """Own this status path until all writes and maintenance lease cleanup finish.
+
+    The sidecar inode is stable: never unlink it or lock the replaced JSON inode.
+    Only flock contention is busy; setup errors reject startup before any write.
+    """
+    descriptor = None
+    try:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor = os.open(path.with_name(path.name + ".lock"),
+                                 os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+            info = os.fstat(descriptor)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or info.st_nlink != 1 or info.st_mode & 0o022):
+                raise ValueError
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except BlockingIOError:
+                acquired = False
+        except (OSError, ValueError):
+            raise RuntimeError("WEEKLY_AUDIT_FAILED") from None
+        yield acquired
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def _identity_valid(identity: Mapping[str, object]) -> bool:
@@ -65,7 +99,7 @@ def run_weekly_audit(
     manager: HistoricalDataManager, *, status_path: Path, products: tuple[str, ...],
     identity: Mapping[str, object], now: Callable[[], datetime],
 ) -> dict[str, Any]:
-    """Acquire nonblocking shared lease before opening a fresh bounded read-only transaction."""
+    """Own status writes, then acquire the shared lease before a fresh read-only transaction."""
     if not _identity_valid(identity) or not products or len(set(products)) != len(products) or any(
         re.fullmatch(r"[a-z]{1,4}", symbol) is None for symbol in products
     ):
@@ -80,6 +114,18 @@ def run_weekly_audit(
         "through": None, "finding_count": 0, "findings": [], "error_code": None,
         "provider_requests": 0, "data_writes": 0,
     }
+    with _status_writer_guard(status_path) as owned:
+        if not owned:
+            # This invocation is observable only to its caller, not in the owner's file.
+            payload.update(status="skipped_busy", finished_at=started)
+            return payload
+        return _run_owned_audit(manager, status_path=status_path, products=products, now=now, payload=payload)
+
+
+def _run_owned_audit(
+    manager: HistoricalDataManager, *, status_path: Path, products: tuple[str, ...],
+    now: Callable[[], datetime], payload: dict[str, Any],
+) -> dict[str, Any]:
     # Status is a local diagnostic output; no Catalog, DB, provider, or data lake write.
     _atomic_write_status(status_path, payload)
     try:
@@ -90,7 +136,7 @@ def run_weekly_audit(
         _atomic_write_status(status_path, payload)
         return payload
     if lease is None:
-        payload.update(status="skipped_busy", finished_at=started)
+        payload.update(status="skipped_busy", finished_at=payload["started_at"])
         _atomic_write_status(status_path, payload)
         return payload
     try:
