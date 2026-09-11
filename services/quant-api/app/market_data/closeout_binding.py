@@ -262,6 +262,8 @@ class RuntimeDataBinding:
                 or self.settings["GUIYI_LIVE_RECOVERY_ENABLED"] != "1"):
             raise ValueError
         self.products = _products(root)
+        if interruption is not None and tuple(parsed["last_run"]["products"]) != self.products:
+            raise ValueError
 
     @staticmethod
     def _validate_status(status: bytes):
@@ -296,7 +298,7 @@ class RuntimeDataBinding:
             started = datetime.fromisoformat(interruption["started_at"])
             if started.utcoffset() is None:
                 raise ValueError
-            return parsed, started, interruption
+            return public, started, interruption
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             raise ValueError from None
 
@@ -327,6 +329,7 @@ class RuntimeDataBinding:
         if (interruption is None or last_run["started_at"] != current["started_at"]
                 or current.get("scheduled_date", last_run["trading_day"]) != last_run["trading_day"]
                 or current.get("products", last_run["products"]) != last_run["products"]
+                or tuple(last_run["products"]) != self.products
                 or current.get("attempt", last_run["attempts"]) != last_run["attempts"]):
             raise ValueError
         verify_closeout_identity(self.root, self.commit)

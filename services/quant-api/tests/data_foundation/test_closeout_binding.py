@@ -180,6 +180,56 @@ def test_fresh_binding_accepts_only_exact_schema_v5_terminal_authority(target, s
     assert binding.last_interruption == terminal["last_interruption"]
 
 
+@pytest.mark.parametrize("entrypoint", ["fresh", "rebind"])
+def test_terminal_binding_requires_runtime_operational_product_scope(target, entrypoint):
+    binding = target.create()
+    terminal = _terminal_status()
+    terminal["last_run"]["products"] = ["AG"]
+    terminal_sha256 = _write_status(target.status, terminal)
+
+    with pytest.raises(ValueError):
+        if entrypoint == "fresh":
+            target.module.RuntimeDataBinding(target.root, "a" * 40, terminal_sha256)
+        else:
+            binding.rebind_terminal_status(terminal_sha256)
+
+
+def test_closeout_writer_terminal_sha_rebinds_same_runtime_binding(target):
+    from app.market_data.after_market_closeout import close_interrupted_run
+    from app.market_data.historical_data_manager import MaintenanceResult
+
+    running = {
+        "schema_version": 2,
+        "current_run": {"scheduled_date": "2028-01-01", "started_at": "2028-01-01T00:00:00Z",
+            "products": ["au"]},
+        "last_run": None, "last_successful_trading_day": "2027-12-31", "last_failure": None,
+    }
+    running_sha256 = _write_status(target.status, running)
+    guard_dir = target.root / ".run/live-recovery-guards"
+    guard_dir.mkdir(mode=0o700)
+    (guard_dir / "after-market.lock").touch(mode=0o600)
+    binding = target.module.RuntimeDataBinding(target.root, "a" * 40, running_sha256)
+    events = []
+    with Session(create_engine("sqlite://")) as db:
+        manager = SimpleNamespace(
+            catalog=SimpleNamespace(session=db, product_partitions=lambda symbol: (),
+                main_map=lambda *args: [SimpleNamespace(contract="AU2901")],
+                acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: events.append("release"))),
+            audit=lambda request: MaintenanceResult("audit", "passed", request.through, 0, 0, 0, 0, 0),
+        )
+        result = close_interrupted_run(manager, root=target.root, expected_commit="a" * 40,
+            expected_status_sha256=running_sha256, products=binding.products,
+            live_store=SimpleNamespace(subscriptions=lambda day: {"au": "AU2901"}),
+            now=lambda: datetime(2029, 1, 1, tzinfo=UTC), apply=True,
+            verify_identity=lambda *args: None)
+
+    assert result["status"] == "closed_interrupted"
+    assert result["terminal_status_sha256"] == hashlib.sha256(target.status.read_bytes()).hexdigest()
+    binding.rebind_terminal_status(result["terminal_status_sha256"])
+    assert binding.last_interruption == json.loads(target.status.read_bytes())["last_interruption"]
+    assert events == ["release"]
+
+
 def test_binding_accepts_known_inert_legacy_settings_without_exposing_them(target):
     inert_names = (
         "APP_ENV", "APP_PORT", "APP_SECRET_KEY", "BACKTEST_DATA_PATH", "BACKTEST_MAX_WORKERS",
