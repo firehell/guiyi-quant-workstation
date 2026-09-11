@@ -1,13 +1,37 @@
 # 当前状态
 
 文档核对：2026-09-11。正式代码基线 `v1.10.6@a8e67790dcd33db95f65c442c415378782927618`；
-develop 代码基线 `a8e67790dcd33db95f65c442c415378782927618`。本文件只保留当前版本、已证明事实、
+本轮 develop 检查起点 `c073e255234c244585d1a475a937881d760d2dc4`。本文件只保留当前版本、已证明事实、
 尚缺证据、已接受的阶段规划、本轮冻结范围与唯一下一步。操作过程、逐次授权和旧候选矩阵从 Git history、tag、PR
 与原 evidence 追溯；历史授权不授权重跑。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见
 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
-工作 2 已于 2026-09-11 完成：只读 closeout 返回 `ready` 后，owner 批准的单次 apply 将 2026-09-09 旧运行记为 `interrupted`，独立读回通过。部署预检仍受当天 60 品种 Session 缺失阻塞；未补行情、未切换 Runtime。
+工作 2 已于 2026-09-11 完成：只读 closeout 返回 `ready` 后，owner 批准的单次 apply 将 2026-09-09 旧运行记为 `interrupted`，独立读回通过。当时部署预检受当天 60 品种 Session 缺失阻塞；该收尾未补行情、未切换 Runtime。本次新读回见下节。
 工作 3 已于 2026-09-11 完成源码、测试、合同和独立 Review，并随 v1.10.6 发布；尚未取得新版本 Runtime 与自然盘后证据，后续仍归工作 5。
+
+## 9 月 11 日新中断与 1.10.7 候选准备
+
+- 20:56 停止后新读回：18:05 本次旧版盘后进程已退出、维护锁释放，状态仍保留 `current_run`。
+  此次与已完成的 9 月 9 日旧运行收尾分开；尚未执行本次状态 apply。
+- Calendar 五交易所 9 月 11–14 日均在；9 月 11 日 Session 为 60 品种/225 行，9 月 14 日全部缺失；
+  原日及 14 日 Live snapshot 缺失。60 品种连续行情 Catalog 最新仍为日/分钟 9 月 8 日、周线 9 月 4 日。
+  该端点检查不证明物理完整性或旧 writer 的逐次提交归属；promotion 仍 blocked。
+- 隔离旧/新完整维护链确认旧版盘后全历史同步会删除下一交易日 Session。已发布 daily 改造避开该路径；
+  full/refresh 仍存在同类缺陷，本轮 `97ef59b97` 将历史替换限制到截止日并拒绝含糊模板。
+  Session 回归 465 passed；独立 Review 240 passed、事务回滚/其他品种保留复核通过，无 P0–P3。
+- owner 已批准[同日缺 snapshot 收尾方案](docs/superpowers/plans/2026-09-11-missing-snapshot-closeout.md)。
+  新 schema v5 只记录行政中断及 `not_verified_missing`，完整物理审计、双锁、身份/CAS 与 promotion
+  保持原约束。独立 Review 发现的第二次 snapshot 读取竞争已修正，复审 183 passed、无 P0–P3；
+  相关后端 323 passed / 12 skipped，真实隔离 PostgreSQL 3 passed，Web 10 passed/build、Mypy/Ruff 通过。
+- 最终候选回归：完整后端 3353 passed / 16 skipped / 31 deselected，唯一两项失败为沙箱禁止绑定
+  loopback 的真实 socket 测试；相同代码在隔离本机 HTTP 环境重跑 2 passed。工程 84 passed；Web
+  全量 543 passed / 1 skipped、build 通过；Mypy 154 文件、Ruff、OpenSpec 9、secret scan 0 findings、
+  offline lock check 与 diff check 通过。未将 fixture 或工程结果计作现场业务验收。
+- 版本身份已准备为 1.10.7，收敛 daily/生命周期、Session 保留、收尾、单 worker 与周检状态补丁。
+  相对 v1.10.6 还包含既有 `c073e255` 研究输出，未删改或据此缩称为纯代码补丁；精确候选仍待冻结。
+- `EXTERNAL_GATE_PENDING`：本次完整只读 closeout、状态 apply、最小元数据恢复、9 月 9–11 日行情
+  范围与 MDS 读回、发布、Runtime 切换及新版本自然验收均未关闭。旧 v1.10.5 writer 下次运行不能
+  承接 v5 摘要，apply 前必须明确后续调度处置；不自动暂停或切换。最小下一步是新只读 closeout。
 
 ## 单 API worker 补丁候选（面向 v1.10.7，未发布）
 
@@ -54,8 +78,8 @@ develop 代码基线 `a8e67790dcd33db95f65c442c415378782927618`。本文件只�
   跳过，candidate-preview 独立 3 passed；隔离 PostgreSQL 3 passed；Mypy 154 个源码文件、Ruff、9 项
   OpenSpec strict、secret scan（0 findings）、lock check、diff check 与 launchd render-only 通过。独立
   Review 的发布状态一致性发现已在候选内修正，最终 Spec/Standards 复核无 P0–P3。
-- Runtime promotion、weekly-audit 安装及新版本自然盘后验收是独立 Gate；2026-09-11 Session 与 Live
-  snapshot 缺失继续阻塞 promotion，不因本次发布自动修复。现役 v1.10.5 API/Web health 为 200，
+- Runtime promotion、weekly-audit 安装及新版本自然盘后验收是独立 Gate；发布时的 2026-09-11 Session 与 Live
+  snapshot 缺失阻塞 promotion，不因发布自动修复；此后现场变化见本轮新读回。现役 v1.10.5 API/Web health 为 200，
   Runtime health 为 failed，当前有界 readback 未确认该失败的单一原因；weekly audit 独立显示 `not_run`，
   且不是 required service。这些都不是 v1.10.6 Runtime evidence。
 
@@ -65,7 +89,7 @@ develop 代码基线 `a8e67790dcd33db95f65c442c415378782927618`。本文件只�
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.6@a8e67790d`，PR #362 合入 main，annotated tag 与 GitHub Release 已读回 |
 | 现役 Runtime | 未切换，未声明 `RUNTIME_READY` | 五服务仍加载 v1.10.5；after-market loaded 且 idle；v1.10.6 promotion 与自然盘后验收未完成 |
-| 中断盘后收尾 | `COMPLETED` | 2026-09-11 单次 apply 成功并独立读回：旧运行为 interrupted、current_run 已清除；720 项允许缺口保留，零 provider 请求、零数据写入 |
+| 中断盘后收尾 | 9 月 9 日 `COMPLETED`；9 月 11 日 `EXTERNAL_GATE_PENDING` | 先前旧运行单次 apply 与独立读回完成；9 月 11 日新运行已停、尚未 apply，两次范围不混同 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED` | `8f2b051fd` 随 v1.10.6 发布；Runtime 与自然盘后 Gate 尚未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
 | 本轮稳定版 | `RELEASED`，Runtime Gate pending | v1.10.6 main/tag/GitHub Release 已完成；Runtime promotion、weekly-audit 安装和自然业务验收均未执行 |

@@ -133,6 +133,16 @@ export function weeklyAuditDetail(audit: NonNullable<RuntimeHealthResponse['comp
 }
 
 export function afterMarketDetail(afterMarket: RuntimeHealthResponse['components']['after_market']): string {
+  const detail = afterMarketRunDetail(afterMarket)
+  const evidence = afterMarket.last_interruption
+  if (!evidence) return detail
+  const reconciliation = evidence.snapshot_classification === 'not_verified_missing'
+    ? '原日 Live 快照缺失，对账未核验'
+    : '核验时点的 Live 对账匹配'
+  return `${detail} · ${evidence.trading_day} 中断记录：${reconciliation}（${formatRuntimeTimestamp(evidence.snapshot_checked_at)}）`
+}
+
+function afterMarketRunDetail(afterMarket: RuntimeHealthResponse['components']['after_market']): string {
   if (afterMarket.last_run?.status === 'interrupted' && !afterMarket.current_run) {
     return `未证明更新完成 · ${afterMarket.last_run.attempts == null ? '尝试次数未知' : `已记录 ${afterMarket.last_run.attempts} 次尝试`}`
   }

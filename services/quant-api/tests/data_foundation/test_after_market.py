@@ -1450,10 +1450,10 @@ def test_missing_daily_baseline_is_explicit_history_maintenance_required(tmp_pat
     assert not sleeps and not live.cleaned and len(notices) == 1
 
 
-def test_public_status_rejects_unknown_schema_v5() -> None:
+def test_public_status_rejects_unknown_schema_v6() -> None:
     payload = public_after_market_status(
         {
-            "schema_version": 5,
+            "schema_version": 6,
             "current_run": None,
             "last_run": {
                 "trading_day": "2026-08-10",
@@ -1557,3 +1557,47 @@ def test_commit_outcome_unknown_is_public_and_never_retried(tmp_path, monkeypatc
     assert live_store.published == []
     assert _notice_error_codes(notices) == ["COMMIT_OUTCOME_UNKNOWN"]
     assert public_after_market_status(_status(tmp_path / "after-market-status.json"))["last_failure"]["error_code"] == "COMMIT_OUTCOME_UNKNOWN"
+
+
+@pytest.mark.parametrize("outcome", ["passed", "failed"])
+def test_natural_writer_preserves_v5_interruption_without_inheriting_success(tmp_path, outcome):
+    from tests.data_foundation.test_after_market_closeout import missing_interrupted_status
+    raw = missing_interrupted_status()
+    updater, manager, _, _, _, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result(outcome, stop_reason="PROVIDER_QUOTA_EXHAUSTED" if outcome == "failed" else None)])
+    # The natural writer is later than the administratively closed run.
+    raw["last_interruption"].update(trading_day="2026-08-07", started_at="2026-08-07T18:05:00+08:00",
+        closed_at="2026-08-08T08:00:00+08:00", snapshot_checked_at="2026-08-08T08:00:00+08:00")
+    raw["last_run"].update(trading_day="2026-08-07", started_at="2026-08-07T18:05:00+08:00",
+        finished_at="2026-08-08T08:00:00+08:00")
+    raw["last_failure"]["trading_day"] = "2026-08-07"
+    raw["last_successful_trading_day"] = "2026-08-06"
+    updater.status_path.write_text(json.dumps(raw))
+    observed = []
+    original = manager.coverage.latest_metadata_day
+    def observe(products):
+        observed.append(public_after_market_status(_status(updater.status_path)))
+        return original(products)
+    manager.coverage.latest_metadata_day = observe
+    assert updater.run().status == outcome
+    current = observed[0]
+    assert current["schema_version"] == 5
+    assert current["last_interruption"] == raw["last_interruption"]
+    assert current["last_run"]["status"] == "interrupted"
+    assert current["last_successful_trading_day"] == "2026-08-06"
+    final = public_after_market_status(_status(updater.status_path))
+    assert final["schema_version"] == 5
+    assert final["last_run"]["status"] == outcome
+    assert final["last_interruption"] == raw["last_interruption"]
+    assert final["last_successful_trading_day"] == ("2026-08-10" if outcome == "passed" else "2026-08-06")
+
+
+def test_natural_reconciliation_still_rejects_missing_snapshot(tmp_path):
+    updater, _, _, _, notices, live = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True, True], results=[_result("passed"), _result("passed")])
+    live.snapshot = None
+    result = updater.run()
+    assert result.status == "failed" and result.error_code == "LIVE_DOMINANT_MISMATCH"
+    assert live.cleaned == []
+    assert len(notices) == 1
+    assert _status(updater.status_path)["last_successful_trading_day"] is None

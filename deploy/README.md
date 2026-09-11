@@ -82,8 +82,11 @@ guiyi data close-interrupted-after-market --runtime-root /absolute/current-runti
 
 只有获得针对相同身份的一次实际收尾执行意图后才追加 `--apply`。该操作只将原运行记录为 interrupted，
 不证明更新完成，不修复行情、不安装调度。blocked/结果不确定立即停止，不删 JSON、不重跑；明确写入不确定时
-须重新只读核实。旧 Runtime reader 不认识 schema v4 会降级；新候选 reader 可以读取，但 promotion 的
+须重新只读核实。旧 Runtime reader 不认识 schema v4/v5 会降级；新候选 reader 可以读取，但 promotion 的
 phase/Live snapshot Gate 完全保留。安全收尾、发布、五服务同步和周审计安装仍是各自受控操作。
+现役 v1.10.5 writer 下次自然运行会写回 schema v2，不能承接 v5 中断摘要；reader 降级不阻止覆盖。
+收尾 apply 前须核对下一次旧任务窗口，明确届时使用已批准的新 writer，或另行取得暂停旧盘后调度的
+执行意图；保留收尾读回证据。不得据此自动暂停调度或切换 Runtime。
 旧 Runtime 在五服务解除引用前不得清理。
 
 #### Read-only promotion predicate

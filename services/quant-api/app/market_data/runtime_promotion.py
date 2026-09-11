@@ -351,6 +351,11 @@ def _timestamp(value: object) -> datetime | None:
 def _public_status_dates_are_sane(public: Mapping[str, object], now: datetime) -> bool:
     today = now.astimezone(_SHANGHAI).date()
     dates: list[object] = [public.get("last_successful_trading_day")]
+    interruption = public.get("last_interruption")
+    if isinstance(interruption, Mapping):
+        closed_at = _timestamp(interruption.get("closed_at"))
+        if closed_at is None or closed_at > now.astimezone(UTC):
+            return False
     last_run = public.get("last_run")
     if isinstance(last_run, Mapping):
         dates.append(last_run.get("trading_day"))

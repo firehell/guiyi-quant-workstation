@@ -266,11 +266,17 @@ expected day 才是 `degraded/missed`。合法 `current_run` 也只是已持久�
 Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN`，本次停止且不重试，
 不发布 `canonical_updated` 或执行成功后的 Live 清理；须用独立只读事务确认 Catalog 结果。
 
+历史 metadata 的 full update/refresh 只替换请求品种截至 `through` 的 Session，保留其后明确按日事实。
+输入 snapshot 越过截点、包含非请求品种或非按日 Session，以及既有 open-ended、跨截点或未来非按日模板，
+均以 `HISTORICAL_SESSION_REPLACEMENT_UNPROVEN` 整事务失败；不得拆分模板或删除未来事实。
+这不改变受限当天/下一交易日同步的独立写入范围，也不证明既有历史已完整。
+
 ### 中断盘后运行的显式收尾
 
 `data.close-interrupted-after-market` 默认只读；必须绑定现役 Runtime root、40 位 commit 和原状态字节 SHA-256。
 它要求五服务 installed/loaded 身份一致、现役 checkout 为干净 detached annotated release，Live/Alert 声明
-共享恢复保护开启、盘后进程明确 idle。只处理先前自然日的合法 `current_run`，不停止进程、不创建缺失锁。
+共享恢复保护开启、盘后进程明确 idle。允许同日或先前自然日的合法 `current_run`；开始时间不得晚于核验时刻，
+scheduled_date 必须匹配原开始日期。不停止进程、不创建缺失锁。
 数据依赖只能由目标 Runtime 的固定外部 `project.env` 与目标 universe 文件显式构造，不能使用执行 CLI 的开发配置。
 配置的变量名只接受精确白名单且不执行 shell；参与收尾依赖的值只接受字面赋值与先前 dependency source
 赋值展开。文件须自有 0600、父目录自有 0700。
@@ -294,19 +300,27 @@ API/Alert 可保留既有绝对、无父路径跳转的 `GUIYI_ALERT_NOTIFICATIO
 repeatable-read/read-only 事务中，通过 Catalog inventory 和既有 Canonical reader 检查 operational 全部已提交指针，
 包括预期窗口外的文件，并复用 audit 检查中断日 metadata、rank1 和目标窗口。只允许确认为有效子集的
 `EXPECTED_PARTITION_MISSING` 留作待维护；额外端点、其他 finding、未知异常均阻断。待维护计数不证明缺失由这次中断造成。
-原交易日不可变 Live snapshot 必须仍在且与 rank1 一致；缺失、过期或不一致均阻断，不使用当前日快照代替。
+原交易日 Live snapshot 完整合法且与 rank1 一致时记录 `verified_match`；成功读取明确为 None 时可仅作行政收尾，
+记录 `not_verified_missing` 与对账未核验，不推断从未生成或 TTL 过期。空/部分集合、额外产品、错合约、
+不匹配、格式错误或读取异常仍阻断，不得降为 missing，也不使用其他日快照代替。
+审计时与替换前分别读取原日 snapshot，分类或内容变化即阻断，不自动重试。after-market guard 不冻结
+普通 Live 初始化，证据只描述记录的核验时点；不能宣称整个审计窗口 snapshot 恒定。
 
 显式 `--apply` 在同一锁窗口重新校验身份与原状态字节，使用 pinned directory FD 原子替换并 fsync。
-唯一写入是原盘后状态文件：收尾写 schema v4、`last_run.status=interrupted`、`error_code=AFTER_MARKET_INTERRUPTED`，
+唯一写入是原盘后状态文件：新收尾写 schema v5、`last_run.status=interrupted`、`error_code=AFTER_MARKET_INTERRUPTED`，
 清除 `current_run`，保留原开始时间与最后成功日；旧 schema v2 未记录的 attempts 保持 null，v3 保留已记录次数。
 不发送通知、不发布 canonical_updated、不清理 Live，不调用 provider 或写行情/DB/Redis；不自动重试。
 替换前失败保留原状态；替换或其后 fsync 的结果不确定返回 `AFTER_MARKET_CLOSEOUT_OUTCOME_UNKNOWN`、
 `status_written=null` 和锁内只读 readback 分类，不能假称未写入或直接重试。
 
-reader 兼容 v1-v4；v4 与 v3 的进度字段相同，仅增加中断终态与未知 attempts 表达。
-新自然运行可暂时保留 v4 的中断摘要，正常终态仍写 v3。Runtime health 保持 `degraded/interrupted`，
-Web 显示收尾而非完成；promotion 仍独立检查 phase/snapshot，不把 interrupted 当作 after_market_complete。
-旧 reader 不认识 v4 时应降级，不能当健康；本入口不授权部署。它确认当前已提交视图，不能还原旧 writer
+reader 兼容 v1-v5；v4 的既有中断语义保持不变，v5 额外持久记录原日 snapshot 分类、核验时点与
+reconciliation 是否经过验证；这些字段统一位于 `last_interruption`，包括 `trading_day`、`started_at`、
+`closed_at`、`snapshot_checked_at`、`snapshot_classification` 和 `reconciliation_verified`。
+公开 API/health/Web 保留缺失证据，不能仅在内部 JSON 或 CLI 展示。
+新自然运行承接该中断摘要时保留其版本及缺证信息，不继承为业务成功；正常终态仍按自然运行合同写入。
+Runtime health 保持 `degraded/interrupted`，Web 显示收尾及未核验的 Live 对账。自然 reconciliation 和
+promotion 的通过条件不改变，interrupted 不能成为 after_market_complete。旧 reader 不认识新版本时降级，
+不能当健康；本入口不授权部署。它确认当前已提交视图，不能还原旧 writer
 每次 commit 的执行轨迹，不是 checkpoint，也不替代每日完成或每周历史审计。
 
 ### 每周 operational 全历史只读审计

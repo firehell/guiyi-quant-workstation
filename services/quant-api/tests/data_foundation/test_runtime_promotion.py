@@ -825,3 +825,27 @@ def test_phase_disagreement_or_dependency_error_blocks_state_unavailable() -> No
     assert disagreement.reason == PROMOTION_STATE_UNAVAILABLE
     assert dependency_failure.reason == PROMOTION_STATE_UNAVAILABLE
     assert missing_closed_day.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+@pytest.mark.parametrize("window,expected", [
+    ("after_start", PROMOTION_LIVE_SNAPSHOT_REQUIRED),
+    ("snapshot", "snapshot_ready"), ("before_start", "before_first_session"),
+    ("non_trading", "non_trading_interval"), ("new_natural_success", "after_market_complete"),
+])
+def test_v5_interruption_never_relaxes_promotion_windows(window, expected):
+    status = _passed_status()
+    status.update(schema_version=5, current_run=None,
+        last_interruption={"trading_day": DAY.isoformat(), "started_at": "2026-09-03T13:00:00+08:00",
+            "closed_at": "2026-09-03T14:00:00+08:00", "snapshot_checked_at": "2026-09-03T14:00:00+08:00",
+            "snapshot_classification": "not_verified_missing", "reconciliation_verified": False})
+    if window != "new_natural_success":
+        status["last_run"].update(status="interrupted", attempts=None, error_code="AFTER_MARKET_INTERRUPTED",
+            started_at="2026-09-03T13:00:00+08:00", finished_at="2026-09-03T14:00:00+08:00")
+    phases = ({symbol: _phase(symbol, MarketPhase.CLOSED, trading_day=None) for symbol in PRODUCTS}
+        if window == "non_trading" else _phases())
+    decision = evaluate_market_runtime_promotion(products=PRODUCTS, phases=phases, now=NOW,
+        snapshot={"j": "J2601", "jm": "JM2601"} if window == "snapshot" else None,
+        after_market_status=status,
+        first_session_starts=_first_session_starts(NOW + timedelta(hours=1)) if window == "before_start" else _first_session_starts())
+    assert decision.reason == expected
+    assert decision.status == ("blocked" if window == "after_start" else "passed")

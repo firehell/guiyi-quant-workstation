@@ -127,7 +127,7 @@ def test_closeout_uncertainty_preserves_original_bytes(closeout_case, failure):
     elif failure == "audit":
         case["manager"].audit = lambda *args: MaintenanceResult("audit", "failed", None, 0, 0, 0, 1, 0)
     else:
-        overrides["live_store"] = SimpleNamespace(subscriptions=lambda day: None)
+        overrides["live_store"] = SimpleNamespace(subscriptions=lambda day: {})
     result = close(case, apply=True, **overrides)
     assert result["status"] == "blocked" and result["status_written"] is False
     assert "secret" not in json.dumps(result)
@@ -329,3 +329,274 @@ def test_runtime_directory_replacement_cannot_redirect_pinned_closeout(closeout_
     assert close(case, apply=True)["status"] == "blocked"
     assert (displaced / case["path"].name).read_bytes() == case["content"]
     assert case["path"].read_bytes() == case["content"]
+
+
+def missing_interrupted_status():
+    raw = interrupted_status()
+    raw.update(schema_version=5, last_interruption={
+        "trading_day": "2026-09-09", "started_at": "2026-09-09T18:05:00+08:00",
+        "closed_at": "2026-09-10T08:00:00+08:00", "snapshot_checked_at": "2026-09-10T08:00:00+08:00",
+        "snapshot_classification": "not_verified_missing", "reconciliation_verified": False,
+    })
+    return raw
+
+
+@pytest.mark.parametrize("today", ["2026-09-09T21:00:00+08:00", "2026-09-10T08:00:00+08:00"])
+@pytest.mark.parametrize("snapshot,classification,verified", [
+    (None, "not_verified_missing", False), ({"au": "AU2612"}, "verified_match", True),
+])
+def test_same_or_old_day_closeout_records_observed_evidence(closeout_case, today, snapshot, classification, verified):
+    calls = []
+    def subscriptions(day):
+        calls.append(day.isoformat())
+        return snapshot
+    result = close(closeout_case, apply=True, now=lambda: datetime.fromisoformat(today),
+        live_store=SimpleNamespace(subscriptions=subscriptions))
+    assert result["status"] == "closed_interrupted"
+    assert calls == ["2026-09-09", "2026-09-09"]
+    assert closeout_case["events"] == ["lock", "audit", "release"]
+    raw = json.loads(closeout_case["path"].read_bytes())
+    assert raw["schema_version"] == 5
+    evidence = raw["last_interruption"]
+    assert evidence == {"trading_day": "2026-09-09", "started_at": "2026-09-09T18:05:00+08:00",
+        "closed_at": today, "snapshot_checked_at": today, "snapshot_classification": classification,
+        "reconciliation_verified": verified}
+    assert public_after_market_status(raw)["last_interruption"] == evidence
+    assert result["last_interruption"] == evidence
+    assert raw["last_successful_trading_day"] == "2026-09-08"
+
+
+@pytest.mark.parametrize("snapshot", [{}, [], {"au": "AU2610"}, {"au": None},
+    {"au": "AU2612", "ag": "AG2612"}, {"au": "AU2612", " AU ": "AU2612"},
+    {"au": "AU2612", 1: 2}])
+def test_present_invalid_or_mismatching_snapshot_is_never_missing(closeout_case, snapshot):
+    result = close(closeout_case, apply=True, live_store=SimpleNamespace(subscriptions=lambda day: snapshot))
+    assert result["status"] == "blocked" and result["status_written"] is False
+    assert closeout_case["path"].read_bytes() == closeout_case["content"]
+
+
+@pytest.mark.parametrize("snapshots", [
+    [None, {"au": "AU2612"}], [{"au": "AU2612"}, None],
+    [{"au": "AU2612"}, {"au": "au2612"}], [None, {}],
+])
+def test_snapshot_change_between_audit_and_replace_blocks_without_retry(closeout_case, snapshots):
+    values = iter(snapshots)
+    result = close(closeout_case, apply=True, live_store=SimpleNamespace(subscriptions=lambda day: next(values)))
+    assert result["status"] == "blocked" and result["status_written"] is False
+    assert closeout_case["path"].read_bytes() == closeout_case["content"]
+
+
+@pytest.mark.parametrize("failing_read", [1, 2])
+def test_snapshot_read_error_is_not_absence(closeout_case, failing_read):
+    calls = 0
+    def subscriptions(day):
+        nonlocal calls
+        calls += 1
+        if calls == failing_read:
+            raise ConnectionError("private Redis details")
+        return None
+    result = close(closeout_case, apply=True, live_store=SimpleNamespace(subscriptions=subscriptions))
+    assert result["status"] == "blocked" and result["status_written"] is False
+    assert "private" not in json.dumps(result)
+    assert closeout_case["path"].read_bytes() == closeout_case["content"]
+
+
+@pytest.mark.parametrize("today", ["2026-09-09T18:04:59+08:00", "2026-09-09T21:00:00"])
+def test_future_start_or_naive_clock_blocks_before_audit(closeout_case, today):
+    result = close(closeout_case, apply=True, now=lambda: datetime.fromisoformat(today))
+    assert result["status"] == "blocked"
+    assert closeout_case["events"] == []
+
+
+def test_missing_snapshot_never_skips_physical_audit(closeout_case):
+    closeout_case["manager"].catalog.product_partitions = lambda symbol: (object(),)
+    def unreadable(partition):
+        raise ValueError("PARTITION_UNREADABLE")
+    closeout_case["manager"].store = SimpleNamespace(read_catalog_partition=unreadable)
+    result = close(closeout_case, apply=True, live_store=SimpleNamespace(subscriptions=lambda day: None))
+    assert result["status"] == "blocked" and result["status_written"] is False
+    assert closeout_case["events"] == ["lock", "release"]
+
+
+@pytest.mark.parametrize("change", [
+    {"snapshot_classification": "missing"}, {"reconciliation_verified": True},
+    {"reconciliation_verified": 0}, {"snapshot_checked_at": "invalid"},
+    {"trading_day": "2026-09-08"}, {"closed_at": "2026-09-09T00:00:00+08:00"},
+])
+def test_v5_reader_rejects_inconsistent_interruption_evidence(change):
+    raw = missing_interrupted_status()
+    raw["last_interruption"].update(change)
+    assert public_after_market_status(raw) == {}
+
+
+def test_v5_reader_and_health_expose_missing_evidence(tmp_path, monkeypatch):
+    from app.services import runtime_health
+    from app.schemas.runtime import RuntimeAfterMarketHealth
+    raw = missing_interrupted_status()
+    public = public_after_market_status(raw)
+    assert public["last_interruption"] == raw["last_interruption"]
+    path = tmp_path / "status.json"
+    path.write_text(json.dumps(raw))
+    monkeypatch.setattr(runtime_health, "_expected_after_market_day", lambda *args, **kwargs: (datetime(2026, 9, 8).date(), False))
+    result = runtime_health._collect_after_market_health(None, status_path=path, configured_enabled=True,
+        now=datetime.fromisoformat("2026-09-10T09:00:00+08:00"))
+    assert result["run_state"] == "interrupted" and result["status"] == "degraded"
+    assert RuntimeAfterMarketHealth.model_validate(result).model_dump()["last_interruption"] == raw["last_interruption"]
+    from app.market_data.runtime_promotion import _after_market_status_decision
+    assert _after_market_status_decision(raw, trading_day=datetime(2026, 9, 9).date(), products=("au",),
+        now=datetime.fromisoformat("2026-09-10T09:00:00+08:00")) == "missing"
+
+
+def test_v5_captured_reader_retains_same_day_repair_block(monkeypatch):
+    from app.guiyi_cli import captured_recovery
+    monkeypatch.setattr(captured_recovery, "read_captured_file", lambda *args: json.dumps(missing_interrupted_status()).encode())
+    with pytest.raises(captured_recovery.CapturedRecoveryCliError):
+        captured_recovery._after_market_preflight(datetime(2026, 9, 9).date())
+    captured_recovery._after_market_preflight(datetime(2026, 9, 10).date())
+
+
+def test_v5_missing_evidence_stays_visible_when_expected_calendar_is_unavailable(tmp_path, monkeypatch):
+    from app.services import runtime_health
+    raw = missing_interrupted_status()
+    path = tmp_path / "status.json"
+    path.write_text(json.dumps(raw))
+    def unavailable(*args, **kwargs):
+        raise ValueError("TRADING_SESSION_MISSING")
+    monkeypatch.setattr(runtime_health, "_expected_after_market_day", unavailable)
+    result = runtime_health._collect_after_market_health(None, status_path=path, configured_enabled=True,
+        now=datetime.fromisoformat("2026-09-10T09:00:00+08:00"))
+    assert result["status"] == "degraded"
+    assert result["error_type"] == "after_market_expected_day_invalid"
+    assert result["last_interruption"] == raw["last_interruption"]
+
+
+@pytest.mark.parametrize("run", ["last_run", "current_run"])
+def test_v5_reader_rejects_interruption_closed_after_later_run_started(run):
+    raw = missing_interrupted_status()
+    if run == "last_run":
+        raw["last_run"].update(status="passed", attempts=1, error_code=None,
+            started_at="2026-09-10T07:59:00+08:00", finished_at="2026-09-10T09:00:00+08:00")
+    else:
+        raw["current_run"] = {"scheduled_date": "2026-09-10", "started_at": "2026-09-10T07:59:00+08:00",
+            "products": ["au"], "attempt": 0, "stage": "calendar", "updated_at": "2026-09-10T07:59:00+08:00",
+            "stage_started_at": "2026-09-10T07:59:00+08:00", "elapsed_seconds": 0.0,
+            "current_partition": None, "current_symbol": None, "counters": {}, "stage_durations": {}, "retry_at": None}
+    assert public_after_market_status(raw) == {}
+
+
+def test_v5_future_interruption_without_last_run_cannot_authorize_promotion(tmp_path, monkeypatch):
+    from app.services import runtime_health
+    from app.market_data.runtime_promotion import _after_market_status_decision
+    raw = missing_interrupted_status()
+    raw["last_run"] = None
+    now = datetime.fromisoformat("2026-09-10T07:00:00+08:00")
+    assert _after_market_status_decision(raw, trading_day=now.date(), products=("au",), now=now) == "unavailable"
+    path = tmp_path / "status.json"
+    path.write_text(json.dumps(raw))
+    monkeypatch.setattr(runtime_health, "_expected_after_market_day", lambda *a, **k: (now.date(), False))
+    result = runtime_health._collect_after_market_health(None, status_path=path, configured_enabled=True, now=now)
+    assert result["error_type"] == "after_market_status_invalid"
+
+
+@pytest.mark.parametrize("drift", ["restart", "guard"])
+def test_missing_snapshot_does_not_bypass_identity_or_guard_drift(closeout_case, drift):
+    case = closeout_case
+    calls = 0
+    def identity(*args):
+        nonlocal calls
+        calls += 1
+        if drift == "restart" and calls == 3:
+            raise ValueError("process restarted")
+    audit = case["manager"].audit
+    def changed_guard(request):
+        result = audit(request)
+        guard = case["root"] / ".run/live-recovery-guards/after-market.lock"
+        guard.rename(guard.with_suffix(".old"))
+        guard.touch(mode=0o600)
+        return result
+    if drift == "guard":
+        case["manager"].audit = changed_guard
+    result = close(case, apply=True, verify_identity=identity,
+        live_store=SimpleNamespace(subscriptions=lambda day: None))
+    assert result["status"] == "blocked" and result["status_written"] is False
+    assert case["path"].read_bytes() == case["content"]
+
+
+def test_concurrent_closeout_cannot_publish_while_first_holds_writer_guard(closeout_case):
+    case = closeout_case
+    audit = case["manager"].audit
+    contender = []
+    def competing_closeout(request):
+        contender.append(close(case, apply=True))
+        return audit(request)
+    case["manager"].audit = competing_closeout
+    assert close(case, apply=True, live_store=SimpleNamespace(subscriptions=lambda day: None))["status"] == "closed_interrupted"
+    assert len(contender) == 1 and contender[0]["status"] == "blocked"
+    assert contender[0]["status_written"] is False
+
+
+def test_missing_snapshot_closeout_cas_rejects_state_change_during_temporary_sync(closeout_case, monkeypatch):
+    from app.market_data import after_market_closeout
+    real_sync = after_market_closeout.os.fsync
+    newer = closeout_case["content"] + b" "
+    def drift(fd):
+        closeout_case["path"].write_bytes(newer)
+        real_sync(fd)
+    monkeypatch.setattr(after_market_closeout.os, "fsync", drift)
+    result = close(closeout_case, apply=True, live_store=SimpleNamespace(subscriptions=lambda day: None))
+    assert result["status"] == "blocked" and result["status_written"] is False
+    assert closeout_case["path"].read_bytes() == newer
+
+
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
+def test_legacy_schema_never_inherits_v5_interruption_evidence(version):
+    raw = missing_interrupted_status()
+    raw.update(schema_version=version)
+    if version < 4:
+        raw["last_run"].update(status="failed", attempts=1, error_code="UPDATE_FAILED")
+    public = public_after_market_status(raw)
+    assert public and "last_interruption" not in public
+
+
+@pytest.mark.parametrize("drift", ["restart", "guard", "directory"])
+def test_second_snapshot_read_cannot_bypass_final_identity_checks(closeout_case, drift):
+    case = closeout_case
+    reads = 0
+    restarted = False
+    displaced = case["root"] / "displaced"
+    def subscriptions(day):
+        nonlocal reads, restarted
+        reads += 1
+        if reads == 2:
+            if drift == "restart":
+                restarted = True
+            elif drift == "guard":
+                guard = case["root"] / ".run/live-recovery-guards/after-market.lock"
+                guard.rename(guard.with_suffix(".old"))
+                guard.touch(mode=0o600)
+            else:
+                case["path"].parent.rename(displaced)
+                case["path"].parent.mkdir(mode=0o700)
+                # Keep the guard inode visible so the directory check is independently required.
+                (displaced / "live-recovery-guards").rename(case["path"].parent / "live-recovery-guards")
+                case["path"].write_bytes(case["content"])
+        return None
+    def verify(*args):
+        if restarted:
+            raise ValueError("consumer restarted")
+    result = close(case, apply=True, verify_identity=verify,
+        live_store=SimpleNamespace(subscriptions=subscriptions))
+    assert reads == 2
+    assert result["status"] == "blocked" and result["status_written"] is False
+    assert case["path"].read_bytes() == case["content"]
+    if drift == "directory":
+        assert (displaced / case["path"].name).read_bytes() == case["content"]
+
+
+def test_snapshot_timestamp_precedes_final_identity_check_completion(closeout_case):
+    times = iter(["2026-09-10T08:00:00+08:00", "2026-09-10T08:10:00+08:00", "2026-09-10T08:12:00+08:00"])
+    result = close(closeout_case, apply=True, now=lambda: datetime.fromisoformat(next(times)))
+    assert result["status"] == "closed_interrupted"
+    evidence = result["last_interruption"]
+    assert evidence["snapshot_checked_at"] == "2026-09-10T08:10:00+08:00"
+    assert evidence["closed_at"] == "2026-09-10T08:12:00+08:00"

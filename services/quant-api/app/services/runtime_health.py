@@ -483,6 +483,7 @@ def _collect_after_market_health(
         return {"status": RUNTIME_STATUS_DISABLED, **empty}
     expected_day: date | None = None
     due_today = False
+    expected_day_error = False
     if configured_enabled:
         try:
             expected_day, due_today = _expected_after_market_day(
@@ -491,15 +492,14 @@ def _collect_after_market_health(
                 products=load_operational_products(),
             )
         except Exception:  # noqa: BLE001 - calendar/catalog errors are public-safe degraded state
-            return {
-                "status": RUNTIME_STATUS_DEGRADED,
-                **empty,
-                "run_state": "degraded",
-                "error_type": "after_market_expected_day_invalid",
-            }
+            expected_day_error = True
     expected_text = expected_day.isoformat() if expected_day is not None else None
-    base = {**empty, "expected_trading_day": expected_text}
+    base: dict[str, object] = {**empty, "expected_trading_day": expected_text}
+    if expected_day_error:
+        base.update(run_state="degraded", error_type="after_market_expected_day_invalid")
     if not status_path.exists():
+        if expected_day_error:
+            return {"status": RUNTIME_STATUS_DEGRADED, **base}
         if configured_enabled and due_today:
             return {
                 "status": RUNTIME_STATUS_DEGRADED,
@@ -520,14 +520,14 @@ def _collect_after_market_health(
             "status": RUNTIME_STATUS_DEGRADED,
             **base,
             "run_state": "degraded",
-            "error_type": "after_market_status_invalid",
+            "error_type": "after_market_expected_day_invalid" if expected_day_error else "after_market_status_invalid",
         }
     if not isinstance(raw, Mapping):
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **base,
             "run_state": "degraded",
-            "error_type": "after_market_status_invalid",
+            "error_type": "after_market_expected_day_invalid" if expected_day_error else "after_market_status_invalid",
         }
     public = public_after_market_status(raw)
     if not public:
@@ -540,7 +540,7 @@ def _collect_after_market_health(
             "status": RUNTIME_STATUS_DEGRADED,
             **base,
             "run_state": "degraded",
-            "error_type": error_type,
+            "error_type": "after_market_expected_day_invalid" if expected_day_error else error_type,
         }
     if not _finalized_after_market_chronology_valid(
         public,
@@ -550,8 +550,16 @@ def _collect_after_market_health(
             "status": RUNTIME_STATUS_DEGRADED,
             **base,
             "run_state": "degraded",
-            "error_type": "after_market_status_invalid",
+            "error_type": "after_market_expected_day_invalid" if expected_day_error else "after_market_status_invalid",
         }
+    if "last_interruption" in public:
+        base["last_interruption"] = public["last_interruption"]
+    if expected_day_error:
+        if public.get("schema_version") != 5:
+            return {"status": RUNTIME_STATUS_DEGRADED, **base}
+        return {"status": RUNTIME_STATUS_DEGRADED, **base,
+                "last_run": public["last_run"], "last_successful_trading_day": public["last_successful_trading_day"],
+                "last_failure": public["last_failure"]}
     current_run = public.get("current_run")
     if isinstance(current_run, Mapping):
         try:
@@ -658,7 +666,7 @@ def _collect_after_market_health(
 
 def _raw_current_run_is_invalid(raw: Mapping[str, object]) -> bool:
     schema_version = raw.get("schema_version")
-    if schema_version not in {2, 3, 4} or raw.get("current_run") is None:
+    if schema_version not in {2, 3, 4, 5} or raw.get("current_run") is None:
         return False
     current_only = public_after_market_status(
         {
@@ -667,6 +675,7 @@ def _raw_current_run_is_invalid(raw: Mapping[str, object]) -> bool:
             "last_run": None,
             "last_successful_trading_day": None,
             "last_failure": None,
+            **({"last_interruption": raw.get("last_interruption")} if schema_version == 5 else {}),
         }
     )
     return not current_only
@@ -680,6 +689,9 @@ def _finalized_after_market_chronology_valid(
     latest_allowed_day = now.astimezone(SHANGHAI).date()
     last_run = public.get("last_run")
     try:
+        interruption = public.get("last_interruption")
+        if isinstance(interruption, Mapping) and _required_timestamp(interruption.get("closed_at")) > now:
+            return False
         if isinstance(last_run, Mapping):
             started_at = _required_timestamp(last_run.get("started_at"))
             finished_at = _required_timestamp(last_run.get("finished_at"))

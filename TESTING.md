@@ -192,6 +192,8 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 测试包括旧次数未知、中断 health、默认只读、部分完成、窗口外损坏、额外端点、锁冲突、危险文件类型、
 CAS 漂移、时钟倒退和替换后 fsync 不确定；还覆盖目标配置/实际依赖一致性、源替换、PID 变化、
 shell/libpq 覆盖、第二 dotenv 来源和私有文件权限；所有 apply 只写临时状态文件。
+schema v5 另覆盖已停止的同日运行、缺失 snapshot 的未核验摘要、两读分类/内容竞争、非法 snapshot
+拒绝，以及自然运行承接摘要但不继承成功；下文 promotion 和 Web 测试验证原通过条件与公开展示。
 
 以下定向命令覆盖 Catalog-bounded daily 规划/发布、schema-v3 进度持久化与 fail-closed health、
 `operational_full_history` 审计、HTTP schema 保留、launchd 渲染/安装防护和只读状态输出。它们使用 fake provider、

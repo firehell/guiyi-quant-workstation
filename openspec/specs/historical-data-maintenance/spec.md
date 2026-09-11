@@ -31,23 +31,43 @@ The close-interrupted-after-market command MUST default to read-only and bind th
 commit and status-byte SHA-256. Five installed/loaded service identities, clean detached annotated release,
 enabled Live/Alert recovery guard and an idle after-market process MUST be verified. The existing OS guard
 and Catalog maintenance lease MUST be acquired nonblocking before a fresh read-only transaction. Missing
-guard files MUST NOT be created. Only a previous natural day's valid current_run may be closed.
+guard files MUST NOT be created. A same-day or previous-day valid current_run MAY be closed only when its
+start is not in the future and its scheduled_date matches the original start date.
 
 All operational Catalog pointers MUST pass the shared physical reader, including pointers outside the audit
 window. Existing audit MUST verify metadata, rank1 and expected windows through the interrupted date. Only
 proven missing valid subsets may remain pending; extra endpoints, other findings or unknown results MUST block.
-The original day's immutable Live snapshot MUST match rank1; absence MUST block without synthesis or fallback.
+The original day's Live snapshot MUST be classified as verified_match only when complete, valid and matching
+rank1. A successful read returning None MAY permit administrative interrupted closeout with
+not_verified_missing and reconciliation not verified. Empty/partial/extra/invalid/mismatching snapshots and
+read failures MUST block, never become missing. No cause of absence may be inferred and no snapshot synthesized.
+The snapshot MUST be read during audit and again before replacement; changed classification or content MUST
+block without retry. The after-market guard does not freeze ordinary Live initialization; recorded evidence
+MUST describe its observation time, not claim snapshot immutability throughout the closeout window.
 
 Explicit apply MUST recheck identity and status bytes under both locks and atomically replace only the original
-status file via its pinned directory descriptor. Schema v4 MUST express interrupted, not passed, retain the old
+status file via its pinned directory descriptor. New closeout schema v5 MUST express interrupted, not passed, retain the old
 successful day, and preserve unknown legacy attempts as null. It MUST NOT send notifications, publish an update
 event, clean Live, call a provider, write market data or retry. A post-replacement uncertainty MUST report unknown
-write outcome and bounded readback, never claim unchanged state. Readers MUST accept v1-v4, health MUST remain
-degraded/interrupted, and promotion MUST NOT use this terminal as after_market_complete.
+write outcome and bounded readback, never claim unchanged state. Readers MUST accept v1-v5; v5 MUST persist
+the original snapshot day, observation time, classification and reconciliation verification status. Public
+API, health and Web MUST preserve missing evidence. Existing v1-v4 semantics MUST remain unchanged and
+old readers that cannot parse v5 MUST degrade. A subsequent natural run MUST preserve the interrupted
+evidence when carrying its summary, never inherit it as success. Health MUST remain degraded/interrupted;
+natural reconciliation and promotion predicates MUST remain unchanged, and this terminal MUST NOT count
+as after_market_complete.
 
 #### Scenario: Legitimately partial interrupted maintenance
 - **WHEN** committed pointers and metadata are valid but expected partitions remain missing
 - **THEN** closeout may record interrupted and pending findings without claiming the update or weekly audit passed
+
+#### Scenario: Same-day stopped run without original Live evidence
+- **WHEN** the run is verified idle and all committed-data, identity, guard and CAS checks pass, but the original snapshot read returns None
+- **THEN** closeout may record interrupted with persistent not_verified_missing evidence, without declaring reconciliation or promotion ready
+
+#### Scenario: Snapshot changes during closeout
+- **WHEN** the original snapshot changes between audit-time and pre-replacement reads
+- **THEN** closeout blocks and preserves the original status bytes without retry
 
 #### Scenario: Filesystem sync fails after replacement
 - **WHEN** replacement may have occurred but durability cannot be established

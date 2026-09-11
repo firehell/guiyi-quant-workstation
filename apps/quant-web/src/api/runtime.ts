@@ -56,6 +56,15 @@ export interface RuntimeAfterMarketCurrentRun {
   retry_at?: string | null
 }
 
+export interface RuntimeAfterMarketInterruption {
+  trading_day: string
+  started_at: string
+  closed_at: string
+  snapshot_checked_at: string
+  snapshot_classification: 'not_verified_missing' | 'verified_match'
+  reconciliation_verified: boolean
+}
+
 export interface RuntimeAfterMarketHealth {
   status: string
   configured_enabled: boolean
@@ -63,6 +72,7 @@ export interface RuntimeAfterMarketHealth {
   expected_trading_day: string | null
   current_run: RuntimeAfterMarketCurrentRun | null
   last_run: RuntimeAfterMarketRun | null
+  last_interruption?: RuntimeAfterMarketInterruption | null
   last_successful_trading_day: string | null
   last_failure: Record<string, string> | null
   error_type: string | null

@@ -2,12 +2,12 @@
 
 The old writer has no per-run publication ledger. Consequently this seam requires
 the existing full audit at the interrupted cutoff, not an inference from progress
-or Catalog endpoints. Missing old Live evidence also blocks; it is never synthesized.
+or Catalog endpoints. Missing old Live evidence remains explicitly unverified; it is never synthesized.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import date, datetime
 import fcntl
@@ -21,7 +21,7 @@ import stat
 from typing import Any
 
 from app.db.readonly import readonly_transaction
-from app.market_data.after_market import public_after_market_status, _rank1_matches_live_snapshot
+from app.market_data.after_market import public_after_market_status, _rank1_matches_snapshot
 from app.market_data.historical_data_manager import AuditRequest, HistoricalDataManager
 from app.market_data.domain import BarFrequency, DatasetKey, DatasetKind
 from app.market_data.session_clock import SHANGHAI
@@ -180,6 +180,23 @@ def _verify_committed_view(manager: HistoricalDataManager, products: tuple[str, 
     return len(audit.findings)
 
 
+def _snapshot_evidence(
+    manager: HistoricalDataManager, live_store: Any, products: tuple[str, ...], day: date,
+) -> tuple[str, tuple[tuple[str, str], ...] | None]:
+    snapshot = live_store.subscriptions(day)
+    if snapshot is None:
+        return "not_verified_missing", None
+    if (not isinstance(snapshot, Mapping) or len(snapshot) != len(products)
+            or any(not isinstance(symbol, str) or not isinstance(contract, str)
+                   or not symbol.strip() or not contract.strip()
+                   for symbol, contract in snapshot.items())):
+        raise ValueError
+    # Do not let normalization hide duplicate keys, invalid values or extra products.
+    if not _rank1_matches_snapshot(manager, snapshot, products, day):
+        raise ValueError
+    return "verified_match", tuple(sorted(snapshot.items()))
+
+
 def close_interrupted_run(
     manager: HistoricalDataManager, *, root: Path, expected_commit: str,
     expected_status_sha256: str, products: tuple[str, ...], live_store: Any,
@@ -218,17 +235,25 @@ def close_interrupted_run(
             clock = now()
             day = started.astimezone(SHANGHAI).date()
             if (clock.utcoffset() is None or started > clock or current["scheduled_date"] != day.isoformat()
-                    or day >= clock.astimezone(SHANGHAI).date()):
+                    or day > clock.astimezone(SHANGHAI).date()):
                 raise ValueError
             lease = manager.catalog.acquire_maintenance_lock()
             if lease is None:
                 raise ValueError
             try:
                 with readonly_transaction(manager.catalog.session):
+                    snapshot_evidence = _snapshot_evidence(manager, live_store, products, day)
                     pending = _verify_committed_view(manager, products, day)
-                    if not _rank1_matches_live_snapshot(manager, live_store, products, day):
+                # The writer guard does not freeze ordinary Live initialization.
+                # These are two observations, not a claim of whole-window immutability.
+                with readonly_transaction(manager.catalog.session):
+                    if _snapshot_evidence(manager, live_store, products, day) != snapshot_evidence:
                         raise ValueError
-                # Recheck service identity and bytes after the independent DB transaction.
+                snapshot_checked_at = now()
+                if snapshot_checked_at.utcoffset() is None or snapshot_checked_at < clock:
+                    raise ValueError
+                # Recheck all identity evidence AFTER both independent DB/Redis reads.
+                # A restart or path replacement during the second read must fail closed.
                 verify_identity(root, expected_commit)
                 recheck_guard()
                 with _directory(root / ".run") as visible_directory:
@@ -238,10 +263,17 @@ def close_interrupted_run(
                 if _read(directory, _NAME) != original:
                     raise ValueError
                 finished = now()
-                if finished.utcoffset() is None or finished < clock:
+                if finished.utcoffset() is None or finished < snapshot_checked_at:
                     raise ValueError
+                interruption = {
+                    "trading_day": day.isoformat(), "started_at": current["started_at"],
+                    "closed_at": finished.astimezone(SHANGHAI).isoformat(),
+                    "snapshot_checked_at": snapshot_checked_at.astimezone(SHANGHAI).isoformat(),
+                    "snapshot_classification": snapshot_evidence[0],
+                    "reconciliation_verified": snapshot_evidence[0] == "verified_match",
+                }
                 payload = {
-                    "schema_version": 4, "current_run": None,
+                    "schema_version": 5, "last_interruption": interruption, "current_run": None,
                     "last_run": {"trading_day": day.isoformat(), "status": "interrupted",
                         "attempts": current.get("attempt"), "started_at": current["started_at"],
                         "finished_at": finished.astimezone(SHANGHAI).isoformat(), "products": list(products),
@@ -257,7 +289,7 @@ def close_interrupted_run(
                 result.update(status="closed_interrupted" if apply else "ready", error_code=None,
                               runtime_root=str(root), runtime_commit=expected_commit,
                               status_sha256=expected_status_sha256, trading_day=day.isoformat(),
-                              pending_findings=pending)
+                              pending_findings=pending, last_interruption=interruption)
             finally:
                 lease.release()
     except _WriteOutcomeUnknown as exc:
