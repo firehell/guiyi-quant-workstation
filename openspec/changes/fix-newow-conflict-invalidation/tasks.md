@@ -19,7 +19,7 @@ pnpm --dir apps/quant-web build
 
 - [x] 3.1 在 `apps/quant-web/e2e/newow-product.spec.mjs` 增加受控响应顺序案例；按 `TESTING.md` 在隔离 5182 执行固定 fixture，记录冲突不恢复旧解释、重新加载可恢复及合法导航保持 reference 的页面结果。
 - [x] 3.2 独立 Review 并发交错和清理范围；完成 diff、secret 与 OpenSpec 检查，修正反馈后再集成。
-- [ ] 3.3 交付实际命令和结果，明确 fixture browser acceptance 与生产/Runtime 验收边界；实现完成前保持任务未完成状态，不提前改写 STATUS。
+- [x] 3.3 交付实际命令和结果，明确 fixture browser acceptance 与生产/Runtime 验收边界；实现完成前保持任务未完成状态，不提前改写 STATUS。
 
 隔离页面命令（执行前确认无外部后端环境覆盖；不复用他人服务）：
 
@@ -29,4 +29,4 @@ REAL_BACKEND=0 PLAYWRIGHT_PORT=5182 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5182 PL
 
 实施验证：定向 unit 109/109、完整 Web unit 532 passed / 1 skipped、build 与新增冲突/重新加载浏览器案例通过；独立 Spec/Quality Review 通过。完整 Newow fixture 为 36 passed / 2 failed，同环境修改前代码精确复现相同截图差异和 main_rise 60m explanation `NEWOW_RESPONSE_INVALID`。完整浏览器 Gate 未通过；不修改截图基线或放宽阈值。
 
-最终整分支 Spec/Standards Review 已通过，无新增发现。owner 本轮明确要求先关闭两文件 Mypy 基线错误再集成 develop；12 项类型错误已关闭，全量 Mypy 154 个源码文件通过。两项已确认的浏览器基线失败仍为独立未关闭 Gate，不声明完整浏览器验收通过。后续验证与集成状态见 `STATUS.md` 的三项修复候选记录。
+最终整分支 Spec/Standards Review 已通过，无新增发现。owner 本轮明确要求先关闭两文件 Mypy 基线错误再集成 develop；12 项类型错误已关闭，全量 Mypy 154 个源码文件通过。两项已确认的浏览器基线失败仍为独立未关闭 Gate，不声明完整浏览器验收通过。补修后的完整后端 3248 passed / 16 skipped / 31 deselected，独立 Spec/Standards Review 无 P0–P3 发现；已按 owner 要求将源码提交 `17718f126` 集成 develop。验收边界见 `STATUS.md` 的三项修复候选记录。
