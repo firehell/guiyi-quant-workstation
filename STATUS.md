@@ -9,6 +9,23 @@ develop 代码基线 `a8e67790dcd33db95f65c442c415378782927618`。本文件只�
 工作 2 已于 2026-09-11 完成：只读 closeout 返回 `ready` 后，owner 批准的单次 apply 将 2026-09-09 旧运行记为 `interrupted`，独立读回通过。部署预检仍受当天 60 品种 Session 缺失阻塞；未补行情、未切换 Runtime。
 工作 3 已于 2026-09-11 完成源码、测试、合同和独立 Review，并随 v1.10.6 发布；尚未取得新版本 Runtime 与自然盘后证据，后续仍归工作 5。
 
+## 单 API worker 补丁候选（面向 v1.10.7，未发布）
+
+- 修复代码 `044972b82201afe6dc9ee5a532040d748b862bac`：正式 API launcher 显式固定一个 worker，
+  保留进程内快照、token 逐事实校验、重型门禁、取消与去重。它修复部署契约，不重开已发布的前端旧响应修复。
+- `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE`：Newow 1326 passed / 1 skipped，新增真实 socket
+  2 passed；工程 84 passed；Web 定向 unit 117 passed、浏览器 fixture 51 passed；OpenSpec 9、Ruff、
+  secret scan 0 findings、diff check 与 launchd render-only 通过，独立 Review 无 P0–P3。
+- 黄金趋势 1d、截点 `2026-09-08T07:00:00.000001Z` 的五组新进程真实只读 HTTP 链路通过；四连接交错、
+  主图/参考分页、副图和重启旧 token 拒绝保持正确。重型运行重叠采样：health 2078 次，p95 12.9 ms、
+  最大 165.2 ms；普通行情 722 次，p95 91.4 ms、最大 328.7 ms；全部采样无错误或超时。
+- 精确候选真实浏览器无业务拦截，参考记录 50→70、统计摘要不变、精确信号定位及当前窗口照妖镜绘制通过。
+  旧历史视窗未读取的副图范围不据此宣称完整。未清 OS/磁盘缓存，初期采样有并行 fixture 测试 CPU 活动；
+  不外推全品种、吞吐上限或双 worker 性能对比。证据与冻结脚本见
+  [单 worker 验收记录](outputs/newow-single-worker-20260911/acceptance.json)。
+- `EXTERNAL_GATE_PENDING`：尚未发布新补丁或切换 Runtime；现役状态与 v1.10.6 release 事实保持下文所述。
+  下一步是冻结新补丁 release candidate 并单独取得发布意图，之后另行处理 Runtime promotion 与现场进程/请求验收。
+
 ## v1.10.6 Release（Runtime 未切换）
 
 - 独立候选 `2cb4538da362d4833262d303c4bf02f041575e76` 由 PR #362 合入 main；merge commit

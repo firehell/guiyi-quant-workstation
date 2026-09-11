@@ -1,0 +1,415 @@
+[
+  {
+    "round": 0,
+    "section": "chart",
+    "start": 33903.703037791,
+    "end": 33904.044890375,
+    "pid": 10973
+  },
+  {
+    "round": 0,
+    "section": "chart",
+    "start": 33904.05023675,
+    "end": 33904.283564041,
+    "pid": 10973
+  },
+  {
+    "round": 0,
+    "section": "reference",
+    "start": 33905.320404875,
+    "end": 33909.61312225,
+    "pid": 10973
+  },
+  {
+    "round": 0,
+    "section": "reference",
+    "start": 33909.62492375,
+    "end": 33913.742961833,
+    "pid": 10973
+  },
+  {
+    "round": 0,
+    "section": "comparator",
+    "start": 33913.748428041,
+    "end": 33914.857235833,
+    "pid": 10973
+  },
+  {
+    "round": 0,
+    "section": "comparator",
+    "start": 33914.862886791,
+    "end": 33915.934697875,
+    "pid": 10973
+  },
+  {
+    "round": 0,
+    "section": "chart",
+    "start": 33915.955385833,
+    "end": 33916.240218083,
+    "pid": 10973
+  },
+  {
+    "round": 0,
+    "section": "chart",
+    "start": 33915.954415916,
+    "end": 33916.984005583,
+    "pid": 10973
+  },
+  {
+    "round": 0,
+    "section": "auxiliary",
+    "start": 33915.954197916,
+    "end": 33917.509394166,
+    "pid": 10973
+  },
+  {
+    "round": 0,
+    "section": "reference",
+    "start": 33915.95919475,
+    "end": 33919.6574095,
+    "pid": 10973
+  },
+  {
+    "round": 0,
+    "section": "chart",
+    "start": 33919.664062583,
+    "end": 33919.760999708,
+    "pid": 10973
+  },
+  {
+    "round": 1,
+    "section": "chart",
+    "start": 33920.8891145,
+    "end": 33921.165102666,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "chart",
+    "start": 33921.170053791,
+    "end": 33921.402603125,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "reference",
+    "start": 33922.410378083,
+    "end": 33926.633830875,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "reference",
+    "start": 33926.643748333,
+    "end": 33930.5605745,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "comparator",
+    "start": 33930.566779083,
+    "end": 33931.678989791,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "comparator",
+    "start": 33931.684537916,
+    "end": 33932.837399125,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "chart",
+    "start": 33932.854477583,
+    "end": 33933.120028416,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "chart",
+    "start": 33932.850974333,
+    "end": 33933.845645416,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "auxiliary",
+    "start": 33932.849896666,
+    "end": 33934.43369675,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "reference",
+    "start": 33932.849628958,
+    "end": 33936.629859708,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "chart",
+    "start": 33936.636811041,
+    "end": 33936.739395583,
+    "pid": 11013
+  },
+  {
+    "round": 1,
+    "section": "chart",
+    "start": 33936.744733791,
+    "end": 33937.497039375,
+    "pid": 11013
+  },
+  {
+    "round": 2,
+    "section": "chart",
+    "start": 33938.683300958,
+    "end": 33938.952229666,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "chart",
+    "start": 33938.956977291,
+    "end": 33939.172705583,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "reference",
+    "start": 33940.203679916,
+    "end": 33944.370327375,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "reference",
+    "start": 33944.381867916,
+    "end": 33948.384794666,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "comparator",
+    "start": 33948.389968,
+    "end": 33949.51376875,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "comparator",
+    "start": 33949.519355291,
+    "end": 33950.641944291,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "chart",
+    "start": 33950.665364916,
+    "end": 33950.906215708,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "chart",
+    "start": 33950.665656333,
+    "end": 33951.679707833,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "auxiliary",
+    "start": 33950.66699425,
+    "end": 33952.232155125,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "reference",
+    "start": 33950.670555583,
+    "end": 33954.502865375,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "chart",
+    "start": 33954.5098055,
+    "end": 33954.603328833,
+    "pid": 11070
+  },
+  {
+    "round": 2,
+    "section": "chart",
+    "start": 33954.608276333,
+    "end": 33955.352288208,
+    "pid": 11070
+  },
+  {
+    "round": 3,
+    "section": "chart",
+    "start": 33956.497464708,
+    "end": 33956.772185291,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "chart",
+    "start": 33956.777031375,
+    "end": 33956.995899916,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "reference",
+    "start": 33958.022930625,
+    "end": 33962.230011625,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "reference",
+    "start": 33962.23605625,
+    "end": 33966.184168833,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "comparator",
+    "start": 33966.201654625,
+    "end": 33967.325390291,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "comparator",
+    "start": 33967.338885833,
+    "end": 33968.4483695,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "chart",
+    "start": 33968.4839915,
+    "end": 33968.73553275,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "chart",
+    "start": 33968.485040041,
+    "end": 33969.466038458,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "auxiliary",
+    "start": 33968.490921333,
+    "end": 33970.051120375,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "reference",
+    "start": 33968.483766666,
+    "end": 33972.310973875,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "chart",
+    "start": 33972.320160875,
+    "end": 33972.414334875,
+    "pid": 11093
+  },
+  {
+    "round": 3,
+    "section": "chart",
+    "start": 33972.418437875,
+    "end": 33973.175018083,
+    "pid": 11093
+  },
+  {
+    "round": 4,
+    "section": "chart",
+    "start": 33974.313898291,
+    "end": 33974.588945708,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "chart",
+    "start": 33974.594055416,
+    "end": 33974.817991041,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "reference",
+    "start": 33975.87553325,
+    "end": 33980.164850416,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "reference",
+    "start": 33980.177905791,
+    "end": 33984.506596291,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "comparator",
+    "start": 33984.512289958,
+    "end": 33985.668689791,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "comparator",
+    "start": 33985.673657625,
+    "end": 33986.810992291,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "chart",
+    "start": 33986.81779425,
+    "end": 33987.101287166,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "chart",
+    "start": 33986.818060625,
+    "end": 33987.815892041,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "auxiliary",
+    "start": 33986.831395791,
+    "end": 33988.370935041,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "reference",
+    "start": 33986.819021375,
+    "end": 33990.652917208,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "chart",
+    "start": 33990.659995916,
+    "end": 33990.763863041,
+    "pid": 11130
+  },
+  {
+    "round": 4,
+    "section": "chart",
+    "start": 33990.769068833,
+    "end": 33991.52699875,
+    "pid": 11130
+  }
+]

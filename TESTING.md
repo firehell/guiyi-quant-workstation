@@ -366,6 +366,22 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 进程身份；不清除 OS/磁盘缓存。失败保持阻塞，不增加业务重试或降低快照校验。发布后现场进程和请求链路
 仍须独立验收，不能以 render-only 或候选预览代替 Runtime promotion。
 
+本次黄金固定截点实测的结果、逐请求计时、真实计算区间、截图与冻结脚本保存在
+`outputs/newow-single-worker-20260911/`。这些脚本是本次工作站证据，不是新增正式服务入口；
+其中 `serve.py` 用正式路由加只读 DB/GET 白名单（8011）或复用既有 `app.preview`（8010）。
+需要复验时先确认脚本内固定配置根、数据范围、端口空闲和精确代码与本次意图匹配，再从候选根运行：
+
+```bash
+mkdir -p .run/single-worker
+cp outputs/newow-single-worker-20260911/{serve.py,measure.py,browser_acceptance.cjs,auxiliary_browser.cjs} .run/single-worker/
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python .run/single-worker/measure.py
+```
+
+`measure.py` 负责五个自建 API 进程的启动与回收；不控制现役服务。浏览器脚本须在同 commit 的上述
+候选预览 API/Web 启动后运行，结束后关闭自建预览。不得把旧证据覆盖为新候选通过，也不得把自建预览
+停机当作 Runtime 操作。命令失败后先保留结果并定位；不得借复验下载、补数或更改生产配置。
+
 照妖镜专用绘图规则与生命周期定向验证（确定性显示输入，不代表真实行情或当前在线牛哇）：
 
 ```bash
