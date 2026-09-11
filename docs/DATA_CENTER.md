@@ -109,9 +109,14 @@ publishing 只在单分区 Catalog commit 后计数；这些数字不是去重�
 优先完成基础 provider 日线 `1d` 与由其聚合的 `1w`，再按 active universe、Dataset、年月顺序续传基础
 provider 分钟线 `1m`。每完成一个 1m dataset-month，立即生成四个日内派生月。
 
-18:05 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational 60)` 判断当天是否为交易日，
-再由持 maintenance lock 的 `HistoricalDataManager.update` 同步 metadata 后规划 coverage；不得先用可能
-尚未同步的当天 TradingSession 判定 `NON_TRADING_DAY`。受限 metadata 同步准备 operational 60 品种：
+18:05 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational 60)` 判断当天是否为交易日。
+该判断要求每个相关交易所存在当天精确的 `provider=rqdata` Calendar 行；缺行或非权威行返回
+`TRADING_CALENDAR_MISSING`，以 `attempts=0` 终止并保留失败事实，不能回退到昨天后伪装成
+`NON_TRADING_DAY`。相关交易所解析出的维护日期不一致时返回 `TRADING_CALENDAR_CONFLICT`，不能用
+最早日期跳过仍开市的交易所。只有所有相关交易所的权威结果一致且当天明确为非交易日时才允许跳过。
+交易日再由持 maintenance lock 的
+`HistoricalDataManager.update` 同步 metadata 后规划 coverage；不得先用可能尚未同步的当天
+TradingSession 判定 `NON_TRADING_DAY`。受限 metadata 同步准备 operational 60 品种：
 Calendar 覆盖当天至 ISO 周日或下一交易日（取较晚者），TradingSession 精确替换当天与下一交易日，
 MainContractMap 仍只发布当天 rank1。
 共享 Calendar 的夜盘字段只用同交易所、同交易日的 Session 正证据；不得把某日夜盘扩散到整个
@@ -126,6 +131,9 @@ UNKNOWN 仅可保留 trading-day 身份一致的已有 Calendar；缺键报 `CAL
 下一交易日 Session 尚未由 provider 发布时精确返回 `NEXT_TRADING_SESSION_NOT_READY`，最多一小时后再
 尝试一次；格式、重复或身份异常仍 fail-closed。这样夜盘 phase resolver 在夜盘前取得下一交易日 Session
 事实，同时不会提前发布未来主力映射，也不写 Dataset、Partition 或 Parquet。
+
+after-market 是可写命令。其进程边界若在会话、组装、状态持久化或维护阶段收到未处理异常，公开错误载荷
+必须使用 `readonly=false`，不得因最终结果未知而声称本轮只读；weekly-audit 仍保持 `readonly=true`。
 
 既有月等于 expected bars 时跳过；合法子集只下载缺失 bars 并重写完整月；不可读、extra bar 或
 identity 冲突时重建相交整月。明确的 RQData 额度异常映射为 `PROVIDER_QUOTA_EXHAUSTED`：本轮

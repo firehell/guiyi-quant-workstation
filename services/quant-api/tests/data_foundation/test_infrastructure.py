@@ -480,6 +480,95 @@ def test_latest_complete_day_falls_back_when_current_session_metadata_is_pending
     session.close()
 
 
+def test_latest_metadata_day_rejects_unknown_current_calendar_day(tmp_path) -> None:
+    """Missing today's fact must not be mistaken for a known non-trading day."""
+    session, starts = _session(tmp_path)
+    current_day = session.scalar(
+        select(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == date(2025, 1, 10),
+        )
+    )
+    assert current_day is not None
+    session.delete(current_day)
+    session.commit()
+    coverage = DatabaseCoverageSource(
+        session,
+        starts,
+        now=lambda: datetime(2025, 1, 10, 18, 5, tzinfo=SHANGHAI),
+    )
+
+    with pytest.raises(InfrastructureError, match="^TRADING_CALENDAR_MISSING$"):
+        coverage.latest_metadata_day(("jm",))
+
+    session.close()
+
+
+def test_latest_metadata_day_requires_authoritative_current_calendar_fact(
+    tmp_path,
+) -> None:
+    session, starts = _session(tmp_path)
+    current_day = session.scalar(
+        select(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == date(2025, 1, 10),
+        )
+    )
+    assert current_day is not None
+    current_day.provider = None
+    session.commit()
+    coverage = DatabaseCoverageSource(
+        session,
+        starts,
+        now=lambda: datetime(2025, 1, 10, 18, 5, tzinfo=SHANGHAI),
+    )
+
+    with pytest.raises(InfrastructureError, match="^TRADING_CALENDAR_MISSING$"):
+        coverage.latest_metadata_day(("jm",))
+
+    session.close()
+
+
+def test_latest_metadata_day_rejects_cross_exchange_calendar_disagreement(
+    tmp_path,
+) -> None:
+    session, starts = _session(tmp_path)
+    session.add(Exchange(code="SHFE", name="SHFE"))
+    session.add(
+        Instrument(
+            symbol="au",
+            name="黄金",
+            exchange_code="SHFE",
+            is_active=True,
+        )
+    )
+    session.add_all(
+        (
+            TradingCalendar(
+                exchange_code="SHFE",
+                trade_date=date(2025, 1, 9),
+                is_trading_day=True,
+            ),
+            TradingCalendar(
+                exchange_code="SHFE",
+                trade_date=date(2025, 1, 10),
+                is_trading_day=False,
+            ),
+        )
+    )
+    session.commit()
+    coverage = DatabaseCoverageSource(
+        session,
+        starts,
+        now=lambda: datetime(2025, 1, 10, 18, 5, tzinfo=SHANGHAI),
+    )
+
+    with pytest.raises(InfrastructureError, match="^TRADING_CALENDAR_CONFLICT$"):
+        coverage.latest_metadata_day(("jm", "au"))
+
+    session.close()
+
+
 def test_metadata_complete_returns_false_before_active_metadata_sync(tmp_path) -> None:
     session, starts = _session(tmp_path)
     instrument = session.scalar(select(Instrument).where(Instrument.symbol == "jm"))

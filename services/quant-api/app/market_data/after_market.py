@@ -52,11 +52,16 @@ _PUBLIC_ERROR_CODES = frozenset(
         "PROVIDER_QUOTA_EXHAUSTED",
         "RQDATA_NOT_READY",
         "RQDATA_READY_CHECK_FAILED",
+        "TRADING_CALENDAR_CONFLICT",
+        "TRADING_CALENDAR_MISSING",
         "UPDATE_FAILED",
         "COMMIT_OUTCOME_UNKNOWN",
         "HISTORICAL_MAINTENANCE_REQUIRED",
         "AFTER_MARKET_INTERRUPTED",
     }
+)
+_CALENDAR_CLASSIFICATION_ERROR_CODES = frozenset(
+    {"TRADING_CALENDAR_CONFLICT", "TRADING_CALENDAR_MISSING"}
 )
 _PUBLIC_PRODUCT_CODE = re.compile(r"[a-z]{1,4}\Z")
 _PUBLIC_NOTIFICATION_ERROR_TYPES = frozenset(
@@ -158,7 +163,28 @@ class AfterMarketUpdater:
         self._write_current_run(started_at, products)
         # 先用仅依赖 Calendar 的日期判断今天是否为交易日。当天 Session 正是下方
         # manager.update() 要同步的 metadata，不能反过来把它作为进入更新的前置条件。
-        trading_day = self.manager.coverage.latest_metadata_day(products)
+        try:
+            trading_day = self.manager.coverage.latest_metadata_day(products)
+        except Exception as exc:  # noqa: BLE001 - metadata details stay private
+            calendar_error_code = (
+                exc.code
+                if isinstance(exc, InfrastructureError)
+                and exc.code in _CALENDAR_CLASSIFICATION_ERROR_CODES
+                else "UPDATE_FAILED"
+            )
+            _diagnostic_warning(
+                "after_market_attempt_failed stage=calendar attempt=0 "
+                "detail_code=%s exception_type=%s",
+                calendar_error_code,
+                type(exc).__name__,
+            )
+            return self._finish_failure(
+                AfterMarketResult(
+                    "failed", started_at.date(), 0, calendar_error_code
+                ),
+                started_at,
+                products,
+            )
         if trading_day != started_at.date():
             result = AfterMarketResult(
                 status="skipped",
@@ -193,7 +219,18 @@ class AfterMarketUpdater:
                 continue
             break
 
-        result = AfterMarketResult("failed", trading_day, attempt, error_code)
+        return self._finish_failure(
+            AfterMarketResult("failed", trading_day, attempt, error_code),
+            started_at,
+            products,
+        )
+
+    def _finish_failure(
+        self,
+        result: AfterMarketResult,
+        started_at: datetime,
+        products: tuple[str, ...],
+    ) -> AfterMarketResult:
         self._write_status(result, started_at, products)
         if self.notification_transport is not None:
             notification = self._send_failure_notification(result)
@@ -857,9 +894,22 @@ def _public_last_run(
         (status == "passed" and attempts in {1, 2} and error_code is None)
         or (
             status == "failed"
-            and attempts in {1, 2}
             and isinstance(error_code, str)
-            and error_code in _PUBLIC_ERROR_CODES - {"NON_TRADING_DAY"}
+            and (
+                (
+                    attempts == 0
+                    and schema_version >= 3
+                    and error_code
+                    in _CALENDAR_CLASSIFICATION_ERROR_CODES | {"UPDATE_FAILED"}
+                )
+                or (
+                    attempts in {1, 2}
+                    and error_code
+                    in _PUBLIC_ERROR_CODES
+                    - {"NON_TRADING_DAY"}
+                    - _CALENDAR_CLASSIFICATION_ERROR_CODES
+                )
+            )
         )
         or (status == "skipped" and attempts == 0 and error_code == "NON_TRADING_DAY")
     )

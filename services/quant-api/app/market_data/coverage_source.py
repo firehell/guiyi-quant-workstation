@@ -118,19 +118,38 @@ class DatabaseCoverageSource:
         """metadata bootstrap 可安全同步到的最近已知交易日，不依赖 SessionClock。"""
         current_day = self._now().astimezone(SHANGHAI).date()
         values: list[date] = []
+        current_by_exchange: dict[str, bool] = {}
         for symbol in products:
             exchange = self._exchange(symbol)
-            value = self.session.scalar(
-                select(func.max(TradingCalendar.trade_date)).where(
-                    TradingCalendar.exchange_code == exchange,
-                    TradingCalendar.is_trading_day.is_(True),
-                    TradingCalendar.trade_date <= current_day,
+            if exchange not in current_by_exchange:
+                current_fact = self.session.scalar(
+                    select(TradingCalendar.is_trading_day).where(
+                        TradingCalendar.exchange_code == exchange,
+                        TradingCalendar.trade_date == current_day,
+                        TradingCalendar.provider == "rqdata",
+                    )
                 )
-            )
+                if current_fact is None:
+                    raise InfrastructureError("TRADING_CALENDAR_MISSING")
+                current_by_exchange[exchange] = current_fact
+            value: date | None
+            if current_by_exchange[exchange]:
+                value = current_day
+            else:
+                value = self.session.scalar(
+                    select(func.max(TradingCalendar.trade_date)).where(
+                        TradingCalendar.exchange_code == exchange,
+                        TradingCalendar.is_trading_day.is_(True),
+                        TradingCalendar.trade_date < current_day,
+                        TradingCalendar.provider == "rqdata",
+                    )
+                )
             if value is None:
                 raise InfrastructureError("TRADING_CALENDAR_MISSING")
             values.append(value)
-        return min(values)
+        if len(set(values)) != 1:
+            raise InfrastructureError("TRADING_CALENDAR_CONFLICT")
+        return values[0]
 
     def metadata_complete(self, products: tuple[str, ...], through: date) -> bool:
         """快速判断日历/会话/主力映射是否已覆盖 through；不齐时返回 False 触发 synchronize。"""

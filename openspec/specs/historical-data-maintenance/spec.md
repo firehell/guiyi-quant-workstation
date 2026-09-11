@@ -221,6 +221,25 @@ atomically publishing v3. If invalidation cannot produce any durable byte change
 a run is established; a file-only reader is not required to claim an unobservable attempt occurred. Progress,
 status and log copies MUST NOT become a checkpoint or change maintenance results.
 
+Current-day classification MUST require an exact `provider=rqdata` Calendar fact for every relevant exchange.
+A missing or non-authoritative current-day row MUST terminate as `TRADING_CALENDAR_MISSING` with zero maintenance
+attempts and no provider/data work; only an exact authoritative non-trading-day fact MAY produce
+`NON_TRADING_DAY`. Relevant exchanges resolving to different maintenance days MUST terminate as
+`TRADING_CALENDAR_CONFLICT` rather than choosing the earliest day. Once `current_run` is established, an ordinary Calendar-stage exception MUST durably finalize
+the run as failed. Process interruption MUST remain observable as an unfinished run rather than being relabeled
+as success. Any unhandled after-market execution exception at the CLI or supervised Runtime boundary MUST report
+`readonly=false`; weekly audit exceptions remain read-only.
+
+#### Scenario: Current Calendar fact is unknown
+
+- **WHEN** yesterday has a trading Calendar row but any relevant exchange lacks today's exact authoritative row
+- **THEN** after-market records `failed / attempts=0 / TRADING_CALENDAR_MISSING`, performs no provider or data work, and does not report `NON_TRADING_DAY`
+
+#### Scenario: Mutation-capable boundary fails
+
+- **WHEN** an after-market process boundary receives an exception before the final side effects are known
+- **THEN** its sanitized error payload reports `readonly=false` and does not assert zero writes
+
 #### Scenario: A current run was persisted but not finalized
 
 - **WHEN** schema v3 contains a valid `current_run` updated within two hours

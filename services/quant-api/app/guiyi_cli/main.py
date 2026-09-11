@@ -73,6 +73,8 @@ def _execution_is_readonly(args: argparse.Namespace) -> bool:
         if args.runtime_command in {"subing-ths-scope", "recover-live-captured"}:
             return not args.apply
         return False
+    if args.data_command == "after-market":
+        return False
     return not bool(getattr(args, "apply", False))
 
 

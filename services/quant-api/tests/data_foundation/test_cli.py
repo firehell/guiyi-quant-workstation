@@ -624,6 +624,27 @@ def test_after_market_non_trading_day_skip_exits_successfully() -> None:
     assert manager.calls == []
 
 
+def test_manual_after_market_exception_never_claims_readonly() -> None:
+    manager = FakeManager()
+
+    def unavailable(_manager, *, failure_notification: bool):
+        assert failure_notification is False
+        raise RuntimeError("private maintenance details")
+
+    code, payload = _run(
+        ["data", "after-market"],
+        manager,
+        after_market_factory=unavailable,
+    )
+
+    assert code == 1
+    assert payload["readonly"] is False
+    assert payload["error"] == {
+        "code": "CLI_INTERNAL_ERROR",
+        "type": "RuntimeError",
+    }
+
+
 def test_refresh_requires_a_symbol_and_explicit_window() -> None:
     manager = FakeManager()
     code, payload = _run(

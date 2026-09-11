@@ -154,13 +154,18 @@ class _RecordingTransport:
         return ProviderAcceptance("provider-reference-must-not-persist")
 
 
-def _result(status: str, *, stop_reason: str | None = None) -> MaintenanceResult:
+def _result(
+    status: str,
+    *,
+    stop_reason: str | None = None,
+    applied: int = 0,
+) -> MaintenanceResult:
     return MaintenanceResult(
         action="update",
         status=status,
         through=date(2026, 8, 10),
         planned=0,
-        applied=0,
+        applied=applied,
         blocked=0,
         failed=0,
         provider_requests=0,
@@ -460,6 +465,49 @@ def test_uses_calendar_metadata_day_before_current_session_sync(tmp_path) -> Non
     assert rqdata.calls == [date(2026, 8, 10)]
     assert sleeps == []
     assert notices == []
+
+
+@pytest.mark.parametrize(
+    "calendar_error_code",
+    ("TRADING_CALENDAR_MISSING", "TRADING_CALENDAR_CONFLICT"),
+)
+def test_calendar_classification_failure_finishes_without_provider_work(
+    tmp_path, calendar_error_code: str,
+) -> None:
+    updater, manager, rqdata, sleeps, notices, live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 9),
+        readiness=[],
+        results=[],
+    )
+
+    def unknown_calendar(_products: tuple[str, ...]) -> date:
+        raise InfrastructureError(calendar_error_code)
+
+    manager.coverage.latest_metadata_day = unknown_calendar
+
+    result = updater.run()
+    status = _status(tmp_path / "after-market-status.json")
+
+    assert result == AfterMarketResult(
+        status="failed",
+        trading_day=date(2026, 8, 10),
+        attempts=0,
+        error_code=calendar_error_code,
+    )
+    assert status["current_run"] is None
+    assert status["last_run"]["status"] == "failed"
+    assert status["last_failure"] == {
+        "trading_day": "2026-08-10",
+        "error_code": calendar_error_code,
+    }
+    assert public_after_market_status(status)["last_run"]["attempts"] == 0
+    assert rqdata.calls == []
+    assert manager.calls == []
+    assert sleeps == []
+    assert _notice_error_codes(notices) == [calendar_error_code]
+    assert live_store.published == []
+    assert live_store.cleaned == []
 
 
 def test_updates_once_when_first_attempt_is_ready(tmp_path) -> None:
@@ -905,6 +953,68 @@ def test_preserves_whitelisted_maintenance_stop_code_on_final_failure(tmp_path) 
     assert _notice_error_codes(notices) == ["PROVIDER_QUOTA_EXHAUSTED"]
 
 
+def test_partial_update_with_committed_partition_is_never_recorded_as_passed(
+    tmp_path,
+) -> None:
+    updater, _manager, _rqdata, sleeps, notices, live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[
+            _result(
+                "partial",
+                stop_reason="provider_quota_exhausted",
+                applied=1,
+            )
+        ],
+    )
+
+    result = updater.run()
+    status = public_after_market_status(
+        _status(tmp_path / "after-market-status.json")
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "PROVIDER_QUOTA_EXHAUSTED"
+    assert status["last_run"]["status"] == "failed"
+    assert status["last_successful_trading_day"] is None
+    assert sleeps == []
+    assert _notice_error_codes(notices) == ["PROVIDER_QUOTA_EXHAUSTED"]
+    assert live_store.published == []
+    assert live_store.cleaned == []
+
+
+def test_process_interruption_preserves_unfinished_current_run(tmp_path) -> None:
+    class SimulatedProcessInterruption(BaseException):
+        pass
+
+    updater, manager, _rqdata, sleeps, notices, live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True],
+        results=[],
+    )
+
+    def interrupt(_request, *, before_apply=None, observer=None):
+        raise SimulatedProcessInterruption
+
+    manager.update = interrupt
+
+    with pytest.raises(SimulatedProcessInterruption):
+        updater.run()
+
+    status = public_after_market_status(
+        _status(tmp_path / "after-market-status.json")
+    )
+    assert status["current_run"]["attempt"] == 1
+    assert status["current_run"]["stage"] == "rqdata_readiness"
+    assert status["last_run"] is None
+    assert sleeps == []
+    assert notices == []
+    assert live_store.published == []
+    assert live_store.cleaned == []
+
+
 def test_success_clears_previous_last_failure(tmp_path) -> None:
     status_path = tmp_path / "after-market-status.json"
     status_path.write_text(
@@ -1098,6 +1208,58 @@ def test_public_status_rejects_boolean_attempt_count() -> None:
                 "products": ["j", "jm", "ap", "ag"],
                 "error_code": None,
             }
+        }
+    )
+
+    assert payload == {}
+
+
+def test_public_status_rejects_zero_attempt_post_apply_failure() -> None:
+    payload = public_after_market_status(
+        {
+            "schema_version": 3,
+            "current_run": None,
+            "last_run": {
+                "trading_day": "2026-08-10",
+                "status": "failed",
+                "attempts": 0,
+                "started_at": "2026-08-10T17:00:00+08:00",
+                "finished_at": "2026-08-10T17:05:00+08:00",
+                "products": list(_ACTIVE_PRODUCTS),
+                "error_code": "COMMIT_OUTCOME_UNKNOWN",
+                "failure_notification": None,
+            },
+            "last_successful_trading_day": None,
+            "last_failure": {
+                "trading_day": "2026-08-10",
+                "error_code": "COMMIT_OUTCOME_UNKNOWN",
+            },
+        }
+    )
+
+    assert payload == {}
+
+
+def test_public_status_rejects_zero_attempt_failure_from_legacy_schema() -> None:
+    payload = public_after_market_status(
+        {
+            "schema_version": 2,
+            "current_run": None,
+            "last_run": {
+                "trading_day": "2026-08-10",
+                "status": "failed",
+                "attempts": 0,
+                "started_at": "2026-08-10T17:00:00+08:00",
+                "finished_at": "2026-08-10T17:05:00+08:00",
+                "products": list(_ACTIVE_PRODUCTS),
+                "error_code": "UPDATE_FAILED",
+                "failure_notification": None,
+            },
+            "last_successful_trading_day": None,
+            "last_failure": {
+                "trading_day": "2026-08-10",
+                "error_code": "UPDATE_FAILED",
+            },
         }
     )
 

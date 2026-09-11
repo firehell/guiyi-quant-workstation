@@ -131,7 +131,7 @@ def main(
             exception_error_payload(
                 command=command,
                 exc=exc,
-                readonly=service in {"after-market", "weekly-audit"},
+                readonly=service == "weekly-audit",
             ),
             stderr,
         )

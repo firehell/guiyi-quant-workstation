@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -7,6 +9,28 @@ import sys
 
 
 QUANT_API_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_after_market_boundary_never_claims_an_execution_exception_is_readonly():
+    from app.runtime_entry import main
+
+    stderr = io.StringIO()
+
+    def unavailable():
+        raise RuntimeError("private database details")
+
+    assert (
+        main(
+            ["after-market"],
+            session_factory=unavailable,
+            stderr=stderr,
+            stdout=io.StringIO(),
+        )
+        == 1
+    )
+    payload = json.loads(stderr.getvalue())
+    assert payload["readonly"] is False
+    assert "private" not in stderr.getvalue()
 
 
 def test_after_market_logging_setup_failure_still_runs_maintenance(monkeypatch):
