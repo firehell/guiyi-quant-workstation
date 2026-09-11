@@ -4,7 +4,8 @@ from dataclasses import replace
 
 import pytest
 
-from app.market_data.historical_data_manager import UpdateRequest
+from app.market_data import historical_data_manager as historical
+from app.market_data.historical_data_manager import MaintenanceResult, UpdateRequest
 from app.market_data.coverage_source import DatabaseCoverageSource
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
 from app.market_data.storage import PublishRequest
@@ -23,6 +24,23 @@ def test_daily_requires_existing_baseline_without_metadata_bootstrap(session, tm
         manager.update(UpdateRequest(("jm",), None, date(2025, 1, 3), mode="daily"))
     assert manager.metadata.calls == []
     assert manager.provider.calls == []
+
+
+def test_daily_recovery_plan_hash_uses_only_canonical_target_windows() -> None:
+    target_windows = (
+        {
+            "dataset": ("continuous", "jm", "MAIN", "1d"),
+            "year": 2026,
+            "month": 9,
+            "window_start": "2026-09-01T07:00:00+00:00",
+            "window_end": "2026-09-02T07:00:00+00:00",
+            "missing_bar_count": 2,
+        },
+    )
+
+    assert historical._daily_recovery_plan_sha256(target_windows) == (
+        "fa92fc89670cdcf13c01448dbc85c0c1a89f33125ec43f7f10ffc26217731bfc"
+    )
 
 
 @pytest.fixture
@@ -69,6 +87,326 @@ def daily_manager(session, tmp_path):  # noqa: F811
     manager.provider.calls.clear()
     manager.metadata.calls.clear()
     return manager
+
+
+def test_daily_recovery_dry_run_is_fixed_and_has_no_provider_or_write_side_effects(
+    daily_manager,
+) -> None:
+    manager = daily_manager
+    verified: list[str] = []
+
+    result = manager.daily_recovery(
+        UpdateRequest(
+            products=("jm",),
+            since=None,
+            through=date(2025, 3, 7),
+            apply=False,
+            sync_current_day_metadata=False,
+            mode="daily",
+        ),
+        verify_identity=lambda: verified.append("verified"),
+    )
+
+    assert result.status == "planned"
+    assert result.readonly is True
+    assert result.through == date(2025, 3, 7)
+    assert len(result.plan_sha256) == 64
+    assert result.target_windows
+    assert result.provider_requests == 0
+    assert manager.provider.calls == []
+    assert manager.metadata.current_day_calls == []
+    assert verified == ["verified", "verified"]
+
+
+def test_daily_recovery_apply_replans_and_verifies_under_lease_before_side_effects(
+    daily_manager, monkeypatch
+) -> None:
+    manager = daily_manager
+    target_windows = (
+        {
+            "dataset": ("continuous", "jm", "MAIN", "1d"),
+            "year": 2026,
+            "month": 9,
+            "window_start": "2026-09-01T07:00:00+00:00",
+            "window_end": "2026-09-02T07:00:00+00:00",
+            "missing_bar_count": 2,
+        },
+    )
+    plan_hash = historical._daily_recovery_plan_sha256(target_windows)
+    events: list[str] = []
+
+    class Lease:
+        def release(self) -> None:
+            events.append("release")
+
+    monkeypatch.setattr(
+        manager.catalog,
+        "acquire_maintenance_lock",
+        lambda: events.append("lease") or Lease(),
+    )
+
+    def execute(_products, _through, *, apply):
+        events.append("apply" if apply else "plan")
+        return MaintenanceResult(
+            "update",
+            "passed" if apply else "planned",
+            date(2026, 9, 11),
+            1,
+            int(apply),
+            0,
+            0,
+            int(apply),
+            target_windows=() if apply else target_windows,
+        )
+
+    monkeypatch.setattr(manager, "_execute_daily", execute)
+
+    result = manager.daily_recovery(
+        UpdateRequest(
+            ("jm",),
+            None,
+            date(2026, 9, 11),
+            apply=True,
+            sync_current_day_metadata=False,
+            mode="daily",
+        ),
+        expected_plan_sha256=plan_hash,
+        verify_identity=lambda: events.append("verify"),
+        before_apply=lambda: events.append("invalidate"),
+    )
+
+    assert result.status == "passed"
+    assert result.readonly is False
+    assert result.plan_sha256 == plan_hash
+    assert result.target_windows == target_windows
+    assert events == [
+        "lease",
+        "verify",
+        "plan",
+        "verify",
+        "invalidate",
+        "apply",
+        "release",
+    ]
+
+
+def test_daily_recovery_target_drift_blocks_before_invalidation_and_provider(
+    daily_manager, monkeypatch
+) -> None:
+    manager = daily_manager
+    effects: list[str] = []
+    monkeypatch.setattr(
+        manager,
+        "_execute_daily",
+        lambda *_args, **_kwargs: MaintenanceResult(
+            "update",
+            "planned",
+            date(2026, 9, 11),
+            1,
+            0,
+            0,
+            0,
+            0,
+            target_windows=(
+                {
+                    "dataset": ("continuous", "jm", "MAIN", "1d"),
+                    "year": 2026,
+                    "month": 9,
+                    "window_start": "2026-09-01T07:00:00+00:00",
+                    "window_end": "2026-09-01T07:00:00+00:00",
+                    "missing_bar_count": 1,
+                },
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="DAILY_RECOVERY_PLAN_CHANGED"):
+        manager.daily_recovery(
+            UpdateRequest(
+                ("jm",),
+                None,
+                date(2026, 9, 11),
+                apply=True,
+                sync_current_day_metadata=False,
+                mode="daily",
+            ),
+            expected_plan_sha256="0" * 64,
+            verify_identity=lambda: effects.append("verify"),
+            before_apply=lambda: effects.append("invalidate"),
+        )
+
+    assert effects == ["verify"]
+    assert manager.provider.calls == []
+
+
+def test_daily_recovery_identity_drift_after_locked_plan_blocks_before_side_effects(
+    daily_manager, monkeypatch
+) -> None:
+    manager = daily_manager
+    target_windows = (
+        {
+            "dataset": ("continuous", "jm", "MAIN", "1d"),
+            "year": 2026,
+            "month": 9,
+            "window_start": "2026-09-01T07:00:00+00:00",
+            "window_end": "2026-09-01T07:00:00+00:00",
+            "missing_bar_count": 1,
+        },
+    )
+    effects: list[str] = []
+    monkeypatch.setattr(
+        manager,
+        "_execute_daily",
+        lambda *_args, **_kwargs: MaintenanceResult(
+            "update",
+            "planned",
+            date(2026, 9, 11),
+            1,
+            0,
+            0,
+            0,
+            0,
+            target_windows=target_windows,
+        ),
+    )
+
+    def verify() -> None:
+        effects.append("verify")
+        if len(effects) == 2:
+            raise ValueError("RUNTIME_STATUS_CHANGED")
+
+    with pytest.raises(ValueError, match="RUNTIME_STATUS_CHANGED"):
+        manager.daily_recovery(
+            UpdateRequest(
+                ("jm",),
+                None,
+                date(2026, 9, 11),
+                apply=True,
+                sync_current_day_metadata=False,
+                mode="daily",
+            ),
+            expected_plan_sha256=historical._daily_recovery_plan_sha256(
+                target_windows
+            ),
+            verify_identity=verify,
+            before_apply=lambda: effects.append("invalidate"),
+        )
+
+    assert effects == ["verify", "verify"]
+    assert manager.provider.calls == []
+
+
+def test_daily_recovery_maintenance_lock_blocks_before_identity_and_side_effects(
+    daily_manager, monkeypatch
+) -> None:
+    manager = daily_manager
+    effects: list[str] = []
+    monkeypatch.setattr(manager.catalog, "acquire_maintenance_lock", lambda: None)
+
+    result = manager.daily_recovery(
+        UpdateRequest(
+            ("jm",),
+            None,
+            date(2026, 9, 11),
+            apply=True,
+            sync_current_day_metadata=False,
+            mode="daily",
+        ),
+        expected_plan_sha256="0" * 64,
+        verify_identity=lambda: effects.append("verify"),
+        before_apply=lambda: effects.append("invalidate"),
+    )
+
+    assert result.status == "blocked"
+    assert result.maintenance.stop_reason == "maintenance_locked"
+    assert effects == []
+    assert manager.provider.calls == []
+
+
+@pytest.mark.parametrize(
+    ("failure", "terminal_state"),
+    [(RuntimeError("source failed"), "failed"), (KeyboardInterrupt(), "interrupted")],
+)
+def test_maintenance_progress_exposes_failure_and_interruption_terminal_states(
+    daily_manager, failure, terminal_state
+) -> None:
+    manager = daily_manager
+    events = []
+    manager._observer = events.append
+
+    with pytest.raises(type(failure)):
+        with manager._progress("provider", symbol="jm"):
+            raise failure
+
+    assert [(event.phase, event.state) for event in events] == [
+        ("provider", "started"),
+        ("provider", terminal_state),
+    ]
+
+
+def test_daily_recovery_committed_subset_is_single_attempt_and_formally_readable(
+    daily_manager,
+) -> None:
+    from app.market_data.domain import SeriesKind, SeriesQuery
+    from app.market_data.market_data_service import MarketDataService
+
+    manager = daily_manager
+    request = UpdateRequest(
+        ("jm",),
+        None,
+        date(2025, 3, 7),
+        apply=False,
+        sync_current_day_metadata=False,
+        mode="daily",
+    )
+    plan = manager.daily_recovery(request)
+
+    class FailFirstBatch(FakeProvider):
+        def __init__(self, bars):
+            super().__init__(bars)
+            self.batch_attempts = []
+
+        def fetch_many(self, requests):
+            self.batch_attempts.append(requests)
+            if len(self.batch_attempts) == 1:
+                raise RuntimeError("source failed")
+            return super().fetch_many(requests)
+
+    provider = FailFirstBatch(manager.provider.bars)
+    manager.provider = provider
+
+    result = manager.daily_recovery(
+        replace(request, apply=True),
+        expected_plan_sha256=plan.plan_sha256,
+    )
+
+    assert result.status == "failed"
+    assert result.maintenance.applied > 0
+    failed_request = provider.batch_attempts[0][0]
+    assert sum(
+        request.key == failed_request.key and request.expected == failed_request.expected
+        for batch in provider.batch_attempts
+        for request in batch
+    ) == 1
+    committed_key, committed_ends = provider.calls[0]
+    query = SeriesQuery(
+        series_kind=(
+            SeriesKind.CONTINUOUS
+            if committed_key.kind is DatasetKind.CONTINUOUS
+            else SeriesKind.CONTRACT
+        ),
+        symbol=committed_key.symbol,
+        contract=(
+            None
+            if committed_key.kind is DatasetKind.CONTINUOUS
+            else committed_key.series_or_contract
+        ),
+        frequency=committed_key.frequency,
+        start=min(committed_ends) - timedelta(microseconds=1),
+        end=max(committed_ends),
+    )
+    readback = MarketDataService(manager.catalog, manager.store).query(query)
+    assert tuple(bar.bar_end for bar in readback.bars) == committed_ends
 
 
 def test_daily_ignores_old_damaged_file_but_full_audit_detects_it(daily_manager):

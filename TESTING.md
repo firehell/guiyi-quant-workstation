@@ -502,6 +502,24 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 `guiyi data contract-warmup --apply`；即使 dry-run 得到 plan hash，真实 RQData/Canonical apply 仍需
 引用该 exact hash 的单次明确授权。
 
+Runtime-bound daily recovery 的显式 P60/fixed-through 请求、稳定 target-window hash、maintenance lease 内
+identity/CAS 重检、projection 顺序、单次 provider 失败、正式 Catalog/MDS 读回与 NDJSON 进度：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_daily_recovery_cli.py \
+  services/quant-api/tests/data_foundation/test_daily_maintenance.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/data_foundation/test_closeout_binding.py \
+  services/quant-api/tests/test_market_home_projection_invalidation.py \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py
+```
+
+该组测试只使用 Runtime/context doubles、fake provider、SQLite 与临时 Parquet；不会连接真实 RQData、生产
+PostgreSQL/Redis，或修改现场 Canonical、status、projection、Runtime 和调度。真实
+`daily-recovery --apply` 仍必须绑定当前 Runtime/status、dry-run exact plan hash 与一次明确生产写入意图。
+
 Canonical 不可变月发布的 storage、Catalog strict-read 与 manager 失败回归：
 
 ```bash

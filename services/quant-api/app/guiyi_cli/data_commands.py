@@ -31,7 +31,7 @@ from app.market_data.product_retirement import assert_not_retired
 
 def build_request(args: argparse.Namespace):
     """根据 data_command 分支构造对应的维护请求对象。"""
-    if args.data_command in {"after-market", "weekly-audit", "close-interrupted-after-market", "session-anchor-repair", "metadata-repair", "au-calendar-correction"}:
+    if args.data_command in {"after-market", "weekly-audit", "close-interrupted-after-market", "daily-recovery", "session-anchor-repair", "metadata-repair", "au-calendar-correction"}:
         return None
     if args.data_command == "newow-readiness":
         from app.market_data.newow.readiness import ReadinessRequest

@@ -197,6 +197,7 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
 
     assert set(command_action.choices) == {
         "close-interrupted-after-market",
+        "daily-recovery",
         "update",
         "refresh",
         "audit",
@@ -208,6 +209,110 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         "metadata-repair",
         "au-calendar-correction",
     }
+
+
+def test_daily_recovery_parser_requires_exact_runtime_identity_and_fixed_through() -> None:
+    parser = build_parser()
+    common = [
+        "data",
+        "daily-recovery",
+        "--runtime-root",
+        "/runtime",
+        "--runtime-commit",
+        "a" * 40,
+        "--expected-status-sha256",
+        "b" * 64,
+        "--through",
+        "2026-09-11",
+    ]
+
+    parsed = parser.parse_args(common)
+
+    assert parsed.apply is False
+    assert parsed.expected_plan_sha256 is None
+    for required_flag in (
+        "--runtime-root",
+        "--runtime-commit",
+        "--expected-status-sha256",
+        "--through",
+    ):
+        missing = common.copy()
+        index = missing.index(required_flag)
+        del missing[index : index + 2]
+        with pytest.raises(CliUsageError):
+            parser.parse_args(missing)
+
+
+def test_daily_recovery_parser_hash_is_apply_only_and_lowercase_sha256() -> None:
+    parser = build_parser()
+    common = [
+        "data",
+        "daily-recovery",
+        "--runtime-root",
+        "/runtime",
+        "--runtime-commit",
+        "a" * 40,
+        "--expected-status-sha256",
+        "b" * 64,
+        "--through",
+        "2026-09-11",
+    ]
+
+    with pytest.raises(CliUsageError):
+        parser.parse_args([*common, "--expected-plan-sha256", "c" * 64])
+    with pytest.raises(CliUsageError):
+        parser.parse_args([*common, "--apply"])
+    with pytest.raises(CliUsageError):
+        parser.parse_args(
+            [*common, "--apply", "--expected-plan-sha256", "C" * 64]
+        )
+    parsed = parser.parse_args(
+        [*common, "--apply", "--expected-plan-sha256", "c" * 64]
+    )
+    assert parsed.apply is True
+    assert parsed.expected_plan_sha256 == "c" * 64
+
+
+def test_daily_recovery_dispatches_without_constructing_the_default_manager() -> None:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    received = []
+
+    def run_recovery(args, *, progress_stream):
+        received.append((args, progress_stream))
+        return {
+            "schema_version": 1,
+            "command": "data.daily-recovery",
+            "status": "planned",
+            "readonly": True,
+            "plan_sha256": "c" * 64,
+            "targets": [],
+        }
+
+    code = main(
+        [
+            "data",
+            "daily-recovery",
+            "--runtime-root",
+            "/runtime",
+            "--runtime-commit",
+            "a" * 40,
+            "--expected-status-sha256",
+            "b" * 64,
+            "--through",
+            "2026-09-11",
+        ],
+        manager_factory=lambda _session: pytest.fail("default manager is not bound"),
+        daily_recovery_runner=run_recovery,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue())["plan_sha256"] == "c" * 64
+    assert received[0][0].through == "2026-09-11"
+    assert received[0][1] is stderr
+    assert stderr.getvalue() == ""
 
 
 def test_contract_warmup_parser_requires_apply_hash_and_rejects_abbreviations() -> None:

@@ -74,7 +74,7 @@ as after_market_complete.
 - **THEN** report AFTER_MARKET_CLOSEOUT_OUTCOME_UNKNOWN and status_written null, perform no retry or rollback
 
 ### Requirement: 公开维护面
-系统 SHALL 公开 `update`、`refresh`、`audit` 与 `contract-warmup`。`audit` SHALL 接受
+系统 SHALL 公开 `update`、`refresh`、`audit`、`contract-warmup` 与显式 `daily-recovery`。`audit` SHALL 接受
 `(--symbol X | --universe {active,operational})` 的互斥选择器。无 `--apply` 的 update/refresh MUST 只计划，
 不得写 PostgreSQL/Parquet；audit MUST 只读。
 系统还 SHALL 公开一次性 `session-anchor-repair` 三阶段 seam：`plan` 只读输出精确 session、Dataset、
@@ -86,6 +86,40 @@ Catalog、执行精确 0045 并清理 publish 执行时由 operational phase aut
 #### Scenario: 已退出动作
 - **WHEN** 用户调用任何已退出的维护操作
 - **THEN** CLI 不暴露该入口
+
+### Requirement: Runtime-bound daily recovery is an exact hash-locked seam
+`guiyi data daily-recovery` SHALL require an exact Runtime root, 40-character lowercase commit,
+64-character lowercase after-market status hash and explicit `through`. The product scope MUST come only from the
+validated Runtime operational universe. The command MUST construct
+`UpdateRequest(products=runtime_products, since=None, through=through, apply=phase,
+sync_current_day_metadata=False, mode="daily")`; it MUST NOT accept an operator product list, retry, resume, widen to
+full maintenance, bootstrap historical metadata, send a notification or synchronize current-day metadata.
+
+Without `--apply`, the command MUST validate the Runtime binding, perform only the existing daily read plan, construct
+no provider client/request and mutate no DB, Canonical, status, projection or Redis fact. It SHALL return the canonical
+target windows and `plan_sha256 = SHA256(UTF8(json.dumps(target_windows, sort_keys=True,
+separators=(",", ":"), ensure_ascii=False)))`. A dry-run MUST reject `--expected-plan-sha256`.
+
+`--apply` MUST require the exact lowercase dry-run `--expected-plan-sha256`. It MUST acquire the shared maintenance
+lease before revalidating Runtime identity, pinned status and both Live/Alert heartbeats and recomputing the complete
+dry-run target windows. A lock miss or any identity, status, dependency, heartbeat, target-window or hash drift MUST
+block before Market Home projection invalidation, provider access and Catalog/Canonical writes. Only after those
+checks may it invalidate the existing Market Home projection and execute exactly one daily attempt through the shared
+`HistoricalDataManager`. Provider failure, partial completion and commit-unknown remain literal and MUST NOT trigger a
+retry.
+
+The command SHALL emit credential-free bounded NDJSON progress to stderr using the shared maintenance event fields,
+including `started`, `completed`, `failed` and `interrupted`; final JSON remains the only stdout payload. Progress is
+observational and MUST NOT create a second persisted authority or alter maintenance scope.
+
+#### Scenario: Runtime or target identity drifts before apply
+- **WHEN** any pinned Runtime fact or recomputed target-window hash differs while the maintenance lease is held
+- **THEN** daily recovery fails closed before projection invalidation, provider access and data publication
+
+#### Scenario: One source attempt partially commits
+- **WHEN** one provider target fails after earlier targets committed through the formal publication path
+- **THEN** the failure is not retried, completed targets remain readable through Catalog/MarketDataService and the
+  final result reports the literal failed/partial counts
 
 #### Scenario: session-anchor plan
 - **WHEN** operator 执行 `session-anchor-repair --phase plan`

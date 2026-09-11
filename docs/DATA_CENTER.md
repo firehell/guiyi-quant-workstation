@@ -104,6 +104,26 @@ publishing 只在单分区 Catalog commit 后计数；这些数字不是去重�
 阶段可嵌套，`stage_durations` 不得相加推导本轮墙钟时间。observer 失败停止本轮，不能当作
 单族 provider 故障继续。无 observer 的既有调用保持兼容，last-success/status 文件不是进度权威。
 
+受审的单次日常恢复使用专用入口：
+
+```text
+guiyi data daily-recovery \
+  --runtime-root ROOT \
+  --runtime-commit COMMIT \
+  --expected-status-sha256 STATUS_SHA256 \
+  --through YYYY-MM-DD \
+  [--apply --expected-plan-sha256 PLAN_SHA256]
+```
+
+它不接受 `--symbol/--universe/--since`，品种只取已验证 Runtime binding 的 operational P60；固定构造
+`since=None`、`mode=daily`、`sync_current_day_metadata=false`。默认 dry-run 不初始化 provider client，
+不发 provider 请求，也不写 DB、Canonical、status、projection 或 Redis；返回 canonical target windows，
+并按紧凑、键排序、UTF-8、`ensure_ascii=false` 的 target-windows JSON 计算 SHA-256。apply 必须提供同一
+lowercase plan hash，并在 maintenance lease 内重新核验 root/commit/status、依赖、Live/Alert heartbeat 与
+完整窗口 hash；漂移或锁冲突均在 projection invalidation 和 provider/写入前阻断。通过后只运行一次既有
+daily manager 路径，不同步当天 metadata、不回退 full、不重试、不续跑、不通知。进度仅以共享事件字段写
+stderr NDJSON；stdout 保留唯一最终 JSON，任何已提交、失败、partial 或 commit-unknown 结果保持原义。
+
 `effective_start(symbol)=max(product_window_start(symbol), active_history_floor)`，其中
 `active_history_floor=2023-01-01`。`update` 使用显式 `--through` 固定水位，先同步 metadata，后
 优先完成基础 provider 日线 `1d` 与由其聚合的 `1w`，再按 active universe、Dataset、年月顺序续传基础
@@ -481,6 +501,7 @@ main ready count 只计算实际主图 READY，不把其他 section 的证据状
 
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
+guiyi data daily-recovery --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 HASH --through DATE [--apply --expected-plan-sha256 HASH]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}] [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe {active,operational}) [--through DATE] [--progress]
@@ -489,7 +510,7 @@ guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest P
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply
 ```
 
-无 `--apply` 的 update/refresh/contract-warmup 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
+无 `--apply` 的 update/refresh/contract-warmup/daily-recovery 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
 始终只读。audit 对每个请求品种独立返回结构化 finding（`code`、`category`、dataset、year、month）：已知
 Session、Calendar 与产品窗口元数据缺口分别归为 `metadata_session`、`metadata_calendar`、
 `metadata_window`，但不会中断其余品种；主力映射、预期分区缺失与物理一致性问题分别归为

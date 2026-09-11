@@ -155,6 +155,7 @@ def main(
     subing_readiness_builder=build_subing_readiness,
     newow_readiness_builder=None,
     captured_recovery_runner=run_captured_recovery,
+    daily_recovery_runner=None,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
@@ -180,15 +181,22 @@ def main(
 
     try:
         if args.domain == "data":
-            payload = _run_data(
-                args,
-                session_factory,
-                manager_factory,
-                after_market_factory,
-                stderr,
-                session_anchor_repair_factory,
-                newow_readiness_builder,
-            )
+            if args.data_command == "daily-recovery":
+                if daily_recovery_runner is None:
+                    from app.guiyi_cli.daily_recovery import run_daily_recovery
+
+                    daily_recovery_runner = run_daily_recovery
+                payload = daily_recovery_runner(args, progress_stream=stderr)
+            else:
+                payload = _run_data(
+                    args,
+                    session_factory,
+                    manager_factory,
+                    after_market_factory,
+                    stderr,
+                    session_anchor_repair_factory,
+                    newow_readiness_builder,
+                )
         elif args.runtime_command == "recover-live-captured":
             payload = captured_recovery_runner(args, session_factory=session_factory)
         elif args.runtime_command == "subing-readiness":

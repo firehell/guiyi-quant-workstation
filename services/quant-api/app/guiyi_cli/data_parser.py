@@ -65,6 +65,21 @@ class JsonArgumentParser(argparse.ArgumentParser):
                 or re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None
             ):
                 self.error("apply requires a lowercase SHA-256 plan hash")
+        if getattr(result, "data_command", None) == "daily-recovery":
+            expected_hash = result.expected_plan_sha256
+            if (
+                re.fullmatch(r"[0-9a-f]{40}", result.runtime_commit) is None
+                or re.fullmatch(r"[0-9a-f]{64}", result.expected_status_sha256)
+                is None
+            ):
+                self.error("exact runtime identity required")
+            if not result.apply and expected_hash is not None:
+                self.error("dry-run does not accept an expected plan hash")
+            if result.apply and (
+                not isinstance(expected_hash, str)
+                or re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None
+            ):
+                self.error("apply requires a lowercase SHA-256 plan hash")
         return result
 
 
@@ -79,6 +94,14 @@ def add_data_commands(
     update.add_argument("--since")
     update.add_argument("--through")
     update.add_argument("--apply", action="store_true")
+
+    recovery = commands.add_parser("daily-recovery", allow_abbrev=False)
+    recovery.add_argument("--runtime-root", required=True)
+    recovery.add_argument("--runtime-commit", required=True)
+    recovery.add_argument("--expected-status-sha256", required=True)
+    recovery.add_argument("--through", required=True)
+    recovery.add_argument("--expected-plan-sha256")
+    recovery.add_argument("--apply", action="store_true")
 
     refresh = commands.add_parser("refresh")
     refresh.add_argument("--symbol", required=True)

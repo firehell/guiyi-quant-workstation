@@ -169,7 +169,7 @@ class MaintenanceProgressEvent:
     """Bounded, credential-free progress; counters never determine maintenance scope."""
 
     phase: Literal["planning", "reading", "provider", "publishing", "aggregation"]
-    state: Literal["started", "completed"]
+    state: Literal["started", "completed", "failed", "interrupted"]
     symbol: str | None
     dataset: tuple[str, str, str, str] | None
     year: int | None
@@ -316,6 +316,55 @@ class MaintenanceResult:
             ],
             "failures": [dict(item) for item in self.failures],
         }
+
+
+@dataclass(frozen=True, slots=True)
+class DailyRecoveryResult:
+    """Exact dry-run plan plus the literal outcome of one bounded recovery attempt."""
+
+    maintenance: MaintenanceResult
+    plan_sha256: str
+    target_windows: tuple[Mapping[str, object], ...]
+    readonly: bool
+
+    @property
+    def status(self) -> str:
+        return self.maintenance.status
+
+    @property
+    def through(self) -> date | None:
+        return self.maintenance.through
+
+    @property
+    def provider_requests(self) -> int:
+        return self.maintenance.provider_requests
+
+    def as_payload(self) -> dict[str, object]:
+        payload = self.maintenance.as_payload()
+        payload.update(
+            {
+                "command": "data.daily-recovery",
+                "readonly": self.readonly,
+                "plan_sha256": self.plan_sha256,
+                "targets": [dict(item) for item in self.target_windows],
+            }
+        )
+        return payload
+
+
+def _daily_recovery_plan_sha256(
+    target_windows: tuple[Mapping[str, object], ...],
+) -> str:
+    """Hash exactly the canonical target-window JSON required by the recovery CAS."""
+
+    return hashlib.sha256(
+        json.dumps(
+            target_windows,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _maintenance_locked(action: str, through: date) -> MaintenanceResult:
@@ -819,6 +868,98 @@ class HistoricalDataManager(ContractWarmupPlanner):
             self._observer = None
             self._source_cache = None
 
+    def daily_recovery(
+        self,
+        request: UpdateRequest,
+        *,
+        expected_plan_sha256: str | None = None,
+        before_apply: Callable[[], None] | None = None,
+        verify_identity: Callable[[], None] | None = None,
+        observer: MaintenanceObserver | None = None,
+    ) -> DailyRecoveryResult:
+        """Plan or execute one fixed daily recovery without widening its metadata scope."""
+
+        if (
+            request.mode != "daily"
+            or request.since is not None
+            or request.through is None
+            or request.sync_current_day_metadata
+        ):
+            raise ValueError("DAILY_RECOVERY_REQUEST_INVALID")
+        if not request.apply and expected_plan_sha256 is not None:
+            raise ValueError("DAILY_RECOVERY_PLAN_HASH_UNEXPECTED")
+        if request.apply and (
+            not isinstance(expected_plan_sha256, str)
+            or len(expected_plan_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in expected_plan_sha256
+            )
+        ):
+            raise ValueError("DAILY_RECOVERY_PLAN_HASH_INVALID")
+        self._observer = observer
+        self._progress_counts = {}
+        try:
+            if request.apply:
+                lease = self.catalog.acquire_maintenance_lock()
+                if lease is None:
+                    return DailyRecoveryResult(
+                        maintenance=_maintenance_locked("update", request.through),
+                        plan_sha256=expected_plan_sha256,
+                        target_windows=(),
+                        readonly=False,
+                    )
+                try:
+                    if verify_identity is not None:
+                        verify_identity()
+                    locked_plan = self._execute_daily(
+                        request.products,
+                        request.through,
+                        apply=False,
+                    )
+                    locked_sha256 = _daily_recovery_plan_sha256(
+                        locked_plan.target_windows
+                    )
+                    if locked_sha256 != expected_plan_sha256:
+                        raise ValueError("DAILY_RECOVERY_PLAN_CHANGED")
+                    if verify_identity is not None:
+                        verify_identity()
+                    if before_apply is not None:
+                        before_apply()
+                    maintenance = self._execute_daily(
+                        request.products,
+                        request.through,
+                        apply=True,
+                    )
+                    return DailyRecoveryResult(
+                        maintenance=maintenance,
+                        plan_sha256=locked_sha256,
+                        target_windows=locked_plan.target_windows,
+                        readonly=False,
+                    )
+                finally:
+                    _release_maintenance_lease(lease)
+            if verify_identity is not None:
+                verify_identity()
+            maintenance = self._execute_daily(
+                request.products,
+                request.through,
+                apply=False,
+            )
+            if verify_identity is not None:
+                verify_identity()
+            return DailyRecoveryResult(
+                maintenance=maintenance,
+                plan_sha256=_daily_recovery_plan_sha256(
+                    maintenance.target_windows
+                ),
+                target_windows=maintenance.target_windows,
+                readonly=True,
+            )
+        finally:
+            self._observer = None
+            self._source_cache = None
+
     @contextmanager
     def _progress(self, phase, key=None, year=None, month=None, *, symbol=None):
         started = monotonic()
@@ -836,9 +977,14 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     raise _ObserverFailure("MAINTENANCE_OBSERVER_FAILED") from exc
 
         emit("started")
-        yield
-        self._progress_counts[phase] = self._progress_counts.get(phase, 0) + 1
-        emit("completed")
+        try:
+            yield
+        except BaseException as exc:
+            emit("interrupted" if isinstance(exc, KeyboardInterrupt) else "failed")
+            raise
+        else:
+            self._progress_counts[phase] = self._progress_counts.get(phase, 0) + 1
+            emit("completed")
 
     def _update(
         self, request: UpdateRequest, *, before_apply: Callable[[], None] | None,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from contextlib import contextmanager
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
@@ -53,6 +54,72 @@ from app.redis_connections import get_redis_connection
 
 _PRODUCT_STARTS = PROJECT_ROOT / "data/universe/product_window_starts.csv"
 _HISTORY_FLOOR = PROJECT_ROOT / "data/universe/active_history_floor.txt"
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeBoundHistoricalMaintenance:
+    """Pinned Runtime dependencies for one explicit historical maintenance command."""
+
+    products: tuple[str, ...]
+    manager: HistoricalDataManager
+    verify_identity: Callable[[], None]
+    invalidate_projection: Callable[[], None]
+
+
+@contextmanager
+def open_runtime_bound_historical_maintenance(
+    root: Path,
+    commit: str,
+    status_sha256: str,
+) -> Iterator[RuntimeBoundHistoricalMaintenance]:
+    """Compose DB, Redis, Canonical and universe only from one validated Runtime."""
+
+    from redis import Redis
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.db.url import normalize_database_url
+    from app.market_data.closeout_binding import RuntimeDataBinding, _redis_url
+    from app.market_data.live_market import RedisLiveStore
+    from app.market_data.session_clock import SHANGHAI
+
+    binding = RuntimeDataBinding(root, commit, status_sha256)
+    engine = create_engine(normalize_database_url(binding.settings["DATABASE_URL"]))
+    redis = None
+    try:
+        redis = Redis.from_url(_redis_url(binding.settings))
+        store = RedisLiveStore(redis)
+        with Session(engine, autoflush=False) as session:
+            manager = build_historical_data_manager(
+                session,
+                data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]),
+                config_root=binding.root,
+            )
+
+            def verify_identity() -> None:
+                binding.check(
+                    manager,
+                    session,
+                    redis,
+                    store,
+                    lambda: datetime.now(SHANGHAI),
+                )
+
+            projection = MarketHomeProjectionStore(
+                market_home_projection_path(manager.catalog.canonical_root)
+            )
+            yield RuntimeBoundHistoricalMaintenance(
+                products=binding.products,
+                manager=manager,
+                verify_identity=verify_identity,
+                invalidate_projection=projection.invalidate,
+            )
+    finally:
+        try:
+            if redis is not None:
+                redis.close()
+        finally:
+            engine.dispose()
 
 
 def canonical_root() -> Path:
