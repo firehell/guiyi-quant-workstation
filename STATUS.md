@@ -22,7 +22,7 @@ develop 代码基线 `5d880f236bf1634c60d4b62a26e74f71c7acf171`。本文件只�
   工程 81 passed；Web 541 passed / 1 skipped，build 通过；标准浏览器 154 passed / 3 个 candidate-preview
   跳过，candidate-preview 独立 3 passed；隔离 PostgreSQL 3 passed；Mypy 154 个源码文件、Ruff、9 项
   OpenSpec strict、secret scan（0 findings）、lock check、diff check 与 launchd render-only 通过。独立
-  Review 的发布状态一致性发现已在候选内修正，复核待完成。
+  Review 的发布状态一致性发现已在候选内修正，最终 Spec/Standards 复核无 P0–P3。
 - Runtime promotion、weekly-audit 安装及新版本自然盘后验收是独立 Gate；2026-09-11 Session 与 Live
   snapshot 缺失继续阻塞 promotion，不因本次发布自动修复。现役 v1.10.5 API/Web health 为 200，
   Runtime health 为 failed，当前有界 readback 未确认该失败的单一原因；weekly audit 独立显示 `not_run`，
@@ -37,7 +37,7 @@ develop 代码基线 `5d880f236bf1634c60d4b62a26e74f71c7acf171`。本文件只�
 | 中断盘后收尾 | `COMPLETED` | 2026-09-11 单次 apply 成功并独立读回：旧运行为 interrupted、current_run 已清除；720 项允许缺口保留，零 provider 请求、零数据写入 |
 | 盘后生命周期修复 | `COMPLETED`，未发布 | `8f2b051fd` 关闭 Calendar 误跳过与异常只读误报；完整回归和独立 Review 通过 |
 | 牛哇加载一致性 | `COMPLETED`，未发布 | `fef307732` 已撤销共享快照冲突后的旧请求写入资格；相关 unit、九组合及完整浏览器矩阵在 v1.10.6 候选重验通过 |
-| 本轮稳定版 | `RELEASE_CANDIDATE` | `codex/release-v1.10.6` 基于 `5d880f236` 冻结全部已接受 develop diff，并补齐 1.10.6 版本身份；独立 Review 待完成 |
+| 本轮稳定版 | `RELEASE_CANDIDATE` | `codex/release-v1.10.6` 基于 `5d880f236` 冻结全部已接受 develop diff，并补齐 1.10.6 版本身份；独立 Review 已通过 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
@@ -240,7 +240,7 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 | 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单次 apply 记 `interrupted` | 已完成 | 60 品种全部已提交指针可读；720 项有效子集缺口；原日快照匹配；单次 apply 与独立状态读回通过；部署阻塞已定位为独立 Session/Live Gate | 不再阻塞旧事故归类；Runtime promotion 仍受独立 Gate 阻塞 | 不重跑 closeout；后续进入工作 3/5 的盘后稳定版交付 |
 | 3 | 盘后运行生命周期与错误判断 | 代码缺陷 | 降低下次故障恢复成本 | `coverage_source`/`after_market`/`runtime_entry`；日常增量与 weekly-audit 保持独立 | 工作 2 已完成 | `8f2b051fd`；最终后端 3259 passed / 16 skipped / 31 deselected，工程 81 passed，Mypy 154 文件、Ruff、OpenSpec、secret scan 和独立 Review 通过 | 已完成，不再阻塞候选冻结；自然运行归工作 5 | 不追加生产操作；进入工作 5 冻结精确候选 |
 | 4 | 现有牛哇加载与显示一致性 | 代码缺陷 | 现有公式下页面可靠 | 请求取消/代次/在途快照/面板/分页；策略/周期切换、历史分页、参考定位、冲突恢复 | 已完成并纳入候选 | `fef307732` 与对应 OpenSpec/回归关闭旧请求回写；v1.10.6 完整 Web 和浏览器矩阵通过 | 不再阻塞本候选；生产历史仍是独立数据 Gate | 不追加三策略主动作、新版评分或参考价格口径 |
-| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2、3、4 已闭环；范围已接受全量 develop | 候选已冻结，固定工程矩阵通过；独立 Review 的文档一致性发现已修正，复核后执行 main/tag/release | 本轮里程碑 | 完成候选复核，再发布 v1.10.6；不自动切换 Runtime |
+| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2、3、4 已闭环；范围已接受全量 develop | 候选已冻结，固定工程矩阵和独立 Review 通过 | 本轮里程碑 | 执行 v1.10.6 main/tag/release；不自动切换 Runtime |
 | 6 | 其他品种可用性与分批补数 | 数据缺口 | 先恢复日周六组合，再准备 60m | 复用 readiness；按物理合约/窗口去重；每批 MDS 读回、对应页面及维护接续 | 稳定交付恢复后；每批真实查询/写入另需单次意图 | 声明范围内日周逐项可核对；60m 数据就绪与产品开放分开验收 | 不阻塞无共享完整性问题的盘后稳定版 | 先冻结日周品种/窗口/面板和预热需求，再出可用性清单，不边跑边扩范围 |
 | 7 | 牛哇新版综合解释 | 新版需求 | 把规则适配从显示修复中分开 | 新版本身份；先内核固定输入，再接口和页面 | 先批准新合同，含 `certExtra` | 同输入能解释新旧差异；分项与总分可核对；不改变主动作、参考交易或正式通知 | 独立后续候选 | Plan-only；本轮安排不构成实现或发布批准 |
 
@@ -253,6 +253,6 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 ## 唯一下一步
 
-完成 v1.10.6 候选独立 Review 后执行 main、annotated tag 与 GitHub Release；Runtime promotion 保持独立 Gate。
+执行 v1.10.6 main、annotated tag 与 GitHub Release；Runtime promotion 保持独立 Gate。
 
 本文件不构成元数据/行情修复、发布或 Runtime promotion 批准。
