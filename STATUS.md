@@ -19,19 +19,36 @@
 - 隔离旧/新完整维护链确认旧版盘后全历史同步会删除下一交易日 Session。已发布 daily 改造避开该路径；
   full/refresh 仍存在同类缺陷，本轮 `97ef59b97` 将历史替换限制到截止日并拒绝含糊模板。
   Session 回归 465 passed；独立 Review 240 passed、事务回滚/其他品种保留复核通过，无 P0–P3。
-- owner 已批准[同日缺 snapshot 收尾方案](docs/superpowers/plans/2026-09-11-missing-snapshot-closeout.md)。
+- owner 已批准同日缺 snapshot 收尾方案，正式语义见[数据合同](docs/DATA_CENTER.md)，审批笔记从
+  `262670773` 的 Git history 追溯，不作为 active 设计源。
   新 schema v5 只记录行政中断及 `not_verified_missing`，完整物理审计、双锁、身份/CAS 与 promotion
   保持原约束。独立 Review 发现的第二次 snapshot 读取竞争已修正，复审 183 passed、无 P0–P3；
   相关后端 323 passed / 12 skipped，真实隔离 PostgreSQL 3 passed，Web 10 passed/build、Mypy/Ruff 通过。
-- 最终候选回归：完整后端 3353 passed / 16 skipped / 31 deselected，唯一两项失败为沙箱禁止绑定
+- 收尾提交 `262670773` 回归：完整后端 3353 passed / 16 skipped / 31 deselected，唯一两项失败为沙箱禁止绑定
   loopback 的真实 socket 测试；相同代码在隔离本机 HTTP 环境重跑 2 passed。工程 84 passed；Web
   全量 543 passed / 1 skipped、build 通过；Mypy 154 文件、Ruff、OpenSpec 9、secret scan 0 findings、
   offline lock check 与 diff check 通过。未将 fixture 或工程结果计作现场业务验收。
+- 固定 `262670773` 的新现场只读 closeout 已执行并 blocked：首个 `A2305/1m/2022-05` 分区所需
+  9 个交易日 Calendar 均在，但 Session 全缺，正式 reader 返回 `SESSION_BOUNDARY_INVALID`。
+  零 provider/数据/状态写入，原状态 SHA 未变；未取得 ready。原始文件解码不等于边界验收通过。
+- 后续只读 Catalog 盘点：2023 年前共有 a/au 两品种、9 合约、200 分区；现有 Session 均为本次
+  18:09 创建，起点在 2023 年或以后。仅修复替换上界仍不够；追加的双边界修复已完成，先证明完整
+  来源窗口再替换，保留窗口前 warm-up 与窗口后 Session。独立 Review 262 passed、无 P0–P3；
+  真实 adapter/SQLite 回归先 RED 后 GREEN，相关维护链 579 passed。
+- 双边界最终完整后端回归 3377 passed / 16 skipped / 31 deselected（含真实隔离 socket），Mypy
+  154 文件、Ruff、OpenSpec 9、secret scan 0 findings 与 diff check 通过。此结果不恢复生产缺失事实。
+- 提交后的跟踪态检查另发现 `262670773` 跟踪了仓库禁止保留的实现笔记；之前的工程 84 passed
+  发生在该文件暂存前，不能覆盖此问题。已移除 active 笔记并保留 Git history、改链正式合同，
+  repository-hygiene/canonical-consistency 复验 22 passed，未修改或放宽测试。
+- 既有 metadata-repair 计划限定 a 155 日、au 196 日，Calendar 缺口为 0。owner 批准的一次
+  351 请求已完成，取得 1396 行 Session（a 617、au 779），snapshot `d571d874…4306d`，无 blocker。
+  源快照独立审查与真实只读 recheck 通过，生产 apply 尚未执行；获取不等于修复完成。
 - 版本身份已准备为 1.10.7，收敛 daily/生命周期、Session 保留、收尾、单 worker 与周检状态补丁。
   相对 v1.10.6 还包含既有 `c073e255` 研究输出，未删改或据此缩称为纯代码补丁；精确候选仍待冻结。
 - `EXTERNAL_GATE_PENDING`：本次完整只读 closeout、状态 apply、最小元数据恢复、9 月 9–11 日行情
   范围与 MDS 读回、发布、Runtime 切换及新版本自然验收均未关闭。旧 v1.10.5 writer 下次运行不能
-  承接 v5 摘要，apply 前必须明确后续调度处置；不自动暂停或切换。最小下一步是新只读 closeout。
+  承接 v5 摘要，apply 前必须明确后续调度处置；不自动暂停或切换。最小下一步是批准范围内的历史
+  Session 修复，随后重新执行只读 closeout；不重下这 200 个历史行情分区。
 
 ## 单 API worker 补丁候选（面向 v1.10.7，未发布）
 

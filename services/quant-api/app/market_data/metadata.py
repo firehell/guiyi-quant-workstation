@@ -4,7 +4,7 @@
 交易时段与主力映射写入 Catalog 所绑定的 SQLAlchemy session。
 
 设计要点：
-- 交易时段（``TradingSession``）按品种替换到 through，保留之后明确按日的事实；
+- 交易时段（``TradingSession``）只替换 snapshot 证明的按品种双边界窗口；
 - 主力映射按 ``main_contract_starts`` 窗口先删后插，保证刷新区间与 RQData 一致；
 - 单事务 commit，异常 rollback，不向 Parquet 写入任何内容。
 
@@ -24,6 +24,7 @@ from typing import Any, Protocol
 from sqlalchemy import delete, or_, select
 
 from app.market_data.catalog import MarketCatalog
+from app.market_data.domain import normalize_contract_for_symbol
 from app.market_data.errors import InfrastructureError
 from app.market_data.product_retirement import assert_products_not_retired
 from app.models import (
@@ -89,7 +90,6 @@ class MetadataSynchronizer:
         floors = dict(starts or {symbol: through for symbol in normalized})
         snapshot = self.adapter.fetch_metadata(normalized, through, floors)
         session = self.catalog.session
-        session_days = calendar_session_index(snapshot.sessions)
         try:
             for values in snapshot.exchanges:
                 _upsert(session, Exchange, {"code": values["code"]}, values)
@@ -104,39 +104,36 @@ class MetadataSynchronizer:
                     {"contract_code": values["contract_code"]},
                     values,
                 )
+            exchanges = _existing_product_exchanges(session, normalized)
+            replacement_days = _historical_session_replacement_days(
+                snapshot, normalized, through, floors, exchanges,
+            )
+            session_days = calendar_session_index(snapshot.sessions)
             for values in snapshot.calendars:
                 _upsert_calendar(
                     session, values, session_days.get(
                         (values["exchange_code"], values["trade_date"]), ()
                     ),
                 )
-            # 历史 snapshot 不得改写 through 之后已准备的下一交易日事实。
-            # 跨越边界或无结束日期的旧模板无法安全拆分，整次同步拒绝。
-            if any(
-                values.get("instrument_symbol") not in normalized
-                or type(values.get("effective_from")) is not date
-                or values.get("effective_to") != values["effective_from"]
-                or values["effective_from"] > through
-                for values in snapshot.sessions
-            ):
-                raise ValueError("HISTORICAL_SESSION_REPLACEMENT_UNPROVEN")
-            ambiguous = session.scalar(select(TradingSession.id).where(
-                TradingSession.instrument_symbol.in_(normalized),
-                or_(
-                    TradingSession.effective_to.is_(None),
-                    (TradingSession.effective_to > through)
-                    & (TradingSession.effective_from != TradingSession.effective_to),
-                ),
-            ).limit(1))
-            if ambiguous is not None:
-                raise ValueError("HISTORICAL_SESSION_REPLACEMENT_UNPROVEN")
-            # 历史时段是「按生效日」的事实；仅替换截点内的历史。
-            session.execute(
-                delete(TradingSession).where(
-                    TradingSession.instrument_symbol.in_(normalized),
+            for symbol in normalized:
+                lower = snapshot.main_contract_starts[symbol]
+                ambiguous = session.scalar(select(TradingSession.id).where(
+                    TradingSession.instrument_symbol == symbol,
+                    or_(
+                        TradingSession.effective_to.is_(None),
+                        (TradingSession.effective_from < lower)
+                        & (TradingSession.effective_to >= lower),
+                        (TradingSession.effective_to > through)
+                        & (TradingSession.effective_from != TradingSession.effective_to),
+                    ),
+                ).limit(1))
+                if ambiguous is not None:
+                    raise ValueError("HISTORICAL_SESSION_REPLACEMENT_UNPROVEN")
+                session.execute(delete(TradingSession).where(
+                    TradingSession.instrument_symbol == symbol,
+                    TradingSession.effective_from >= lower,
                     TradingSession.effective_from <= through,
-                )
-            )
+                ))
             for values in snapshot.sessions:
                 _upsert(
                     session,
@@ -151,6 +148,20 @@ class MetadataSynchronizer:
                     },
                     values,
                 )
+            # Reuse the authoritative clock and aggregation overlap checks;
+            # validation sees the replacement plus preserved surrounding facts.
+            from app.market_data.aggregation import AggregationError, _validate_sessions
+            from app.market_data.session_clock import SessionClockError, SessionWindowBatch
+
+            session.flush()
+            try:
+                for symbol, days in replacement_days.items():
+                    batch = SessionWindowBatch(session, exchange=exchanges[symbol],
+                                               symbol=symbol, trading_days=days)
+                    for day in days:
+                        _validate_sessions(batch.windows(day))
+            except (AggregationError, SessionClockError) as exc:
+                raise ValueError("HISTORICAL_SESSION_REPLACEMENT_UNPROVEN") from exc
             for symbol in normalized:
                 refresh_start = snapshot.main_contract_starts.get(symbol)
                 if refresh_start is None or refresh_start > through:
@@ -176,7 +187,7 @@ class MetadataSynchronizer:
     ) -> date:
         """受限同步指定品种的当天事实及下一交易日 Session。
 
-        此入口特意不复用 ``synchronize``：后者会替换品种截至 through 的历史 TradingSession，
+        此入口特意不复用 ``synchronize``：后者会替换 snapshot 证明窗口内的历史 TradingSession，
         不适用于 Runtime 启用前补齐有界 metadata 的最小权限范围。Calendar 只允许
         写入当天至 ISO 周日或下一交易日（取较晚者），Session 只写当天与下一交易日；
         rank-1 Map 仍只写当天。事实须完整且与既有 Instrument/Exchange 身份一致，
@@ -247,6 +258,82 @@ class MetadataSynchronizer:
             session.rollback()
             raise
         return trading_day
+
+
+def _historical_session_replacement_days(
+    snapshot: MetadataSnapshot,
+    products: tuple[str, ...],
+    through: date,
+    floors: Mapping[str, date],
+    exchanges: Mapping[str, str],
+) -> dict[str, tuple[date, ...]]:
+    """Prove the adapter's explicit windows, never infer coverage from returned rows."""
+    code = "HISTORICAL_SESSION_REPLACEMENT_UNPROVEN"
+    starts = snapshot.main_contract_starts
+    if (not products or type(through) is not date or set(starts) != set(products)
+            or set(floors) != set(products)):
+        raise ValueError(code)
+    required_calendar: set[tuple[str, date]] = set()
+    for symbol in products:
+        lower = starts[symbol]
+        if (type(lower) is not date or type(floors[symbol]) is not date
+                or not floors[symbol] <= lower <= through):
+            raise ValueError(code)
+        required_calendar.update((exchanges[symbol], lower + timedelta(days=offset))
+                                 for offset in range((through - lower).days + 1))
+    calendars: dict[tuple[str, date], bool] = {}
+    for row in snapshot.calendars:
+        key = (row["exchange_code"], row["trade_date"])
+        if key not in required_calendar:
+            continue  # Previous-month and future ISO-week context remains valid.
+        if (key in calendars or row.get("provider") != "rqdata"
+                or type(row.get("is_trading_day")) is not bool):
+            raise ValueError(code)
+        calendars[key] = row["is_trading_day"]
+    if set(calendars) != required_calendar:
+        raise ValueError(code)
+    expected = {
+        (symbol, day) for symbol in products
+        for (exchange, day), trading in calendars.items()
+        if exchange == exchanges[symbol] and starts[symbol] <= day <= through and trading
+    }
+    if any(not any(candidate == symbol for candidate, _ in expected) for symbol in products):
+        raise ValueError(code)
+    maps: set[tuple[str, date]] = set()
+    for symbol, day, contract in snapshot.main_contracts:
+        key = (symbol, day)
+        if (key not in expected or key in maps
+                or normalize_contract_for_symbol(symbol, contract) is None):
+            raise ValueError(code)
+        maps.add(key)
+    if maps != expected:
+        raise ValueError(code)
+    identities: set[tuple[object, ...]] = set()
+    covered: set[tuple[str, date]] = set()
+    for row in snapshot.sessions:
+        session_symbol, session_day = row.get("instrument_symbol"), row.get("effective_from")
+        start, end = row.get("start_time"), row.get("end_time")
+        if (not isinstance(session_symbol, str) or type(session_day) is not date
+                or (session_symbol, session_day) not in expected
+                or row.get("effective_to") != session_day
+                or row.get("exchange_code") != exchanges[session_symbol]
+                or row.get("provider") != "rqdata" or row.get("is_active") is not True
+                or not isinstance(row.get("session_name"), str) or not row["session_name"].strip()
+                or not isinstance(start, time) or not isinstance(end, time)
+                or start.tzinfo is not None or end.tzinfo is not None
+                or start == end or start.second or start.microsecond or end.second or end.microsecond
+                or type(row.get("crosses_midnight")) is not bool
+                or row["crosses_midnight"] != (end < start)):
+            raise ValueError(code)
+        identity = (row["exchange_code"], session_symbol, row["session_name"], start, end, session_day)
+        if identity in identities:
+            raise ValueError(code)
+        identities.add(identity)
+        covered.add((session_symbol, session_day))
+    if covered != expected:
+        raise ValueError(code)
+    return {symbol: tuple(sorted(day for candidate, day in expected if candidate == symbol))
+            for symbol in products}
 
 
 def calendar_session_index(sessions) -> dict[tuple[str, date], list[Mapping[str, Any]]]:

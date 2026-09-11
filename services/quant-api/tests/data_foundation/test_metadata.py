@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, timedelta, time
 from pathlib import Path
 
@@ -424,11 +425,17 @@ def test_calendar_source_conflict_rolls_back_all_metadata(current_only):
     row.has_night_session = False
     session.commit()
     before = _metadata_state(session)
-    synchronizer = MetadataSynchronizer(_Adapter(_snapshot()), MarketCatalog(session, Path(".")))
+    snapshot = _snapshot()
+    if not current_only:
+        snapshot = replace(snapshot, sessions=tuple(
+            {**row, "crosses_midnight": row["end_time"] < row["start_time"]}
+            for row in snapshot.sessions
+        ))
+    synchronizer = MetadataSynchronizer(_Adapter(snapshot), MarketCatalog(session, Path(".")))
     with pytest.raises(ValueError, match="CALENDAR_SOURCE_CONFLICT"):
         if current_only:
             synchronizer.synchronize_current_day(("j", "jm"), _DAY)
         else:
-            synchronizer.synchronize(("j", "jm"), _DAY)
+            synchronizer.synchronize(("j", "jm"), _AFTER, {"j": _DAY, "jm": _DAY})
     assert _metadata_state(session) == before
     assert session.get(Exchange, 1).name == "preserved DCE"

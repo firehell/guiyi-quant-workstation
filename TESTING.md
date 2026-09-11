@@ -248,6 +248,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/data_foundation/test_bounded_metadata.py \
   services/quant-api/tests/data_foundation/test_metadata.py \
   services/quant-api/tests/data_foundation/test_historical_session_preservation.py \
+  services/quant-api/tests/data_foundation/test_historical_session_window.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/data_foundation/test_cli.py
 ```

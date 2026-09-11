@@ -22,10 +22,26 @@ product-specific Session 和 RQData `rule=2` 的 rank1 MainContractMap；Map 对
 RQData 1m Session 的 provider start 是首根 `bar_end` 标签；MetadataSynchronizer SHALL 在 adapter 边界
 减一分钟后再写入 `trading_sessions`，使 DB 中 start 始终表示 `(start, end]` 的排他边界。分钟不对齐、
 无效区间、重叠 session 与不可解释跨午夜布局 MUST fail closed。
-历史 metadata 同步 SHALL 仅替换请求品种 `effective_from <= through` 的 Session，保留截点之后的
-明确按日事实。输入 Session MUST 属于请求品种、按日且不晚于 through。既有无结束日期、跨越 through
-或截点之后非按日的模板无法证明安全替换时 MUST 整事务回滚并报
-`HISTORICAL_SESSION_REPLACEMENT_UNPROVEN`，不得拆分模板或静默删除未来事实。
+历史 metadata 同步 SHALL 仅替换每个请求品种 `L <= effective_from <= U` 的 Session，其中
+`L = snapshot.main_contract_starts[product]`、`U = through`，且请求 floor ≤ L ≤ U。adapter SHALL
+将实际传入 provider snapshot 的各品种 starts 原样作为返回的 main_contract_starts；不得从返回行的
+最早日期猜测完整覆盖。每个品种所属交易所在 [L,U] 内 MUST 有连续自然日 Calendar，provider 为
+rqdata、交易日标记为严格 bool 且键唯一；前月和 through+7 的合法 Calendar context 可保留。
+令 E 为窗口 Calendar 证明的交易日集合；E MUST 非空，Map 按 (symbol,date) 恰好覆盖 E 且每键一行，
+Session 日期集合 MUST 恰好等于 E。Session MUST 是匹配品种、交易所、rqdata 来源的 active 按日事实，
+允许同日多个合法时段，但不得有重复行身份、重叠或无效时段。
+任一覆盖证明缺失、空或稀疏时 MUST 整事务回滚并报 `HISTORICAL_SESSION_REPLACEMENT_UNPROVEN`。
+同步 SHALL 保留 L 之前的 warm-up 与 U 之后的明确按日事实。既有无结束日期、跨下界
+`from < L <= to`、跨上界 `from <= U < to` 或 U 之后非按日的模板无法证明安全替换时 MUST
+以同一错误整事务回滚，不得拆分模板或静默删除窗口外事实。
+
+#### Scenario: 历史补齐保留窗口前 warm-up
+- **WHEN** provider snapshot 明确从 2023 年开始，而 Catalog 已有 2022 年 contract warm-up Session
+- **THEN** 同步仅在证明完整的 snapshot 窗口内替换，2022 年原 Session 身份和值保持不变
+
+#### Scenario: 返回快照缺日或缺少明确下界
+- **WHEN** snapshot 下界缺失、窗口 Calendar 缺自然日，或 Map、Session 未完整覆盖其交易日集合
+- **THEN** 同步整事务回滚，不以返回行最早日期收缩替换窗口，也不删除旧事实后接受稀疏来源
 
 #### Scenario: 历史补齐保留下一交易日
 - **WHEN** 受限 metadata 已准备下一交易日 Session，随后 full update 或 refresh 需要补齐截至 through 的历史 metadata

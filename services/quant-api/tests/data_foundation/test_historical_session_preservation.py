@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 
 from app.market_data.historical_data_manager import RefreshRequest, UpdateRequest
 from app.market_data.metadata import MetadataSnapshot, MetadataSynchronizer
-from app.models import MainContractMap, TradingSession
+from app.models import MainContractMap, TradingCalendar, TradingSession
 from tests.data_foundation.test_daily_maintenance import daily_manager  # noqa: F401
 from tests.data_foundation.test_historical_data_manager import session  # noqa: F401
 
@@ -28,7 +28,15 @@ class _MetadataAdapter:
                      for row in db.scalars(select(MainContractMap).where(
                          MainContractMap.symbol == 'jm', MainContractMap.trade_date <= day,
                      )))
-        self.historical = MetadataSnapshot((), (), (), (), session_values, maps,
+        calendars = tuple({**{field: getattr(row, field) for field in (
+            'exchange_code', 'trade_date', 'is_trading_day', 'provider',
+        )}, 'has_night_session': False if (
+            not row.is_trading_day or row.trade_date >= date(2025, 1, 1)
+        ) else None, 'night_session_products': ('jm',)}
+        for row in db.scalars(select(TradingCalendar).where(
+            TradingCalendar.exchange_code == 'DCE', TradingCalendar.trade_date <= day,
+        )))
+        self.historical = MetadataSnapshot((), (), (), calendars, session_values, maps,
                                             {'jm': date(2025, 1, 1)})
         self.current = MetadataSnapshot((), (), (), tuple({
             'exchange_code': 'DCE', 'trade_date': day + timedelta(days=n),

@@ -307,10 +307,10 @@ class RQDataMarketAdapter:
                     )
                 )
                 map_floor = first_map_day or floor
-                # MetadataSynchronizer replaces all historical Session facts for a
-                # product.  Its snapshot must therefore start at the first
-                # provider-backed map day, not merely the recent map-refresh
-                # window; otherwise a near-term refresh erases older sessions.
+                # Return this requested lower bound in main_contract_starts.
+                # MetadataSynchronizer proves complete coverage of that window
+                # before replacing Sessions and preserves facts outside it,
+                # including contract warm-up history before the active floor.
                 refresh_start = map_floor
                 calendar_days = _product_trading_days(
                     self.session,

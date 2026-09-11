@@ -266,9 +266,12 @@ expected day 才是 `degraded/missed`。合法 `current_run` 也只是已持久�
 Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN`，本次停止且不重试，
 不发布 `canonical_updated` 或执行成功后的 Live 清理；须用独立只读事务确认 Catalog 结果。
 
-历史 metadata 的 full update/refresh 只替换请求品种截至 `through` 的 Session，保留其后明确按日事实。
-输入 snapshot 越过截点、包含非请求品种或非按日 Session，以及既有 open-ended、跨截点或未来非按日模板，
-均以 `HISTORICAL_SESSION_REPLACEMENT_UNPROVEN` 整事务失败；不得拆分模板或删除未来事实。
+历史 metadata 的 full update/refresh 按品种只替换来源声明的 `[main_contract_starts[p], through]` Session。
+下界必须来自 adapter 实际请求且不早于 caller floor，不从响应最早日期推断；窗口自然日 Calendar 须连续，
+以其中权威交易日证明 Map 恰好逐日一行、Session 的日期集合完整且时段合法。Calendar 可保留既有窗口外
+上下文，Session 不能越过声明窗口。窗口前 warm-up 和窗口后明确按日事实保留。
+空、稀疏、错身份、重复或非法时段，以及既有 open-ended、跨任一边界或未来非按日模板，均以
+`HISTORICAL_SESSION_REPLACEMENT_UNPROVEN` 整事务失败；不得拆分模板或删除窗口外事实。
 这不改变受限当天/下一交易日同步的独立写入范围，也不证明既有历史已完整。
 
 ### 中断盘后运行的显式收尾
