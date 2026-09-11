@@ -87,6 +87,43 @@ def test_ordinary_maintenance_keeps_legacy_bounded_target_schema(
     )
 
 
+def test_ordinary_daily_update_never_computes_recovery_target_identities(
+    daily_manager, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        historical,
+        "_bar_ends_sha256",
+        lambda *_args: pytest.fail(
+            "ordinary daily update must not compute recovery identities"
+        ),
+    )
+
+    result = daily_manager.update(
+        UpdateRequest(
+            ("jm",),
+            None,
+            date(2025, 3, 7),
+            apply=False,
+            sync_current_day_metadata=False,
+            mode="daily",
+        )
+    )
+
+    assert result.status == "planned"
+    assert result.target_windows
+    assert all(
+        set(target) == {
+            "dataset",
+            "year",
+            "month",
+            "window_start",
+            "window_end",
+            "missing_bar_count",
+        }
+        for target in result.target_windows
+    )
+
+
 @pytest.mark.parametrize("drift_field", ("expected", "missing"))
 def test_daily_recovery_cas_binds_every_internal_target_timestamp(
     daily_manager, monkeypatch, drift_field
@@ -152,7 +189,10 @@ def test_daily_recovery_cas_binds_every_internal_target_timestamp(
     monkeypatch.setattr(
         manager,
         "_plan_daily_recovery",
-        lambda *_args: SimpleNamespace(target_windows=changed_windows),
+        lambda *_args: SimpleNamespace(
+            target_windows=(historical._target_payload(changed),),
+            planned_targets=(changed,),
+        ),
     )
     monkeypatch.setattr(
         manager,
@@ -258,16 +298,22 @@ def test_daily_recovery_apply_freezes_and_verifies_under_lease_before_side_effec
     daily_manager, monkeypatch
 ) -> None:
     manager = daily_manager
-    target_windows = (
-        {
-            "dataset": ("continuous", "jm", "MAIN", "1d"),
-            "year": 2026,
-            "month": 9,
-            "window_start": "2026-09-01T07:00:00+00:00",
-            "window_end": "2026-09-02T07:00:00+00:00",
-            "missing_bar_count": 2,
-        },
+    first = datetime(2026, 9, 1, 7, tzinfo=UTC)
+    last = datetime(2026, 9, 2, 7, tzinfo=UTC)
+    target = historical._Target(
+        key=DatasetKey(
+            DatasetKind.CONTINUOUS,
+            "jm",
+            "MAIN",
+            BarFrequency.D1,
+        ),
+        year=2026,
+        month=9,
+        expected=(first, last),
+        missing=(first, last),
+        existing=(),
     )
+    target_windows = (historical._daily_recovery_target_payload(target),)
     plan_hash = historical._daily_recovery_plan_sha256(target_windows)
     events: list[str] = []
 
@@ -281,7 +327,10 @@ def test_daily_recovery_apply_freezes_and_verifies_under_lease_before_side_effec
         lambda: events.append("lease") or Lease(),
     )
 
-    plan = SimpleNamespace(target_windows=target_windows)
+    plan = SimpleNamespace(
+        target_windows=(historical._target_payload(target),),
+        planned_targets=(target,),
+    )
 
     def freeze(_products, _through):
         events.append("plan")
@@ -443,21 +492,27 @@ def test_daily_recovery_target_drift_blocks_before_invalidation_and_provider(
     daily_manager, monkeypatch
 ) -> None:
     manager = daily_manager
+    end = datetime(2026, 9, 1, 7, tzinfo=UTC)
+    target = historical._Target(
+        key=DatasetKey(
+            DatasetKind.CONTINUOUS,
+            "jm",
+            "MAIN",
+            BarFrequency.D1,
+        ),
+        year=2026,
+        month=9,
+        expected=(end,),
+        missing=(end,),
+        existing=(),
+    )
     effects: list[str] = []
     monkeypatch.setattr(
         manager,
         "_plan_daily_recovery",
         lambda *_args, **_kwargs: SimpleNamespace(
-            target_windows=(
-                {
-                    "dataset": ("continuous", "jm", "MAIN", "1d"),
-                    "year": 2026,
-                    "month": 9,
-                    "window_start": "2026-09-01T07:00:00+00:00",
-                    "window_end": "2026-09-01T07:00:00+00:00",
-                    "missing_bar_count": 1,
-                },
-            ),
+            target_windows=(historical._target_payload(target),),
+            planned_targets=(target,),
         ),
     )
 
@@ -484,21 +539,29 @@ def test_daily_recovery_identity_drift_after_locked_plan_blocks_before_side_effe
     daily_manager, monkeypatch
 ) -> None:
     manager = daily_manager
-    target_windows = (
-        {
-            "dataset": ("continuous", "jm", "MAIN", "1d"),
-            "year": 2026,
-            "month": 9,
-            "window_start": "2026-09-01T07:00:00+00:00",
-            "window_end": "2026-09-01T07:00:00+00:00",
-            "missing_bar_count": 1,
-        },
+    end = datetime(2026, 9, 1, 7, tzinfo=UTC)
+    target = historical._Target(
+        key=DatasetKey(
+            DatasetKind.CONTINUOUS,
+            "jm",
+            "MAIN",
+            BarFrequency.D1,
+        ),
+        year=2026,
+        month=9,
+        expected=(end,),
+        missing=(end,),
+        existing=(),
     )
+    target_windows = (historical._daily_recovery_target_payload(target),)
     effects: list[str] = []
     monkeypatch.setattr(
         manager,
         "_plan_daily_recovery",
-        lambda *_args, **_kwargs: SimpleNamespace(target_windows=target_windows),
+        lambda *_args, **_kwargs: SimpleNamespace(
+            target_windows=(historical._target_payload(target),),
+            planned_targets=(target,),
+        ),
     )
 
     def verify() -> None:

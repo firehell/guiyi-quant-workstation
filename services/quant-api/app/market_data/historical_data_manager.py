@@ -412,6 +412,7 @@ class _DailyRecoveryPlan:
 
     groups: tuple[_DailyRecoveryGroup, ...]
     target_windows: tuple[Mapping[str, object], ...]
+    planned_targets: tuple[_Target, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -938,8 +939,11 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         request.products,
                         request.through,
                     )
+                    locked_target_windows = _daily_recovery_target_windows(
+                        locked_plan
+                    )
                     locked_sha256 = _daily_recovery_plan_sha256(
-                        locked_plan.target_windows
+                        locked_target_windows
                     )
                     if locked_sha256 != expected_plan_sha256:
                         raise ValueError("DAILY_RECOVERY_PLAN_CHANGED")
@@ -955,7 +959,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     return DailyRecoveryResult(
                         maintenance=maintenance,
                         plan_sha256=locked_sha256,
-                        target_windows=locked_plan.target_windows,
+                        target_windows=locked_target_windows,
                         readonly=False,
                     )
                 finally:
@@ -966,15 +970,14 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 request.products,
                 request.through,
             )
+            target_windows = _daily_recovery_target_windows(plan)
             if verify_identity is not None:
                 verify_identity()
             maintenance = self._daily_recovery_plan_result(plan, request.through)
             return DailyRecoveryResult(
                 maintenance=maintenance,
-                plan_sha256=_daily_recovery_plan_sha256(
-                    maintenance.target_windows
-                ),
-                target_windows=maintenance.target_windows,
+                plan_sha256=_daily_recovery_plan_sha256(target_windows),
+                target_windows=target_windows,
                 readonly=True,
             )
         finally:
@@ -1457,6 +1460,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
 
         groups: list[_DailyRecoveryGroup] = []
         windows: list[Mapping[str, object]] = []
+        planned_targets: list[_Target] = []
         for descriptors in self._daily_groups(products, through):
             self._source_cache = {}
             desired = (
@@ -1508,7 +1512,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 else:
                     expanded.append(target)
             target_windows = tuple(
-                _daily_recovery_target_payload(target) for target in expanded
+                _target_payload(target) for target in expanded
             )
             groups.append(
                 _DailyRecoveryGroup(
@@ -1521,8 +1525,13 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 )
             )
             windows.extend(target_windows)
+            planned_targets.extend(expanded)
             self._source_cache = None
-        return _DailyRecoveryPlan(tuple(groups), tuple(windows))
+        return _DailyRecoveryPlan(
+            tuple(groups),
+            tuple(windows),
+            tuple(planned_targets),
+        )
 
     @staticmethod
     def _daily_recovery_plan_result(
@@ -2421,6 +2430,17 @@ def _daily_recovery_target_payload(target: _Target) -> Mapping[str, object]:
         "expected_bar_ends_sha256": _bar_ends_sha256(target.expected),
         "missing_bar_ends_sha256": _bar_ends_sha256(target.missing),
     }
+
+
+def _daily_recovery_target_windows(
+    plan: _DailyRecoveryPlan,
+) -> tuple[Mapping[str, object], ...]:
+    """Build the dedicated CAS packet from the exact frozen execution targets."""
+
+    return tuple(
+        _daily_recovery_target_payload(target)
+        for target in plan.planned_targets
+    )
 
 
 def _bar_ends_sha256(values: tuple[datetime, ...]) -> str:
