@@ -4,7 +4,7 @@
 交易时段与主力映射写入 Catalog 所绑定的 SQLAlchemy session。
 
 设计要点：
-- 交易时段（``TradingSession``）按品种全量替换，避免历史时段模板覆盖旧日；
+- 交易时段（``TradingSession``）按品种替换到 through，保留之后明确按日的事实；
 - 主力映射按 ``main_contract_starts`` 窗口先删后插，保证刷新区间与 RQData 一致；
 - 单事务 commit，异常 rollback，不向 Parquet 写入任何内容。
 
@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta, time
 from typing import Any, Protocol
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 
 from app.market_data.catalog import MarketCatalog
 from app.market_data.errors import InfrastructureError
@@ -110,10 +110,31 @@ class MetadataSynchronizer:
                         (values["exchange_code"], values["trade_date"]), ()
                     ),
                 )
-            # 历史时段是「按生效日」的事实；先删后插，避免旧版当前时段模板误盖历史日
+            # 历史 snapshot 不得改写 through 之后已准备的下一交易日事实。
+            # 跨越边界或无结束日期的旧模板无法安全拆分，整次同步拒绝。
+            if any(
+                values.get("instrument_symbol") not in normalized
+                or type(values.get("effective_from")) is not date
+                or values.get("effective_to") != values["effective_from"]
+                or values["effective_from"] > through
+                for values in snapshot.sessions
+            ):
+                raise ValueError("HISTORICAL_SESSION_REPLACEMENT_UNPROVEN")
+            ambiguous = session.scalar(select(TradingSession.id).where(
+                TradingSession.instrument_symbol.in_(normalized),
+                or_(
+                    TradingSession.effective_to.is_(None),
+                    (TradingSession.effective_to > through)
+                    & (TradingSession.effective_from != TradingSession.effective_to),
+                ),
+            ).limit(1))
+            if ambiguous is not None:
+                raise ValueError("HISTORICAL_SESSION_REPLACEMENT_UNPROVEN")
+            # 历史时段是「按生效日」的事实；仅替换截点内的历史。
             session.execute(
                 delete(TradingSession).where(
-                    TradingSession.instrument_symbol.in_(normalized)
+                    TradingSession.instrument_symbol.in_(normalized),
+                    TradingSession.effective_from <= through,
                 )
             )
             for values in snapshot.sessions:
@@ -155,7 +176,7 @@ class MetadataSynchronizer:
     ) -> date:
         """受限同步指定品种的当天事实及下一交易日 Session。
 
-        此入口特意不复用 ``synchronize``：后者会按品种删除全部 TradingSession，
+        此入口特意不复用 ``synchronize``：后者会替换品种截至 through 的历史 TradingSession，
         不适用于 Runtime 启用前补齐有界 metadata 的最小权限范围。Calendar 只允许
         写入当天至 ISO 周日或下一交易日（取较晚者），Session 只写当天与下一交易日；
         rank-1 Map 仍只写当天。事实须完整且与既有 Instrument/Exchange 身份一致，

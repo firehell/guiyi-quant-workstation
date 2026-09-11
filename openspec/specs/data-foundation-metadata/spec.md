@@ -22,6 +22,18 @@ product-specific Session 和 RQData `rule=2` 的 rank1 MainContractMap；Map 对
 RQData 1m Session 的 provider start 是首根 `bar_end` 标签；MetadataSynchronizer SHALL 在 adapter 边界
 减一分钟后再写入 `trading_sessions`，使 DB 中 start 始终表示 `(start, end]` 的排他边界。分钟不对齐、
 无效区间、重叠 session 与不可解释跨午夜布局 MUST fail closed。
+历史 metadata 同步 SHALL 仅替换请求品种 `effective_from <= through` 的 Session，保留截点之后的
+明确按日事实。输入 Session MUST 属于请求品种、按日且不晚于 through。既有无结束日期、跨越 through
+或截点之后非按日的模板无法证明安全替换时 MUST 整事务回滚并报
+`HISTORICAL_SESSION_REPLACEMENT_UNPROVEN`，不得拆分模板或静默删除未来事实。
+
+#### Scenario: 历史补齐保留下一交易日
+- **WHEN** 受限 metadata 已准备下一交易日 Session，随后 full update 或 refresh 需要补齐截至 through 的历史 metadata
+- **THEN** 历史同步保留下一交易日的原按日 Session，后续历史维护不得清空该事实
+
+#### Scenario: 历史模板跨越维护截点
+- **WHEN** 请求品种既有无结束日期、跨越 through 或截点之后非按日的 Session 模板
+- **THEN** 同步整事务回滚并明确失败，不截断、拆分或删除未来事实
 
 #### Scenario: 主力修订
 - **WHEN** 同一 symbol/trade_date 的 rank1 合约被 RQData 修订
