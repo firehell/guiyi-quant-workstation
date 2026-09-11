@@ -130,6 +130,9 @@ maintenance lease 内重新核验 root/commit/status、依赖、Live/Alert heart
 metadata、不回退 full、不重试、不续跑、不通知。进度仅以共享事件字段写 stderr NDJSON；stdout 保留唯一
 最终 JSON，任何已提交、失败、partial 或 commit-unknown 结果保持原义。
 
+上述完整时间戳 identity 只属于 `daily-recovery` 的 CAS/result；普通 `data update` 与 `data refresh` 继续返回
+原有 dataset/year/month/window-start/window-end/missing-count target schema，不附加 recovery identity 字段。
+
 当天/下一交易日 metadata 的受审恢复使用独立三阶段入口：
 
 ```text

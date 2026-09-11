@@ -47,6 +47,46 @@ def test_daily_recovery_plan_hash_uses_only_canonical_target_windows() -> None:
     )
 
 
+@pytest.mark.parametrize("action", ("update", "refresh"))
+def test_ordinary_maintenance_keeps_legacy_bounded_target_schema(
+    daily_manager, action
+) -> None:
+    first = datetime(2026, 9, 1, 7, tzinfo=UTC)
+    middle = datetime(2026, 9, 2, 7, tzinfo=UTC)
+    last = datetime(2026, 9, 3, 7, tzinfo=UTC)
+    target = historical._Target(
+        key=DatasetKey(
+            DatasetKind.CONTINUOUS,
+            "jm",
+            "MAIN",
+            BarFrequency.D1,
+        ),
+        year=2026,
+        month=9,
+        expected=(first, middle, last),
+        missing=(first, middle, last),
+        existing=(),
+    )
+
+    result = daily_manager._execute(
+        action,
+        (target,),
+        date(2026, 9, 3),
+        apply=False,
+    )
+
+    assert result.target_windows == (
+        {
+            "dataset": ("continuous", "jm", "MAIN", "1d"),
+            "year": 2026,
+            "month": 9,
+            "window_start": "2026-09-01T07:00:00+00:00",
+            "window_end": "2026-09-03T07:00:00+00:00",
+            "missing_bar_count": 3,
+        },
+    )
+
+
 @pytest.mark.parametrize("drift_field", ("expected", "missing"))
 def test_daily_recovery_cas_binds_every_internal_target_timestamp(
     daily_manager, monkeypatch, drift_field
@@ -80,8 +120,8 @@ def test_daily_recovery_cas_binds_every_internal_target_timestamp(
         ),
         existing=(),
     )
-    approved_windows = (historical._target_payload(approved),)
-    changed_windows = (historical._target_payload(changed),)
+    approved_windows = (historical._daily_recovery_target_payload(approved),)
+    changed_windows = (historical._daily_recovery_target_payload(changed),)
 
     for field in (
         "dataset",

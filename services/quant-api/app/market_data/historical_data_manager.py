@@ -1507,7 +1507,9 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     expanded.extend(next(pending_fetch_groups))
                 else:
                     expanded.append(target)
-            target_windows = tuple(_target_payload(target) for target in expanded)
+            target_windows = tuple(
+                _daily_recovery_target_payload(target) for target in expanded
+            )
             groups.append(
                 _DailyRecoveryGroup(
                     family=_family(descriptors[0][0]),
@@ -2397,18 +2399,26 @@ def _failure(target: _Target, exc: Exception) -> Mapping[str, object]:
 
 
 def _target_payload(target: _Target) -> Mapping[str, object]:
-    """Describe one bounded target while locking every expected/missing bar end."""
+    """dry-run 时描述单个目标窗口（缺失 bar 起止与数量）。"""
     return {
         "dataset": target.key.as_tuple(),
         "year": target.year,
         "month": target.month,
+        "window_start": target.missing[0].isoformat(),
+        "window_end": target.missing[-1].isoformat(),
+        "missing_bar_count": len(target.missing),
+    }
+
+
+def _daily_recovery_target_payload(target: _Target) -> Mapping[str, object]:
+    """Enrich only daily recovery targets with complete bounded CAS identities."""
+
+    return {
+        **_target_payload(target),
         "expected_start": target.expected[0].isoformat(),
         "expected_end": target.expected[-1].isoformat(),
         "expected_bar_count": len(target.expected),
         "expected_bar_ends_sha256": _bar_ends_sha256(target.expected),
-        "window_start": target.missing[0].isoformat(),
-        "window_end": target.missing[-1].isoformat(),
-        "missing_bar_count": len(target.missing),
         "missing_bar_ends_sha256": _bar_ends_sha256(target.missing),
     }
 

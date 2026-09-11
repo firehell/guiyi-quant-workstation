@@ -103,7 +103,9 @@ separators=(",", ":"), ensure_ascii=False)))`. Each bounded target window MUST i
 expected and missing endpoints/counts, plus `expected_bar_ends_sha256` and `missing_bar_ends_sha256`. Each per-set hash
 MUST cover the complete sorted UTC ISO timestamp sequence using the same compact UTF-8 JSON encoding, so any internal
 expected or missing timestamp drift changes the outer plan hash even when endpoints and counts remain equal. A dry-run
-MUST reject `--expected-plan-sha256`.
+MUST reject `--expected-plan-sha256`. This identity enrichment is exclusive to `daily-recovery`; ordinary `update`
+and `refresh` target payloads MUST retain the existing dataset/year/month/window-start/window-end/missing-count schema
+and MUST NOT expose recovery identity fields.
 
 `--apply` MUST require the exact lowercase dry-run `--expected-plan-sha256`. It MUST acquire the shared maintenance
 lease before revalidating Runtime identity, pinned status and both Live/Alert heartbeats and recomputing the complete
