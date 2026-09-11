@@ -191,10 +191,26 @@ ALERT_CANONICAL_REQUIREMENTS = (
     "G10",
     "G9",
 )
+ALERT_SHARED_CANONICAL_REQUIREMENTS = (
+    "owner + 三位朋友",
+    "0700",
+    "0600",
+    "market:state(reason=canonical_updated)",
+    "schema v6",
+    "failure timestamp",
+    "精确 CAS",
+)
 AGENT_DOMAIN_ROUTES = (
     "docs/DATA_CENTER.md",
     "deploy/README.md",
     "openspec/specs/subing-ths-alert/spec.md",
+)
+AGENT_GLOBAL_BOUNDARIES = (
+    "讨论、比较方案、只读审计或 Plan-only",
+    "连续完成实现",
+    "集成 develop 不授权生产写入",
+    "持续授权只在 owner 已",
+    "系统命令使用固定 executable 与离散参数",
 )
 REQUIRED_PROJECT_SKILL_PATHS = {
     ".agents/skills/futures-data/SKILL.md",
@@ -529,6 +545,8 @@ def test_active_alert_canonical_matches_the_two_rule_code_contract() -> None:
 
 def test_root_agent_guidance_routes_domain_contracts_without_copying_them() -> None:
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    for boundary in AGENT_GLOBAL_BOUNDARIES:
+        assert boundary in agents
     for relative in AGENT_DOMAIN_ROUTES:
         assert f"`{relative}`" in agents, relative
         assert (ROOT / relative).is_file(), relative
@@ -537,13 +555,34 @@ def test_root_agent_guidance_routes_domain_contracts_without_copying_them() -> N
         assert domain_literal not in agents
 
 
-def test_project_skill_inventory_and_frontmatter_are_narrow() -> None:
+def test_project_skill_inventory_frontmatter_and_active_references_are_narrow() -> None:
     actual = {
         path.relative_to(ROOT).as_posix()
         for path in ROOT.glob(".agents/skills/*/SKILL.md")
     }
     assert REQUIRED_PROJECT_SKILL_PATHS <= actual
     assert REMOVED_NAVIGATION_SKILL_PATHS.isdisjoint(actual)
+
+    for skill_name in ("quant-" + "backend", "quant-" + "frontend"):
+        active_references = subprocess.run(
+            [
+                "git",
+                "-c",
+                "core.fsmonitor=false",
+                "grep",
+                "-n",
+                "-I",
+                skill_name,
+                "--",
+                ".",
+                ":!tests/engineering/test_canonical_consistency.py",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert active_references.returncode == 1, active_references.stdout
 
     for relative in sorted(actual):
         source = (ROOT / relative).read_text(encoding="utf-8")
@@ -577,6 +616,8 @@ def test_alert_domain_canonical_documents_rule_identity_and_formula_gates() -> N
         ROOT / "openspec/specs/subing-ths-alert/spec.md"
     ).read_text(encoding="utf-8")
     for term in ALERT_CANONICAL_REQUIREMENTS:
+        assert term in subing_spec
+    for term in ALERT_SHARED_CANONICAL_REQUIREMENTS:
         assert term in subing_spec
     assert subing_spec.index("G10") < subing_spec.index("G9")
 

@@ -55,7 +55,9 @@ release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不�
 发布或 Runtime promotion。
 
 不得读取、显示、提交或记录凭据；不修改 `.env`。外部输入须在敏感操作前校验类型、范围、身份和关联字段；
-失败、质量异常或安全开关缺失时 fail-closed。仓库指引不能覆盖宿主或工具的安全控制。
+系统命令使用固定 executable 与离散参数，SQL 使用参数绑定或既有 ORM；输入派生路径规范化后必须仍在允许根内。
+错误输出不得暴露凭据、内部地址、SQL 或 stack trace。失败、质量异常或安全开关缺失时 fail-closed。
+仓库指引不能覆盖宿主或工具的安全控制。
 
 ## 持续 Runtime 授权边界
 
@@ -99,7 +101,8 @@ release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不�
 
 - 日常开发、任务定位和按影响验证：`docs/DEVELOPMENT.md`
 - 数据、Catalog、维护、Live 与盘后合同：`docs/DATA_CENTER.md` 及相关 data OpenSpec
-- Alert 固定身份、公式、Event、Scope、migration 和兼容 Gate：`openspec/specs/subing-ths-alert/spec.md`
+- HTDY 产品面与七周期入口：`PROJECT_SOURCE.md`、`DECISIONS.md`；共享 Alert Runtime、SuBing 身份、公式、
+  Event、Scope、migration 和兼容 Gate：`openspec/specs/subing-ths-alert/spec.md`
 - active 依赖与产品边界：`docs/ARCHITECTURE.md`、`PROJECT_SOURCE.md`、`DECISIONS.md`
 - release、服务、promotion 与 worktree：`.agents/skills/release-agent/SKILL.md`、`deploy/README.md`
 - 可执行验证命令：`TESTING.md`
