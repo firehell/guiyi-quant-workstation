@@ -1,3 +1,3 @@
 """Application release identity shared by API metadata and health probes."""
 
-APP_VERSION = "1.10.5"
+APP_VERSION = "1.10.6"
