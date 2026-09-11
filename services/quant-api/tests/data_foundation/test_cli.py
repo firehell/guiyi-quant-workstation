@@ -197,6 +197,7 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
 
     assert set(command_action.choices) == {
         "close-interrupted-after-market",
+        "compatible-recovery-proof",
         "current-day-metadata-recovery",
         "daily-recovery",
         "update",
@@ -210,6 +211,94 @@ def test_data_parser_exposes_only_active_user_commands() -> None:
         "metadata-repair",
         "au-calendar-correction",
     }
+
+
+def test_compatible_recovery_proof_parser_requires_all_exact_identities() -> None:
+    parser = build_parser()
+    common = [
+        "data",
+        "compatible-recovery-proof",
+        "--candidate-root",
+        "/candidate",
+        "--candidate-commit",
+        "a" * 40,
+        "--runtime-root",
+        "/runtime",
+        "--runtime-commit",
+        "b" * 40,
+        "--expected-status-sha256",
+        "c" * 64,
+        "--expected-operational-products-sha256",
+        "d" * 64,
+    ]
+
+    parsed = parser.parse_args(common)
+
+    assert parsed.data_command == "compatible-recovery-proof"
+    assert not hasattr(parsed, "apply")
+    for flag in (
+        "--candidate-root",
+        "--candidate-commit",
+        "--runtime-root",
+        "--runtime-commit",
+        "--expected-status-sha256",
+        "--expected-operational-products-sha256",
+    ):
+        missing = common.copy()
+        index = missing.index(flag)
+        del missing[index : index + 2]
+        with pytest.raises(CliUsageError):
+            parser.parse_args(missing)
+    for index in (5, 9, 11, 13):
+        malformed = common.copy()
+        malformed[index] = malformed[index].upper()
+        with pytest.raises(CliUsageError):
+            parser.parse_args(malformed)
+
+
+def test_compatible_recovery_proof_dispatches_without_data_dependencies() -> None:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    received = []
+
+    def runner(args):
+        received.append(args)
+        return {
+            "schema_version": 1,
+            "command": "data.compatible-recovery-proof",
+            "status": "passed",
+            "readonly": True,
+            "recovery_ready": False,
+        }
+
+    code = main(
+        [
+            "data",
+            "compatible-recovery-proof",
+            "--candidate-root",
+            "/candidate",
+            "--candidate-commit",
+            "a" * 40,
+            "--runtime-root",
+            "/runtime",
+            "--runtime-commit",
+            "b" * 40,
+            "--expected-status-sha256",
+            "c" * 64,
+            "--expected-operational-products-sha256",
+            "d" * 64,
+        ],
+        manager_factory=lambda _session: pytest.fail("data manager must not be built"),
+        session_factory=lambda: pytest.fail("database session must not be opened"),
+        compatible_recovery_proof_runner=runner,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 0
+    assert json.loads(stdout.getvalue())["recovery_ready"] is False
+    assert received[0].candidate_commit == "a" * 40
+    assert stderr.getvalue() == ""
 
 
 def test_current_day_metadata_recovery_parser_keeps_three_phases_separate() -> None:

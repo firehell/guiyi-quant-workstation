@@ -523,6 +523,23 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 PostgreSQL/Redis，或修改现场 Canonical、status、projection、Runtime 和调度。真实
 `daily-recovery --apply` 仍必须绑定当前 Runtime/status、dry-run exact plan hash 与一次明确生产写入意图。
 
+schema-v5 compatible recovery 的只读绑定、候选 commit/tree、operational hash/count、`last_interruption`
+保留、配置脱敏、状态/产品/配置/root/commit 漂移阻断，以及安装失败后 marker 非事务 rollback 合同：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_closeout_binding.py \
+  services/quant-api/tests/data_foundation/test_after_market_closeout.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/test_captured_recovery_runtime.py \
+  tests/engineering/test_market_runtime_launchd.py
+```
+
+测试只使用临时 root、合成状态/配置与 fake launchctl；不读取现场配置，不连接 provider、生产 DB/Redis，
+不写现场 Canonical/status，也不执行安装或 Runtime mutation。`compatible-recovery-proof` 的
+`recovery_ready=false` 是有意保留的发布与执行 Gate；render-only/fixture 通过不能生成可用恢复 root。
+
 Runtime-bound current-day metadata recovery 的严格 snapshot codec/hash、P60 64 次应用层 fake API 调用、
 capture/plan/apply provider 隔离、Calendar/Session/rank1 exact diff、下一交易日 insert、warm-up/窗口外保留、
 maintenance lease、Runtime/plan drift、rollback、commit outcome unknown 与自然同步回归：

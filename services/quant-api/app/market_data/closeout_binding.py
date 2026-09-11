@@ -1,6 +1,8 @@
 """Private target configuration binding for closeout; never sources shell or logs settings."""
 
 from datetime import UTC, datetime
+from copy import deepcopy
+from collections.abc import Callable
 import hashlib
 import json
 import os
@@ -367,6 +369,111 @@ class RuntimeDataBinding:
         self._status_sha256 = status_sha256
         self._status_payload = parsed
         self.last_interruption = interruption
+
+    def compatible_recovery_proof(
+        self,
+        *,
+        candidate_root: Path,
+        candidate_commit: str,
+        expected_operational_products_sha256: str,
+        _identity_reader: Callable[..., str] | None = None,
+    ) -> dict[str, object]:
+        """Render a bounded proof; publication and recovery execution stay external gates."""
+        from app.market_data.captured_recovery_runtime import (
+            _read_command as read_identity_command,
+        )
+
+        identity_reader = _identity_reader or read_identity_command
+
+        if (
+            re.fullmatch(r"[0-9a-f]{40}", candidate_commit) is None
+            or re.fullmatch(r"[0-9a-f]{64}", expected_operational_products_sha256)
+            is None
+            or candidate_root != candidate_root.resolve(strict=True)
+            or Path(__file__).resolve()
+            != candidate_root
+            / "services/quant-api/app/market_data/closeout_binding.py"
+        ):
+            raise ValueError
+        verify_closeout_identity(self.root, self.commit)
+        self._verify_pinned_status()
+        if (
+            self._read_sources() != self._sources
+            or self._read_processes() != self._processes
+            or self._status_payload.get("schema_version") != 5
+            or self._status_payload.get("current_run") is not None
+            or not isinstance(self.last_interruption, dict)
+        ):
+            raise ValueError
+        products_path = self.root / "data/universe/operational_products.txt"
+        products_content = self._sources[products_path][0]
+        if hashlib.sha256(products_content).hexdigest() != expected_operational_products_sha256:
+            raise ValueError
+        git = ["/usr/bin/git", "-c", "core.fsmonitor=false"]
+
+        def candidate_identity() -> str:
+            if (
+                identity_reader(
+                    [*git, "rev-parse", "--show-toplevel"], root=candidate_root
+                )
+                != str(candidate_root)
+                or identity_reader([*git, "rev-parse", "HEAD"], root=candidate_root)
+                != candidate_commit
+                or identity_reader(
+                    [*git, "status", "--porcelain=v1", "--untracked-files=all"],
+                    root=candidate_root,
+                )
+            ):
+                raise ValueError
+            tree = identity_reader(
+                [*git, "rev-parse", "HEAD^{tree}"], root=candidate_root
+            )
+            if re.fullmatch(r"[0-9a-f]{40}", tree) is None:
+                raise ValueError
+            return tree
+
+        candidate_tree = candidate_identity()
+        self._verify_pinned_status()
+        if (
+            self._read_sources() != self._sources
+            or self._read_processes() != self._processes
+            or candidate_identity() != candidate_tree
+        ):
+            raise ValueError
+        return {
+            "schema_version": 1,
+            "command": "data.compatible-recovery-proof",
+            "status": "passed",
+            "readonly": True,
+            "candidate": {
+                "root": str(candidate_root),
+                "commit": candidate_commit,
+                "tree": candidate_tree,
+            },
+            "source_runtime": {"root": str(self.root), "commit": self.commit},
+            "status_schema_version": 5,
+            "status_sha256": self._status_sha256,
+            "operational_products_sha256": expected_operational_products_sha256,
+            "operational_products_count": len(self.products),
+            "last_interruption": deepcopy(self.last_interruption),
+            "configuration_identity": {
+                "database": "retained",
+                "redis": "retained",
+                "canonical": "retained",
+                "rqdata": "retained",
+            },
+            "required_services": ["api", "web", "live", "alert", "after-market"],
+            "provider_requests": 0,
+            "database_writes": 0,
+            "canonical_writes": 0,
+            "runtime_mutations": 0,
+            "recovery_ready": False,
+            "recovery_blockers": [
+                "PUBLISHED_EXACT_RECOVERY_TAG_REQUIRED",
+                "IMMUTABLE_RECOVERY_ROOT_REQUIRED",
+                "SEPARATE_RECOVERY_EXECUTION_INTENT_REQUIRED",
+            ],
+        }
 
     def _read_sources(self):
         # Target Python imports load dotenv without override. Even explicit main

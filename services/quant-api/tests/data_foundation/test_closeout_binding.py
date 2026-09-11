@@ -110,6 +110,14 @@ def _write_status(path, payload):
     return hashlib.sha256(content).hexdigest()
 
 
+def _clean_candidate_reader(arguments, *, root):
+    from app.market_data.captured_recovery_runtime import _read_command
+
+    if "status" in arguments:
+        return ""
+    return _read_command(arguments, root=root)
+
+
 def test_binding_constructs_target_dependencies_not_executing_environment(target, monkeypatch):
     from app.market_data.composition import build_historical_data_manager
     binding = target.create()
@@ -233,6 +241,122 @@ def test_fresh_binding_accepts_only_exact_schema_v5_terminal_authority(target, s
 
     binding = target.module.RuntimeDataBinding(target.root, "a" * 40, terminal_sha256)
     assert binding.last_interruption == terminal["last_interruption"]
+
+
+def test_compatible_recovery_proof_is_bounded_redacted_and_not_ready(target):
+    from app.core.env import PROJECT_ROOT
+    from app.market_data.captured_recovery_runtime import _read_command
+
+    terminal = _terminal_status()
+    terminal_sha256 = _write_status(target.status, terminal)
+    binding = target.module.RuntimeDataBinding(target.root, "a" * 40, terminal_sha256)
+    products_path = target.root / "data/universe/operational_products.txt"
+    products_sha256 = hashlib.sha256(products_path.read_bytes()).hexdigest()
+    candidate_commit = _read_command(
+        ["/usr/bin/git", "-c", "core.fsmonitor=false", "rev-parse", "HEAD"],
+        root=PROJECT_ROOT,
+    )
+    before = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in (target.status, target.config, products_path)
+    }
+
+    proof = binding.compatible_recovery_proof(
+        candidate_root=PROJECT_ROOT,
+        candidate_commit=candidate_commit,
+        expected_operational_products_sha256=products_sha256,
+        _identity_reader=_clean_candidate_reader,
+    )
+
+    assert proof == {
+        "schema_version": 1,
+        "command": "data.compatible-recovery-proof",
+        "status": "passed",
+        "readonly": True,
+        "candidate": {
+            "root": str(PROJECT_ROOT),
+            "commit": candidate_commit,
+            "tree": _read_command(
+                [
+                    "/usr/bin/git",
+                    "-c",
+                    "core.fsmonitor=false",
+                    "rev-parse",
+                    "HEAD^{tree}",
+                ],
+                root=PROJECT_ROOT,
+            ),
+        },
+        "source_runtime": {"root": str(target.root), "commit": "a" * 40},
+        "status_schema_version": 5,
+        "status_sha256": terminal_sha256,
+        "operational_products_sha256": products_sha256,
+        "operational_products_count": 1,
+        "last_interruption": terminal["last_interruption"],
+        "configuration_identity": {
+            "database": "retained",
+            "redis": "retained",
+            "canonical": "retained",
+            "rqdata": "retained",
+        },
+        "required_services": ["api", "web", "live", "alert", "after-market"],
+        "provider_requests": 0,
+        "database_writes": 0,
+        "canonical_writes": 0,
+        "runtime_mutations": 0,
+        "recovery_ready": False,
+        "recovery_blockers": [
+            "PUBLISHED_EXACT_RECOVERY_TAG_REQUIRED",
+            "IMMUTABLE_RECOVERY_ROOT_REQUIRED",
+            "SEPARATE_RECOVERY_EXECUTION_INTENT_REQUIRED",
+        ],
+    }
+    assert "fixture-only" not in json.dumps(proof)
+    assert "fixture-rqdata-license" not in json.dumps(proof)
+    assert before == {
+        path: (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in (target.status, target.config, products_path)
+    }
+
+
+@pytest.mark.parametrize(
+    "drift", ["candidate_commit", "candidate_root", "candidate_status", "products"]
+)
+def test_compatible_recovery_proof_rejects_explicit_identity_drift(target, drift):
+    from app.core.env import PROJECT_ROOT
+    from app.market_data.captured_recovery_runtime import _read_command
+
+    terminal_sha256 = _write_status(target.status, _terminal_status())
+    binding = target.module.RuntimeDataBinding(target.root, "a" * 40, terminal_sha256)
+    candidate_commit = _read_command(
+        ["/usr/bin/git", "-c", "core.fsmonitor=false", "rev-parse", "HEAD"],
+        root=PROJECT_ROOT,
+    )
+    arguments = {
+        "candidate_root": PROJECT_ROOT,
+        "candidate_commit": candidate_commit,
+        "expected_operational_products_sha256": hashlib.sha256(
+            (target.root / "data/universe/operational_products.txt").read_bytes()
+        ).hexdigest(),
+        "_identity_reader": _clean_candidate_reader,
+    }
+    if drift == "candidate_commit":
+        arguments["candidate_commit"] = "b" * 40
+    elif drift == "candidate_root":
+        arguments["candidate_root"] = target.root
+    elif drift == "candidate_status":
+        arguments["_identity_reader"] = (
+            lambda arguments, *, root: (
+                " M services/quant-api/app/market_data/closeout_binding.py"
+                if "status" in arguments
+                else _clean_candidate_reader(arguments, root=root)
+            )
+        )
+    else:
+        arguments["expected_operational_products_sha256"] = "b" * 64
+
+    with pytest.raises(ValueError):
+        binding.compatible_recovery_proof(**arguments)
 
 
 @pytest.mark.parametrize("entrypoint", ["fresh", "rebind"])

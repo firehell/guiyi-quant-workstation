@@ -89,6 +89,36 @@ phase/Live snapshot Gate 完全保留。安全收尾、发布、五服务同步�
 执行意图；保留收尾读回证据。不得据此自动暂停调度或切换 Runtime。
 旧 Runtime 在五服务解除引用前不得清理。
 
+#### Compatible recovery proof and failed-install boundary
+
+部署前的恢复候选必须是已经发布的 exact annotated tag、该 tag 的 peeled 40 位 commit，以及位于独立绝对
+路径、detached 且内容不变的目标 root；候选代码必须能读取 schema-v5 盘后终态并保留规范化
+`last_interruption`。v1.10.5 与 v1.10.6 不支持这个状态合同，schema v5 写入后不得将它们列为 rollback
+或恢复候选。
+
+候选代码可先对现役 Runtime 做一次只读兼容性证明：
+
+```bash
+guiyi data compatible-recovery-proof \
+  --candidate-root /absolute/candidate-root \
+  --candidate-commit EXACT_CANDIDATE_40_HEX_COMMIT \
+  --runtime-root /absolute/current-runtime \
+  --runtime-commit EXACT_RUNTIME_40_HEX_COMMIT \
+  --expected-status-sha256 EXACT_64_HEX_STATUS_SHA256 \
+  --expected-operational-products-sha256 EXACT_64_HEX_PRODUCTS_SHA256
+```
+
+该命令复用 `RuntimeDataBinding`，重新核对现役五服务、root/commit、精确 status 字节、operational
+集合及 DB/Redis/Canonical/RQData 配置身份，只输出候选 commit/tree、hash/count、规范化中断摘要与配置
+类别，不输出配置值。它没有 provider、DB/Canonical 写入、网络、通知、launchctl mutation、marker/plist
+mutation 或安装能力；结果中的 `recovery_ready` 固定为 `false`，直到发布 Gate 另行证明 exact tag/peeled
+commit 和 immutable recovery root，并取得一次匹配的恢复执行意图。
+
+安装部分失败后的恢复不是安装器自动 rollback。只有针对已发布 compatible root、明确服务集合和该次失败现场
+单独批准的一次尝试，才可使用该 root 中已正式 Review 的安装器；仍须运行同一 promotion preflight。
+activation marker 恢复不能证明已加载服务、plist 或 status 已事务回滚；任何失败尝试仍有 label loaded 或现场
+结果不明时保持 blocked，不自动重试，也不切换到 v1.10.5/v1.10.6。
+
 #### Read-only promotion predicate
 
 `install-local-services.sh --confirm-market-runtime` 只会执行一次

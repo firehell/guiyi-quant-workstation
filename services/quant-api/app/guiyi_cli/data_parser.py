@@ -112,6 +112,19 @@ class JsonArgumentParser(argparse.ArgumentParser):
                 or not valid_plan_hash
             ):
                 self.error("apply requires exact snapshot and plan hashes")
+        if getattr(result, "data_command", None) == "compatible-recovery-proof":
+            if (
+                re.fullmatch(r"[0-9a-f]{40}", result.candidate_commit) is None
+                or re.fullmatch(r"[0-9a-f]{40}", result.runtime_commit) is None
+                or re.fullmatch(r"[0-9a-f]{64}", result.expected_status_sha256)
+                is None
+                or re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    result.expected_operational_products_sha256,
+                )
+                is None
+            ):
+                self.error("exact candidate and runtime identities required")
         return result
 
 
@@ -149,6 +162,18 @@ def add_data_commands(
     current_metadata.add_argument("--expected-snapshot-sha256")
     current_metadata.add_argument("--expected-plan-sha256")
     current_metadata.add_argument("--apply", action="store_true")
+
+    compatible_recovery = commands.add_parser(
+        "compatible-recovery-proof", allow_abbrev=False
+    )
+    compatible_recovery.add_argument("--candidate-root", required=True)
+    compatible_recovery.add_argument("--candidate-commit", required=True)
+    compatible_recovery.add_argument("--runtime-root", required=True)
+    compatible_recovery.add_argument("--runtime-commit", required=True)
+    compatible_recovery.add_argument("--expected-status-sha256", required=True)
+    compatible_recovery.add_argument(
+        "--expected-operational-products-sha256", required=True
+    )
 
     refresh = commands.add_parser("refresh")
     refresh.add_argument("--symbol", required=True)

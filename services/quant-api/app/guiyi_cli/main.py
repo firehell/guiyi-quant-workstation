@@ -157,6 +157,7 @@ def main(
     captured_recovery_runner=run_captured_recovery,
     daily_recovery_runner=None,
     current_day_metadata_recovery_runner=None,
+    compatible_recovery_proof_runner=None,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
@@ -198,6 +199,14 @@ def main(
                         run_current_day_metadata_recovery
                     )
                 payload = current_day_metadata_recovery_runner(args)
+            elif args.data_command == "compatible-recovery-proof":
+                if compatible_recovery_proof_runner is None:
+                    from app.guiyi_cli.compatible_recovery import (
+                        run_compatible_recovery_proof,
+                    )
+
+                    compatible_recovery_proof_runner = run_compatible_recovery_proof
+                payload = compatible_recovery_proof_runner(args)
             else:
                 payload = _run_data(
                     args,
