@@ -124,6 +124,82 @@ def test_ordinary_daily_update_never_computes_recovery_target_identities(
     )
 
 
+def test_ordinary_daily_apply_executes_each_group_before_planning_the_next(
+    daily_manager, monkeypatch
+) -> None:
+    manager = daily_manager
+    end = datetime(2025, 3, 7, 7, tzinfo=UTC)
+    key = DatasetKey(DatasetKind.CONTINUOUS, "jm", "MAIN", BarFrequency.D1)
+    target = historical._Target(
+        key=key,
+        year=2025,
+        month=3,
+        expected=(end,),
+        missing=(end,),
+        existing=(),
+    )
+    events: list[str] = []
+
+    def groups(_products, _through):
+        events.append("plan:first")
+        yield ((key, 2025, 3, (date(2025, 3, 7),)),)
+        events.append("plan:later")
+        raise ValueError("LATER_GROUP_PLAN_FAILED")
+
+    monkeypatch.setattr(manager, "_daily_groups", groups)
+    monkeypatch.setattr(
+        manager,
+        "_iter_targets",
+        lambda *_args, **_kwargs: iter((target,)),
+    )
+
+    def execute(*_args, **_kwargs):
+        events.append("commit:first")
+        return MaintenanceResult(
+            "update",
+            "passed",
+            date(2025, 3, 7),
+            1,
+            1,
+            0,
+            0,
+            1,
+        )
+
+    monkeypatch.setattr(manager, "_execute_apply", execute)
+
+    with pytest.raises(ValueError, match="LATER_GROUP_PLAN_FAILED"):
+        manager.update(
+            UpdateRequest(
+                ("jm",),
+                None,
+                date(2025, 3, 7),
+                apply=True,
+                sync_current_day_metadata=False,
+                mode="daily",
+            )
+        )
+
+    assert events == ["plan:first", "commit:first", "plan:later"]
+
+
+def test_ordinary_daily_apply_keeps_empty_cli_targets(daily_manager) -> None:
+    result = daily_manager.update(
+        UpdateRequest(
+            ("jm",),
+            None,
+            date(2025, 3, 7),
+            apply=True,
+            sync_current_day_metadata=False,
+            mode="daily",
+        )
+    )
+
+    assert result.status == "passed"
+    assert result.target_windows == ()
+    assert result.as_payload()["targets"] == []
+
+
 @pytest.mark.parametrize("drift_field", ("expected", "missing"))
 def test_daily_recovery_cas_binds_every_internal_target_timestamp(
     daily_manager, monkeypatch, drift_field

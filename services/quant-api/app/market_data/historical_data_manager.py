@@ -1615,14 +1615,123 @@ class HistoricalDataManager(ContractWarmupPlanner):
             target_windows=plan.target_windows,
         )
 
-    def _execute_daily(self, products, through, *, apply):
-        plan = self._plan_daily_recovery(products, through)
-        if not apply:
-            return self._daily_recovery_plan_result(plan, through)
-        return self._execute_daily_recovery_plan(
-            plan,
-            through,
-            console_progress=True,
+    def _execute_daily(
+        self,
+        products: tuple[str, ...],
+        through: date,
+        *,
+        apply: bool,
+    ) -> MaintenanceResult:
+        totals = dict(
+            planned=0,
+            applied=0,
+            blocked=0,
+            failed=0,
+            provider_requests=0,
+        )
+        failures: list[Mapping[str, object]] = []
+        windows: list[Mapping[str, object]] = []
+        failed_families: set[tuple[str, str, str]] = set()
+        for descriptors in self._daily_groups(products, through):
+            # Source rows live only for this family-month. Pointer identity is
+            # rechecked on every reuse; no cross-run or cross-product cache exists.
+            self._source_cache = {}
+            desired = (
+                (
+                    key,
+                    year,
+                    month,
+                    tuple(
+                        end.astimezone(UTC)
+                        for end in self.coverage.expected_bar_ends_for_trading_days(
+                            key, days
+                        )
+                    ),
+                    days,
+                )
+                for key, year, month, days in descriptors
+            )
+            targets = tuple(
+                self._iter_targets(
+                    products,
+                    None,
+                    through,
+                    desired_months=desired,
+                )
+            )
+            family = _family(descriptors[0][0])
+            if family in failed_families and apply:
+                totals["planned"] += len(targets)
+                totals["blocked"] += len(targets)
+                continue
+            if not apply:
+                expanded: list[_Target] = []
+                for target in targets:
+                    if target.key.frequency is BarFrequency.W1:
+                        expanded.extend(
+                            self._weekly_daily_companions(target, through)
+                        )
+                    expanded.append(target)
+                result = self._execute(
+                    "update",
+                    tuple(expanded),
+                    through,
+                    apply=False,
+                )
+            else:
+                result = self._execute_apply(
+                    "update",
+                    tuple(
+                        target
+                        for target in targets
+                        if target.key.frequency in PROVIDER_FETCH_FREQUENCIES
+                    ),
+                    tuple(
+                        target
+                        for target in targets
+                        if target.key.frequency in INTRADAY_DERIVED_FREQUENCIES
+                    ),
+                    through,
+                    weekly_daily_companions=True,
+                )
+            self._source_cache = None
+            for name in totals:
+                totals[name] += getattr(result, name)
+            failures.extend(result.failures)
+            windows.extend(result.target_windows)
+            if result.failed:
+                failed_families.add(family)
+            if result.stop_reason:
+                return MaintenanceResult(
+                    action="update",
+                    status="partial",
+                    through=through,
+                    planned=totals["planned"],
+                    applied=totals["applied"],
+                    blocked=totals["blocked"],
+                    failed=totals["failed"],
+                    provider_requests=totals["provider_requests"],
+                    stop_reason=result.stop_reason,
+                    failures=tuple(failures),
+                )
+        status = "noop" if not totals["planned"] else (
+            "failed"
+            if totals["failed"] or totals["blocked"]
+            else "passed"
+            if apply
+            else "planned"
+        )
+        return MaintenanceResult(
+            action="update",
+            status=status,
+            through=through,
+            planned=totals["planned"],
+            applied=totals["applied"],
+            blocked=totals["blocked"],
+            failed=totals["failed"],
+            provider_requests=totals["provider_requests"],
+            failures=tuple(failures),
+            target_windows=tuple(windows),
         )
 
     def _plan(
