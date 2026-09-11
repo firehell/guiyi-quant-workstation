@@ -120,9 +120,12 @@ guiyi data daily-recovery \
 不发 provider 请求，也不写 DB、Canonical、status、projection 或 Redis；返回 canonical target windows，
 并按紧凑、键排序、UTF-8、`ensure_ascii=false` 的 target-windows JSON 计算 SHA-256。apply 必须提供同一
 lowercase plan hash，并在 maintenance lease 内重新核验 root/commit/status、依赖、Live/Alert heartbeat 与
-完整窗口 hash；漂移或锁冲突均在 projection invalidation 和 provider/写入前阻断。通过后只运行一次既有
-daily manager 路径，不同步当天 metadata、不回退 full、不重试、不续跑、不通知。进度仅以共享事件字段写
-stderr NDJSON；stdout 保留唯一最终 JSON，任何已提交、失败、partial 或 commit-unknown 结果保持原义。
+完整窗口 hash；漂移或锁冲突均在 projection invalidation 和 provider/写入前阻断。校验 hash 的冻结目标对象
+就是执行器消费的唯一计划，不能在失效 projection 后二次动态规划。RQData 配置只从已 pin 的目标 Runtime
+`project.env` 解析，并在锁内两次 binding check 中核对已组装的 lazy adapter；通过后才可创建 provider client，
+不得回退到执行 checkout 或 ambient provider 配置。随后只运行一次既有 daily manager 路径，不同步当天
+metadata、不回退 full、不重试、不续跑、不通知。进度仅以共享事件字段写 stderr NDJSON；stdout 保留唯一
+最终 JSON，任何已提交、失败、partial 或 commit-unknown 结果保持原义。
 
 `effective_start(symbol)=max(product_window_start(symbol), active_history_floor)`，其中
 `active_history_floor=2023-01-01`。`update` 使用显式 `--through` 固定水位，先同步 metadata，后

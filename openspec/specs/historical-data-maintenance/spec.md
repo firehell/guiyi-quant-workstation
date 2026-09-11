@@ -104,9 +104,12 @@ separators=(",", ":"), ensure_ascii=False)))`. A dry-run MUST reject `--expected
 lease before revalidating Runtime identity, pinned status and both Live/Alert heartbeats and recomputing the complete
 dry-run target windows. A lock miss or any identity, status, dependency, heartbeat, target-window or hash drift MUST
 block before Market Home projection invalidation, provider access and Catalog/Canonical writes. Only after those
-checks may it invalidate the existing Market Home projection and execute exactly one daily attempt through the shared
-`HistoricalDataManager`. Provider failure, partial completion and commit-unknown remain literal and MUST NOT trigger a
-retry.
+checks may it invalidate the existing Market Home projection and execute exactly the same immutable target plan that
+produced the checked hash, without a second dynamic plan. The provider configuration MUST be parsed from the pinned
+target Runtime configuration, matched against the composed lazy adapter during both binding checks, and used to create
+the provider client only after those checks. It MUST NOT fall back to the executing checkout or ambient provider
+configuration. The shared `HistoricalDataManager` performs exactly one attempt; provider failure, partial completion
+and commit-unknown remain literal and MUST NOT trigger a retry.
 
 The command SHALL emit credential-free bounded NDJSON progress to stderr using the shared maintenance event fields,
 including `started`, `completed`, `failed` and `interrupted`; final JSON remains the only stdout payload. Progress is

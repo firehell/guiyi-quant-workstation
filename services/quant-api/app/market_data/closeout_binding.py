@@ -18,12 +18,16 @@ from app.market_data.after_market_closeout import _directory, _read, verify_clos
 from app.market_data.captured_recovery_runtime import _read_command, _verify_loaded_service, _verify_heartbeat
 from app.market_data.coverage_source import DatabaseCoverageSource
 from app.market_data.operational_universe import load_operational_products
+from app.market_data.rqdata_adapter import (
+    RQDATA_PROVIDER_SETTINGS,
+    runtime_provider_settings,
+)
 
 
 _DEPENDENCY_SETTINGS = {
     "DATABASE_URL", "POSTGRES_PASSWORD", "REDIS_URL", "REDIS_PASSWORD",
     "GUIYI_CANONICAL_DATA_ROOT", "GUIYI_LIVE_RECOVERY_ENABLED",
-}
+} | RQDATA_PROVIDER_SETTINGS
 
 _DEPENDENCY_SOURCE_SETTINGS = _DEPENDENCY_SETTINGS | {
     "POSTGRES_DB", "POSTGRES_PORT", "POSTGRES_USER", "REDIS_PORT",
@@ -31,7 +35,7 @@ _DEPENDENCY_SOURCE_SETTINGS = _DEPENDENCY_SETTINGS | {
 
 _CLOSEOUT_IGNORED_SETTINGS = {
     "CORS_ORIGINS", "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",
-    "RQDATA_ADDR", "RQDATA_LICENSE_KEY", "RQDATA_PASSWORD", "RQDATA_USERNAME", "VITE_API_BASE_URL",
+    "VITE_API_BASE_URL",
     "VITE_MARKET_WS_URL", "VITE_PROXY_API_TARGET", "VITE_PROXY_WS_TARGET",
 }
 
@@ -131,6 +135,11 @@ def assert_dependencies(settings, *, root: Path, manager, session, redis, produc
     if (manager.catalog.session is not session or manager.catalog.canonical_root != canonical
             or manager.store.root != canonical or manager.coverage.session is not session
             or manager.store.boundary_validator != manager.coverage.valid_boundaries):
+        raise ValueError
+    if (
+        not hasattr(manager.provider, "matches_provider_settings")
+        or not manager.provider.matches_provider_settings(settings)
+    ):
         raise ValueError
     target = DatabaseCoverageSource(session, root / "data/universe/product_window_starts.csv",
         history_floor_path=root / "data/universe/active_history_floor.txt")
@@ -261,6 +270,7 @@ class RuntimeDataBinding:
         if (not required <= self.settings.keys() or not self.settings["POSTGRES_PASSWORD"]
                 or self.settings["GUIYI_LIVE_RECOVERY_ENABLED"] != "1"):
             raise ValueError
+        runtime_provider_settings(self.settings, required=True)
         self.products = _products(root)
         if interruption is not None and tuple(parsed["last_run"]["products"]) != self.products:
             raise ValueError

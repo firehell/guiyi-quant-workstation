@@ -40,20 +40,80 @@ from app.models import Instrument, MainContractMap, TradingCalendar
 
 _SESSION = re.compile(r"(?P<start>\d{1,2}:\d{2})\s*[-~]\s*(?P<end>\d{1,2}:\d{2})")
 
+RQDATA_PROVIDER_SETTINGS = frozenset(
+    {
+        "RQDATAC2_CONF",
+        "RQDATAC_CONF",
+        "RQDATA_LICENSE_KEY",
+        "RQDATA_USERNAME",
+        "RQDATA_PASSWORD",
+        "RQDATA_ADDR",
+    }
+)
+
+
+def runtime_provider_settings(
+    settings: Mapping[str, str],
+    *,
+    required: bool = False,
+) -> dict[str, str]:
+    """Copy the supported provider settings without returning/logging an identity."""
+
+    result = {
+        key: value
+        for key, value in settings.items()
+        if key in RQDATA_PROVIDER_SETTINGS and value
+    }
+    configured = bool(
+        result.get("RQDATAC2_CONF")
+        or result.get("RQDATAC_CONF")
+        or result.get("RQDATA_LICENSE_KEY")
+        or (
+            result.get("RQDATA_USERNAME")
+            and result.get("RQDATA_PASSWORD")
+        )
+    )
+    if required and not configured:
+        raise ValueError("RQDATA_CREDENTIALS_MISSING")
+    return result
+
 
 class RQDataMarketAdapter:
     """固定 RQData 适配器：bars 拉取与 metadata snapshot（实现 BarSource / MetadataPort）。"""
 
-    def __init__(self, *, session: Session, client: Any | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        session: Session,
+        client: Any | None = None,
+        provider_settings: Mapping[str, str] | None = None,
+    ) -> None:
         self.session = session
         self.catalog = MarketCatalog(session, PROJECT_ROOT)
         self._client = client
+        self._provider_settings = (
+            runtime_provider_settings(provider_settings, required=True)
+            if provider_settings is not None
+            else None
+        )
+
+    def matches_provider_settings(self, settings: Mapping[str, str]) -> bool:
+        """Compare the private pinned configuration without exposing its values."""
+
+        return self._provider_settings == runtime_provider_settings(
+            settings,
+            required=True,
+        )
 
     @property
     def client(self) -> Any:
         """仅在 apply 路径首次需要行情时初始化 rqdatac，dry-run 不触网。"""
         if self._client is None:
-            self._client = RQDataClient()
+            self._client = (
+                RQDataClient()
+                if self._provider_settings is None
+                else RQDataClient(settings=self._provider_settings)
+            )
         return self._client
 
     def fetch_many(
@@ -348,16 +408,20 @@ class RQDataMarketAdapter:
 class RQDataClient:
     """rqdatac 薄封装：凭证初始化与 price / metadata 高层调用。"""
 
-    def __init__(self) -> None:
-        load_project_env()
+    def __init__(self, *, settings: Mapping[str, str] | None = None) -> None:
+        if settings is None:
+            load_project_env()
+            configured: Mapping[str, str] = os.environ
+        else:
+            configured = runtime_provider_settings(settings, required=True)
         try:
             import rqdatac  # type: ignore[import-not-found, import-untyped]
         except ImportError as exc:
             raise InfrastructureError("RQDATA_NOT_INSTALLED") from exc
-        uri = os.getenv("RQDATAC2_CONF") or os.getenv("RQDATAC_CONF")
-        license_key = os.getenv("RQDATA_LICENSE_KEY")
-        username = os.getenv("RQDATA_USERNAME")
-        password = os.getenv("RQDATA_PASSWORD")
+        uri = configured.get("RQDATAC2_CONF") or configured.get("RQDATAC_CONF")
+        license_key = configured.get("RQDATA_LICENSE_KEY")
+        username = configured.get("RQDATA_USERNAME")
+        password = configured.get("RQDATA_PASSWORD")
         if uri:
             rqdatac.init(uri=uri)
         elif license_key:
@@ -366,7 +430,7 @@ class RQDataClient:
             rqdatac.init(
                 username,
                 password,
-                os.getenv("RQDATA_ADDR", "rqdatad-pro.ricequant.com:16011"),
+                configured.get("RQDATA_ADDR", "rqdatad-pro.ricequant.com:16011"),
             )
         else:
             raise InfrastructureError("RQDATA_CREDENTIALS_MISSING")

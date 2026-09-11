@@ -97,7 +97,7 @@ def test_daily_recovery_builds_exact_bound_request_from_runtime_products(
         runtime_root="/runtime",
         runtime_commit="a" * 40,
         expected_status_sha256="b" * 64,
-        through="2026-09-11",
+        through=date(2026, 9, 11),
         apply=apply,
         expected_plan_sha256=expected_plan_sha256,
     )

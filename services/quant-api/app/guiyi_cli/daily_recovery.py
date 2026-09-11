@@ -48,7 +48,9 @@ def run_daily_recovery(
 ) -> dict[str, object]:
     """Build the exact P60/fixed-through request and delegate its CAS to the manager."""
 
-    through = date.fromisoformat(args.through)
+    through = args.through
+    if not isinstance(through, date):
+        raise ValueError("CLI_ARGUMENT_INVALID")
     with runtime_context_factory(
         Path(args.runtime_root),
         args.runtime_commit,

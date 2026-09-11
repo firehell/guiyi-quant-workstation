@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import re
 from typing import Any, NoReturn
 
@@ -99,7 +100,7 @@ def add_data_commands(
     recovery.add_argument("--runtime-root", required=True)
     recovery.add_argument("--runtime-commit", required=True)
     recovery.add_argument("--expected-status-sha256", required=True)
-    recovery.add_argument("--through", required=True)
+    recovery.add_argument("--through", type=date.fromisoformat, required=True)
     recovery.add_argument("--expected-plan-sha256")
     recovery.add_argument("--apply", action="store_true")
 

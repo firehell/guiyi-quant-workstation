@@ -1,6 +1,10 @@
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from dataclasses import replace
+import io
+import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -118,7 +122,7 @@ def test_daily_recovery_dry_run_is_fixed_and_has_no_provider_or_write_side_effec
     assert verified == ["verified", "verified"]
 
 
-def test_daily_recovery_apply_replans_and_verifies_under_lease_before_side_effects(
+def test_daily_recovery_apply_freezes_and_verifies_under_lease_before_side_effects(
     daily_manager, monkeypatch
 ) -> None:
     manager = daily_manager
@@ -145,21 +149,29 @@ def test_daily_recovery_apply_replans_and_verifies_under_lease_before_side_effec
         lambda: events.append("lease") or Lease(),
     )
 
-    def execute(_products, _through, *, apply):
-        events.append("apply" if apply else "plan")
+    plan = SimpleNamespace(target_windows=target_windows)
+
+    def freeze(_products, _through):
+        events.append("plan")
+        return plan
+
+    def execute(frozen, _through, *, console_progress):
+        assert frozen is plan
+        assert console_progress is False
+        events.append("apply")
         return MaintenanceResult(
             "update",
-            "passed" if apply else "planned",
+            "passed",
             date(2026, 9, 11),
             1,
-            int(apply),
+            1,
             0,
             0,
-            int(apply),
-            target_windows=() if apply else target_windows,
+            1,
         )
 
-    monkeypatch.setattr(manager, "_execute_daily", execute)
+    monkeypatch.setattr(manager, "_plan_daily_recovery", freeze)
+    monkeypatch.setattr(manager, "_execute_daily_recovery_plan", execute)
 
     result = manager.daily_recovery(
         UpdateRequest(
@@ -190,6 +202,111 @@ def test_daily_recovery_apply_replans_and_verifies_under_lease_before_side_effec
     ]
 
 
+def test_daily_recovery_apply_executes_the_single_locked_plan_without_replanning(
+    daily_manager, monkeypatch
+) -> None:
+    manager = daily_manager
+    request = UpdateRequest(
+        ("jm",),
+        None,
+        date(2025, 3, 7),
+        apply=False,
+        sync_current_day_metadata=False,
+        mode="daily",
+    )
+    dry_run = manager.daily_recovery(request)
+    original = manager._daily_groups
+    plan_calls = 0
+
+    def plan_once(products, through):
+        nonlocal plan_calls
+        plan_calls += 1
+        if plan_calls > 1:
+            raise AssertionError("daily recovery replanned after its CAS check")
+        yield from original(products, through)
+
+    monkeypatch.setattr(manager, "_daily_groups", plan_once)
+
+    result = manager.daily_recovery(
+        replace(request, apply=True),
+        expected_plan_sha256=dry_run.plan_sha256,
+    )
+
+    assert result.status == "passed"
+    assert result.target_windows == dry_run.target_windows
+    assert plan_calls == 1
+
+
+def test_daily_recovery_main_apply_keeps_legacy_progress_off_stdout(
+    daily_manager, capsys
+) -> None:
+    from app.guiyi_cli.daily_recovery import run_daily_recovery
+    from app.guiyi_cli.main import main
+
+    manager = daily_manager
+    dry_run = manager.daily_recovery(
+        UpdateRequest(
+            ("jm",),
+            None,
+            date(2025, 3, 7),
+            apply=False,
+            sync_current_day_metadata=False,
+            mode="daily",
+        )
+    )
+    capsys.readouterr()
+    runtime = SimpleNamespace(
+        products=("jm",),
+        manager=manager,
+        verify_identity=lambda: None,
+        invalidate_projection=lambda: None,
+    )
+
+    @contextmanager
+    def open_runtime(*_args):
+        yield runtime
+
+    def runner(args, *, progress_stream):
+        return run_daily_recovery(
+            args,
+            progress_stream=progress_stream,
+            runtime_context_factory=open_runtime,
+        )
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    code = main(
+        [
+            "data",
+            "daily-recovery",
+            "--runtime-root",
+            "/runtime",
+            "--runtime-commit",
+            "a" * 40,
+            "--expected-status-sha256",
+            "b" * 64,
+            "--through",
+            "2025-03-07",
+            "--apply",
+            "--expected-plan-sha256",
+            dry_run.plan_sha256,
+        ],
+        daily_recovery_runner=runner,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert captured.out == ""
+    assert json.loads(stdout.getvalue())["plan_sha256"] == dry_run.plan_sha256
+    assert len(stdout.getvalue().splitlines()) > 1
+    assert all(
+        json.loads(line)["event"] == "data.daily-recovery.progress"
+        for line in stderr.getvalue().splitlines()
+    )
+
+
 def test_daily_recovery_target_drift_blocks_before_invalidation_and_provider(
     daily_manager, monkeypatch
 ) -> None:
@@ -197,16 +314,8 @@ def test_daily_recovery_target_drift_blocks_before_invalidation_and_provider(
     effects: list[str] = []
     monkeypatch.setattr(
         manager,
-        "_execute_daily",
-        lambda *_args, **_kwargs: MaintenanceResult(
-            "update",
-            "planned",
-            date(2026, 9, 11),
-            1,
-            0,
-            0,
-            0,
-            0,
+        "_plan_daily_recovery",
+        lambda *_args, **_kwargs: SimpleNamespace(
             target_windows=(
                 {
                     "dataset": ("continuous", "jm", "MAIN", "1d"),
@@ -256,18 +365,8 @@ def test_daily_recovery_identity_drift_after_locked_plan_blocks_before_side_effe
     effects: list[str] = []
     monkeypatch.setattr(
         manager,
-        "_execute_daily",
-        lambda *_args, **_kwargs: MaintenanceResult(
-            "update",
-            "planned",
-            date(2026, 9, 11),
-            1,
-            0,
-            0,
-            0,
-            0,
-            target_windows=target_windows,
-        ),
+        "_plan_daily_recovery",
+        lambda *_args, **_kwargs: SimpleNamespace(target_windows=target_windows),
     )
 
     def verify() -> None:

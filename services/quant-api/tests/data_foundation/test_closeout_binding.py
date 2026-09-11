@@ -54,6 +54,7 @@ def target(tmp_path, monkeypatch):
     config = runtime_dir / "project.env"
     config.write_text('DATABASE_URL=postgresql+psycopg://fixture@127.0.0.1:15448/test\n'
         'REDIS_URL=redis://127.0.0.1:15449/0\nPOSTGRES_PASSWORD=fixture-only\n'
+        'RQDATA_LICENSE_KEY=fixture-rqdata-license\n'
         f'GUIYI_CANONICAL_DATA_ROOT="{tmp_path.resolve()}/canonical"\nGUIYI_LIVE_RECOVERY_ENABLED=1\n')
     config.chmod(0o600)
     universe = root / "data/universe"
@@ -115,7 +116,12 @@ def test_binding_constructs_target_dependencies_not_executing_environment(target
     monkeypatch.setenv("DATABASE_URL", "sqlite:///wrong-environment")
     monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", "/wrong-lake")
     with Session(create_engine(binding.settings["DATABASE_URL"])) as db:
-        manager = build_historical_data_manager(db, data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]), config_root=binding.root)
+        manager = build_historical_data_manager(
+            db,
+            data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]),
+            config_root=binding.root,
+            provider_settings=binding.settings,
+        )
         client = Redis.from_url(binding.settings["REDIS_URL"])
         heartbeat = {"runtime_root": str(target.root), "runtime_commit": "a" * 40,
             "recovery_guard_enabled": True, "generated_at": "2029-01-01T00:00:00Z"}
@@ -129,10 +135,58 @@ def test_binding_constructs_target_dependencies_not_executing_environment(target
         assert requested == ["alert:heartbeat"]
         assert not db.in_transaction()
         assert manager.store.root == Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"])
+        assert manager.provider.matches_provider_settings(binding.settings)
         target.config.write_text(target.config.read_text() + "# later replacement\n")
         with pytest.raises(ValueError):
             binding.check(manager, db, client, store, lambda: datetime(2029, 1, 1, tzinfo=UTC))
         assert not db.in_transaction()
+        client.close()
+
+
+def test_runtime_binding_rejects_missing_provider_configuration(target) -> None:
+    target.config.write_text(
+        target.config.read_text().replace(
+            "RQDATA_LICENSE_KEY=fixture-rqdata-license\n", ""
+        )
+    )
+
+    with pytest.raises(ValueError):
+        target.create()
+
+
+def test_runtime_binding_rejects_manager_with_different_provider_configuration(
+    target, monkeypatch
+) -> None:
+    from app.market_data.composition import build_historical_data_manager
+
+    binding = target.create()
+    with Session(create_engine(binding.settings["DATABASE_URL"])) as db:
+        manager = build_historical_data_manager(
+            db,
+            data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]),
+            config_root=binding.root,
+            provider_settings={"RQDATA_LICENSE_KEY": "different-license"},
+        )
+        client = Redis.from_url(binding.settings["REDIS_URL"])
+        heartbeat = {
+            "runtime_root": str(target.root),
+            "runtime_commit": "a" * 40,
+            "recovery_guard_enabled": True,
+            "generated_at": "2029-01-01T00:00:00Z",
+        }
+        monkeypatch.setattr(client, "get", lambda key: json.dumps(heartbeat))
+        store = SimpleNamespace(heartbeat=lambda: heartbeat)
+
+        with pytest.raises(ValueError):
+            binding.check(
+                manager,
+                db,
+                client,
+                store,
+                lambda: datetime(2029, 1, 1, tzinfo=UTC),
+            )
+
+        assert manager.provider._client is None
         client.close()
 
 
@@ -144,7 +198,8 @@ def test_running_binding_requires_explicit_exact_terminal_rebind(target, monkeyp
     terminal_sha256 = _write_status(target.status, terminal)
     with Session(create_engine(binding.settings["DATABASE_URL"])) as db:
         manager = build_historical_data_manager(db,
-            data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]), config_root=binding.root)
+            data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]),
+            config_root=binding.root, provider_settings=binding.settings)
         client = Redis.from_url(binding.settings["REDIS_URL"])
         heartbeat = {"runtime_root": str(target.root), "runtime_commit": "a" * 40,
             "recovery_guard_enabled": True, "generated_at": "2029-01-01T00:00:00Z"}
@@ -284,8 +339,8 @@ def test_binding_rejects_duplicate_ignored_setting(target):
 def test_binding_drops_active_settings_that_closeout_does_not_consume(target):
     ignored_names = (
         "CORS_ORIGINS", "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",
-        "RQDATA_ADDR", "RQDATA_LICENSE_KEY", "RQDATA_PASSWORD", "RQDATA_USERNAME", "VITE_API_BASE_URL",
-        "VITE_MARKET_WS_URL", "VITE_PROXY_API_TARGET", "VITE_PROXY_WS_TARGET",
+        "VITE_API_BASE_URL", "VITE_MARKET_WS_URL", "VITE_PROXY_API_TARGET",
+        "VITE_PROXY_WS_TARGET",
     )
     assert target.module._CLOSEOUT_IGNORED_SETTINGS == set(ignored_names)
     target.config.write_text(
@@ -357,6 +412,7 @@ def test_binding_allows_dependency_sources_to_build_dependency_values(target):
         "POSTGRES_USER=fixture\nPOSTGRES_DB=test\nPOSTGRES_PORT=15448\n"
         "DATABASE_URL=postgresql+psycopg://$POSTGRES_USER@127.0.0.1:$POSTGRES_PORT/$POSTGRES_DB\n"
         "REDIS_URL=redis://127.0.0.1:15449/0\nPOSTGRES_PASSWORD=fixture-only\n"
+        "RQDATA_LICENSE_KEY=fixture-rqdata-license\n"
         f"GUIYI_CANONICAL_DATA_ROOT={target.root}/canonical\nGUIYI_LIVE_RECOVERY_ENABLED=1\n"
     )
 
@@ -663,7 +719,10 @@ def test_binding_rejects_different_redis_endpoint_without_connecting(target):
     from app.market_data.composition import build_historical_data_manager
     binding = target.create()
     with Session(create_engine(binding.settings["DATABASE_URL"])) as db:
-        manager = build_historical_data_manager(db, data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]), config_root=binding.root)
+        manager = build_historical_data_manager(
+            db, data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]),
+            config_root=binding.root, provider_settings=binding.settings,
+        )
         client = Redis.from_url("redis://127.0.0.1:15450/0")
         with pytest.raises(ValueError):
             target.module.assert_dependencies(binding.settings, root=binding.root, manager=manager,
@@ -681,7 +740,8 @@ def test_binding_requires_exact_partition_validator_and_dependency_identity(targ
     engine = create_engine(binding.settings["DATABASE_URL"])
     with Session(engine) as db, Session(engine) as other_db:
         manager = build_historical_data_manager(db,
-            data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]), config_root=binding.root)
+            data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]),
+            config_root=binding.root, provider_settings=binding.settings)
         client = Redis.from_url(binding.settings["REDIS_URL"])
         if mismatch == "missing":
             manager.store.boundary_validator = None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from types import SimpleNamespace
 
 from sqlalchemy import create_engine
@@ -76,3 +77,60 @@ def test_metadata_synchronizer_uses_existing_composition_boundary(
     assert synchronizer.adapter is adapter
     assert synchronizer.catalog is catalog
     session.close()
+
+
+def test_historical_manager_lazily_constructs_provider_from_explicit_settings(
+    tmp_path, monkeypatch
+) -> None:
+    from app.market_data import rqdata_adapter
+
+    root = tmp_path / "canonical"
+    root.mkdir()
+    received = []
+    client = SimpleNamespace()
+
+    def build_client(*, settings=None):
+        received.append(settings)
+        return client
+
+    monkeypatch.setattr(rqdata_adapter, "RQDataClient", build_client)
+    session = _session()
+    settings = {"RQDATA_LICENSE_KEY": "runtime-bound-license"}
+
+    manager = build_historical_data_manager(
+        session,
+        data_root=root,
+        provider_settings=settings,
+    )
+
+    assert received == []
+    assert manager.provider.client is client
+    assert received == [settings]
+    assert manager.provider.matches_provider_settings(settings)
+    session.close()
+
+
+def test_rqdata_client_explicit_settings_do_not_load_ambient_configuration(
+    monkeypatch,
+) -> None:
+    from app.market_data import rqdata_adapter
+
+    calls = []
+    fake_rqdatac = SimpleNamespace(
+        init=lambda *args, **kwargs: calls.append((args, kwargs))
+    )
+    monkeypatch.setitem(sys.modules, "rqdatac", fake_rqdatac)
+    monkeypatch.setenv("RQDATA_LICENSE_KEY", "ambient-license")
+    monkeypatch.setattr(
+        rqdata_adapter,
+        "load_project_env",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("explicit Runtime settings must not load project env")
+        ),
+    )
+
+    rqdata_adapter.RQDataClient(
+        settings={"RQDATA_LICENSE_KEY": "runtime-license"}
+    )
+
+    assert calls == [(('license', 'runtime-license'), {})]

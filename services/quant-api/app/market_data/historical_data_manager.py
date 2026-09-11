@@ -395,6 +395,26 @@ class _Target:
 
 
 @dataclass(frozen=True, slots=True)
+class _DailyRecoveryGroup:
+    """One frozen family-month unit, including any weekly D1 companions."""
+
+    family: tuple[str, str, str]
+    targets: tuple[_Target, ...]
+    fetched: tuple[_Target, ...]
+    intraday_derived: tuple[_Target, ...]
+    fetch_groups: tuple[tuple[_Target, ...], ...]
+    target_windows: tuple[Mapping[str, object], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _DailyRecoveryPlan:
+    """Immutable target set used for both CAS identity and execution."""
+
+    groups: tuple[_DailyRecoveryGroup, ...]
+    target_windows: tuple[Mapping[str, object], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _ContractPartitionClassification:
     """Mapped required 与 lifecycle-valid persisted 的单一分区分类结果。"""
 
@@ -912,10 +932,9 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 try:
                     if verify_identity is not None:
                         verify_identity()
-                    locked_plan = self._execute_daily(
+                    locked_plan = self._plan_daily_recovery(
                         request.products,
                         request.through,
-                        apply=False,
                     )
                     locked_sha256 = _daily_recovery_plan_sha256(
                         locked_plan.target_windows
@@ -926,10 +945,10 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         verify_identity()
                     if before_apply is not None:
                         before_apply()
-                    maintenance = self._execute_daily(
-                        request.products,
+                    maintenance = self._execute_daily_recovery_plan(
+                        locked_plan,
                         request.through,
-                        apply=True,
+                        console_progress=False,
                     )
                     return DailyRecoveryResult(
                         maintenance=maintenance,
@@ -941,13 +960,13 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     _release_maintenance_lease(lease)
             if verify_identity is not None:
                 verify_identity()
-            maintenance = self._execute_daily(
+            plan = self._plan_daily_recovery(
                 request.products,
                 request.through,
-                apply=False,
             )
             if verify_identity is not None:
                 verify_identity()
+            maintenance = self._daily_recovery_plan_result(plan, request.through)
             return DailyRecoveryResult(
                 maintenance=maintenance,
                 plan_sha256=_daily_recovery_plan_sha256(
@@ -1427,60 +1446,154 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     )
                 yield tuple(descriptors)
 
-    def _execute_daily(self, products, through, *, apply):
+    def _plan_daily_recovery(
+        self,
+        products: tuple[str, ...],
+        through: date,
+    ) -> _DailyRecoveryPlan:
+        """Resolve every target once so the hash and writer share one exact plan."""
+
+        groups: list[_DailyRecoveryGroup] = []
+        windows: list[Mapping[str, object]] = []
+        for descriptors in self._daily_groups(products, through):
+            self._source_cache = {}
+            desired = (
+                (
+                    key,
+                    year,
+                    month,
+                    tuple(
+                        end.astimezone(UTC)
+                        for end in self.coverage.expected_bar_ends_for_trading_days(
+                            key, days
+                        )
+                    ),
+                    days,
+                )
+                for key, year, month, days in descriptors
+            )
+            targets = tuple(
+                self._iter_targets(
+                    products,
+                    None,
+                    through,
+                    desired_months=desired,
+                )
+            )
+            fetched = tuple(
+                target
+                for target in targets
+                if target.key.frequency in PROVIDER_FETCH_FREQUENCIES
+            )
+            intraday_derived = tuple(
+                target
+                for target in targets
+                if target.key.frequency in INTRADAY_DERIVED_FREQUENCIES
+            )
+            fetch_groups = tuple(
+                (
+                    (*self._weekly_daily_companions(target, through), target)
+                    if target.key.frequency is BarFrequency.W1
+                    else (target,)
+                )
+                for target in fetched
+            )
+            expanded: list[_Target] = []
+            pending_fetch_groups = iter(fetch_groups)
+            for target in targets:
+                if target.key.frequency in PROVIDER_FETCH_FREQUENCIES:
+                    expanded.extend(next(pending_fetch_groups))
+                else:
+                    expanded.append(target)
+            target_windows = tuple(_target_payload(target) for target in expanded)
+            groups.append(
+                _DailyRecoveryGroup(
+                    family=_family(descriptors[0][0]),
+                    targets=targets,
+                    fetched=fetched,
+                    intraday_derived=intraday_derived,
+                    fetch_groups=fetch_groups,
+                    target_windows=target_windows,
+                )
+            )
+            windows.extend(target_windows)
+            self._source_cache = None
+        return _DailyRecoveryPlan(tuple(groups), tuple(windows))
+
+    @staticmethod
+    def _daily_recovery_plan_result(
+        plan: _DailyRecoveryPlan,
+        through: date,
+    ) -> MaintenanceResult:
+        planned = len(plan.target_windows)
+        return MaintenanceResult(
+            "update",
+            "planned" if planned else "noop",
+            through,
+            planned,
+            0,
+            0,
+            0,
+            0,
+            target_windows=plan.target_windows,
+        )
+
+    def _execute_daily_recovery_plan(
+        self,
+        plan: _DailyRecoveryPlan,
+        through: date,
+        *,
+        console_progress: bool,
+    ) -> MaintenanceResult:
+        """Execute only the frozen target objects whose windows produced the CAS."""
+
         totals = dict(planned=0, applied=0, blocked=0, failed=0, provider_requests=0)
         failures = []
-        windows = []
         failed_families = set()
-        for descriptors in self._daily_groups(products, through):
+        for group in plan.groups:
             # Source rows live only for this family-month. Pointer identity is rechecked
             # on every reuse; no cross-run or cross-product Parquet cache exists.
             self._source_cache = {}
-            desired = (
-                (key, year, month, tuple(end.astimezone(UTC) for end in
-                    self.coverage.expected_bar_ends_for_trading_days(key, days)), days)
-                for key, year, month, days in descriptors
-            )
-            targets = tuple(self._iter_targets(
-                products, None, through, desired_months=desired,
-            ))
-            family = _family(descriptors[0][0])
-            if family in failed_families and apply:
-                totals["planned"] += len(targets)
-                totals["blocked"] += len(targets)
+            if group.family in failed_families:
+                totals["planned"] += len(group.targets)
+                totals["blocked"] += len(group.targets)
                 continue
-            if not apply:
-                expanded = []
-                for target in targets:
-                    if target.key.frequency is BarFrequency.W1:
-                        expanded.extend(self._weekly_daily_companions(target, through))
-                    expanded.append(target)
-                result = self._execute("update", tuple(expanded), through, apply=False)
-            else:
-                result = self._execute_apply(
-                    "update",
-                    tuple(t for t in targets if t.key.frequency in PROVIDER_FETCH_FREQUENCIES),
-                    tuple(t for t in targets if t.key.frequency in INTRADAY_DERIVED_FREQUENCIES),
-                    through, weekly_daily_companions=True,
-                )
+            result = self._execute_apply(
+                "update",
+                group.fetched,
+                group.intraday_derived,
+                through,
+                weekly_daily_companions=False,
+                preplanned_fetch_groups=group.fetch_groups,
+                console_progress=console_progress,
+            )
             self._source_cache = None
             for name in totals:
                 totals[name] += getattr(result, name)
             failures.extend(result.failures)
-            windows.extend(result.target_windows)
             if result.failed:
-                failed_families.add(family)
+                failed_families.add(group.family)
             if result.stop_reason:
                 return MaintenanceResult(
                     "update", "partial", through, **totals,
                     stop_reason=result.stop_reason, failures=tuple(failures),
                 )
         status = "noop" if not totals["planned"] else (
-            "failed" if totals["failed"] or totals["blocked"] else "passed" if apply else "planned"
+            "failed" if totals["failed"] or totals["blocked"] else "passed"
         )
         return MaintenanceResult(
             "update", status, through, **totals,
-            failures=tuple(failures), target_windows=tuple(windows),
+            failures=tuple(failures), target_windows=plan.target_windows,
+        )
+
+    def _execute_daily(self, products, through, *, apply):
+        plan = self._plan_daily_recovery(products, through)
+        if not apply:
+            return self._daily_recovery_plan_result(plan, through)
+        return self._execute_daily_recovery_plan(
+            plan,
+            through,
+            console_progress=True,
         )
 
     def _plan(
@@ -1795,6 +1908,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
         *,
         weekly_daily_companions: bool,
         fail_stop: bool = False,
+        preplanned_fetch_groups: tuple[tuple[_Target, ...], ...] | None = None,
+        console_progress: bool = True,
     ) -> MaintenanceResult:
         """apply 核心循环：先聚合已有 1m，再 fetch，最后扫剩余日内派生目标。"""
         remaining_derived = list(intraday_derived)
@@ -1852,7 +1967,9 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 planned += 1
                 applied += 1
         fetch_groups: Iterable[tuple[_Target, ...]]
-        if weekly_daily_companions:
+        if preplanned_fetch_groups is not None:
+            fetch_groups = preplanned_fetch_groups
+        elif weekly_daily_companions:
             fetch_groups = (
                 (
                     (*self._weekly_daily_companions(target, through), target)
@@ -1943,7 +2060,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         stop_reason="contract_warmup_target_failed",
                         failures=tuple(failures),
                     )
-            if planned == 1 or planned % 100 == 0:
+            if console_progress and (planned == 1 or planned % 100 == 0):
                 print(
                     f"maintenance {action} fetched planned={planned} applied={applied} "
                     f"failed={len(failures)} provider_requests={provider_requests}",
@@ -1975,7 +2092,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         stop_reason="contract_warmup_target_failed",
                         failures=tuple(failures),
                     )
-            if planned % 100 == 0:
+            if console_progress and planned % 100 == 0:
                 print(
                     f"maintenance {action} derived planned={planned} applied={applied} "
                     f"failed={len(failures)} blocked={blocked}",

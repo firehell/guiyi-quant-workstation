@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Callable, ContextManager, cast
+from typing import Callable, ContextManager, Mapping, cast
 
 from sqlalchemy.orm import Session
 
@@ -94,6 +94,7 @@ def open_runtime_bound_historical_maintenance(
                 session,
                 data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]),
                 config_root=binding.root,
+                provider_settings=binding.settings,
             )
 
             def verify_identity() -> None:
@@ -130,8 +131,13 @@ def canonical_root() -> Path:
     return root.resolve()
 
 
-def build_historical_data_manager(session: Session, *, data_root: Path | None = None,
-                                  config_root: Path | None = None) -> HistoricalDataManager:
+def build_historical_data_manager(
+    session: Session,
+    *,
+    data_root: Path | None = None,
+    config_root: Path | None = None,
+    provider_settings: Mapping[str, str] | None = None,
+) -> HistoricalDataManager:
     """Compose the Historical maintenance boundary without starting a run."""
 
     from app.market_data.coverage_source import DatabaseCoverageSource
@@ -139,7 +145,10 @@ def build_historical_data_manager(session: Session, *, data_root: Path | None = 
 
     root = data_root if data_root is not None else canonical_root()
     catalog = MarketCatalog(session, root)
-    adapter = RQDataMarketAdapter(session=session)
+    adapter = RQDataMarketAdapter(
+        session=session,
+        provider_settings=provider_settings,
+    )
     coverage = DatabaseCoverageSource(
         session,
         config_root / "data/universe/product_window_starts.csv" if config_root is not None else _PRODUCT_STARTS,

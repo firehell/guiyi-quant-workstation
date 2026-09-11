@@ -230,6 +230,7 @@ def test_daily_recovery_parser_requires_exact_runtime_identity_and_fixed_through
 
     assert parsed.apply is False
     assert parsed.expected_plan_sha256 is None
+    assert parsed.through == date(2026, 9, 11)
     for required_flag in (
         "--runtime-root",
         "--runtime-commit",
@@ -273,6 +274,37 @@ def test_daily_recovery_parser_hash_is_apply_only_and_lowercase_sha256() -> None
     assert parsed.expected_plan_sha256 == "c" * 64
 
 
+def test_daily_recovery_invalid_through_is_a_readonly_argument_error() -> None:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    code = main(
+        [
+            "data",
+            "daily-recovery",
+            "--runtime-root",
+            "/runtime",
+            "--runtime-commit",
+            "a" * 40,
+            "--expected-status-sha256",
+            "b" * 64,
+            "--through",
+            "not-a-date",
+        ],
+        daily_recovery_runner=lambda *_args, **_kwargs: pytest.fail(
+            "argument failure must precede execution"
+        ),
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert code == 2
+    assert stdout.getvalue() == ""
+    payload = json.loads(stderr.getvalue())
+    assert payload["error"]["code"] == "CLI_ARGUMENT_INVALID"
+    assert payload["readonly"] is True
+
+
 def test_daily_recovery_dispatches_without_constructing_the_default_manager() -> None:
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -310,7 +342,7 @@ def test_daily_recovery_dispatches_without_constructing_the_default_manager() ->
 
     assert code == 0
     assert json.loads(stdout.getvalue())["plan_sha256"] == "c" * 64
-    assert received[0][0].through == "2026-09-11"
+    assert received[0][0].through == date(2026, 9, 11)
     assert received[0][1] is stderr
     assert stderr.getvalue() == ""
 

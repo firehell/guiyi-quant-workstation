@@ -503,7 +503,8 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 引用该 exact hash 的单次明确授权。
 
 Runtime-bound daily recovery 的显式 P60/fixed-through 请求、稳定 target-window hash、maintenance lease 内
-identity/CAS 重检、projection 顺序、单次 provider 失败、正式 Catalog/MDS 读回与 NDJSON 进度：
+identity/CAS 重检、hash 与执行共用同一冻结计划、目标 Runtime provider 配置绑定、projection 顺序、唯一
+stdout 终态 JSON、单次 provider 失败、正式 Catalog/MDS 读回与 NDJSON 进度：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
@@ -512,6 +513,8 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/data_foundation/test_daily_maintenance.py \
   services/quant-api/tests/data_foundation/test_cli.py \
   services/quant-api/tests/data_foundation/test_closeout_binding.py \
+  services/quant-api/tests/data_foundation/test_composition.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/test_market_home_projection_invalidation.py \
   services/quant-api/tests/data_foundation/test_catalog_and_service.py
 ```
