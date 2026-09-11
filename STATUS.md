@@ -26,6 +26,17 @@ develop 代码基线 `a8e67790dcd33db95f65c442c415378782927618`。本文件只�
 - `EXTERNAL_GATE_PENDING`：尚未发布新补丁或切换 Runtime；现役状态与 v1.10.6 release 事实保持下文所述。
   下一步是冻结新补丁 release candidate 并单独取得发布意图，之后另行处理 Runtime promotion 与现场进程/请求验收。
 
+## 周检状态归属补丁（未发布、未启用）
+
+- 修复代码 `838a7e649`：同一状态路径先取得专属写入锁，再写 running、获取维护锁和执行只读审计；
+  竞争者只返回 `skipped_busy`，不覆盖持有者状态。独占新尝试的维护锁 busy/异常仍写入本次 skipped_busy/failed，
+  不沿用旧成功。锁覆盖终态发布和维护 lease 释放，进程中断保留未完成状态。
+- `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE`：周检定向 43 passed（含独立复跑）；相关回归 368 passed，
+  首次唯一失败是隔离 worktree 缺前端依赖，复用已有依赖后该项重跑 1 passed；隔离 PostgreSQL 2 passed。
+  Ruff、Mypy、OpenSpec 9 项、引用检查、secret scan 0 findings、diff check 通过；独立 Review 无 P0–P3。
+- `EXTERNAL_GATE_PENDING`：补丁尚未发布或进入 Runtime；周检安装和新版本自然运行验收仍为独立 Gate。
+  weekly audit 保持可选，不是 operational health 的 required service；未运行本身不要求停止 API/Live 等服务。
+
 ## v1.10.6 Release（Runtime 未切换）
 
 - 独立候选 `2cb4538da362d4833262d303c4bf02f041575e76` 由 PR #362 合入 main；merge commit
