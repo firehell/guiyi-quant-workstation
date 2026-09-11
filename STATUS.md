@@ -6,7 +6,7 @@ develop 代码基线 `baef0d92bc9c3a61b2d2f1d7cc61856526f2895e`。本文件只�
 与原 evidence 追溯；历史授权不授权重跑。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见
 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
-工作 2 于 2026-09-11 只读 closeout 返回 `ready`；状态未写，单次 apply 仍待批准。部署预检另受当天 60 品种 Session 缺失阻塞，未补行情、未切换 Runtime。
+工作 2 已于 2026-09-11 完成：只读 closeout 返回 `ready` 后，owner 批准的单次 apply 将 2026-09-09 旧运行记为 `interrupted`，独立读回通过。部署预检仍受当天 60 品种 Session 缺失阻塞；未补行情、未切换 Runtime。
 
 ## 当前阶段
 
@@ -14,7 +14,7 @@ develop 代码基线 `baef0d92bc9c3a61b2d2f1d7cc61856526f2895e`。本文件只�
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.5`，PR #359 合入 main |
 | 现役 Runtime | 已切换，未声明 `RUNTIME_READY` | 五服务均加载 v1.10.5；after-market loaded 且 idle；现版本自然盘后验收未完成 |
-| 中断盘后收尾 | `CODE_COMPLETE` / `EXTERNAL_GATE_PENDING` | 2026-09-11 只读返回 ready，720 项均为允许保留的缺失项；未 apply，状态字节未变 |
+| 中断盘后收尾 | `COMPLETED` | 2026-09-11 单次 apply 成功并独立读回：旧运行为 interrupted、current_run 已清除；720 项允许缺口保留，零 provider 请求、零数据写入 |
 | 盘后生命周期修复 | 待精确基线复现 | 不把上轮线索直接写成生产根因 |
 | 牛哇加载一致性 | 待精确基线复现 | 黄金固定截点本地预览已完成，不代替当前全品种验收 |
 | 本轮稳定版 | 范围已接受全量 develop，候选 commit 未冻结 | owner 已接受相对 v1.10.5 的全部 develop diff；精确冻结仍留工作 5 |
@@ -103,9 +103,9 @@ Web 优化信息层级、布局、可读性、图表操作、加载体验和移�
 
 三项架构修复和 Mypy 补修为 `CODE_COMPLETE / REVIEW_COMPLETE`；完整后端回归通过，补修独立 Spec/Standards Review 无 P0–P3 发现，额外 8024 组新旧 Decimal 差分一致。集成后的全量 Mypy 再验通过，包含原有未提交 closeout 修改的定向回归 226 passed。按 owner 明确要求关闭 Mypy 后集成 develop，已执行。浏览器补修的独立 Spec/Standards Review 均无 P0–P3 发现，Newow fixture 浏览器 Gate 已关闭；这不代表生产历史、原站 parity 或 Runtime 验收。原 develop 两处 closeout heartbeat 修改在架构集成时保留，随后已独立验证、Review 并提交为 `baef0d92b`，详见下节。release candidate 条件仍按现有发布计划复核；不新增真实数据、通知或 Runtime 授权。
 
-## 工作 2 只读验收与部署排查（2026-09-11）
+## 工作 2 中断盘后安全收尾（2026-09-11）
 
-状态为 `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING`。`baef0d92b` 已提交并推送 develop：closeout 从生产者实际写入的 `alert:heartbeat` 读取 Alert 身份；测试只响应该精确键，保持缺失/过期/身份或恢复开关不符即拒绝。RED 验证旧键失败；直接相关五文件回归 236 passed，全量 Mypy 154 个源码文件通过，Ruff、18 项工程检查、9 项 OpenSpec strict 和 secret scan（0 findings）通过；独立 Review 无 P0–P3 发现。未发布。
+状态为 `COMPLETED`。`baef0d92b` 已提交并推送 develop：closeout 从生产者实际写入的 `alert:heartbeat` 读取 Alert 身份；测试只响应该精确键，保持缺失/过期/身份或恢复开关不符即拒绝。RED 验证旧键失败；直接相关五文件回归 236 passed，全量 Mypy 154 个源码文件通过，Ruff、18 项工程检查、9 项 OpenSpec strict 和 secret scan（0 findings）通过；独立 Review 无 P0–P3 发现。未发布。
 
 owner 授权停止仅属于本任务的慢速只读诊断 PID 22129，并进行一次新的只读排查。旧诊断在 50 分 16 秒时被 SIGTERM，exit 143，没有 closeout 结论。排查确认本任务的全局追踪造成额外开销：隔离真实 reader 的 1000 行分区基准中约 7.54 倍；该比例不能推算生产耗时或作为唯一原因。新诊断移除全局追踪，仅观察原函数进度，独立 Review 确认不改变检查、返回值或异常传播。
 
@@ -116,9 +116,9 @@ owner 授权停止仅属于本任务的慢速只读诊断 PID 22129，并进行�
 - operational 60 品种的 45,362 个 Catalog 已提交指针全部通过严格物理读取；中断日 audit 返回 720 项 `EXPECTED_PARTITION_MISSING`，随后全部通过允许缺口/有效子集检查，`pending_findings=720`。audit 自身为 failed，closeout 则按合同 ready；不证明全历史完整，也不证明这些缺口由旧中断造成。
 - 2026-09-09 原 Live snapshot 与 60 品种 rank1 匹配；来源时间、配置/启动身份、锁及结束前身份/状态字节复核通过。旧 9 月 8 日自然成功证据没有晋升为新成功。
 
-11:22–11:23 的现役及 develop 只读部署 preflight 均返回 blocked / `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。使用相同 Runtime 绑定依赖的只读诊断确认：五交易所当天 Calendar 存在，附近 Calendar 完整性检查未失败；60/60 品种解析 2026-09-11 Session 均报 `TRADING_SESSION_MISSING`，故 phase=UNKNOWN；当天 Live snapshot 不存在，旧状态分类仍为 running。这里只确认当前有效 Session 缺失，不推断何时或为何缺失；既有截至旧目标日的元数据恢复不因此改写为失败。
+11:22–11:23 的现役及 develop 只读部署 preflight 均返回 blocked / `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。使用相同 Runtime 绑定依赖的只读诊断确认：五交易所当天 Calendar 存在，附近 Calendar 完整性检查未失败；60/60 品种解析 2026-09-11 Session 均报 `TRADING_SESSION_MISSING`，故 phase=UNKNOWN；当天 Live snapshot 不存在，旧状态分类当时仍为 running。这里只确认当前有效 Session 缺失，不推断何时或为何缺失；既有截至旧目标日的元数据恢复不因此改写为失败。
 
-唯一待执行的收尾 mutation 是单次 apply 原状态文件：记 interrupted，保留原开始时间/最后成功日，未知 attempts 保持 null；不下载、不写 Canonical/DB/Redis、不通知、不切换。apply 后仍需真实读回和部署预检，不能承诺当前 Session / Live 快照 Gate 随之关闭。旧 v1.10.5 reader 对 schema v4 的兼容性也须与候选 reader 分别检查。
+owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条件后返回 `status=closed_interrupted`、`status_written=true`、`pending_findings=720`、`provider_requests=0`、`data_writes=0`。独立读回确认状态文件仍为 0600 普通文件，新 SHA-256 为 `ee5ccb1f377d4b7ac0812cd09779f00e65295387a07dabd9466872da83ae8a4b`：schema v4、`current_run=null`、2026-09-09 `last_run.status=interrupted`、attempts=null、`AFTER_MARKET_INTERRUPTED`，最后成功日保留 2026-09-08。develop reader 可正确读取该状态；现役 v1.10.5 与 develop 的收尾后只读 preflight 仍均为 blocked / `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`，60 品种、零当天 snapshot。旧事故已完成有证据的归类；Session / Live Gate 独立保留，未执行 installer、promotion、通知或任何数据修复。
 
 ## Release、Runtime 与 Scope
 
@@ -146,8 +146,7 @@ owner 授权停止仅属于本任务的慢速只读诊断 PID 22129，并进行�
 
 | 缺口 | 类型 | 当前证据边界 |
 |---|---|---|
-| 中断盘后状态收尾 apply | 现场验收 | 2026-09-11 只读已 ready，精确身份、原状态哈希、数据检查和原日快照均通过；完整证据见“工作 2 只读验收与部署排查”节。apply 未执行，仍需目标明确的单次意图。 |
-| 收尾后部署预检 | 现场验收 | 尚未 apply；现役与 develop 只读 preflight 均 blocked / `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。当前 60 品种 Session 缺失导致 UNKNOWN，当天快照缺失，旧状态仍 running；不能承诺 apply 后通过。未跑 installer 或 promotion。 |
+| 收尾后部署预检 | 现场验收 | apply 与状态读回已完成；现役与 develop 只读 preflight 仍均 blocked / `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。当前 60 品种 Session 缺失导致 UNKNOWN，当天 snapshot 缺失；这是独立 Runtime Gate，未跑 installer 或 promotion。 |
 | v1.10.5 自然盘后 | 现场验收 | 不得用 v1.10.3 成功记录或旧状态字节代替。 |
 | 盘后日历未知、异常退出、副作用报告 | 代码缺陷 | 上轮线索见下节；须在任务精确基线复现。已实现的日常增量与独立 weekly-audit 不得被包装成“全历史已完整”。 |
 | 现有牛哇旧请求回写、面板冲突、分页定位 | 代码缺陷 | `useNewowProduct.ts` 已有代次/取消/冲突处理；隔离脚本只是线索。黄金固定截点九组合可作为回归基础，不得改截点或冒充当前全品种。 |
@@ -158,10 +157,10 @@ owner 授权停止仅属于本任务的慢速只读诊断 PID 22129，并进行�
 
 近期里程碑是：交付一个盘后结果可信、失败可诊断、部署可验收的稳定版本。工作 1–5 服务该里程碑；工作 6、7 不是同一任务，不要求完成后才能发布。
 
-**分层 Gate（本次规划不关闭任何一项）**
+**分层 Gate**
 
 - 候选与发布 Gate：工作 3 的相关故障路径须有精确基线复现和隔离故障注入证明；工作 5 冻结相对 `v1.10.5` 的真实 diff，完成必要检查与独立 Review；main/tag/release 另需批准。工作 4 仅在属于同一候选时阻塞该候选。
-- Runtime promotion Gate：工作 2 的旧中断运行须有证据归类，且当时有效的部署预检条件全部满足；Session/Live 快照缺失即使原因已知仍阻塞切换，不能承诺收尾 apply 自动解决。promotion 与 release 分别批准。
+- Runtime promotion Gate：工作 2 已完成旧中断运行归类；当时有效的部署预检条件仍须全部满足。Session/Live 快照缺失即使原因已知仍阻塞切换；promotion 与 release 分别批准。
 - 稳定版运行验收 Gate：发布并切换后，取得新版本自然盘后、后续增量和周检执行证据。此 Gate 未完成时保留待验收，不声明 `RUNTIME_READY`，也不倒置为发布前真实运行要求。
 
 **本轮不阻塞（已披露限制）**
@@ -186,9 +185,9 @@ owner 授权停止仅属于本任务的慢速只读诊断 PID 22129，并进行�
 
 | 项 | 既有记录 | 下一步 |
 |---|---|---|
-| 旧盘后中断收尾 | `docs/DATA_CENTER.md` 收尾合同；OpenSpec `historical-data-maintenance` | 只读已 ready；只待单次 apply 将原运行记为 interrupted，所有检查在 apply 锁窗口重验；不另加载服务 |
+| 旧盘后中断收尾 | `docs/DATA_CENTER.md` 收尾合同；OpenSpec `historical-data-maintenance` | 已完成：单次 apply 写入 interrupted，独立读回通过；不重跑 |
 | 现版本自然盘后 | 本文件 Runtime 表；不得使用 `cece65929…` 旧成功字节 | 工作 5 发布并切换后再验收 |
-| 收尾后部署预检 | `deploy/README.md`；2026-09-11 preflight 为 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` | apply 后再读回；当天 Session / Live 快照问题独立保留，不借收尾补数或切换 |
+| 收尾后部署预检 | `deploy/README.md`；2026-09-11 收尾后 preflight 仍为 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` | 当天 Session / Live snapshot 问题独立保留，不借收尾补数或切换 |
 
 ### 代码缺陷
 
@@ -219,10 +218,10 @@ owner 授权停止仅属于本任务的慢速只读诊断 PID 22129，并进行�
 | 编号 | 工作 | 类型 | 目标 | 范围 | 前置 | 验收 | 阻塞对象 | 下一步 |
 |---|---|---|---|---|---|---|---|---|
 | 1 | 状态和范围收敛 | 文档 | 能直接看出现在做哪一项、还差什么 | 只改当前状态表述与任务对应；不改公式、产品边界、业务代码 | 无 | 打开本文件即可区分已完成/待验证/待修复/新需求 | 不阻塞发布本身；阻塞“继续混成一个大任务” | 本项随本文完成；下一项为工作 2 |
-| 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单独批准 apply 记 `interrupted` | 2026-09-11 只读 ready | 60 品种全部已提交指针可读；720 项有效子集缺口；原日快照匹配；状态未写；当天 Session 缺失的部署阻塞已定位 | apply 与当天部署 Gate 仍未关闭 | 单次 apply，随后状态读回与部署预检；不授权元数据/行情修复 |
+| 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单次 apply 记 `interrupted` | 已完成 | 60 品种全部已提交指针可读；720 项有效子集缺口；原日快照匹配；单次 apply 与独立状态读回通过；部署阻塞已定位为独立 Session/Live Gate | 不再阻塞旧事故归类；Runtime promotion 仍受独立 Gate 阻塞 | 不重跑 closeout；后续进入工作 3/5 的盘后稳定版交付 |
 | 3 | 盘后运行生命周期与错误判断 | 代码缺陷 | 降低下次故障恢复成本 | `coverage_source`/`after_market`/`runtime_entry`；日常增量与 weekly-audit 保持独立 | 工作 2 的生产写入不得与本项生产操作并行 | 隔离故障注入：日历未知不假跳过、普通异常不留可避免假运行、部分提交不假成功、未知结果不假只读、不自动重试 | 本轮稳定版后端主任务 | 先复现再修；不新增队列、不放宽写入、不重写数据中心 |
 | 4 | 现有牛哇加载与显示一致性 | 代码缺陷 | 现有公式下页面可靠 | 请求取消/代次/在途快照/面板/分页；策略/周期切换、历史分页、参考定位、冲突恢复 | 独立前端任务；与盘后生产写入解耦 | 旧响应不能恢复失效数据；分页和定位不改变参考统计口径 | 仅在合入同一候选时阻塞该稳定版 | 精确基线复现；不改三策略主动作、新版评分或参考价格口径 |
-| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2 未闭环可能阻塞切换；范围已接受全量 develop | 发布了哪个精确版本、部署了哪个版本、哪些自然 Gate 已完成/仍待验证全部清楚 | 本轮里程碑 | 工作 2 闭环后冻结精确 commit；本步不发布 |
+| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2 已闭环；范围已接受全量 develop | 发布了哪个精确版本、部署了哪个版本、哪些自然 Gate 已完成/仍待验证全部清楚 | 本轮里程碑 | 工作 3 关闭相关错误路径后冻结精确 commit；本步不发布 |
 | 6 | 其他品种可用性与分批补数 | 数据缺口 | 先恢复日周六组合，再准备 60m | 复用 readiness；按物理合约/窗口去重；每批 MDS 读回、对应页面及维护接续 | 稳定交付恢复后；每批真实查询/写入另需单次意图 | 声明范围内日周逐项可核对；60m 数据就绪与产品开放分开验收 | 不阻塞无共享完整性问题的盘后稳定版 | 先冻结日周品种/窗口/面板和预热需求，再出可用性清单，不边跑边扩范围 |
 | 7 | 牛哇新版综合解释 | 新版需求 | 把规则适配从显示修复中分开 | 新版本身份；先内核固定输入，再接口和页面 | 先批准新合同，含 `certExtra` | 同输入能解释新旧差异；分项与总分可核对；不改变主动作、参考交易或正式通知 | 独立后续候选 | Plan-only；本轮安排不构成实现或发布批准 |
 
@@ -237,6 +236,6 @@ owner 授权停止仅属于本任务的慢速只读诊断 PID 22129，并进行�
 
 ## 唯一下一步
 
-对上述已 ready 的精确目标单独批准一次 `--apply`，将 2026-09-09 旧运行记为 `interrupted`；随后独立读回并再做只读部署预检。apply 仍须在同一锁窗口重验全部条件，失败不自动重试。2026-09-11 Session 缺失与当天 Live 快照缺失另需界定修复范围，不能把收尾扩大成数据写入。
+按已接受路线进入工作 3/5 的盘后稳定版交付：先在隔离环境精确复现并关闭盘后生命周期错误路径，再冻结候选和验收范围。2026-09-11 Session 缺失与当天 Live snapshot 缺失作为独立 Gate 界定修复范围；不重跑 closeout，不把该问题扩大为未经批准的生产数据写入。
 
-本文件不构成 apply、元数据/行情修复、发布或 Runtime promotion 批准。
+本文件不构成元数据/行情修复、发布或 Runtime promotion 批准。
