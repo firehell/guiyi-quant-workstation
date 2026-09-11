@@ -363,7 +363,7 @@ class RuntimeDataBinding:
         assert_dependencies(self.settings, root=self.root, manager=manager, session=session,
                             redis=redis, products=self.products)
         live = store.heartbeat()
-        raw = redis.get("alert:runtime-status")
+        raw = redis.get("alert:heartbeat")
         observed = now()
         _verify_heartbeat(live, now=observed, root=self.root, commit=self.commit)
         _verify_heartbeat(json.loads(raw) if raw is not None else None, now=observed, root=self.root, commit=self.commit)
