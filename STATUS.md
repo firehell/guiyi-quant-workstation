@@ -1,19 +1,22 @@
 # 当前状态
 
-文档核对：2026-09-11。正式代码基线 `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；
-develop 代码基线 `5d880f236bf1634c60d4b62a26e74f71c7acf171`。本文件只保留当前版本、已证明事实、
+文档核对：2026-09-11。正式代码基线 `v1.10.6@a8e67790dcd33db95f65c442c415378782927618`；
+develop 代码基线 `a8e67790dcd33db95f65c442c415378782927618`。本文件只保留当前版本、已证明事实、
 尚缺证据、已接受的阶段规划、本轮冻结范围与唯一下一步。操作过程、逐次授权和旧候选矩阵从 Git history、tag、PR
 与原 evidence 追溯；历史授权不授权重跑。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见
 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
 工作 2 已于 2026-09-11 完成：只读 closeout 返回 `ready` 后，owner 批准的单次 apply 将 2026-09-09 旧运行记为 `interrupted`，独立读回通过。部署预检仍受当天 60 品种 Session 缺失阻塞；未补行情、未切换 Runtime。
-工作 3 已于 2026-09-11 完成源码、测试、合同和独立 Review；尚未发布或取得新版本自然盘后证据，后续归工作 5。
+工作 3 已于 2026-09-11 完成源码、测试、合同和独立 Review，并随 v1.10.6 发布；尚未取得新版本 Runtime 与自然盘后证据，后续仍归工作 5。
 
-## v1.10.6 候选（尚未发布）
+## v1.10.6 Release（Runtime 未切换）
 
-- 独立候选分支 `codex/release-v1.10.6` 冻结于 develop
-  `5d880f236bf1634c60d4b62a26e74f71c7acf171`，只增加 API、Web、Python lock 与一致性测试的
-  `1.10.6` 版本身份；本段不声明 main、tag、GitHub Release 或 Runtime 已更新。
+- 独立候选 `2cb4538da362d4833262d303c4bf02f041575e76` 由 PR #362 合入 main；merge commit
+  `a8e67790dcd33db95f65c442c415378782927618` 与候选 tree
+  `4d51ac0d81e4d0c9e306df5e103f5ba0ef74e37e` 完全一致。annotated tag object 为
+  `1c4fe01b2e4717e46b88a2db879620610100a534`，peeled commit 为同一 main commit。
+- GitHub Release `v1.10.6` 于 `2026-09-11T07:23:52Z` 发布，non-draft、non-prerelease；API、Web、
+  Python package、lock 与 health identity 均为 `1.10.6`。
 - owner 已接受相对 `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09` 的全部 develop diff。
   冻结前统计为 187 个文件、1,015,631 行新增、1,798 行删除；包含盘后收尾与生命周期修复、每日增量与
   weekly-audit、Canonical 边界校验、Newow 请求失效与显示回归、黄金及其余品种的仓库内 evidence，
@@ -32,12 +35,12 @@ develop 代码基线 `5d880f236bf1634c60d4b62a26e74f71c7acf171`。本文件只�
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.5`，PR #359 合入 main |
-| 现役 Runtime | 已切换，未声明 `RUNTIME_READY` | 五服务均加载 v1.10.5；after-market loaded 且 idle；现版本自然盘后验收未完成 |
+| 正式 Release | `RELEASED` | `v1.10.6@a8e67790d`，PR #362 合入 main，annotated tag 与 GitHub Release 已读回 |
+| 现役 Runtime | 未切换，未声明 `RUNTIME_READY` | 五服务仍加载 v1.10.5；after-market loaded 且 idle；v1.10.6 promotion 与自然盘后验收未完成 |
 | 中断盘后收尾 | `COMPLETED` | 2026-09-11 单次 apply 成功并独立读回：旧运行为 interrupted、current_run 已清除；720 项允许缺口保留，零 provider 请求、零数据写入 |
-| 盘后生命周期修复 | `COMPLETED`，未发布 | `8f2b051fd` 关闭 Calendar 误跳过与异常只读误报；完整回归和独立 Review 通过 |
-| 牛哇加载一致性 | `COMPLETED`，未发布 | `fef307732` 已撤销共享快照冲突后的旧请求写入资格；相关 unit、九组合及完整浏览器矩阵在 v1.10.6 候选重验通过 |
-| 本轮稳定版 | `RELEASE_CANDIDATE` | `codex/release-v1.10.6` 基于 `5d880f236` 冻结全部已接受 develop diff，并补齐 1.10.6 版本身份；独立 Review 已通过 |
+| 盘后生命周期修复 | `COMPLETED / RELEASED` | `8f2b051fd` 随 v1.10.6 发布；Runtime 与自然盘后 Gate 尚未完成 |
+| 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
+| 本轮稳定版 | `RELEASED`，Runtime Gate pending | v1.10.6 main/tag/GitHub Release 已完成；Runtime promotion、weekly-audit 安装和自然业务验收均未执行 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
@@ -60,7 +63,7 @@ owner 已要求将本轮讨论的规划与执行规则纳入 develop。本节记
 | 阶段 | 目标与前置 | 范围与出口 | 不得搭车 |
 |---|---|---|---|
 | 前置收尾 | 对应工作 2；按最新现场证据处理旧事故 | 原运行有证据归类，受控收尾后独立读回和部署预检；剩余阻塞单独界定，不能把 interrupted 当 passed | 不借收尾补行情、改 Scope 或切换 Runtime |
-| 第一阶段：盘后稳定版 | 对应工作 3、5；工作 4 仅按已接受候选范围参与 | 修稳已实现的每日增量与独立 weekly-audit；冻结精确候选，完成工程验收、独立发布及 promotion Gate，再验新版本自然运行 | 不追加牛哇日周开放、新版评分或 60m 大规模补数 |
+| 第一阶段：盘后稳定版 | 对应工作 3、5；工作 4 按已接受范围参与 | v1.10.6 工程验收与独立发布已完成；promotion、weekly-audit 安装及新版本自然运行仍为独立 Gate | 不追加牛哇日周开放、新版评分或 60m 大规模补数 |
 | 第二阶段：牛哇日周版 | 稳定交付恢复后，工作 6 优先服务日周；复用工作 4 的正确性修复 | 趋势、震荡、主升浪 × 1d/1w 六组合，在明确品种、历史窗口和面板范围内完成数据、计算、页面及维护接续验收 | 不开放 Newow 60m，不新增简化评分、公式或推送 |
 | 第三阶段：Web 体验与 60m 数据准备 | 日周版交付并稳定后，两条互不依赖的支线 | Web 每次改善一个具体使用问题；60m 按去重物理合约/窗口分批准备，每批有读回、缺口与后续维护结论 | 不把补数完成作为纯 Web 版本前置，不边下载边默认开放 60m |
 | 第四阶段：60m 独立开放 | 声明范围内数据及持续维护已就绪，产品任务合同另行审定 | 三个 60m 组合及拟开放跨周期面板分别完成输入、计算、页面和时间因果验收，再独立发布/部署 | 不同时升级公式、参考交易模型、新版评分或通知能力 |
@@ -112,20 +115,20 @@ Web 优化信息层级、布局、可读性、图表操作、加载体验和移�
 恢复完整综合解释时，各周期须携带 bar_end/as_of，只用当时已完成输入，不用后来完成的周线回填历史 60m。
 工作 7 新版综合解释仍为独立候选，不因日周/60m 恢复而自动获得实现批准。
 
-## 架构审查三项修复候选（2026-09-11）
+## 架构审查三项修复（随 v1.10.6 发布）
 
-`codex/architecture-fixes` 已完成三项批准的 OpenSpec 实现：同族同月 1m 发布先于派生、Newow 冲突撤销旧请求写入资格、Canonical 分区批量边界校验。三项独立 Review 和整分支 Spec/Standards Review 均通过；只涉及源码、测试及规范；已于 2026-09-11 fast-forward 集成 develop，源码提交 `17718f126`，未发布或切换 Runtime。
+`codex/architecture-fixes` 已完成三项批准的 OpenSpec 实现：同族同月 1m 发布先于派生、Newow 冲突撤销旧请求写入资格、Canonical 分区批量边界校验。三项独立 Review 和整分支 Spec/Standards Review 均通过；只涉及源码、测试及规范；已于 2026-09-11 fast-forward 集成 develop，源码提交 `17718f126`，并随 v1.10.6 发布。Runtime 尚未切换。
 
 - 最终源码验证：后端 3248 passed / 16 skipped / 31 deselected；Web unit 541 passed / 1 skipped；build、Ruff、OpenSpec 与 secret scan 通过。
 - 浏览器基线已由 `20dcc4f29` 修复并集成 develop：解释夹具按既有合同使用 trend 上下文，外层仍保留所选策略；九组合夹具通过正式解析器。原 Newow product 两项失败已关闭，完整 product 38 passed；扩展详情/图表共 66 passed，candidate-preview 另 3 passed。只同步六张已独立视觉复核的过期截图（日周完整日期、既有刷新按钮、自然换行），保留 500 像素阈值及既有弹窗截图；未改正式产品源码或公式。
 - 根据 owner 本轮“先关闭两个未改文件中的 Mypy 基线错误，然后集成”的要求，已补齐 `domain.py` 的有限 Decimal 指数类型收窄及 `bounded_metadata.py` 的可空生命周期日期检查；全量 Mypy 154 个源码文件通过。新增 12 项行为保持回归，修复前后定向均为 147 passed；未增加类型忽略或改变行情口径。
 - 批量校验的隔离真实 store 测试中，1/5/60 根 × 1/3 个交易日的 publish/readback SELECT 分别固定为 continuous 5/5、contract 6/6。这不是生产墙钟性能验收，也未修复任何既有生产分区。
 
-三项架构修复和 Mypy 补修为 `CODE_COMPLETE / REVIEW_COMPLETE`；完整后端回归通过，补修独立 Spec/Standards Review 无 P0–P3 发现，额外 8024 组新旧 Decimal 差分一致。集成后的全量 Mypy 再验通过，包含原有未提交 closeout 修改的定向回归 226 passed。按 owner 明确要求关闭 Mypy 后集成 develop，已执行。浏览器补修的独立 Spec/Standards Review 均无 P0–P3 发现，Newow fixture 浏览器 Gate 已关闭；这不代表生产历史、原站 parity 或 Runtime 验收。原 develop 两处 closeout heartbeat 修改在架构集成时保留，随后已独立验证、Review 并提交为 `baef0d92b`，详见下节。release candidate 条件仍按现有发布计划复核；不新增真实数据、通知或 Runtime 授权。
+三项架构修复和 Mypy 补修为 `CODE_COMPLETE / REVIEW_COMPLETE`；完整后端回归通过，补修独立 Spec/Standards Review 无 P0–P3 发现，额外 8024 组新旧 Decimal 差分一致。集成后的全量 Mypy 再验通过，包含原有未提交 closeout 修改的定向回归 226 passed。按 owner 明确要求关闭 Mypy 后集成 develop，已执行。浏览器补修的独立 Spec/Standards Review 均无 P0–P3 发现，Newow fixture 浏览器 Gate 已关闭；这不代表生产历史、原站 parity 或 Runtime 验收。原 develop 两处 closeout heartbeat 修改在架构集成时保留，随后已独立验证、Review 并提交为 `baef0d92b`，详见下节。上述范围已随 v1.10.6 发布；不新增真实数据、通知或 Runtime 授权。
 
 ## 工作 2 中断盘后安全收尾（2026-09-11）
 
-状态为 `COMPLETED`。`baef0d92b` 已提交并推送 develop：closeout 从生产者实际写入的 `alert:heartbeat` 读取 Alert 身份；测试只响应该精确键，保持缺失/过期/身份或恢复开关不符即拒绝。RED 验证旧键失败；直接相关五文件回归 236 passed，全量 Mypy 154 个源码文件通过，Ruff、18 项工程检查、9 项 OpenSpec strict 和 secret scan（0 findings）通过；独立 Review 无 P0–P3 发现。未发布。
+状态为 `COMPLETED / RELEASED`。`baef0d92b` 已随 v1.10.6 发布：closeout 从生产者实际写入的 `alert:heartbeat` 读取 Alert 身份；测试只响应该精确键，保持缺失/过期/身份或恢复开关不符即拒绝。RED 验证旧键失败；直接相关五文件回归 236 passed，全量 Mypy 154 个源码文件通过，Ruff、18 项工程检查、9 项 OpenSpec strict 和 secret scan（0 findings）通过；独立 Review 无 P0–P3 发现。Runtime 尚未切换。
 
 owner 授权停止仅属于本任务的慢速只读诊断 PID 22129，并进行一次新的只读排查。旧诊断在 50 分 16 秒时被 SIGTERM，exit 143，没有 closeout 结论。排查确认本任务的全局追踪造成额外开销：隔离真实 reader 的 1000 行分区基准中约 7.54 倍；该比例不能推算生产耗时或作为唯一原因。新诊断移除全局追踪，仅观察原函数进度，独立 Review 确认不改变检查、返回值或异常传播。
 
@@ -144,15 +147,15 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 | 项目 | 最近已记录事实 |
 |---|---|
-| 正式 Release | `v1.10.5@cdd72d7501227d8e7f905ea0b8a54c038b521a09`；PR #359 于 `2026-09-09T03:53:57Z` 合入 main；tree `11704da35b2eccf62bdddc330eb0e42ea5930247`；annotated tag object `71bad4102a9be883ba341c7dd27f0e98f59dab41`。GitHub Release 同日 `03:55:28Z`，non-draft、non-prerelease。API/Web/Python/lock 为 1.10.5。 |
-| 发布验收 | 已审候选 `0d2273445637a6dd5cfef2a45c4f1242276952c5` 与发布 tree 一致。该候选不是“只修两合约数据”的最小补丁，还含 Canonical P1、captured Runtime 身份解析、WebSocket 资源边界、统一详情页、苏冰历史参考与 Newow 只读相关改进。 |
+| 正式 Release | `v1.10.6@a8e67790dcd33db95f65c442c415378782927618`；PR #362 于 `2026-09-11T07:22:25Z` 合入 main；tree `4d51ac0d81e4d0c9e306df5e103f5ba0ef74e37e`；annotated tag object `1c4fe01b2e4717e46b88a2db879620610100a534`。GitHub Release 于 `07:23:52Z` 发布，non-draft、non-prerelease。API/Web/Python/lock 为 1.10.6。 |
+| 发布验收 | 已审候选 `2cb4538da362d4833262d303c4bf02f041575e76` 与发布 tree 一致。候选包含 owner 已接受的全部 develop diff；完整工程、Web、浏览器、隔离 PostgreSQL、静态检查和双路 Review 通过。 |
 | Runtime | 2026-09-11 closeout 前后身份复核通过：五服务均为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1` / `cdd72d7501227d8e7f905ea0b8a54c038b521a09`；API/Web/Live/Alert running，after-market loaded 且 idle（runs=0），18:05 调度保留。本轮未 load、restart 或切换。现役根干净 detached annotated `v1.10.5`；现版本自然盘后验收仍待完成。 |
 | Runtime 工作树 | 现役根为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1`；原 v1.10.4 根仍保留。旧根无五项 launchd 引用，未清理。生产已产生 hash URI，不得把只支持固定 URI 的 v1.10.4 当作通用回退。 |
-| 最近 health | `2026-09-09 14:03:17 CST`：API 1.10.5、Runtime health ok/readonly，严格 captured 身份通过；60 品种 TRADING、subscribed_count=60；苏冰自然评估到 14:00。该结论保留原采集时间，不是 2026-09-10 的实时健康。 |
+| 最近 health | `2026-09-11` 发布前只读检查：现役 v1.10.5 API/Web 为 200，Runtime health failed；当前有界输出未确认单一失败原因。weekly audit 独立为 `not_run` 且不是 required service。该结果不属于 v1.10.6 Runtime。 |
 | Database | 最近生产 readback 为 Alembic `20260903_0045`。 |
 | Market Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | `2026-09-07T06:49:43Z` 审计：HTDY 仅 `jm × 5m/15m`；苏冰 60 品种 × 15m；两 Rule enabled。HTDY“焦煤 15m/5m，其余 59 品种 60m”共 61 对仍是未应用目标。 |
-| 最近自然 After-market | v1.10.3 于 2026-09-08 自然运行，18:05:05 开始、19:05:52 完成，passed、attempts=1、60 品种。该状态字节随后带入 v1.10.4/v1.10.5，hash `cece65929ba734c37cf91ee47af1b0d23b5dc3dd413c9d703888f669428347d5`。它不是 v1.10.5 自然盘后证据。 |
+| 最近自然 After-market | v1.10.3 于 2026-09-08 自然运行，18:05:05 开始、19:05:52 完成，passed、attempts=1、60 品种。该状态字节随后带入 v1.10.4/v1.10.5，hash `cece65929ba734c37cf91ee47af1b0d23b5dc3dd413c9d703888f669428347d5`。它不是 v1.10.5 或 v1.10.6 自然盘后证据。 |
 
 ## 已证明事实（不得重新打开，也不得扩大解释）
 
@@ -160,15 +163,14 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 2. **黄金牛哇固定历史截点本地预览已完成**。截点 `2026-09-08T07:00:00.000001Z`，候选 `e79e82f42`；九组合主图/副图/解释/参考统计/历史定位在 API8010/Web5174 真实浏览器通过。周线默认本周未完成保留；震荡周线 AU2610 比较器明确不足 20 根。这不是当前时点或全品种生产验收。目标/吸筹 previous-close、原页面时序、期货 owner/segment 仍为 `EVIDENCE_REQUIRED`。
 3. **Calendar/Session 元数据恢复已完成**：黄金五合约夜盘/Session 缺口关闭；其余 59 品种在 `a53389cc5` 后 Calendar/Session 剩余唯一缺口为 0。这不证明分钟历史或九组合页面已恢复。
 4. **中断盘后收尾入口在 develop 已是代码完成**。来源时间模型 `4cd08ff19` 已合入 `develop@00c7fec60`；其后又合入 launchd 环境解析、inert 配置剔除与依赖来源保护。`data close-interrupted-after-market` 默认只读；`--apply` 只可将旧运行记为 `interrupted`，不能记成功、补行情或放宽 promotion。合同见 `docs/DATA_CENTER.md` 与 `openspec/specs/historical-data-maintenance/spec.md`。
-5. **统一详情页、Canonical P1、captured 身份解析已随 v1.10.5 发布或已集成 develop**。详情页 owner 视觉接受只授权 develop 集成；fixture 不证明生产数据。Canonical 后续每批写入仍须独立单次意图。
+5. **统一详情页、Canonical P1、captured 身份解析已随 v1.10.5 发布；后续架构与显示修复已随 v1.10.6 发布**。详情页 owner 视觉接受只证明对应版本范围；fixture 不证明生产数据。Canonical 后续每批写入仍须独立单次意图。
 
 ## 尚缺证据
 
 | 缺口 | 类型 | 当前证据边界 |
 |---|---|---|
 | 收尾后部署预检 | 现场验收 | apply 与状态读回已完成；现役与 develop 只读 preflight 仍均 blocked / `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。当前 60 品种 Session 缺失导致 UNKNOWN，当天 snapshot 缺失；这是独立 Runtime Gate，未跑 installer 或 promotion。 |
-| v1.10.5 自然盘后 | 现场验收 | 不得用 v1.10.3 成功记录或旧状态字节代替。 |
-| 工作 3 新版本自然盘后 | 现场验收 | 源码、测试和 Review 已关闭；尚未发布或切换 Runtime，后续由工作 5 验证自然盘后、后续增量和 weekly-audit。 |
+| v1.10.6 自然盘后 | 现场验收 | 已发布但尚未切换 Runtime；后续验证自然盘后、后续增量和 weekly-audit，不得用 v1.10.3 成功记录或旧状态字节代替。 |
 | 其他品种物理历史与页面可用性 | 数据缺口 | 元数据不得再列为待修。须按品种/周期/面板区分元数据缺失、物理历史缺失、质量异常、正常样本不足和原站证据不足。 |
 | 牛哇新版综合解释 | 新版需求 | 同输入已确认新版五项/`R0–R4`/`MM1–MM4`/计龄与当前 v3.2.59 四项/13 格合同 3/3 不一致；总分含未展示 `certExtra`。详见 [当前复核](docs/research/newow-current-review.md) N09。震荡 60 分钟图表差异为 `KNOWN_DIFFERENCE_ACCEPTED`。 |
 
@@ -178,7 +180,7 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 **分层 Gate**
 
-- 候选与发布 Gate：工作 3 的相关故障路径须有精确基线复现和隔离故障注入证明；工作 5 冻结相对 `v1.10.5` 的真实 diff，完成必要检查与独立 Review；main/tag/release 另需批准。工作 4 仅在属于同一候选时阻塞该候选。
+- 候选与发布 Gate：v1.10.6 已完成工作 3 故障回归、相对 `v1.10.5` 的真实 diff 冻结、必要检查、独立 Review 及 main/tag/GitHub Release；该 Gate 已关闭。
 - Runtime promotion Gate：工作 2 已完成旧中断运行归类；当时有效的部署预检条件仍须全部满足。Session/Live 快照缺失即使原因已知仍阻塞切换；promotion 与 release 分别批准。
 - 稳定版运行验收 Gate：发布并切换后，取得新版本自然盘后、后续增量和周检执行证据。此 Gate 未完成时保留待验收，不声明 `RUNTIME_READY`，也不倒置为发布前真实运行要求。
 
@@ -192,20 +194,18 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 - 原件缺口继续 `EVIDENCE_REQUIRED`：诊断 token、六组合评分/排序、AI 逐字 copy、目标/吸筹权威昨收与期货 owner parity、比较器 browser-final/tie golden。
 - 旧苏冰 failure 时间戳、Topic 其他成员送达人数。
 
-`develop` 相对 `v1.10.5` 已包含中断收尾、来源时间、closeout 配置、日常增量/weekly-audit、牛哇显示与黄金/59 品种数据记录等。owner 已接受该全量 diff 作为下一稳定版范围；工作 5 仍须在发布前冻结精确 commit 并覆盖验收，不能把范围接受写成已经发布。
-不为追求最小补丁反向重拆已接受集成；候选冻结后只接纳阻断该次交付的问题，
-不追加日周开放、新评分或 60m 补数。具体执行规则见 `docs/DEVELOPMENT.md`。
+`develop` 相对 `v1.10.5` 的中断收尾、来源时间、closeout 配置、日常增量/weekly-audit、牛哇显示与黄金/59 品种数据记录等已作为完整范围随 v1.10.6 发布。发布候选只接纳阻断该次交付的问题，未追加日周开放、新评分或 60m 补数。具体执行规则见 `docs/DEVELOPMENT.md`。
 
 ## 待办分类
 
-上轮四项代码问题列为待精确基线复现，不直接认定为生产根因。已被后续提交修好的，只补验证，不重复修改。GitHub 当前无开放 Issue；不新建平行台账，统一挂到下表已有记录。
+上轮四项代码问题已按精确基线逐项复核；已修复项关闭并随 v1.10.6 发布，仍缺的现场证据继续独立保留，不追溯认定为 v1.10.5 事故的唯一根因。GitHub 当前无开放 Issue；不新建平行台账，统一挂到下表已有记录。
 
 ### 现场验收
 
 | 项 | 既有记录 | 下一步 |
 |---|---|---|
 | 旧盘后中断收尾 | `docs/DATA_CENTER.md` 收尾合同；OpenSpec `historical-data-maintenance` | 已完成：单次 apply 写入 interrupted，独立读回通过；不重跑 |
-| 现版本自然盘后 | 本文件 Runtime 表；不得使用 `cece65929…` 旧成功字节 | 工作 5 发布并切换后再验收 |
+| v1.10.6 自然盘后 | 本文件 Runtime 表；不得使用 `cece65929…` 旧成功字节 | Runtime promotion 后等待自然运行并独立读回 |
 | 收尾后部署预检 | `deploy/README.md`；2026-09-11 收尾后 preflight 仍为 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` | 当天 Session / Live snapshot 问题独立保留，不借收尾补数或切换 |
 
 ### 代码缺陷
@@ -236,11 +236,11 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 | 编号 | 工作 | 类型 | 目标 | 范围 | 前置 | 验收 | 阻塞对象 | 下一步 |
 |---|---|---|---|---|---|---|---|---|
-| 1 | 状态和范围收敛 | 文档 | 能直接看出现在做哪一项、还差什么 | 只改当前状态表述与任务对应；不改公式、产品边界、业务代码 | 无 | 打开本文件即可区分已完成/待验证/待修复/新需求 | 不阻塞发布本身；阻塞“继续混成一个大任务” | 本项随本文完成；下一项为工作 2 |
-| 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单次 apply 记 `interrupted` | 已完成 | 60 品种全部已提交指针可读；720 项有效子集缺口；原日快照匹配；单次 apply 与独立状态读回通过；部署阻塞已定位为独立 Session/Live Gate | 不再阻塞旧事故归类；Runtime promotion 仍受独立 Gate 阻塞 | 不重跑 closeout；后续进入工作 3/5 的盘后稳定版交付 |
-| 3 | 盘后运行生命周期与错误判断 | 代码缺陷 | 降低下次故障恢复成本 | `coverage_source`/`after_market`/`runtime_entry`；日常增量与 weekly-audit 保持独立 | 工作 2 已完成 | `8f2b051fd`；最终后端 3259 passed / 16 skipped / 31 deselected，工程 81 passed，Mypy 154 文件、Ruff、OpenSpec、secret scan 和独立 Review 通过 | 已完成，不再阻塞候选冻结；自然运行归工作 5 | 不追加生产操作；进入工作 5 冻结精确候选 |
-| 4 | 现有牛哇加载与显示一致性 | 代码缺陷 | 现有公式下页面可靠 | 请求取消/代次/在途快照/面板/分页；策略/周期切换、历史分页、参考定位、冲突恢复 | 已完成并纳入候选 | `fef307732` 与对应 OpenSpec/回归关闭旧请求回写；v1.10.6 完整 Web 和浏览器矩阵通过 | 不再阻塞本候选；生产历史仍是独立数据 Gate | 不追加三策略主动作、新版评分或参考价格口径 |
-| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2、3、4 已闭环；范围已接受全量 develop | 候选已冻结，固定工程矩阵和独立 Review 通过 | 本轮里程碑 | 执行 v1.10.6 main/tag/release；不自动切换 Runtime |
+| 1 | 状态和范围收敛 | 文档 | 能直接看出现在做哪一项、还差什么 | 只改当前状态表述与任务对应；不改公式、产品边界、业务代码 | 无 | 打开本文件即可区分已完成/待验证/待修复/新需求 | 已完成 | 无需重开 |
+| 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单次 apply 记 `interrupted` | 已完成 | 60 品种全部已提交指针可读；720 项有效子集缺口；原日快照匹配；单次 apply 与独立状态读回通过；部署阻塞已定位为独立 Session/Live Gate | 旧事故归类已关闭；Runtime promotion 仍受独立 Gate 阻塞 | 不重跑 closeout |
+| 3 | 盘后运行生命周期与错误判断 | 代码缺陷 | 降低下次故障恢复成本 | `coverage_source`/`after_market`/`runtime_entry`；日常增量与 weekly-audit 保持独立 | 工作 2 已完成 | `8f2b051fd`；最终后端 3259 passed / 16 skipped / 31 deselected，工程 81 passed，Mypy 154 文件、Ruff、OpenSpec、secret scan 和独立 Review 通过 | 已完成并随 v1.10.6 发布；自然运行归工作 5 | 等待新 Runtime 自然验收 |
+| 4 | 现有牛哇加载与显示一致性 | 代码缺陷 | 现有公式下页面可靠 | 请求取消/代次/在途快照/面板/分页；策略/周期切换、历史分页、参考定位、冲突恢复 | 已完成并纳入 v1.10.6 | `fef307732` 与对应 OpenSpec/回归关闭旧请求回写；v1.10.6 完整 Web 和浏览器矩阵通过 | 已完成并发布；生产历史仍是独立数据 Gate | 不追加三策略主动作、新版评分或参考价格口径 |
+| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2、3、4 已闭环；范围已接受全量 develop | v1.10.6 main/tag/GitHub Release 已完成；Runtime 与自然业务 Gate 待完成 | 本轮里程碑 | 先解决只读 promotion predicate，再另行批准 Runtime switch |
 | 6 | 其他品种可用性与分批补数 | 数据缺口 | 先恢复日周六组合，再准备 60m | 复用 readiness；按物理合约/窗口去重；每批 MDS 读回、对应页面及维护接续 | 稳定交付恢复后；每批真实查询/写入另需单次意图 | 声明范围内日周逐项可核对；60m 数据就绪与产品开放分开验收 | 不阻塞无共享完整性问题的盘后稳定版 | 先冻结日周品种/窗口/面板和预热需求，再出可用性清单，不边跑边扩范围 |
 | 7 | 牛哇新版综合解释 | 新版需求 | 把规则适配从显示修复中分开 | 新版本身份；先内核固定输入，再接口和页面 | 先批准新合同，含 `certExtra` | 同输入能解释新旧差异；分项与总分可核对；不改变主动作、参考交易或正式通知 | 独立后续候选 | Plan-only；本轮安排不构成实现或发布批准 |
 
@@ -253,6 +253,6 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 ## 唯一下一步
 
-执行 v1.10.6 main、annotated tag 与 GitHub Release；Runtime promotion 保持独立 Gate。
+只读定位并关闭 Runtime promotion predicate 的 Session / Live snapshot 阻塞；实际 Runtime switch 仍须独立批准。
 
 本文件不构成元数据/行情修复、发布或 Runtime promotion 批准。
