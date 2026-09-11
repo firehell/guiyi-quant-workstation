@@ -54,7 +54,9 @@ class _Adapter:
         products: tuple[str, ...],
         trading_day: date,
     ) -> MetadataSnapshot:
-        self.calls.append((products, trading_day, {item: trading_day for item in products}))
+        self.calls.append(
+            (products, trading_day, {item: trading_day for item in products})
+        )
         return self.snapshot
 
 
@@ -206,7 +208,12 @@ def _session_values(symbol: str, name: str) -> dict[str, object]:
 def _metadata_state(session: Session) -> dict[str, list[tuple[object, ...]]]:
     return {
         "calendar": [
-            (row.exchange_code, row.trade_date, row.is_trading_day, row.has_night_session)
+            (
+                row.exchange_code,
+                row.trade_date,
+                row.is_trading_day,
+                row.has_night_session,
+            )
             for row in session.scalars(
                 select(TradingCalendar).order_by(
                     TradingCalendar.exchange_code, TradingCalendar.trade_date
@@ -239,7 +246,9 @@ def _metadata_state(session: Session) -> dict[str, list[tuple[object, ...]]]:
     }
 
 
-def test_current_day_sync_replaces_day_facts_and_bounded_week_calendar_context() -> None:
+def test_current_day_sync_replaces_day_facts_and_bounded_week_calendar_context() -> (
+    None
+):
     session = _session()
     adapter = _Adapter(_snapshot())
     synchronizer = MetadataSynchronizer(adapter, MarketCatalog(session, Path(".")))
@@ -364,6 +373,41 @@ def test_current_day_sync_invalid_provider_fact_rolls_back_all_metadata() -> Non
     session.close()
 
 
+def test_natural_current_day_validation_failure_rolls_back_open_transaction() -> None:
+    session = _session()
+    synchronizer = MetadataSynchronizer(
+        _Adapter(_snapshot(include_jm_map=False)), MarketCatalog(session, Path("."))
+    )
+
+    with pytest.raises(ValueError, match="CURRENT_DAY_MAIN_CONTRACT_MAP_INVALID"):
+        synchronizer.synchronize_current_day(("j", "jm"), _DAY)
+
+    assert session.in_transaction() is False
+    session.close()
+
+
+def test_natural_current_day_commit_error_keeps_original_exception() -> None:
+    session = _session()
+    synchronizer = MetadataSynchronizer(
+        _Adapter(_snapshot()), MarketCatalog(session, Path("."))
+    )
+    original_commit = session.commit
+    commits = []
+
+    def fail_commit():
+        commits.append(True)
+        raise OSError("natural commit failure")
+
+    session.commit = fail_commit
+    with pytest.raises(OSError, match="natural commit failure"):
+        synchronizer.synchronize_current_day(("j", "jm"), _DAY)
+
+    assert commits == [True]
+    assert session.in_transaction() is False
+    session.commit = original_commit
+    session.close()
+
+
 def test_current_day_sync_checks_rank1_before_missing_next_session() -> None:
     session = _session()
     before = _metadata_state(session)
@@ -419,19 +463,27 @@ def test_current_day_sync_rejects_rank1_contract_owned_by_another_product() -> N
 @pytest.mark.parametrize("current_only", [False, True])
 def test_calendar_source_conflict_rolls_back_all_metadata(current_only):
     session = _session()
-    row = session.scalar(select(TradingCalendar).where(
-        TradingCalendar.exchange_code == "DCE", TradingCalendar.trade_date == _AFTER,
-    ))
+    row = session.scalar(
+        select(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == _AFTER,
+        )
+    )
     row.has_night_session = False
     session.commit()
     before = _metadata_state(session)
     snapshot = _snapshot()
     if not current_only:
-        snapshot = replace(snapshot, sessions=tuple(
-            {**row, "crosses_midnight": row["end_time"] < row["start_time"]}
-            for row in snapshot.sessions
-        ))
-    synchronizer = MetadataSynchronizer(_Adapter(snapshot), MarketCatalog(session, Path(".")))
+        snapshot = replace(
+            snapshot,
+            sessions=tuple(
+                {**row, "crosses_midnight": row["end_time"] < row["start_time"]}
+                for row in snapshot.sessions
+            ),
+        )
+    synchronizer = MetadataSynchronizer(
+        _Adapter(snapshot), MarketCatalog(session, Path("."))
+    )
     with pytest.raises(ValueError, match="CALENDAR_SOURCE_CONFLICT"):
         if current_only:
             synchronizer.synchronize_current_day(("j", "jm"), _DAY)

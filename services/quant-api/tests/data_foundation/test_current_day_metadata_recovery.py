@@ -208,6 +208,45 @@ def test_plan_discloses_exact_equal_and_insert_facts_and_blocks_value_changes() 
     session.close()
 
 
+def test_plan_blocks_one_extra_overlapping_session_outside_snapshot() -> None:
+    from app.market_data.current_day_metadata_recovery import (
+        CurrentDayMetadataRecoveryError,
+        encode_current_day_snapshot,
+        plan_current_day_metadata,
+    )
+
+    session = _session()
+    catalog = MarketCatalog(session, Path("."))
+    session.add(
+        TradingSession(
+            exchange_code="DCE",
+            instrument_symbol="j",
+            session_name="unexpected-overlap",
+            start_time=time(9),
+            end_time=time(10),
+            effective_from=DAY,
+            effective_to=DAY,
+            crosses_midnight=False,
+            is_active=True,
+            provider="rqdata",
+        )
+    )
+    session.commit()
+    encoded = encode_current_day_snapshot(
+        _snapshot(), products=("j", "jm"), trading_day=DAY
+    )
+
+    with pytest.raises(CurrentDayMetadataRecoveryError, match="SESSION_CONFLICT"):
+        plan_current_day_metadata(
+            catalog,
+            encoded,
+            expected_snapshot_sha256=encoded["snapshot_sha256"],
+            products=("j", "jm"),
+            trading_day=DAY,
+        )
+    session.close()
+
+
 def test_apply_replans_under_maintenance_lease_and_preserves_other_facts() -> None:
     from app.market_data.current_day_metadata_recovery import (
         apply_current_day_metadata,
@@ -245,7 +284,7 @@ def test_apply_replans_under_maintenance_lease_and_preserves_other_facts() -> No
         verify_identity=lambda: events.append("verified"),
     )
 
-    assert events == ["locked", "verified", "released"]
+    assert events == ["locked", "verified", "verified", "released"]
     assert result == {
         "schema_version": 1,
         "command": "data.current-day-metadata-recovery",
@@ -299,7 +338,7 @@ def test_apply_blocks_plan_or_identity_drift_before_writer() -> None:
         trading_day=DAY,
     )
     writes = []
-    synchronizer.apply_current_day_snapshot = lambda *_args, **_kwargs: writes.append(
+    synchronizer.write_prepared_current_day = lambda *_args, **_kwargs: writes.append(
         True
     )
 
@@ -363,7 +402,7 @@ def test_apply_blocks_catalog_plan_drift_under_lock_before_writer() -> None:
     )
     session.commit()
     writes = []
-    synchronizer.apply_current_day_snapshot = lambda *_args, **_kwargs: writes.append(
+    synchronizer.write_prepared_current_day = lambda *_args, **_kwargs: writes.append(
         True
     )
 
@@ -378,6 +417,55 @@ def test_apply_blocks_catalog_plan_drift_under_lock_before_writer() -> None:
             acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None),
             verify_identity=lambda: None,
         )
+    assert writes == []
+    session.close()
+
+
+def test_apply_rechecks_runtime_after_replan_before_writer() -> None:
+    from app.market_data.current_day_metadata_recovery import (
+        CurrentDayMetadataRecoveryError,
+        apply_current_day_metadata,
+        encode_current_day_snapshot,
+        plan_current_day_metadata,
+    )
+
+    session = _session()
+    catalog = MarketCatalog(session, Path("."))
+    synchronizer = MetadataSynchronizer(SimpleNamespace(), catalog)
+    encoded = encode_current_day_snapshot(
+        _snapshot(), products=("j", "jm"), trading_day=DAY
+    )
+    plan = plan_current_day_metadata(
+        catalog,
+        encoded,
+        expected_snapshot_sha256=encoded["snapshot_sha256"],
+        products=("j", "jm"),
+        trading_day=DAY,
+    )
+    checks = []
+    writes = []
+    synchronizer.write_prepared_current_day = lambda *_args, **_kwargs: writes.append(
+        True
+    )
+
+    def verify_identity():
+        checks.append("check")
+        if len(checks) == 2:
+            raise ValueError("status changed during replan")
+
+    with pytest.raises(CurrentDayMetadataRecoveryError, match="RUNTIME_IDENTITY_DRIFT"):
+        apply_current_day_metadata(
+            synchronizer,
+            encoded,
+            expected_snapshot_sha256=encoded["snapshot_sha256"],
+            expected_plan_sha256=plan["plan_sha256"],
+            products=("j", "jm"),
+            trading_day=DAY,
+            acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None),
+            verify_identity=verify_identity,
+        )
+
+    assert checks == ["check", "check"]
     assert writes == []
     session.close()
 

@@ -332,7 +332,11 @@ def apply_current_day_metadata(
         if fresh["plan_sha256"] != expected_plan_sha256:
             raise CurrentDayMetadataRecoveryError("PLAN_DRIFT")
         try:
-            synchronizer.apply_current_day_snapshot(
+            verify_identity()
+        except Exception:
+            raise CurrentDayMetadataRecoveryError("RUNTIME_IDENTITY_DRIFT") from None
+        try:
+            prepared = synchronizer.prepare_current_day_snapshot(
                 decode_current_day_snapshot(
                     snapshot_payload,
                     expected_snapshot_sha256=expected_snapshot_sha256,
@@ -341,15 +345,19 @@ def apply_current_day_metadata(
                 ),
                 products,
                 trading_day,
-                preserve_equal=True,
             )
-        except Exception as exc:
-            code = getattr(exc, "code", None)
-            if code == "CURRENT_DAY_COMMIT_OUTCOME_UNKNOWN":
-                raise CurrentDayMetadataRecoveryError(
-                    "COMMIT_OUTCOME_UNKNOWN"
-                ) from None
+            synchronizer.write_prepared_current_day(prepared, preserve_equal=True)
+        except Exception:
+            session.rollback()
             raise CurrentDayMetadataRecoveryError("APPLY_FAILED") from None
+        try:
+            session.commit()
+        except Exception:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            raise CurrentDayMetadataRecoveryError("COMMIT_OUTCOME_UNKNOWN") from None
         counts = fresh["counts"]
         return {
             "schema_version": 1,
@@ -394,12 +402,15 @@ def _fact_diff(session, prepared) -> list[dict[str, Any]]:
         facts.append(
             {"kind": "calendar", "state": "equal" if row else "insert", **values}
         )
+    sessions_by_day: dict[tuple[str, date], list[dict[str, Any]]] = {}
     for source in prepared.sessions:
-        day = source["effective_from"]
+        key = (source["instrument_symbol"], source["effective_from"])
+        sessions_by_day.setdefault(key, []).append(_source_session_values(source))
+    for (symbol, day), expected_rows in sorted(sessions_by_day.items()):
         overlapping = tuple(
             session.scalars(
                 select(TradingSession).where(
-                    TradingSession.instrument_symbol == source["instrument_symbol"],
+                    TradingSession.instrument_symbol == symbol,
                     TradingSession.effective_from <= day,
                     or_(
                         TradingSession.effective_to.is_(None),
@@ -408,24 +419,18 @@ def _fact_diff(session, prepared) -> list[dict[str, Any]]:
                 )
             )
         )
-        expected = {
-            "exchange_code": source["exchange_code"],
-            "instrument_symbol": source["instrument_symbol"],
-            "session_name": source["session_name"],
-            "start_time": source["start_time"].isoformat(),
-            "end_time": source["end_time"].isoformat(),
-            "effective_from": day.isoformat(),
-            "effective_to": source["effective_to"].isoformat(),
-            "crosses_midnight": source["crosses_midnight"],
-            "is_active": source["is_active"],
-            "provider": source.get("provider", "rqdata"),
-        }
-        matching = [row for row in overlapping if _session_values(row) == expected]
-        if overlapping and len(matching) != 1:
+        expected_rows = sorted(expected_rows, key=_json)
+        existing_rows = sorted((_session_values(row) for row in overlapping), key=_json)
+        if existing_rows and existing_rows != expected_rows:
             raise CurrentDayMetadataRecoveryError("SESSION_CONFLICT")
-        facts.append(
-            {"kind": "session", "state": "equal" if matching else "insert", **expected}
-        )
+        for expected in expected_rows:
+            facts.append(
+                {
+                    "kind": "session",
+                    "state": "equal" if existing_rows else "insert",
+                    **expected,
+                }
+            )
     for symbol, row_day, contract in prepared.main_contracts:
         expected = {
             "symbol": symbol,
@@ -464,6 +469,22 @@ def _session_values(row: TradingSession) -> dict[str, Any]:
         "crosses_midnight": row.crosses_midnight,
         "is_active": row.is_active,
         "provider": row.provider,
+    }
+
+
+def _source_session_values(source: Mapping[str, Any]) -> dict[str, Any]:
+    effective_to = source["effective_to"]
+    return {
+        "exchange_code": source["exchange_code"],
+        "instrument_symbol": source["instrument_symbol"],
+        "session_name": source["session_name"],
+        "start_time": source["start_time"].isoformat(),
+        "end_time": source["end_time"].isoformat(),
+        "effective_from": source["effective_from"].isoformat(),
+        "effective_to": effective_to.isoformat() if effective_to else None,
+        "crosses_midnight": source["crosses_midnight"],
+        "is_active": source["is_active"],
+        "provider": source.get("provider", "rqdata"),
     }
 
 
