@@ -50,6 +50,18 @@ class MetadataSnapshot:
     main_contract_starts: Mapping[str, date]
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedCurrentDayMetadata:
+    """Validated current/next-day facts shared by natural sync and recovery."""
+
+    products: tuple[str, ...]
+    trading_day: date
+    calendars: tuple[dict[str, Any], ...]
+    sessions: tuple[dict[str, Any], ...]
+    main_contracts: tuple[tuple[str, date, str], ...]
+    next_trading_days: Mapping[str, date]
+
+
 class MetadataAdapter(Protocol):
     """外部元数据来源协议（通常为 RQData 适配器实现）。"""
 
@@ -193,46 +205,101 @@ class MetadataSynchronizer:
         rank-1 Map 仍只写当天。事实须完整且与既有 Instrument/Exchange 身份一致，
         否则整个事务回滚。
         """
+        snapshot = self.capture_current_day(products, trading_day)
+        self.apply_current_day_snapshot(snapshot, products, trading_day)
+        return trading_day
+
+    def capture_current_day(
+        self,
+        products: tuple[str, ...],
+        trading_day: date,
+    ) -> MetadataSnapshot:
+        """Fetch exactly one bounded provider snapshot without any Catalog write."""
         normalized = _normalized_products(products)
         if type(trading_day) is not date:
             raise ValueError("CURRENT_DAY_TRADING_DAY_INVALID")
         assert_products_not_retired(normalized)
-        snapshot = self.adapter.fetch_current_day_metadata(normalized, trading_day)
-        session = self.catalog.session
-        session_days = calendar_session_index(snapshot.sessions)
-        try:
-            exchanges = _existing_product_exchanges(session, normalized)
-            main_contracts = _current_day_main_contracts(
-                session, snapshot, normalized, trading_day
-            )
-            calendars, next_trading_days = _current_calendar_context(
-                snapshot, trading_day, set(exchanges.values())
-            )
-            sessions = _current_and_next_sessions(
-                snapshot,
-                normalized,
-                exchanges,
-                trading_day,
-                next_trading_days,
-            )
+        return self.adapter.fetch_current_day_metadata(normalized, trading_day)
 
-            for values in calendars:
+    def prepare_current_day_snapshot(
+        self,
+        snapshot: MetadataSnapshot,
+        products: tuple[str, ...],
+        trading_day: date,
+    ) -> PreparedCurrentDayMetadata:
+        """Validate a frozen snapshot against current Catalog identities, without writes."""
+        normalized = _normalized_products(products)
+        if type(trading_day) is not date:
+            raise ValueError("CURRENT_DAY_TRADING_DAY_INVALID")
+        assert_products_not_retired(normalized)
+        session = self.catalog.session
+        exchanges = _existing_product_exchanges(session, normalized)
+        main_contracts = _current_day_main_contracts(
+            session, snapshot, normalized, trading_day
+        )
+        calendars, next_trading_days = _current_calendar_context(
+            snapshot, trading_day, set(exchanges.values())
+        )
+        sessions = _current_and_next_sessions(
+            snapshot,
+            normalized,
+            exchanges,
+            trading_day,
+            next_trading_days,
+        )
+        return PreparedCurrentDayMetadata(
+            products=normalized,
+            trading_day=trading_day,
+            calendars=calendars,
+            sessions=sessions,
+            main_contracts=main_contracts,
+            next_trading_days=next_trading_days,
+        )
+
+    def apply_current_day_snapshot(
+        self,
+        snapshot: MetadataSnapshot,
+        products: tuple[str, ...],
+        trading_day: date,
+        *,
+        preserve_equal: bool = False,
+    ) -> date:
+        """Validate then commit one frozen snapshot using the natural shared writer."""
+        prepared = self.prepare_current_day_snapshot(snapshot, products, trading_day)
+        self._write_current_day(prepared, preserve_equal=preserve_equal)
+        return trading_day
+
+    def _write_current_day(
+        self,
+        prepared: PreparedCurrentDayMetadata,
+        *,
+        preserve_equal: bool,
+    ) -> None:
+        session = self.catalog.session
+        session_days = calendar_session_index(prepared.sessions)
+        try:
+            for values in prepared.calendars:
                 _upsert_calendar(
                     session, values, session_days.get(
                         (values["exchange_code"], values["trade_date"]), ()
                     ),
                 )
-            for symbol in normalized:
-                replacement_days = (trading_day, next_trading_days[exchanges[symbol]])
-                session.execute(
-                    delete(TradingSession).where(
-                        TradingSession.instrument_symbol == symbol,
-                        TradingSession.effective_from.in_(replacement_days),
-                        TradingSession.effective_to.in_(replacement_days),
-                        TradingSession.effective_from == TradingSession.effective_to,
+            if not preserve_equal:
+                exchanges = _existing_product_exchanges(session, prepared.products)
+                for symbol in prepared.products:
+                    replacement_days = (
+                        prepared.trading_day,
+                        prepared.next_trading_days[exchanges[symbol]],
                     )
-                )
-            for values in sessions:
+                    session.execute(
+                        delete(TradingSession).where(
+                            TradingSession.instrument_symbol == symbol,
+                            TradingSession.effective_from.in_(replacement_days),
+                            TradingSession.effective_to.in_(replacement_days),
+                            TradingSession.effective_from == TradingSession.effective_to,
+                        )
+                    )
+            for values in prepared.sessions:
                 _upsert(
                     session,
                     TradingSession,
@@ -246,18 +313,26 @@ class MetadataSynchronizer:
                     },
                     values,
                 )
-            session.execute(
-                delete(MainContractMap).where(
-                    MainContractMap.symbol.in_(normalized),
-                    MainContractMap.trade_date == trading_day,
+            if not preserve_equal:
+                session.execute(
+                    delete(MainContractMap).where(
+                        MainContractMap.symbol.in_(prepared.products),
+                        MainContractMap.trade_date == prepared.trading_day,
+                    )
                 )
-            )
-            self.catalog.upsert_main_contracts(main_contracts)
-            session.commit()
+            self.catalog.upsert_main_contracts(prepared.main_contracts)
+            session.flush()
         except Exception:
             session.rollback()
             raise
-        return trading_day
+        try:
+            session.commit()
+        except Exception:
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            raise InfrastructureError("CURRENT_DAY_COMMIT_OUTCOME_UNKNOWN") from None
 
 
 def _historical_session_replacement_days(

@@ -59,6 +59,40 @@ Session 日期集合 MUST 恰好等于 E。Session MUST 是匹配品种、交易
 - **WHEN** RQData 返回 `09:01-10:15` 的 1m Session
 - **THEN** active metadata 保存 `09:00-10:15`，Historical expected bars 与 Live 首分钟都以同一边界解析
 
+### Requirement: Runtime-bound current-day metadata recovery separates source and write authority
+系统 SHALL 提供 `guiyi data current-day-metadata-recovery --phase capture|plan|apply`。三阶段 MUST
+绑定 exact Runtime root、lowercase commit、after-market status hash、显式 trading day，并只使用该
+Runtime 的 operational products。`capture --apply` 表示一次外部 source capture 意图；它 MUST 恰好调用
+一次既有 `fetch_current_day_metadata(products,trading_day)`，只输出严格 JSON snapshot、语义
+`snapshot_sha256`、方法/参数身份与应用层调用摘要，不写 PostgreSQL、Canonical、Redis、status 或 projection。
+P60 正常适配器边界的摘要为 64 次应用层调用：下一交易日探测 1、完整期货合约表 1、有界 Calendar 1、
+rank1 dominant 60、批量 trading periods 1；该计数不得表述为 SDK 内部或 provider 计费请求数。
+
+`plan` MUST 只消费 exact frozen snapshot/hash，不构造或调用 provider。它 SHALL 复用
+`MetadataSynchronizer` 的 current-day 验证，逐行披露当天至 context end 的 Calendar、当天与下一交易日
+Session、当天 rank1 MainContractMap 的 `equal|insert` 精确差异及 `plan_sha256`。既有 Calendar、当前/下一
+交易日 Session 或当天 Map 的任何值变化、重叠或来源冲突 MUST block，不得以 Calendar 修订完成恢复。
+未知、partial、malformed 或 future-not-ready snapshot MUST fail closed；窗口外 Session、Map、Dataset、
+Partition 与 warm-up MUST 保持不变。
+
+`apply --apply` MUST 同时绑定 exact snapshot/hash 与 plan hash；取得全局 maintenance lease 后重新检查
+Runtime root/commit/status、依赖、Live/Alert heartbeat 和完整 diff。任一 drift 或 lock miss MUST 在写入前
+阻断。通过后 SHALL 调用与自然 `synchronize_current_day` 共用的 validated writer，一次事务只插入计划缺失
+事实；apply 路径不得构造 provider，并固定报告 `provider_requests=0`。commit 结果不明 MUST 报
+`CURRENT_DAY_METADATA_COMMIT_OUTCOME_UNKNOWN`、停止且不得 retry；必须独立 readback 后再决定新动作。
+
+#### Scenario: Frozen source is planned without provider capability
+- **WHEN** operator supplies a matching current-day snapshot and hash to `--phase plan`
+- **THEN** the command returns exact equal/insert facts and plan hash with zero provider or database writes
+
+#### Scenario: Existing current-day fact differs
+- **WHEN** any Calendar, current/next Session or current-day rank1 value differs from the captured source
+- **THEN** planning/apply blocks before mutation and does not overwrite the existing fact
+
+#### Scenario: Apply loses commit acknowledgement
+- **WHEN** the shared transaction commit raises after submission
+- **THEN** the result is commit-outcome-unknown, the lease is released, and no automatic retry occurs
+
 ### Requirement: 共享 Calendar 逐日夜盘证据
 MetadataSynchronizer SHALL 将 Calendar 视为交易所共享事实。夜盘 true MUST 由同日 provider
 Session 正证据支持；交易日 false MUST 由筛选请求品种之前的完整 provider 合约集合及逐日生命周期

@@ -156,6 +156,7 @@ def main(
     newow_readiness_builder=None,
     captured_recovery_runner=run_captured_recovery,
     daily_recovery_runner=None,
+    current_day_metadata_recovery_runner=None,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
@@ -187,6 +188,16 @@ def main(
 
                     daily_recovery_runner = run_daily_recovery
                 payload = daily_recovery_runner(args, progress_stream=stderr)
+            elif args.data_command == "current-day-metadata-recovery":
+                if current_day_metadata_recovery_runner is None:
+                    from app.guiyi_cli.current_day_metadata_recovery import (
+                        run_current_day_metadata_recovery,
+                    )
+
+                    current_day_metadata_recovery_runner = (
+                        run_current_day_metadata_recovery
+                    )
+                payload = current_day_metadata_recovery_runner(args)
             else:
                 payload = _run_data(
                     args,
@@ -294,6 +305,8 @@ def main(
                 "acknowledged",
                 "audited",
                 "closed_interrupted",
+                "captured",
+                "applied",
             }
         )
         else 1

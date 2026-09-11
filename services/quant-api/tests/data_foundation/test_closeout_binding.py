@@ -596,6 +596,47 @@ def test_binding_validates_target_active_not_current_active(target):
         target.create()
 
 
+def test_catalog_check_reuses_binding_and_rechecks_status_after_heartbeats(
+    target, monkeypatch
+):
+    binding = target.create()
+    calls = []
+    catalog = SimpleNamespace()
+    session = SimpleNamespace()
+    redis = SimpleNamespace(get=lambda key: (calls.append(key) or b"{}"))
+    store = SimpleNamespace(heartbeat=lambda: {})
+    monkeypatch.setattr(
+        target.module,
+        "assert_catalog_dependencies",
+        lambda settings, **kwargs: calls.append((settings, kwargs)),
+    )
+    monkeypatch.setattr(
+        target.module, "_verify_heartbeat", lambda *args, **kwargs: None
+    )
+
+    binding.check_catalog(
+        catalog,
+        session,
+        redis,
+        store,
+        lambda: datetime(2029, 1, 1, tzinfo=UTC),
+    )
+
+    assert calls[0][1]["catalog"] is catalog
+    assert calls[0][1]["session"] is session
+    assert calls[1] == "alert:heartbeat"
+
+    store.heartbeat = lambda: (target.status.write_text("{}") or {})
+    with pytest.raises(ValueError):
+        binding.check_catalog(
+            catalog,
+            session,
+            redis,
+            store,
+            lambda: datetime(2029, 1, 1, tzinfo=UTC),
+        )
+
+
 def test_binding_rejects_sources_newer_than_interrupted_run(target):
     status = target.root / ".run/after-market-status.json"
     raw = json.dumps({"current_run": {"started_at": "2020-01-01T00:00:00Z"}}).encode()

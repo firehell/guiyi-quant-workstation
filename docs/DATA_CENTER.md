@@ -127,6 +127,24 @@ lowercase plan hash，并在 maintenance lease 内重新核验 root/commit/statu
 metadata、不回退 full、不重试、不续跑、不通知。进度仅以共享事件字段写 stderr NDJSON；stdout 保留唯一
 最终 JSON，任何已提交、失败、partial 或 commit-unknown 结果保持原义。
 
+当天/下一交易日 metadata 的受审恢复使用独立三阶段入口：
+
+```text
+guiyi data current-day-metadata-recovery --phase capture --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 STATUS_SHA256 --trading-day YYYY-MM-DD --apply
+guiyi data current-day-metadata-recovery --phase plan --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 STATUS_SHA256 --trading-day YYYY-MM-DD --snapshot PATH --expected-snapshot-sha256 SNAPSHOT_SHA256
+guiyi data current-day-metadata-recovery --phase apply --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 STATUS_SHA256 --trading-day YYYY-MM-DD --snapshot PATH --expected-snapshot-sha256 SNAPSHOT_SHA256 --expected-plan-sha256 PLAN_SHA256 --apply
+```
+
+三阶段只取已校验 Runtime operational universe。capture 的 `--apply` 是一次 provider source 意图，只调用
+共享 current-day adapter 一次并输出严格 snapshot/hash；不写数据库或 Canonical。P60 的正常调用摘要为
+64 个应用层调用（next-day probe 1、完整合约 inventory 1、bounded Calendar 1、dominant 60、batched
+trading periods 1），不代表 provider 计费请求。plan 从冻结 snapshot 逐项列出 Calendar、当天/下一交易日
+Session 与当天 rank1 Map 的 equal/insert diff，既有值变化即阻断；不构造 provider。apply 在 maintenance
+lease 内重检 Runtime/status/heartbeat 与同一 diff，随后通过共享 validated writer 一次事务插入缺失事实；
+不构造 provider，`provider_requests=0`。snapshot、plan 或 Runtime 漂移、future-not-ready、commit outcome
+unknown 都停止，不 retry，不触碰窗口外 warm-up/Map/Session、Dataset/Partition、Redis、status、projection、
+通知或调度。
+
 `effective_start(symbol)=max(product_window_start(symbol), active_history_floor)`，其中
 `active_history_floor=2023-01-01`。`update` 使用显式 `--through` 固定水位，先同步 metadata，后
 优先完成基础 provider 日线 `1d` 与由其聚合的 `1w`，再按 active universe、Dataset、年月顺序续传基础
@@ -505,6 +523,7 @@ main ready count 只计算实际主图 READY，不把其他 section 的证据状
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
 guiyi data daily-recovery --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 HASH --through DATE [--apply --expected-plan-sha256 HASH]
+guiyi data current-day-metadata-recovery --phase {capture,plan,apply} --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 HASH --trading-day DATE [--snapshot PATH --expected-snapshot-sha256 HASH --expected-plan-sha256 HASH --apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}] [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe {active,operational}) [--through DATE] [--progress]
@@ -513,7 +532,8 @@ guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest P
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply
 ```
 
-无 `--apply` 的 update/refresh/contract-warmup/daily-recovery 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
+无 `--apply` 的 update/refresh/contract-warmup/daily-recovery 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；
+current-day metadata capture 虽带 `--apply` 也只授权外部 source read，DB/Canonical 写入仍为零；audit
 始终只读。audit 对每个请求品种独立返回结构化 finding（`code`、`category`、dataset、year、month）：已知
 Session、Calendar 与产品窗口元数据缺口分别归为 `metadata_session`、`metadata_calendar`、
 `metadata_window`，但不会中断其余品种；主力映射、预期分区缺失与物理一致性问题分别归为

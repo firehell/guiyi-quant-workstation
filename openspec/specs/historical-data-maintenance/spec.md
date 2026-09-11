@@ -74,7 +74,8 @@ as after_market_complete.
 - **THEN** report AFTER_MARKET_CLOSEOUT_OUTCOME_UNKNOWN and status_written null, perform no retry or rollback
 
 ### Requirement: 公开维护面
-系统 SHALL 公开 `update`、`refresh`、`audit`、`contract-warmup` 与显式 `daily-recovery`。`audit` SHALL 接受
+系统 SHALL 公开 `update`、`refresh`、`audit`、`contract-warmup`、显式 `daily-recovery` 与
+`current-day-metadata-recovery`。`audit` SHALL 接受
 `(--symbol X | --universe {active,operational})` 的互斥选择器。无 `--apply` 的 update/refresh MUST 只计划，
 不得写 PostgreSQL/Parquet；audit MUST 只读。
 系统还 SHALL 公开一次性 `session-anchor-repair` 三阶段 seam：`plan` 只读输出精确 session、Dataset、
@@ -114,6 +115,11 @@ and commit-unknown remain literal and MUST NOT trigger a retry.
 The command SHALL emit credential-free bounded NDJSON progress to stderr using the shared maintenance event fields,
 including `started`, `completed`, `failed` and `interrupted`; final JSON remains the only stdout payload. Progress is
 observational and MUST NOT create a second persisted authority or alter maintenance scope.
+
+`current-day-metadata-recovery` 的 capture/plan/apply 负责当前/下一交易日 metadata 的 source/write
+解耦；它不属于 historical Bar update，不得调用 full/daily maintenance、写 Canonical、失效 projection、
+通知、retry 或改变 after-market status。精确 snapshot/diff、既有事实冲突、lease 内 Runtime/Catalog CAS、
+provider-free apply 与 commit-unknown 合同由 `data-foundation-metadata` canonical 定义。
 
 #### Scenario: Runtime or target identity drifts before apply
 - **WHEN** any pinned Runtime fact or recomputed target-window hash differs while the maintenance lease is held

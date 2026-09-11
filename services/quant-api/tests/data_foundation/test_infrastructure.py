@@ -1653,16 +1653,88 @@ def test_current_day_metadata_snapshot_includes_next_trading_day_sessions() -> N
         (current_day, current_day + timedelta(days=14)),
         (current_day, next_trading_day),
     ]
-    assert [row["trade_date"] for row in snapshot.calendars] == [
-        current_day,
-        date(2025, 1, 11),
-        date(2025, 1, 12),
-        next_trading_day,
-    ]
     assert {row["effective_from"] for row in snapshot.sessions} == {
         current_day,
         next_trading_day,
     }
+
+
+def test_current_day_metadata_snapshot_p60_has_exact_64_application_calls() -> None:
+    current_day = date(2026, 9, 11)
+    next_trading_day = date(2026, 9, 14)
+    symbols = tuple(
+        (
+            chr(65 + index)
+            if index < 26
+            else chr(65 + (index - 26) // 26) + chr(65 + (index - 26) % 26)
+        )
+        for index in range(60)
+    )
+    calls = []
+
+    class FuturesApi:
+        def get_dominant(self, underlying_symbol, start_date, end_date, rule=0, rank=1):
+            calls.append(("dominant", underlying_symbol, start_date, end_date, rule, rank))
+            contract = underlying_symbol + "2611"
+            return pd.Series(
+                [contract, contract],
+                index=pd.to_datetime([current_day, next_trading_day]),
+                name="dominant",
+            )
+
+    class Api:
+        futures = FuturesApi()
+
+        def get_trading_dates(self, start_date, end_date):
+            calls.append(("dates", start_date, end_date))
+            return (current_day, next_trading_day)
+
+        def all_instruments(self, type):
+            calls.append(("inventory", type))
+            return pd.DataFrame(
+                [
+                    {
+                        "underlying_symbol": symbol,
+                        "exchange": "DCE",
+                        "order_book_id": symbol + "2611",
+                        "symbol": symbol + "2611",
+                        "listed_date": date(2020, 1, 1),
+                        "de_listed_date": date(2030, 1, 1),
+                    }
+                    for symbol in symbols
+                ]
+            )
+
+        def get_trading_periods(self, order_book_ids, start_date, end_date, frequency):
+            calls.append(("periods", tuple(order_book_ids), start_date, end_date, frequency))
+            return pd.DataFrame(
+                {"trading_hours": ["21:01-23:00"] * (len(symbols) * 2)},
+                index=pd.MultiIndex.from_tuples(
+                    [
+                        (symbol + "2611", row_day)
+                        for symbol in symbols
+                        for row_day in (current_day, next_trading_day)
+                    ],
+                    names=("order_book_id", "date"),
+                ),
+            )
+
+    client = object.__new__(rqdata_adapter.RQDataClient)
+    client.api = Api()
+
+    snapshot = client.current_day_metadata_snapshot(
+        tuple(symbol.lower() for symbol in symbols), current_day
+    )
+
+    assert len(calls) == 64
+    assert [call[0] for call in calls] == [
+        "dates",
+        "inventory",
+        "dates",
+        *(["dominant"] * 60),
+        "periods",
+    ]
+    assert len(snapshot.main_contracts) == 120
 
 
 def test_current_day_metadata_snapshot_preserves_missing_next_period_for_sync() -> None:

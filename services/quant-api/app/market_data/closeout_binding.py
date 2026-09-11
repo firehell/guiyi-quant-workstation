@@ -111,8 +111,8 @@ def _redis_url(settings: dict[str, str]) -> str:
     return value
 
 
-def assert_dependencies(settings, *, root: Path, manager, session, redis, products) -> None:
-    """Inspect actual constructed dependencies without creating any connection."""
+def _assert_dependency_endpoints(settings, *, root: Path, session, redis, products) -> Path:
+    """Verify DB/Redis/Canonical/universe identities without constructing a provider."""
     if any(key.startswith("PG") for key in os.environ):
         raise ValueError
     expected_db = make_url(normalize_database_url(settings["DATABASE_URL"]))
@@ -132,6 +132,25 @@ def assert_dependencies(settings, *, root: Path, manager, session, redis, produc
     canonical = Path(settings["GUIYI_CANONICAL_DATA_ROOT"])
     if not canonical.is_absolute() or canonical != canonical.resolve() or ".." in canonical.parts:
         raise ValueError
+    if products != _products(root):
+        raise ValueError
+    return canonical
+
+
+def assert_catalog_dependencies(settings, *, root: Path, catalog, session, redis, products) -> None:
+    """Verify the provider-free current-day plan/apply dependency surface."""
+    canonical = _assert_dependency_endpoints(
+        settings, root=root, session=session, redis=redis, products=products
+    )
+    if catalog.session is not session or catalog.canonical_root != canonical:
+        raise ValueError
+
+
+def assert_dependencies(settings, *, root: Path, manager, session, redis, products) -> None:
+    """Inspect actual constructed historical dependencies without provider calls."""
+    canonical = _assert_dependency_endpoints(
+        settings, root=root, session=session, redis=redis, products=products
+    )
     if (manager.catalog.session is not session or manager.catalog.canonical_root != canonical
             or manager.store.root != canonical or manager.coverage.session is not session
             or manager.store.boundary_validator != manager.coverage.valid_boundaries):
@@ -144,8 +163,6 @@ def assert_dependencies(settings, *, root: Path, manager, session, redis, produc
     target = DatabaseCoverageSource(session, root / "data/universe/product_window_starts.csv",
         history_floor_path=root / "data/universe/active_history_floor.txt")
     if manager.coverage.starts != target.starts or manager.coverage.history_floor != target.history_floor:
-        raise ValueError
-    if products != _products(root):
         raise ValueError
 
 
@@ -459,4 +476,29 @@ class RuntimeDataBinding:
         observed = now()
         _verify_heartbeat(live, now=observed, root=self.root, commit=self.commit)
         _verify_heartbeat(json.loads(raw) if raw is not None else None, now=observed, root=self.root, commit=self.commit)
+        self._verify_pinned_status()
+
+    def check_catalog(self, catalog, session, redis, store, now) -> None:
+        """Recheck Runtime, heartbeats, and provider-free Catalog dependencies."""
+        verify_closeout_identity(self.root, self.commit)
+        self._verify_pinned_status()
+        if self._read_sources() != self._sources or self._read_processes() != self._processes:
+            raise ValueError
+        assert_catalog_dependencies(
+            self.settings,
+            root=self.root,
+            catalog=catalog,
+            session=session,
+            redis=redis,
+            products=self.products,
+        )
+        observed = now()
+        _verify_heartbeat(store.heartbeat(), now=observed, root=self.root, commit=self.commit)
+        raw = redis.get("alert:heartbeat")
+        _verify_heartbeat(
+            json.loads(raw) if raw is not None else None,
+            now=observed,
+            root=self.root,
+            commit=self.commit,
+        )
         self._verify_pinned_status()

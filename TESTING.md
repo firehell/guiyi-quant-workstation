@@ -523,6 +523,26 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 PostgreSQL/Redis，或修改现场 Canonical、status、projection、Runtime 和调度。真实
 `daily-recovery --apply` 仍必须绑定当前 Runtime/status、dry-run exact plan hash 与一次明确生产写入意图。
 
+Runtime-bound current-day metadata recovery 的严格 snapshot codec/hash、P60 64 次应用层 fake API 调用、
+capture/plan/apply provider 隔离、Calendar/Session/rank1 exact diff、下一交易日 insert、warm-up/窗口外保留、
+maintenance lease、Runtime/plan drift、rollback、commit outcome unknown 与自然同步回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_current_day_metadata_recovery.py \
+  services/quant-api/tests/data_foundation/test_metadata.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/data_foundation/test_closeout_binding.py \
+  services/quant-api/tests/data_foundation/test_after_market.py \
+  services/quant-api/tests/data_foundation/test_historical_session_preservation.py
+```
+
+该组测试仅使用 fake API、Runtime/context doubles、SQLite 与临时路径；不连接真实 RQData、生产
+PostgreSQL/Redis，不写现场 Canonical/status/Runtime。真实 capture、metadata apply 各自需要绑定 exact
+Runtime/status/日期及相应 source/plan hash 的一次明确意图；capture 意图不授权后续数据库写入。
+
 Canonical 不可变月发布的 storage、Catalog strict-read 与 manager 失败回归：
 
 ```bash
