@@ -24,4 +24,6 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 - [x] 3.3 独立 Review 重点核对范围等价、错误传播、query count、closeout 精确来源绑定与新旧 callback 同步替换；完成 OpenSpec、diff、secret 检查。
 - [ ] 3.4 交付实际命令、结果及前后查询数；实现验收后再按仓库流程同步规范和集成 develop。代码完成不等于真实运行提速已验收，不执行数据写入、closeout apply 或 Runtime promotion。
 
-实施验证：定向 269 passed；data_foundation 1285 passed / 12 skipped / 16 deselected；全量 Ruff、四个改动源码的定向 Mypy 及独立 Spec/Quality Review 通过。真实 store publish/readback 的 SELECT 次数在 1/5/60 根 × 1/3 日下分别固定为 continuous 5/5、contract 6/6。全量 Mypy 仍有 `domain.py`、`bounded_metadata.py` 两个未改文件的 12 项基线错误，不声明全量类型检查通过。
+实施验证：定向 269 passed；data_foundation 1285 passed / 12 skipped / 16 deselected；全量 Ruff、四个改动源码的定向 Mypy 及独立 Spec/Quality Review 通过。真实 store publish/readback 的 SELECT 次数在 1/5/60 根 × 1/3 日下分别固定为 continuous 5/5、contract 6/6。初次全量 Mypy 发现 `domain.py`、`bounded_metadata.py` 两个未改文件的 12 项基线错误；已按 owner 后续要求修复，全量 154 个源码文件通过。
+
+最终整分支 Spec/Standards Review 已通过，无新增发现。owner 本轮明确要求先关闭两文件 Mypy 基线错误再集成 develop；12 项类型错误已关闭，全量 Mypy 154 个源码文件通过。两项已确认的浏览器基线失败仍为独立未关闭 Gate，不声明完整浏览器验收通过。后续验证与集成状态见 `STATUS.md` 的三项修复候选记录。

@@ -857,6 +857,24 @@ def test_exchange_inventory_requires_exact_unfiltered_identity_and_lifecycle(exc
         universe_plan(exchange_universe_case, inventory=inventory)
 
 
+@pytest.mark.parametrize("field", ["listed_date", "de_listed_date"])
+@pytest.mark.parametrize("value", [None, "0000-00-00", "not-a-date"])
+def test_inventory_missing_or_invalid_lifecycle_retains_error_classification(exchange_universe_case, field, value):
+    inventory = inventory_for(exchange_universe_case)
+    inventory["response"][0][field] = value
+    expected = "INVENTORY_INVALID" if value == "not-a-date" else "INVENTORY_UNIVERSE_MISMATCH"
+    with pytest.raises(repair.MetadataRepairError, match=expected):
+        universe_plan(exchange_universe_case, inventory=inventory)
+
+
+def test_inventory_source_outside_lifecycle_retains_source_mismatch(exchange_universe_case):
+    inventory = inventory_for(exchange_universe_case)
+    inventory["response"].append({**inventory["response"][0], "order_book_id": "AG2702"})
+    inventory["response"][0]["de_listed_date"] = exchange_universe_case[3]["date"]
+    with pytest.raises(repair.MetadataRepairError, match="INVENTORY_SOURCE_MISMATCH"):
+        universe_plan(exchange_universe_case, inventory=inventory)
+
+
 def test_inventory_raw_response_is_hash_bound_and_recomputed(exchange_universe_case):
     import copy
     value = universe_plan(exchange_universe_case)

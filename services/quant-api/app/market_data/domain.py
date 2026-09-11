@@ -106,12 +106,16 @@ def sum_decimal_exact(values: tuple[Decimal, ...]) -> Decimal:
     """Sum market facts without inheriting the caller's Decimal context."""
     if not values:
         return Decimal(0)
-    if any(not value.is_finite() for value in values):
-        raise InvalidOperation
-    exponent = min(value.as_tuple().exponent for value in values)
-    total = 0
+    parts: list[tuple[int, tuple[int, ...], int]] = []
     for value in values:
         sign, digits, value_exponent = value.as_tuple()
+        # Non-finite Decimal values encode their exponent as n, N or F.
+        if not isinstance(value_exponent, int):
+            raise InvalidOperation
+        parts.append((sign, digits, value_exponent))
+    exponent = min(part[2] for part in parts)
+    total = 0
+    for sign, digits, value_exponent in parts:
         coefficient = int("".join(str(digit) for digit in digits)) if digits else 0
         if sign:
             coefficient = -coefficient

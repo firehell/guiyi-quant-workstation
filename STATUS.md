@@ -21,6 +21,17 @@ develop 代码基线 `a28775b28bb8ef1d390e53aa0a93a753e50e6880`。本文件只�
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 
+## 架构审查三项修复候选（2026-09-11）
+
+`codex/architecture-fixes` 已完成三项批准的 OpenSpec 实现：同族同月 1m 发布先于派生、Newow 冲突撤销旧请求写入资格、Canonical 分区批量边界校验。三项独立 Review 和整分支 Spec/Standards Review 均通过；只涉及源码、测试及规范，尚未集成 develop、未发布或切换 Runtime。
+
+- 最终源码验证：后端 3248 passed / 16 skipped / 31 deselected；Web unit 532 passed / 1 skipped；build、Ruff、OpenSpec 与 secret scan 通过。
+- 定向竞态浏览器回归通过；完整 Newow fixture 为 36 passed / 2 failed。相同浏览器和依赖下，修改前源码精确复现相同的桌面 reference 截图差异（5024 pixels）及 main_rise 60m explanation `NEWOW_RESPONSE_INVALID`；没有更新截图或放宽阈值。
+- 根据 owner 本轮“先关闭两个未改文件中的 Mypy 基线错误，然后集成”的要求，已补齐 `domain.py` 的有限 Decimal 指数类型收窄及 `bounded_metadata.py` 的可空生命周期日期检查；全量 Mypy 154 个源码文件通过。新增 12 项行为保持回归，修复前后定向均为 147 passed；未增加类型忽略或改变行情口径。
+- 批量校验的隔离真实 store 测试中，1/5/60 根 × 1/3 个交易日的 publish/readback SELECT 分别固定为 continuous 5/5、contract 6/6。这不是生产墙钟性能验收，也未修复任何既有生产分区。
+
+三项架构修复和 Mypy 补修为 `CODE_COMPLETE / REVIEW_COMPLETE`；完整后端回归通过，补修独立 Spec/Standards Review 无 P0–P3 发现，额外 8024 组新旧 Decimal 差分一致。允许集成 develop。owner 已明确要求关闭 Mypy 后集成 develop；两项已确认的浏览器基线失败保留为独立未关闭 Gate，不声明完整浏览器验收通过。原 develop 两处未提交的 closeout heartbeat 修改保持不变；不新增真实数据、通知或 Runtime 授权。
+
 ## Release、Runtime 与 Scope
 
 | 项目 | 最近已记录事实 |

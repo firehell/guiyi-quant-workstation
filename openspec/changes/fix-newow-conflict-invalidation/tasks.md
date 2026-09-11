@@ -28,3 +28,5 @@ REAL_BACKEND=0 PLAYWRIGHT_PORT=5182 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5182 PL
 ```
 
 实施验证：定向 unit 109/109、完整 Web unit 532 passed / 1 skipped、build 与新增冲突/重新加载浏览器案例通过；独立 Spec/Quality Review 通过。完整 Newow fixture 为 36 passed / 2 failed，同环境修改前代码精确复现相同截图差异和 main_rise 60m explanation `NEWOW_RESPONSE_INVALID`。完整浏览器 Gate 未通过；不修改截图基线或放宽阈值。
+
+最终整分支 Spec/Standards Review 已通过，无新增发现。owner 本轮明确要求先关闭两文件 Mypy 基线错误再集成 develop；12 项类型错误已关闭，全量 Mypy 154 个源码文件通过。两项已确认的浏览器基线失败仍为独立未关闭 Gate，不声明完整浏览器验收通过。后续验证与集成状态见 `STATUS.md` 的三项修复候选记录。

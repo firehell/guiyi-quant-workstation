@@ -161,8 +161,13 @@ def _validate_exchange_inventory(evidence: Any, universes: list[dict]) -> dict |
             for source in universe["sources"]:
                 row = by_contract.get(source["contract"])
                 if (row is None or row.get("underlying_symbol") != source["symbol"].upper()
-                        or row.get("exchange", row.get("exchange_code")) != universe["exchange"]
-                        or not _optional_date(row.get("listed_date")) <= day < _optional_date(row.get("de_listed_date"))):
+                        or row.get("exchange", row.get("exchange_code")) != universe["exchange"]):
+                    raise MetadataRepairError("INVENTORY_SOURCE_MISMATCH")
+                listed = _optional_date(row.get("listed_date"))
+                expired = _optional_date(row.get("de_listed_date"))
+                if listed is None or expired is None:
+                    raise MetadataRepairError("INVENTORY_INVALID")
+                if not listed <= day < expired:
                     raise MetadataRepairError("INVENTORY_SOURCE_MISMATCH")
         # Own a JSON snapshot; caller mutation cannot alter a returned plan's evidence.
         return json.loads(_json(evidence))
