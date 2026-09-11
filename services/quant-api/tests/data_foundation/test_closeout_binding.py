@@ -198,6 +198,38 @@ def test_runtime_binding_rejects_manager_with_different_provider_configuration(
         client.close()
 
 
+def test_closeout_cli_composes_lazy_provider_from_exact_runtime_settings(
+    target, monkeypatch
+) -> None:
+    from app.guiyi_cli import after_market_closeout as cli_closeout
+    from app.market_data import closeout_binding, composition
+
+    binding = target.create()
+    real_build = composition.build_historical_data_manager
+    received = []
+
+    def build_manager(*args, **kwargs):
+        received.append(kwargs.get("provider_settings"))
+        return real_build(*args, **kwargs)
+
+    def closeout(manager, **kwargs):
+        assert manager.provider._client is None
+        return {"status": "ready", "readonly": True}
+
+    monkeypatch.setattr(closeout_binding, "RuntimeDataBinding", lambda *args: binding)
+    monkeypatch.setattr(composition, "build_historical_data_manager", build_manager)
+    monkeypatch.setattr(cli_closeout, "close_interrupted_run", closeout)
+    args = SimpleNamespace(runtime_root=str(target.root), runtime_commit="a" * 40,
+        expected_status_sha256="b" * 64, apply=False)
+
+    result = cli_closeout.run_closeout_command(
+        args, session_factory=None, manager_factory=None
+    )
+
+    assert result == {"status": "ready", "readonly": True}
+    assert received == [binding.settings]
+
+
 def test_running_binding_requires_explicit_exact_terminal_rebind(target, monkeypatch):
     from app.market_data.composition import build_historical_data_manager
 
