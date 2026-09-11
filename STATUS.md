@@ -42,13 +42,35 @@
   repository-hygiene/canonical-consistency 复验 22 passed，未修改或放宽测试。
 - 既有 metadata-repair 计划限定 a 155 日、au 196 日，Calendar 缺口为 0。owner 批准的一次
   351 请求已完成，取得 1396 行 Session（a 617、au 779），snapshot `d571d874…4306d`，无 blocker。
-  源快照独立审查与真实只读 recheck 通过，生产 apply 尚未执行；获取不等于修复完成。
+  源快照独立审查与真实只读 recheck 通过。随后 owner 批准的单次生产 apply 于 22:06 完成：
+  新增 1396 行 Session，Calendar 0 行、provider 请求 0；使用冻结代码 `262670773`、计划
+  `ff24fc9a…49978` 与上述 snapshot。22:07 独立读回逐行一致，351 个目标缺失日期归零，
+  固定 200 个分区经正式 reader 读取 451900 根 Bar 全部通过；状态 SHA `37d7dbd0…c1c2` 不变。
+  本地执行证据独立 Review 通过，仅关闭 a/au 的这批历史 Session 缺口，未补任何 OHLCV。
+- 22:11 使用现役 Runtime 的认证连接重新读回：五交易所 Calendar 9 月 11–14 日完整；
+  9 月 11 日 Session 仍为 60 品种/225 行，9 月 14 日仍为 60/60 缺失，phase 全部 UNKNOWN；
+  11 日及 14 日 Live snapshot 均明确 missing。早一次普通连接诊断的 unavailable 不作为缺失证据。
+  修复后的正式全量只读 closeout 于 23:23 返回 `ready`：45362 个 Catalog 已提交分区全部经正式
+  reader 读取；60 品种覆盖审计仅发现 840 项 `EXPECTED_PARTITION_MISSING`，均通过合法子集检查。
+  原日 snapshot 两次读取均为 `not_verified_missing`，`reconciliation_verified=false`；最终身份检查
+  通过，状态 SHA 未变、状态写入为 false。此 ready 只允许提出行政中断收尾，不代表行情完整或 passed。
+  23:24 独立读回 advisory lock 为 0，current_run 仍在；14 日 Session 仍缺失，两日 snapshot 仍 missing，
+  phase 仍 UNKNOWN60。正式只读 promotion preflight 仍 blocked / `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。
+- 同一现役绑定的正式 daily dry-run 返回 `planned`：60 品种、960 个窗口，全部在 2026 年 9 月，
+  对应 840 个不同 dataset/月及 120 个周线所需 D1 刷新窗口。主要增量为 9 月 9–11 日，
+  夜盘时间戳可始于 9 月 8 日晚；周线依赖需刷新 9 月 7–11 日整周 D1，不能把这 5 日都称为缺失。
+  provider/applied/blocked/failed 均为 0，状态 SHA 未变；这只是明确候选处理范围，未授权行情写入。
+- 切换时机隔离验证：周六 06:00（含）至 18:00（不含），若所有品种均处于非交易 Calendar 的
+  `CLOSED / trading_day=None / current_session=None`，且盘后状态有效、没有 current_run，可走
+  `non_trading_interval`，不要求缺失的未来 Session/snapshot；18:00 起缺 Session 又会 UNKNOWN。
+  SQLite/内存边界复核及既有 71 项测试通过。这不是 9 月 12 日现场 passed；届时必须正式只读 preflight。
 - 版本身份已准备为 1.10.7，收敛 daily/生命周期、Session 保留、收尾、单 worker 与周检状态补丁。
   相对 v1.10.6 还包含既有 `c073e255` 研究输出，未删改或据此缩称为纯代码补丁；精确候选仍待冻结。
-- `EXTERNAL_GATE_PENDING`：本次完整只读 closeout、状态 apply、最小元数据恢复、9 月 9–11 日行情
+- `EXTERNAL_GATE_PENDING`：本次状态 apply、剩余 9 月 14 日 Session 恢复、9 月 9–11 日行情
   范围与 MDS 读回、发布、Runtime 切换及新版本自然验收均未关闭。旧 v1.10.5 writer 下次运行不能
-  承接 v5 摘要，apply 前必须明确后续调度处置；不自动暂停或切换。最小下一步是批准范围内的历史
-  Session 修复，随后重新执行只读 closeout；不重下这 200 个历史行情分区。
+  承接 v5 摘要，apply 前必须明确后续调度处置；不自动暂停或切换。最小下一步是批准本次
+  `interrupted` 状态 apply，并明确 9 月 12 日 18:05 前的旧调度处置；实际 apply 仍重验完整合同，
+  不重做已通过的 200 分区恢复。
 
 ## 单 API worker 补丁候选（面向 v1.10.7，未发布）
 
@@ -322,6 +344,8 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 ## 唯一下一步
 
-只读定位并关闭 Runtime promotion predicate 的 Session / Live snapshot 阻塞；实际 Runtime switch 仍须独立批准。
+本次全量只读 closeout 已 ready；下一步取得 9 月 11 日中断运行状态 apply 的单次意图，并明确旧版
+9 月 12 日 18:05 调度处置。9 月 14 日 Session、Live snapshot 和 Runtime promotion 各自保留 Gate，
+已通过的历史 Session 恢复不重跑。
 
 本文件不构成元数据/行情修复、发布或 Runtime promotion 批准。
