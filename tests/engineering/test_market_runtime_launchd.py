@@ -8,7 +8,6 @@ import os
 import plistlib
 import shutil
 import subprocess
-import sys
 
 import pytest
 
@@ -63,63 +62,51 @@ def test_weekly_install_rejects_different_runtime_identity_before_launchctl(tmp_
     assert not (agents / "com.guiyi.quant-weekly-audit.plist").exists()
 
 
-def test_standalone_preflight_resolves_supervised_path_with_real_parser(
+def test_preflight_delegates_status_authority_to_the_single_python_process(
     tmp_path: Path,
 ) -> None:
     repo = _copy_launchd_fixture(tmp_path / "candidate")
-    supervised = tmp_path / "supervised"
-    supervised.mkdir()
     home = tmp_path / "home"
-    agents = home / "Library/LaunchAgents"
-    agents.mkdir(parents=True)
-    with (agents / "com.guiyi.quant-after-market.plist").open("wb") as handle:
-        plistlib.dump(
-            {"EnvironmentVariables": {"GUIYI_PROJECT_ROOT": str(supervised)}}, handle
-        )
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     launchctl = fake_bin / "launchctl"
     launchctl.write_text(
-        '#!/bin/sh\n[ "$1" = print ] || exit 91\n'
-        f'echo "GUIYI_PROJECT_ROOT => {supervised}"\n',
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$*" >> "$HOME/shell-launchctl-calls"\n'
+        'echo "permission denied" >&2\n'
+        "exit 77\n",
         encoding="utf-8",
     )
     launchctl.chmod(0o755)
     python = repo / "services/quant-api/.venv/bin/python"
     python.parent.mkdir(parents=True)
     python.write_text(
-        f"#!{sys.executable}\n"
-        "from app.market_data.runtime_promotion import _status_path_from_environment\n"
-        f"assert str(_status_path_from_environment()) == {str(supervised / '.run/after-market-status.json')!r}\n"
-        'print(\'{"schema_version":1,"command":"runtime.market-promotion-preflight","status":"passed","reason":"non_trading_interval","trading_day":null,"operational_count":0,"snapshot_count":0}\')\n',
+        "#!/bin/sh\n"
+        '[ -z "${GUIYI_AFTER_MARKET_STATUS_PATH:-}" ] || exit 91\n'
+        "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"passed\",\"reason\":\"non_trading_interval\",\"trading_day\":null,\"operational_count\":0,\"snapshot_count\":0}'\n",
         encoding="utf-8",
     )
-    python.chmod(0o755)
-    environment = {
-        **os.environ,
-        "HOME": str(home),
-        "PATH": f"{fake_bin}:{os.environ['PATH']}",
-        "GUIYI_PROJECT_ROOT": str(repo),
-        "GUIYI_RUNTIME_ENV": str(tmp_path / "missing"),
-        "POSTGRES_PASSWORD": "fixture",
-        "PYTHONPATH": f"{REPO_ROOT}/services/quant-api:{REPO_ROOT}/packages/quant-core",
-    }
-    environment.pop("GUIYI_AFTER_MARKET_STATUS_PATH", None)
+    python.chmod(0o700)
+
     result = subprocess.run(
-        [
-            str(repo / "scripts/ops/macos/run-local-service.sh"),
-            "market-runtime-preflight",
-        ],
+        [str(repo / "scripts/ops/macos/run-local-service.sh"), "market-runtime-preflight"],
         cwd=repo,
-        env=environment,
+        env={
+            **os.environ,
+            "HOME": str(home),
+            "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "GUIYI_PROJECT_ROOT": str(repo),
+            "GUIYI_RUNTIME_ENV": str(tmp_path / "missing.env"),
+            "POSTGRES_PASSWORD": "fixture",
+        },
         capture_output=True,
         text=True,
         check=False,
     )
+
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout)["reason"] == "non_trading_interval"
-    assert result.stderr == ""
-    assert not (repo / ".run/market-runtime-enabled").exists()
+    assert not (home / "shell-launchctl-calls").exists()
 
 
 def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tmp_path: Path) -> None:
@@ -202,172 +189,6 @@ def test_blocked_market_preflight_leaves_marker_plists_and_launchctl_untouched(
     assert not (home / "launchctl-calls.log").exists()
 
 
-@pytest.mark.parametrize(
-    "status_contents",
-    [
-        '{"schema_version":2,"current_run":{"scheduled_date":"2026-09-03","started_at":"2026-09-03T14:05:00+08:00","products":["j","jm"]}}\n',
-        "not-json\n",
-    ],
-)
-def test_market_preflight_reads_supervised_after_market_status_before_mutation(
-    tmp_path: Path, status_contents: str
-) -> None:
-    candidate = _copy_launchd_fixture(tmp_path / "candidate")
-    supervised = tmp_path / "supervised"
-    (supervised / ".run").mkdir(parents=True)
-    (supervised / ".run/after-market-status.json").write_text(
-        status_contents, encoding="utf-8"
-    )
-    home = tmp_path / "home"
-    agent_dir = home / "Library/LaunchAgents"
-    agent_dir.mkdir(parents=True)
-    with (agent_dir / "com.guiyi.quant-after-market.plist").open("wb") as handle:
-        plistlib.dump(
-            {"EnvironmentVariables": {"GUIYI_PROJECT_ROOT": str(supervised)}}, handle
-        )
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    python = candidate / "services/quant-api/.venv/bin/python"
-    python.parent.mkdir(parents=True)
-    python.write_text(
-        "#!/bin/sh\n"
-        f'[ "$GUIYI_AFTER_MARKET_STATUS_PATH" = "{supervised}/.run/after-market-status.json" ] || exit 91\n'
-        "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"blocked\",\"reason\":\"MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE\",\"trading_day\":null,\"operational_count\":0,\"snapshot_count\":0}'\n"
-        "exit 1\n",
-        encoding="utf-8",
-    )
-    python.chmod(0o700)
-    launchctl = fake_bin / "launchctl"
-    launchctl.write_text(
-        "#!/bin/sh\n"
-        'if [ "${1:-}" = "print" ]; then\n'
-        '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
-        '  case "${2##*/}" in com.guiyi.quant-after-market)\n'
-        f'    echo "GUIYI_PROJECT_ROOT => {supervised}"; exit 0 ;; esac\n'
-        "  exit 1\n"
-        "fi\n"
-        'printf "%s\\n" "$*" >> "$HOME/mutation-calls.log"\n'
-        "exit 90\n",
-        encoding="utf-8",
-    )
-    launchctl.chmod(0o755)
-
-    result = _run_installer_result(candidate, home, fake_bin, "--confirm-market-runtime")
-
-    assert result.returncode == 1
-    assert "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE" in result.stdout
-    assert not (candidate / ".run/market-runtime-enabled").exists()
-    assert not (home / "mutation-calls.log").exists()
-
-
-@pytest.mark.parametrize("loaded_root", ["", "relative/root"])
-def test_market_preflight_rejects_invalid_loaded_authority_without_mutation(
-    tmp_path: Path, loaded_root: str
-) -> None:
-    candidate = _copy_launchd_fixture(tmp_path / "candidate")
-    home = tmp_path / "home"
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    launchctl = fake_bin / "launchctl"
-    launchctl.write_text(
-        "#!/bin/sh\n"
-        'if [ "${1:-}" = "print" ]; then\n'
-        '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
-        '  case "${2##*/}" in com.guiyi.quant-after-market)\n'
-        f'    echo "GUIYI_PROJECT_ROOT => {loaded_root}"; exit 0 ;; esac\n'
-        "  exit 1\n"
-        "fi\n"
-        'printf "%s\\n" "$*" >> "$HOME/mutation-calls.log"\n'
-        "exit 90\n",
-        encoding="utf-8",
-    )
-    launchctl.chmod(0o755)
-
-    result = _run_installer_result(candidate, home, fake_bin, "--confirm-market-runtime")
-
-    assert result.returncode == 1
-    assert "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE" in result.stdout
-    assert not (candidate / ".run/market-runtime-enabled").exists()
-    assert not (home / "mutation-calls.log").exists()
-
-
-def test_market_preflight_rejects_loaded_and_installed_root_disagreement(tmp_path: Path) -> None:
-    candidate = _copy_launchd_fixture(tmp_path / "candidate")
-    supervised = tmp_path / "supervised"
-    supervised.mkdir()
-    home = tmp_path / "home"
-    agent_dir = home / "Library/LaunchAgents"
-    agent_dir.mkdir(parents=True)
-    with (agent_dir / "com.guiyi.quant-after-market.plist").open("wb") as handle:
-        plistlib.dump(
-            {"EnvironmentVariables": {"GUIYI_PROJECT_ROOT": str(candidate)}}, handle
-        )
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    launchctl = fake_bin / "launchctl"
-    launchctl.write_text(
-        "#!/bin/sh\n"
-        'if [ "${1:-}" = "print" ]; then\n'
-        '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
-        '  case "${2##*/}" in com.guiyi.quant-after-market)\n'
-        f'    echo "GUIYI_PROJECT_ROOT => {supervised}"; exit 0 ;; esac\n'
-        "  exit 1\n"
-        "fi\n"
-        'printf "%s\\n" "$*" >> "$HOME/mutation-calls.log"\n'
-        "exit 90\n",
-        encoding="utf-8",
-    )
-    launchctl.chmod(0o755)
-
-    result = _run_installer_result(candidate, home, fake_bin, "--confirm-market-runtime")
-
-    assert result.returncode == 1
-    assert "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE" in result.stdout
-    assert not (candidate / ".run/market-runtime-enabled").exists()
-    assert not (home / "mutation-calls.log").exists()
-
-
-@pytest.mark.parametrize("failure_scope", ["domain", "label"])
-def test_market_preflight_rejects_launchctl_authority_errors_without_mutation(
-    tmp_path: Path, failure_scope: str
-) -> None:
-    candidate = _copy_launchd_fixture(tmp_path / "candidate")
-    home = tmp_path / "home"
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    launchctl = fake_bin / "launchctl"
-    domain_case = (
-        'echo "permission denied" >&2; exit 77\n'
-        if failure_scope == "domain"
-        else 'echo "domain = gui/$UID"; exit 0\n'
-    )
-    label_case = (
-        'echo "permission denied" >&2; exit 77\n'
-        if failure_scope == "label"
-        else 'echo "Could not find service" >&2; exit 1\n'
-    )
-    launchctl.write_text(
-        "#!/bin/sh\n"
-        'if [ "${1:-}" = "print" ]; then\n'
-        '  if [ "${2:-}" = "gui/$UID" ]; then\n'
-        f"    {domain_case}"
-        "  fi\n"
-        f"  {label_case}"
-        "fi\n"
-        'printf "%s\\n" "$*" >> "$HOME/mutation-calls.log"\n'
-        "exit 90\n",
-        encoding="utf-8",
-    )
-    launchctl.chmod(0o755)
-
-    result = _run_installer_result(candidate, home, fake_bin, "--confirm-market-runtime")
-
-    assert result.returncode == 1
-    assert "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE" in result.stdout
-    assert not (candidate / ".run/market-runtime-enabled").exists()
-    assert not (home / "mutation-calls.log").exists()
-
-
 def test_market_preflight_missing_runtime_python_has_bounded_json_contract(
     tmp_path: Path,
 ) -> None:
@@ -434,7 +255,7 @@ def test_market_preflight_loads_runtime_env_without_disclosing_it(tmp_path: Path
     assert "test-only-secret" not in result.stdout + result.stderr
 
 
-def test_market_preflight_source_cannot_override_controlled_status_path_or_arguments(
+def test_market_preflight_source_cannot_override_python_status_authority_or_arguments(
     tmp_path: Path,
 ) -> None:
     repo = _copy_launchd_fixture(tmp_path / "candidate")
@@ -453,8 +274,10 @@ def test_market_preflight_source_cannot_override_controlled_status_path_or_argum
     python.parent.mkdir(parents=True)
     python.write_text(
         "#!/bin/sh\n"
+        '[ -z "${GUIYI_AFTER_MARKET_STATUS_PATH:-}" ] || exit 91\n'
+        '[ "$*" = "-m app.market_data.runtime_promotion" ] || exit 92\n'
         "touch \"$(dirname \"$0\")/python-was-run\"\n"
-        "exit 90\n",
+        "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"passed\",\"reason\":\"non_trading_interval\",\"trading_day\":null,\"operational_count\":0,\"snapshot_count\":0}'\n",
         encoding="utf-8",
     )
     python.chmod(0o700)
@@ -474,10 +297,10 @@ def test_market_preflight_source_cannot_override_controlled_status_path_or_argum
         check=False,
     )
 
-    assert result.returncode == 1
+    assert result.returncode == 0
     assert result.stderr == ""
-    assert json.loads(result.stdout)["reason"] == "MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE"
-    assert not (python.parent / "python-was-run").exists()
+    assert json.loads(result.stdout)["reason"] == "non_trading_interval"
+    assert (python.parent / "python-was-run").exists()
     assert str(repo) not in result.stdout + result.stderr
 
 
@@ -645,6 +468,86 @@ def test_market_runtime_launch_agents_use_project_root_as_working_directory(
             payload = plistlib.load(handle)
         assert isinstance(payload, dict)
         assert payload["WorkingDirectory"] == str(repo.resolve())
+
+
+def test_market_install_establishes_new_after_market_owner_before_live(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "print" ]; then\n'
+        '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
+        '  echo "Could not find service" >&2; exit 1\n'
+        "fi\n"
+        'printf "%s\\n" "$*" >> "$HOME/launchctl-calls"\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-market-runtime")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    bootstraps = [
+        Path(line.split()[-1]).name
+        for line in (home / "launchctl-calls").read_text(encoding="utf-8").splitlines()
+        if line.startswith("bootstrap ")
+    ]
+    assert bootstraps == [
+        "com.guiyi.quant-after-market.plist",
+        "com.guiyi.quant-live.plist",
+    ]
+
+
+def test_partial_market_install_stops_candidate_and_requires_explicit_recovery(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    sleep = fake_bin / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    sleep.chmod(0o755)
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'command="${1:-}"\n'
+        'target="${2:-}"\n'
+        'label="${target##*/}"\n'
+        'state_dir="$HOME/launchd-state"\n'
+        'mkdir -p "$state_dir"\n'
+        'if [ "$command" = "print" ] && [ "$target" = "gui/$UID" ]; then exit 0; fi\n'
+        'if [ "$command" = "print" ]; then\n'
+        '  [ -f "$state_dir/$label" ] && exit 0\n'
+        '  echo "Could not find service" >&2; exit 1\n'
+        "fi\n"
+        'printf "%s\\n" "$*" >> "$HOME/launchctl-calls"\n'
+        'if [ "$command" = "bootout" ]; then rm -f "$state_dir/$label"; exit 0; fi\n'
+        'if [ "$command" = "bootstrap" ]; then\n'
+        '  plist="${3:-}"; label="${plist##*/}"; label="${label%.plist}"\n'
+        '  [ "$label" = "com.guiyi.quant-live" ] && exit 81\n'
+        '  touch "$state_dir/$label"; exit 0\n'
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-market-runtime")
+
+    assert result.returncode == 1
+    assert "partial market install is blocked" in result.stderr
+    assert "explicit compatible-root recovery is required" in result.stderr
+    assert not (repo / ".run/market-runtime-enabled").exists()
+    state_dir = home / "launchd-state"
+    assert not (state_dir / "com.guiyi.quant-after-market").exists()
+    assert not (state_dir / "com.guiyi.quant-live").exists()
 
 
 def test_after_market_launch_agent_runs_after_next_session_metadata_is_ready(

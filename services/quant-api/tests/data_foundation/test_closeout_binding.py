@@ -41,6 +41,9 @@ def target(tmp_path, monkeypatch):
     root.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.setattr(module, "verify_closeout_identity", lambda *args: None)
+    monkeypatch.setattr(
+        module, "verify_runtime_release_identity", lambda *args: None, raising=False
+    )
     run = root / ".run"
     run.mkdir(mode=0o700)
     raw = json.dumps({"current_run": {"started_at": "2028-01-01T00:00:00Z"}}).encode()
@@ -81,6 +84,12 @@ def target(tmp_path, monkeypatch):
         assert arguments[:4] == ["/usr/bin/env", "TZ=UTC", "/bin/ps", "-p"]
         return "Mon Jan 01 00:00:00 2029"
     monkeypatch.setattr(module, "_read_command", read)
+    monkeypatch.setattr(
+        module,
+        "_read_launchd_service",
+        lambda label, **kwargs: outputs[label],
+        raising=False,
+    )
     return SimpleNamespace(root=root, config=config, module=module, outputs=outputs,
         status=run / "after-market-status.json",
         create=lambda: module.RuntimeDataBinding(root, "a" * 40, hashlib.sha256(raw).hexdigest()))
@@ -108,6 +117,10 @@ def _write_status(path, payload):
     content = (json.dumps(payload, ensure_ascii=False) + "\n").encode()
     path.write_bytes(content)
     return hashlib.sha256(content).hexdigest()
+
+
+def _stop_writer(target) -> None:
+    target.outputs["com.guiyi.quant-after-market"] = None
 
 
 def _clean_candidate_reader(arguments, *, root):
@@ -265,6 +278,7 @@ def test_running_binding_requires_explicit_exact_terminal_rebind(target, monkeyp
 def test_fresh_binding_accepts_only_exact_schema_v5_terminal_authority(target, schema_version):
     terminal = _terminal_status(schema_version=schema_version)
     terminal_sha256 = _write_status(target.status, terminal)
+    _stop_writer(target)
 
     if schema_version < 5:
         with pytest.raises(ValueError):
@@ -275,12 +289,53 @@ def test_fresh_binding_accepts_only_exact_schema_v5_terminal_authority(target, s
     assert binding.last_interruption == terminal["last_interruption"]
 
 
+def test_terminal_binding_accepts_only_explicitly_absent_writer_and_rechecks_it(target):
+    terminal_sha256 = _write_status(target.status, _terminal_status())
+    writer = "com.guiyi.quant-after-market"
+    target.outputs[writer] = None
+
+    binding = target.module.RuntimeDataBinding(target.root, "a" * 40, terminal_sha256)
+
+    assert binding.after_market_state == "stopped"
+    binding.recheck_identity()
+
+    target.outputs[writer] = (
+        "service = {\nstate = not running\n"
+        f"working directory = {target.root}\narguments = {{\n/bin/bash\n"
+        f"{Path.home() / 'Library/Application Support/GuiyiQuant/run-local-service.sh'}\n"
+        "after-market\n}\nenvironment = {\n"
+        f"GUIYI_PROJECT_ROOT => {target.root}\nGUIYI_RUNTIME_COMMIT => {'a' * 40}\n"
+        "}\n}\n"
+    )
+    with pytest.raises(ValueError):
+        binding.recheck_identity()
+
+
+def test_terminal_binding_treats_launchd_error_as_unavailable_not_absent(target):
+    from app.market_data.captured_recovery_runtime import CapturedRecoveryRuntimeError
+
+    terminal_sha256 = _write_status(target.status, _terminal_status())
+
+    def unavailable(label, **kwargs):
+        if label == "com.guiyi.quant-after-market":
+            raise CapturedRecoveryRuntimeError(
+                "CAPTURED_RECOVERY_RUNTIME_IDENTITY_UNAVAILABLE"
+            )
+        return target.outputs[label]
+
+    target.module._read_launchd_service = unavailable
+
+    with pytest.raises(ValueError):
+        target.module.RuntimeDataBinding(target.root, "a" * 40, terminal_sha256)
+
+
 def test_compatible_recovery_proof_is_bounded_redacted_and_not_ready(target):
     from app.core.env import PROJECT_ROOT
     from app.market_data.captured_recovery_runtime import _read_command
 
     terminal = _terminal_status()
     terminal_sha256 = _write_status(target.status, terminal)
+    _stop_writer(target)
     binding = target.module.RuntimeDataBinding(target.root, "a" * 40, terminal_sha256)
     products_path = target.root / "data/universe/operational_products.txt"
     products_sha256 = hashlib.sha256(products_path.read_bytes()).hexdigest()
@@ -292,12 +347,14 @@ def test_compatible_recovery_proof_is_bounded_redacted_and_not_ready(target):
         path: (path.read_bytes(), path.stat().st_mtime_ns)
         for path in (target.status, target.config, products_path)
     }
+    heartbeat_checks = []
 
     proof = binding.compatible_recovery_proof(
         candidate_root=PROJECT_ROOT,
         candidate_commit=candidate_commit,
         expected_operational_products_sha256=products_sha256,
         _identity_reader=_clean_candidate_reader,
+        _heartbeat_checker=lambda: heartbeat_checks.append("checked"),
     )
 
     assert proof == {
@@ -345,6 +402,7 @@ def test_compatible_recovery_proof_is_bounded_redacted_and_not_ready(target):
     }
     assert "fixture-only" not in json.dumps(proof)
     assert "fixture-rqdata-license" not in json.dumps(proof)
+    assert heartbeat_checks == ["checked", "checked"]
     assert before == {
         path: (path.read_bytes(), path.stat().st_mtime_ns)
         for path in (target.status, target.config, products_path)
@@ -359,6 +417,7 @@ def test_compatible_recovery_proof_rejects_explicit_identity_drift(target, drift
     from app.market_data.captured_recovery_runtime import _read_command
 
     terminal_sha256 = _write_status(target.status, _terminal_status())
+    _stop_writer(target)
     binding = target.module.RuntimeDataBinding(target.root, "a" * 40, terminal_sha256)
     candidate_commit = _read_command(
         ["/usr/bin/git", "-c", "core.fsmonitor=false", "rev-parse", "HEAD"],
@@ -371,6 +430,7 @@ def test_compatible_recovery_proof_rejects_explicit_identity_drift(target, drift
             (target.root / "data/universe/operational_products.txt").read_bytes()
         ).hexdigest(),
         "_identity_reader": _clean_candidate_reader,
+        "_heartbeat_checker": lambda: None,
     }
     if drift == "candidate_commit":
         arguments["candidate_commit"] = "b" * 40
@@ -397,6 +457,8 @@ def test_terminal_binding_requires_runtime_operational_product_scope(target, ent
     terminal = _terminal_status()
     terminal["last_run"]["products"] = ["AG"]
     terminal_sha256 = _write_status(target.status, terminal)
+    if entrypoint == "fresh":
+        _stop_writer(target)
 
     with pytest.raises(ValueError):
         if entrypoint == "fresh":

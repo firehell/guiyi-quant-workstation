@@ -793,6 +793,69 @@ def test_session_authority_dependency_failure_blocks_without_reading_snapshot() 
     assert decision.reason == PROMOTION_STATE_UNAVAILABLE
 
 
+def test_preflight_uses_python_status_authority_and_rechecks_before_decision(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+
+    class Resolver:
+        def resolve(self, symbol: str, _now: datetime) -> ProductMarketPhase:
+            events.append(f"phase:{symbol}")
+            return _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+
+    class Authority:
+        path = tmp_path / "runtime/.run/after-market-status.json"
+
+        def recheck(self) -> None:
+            events.append("authority:recheck")
+
+    decision = run_market_runtime_promotion_preflight(
+        session_factory=lambda: nullcontext(object()),
+        phase_resolver_factory=lambda _session: Resolver(),
+        live_store_factory=lambda: object(),
+        products_loader=lambda: PRODUCTS,
+        status_authority_factory=lambda: Authority(),
+        now=lambda: NOW,
+    )
+
+    assert decision.status == "passed"
+    assert decision.reason == "non_trading_interval"
+    assert events == ["phase:j", "phase:jm", "authority:recheck"]
+
+
+def test_preflight_fails_closed_when_python_status_authority_drifts(
+    tmp_path: Path,
+) -> None:
+    class Resolver:
+        def resolve(self, symbol: str, _now: datetime) -> ProductMarketPhase:
+            return _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+
+    class Authority:
+        path = tmp_path / "runtime/.run/after-market-status.json"
+
+        def recheck(self) -> None:
+            raise ValueError("pinned stopped-terminal identity changed")
+
+    decision = run_market_runtime_promotion_preflight(
+        session_factory=lambda: nullcontext(object()),
+        phase_resolver_factory=lambda _session: Resolver(),
+        live_store_factory=lambda: object(),
+        products_loader=lambda: PRODUCTS,
+        status_authority_factory=lambda: Authority(),
+        now=lambda: NOW,
+    )
+
+    assert decision.payload() == {
+        "schema_version": 1,
+        "command": "runtime.market-promotion-preflight",
+        "status": "blocked",
+        "reason": PROMOTION_STATE_UNAVAILABLE,
+        "trading_day": None,
+        "operational_count": 0,
+        "snapshot_count": 0,
+    }
+
+
 def test_phase_disagreement_or_dependency_error_blocks_state_unavailable() -> None:
     disagreement = evaluate_market_runtime_promotion(
         products=PRODUCTS,

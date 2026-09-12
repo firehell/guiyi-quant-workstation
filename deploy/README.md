@@ -114,10 +114,17 @@ guiyi data compatible-recovery-proof \
 mutation 或安装能力；结果中的 `recovery_ready` 固定为 `false`，直到发布 Gate 另行证明 exact tag/peeled
 commit 和 immutable recovery root，并取得一次匹配的恢复执行意图。
 
-安装部分失败后的恢复不是安装器自动 rollback。只有针对已发布 compatible root、明确服务集合和该次失败现场
-单独批准的一次尝试，才可使用该 root 中已正式 Review 的安装器；仍须运行同一 promotion preflight。
-activation marker 恢复不能证明已加载服务、plist 或 status 已事务回滚；任何失败尝试仍有 label loaded 或现场
-结果不明时保持 blocked，不自动重试，也不切换到 v1.10.5/v1.10.6。
+Market 安装固定先加载 idle 的 `com.guiyi.quant-after-market`，再加载并 kickstart
+`com.guiyi.quant-live`；新 writer 的 root/commit 与 status ownership 因而先于新 Live 建立。新 root 不继承旧
+root 的 `.run`，安装器不复制或改写旧 schema-v5 terminal status；旧 status 仍留在旧 root，作为 D 的不可变
+审计事实。新 writer 首次自然运行才在新 root 建立自己的 status。
+
+安装部分失败后的恢复不是安装器自动 rollback。失败处理按已尝试 label 的逆序 bootout candidate，并恢复本次
+candidate activation marker 的前像；随后明确输出 `partial market install is blocked`。共享 launcher、installed
+plist 和 status 不是事务资源，不能由 marker 恢复推断它们已回滚。只有针对已发布 compatible root、明确服务
+集合和该次失败现场单独批准的一次恢复尝试，才可使用该 root 中已正式 Review 的安装器；仍须重新运行同一
+promotion preflight。任一 candidate label 仍 loaded、bootout 结果不明，或 preflight 无法从当时 installed
+plist/loaded identity 重新取得权威 status 时继续 blocked，不自动重试，也不切换到 v1.10.5/v1.10.6。
 
 #### Read-only promotion predicate
 
@@ -134,11 +141,17 @@ preflight 只读取 operational universe、权威 Calendar/Session phase、既�
 顺序完全一致的 `after_market_complete`；以及无 current trading day、无 active Session 的
 `non_trading_interval`。它不会把“下一段 session 尚未开始”误作 `before_first_session`。
 
-跨 checkout 时，preflight 从当前 supervised、已加载 after-market launchd root 读取 status，并与 installed
-plist 声明的 root 交叉校验，不能把 candidate checkout 当作 status authority。仅 first-install 可使用 candidate
-root，且必须同时满足 launchd domain 可读、after-market label 明确 not-found、没有 installed plist。任何
-domain/permission/label 命令错误，或 root 缺失、畸形、不一致，均以
-`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` 阻断；runtime env 不能覆盖这个受控 status path。
+跨 checkout 时，preflight 只调用 Python status authority，不在 shell 重复解析 terminal JSON。正常 loaded
+分支从当前 supervised after-market launchd root 读取 status，并与 installed plist 声明交叉校验。D 后的
+stopped 分支只接受 exact schema-v5 interrupted terminal、保留且未变的 installed plist/root/commit/config、
+launchd domain 可读且 after-market label 明确 not-found、另外四服务身份精确，以及 Live/Alert 双 heartbeat
+新鲜且 recovery guard 已启用；读取前后重检任一 status/plist/root/process/config/heartbeat 漂移或 writer
+重现均阻断。仅 genuine first-install 可使用 candidate root，并同时要求 label 明确 not-found 且没有 installed
+plist。任何 domain/permission/label 命令错误，或 root 缺失、畸形、不一致，均以
+`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` 阻断；runtime env 不能覆盖 Python 选定的 status path。
+
+stopped-terminal 只解决 status ownership；不会把 promotion 判为通过。`snapshot_ready`、
+`before_first_session`、`after_market_complete` 与 `non_trading_interval` 四个独立 predicate 原样保留。
 
 已开始后的缺失 snapshot、无效/部分 snapshot、未知或分歧的 phase/session authority，以及 running、corrupt、
 unreadable 或 chronology 不可能的 after-market state 一律阻断；公开 block reason 仅为

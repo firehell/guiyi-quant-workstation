@@ -122,10 +122,10 @@ def _replace(directory: int, original: bytes, payload: dict[str, Any]) -> None:
             pass
 
 
-def verify_closeout_identity(root: Path, commit: str) -> None:
-    """Require the exact guarded release still loaded by all five services, EOD idle."""
+def verify_runtime_release_identity(root: Path, commit: str) -> None:
+    """Require the exact guarded immutable release without changing service state."""
     from app.market_data.captured_recovery_runtime import (
-        _read_command, _verify_after_market_plist, _verify_loaded_service, _verify_markers,
+        _read_command, _verify_markers,
     )
 
     if root != root.resolve(strict=True):
@@ -142,6 +142,15 @@ def verify_closeout_identity(root: Path, commit: str) -> None:
             or _read_command([*git, "rev-parse", f"refs/tags/{tag}^{{commit}}"], root=root) != commit):
         raise ValueError
     _verify_markers(root)
+
+
+def verify_closeout_identity(root: Path, commit: str) -> None:
+    """Require the exact guarded release still loaded by all five services, EOD idle."""
+    from app.market_data.captured_recovery_runtime import (
+        _read_command, _verify_after_market_plist, _verify_loaded_service,
+    )
+
+    verify_runtime_release_identity(root, commit)
     for service in ("api", "web", "live", "alert", "after-market"):
         _verify_after_market_plist(root=root, commit=commit, label=f"com.guiyi.quant-{service}")
         output = _read_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/com.guiyi.quant-{service}"], root=root)

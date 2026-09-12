@@ -183,6 +183,42 @@ def test_subprocess_failures_are_sanitized(runtime, monkeypatch, error):
     assert "secret" not in str(caught.value)
 
 
+def test_launchd_reader_accepts_only_explicit_label_absence(runtime, monkeypatch):
+    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(
+        runtime.module,
+        "_command_result",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1, stdout="", stderr="Could not find service"
+        ),
+    )
+
+    assert (
+        runtime.module._read_launchd_service(
+            "com.guiyi.quant-after-market", root=runtime.root
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "stderr", ["permission denied", "Could not find service\npermission denied", ""]
+)
+def test_launchd_reader_never_treats_errors_as_absence(runtime, monkeypatch, stderr):
+    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(
+        runtime.module,
+        "_command_result",
+        lambda *args, **kwargs: SimpleNamespace(returncode=77, stdout="", stderr=stderr),
+    )
+
+    with pytest.raises(runtime.module.CapturedRecoveryRuntimeError) as caught:
+        runtime.module._read_launchd_service(
+            "com.guiyi.quant-after-market", root=runtime.root
+        )
+    assert caught.value.code == "CAPTURED_RECOVERY_RUNTIME_IDENTITY_UNAVAILABLE"
+
+
 @pytest.mark.parametrize("worker,guard", [(False, False), (True, False), (True, True)])
 def test_live_heartbeat_proves_actual_worker_and_guard(monkeypatch, worker, guard):
     from app.core.env import PROJECT_ROOT

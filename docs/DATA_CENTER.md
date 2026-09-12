@@ -577,15 +577,20 @@ Live Bars 与 subscription snapshot。repair-only cleanup 不改变这条自然 
 
 ### Market Runtime promotion preflight
 
-`run-local-service.sh market-runtime-preflight` 是只读、bounded-JSON 的 promotion preflight。它只读取既有
-operational universe、Calendar/Session phase authority、当前交易日 immutable Live subscription snapshot 与公开
-after-market status；不连接 RQData，不写 Catalog、Redis 或状态文件。
+`run-local-service.sh market-runtime-preflight` 是只读、bounded-JSON 的 promotion preflight。shell 只负责安全
+加载运行环境并调用一次 Python，不解析 terminal JSON 或自行选择 supervised status。Python authority 读取既有
+operational universe、Calendar/Session phase authority、当前交易日 immutable Live subscription snapshot、公开
+after-market status，以及 stopped 分支所需的 installed plist、launchd identity 和 Live/Alert heartbeat；不连接
+RQData，不写 Catalog、Redis 或状态文件。
 
-跨 checkout promotion 时，after-market status 的 authority 来自当前 supervised 的、已加载 after-market
-launchd root，并与已安装 plist 声明的 root 交叉校验；candidate checkout 不能自行取得 status authority。只有
-launchd domain 可读、after-market label 明确为 not-found、且不存在 installed plist 的 first-install 条件下，才可
-使用 candidate root。domain/permission/label 命令错误、root 缺失、畸形或彼此不一致一律为
-`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。preflight 的受控 status path 不受 runtime env 覆盖。
+跨 checkout promotion 时，正常 loaded authority 来自当前 supervised 的 after-market launchd root，并与已安装
+plist 声明交叉校验；candidate checkout 不能自行取得 status authority。D 后 stopped authority 只接受 exact
+schema-v5 interrupted terminal：installed after-market plist、release root/commit/config 保持不变，launchd domain
+可读且 writer label 明确 absent，另外四服务的 plist/process/root/commit/config 精确，Live/Alert 双 heartbeat
+新鲜且证明 recovery guard，使用前再核对 status/plist/root/process/config/heartbeat。permission/error/unreadable
+不是 absent；writer 重现或任一 pinned fact 漂移都以 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` 阻断。
+只有 label 明确 not-found 且不存在 installed plist 的 genuine first-install 才可使用 candidate root。preflight 的
+受控 status path 不受 runtime env 覆盖。
 
 只有以下四种窗口可通过：有效 snapshot 与 operational symbols/contract identities 精确对应的
 `snapshot_ready`；所有 operational 产品尚未到权威 Session 的真正最早 start 的 `before_first_session`；同一
@@ -598,6 +603,12 @@ status，或不可能的 status chronology 都必须阻断；其稳定公开原�
 
 这个 preflight 没有 override、repair、synthetic snapshot、retry、replay 或 fallback；它不把预检通过表述为
 release、Runtime ready、formal rank1 reconciliation 或生产验证。
+
+Market 安装顺序固定为 after-market（只 bootstrap/enable，保持 idle）再到 Live（bootstrap/enable/kickstart），
+使新 writer 先取得新 root 的 status ownership。新 root 不继承或复制旧 `.run`；旧 schema-v5 terminal 留在旧
+root。部分安装失败会逆序停止本次 candidate label 并恢复 candidate activation marker 前像，但 shared launcher、
+installed plist 和 status 不具备事务 rollback；安装器明确保持 blocked，后续只能在重新取得当时 status authority
+并获得一次匹配的 compatible-root 恢复意图后重试，不能自动回退旧 writer。
 
 active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
 `data/universe/retired_products.txt`，与 active 互斥。

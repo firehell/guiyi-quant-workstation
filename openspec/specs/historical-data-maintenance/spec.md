@@ -57,6 +57,23 @@ evidence when carrying its summary, never inherit it as success. Health MUST rem
 natural reconciliation and promotion predicates MUST remain unchanged, and this terminal MUST NOT count
 as after_market_complete.
 
+Compatible recovery, Runtime-bound daily/current-day maintenance, and deployment promotion preflight MUST
+share one Python authority for this stopped terminal. The stopped branch MUST require exact schema-v5
+interrupted bytes, the unchanged installed after-market plist/root/commit/config, a readable launchd domain,
+the writer label explicitly absent, exact identities for the other four required services, and fresh Live and
+Alert heartbeats proving the recovery guard. It MUST pin and recheck status, plist, root, process, config and
+heartbeat facts before use; permission/error/unreadable results are not absence, and writer reappearance or
+any drift MUST fail closed. Normal after-market closeout MUST continue to require all five services loaded,
+with after-market idle. A stopped terminal MUST NOT by itself satisfy any promotion predicate.
+
+#### Scenario: Stopped terminal is used by a compatible read-only entry point
+- **WHEN** the exact v5 terminal, installed writer identity, explicit launchd absence, other four services and both heartbeats remain pinned and valid
+- **THEN** the entry point may continue to its own independent read-only or dry-run checks without treating the interruption as completion
+
+#### Scenario: Stopped authority becomes ambiguous
+- **WHEN** the writer reappears, a pinned fact changes, or launchd returns anything other than an exact loaded definition or exact not-found result
+- **THEN** the entry point fails closed before provider access, data publication or promotion
+
 #### Scenario: Legitimately partial interrupted maintenance
 - **WHEN** committed pointers and metadata are valid but expected partitions remain missing
 - **THEN** closeout may record interrupted and pending findings without claiming the update or weekly audit passed

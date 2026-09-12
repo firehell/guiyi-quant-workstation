@@ -16,8 +16,18 @@ from sqlalchemy.engine import make_url
 
 from app.db.url import normalize_database_url
 from app.market_data.after_market import public_after_market_status
-from app.market_data.after_market_closeout import _directory, _read, verify_closeout_identity
-from app.market_data.captured_recovery_runtime import _read_command, _verify_loaded_service, _verify_heartbeat
+from app.market_data.after_market_closeout import (
+    _directory,
+    _read,
+    verify_closeout_identity,
+    verify_runtime_release_identity,
+)
+from app.market_data.captured_recovery_runtime import (
+    _read_command,
+    _read_launchd_service,
+    _verify_heartbeat,
+    _verify_loaded_service,
+)
 from app.market_data.coverage_source import DatabaseCoverageSource
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.rqdata_adapter import (
@@ -259,7 +269,6 @@ class RuntimeDataBinding:
         if any(key.startswith("PG") for key in os.environ):
             raise ValueError
         self.root, self.commit = root, commit
-        verify_closeout_identity(root, commit)
         with _directory(root / ".run") as directory:
             status = _read(directory, "after-market-status.json")
         if hashlib.sha256(status).hexdigest() != status_sha256:
@@ -269,6 +278,8 @@ class RuntimeDataBinding:
         self._status_sha256 = status_sha256
         self._status_payload = parsed
         self.last_interruption = interruption
+        self.after_market_state = "stopped" if interruption is not None else "loaded"
+        self._verify_runtime_identity()
         self.started_ns = int(started.timestamp() * 1_000_000_000)
         self.runtime_dir = Path.home() / "Library/Application Support/GuiyiQuant"
         self.agent_dir = Path.home() / "Library/LaunchAgents"
@@ -340,6 +351,19 @@ class RuntimeDataBinding:
         if status != self._status or hashlib.sha256(status).hexdigest() != self._status_sha256:
             raise ValueError
 
+    def _verify_runtime_identity(self) -> None:
+        if self.after_market_state == "stopped":
+            verify_runtime_release_identity(self.root, self.commit)
+        else:
+            verify_closeout_identity(self.root, self.commit)
+
+    def recheck_identity(self) -> None:
+        """Recheck every pinned filesystem, process and status fact."""
+        self._verify_runtime_identity()
+        self._verify_pinned_status()
+        if self._read_sources() != self._sources or self._read_processes() != self._processes:
+            raise ValueError
+
     def rebind_terminal_status(self, status_sha256: str) -> None:
         """Explicitly replace a pinned running status with its exact schema-v5 terminal."""
         if re.fullmatch(r"[0-9a-f]{64}", status_sha256) is None:
@@ -347,7 +371,7 @@ class RuntimeDataBinding:
         current = self._status_payload.get("current_run")
         if not isinstance(current, dict):
             raise ValueError
-        verify_closeout_identity(self.root, self.commit)
+        self._verify_runtime_identity()
         if self._read_sources() != self._sources or self._read_processes() != self._processes:
             raise ValueError
         status = self._read_status()
@@ -361,7 +385,7 @@ class RuntimeDataBinding:
                 or tuple(last_run["products"]) != self.products
                 or current.get("attempt", last_run["attempts"]) != last_run["attempts"]):
             raise ValueError
-        verify_closeout_identity(self.root, self.commit)
+        self._verify_runtime_identity()
         if (self._read_sources() != self._sources or self._read_processes() != self._processes
                 or self._read_status() != status):
             raise ValueError
@@ -377,6 +401,7 @@ class RuntimeDataBinding:
         candidate_commit: str,
         expected_operational_products_sha256: str,
         _identity_reader: Callable[..., str] | None = None,
+        _heartbeat_checker: Callable[[], None] | None = None,
     ) -> dict[str, object]:
         """Render a bounded proof; publication and recovery execution stay external gates."""
         from app.market_data.captured_recovery_runtime import (
@@ -384,6 +409,7 @@ class RuntimeDataBinding:
         )
 
         identity_reader = _identity_reader or read_identity_command
+        heartbeat_checker = _heartbeat_checker or self.check_runtime_heartbeats
 
         if (
             re.fullmatch(r"[0-9a-f]{40}", candidate_commit) is None
@@ -395,8 +421,7 @@ class RuntimeDataBinding:
             / "services/quant-api/app/market_data/closeout_binding.py"
         ):
             raise ValueError
-        verify_closeout_identity(self.root, self.commit)
-        self._verify_pinned_status()
+        heartbeat_checker()
         if (
             self._read_sources() != self._sources
             or self._read_processes() != self._processes
@@ -433,7 +458,7 @@ class RuntimeDataBinding:
             return tree
 
         candidate_tree = candidate_identity()
-        self._verify_pinned_status()
+        heartbeat_checker()
         if (
             self._read_sources() != self._sources
             or self._read_processes() != self._processes
@@ -474,6 +499,34 @@ class RuntimeDataBinding:
                 "SEPARATE_RECOVERY_EXECUTION_INTENT_REQUIRED",
             ],
         }
+
+    def _check_heartbeats(self, redis, store, now: Callable[[], datetime]) -> None:
+        observed = now()
+        _verify_heartbeat(
+            store.heartbeat(), now=observed, root=self.root, commit=self.commit
+        )
+        raw = redis.get("alert:heartbeat")
+        _verify_heartbeat(
+            json.loads(raw) if raw is not None else None,
+            now=observed,
+            root=self.root,
+            commit=self.commit,
+        )
+
+    def check_runtime_heartbeats(self) -> None:
+        """Verify stopped-terminal service identity and both fresh Runtime heartbeats."""
+        from app.market_data.live_market import RedisClient, RedisLiveStore
+        from app.market_data.session_clock import SHANGHAI
+        from typing import cast
+
+        self.recheck_identity()
+        redis = Redis.from_url(_redis_url(self.settings))
+        try:
+            store = RedisLiveStore(cast(RedisClient, redis))
+            self._check_heartbeats(redis, store, lambda: datetime.now(SHANGHAI))
+            self.recheck_identity()
+        finally:
+            redis.close()
 
     def _read_sources(self):
         # Target Python imports load dotenv without override. Even explicit main
@@ -525,7 +578,13 @@ class RuntimeDataBinding:
                     or installed_environment.get("GUIYI_PROJECT_ROOT") != str(self.root)
                     or installed_environment.get("GUIYI_RUNTIME_COMMIT") != self.commit):
                 raise ValueError
-            output = _read_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{label}"], root=self.root)
+            output = _read_launchd_service(label, root=self.root)
+            if name == "after-market" and self.after_market_state == "stopped":
+                if output is not None:
+                    raise ValueError
+                continue
+            if output is None:
+                raise ValueError
             environments = _environments(output)
             for environment in environments:
                 validate_environment(environment, name)
@@ -572,22 +631,18 @@ class RuntimeDataBinding:
             raise ValueError
 
     def check(self, manager, session, redis, store, now) -> None:
-        verify_closeout_identity(self.root, self.commit)
+        self._verify_runtime_identity()
         self._verify_pinned_status()
         if self._read_sources() != self._sources or self._read_processes() != self._processes:
             raise ValueError
         assert_dependencies(self.settings, root=self.root, manager=manager, session=session,
                             redis=redis, products=self.products)
-        live = store.heartbeat()
-        raw = redis.get("alert:heartbeat")
-        observed = now()
-        _verify_heartbeat(live, now=observed, root=self.root, commit=self.commit)
-        _verify_heartbeat(json.loads(raw) if raw is not None else None, now=observed, root=self.root, commit=self.commit)
+        self._check_heartbeats(redis, store, now)
         self._verify_pinned_status()
 
     def check_catalog(self, catalog, session, redis, store, now) -> None:
         """Recheck Runtime, heartbeats, and provider-free Catalog dependencies."""
-        verify_closeout_identity(self.root, self.commit)
+        self._verify_runtime_identity()
         self._verify_pinned_status()
         if self._read_sources() != self._sources or self._read_processes() != self._processes:
             raise ValueError
@@ -599,13 +654,5 @@ class RuntimeDataBinding:
             redis=redis,
             products=self.products,
         )
-        observed = now()
-        _verify_heartbeat(store.heartbeat(), now=observed, root=self.root, commit=self.commit)
-        raw = redis.get("alert:heartbeat")
-        _verify_heartbeat(
-            json.loads(raw) if raw is not None else None,
-            now=observed,
-            root=self.root,
-            commit=self.commit,
-        )
+        self._check_heartbeats(redis, store, now)
         self._verify_pinned_status()

@@ -393,7 +393,7 @@ def test_failed_second_market_label_boots_out_every_touched_service(
         home,
         fake_bin,
         "--confirm-market-runtime",
-        extra_env={"GUIYI_FAKE_FAIL_AFTER_MARKET_ENABLE": "1"},
+        extra_env={"GUIYI_FAKE_FAIL_LIVE_ENABLE": "1"},
         check=False,
     )
 
@@ -403,13 +403,13 @@ def test_failed_second_market_label_boots_out_every_touched_service(
     failed_enable = next(
         index
         for index, call in enumerate(recorded)
-        if call.startswith("enable ") and "com.guiyi.quant-after-market" in call
+        if call.startswith("enable ") and "com.guiyi.quant-live" in call
     )
     cleanup = recorded[failed_enable + 1 :]
     cleanup_bootouts = [call for call in cleanup if call.startswith("bootout ")]
     assert [call.rsplit("/", 1)[-1] for call in cleanup_bootouts] == [
-        "com.guiyi.quant-after-market",
         "com.guiyi.quant-live",
+        "com.guiyi.quant-after-market",
     ]
 
 
@@ -497,6 +497,9 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
         'fi\n'
         'if [ "${1:-}" = "enable" ] && [ "${GUIYI_FAKE_FAIL_AFTER_MARKET_ENABLE:-0}" = "1" ]; then\n'
         '  case "$*" in *com.guiyi.quant-after-market*) exit 8 ;; esac\n'
+        'fi\n'
+        'if [ "${1:-}" = "enable" ] && [ "${GUIYI_FAKE_FAIL_LIVE_ENABLE:-0}" = "1" ]; then\n'
+        '  case "$*" in *com.guiyi.quant-live*) exit 8 ;; esac\n'
         'fi\n'
         'case "${1:-}" in bootstrap|enable|kickstart) exit 0 ;; print) echo "Could not find service" >&2; exit 1 ;; bootout) exit 1 ;; *) exit 2 ;; esac\n',
         encoding="utf-8",

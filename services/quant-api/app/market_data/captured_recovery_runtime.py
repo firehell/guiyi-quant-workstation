@@ -37,18 +37,54 @@ def runtime_heartbeat_identity() -> dict[str, object]:
 
 
 def _read_command(arguments: list[str], *, root: Path) -> str:
+    result = _command_result(arguments, root=root)
+    if result.returncode != 0:
+        _reject("IDENTITY_UNAVAILABLE")
+    return result.stdout.strip()
+
+
+def _command_result(
+    arguments: list[str], *, root: Path, capture_stderr: bool = False
+) -> subprocess.CompletedProcess[str]:
     try:
         result = subprocess.run(
             arguments, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, timeout=5, check=False,
+            stderr=subprocess.PIPE if capture_stderr else subprocess.DEVNULL,
+            text=True, timeout=5, check=False,
             env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1",
                  "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_OPTIONAL_LOCKS": "0"},
         )
     except (OSError, subprocess.SubprocessError, UnicodeError):
         _reject("IDENTITY_UNAVAILABLE")
-    if result.returncode != 0 or not isinstance(result.stdout, str):
+    if not isinstance(result.stdout, str) or (
+        capture_stderr and not isinstance(result.stderr, str)
+    ):
         _reject("IDENTITY_UNAVAILABLE")
-    return result.stdout.strip()
+    return result
+
+
+def _read_launchd_service(label: str, *, root: Path) -> str | None:
+    """Return one loaded definition, or None only for an explicit label absence."""
+    if re.fullmatch(r"com\.guiyi\.quant-(?:api|web|live|alert|after-market)", label) is None:
+        _reject("IDENTITY_UNAVAILABLE")
+    domain = f"gui/{os.getuid()}"
+    _read_command(["/bin/launchctl", "print", domain], root=root)
+    result = _command_result(
+        ["/bin/launchctl", "print", f"{domain}/{label}"],
+        root=root,
+        capture_stderr=True,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    unavailable = "\n".join(
+        value.strip() for value in (result.stdout, result.stderr) if value.strip()
+    )
+    if re.fullmatch(
+        r'(?:Could not find service|Could not find service ".+" in domain for user gui: [0-9]+)',
+        unavailable,
+    ):
+        return None
+    _reject("IDENTITY_UNAVAILABLE")
 
 
 def _verify_markers(root: Path) -> None:

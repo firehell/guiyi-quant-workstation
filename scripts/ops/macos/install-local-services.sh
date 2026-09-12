@@ -54,7 +54,10 @@ if [[ ! "$RUNTIME_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
-market_runtime_labels=(com.guiyi.quant-live com.guiyi.quant-after-market)
+# Establish the new status writer before starting the new live reader.  If a
+# later stage fails, cleanup runs in reverse and leaves no candidate service
+# loaded; recovery then follows the explicit compatible-root contract.
+market_runtime_labels=(com.guiyi.quant-after-market com.guiyi.quant-live)
 alert_runtime_labels=(com.guiyi.quant-alert)
 weekly_audit_labels=(com.guiyi.quant-weekly-audit)
 render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}" "${weekly_audit_labels[@]}")
@@ -296,6 +299,9 @@ if ! load_selected_services; then
   if ! restore_runtime_activation_marker; then
     printf '[install-local-services] ERROR: activation marker rollback failed\n' >&2
     exit 1
+  fi
+  if [[ "$MODE" == "--confirm-market-runtime" ]]; then
+    printf '[install-local-services] ERROR: partial market install is blocked; candidate services were stopped, but installed artifacts are not transactionally rolled back; explicit compatible-root recovery is required\n' >&2
   fi
   exit 1
 fi
