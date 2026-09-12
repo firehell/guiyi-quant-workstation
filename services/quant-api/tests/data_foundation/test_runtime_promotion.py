@@ -793,6 +793,112 @@ def test_session_authority_dependency_failure_blocks_without_reading_snapshot() 
     assert decision.reason == PROMOTION_STATE_UNAVAILABLE
 
 
+def test_preflight_uses_python_status_authority_and_rechecks_before_decision(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+
+    class Resolver:
+        def resolve(self, symbol: str, _now: datetime) -> ProductMarketPhase:
+            events.append(f"phase:{symbol}")
+            return _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+
+    class Authority:
+        path = tmp_path / "runtime/.run/after-market-status.json"
+        mode = "loaded"
+
+        def recheck(self) -> None:
+            events.append("authority:recheck")
+
+    decision = run_market_runtime_promotion_preflight(
+        session_factory=lambda: nullcontext(object()),
+        phase_resolver_factory=lambda _session: Resolver(),
+        live_store_factory=lambda: object(),
+        products_loader=lambda: PRODUCTS,
+        status_authority_factory=lambda: Authority(),
+        now=lambda: NOW,
+    )
+
+    assert decision.status == "passed"
+    assert decision.reason == "non_trading_interval"
+    assert events == ["phase:j", "phase:jm", "authority:recheck"]
+
+
+def test_preflight_fails_closed_when_python_status_authority_drifts(
+    tmp_path: Path,
+) -> None:
+    class Resolver:
+        def resolve(self, symbol: str, _now: datetime) -> ProductMarketPhase:
+            return _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+
+    class Authority:
+        path = tmp_path / "runtime/.run/after-market-status.json"
+        mode = "loaded"
+
+        def recheck(self) -> None:
+            raise ValueError("pinned stopped-terminal identity changed")
+
+    decision = run_market_runtime_promotion_preflight(
+        session_factory=lambda: nullcontext(object()),
+        phase_resolver_factory=lambda _session: Resolver(),
+        live_store_factory=lambda: object(),
+        products_loader=lambda: PRODUCTS,
+        status_authority_factory=lambda: Authority(),
+        now=lambda: NOW,
+    )
+
+    assert decision.payload() == {
+        "schema_version": 1,
+        "command": "runtime.market-promotion-preflight",
+        "status": "blocked",
+        "reason": PROMOTION_STATE_UNAVAILABLE,
+        "trading_day": None,
+        "operational_count": 0,
+        "snapshot_count": 0,
+    }
+
+
+def test_first_install_authority_never_consumes_candidate_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from app.market_data import runtime_promotion as module
+
+    residual = tmp_path / "candidate/.run/after-market-status.json"
+    residual.parent.mkdir(parents=True)
+    residual.write_text(json.dumps(_passed_status()), encoding="utf-8")
+
+    class Resolver:
+        def resolve(self, symbol: str, _now: datetime) -> ProductMarketPhase:
+            return _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+
+    class Authority:
+        path = residual
+        mode = "first_install"
+
+        def recheck(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        module,
+        "_load_after_market_status",
+        lambda path: (_ for _ in ()).throw(
+            AssertionError("first install must not read candidate status")
+        ),
+    )
+
+    decision = run_market_runtime_promotion_preflight(
+        session_factory=lambda: nullcontext(object()),
+        phase_resolver_factory=lambda _session: Resolver(),
+        live_store_factory=lambda: object(),
+        products_loader=lambda: PRODUCTS,
+        status_authority_factory=lambda: Authority(),
+        now=lambda: NOW,
+    )
+
+    assert decision.status == "passed"
+    assert decision.reason == "non_trading_interval"
+
+
 def test_phase_disagreement_or_dependency_error_blocks_state_unavailable() -> None:
     disagreement = evaluate_market_runtime_promotion(
         products=PRODUCTS,
@@ -825,3 +931,27 @@ def test_phase_disagreement_or_dependency_error_blocks_state_unavailable() -> No
     assert disagreement.reason == PROMOTION_STATE_UNAVAILABLE
     assert dependency_failure.reason == PROMOTION_STATE_UNAVAILABLE
     assert missing_closed_day.reason == PROMOTION_STATE_UNAVAILABLE
+
+
+@pytest.mark.parametrize("window,expected", [
+    ("after_start", PROMOTION_LIVE_SNAPSHOT_REQUIRED),
+    ("snapshot", "snapshot_ready"), ("before_start", "before_first_session"),
+    ("non_trading", "non_trading_interval"), ("new_natural_success", "after_market_complete"),
+])
+def test_v5_interruption_never_relaxes_promotion_windows(window, expected):
+    status = _passed_status()
+    status.update(schema_version=5, current_run=None,
+        last_interruption={"trading_day": DAY.isoformat(), "started_at": "2026-09-03T13:00:00+08:00",
+            "closed_at": "2026-09-03T14:00:00+08:00", "snapshot_checked_at": "2026-09-03T14:00:00+08:00",
+            "snapshot_classification": "not_verified_missing", "reconciliation_verified": False})
+    if window != "new_natural_success":
+        status["last_run"].update(status="interrupted", attempts=None, error_code="AFTER_MARKET_INTERRUPTED",
+            started_at="2026-09-03T13:00:00+08:00", finished_at="2026-09-03T14:00:00+08:00")
+    phases = ({symbol: _phase(symbol, MarketPhase.CLOSED, trading_day=None) for symbol in PRODUCTS}
+        if window == "non_trading" else _phases())
+    decision = evaluate_market_runtime_promotion(products=PRODUCTS, phases=phases, now=NOW,
+        snapshot={"j": "J2601", "jm": "JM2601"} if window == "snapshot" else None,
+        after_market_status=status,
+        first_session_starts=_first_session_starts(NOW + timedelta(hours=1)) if window == "before_start" else _first_session_starts())
+    assert decision.reason == expected
+    assert decision.status == ("blocked" if window == "after_start" else "passed")

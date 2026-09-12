@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from contextlib import contextmanager
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Callable, ContextManager, cast
+from typing import Callable, ContextManager, Mapping, cast
 
 from sqlalchemy.orm import Session
 
@@ -55,6 +56,74 @@ _PRODUCT_STARTS = PROJECT_ROOT / "data/universe/product_window_starts.csv"
 _HISTORY_FLOOR = PROJECT_ROOT / "data/universe/active_history_floor.txt"
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeBoundHistoricalMaintenance:
+    """Pinned Runtime dependencies for one explicit historical maintenance command."""
+
+    products: tuple[str, ...]
+    manager: HistoricalDataManager
+    verify_identity: Callable[[], None]
+    invalidate_projection: Callable[[], None]
+
+
+@contextmanager
+def open_runtime_bound_historical_maintenance(
+    root: Path,
+    commit: str,
+    status_sha256: str,
+) -> Iterator[RuntimeBoundHistoricalMaintenance]:
+    """Compose DB, Redis, Canonical and universe only from one validated Runtime."""
+
+    from redis import Redis
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.db.url import normalize_database_url
+    from app.market_data.closeout_binding import RuntimeDataBinding, _redis_url
+    from app.market_data.live_market import RedisLiveStore
+    from app.market_data.session_clock import SHANGHAI
+
+    binding = RuntimeDataBinding(root, commit, status_sha256)
+    engine = create_engine(normalize_database_url(binding.settings["DATABASE_URL"]))
+    redis = None
+    try:
+        redis = Redis.from_url(_redis_url(binding.settings))
+        # redis-py accepts a broader value/key surface than the narrow Runtime port.
+        store = RedisLiveStore(cast(RedisClient, redis))
+        with Session(engine, autoflush=False) as session:
+            manager = build_historical_data_manager(
+                session,
+                data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]),
+                config_root=binding.root,
+                provider_settings=binding.settings,
+            )
+
+            def verify_identity() -> None:
+                binding.check(
+                    manager,
+                    session,
+                    redis,
+                    store,
+                    lambda: datetime.now(SHANGHAI),
+                )
+
+            projection = MarketHomeProjectionStore(
+                market_home_projection_path(manager.catalog.canonical_root)
+            )
+            yield RuntimeBoundHistoricalMaintenance(
+                products=binding.products,
+                manager=manager,
+                verify_identity=verify_identity,
+                invalidate_projection=projection.invalidate,
+            )
+    finally:
+        try:
+            if redis is not None:
+                redis.close()
+        finally:
+            engine.dispose()
+
+
 def canonical_root() -> Path:
     """Resolve the single Canonical Parquet root."""
 
@@ -63,8 +132,13 @@ def canonical_root() -> Path:
     return root.resolve()
 
 
-def build_historical_data_manager(session: Session, *, data_root: Path | None = None,
-                                  config_root: Path | None = None) -> HistoricalDataManager:
+def build_historical_data_manager(
+    session: Session,
+    *,
+    data_root: Path | None = None,
+    config_root: Path | None = None,
+    provider_settings: Mapping[str, str] | None = None,
+) -> HistoricalDataManager:
     """Compose the Historical maintenance boundary without starting a run."""
 
     from app.market_data.coverage_source import DatabaseCoverageSource
@@ -72,7 +146,10 @@ def build_historical_data_manager(session: Session, *, data_root: Path | None = 
 
     root = data_root if data_root is not None else canonical_root()
     catalog = MarketCatalog(session, root)
-    adapter = RQDataMarketAdapter(session=session)
+    adapter = RQDataMarketAdapter(
+        session=session,
+        provider_settings=provider_settings,
+    )
     coverage = DatabaseCoverageSource(
         session,
         config_root / "data/universe/product_window_starts.csv" if config_root is not None else _PRODUCT_STARTS,

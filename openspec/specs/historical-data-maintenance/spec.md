@@ -31,30 +31,73 @@ The close-interrupted-after-market command MUST default to read-only and bind th
 commit and status-byte SHA-256. Five installed/loaded service identities, clean detached annotated release,
 enabled Live/Alert recovery guard and an idle after-market process MUST be verified. The existing OS guard
 and Catalog maintenance lease MUST be acquired nonblocking before a fresh read-only transaction. Missing
-guard files MUST NOT be created. Only a previous natural day's valid current_run may be closed.
+guard files MUST NOT be created. A same-day or previous-day valid current_run MAY be closed only when its
+start is not in the future and its scheduled_date matches the original start date.
 
 All operational Catalog pointers MUST pass the shared physical reader, including pointers outside the audit
 window. Existing audit MUST verify metadata, rank1 and expected windows through the interrupted date. Only
 proven missing valid subsets may remain pending; extra endpoints, other findings or unknown results MUST block.
-The original day's immutable Live snapshot MUST match rank1; absence MUST block without synthesis or fallback.
+The original day's Live snapshot MUST be classified as verified_match only when complete, valid and matching
+rank1. A successful read returning None MAY permit administrative interrupted closeout with
+not_verified_missing and reconciliation not verified. Empty/partial/extra/invalid/mismatching snapshots and
+read failures MUST block, never become missing. No cause of absence may be inferred and no snapshot synthesized.
+The snapshot MUST be read during audit and again before replacement; changed classification or content MUST
+block without retry. The after-market guard does not freeze ordinary Live initialization; recorded evidence
+MUST describe its observation time, not claim snapshot immutability throughout the closeout window.
 
 Explicit apply MUST recheck identity and status bytes under both locks and atomically replace only the original
-status file via its pinned directory descriptor. Schema v4 MUST express interrupted, not passed, retain the old
+status file via its pinned directory descriptor. New closeout schema v5 MUST express interrupted, not passed, retain the old
 successful day, and preserve unknown legacy attempts as null. It MUST NOT send notifications, publish an update
 event, clean Live, call a provider, write market data or retry. A post-replacement uncertainty MUST report unknown
-write outcome and bounded readback, never claim unchanged state. Readers MUST accept v1-v4, health MUST remain
-degraded/interrupted, and promotion MUST NOT use this terminal as after_market_complete.
+write outcome and bounded readback, never claim unchanged state. Readers MUST accept v1-v5; v5 MUST persist
+the original snapshot day, observation time, classification and reconciliation verification status. Public
+API, health and Web MUST preserve missing evidence. Existing v1-v4 semantics MUST remain unchanged and
+old readers that cannot parse v5 MUST degrade. A subsequent natural run MUST preserve the interrupted
+evidence when carrying its summary, never inherit it as success. Health MUST remain degraded/interrupted;
+natural reconciliation and promotion predicates MUST remain unchanged, and this terminal MUST NOT count
+as after_market_complete.
+
+Compatible recovery, Runtime-bound daily/current-day maintenance, and deployment promotion preflight MUST
+share one Python authority for this stopped terminal. The stopped branch MUST require exact schema-v5
+interrupted bytes, the unchanged installed after-market plist/root/commit/config, a readable launchd domain,
+the writer label explicitly absent, exact identities for the other four required services, and fresh Live and
+Alert heartbeats proving the recovery guard. It MUST pin and recheck status, plist, root, process, config and
+heartbeat facts before use; permission/error/unreadable results are not absence, and writer reappearance or
+any drift MUST fail closed. Normal after-market closeout MUST continue to require all five services loaded,
+with after-market idle. A stopped terminal MUST NOT by itself satisfy any promotion predicate.
+
+The deployment installer MUST also obtain every launchd loaded/absent classification from that Python
+authority. Shell MUST NOT parse `launchctl` output or reproduce absence policy; only the authority may accept
+exit 113 with the exact requested label/user absence shape. Any other exit or output is unknown and MUST fail
+closed before install, cleanup, or restore can claim a state.
+
+#### Scenario: Stopped terminal is used by a compatible read-only entry point
+- **WHEN** the exact v5 terminal, installed writer identity, explicit launchd absence, other four services and both heartbeats remain pinned and valid
+- **THEN** the entry point may continue to its own independent read-only or dry-run checks without treating the interruption as completion
+
+#### Scenario: Stopped authority becomes ambiguous
+- **WHEN** the writer reappears, a pinned fact changes, or launchd returns anything other than an exact loaded definition or exact not-found result
+- **THEN** the entry point fails closed before provider access, data publication or promotion
 
 #### Scenario: Legitimately partial interrupted maintenance
 - **WHEN** committed pointers and metadata are valid but expected partitions remain missing
 - **THEN** closeout may record interrupted and pending findings without claiming the update or weekly audit passed
+
+#### Scenario: Same-day stopped run without original Live evidence
+- **WHEN** the run is verified idle and all committed-data, identity, guard and CAS checks pass, but the original snapshot read returns None
+- **THEN** closeout may record interrupted with persistent not_verified_missing evidence, without declaring reconciliation or promotion ready
+
+#### Scenario: Snapshot changes during closeout
+- **WHEN** the original snapshot changes between audit-time and pre-replacement reads
+- **THEN** closeout blocks and preserves the original status bytes without retry
 
 #### Scenario: Filesystem sync fails after replacement
 - **WHEN** replacement may have occurred but durability cannot be established
 - **THEN** report AFTER_MARKET_CLOSEOUT_OUTCOME_UNKNOWN and status_written null, perform no retry or rollback
 
 ### Requirement: 公开维护面
-系统 SHALL 公开 `update`、`refresh`、`audit` 与 `contract-warmup`。`audit` SHALL 接受
+系统 SHALL 公开 `update`、`refresh`、`audit`、`contract-warmup`、显式 `daily-recovery` 与
+`current-day-metadata-recovery`。`audit` SHALL 接受
 `(--symbol X | --universe {active,operational})` 的互斥选择器。无 `--apply` 的 update/refresh MUST 只计划，
 不得写 PostgreSQL/Parquet；audit MUST 只读。
 系统还 SHALL 公开一次性 `session-anchor-repair` 三阶段 seam：`plan` 只读输出精确 session、Dataset、
@@ -66,6 +109,58 @@ Catalog、执行精确 0045 并清理 publish 执行时由 operational phase aut
 #### Scenario: 已退出动作
 - **WHEN** 用户调用任何已退出的维护操作
 - **THEN** CLI 不暴露该入口
+
+### Requirement: Runtime-bound daily recovery is an exact hash-locked seam
+`guiyi data daily-recovery` SHALL require an exact Runtime root, 40-character lowercase commit,
+64-character lowercase after-market status hash and explicit `through`. The product scope MUST come only from the
+validated Runtime operational universe. The command MUST construct
+`UpdateRequest(products=runtime_products, since=None, through=through, apply=phase,
+sync_current_day_metadata=False, mode="daily")`; it MUST NOT accept an operator product list, retry, resume, widen to
+full maintenance, bootstrap historical metadata, send a notification or synchronize current-day metadata.
+
+Without `--apply`, the command MUST validate the Runtime binding, perform only the existing daily read plan, construct
+no provider client/request and mutate no DB, Canonical, status, projection or Redis fact. It SHALL return the canonical
+target windows and `plan_sha256 = SHA256(UTF8(json.dumps(target_windows, sort_keys=True,
+separators=(",", ":"), ensure_ascii=False)))`. Each bounded target window MUST include dataset/year/month, inspectable
+expected and missing endpoints/counts, plus `expected_bar_ends_sha256` and `missing_bar_ends_sha256`. Each per-set hash
+MUST cover the complete sorted UTC ISO timestamp sequence using the same compact UTF-8 JSON encoding, so any internal
+expected or missing timestamp drift changes the outer plan hash even when endpoints and counts remain equal. A dry-run
+MUST reject `--expected-plan-sha256`. This identity enrichment is exclusive to `daily-recovery`; ordinary `update`
+and `refresh` target payloads MUST retain the existing dataset/year/month/window-start/window-end/missing-count schema
+and MUST NOT expose recovery identity fields.
+
+`--apply` MUST require the exact lowercase dry-run `--expected-plan-sha256`. It MUST acquire the shared maintenance
+lease before revalidating Runtime identity, pinned status and both Live/Alert heartbeats and recomputing the complete
+dry-run target windows. A lock miss or any identity, status, dependency, heartbeat, target-window or hash drift MUST
+block before Market Home projection invalidation, provider access and Catalog/Canonical writes. Only after those
+checks may it invalidate the existing Market Home projection and execute exactly the same immutable target plan that
+produced the checked hash, without a second dynamic plan. The provider configuration MUST be parsed from the pinned
+target Runtime configuration, matched against the composed lazy adapter during both binding checks, and used to create
+the provider client only after those checks. It MUST NOT fall back to the executing checkout or ambient provider
+configuration. The shared `HistoricalDataManager` performs exactly one attempt; provider failure, partial completion
+and commit-unknown remain literal and MUST NOT trigger a retry.
+
+The command SHALL emit credential-free bounded NDJSON progress to stderr using the shared maintenance event fields,
+including `started`, `completed`, `failed` and `interrupted`; final JSON remains the only stdout payload. Progress is
+observational and MUST NOT create a second persisted authority or alter maintenance scope.
+
+`current-day-metadata-recovery` 的 capture/plan/apply 负责当前/下一交易日 metadata 的 source/write
+解耦；它不属于 historical Bar update，不得调用 full/daily maintenance、写 Canonical、失效 projection、
+通知、retry 或改变 after-market status。精确 snapshot/diff、既有事实冲突、lease 内 Runtime/Catalog CAS、
+provider-free apply 与 commit-unknown 合同由 `data-foundation-metadata` canonical 定义。
+
+#### Scenario: Runtime or target identity drifts before apply
+- **WHEN** any pinned Runtime fact or recomputed target-window hash differs while the maintenance lease is held
+- **THEN** daily recovery fails closed before projection invalidation, provider access and data publication
+
+#### Scenario: An internal bar end drifts without changing target endpoints or count
+- **WHEN** a recomputed target has different expected or missing bar ends but the same dataset, month, first/last bar and count
+- **THEN** its per-set identity and outer plan hash differ, and apply stops before projection invalidation or provider/write work
+
+#### Scenario: One source attempt partially commits
+- **WHEN** one provider target fails after earlier targets committed through the formal publication path
+- **THEN** the failure is not retried, completed targets remain readable through Catalog/MarketDataService and the
+  final result reports the literal failed/partial counts
 
 #### Scenario: session-anchor plan
 - **WHEN** operator 执行 `session-anchor-repair --phase plan`
@@ -253,12 +348,22 @@ as success. Any unhandled after-market execution exception at the CLI or supervi
 ### Requirement: Weekly operational full-history audit remains optional and read-only
 
 The weekly adapter MUST select the exact ordered `operational_products.txt` scope with identity
-`operational_full_history`, atomically persist running before acquiring the shared maintenance lock, and open a
-fresh read-only transaction only after the nonblocking lock succeeds. Busy MUST become `skipped_busy`; no status
+`operational_full_history`, acquire a nonblocking local writer guard for the status path, then atomically persist
+running before acquiring the shared maintenance lock, and open a fresh read-only transaction only after that lock
+succeeds. The writer guard MUST use a stable adjacent `.lock` inode, never the atomically replaced status inode;
+it MUST NOT be unlinked or replaced and MUST remain held through all status writes and maintenance lease cleanup.
+A competitor without status ownership MUST return `skipped_busy` only to its caller, without changing the owner's
+file or acquiring the maintenance lock. An exclusive attempt encountering a busy maintenance lock MUST persist
+its own `skipped_busy`; a maintenance-lock exception MUST persist sanitized `failed`, replacing any previous success.
+Unsafe or failed writer-guard setup MUST reject startup before establishing a run, without unlocked status writes
+or claiming that this attempt was persisted. Only guard acquisition contention MAY be classified as guard busy;
+audit or status-write exceptions MUST NOT be misclassified. Process interruption MUST retain the unfinished run,
+and process exit MUST release the writer guard. No status
 MAY cause wait, retry, provider access, metadata/data write, repair or notification. The audit MUST cover the
 existing full-history Calendar/Session, rank1, expected partition, Catalog pointer and physical integrity checks.
 
-Its latest-result file MUST bind exact Runtime root/40-hex commit, scope/products, timestamps, progress, findings,
+Its latest-result file represents the latest run established by a status owner, not every invocation. It MUST bind
+exact Runtime root/40-hex commit, scope/products, timestamps, progress, findings,
 `provider_requests=0` and `data_writes=0`. Health MUST map absence to `not_run`, unchanged running older than two
 hours to `stuck`, terminal older than eight days to `stale`, and malformed identity/scope/counts/chronology/counters
 to `invalid`. `passed` MUST require a resolved audited `through`, all products complete and zero findings. This
@@ -273,7 +378,17 @@ MUST NOT imply historical health, current freshness, release acceptance or Runti
 #### Scenario: Weekly audit conflicts with maintenance
 
 - **WHEN** the shared maintenance lock is busy
-- **THEN** the audit records `skipped_busy`, performs no database audit/provider/data write/notification, and exits without retry
+- **THEN** an audit holding status ownership records its own `skipped_busy`, performs no database audit/provider/data write/notification, and exits without retry
+
+#### Scenario: Concurrent weekly invocation cannot overwrite the owner
+
+- **WHEN** A owns the status path and B starts before A's maintenance acquisition, during audit, or during terminal publication/lease cleanup
+- **THEN** B returns `skipped_busy` without changing A's status bytes, timestamps or progress, and later health reads A's success, findings, failure or unfinished run
+
+#### Scenario: New exclusive attempt cannot reuse old success on lock failure
+
+- **WHEN** the previous run passed and a new status owner encounters a maintenance-lock exception
+- **THEN** the latest file and health report this attempt as failed with no previous cutoff or completed count, and no audit/provider/data work occurs
 
 ### Requirement: quota 中止和续传
 明确的 provider quota/limit 异常 SHALL 映射为 `PROVIDER_QUOTA_EXHAUSTED`；该轮 MUST 立即停止后续

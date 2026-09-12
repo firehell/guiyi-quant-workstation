@@ -186,3 +186,31 @@ test('latest-resource generations retain success on current failure and ignore s
   assert.equal(resource.data.value, 'new')
   assert.equal(resource.failed.value, true)
 })
+
+for (const classification of ['not_verified_missing', 'verified_match']) {
+  test(`v5 interruption ${classification} remains visible during later runs`, async () => {
+    const { runtimeStatusPresentation } = await import('../src/utils/runtimePresentation.ts')
+    const payload = runtimeHealth()
+    Object.assign(payload.components.after_market, {
+      status: 'degraded', run_state: 'interrupted', current_run: null,
+      last_run: { status: 'interrupted', attempts: null, finished_at: '2026-09-10T00:00:00Z' },
+      last_interruption: {
+        trading_day: '2026-09-09', started_at: '2026-09-09T18:05:00+08:00',
+        closed_at: '2026-09-10T08:00:00+08:00', snapshot_checked_at: '2026-09-10T08:00:00+08:00',
+        snapshot_classification: classification, reconciliation_verified: classification === 'verified_match',
+      },
+    })
+    for (const later of [false, true]) {
+      if (later) Object.assign(payload.components.after_market, {
+        status: 'ok', run_state: 'completed',
+        last_run: { status: 'passed', attempts: 1, finished_at: '2026-09-11T00:00:00Z' },
+      })
+      const item = runtimeStatusPresentation(payload).find(item => item.key === 'after_market')!
+      assert.match(item.detail, /2026-09-09.*中断/)
+      assert.match(item.detail, classification === 'not_verified_missing'
+        ? /原日 Live 快照缺失.*对账未核验/ : /核验时点.*Live 对账匹配/)
+      assert.doesNotMatch(item.detail, /从未生成|TTL|已修复|全窗口/)
+      if (later) assert.equal(item.state, '已完成')
+    }
+  })
+}

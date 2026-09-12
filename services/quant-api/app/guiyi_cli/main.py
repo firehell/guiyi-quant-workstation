@@ -155,6 +155,9 @@ def main(
     subing_readiness_builder=build_subing_readiness,
     newow_readiness_builder=None,
     captured_recovery_runner=run_captured_recovery,
+    daily_recovery_runner=None,
+    current_day_metadata_recovery_runner=None,
+    compatible_recovery_proof_runner=None,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
@@ -180,15 +183,40 @@ def main(
 
     try:
         if args.domain == "data":
-            payload = _run_data(
-                args,
-                session_factory,
-                manager_factory,
-                after_market_factory,
-                stderr,
-                session_anchor_repair_factory,
-                newow_readiness_builder,
-            )
+            if args.data_command == "daily-recovery":
+                if daily_recovery_runner is None:
+                    from app.guiyi_cli.daily_recovery import run_daily_recovery
+
+                    daily_recovery_runner = run_daily_recovery
+                payload = daily_recovery_runner(args, progress_stream=stderr)
+            elif args.data_command == "current-day-metadata-recovery":
+                if current_day_metadata_recovery_runner is None:
+                    from app.guiyi_cli.current_day_metadata_recovery import (
+                        run_current_day_metadata_recovery,
+                    )
+
+                    current_day_metadata_recovery_runner = (
+                        run_current_day_metadata_recovery
+                    )
+                payload = current_day_metadata_recovery_runner(args)
+            elif args.data_command == "compatible-recovery-proof":
+                if compatible_recovery_proof_runner is None:
+                    from app.guiyi_cli.compatible_recovery import (
+                        run_compatible_recovery_proof,
+                    )
+
+                    compatible_recovery_proof_runner = run_compatible_recovery_proof
+                payload = compatible_recovery_proof_runner(args)
+            else:
+                payload = _run_data(
+                    args,
+                    session_factory,
+                    manager_factory,
+                    after_market_factory,
+                    stderr,
+                    session_anchor_repair_factory,
+                    newow_readiness_builder,
+                )
         elif args.runtime_command == "recover-live-captured":
             payload = captured_recovery_runner(args, session_factory=session_factory)
         elif args.runtime_command == "subing-readiness":
@@ -286,6 +314,8 @@ def main(
                 "acknowledged",
                 "audited",
                 "closed_interrupted",
+                "captured",
+                "applied",
             }
         )
         else 1

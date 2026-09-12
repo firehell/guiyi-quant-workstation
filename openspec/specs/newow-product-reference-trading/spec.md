@@ -580,6 +580,11 @@ API、clean-room 与归一期货适配 SHALL 分开标识；页面 API 与前端
 
 ### Requirement: Snapshot reuse and bounded resources never replace validation
 
+支持的部署拓扑 SHALL 在同一 API 入口使用单个应用进程，统一持有 snapshot cache、重型门禁与在途去重。
+正式启动入口 MUST 显式固定一个 worker，环境并发默认值不得扩大该数量；多 worker 或多个 API 副本不在
+当前支持范围。单进程内多连接请求 MUST 在共同事实兼容时接受同一有效 token，不得依靠连接粘滞。
+进程重启、淘汰或过期后的 token MUST 按既有失效语义返回分类 409，不得因重算相同事实接受未知 token。
+
 应用层 SHALL 分开查询身份、输入事实身份和实际读取时间。若无可靠全局 revision，
 `data_revision_identity` MUST 为 null；`input_content_sha256` 仅为真实输入指纹，不是 Canonical revision 或
 历史 PIT 快照。跨 section 拼接只能在共同依赖逐字段一致且相关来源版本兼容时发生。
@@ -603,6 +608,18 @@ summary 可在同 reference 指纹下共享，页结果不得跨 cursor/limit �
 排队取消必须移除 waiter 并释放名额，运行阶段在安全边界释放 permit，不新增常驻 worker。取消 MUST
 传至分页和安全计算边界；共享计算以相同 entry key+section result key 去重且只有最后消费者取消才停止。对不可抢占原语不得承诺
 浏览器 abort 即瞬时停止，也不得跨线程共享不安全数据库 Session。
+
+#### Scenario: Independent connections share one snapshot owner
+
+- **GIVEN** 单 API 应用进程已签发一个有效 token，共同输入事实未变
+- **WHEN** 多个独立连接交错请求 chart、reference、auxiliary 与分页或历史定位
+- **THEN** 兼容请求共用该 token，各自保持窗口、cursor 和输入身份，不发生进程归属引起的 409
+
+#### Scenario: Restart invalidates the previous process token
+
+- **GIVEN** API 已重启且新进程计算了与旧进程相同的事实
+- **WHEN** 请求携带旧进程签发的 token
+- **THEN** 返回既有分类 409；客户端清除关联旧状态并按既有最多一次规则重建，不增加重试预算
 
 #### Scenario: A data revision invalidates a cursor
 

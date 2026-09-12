@@ -104,6 +104,53 @@ publishing 只在单分区 Catalog commit 后计数；这些数字不是去重�
 阶段可嵌套，`stage_durations` 不得相加推导本轮墙钟时间。observer 失败停止本轮，不能当作
 单族 provider 故障继续。无 observer 的既有调用保持兼容，last-success/status 文件不是进度权威。
 
+受审的单次日常恢复使用专用入口：
+
+```text
+guiyi data daily-recovery \
+  --runtime-root ROOT \
+  --runtime-commit COMMIT \
+  --expected-status-sha256 STATUS_SHA256 \
+  --through YYYY-MM-DD \
+  [--apply --expected-plan-sha256 PLAN_SHA256]
+```
+
+它不接受 `--symbol/--universe/--since`，品种只取已验证 Runtime binding 的 operational P60；固定构造
+`since=None`、`mode=daily`、`sync_current_day_metadata=false`。默认 dry-run 不初始化 provider client，
+不发 provider 请求，也不写 DB、Canonical、status、projection 或 Redis；返回 canonical target windows，
+每个窗口除 dataset/year/month 和 expected/missing 起止及数量外，还携带完整排序 UTC ISO 时间戳序列的
+`expected_bar_ends_sha256`、`missing_bar_ends_sha256`。两个内层 hash 与外层 target-windows hash 都使用紧凑、
+键排序、UTF-8、`ensure_ascii=false` JSON；因此即使端点和数量相同，任一内部 expected/missing 时间戳漂移也会
+改变 plan hash，同时每个公开 target 仍保持常数大小。apply 必须提供同一 lowercase plan hash，并在
+maintenance lease 内重新核验 root/commit/status、依赖、Live/Alert heartbeat 与完整窗口 hash；漂移或锁冲突均
+在 projection invalidation 和 provider/写入前阻断。校验 hash 的冻结目标对象
+就是执行器消费的唯一计划，不能在失效 projection 后二次动态规划。RQData 配置只从已 pin 的目标 Runtime
+`project.env` 解析，并在锁内两次 binding check 中核对已组装的 lazy adapter；通过后才可创建 provider client，
+不得回退到执行 checkout 或 ambient provider 配置。随后只运行一次既有 daily manager 路径，不同步当天
+metadata、不回退 full、不重试、不续跑、不通知。进度仅以共享事件字段写 stderr NDJSON；stdout 保留唯一
+最终 JSON，任何已提交、失败、partial 或 commit-unknown 结果保持原义。
+
+上述完整时间戳 identity 只属于 `daily-recovery` 的 CAS/result；普通 `data update` 与 `data refresh` 继续返回
+原有 dataset/year/month/window-start/window-end/missing-count target schema，不附加 recovery identity 字段。
+
+当天/下一交易日 metadata 的受审恢复使用独立三阶段入口：
+
+```text
+guiyi data current-day-metadata-recovery --phase capture --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 STATUS_SHA256 --trading-day YYYY-MM-DD --apply
+guiyi data current-day-metadata-recovery --phase plan --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 STATUS_SHA256 --trading-day YYYY-MM-DD --snapshot PATH --expected-snapshot-sha256 SNAPSHOT_SHA256
+guiyi data current-day-metadata-recovery --phase apply --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 STATUS_SHA256 --trading-day YYYY-MM-DD --snapshot PATH --expected-snapshot-sha256 SNAPSHOT_SHA256 --expected-plan-sha256 PLAN_SHA256 --apply
+```
+
+三阶段只取已校验 Runtime operational universe。capture 的 `--apply` 是一次 provider source 意图，只调用
+共享 current-day adapter 一次并输出严格 snapshot/hash；不写数据库或 Canonical。P60 的正常调用摘要为
+64 个应用层调用（next-day probe 1、完整合约 inventory 1、bounded Calendar 1、dominant 60、batched
+trading periods 1），不代表 provider 计费请求。plan 从冻结 snapshot 逐项列出 Calendar、当天/下一交易日
+Session 与当天 rank1 Map 的 equal/insert diff，既有值变化即阻断；不构造 provider。apply 在 maintenance
+lease 内重检 Runtime/status/heartbeat 与同一 diff，随后通过共享 validated writer 一次事务插入缺失事实；
+不构造 provider，`provider_requests=0`。snapshot、plan 或 Runtime 漂移、future-not-ready、commit outcome
+unknown 都停止，不 retry，不触碰窗口外 warm-up/Map/Session、Dataset/Partition、Redis、status、projection、
+通知或调度。
+
 `effective_start(symbol)=max(product_window_start(symbol), active_history_floor)`，其中
 `active_history_floor=2023-01-01`。`update` 使用显式 `--through` 固定水位，先同步 metadata，后
 优先完成基础 provider 日线 `1d` 与由其聚合的 `1w`，再按 active universe、Dataset、年月顺序续传基础
@@ -266,11 +313,20 @@ expected day 才是 `degraded/missed`。合法 `current_run` 也只是已持久�
 Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN`，本次停止且不重试，
 不发布 `canonical_updated` 或执行成功后的 Live 清理；须用独立只读事务确认 Catalog 结果。
 
+历史 metadata 的 full update/refresh 按品种只替换来源声明的 `[main_contract_starts[p], through]` Session。
+下界必须来自 adapter 实际请求且不早于 caller floor，不从响应最早日期推断；窗口自然日 Calendar 须连续，
+以其中权威交易日证明 Map 恰好逐日一行、Session 的日期集合完整且时段合法。Calendar 可保留既有窗口外
+上下文，Session 不能越过声明窗口。窗口前 warm-up 和窗口后明确按日事实保留。
+空、稀疏、错身份、重复或非法时段，以及既有 open-ended、跨任一边界或未来非按日模板，均以
+`HISTORICAL_SESSION_REPLACEMENT_UNPROVEN` 整事务失败；不得拆分模板或删除窗口外事实。
+这不改变受限当天/下一交易日同步的独立写入范围，也不证明既有历史已完整。
+
 ### 中断盘后运行的显式收尾
 
 `data.close-interrupted-after-market` 默认只读；必须绑定现役 Runtime root、40 位 commit 和原状态字节 SHA-256。
 它要求五服务 installed/loaded 身份一致、现役 checkout 为干净 detached annotated release，Live/Alert 声明
-共享恢复保护开启、盘后进程明确 idle。只处理先前自然日的合法 `current_run`，不停止进程、不创建缺失锁。
+共享恢复保护开启、盘后进程明确 idle。允许同日或先前自然日的合法 `current_run`；开始时间不得晚于核验时刻，
+scheduled_date 必须匹配原开始日期。不停止进程、不创建缺失锁。
 数据依赖只能由目标 Runtime 的固定外部 `project.env` 与目标 universe 文件显式构造，不能使用执行 CLI 的开发配置。
 配置的变量名只接受精确白名单且不执行 shell；参与收尾依赖的值只接受字面赋值与先前 dependency source
 赋值展开。文件须自有 0600、父目录自有 0700。
@@ -294,29 +350,42 @@ API/Alert 可保留既有绝对、无父路径跳转的 `GUIYI_ALERT_NOTIFICATIO
 repeatable-read/read-only 事务中，通过 Catalog inventory 和既有 Canonical reader 检查 operational 全部已提交指针，
 包括预期窗口外的文件，并复用 audit 检查中断日 metadata、rank1 和目标窗口。只允许确认为有效子集的
 `EXPECTED_PARTITION_MISSING` 留作待维护；额外端点、其他 finding、未知异常均阻断。待维护计数不证明缺失由这次中断造成。
-原交易日不可变 Live snapshot 必须仍在且与 rank1 一致；缺失、过期或不一致均阻断，不使用当前日快照代替。
+原交易日 Live snapshot 完整合法且与 rank1 一致时记录 `verified_match`；成功读取明确为 None 时可仅作行政收尾，
+记录 `not_verified_missing` 与对账未核验，不推断从未生成或 TTL 过期。空/部分集合、额外产品、错合约、
+不匹配、格式错误或读取异常仍阻断，不得降为 missing，也不使用其他日快照代替。
+审计时与替换前分别读取原日 snapshot，分类或内容变化即阻断，不自动重试。after-market guard 不冻结
+普通 Live 初始化，证据只描述记录的核验时点；不能宣称整个审计窗口 snapshot 恒定。
 
 显式 `--apply` 在同一锁窗口重新校验身份与原状态字节，使用 pinned directory FD 原子替换并 fsync。
-唯一写入是原盘后状态文件：收尾写 schema v4、`last_run.status=interrupted`、`error_code=AFTER_MARKET_INTERRUPTED`，
+唯一写入是原盘后状态文件：新收尾写 schema v5、`last_run.status=interrupted`、`error_code=AFTER_MARKET_INTERRUPTED`，
 清除 `current_run`，保留原开始时间与最后成功日；旧 schema v2 未记录的 attempts 保持 null，v3 保留已记录次数。
 不发送通知、不发布 canonical_updated、不清理 Live，不调用 provider 或写行情/DB/Redis；不自动重试。
 替换前失败保留原状态；替换或其后 fsync 的结果不确定返回 `AFTER_MARKET_CLOSEOUT_OUTCOME_UNKNOWN`、
 `status_written=null` 和锁内只读 readback 分类，不能假称未写入或直接重试。
 
-reader 兼容 v1-v4；v4 与 v3 的进度字段相同，仅增加中断终态与未知 attempts 表达。
-新自然运行可暂时保留 v4 的中断摘要，正常终态仍写 v3。Runtime health 保持 `degraded/interrupted`，
-Web 显示收尾而非完成；promotion 仍独立检查 phase/snapshot，不把 interrupted 当作 after_market_complete。
-旧 reader 不认识 v4 时应降级，不能当健康；本入口不授权部署。它确认当前已提交视图，不能还原旧 writer
+reader 兼容 v1-v5；v4 的既有中断语义保持不变，v5 额外持久记录原日 snapshot 分类、核验时点与
+reconciliation 是否经过验证；这些字段统一位于 `last_interruption`，包括 `trading_day`、`started_at`、
+`closed_at`、`snapshot_checked_at`、`snapshot_classification` 和 `reconciliation_verified`。
+公开 API/health/Web 保留缺失证据，不能仅在内部 JSON 或 CLI 展示。
+新自然运行承接该中断摘要时保留其版本及缺证信息，不继承为业务成功；正常终态仍按自然运行合同写入。
+Runtime health 保持 `degraded/interrupted`，Web 显示收尾及未核验的 Live 对账。自然 reconciliation 和
+promotion 的通过条件不改变，interrupted 不能成为 after_market_complete。旧 reader 不认识新版本时降级，
+不能当健康；本入口不授权部署。它确认当前已提交视图，不能还原旧 writer
 每次 commit 的执行轨迹，不是 checkpoint，也不替代每日完成或每周历史审计。
 
 ### 每周 operational 全历史只读审计
 
 `data.weekly-audit` 固定使用 `operational_products.txt` 的 `operational_full_history` scope，不借用可变的 active 研究范围。
-它复用 `HistoricalDataManager.audit`、八表 Catalog/metadata、Canonical reader 与既有 maintenance lock：先原子写 running，再非阻塞取锁，
-获锁后才打开 fresh read-only transaction。忙时记录 `skipped_busy`，不等待、抢占或重试；审计不调用 provider/
+它复用 `HistoricalDataManager.audit`、八表 Catalog/metadata、Canonical reader 与既有 maintenance lock：先非阻塞取得
+状态路径专属写入锁，再原子写 running、非阻塞获取 maintenance lock，获锁后才打开 fresh read-only transaction。
+写入锁使用状态文件旁固定的 `.lock` 文件，保持 inode，不删除或替换；一直持有到进度/终态写入和 maintenance lease
+释放完成。竞争者未取得写入权时只向调用方返回 `skipped_busy`，不改写持有者的状态、不获取 maintenance lock。
+独占的新尝试若遇到 maintenance lock 忙，持久化本次 `skipped_busy`；取锁异常则持久化脱敏的 `failed`，不沿用旧成功。
+写入锁无法安全建立时拒绝启动，不无锁改写状态或声称本次状态已持久化。中断仍保留未完成 running，进程退出释放锁。
+不等待、抢占或重试；审计不调用 provider/
 metadata writer/Redis，`provider_requests=0`、`data_writes=0`，只报告 finding，不修复、不通知。
 
-`.run/weekly-audit-status.json` 是单份原子替换的最新审计状态，不是 checkpoint 或 active data selector。
+`.run/weekly-audit-status.json` 是单份原子替换的、最近取得写入权并建立运行的审计状态，不是所有调用的尝试日志、checkpoint 或 active data selector。
 它绑定 exact Runtime root/40 位 commit、operational 顺序、scope 和 `through`；运行超过 2h 映射 `stuck`，终态超过 8 天映射
 `stale`，身份、计数、时序或只读计数不符合合同则映射 `invalid`，缺文件是 `not_run`。`passed` 必须有已审计 cutoff、全部品种完成且 finding 为零。
 Runtime health 先独立计算现有服务 overall，再附加可选 `components.weekly_audit`摘要；旧状态缺字段不得推导历史健康，
@@ -459,6 +528,8 @@ main ready count 只计算实际主图 READY，不把其他 section 的证据状
 
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
+guiyi data daily-recovery --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 HASH --through DATE [--apply --expected-plan-sha256 HASH]
+guiyi data current-day-metadata-recovery --phase {capture,plan,apply} --runtime-root ROOT --runtime-commit COMMIT --expected-status-sha256 HASH --trading-day DATE [--snapshot PATH --expected-snapshot-sha256 HASH --expected-plan-sha256 HASH --apply]
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}] [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe {active,operational}) [--through DATE] [--progress]
@@ -467,7 +538,8 @@ guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest P
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply
 ```
 
-无 `--apply` 的 update/refresh/contract-warmup 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；audit
+无 `--apply` 的 update/refresh/contract-warmup/daily-recovery 仅计划，零 RQData、零 PostgreSQL 写入、零 Parquet 写入；
+current-day metadata capture 虽带 `--apply` 也只授权外部 source read，DB/Canonical 写入仍为零；audit
 始终只读。audit 对每个请求品种独立返回结构化 finding（`code`、`category`、dataset、year、month）：已知
 Session、Calendar 与产品窗口元数据缺口分别归为 `metadata_session`、`metadata_calendar`、
 `metadata_window`，但不会中断其余品种；主力映射、预期分区缺失与物理一致性问题分别归为
@@ -505,15 +577,22 @@ Live Bars 与 subscription snapshot。repair-only cleanup 不改变这条自然 
 
 ### Market Runtime promotion preflight
 
-`run-local-service.sh market-runtime-preflight` 是只读、bounded-JSON 的 promotion preflight。它只读取既有
-operational universe、Calendar/Session phase authority、当前交易日 immutable Live subscription snapshot 与公开
-after-market status；不连接 RQData，不写 Catalog、Redis 或状态文件。
+`run-local-service.sh market-runtime-preflight` 是只读、bounded-JSON 的 promotion preflight。shell 只负责安全
+加载运行环境并调用一次 Python，不解析 terminal JSON 或自行选择 supervised status。Python authority 读取既有
+operational universe、Calendar/Session phase authority、当前交易日 immutable Live subscription snapshot、公开
+after-market status，以及 stopped 分支所需的 installed plist、launchd identity 和 Live/Alert heartbeat；不连接
+RQData，不写 Catalog、Redis 或状态文件。
 
-跨 checkout promotion 时，after-market status 的 authority 来自当前 supervised 的、已加载 after-market
-launchd root，并与已安装 plist 声明的 root 交叉校验；candidate checkout 不能自行取得 status authority。只有
-launchd domain 可读、after-market label 明确为 not-found、且不存在 installed plist 的 first-install 条件下，才可
-使用 candidate root。domain/permission/label 命令错误、root 缺失、畸形或彼此不一致一律为
-`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。preflight 的受控 status path 不受 runtime env 覆盖。
+跨 checkout promotion 时，正常 loaded authority 来自当前 supervised 的 after-market launchd root，并与已安装
+plist 声明交叉校验；candidate checkout 不能自行取得 status authority。D 后 stopped authority 只接受 exact
+schema-v5 interrupted terminal：installed after-market plist、release root/commit/config 保持不变，launchd domain
+可读且 writer label 明确 absent，另外四服务的 plist/process/root/commit/config 精确，Live/Alert 双 heartbeat
+新鲜且证明 recovery guard，并由调用者在 source runtime env 之外提供受审 terminal bytes 的 exact SHA-256，
+使用前再核对 status/plist/root/process/config/heartbeat。缺失或不匹配的独立 SHA、permission/error/unreadable
+不是 absent；writer 重现或任一 pinned fact 漂移都以 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` 阻断。
+只有 label 明确 not-found、不存在 installed plist 且 candidate `.run/after-market-status.json` 也不存在的 genuine
+first-install 才可使用 candidate root；该模式不读取任何 candidate status。preflight 的受控 status path、account
+HOME 与 expected terminal SHA 不受 runtime env 覆盖。
 
 只有以下四种窗口可通过：有效 snapshot 与 operational symbols/contract identities 精确对应的
 `snapshot_ready`；所有 operational 产品尚未到权威 Session 的真正最早 start 的 `before_first_session`；同一
@@ -526,6 +605,23 @@ status，或不可能的 status chronology 都必须阻断；其稳定公开原�
 
 这个 preflight 没有 override、repair、synthetic snapshot、retry、replay 或 fallback；它不把预检通过表述为
 release、Runtime ready、formal rank1 reconciliation 或生产验证。
+
+Market 安装顺序固定为 after-market（只 bootstrap/enable，保持 idle）再到 Live（bootstrap/enable/kickstart），
+使新 writer 先取得新 root 的 status ownership。新 root 不继承或复制旧 `.run`；旧 schema-v5 terminal 留在旧
+root。安装器在任何 candidate mutation 前保存 shared launcher、log rotator、两个 market plist 与两个 label
+loaded/absent 的有界精确前像，并把此后的 launcher/rotator copy/chmod、marker 准备、plist/load 都纳入统一失败
+恢复。所有 loaded/absent 判断均调用 `runtime_status_authority` 的 Python 状态入口；shell 只消费 bounded
+`loaded`/`absent` 结果，不解析 `launchctl` 文本。只有 exit 113 与 exact requested label/user 的现场缺席形状可判为
+absent，其他退出码或输出均为 unknown。部分安装失败先逆序停止本次 candidate label，再恢复并逐字节/逐状态验证该前像；原先 loaded 的进程还须
+精确读回 root、commit、arguments、working directory 和 environment，全部通过后才恢复 activation marker。
+恢复成功仍明确 blocked，必须以新的 preflight 与安装意图重试。bootout/print/restore 的 permission、domain、
+非当前 label 的 quoted not-found 或其他未知错误都保留 marker 并报告 unknown，不得声称 stopped 或 recovered；
+不会加载已停止的旧 writer。恢复测试还须以旧 schema-v5 terminal、独立 expected SHA、真实
+`RuntimeDataBinding`、四服务 identity/config 与双 heartbeat 证明下一次 Python authority/public preflight 可达。
+
+当两个 market label 与 activation marker 已提交后，前像/backup 删除失败属于 post-commit cleanup unknown：
+不得回滚已启用 Runtime，也不得返回可被误读为“安装未发生”的普通失败；安装器成功退出并报告
+`cleanup=unknown retry_safe=false` 与 `do not retry`，后续只能只读核实清理状态。
 
 active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
 `data/universe/retired_products.txt`，与 active 互斥。

@@ -1,0 +1,35 @@
+{
+  "records": 190,
+  "rollup_rows": 78,
+  "rollups_match": true,
+  "detail_formulas_match": true,
+  "recalculation_verified": true,
+  "error_scan": "{\"kind\":\"notice\",\"message\":\"Cell search matched 0 entries.\"}",
+  "sections": [
+    {
+      "name": "本周当前可重算子集（缺数据单列，不与昨日全样本直接比较）",
+      "first": 10,
+      "last": 13
+    },
+    {
+      "name": "本周品种：当前可重算子集",
+      "first": 17,
+      "last": 72
+    },
+    {
+      "name": "按交易日比较",
+      "first": 76,
+      "last": 87
+    },
+    {
+      "name": "本周多空表现",
+      "first": 91,
+      "last": 97
+    },
+    {
+      "name": "当日新增与此前已有",
+      "first": 101,
+      "last": 104
+    }
+  ]
+}

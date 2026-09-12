@@ -1,0 +1,650 @@
+{
+  "A2611": {
+    "symbol": "a",
+    "contract": "A2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "AG2610": {
+    "symbol": "ag",
+    "contract": "AG2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "AL2610": {
+    "symbol": "al",
+    "contract": "AL2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "AP2701": {
+    "symbol": "ap",
+    "contract": "AP2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "AU2610": {
+    "symbol": "au",
+    "contract": "AU2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "B2611": {
+    "symbol": "b",
+    "contract": "B2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "BU2610": {
+    "symbol": "bu",
+    "contract": "BU2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "BZ2610": {
+    "symbol": "bz",
+    "contract": "BZ2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "C2611": {
+    "symbol": "c",
+    "contract": "C2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "CF2701": {
+    "symbol": "cf",
+    "contract": "CF2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "CJ2701": {
+    "symbol": "cj",
+    "contract": "CJ2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "CU2610": {
+    "symbol": "cu",
+    "contract": "CU2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "EB2610": {
+    "symbol": "eb",
+    "contract": "EB2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "EC2610": {
+    "symbol": "ec",
+    "contract": "EC2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "EG2610": {
+    "symbol": "eg",
+    "contract": "EG2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "FG2701": {
+    "symbol": "fg",
+    "contract": "FG2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "FU2611": {
+    "symbol": "fu",
+    "contract": "FU2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "HC2701": {
+    "symbol": "hc",
+    "contract": "HC2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "I2701": {
+    "symbol": "i",
+    "contract": "I2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "JM2701": {
+    "symbol": "jm",
+    "contract": "JM2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "L2701": {
+    "symbol": "l",
+    "contract": "L2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "LC2701": {
+    "symbol": "lc",
+    "contract": "LC2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "LH2611": {
+    "symbol": "lh",
+    "contract": "LH2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "M2701": {
+    "symbol": "m",
+    "contract": "M2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "MA2610": {
+    "symbol": "ma",
+    "contract": "MA2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "NI2610": {
+    "symbol": "ni",
+    "contract": "NI2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "P2701": {
+    "symbol": "p",
+    "contract": "P2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "PD2610": {
+    "symbol": "pd",
+    "contract": "PD2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "PF2611": {
+    "symbol": "pf",
+    "contract": "PF2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "PG2610": {
+    "symbol": "pg",
+    "contract": "PG2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "PK2611": {
+    "symbol": "pk",
+    "contract": "PK2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "PL2611": {
+    "symbol": "pl",
+    "contract": "PL2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "PP2701": {
+    "symbol": "pp",
+    "contract": "PP2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "PR2611": {
+    "symbol": "pr",
+    "contract": "PR2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "PS2611": {
+    "symbol": "ps",
+    "contract": "PS2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "PT2610": {
+    "symbol": "pt",
+    "contract": "PT2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "PX2611": {
+    "symbol": "px",
+    "contract": "PX2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "RB2701": {
+    "symbol": "rb",
+    "contract": "RB2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "RM2611": {
+    "symbol": "rm",
+    "contract": "RM2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "RU2701": {
+    "symbol": "ru",
+    "contract": "RU2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "SA2701": {
+    "symbol": "sa",
+    "contract": "SA2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "SC2610": {
+    "symbol": "sc",
+    "contract": "SC2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "SF2611": {
+    "symbol": "sf",
+    "contract": "SF2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "SH2611": {
+    "symbol": "sh",
+    "contract": "SH2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "SI2611": {
+    "symbol": "si",
+    "contract": "SI2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "SM2611": {
+    "symbol": "sm",
+    "contract": "SM2611",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "SN2610": {
+    "symbol": "sn",
+    "contract": "SN2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "SR2701": {
+    "symbol": "sr",
+    "contract": "SR2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "SS2610": {
+    "symbol": "ss",
+    "contract": "SS2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "TA2701": {
+    "symbol": "ta",
+    "contract": "TA2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "UR2701": {
+    "symbol": "ur",
+    "contract": "UR2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "V2701": {
+    "symbol": "v",
+    "contract": "V2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "Y2701": {
+    "symbol": "y",
+    "contract": "Y2701",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  },
+  "ZN2610": {
+    "symbol": "zn",
+    "contract": "ZN2610",
+    "bars": [],
+    "errors": [
+      {
+        "part": "contract",
+        "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+      }
+    ],
+    "expected": []
+  }
+}

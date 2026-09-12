@@ -192,6 +192,8 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 测试包括旧次数未知、中断 health、默认只读、部分完成、窗口外损坏、额外端点、锁冲突、危险文件类型、
 CAS 漂移、时钟倒退和替换后 fsync 不确定；还覆盖目标配置/实际依赖一致性、源替换、PID 变化、
 shell/libpq 覆盖、第二 dotenv 来源和私有文件权限；所有 apply 只写临时状态文件。
+schema v5 另覆盖已停止的同日运行、缺失 snapshot 的未核验摘要、两读分类/内容竞争、非法 snapshot
+拒绝，以及自然运行承接摘要但不继承成功；下文 promotion 和 Web 测试验证原通过条件与公开展示。
 
 以下定向命令覆盖 Catalog-bounded daily 规划/发布、schema-v3 进度持久化与 fail-closed health、
 `operational_full_history` 审计、HTTP schema 保留、launchd 渲染/安装防护和只读状态输出。它们使用 fake provider、
@@ -202,6 +204,7 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
   services/quant-api/tests/data_foundation/test_daily_maintenance.py \
   services/quant-api/tests/data_foundation/test_after_market.py \
   services/quant-api/tests/data_foundation/test_weekly_audit.py \
+  services/quant-api/tests/data_foundation/test_weekly_audit_ownership.py \
   services/quant-api/tests/data_foundation/test_cli.py \
   services/quant-api/tests/data_foundation/test_market_home_projection_after_market.py \
   services/quant-api/tests/data_foundation/test_runtime_promotion.py \
@@ -230,6 +233,10 @@ GUIYI_ISOLATED_PUBLICATION_DATABASE_URL='postgresql+psycopg://USER@127.0.0.1:154
   services/quant-api/tests/data_foundation/test_weekly_audit_postgresql.py
 ```
 
+周检状态归属测试使用 Pipe 屏障控制真实跨进程 A/B 交错，覆盖取维护锁前、审计中、终态发布及 lease 释放；
+验证竞争者不覆盖、旧成功被新独占 busy/failed 替换、进程中断/退出、guard 和状态写入故障，以及可选 health 不改变 overall。
+它只创建临时状态/锁文件，不安装或启动实际周检服务。
+
 这些工程验证不证明每周调度已安装、真实全历史无 finding、盘后自然运行耗时、release 或 Runtime promotion。
 实际安装语法和前置 Gate 仅见 `deploy/README.md`。
 
@@ -240,6 +247,8 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q \
   services/quant-api/tests/data_foundation/test_bounded_metadata.py \
   services/quant-api/tests/data_foundation/test_metadata.py \
+  services/quant-api/tests/data_foundation/test_historical_session_preservation.py \
+  services/quant-api/tests/data_foundation/test_historical_session_window.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/data_foundation/test_cli.py
 ```
@@ -345,6 +354,42 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/newow/test_product_readonly_compatibility.py \
   services/quant-api/tests/newow/test_market_newow_api.py
 ```
+
+单 API worker 部署契约回归（真实 loopback socket + 隔离 fake MDS，不接触生产数据）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  tests/engineering/test_alert_runtime_launchd.py \
+  services/quant-api/tests/newow/test_product_socket_http.py
+./scripts/ops/macos/install-local-services.sh --render-only
+```
+
+需允许本机 loopback bind；EPERM 是宿主执行限制，不得跳过后宣称通过。测试执行真实 launcher 验证
+单 worker 与 `WEB_CONCURRENCY`，并通过正式应用路由验证四个独立连接的 token、参考记录、副图、两种主图
+分页和历史定位，另验证两个进程计算相同事实仍拒绝彼此 token，以及重启后的旧 token/cursor 失效。
+已有缓存、门禁和去重测试继续覆盖 TTL、淘汰、共同事实修订、取消及 429；socket fixture 不证明工作站数据验收。
+真实验收使用隔离只读 API、固定品种/截点/窗口与真实 MDS，分别验证浏览器操作和正式 `/health`。
+至少五组新进程冷请求/同进程热请求；重型 reference/comparator 实际运行期间，health 与普通行情各至少
+100 次重叠采样，要求 p95 分别不超过 1 秒/3 秒且无超时。记录空闲对比、最大延迟、错误、输入身份与
+进程身份；不清除 OS/磁盘缓存。失败保持阻塞，不增加业务重试或降低快照校验。发布后现场进程和请求链路
+仍须独立验收，不能以 render-only 或候选预览代替 Runtime promotion。
+
+本次黄金固定截点实测的结果、逐请求计时、真实计算区间、截图与冻结脚本保存在
+`outputs/newow-single-worker-20260911/`。这些脚本是本次工作站证据，不是新增正式服务入口；
+其中 `serve.py` 用正式路由加只读 DB/GET 白名单（8011）或复用既有 `app.preview`（8010）。
+需要复验时先确认脚本内固定配置根、数据范围、端口空闲和精确代码与本次意图匹配，再从候选根运行：
+
+```bash
+mkdir -p .run/single-worker
+cp outputs/newow-single-worker-20260911/{serve.py,measure.py,browser_acceptance.cjs,auxiliary_browser.cjs} .run/single-worker/
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python .run/single-worker/measure.py
+```
+
+`measure.py` 负责五个自建 API 进程的启动与回收；不控制现役服务。浏览器脚本须在同 commit 的上述
+候选预览 API/Web 启动后运行，结束后关闭自建预览。不得把旧证据覆盖为新候选通过，也不得把自建预览
+停机当作 Runtime 操作。命令失败后先保留结果并定位；不得借复验下载、补数或更改生产配置。
 
 照妖镜专用绘图规则与生命周期定向验证（确定性显示输入，不代表真实行情或当前在线牛哇）：
 
@@ -456,6 +501,73 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 该组测试仅使用 fake provider、临时 Catalog/Parquet 与临时路径。它不授权也不执行真实
 `guiyi data contract-warmup --apply`；即使 dry-run 得到 plan hash，真实 RQData/Canonical apply 仍需
 引用该 exact hash 的单次明确授权。
+
+Runtime-bound daily recovery 的显式 P60/fixed-through 请求、稳定 target-window hash、maintenance lease 内
+identity/CAS 重检、相同端点/数量下的内部 expected/missing 时间戳漂移、hash 与执行共用同一冻结计划、目标
+Runtime provider 配置绑定、projection 顺序、唯一 stdout 终态 JSON、单次 provider 失败、正式 Catalog/MDS
+读回与 NDJSON 进度：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_daily_recovery_cli.py \
+  services/quant-api/tests/data_foundation/test_daily_maintenance.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/data_foundation/test_closeout_binding.py \
+  services/quant-api/tests/data_foundation/test_composition.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
+  services/quant-api/tests/test_market_home_projection_invalidation.py \
+  services/quant-api/tests/data_foundation/test_catalog_and_service.py
+```
+
+该组测试只使用 Runtime/context doubles、fake provider、SQLite 与临时 Parquet；不会连接真实 RQData、生产
+PostgreSQL/Redis，或修改现场 Canonical、status、projection、Runtime 和调度。真实
+`daily-recovery --apply` 仍必须绑定当前 Runtime/status、dry-run exact plan hash 与一次明确生产写入意图。
+
+schema-v5 compatible recovery 的只读绑定、候选 commit/tree、operational hash/count、`last_interruption`
+保留、配置脱敏、独立 expected terminal SHA、受信 account HOME、stopped status authority、first-install
+status residue 拒绝、launchd error/label reappearance、真实 schema-v5 `RuntimeDataBinding` 的四服务/config/
+heartbeat/recheck、公开 daily/current-day 入口的 stopped success 与 drift/error fail-closed、promotion 四
+predicate 保留、after-market→Live 安装顺序，以及部分安装失败后 candidate 逆序停服、旧 launcher/rotator/
+plist/loaded-state 精确恢复、loaded 进程 root/commit/arguments/working-directory/environment 读回、真实旧
+schema-v5 terminal + expected SHA + `RuntimeDataBinding` 的第二次 authority/public preflight、load 前 mutation
+失败统一恢复、post-commit cleanup unknown 的 committed/no-retry 语义，以及 marker/unknown 显式 blocked 合同：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_closeout_binding.py \
+  services/quant-api/tests/data_foundation/test_after_market_closeout.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/data_foundation/test_runtime_status_authority.py \
+  services/quant-api/tests/data_foundation/test_runtime_promotion.py \
+  services/quant-api/tests/test_captured_recovery_runtime.py \
+  tests/engineering/test_market_runtime_launchd.py
+```
+
+测试只使用临时 root、合成状态/配置与 fake launchctl；不读取现场配置，不连接 provider、生产 DB/Redis，
+不写现场 Canonical/status，也不执行安装或 Runtime mutation。`compatible-recovery-proof` 的
+`recovery_ready=false` 是有意保留的发布与执行 Gate；render-only/fixture 通过不能生成可用恢复 root。
+
+Runtime-bound current-day metadata recovery 的严格 snapshot codec/hash、P60 64 次应用层 fake API 调用、
+capture/plan/apply provider 隔离、Calendar/Session/rank1 exact diff、下一交易日 insert、warm-up/窗口外保留、
+maintenance lease、Runtime/plan drift、rollback、commit outcome unknown 与自然同步回归：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_current_day_metadata_recovery.py \
+  services/quant-api/tests/data_foundation/test_metadata.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/data_foundation/test_closeout_binding.py \
+  services/quant-api/tests/data_foundation/test_after_market.py \
+  services/quant-api/tests/data_foundation/test_historical_session_preservation.py
+```
+
+该组测试仅使用 fake API、Runtime/context doubles、SQLite 与临时路径；不连接真实 RQData、生产
+PostgreSQL/Redis，不写现场 Canonical/status/Runtime。真实 capture、metadata apply 各自需要绑定 exact
+Runtime/status/日期及相应 source/plan hash 的一次明确意图；capture 意图不授权后续数据库写入。
 
 Canonical 不可变月发布的 storage、Catalog strict-read 与 manager 失败回归：
 

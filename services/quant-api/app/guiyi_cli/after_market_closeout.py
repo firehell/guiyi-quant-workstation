@@ -26,7 +26,8 @@ def run_closeout_command(args, *, session_factory, manager_factory):
         store = RedisLiveStore(redis)
         with Session(engine, autoflush=False) as session:
             manager = build_historical_data_manager(session,
-                data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]), config_root=binding.root)
+                data_root=Path(binding.settings["GUIYI_CANONICAL_DATA_ROOT"]), config_root=binding.root,
+                provider_settings=binding.settings)
             def verify(root, commit):
                 if root != binding.root or commit != binding.commit:
                     raise ValueError

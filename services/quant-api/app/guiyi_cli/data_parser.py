@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import re
 from typing import Any, NoReturn
 
@@ -65,6 +66,65 @@ class JsonArgumentParser(argparse.ArgumentParser):
                 or re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None
             ):
                 self.error("apply requires a lowercase SHA-256 plan hash")
+        if getattr(result, "data_command", None) == "daily-recovery":
+            expected_hash = result.expected_plan_sha256
+            if (
+                re.fullmatch(r"[0-9a-f]{40}", result.runtime_commit) is None
+                or re.fullmatch(r"[0-9a-f]{64}", result.expected_status_sha256)
+                is None
+            ):
+                self.error("exact runtime identity required")
+            if not result.apply and expected_hash is not None:
+                self.error("dry-run does not accept an expected plan hash")
+            if result.apply and (
+                not isinstance(expected_hash, str)
+                or re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None
+            ):
+                self.error("apply requires a lowercase SHA-256 plan hash")
+        if getattr(result, "data_command", None) == "current-day-metadata-recovery":
+            exact_identity = (
+                re.fullmatch(r"[0-9a-f]{40}", result.runtime_commit) is not None
+                and re.fullmatch(r"[0-9a-f]{64}", result.expected_status_sha256)
+                is not None
+            )
+            snapshot_hash = result.expected_snapshot_sha256
+            plan_hash = result.expected_plan_sha256
+            valid_snapshot_hash = (
+                isinstance(snapshot_hash, str)
+                and re.fullmatch(r"[0-9a-f]{64}", snapshot_hash) is not None
+            )
+            valid_plan_hash = (
+                isinstance(plan_hash, str)
+                and re.fullmatch(r"[0-9a-f]{64}", plan_hash) is not None
+            )
+            if not exact_identity:
+                self.error("exact runtime identity required")
+            if result.phase == "capture":
+                if not result.apply or result.snapshot or snapshot_hash or plan_hash:
+                    self.error("capture requires only explicit --apply")
+            elif result.phase == "plan":
+                if result.apply or not result.snapshot or not valid_snapshot_hash or plan_hash:
+                    self.error("plan requires exact snapshot only")
+            elif (
+                not result.apply
+                or not result.snapshot
+                or not valid_snapshot_hash
+                or not valid_plan_hash
+            ):
+                self.error("apply requires exact snapshot and plan hashes")
+        if getattr(result, "data_command", None) == "compatible-recovery-proof":
+            if (
+                re.fullmatch(r"[0-9a-f]{40}", result.candidate_commit) is None
+                or re.fullmatch(r"[0-9a-f]{40}", result.runtime_commit) is None
+                or re.fullmatch(r"[0-9a-f]{64}", result.expected_status_sha256)
+                is None
+                or re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    result.expected_operational_products_sha256,
+                )
+                is None
+            ):
+                self.error("exact candidate and runtime identities required")
         return result
 
 
@@ -79,6 +139,41 @@ def add_data_commands(
     update.add_argument("--since")
     update.add_argument("--through")
     update.add_argument("--apply", action="store_true")
+
+    recovery = commands.add_parser("daily-recovery", allow_abbrev=False)
+    recovery.add_argument("--runtime-root", required=True)
+    recovery.add_argument("--runtime-commit", required=True)
+    recovery.add_argument("--expected-status-sha256", required=True)
+    recovery.add_argument("--through", type=date.fromisoformat, required=True)
+    recovery.add_argument("--expected-plan-sha256")
+    recovery.add_argument("--apply", action="store_true")
+
+    current_metadata = commands.add_parser(
+        "current-day-metadata-recovery", allow_abbrev=False
+    )
+    current_metadata.add_argument(
+        "--phase", required=True, choices=("capture", "plan", "apply")
+    )
+    current_metadata.add_argument("--runtime-root", required=True)
+    current_metadata.add_argument("--runtime-commit", required=True)
+    current_metadata.add_argument("--expected-status-sha256", required=True)
+    current_metadata.add_argument("--trading-day", type=date.fromisoformat, required=True)
+    current_metadata.add_argument("--snapshot")
+    current_metadata.add_argument("--expected-snapshot-sha256")
+    current_metadata.add_argument("--expected-plan-sha256")
+    current_metadata.add_argument("--apply", action="store_true")
+
+    compatible_recovery = commands.add_parser(
+        "compatible-recovery-proof", allow_abbrev=False
+    )
+    compatible_recovery.add_argument("--candidate-root", required=True)
+    compatible_recovery.add_argument("--candidate-commit", required=True)
+    compatible_recovery.add_argument("--runtime-root", required=True)
+    compatible_recovery.add_argument("--runtime-commit", required=True)
+    compatible_recovery.add_argument("--expected-status-sha256", required=True)
+    compatible_recovery.add_argument(
+        "--expected-operational-products-sha256", required=True
+    )
 
     refresh = commands.add_parser("refresh")
     refresh.add_argument("--symbol", required=True)

@@ -9,6 +9,7 @@ ALERT_RUNTIME_MARKER="$PROJECT_ROOT/.run/alert-runtime-enabled"
 AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
+PYTHON_BIN="$PROJECT_ROOT/services/quant-api/.venv/bin/python"
 MODE="${1:---render-only}"
 ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
 
@@ -54,7 +55,10 @@ if [[ ! "$RUNTIME_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 base_labels=(com.guiyi.quant-api com.guiyi.quant-web com.guiyi.quant-log-rotate)
-market_runtime_labels=(com.guiyi.quant-live com.guiyi.quant-after-market)
+# Establish the new status writer before starting the new live reader.  If a
+# later stage fails, cleanup runs in reverse before the exact previous market
+# authority is restored from its bounded install preimage.
+market_runtime_labels=(com.guiyi.quant-after-market com.guiyi.quant-live)
 alert_runtime_labels=(com.guiyi.quant-alert)
 weekly_audit_labels=(com.guiyi.quant-weekly-audit)
 render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}" "${weekly_audit_labels[@]}")
@@ -123,26 +127,97 @@ fi
 
 mkdir -p "$AGENT_DIR" "$RUNTIME_DIR" "$LOG_DIR"
 chmod 700 "$RUNTIME_DIR" "$LOG_DIR"
-if [[ "$MODE" != "--confirm-weekly-audit" ]]; then
-cp "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh"
-chmod 700 "$RUNTIME_DIR/run-local-service.sh"
-cp "$PROJECT_ROOT/scripts/ops/macos/rotate-local-service-logs.sh" "$RUNTIME_DIR/rotate-local-service-logs.sh"
-chmod 700 "$RUNTIME_DIR/rotate-local-service-logs.sh"
-fi
+
+launchd_service_state() {
+  local label="$1" state
+
+  state="$(
+    "$PYTHON_BIN" -m app.market_data.runtime_status_authority \
+      launchd-service-state "$label" 2>/dev/null
+  )" || return 2
+  case "$state" in
+    loaded) return 0 ;;
+    absent) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+
+market_preimage_dir=""
+market_preimage_paths=(
+  "$RUNTIME_DIR/run-local-service.sh"
+  "$RUNTIME_DIR/rotate-local-service-logs.sh"
+  "$AGENT_DIR/com.guiyi.quant-after-market.plist"
+  "$AGENT_DIR/com.guiyi.quant-live.plist"
+)
+market_preimage_existed=()
+market_preimage_labels=(com.guiyi.quant-after-market com.guiyi.quant-live)
+market_preimage_loaded=()
+
+discard_market_install_preimage() {
+  local index
+  [[ -n "$market_preimage_dir" ]] || return 0
+  for ((index=0; index < ${#market_preimage_paths[@]}; index++)); do
+    rm -f "$market_preimage_dir/$index" || return 1
+  done
+  rmdir "$market_preimage_dir" || return 1
+  market_preimage_dir=""
+}
+
+prepare_market_install_preimage() {
+  local index label path state
+  [[ "$MODE" == "--confirm-market-runtime" ]] || return 0
+
+  market_preimage_dir="$(mktemp -d "$RENDER_DIR/market-install-preimage.XXXXXX")" || return 1
+  chmod 700 "$market_preimage_dir" || return 1
+  for ((index=0; index < ${#market_preimage_paths[@]}; index++)); do
+    path="${market_preimage_paths[$index]}"
+    if [[ -e "$path" || -L "$path" ]]; then
+      if [[ ! -f "$path" || -L "$path" ]] || ! cp -p "$path" "$market_preimage_dir/$index"; then
+        printf '[install-local-services] ERROR: market install preimage invalid path=%s\n' "$path" >&2
+        discard_market_install_preimage || true
+        return 1
+      fi
+      market_preimage_existed+=(1)
+    else
+      market_preimage_existed+=(0)
+    fi
+  done
+  for label in "${market_preimage_labels[@]}"; do
+    if launchd_service_state "$label"; then
+      market_preimage_loaded+=(1)
+    else
+      state=$?
+      if [[ "$state" == "1" ]]; then
+        market_preimage_loaded+=(0)
+      else
+        printf '[install-local-services] ERROR: market install preimage launchd state unknown label=%s\n' "$label" >&2
+        discard_market_install_preimage || true
+        return 1
+      fi
+    fi
+  done
+}
 
 reload_launch_agent() {
   local label="$1"
   local plist="$2"
-  local attempt
+  local attempt state=0
 
   launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
   for attempt in 1 2 3 4 5; do
-    if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+    if launchd_service_state "$label"; then
+      sleep 1
+      continue
+    else
+      state=$?
+    fi
+    if [[ "$state" == "1" ]]; then
       break
     fi
-    sleep 1
+    printf '[install-local-services] ERROR: launchd state unknown label=%s\n' "$label" >&2
+    return 1
   done
-  if launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+  if [[ "$state" == "0" ]]; then
     printf '[install-local-services] ERROR: launchd bootout timed out label=%s\n' "$label" >&2
     return 1
   fi
@@ -151,13 +226,76 @@ reload_launch_agent() {
     if launchctl bootstrap "gui/$UID" "$plist"; then
       return 0
     fi
-    if launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+    if launchd_service_state "$label"; then
       return 0
+    else
+      state=$?
+    fi
+    if [[ "$state" == "2" ]]; then
+      printf '[install-local-services] ERROR: launchd state unknown label=%s\n' "$label" >&2
+      return 1
     fi
     sleep 1
   done
   printf '[install-local-services] ERROR: launchd reload failed label=%s\n' "$label" >&2
   return 1
+}
+
+restore_market_install_preimage() {
+  local index label path state
+  [[ "$MODE" == "--confirm-market-runtime" ]] || return 0
+  [[ -n "$market_preimage_dir" ]] || return 1
+
+  for ((index=0; index < ${#market_preimage_paths[@]}; index++)); do
+    path="${market_preimage_paths[$index]}"
+    if [[ "${market_preimage_existed[$index]}" == "1" ]]; then
+      [[ -f "$market_preimage_dir/$index" && ! -L "$market_preimage_dir/$index" ]] || return 1
+      cp -p "$market_preimage_dir/$index" "$path" || return 1
+    else
+      rm -f "$path" || return 1
+    fi
+  done
+
+  for ((index=0; index < ${#market_preimage_labels[@]}; index++)); do
+    label="${market_preimage_labels[$index]}"
+    if [[ "${market_preimage_loaded[$index]}" == "1" ]]; then
+      path="$AGENT_DIR/${label}.plist"
+      [[ -f "$path" && ! -L "$path" ]] || return 1
+      reload_launch_agent "$label" "$path" || return 1
+      launchctl enable "gui/$UID/$label" || return 1
+      if [[ "$label" == "com.guiyi.quant-live" ]]; then
+        launchctl kickstart -k "gui/$UID/$label" || return 1
+      fi
+    fi
+  done
+
+  for ((index=0; index < ${#market_preimage_paths[@]}; index++)); do
+    path="${market_preimage_paths[$index]}"
+    if [[ "${market_preimage_existed[$index]}" == "1" ]]; then
+      [[ -f "$path" && ! -L "$path" ]] || return 1
+      cmp -s "$market_preimage_dir/$index" "$path" || return 1
+    elif [[ -e "$path" || -L "$path" ]]; then
+      return 1
+    fi
+  done
+  for ((index=0; index < ${#market_preimage_labels[@]}; index++)); do
+    label="${market_preimage_labels[$index]}"
+    if launchd_service_state "$label"; then
+      state=1
+    else
+      case "$?" in
+        1) state=0 ;;
+        *) return 1 ;;
+      esac
+    fi
+    [[ "$state" == "${market_preimage_loaded[$index]}" ]] || return 1
+    if [[ "$state" == "1" ]] && ! "$PYTHON_BIN" \
+      -m app.market_data.runtime_status_authority \
+      verify-restored-loaded-service "$label" >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+  discard_market_install_preimage
 }
 
 write_runtime_activation_marker() {
@@ -193,6 +331,7 @@ write_alert_runtime_activation_marker() {
 activation_marker=""
 activation_marker_backup=""
 activation_marker_existed=0
+activation_marker_snapshot_ready=0
 
 prepare_runtime_activation_marker() {
   local writer
@@ -215,16 +354,12 @@ prepare_runtime_activation_marker() {
     fi
     activation_marker_existed=1
   fi
-  if ! "$writer"; then
-    restore_runtime_activation_marker || {
-      printf '[install-local-services] ERROR: activation marker rollback failed\n' >&2
-    }
-    return 1
-  fi
+  activation_marker_snapshot_ready=1
+  "$writer"
 }
 
 restore_runtime_activation_marker() {
-  if [[ -z "$activation_marker" ]]; then
+  if [[ -z "$activation_marker" || "$activation_marker_snapshot_ready" == "0" ]]; then
     return 0
   fi
   if [[ "$activation_marker_existed" == "1" ]]; then
@@ -240,6 +375,7 @@ restore_runtime_activation_marker() {
     rm -f "$activation_marker_backup" || return 1
     activation_marker_backup=""
   fi
+  activation_marker_snapshot_ready=0
 }
 
 discard_runtime_activation_marker_backup() {
@@ -247,9 +383,8 @@ discard_runtime_activation_marker_backup() {
     rm -f "$activation_marker_backup" || return 1
     activation_marker_backup=""
   fi
+  activation_marker_snapshot_ready=0
 }
-
-prepare_runtime_activation_marker
 
 attempted_load_labels=()
 
@@ -268,19 +403,39 @@ load_selected_services() {
   done
 }
 
+perform_selected_service_install() {
+  if [[ "$MODE" != "--confirm-weekly-audit" ]]; then
+    cp "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh" || return 1
+    chmod 700 "$RUNTIME_DIR/run-local-service.sh" || return 1
+    cp "$PROJECT_ROOT/scripts/ops/macos/rotate-local-service-logs.sh" "$RUNTIME_DIR/rotate-local-service-logs.sh" || return 1
+    chmod 700 "$RUNTIME_DIR/rotate-local-service-logs.sh" || return 1
+  fi
+  prepare_runtime_activation_marker || return 1
+  load_selected_services
+}
+
 stop_attempted_services() {
-  local index label attempt
+  local index label attempt state
   local failed=0
   for ((index=${#attempted_load_labels[@]} - 1; index >= 0; index--)); do
     label="${attempted_load_labels[$index]}"
     launchctl bootout "gui/$UID/$label" >/dev/null 2>&1 || true
+    state=0
     for attempt in 1 2 3 4 5; do
-      if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+      if launchd_service_state "$label"; then
+        sleep 1
+        continue
+      else
+        state=$?
+      fi
+      if [[ "$state" == "1" ]]; then
         break
       fi
-      sleep 1
+      printf '[install-local-services] ERROR: cleanup state unknown label=%s\n' "$label" >&2
+      failed=1
+      break
     done
-    if launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+    if [[ "$state" == "0" ]]; then
       printf '[install-local-services] ERROR: failed-attempt bootout timed out label=%s\n' "$label" >&2
       failed=1
     fi
@@ -288,17 +443,38 @@ stop_attempted_services() {
   return "$failed"
 }
 
-if ! load_selected_services; then
+prepare_market_install_preimage
+
+if ! perform_selected_service_install; then
   if ! stop_attempted_services; then
     printf '[install-local-services] ERROR: failed attempt remains loaded; activation marker retained\n' >&2
+    exit 1
+  fi
+  if [[ "$MODE" == "--confirm-market-runtime" ]] && ! restore_market_install_preimage; then
+    printf '[install-local-services] ERROR: market authority restore unknown; activation marker retained\n' >&2
     exit 1
   fi
   if ! restore_runtime_activation_marker; then
     printf '[install-local-services] ERROR: activation marker rollback failed\n' >&2
     exit 1
   fi
+  if [[ "$MODE" == "--confirm-market-runtime" ]]; then
+    printf '[install-local-services] ERROR: partial market install is blocked; previous market authority restored; separate preflight and install intent required\n' >&2
+  fi
   exit 1
 fi
-discard_runtime_activation_marker_backup
+
+post_commit_cleanup="complete"
+if ! discard_runtime_activation_marker_backup; then
+  post_commit_cleanup="unknown"
+fi
+if ! discard_market_install_preimage; then
+  post_commit_cleanup="unknown"
+fi
+if [[ "$post_commit_cleanup" == "unknown" ]]; then
+  printf '[install-local-services] WARNING: installation committed; post-commit cleanup unknown; do not retry\n' >&2
+  printf '[install-local-services] loaded=true mode=%s services=%s cleanup=unknown retry_safe=false\n' "$MODE" "${#load_labels[@]}"
+  exit 0
+fi
 
 printf '[install-local-services] loaded=true mode=%s services=%s\n' "$MODE" "${#load_labels[@]}"

@@ -420,7 +420,8 @@ class AfterMarketUpdater:
     ) -> None:
         previous = _load_status(self.status_path)
         finished_at = _local_timestamp(self.now())
-        schema_version = 3
+        interruption = previous.get("last_interruption")
+        schema_version = 5 if interruption is not None else 3
         payload: dict[str, Any] = {
             "schema_version": schema_version,
             "current_run": None,
@@ -439,6 +440,8 @@ class AfterMarketUpdater:
             ),
             "last_failure": _public_last_failure(previous.get("last_failure")),
         }
+        if interruption is not None:
+            payload["last_interruption"] = interruption
         if result.status == "passed":
             payload["last_successful_trading_day"] = result.trading_day.isoformat()
             payload["last_failure"] = None
@@ -471,10 +474,10 @@ class AfterMarketUpdater:
             raise _ProgressPersistenceError() from None
         previous_schema_version = (
             int(previous["schema_version"])
-            if previous.get("schema_version") in {2, 3, 4}
+            if previous.get("schema_version") in {2, 3, 4, 5}
             else 1
         )
-        schema_version = 4 if previous_schema_version == 4 else 3
+        schema_version = max(3, previous_schema_version)
         self._progress_failed = False
         self._current = {
             "scheduled_date": started_at.date().isoformat(),
@@ -497,6 +500,8 @@ class AfterMarketUpdater:
             ),
             "last_failure": _public_last_failure(previous.get("last_failure")),
         }
+        if previous_schema_version == 5:
+            payload["last_interruption"] = previous["last_interruption"]
         self._write_required_status(payload)
         self._last_progress_write = self.monotonic()
         self._log_progress()
@@ -550,7 +555,7 @@ class AfterMarketUpdater:
         ).total_seconds())
         try:
             payload = _load_status(self.status_path)
-            if payload.get("schema_version") not in {3, 4} or not payload.get("current_run"):
+            if payload.get("schema_version") not in {3, 4, 5} or not payload.get("current_run"):
                 raise ValueError
             payload["current_run"] = self._current
             _atomic_write_status(self.status_path, payload)
@@ -764,7 +769,14 @@ def _rank1_matches_live_snapshot(
     trading_day: date,
 ) -> bool:
     """Compare one immutable Live day snapshot with the formal rank-one facts."""
-    snapshot = live_store.subscriptions(trading_day)
+    return _rank1_matches_snapshot(manager, live_store.subscriptions(trading_day), products, trading_day)
+
+
+def _rank1_matches_snapshot(
+    manager: HistoricalDataManager, snapshot: Mapping[str, Any] | None,
+    products: tuple[str, ...], trading_day: date,
+) -> bool:
+    """Compare already-read subscription facts; callers own observation timing."""
     if snapshot is None:
         return False
     live = {
@@ -817,7 +829,7 @@ def public_after_market_status(value: object) -> dict[str, object]:
     if not isinstance(value, Mapping):
         return {}
     raw_schema_version = value.get("schema_version", 1)
-    if type(raw_schema_version) is not int or raw_schema_version not in {1, 2, 3, 4}:
+    if type(raw_schema_version) is not int or raw_schema_version not in {1, 2, 3, 4, 5}:
         return {}
     schema_version = raw_schema_version
     current_run = (
@@ -852,6 +864,21 @@ def public_after_market_status(value: object) -> dict[str, object]:
         "last_successful_trading_day": last_success,
         "last_failure": last_failure,
     }
+    if schema_version == 5:
+        interruption = _public_last_interruption(value.get("last_interruption"))
+        if interruption is None:
+            return {}
+        if isinstance(last_run, Mapping) and last_run.get("status") == "interrupted":
+            if (last_run["trading_day"] != interruption["trading_day"]
+                    or last_run["started_at"] != interruption["started_at"]
+                    or last_run["finished_at"] != interruption["closed_at"]):
+                return {}
+        closed_at = datetime.fromisoformat(str(interruption["closed_at"]))
+        for run in (current_run, last_run):
+            if isinstance(run, Mapping) and run.get("status") != "interrupted":
+                if closed_at > datetime.fromisoformat(str(run["started_at"])):
+                    return {}
+        public["last_interruption"] = interruption
     if schema_version >= 2:
         return {
             "schema_version": schema_version,
@@ -859,6 +886,28 @@ def public_after_market_status(value: object) -> dict[str, object]:
             **public,
         }
     return public
+
+
+def _public_last_interruption(value: object) -> dict[str, object] | None:
+    """Bounded administrative evidence; never an after-market success receipt."""
+    if not isinstance(value, Mapping):
+        return None
+    day = _public_trading_day(value.get("trading_day"))
+    started = _public_timestamp(value.get("started_at"))
+    closed = _public_timestamp(value.get("closed_at"))
+    checked = _public_timestamp(value.get("snapshot_checked_at"))
+    classification = value.get("snapshot_classification")
+    verified = value.get("reconciliation_verified")
+    if (day is None or started is None or closed is None or checked is None
+            or classification not in ("not_verified_missing", "verified_match")
+            or type(verified) is not bool or verified != (classification == "verified_match")):
+        return None
+    if (datetime.fromisoformat(started).astimezone(SHANGHAI).date().isoformat() != day
+            or not datetime.fromisoformat(started) <= datetime.fromisoformat(checked) <= datetime.fromisoformat(closed)):
+        return None
+    return {"trading_day": day, "started_at": started, "closed_at": closed,
+            "snapshot_checked_at": checked, "snapshot_classification": classification,
+            "reconciliation_verified": verified}
 
 
 def _present_nonnull_invalid(
@@ -913,7 +962,7 @@ def _public_last_run(
         )
         or (status == "skipped" and attempts == 0 and error_code == "NON_TRADING_DAY")
     )
-    if schema_version == 4 and status == "interrupted":
+    if schema_version >= 4 and status == "interrupted":
         valid_outcome = (error_code == "AFTER_MARKET_INTERRUPTED"
                          and (attempts is None or valid_attempts and attempts in {0, 1, 2})
                          and value.get("failure_notification") is None)

@@ -169,7 +169,7 @@ class MaintenanceProgressEvent:
     """Bounded, credential-free progress; counters never determine maintenance scope."""
 
     phase: Literal["planning", "reading", "provider", "publishing", "aggregation"]
-    state: Literal["started", "completed"]
+    state: Literal["started", "completed", "failed", "interrupted"]
     symbol: str | None
     dataset: tuple[str, str, str, str] | None
     year: int | None
@@ -318,6 +318,55 @@ class MaintenanceResult:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class DailyRecoveryResult:
+    """Exact dry-run plan plus the literal outcome of one bounded recovery attempt."""
+
+    maintenance: MaintenanceResult
+    plan_sha256: str
+    target_windows: tuple[Mapping[str, object], ...]
+    readonly: bool
+
+    @property
+    def status(self) -> str:
+        return self.maintenance.status
+
+    @property
+    def through(self) -> date | None:
+        return self.maintenance.through
+
+    @property
+    def provider_requests(self) -> int:
+        return self.maintenance.provider_requests
+
+    def as_payload(self) -> dict[str, object]:
+        payload = self.maintenance.as_payload()
+        payload.update(
+            {
+                "command": "data.daily-recovery",
+                "readonly": self.readonly,
+                "plan_sha256": self.plan_sha256,
+                "targets": [dict(item) for item in self.target_windows],
+            }
+        )
+        return payload
+
+
+def _daily_recovery_plan_sha256(
+    target_windows: tuple[Mapping[str, object], ...],
+) -> str:
+    """Hash exactly the canonical target-window JSON required by the recovery CAS."""
+
+    return hashlib.sha256(
+        json.dumps(
+            target_windows,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def _maintenance_locked(action: str, through: date) -> MaintenanceResult:
     """另一维护任务已持有 lease 时的标准 blocked 响应，避免无锁写入。"""
     return MaintenanceResult(
@@ -343,6 +392,27 @@ class _Target:
     expected: tuple[datetime, ...]
     missing: tuple[datetime, ...]
     existing: tuple[CanonicalBar, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _DailyRecoveryGroup:
+    """One frozen family-month unit, including any weekly D1 companions."""
+
+    family: tuple[str, str, str]
+    targets: tuple[_Target, ...]
+    fetched: tuple[_Target, ...]
+    intraday_derived: tuple[_Target, ...]
+    fetch_groups: tuple[tuple[_Target, ...], ...]
+    target_windows: tuple[Mapping[str, object], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _DailyRecoveryPlan:
+    """Immutable target set used for both CAS identity and execution."""
+
+    groups: tuple[_DailyRecoveryGroup, ...]
+    target_windows: tuple[Mapping[str, object], ...]
+    planned_targets: tuple[_Target, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -819,6 +889,101 @@ class HistoricalDataManager(ContractWarmupPlanner):
             self._observer = None
             self._source_cache = None
 
+    def daily_recovery(
+        self,
+        request: UpdateRequest,
+        *,
+        expected_plan_sha256: str | None = None,
+        before_apply: Callable[[], None] | None = None,
+        verify_identity: Callable[[], None] | None = None,
+        observer: MaintenanceObserver | None = None,
+    ) -> DailyRecoveryResult:
+        """Plan or execute one fixed daily recovery without widening its metadata scope."""
+
+        if (
+            request.mode != "daily"
+            or request.since is not None
+            or request.through is None
+            or request.sync_current_day_metadata
+        ):
+            raise ValueError("DAILY_RECOVERY_REQUEST_INVALID")
+        if not request.apply and expected_plan_sha256 is not None:
+            raise ValueError("DAILY_RECOVERY_PLAN_HASH_UNEXPECTED")
+        if request.apply and (
+            not isinstance(expected_plan_sha256, str)
+            or len(expected_plan_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in expected_plan_sha256
+            )
+        ):
+            raise ValueError("DAILY_RECOVERY_PLAN_HASH_INVALID")
+        self._observer = observer
+        self._progress_counts = {}
+        try:
+            if request.apply:
+                if expected_plan_sha256 is None:
+                    raise ValueError("DAILY_RECOVERY_PLAN_HASH_INVALID")
+                lease = self.catalog.acquire_maintenance_lock()
+                if lease is None:
+                    return DailyRecoveryResult(
+                        maintenance=_maintenance_locked("update", request.through),
+                        plan_sha256=expected_plan_sha256,
+                        target_windows=(),
+                        readonly=False,
+                    )
+                try:
+                    if verify_identity is not None:
+                        verify_identity()
+                    locked_plan = self._plan_daily_recovery(
+                        request.products,
+                        request.through,
+                    )
+                    locked_target_windows = _daily_recovery_target_windows(
+                        locked_plan
+                    )
+                    locked_sha256 = _daily_recovery_plan_sha256(
+                        locked_target_windows
+                    )
+                    if locked_sha256 != expected_plan_sha256:
+                        raise ValueError("DAILY_RECOVERY_PLAN_CHANGED")
+                    if verify_identity is not None:
+                        verify_identity()
+                    if before_apply is not None:
+                        before_apply()
+                    maintenance = self._execute_daily_recovery_plan(
+                        locked_plan,
+                        request.through,
+                        console_progress=False,
+                    )
+                    return DailyRecoveryResult(
+                        maintenance=maintenance,
+                        plan_sha256=locked_sha256,
+                        target_windows=locked_target_windows,
+                        readonly=False,
+                    )
+                finally:
+                    _release_maintenance_lease(lease)
+            if verify_identity is not None:
+                verify_identity()
+            plan = self._plan_daily_recovery(
+                request.products,
+                request.through,
+            )
+            target_windows = _daily_recovery_target_windows(plan)
+            if verify_identity is not None:
+                verify_identity()
+            maintenance = self._daily_recovery_plan_result(plan, request.through)
+            return DailyRecoveryResult(
+                maintenance=maintenance,
+                plan_sha256=_daily_recovery_plan_sha256(target_windows),
+                target_windows=target_windows,
+                readonly=True,
+            )
+        finally:
+            self._observer = None
+            self._source_cache = None
+
     @contextmanager
     def _progress(self, phase, key=None, year=None, month=None, *, symbol=None):
         started = monotonic()
@@ -836,9 +1001,14 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     raise _ObserverFailure("MAINTENANCE_OBSERVER_FAILED") from exc
 
         emit("started")
-        yield
-        self._progress_counts[phase] = self._progress_counts.get(phase, 0) + 1
-        emit("completed")
+        try:
+            yield
+        except BaseException as exc:
+            emit("interrupted" if isinstance(exc, KeyboardInterrupt) else "failed")
+            raise
+        else:
+            self._progress_counts[phase] = self._progress_counts.get(phase, 0) + 1
+            emit("completed")
 
     def _update(
         self, request: UpdateRequest, *, before_apply: Callable[[], None] | None,
@@ -1281,41 +1451,248 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     )
                 yield tuple(descriptors)
 
-    def _execute_daily(self, products, through, *, apply):
-        totals = dict(planned=0, applied=0, blocked=0, failed=0, provider_requests=0)
-        failures = []
-        windows = []
-        failed_families = set()
+    def _plan_daily_recovery(
+        self,
+        products: tuple[str, ...],
+        through: date,
+    ) -> _DailyRecoveryPlan:
+        """Resolve every target once so the hash and writer share one exact plan."""
+
+        groups: list[_DailyRecoveryGroup] = []
+        windows: list[Mapping[str, object]] = []
+        planned_targets: list[_Target] = []
         for descriptors in self._daily_groups(products, through):
+            self._source_cache = {}
+            desired = (
+                (
+                    key,
+                    year,
+                    month,
+                    tuple(
+                        end.astimezone(UTC)
+                        for end in self.coverage.expected_bar_ends_for_trading_days(
+                            key, days
+                        )
+                    ),
+                    days,
+                )
+                for key, year, month, days in descriptors
+            )
+            targets = tuple(
+                self._iter_targets(
+                    products,
+                    None,
+                    through,
+                    desired_months=desired,
+                )
+            )
+            fetched = tuple(
+                target
+                for target in targets
+                if target.key.frequency in PROVIDER_FETCH_FREQUENCIES
+            )
+            intraday_derived = tuple(
+                target
+                for target in targets
+                if target.key.frequency in INTRADAY_DERIVED_FREQUENCIES
+            )
+            fetch_groups = tuple(
+                (
+                    (*self._weekly_daily_companions(target, through), target)
+                    if target.key.frequency is BarFrequency.W1
+                    else (target,)
+                )
+                for target in fetched
+            )
+            expanded: list[_Target] = []
+            pending_fetch_groups = iter(fetch_groups)
+            for target in targets:
+                if target.key.frequency in PROVIDER_FETCH_FREQUENCIES:
+                    expanded.extend(next(pending_fetch_groups))
+                else:
+                    expanded.append(target)
+            target_windows = tuple(
+                _target_payload(target) for target in expanded
+            )
+            groups.append(
+                _DailyRecoveryGroup(
+                    family=_family(descriptors[0][0]),
+                    targets=targets,
+                    fetched=fetched,
+                    intraday_derived=intraday_derived,
+                    fetch_groups=fetch_groups,
+                    target_windows=target_windows,
+                )
+            )
+            windows.extend(target_windows)
+            planned_targets.extend(expanded)
+            self._source_cache = None
+        return _DailyRecoveryPlan(
+            tuple(groups),
+            tuple(windows),
+            tuple(planned_targets),
+        )
+
+    @staticmethod
+    def _daily_recovery_plan_result(
+        plan: _DailyRecoveryPlan,
+        through: date,
+    ) -> MaintenanceResult:
+        planned = len(plan.target_windows)
+        return MaintenanceResult(
+            "update",
+            "planned" if planned else "noop",
+            through,
+            planned,
+            0,
+            0,
+            0,
+            0,
+            target_windows=plan.target_windows,
+        )
+
+    def _execute_daily_recovery_plan(
+        self,
+        plan: _DailyRecoveryPlan,
+        through: date,
+        *,
+        console_progress: bool,
+    ) -> MaintenanceResult:
+        """Execute only the frozen target objects whose windows produced the CAS."""
+
+        totals = dict(planned=0, applied=0, blocked=0, failed=0, provider_requests=0)
+        failures: list[Mapping[str, object]] = []
+        failed_families = set()
+        for group in plan.groups:
             # Source rows live only for this family-month. Pointer identity is rechecked
             # on every reuse; no cross-run or cross-product Parquet cache exists.
             self._source_cache = {}
+            if group.family in failed_families:
+                totals["planned"] += len(group.targets)
+                totals["blocked"] += len(group.targets)
+                continue
+            result = self._execute_apply(
+                "update",
+                group.fetched,
+                group.intraday_derived,
+                through,
+                weekly_daily_companions=False,
+                preplanned_fetch_groups=group.fetch_groups,
+                console_progress=console_progress,
+            )
+            self._source_cache = None
+            for name in totals:
+                totals[name] += getattr(result, name)
+            failures.extend(result.failures)
+            if result.failed:
+                failed_families.add(group.family)
+            if result.stop_reason:
+                return MaintenanceResult(
+                    action="update",
+                    status="partial",
+                    through=through,
+                    planned=totals["planned"],
+                    applied=totals["applied"],
+                    blocked=totals["blocked"],
+                    failed=totals["failed"],
+                    provider_requests=totals["provider_requests"],
+                    stop_reason=result.stop_reason,
+                    failures=tuple(failures),
+                )
+        status = "noop" if not totals["planned"] else (
+            "failed" if totals["failed"] or totals["blocked"] else "passed"
+        )
+        return MaintenanceResult(
+            action="update",
+            status=status,
+            through=through,
+            planned=totals["planned"],
+            applied=totals["applied"],
+            blocked=totals["blocked"],
+            failed=totals["failed"],
+            provider_requests=totals["provider_requests"],
+            failures=tuple(failures),
+            target_windows=plan.target_windows,
+        )
+
+    def _execute_daily(
+        self,
+        products: tuple[str, ...],
+        through: date,
+        *,
+        apply: bool,
+    ) -> MaintenanceResult:
+        totals = dict(
+            planned=0,
+            applied=0,
+            blocked=0,
+            failed=0,
+            provider_requests=0,
+        )
+        failures: list[Mapping[str, object]] = []
+        windows: list[Mapping[str, object]] = []
+        failed_families: set[tuple[str, str, str]] = set()
+        for descriptors in self._daily_groups(products, through):
+            # Source rows live only for this family-month. Pointer identity is
+            # rechecked on every reuse; no cross-run or cross-product cache exists.
+            self._source_cache = {}
             desired = (
-                (key, year, month, tuple(end.astimezone(UTC) for end in
-                    self.coverage.expected_bar_ends_for_trading_days(key, days)), days)
+                (
+                    key,
+                    year,
+                    month,
+                    tuple(
+                        end.astimezone(UTC)
+                        for end in self.coverage.expected_bar_ends_for_trading_days(
+                            key, days
+                        )
+                    ),
+                    days,
+                )
                 for key, year, month, days in descriptors
             )
-            targets = tuple(self._iter_targets(
-                products, None, through, desired_months=desired,
-            ))
+            targets = tuple(
+                self._iter_targets(
+                    products,
+                    None,
+                    through,
+                    desired_months=desired,
+                )
+            )
             family = _family(descriptors[0][0])
             if family in failed_families and apply:
                 totals["planned"] += len(targets)
                 totals["blocked"] += len(targets)
                 continue
             if not apply:
-                expanded = []
+                expanded: list[_Target] = []
                 for target in targets:
                     if target.key.frequency is BarFrequency.W1:
-                        expanded.extend(self._weekly_daily_companions(target, through))
+                        expanded.extend(
+                            self._weekly_daily_companions(target, through)
+                        )
                     expanded.append(target)
-                result = self._execute("update", tuple(expanded), through, apply=False)
+                result = self._execute(
+                    "update",
+                    tuple(expanded),
+                    through,
+                    apply=False,
+                )
             else:
                 result = self._execute_apply(
                     "update",
-                    tuple(t for t in targets if t.key.frequency in PROVIDER_FETCH_FREQUENCIES),
-                    tuple(t for t in targets if t.key.frequency in INTRADAY_DERIVED_FREQUENCIES),
-                    through, weekly_daily_companions=True,
+                    tuple(
+                        target
+                        for target in targets
+                        if target.key.frequency in PROVIDER_FETCH_FREQUENCIES
+                    ),
+                    tuple(
+                        target
+                        for target in targets
+                        if target.key.frequency in INTRADAY_DERIVED_FREQUENCIES
+                    ),
+                    through,
+                    weekly_daily_companions=True,
                 )
             self._source_cache = None
             for name in totals:
@@ -1326,15 +1703,35 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 failed_families.add(family)
             if result.stop_reason:
                 return MaintenanceResult(
-                    "update", "partial", through, **totals,
-                    stop_reason=result.stop_reason, failures=tuple(failures),
+                    action="update",
+                    status="partial",
+                    through=through,
+                    planned=totals["planned"],
+                    applied=totals["applied"],
+                    blocked=totals["blocked"],
+                    failed=totals["failed"],
+                    provider_requests=totals["provider_requests"],
+                    stop_reason=result.stop_reason,
+                    failures=tuple(failures),
                 )
         status = "noop" if not totals["planned"] else (
-            "failed" if totals["failed"] or totals["blocked"] else "passed" if apply else "planned"
+            "failed"
+            if totals["failed"] or totals["blocked"]
+            else "passed"
+            if apply
+            else "planned"
         )
         return MaintenanceResult(
-            "update", status, through, **totals,
-            failures=tuple(failures), target_windows=tuple(windows),
+            action="update",
+            status=status,
+            through=through,
+            planned=totals["planned"],
+            applied=totals["applied"],
+            blocked=totals["blocked"],
+            failed=totals["failed"],
+            provider_requests=totals["provider_requests"],
+            failures=tuple(failures),
+            target_windows=tuple(windows),
         )
 
     def _plan(
@@ -1649,6 +2046,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
         *,
         weekly_daily_companions: bool,
         fail_stop: bool = False,
+        preplanned_fetch_groups: tuple[tuple[_Target, ...], ...] | None = None,
+        console_progress: bool = True,
     ) -> MaintenanceResult:
         """apply 核心循环：先聚合已有 1m，再 fetch，最后扫剩余日内派生目标。"""
         remaining_derived = list(intraday_derived)
@@ -1706,7 +2105,9 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 planned += 1
                 applied += 1
         fetch_groups: Iterable[tuple[_Target, ...]]
-        if weekly_daily_companions:
+        if preplanned_fetch_groups is not None:
+            fetch_groups = preplanned_fetch_groups
+        elif weekly_daily_companions:
             fetch_groups = (
                 (
                     (*self._weekly_daily_companions(target, through), target)
@@ -1797,7 +2198,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         stop_reason="contract_warmup_target_failed",
                         failures=tuple(failures),
                     )
-            if planned == 1 or planned % 100 == 0:
+            if console_progress and (planned == 1 or planned % 100 == 0):
                 print(
                     f"maintenance {action} fetched planned={planned} applied={applied} "
                     f"failed={len(failures)} provider_requests={provider_requests}",
@@ -1829,7 +2230,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         stop_reason="contract_warmup_target_failed",
                         failures=tuple(failures),
                     )
-            if planned % 100 == 0:
+            if console_progress and planned % 100 == 0:
                 print(
                     f"maintenance {action} derived planned={planned} applied={applied} "
                     f"failed={len(failures)} blocked={blocked}",
@@ -2125,6 +2526,46 @@ def _target_payload(target: _Target) -> Mapping[str, object]:
         "window_end": target.missing[-1].isoformat(),
         "missing_bar_count": len(target.missing),
     }
+
+
+def _daily_recovery_target_payload(target: _Target) -> Mapping[str, object]:
+    """Enrich only daily recovery targets with complete bounded CAS identities."""
+
+    return {
+        **_target_payload(target),
+        "expected_start": target.expected[0].isoformat(),
+        "expected_end": target.expected[-1].isoformat(),
+        "expected_bar_count": len(target.expected),
+        "expected_bar_ends_sha256": _bar_ends_sha256(target.expected),
+        "missing_bar_ends_sha256": _bar_ends_sha256(target.missing),
+    }
+
+
+def _daily_recovery_target_windows(
+    plan: _DailyRecoveryPlan,
+) -> tuple[Mapping[str, object], ...]:
+    """Build the dedicated CAS packet from the exact frozen execution targets."""
+
+    return tuple(
+        _daily_recovery_target_payload(target)
+        for target in plan.planned_targets
+    )
+
+
+def _bar_ends_sha256(values: tuple[datetime, ...]) -> str:
+    """Hash the exact canonical sorted UTC timestamp sequence at constant size."""
+
+    canonical = tuple(
+        item.astimezone(UTC).isoformat() for item in sorted(values)
+    )
+    return hashlib.sha256(
+        json.dumps(
+            canonical,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _contract_warmup_target_payload(target: _Target) -> Mapping[str, object]:

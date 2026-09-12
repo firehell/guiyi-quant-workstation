@@ -142,6 +142,7 @@ def run_market_runtime_promotion_preflight(
     products_loader: Callable[[], tuple[str, ...]] | None = None,
     first_session_starts_loader: FirstSessionStartsLoader | None = None,
     status_path: Path | None = None,
+    status_authority_factory: Callable[[], Any] | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> PromotionDecision:
     """Read the existing runtime state and fail closed at every dependency edge."""
@@ -158,12 +159,24 @@ def run_market_runtime_promotion_preflight(
             from app.market_data.operational_universe import load_operational_products
 
             products_loader = load_operational_products
+        status_authority = None
         if status_path is None:
             from app.core.env import PROJECT_ROOT
 
-            status_path = _status_path_from_environment() or (
-                PROJECT_ROOT / ".run" / "after-market-status.json"
-            )
+            if status_authority_factory is None:
+                from app.market_data.runtime_status_authority import (
+                    resolve_market_runtime_status_authority,
+                )
+
+                status_authority = resolve_market_runtime_status_authority(
+                    candidate_root=PROJECT_ROOT,
+                    expected_stopped_status_sha256=os.environ.get(
+                        "GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256"
+                    ),
+                )
+            else:
+                status_authority = status_authority_factory()
+            status_path = status_authority.path
         products = products_loader()
         current_time = now()
         with session_factory() as session:
@@ -191,7 +204,14 @@ def run_market_runtime_promotion_preflight(
                 snapshot = store.subscriptions(trading_day)
             except (TypeError, ValueError):
                 snapshot = _INVALID
-        status = _load_after_market_status(status_path)
+        status = (
+            None
+            if status_authority is not None
+            and status_authority.mode == "first_install"
+            else _load_after_market_status(status_path)
+        )
+        if status_authority is not None:
+            status_authority.recheck()
         return evaluate_market_runtime_promotion(
             products=products,
             phases=phases,
@@ -351,6 +371,11 @@ def _timestamp(value: object) -> datetime | None:
 def _public_status_dates_are_sane(public: Mapping[str, object], now: datetime) -> bool:
     today = now.astimezone(_SHANGHAI).date()
     dates: list[object] = [public.get("last_successful_trading_day")]
+    interruption = public.get("last_interruption")
+    if isinstance(interruption, Mapping):
+        closed_at = _timestamp(interruption.get("closed_at"))
+        if closed_at is None or closed_at > now.astimezone(UTC):
+            return False
     last_run = public.get("last_run")
     if isinstance(last_run, Mapping):
         dates.append(last_run.get("trading_day"))
@@ -371,22 +396,6 @@ def _public_status_dates_are_sane(public: Mapping[str, object], now: datetime) -
         except ValueError:
             return False
     return True
-
-
-def _status_path_from_environment() -> Path | None:
-    configured = os.environ.get("GUIYI_AFTER_MARKET_STATUS_PATH")
-    if configured is None:
-        return None
-    path = Path(configured)
-    if (
-        not path.is_absolute()
-        or path.name != "after-market-status.json"
-        or path.parent.name != ".run"
-        or ".." in path.parts
-        or not path.parent.parent.is_dir()
-    ):
-        raise ValueError("PROMOTION_STATUS_PATH_UNAVAILABLE")
-    return path
 
 
 def _load_after_market_status(path: Path) -> object:

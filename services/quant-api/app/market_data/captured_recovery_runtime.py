@@ -37,18 +37,60 @@ def runtime_heartbeat_identity() -> dict[str, object]:
 
 
 def _read_command(arguments: list[str], *, root: Path) -> str:
+    result = _command_result(arguments, root=root)
+    if result.returncode != 0:
+        _reject("IDENTITY_UNAVAILABLE")
+    return result.stdout.strip()
+
+
+def _command_result(
+    arguments: list[str], *, root: Path, capture_stderr: bool = False
+) -> subprocess.CompletedProcess[str]:
     try:
         result = subprocess.run(
             arguments, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, timeout=5, check=False,
+            stderr=subprocess.PIPE if capture_stderr else subprocess.DEVNULL,
+            text=True, timeout=5, check=False,
             env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1",
                  "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_OPTIONAL_LOCKS": "0"},
         )
     except (OSError, subprocess.SubprocessError, UnicodeError):
         _reject("IDENTITY_UNAVAILABLE")
-    if result.returncode != 0 or not isinstance(result.stdout, str):
+    if not isinstance(result.stdout, str) or (
+        capture_stderr and not isinstance(result.stderr, str)
+    ):
         _reject("IDENTITY_UNAVAILABLE")
-    return result.stdout.strip()
+    return result
+
+
+def _read_launchd_service(label: str, *, root: Path) -> str | None:
+    """Return one loaded definition, or None only for an explicit label absence."""
+    if re.fullmatch(
+        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|log-rotate|weekly-audit)",
+        label,
+    ) is None:
+        _reject("IDENTITY_UNAVAILABLE")
+    domain = f"gui/{os.getuid()}"
+    _read_command(["/bin/launchctl", "print", domain], root=root)
+    result = _command_result(
+        ["/bin/launchctl", "print", f"{domain}/{label}"],
+        root=root,
+        capture_stderr=True,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    unavailable = result.stdout + result.stderr
+    explicit_absence = (
+        f'Could not find service "{label}" in domain for user gui: {os.getuid()}'
+    )
+    if result.returncode == 113 and unavailable in {
+        explicit_absence,
+        f"{explicit_absence}\n",
+        f"Bad request.\n{explicit_absence}",
+        f"Bad request.\n{explicit_absence}\n",
+    }:
+        return None
+    _reject("IDENTITY_UNAVAILABLE")
 
 
 def _verify_markers(root: Path) -> None:
@@ -127,12 +169,18 @@ def _verify_loaded_service(
     return fields
 
 
-def _verify_after_market_plist(*, root: Path, commit: str,
-                               label: str = "com.guiyi.quant-after-market") -> None:
+def _verify_after_market_plist(
+    *,
+    root: Path,
+    commit: str,
+    label: str = "com.guiyi.quant-after-market",
+    home: Path | None = None,
+) -> None:
     """Require the installed schedule to retain the same guarded after-market code root."""
     if label not in {f"com.guiyi.quant-{name}" for name in ("api", "web", "live", "alert", "after-market")}:
         _reject("SERVICE_CONFIGURATION_INVALID")
-    path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    account_home = home if home is not None else Path.home()
+    path = account_home / "Library" / "LaunchAgents" / f"{label}.plist"
     try:
         parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
@@ -156,7 +204,7 @@ def _verify_after_market_plist(*, root: Path, commit: str,
         _reject("SERVICE_CONFIGURATION_INVALID")
     environment = payload.get("EnvironmentVariables")
     if (payload.get("Label") != label
-            or payload.get("WorkingDirectory") != str(Path.home() if label in {"com.guiyi.quant-api", "com.guiyi.quant-web"} else root)
+            or payload.get("WorkingDirectory") != str(account_home if label in {"com.guiyi.quant-api", "com.guiyi.quant-web"} else root)
             or not isinstance(environment, dict)
             or environment.get("GUIYI_PROJECT_ROOT") != str(root)
             or environment.get("GUIYI_RUNTIME_COMMIT") != commit):

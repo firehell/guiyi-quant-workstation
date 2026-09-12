@@ -1,0 +1,591 @@
+{
+  "code_commit": "044972b82201afe6dc9ee5a532040d748b862bac",
+  "target_patch": "v1.10.7 (not released)",
+  "source_blobs": {
+    "scripts/ops/macos/run-local-service.sh": "a68af8792317db8e29f2861d0f85e7b2a8c890f1",
+    "services/quant-api/app/main.py": "5727024d5287ac62d590f2f6f986563fcab70b8f",
+    "services/quant-api/app/api/market_newow.py": "ae567a0a53a917dbb78b819afb34fc6cf02eb314",
+    "services/quant-api/app/market_data/newow/snapshot_cache.py": "9e516aa3007b15e4e43dcccfcda1f8f20e7145cd",
+    "services/quant-api/app/market_data/newow/resource_gate.py": "299eebf0f729b87a1b2372481b8a784aacfd96a2",
+    "services/quant-api/app/market_data/newow/inflight.py": "8577e5c9372206569a596d4fb249e80f59fdbe98"
+  },
+  "readonly_preflight": {
+    "database_readonly": "on",
+    "advisory_locks_present": false
+  },
+  "http": {
+    "cutoff": "2026-09-08T07:00:00.000001Z",
+    "product": "au",
+    "chart_limit": 100,
+    "history_limit": 2,
+    "performance_since": "2023-01-01",
+    "performance_through": "2026-09-08",
+    "os_disk_cache_cleared": false,
+    "workers": 1,
+    "rounds": [
+      {
+        "pid": 10973,
+        "cold_chart_s": 0.3786220839974703,
+        "warm_chart_s": 0.23837450000428362,
+        "cold_reference_s": 4.297576625001966,
+        "warm_reference_s": 4.130157542000234,
+        "cold_comparator_s": 1.1138445409960696,
+        "warm_comparator_s": 1.077388958001393,
+        "chart_input_sha256": "daaa31c9667d40cf89cdd5ecc92cff0b59d3403f78e2a0631d160c164182abec",
+        "reference_input_sha256": "227f7c1c18ac90eafa89a0b9334b7b27c97602f8d6db55fda45cf1720756293b",
+        "reference_count": 56,
+        "interleaved_connections": 4,
+        "chain_passed": true
+      },
+      {
+        "pid": 11013,
+        "cold_chart_s": 0.3046885419971659,
+        "warm_chart_s": 0.23703858399676392,
+        "cold_reference_s": 4.229270958996494,
+        "warm_reference_s": 3.9265546669994364,
+        "cold_comparator_s": 1.1180643340048846,
+        "warm_comparator_s": 1.1582319169974653,
+        "chart_input_sha256": "daaa31c9667d40cf89cdd5ecc92cff0b59d3403f78e2a0631d160c164182abec",
+        "reference_input_sha256": "227f7c1c18ac90eafa89a0b9334b7b27c97602f8d6db55fda45cf1720756293b",
+        "reference_count": 56,
+        "interleaved_connections": 4,
+        "chain_passed": true
+      },
+      {
+        "pid": 11070,
+        "cold_chart_s": 0.2966536250023637,
+        "warm_chart_s": 0.2201388749963371,
+        "cold_reference_s": 4.170971957995789,
+        "warm_reference_s": 4.014867749996483,
+        "cold_comparator_s": 1.1285674590035342,
+        "warm_comparator_s": 1.1283518339987495,
+        "chart_input_sha256": "daaa31c9667d40cf89cdd5ecc92cff0b59d3403f78e2a0631d160c164182abec",
+        "reference_input_sha256": "227f7c1c18ac90eafa89a0b9334b7b27c97602f8d6db55fda45cf1720756293b",
+        "reference_count": 56,
+        "interleaved_connections": 4,
+        "chain_passed": true
+      },
+      {
+        "pid": 11093,
+        "cold_chart_s": 0.3032542500004638,
+        "warm_chart_s": 0.22334399999817833,
+        "cold_reference_s": 4.212375957999029,
+        "warm_reference_s": 3.954052249995584,
+        "cold_comparator_s": 1.1434772909997264,
+        "warm_comparator_s": 1.120285334000073,
+        "chart_input_sha256": "daaa31c9667d40cf89cdd5ecc92cff0b59d3403f78e2a0631d160c164182abec",
+        "reference_input_sha256": "227f7c1c18ac90eafa89a0b9334b7b27c97602f8d6db55fda45cf1720756293b",
+        "reference_count": 56,
+        "interleaved_connections": 4,
+        "chain_passed": true
+      },
+      {
+        "pid": 11130,
+        "cold_chart_s": 0.3067201669982751,
+        "warm_chart_s": 0.22835725000186358,
+        "cold_reference_s": 4.2944564999997965,
+        "warm_reference_s": 4.342047999998613,
+        "cold_comparator_s": 1.1607852500019362,
+        "warm_comparator_s": 1.1421699999991688,
+        "chart_input_sha256": "daaa31c9667d40cf89cdd5ecc92cff0b59d3403f78e2a0631d160c164182abec",
+        "reference_input_sha256": "227f7c1c18ac90eafa89a0b9334b7b27c97602f8d6db55fda45cf1720756293b",
+        "reference_count": 56,
+        "interleaved_connections": 4,
+        "chain_passed": true
+      }
+    ],
+    "latency": {
+      "health_idle": {
+        "count": 200,
+        "p95_s": 0.005668207995768171,
+        "max_s": 0.036579540996172,
+        "errors": 0
+      },
+      "health_load": {
+        "count": 2078,
+        "p95_s": 0.012854375003371388,
+        "max_s": 0.16520870800013654,
+        "errors": 0
+      },
+      "bars_idle": {
+        "count": 86,
+        "p95_s": 0.06290537500171922,
+        "max_s": 0.07518699999491218,
+        "errors": 0
+      },
+      "bars_load": {
+        "count": 722,
+        "p95_s": 0.09141404100228101,
+        "max_s": 0.32868416699784575,
+        "errors": 0
+      }
+    },
+    "passed": true
+  },
+  "browser": {
+    "code_sha": "044972b82201afe6dc9ee5a532040d748b862bac",
+    "product": "au",
+    "cutoff": "2026-09-08T07:00:00.000001Z",
+    "mode": "actual_candidate_no_route_interception",
+    "before_reference_count": 50,
+    "after_reference_count": 70,
+    "located_reference_id": "8c13c399194e770513d5c55d00cdde9bee7fcf5ed27d95b8171a360252af35d4",
+    "page_errors": [],
+    "all_status_200": true,
+    "one_snapshot_token": true,
+    "reference_summary_unchanged": true,
+    "trace": [
+      {
+        "params": {
+          "product": "au",
+          "strategy": "trend",
+          "frequency": "1d",
+          "series_kind": "actual_dominant",
+          "section": "chart",
+          "as_of": "2026-09-08T07:00:00.000001Z"
+        },
+        "status": 200,
+        "token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP",
+        "input_sha256": "d8f93c0eb2bff4dfffdf53a74a2712dcac0d88bfe8cddf29edbddc6d7aac2b58",
+        "section_status": {
+          "status": "ready",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason_code": null
+        }
+      },
+      {
+        "params": {
+          "product": "au",
+          "strategy": "trend",
+          "frequency": "1d",
+          "series_kind": "actual_dominant",
+          "section": "auxiliary",
+          "as_of": "2026-09-08T07:00:00.000001Z",
+          "component": "macd",
+          "snapshot_token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP"
+        },
+        "status": 200,
+        "token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP",
+        "input_sha256": "d8f93c0eb2bff4dfffdf53a74a2712dcac0d88bfe8cddf29edbddc6d7aac2b58",
+        "section_status": {
+          "status": "ready",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason_code": null
+        }
+      },
+      {
+        "params": {
+          "product": "au",
+          "strategy": "trend",
+          "frequency": "1d",
+          "series_kind": "actual_dominant",
+          "section": "reference",
+          "as_of": "2026-09-08T07:00:00.000001Z",
+          "snapshot_token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP"
+        },
+        "status": 200,
+        "token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP",
+        "input_sha256": "227f7c1c18ac90eafa89a0b9334b7b27c97602f8d6db55fda45cf1720756293b",
+        "section_status": {
+          "status": "ready",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason_code": null
+        }
+      },
+      {
+        "params": {
+          "product": "au",
+          "strategy": "trend",
+          "frequency": "1d",
+          "series_kind": "actual_dominant",
+          "section": "reference",
+          "as_of": "2026-09-08T07:00:00.000001Z",
+          "performance_since": "2023-01-01",
+          "performance_through": "2026-09-08",
+          "history_limit": "50",
+          "history_before": "eyJiZWZvcmUiOiJbXCIyMDIzLTEyLTE0VDA3OjAwOjAwKzAwOjAwXCIsMCxcImIyYzg0ZmJjZTljYjVmNWM1YWFlMmJjZDZjZTE3OTQ3NTRhYTUwYmE2YmI4YjVmZWExMWFlZjljMGFkMzBmOGFcIl0iLCJmaW5nZXJwcmludCI6IjIyN2Y3YzFjMThhYzkwZWFmYTg5YTBiOTMzNGI3YjI3Yzk3NjAyZjhkNmRiNTVmZGE0NWNmMTcyMDc1NjI5M2IiLCJraW5kIjoicmVmZXJlbmNlIiwicGFnZV9pZGVudGl0eSI6IjdhNDY2ZTYxZTYxMWI1NDViZTY1OTRmMzUxOTg3MzRhZTU5Zjk2ZTQyZTliNzlmMTVkODE1ODYxODk5MGY5N2MiLCJ2IjoxfQ",
+          "snapshot_token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP"
+        },
+        "status": 200,
+        "token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP",
+        "input_sha256": "227f7c1c18ac90eafa89a0b9334b7b27c97602f8d6db55fda45cf1720756293b",
+        "section_status": {
+          "status": "ready",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason_code": null
+        }
+      },
+      {
+        "params": {
+          "product": "au",
+          "strategy": "trend",
+          "frequency": "1d",
+          "series_kind": "actual_dominant",
+          "section": "auxiliary",
+          "as_of": "2026-09-08T07:00:00.000001Z",
+          "component": "zhaoyao_mirror",
+          "snapshot_token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP"
+        },
+        "status": 200,
+        "token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP",
+        "input_sha256": "d8f93c0eb2bff4dfffdf53a74a2712dcac0d88bfe8cddf29edbddc6d7aac2b58",
+        "section_status": {
+          "status": "ready",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason_code": null
+        }
+      },
+      {
+        "params": {
+          "product": "au",
+          "strategy": "trend",
+          "frequency": "1d",
+          "series_kind": "actual_dominant",
+          "section": "chart",
+          "as_of": "2026-09-08T07:00:00.000001Z",
+          "chart_limit": "500",
+          "chart_older_window": "jnRf-j8fyYCBWYrPhMAi0HmFPToRKEOP",
+          "snapshot_token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP"
+        },
+        "status": 200,
+        "token": "7wprLkC_3vMAW1bCU3GH5Xl_DwmVvLVP",
+        "input_sha256": "baa8f06012da51d735aebeeb8c01b0fae675b2dead3e5ced57f2178eaf0625d8",
+        "section_status": {
+          "status": "ready",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason_code": null
+        }
+      }
+    ]
+  },
+  "current_auxiliary": {
+    "params": {
+      "product": "au",
+      "strategy": "trend",
+      "frequency": "1d",
+      "series_kind": "actual_dominant",
+      "section": "auxiliary",
+      "as_of": "2026-09-08T07:00:00.000001Z",
+      "component": "zhaoyao_mirror",
+      "snapshot_token": "vNxPCKcg4pZo3aX91YHL2nV7K5HdbEWR"
+    },
+    "meta": {
+      "schema_version": "newow_product_detail_v1",
+      "identity": {
+        "product": "au",
+        "strategy": "trend",
+        "frequency": "1d",
+        "series_kind": "actual_dominant",
+        "profile_id": "newow_product_trend_1d_v1",
+        "formula_versions": [
+          "newow_escape_d123_page_v2",
+          "newow_trend_band_page_v2"
+        ]
+      },
+      "as_of": "2026-09-08T07:00:00.000001Z",
+      "read_at": "2026-09-11T09:38:45.635127Z",
+      "input_content_sha256": "d8f93c0eb2bff4dfffdf53a74a2712dcac0d88bfe8cddf29edbddc6d7aac2b58",
+      "data_revision_identity": null,
+      "snapshot_token": "vNxPCKcg4pZo3aX91YHL2nV7K5HdbEWR",
+      "reference_model_version": "newow_marker_reference_zero_cost_v1",
+      "futures_adaptation_version": "newow_futures_segment_interrupt_v1"
+    },
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "segments": [
+      {
+        "contract": "AU2410",
+        "bars": 243,
+        "first": "2023-09-18T07:00:00Z",
+        "last": "2024-09-19T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2412",
+        "bars": 246,
+        "first": "2023-11-16T07:00:00Z",
+        "last": "2024-11-21T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2502",
+        "bars": 241,
+        "first": "2024-01-16T07:00:00Z",
+        "last": "2025-01-14T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2504",
+        "bars": 244,
+        "first": "2024-03-18T07:00:00Z",
+        "last": "2025-03-20T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2506",
+        "bars": 235,
+        "first": "2024-05-16T07:00:00Z",
+        "last": "2025-05-06T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2508",
+        "bars": 230,
+        "first": "2024-07-16T07:00:00Z",
+        "last": "2025-06-27T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2510",
+        "bars": 244,
+        "first": "2024-09-19T07:00:00Z",
+        "last": "2025-09-18T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2512",
+        "bars": 246,
+        "first": "2024-11-18T07:00:00Z",
+        "last": "2025-11-20T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2602",
+        "bars": 244,
+        "first": "2025-01-16T07:00:00Z",
+        "last": "2026-01-19T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2604",
+        "bars": 247,
+        "first": "2025-03-18T07:00:00Z",
+        "last": "2026-03-24T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2606",
+        "bars": 248,
+        "first": "2025-05-16T07:00:00Z",
+        "last": "2026-05-25T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2608",
+        "bars": 250,
+        "first": "2025-07-16T07:00:00Z",
+        "last": "2026-07-27T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      },
+      {
+        "contract": "AU2610",
+        "bars": 237,
+        "first": "2025-09-16T07:00:00Z",
+        "last": "2026-09-08T07:00:00Z",
+        "keys": [
+          "entry",
+          "wash",
+          "distribution",
+          "markup",
+          "exit",
+          "inducement",
+          "peaks",
+          "caution",
+          "repainting",
+          "formal_signal_eligible",
+          "formula_version"
+        ]
+      }
+    ]
+  },
+  "checks": {
+    "newow_module": {
+      "passed": 1326,
+      "skipped": 1
+    },
+    "socket_http": {
+      "passed": 2
+    },
+    "engineering": {
+      "passed": 84
+    },
+    "web_unit": {
+      "passed": 117
+    },
+    "web_browser_fixture": {
+      "passed": 51
+    },
+    "openspec": {
+      "passed": 9
+    },
+    "ruff": "passed",
+    "secret_findings": 0,
+    "diff_check": "passed",
+    "independent_review": "no P0-P3"
+  },
+  "limits": [
+    "AU trend 1d at the frozen cutoff only; not all-product readiness.",
+    "OS/disk caches were not cleared. Early HTTP sampling overlapped a fixture pytest CPU job; this is no throughput or two-worker speedup claim.",
+    "Browser older-window locate validates marker/reference identity; auxiliary visual acceptance covers its loaded current display range, not every older viewport.",
+    "Initial harness assertions (TCP TIME_WAIT, end-of-history button, locate does not open modal) were corrected; final full HTTP and browser runs passed without product changes or added business retries.",
+    "No release, tag movement, Runtime switch, provider download, data/DB mutation, or notification."
+  ],
+  "artifact_sha256": {
+    "auxiliary_browser.cjs": "9428a4ce84e5af58fb1e39da10f9d5ba622e8173faef550d24387b7bc9dae805",
+    "browser-auxiliary-current.png": "79648e403daa71542cb3a476a64e0c36e8b8836228d457c53f54f6a2c8c2db69",
+    "browser-chart.png": "bb4b3f061b7744cbf7f40c6bf7f280f387fca72e67f787402299c03de75415a6",
+    "browser-reference.png": "65c87d86847e9aa0e3e395595cdb8506c2894e0cb101c1c8fe26dd6db9d71eb2",
+    "browser_acceptance.cjs": "9431b63c981042c19f0a7c51b408f1bfbde215973448402302805813716e3f1a",
+    "intervals.json": "e53ea037c2829a986118aeb6704b30d91153bfbee32d88fb67b4e9b1812181af",
+    "measure.py": "fbe05167ba72e95f0eba58d5bfbda7c3ddcd4ba6ab3f514620b288ff07c251c5",
+    "samples.ndjson": "4112dff2a1cb303ff97ad9750d0fd4c518dc93458289642721b4132144cbd061",
+    "serve.py": "da87092e430f943d1375ec91aa27ae825a292ab341e1733a9079fb86a7713ae1"
+  }
+}

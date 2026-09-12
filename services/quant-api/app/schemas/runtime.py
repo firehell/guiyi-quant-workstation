@@ -85,6 +85,17 @@ class RuntimeWeeklyAuditHealth(BaseModel):
     current_symbol: str | None = None
 
 
+class RuntimeAfterMarketInterruption(BaseModel):
+    """Administrative closeout evidence at the recorded observation time only."""
+
+    trading_day: str
+    started_at: str
+    closed_at: str
+    snapshot_checked_at: str
+    snapshot_classification: Literal["not_verified_missing", "verified_match"]
+    reconciliation_verified: bool
+
+
 class RuntimeAfterMarketHealth(BaseModel):
     """由本地公开状态文件派生的盘后维护摘要。"""
 
@@ -94,6 +105,7 @@ class RuntimeAfterMarketHealth(BaseModel):
     expected_trading_day: str | None = None
     current_run: RuntimeAfterMarketCurrentRun | None = None
     last_run: RuntimeAfterMarketRun | None = None
+    last_interruption: RuntimeAfterMarketInterruption | None = Field(default=None, exclude_if=lambda value: value is None)
     last_successful_trading_day: str | None = None
     last_failure: dict[str, str] | None = None
     error_type: str | None = None

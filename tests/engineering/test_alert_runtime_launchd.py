@@ -106,6 +106,34 @@ def test_alert_confirmation_rejects_installed_api_path_mismatch_without_mutation
     assert not calls.exists()
 
 
+@pytest.mark.parametrize("web_concurrency", [None, "2", "8"])
+def test_api_launcher_uses_one_snapshot_owner(tmp_path: Path, web_concurrency: str | None) -> None:
+    repo = _copy_fixture(tmp_path / "repo")
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n', encoding="utf-8")
+    python.chmod(0o700)
+    runtime_env = tmp_path / "project.env"
+    runtime_env.write_text("POSTGRES_PASSWORD=test-only\n", encoding="utf-8")
+    env = {
+        "PATH": os.environ["PATH"],
+        "HOME": str(tmp_path / "home"),
+        "GUIYI_PROJECT_ROOT": str(repo),
+        "GUIYI_RUNTIME_ENV": str(runtime_env),
+    }
+    if web_concurrency is not None:
+        env["WEB_CONCURRENCY"] = web_concurrency
+    result = subprocess.run(
+        [str(repo / "scripts/ops/macos/run-local-service.sh"), "api"],
+        cwd=repo, env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "-m", "uvicorn", "app.main:app", "--app-dir", str(repo / "services/quant-api"),
+        "--host", "127.0.0.1", "--port", "8000", "--workers", "1", "--no-access-log",
+    ]
+
+
 def test_run_local_service_preserves_launcher_config_over_runtime_env(
     tmp_path: Path,
 ) -> None:
@@ -365,7 +393,7 @@ def test_failed_second_market_label_boots_out_every_touched_service(
         home,
         fake_bin,
         "--confirm-market-runtime",
-        extra_env={"GUIYI_FAKE_FAIL_AFTER_MARKET_ENABLE": "1"},
+        extra_env={"GUIYI_FAKE_FAIL_LIVE_ENABLE": "1"},
         check=False,
     )
 
@@ -375,13 +403,13 @@ def test_failed_second_market_label_boots_out_every_touched_service(
     failed_enable = next(
         index
         for index, call in enumerate(recorded)
-        if call.startswith("enable ") and "com.guiyi.quant-after-market" in call
+        if call.startswith("enable ") and "com.guiyi.quant-live" in call
     )
     cleanup = recorded[failed_enable + 1 :]
     cleanup_bootouts = [call for call in cleanup if call.startswith("bootout ")]
     assert [call.rsplit("/", 1)[-1] for call in cleanup_bootouts] == [
-        "com.guiyi.quant-after-market",
         "com.guiyi.quant-live",
+        "com.guiyi.quant-after-market",
     ]
 
 
@@ -451,14 +479,13 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
         '  if [ "${GUIYI_FAKE_FAIL_ALERT_BOOTSTRAP:-0}" = "1" ]; then exit 8; fi\n'
         'esac\n'
         'if [ "${1:-}" = "bootstrap" ]; then\n'
-        '  case "$*" in *com.guiyi.quant-alert.plist*) touch "$alert_state" ;; esac\n'
+        '  label="${3##*/}"; label="${label%.plist}"; touch "$state_dir/$label"\n'
         'fi\n'
         'if [ "${1:-}" = "bootout" ]; then\n'
         '  case "$*" in *com.guiyi.quant-alert*)\n'
         '    if [ -f "$alert_state" ] && [ "${GUIYI_FAKE_STOP_REMAINS_LOADED:-0}" = "1" ]; then exit 8; fi\n'
-        '    rm -f "$alert_state"\n'
-        '    exit 0\n'
         '  esac\n'
+        '  label="${2##*/}"; rm -f "$state_dir/$label"; exit 0\n'
         'fi\n'
         'if [ "${1:-}" = "print" ] && [ "${2:-}" = "gui/$UID" ]; then echo "domain = gui/$UID"; exit 0; fi\n'
         'if [ "${1:-}" = "print" ]; then\n'
@@ -470,7 +497,10 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
         'if [ "${1:-}" = "enable" ] && [ "${GUIYI_FAKE_FAIL_AFTER_MARKET_ENABLE:-0}" = "1" ]; then\n'
         '  case "$*" in *com.guiyi.quant-after-market*) exit 8 ;; esac\n'
         'fi\n'
-        'case "${1:-}" in bootstrap|enable|kickstart) exit 0 ;; print) echo "Could not find service" >&2; exit 1 ;; bootout) exit 1 ;; *) exit 2 ;; esac\n',
+        'if [ "${1:-}" = "enable" ] && [ "${GUIYI_FAKE_FAIL_LIVE_ENABLE:-0}" = "1" ]; then\n'
+        '  case "$*" in *com.guiyi.quant-live*) exit 8 ;; esac\n'
+        'fi\n'
+        'case "${1:-}" in bootstrap|enable|kickstart) exit 0 ;; print) printf \'Could not find service "%s" in domain for user gui: %s\\n\' "${2##*/}" "$UID" >&2; exit 113 ;; bootout) exit 1 ;; *) exit 2 ;; esac\n',
         encoding="utf-8",
     )
     launchctl.chmod(0o755)
@@ -507,6 +537,7 @@ def _run(
     extra_env: dict[str, str] | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    _install_python_authority_fixture(repo)
     result = subprocess.run(
         [str(repo / "scripts/ops/macos/install-local-services.sh"), mode],
         cwd=repo,
@@ -524,3 +555,33 @@ def _run(
     if check:
         assert result.returncode == 0, result.stderr
     return result
+
+
+def _install_python_authority_fixture(repo: Path) -> None:
+    python = repo / "services/quant-api/.venv/bin/python"
+    behavior = python.with_name("python-test-behavior")
+    if behavior.exists():
+        return
+    python.parent.mkdir(parents=True, exist_ok=True)
+    if python.exists():
+        shutil.copy2(python, behavior)
+    else:
+        behavior.write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+        behavior.chmod(0o700)
+    python.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = -m ] && [ "$2" = app.market_data.runtime_status_authority ] '
+        '&& [ "$3" = launchd-service-state ]; then\n'
+        '  label="$4"\n'
+        '  state_file="$HOME/authority-state/$label"\n'
+        '  if [ -f "$state_file" ]; then state="$(/bin/cat "$state_file")"\n'
+        '  elif [ -f "$HOME/fake-launchctl-state/$label" ]; then state=loaded\n'
+        "  else state=absent\n"
+        "  fi\n"
+        '  case "$state" in loaded|absent) printf \'%s\\n\' "$state" ;; *) exit 1 ;; esac\n'
+        "  exit 0\n"
+        "fi\n"
+        'exec "$(dirname "$0")/python-test-behavior" "$@"\n',
+        encoding="utf-8",
+    )
+    python.chmod(0o700)

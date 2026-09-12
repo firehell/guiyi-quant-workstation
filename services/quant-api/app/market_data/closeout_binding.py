@@ -1,6 +1,8 @@
 """Private target configuration binding for closeout; never sources shell or logs settings."""
 
 from datetime import UTC, datetime
+from copy import deepcopy
+from collections.abc import Callable
 import hashlib
 import json
 import os
@@ -13,16 +15,31 @@ from redis import Redis
 from sqlalchemy.engine import make_url
 
 from app.db.url import normalize_database_url
-from app.market_data.after_market_closeout import _directory, _read, verify_closeout_identity
-from app.market_data.captured_recovery_runtime import _read_command, _verify_loaded_service, _verify_heartbeat
+from app.market_data.after_market import public_after_market_status
+from app.market_data.after_market_closeout import (
+    _directory,
+    _read,
+    verify_closeout_identity,
+    verify_runtime_release_identity,
+)
+from app.market_data.captured_recovery_runtime import (
+    _read_command,
+    _read_launchd_service,
+    _verify_heartbeat,
+    _verify_loaded_service,
+)
 from app.market_data.coverage_source import DatabaseCoverageSource
 from app.market_data.operational_universe import load_operational_products
+from app.market_data.rqdata_adapter import (
+    RQDATA_PROVIDER_SETTINGS,
+    runtime_provider_settings,
+)
 
 
 _DEPENDENCY_SETTINGS = {
     "DATABASE_URL", "POSTGRES_PASSWORD", "REDIS_URL", "REDIS_PASSWORD",
     "GUIYI_CANONICAL_DATA_ROOT", "GUIYI_LIVE_RECOVERY_ENABLED",
-}
+} | RQDATA_PROVIDER_SETTINGS
 
 _DEPENDENCY_SOURCE_SETTINGS = _DEPENDENCY_SETTINGS | {
     "POSTGRES_DB", "POSTGRES_PORT", "POSTGRES_USER", "REDIS_PORT",
@@ -30,7 +47,7 @@ _DEPENDENCY_SOURCE_SETTINGS = _DEPENDENCY_SETTINGS | {
 
 _CLOSEOUT_IGNORED_SETTINGS = {
     "CORS_ORIGINS", "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",
-    "RQDATA_ADDR", "RQDATA_LICENSE_KEY", "RQDATA_PASSWORD", "RQDATA_USERNAME", "VITE_API_BASE_URL",
+    "VITE_API_BASE_URL",
     "VITE_MARKET_WS_URL", "VITE_PROXY_API_TARGET", "VITE_PROXY_WS_TARGET",
 }
 
@@ -106,8 +123,8 @@ def _redis_url(settings: dict[str, str]) -> str:
     return value
 
 
-def assert_dependencies(settings, *, root: Path, manager, session, redis, products) -> None:
-    """Inspect actual constructed dependencies without creating any connection."""
+def _assert_dependency_endpoints(settings, *, root: Path, session, redis, products) -> Path:
+    """Verify DB/Redis/Canonical/universe identities without constructing a provider."""
     if any(key.startswith("PG") for key in os.environ):
         raise ValueError
     expected_db = make_url(normalize_database_url(settings["DATABASE_URL"]))
@@ -127,15 +144,37 @@ def assert_dependencies(settings, *, root: Path, manager, session, redis, produc
     canonical = Path(settings["GUIYI_CANONICAL_DATA_ROOT"])
     if not canonical.is_absolute() or canonical != canonical.resolve() or ".." in canonical.parts:
         raise ValueError
+    if products != _products(root):
+        raise ValueError
+    return canonical
+
+
+def assert_catalog_dependencies(settings, *, root: Path, catalog, session, redis, products) -> None:
+    """Verify the provider-free current-day plan/apply dependency surface."""
+    canonical = _assert_dependency_endpoints(
+        settings, root=root, session=session, redis=redis, products=products
+    )
+    if catalog.session is not session or catalog.canonical_root != canonical:
+        raise ValueError
+
+
+def assert_dependencies(settings, *, root: Path, manager, session, redis, products) -> None:
+    """Inspect actual constructed historical dependencies without provider calls."""
+    canonical = _assert_dependency_endpoints(
+        settings, root=root, session=session, redis=redis, products=products
+    )
     if (manager.catalog.session is not session or manager.catalog.canonical_root != canonical
             or manager.store.root != canonical or manager.coverage.session is not session
             or manager.store.boundary_validator != manager.coverage.valid_boundaries):
         raise ValueError
+    if (
+        not hasattr(manager.provider, "matches_provider_settings")
+        or not manager.provider.matches_provider_settings(settings)
+    ):
+        raise ValueError
     target = DatabaseCoverageSource(session, root / "data/universe/product_window_starts.csv",
         history_floor_path=root / "data/universe/active_history_floor.txt")
     if manager.coverage.starts != target.starts or manager.coverage.history_floor != target.history_floor:
-        raise ValueError
-    if products != _products(root):
         raise ValueError
 
 
@@ -226,21 +265,32 @@ def _environments(output: str) -> tuple[dict[str, str], ...]:
 class RuntimeDataBinding:
     """Pins source identity in memory. No configuration or digest is publicly returned."""
 
-    def __init__(self, root: Path, commit: str, status_sha256: str):
+    def __init__(
+        self,
+        root: Path,
+        commit: str,
+        status_sha256: str,
+        *,
+        home: Path | None = None,
+    ):
         if any(key.startswith("PG") for key in os.environ):
             raise ValueError
         self.root, self.commit = root, commit
-        verify_closeout_identity(root, commit)
+        self.home = home if home is not None else Path.home()
         with _directory(root / ".run") as directory:
             status = _read(directory, "after-market-status.json")
         if hashlib.sha256(status).hexdigest() != status_sha256:
             raise ValueError
-        started = datetime.fromisoformat(json.loads(status)["current_run"]["started_at"])
-        if started.utcoffset() is None:
-            raise ValueError
+        parsed, started, interruption = self._validate_status(status)
+        self._status = status
+        self._status_sha256 = status_sha256
+        self._status_payload = parsed
+        self.last_interruption = interruption
+        self.after_market_state = "stopped" if interruption is not None else "loaded"
+        self._verify_runtime_identity()
         self.started_ns = int(started.timestamp() * 1_000_000_000)
-        self.runtime_dir = Path.home() / "Library/Application Support/GuiyiQuant"
-        self.agent_dir = Path.home() / "Library/LaunchAgents"
+        self.runtime_dir = self.home / "Library/Application Support/GuiyiQuant"
+        self.agent_dir = self.home / "Library/LaunchAgents"
         self.config_path = self.runtime_dir / "project.env"
         self._sources = self._read_sources()
         self._processes = self._read_processes()
@@ -258,7 +308,233 @@ class RuntimeDataBinding:
         if (not required <= self.settings.keys() or not self.settings["POSTGRES_PASSWORD"]
                 or self.settings["GUIYI_LIVE_RECOVERY_ENABLED"] != "1"):
             raise ValueError
+        runtime_provider_settings(self.settings, required=True)
         self.products = _products(root)
+        if interruption is not None and tuple(parsed["last_run"]["products"]) != self.products:
+            raise ValueError
+
+    @staticmethod
+    def _validate_status(status: bytes):
+        try:
+            parsed = json.loads(status)
+            if not isinstance(parsed, dict):
+                raise ValueError
+            current = parsed.get("current_run")
+            if current is not None:
+                if not isinstance(current, dict) or not isinstance(current.get("started_at"), str):
+                    raise ValueError
+                started = datetime.fromisoformat(current["started_at"])
+                if started.utcoffset() is None:
+                    raise ValueError
+                return parsed, started, None
+            if type(parsed.get("schema_version")) is not int or parsed["schema_version"] != 5:
+                raise ValueError
+            public = public_after_market_status(parsed)
+            interruption = public.get("last_interruption")
+            last_run = public.get("last_run")
+            last_failure = public.get("last_failure")
+            if (not isinstance(interruption, dict) or not isinstance(last_run, dict)
+                    or last_run.get("status") != "interrupted"
+                    or last_run.get("error_code") != "AFTER_MARKET_INTERRUPTED"
+                    or not isinstance(last_failure, dict)
+                    or last_failure.get("error_code") != "AFTER_MARKET_INTERRUPTED"
+                    or last_run.get("trading_day") != interruption.get("trading_day")
+                    or last_run.get("started_at") != interruption.get("started_at")
+                    or last_run.get("finished_at") != interruption.get("closed_at")
+                    or last_failure.get("trading_day") != interruption.get("trading_day")):
+                raise ValueError
+            started = datetime.fromisoformat(interruption["started_at"])
+            if started.utcoffset() is None:
+                raise ValueError
+            return public, started, interruption
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            raise ValueError from None
+
+    def _read_status(self) -> bytes:
+        with _directory(self.root / ".run") as directory:
+            return _read(directory, "after-market-status.json")
+
+    def _verify_pinned_status(self) -> None:
+        status = self._read_status()
+        if status != self._status or hashlib.sha256(status).hexdigest() != self._status_sha256:
+            raise ValueError
+
+    def _verify_runtime_identity(self) -> None:
+        if self.after_market_state == "stopped":
+            verify_runtime_release_identity(self.root, self.commit)
+        else:
+            verify_closeout_identity(self.root, self.commit, home=self.home)
+
+    def recheck_identity(self) -> None:
+        """Recheck every pinned filesystem, process and status fact."""
+        self._verify_runtime_identity()
+        self._verify_pinned_status()
+        if self._read_sources() != self._sources or self._read_processes() != self._processes:
+            raise ValueError
+
+    def rebind_terminal_status(self, status_sha256: str) -> None:
+        """Explicitly replace a pinned running status with its exact schema-v5 terminal."""
+        if re.fullmatch(r"[0-9a-f]{64}", status_sha256) is None:
+            raise ValueError
+        current = self._status_payload.get("current_run")
+        if not isinstance(current, dict):
+            raise ValueError
+        self._verify_runtime_identity()
+        if self._read_sources() != self._sources or self._read_processes() != self._processes:
+            raise ValueError
+        status = self._read_status()
+        if hashlib.sha256(status).hexdigest() != status_sha256:
+            raise ValueError
+        parsed, _, interruption = self._validate_status(status)
+        last_run = parsed["last_run"]
+        if (interruption is None or last_run["started_at"] != current["started_at"]
+                or current.get("scheduled_date", last_run["trading_day"]) != last_run["trading_day"]
+                or current.get("products", last_run["products"]) != last_run["products"]
+                or tuple(last_run["products"]) != self.products
+                or current.get("attempt", last_run["attempts"]) != last_run["attempts"]):
+            raise ValueError
+        self._verify_runtime_identity()
+        if (self._read_sources() != self._sources or self._read_processes() != self._processes
+                or self._read_status() != status):
+            raise ValueError
+        self._status = status
+        self._status_sha256 = status_sha256
+        self._status_payload = parsed
+        self.last_interruption = interruption
+
+    def compatible_recovery_proof(
+        self,
+        *,
+        candidate_root: Path,
+        candidate_commit: str,
+        expected_operational_products_sha256: str,
+        _identity_reader: Callable[..., str] | None = None,
+        _heartbeat_checker: Callable[[], None] | None = None,
+    ) -> dict[str, object]:
+        """Render a bounded proof; publication and recovery execution stay external gates."""
+        from app.market_data.captured_recovery_runtime import (
+            _read_command as read_identity_command,
+        )
+
+        identity_reader = _identity_reader or read_identity_command
+        heartbeat_checker = _heartbeat_checker or self.check_runtime_heartbeats
+
+        if (
+            re.fullmatch(r"[0-9a-f]{40}", candidate_commit) is None
+            or re.fullmatch(r"[0-9a-f]{64}", expected_operational_products_sha256)
+            is None
+            or candidate_root != candidate_root.resolve(strict=True)
+            or Path(__file__).resolve()
+            != candidate_root
+            / "services/quant-api/app/market_data/closeout_binding.py"
+        ):
+            raise ValueError
+        heartbeat_checker()
+        if (
+            self._read_sources() != self._sources
+            or self._read_processes() != self._processes
+            or self._status_payload.get("schema_version") != 5
+            or self._status_payload.get("current_run") is not None
+            or not isinstance(self.last_interruption, dict)
+        ):
+            raise ValueError
+        products_path = self.root / "data/universe/operational_products.txt"
+        products_content = self._sources[products_path][0]
+        if hashlib.sha256(products_content).hexdigest() != expected_operational_products_sha256:
+            raise ValueError
+        git = ["/usr/bin/git", "-c", "core.fsmonitor=false"]
+
+        def candidate_identity() -> str:
+            if (
+                identity_reader(
+                    [*git, "rev-parse", "--show-toplevel"], root=candidate_root
+                )
+                != str(candidate_root)
+                or identity_reader([*git, "rev-parse", "HEAD"], root=candidate_root)
+                != candidate_commit
+                or identity_reader(
+                    [*git, "status", "--porcelain=v1", "--untracked-files=all"],
+                    root=candidate_root,
+                )
+            ):
+                raise ValueError
+            tree = identity_reader(
+                [*git, "rev-parse", "HEAD^{tree}"], root=candidate_root
+            )
+            if re.fullmatch(r"[0-9a-f]{40}", tree) is None:
+                raise ValueError
+            return tree
+
+        candidate_tree = candidate_identity()
+        heartbeat_checker()
+        if (
+            self._read_sources() != self._sources
+            or self._read_processes() != self._processes
+            or candidate_identity() != candidate_tree
+        ):
+            raise ValueError
+        return {
+            "schema_version": 1,
+            "command": "data.compatible-recovery-proof",
+            "status": "passed",
+            "readonly": True,
+            "candidate": {
+                "root": str(candidate_root),
+                "commit": candidate_commit,
+                "tree": candidate_tree,
+            },
+            "source_runtime": {"root": str(self.root), "commit": self.commit},
+            "status_schema_version": 5,
+            "status_sha256": self._status_sha256,
+            "operational_products_sha256": expected_operational_products_sha256,
+            "operational_products_count": len(self.products),
+            "last_interruption": deepcopy(self.last_interruption),
+            "configuration_identity": {
+                "database": "retained",
+                "redis": "retained",
+                "canonical": "retained",
+                "rqdata": "retained",
+            },
+            "required_services": ["api", "web", "live", "alert", "after-market"],
+            "provider_requests": 0,
+            "database_writes": 0,
+            "canonical_writes": 0,
+            "runtime_mutations": 0,
+            "recovery_ready": False,
+            "recovery_blockers": [
+                "PUBLISHED_EXACT_RECOVERY_TAG_REQUIRED",
+                "IMMUTABLE_RECOVERY_ROOT_REQUIRED",
+                "SEPARATE_RECOVERY_EXECUTION_INTENT_REQUIRED",
+            ],
+        }
+
+    def _check_heartbeats(self, redis, store, now: Callable[[], datetime]) -> None:
+        observed = now()
+        _verify_heartbeat(
+            store.heartbeat(), now=observed, root=self.root, commit=self.commit
+        )
+        raw = redis.get("alert:heartbeat")
+        _verify_heartbeat(
+            json.loads(raw) if raw is not None else None,
+            now=observed,
+            root=self.root,
+            commit=self.commit,
+        )
+
+    def check_runtime_heartbeats(self) -> None:
+        """Verify stopped-terminal service identity and both fresh Runtime heartbeats."""
+        from app.market_data.live_market import RedisClient, RedisLiveStore
+        from app.market_data.session_clock import SHANGHAI
+        from typing import cast
+
+        self.recheck_identity()
+        redis = Redis.from_url(_redis_url(self.settings))
+        try:
+            store = RedisLiveStore(cast(RedisClient, redis))
+            self._check_heartbeats(redis, store, lambda: datetime.now(SHANGHAI))
+            self.recheck_identity()
+        finally:
+            redis.close()
 
     def _read_sources(self):
         # Target Python imports load dotenv without override. Even explicit main
@@ -289,7 +565,7 @@ class RuntimeDataBinding:
                    "__CF_USER_TEXT_ENCODING", "SSH_AUTH_SOCK", "GUIYI_PROJECT_ROOT", "GUIYI_RUNTIME_COMMIT"}
         def validate_environment(values, service):
             supported = allowed | ({"GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"} if service in {"api", "alert"} else set())
-            if values.keys() - supported or values.get("HOME", str(Path.home())) != str(Path.home()):
+            if values.keys() - supported or values.get("HOME", str(self.home)) != str(self.home):
                 raise ValueError
             notification = values.get("GUIYI_ALERT_NOTIFICATION_CONFIG_PATH")
             if notification is not None and (not isinstance(notification, str) or not Path(notification).is_absolute()
@@ -298,7 +574,7 @@ class RuntimeDataBinding:
         for name in ("api", "web", "live", "alert", "after-market"):
             label = f"com.guiyi.quant-{name}"
             arguments = ("/bin/bash", str(self.runtime_dir / "run-local-service.sh"), name)
-            working_directory = Path.home() if name in {"api", "web"} else self.root
+            working_directory = self.home if name in {"api", "web"} else self.root
             path = self.agent_dir / f"{label}.plist"
             payload = plistlib.loads(self._sources[path][0])
             if not isinstance(payload, dict) or payload.get("Label") != label:
@@ -310,7 +586,13 @@ class RuntimeDataBinding:
                     or installed_environment.get("GUIYI_PROJECT_ROOT") != str(self.root)
                     or installed_environment.get("GUIYI_RUNTIME_COMMIT") != self.commit):
                 raise ValueError
-            output = _read_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/{label}"], root=self.root)
+            output = _read_launchd_service(label, root=self.root)
+            if name == "after-market" and self.after_market_state == "stopped":
+                if output is not None:
+                    raise ValueError
+                continue
+            if output is None:
+                raise ValueError
             environments = _environments(output)
             for environment in environments:
                 validate_environment(environment, name)
@@ -357,13 +639,28 @@ class RuntimeDataBinding:
             raise ValueError
 
     def check(self, manager, session, redis, store, now) -> None:
-        verify_closeout_identity(self.root, self.commit)
+        self._verify_runtime_identity()
+        self._verify_pinned_status()
         if self._read_sources() != self._sources or self._read_processes() != self._processes:
             raise ValueError
         assert_dependencies(self.settings, root=self.root, manager=manager, session=session,
                             redis=redis, products=self.products)
-        live = store.heartbeat()
-        raw = redis.get("alert:heartbeat")
-        observed = now()
-        _verify_heartbeat(live, now=observed, root=self.root, commit=self.commit)
-        _verify_heartbeat(json.loads(raw) if raw is not None else None, now=observed, root=self.root, commit=self.commit)
+        self._check_heartbeats(redis, store, now)
+        self._verify_pinned_status()
+
+    def check_catalog(self, catalog, session, redis, store, now) -> None:
+        """Recheck Runtime, heartbeats, and provider-free Catalog dependencies."""
+        self._verify_runtime_identity()
+        self._verify_pinned_status()
+        if self._read_sources() != self._sources or self._read_processes() != self._processes:
+            raise ValueError
+        assert_catalog_dependencies(
+            self.settings,
+            root=self.root,
+            catalog=catalog,
+            session=session,
+            redis=redis,
+            products=self.products,
+        )
+        self._check_heartbeats(redis, store, now)
+        self._verify_pinned_status()
