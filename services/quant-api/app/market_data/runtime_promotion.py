@@ -7,6 +7,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Protocol, TextIO, cast
@@ -168,7 +169,10 @@ def run_market_runtime_promotion_preflight(
                 )
 
                 status_authority = resolve_market_runtime_status_authority(
-                    candidate_root=PROJECT_ROOT
+                    candidate_root=PROJECT_ROOT,
+                    expected_stopped_status_sha256=os.environ.get(
+                        "GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256"
+                    ),
                 )
             else:
                 status_authority = status_authority_factory()
@@ -200,7 +204,12 @@ def run_market_runtime_promotion_preflight(
                 snapshot = store.subscriptions(trading_day)
             except (TypeError, ValueError):
                 snapshot = _INVALID
-        status = _load_after_market_status(status_path)
+        status = (
+            None
+            if status_authority is not None
+            and status_authority.mode == "first_install"
+            else _load_after_market_status(status_path)
+        )
         if status_authority is not None:
             status_authority.recheck()
         return evaluate_market_runtime_promotion(

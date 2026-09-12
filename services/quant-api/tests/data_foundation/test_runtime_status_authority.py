@@ -7,6 +7,13 @@ import plistlib
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _use_test_account_home(monkeypatch):
+    import app.market_data.runtime_status_authority as module
+
+    monkeypatch.setattr(module, "_account_home", lambda: Path.home())
+
+
 def _installed_writer(home: Path, root: Path, commit: str) -> Path:
     agent_dir = home / "Library/LaunchAgents"
     agent_dir.mkdir(parents=True)
@@ -55,16 +62,25 @@ def test_status_authority_pins_installed_stopped_terminal_and_rechecks(
     class Binding:
         after_market_state = "stopped"
 
-        def __init__(self, observed_root: Path, observed_commit: str, status_sha: str):
+        def __init__(
+            self,
+            observed_root: Path,
+            observed_commit: str,
+            status_sha: str,
+            *,
+            home: Path,
+        ):
             assert observed_root == root
             assert observed_commit == commit
             assert status_sha == hashlib.sha256(status.read_bytes()).hexdigest()
+            assert home == Path.home()
 
         def check_runtime_heartbeats(self) -> None:
             checks.append("checked")
 
     authority = resolve_market_runtime_status_authority(
         candidate_root=tmp_path / "candidate",
+        expected_stopped_status_sha256=hashlib.sha256(status.read_bytes()).hexdigest(),
         service_reader=lambda label, **kwargs: None,
         binding_factory=Binding,
     )
@@ -74,6 +90,96 @@ def test_status_authority_pins_installed_stopped_terminal_and_rechecks(
     assert checks == ["checked"]
     authority.recheck()
     assert checks == ["checked", "checked"]
+
+
+def test_status_authority_uses_account_home_not_runtime_environment_home(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import app.market_data.runtime_status_authority as module
+
+    trusted_home = tmp_path / "trusted-home"
+    attacker_home = tmp_path / "runtime-env-home"
+    root = tmp_path / "runtime"
+    status = root / ".run/after-market-status.json"
+    status.parent.mkdir(parents=True)
+    status.write_bytes(b'{"schema_version":5,"current_run":null}\n')
+    expected = hashlib.sha256(status.read_bytes()).hexdigest()
+    _installed_writer(trusted_home, root, "a" * 40)
+    monkeypatch.setenv("HOME", str(attacker_home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: attacker_home))
+    monkeypatch.setattr(module, "_account_home", lambda: trusted_home, raising=False)
+    observed: list[Path] = []
+
+    class Binding:
+        after_market_state = "stopped"
+
+        def __init__(self, *args, home: Path):
+            observed.append(home)
+
+        def check_runtime_heartbeats(self) -> None:
+            pass
+
+    authority = module.resolve_market_runtime_status_authority(
+        candidate_root=tmp_path / "candidate",
+        expected_stopped_status_sha256=expected,
+        service_reader=lambda label, **kwargs: None,
+        binding_factory=Binding,
+    )
+
+    assert authority.mode == "stopped_terminal"
+    assert observed == [trusted_home]
+
+
+def test_status_authority_requires_independent_expected_terminal_sha(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import app.market_data.runtime_status_authority as module
+
+    home = tmp_path / "home"
+    root = tmp_path / "runtime"
+    status = root / ".run/after-market-status.json"
+    status.parent.mkdir(parents=True)
+    status.write_bytes(b'{"schema_version":5,"current_run":null}\n')
+    _installed_writer(home, root, "a" * 40)
+    monkeypatch.setattr(module, "_account_home", lambda: home, raising=False)
+    called: list[object] = []
+
+    with pytest.raises(ValueError):
+        module.resolve_market_runtime_status_authority(
+            candidate_root=tmp_path / "candidate",
+            service_reader=lambda label, **kwargs: None,
+            binding_factory=lambda *args, **kwargs: called.append((args, kwargs)),
+        )
+
+    assert called == []
+
+
+def test_status_authority_rejects_terminal_replaced_before_binding_creation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import app.market_data.runtime_status_authority as module
+
+    home = tmp_path / "home"
+    root = tmp_path / "runtime"
+    status = root / ".run/after-market-status.json"
+    status.parent.mkdir(parents=True)
+    original = b'{"schema_version":5,"current_run":null}\n'
+    status.write_bytes(original)
+    expected = hashlib.sha256(original).hexdigest()
+    _installed_writer(home, root, "a" * 40)
+    monkeypatch.setattr(module, "_account_home", lambda: home, raising=False)
+    status.write_bytes(b'{"schema_version":5,"current_run":null,"replacement":true}\n')
+    called: list[object] = []
+
+    with pytest.raises(ValueError):
+        module.resolve_market_runtime_status_authority(
+            candidate_root=tmp_path / "candidate",
+            expected_stopped_status_sha256=expected,
+            service_reader=lambda label, **kwargs: None,
+            binding_factory=lambda *args, **kwargs: called.append((args, kwargs)),
+        )
+
+    assert called == []
 
 
 def test_status_authority_rejects_installed_stopped_candidate_without_terminal(
@@ -93,8 +199,9 @@ def test_status_authority_rejects_installed_stopped_candidate_without_terminal(
     try:
         resolve_market_runtime_status_authority(
             candidate_root=tmp_path / "candidate",
+            expected_stopped_status_sha256="b" * 64,
             service_reader=lambda label, **kwargs: None,
-            binding_factory=lambda *args: called.append(args),
+            binding_factory=lambda *args, **kwargs: called.append((args, kwargs)),
         )
     except ValueError:
         pass
@@ -160,7 +267,9 @@ def test_status_authority_rejects_loaded_and_installed_root_disagreement(
     installed_root.mkdir()
     loaded_root.mkdir()
     commit = "a" * 40
-    monkeypatch.setattr(module, "_installed_identity", lambda: (installed_root, commit))
+    monkeypatch.setattr(
+        module, "_installed_identity", lambda *args: (installed_root, commit)
+    )
     monkeypatch.setattr(module, "verify_runtime_release_identity", lambda *args: None)
     monkeypatch.setattr(module, "_verify_after_market_plist", lambda **kwargs: None)
     output = (
@@ -187,7 +296,7 @@ def test_status_authority_preserves_loaded_owner_and_rechecks(tmp_path: Path, mo
     root.mkdir()
     commit = "a" * 40
     installed = (root, commit)
-    monkeypatch.setattr(module, "_installed_identity", lambda: installed)
+    monkeypatch.setattr(module, "_installed_identity", lambda *args: installed)
     release_checks: list[tuple[Path, str]] = []
     monkeypatch.setattr(
         module,
@@ -228,7 +337,7 @@ def test_status_authority_preserves_genuine_first_install_and_rejects_reappearan
     installed: list[tuple[Path, str]] = []
     loaded: list[str] = []
     monkeypatch.setattr(
-        module, "_installed_identity", lambda: installed[0] if installed else None
+        module, "_installed_identity", lambda *args: installed[0] if installed else None
     )
 
     authority = module.resolve_market_runtime_status_authority(
@@ -241,3 +350,28 @@ def test_status_authority_preserves_genuine_first_install_and_rejects_reappearan
     loaded.append("writer reappeared")
     with pytest.raises(ValueError):
         authority.recheck()
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        b'{"schema_version":2,"current_run":null,"last_run":{"status":"passed"}}\n',
+        b'{"schema_version":5,"current_run":null,"last_run":{"status":"interrupted"}}\n',
+    ],
+)
+def test_genuine_first_install_rejects_any_candidate_status_residue(
+    tmp_path: Path, monkeypatch, contents: bytes
+) -> None:
+    import app.market_data.runtime_status_authority as module
+
+    candidate = tmp_path / "candidate"
+    status = candidate / ".run/after-market-status.json"
+    status.parent.mkdir(parents=True)
+    status.write_bytes(contents)
+    monkeypatch.setattr(module, "_installed_identity", lambda *args: None)
+
+    with pytest.raises(ValueError):
+        module.resolve_market_runtime_status_authority(
+            candidate_root=candidate,
+            service_reader=lambda label, **kwargs: None,
+        )

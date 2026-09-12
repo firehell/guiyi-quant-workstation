@@ -119,12 +119,13 @@ Market 安装固定先加载 idle 的 `com.guiyi.quant-after-market`，再加载
 root 的 `.run`，安装器不复制或改写旧 schema-v5 terminal status；旧 status 仍留在旧 root，作为 D 的不可变
 审计事实。新 writer 首次自然运行才在新 root 建立自己的 status。
 
-安装部分失败后的恢复不是安装器自动 rollback。失败处理按已尝试 label 的逆序 bootout candidate，并恢复本次
-candidate activation marker 的前像；随后明确输出 `partial market install is blocked`。共享 launcher、installed
-plist 和 status 不是事务资源，不能由 marker 恢复推断它们已回滚。只有针对已发布 compatible root、明确服务
-集合和该次失败现场单独批准的一次恢复尝试，才可使用该 root 中已正式 Review 的安装器；仍须重新运行同一
-promotion preflight。任一 candidate label 仍 loaded、bootout 结果不明，或 preflight 无法从当时 installed
-plist/loaded identity 重新取得权威 status 时继续 blocked，不自动重试，也不切换到 v1.10.5/v1.10.6。
+安装器在 candidate mutation 前只为 shared launcher、log rotator、after-market/Live installed plist 和两者
+loaded/absent 状态保存有界精确前像，不复制或修改 status。部分失败时先按已尝试 label 的逆序 bootout
+candidate，再恢复文件并按原状态仅重载先前 loaded 的服务；逐字节和逐状态验证通过后才恢复 activation marker
+前像，并明确输出 `partial market install is blocked`。该恢复不会重试安装，也不会加载原本 stopped 的旧 writer；
+下一次安装仍需新的 promotion preflight 与一次匹配的安装意图。任一 candidate label 仍 loaded、bootout/print
+不是 exact not-found、恢复或读回结果不明时，marker 保留且状态为 unknown/blocked，不能声称 stopped 或
+recovered，也不切换到 v1.10.5/v1.10.6。
 
 #### Read-only promotion predicate
 
@@ -134,6 +135,15 @@ runtime script 写入、已安装 LaunchAgent plist 替换以及任何 `launchct
 不属于这些外部 activation mutation。若 preflight 阻断，安装器非零退出，且不触碰 marker、runtime directory、
 installed plist，也不执行 `launchctl` mutation；为解析 supervised authority 而进行的只读 `launchctl print`
 可能已发生。
+
+针对 stopped-terminal 的受控安装调用必须由外部受审 receipt 提供 SHA，而不是从现场 status 临时自算：
+
+```bash
+GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256=EXACT_REVIEWED_64_HEX_SHA256 \
+  ./scripts/ops/macos/install-local-services.sh --confirm-market-runtime
+```
+
+该变量缺失或与现场字节不符时 stopped 分支失败关闭；genuine first-install 不需要也不消费 status。
 
 preflight 只读取 operational universe、权威 Calendar/Session phase、既有 immutable Live subscription snapshot 与
 公开 after-market status。允许的通过原因只有：完整且 identity 有效 snapshot 的 `snapshot_ready`；所有品种真正
@@ -145,10 +155,12 @@ preflight 只读取 operational universe、权威 Calendar/Session phase、既�
 分支从当前 supervised after-market launchd root 读取 status，并与 installed plist 声明交叉校验。D 后的
 stopped 分支只接受 exact schema-v5 interrupted terminal、保留且未变的 installed plist/root/commit/config、
 launchd domain 可读且 after-market label 明确 not-found、另外四服务身份精确，以及 Live/Alert 双 heartbeat
-新鲜且 recovery guard 已启用；读取前后重检任一 status/plist/root/process/config/heartbeat 漂移或 writer
-重现均阻断。仅 genuine first-install 可使用 candidate root，并同时要求 label 明确 not-found 且没有 installed
-plist。任何 domain/permission/label 命令错误，或 root 缺失、畸形、不一致，均以
-`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` 阻断；runtime env 不能覆盖 Python 选定的 status path。
+新鲜且 recovery guard 已启用；调用方还必须在 source runtime env 之外提供受审 terminal bytes 的 exact
+SHA-256，缺失或不匹配均阻断。读取前后重检任一 status/plist/root/process/config/heartbeat 漂移或 writer
+重现均阻断。仅 genuine first-install 可使用 candidate root，并同时要求 label 明确 not-found、没有 installed
+plist 且 candidate status 不存在；该模式不会读取残留或预置 `.run` status。任何 domain/permission/label 命令
+错误，或 root 缺失、畸形、不一致，均以 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` 阻断；runtime env
+不能覆盖 Python 选定的 status path、account HOME 或 caller 提供的 expected terminal SHA。
 
 stopped-terminal 只解决 status ownership；不会把 promotion 判为通过。`snapshot_ready`、
 `before_first_session`、`after_market_complete` 与 `non_trading_interval` 四个独立 predicate 原样保留。

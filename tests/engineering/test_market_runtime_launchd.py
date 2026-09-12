@@ -22,7 +22,13 @@ def test_weekly_render_is_saturday_and_install_only_loads_weekly_without_shared_
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     launchctl = fake_bin / "launchctl"
-    launchctl.write_text('#!/bin/sh\n[ "$1" = print ] && exit 1\nprintf "%s\\n" "$*" >> "$HOME/calls"\nexit 0\n')
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = print ] && [ "$2" = "gui/$UID" ] && exit 0\n'
+        '[ "$1" = print ] && { echo "Could not find service" >&2; exit 1; }\n'
+        'printf "%s\\n" "$*" >> "$HOME/calls"\n'
+        "exit 0\n"
+    )
     launchctl.chmod(0o755)
     _run_installer(repo, home, fake_bin, "--render-only")
     rendered = repo / ".run/launchd/com.guiyi.quant-weekly-audit.plist"
@@ -265,8 +271,10 @@ def test_market_preflight_source_cannot_override_python_status_authority_or_argu
     runtime_env = tmp_path / "runtime.env"
     runtime_env.write_text(
         "POSTGRES_PASSWORD=fixture\n"
+        f"HOME={tmp_path}/runtime-env-home\n"
         f"controlled_status_path={repo}/.run/after-market-status.json\n"
         f"GUIYI_AFTER_MARKET_STATUS_PATH={repo}/.run/after-market-status.json\n"
+        "GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
         "set -- source-overrode-arguments\n",
         encoding="utf-8",
     )
@@ -276,6 +284,8 @@ def test_market_preflight_source_cannot_override_python_status_authority_or_argu
         "#!/bin/sh\n"
         '[ -z "${GUIYI_AFTER_MARKET_STATUS_PATH:-}" ] || exit 91\n'
         '[ "$*" = "-m app.market_data.runtime_promotion" ] || exit 92\n'
+        f'[ "$HOME" = "{tmp_path / "home"}" ] || exit 93\n'
+        f'[ "$GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256" = "{"a" * 64}" ] || exit 94\n'
         "touch \"$(dirname \"$0\")/python-was-run\"\n"
         "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"passed\",\"reason\":\"non_trading_interval\",\"trading_day\":null,\"operational_count\":0,\"snapshot_count\":0}'\n",
         encoding="utf-8",
@@ -291,6 +301,7 @@ def test_market_preflight_source_cannot_override_python_status_authority_or_argu
             "GUIYI_PROJECT_ROOT": str(repo),
             "GUIYI_RUNTIME_ENV": str(runtime_env),
             "GUIYI_AFTER_MARKET_STATUS_PATH": str(status_path),
+            "GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256": "a" * 64,
         },
         capture_output=True,
         text=True,
@@ -482,7 +493,7 @@ def test_market_install_establishes_new_after_market_owner_before_live(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "print" ]; then\n'
         '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
-        '  echo "Could not find service" >&2; exit 1\n'
+        '  echo "Could not find service" >&2; exit 113\n'
         "fi\n"
         'printf "%s\\n" "$*" >> "$HOME/launchctl-calls"\n'
         "exit 0\n",
@@ -504,7 +515,7 @@ def test_market_install_establishes_new_after_market_owner_before_live(
     ]
 
 
-def test_partial_market_install_stops_candidate_and_requires_explicit_recovery(
+def test_partial_market_install_stops_candidate_and_restores_previous_authority(
     tmp_path: Path,
 ) -> None:
     repo = _copy_launchd_fixture(tmp_path / "repo")
@@ -543,11 +554,140 @@ def test_partial_market_install_stops_candidate_and_requires_explicit_recovery(
 
     assert result.returncode == 1
     assert "partial market install is blocked" in result.stderr
-    assert "explicit compatible-root recovery is required" in result.stderr
+    assert "previous market authority restored" in result.stderr
+    assert "separate preflight and install intent required" in result.stderr
     assert not (repo / ".run/market-runtime-enabled").exists()
     state_dir = home / "launchd-state"
     assert not (state_dir / "com.guiyi.quant-after-market").exists()
     assert not (state_dir / "com.guiyi.quant-live").exists()
+
+
+def test_partial_market_cleanup_launchctl_error_retains_marker_as_unknown(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    sleep = fake_bin / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    sleep.chmod(0o755)
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'if [ -f "$HOME/cleanup-started" ]; then\n'
+        '  echo "permission denied" >&2; exit 77\n'
+        "fi\n"
+        'if [ "${1:-}" = "print" ] && [ "${2:-}" = "gui/$UID" ]; then exit 0; fi\n'
+        'if [ "${1:-}" = "print" ]; then echo "Could not find service" >&2; exit 1; fi\n'
+        'if [ "${1:-}" = "enable" ]; then\n'
+        '  case "${2:-}" in *com.guiyi.quant-live) touch "$HOME/cleanup-started"; exit 81 ;; esac\n'
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-market-runtime")
+
+    assert result.returncode == 1
+    assert "cleanup state unknown" in result.stderr
+    assert "activation marker retained" in result.stderr
+    assert (repo / ".run/market-runtime-enabled").read_text() == "enabled\n"
+
+
+def test_partial_market_install_restores_authority_for_next_preflight(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "candidate")
+    old_root = tmp_path / "old-runtime"
+    old_root.mkdir()
+    home = tmp_path / "home"
+    agent_dir = home / "Library/LaunchAgents"
+    agent_dir.mkdir(parents=True)
+    runtime_dir = home / "Library/Application Support/GuiyiQuant"
+    runtime_dir.mkdir(parents=True)
+    shared = runtime_dir / "run-local-service.sh"
+    shared.write_text("old shared launcher\n", encoding="utf-8")
+    rotator = runtime_dir / "rotate-local-service-logs.sh"
+    rotator.write_text("old log rotator\n", encoding="utf-8")
+    old_plists: dict[str, bytes] = {}
+    for label in ("com.guiyi.quant-after-market", "com.guiyi.quant-live"):
+        payload = plistlib.dumps(
+            {
+                "Label": label,
+                "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": str(old_root)},
+            }
+        )
+        old_plists[label] = payload
+        (agent_dir / f"{label}.plist").write_bytes(payload)
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    sleep = fake_bin / "sleep"
+    sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    sleep.chmod(0o755)
+    state_dir = home / "launchd-state"
+    state_dir.mkdir()
+    (state_dir / "com.guiyi.quant-live").touch()
+    (home / "fail-live-once").touch()
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'command="${1:-}"; target="${2:-}"; label="${target##*/}"\n'
+        'state_dir="$HOME/launchd-state"\n'
+        'if [ "$command" = print ] && [ "$target" = "gui/$UID" ]; then exit 0; fi\n'
+        'if [ "$command" = print ]; then\n'
+        '  [ -f "$state_dir/$label" ] && exit 0\n'
+        '  echo "Could not find service" >&2; exit 1\n'
+        "fi\n"
+        'if [ "$command" = bootout ]; then rm -f "$state_dir/$label"; exit 0; fi\n'
+        'if [ "$command" = bootstrap ]; then\n'
+        '  label="${3##*/}"; label="${label%.plist}"; touch "$state_dir/$label"; exit 0\n'
+        "fi\n"
+        'if [ "$command" = enable ]; then\n'
+        '  case "$target" in *com.guiyi.quant-live)\n'
+        '    if [ -f "$HOME/fail-live-once" ]; then rm -f "$HOME/fail-live-once"; exit 81; fi ;;\n'
+        '  esac\n'
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+    python = repo / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        "#!/bin/sh\n"
+        'count_file="$(dirname "$0")/preflight-count"\n'
+        'count=0; [ -f "$count_file" ] && count="$(cat "$count_file")"\n'
+        'count=$((count + 1)); printf "%s" "$count" > "$count_file"\n'
+        'if [ "$count" = 2 ]; then\n'
+        f'  grep -q "{old_root}" "$HOME/Library/LaunchAgents/com.guiyi.quant-after-market.plist" || exit 91\n'
+        f'  grep -q "{old_root}" "$HOME/Library/LaunchAgents/com.guiyi.quant-live.plist" || exit 92\n'
+        '  grep -q "old shared launcher" "$HOME/Library/Application Support/GuiyiQuant/run-local-service.sh" || exit 93\n'
+        '  [ -f "$HOME/launchd-state/com.guiyi.quant-live" ] || exit 94\n'
+        '  [ ! -f "$HOME/launchd-state/com.guiyi.quant-after-market" ] || exit 95\n'
+        "fi\n"
+        "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"passed\",\"reason\":\"non_trading_interval\",\"trading_day\":null,\"operational_count\":0,\"snapshot_count\":0}'\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o700)
+
+    first = _run_installer_result(repo, home, fake_bin, "--confirm-market-runtime")
+
+    assert first.returncode == 1
+    assert "previous market authority restored" in first.stderr
+    assert shared.read_text() == "old shared launcher\n"
+    assert rotator.read_text() == "old log rotator\n"
+    for label, contents in old_plists.items():
+        assert (agent_dir / f"{label}.plist").read_bytes() == contents
+    assert (state_dir / "com.guiyi.quant-live").exists()
+    assert not (state_dir / "com.guiyi.quant-after-market").exists()
+
+    second = _run_installer_result(repo, home, fake_bin, "--confirm-market-runtime")
+
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert (python.parent / "preflight-count").read_text() == "2"
 
 
 def test_after_market_launch_agent_runs_after_next_session_metadata_is_ready(

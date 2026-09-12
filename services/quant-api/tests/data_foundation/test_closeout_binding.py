@@ -1,14 +1,16 @@
-from types import SimpleNamespace
+from contextlib import contextmanager
+from datetime import UTC, date, datetime
+import hashlib
+import io
+import json
 from pathlib import Path
+import plistlib
+from types import SimpleNamespace
 
 import pytest
+from redis import Redis
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from redis import Redis
-from datetime import UTC, datetime
-import hashlib
-import json
-import plistlib
 
 
 def test_literal_config_does_not_execute_or_accept_shell(tmp_path):
@@ -40,7 +42,9 @@ def target(tmp_path, monkeypatch):
     home.mkdir()
     root.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-    monkeypatch.setattr(module, "verify_closeout_identity", lambda *args: None)
+    monkeypatch.setattr(
+        module, "verify_closeout_identity", lambda *args, **kwargs: None
+    )
     monkeypatch.setattr(
         module, "verify_runtime_release_identity", lambda *args: None, raising=False
     )
@@ -90,9 +94,11 @@ def target(tmp_path, monkeypatch):
         lambda label, **kwargs: outputs[label],
         raising=False,
     )
-    return SimpleNamespace(root=root, config=config, module=module, outputs=outputs,
+    return SimpleNamespace(root=root, home=home, config=config, module=module, outputs=outputs,
         status=run / "after-market-status.json",
-        create=lambda: module.RuntimeDataBinding(root, "a" * 40, hashlib.sha256(raw).hexdigest()))
+        create=lambda: module.RuntimeDataBinding(
+            root, "a" * 40, hashlib.sha256(raw).hexdigest(), home=home
+        ))
 
 
 def _terminal_status(*, schema_version=5):
@@ -129,6 +135,270 @@ def _clean_candidate_reader(arguments, *, root):
     if "status" in arguments:
         return ""
     return _read_command(arguments, root=root)
+
+
+def _stopped_binding_with_heartbeats(target, *, checks=None):
+    terminal_sha256 = _write_status(target.status, _terminal_status())
+    _stop_writer(target)
+    binding = target.module.RuntimeDataBinding(
+        target.root, "a" * 40, terminal_sha256, home=target.home
+    )
+    heartbeat = {
+        "runtime_root": str(target.root),
+        "runtime_commit": "a" * 40,
+        "recovery_guard_enabled": True,
+        "generated_at": "2029-01-01T00:00:00Z",
+    }
+    redis = SimpleNamespace(get=lambda key: json.dumps(heartbeat))
+    store = SimpleNamespace(heartbeat=lambda: heartbeat)
+
+    def check_runtime_heartbeats():
+        binding.recheck_identity()
+        binding._check_heartbeats(
+            redis, store, lambda: datetime(2029, 1, 1, tzinfo=UTC)
+        )
+        binding.recheck_identity()
+        if checks is not None:
+            checks.append("checked")
+
+    binding.check_runtime_heartbeats = check_runtime_heartbeats
+    return binding, terminal_sha256
+
+
+def test_stopped_authority_uses_real_schema_v5_binding_and_rechecks_every_fact(
+    target, monkeypatch
+):
+    from app.market_data import runtime_status_authority as authority_module
+
+    attacker_home = target.home.parent / "runtime-env-home"
+    monkeypatch.setenv("HOME", str(attacker_home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: attacker_home))
+    checks = []
+    binding, terminal_sha256 = _stopped_binding_with_heartbeats(
+        target, checks=checks
+    )
+    monkeypatch.setattr(authority_module, "_account_home", lambda: target.home)
+    monkeypatch.setattr(
+        authority_module, "verify_runtime_release_identity", lambda *args: None
+    )
+
+    authority = authority_module.resolve_market_runtime_status_authority(
+        candidate_root=target.root,
+        expected_stopped_status_sha256=terminal_sha256,
+        service_reader=lambda label, **kwargs: target.outputs[label],
+        binding_factory=lambda *args, **kwargs: binding,
+    )
+
+    assert authority.mode == "stopped_terminal"
+    assert authority.path == target.status
+    authority.recheck()
+    assert checks == ["checked", "checked"]
+
+    target.config.write_text(target.config.read_text() + "# drift\n")
+    with pytest.raises(ValueError):
+        authority.recheck()
+
+
+def test_public_daily_recovery_accepts_real_stopped_runtime_binding(target):
+    from app.guiyi_cli.daily_recovery import run_daily_recovery
+    from app.market_data.historical_data_manager import (
+        DailyRecoveryResult,
+        MaintenanceResult,
+    )
+
+    binding, terminal_sha256 = _stopped_binding_with_heartbeats(target)
+    calls = []
+
+    class Manager:
+        def daily_recovery(
+            self,
+            request,
+            *,
+            expected_plan_sha256,
+            before_apply,
+            verify_identity,
+            observer,
+        ):
+            verify_identity()
+            calls.append((request.products, expected_plan_sha256))
+            return DailyRecoveryResult(
+                maintenance=MaintenanceResult(
+                    "update", "planned", request.through, 0, 0, 0, 0, 0
+                ),
+                plan_sha256="c" * 64,
+                target_windows=(),
+                readonly=True,
+            )
+
+    @contextmanager
+    def context(root, commit, status_sha256):
+        assert (root, commit, status_sha256) == (
+            target.root,
+            "a" * 40,
+            terminal_sha256,
+        )
+        yield SimpleNamespace(
+            products=binding.products,
+            manager=Manager(),
+            invalidate_projection=lambda: None,
+            verify_identity=binding.check_runtime_heartbeats,
+        )
+
+    args = SimpleNamespace(
+        runtime_root=str(target.root),
+        runtime_commit="a" * 40,
+        expected_status_sha256=terminal_sha256,
+        through=date(2029, 1, 1),
+        apply=False,
+        expected_plan_sha256=None,
+    )
+
+    result = run_daily_recovery(
+        args, progress_stream=io.StringIO(), runtime_context_factory=context
+    )
+
+    assert result["status"] == "planned"
+    assert calls == [(binding.products, None)]
+
+
+def test_public_current_day_capture_accepts_real_stopped_runtime_binding(target):
+    from app.guiyi_cli.current_day_metadata_recovery import (
+        run_current_day_metadata_recovery,
+    )
+    from app.market_data.metadata import MetadataSnapshot
+
+    binding, terminal_sha256 = _stopped_binding_with_heartbeats(target)
+    calls = []
+    snapshot = MetadataSnapshot((), (), (), (), (), (), {})
+
+    @contextmanager
+    def context(root, commit, status_sha256, *, phase):
+        assert (root, commit, status_sha256, phase) == (
+            target.root,
+            "a" * 40,
+            terminal_sha256,
+            "capture",
+        )
+        yield SimpleNamespace(
+            products=binding.products,
+            synchronizer=SimpleNamespace(
+                capture_current_day=lambda products, trading_day: (
+                    calls.append((products, trading_day)) or snapshot
+                )
+            ),
+            verify_identity=binding.check_runtime_heartbeats,
+        )
+
+    args = SimpleNamespace(
+        phase="capture",
+        runtime_root=str(target.root),
+        runtime_commit="a" * 40,
+        expected_status_sha256=terminal_sha256,
+        trading_day=date(2029, 1, 1),
+        snapshot=None,
+        expected_snapshot_sha256=None,
+        expected_plan_sha256=None,
+    )
+
+    result = run_current_day_metadata_recovery(
+        args, runtime_context_factory=context
+    )
+
+    assert result["status"] == "captured"
+    assert calls == [(binding.products, date(2029, 1, 1))]
+
+
+@pytest.mark.parametrize("entrypoint", ["daily", "current_day"])
+@pytest.mark.parametrize("failure", ["writer_reappeared", "launchd_error"])
+def test_public_maintenance_stopped_runtime_identity_failure_is_fail_closed(
+    target, entrypoint, failure
+):
+    from app.market_data.captured_recovery_runtime import CapturedRecoveryRuntimeError
+
+    binding, terminal_sha256 = _stopped_binding_with_heartbeats(target)
+    provider_calls = []
+    if failure == "writer_reappeared":
+        target.outputs["com.guiyi.quant-after-market"] = "candidate writer reappeared"
+    else:
+        original = target.module._read_launchd_service
+
+        def unavailable(label, **kwargs):
+            if label == "com.guiyi.quant-live":
+                raise CapturedRecoveryRuntimeError(
+                    "CAPTURED_RECOVERY_RUNTIME_IDENTITY_UNAVAILABLE"
+                )
+            return original(label, **kwargs)
+
+        target.module._read_launchd_service = unavailable
+
+    if entrypoint == "daily":
+        from app.guiyi_cli.daily_recovery import run_daily_recovery
+        from app.market_data.historical_data_manager import DailyRecoveryResult
+
+        class Manager:
+            def daily_recovery(self, request, **kwargs):
+                kwargs["verify_identity"]()
+                provider_calls.append("daily")
+                return DailyRecoveryResult
+
+        @contextmanager
+        def context(root, commit, status_sha256):
+            yield SimpleNamespace(
+                products=binding.products,
+                manager=Manager(),
+                invalidate_projection=lambda: None,
+                verify_identity=binding.check_runtime_heartbeats,
+            )
+
+        args = SimpleNamespace(
+            runtime_root=str(target.root),
+            runtime_commit="a" * 40,
+            expected_status_sha256=terminal_sha256,
+            through=date(2029, 1, 1),
+            apply=False,
+            expected_plan_sha256=None,
+        )
+        with pytest.raises((ValueError, CapturedRecoveryRuntimeError)):
+            run_daily_recovery(
+                args, progress_stream=io.StringIO(), runtime_context_factory=context
+            )
+    else:
+        from app.guiyi_cli.current_day_metadata_recovery import (
+            run_current_day_metadata_recovery,
+        )
+        from app.market_data.current_day_metadata_recovery import (
+            CurrentDayMetadataRecoveryError,
+        )
+
+        @contextmanager
+        def context(root, commit, status_sha256, *, phase):
+            yield SimpleNamespace(
+                products=binding.products,
+                synchronizer=SimpleNamespace(
+                    capture_current_day=lambda *args: provider_calls.append("current")
+                ),
+                verify_identity=binding.check_runtime_heartbeats,
+            )
+
+        args = SimpleNamespace(
+            phase="capture",
+            runtime_root=str(target.root),
+            runtime_commit="a" * 40,
+            expected_status_sha256=terminal_sha256,
+            trading_day=date(2029, 1, 1),
+            snapshot=None,
+            expected_snapshot_sha256=None,
+            expected_plan_sha256=None,
+        )
+        with pytest.raises(
+            CurrentDayMetadataRecoveryError,
+            match="CURRENT_DAY_METADATA_RUNTIME_IDENTITY_DRIFT",
+        ):
+            run_current_day_metadata_recovery(
+                args, runtime_context_factory=context
+            )
+
+    assert provider_calls == []
 
 
 def test_binding_constructs_target_dependencies_not_executing_environment(target, monkeypatch):

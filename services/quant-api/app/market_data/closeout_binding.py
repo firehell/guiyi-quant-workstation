@@ -265,10 +265,18 @@ def _environments(output: str) -> tuple[dict[str, str], ...]:
 class RuntimeDataBinding:
     """Pins source identity in memory. No configuration or digest is publicly returned."""
 
-    def __init__(self, root: Path, commit: str, status_sha256: str):
+    def __init__(
+        self,
+        root: Path,
+        commit: str,
+        status_sha256: str,
+        *,
+        home: Path | None = None,
+    ):
         if any(key.startswith("PG") for key in os.environ):
             raise ValueError
         self.root, self.commit = root, commit
+        self.home = home if home is not None else Path.home()
         with _directory(root / ".run") as directory:
             status = _read(directory, "after-market-status.json")
         if hashlib.sha256(status).hexdigest() != status_sha256:
@@ -281,8 +289,8 @@ class RuntimeDataBinding:
         self.after_market_state = "stopped" if interruption is not None else "loaded"
         self._verify_runtime_identity()
         self.started_ns = int(started.timestamp() * 1_000_000_000)
-        self.runtime_dir = Path.home() / "Library/Application Support/GuiyiQuant"
-        self.agent_dir = Path.home() / "Library/LaunchAgents"
+        self.runtime_dir = self.home / "Library/Application Support/GuiyiQuant"
+        self.agent_dir = self.home / "Library/LaunchAgents"
         self.config_path = self.runtime_dir / "project.env"
         self._sources = self._read_sources()
         self._processes = self._read_processes()
@@ -355,7 +363,7 @@ class RuntimeDataBinding:
         if self.after_market_state == "stopped":
             verify_runtime_release_identity(self.root, self.commit)
         else:
-            verify_closeout_identity(self.root, self.commit)
+            verify_closeout_identity(self.root, self.commit, home=self.home)
 
     def recheck_identity(self) -> None:
         """Recheck every pinned filesystem, process and status fact."""
@@ -557,7 +565,7 @@ class RuntimeDataBinding:
                    "__CF_USER_TEXT_ENCODING", "SSH_AUTH_SOCK", "GUIYI_PROJECT_ROOT", "GUIYI_RUNTIME_COMMIT"}
         def validate_environment(values, service):
             supported = allowed | ({"GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"} if service in {"api", "alert"} else set())
-            if values.keys() - supported or values.get("HOME", str(Path.home())) != str(Path.home()):
+            if values.keys() - supported or values.get("HOME", str(self.home)) != str(self.home):
                 raise ValueError
             notification = values.get("GUIYI_ALERT_NOTIFICATION_CONFIG_PATH")
             if notification is not None and (not isinstance(notification, str) or not Path(notification).is_absolute()
@@ -566,7 +574,7 @@ class RuntimeDataBinding:
         for name in ("api", "web", "live", "alert", "after-market"):
             label = f"com.guiyi.quant-{name}"
             arguments = ("/bin/bash", str(self.runtime_dir / "run-local-service.sh"), name)
-            working_directory = Path.home() if name in {"api", "web"} else self.root
+            working_directory = self.home if name in {"api", "web"} else self.root
             path = self.agent_dir / f"{label}.plist"
             payload = plistlib.loads(self._sources[path][0])
             if not isinstance(payload, dict) or payload.get("Label") != label:

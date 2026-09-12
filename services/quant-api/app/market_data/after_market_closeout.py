@@ -144,7 +144,9 @@ def verify_runtime_release_identity(root: Path, commit: str) -> None:
     _verify_markers(root)
 
 
-def verify_closeout_identity(root: Path, commit: str) -> None:
+def verify_closeout_identity(
+    root: Path, commit: str, *, home: Path | None = None
+) -> None:
     """Require the exact guarded release still loaded by all five services, EOD idle."""
     from app.market_data.captured_recovery_runtime import (
         _read_command, _verify_after_market_plist, _verify_loaded_service,
@@ -152,7 +154,12 @@ def verify_closeout_identity(root: Path, commit: str) -> None:
 
     verify_runtime_release_identity(root, commit)
     for service in ("api", "web", "live", "alert", "after-market"):
-        _verify_after_market_plist(root=root, commit=commit, label=f"com.guiyi.quant-{service}")
+        _verify_after_market_plist(
+            root=root,
+            commit=commit,
+            label=f"com.guiyi.quant-{service}",
+            home=home,
+        )
         output = _read_command(["/bin/launchctl", "print", f"gui/{os.getuid()}/com.guiyi.quant-{service}"], root=root)
         _verify_loaded_service(output, root=root, commit=commit, allow_idle=service == "after-market",
                                require_idle=service == "after-market",

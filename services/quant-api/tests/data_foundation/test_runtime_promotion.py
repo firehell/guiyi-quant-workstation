@@ -805,6 +805,7 @@ def test_preflight_uses_python_status_authority_and_rechecks_before_decision(
 
     class Authority:
         path = tmp_path / "runtime/.run/after-market-status.json"
+        mode = "loaded"
 
         def recheck(self) -> None:
             events.append("authority:recheck")
@@ -832,6 +833,7 @@ def test_preflight_fails_closed_when_python_status_authority_drifts(
 
     class Authority:
         path = tmp_path / "runtime/.run/after-market-status.json"
+        mode = "loaded"
 
         def recheck(self) -> None:
             raise ValueError("pinned stopped-terminal identity changed")
@@ -854,6 +856,47 @@ def test_preflight_fails_closed_when_python_status_authority_drifts(
         "operational_count": 0,
         "snapshot_count": 0,
     }
+
+
+def test_first_install_authority_never_consumes_candidate_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from app.market_data import runtime_promotion as module
+
+    residual = tmp_path / "candidate/.run/after-market-status.json"
+    residual.parent.mkdir(parents=True)
+    residual.write_text(json.dumps(_passed_status()), encoding="utf-8")
+
+    class Resolver:
+        def resolve(self, symbol: str, _now: datetime) -> ProductMarketPhase:
+            return _phase(symbol, MarketPhase.CLOSED, trading_day=None)
+
+    class Authority:
+        path = residual
+        mode = "first_install"
+
+        def recheck(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        module,
+        "_load_after_market_status",
+        lambda path: (_ for _ in ()).throw(
+            AssertionError("first install must not read candidate status")
+        ),
+    )
+
+    decision = run_market_runtime_promotion_preflight(
+        session_factory=lambda: nullcontext(object()),
+        phase_resolver_factory=lambda _session: Resolver(),
+        live_store_factory=lambda: object(),
+        products_loader=lambda: PRODUCTS,
+        status_authority_factory=lambda: Authority(),
+        now=lambda: NOW,
+    )
+
+    assert decision.status == "passed"
+    assert decision.reason == "non_trading_interval"
 
 
 def test_phase_disagreement_or_dependency_error_blocks_state_unavailable() -> None:

@@ -525,9 +525,11 @@ PostgreSQL/Redis，或修改现场 Canonical、status、projection、Runtime 和
 `daily-recovery --apply` 仍必须绑定当前 Runtime/status、dry-run exact plan hash 与一次明确生产写入意图。
 
 schema-v5 compatible recovery 的只读绑定、候选 commit/tree、operational hash/count、`last_interruption`
-保留、配置脱敏、stopped status authority、launchd error/label reappearance、heartbeat 与
-status/plist/root/process/config 漂移阻断、promotion 四 predicate 保留、after-market→Live 安装顺序，以及部分
-安装失败后 candidate 逆序停服、marker 恢复和显式 blocked 合同：
+保留、配置脱敏、独立 expected terminal SHA、受信 account HOME、stopped status authority、first-install
+status residue 拒绝、launchd error/label reappearance、真实 schema-v5 `RuntimeDataBinding` 的四服务/config/
+heartbeat/recheck、公开 daily/current-day 入口的 stopped success 与 drift/error fail-closed、promotion 四
+predicate 保留、after-market→Live 安装顺序，以及部分安装失败后 candidate 逆序停服、旧 launcher/plist/
+loaded-state 精确恢复、第二次 preflight 可达和 marker/unknown 显式 blocked 合同：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \

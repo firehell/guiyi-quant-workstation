@@ -163,12 +163,18 @@ def _verify_loaded_service(
     return fields
 
 
-def _verify_after_market_plist(*, root: Path, commit: str,
-                               label: str = "com.guiyi.quant-after-market") -> None:
+def _verify_after_market_plist(
+    *,
+    root: Path,
+    commit: str,
+    label: str = "com.guiyi.quant-after-market",
+    home: Path | None = None,
+) -> None:
     """Require the installed schedule to retain the same guarded after-market code root."""
     if label not in {f"com.guiyi.quant-{name}" for name in ("api", "web", "live", "alert", "after-market")}:
         _reject("SERVICE_CONFIGURATION_INVALID")
-    path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    account_home = home if home is not None else Path.home()
+    path = account_home / "Library" / "LaunchAgents" / f"{label}.plist"
     try:
         parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
@@ -192,7 +198,7 @@ def _verify_after_market_plist(*, root: Path, commit: str,
         _reject("SERVICE_CONFIGURATION_INVALID")
     environment = payload.get("EnvironmentVariables")
     if (payload.get("Label") != label
-            or payload.get("WorkingDirectory") != str(Path.home() if label in {"com.guiyi.quant-api", "com.guiyi.quant-web"} else root)
+            or payload.get("WorkingDirectory") != str(account_home if label in {"com.guiyi.quant-api", "com.guiyi.quant-web"} else root)
             or not isinstance(environment, dict)
             or environment.get("GUIYI_PROJECT_ROOT") != str(root)
             or environment.get("GUIYI_RUNTIME_COMMIT") != commit):

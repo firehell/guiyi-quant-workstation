@@ -587,10 +587,12 @@ RQData，不写 Catalog、Redis 或状态文件。
 plist 声明交叉校验；candidate checkout 不能自行取得 status authority。D 后 stopped authority 只接受 exact
 schema-v5 interrupted terminal：installed after-market plist、release root/commit/config 保持不变，launchd domain
 可读且 writer label 明确 absent，另外四服务的 plist/process/root/commit/config 精确，Live/Alert 双 heartbeat
-新鲜且证明 recovery guard，使用前再核对 status/plist/root/process/config/heartbeat。permission/error/unreadable
+新鲜且证明 recovery guard，并由调用者在 source runtime env 之外提供受审 terminal bytes 的 exact SHA-256，
+使用前再核对 status/plist/root/process/config/heartbeat。缺失或不匹配的独立 SHA、permission/error/unreadable
 不是 absent；writer 重现或任一 pinned fact 漂移都以 `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE` 阻断。
-只有 label 明确 not-found 且不存在 installed plist 的 genuine first-install 才可使用 candidate root。preflight 的
-受控 status path 不受 runtime env 覆盖。
+只有 label 明确 not-found、不存在 installed plist 且 candidate `.run/after-market-status.json` 也不存在的 genuine
+first-install 才可使用 candidate root；该模式不读取任何 candidate status。preflight 的受控 status path、account
+HOME 与 expected terminal SHA 不受 runtime env 覆盖。
 
 只有以下四种窗口可通过：有效 snapshot 与 operational symbols/contract identities 精确对应的
 `snapshot_ready`；所有 operational 产品尚未到权威 Session 的真正最早 start 的 `before_first_session`；同一
@@ -606,9 +608,10 @@ release、Runtime ready、formal rank1 reconciliation 或生产验证。
 
 Market 安装顺序固定为 after-market（只 bootstrap/enable，保持 idle）再到 Live（bootstrap/enable/kickstart），
 使新 writer 先取得新 root 的 status ownership。新 root 不继承或复制旧 `.run`；旧 schema-v5 terminal 留在旧
-root。部分安装失败会逆序停止本次 candidate label 并恢复 candidate activation marker 前像，但 shared launcher、
-installed plist 和 status 不具备事务 rollback；安装器明确保持 blocked，后续只能在重新取得当时 status authority
-并获得一次匹配的 compatible-root 恢复意图后重试，不能自动回退旧 writer。
+root。安装器在任何 candidate mutation 前保存 shared launcher、两个 market plist 与两个 label loaded/absent 的
+有界精确前像。部分安装失败先逆序停止本次 candidate label，再恢复并逐字节/逐状态验证该前像和 activation
+marker；恢复成功仍明确 blocked，必须以新的 preflight 与安装意图重试。bootout/print/restore 的 permission、
+domain 或其他未知错误都保留 marker 并报告 unknown，不得声称 stopped 或 recovered；不会加载已停止的旧 writer。
 
 active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
 `data/universe/retired_products.txt`，与 active 互斥。

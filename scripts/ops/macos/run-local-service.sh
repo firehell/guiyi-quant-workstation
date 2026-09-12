@@ -28,6 +28,8 @@ RUNTIME_DIR="${GUIYI_RUNTIME_DIR:-$HOME/Library/Application Support/GuiyiQuant}"
 RUNTIME_ENV="${GUIYI_RUNTIME_ENV:-$RUNTIME_DIR/project.env}"
 PYTHON_BIN="$PROJECT_ROOT/services/quant-api/.venv/bin/python"
 LAUNCHER_ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
+AUTHORITY_HOME="$HOME"
+EXPECTED_AFTER_MARKET_STATUS_SHA256="${GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256:-}"
 
 if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
   if [[ ! -x "$PYTHON_BIN" ]]; then
@@ -44,19 +46,27 @@ if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
     /bin/bash -euo pipefail -c '
       readonly runtime_env="$1"
       readonly python_bin="$2"
+      readonly authority_home="$3"
+      readonly expected_status_sha256="$4"
       if [[ -n "$runtime_env" ]]; then
         set -a
         source "$runtime_env" >/dev/null 2>&1
         set +a
       fi
+      export HOME="$authority_home"
       unset GUIYI_AFTER_MARKET_STATUS_PATH
+      if [[ -n "$expected_status_sha256" ]]; then
+        export GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256="$expected_status_sha256"
+      else
+        unset GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256
+      fi
       [[ -n "${POSTGRES_PASSWORD:-}" ]] || exit 64
       export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
       if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
         export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
       fi
       exec "$python_bin" -m app.market_data.runtime_promotion
-    ' bash "$preflight_env" "$PYTHON_BIN" 2>/dev/null
+    ' bash "$preflight_env" "$PYTHON_BIN" "$AUTHORITY_HOME" "$EXPECTED_AFTER_MARKET_STATUS_SHA256" 2>/dev/null
   )"; then
     preflight_result=0
   else

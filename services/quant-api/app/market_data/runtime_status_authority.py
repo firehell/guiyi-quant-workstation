@@ -8,6 +8,7 @@ import hashlib
 import os
 from pathlib import Path
 import plistlib
+import pwd
 import re
 from typing import Protocol
 
@@ -38,8 +39,18 @@ class RuntimeStatusAuthority:
     recheck: Callable[[], None]
 
 
-def _installed_identity() -> tuple[Path, str] | None:
-    path = Path.home() / "Library/LaunchAgents" / f"{_LABEL}.plist"
+def _account_home() -> Path:
+    try:
+        home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+        if not home.is_absolute() or home != home.resolve(strict=True):
+            raise ValueError
+        return home
+    except (KeyError, OSError, TypeError, ValueError):
+        raise ValueError from None
+
+
+def _installed_identity(home: Path) -> tuple[Path, str] | None:
+    path = home / "Library/LaunchAgents" / f"{_LABEL}.plist"
     if not os.path.lexists(path):
         return None
     content, _identity = _snapshot(path)
@@ -53,7 +64,7 @@ def _installed_identity() -> tuple[Path, str] | None:
         root = Path(environment["GUIYI_PROJECT_ROOT"])
         commit = environment["GUIYI_RUNTIME_COMMIT"]
         launcher = (
-            Path.home()
+            home
             / "Library/Application Support/GuiyiQuant/run-local-service.sh"
         )
         if (
@@ -72,22 +83,28 @@ def _installed_identity() -> tuple[Path, str] | None:
     return root, commit
 
 
-def _status_sha256(root: Path) -> str:
+def _verify_status_sha256(root: Path, expected: str | None) -> str:
+    if not isinstance(expected, str) or re.fullmatch(r"[0-9a-f]{64}", expected) is None:
+        raise ValueError
     try:
         content, _identity = _snapshot(root / ".run/after-market-status.json")
     except (OSError, ValueError):
         raise ValueError from None
-    return hashlib.sha256(content).hexdigest()
+    if hashlib.sha256(content).hexdigest() != expected:
+        raise ValueError
+    return expected
 
 
 def resolve_market_runtime_status_authority(
     *,
     candidate_root: Path,
+    expected_stopped_status_sha256: str | None = None,
     service_reader: Callable[..., str | None] = _read_launchd_service,
-    binding_factory: Callable[[Path, str, str], _Binding] = RuntimeDataBinding,
+    binding_factory: Callable[..., _Binding] = RuntimeDataBinding,
 ) -> RuntimeStatusAuthority:
     """Resolve loaded, exact stopped-terminal, or genuine first-install ownership."""
-    installed = _installed_identity()
+    home = _account_home()
+    installed = _installed_identity(home)
     output = service_reader(_LABEL, root=candidate_root)
     if output is not None:
         if installed is None:
@@ -95,10 +112,10 @@ def resolve_market_runtime_status_authority(
         root, commit = installed
 
         def recheck_loaded() -> None:
-            if _installed_identity() != installed:
+            if _installed_identity(home) != installed:
                 raise ValueError
             verify_runtime_release_identity(root, commit)
-            _verify_after_market_plist(root=root, commit=commit)
+            _verify_after_market_plist(root=root, commit=commit, home=home)
             current = service_reader(_LABEL, root=root)
             if current is None:
                 raise ValueError
@@ -117,17 +134,23 @@ def resolve_market_runtime_status_authority(
         )
     if installed is None:
         root = candidate_root.resolve(strict=True)
+        status_path = root / ".run/after-market-status.json"
 
         def recheck_first_install() -> None:
-            if _installed_identity() is not None or service_reader(_LABEL, root=root) is not None:
+            if (
+                _installed_identity(home) is not None
+                or service_reader(_LABEL, root=root) is not None
+                or os.path.lexists(status_path)
+            ):
                 raise ValueError
 
         recheck_first_install()
         return RuntimeStatusAuthority(
-            root / ".run/after-market-status.json", "first_install", recheck_first_install
+            status_path, "first_install", recheck_first_install
         )
     root, commit = installed
-    binding = binding_factory(root, commit, _status_sha256(root))
+    expected = _verify_status_sha256(root, expected_stopped_status_sha256)
+    binding = binding_factory(root, commit, expected, home=home)
     if binding.after_market_state != "stopped":
         raise ValueError
     binding.check_runtime_heartbeats()
