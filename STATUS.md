@@ -1,7 +1,7 @@
 # 当前状态
 
-文档核对：2026-09-11。正式代码基线 `v1.10.6@a8e67790dcd33db95f65c442c415378782927618`；
-本轮 develop 检查起点 `c073e255234c244585d1a475a937881d760d2dc4`。本文件只保留当前版本、已证明事实、
+文档核对：2026-09-12。正式代码基线 `v1.10.6@a8e67790dcd33db95f65c442c415378782927618`；
+本轮 develop 候选代码截至 `9dfc44dbc64f1262d10a0aad1ae68cc08401d3e1`。本文件只保留当前版本、已证明事实、
 尚缺证据、已接受的阶段规划、本轮冻结范围与唯一下一步。操作过程、逐次授权和旧候选矩阵从 Git history、tag、PR
 与原 evidence 追溯；历史授权不授权重跑。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见
 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
@@ -9,13 +9,45 @@
 工作 2 已于 2026-09-11 完成：只读 closeout 返回 `ready` 后，owner 批准的单次 apply 将 2026-09-09 旧运行记为 `interrupted`，独立读回通过。当时部署预检受当天 60 品种 Session 缺失阻塞；该收尾未补行情、未切换 Runtime。本次新读回见下节。
 工作 3 已于 2026-09-11 完成源码、测试、合同和独立 Review，并随 v1.10.6 发布；尚未取得新版本 Runtime 与自然盘后证据，后续仍归工作 5。
 
+## 2026-09-12 D/E/F 与候选收口
+
+- 2026-09-11 的第二次旧盘后运行已按 owner 精确意图行政收尾：schema v5、`current_run=null`、
+  `last_run=interrupted`，terminal SHA-256 为
+  `98c09006fee9624b0cef0f50e01c11b4d59e5ac8e6bdb57e76e7ba47e6566d08`。旧 writer 的 installed plist
+  保留且绑定 `v1.10.5@cdd72d750`，label 明确 absent；API/Web/Live/Alert 四服务继续运行旧版。该处置避免旧
+  writer 再覆盖 v5，但不等于发布或 Runtime promotion。
+- 停止状态后的公共维护、兼容恢复与 promotion authority 已收敛并通过独立 Review；最终解析修复为
+  `9dfc44dbc`。公开 preflight 会拒绝权限错误、含糊 not-found、label 重现及任一 root/commit/status/heartbeat
+  漂移，不把 stopped writer 扩张成通用四服务 Runtime。
+- E 的真实 metadata source capture 固定 snapshot
+  `8586532f98bceb2c525ffafeb9dedf4b0286bb13d4d58cd83414e88bc36a0e65`，64 次应用层调用取得 Calendar 20、
+  Session 450、主力源行 120。provider-free plan
+  `52fead349311021e27338e59de3c4c9062189b811a23efa30f2a76bb9e1f7fcf` 只新增 operational P60 的
+  2026-09-14 Session 225 行；owner 批准的一次 apply 已完成，Calendar/rank1/Canonical/provider 写入均为 0。
+  独立读回确认 2026-09-11 与 2026-09-14 均为 60 品种/225 Session，apply 后重规划为全 equal no-op。
+- E 后重新生成的 F daily plan
+  `3e56bbe9ee2adb705904e524a7dee5ce307b424b3b50172b0e949f98ebdad1e1` 固定 960 个执行目标：840 个 P60 ×
+  continuous/physical × 七周期的 9 月 9–11 日增量，以及 120 个 W1 所需 9 月 7–11 日 D1 companion。
+  owner 批准的一次 apply 返回 `passed`：960 applied、0 failed、0 blocked、480 provider requests，未重试。
+  正式 MDS 写后读回核对 840/840 个最终分区、487138 根 Bar 与完整 endpoint hash，0 finding；现役 API
+  另读到 RB 2026-09-11 completed D1，API health 与 Web 均为 200。该结果只关闭本次受控增量，不证明全历史审计。
+- 1.10.7 候选代码对上述 schema-v5 现场的只读 compatible-recovery proof 已通过，保留 interruption、P60 及
+  DB/Redis/Canonical/RQData 配置身份，零 provider/数据/Runtime mutation。`recovery_ready=false` 仍正确保留
+  exact published tag、immutable recovery root 与独立恢复执行意图三个 Gate；v1.10.5/v1.10.6 不列为恢复版本。
+- 前端证据仍绑定 `24ab72601` 的 543 passed / 1 skipped 与 production build 通过；从该提交到
+  `9dfc44dbc` 的 Web source/config/lock diff 为空，按冻结计划复用。当前隔离 worktree 的顶层依赖链接缺失所致
+  的复跑失败仅是环境证据，不改写上述通过结果，也不把它计作产品失败。
+- 当前为 `CODE_COMPLETE / DATA_RECOVERY_COMPLETE / RELEASE_CANDIDATE_PREP`。尚未执行 v1.10.7 的 main merge、
+  annotated tag、GitHub Release、immutable Runtime/recovery root 或五服务切换；这些仍按发布与 Runtime 两个
+  独立 Gate 处理。自然 Live Bar、自然盘后及后续交易日增量也仍待新版本 Runtime 验收。
+
 ## 9 月 11 日新中断与 1.10.7 候选准备
 
-- 20:56 停止后新读回：18:05 本次旧版盘后进程已退出、维护锁释放，状态仍保留 `current_run`。
-  此次与已完成的 9 月 9 日旧运行收尾分开；尚未执行本次状态 apply。
-- Calendar 五交易所 9 月 11–14 日均在；9 月 11 日 Session 为 60 品种/225 行，9 月 14 日全部缺失；
-  原日及 14 日 Live snapshot 缺失。60 品种连续行情 Catalog 最新仍为日/分钟 9 月 8 日、周线 9 月 4 日。
-  该端点检查不证明物理完整性或旧 writer 的逐次提交归属；promotion 仍 blocked。
+- 20:56 停止后的最初读回确认旧版盘后进程退出、维护锁释放，当时状态仍保留 `current_run`；后续 D 的
+  精确 apply 与读回已按上节完成。此次与已完成的 9 月 9 日旧运行收尾分开。
+- 当时 Calendar 五交易所 9 月 11–14 日均在、9 月 14 日 Session 全部缺失、两日 Live snapshot 缺失，
+  且 60 品种行情截至 9 月 8 日/周线 9 月 4 日。E/F 已关闭 Session 与行情增量缺口；snapshot 不被伪造，
+  promotion 仍须使用当前现场重新运行正式 predicate。
 - 隔离旧/新完整维护链确认旧版盘后全历史同步会删除下一交易日 Session。已发布 daily 改造避开该路径；
   full/refresh 仍存在同类缺陷，本轮 `97ef59b97` 将历史替换限制到截止日并拒绝含糊模板。
   Session 回归 465 passed；独立 Review 240 passed、事务回滚/其他品种保留复核通过，无 P0–P3。
@@ -56,21 +88,18 @@
   通过，状态 SHA 未变、状态写入为 false。此 ready 只允许提出行政中断收尾，不代表行情完整或 passed。
   23:24 独立读回 advisory lock 为 0，current_run 仍在；14 日 Session 仍缺失，两日 snapshot 仍 missing，
   phase 仍 UNKNOWN60。正式只读 promotion preflight 仍 blocked / `MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。
-- 同一现役绑定的正式 daily dry-run 返回 `planned`：60 品种、960 个窗口，全部在 2026 年 9 月，
-  对应 840 个不同 dataset/月及 120 个周线所需 D1 刷新窗口。主要增量为 9 月 9–11 日，
-  夜盘时间戳可始于 9 月 8 日晚；周线依赖需刷新 9 月 7–11 日整周 D1，不能把这 5 日都称为缺失。
-  provider/applied/blocked/failed 均为 0，状态 SHA 未变；这只是明确候选处理范围，未授权行情写入。
+- 同一现役绑定的原 daily dry-run 固定为 60 品种、960 个窗口；E 后重新规划得到相同 core window，并用
+  完整 expected/missing endpoint hash 形成上节 F plan。该计划已按一次精确意图完成并通过 MDS 读回；
+  周线 companion 仍是 9 月 7–11 日整周刷新，不能把其中已存在的 9 月 7–8 日称为缺失。
 - 切换时机隔离验证：周六 06:00（含）至 18:00（不含），若所有品种均处于非交易 Calendar 的
   `CLOSED / trading_day=None / current_session=None`，且盘后状态有效、没有 current_run，可走
   `non_trading_interval`，不要求缺失的未来 Session/snapshot；18:00 起缺 Session 又会 UNKNOWN。
   SQLite/内存边界复核及既有 71 项测试通过。这不是 9 月 12 日现场 passed；届时必须正式只读 preflight。
-- 版本身份已准备为 1.10.7，收敛 daily/生命周期、Session 保留、收尾、单 worker 与周检状态补丁。
-  相对 v1.10.6 还包含既有 `c073e255` 研究输出，未删改或据此缩称为纯代码补丁；精确候选仍待冻结。
-- `EXTERNAL_GATE_PENDING`：本次状态 apply、剩余 9 月 14 日 Session 恢复、9 月 9–11 日行情
-  范围与 MDS 读回、发布、Runtime 切换及新版本自然验收均未关闭。旧 v1.10.5 writer 下次运行不能
-  承接 v5 摘要，apply 前必须明确后续调度处置；不自动暂停或切换。最小下一步是批准本次
-  `interrupted` 状态 apply，并明确 9 月 12 日 18:05 前的旧调度处置；实际 apply 仍重验完整合同，
-  不重做已通过的 200 分区恢复。
+- 版本身份为 1.10.7，收敛 daily/生命周期、Session 保留、收尾、单 worker、周检状态和停止状态恢复补丁。
+  相对 v1.10.6 还包含既有 `c073e255` 研究输出，未删改或据此缩称为纯代码补丁；最终候选在本状态更新后冻结。
+- `EXTERNAL_GATE_PENDING`：D/E/F 已关闭；尚缺最终候选验证与独立 Review、v1.10.7 发布、compatible immutable
+  recovery root、Runtime 切换及新版本自然验收。旧 writer 已明确停止且不会参加下一次 18:05 调度；未自动
+  发布、安装 weekly audit、切换服务或发送通知。
 
 ## 单 API worker 补丁候选（面向 v1.10.7，未发布）
 
@@ -127,11 +156,11 @@
 | 项目 | 阶段 | 说明 |
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.6@a8e67790d`，PR #362 合入 main，annotated tag 与 GitHub Release 已读回 |
-| 现役 Runtime | 未切换，未声明 `RUNTIME_READY` | 五服务仍加载 v1.10.5；after-market loaded 且 idle；v1.10.6 promotion 与自然盘后验收未完成 |
-| 中断盘后收尾 | 9 月 9 日 `COMPLETED`；9 月 11 日 `EXTERNAL_GATE_PENDING` | 先前旧运行单次 apply 与独立读回完成；9 月 11 日新运行已停、尚未 apply，两次范围不混同 |
+| 现役 Runtime | 未切换，未声明 `RUNTIME_READY` | API/Web/Live/Alert 四服务仍运行 v1.10.5；旧 after-market plist 保留但 label absent；新版本 promotion 与自然验收未完成 |
+| 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED` | `8f2b051fd` 随 v1.10.6 发布；Runtime 与自然盘后 Gate 尚未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
-| 本轮稳定版 | `RELEASED`，Runtime Gate pending | v1.10.6 main/tag/GitHub Release 已完成；Runtime promotion、weekly-audit 安装和自然业务验收均未执行 |
+| 本轮稳定版 | v1.10.7 `RELEASE_CANDIDATE_PREP` | D/E/F 与候选代码已收口；最终验证/Review、发布、compatible root、Runtime promotion 和自然业务验收仍分开 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
