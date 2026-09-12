@@ -1,9 +1,9 @@
 # 当前状态
 
-文档核对：2026-09-12。正式 Release 与现役 Runtime 基线为
-`v1.10.7@be89c65cc2bbcd245a9b5efb22ef8a4532bce1cc`；切换后发现的前端 API 前缀修复固定于 develop 候选
-`5879452c1`，尚未发布或进入 Runtime。本轮已审发布候选固定于 `47c918596`，其中生产修复固定于
-`bf48284cf`。本文件只保留当前版本、已证明事实、
+文档核对：2026-09-12。正式 Release 与现役 Runtime 基线仍为
+`v1.10.7@be89c65cc2bbcd245a9b5efb22ef8a4532bce1cc`；当前仓库版本事实已准备为未发布的 v1.10.8
+`RELEASE_CANDIDATE`，包含前端 API 前缀修复 `5879452c1`，尚未发布或进入 Runtime。v1.10.7 已审发布候选
+固定于 `47c918596`，其中生产修复固定于 `bf48284cf`。本文件只保留当前版本、已证明事实、
 尚缺证据、已接受的阶段规划、本轮冻结范围与唯一下一步。操作过程、逐次授权和旧候选矩阵从 Git history、tag、PR
 与原 evidence 追溯；历史授权不授权重跑。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见
 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
@@ -219,11 +219,12 @@
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.7@be89c65cc`，PR #363 合入 main，annotated tag object `34df064af` 与 GitHub Release 已读回 |
 | 现役 Runtime | `RUNTIME_PROMOTED`，未声明 `RUNTIME_READY` | 五服务已绑定 `v1.10.7@be89c65cc`；API/Web 200、Live/Alert running、after-market 等待自然运行；SuBing 历史参考页面 404 与自然业务 Gate 尚未关闭 |
+| 补丁候选 | `RELEASE_CANDIDATE`，未发布 | v1.10.8 仓库版本事实已包含 `5879452c1`；独立最终 Review、main/tag/GitHub Release 与 Runtime promotion 均未执行 |
 | v1.10.7 部署准备 | `COMPLETED` | 独立 Runtime/recovery root 已固定；locked 依赖、Web build、render、兼容恢复和失败恢复路径通过；正式只读 preflight 与单次切换已完成 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED` | `8f2b051fd` 随 v1.10.6 发布；Runtime 与自然盘后 Gate 尚未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
-| 本轮稳定版 | v1.10.7 `IMMEDIATE_ACCEPTANCE_PARTIAL` | D/E/F、候选验证、独立 Review、发布、固定 root、preflight 与 promotion 已收口；前端路径修复、新版本发布/promotion 和自然业务验收仍分开 |
+| 本轮稳定版 | v1.10.7 `IMMEDIATE_ACCEPTANCE_PARTIAL` | D/E/F、候选验证、独立 Review、发布、固定 root、preflight 与 promotion 已收口；v1.10.8 补丁候选的最终 Review、发布/promotion 和自然业务验收仍分开 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
@@ -365,6 +366,8 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 - 候选与发布 Gate：v1.10.7 已完成真实 diff 冻结、必要检查、独立 Review 及 main/tag/GitHub Release；该 Gate 已关闭。
 - Runtime promotion Gate：exact v1.10.7 已按独立一次意图完成切换并读回，未发生恢复或重试；该 Gate 已关闭。
+- v1.10.8 补丁候选 Gate：仓库版本事实已准备为 `RELEASE_CANDIDATE`，独立最终 Review 与发布尚未完成；不据此创建 tag、
+  切换 Runtime 或改变 data、Scope、weekly audit、notification 状态。
 - 稳定版运行验收 Gate：SuBing 历史参考页面须先由新版本关闭 404，再取得自然 Live Bar、自然盘后与后续增量证据。此 Gate 未完成时保留待验收，不声明 `RUNTIME_READY`，也不倒置为发布前真实运行要求。
 
 **本轮不阻塞（已披露限制）**
@@ -424,7 +427,7 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 | 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单次 apply 记 `interrupted` | 已完成 | 60 品种全部已提交指针可读；720 项有效子集缺口；原日快照匹配；单次 apply 与独立状态读回通过；后续 D/E/F 与 promotion 均按独立 Gate 完成 | 旧事故归类已关闭 | 不重跑 closeout |
 | 3 | 盘后运行生命周期与错误判断 | 代码缺陷 | 降低下次故障恢复成本 | `coverage_source`/`after_market`/`runtime_entry`；日常增量与 weekly-audit 保持独立 | 工作 2 已完成 | `8f2b051fd`；最终后端 3259 passed / 16 skipped / 31 deselected，工程 81 passed，Mypy 154 文件、Ruff、OpenSpec、secret scan 和独立 Review 通过 | 已完成并随 v1.10.6 发布；自然运行归工作 5 | 等待新 Runtime 自然验收 |
 | 4 | 现有牛哇加载与显示一致性 | 代码缺陷 | 现有公式下页面可靠 | 请求取消/代次/在途快照/面板/分页；策略/周期切换、历史分页、参考定位、冲突恢复 | 已完成并纳入 v1.10.6 | `fef307732` 与对应 OpenSpec/回归关闭旧请求回写；v1.10.6 完整 Web 和浏览器矩阵通过 | 已完成并发布；生产历史仍是独立数据 Gate | 不追加三策略主动作、新版评分或参考价格口径 |
-| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2、3、4 已闭环；范围已接受全量 develop | v1.10.7 main/tag/GitHub Release、immutable Runtime/recovery root、preflight 与五服务 promotion 已完成；SuBing 页面修复和自然业务 Gate 待完成 | 本轮里程碑 | 冻结 `5879452c1` 的补丁候选并独立 Review；发布与新 Runtime promotion 继续分开批准 |
+| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2、3、4 已闭环；范围已接受全量 develop | v1.10.7 main/tag/GitHub Release、immutable Runtime/recovery root、preflight 与五服务 promotion 已完成；SuBing 页面修复和自然业务 Gate 待完成 | 本轮里程碑 | 完成 v1.10.8 补丁候选的独立最终 Review；发布与新 Runtime promotion 继续分开批准 |
 | 6 | 其他品种可用性与分批补数 | 数据缺口 | 先恢复日周六组合，再准备 60m | 复用 readiness；按物理合约/窗口去重；每批 MDS 读回、对应页面及维护接续 | 稳定交付恢复后；每批真实查询/写入另需单次意图 | 声明范围内日周逐项可核对；60m 数据就绪与产品开放分开验收 | 不阻塞无共享完整性问题的盘后稳定版 | 先冻结日周品种/窗口/面板和预热需求，再出可用性清单，不边跑边扩范围 |
 | 7 | 牛哇新版综合解释 | 新版需求 | 把规则适配从显示修复中分开 | 新版本身份；先内核固定输入，再接口和页面 | 先批准新合同，含 `certExtra` | 同输入能解释新旧差异；分项与总分可核对；不改变主动作、参考交易或正式通知 | 独立后续候选 | Plan-only；本轮安排不构成实现或发布批准 |
 
@@ -437,8 +440,7 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 ## 唯一下一步
 
-从已包含 `5879452c1` 的 develop 开始补丁候选与版本准备，冻结精确候选并完成独立最终 Review；该修复仍未发布，
-现役保持 exact v1.10.7。main/tag/GitHub Release、后续 Runtime promotion、data、Scope、weekly audit 与 notification
-仍为各自独立 Gate，D/E/F 不重跑。
+对已准备的未发布 v1.10.8 `RELEASE_CANDIDATE` 完成独立最终 Review；现役保持 exact v1.10.7。main/tag/GitHub
+Release、后续 Runtime promotion、data、Scope、weekly audit 与 notification 仍为各自独立 Gate，D/E/F 不重跑。
 
 本文件不构成元数据/行情修复、发布或 Runtime promotion 批准。
