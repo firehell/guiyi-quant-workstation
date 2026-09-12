@@ -437,7 +437,8 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 ## 唯一下一步
 
-将 `5879452c1` 的 SuBing 历史参考 API 前缀修复集成 develop，冻结补丁发布候选并完成独立 Review；
-main/tag/GitHub Release 与后续 Runtime promotion 继续作为两个独立 Gate。D/E/F 不重跑，weekly audit 不搭车。
+从已包含 `5879452c1` 的 develop 开始补丁候选与版本准备，冻结精确候选并完成独立最终 Review；该修复仍未发布，
+现役保持 exact v1.10.7。main/tag/GitHub Release、后续 Runtime promotion、data、Scope、weekly audit 与 notification
+仍为各自独立 Gate，D/E/F 不重跑。
 
 本文件不构成元数据/行情修复、发布或 Runtime promotion 批准。
