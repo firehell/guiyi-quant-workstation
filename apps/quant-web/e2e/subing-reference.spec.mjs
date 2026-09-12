@@ -1,5 +1,18 @@
 import { expect, test } from '@playwright/test'
 import { mockSubingReference, referenceBars, subingReferenceFixture } from './subing-reference.helpers.mjs'
+
+test('historical reference uses the unified API base exactly once', async ({ page }) => {
+  const referencePaths = []
+  page.on('request', request => {
+    const pathname = new URL(request.url()).pathname
+    if (pathname.endsWith('/subing/reference')) referencePaths.push(pathname)
+  })
+  await mockSubingReference(page)
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  await expect(page.getByRole('heading', { name: '乐观参考交易' })).toBeVisible()
+  expect(referencePaths).toEqual(['/api/v1/market/jm/subing/reference'])
+})
+
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
   test(`SuBing historical fixture preview ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport)

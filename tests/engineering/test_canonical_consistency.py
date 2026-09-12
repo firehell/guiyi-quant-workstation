@@ -441,7 +441,7 @@ def test_release_versions_are_consistent() -> None:
         web["version"],
         *lock_versions,
         *app_versions,
-    } == {"1.10.7"}
+    } == {"1.10.8"}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
 
