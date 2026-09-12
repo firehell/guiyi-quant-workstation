@@ -10,6 +10,7 @@ from pathlib import Path
 import plistlib
 import pwd
 import re
+import sys
 from typing import Protocol
 
 from app.market_data.after_market_closeout import verify_runtime_release_identity
@@ -18,10 +19,19 @@ from app.market_data.captured_recovery_runtime import (
     _verify_after_market_plist,
     _verify_loaded_service,
 )
-from app.market_data.closeout_binding import RuntimeDataBinding, _snapshot
+from app.market_data.closeout_binding import (
+    RuntimeDataBinding,
+    _arguments,
+    _environments,
+    _snapshot,
+)
 
 
 _LABEL = "com.guiyi.quant-after-market"
+_MARKET_LABELS = {
+    "com.guiyi.quant-after-market": "after-market",
+    "com.guiyi.quant-live": "live",
+}
 
 
 class _Binding(Protocol):
@@ -95,6 +105,85 @@ def _verify_status_sha256(root: Path, expected: str | None) -> str:
     return expected
 
 
+def verify_restored_loaded_market_service(
+    label: str,
+    *,
+    home: Path | None = None,
+    service_reader: Callable[..., str | None] = _read_launchd_service,
+) -> None:
+    """Verify one restored loaded market process against its installed plist."""
+    service = _MARKET_LABELS.get(label)
+    if service is None:
+        raise ValueError
+    account_home = _account_home() if home is None else home
+    path = account_home / "Library/LaunchAgents" / f"{label}.plist"
+    try:
+        content, _identity = _snapshot(path)
+        payload = plistlib.loads(content)
+        if not isinstance(payload, dict):
+            raise ValueError
+        environment = payload.get("EnvironmentVariables")
+        if not isinstance(environment, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in environment.items()
+        ):
+            raise ValueError
+        root = Path(environment["GUIYI_PROJECT_ROOT"])
+        commit = environment["GUIYI_RUNTIME_COMMIT"]
+        arguments = (
+            "/bin/bash",
+            str(
+                account_home
+                / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+            ),
+            service,
+        )
+        if (
+            payload.get("Label") != label
+            or payload.get("WorkingDirectory") != str(root)
+            or tuple(payload.get("ProgramArguments", ())) != arguments
+            or set(environment)
+            != {"PATH", "GUIYI_PROJECT_ROOT", "GUIYI_RUNTIME_COMMIT"}
+            or not environment["PATH"]
+            or re.fullmatch(r"[0-9a-f]{40}", commit) is None
+            or not root.is_absolute()
+            or root != root.resolve(strict=True)
+        ):
+            raise ValueError
+        _verify_after_market_plist(
+            root=root, commit=commit, label=label, home=account_home
+        )
+        output = service_reader(label, root=root)
+        if output is None:
+            raise ValueError
+        _verify_loaded_service(
+            output,
+            root=root,
+            commit=commit,
+            allow_idle=service == "after-market",
+            require_idle=service == "after-market",
+            working_directory=root,
+        )
+        if _arguments(output) != arguments:
+            raise ValueError
+        matching_environments = [
+            observed
+            for observed in _environments(output)
+            if observed.get("GUIYI_PROJECT_ROOT") == str(root)
+            and observed.get("GUIYI_RUNTIME_COMMIT") == commit
+        ]
+        if matching_environments != [environment]:
+            raise ValueError
+    except (
+        KeyError,
+        OSError,
+        TypeError,
+        ValueError,
+        plistlib.InvalidFileException,
+    ):
+        raise ValueError from None
+
+
 def resolve_market_runtime_status_authority(
     *,
     candidate_root: Path,
@@ -159,3 +248,18 @@ def resolve_market_runtime_status_authority(
         "stopped_terminal",
         binding.check_runtime_heartbeats,
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    arguments = sys.argv[1:] if argv is None else argv
+    if len(arguments) != 2 or arguments[0] != "verify-restored-loaded-service":
+        return 2
+    try:
+        verify_restored_loaded_market_service(arguments[1])
+    except ValueError:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised through installer
+    raise SystemExit(main())

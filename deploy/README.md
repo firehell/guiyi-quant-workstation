@@ -120,12 +120,20 @@ root 的 `.run`，安装器不复制或改写旧 schema-v5 terminal status；旧
 审计事实。新 writer 首次自然运行才在新 root 建立自己的 status。
 
 安装器在 candidate mutation 前只为 shared launcher、log rotator、after-market/Live installed plist 和两者
-loaded/absent 状态保存有界精确前像，不复制或修改 status。部分失败时先按已尝试 label 的逆序 bootout
-candidate，再恢复文件并按原状态仅重载先前 loaded 的服务；逐字节和逐状态验证通过后才恢复 activation marker
-前像，并明确输出 `partial market install is blocked`。该恢复不会重试安装，也不会加载原本 stopped 的旧 writer；
-下一次安装仍需新的 promotion preflight 与一次匹配的安装意图。任一 candidate label 仍 loaded、bootout/print
-不是 exact not-found、恢复或读回结果不明时，marker 保留且状态为 unknown/blocked，不能声称 stopped 或
+loaded/absent 状态保存有界精确前像，不复制或修改 status。此后从 shared launcher/rotator 的 copy/chmod、
+activation marker 准备到 plist/load 的整个 mutation 区间都使用同一个失败恢复出口。部分失败时先按已尝试
+label 的逆序 bootout candidate，再恢复文件并按原状态仅重载先前 loaded 的服务；除逐字节和 loaded/absent
+状态外，每个恢复为 loaded 的服务还必须由 Python authority 精确核对进程 root、commit、arguments、working
+directory 与 environment，全部通过后才恢复 activation marker 前像，并明确输出
+`partial market install is blocked`。该恢复不会重试安装，也不会加载原本 stopped 的旧 writer；下一次安装仍需
+新的 promotion preflight 与一次匹配的安装意图。任一 candidate label 仍 loaded、bootout/print 不是当前请求
+label 的 exact not-found、恢复或读回结果不明时，marker 保留且状态为 unknown/blocked，不能声称 stopped 或
 recovered，也不切换到 v1.10.5/v1.10.6。
+
+两个 market label 已成功启用且 marker 已提交后，前像或 marker backup 的删除只是 post-commit cleanup。
+cleanup 不确定时不回滚已经提交的 Runtime，安装器以成功退出并显式输出
+`cleanup=unknown retry_safe=false`，同时警告 `do not retry`；调用方必须把它解释为“安装已发生、清理状态未知”，
+不能按普通安装失败自动重试。
 
 #### Read-only promotion predicate
 

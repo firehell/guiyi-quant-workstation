@@ -9,6 +9,7 @@ ALERT_RUNTIME_MARKER="$PROJECT_ROOT/.run/alert-runtime-enabled"
 AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
+PYTHON_BIN="$PROJECT_ROOT/services/quant-api/.venv/bin/python"
 MODE="${1:---render-only}"
 ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
 
@@ -128,7 +129,7 @@ mkdir -p "$AGENT_DIR" "$RUNTIME_DIR" "$LOG_DIR"
 chmod 700 "$RUNTIME_DIR" "$LOG_DIR"
 
 launchd_service_state() {
-  local label="$1" output result
+  local label="$1" output result quoted_not_found
 
   if ! launchctl print "gui/$UID" >/dev/null 2>&1; then
     return 2
@@ -138,10 +139,9 @@ launchd_service_state() {
   else
     result=$?
   fi
-  if [[ "$result" != "0" ]] && {
-    [[ "$output" == "Could not find service" ]] \
-      || [[ "$output" =~ ^Could\ not\ find\ service\ \"[^\"]+\"\ in\ domain\ for\ user\ gui:\ [0-9]+$ ]]
-  }; then
+  quoted_not_found="Could not find service \"$label\" in domain for user gui: $UID"
+  if [[ "$result" != "0" ]] \
+    && [[ "$output" == "Could not find service" || "$output" == "$quoted_not_found" ]]; then
     return 1
   fi
   return 2
@@ -294,18 +294,14 @@ restore_market_install_preimage() {
       esac
     fi
     [[ "$state" == "${market_preimage_loaded[$index]}" ]] || return 1
+    if [[ "$state" == "1" ]] && ! "$PYTHON_BIN" \
+      -m app.market_data.runtime_status_authority \
+      verify-restored-loaded-service "$label" >/dev/null 2>&1; then
+      return 1
+    fi
   done
   discard_market_install_preimage
 }
-
-prepare_market_install_preimage
-
-if [[ "$MODE" != "--confirm-weekly-audit" ]]; then
-  cp "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh"
-  chmod 700 "$RUNTIME_DIR/run-local-service.sh"
-  cp "$PROJECT_ROOT/scripts/ops/macos/rotate-local-service-logs.sh" "$RUNTIME_DIR/rotate-local-service-logs.sh"
-  chmod 700 "$RUNTIME_DIR/rotate-local-service-logs.sh"
-fi
 
 write_runtime_activation_marker() {
   local marker="$1" temporary_marker marker_mode
@@ -340,6 +336,7 @@ write_alert_runtime_activation_marker() {
 activation_marker=""
 activation_marker_backup=""
 activation_marker_existed=0
+activation_marker_snapshot_ready=0
 
 prepare_runtime_activation_marker() {
   local writer
@@ -362,16 +359,12 @@ prepare_runtime_activation_marker() {
     fi
     activation_marker_existed=1
   fi
-  if ! "$writer"; then
-    restore_runtime_activation_marker || {
-      printf '[install-local-services] ERROR: activation marker rollback failed\n' >&2
-    }
-    return 1
-  fi
+  activation_marker_snapshot_ready=1
+  "$writer"
 }
 
 restore_runtime_activation_marker() {
-  if [[ -z "$activation_marker" ]]; then
+  if [[ -z "$activation_marker" || "$activation_marker_snapshot_ready" == "0" ]]; then
     return 0
   fi
   if [[ "$activation_marker_existed" == "1" ]]; then
@@ -387,6 +380,7 @@ restore_runtime_activation_marker() {
     rm -f "$activation_marker_backup" || return 1
     activation_marker_backup=""
   fi
+  activation_marker_snapshot_ready=0
 }
 
 discard_runtime_activation_marker_backup() {
@@ -394,9 +388,8 @@ discard_runtime_activation_marker_backup() {
     rm -f "$activation_marker_backup" || return 1
     activation_marker_backup=""
   fi
+  activation_marker_snapshot_ready=0
 }
-
-prepare_runtime_activation_marker
 
 attempted_load_labels=()
 
@@ -413,6 +406,17 @@ load_selected_services() {
       launchctl kickstart -k "gui/$UID/$label" || return 1
     fi
   done
+}
+
+perform_selected_service_install() {
+  if [[ "$MODE" != "--confirm-weekly-audit" ]]; then
+    cp "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh" || return 1
+    chmod 700 "$RUNTIME_DIR/run-local-service.sh" || return 1
+    cp "$PROJECT_ROOT/scripts/ops/macos/rotate-local-service-logs.sh" "$RUNTIME_DIR/rotate-local-service-logs.sh" || return 1
+    chmod 700 "$RUNTIME_DIR/rotate-local-service-logs.sh" || return 1
+  fi
+  prepare_runtime_activation_marker || return 1
+  load_selected_services
 }
 
 stop_attempted_services() {
@@ -444,7 +448,9 @@ stop_attempted_services() {
   return "$failed"
 }
 
-if ! load_selected_services; then
+prepare_market_install_preimage
+
+if ! perform_selected_service_install; then
   if ! stop_attempted_services; then
     printf '[install-local-services] ERROR: failed attempt remains loaded; activation marker retained\n' >&2
     exit 1
@@ -462,7 +468,18 @@ if ! load_selected_services; then
   fi
   exit 1
 fi
-discard_runtime_activation_marker_backup
-discard_market_install_preimage
+
+post_commit_cleanup="complete"
+if ! discard_runtime_activation_marker_backup; then
+  post_commit_cleanup="unknown"
+fi
+if ! discard_market_install_preimage; then
+  post_commit_cleanup="unknown"
+fi
+if [[ "$post_commit_cleanup" == "unknown" ]]; then
+  printf '[install-local-services] WARNING: installation committed; post-commit cleanup unknown; do not retry\n' >&2
+  printf '[install-local-services] loaded=true mode=%s services=%s cleanup=unknown retry_safe=false\n' "$MODE" "${#load_labels[@]}"
+  exit 0
+fi
 
 printf '[install-local-services] loaded=true mode=%s services=%s\n' "$MODE" "${#load_labels[@]}"

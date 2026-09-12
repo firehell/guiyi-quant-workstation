@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from contextlib import nullcontext
 import importlib
 import json
+import os
 from pathlib import Path
 import plistlib
 import subprocess
@@ -199,6 +200,31 @@ def test_launchd_reader_accepts_only_explicit_label_absence(runtime, monkeypatch
         )
         is None
     )
+
+
+def test_launchd_reader_rejects_quoted_absence_for_a_different_label(
+    runtime, monkeypatch
+):
+    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(
+        runtime.module,
+        "_command_result",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=113,
+            stdout="",
+            stderr=(
+                'Could not find service "com.guiyi.quant-live" '
+                f"in domain for user gui: {os.getuid()}"
+            ),
+        ),
+    )
+
+    with pytest.raises(runtime.module.CapturedRecoveryRuntimeError) as caught:
+        runtime.module._read_launchd_service(
+            "com.guiyi.quant-after-market", root=runtime.root
+        )
+
+    assert caught.value.code == "CAPTURED_RECOVERY_RUNTIME_IDENTITY_UNAVAILABLE"
 
 
 @pytest.mark.parametrize(

@@ -3,8 +3,11 @@ from datetime import UTC, date, datetime
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import plistlib
+import shutil
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -197,6 +200,163 @@ def test_stopped_authority_uses_real_schema_v5_binding_and_rechecks_every_fact(
     target.config.write_text(target.config.read_text() + "# drift\n")
     with pytest.raises(ValueError):
         authority.recheck()
+
+
+def test_partial_install_restore_reaches_real_stopped_authority_and_preflight(
+    target, tmp_path, monkeypatch
+):
+    from contextlib import nullcontext
+
+    from app.core.env import PROJECT_ROOT
+    from app.market_data import runtime_status_authority as authority_module
+    from app.market_data.market_phase import MarketPhase, ProductMarketPhase
+    from app.market_data.runtime_promotion import (
+        run_market_runtime_promotion_preflight,
+    )
+
+    terminal_sha256 = _write_status(target.status, _terminal_status())
+    _stop_writer(target)
+    candidate = tmp_path / "candidate"
+    for relative in (
+        "deploy/launchd",
+        "scripts/ops/macos/install-local-services.sh",
+        "scripts/ops/macos/run-local-service.sh",
+        "scripts/ops/macos/rotate-local-service-logs.sh",
+    ):
+        source = PROJECT_ROOT / relative
+        destination = candidate / relative
+        if source.is_dir():
+            shutil.copytree(source, destination)
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    (fake_bin / "git").write_text(
+        "#!/bin/sh\nprintf '%s\\n' 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'\n",
+        encoding="utf-8",
+    )
+    (fake_bin / "git").chmod(0o755)
+    (fake_bin / "sleep").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (fake_bin / "sleep").chmod(0o755)
+    state_dir = target.home / "launchd-state"
+    state_dir.mkdir()
+    (state_dir / "com.guiyi.quant-live").touch()
+    (target.home / "fail-live-once").touch()
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'command="${1:-}"; target="${2:-}"; label="${target##*/}"\n'
+        'if [ "$command" = print ] && [ "$target" = "gui/$UID" ]; then exit 0; fi\n'
+        'if [ "$command" = print ]; then\n'
+        '  [ -f "$HOME/launchd-state/$label" ] && exit 0\n'
+        '  echo "Could not find service" >&2; exit 113\n'
+        "fi\n"
+        'if [ "$command" = bootout ]; then rm -f "$HOME/launchd-state/$label"; exit 0; fi\n'
+        'if [ "$command" = bootstrap ]; then\n'
+        '  label="${3##*/}"; label="${label%.plist}"; touch "$HOME/launchd-state/$label"; exit 0\n'
+        "fi\n"
+        'if [ "$command" = enable ]; then\n'
+        '  case "$target" in *com.guiyi.quant-live)\n'
+        '    if [ -f "$HOME/fail-live-once" ]; then rm -f "$HOME/fail-live-once"; exit 81; fi ;;\n'
+        "  esac\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+    python = candidate / "services/quant-api/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        '  "-m app.market_data.runtime_status_authority verify-restored-loaded-service "*) exit 0 ;;\n'
+        "esac\n"
+        "printf '%s\\n' "
+        "'{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\","
+        "\"status\":\"passed\",\"reason\":\"non_trading_interval\","
+        "\"trading_day\":null,\"operational_count\":1,\"snapshot_count\":0}'\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o700)
+
+    result = subprocess.run(
+        [
+            str(candidate / "scripts/ops/macos/install-local-services.sh"),
+            "--confirm-market-runtime",
+        ],
+        cwd=candidate,
+        env={
+            **os.environ,
+            "HOME": str(target.home),
+            "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "POSTGRES_PASSWORD": "fixture-only",
+            "GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256": terminal_sha256,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "previous market authority restored" in result.stderr
+    monkeypatch.setattr(authority_module, "_account_home", lambda: target.home)
+    checks = []
+
+    def binding_factory(root, commit, status_sha256, *, home):
+        binding = target.module.RuntimeDataBinding(
+            root, commit, status_sha256, home=home
+        )
+        heartbeat = {
+            "runtime_root": str(target.root),
+            "runtime_commit": "a" * 40,
+            "recovery_guard_enabled": True,
+            "generated_at": "2029-01-01T00:00:00Z",
+        }
+
+        def check():
+            binding.recheck_identity()
+            binding._check_heartbeats(
+                SimpleNamespace(get=lambda key: json.dumps(heartbeat)),
+                SimpleNamespace(heartbeat=lambda: heartbeat),
+                lambda: datetime(2029, 1, 1, tzinfo=UTC),
+            )
+            binding.recheck_identity()
+            checks.append("checked")
+
+        binding.check_runtime_heartbeats = check
+        return binding
+
+    authority = authority_module.resolve_market_runtime_status_authority(
+        candidate_root=candidate,
+        expected_stopped_status_sha256=terminal_sha256,
+        service_reader=lambda label, **kwargs: target.outputs[label],
+        binding_factory=binding_factory,
+    )
+
+    class Resolver:
+        def resolve(self, symbol, now):
+            return ProductMarketPhase(
+                symbol=symbol,
+                phase=MarketPhase.CLOSED,
+                trading_day=None,
+                current_session=None,
+                next_session_start=None,
+            )
+
+    decision = run_market_runtime_promotion_preflight(
+        session_factory=lambda: nullcontext(object()),
+        phase_resolver_factory=lambda session: Resolver(),
+        live_store_factory=lambda: object(),
+        products_loader=lambda: ("au",),
+        status_authority_factory=lambda: authority,
+        now=lambda: datetime(2029, 1, 1, tzinfo=UTC),
+    )
+
+    assert authority.mode == "stopped_terminal"
+    assert decision.status == "passed"
+    assert decision.reason == "non_trading_interval"
+    assert checks == ["checked", "checked"]
 
 
 def test_public_daily_recovery_accepts_real_stopped_runtime_binding(target):

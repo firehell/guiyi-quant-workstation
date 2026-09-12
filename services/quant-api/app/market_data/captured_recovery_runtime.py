@@ -79,10 +79,10 @@ def _read_launchd_service(label: str, *, root: Path) -> str | None:
     unavailable = "\n".join(
         value.strip() for value in (result.stdout, result.stderr) if value.strip()
     )
-    if re.fullmatch(
-        r'(?:Could not find service|Could not find service ".+" in domain for user gui: [0-9]+)',
-        unavailable,
-    ):
+    if unavailable in {
+        "Could not find service",
+        f'Could not find service "{label}" in domain for user gui: {os.getuid()}',
+    }:
         return None
     _reject("IDENTITY_UNAVAILABLE")
 

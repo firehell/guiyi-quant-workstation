@@ -41,6 +41,89 @@ def _installed_writer(home: Path, root: Path, commit: str) -> Path:
     return path
 
 
+def _loaded_service_output(
+    *, home: Path, root: Path, commit: str, service: str = "live"
+) -> str:
+    launcher = home / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+    return (
+        f"service = {{\nstate = running\npid = 123\nworking directory = {root}\n"
+        "arguments = {\n"
+        f"/bin/bash\n{launcher}\n{service}\n}}\n"
+        "environment = {\n"
+        "PATH => /usr/bin:/bin\n"
+        f"GUIYI_PROJECT_ROOT => {root}\n"
+        f"GUIYI_RUNTIME_COMMIT => {commit}\n"
+        "}\n}\n"
+    )
+
+
+def _installed_market_service(
+    home: Path, root: Path, commit: str, service: str = "live"
+) -> Path:
+    label = f"com.guiyi.quant-{service}"
+    path = home / "Library/LaunchAgents" / f"{label}.plist"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        plistlib.dumps(
+            {
+                "Label": label,
+                "WorkingDirectory": str(root),
+                "ProgramArguments": [
+                    "/bin/bash",
+                    str(
+                        home
+                        / "Library/Application Support/GuiyiQuant/run-local-service.sh"
+                    ),
+                    service,
+                ],
+                "EnvironmentVariables": {
+                    "PATH": "/usr/bin:/bin",
+                    "GUIYI_PROJECT_ROOT": str(root),
+                    "GUIYI_RUNTIME_COMMIT": commit,
+                },
+            }
+        )
+    )
+    return path
+
+
+@pytest.mark.parametrize(
+    ("needle", "replacement"),
+    [
+        ("GUIYI_PROJECT_ROOT", "GUIYI_WRONG_ROOT"),
+        ("a" * 40, "b" * 40),
+        ("\nlive\n", "\nafter-market\n"),
+        ("PATH => /usr/bin:/bin", "PATH => /unreviewed/bin"),
+    ],
+)
+def test_restored_loaded_service_requires_exact_process_identity(
+    tmp_path: Path, monkeypatch, needle: str, replacement: str
+) -> None:
+    import app.market_data.runtime_status_authority as module
+
+    home = tmp_path / "home"
+    root = tmp_path / "runtime"
+    root.mkdir()
+    commit = "a" * 40
+    _installed_market_service(home, root, commit)
+    output = _loaded_service_output(home=home, root=root, commit=commit)
+
+    module.verify_restored_loaded_market_service(
+        "com.guiyi.quant-live",
+        home=home,
+        service_reader=lambda *args, **kwargs: output,
+    )
+
+    with pytest.raises(ValueError):
+        module.verify_restored_loaded_market_service(
+            "com.guiyi.quant-live",
+            home=home,
+            service_reader=lambda *args, **kwargs: output.replace(
+                needle, replacement
+            ),
+        )
+
+
 def test_status_authority_pins_installed_stopped_terminal_and_rechecks(
     tmp_path: Path, monkeypatch
 ) -> None:

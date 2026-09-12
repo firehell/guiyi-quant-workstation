@@ -608,10 +608,18 @@ release、Runtime ready、formal rank1 reconciliation 或生产验证。
 
 Market 安装顺序固定为 after-market（只 bootstrap/enable，保持 idle）再到 Live（bootstrap/enable/kickstart），
 使新 writer 先取得新 root 的 status ownership。新 root 不继承或复制旧 `.run`；旧 schema-v5 terminal 留在旧
-root。安装器在任何 candidate mutation 前保存 shared launcher、两个 market plist 与两个 label loaded/absent 的
-有界精确前像。部分安装失败先逆序停止本次 candidate label，再恢复并逐字节/逐状态验证该前像和 activation
-marker；恢复成功仍明确 blocked，必须以新的 preflight 与安装意图重试。bootout/print/restore 的 permission、
-domain 或其他未知错误都保留 marker 并报告 unknown，不得声称 stopped 或 recovered；不会加载已停止的旧 writer。
+root。安装器在任何 candidate mutation 前保存 shared launcher、log rotator、两个 market plist 与两个 label
+loaded/absent 的有界精确前像，并把此后的 launcher/rotator copy/chmod、marker 准备、plist/load 都纳入统一失败
+恢复。部分安装失败先逆序停止本次 candidate label，再恢复并逐字节/逐状态验证该前像；原先 loaded 的进程还须
+精确读回 root、commit、arguments、working directory 和 environment，全部通过后才恢复 activation marker。
+恢复成功仍明确 blocked，必须以新的 preflight 与安装意图重试。bootout/print/restore 的 permission、domain、
+非当前 label 的 quoted not-found 或其他未知错误都保留 marker 并报告 unknown，不得声称 stopped 或 recovered；
+不会加载已停止的旧 writer。恢复测试还须以旧 schema-v5 terminal、独立 expected SHA、真实
+`RuntimeDataBinding`、四服务 identity/config 与双 heartbeat 证明下一次 Python authority/public preflight 可达。
+
+当两个 market label 与 activation marker 已提交后，前像/backup 删除失败属于 post-commit cleanup unknown：
+不得回滚已启用 Runtime，也不得返回可被误读为“安装未发生”的普通失败；安装器成功退出并报告
+`cleanup=unknown retry_safe=false` 与 `do not retry`，后续只能只读核实清理状态。
 
 active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
 `data/universe/retired_products.txt`，与 active 互斥。

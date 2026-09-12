@@ -528,8 +528,10 @@ schema-v5 compatible recovery 的只读绑定、候选 commit/tree、operational
 保留、配置脱敏、独立 expected terminal SHA、受信 account HOME、stopped status authority、first-install
 status residue 拒绝、launchd error/label reappearance、真实 schema-v5 `RuntimeDataBinding` 的四服务/config/
 heartbeat/recheck、公开 daily/current-day 入口的 stopped success 与 drift/error fail-closed、promotion 四
-predicate 保留、after-market→Live 安装顺序，以及部分安装失败后 candidate 逆序停服、旧 launcher/plist/
-loaded-state 精确恢复、第二次 preflight 可达和 marker/unknown 显式 blocked 合同：
+predicate 保留、after-market→Live 安装顺序，以及部分安装失败后 candidate 逆序停服、旧 launcher/rotator/
+plist/loaded-state 精确恢复、loaded 进程 root/commit/arguments/working-directory/environment 读回、真实旧
+schema-v5 terminal + expected SHA + `RuntimeDataBinding` 的第二次 authority/public preflight、load 前 mutation
+失败统一恢复、post-commit cleanup unknown 的 committed/no-retry 语义，以及 marker/unknown 显式 blocked 合同：
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core \
