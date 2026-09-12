@@ -1,7 +1,9 @@
 # 当前状态
 
-文档核对：2026-09-12。正式代码基线 `v1.10.7@be89c65cc2bbcd245a9b5efb22ef8a4532bce1cc`；
-本轮已审发布候选固定于 `47c918596`，其中生产修复固定于 `bf48284cf`。本文件只保留当前版本、已证明事实、
+文档核对：2026-09-12。正式 Release 与现役 Runtime 基线为
+`v1.10.7@be89c65cc2bbcd245a9b5efb22ef8a4532bce1cc`；切换后发现的前端 API 前缀修复固定于 develop 候选
+`5879452c1`，尚未发布或进入 Runtime。本轮已审发布候选固定于 `47c918596`，其中生产修复固定于
+`bf48284cf`。本文件只保留当前版本、已证明事实、
 尚缺证据、已接受的阶段规划、本轮冻结范围与唯一下一步。操作过程、逐次授权和旧候选矩阵从 Git history、tag、PR
 与原 evidence 追溯；历史授权不授权重跑。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见
 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
@@ -42,9 +44,10 @@
   `47c918596` 的 Web source/config/lock diff 为空，按冻结计划复用。当前隔离 worktree 的顶层依赖链接缺失所致
   的复跑失败仅是环境证据，不改写上述通过结果，也不把它计作产品失败。
 - 当前为 `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / DATA_RECOVERY_COMPLETE / RELEASED /
-  DEPLOYMENT_PREPARED`。v1.10.7 已经 PR #363 合入 main，annotated tag、GitHub Release、独立固定 Runtime /
-  recovery root 与正式只读 preflight 均已读回；尚未切换五服务。自然 Live Bar、自然盘后及后续交易日增量
-  仍待新版本 Runtime 验收。
+  RUNTIME_PROMOTED / IMMEDIATE_ACCEPTANCE_PARTIAL`。v1.10.7 已经 PR #363 合入 main，annotated tag、
+  GitHub Release、独立固定 Runtime/recovery root、正式只读 preflight 与五服务切换均已读回；即时服务与
+  Market Home 验收通过，但 SuBing 历史参考页面暴露前端重复 API 前缀，修复尚未发布。自然 Live Bar、
+  自然盘后及后续交易日增量仍待现役 Runtime 验收。
 
 ## 9 月 11 日新中断与 1.10.7 候选准备
 
@@ -102,11 +105,11 @@
   SQLite/内存边界复核及既有 71 项测试通过。这不是 9 月 12 日现场 passed；届时必须正式只读 preflight。
 - 版本身份为 1.10.7，收敛 daily/生命周期、Session 保留、收尾、单 worker、周检状态和停止状态恢复补丁。
   相对 v1.10.6 还包含既有 `c073e255` 研究输出，未删改或据此缩称为纯代码补丁；最终候选在本状态更新后冻结。
-- `EXTERNAL_GATE_PENDING`：D/E/F、最终候选 Review、v1.10.7 发布、compatible immutable recovery root 与
-  本次正式只读 preflight 已关闭；尚缺 Runtime 切换及新版本自然验收。旧 writer 已明确停止且不会参加下一次
-  18:05 调度；未自动安装 weekly audit、切换服务或发送通知。
+- D/E/F、最终候选 Review、v1.10.7 发布、compatible immutable recovery root、正式只读 preflight 与
+  五服务 Runtime 切换均已关闭；尚缺页面修复版与新版本自然验收。旧 writer 已明确停止且不会参加下一次
+  18:05 调度；未自动安装 weekly audit、重跑 D/E/F 或发送通知。
 
-## 单 API worker 补丁（随 v1.10.7 发布；Runtime 未切换）
+## 单 API worker 补丁（随 v1.10.7 发布；切换前证据）
 
 - 修复代码 `044972b82201afe6dc9ee5a532040d748b862bac`：正式 API launcher 显式固定一个 worker，
   保留进程内快照、token 逐事实校验、重型门禁、取消与去重。它修复部署契约，不重开已发布的前端旧响应修复。
@@ -120,8 +123,7 @@
   旧历史视窗未读取的副图范围不据此宣称完整。未清 OS/磁盘缓存，初期采样有并行 fixture 测试 CPU 活动；
   不外推全品种、吞吐上限或双 worker 性能对比。证据与冻结脚本见
   [单 worker 验收记录](outputs/newow-single-worker-20260911/acceptance.json)。
-- `EXTERNAL_GATE_PENDING`：补丁已随 v1.10.7 发布但尚未切换 Runtime；后续独立处理 Runtime promotion 与
-  现场进程/请求验收。
+- 该补丁随后已随 v1.10.7 进入 Runtime；即时进程身份见本文件 promotion 小节，自然运行证据仍独立待验。
 
 ## 周检状态归属补丁（随 v1.10.7 发布；未启用）
 
@@ -131,10 +133,10 @@
 - `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE`：周检定向 43 passed（含独立复跑）；相关回归 368 passed，
   首次唯一失败是隔离 worktree 缺前端依赖，复用已有依赖后该项重跑 1 passed；隔离 PostgreSQL 2 passed。
   Ruff、Mypy、OpenSpec 9 项、引用检查、secret scan 0 findings、diff check 通过；独立 Review 无 P0–P3。
-- `EXTERNAL_GATE_PENDING`：补丁已发布但尚未进入 Runtime；周检安装和新版本自然运行验收仍为独立 Gate。
+- 补丁代码已随 v1.10.7 进入 Runtime，但周检仍未安装或启用；安装和自然运行验收保持独立 Gate。
   weekly audit 保持可选，不是 operational health 的 required service；未运行本身不要求停止 API/Live 等服务。
 
-## v1.10.7 Release（Runtime 未切换）
+## v1.10.7 Release（发布时未切换；现状见 promotion 小节）
 
 - owner 批准的单次发布于 2026-09-12 完成：PR #363 将已审候选 `47c918596` 合入 main，merge commit
   `be89c65cc2bbcd245a9b5efb22ef8a4532bce1cc`，tree `e9abc7dbad94b619a537df262f94e48cf8ce8d37`。
@@ -145,7 +147,7 @@
   Runtime health/overall 同时为 failed。该结果证明本次发布未切换 Runtime，不是 v1.10.7
   Runtime 或自然运行验收。
 
-## v1.10.7 部署准备（已完成；Runtime 未切换）
+## v1.10.7 部署准备（切换前已完成）
 
 - 独立 Runtime root `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.7-r1` 与 compatible-recovery root
   `/Volumes/扩展盘/guiyi-quant-recovery-v1.10.7-r1` 均为非 symlink、detached、tracked clean，精确绑定
@@ -163,6 +165,31 @@
   服务读回仍为 v1.10.5 API/Web/Live/Alert running、after-market absent，API/Web 200；未发生安装、重启或切换。
 - 该 preflight 只证明本次时点 predicate；Runtime switch、失败时实际恢复执行和切换后自然验收仍需各自合同
   与一次匹配意图，weekly audit 未安装。
+
+## v1.10.7 Runtime promotion 与即时验收（已切换；自然验收未完成）
+
+- owner 批准的单次切换于 2026-09-12 22:35–22:36 CST 执行。执行前 compatible-recovery proof 再次
+  `passed`，正式 promotion preflight 返回 `passed / non_trading_interval / trading_day=null /
+  operational_count=60 / snapshot_count=0`；通知配置只验证路径与存在性，未读取或输出凭据。
+- 切换严格按已停止 terminal 的恢复顺序执行：先 Market Runtime（after-market、Live），再基础服务
+  （API、Web），最后 Alert Runtime；三段均只执行一次且成功，未触发恢复、重试、D/E/F、Scope/数据写入或
+  weekly-audit 安装。五个 installed label 均精确绑定非 symlink、detached、tracked-clean 的
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.7-r1@be89c65cc`。
+- 即时只读服务验收：API/Web 均为 HTTP 200；Live 与 Alert running，after-market loaded/not-running；
+  Live heartbeat 新鲜、P60 全部处于周六 `CLOSED`，当前无订阅与自然 Bar；after-market 状态为
+  `pending`，等待首次自然运行。Alert heartbeat 新鲜、2 条 Rule/60 品种 Scope 与 processing state 正常；
+  overall `degraded` 仅保留 2026-09-10 尚未确认的历史通知失败，连续失败为 0，未清除或确认旧事实。
+  本地 API/Web 端口及 FRPC tunnel 只读检查通过。
+- 真实浏览器 Market Home 在异步加载后显示截至 2026-09-11 的 60/60 品种、过期 0、缺失 0；SuBing
+  选择器列出 60 品种，A/A2611 详情与已保存 AlertEvent 可读。详情页同时暴露真实缺陷：历史参考请求被拼为
+  `/api/v1/api/v1/market/a/subing/reference` 并返回 404，因此即时页面验收不是全绿。
+- 根因是 `subingReference.ts` 在统一 `/api/v1` baseURL 之上再次写入相同前缀。develop 修复
+  `5879452c1` 将请求恢复为统一 client 的 `/market/...` 相对路径，并新增真实浏览器请求路径回归；测试先以
+  exact duplicate path 失败，修复后同项及完整 SuBing reference 7 项通过，Web unit 543 passed / 1 skipped，
+  TypeScript 与 production build/bundle topology 通过，secret scan 0 finding、diff check 通过。
+- exact v1.10.7 tag/Runtime 保持不可变；上述前端修复尚未发布或 promotion。`RUNTIME_PROMOTED` 只证明版本
+  身份和服务切换，不等于 `RUNTIME_READY`：仍缺修复版页面读回、首个自然 completed Live Bar、自然盘后及
+  后续交易日增量/MDS 验收。
 
 ## v1.10.6 Release（历史；Runtime 未切换）
 
@@ -191,12 +218,12 @@
 | 项目 | 阶段 | 说明 |
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.7@be89c65cc`，PR #363 合入 main，annotated tag object `34df064af` 与 GitHub Release 已读回 |
-| 现役 Runtime | 未切换，未声明 `RUNTIME_READY` | API/Web/Live/Alert 四服务仍运行 v1.10.5；旧 after-market plist 保留但 label absent；新版本 promotion 与自然验收未完成 |
-| v1.10.7 部署准备 | `COMPLETED` | 独立 Runtime/recovery root 已固定；locked 依赖、Web build、render、兼容恢复和失败恢复路径通过；本次正式只读 preflight 为 `non_trading_interval` passed |
+| 现役 Runtime | `RUNTIME_PROMOTED`，未声明 `RUNTIME_READY` | 五服务已绑定 `v1.10.7@be89c65cc`；API/Web 200、Live/Alert running、after-market 等待自然运行；SuBing 历史参考页面 404 与自然业务 Gate 尚未关闭 |
+| v1.10.7 部署准备 | `COMPLETED` | 独立 Runtime/recovery root 已固定；locked 依赖、Web build、render、兼容恢复和失败恢复路径通过；正式只读 preflight 与单次切换已完成 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED` | `8f2b051fd` 随 v1.10.6 发布；Runtime 与自然盘后 Gate 尚未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
-| 本轮稳定版 | v1.10.7 `DEPLOYMENT_PREPARED` | D/E/F、候选验证、独立 Review、发布、固定 root 与只读 preflight 已收口；Runtime promotion 和自然业务验收仍分开 |
+| 本轮稳定版 | v1.10.7 `IMMEDIATE_ACCEPTANCE_PARTIAL` | D/E/F、候选验证、独立 Review、发布、固定 root、preflight 与 promotion 已收口；前端路径修复、新版本发布/promotion 和自然业务验收仍分开 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
@@ -305,9 +332,9 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 |---|---|
 | 正式 Release | `v1.10.7@be89c65cc2bbcd245a9b5efb22ef8a4532bce1cc`；PR #363 于 `2026-09-12T11:08:00Z` 合入 main；tree `e9abc7dbad94b619a537df262f94e48cf8ce8d37`；annotated tag object `34df064af786316ed9b1b95a4a7fa092f6d466d5`。GitHub Release 于 `11:09:50Z` 发布，non-draft、non-prerelease。API/Web/Python/lock 为 1.10.7。 |
 | 发布验收 | 已审候选 `47c91859670cb38b6777a0dba2c9890705f5c1ea` 与发布 tree 一致。完整后端 3493 passed / 16 skipped / 31 deselected；工程 86 passed；Web 证据 543 passed / 1 skipped 且 build 通过；Mypy 159 文件、Ruff、OpenSpec 9、secret scan、diff check 和独立 Review 通过。 |
-| Runtime | 2026-09-12 发布后只读身份复核：API/Web/Live/Alert 均为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1` / `cdd72d7501227d8e7f905ea0b8a54c038b521a09` 且 running；after-market label absent。发布过程未 load、restart 或切换服务；现役根仍是干净 detached annotated `v1.10.5`，新版本自然盘后验收待完成。 |
-| Runtime 工作树 | 现役根仍为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.5-r1`。已准备 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.7-r1` 与 `/Volumes/扩展盘/guiyi-quant-recovery-v1.10.7-r1`，二者均 detached/clean 于 exact `be89c65cc`；原 v1.10.4 根仍保留。未清理任何现役或恢复根。 |
-| 最近 health | `2026-09-12` v1.10.7 发布后只读检查：现役 v1.10.5 API/Web 为 200，API/Web/Live/Alert root/commit 精确，after-market missing；Runtime health 与 overall failed。weekly audit 不是 required service。该结果不属于 v1.10.7 Runtime。 |
+| Runtime | `2026-09-12 22:35–22:36 CST` 已按独立一次意图切换：API/Web/Live/Alert running，after-market loaded/not-running；五服务均为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.7-r1` / `be89c65cc2bbcd245a9b5efb22ef8a4532bce1cc`。未安装 weekly audit。 |
+| Runtime 工作树 | 现役根为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.7-r1`，detached/clean 于 exact `be89c65cc`；compatible-recovery root `/Volumes/扩展盘/guiyi-quant-recovery-v1.10.7-r1` 保留。旧 v1.10.5 与 v1.10.4 根未清理。 |
+| 最近 health | v1.10.7 API/Web 200，Live/Alert heartbeat 新鲜，after-market 等待首次自然运行；overall `degraded` 保留既有未确认历史通知失败。Market Home 60/60 可读；SuBing 历史参考因重复 API 前缀 404，develop 修复 `5879452c1` 尚未发布。 |
 | Database | 最近生产 readback 为 Alembic `20260903_0045`。 |
 | Market Scope | `operational_products.txt` 的 60 个品种。 |
 | Alert Scope | `2026-09-07T06:49:43Z` 审计：HTDY 仅 `jm × 5m/15m`；苏冰 60 品种 × 15m；两 Rule enabled。HTDY“焦煤 15m/5m，其余 59 品种 60m”共 61 对仍是未应用目标。 |
@@ -325,8 +352,8 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 | 缺口 | 类型 | 当前证据边界 |
 |---|---|---|
-| Runtime 切换与切换后验收 | 现场验收 | `2026-09-12 21:12 CST` exact v1.10.7 正式只读 preflight 已按 `non_trading_interval` 通过；五服务仍未切换。安装时仍须重新校验时点 predicate，随后取得服务、页面、自然 Live Bar、盘后与后续增量证据。 |
-| v1.10.7 自然盘后 | 现场验收 | 已发布但尚未切换 Runtime；后续验证自然盘后、后续增量和 weekly-audit，不得用 v1.10.3 成功记录或旧状态字节代替。 |
+| Runtime 切换与切换后验收 | 现场验收 | exact v1.10.7 五服务切换与服务身份已关闭；Market Home 60/60 通过，但 SuBing 历史参考页面 404，develop 修复尚未发布。仍缺修复版页面、自然 Live Bar、盘后与后续增量证据。 |
+| v1.10.7 自然盘后 | 现场验收 | v1.10.7 已进入 Runtime，after-market 等待首次自然运行；后续验证自然盘后与增量，不得用 v1.10.3 成功记录或旧状态字节代替。weekly audit 仍未安装且不搭车。 |
 | 其他品种物理历史与页面可用性 | 数据缺口 | 元数据不得再列为待修。须按品种/周期/面板区分元数据缺失、物理历史缺失、质量异常、正常样本不足和原站证据不足。 |
 | 牛哇新版综合解释 | 新版需求 | 同输入已确认新版五项/`R0–R4`/`MM1–MM4`/计龄与当前 v3.2.59 四项/13 格合同 3/3 不一致；总分含未展示 `certExtra`。详见 [当前复核](docs/research/newow-current-review.md) N09。震荡 60 分钟图表差异为 `KNOWN_DIFFERENCE_ACCEPTED`。 |
 
@@ -337,10 +364,8 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 **分层 Gate**
 
 - 候选与发布 Gate：v1.10.7 已完成真实 diff 冻结、必要检查、独立 Review 及 main/tag/GitHub Release；该 Gate 已关闭。
-- Runtime promotion Gate：工作 2 已完成旧中断运行归类；本次 exact v1.10.7 只读 preflight 已按
-  `non_trading_interval` 通过，但 predicate 具有时点性且安装会重新校验。promotion 与 release 分别批准，
-  当前通过结果不自动授权五服务切换。
-- 稳定版运行验收 Gate：发布并切换后，取得新版本自然盘后、后续增量和周检执行证据。此 Gate 未完成时保留待验收，不声明 `RUNTIME_READY`，也不倒置为发布前真实运行要求。
+- Runtime promotion Gate：exact v1.10.7 已按独立一次意图完成切换并读回，未发生恢复或重试；该 Gate 已关闭。
+- 稳定版运行验收 Gate：SuBing 历史参考页面须先由新版本关闭 404，再取得自然 Live Bar、自然盘后与后续增量证据。此 Gate 未完成时保留待验收，不声明 `RUNTIME_READY`，也不倒置为发布前真实运行要求。
 
 **本轮不阻塞（已披露限制）**
 
@@ -363,8 +388,8 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 | 项 | 既有记录 | 下一步 |
 |---|---|---|
 | 旧盘后中断收尾 | `docs/DATA_CENTER.md` 收尾合同；OpenSpec `historical-data-maintenance` | 已完成：单次 apply 写入 interrupted，独立读回通过；不重跑 |
-| v1.10.7 自然盘后 | 本文件 Runtime 表；不得使用 `cece65929…` 旧成功字节 | Runtime promotion 后等待自然运行并独立读回 |
-| 收尾后部署预检 | `deploy/README.md`；2026-09-12 exact v1.10.7 preflight 为 `non_trading_interval` passed | 已关闭本次只读准备；安装时重新校验，不借此自动切换 |
+| v1.10.7 自然盘后 | 本文件 Runtime 表；不得使用 `cece65929…` 旧成功字节 | 现役 v1.10.7 等待自然运行并独立读回 |
+| 收尾后部署预检 | `deploy/README.md`；2026-09-12 exact v1.10.7 preflight 为 `non_trading_interval` passed | 已关闭：安装前重验通过，五服务单次切换完成 |
 
 ### 代码缺陷
 
@@ -374,6 +399,7 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 | 异常退出状态转换 | `8f2b051fd`；`after_market.py` | 已关闭：Calendar 普通异常写终态失败；部分提交和 commit unknown 不假成功；进程级中断保留 unfinished `current_run` |
 | 副作用报告 | `8f2b051fd`；`runtime_entry.py` / `guiyi_cli/main.py` | 已关闭：after-market 未处理异常固定 `readonly=false`；weekly-audit 保持只读，错误载荷继续脱敏 |
 | 牛哇旧请求回写与分页定位 | `fef307732`、`20dcc4f29`、`972162b80`；对应 OpenSpec、组合式函数、unit 与浏览器回归 | 已关闭：共享快照冲突会撤销旧请求写入资格；分页、定位、九组合与完整浏览器矩阵在 v1.10.6 候选重验通过 |
+| SuBing 历史参考重复 API 前缀 | `5879452c1`；`subingReference.ts` 与真实浏览器请求路径回归 | develop 已修复并验证，尚未发布或进入 Runtime；exact v1.10.7 页面仍返回 404 |
 
 ### 数据缺口
 
@@ -395,10 +421,10 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 | 编号 | 工作 | 类型 | 目标 | 范围 | 前置 | 验收 | 阻塞对象 | 下一步 |
 |---|---|---|---|---|---|---|---|---|
 | 1 | 状态和范围收敛 | 文档 | 能直接看出现在做哪一项、还差什么 | 只改当前状态表述与任务对应；不改公式、产品边界、业务代码 | 无 | 打开本文件即可区分已完成/待验证/待修复/新需求 | 已完成 | 无需重开 |
-| 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单次 apply 记 `interrupted` | 已完成 | 60 品种全部已提交指针可读；720 项有效子集缺口；原日快照匹配；单次 apply 与独立状态读回通过；部署阻塞已定位为独立 Session/Live Gate | 旧事故归类已关闭；Runtime promotion 仍受独立 Gate 阻塞 | 不重跑 closeout |
+| 2 | 当前中断盘后安全收尾 | 现场验收 | 旧运行有证据归类；部署是否仍阻塞可说明 | 只读核验现役 Runtime、五服务、状态文件、共享锁、配置来源；条件满足后单次 apply 记 `interrupted` | 已完成 | 60 品种全部已提交指针可读；720 项有效子集缺口；原日快照匹配；单次 apply 与独立状态读回通过；后续 D/E/F 与 promotion 均按独立 Gate 完成 | 旧事故归类已关闭 | 不重跑 closeout |
 | 3 | 盘后运行生命周期与错误判断 | 代码缺陷 | 降低下次故障恢复成本 | `coverage_source`/`after_market`/`runtime_entry`；日常增量与 weekly-audit 保持独立 | 工作 2 已完成 | `8f2b051fd`；最终后端 3259 passed / 16 skipped / 31 deselected，工程 81 passed，Mypy 154 文件、Ruff、OpenSpec、secret scan 和独立 Review 通过 | 已完成并随 v1.10.6 发布；自然运行归工作 5 | 等待新 Runtime 自然验收 |
 | 4 | 现有牛哇加载与显示一致性 | 代码缺陷 | 现有公式下页面可靠 | 请求取消/代次/在途快照/面板/分页；策略/周期切换、历史分页、参考定位、冲突恢复 | 已完成并纳入 v1.10.6 | `fef307732` 与对应 OpenSpec/回归关闭旧请求回写；v1.10.6 完整 Web 和浏览器矩阵通过 | 已完成并发布；生产历史仍是独立数据 Gate | 不追加三策略主动作、新版评分或参考价格口径 |
-| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2、3、4 已闭环；范围已接受全量 develop | v1.10.7 main/tag/GitHub Release、immutable Runtime/recovery root 与本次正式只读 preflight 已完成；Runtime 与自然业务 Gate 待完成 | 本轮里程碑 | 另行批准 exact v1.10.7 五服务 Runtime switch；安装时重验 predicate |
+| 5 | 范围固定的稳定版本 | 发布/部署 | 结束继续加内容的循环 | 冻结候选真实 diff；相关回归、集成、Web 构建、浏览器验收、独立 Review；main/tag/release 与 Runtime promotion 分批批准；新版本自然运行验收 | 工作 2、3、4 已闭环；范围已接受全量 develop | v1.10.7 main/tag/GitHub Release、immutable Runtime/recovery root、preflight 与五服务 promotion 已完成；SuBing 页面修复和自然业务 Gate 待完成 | 本轮里程碑 | 冻结 `5879452c1` 的补丁候选并独立 Review；发布与新 Runtime promotion 继续分开批准 |
 | 6 | 其他品种可用性与分批补数 | 数据缺口 | 先恢复日周六组合，再准备 60m | 复用 readiness；按物理合约/窗口去重；每批 MDS 读回、对应页面及维护接续 | 稳定交付恢复后；每批真实查询/写入另需单次意图 | 声明范围内日周逐项可核对；60m 数据就绪与产品开放分开验收 | 不阻塞无共享完整性问题的盘后稳定版 | 先冻结日周品种/窗口/面板和预热需求，再出可用性清单，不边跑边扩范围 |
 | 7 | 牛哇新版综合解释 | 新版需求 | 把规则适配从显示修复中分开 | 新版本身份；先内核固定输入，再接口和页面 | 先批准新合同，含 `certExtra` | 同输入能解释新旧差异；分项与总分可核对；不改变主动作、参考交易或正式通知 | 独立后续候选 | Plan-only；本轮安排不构成实现或发布批准 |
 
@@ -411,8 +437,7 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 
 ## 唯一下一步
 
-为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.7-r1@be89c65cc` 的五服务 Runtime switch 取得独立一次意图，
-绑定 compatible-recovery root `/Volumes/扩展盘/guiyi-quant-recovery-v1.10.7-r1` 与 terminal SHA
-`98c09006…6d08`；安装时重新校验 predicate。D/E/F 不重跑，weekly audit 不搭车。
+将 `5879452c1` 的 SuBing 历史参考 API 前缀修复集成 develop，冻结补丁发布候选并完成独立 Review；
+main/tag/GitHub Release 与后续 Runtime promotion 继续作为两个独立 Gate。D/E/F 不重跑，weekly audit 不搭车。
 
 本文件不构成元数据/行情修复、发布或 Runtime promotion 批准。
