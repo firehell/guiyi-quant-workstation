@@ -272,16 +272,9 @@ def test_partial_install_restore_reaches_real_stopped_authority_and_preflight(
         'if [ "$1" = -m ] && [ "$2" = app.market_data.runtime_status_authority ] '
         '&& [ "$3" = launchd-service-state ]; then\n'
         '  label="$4"\n'
-        '  launchctl print "gui/$UID" >/dev/null 2>&1 || exit 1\n'
-        '  if output="$(launchctl print "gui/$UID/$label" 2>&1)"; then\n'
-        "    printf 'loaded\\n'; exit 0\n"
-        "  else\n"
-        '    result="$?"\n'
-        "  fi\n"
-        '  exact="Could not find service \\"$label\\" in domain for user gui: $UID"\n'
-        '  [ "$result" = 113 ] || exit 1\n'
-        '  [ "$output" = "$exact" ] || [ "$output" = "Bad request.\n$exact" ] || exit 1\n'
-        "  printf 'absent\\n'; exit 0\n"
+        '  if [ -f "$HOME/launchd-state/$label" ]; then state=loaded; else state=absent; fi\n'
+        '  printf \'%s\\n\' "$state"\n'
+        "  exit 0\n"
         "fi\n"
         'case "$*" in\n'
         '  "-m app.market_data.runtime_status_authority verify-restored-loaded-service "*) exit 0 ;;\n'

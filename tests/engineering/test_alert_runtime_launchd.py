@@ -479,14 +479,13 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
         '  if [ "${GUIYI_FAKE_FAIL_ALERT_BOOTSTRAP:-0}" = "1" ]; then exit 8; fi\n'
         'esac\n'
         'if [ "${1:-}" = "bootstrap" ]; then\n'
-        '  case "$*" in *com.guiyi.quant-alert.plist*) touch "$alert_state" ;; esac\n'
+        '  label="${3##*/}"; label="${label%.plist}"; touch "$state_dir/$label"\n'
         'fi\n'
         'if [ "${1:-}" = "bootout" ]; then\n'
         '  case "$*" in *com.guiyi.quant-alert*)\n'
         '    if [ -f "$alert_state" ] && [ "${GUIYI_FAKE_STOP_REMAINS_LOADED:-0}" = "1" ]; then exit 8; fi\n'
-        '    rm -f "$alert_state"\n'
-        '    exit 0\n'
         '  esac\n'
+        '  label="${2##*/}"; rm -f "$state_dir/$label"; exit 0\n'
         'fi\n'
         'if [ "${1:-}" = "print" ] && [ "${2:-}" = "gui/$UID" ]; then echo "domain = gui/$UID"; exit 0; fi\n'
         'if [ "${1:-}" = "print" ]; then\n'
@@ -574,16 +573,13 @@ def _install_python_authority_fixture(repo: Path) -> None:
         'if [ "$1" = -m ] && [ "$2" = app.market_data.runtime_status_authority ] '
         '&& [ "$3" = launchd-service-state ]; then\n'
         '  label="$4"\n'
-        '  launchctl print "gui/$UID" >/dev/null 2>&1 || exit 1\n'
-        '  if output="$(launchctl print "gui/$UID/$label" 2>&1)"; then\n'
-        "    printf 'loaded\\n'; exit 0\n"
-        "  else\n"
-        '    result="$?"\n'
+        '  state_file="$HOME/authority-state/$label"\n'
+        '  if [ -f "$state_file" ]; then state="$(/bin/cat "$state_file")"\n'
+        '  elif [ -f "$HOME/fake-launchctl-state/$label" ]; then state=loaded\n'
+        "  else state=absent\n"
         "  fi\n"
-        '  exact="Could not find service \\"$label\\" in domain for user gui: $UID"\n'
-        '  [ "$result" = 113 ] || exit 1\n'
-        '  [ "$output" = "$exact" ] || [ "$output" = "Bad request.\n$exact" ] || exit 1\n'
-        "  printf 'absent\\n'; exit 0\n"
+        '  case "$state" in loaded|absent) printf \'%s\\n\' "$state" ;; *) exit 1 ;; esac\n'
+        "  exit 0\n"
         "fi\n"
         'exec "$(dirname "$0")/python-test-behavior" "$@"\n',
         encoding="utf-8",

@@ -515,7 +515,7 @@ def test_market_install_establishes_new_after_market_owner_before_live(
     ]
 
 
-def test_market_install_delegates_field_absence_to_python_authority(
+def test_market_install_delegates_state_to_python_authority(
     tmp_path: Path,
 ) -> None:
     repo = _copy_launchd_fixture(tmp_path / "repo")
@@ -526,10 +526,8 @@ def test_market_install_delegates_field_absence_to_python_authority(
     launchctl.write_text(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "print" ]; then\n'
-        '  [ "${2:-}" = "gui/$UID" ] && exit 0\n'
-        '  label="${2##*/}"\n'
-        '  printf \'Bad request.\\nCould not find service "%s" in domain for user gui: %s\\n\' "$label" "$UID" >&2\n'
-        "  exit 113\n"
+        '  echo "unexpected shell-side state read" >&2\n'
+        "  exit 77\n"
         "fi\n"
         'printf "%s\\n" "$*" >> "$HOME/launchctl-mutations"\n'
         "exit 0\n",
@@ -547,22 +545,22 @@ def test_market_install_delegates_field_absence_to_python_authority(
     ]
 
 
-def test_market_install_rejects_quoted_not_found_for_a_different_label(
+def test_market_install_rejects_unknown_state_from_python_authority(
     tmp_path: Path,
 ) -> None:
     repo = _copy_launchd_fixture(tmp_path / "repo")
     home = tmp_path / "home"
+    authority_state = home / "authority-state"
+    authority_state.mkdir(parents=True)
+    (authority_state / "com.guiyi.quant-after-market").write_text(
+        "unknown\n", encoding="utf-8"
+    )
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     launchctl = fake_bin / "launchctl"
     launchctl.write_text(
         "#!/bin/sh\n"
-        'if [ "${1:-}" = print ] && [ "${2:-}" = "gui/$UID" ]; then exit 0; fi\n'
-        'if [ "${1:-}" = print ]; then\n'
-        '  echo \'Could not find service "com.guiyi.quant-other" in domain for user gui: '\
-        f"{os.getuid()}' >&2\n"
-        "  exit 113\n"
-        "fi\n"
+        'if [ "${1:-}" = print ]; then exit 77; fi\n'
         'printf "%s\\n" "$*" >> "$HOME/mutation-calls"\n'
         "exit 0\n",
         encoding="utf-8",
@@ -637,6 +635,8 @@ def test_partial_market_cleanup_launchctl_error_retains_marker_as_unknown(
     launchctl.write_text(
         "#!/bin/sh\n"
         'if [ -f "$HOME/cleanup-started" ]; then\n'
+        '  label="${2##*/}"; mkdir -p "$HOME/authority-state"\n'
+        '  printf \'unknown\\n\' > "$HOME/authority-state/$label"\n'
         '  echo "permission denied" >&2; exit 77\n'
         "fi\n"
         'if [ "${1:-}" = "print" ] && [ "${2:-}" = "gui/$UID" ]; then exit 0; fi\n'
@@ -1234,16 +1234,13 @@ def _run_installer_result(
             '&& [ "$3" = launchd-service-state ]; then\n'
             '  label="$4"\n'
             '  printf "%s\\n" "$label" >> "$HOME/authority-state-calls"\n'
-            '  launchctl print "gui/$UID" >/dev/null 2>&1 || exit 1\n'
-            '  if output="$(launchctl print "gui/$UID/$label" 2>&1)"; then\n'
-            "    printf 'loaded\\n'; exit 0\n"
-            "  else\n"
-            '    result="$?"\n'
+            '  state_file="$HOME/authority-state/$label"\n'
+            '  if [ -f "$state_file" ]; then state="$(/bin/cat "$state_file")"\n'
+            '  elif [ -f "$HOME/launchd-state/$label" ]; then state=loaded\n'
+            "  else state=absent\n"
             "  fi\n"
-            '  exact="Could not find service \\"$label\\" in domain for user gui: $UID"\n'
-            '  [ "$result" = 113 ] || exit 1\n'
-            '  [ "$output" = "$exact" ] || [ "$output" = "Bad request.\n$exact" ] || exit 1\n'
-            "  printf 'absent\\n'; exit 0\n"
+            '  case "$state" in loaded|absent) printf \'%s\\n\' "$state" ;; *) exit 1 ;; esac\n'
+            "  exit 0\n"
             "fi\n"
             'exec "$(dirname "$0")/python-test-behavior" "$@"\n',
             encoding="utf-8",
