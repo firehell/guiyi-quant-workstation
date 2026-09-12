@@ -1,7 +1,7 @@
 # 当前状态
 
 文档核对：2026-09-12。正式代码基线 `v1.10.6@a8e67790dcd33db95f65c442c415378782927618`；
-本轮 develop 候选代码截至 `83de0c403`，其中生产修复固定于 `bf48284cf`。本文件只保留当前版本、已证明事实、
+本轮 develop 候选生产/测试代码固定于 `83de0c403`，其中生产修复固定于 `bf48284cf`。本文件只保留当前版本、已证明事实、
 尚缺证据、已接受的阶段规划、本轮冻结范围与唯一下一步。操作过程、逐次授权和旧候选矩阵从 Git history、tag、PR
 与原 evidence 追溯；历史授权不授权重跑。稳定产品面见 `PROJECT_SOURCE.md`，长期决策见
 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
@@ -20,7 +20,7 @@
   shell launchd classifier，所有安装前像、cleanup 与恢复状态均由 Python authority 给出 bounded
   `loaded/absent`；只有 exit 113 与 exact requested label/user（含现场 `Bad request.` 前缀）可判 absent，其他
   结果 fail-closed。独立复审已确认生产修复与七服务 allowlist 正确；其指出的测试桩重复解析已在
-  `83de0c403` 改为预设 bounded state，exact 候选仍待最终复审。
+  `83de0c403` 改为预设 bounded state。最终独立复审绑定 `c4711f532` / tree `486a442a8`，P0–P3 均无 finding。
 - E 的真实 metadata source capture 固定 snapshot
   `8586532f98bceb2c525ffafeb9dedf4b0286bb13d4d58cd83414e88bc36a0e65`，64 次应用层调用取得 Calendar 20、
   Session 450、主力源行 120。provider-free plan
@@ -39,7 +39,7 @@
 - 前端证据仍绑定 `24ab72601` 的 543 passed / 1 skipped 与 production build 通过；从该提交到
   `83de0c403` 的 Web source/config/lock diff 为空，按冻结计划复用。当前隔离 worktree 的顶层依赖链接缺失所致
   的复跑失败仅是环境证据，不改写上述通过结果，也不把它计作产品失败。
-- 当前为 `CODE_COMPLETE / TEST_COMPLETE / DATA_RECOVERY_COMPLETE / FINAL_REVIEW_PENDING`。尚未执行 v1.10.7 的 main merge、
+- 当前为 `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / DATA_RECOVERY_COMPLETE / RELEASE_CANDIDATE`。尚未执行 v1.10.7 的 main merge、
   annotated tag、GitHub Release、immutable Runtime/recovery root 或五服务切换；这些仍按发布与 Runtime 两个
   独立 Gate 处理。自然 Live Bar、自然盘后及后续交易日增量也仍待新版本 Runtime 验收。
 
@@ -99,7 +99,7 @@
   SQLite/内存边界复核及既有 71 项测试通过。这不是 9 月 12 日现场 passed；届时必须正式只读 preflight。
 - 版本身份为 1.10.7，收敛 daily/生命周期、Session 保留、收尾、单 worker、周检状态和停止状态恢复补丁。
   相对 v1.10.6 还包含既有 `c073e255` 研究输出，未删改或据此缩称为纯代码补丁；最终候选在本状态更新后冻结。
-- `EXTERNAL_GATE_PENDING`：D/E/F 已关闭；尚缺 exact `83de0c403` 候选独立 Review、v1.10.7 发布、compatible immutable
+- `EXTERNAL_GATE_PENDING`：D/E/F 与最终候选 Review 已关闭；尚缺 v1.10.7 发布、compatible immutable
   recovery root、Runtime 切换及新版本自然验收。旧 writer 已明确停止且不会参加下一次 18:05 调度；未自动
   发布、安装 weekly audit、切换服务或发送通知。
 
