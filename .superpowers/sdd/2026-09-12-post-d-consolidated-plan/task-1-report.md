@@ -210,3 +210,90 @@ The same brief-authorized frontend evidence remains reusable because frontend so
 - All evidence is fixture/repository verification. Field precheck, Packages B/C, release, installation, Runtime promotion, and natural-run acceptance remain separate external Gates.
 
 Fix-round conclusion remains `允许进入独立 Review`; integration and every external Gate remain unauthorized here.
+
+## Fix round 2 — scoped re-review findings
+
+- Fix implementation commit: `810dd28758ef6acd38fa0ce3ab3a1387460495b1` (`fix(runtime): verify restored market authority`).
+- Status: findings A–D are addressed in implementation, regression tests, and deployment/data/testing contracts. Fresh affected verification passed; controller re-review and integration remain pending.
+- No push, develop integration, provider/data write, service load/unload, release, Runtime switch/promotion, notification, or Package B/C/D operation was performed.
+
+### Finding evidence and resolution
+
+A. **Real partial-recovery authority and exact process readback:** confirmed. Restoring a previously loaded after-market or Live service now invokes the Python authority to compare the installed plist and actual loaded process across root, commit, complete arguments, working directory, and the exact bounded environment. Missing, duplicated, mismatched, or unreadable identity fails closed and retains the activation marker. The recovery integration now starts with a real old schema-v5 interrupted terminal and its independent SHA, injects a candidate Live install failure, restores old stopped-writer/loaded-Live ownership, and then resolves the real `RuntimeDataBinding` through `resolve_market_runtime_status_authority`. It validates the other four services/config, Live and Alert heartbeats plus rechecks, and passes through the public promotion preflight. The separate stateful shell test proves the verifier is invoked and a second preflight is reachable; an explicit negative test proves verifier/readback unknown propagates as blocked with marker retained.
+
+B. **Unified mutation failure recovery:** confirmed. After the bounded market preimage is captured, shared launcher/rotator copy and chmod, marker preparation, plist replacement, and service load all execute inside one failure-recovery region. A pre-load chmod injection restores launcher, rotator, both installed plists, the prior loaded/absent ownership, and marker state before returning the explicit blocked result.
+
+C. **Post-commit cleanup unknown:** confirmed. Once both candidate labels and activation marker have committed, backup/preimage deletion failure does not roll back the enabled Runtime and does not return an ordinary install failure. It exits successfully with `cleanup=unknown retry_safe=false` and a `do not retry` warning. The regression asserts the candidate marker, installed plists, and both loaded states remain committed.
+
+D. **Exact quoted not-found label:** confirmed. Both Python and shell launchd readers accept the quoted not-found form only when it contains the current requested label and uid. A quoted error for another label is unknown and blocks before mutation.
+
+### RED → GREEN evidence
+
+- D initially failed in both layers: the Python test did not raise, and the installer returned success for another label's quoted not-found. Both now reject it.
+- The exact restored-process parameterized test initially failed all four cases because the public verifier did not exist; root-key, commit, arguments, and PATH drift now each fail closed while the exact fixture passes.
+- The pre-load mutation injection initially exited at the failing chmod without restoration; it now reaches the unified recovery path and restores byte/state ownership.
+- The post-commit preimage deletion injection initially returned code 1 without committed-success semantics; it now returns code 0 with the bounded cleanup-unknown/no-retry result.
+- The real partial-recovery integration first exposed an unbound installer Python path; the installer now owns the candidate Python executable explicitly. The completed test uses the real stopped authority and public preflight after restoration.
+
+### Fresh final verification
+
+```bash
+UV_CACHE_DIR=/private/tmp/guiyi-package-a-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/data_foundation/test_closeout_binding.py \
+  services/quant-api/tests/data_foundation/test_after_market_closeout.py \
+  services/quant-api/tests/data_foundation/test_current_day_metadata_recovery.py \
+  services/quant-api/tests/data_foundation/test_daily_recovery_cli.py \
+  services/quant-api/tests/data_foundation/test_daily_maintenance.py \
+  services/quant-api/tests/data_foundation/test_runtime_promotion.py \
+  services/quant-api/tests/data_foundation/test_runtime_status_authority.py \
+  services/quant-api/tests/test_captured_recovery_runtime.py \
+  tests/engineering/test_market_runtime_launchd.py \
+  tests/engineering/test_alert_runtime_launchd.py
+# 438 passed in 76.44s
+
+UV_CACHE_DIR=/private/tmp/guiyi-package-a-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+MYPYPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api mypy --explicit-package-bases \
+  --ignore-missing-imports services/quant-api/app packages/quant-core/guiyi_quant
+# Success: no issues found in 159 source files
+
+UV_CACHE_DIR=/private/tmp/guiyi-package-a-uv-cache \
+uv run --project services/quant-api python -m ruff check \
+  services/quant-api/app services/quant-api/tests \
+  packages/quant-core/guiyi_quant tests/engineering
+# All checks passed!
+
+UV_CACHE_DIR=/private/tmp/guiyi-package-a-uv-cache \
+PYTHONPATH=services/quant-api:packages/quant-core \
+uv run --project services/quant-api pytest -q \
+  tests/engineering/test_repository_hygiene.py \
+  tests/engineering/test_canonical_consistency.py \
+  -k 'not alert_rule_codes_have_one_production_registry_per_language'
+# 21 passed, 1 deselected in 0.90s
+
+openspec validate --specs --strict --no-interactive
+# 9 passed, 0 failed
+
+python3 scripts/engineering/secret_scan.py --json
+# finding_count=0, status=passed
+
+bash -n scripts/ops/macos/install-local-services.sh \
+  scripts/ops/macos/run-local-service.sh
+git diff --check
+# both exit 0
+```
+
+The frontend remains unchanged from `24ab72601ea8a7da4c92bd4379c885060485c8f8`; the brief-authorized frontend verification evidence remains reusable.
+
+### Fix-round 2 self-review and residual risks
+
+- Normal closeout remains strict for all five loaded services. The restored-process verifier is only an additional partial-install recovery readback and does not weaken closeout or promotion.
+- Promotion retains exactly the four existing predicates. A valid stopped terminal or restored ownership alone cannot pass it.
+- The stopped branch still requires an externally reviewed exact SHA; genuine first install still rejects candidate status residue; compatible proof remains `recovery_ready=false` with release/root/execution blockers.
+- Cleanup unknown deliberately means the install has committed but cleanup is unresolved. It must not be retried; only a fresh read-only inspection can determine whether bounded backup artifacts remain.
+- All evidence is isolated fixture/repository verification. Field state, Packages B/C, release, installation, Runtime promotion, and natural-run acceptance remain separate external Gates.
+
+Fix-round 2 conclusion remains `允许进入独立 Review`; integration and every external Gate remain unauthorized here.
