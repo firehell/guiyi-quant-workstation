@@ -233,6 +233,118 @@ def test_launchd_reader_accepts_benign_bad_request_before_exact_label_absence(
     )
 
 
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        (
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()}\n"
+        ),
+        (
+            "Bad request.\n"
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()}\n"
+        ),
+    ],
+)
+def test_launchd_reader_accepts_one_normal_trailing_newline(
+    runtime, monkeypatch, stderr
+):
+    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(
+        runtime.module,
+        "_command_result",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=113, stdout="", stderr=stderr
+        ),
+    )
+
+    assert (
+        runtime.module._read_launchd_service(
+            "com.guiyi.quant-after-market", root=runtime.root
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        (
+            "\n"
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()}"
+        ),
+        (
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()}\n\n"
+        ),
+        (
+            ' Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()}"
+        ),
+        (
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()} "
+        ),
+        (
+            "Bad request.\nBad request.\n"
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()}"
+        ),
+        (
+            "Bad request.\n"
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()}\npermission denied"
+        ),
+        (
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()}\r\n"
+        ),
+    ],
+)
+def test_launchd_reader_rejects_inexact_exit_113_absence_shape(
+    runtime, monkeypatch, stderr
+):
+    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(
+        runtime.module,
+        "_command_result",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=113, stdout="", stderr=stderr
+        ),
+    )
+
+    with pytest.raises(runtime.module.CapturedRecoveryRuntimeError) as caught:
+        runtime.module._read_launchd_service(
+            "com.guiyi.quant-after-market", root=runtime.root
+        )
+
+    assert caught.value.code == "CAPTURED_RECOVERY_RUNTIME_IDENTITY_UNAVAILABLE"
+
+
+def test_launchd_reader_stops_before_label_query_when_domain_is_unreadable(
+    runtime, monkeypatch
+):
+    calls = []
+
+    def unreadable(arguments, **kwargs):
+        calls.append((arguments, kwargs))
+        return SimpleNamespace(returncode=77, stdout="", stderr="domain unavailable")
+
+    monkeypatch.setattr(runtime.module, "_command_result", unreadable)
+
+    with pytest.raises(runtime.module.CapturedRecoveryRuntimeError) as caught:
+        runtime.module._read_launchd_service(
+            "com.guiyi.quant-after-market", root=runtime.root
+        )
+
+    assert caught.value.code == "CAPTURED_RECOVERY_RUNTIME_IDENTITY_UNAVAILABLE"
+    assert calls == [
+        (["/bin/launchctl", "print", f"gui/{os.getuid()}"], {"root": runtime.root})
+    ]
+
+
 def test_launchd_reader_rejects_exact_absence_with_unexpected_exit(runtime, monkeypatch):
     monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
     monkeypatch.setattr(
