@@ -79,9 +79,12 @@ def _read_launchd_service(label: str, *, root: Path) -> str | None:
     unavailable = "\n".join(
         value.strip() for value in (result.stdout, result.stderr) if value.strip()
     )
-    if unavailable in {
-        "Could not find service",
-        f'Could not find service "{label}" in domain for user gui: {os.getuid()}',
+    explicit_absence = (
+        f'Could not find service "{label}" in domain for user gui: {os.getuid()}'
+    )
+    if result.returncode == 113 and unavailable in {
+        explicit_absence,
+        f"Bad request.\n{explicit_absence}",
     }:
         return None
     _reject("IDENTITY_UNAVAILABLE")

@@ -190,7 +190,12 @@ def test_launchd_reader_accepts_only_explicit_label_absence(runtime, monkeypatch
         runtime.module,
         "_command_result",
         lambda *args, **kwargs: SimpleNamespace(
-            returncode=1, stdout="", stderr="Could not find service"
+            returncode=113,
+            stdout="",
+            stderr=(
+                'Could not find service "com.guiyi.quant-after-market" '
+                f"in domain for user gui: {os.getuid()}"
+            ),
         ),
     )
 
@@ -202,7 +207,7 @@ def test_launchd_reader_accepts_only_explicit_label_absence(runtime, monkeypatch
     )
 
 
-def test_launchd_reader_rejects_quoted_absence_for_a_different_label(
+def test_launchd_reader_accepts_benign_bad_request_before_exact_label_absence(
     runtime, monkeypatch
 ):
     monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
@@ -213,7 +218,31 @@ def test_launchd_reader_rejects_quoted_absence_for_a_different_label(
             returncode=113,
             stdout="",
             stderr=(
-                'Could not find service "com.guiyi.quant-live" '
+                "Bad request.\n"
+                f'Could not find service "com.guiyi.quant-after-market" '
+                f"in domain for user gui: {os.getuid()}"
+            ),
+        ),
+    )
+
+    assert (
+        runtime.module._read_launchd_service(
+            "com.guiyi.quant-after-market", root=runtime.root
+        )
+        is None
+    )
+
+
+def test_launchd_reader_rejects_exact_absence_with_unexpected_exit(runtime, monkeypatch):
+    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(
+        runtime.module,
+        "_command_result",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=77,
+            stdout="",
+            stderr=(
+                'Could not find service "com.guiyi.quant-after-market" '
                 f"in domain for user gui: {os.getuid()}"
             ),
         ),
@@ -228,7 +257,57 @@ def test_launchd_reader_rejects_quoted_absence_for_a_different_label(
 
 
 @pytest.mark.parametrize(
-    "stderr", ["permission denied", "Could not find service\npermission denied", ""]
+    "absence",
+    [
+        f'Could not find service "com.guiyi.quant-live" in domain for user gui: {os.getuid()}',
+        (
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid() + 1}"
+        ),
+    ],
+)
+def test_launchd_reader_rejects_prefixed_absence_for_a_different_identity(
+    runtime, monkeypatch, absence
+):
+    monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
+    monkeypatch.setattr(
+        runtime.module,
+        "_command_result",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=113,
+            stdout="",
+            stderr=f"Bad request.\n{absence}",
+        ),
+    )
+
+    with pytest.raises(runtime.module.CapturedRecoveryRuntimeError) as caught:
+        runtime.module._read_launchd_service(
+            "com.guiyi.quant-after-market", root=runtime.root
+        )
+
+    assert caught.value.code == "CAPTURED_RECOVERY_RUNTIME_IDENTITY_UNAVAILABLE"
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "permission denied",
+        "Could not find service",
+        "Could not find service\npermission denied",
+        (
+            "Bad request.\nBad request.\n"
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()}"
+        ),
+        (
+            "Bad request.\n"
+            'Could not find service "com.guiyi.quant-after-market" '
+            f"in domain for user gui: {os.getuid()}\npermission denied"
+        ),
+        "Bad request.\nDomain does not support specified action",
+        "Command failed",
+        "",
+    ],
 )
 def test_launchd_reader_never_treats_errors_as_absence(runtime, monkeypatch, stderr):
     monkeypatch.setattr(runtime.module, "_read_command", lambda *args, **kwargs: "domain")
