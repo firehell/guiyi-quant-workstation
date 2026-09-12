@@ -122,7 +122,9 @@ root 的 `.run`，安装器不复制或改写旧 schema-v5 terminal status；旧
 安装器在 candidate mutation 前只为 shared launcher、log rotator、after-market/Live installed plist 和两者
 loaded/absent 状态保存有界精确前像，不复制或修改 status。此后从 shared launcher/rotator 的 copy/chmod、
 activation marker 准备到 plist/load 的整个 mutation 区间都使用同一个失败恢复出口。部分失败时先按已尝试
-label 的逆序 bootout candidate，再恢复文件并按原状态仅重载先前 loaded 的服务；除逐字节和 loaded/absent
+label 的逆序 bootout candidate，再恢复文件并按原状态仅重载先前 loaded 的服务。安装器通过 Python
+`runtime_status_authority` 取得所有 launchd loaded/absent 结论，shell 不解析 launchctl 输出；仅 exit 113 加
+exact requested label/user 缺席可成为 absent，其他结果一律 unknown/fail-closed。除逐字节和 loaded/absent
 状态外，每个恢复为 loaded 的服务还必须由 Python authority 精确核对进程 root、commit、arguments、working
 directory 与 environment，全部通过后才恢复 activation marker 前像，并明确输出
 `partial market install is blocked`。该恢复不会重试安装，也不会加载原本 stopped 的旧 writer；下一次安装仍需

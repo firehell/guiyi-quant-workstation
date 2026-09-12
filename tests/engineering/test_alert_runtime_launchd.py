@@ -501,7 +501,7 @@ def _fake_runtime(root: Path) -> tuple[Path, Path]:
         'if [ "${1:-}" = "enable" ] && [ "${GUIYI_FAKE_FAIL_LIVE_ENABLE:-0}" = "1" ]; then\n'
         '  case "$*" in *com.guiyi.quant-live*) exit 8 ;; esac\n'
         'fi\n'
-        'case "${1:-}" in bootstrap|enable|kickstart) exit 0 ;; print) echo "Could not find service" >&2; exit 1 ;; bootout) exit 1 ;; *) exit 2 ;; esac\n',
+        'case "${1:-}" in bootstrap|enable|kickstart) exit 0 ;; print) printf \'Could not find service "%s" in domain for user gui: %s\\n\' "${2##*/}" "$UID" >&2; exit 113 ;; bootout) exit 1 ;; *) exit 2 ;; esac\n',
         encoding="utf-8",
     )
     launchctl.chmod(0o755)
@@ -538,6 +538,7 @@ def _run(
     extra_env: dict[str, str] | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    _install_python_authority_fixture(repo)
     result = subprocess.run(
         [str(repo / "scripts/ops/macos/install-local-services.sh"), mode],
         cwd=repo,
@@ -555,3 +556,36 @@ def _run(
     if check:
         assert result.returncode == 0, result.stderr
     return result
+
+
+def _install_python_authority_fixture(repo: Path) -> None:
+    python = repo / "services/quant-api/.venv/bin/python"
+    behavior = python.with_name("python-test-behavior")
+    if behavior.exists():
+        return
+    python.parent.mkdir(parents=True, exist_ok=True)
+    if python.exists():
+        shutil.copy2(python, behavior)
+    else:
+        behavior.write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+        behavior.chmod(0o700)
+    python.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = -m ] && [ "$2" = app.market_data.runtime_status_authority ] '
+        '&& [ "$3" = launchd-service-state ]; then\n'
+        '  label="$4"\n'
+        '  launchctl print "gui/$UID" >/dev/null 2>&1 || exit 1\n'
+        '  if output="$(launchctl print "gui/$UID/$label" 2>&1)"; then\n'
+        "    printf 'loaded\\n'; exit 0\n"
+        "  else\n"
+        '    result="$?"\n'
+        "  fi\n"
+        '  exact="Could not find service \\"$label\\" in domain for user gui: $UID"\n'
+        '  [ "$result" = 113 ] || exit 1\n'
+        '  [ "$output" = "$exact" ] || [ "$output" = "Bad request.\n$exact" ] || exit 1\n'
+        "  printf 'absent\\n'; exit 0\n"
+        "fi\n"
+        'exec "$(dirname "$0")/python-test-behavior" "$@"\n',
+        encoding="utf-8",
+    )
+    python.chmod(0o700)

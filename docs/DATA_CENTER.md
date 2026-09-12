@@ -610,7 +610,9 @@ Market 安装顺序固定为 after-market（只 bootstrap/enable，保持 idle�
 使新 writer 先取得新 root 的 status ownership。新 root 不继承或复制旧 `.run`；旧 schema-v5 terminal 留在旧
 root。安装器在任何 candidate mutation 前保存 shared launcher、log rotator、两个 market plist 与两个 label
 loaded/absent 的有界精确前像，并把此后的 launcher/rotator copy/chmod、marker 准备、plist/load 都纳入统一失败
-恢复。部分安装失败先逆序停止本次 candidate label，再恢复并逐字节/逐状态验证该前像；原先 loaded 的进程还须
+恢复。所有 loaded/absent 判断均调用 `runtime_status_authority` 的 Python 状态入口；shell 只消费 bounded
+`loaded`/`absent` 结果，不解析 `launchctl` 文本。只有 exit 113 与 exact requested label/user 的现场缺席形状可判为
+absent，其他退出码或输出均为 unknown。部分安装失败先逆序停止本次 candidate label，再恢复并逐字节/逐状态验证该前像；原先 loaded 的进程还须
 精确读回 root、commit、arguments、working directory 和 environment，全部通过后才恢复 activation marker。
 恢复成功仍明确 blocked，必须以新的 preflight 与安装意图重试。bootout/print/restore 的 permission、domain、
 非当前 label 的 quoted not-found 或其他未知错误都保留 marker 并报告 unknown，不得声称 stopped 或 recovered；

@@ -129,22 +129,17 @@ mkdir -p "$AGENT_DIR" "$RUNTIME_DIR" "$LOG_DIR"
 chmod 700 "$RUNTIME_DIR" "$LOG_DIR"
 
 launchd_service_state() {
-  local label="$1" output result quoted_not_found
+  local label="$1" state
 
-  if ! launchctl print "gui/$UID" >/dev/null 2>&1; then
-    return 2
-  fi
-  if output="$(launchctl print "gui/$UID/$label" 2>&1)"; then
-    return 0
-  else
-    result=$?
-  fi
-  quoted_not_found="Could not find service \"$label\" in domain for user gui: $UID"
-  if [[ "$result" != "0" ]] \
-    && [[ "$output" == "Could not find service" || "$output" == "$quoted_not_found" ]]; then
-    return 1
-  fi
-  return 2
+  state="$(
+    "$PYTHON_BIN" -m app.market_data.runtime_status_authority \
+      launchd-service-state "$label" 2>/dev/null
+  )" || return 2
+  case "$state" in
+    loaded) return 0 ;;
+    absent) return 1 ;;
+    *) return 2 ;;
+  esac
 }
 
 market_preimage_dir=""

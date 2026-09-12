@@ -65,7 +65,10 @@ def _command_result(
 
 def _read_launchd_service(label: str, *, root: Path) -> str | None:
     """Return one loaded definition, or None only for an explicit label absence."""
-    if re.fullmatch(r"com\.guiyi\.quant-(?:api|web|live|alert|after-market)", label) is None:
+    if re.fullmatch(
+        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|log-rotate|weekly-audit)",
+        label,
+    ) is None:
         _reject("IDENTITY_UNAVAILABLE")
     domain = f"gui/{os.getuid()}"
     _read_command(["/bin/launchctl", "print", domain], root=root)

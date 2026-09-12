@@ -25,7 +25,7 @@ def test_weekly_render_is_saturday_and_install_only_loads_weekly_without_shared_
     launchctl.write_text(
         "#!/bin/sh\n"
         '[ "$1" = print ] && [ "$2" = "gui/$UID" ] && exit 0\n'
-        '[ "$1" = print ] && { echo "Could not find service" >&2; exit 1; }\n'
+        '[ "$1" = print ] && { printf \'Could not find service "%s" in domain for user gui: %s\\n\' "${2##*/}" "$UID" >&2; exit 113; }\n'
         'printf "%s\\n" "$*" >> "$HOME/calls"\n'
         "exit 0\n"
     )
@@ -126,7 +126,7 @@ def test_install_modes_only_confirm_market_runtime_persists_activation_marker(tm
         "#!/bin/sh\n"
         'if [ "${1:-}" = "print" ]; then\n'
         '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
-        '  echo "Could not find service" >&2; exit 1\n'
+        '  printf \'Could not find service "%s" in domain for user gui: %s\\n\' "${2##*/}" "$UID" >&2; exit 113\n'
         "fi\n"
         "case \"${1:-}\" in\n"
         "  bootstrap|enable|kickstart) exit 0 ;;\n"
@@ -178,7 +178,7 @@ def test_blocked_market_preflight_leaves_marker_plists_and_launchctl_untouched(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "print" ]; then\n'
         '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
-        '  echo "Could not find service" >&2; exit 1\n'
+        '  printf \'Could not find service "%s" in domain for user gui: %s\\n\' "${2##*/}" "$UID" >&2; exit 113\n'
         "fi\n"
         "printf '%s\\n' \"$*\" >> \"$HOME/launchctl-calls.log\"\n"
         "exit 90\n",
@@ -443,7 +443,7 @@ def test_market_preflight_runs_once_before_any_activation_mutation(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "print" ]; then\n'
         '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
-        '  echo "Could not find service" >&2; exit 1\n'
+        '  printf \'Could not find service "%s" in domain for user gui: %s\\n\' "${2##*/}" "$UID" >&2; exit 113\n'
         "fi\n"
         "case \"${1:-}\" in\n"
         "  bootstrap|enable|kickstart) exit 0 ;;\n"
@@ -493,7 +493,7 @@ def test_market_install_establishes_new_after_market_owner_before_live(
         "#!/bin/sh\n"
         'if [ "${1:-}" = "print" ]; then\n'
         '  [ "${2:-}" = "gui/$UID" ] && { echo "domain = gui/$UID"; exit 0; }\n'
-        '  echo "Could not find service" >&2; exit 113\n'
+        '  printf \'Could not find service "%s" in domain for user gui: %s\\n\' "${2##*/}" "$UID" >&2; exit 113\n'
         "fi\n"
         'printf "%s\\n" "$*" >> "$HOME/launchctl-calls"\n'
         "exit 0\n",
@@ -512,6 +512,38 @@ def test_market_install_establishes_new_after_market_owner_before_live(
     assert bootstraps == [
         "com.guiyi.quant-after-market.plist",
         "com.guiyi.quant-live.plist",
+    ]
+
+
+def test_market_install_delegates_field_absence_to_python_authority(
+    tmp_path: Path,
+) -> None:
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home = tmp_path / "home"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "print" ]; then\n'
+        '  [ "${2:-}" = "gui/$UID" ] && exit 0\n'
+        '  label="${2##*/}"\n'
+        '  printf \'Bad request.\\nCould not find service "%s" in domain for user gui: %s\\n\' "$label" "$UID" >&2\n'
+        "  exit 113\n"
+        "fi\n"
+        'printf "%s\\n" "$*" >> "$HOME/launchctl-mutations"\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-market-runtime")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = (home / "authority-state-calls").read_text(encoding="utf-8").splitlines()
+    assert calls[:2] == [
+        "com.guiyi.quant-after-market",
+        "com.guiyi.quant-live",
     ]
 
 
@@ -565,7 +597,7 @@ def test_partial_market_install_stops_candidate_and_restores_previous_authority(
         'if [ "$command" = "print" ] && [ "$target" = "gui/$UID" ]; then exit 0; fi\n'
         'if [ "$command" = "print" ]; then\n'
         '  [ -f "$state_dir/$label" ] && exit 0\n'
-        '  echo "Could not find service" >&2; exit 1\n'
+        '  printf \'Could not find service "%s" in domain for user gui: %s\\n\' "$label" "$UID" >&2; exit 113\n'
         "fi\n"
         'printf "%s\\n" "$*" >> "$HOME/launchctl-calls"\n'
         'if [ "$command" = "bootout" ]; then rm -f "$state_dir/$label"; exit 0; fi\n'
@@ -608,7 +640,7 @@ def test_partial_market_cleanup_launchctl_error_retains_marker_as_unknown(
         '  echo "permission denied" >&2; exit 77\n'
         "fi\n"
         'if [ "${1:-}" = "print" ] && [ "${2:-}" = "gui/$UID" ]; then exit 0; fi\n'
-        'if [ "${1:-}" = "print" ]; then echo "Could not find service" >&2; exit 1; fi\n'
+        'if [ "${1:-}" = "print" ]; then printf \'Could not find service "%s" in domain for user gui: %s\\n\' "${2##*/}" "$UID" >&2; exit 113; fi\n'
         'if [ "${1:-}" = "enable" ]; then\n'
         '  case "${2:-}" in *com.guiyi.quant-live) touch "$HOME/cleanup-started"; exit 81 ;; esac\n'
         "fi\n"
@@ -668,7 +700,7 @@ def test_partial_market_install_restores_authority_for_next_preflight(
         'if [ "$command" = print ] && [ "$target" = "gui/$UID" ]; then exit 0; fi\n'
         'if [ "$command" = print ]; then\n'
         '  [ -f "$state_dir/$label" ] && exit 0\n'
-        '  echo "Could not find service" >&2; exit 1\n'
+        '  printf \'Could not find service "%s" in domain for user gui: %s\\n\' "$label" "$UID" >&2; exit 113\n'
         "fi\n"
         'if [ "$command" = bootout ]; then rm -f "$state_dir/$label"; exit 0; fi\n'
         'if [ "$command" = bootstrap ]; then\n'
@@ -764,7 +796,7 @@ def test_partial_market_restore_process_readback_unknown_retains_marker(
         'if [ "$command" = print ] && [ "$target" = "gui/$UID" ]; then exit 0; fi\n'
         'if [ "$command" = print ]; then\n'
         '  [ -f "$HOME/launchd-state/$label" ] && exit 0\n'
-        '  echo "Could not find service" >&2; exit 1\n'
+        '  printf \'Could not find service "%s" in domain for user gui: %s\\n\' "$label" "$UID" >&2; exit 113\n'
         "fi\n"
         'if [ "$command" = bootout ]; then rm -f "$HOME/launchd-state/$label"; exit 0; fi\n'
         'if [ "$command" = bootstrap ]; then\n'
@@ -834,7 +866,7 @@ def test_preload_mutation_failure_restores_market_authority_preimage(
         'if [ "$command" = print ] && [ "$target" = "gui/$UID" ]; then exit 0; fi\n'
         'if [ "$command" = print ]; then\n'
         '  [ -f "$HOME/launchd-state/$label" ] && exit 0\n'
-        '  echo "Could not find service" >&2; exit 113\n'
+        '  printf \'Could not find service "%s" in domain for user gui: %s\\n\' "$label" "$UID" >&2; exit 113\n'
         "fi\n"
         'if [ "$command" = bootout ]; then rm -f "$HOME/launchd-state/$label"; exit 0; fi\n'
         'if [ "$command" = bootstrap ]; then\n'
@@ -882,7 +914,7 @@ def test_post_commit_preimage_cleanup_unknown_reports_committed_success_no_retry
         'if [ "$command" = print ] && [ "$target" = "gui/$UID" ]; then exit 0; fi\n'
         'if [ "$command" = print ]; then\n'
         '  [ -f "$HOME/launchd-state/$label" ] && exit 0\n'
-        '  echo "Could not find service" >&2; exit 113\n'
+        '  printf \'Could not find service "%s" in domain for user gui: %s\\n\' "$label" "$UID" >&2; exit 113\n'
         "fi\n"
         'if [ "$command" = bootout ]; then rm -f "$HOME/launchd-state/$label"; exit 0; fi\n'
         'if [ "$command" = bootstrap ]; then\n'
@@ -1190,6 +1222,30 @@ def _run_installer_result(
         python.write_text(
             "#!/bin/sh\n"
             "printf '%s\\n' '{\"schema_version\":1,\"command\":\"runtime.market-promotion-preflight\",\"status\":\"passed\",\"reason\":\"non_trading_interval\",\"trading_day\":null,\"operational_count\":0,\"snapshot_count\":0}'\n",
+            encoding="utf-8",
+        )
+        python.chmod(0o700)
+    behavior = python.with_name("python-test-behavior")
+    if not behavior.exists():
+        shutil.copy2(python, behavior)
+        python.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = -m ] && [ "$2" = app.market_data.runtime_status_authority ] '
+            '&& [ "$3" = launchd-service-state ]; then\n'
+            '  label="$4"\n'
+            '  printf "%s\\n" "$label" >> "$HOME/authority-state-calls"\n'
+            '  launchctl print "gui/$UID" >/dev/null 2>&1 || exit 1\n'
+            '  if output="$(launchctl print "gui/$UID/$label" 2>&1)"; then\n'
+            "    printf 'loaded\\n'; exit 0\n"
+            "  else\n"
+            '    result="$?"\n'
+            "  fi\n"
+            '  exact="Could not find service \\"$label\\" in domain for user gui: $UID"\n'
+            '  [ "$result" = 113 ] || exit 1\n'
+            '  [ "$output" = "$exact" ] || [ "$output" = "Bad request.\n$exact" ] || exit 1\n'
+            "  printf 'absent\\n'; exit 0\n"
+            "fi\n"
+            'exec "$(dirname "$0")/python-test-behavior" "$@"\n',
             encoding="utf-8",
         )
         python.chmod(0o700)

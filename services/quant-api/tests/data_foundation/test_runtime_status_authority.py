@@ -87,6 +87,48 @@ def _installed_market_service(
     return path
 
 
+def test_cli_classifies_market_service_through_shared_launchd_reader(
+    monkeypatch, capsys
+) -> None:
+    import app.market_data.runtime_status_authority as module
+
+    observed: list[tuple[str, Path]] = []
+
+    def read_service(label: str, *, root: Path) -> None:
+        observed.append((label, root))
+        return None
+
+    monkeypatch.setattr(module, "_read_launchd_service", read_service)
+
+    result = module.main(
+        ["launchd-service-state", "com.guiyi.quant-after-market"]
+    )
+
+    assert result == 0
+    assert capsys.readouterr().out == "absent\n"
+    assert observed == [
+        ("com.guiyi.quant-after-market", module.PROJECT_ROOT)
+    ]
+
+
+def test_cli_launchd_state_fails_closed_without_disclosing_reader_error(
+    monkeypatch, capsys
+) -> None:
+    import app.market_data.runtime_status_authority as module
+
+    def unavailable(*args, **kwargs):
+        raise ValueError("untrusted launchctl output")
+
+    monkeypatch.setattr(module, "_read_launchd_service", unavailable)
+
+    result = module.main(["launchd-service-state", "com.guiyi.quant-live"])
+
+    assert result == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
 @pytest.mark.parametrize(
     ("needle", "replacement"),
     [

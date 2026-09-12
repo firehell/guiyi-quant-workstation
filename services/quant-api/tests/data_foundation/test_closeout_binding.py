@@ -250,7 +250,7 @@ def test_partial_install_restore_reaches_real_stopped_authority_and_preflight(
         'if [ "$command" = print ] && [ "$target" = "gui/$UID" ]; then exit 0; fi\n'
         'if [ "$command" = print ]; then\n'
         '  [ -f "$HOME/launchd-state/$label" ] && exit 0\n'
-        '  echo "Could not find service" >&2; exit 113\n'
+        '  printf \'Could not find service "%s" in domain for user gui: %s\\n\' "$label" "$UID" >&2; exit 113\n'
         "fi\n"
         'if [ "$command" = bootout ]; then rm -f "$HOME/launchd-state/$label"; exit 0; fi\n'
         'if [ "$command" = bootstrap ]; then\n'
@@ -269,6 +269,20 @@ def test_partial_install_restore_reaches_real_stopped_authority_and_preflight(
     python.parent.mkdir(parents=True)
     python.write_text(
         "#!/bin/sh\n"
+        'if [ "$1" = -m ] && [ "$2" = app.market_data.runtime_status_authority ] '
+        '&& [ "$3" = launchd-service-state ]; then\n'
+        '  label="$4"\n'
+        '  launchctl print "gui/$UID" >/dev/null 2>&1 || exit 1\n'
+        '  if output="$(launchctl print "gui/$UID/$label" 2>&1)"; then\n'
+        "    printf 'loaded\\n'; exit 0\n"
+        "  else\n"
+        '    result="$?"\n'
+        "  fi\n"
+        '  exact="Could not find service \\"$label\\" in domain for user gui: $UID"\n'
+        '  [ "$result" = 113 ] || exit 1\n'
+        '  [ "$output" = "$exact" ] || [ "$output" = "Bad request.\n$exact" ] || exit 1\n'
+        "  printf 'absent\\n'; exit 0\n"
+        "fi\n"
         'case "$*" in\n'
         '  "-m app.market_data.runtime_status_authority verify-restored-loaded-service "*) exit 0 ;;\n'
         "esac\n"

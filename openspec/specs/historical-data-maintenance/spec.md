@@ -66,6 +66,11 @@ heartbeat facts before use; permission/error/unreadable results are not absence,
 any drift MUST fail closed. Normal after-market closeout MUST continue to require all five services loaded,
 with after-market idle. A stopped terminal MUST NOT by itself satisfy any promotion predicate.
 
+The deployment installer MUST also obtain every launchd loaded/absent classification from that Python
+authority. Shell MUST NOT parse `launchctl` output or reproduce absence policy; only the authority may accept
+exit 113 with the exact requested label/user absence shape. Any other exit or output is unknown and MUST fail
+closed before install, cleanup, or restore can claim a state.
+
 #### Scenario: Stopped terminal is used by a compatible read-only entry point
 - **WHEN** the exact v5 terminal, installed writer identity, explicit launchd absence, other four services and both heartbeats remain pinned and valid
 - **THEN** the entry point may continue to its own independent read-only or dry-run checks without treating the interruption as completion

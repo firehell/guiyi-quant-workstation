@@ -13,6 +13,7 @@ import re
 import sys
 from typing import Protocol
 
+from app.core.env import PROJECT_ROOT
 from app.market_data.after_market_closeout import verify_runtime_release_identity
 from app.market_data.captured_recovery_runtime import (
     _read_launchd_service,
@@ -31,6 +32,14 @@ _LABEL = "com.guiyi.quant-after-market"
 _MARKET_LABELS = {
     "com.guiyi.quant-after-market": "after-market",
     "com.guiyi.quant-live": "live",
+}
+_INSTALLABLE_LABELS = {
+    "com.guiyi.quant-api",
+    "com.guiyi.quant-web",
+    "com.guiyi.quant-log-rotate",
+    *_MARKET_LABELS,
+    "com.guiyi.quant-alert",
+    "com.guiyi.quant-weekly-audit",
 }
 
 
@@ -252,6 +261,16 @@ def resolve_market_runtime_status_authority(
 
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
+    if len(arguments) == 2 and arguments[0] == "launchd-service-state":
+        label = arguments[1]
+        if label not in _INSTALLABLE_LABELS:
+            return 1
+        try:
+            output = _read_launchd_service(label, root=PROJECT_ROOT)
+        except ValueError:
+            return 1
+        print("absent" if output is None else "loaded")
+        return 0
     if len(arguments) != 2 or arguments[0] != "verify-restored-loaded-service":
         return 2
     try:
