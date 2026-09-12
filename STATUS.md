@@ -9,7 +9,8 @@
 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
 工作 2 已于 2026-09-11 完成：只读 closeout 返回 `ready` 后，owner 批准的单次 apply 将 2026-09-09 旧运行记为 `interrupted`，独立读回通过。当时部署预检受当天 60 品种 Session 缺失阻塞；该收尾未补行情、未切换 Runtime。本次新读回见下节。
-工作 3 已于 2026-09-11 完成源码、测试、合同和独立 Review，并随 v1.10.6 发布；尚未取得新版本 Runtime 与自然盘后证据，后续仍归工作 5。
+工作 3 已于 2026-09-11 完成源码、测试、合同和独立 Review，随 v1.10.6 发布并已进入现役 v1.10.7 Runtime；
+仅自然盘后及后续交易日增量验收仍归工作 5。
 
 ## 2026-09-12 D/E/F 与候选收口
 
@@ -222,7 +223,7 @@
 | 补丁候选 | `RELEASE_CANDIDATE`，未发布 | v1.10.8 仓库版本事实已包含 `5879452c1`；独立最终 Review、main/tag/GitHub Release 与 Runtime promotion 均未执行 |
 | v1.10.7 部署准备 | `COMPLETED` | 独立 Runtime/recovery root 已固定；locked 依赖、Web build、render、兼容恢复和失败恢复路径通过；正式只读 preflight 与单次切换已完成 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
-| 盘后生命周期修复 | `COMPLETED / RELEASED` | `8f2b051fd` 随 v1.10.6 发布；Runtime 与自然盘后 Gate 尚未完成 |
+| 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 随 v1.10.6 发布并已进入现役 v1.10.7 Runtime；仅自然盘后及后续交易日增量验收未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
 | 本轮稳定版 | v1.10.7 `IMMEDIATE_ACCEPTANCE_PARTIAL` | D/E/F、候选验证、独立 Review、发布、固定 root、preflight 与 promotion 已收口；v1.10.8 补丁候选的最终 Review、发布/promotion 和自然业务验收仍分开 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
