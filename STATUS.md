@@ -177,8 +177,8 @@
   准备期观察到的既有 Runtime health failure 未被清除或改写。
 - 现役 root 尚无 after-market terminal status 文件，因此没有现场字节 SHA 可用于
   `compatible-recovery-proof`；本次不伪造、复制或重用旧 terminal SHA。恢复目录身份与失败恢复代码路径已验证，
-  但任何实际恢复仍须绑定届时真实状态和独立一次意图。本次切换未触发恢复；compatible-recovery root 与旧 Runtime
-  roots 继续保留用于回滚和审计，未清理。
+  但任何实际恢复仍须绑定届时真实状态和独立一次意图。本次切换未触发恢复；最新 compatible-recovery root 保留。
+  旧 release roots 已在确认所有正式服务脱离后按下方工作树清理记录移除。
 
 ## v1.10.8 Runtime promotion 与即时验收（已完成；自然验收未完成）
 
@@ -201,6 +201,21 @@
   可读，16 笔 closed 与 1 笔 open 参考交易可见；控制台 0 error / 0 warning。旧双前缀 404 已由 active Runtime 关闭。
 - 本次未写行情/metadata/Scope，未发送手工通知，未执行 weekly audit，未重跑 D/E/F。自然 completed Live Bar、
   自然 after-market、其后的增量/MDS 读回及首次自然 weekly audit 继续作为互相独立的现场 Gate。
+
+## 工作树清理（已完成）
+
+- `2026-09-13` 删除前逐个核对 Git 身份、tracked dirty state、develop 祖先或 patch-equivalence，以及 installed/loaded
+  launchd、进程 cwd/text 引用。所有正式服务只引用 exact v1.10.8；候选删除根均 tracked clean，未删除分支。
+- 使用正式 `git worktree remove --force` 与 `git worktree prune --verbose` 精确移除六棵树：临时 metadata detached
+  树、已进入 develop 的 after-market recovery 树、已由 develop 等价吸收的 closeout heartbeat RED 树、
+  v1.10.5 Runtime、v1.10.7 Runtime 与 v1.10.7 recovery。未使用宽泛 `rm`。
+- 当前只保留主 `develop`、承载本任务的 active Codex worktree、现役
+  `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.8-r1@82860ee3f` 与最新
+  `/Volumes/扩展盘/guiyi-quant-recovery-v1.10.8-r1@82860ee3f`。active Codex worktree 不是 unused tree，未在任务运行中
+  自删除。
+- 删除后六个正式服务身份仍为 exact v1.10.8，API/Web 200；Runtime health 继续如实为 failed，weekly 继续
+  `not_run`。旧 v1.10.5 `.run/after-market-status.json` 随旧 Runtime tree 删除，不能从 Git 恢复；其已审终态和
+  SHA-256 仍由本文件与 Git history 追溯。
 
 ## v1.10.7 Release（发布时未切换；现状见 promotion 小节）
 
@@ -401,7 +416,7 @@ owner 随后批准一次精确 apply；命令在同一锁窗口重验全部条�
 | 正式 Release | `v1.10.8@82860ee3f5f63c49397ab11b0d0ab60c601376b9`；PR #364 于 `2026-09-12T16:18:01Z` 合入 main；tree `6df9ebdce760d7d5d67f83e47e613cf8b0d71e3c`；annotated tag object `b1a52b23932665abe46e98bf9e7e5b07a664fece`。GitHub Release 于 `16:19:25Z` 发布，non-draft、non-prerelease、target `main`。 |
 | 发布验收 | 冻结候选 `6c724f730238c54a30b69d0930d5dcbdc61921e3` 与 v1.10.8 发布 tree 一致；最终 Review 0 Critical / 0 Important / 0 Minor。 |
 | Runtime | API、Web、after-market、Live、Alert、weekly 六服务均 installed/loaded 于 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.8-r1` / `82860ee3f5f63c49397ab11b0d0ab60c601376b9`。一次切换四步均成功，未恢复或重试。 |
-| Runtime 工作树 | 现役根为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.8-r1`，detached/clean 于 exact `82860ee3f`；compatible-recovery root `/Volumes/扩展盘/guiyi-quant-recovery-v1.10.8-r1` 保留。v1.10.7 及更旧 roots 未清理。 |
+| Runtime 工作树 | 现役根为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.8-r1`，detached/clean 于 exact `82860ee3f`；只保留同版本 compatible-recovery root `/Volumes/扩展盘/guiyi-quant-recovery-v1.10.8-r1`。v1.10.5/v1.10.7 Runtime 与 v1.10.7 recovery 已在服务脱离并读回后删除。 |
 | 最近 health | API/Web 200，API version 1.10.8、worker 1；Live/Alert heartbeat 新鲜。public health 仍 degraded、聚合 overall failed，保留既有 Alert transport/evaluation 历史事实；未 acknowledgment 或清除。SuBing 历史参考单前缀 API 已 200，浏览器控制台 0 error/warning。 |
 | Weekly audit | enabled/loaded 于 exact v1.10.8 root，周六 09:00、无 RunAtLoad/KeepAlive、当前 idle、runs 0 / not_run；此前本周 840/840 endpoint 与 120/120 周线归属核对通过，0 缺失/不一致、0 provider、0 data/metadata writes，lease 已释放。证据 `/private/tmp/guiyi-aftermkt-recovery-20260911/weekly-enable-and-current-week-verification.json` / SHA-256 `10cb5deccd5878edfca3e979610a2e95a401fe2377c5ea1198bdc8570b2b2250`；不是全历史或自然调度成功。 |
 | Database | 最近生产 readback 为 Alembic `20260903_0045`。 |
