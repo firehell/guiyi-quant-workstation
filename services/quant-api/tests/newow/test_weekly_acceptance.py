@@ -30,6 +30,7 @@ from app.market_data.newow.product_reader import (
 )
 from app.market_data.newow.product_service import (
     NewowProductService,
+    ProductSection,
     ProductServiceQuery,
 )
 
@@ -210,8 +211,14 @@ def _report() -> dict:
                 "symbol": PRODUCTS[1],
                 "contract": "AG2701",
                 "frequency": "1w",
+                "through": "2026-09-11",
+                "as_of": AS_OF.isoformat(),
                 "status": "DATA_UNAVAILABLE",
                 "reason": "REPLAY_PREFIX_MISSING",
+                "owners": [{"since": "2026-01-01", "through": "2026-09-11"}],
+                "consumers": [
+                    {"strategy": "trend", "frequency": "1w", "section": "chart"}
+                ],
             }
         ],
         "repair_targets": [
@@ -223,9 +230,23 @@ def _report() -> dict:
                 "status": "PROPOSED",
                 "reason": None,
                 "expected_bar_count": 10,
-                "provider_request_count": 2,
+                "provider_request_count": 1,
                 "plan_sha256": "a" * 64,
                 "consumers": [],
+                "dependency_frequencies": ["1d"],
+                "frequencies": ["1d", "1w"],
+                "requested_through": "2026-09-11",
+                "effective_through": "2026-09-11",
+                "direct_target_count": 1,
+                "derived_target_count": 0,
+                "target_windows": [
+                    {
+                        "dataset": ["contract", PRODUCTS[1], "AG2701", "1w"],
+                        "missing_start": "2026-09-11T07:00:00+00:00",
+                        "missing_end": "2026-09-11T07:00:00+00:00",
+                        "missing_bar_count": 10,
+                    }
+                ],
             }
         ],
         "metadata_proposals": [],
@@ -363,6 +384,47 @@ def test_pt_validator_rejects_related_initial_clear_and_phantom_trade(pt_results
     assert "INITIAL_CLEAR_REFERENCED_BY_TRADE" in result["violations"]
 
 
+def _with_invalid_identity(result, field, value):
+    identity = deepcopy(result.meta.identity)
+    object.__setattr__(identity, field, value)
+    return replace(result, meta=replace(result.meta, identity=identity))
+
+
+def _with_invalid_initial_clear(chart, field, value):
+    changed = deepcopy(chart)
+    object.__setattr__(changed.chart.value.replay.actions[0], field, value)
+    return changed
+
+
+@pytest.mark.parametrize(
+    "mutate,code",
+    [
+        (lambda chart, reference: (replace(chart, section=ProductSection.REFERENCE), reference), "CHART_SECTION_MISMATCH"),
+        (lambda chart, reference: (replace(chart, chart=replace(chart.chart, delivery="deferred")), reference), "CHART_NOT_DELIVERED"),
+        (lambda chart, reference: (replace(chart, chart=replace(chart.chart, value=None)), reference), "CHART_VALUE_MISSING"),
+        (lambda chart, reference: (replace(chart, meta=replace(chart.meta, snapshot_token="")), reference), "CHART_SNAPSHOT_TOKEN_MISSING"),
+        (lambda chart, reference: (replace(chart, meta=replace(chart.meta, as_of=AS_OF.replace(day=12))), reference), "CHART_AS_OF_MISMATCH"),
+        (lambda chart, reference: (replace(chart, meta=replace(chart.meta, schema_version="v1")), reference), "CHART_SCHEMA_MISMATCH"),
+        (lambda chart, reference: (replace(chart, meta=replace(chart.meta, futures_adaptation_version="wrong")), reference), "CHART_CONTRACT_MISMATCH"),
+        (lambda chart, reference: (_with_invalid_identity(chart, "strategy", ProductStrategy.TREND), reference), "CHART_IDENTITY_MISMATCH"),
+        (lambda chart, reference: (_with_invalid_identity(chart, "frequency", ProductFrequency.DAILY), reference), "CHART_IDENTITY_MISMATCH"),
+        (lambda chart, reference: (_with_invalid_identity(chart, "series_kind", "continuous"), reference), "CHART_IDENTITY_MISMATCH"),
+        (lambda chart, reference: (_with_invalid_identity(chart, "profile_id", "wrong"), reference), "CHART_IDENTITY_MISMATCH"),
+        (lambda chart, reference: (_with_invalid_identity(chart, "formula_versions", ("wrong",)), reference), "CHART_IDENTITY_MISMATCH"),
+        (lambda chart, reference: (_with_invalid_initial_clear(chart, "trade_eligibility", "ELIGIBLE"), reference), "INITIAL_CLEAR_COUNT_INVALID"),
+        (lambda chart, reference: (_with_invalid_initial_clear(chart, "related_build_id", "fake-build"), reference), "INITIAL_CLEAR_FIELDS_INVALID"),
+        (lambda chart, reference: (_with_invalid_initial_clear(chart, "sequence", 1), reference), "INITIAL_CLEAR_FIELDS_INVALID"),
+    ],
+)
+def test_pt_validator_rejects_each_frozen_contract_boundary(pt_results, mutate, code):
+    from scripts.newow_weekly_acceptance import validate_pt_initial_clear
+
+    result = validate_pt_initial_clear(*mutate(*pt_results), expected_as_of=AS_OF)
+
+    assert result["accepted"] is False
+    assert code in result["violations"]
+
+
 def test_summary_recomputes_three_of_180_ready_but_keeps_audit_complete():
     from scripts.newow_weekly_acceptance import summarize_readiness
 
@@ -421,9 +483,16 @@ def test_summary_aggregates_repair_and_metadata_rows_without_large_private_detai
             "contract": "AG2701",
             "frequency": "1w",
             "through": "2026-09-11",
+            "as_of": AS_OF.isoformat(),
             "status": "UNKNOWN",
             "reason": "HISTORICAL_SESSION_FACT_MISSING",
             "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+            "expected_bar_count": None,
+            "provider_request_count": None,
+            "owners": [{"since": "2026-01-01", "through": "2026-09-11"}],
+            "consumers": [
+                {"strategy": "trend", "frequency": "1w", "section": "chart"}
+            ],
             "error": {
                 "diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"},
                 "private": "discard",
@@ -454,6 +523,15 @@ def test_summary_aggregates_repair_and_metadata_rows_without_large_private_detai
         (lambda report: report.update(as_of="2026-09-12T00:00:00+00:00"), "AS_OF_MISMATCH"),
         (lambda report: report.update(provider_requests=None), "PROVIDER_REQUESTS_NOT_ZERO"),
         (lambda report: report.update(writes="0"), "WRITES_NOT_ZERO"),
+        (lambda report: report.pop("work_used"), "WORK_USED_INVALID"),
+        (
+            lambda report: report["dependencies"][0].update(frequency="60m"),
+            "DEPENDENCY_IDENTITY_INVALID",
+        ),
+        (
+            lambda report: report["repair_targets"][0].pop("plan_sha256"),
+            "REPAIR_SCHEMA_INVALID",
+        ),
         (lambda report: report["cases"].append(deepcopy(report["cases"][0])), "CASE_KEYS_INVALID"),
         (lambda report: report["cases"].pop(), "CASE_KEYS_INVALID"),
         (lambda report: report.update(main_ready_count=180), "MAIN_READY_COUNT_MISMATCH"),

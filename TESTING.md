@@ -70,15 +70,15 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/g
 repair、apply 或通知能力。先验证 parser 与离线行为：
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
   scripts/newow_weekly_acceptance.py --help
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
   services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
   services/quant-api/tests/newow/test_weekly_acceptance.py \
   services/quant-api/tests/newow/test_readiness.py \
   services/quant-api/tests/data_foundation/test_newow_readiness_cli.py \
   services/quant-api/tests/newow/test_product_readonly_compatibility.py
-PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
   scripts/newow_weekly_acceptance.py summary \
   --report /absolute/full-readiness.json \
   --scope data/universe/operational_products.txt \
@@ -90,7 +90,7 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 预算耗尽或代码修复后均停止，不循环复跑。
 
 ```bash
-PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
   scripts/newow_weekly_acceptance.py pt
 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/guiyi \
   data newow-readiness --universe operational --frequency 1w --matrix \

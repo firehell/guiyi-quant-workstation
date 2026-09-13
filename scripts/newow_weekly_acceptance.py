@@ -293,6 +293,104 @@ def _outcome_key(row: object) -> str:
     return f"{row.get('status', 'MISSING')}:{row.get('reason') or '-'}"
 
 
+def _date_text(value: object) -> bool:
+    try:
+        return isinstance(value, str) and date.fromisoformat(value).isoformat() == value
+    except ValueError:
+        return False
+
+
+def _base_row_valid(
+    row: object,
+    products: tuple[str, ...],
+    *,
+    expected_as_of: datetime | None = None,
+    require_owners: bool = True,
+) -> bool:
+    if not isinstance(row, dict):
+        return False
+    contract = row.get("contract")
+    if (
+        row.get("symbol") not in products
+        or not isinstance(contract, str)
+        or re.fullmatch(r"[A-Z]{1,8}[0-9]{3,4}", contract) is None
+        or row.get("frequency") != ProductFrequency.WEEKLY.value
+        or not _date_text(row.get("through"))
+        or not isinstance(row.get("consumers"), list)
+        or (require_owners and not isinstance(row.get("owners"), list))
+    ):
+        return False
+    if expected_as_of is None:
+        return True
+    try:
+        return _instant(row.get("as_of")) <= expected_as_of
+    except ValueError:
+        return False
+
+
+def _repair_row_valid(row: object, products: tuple[str, ...]) -> bool:
+    if not _base_row_valid(row, products, require_owners=False) or not isinstance(row, dict):
+        return False
+    if (
+        row.get("dependency_frequencies") != ["1d"]
+        or row.get("frequencies") != ["1d", "1w"]
+        or not _date_text(row.get("requested_through"))
+        or not _date_text(row.get("effective_through"))
+        or type(row.get("direct_target_count")) is not int
+        or type(row.get("derived_target_count")) is not int
+        or not isinstance(row.get("target_windows"), list)
+    ):
+        return False
+    if row.get("status") == "REVIEW_REQUIRED":
+        return (
+            row.get("reason") == "REPAIR_SCOPE_SOURCE_OR_INTEGRITY"
+            and row.get("plan_sha256") is None
+            and row.get("expected_bar_count") is None
+            and row.get("provider_request_count") is None
+        )
+    if row.get("status") != "PROPOSED" or row.get("reason") is not None:
+        return False
+    targets = row["target_windows"]
+    if (
+        not isinstance(row.get("plan_sha256"), str)
+        or _HEX64.fullmatch(row["plan_sha256"]) is None
+        or type(row.get("expected_bar_count")) is not int
+        or row["expected_bar_count"] < 0
+        or type(row.get("provider_request_count")) is not int
+        or row["provider_request_count"] != len(targets)
+    ):
+        return False
+    for target in targets:
+        if not isinstance(target, dict):
+            return False
+        dataset = target.get("dataset")
+        count = target.get("missing_bar_count")
+        if (
+            not isinstance(dataset, list)
+            or len(dataset) != 4
+            or dataset[:3] != ["contract", row["symbol"], row["contract"]]
+            or dataset[3] not in {"1d", "1w"}
+            or type(count) is not int
+            or count < 0
+        ):
+            return False
+    return True
+
+
+def _metadata_row_valid(
+    row: object, products: tuple[str, ...], expected_as_of: datetime
+) -> bool:
+    return bool(
+        _base_row_valid(row, products, expected_as_of=expected_as_of)
+        and isinstance(row, dict)
+        and row.get("status") == "UNKNOWN"
+        and row.get("reason") == "HISTORICAL_SESSION_FACT_MISSING"
+        and row.get("proposal") == "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED"
+        and row.get("expected_bar_count") is None
+        and row.get("provider_request_count") is None
+    )
+
+
 def summarize_readiness(
     report: object,
     expected_products: tuple[str, ...] | list[str],
@@ -354,6 +452,8 @@ def summarize_readiness(
         violations.append("PROVIDER_REQUESTS_NOT_ZERO")
     if type(report.get("writes")) is not int or report.get("writes") != 0:
         violations.append("WRITES_NOT_ZERO")
+    if type(report.get("work_used")) is not int or report.get("work_used") < 0:
+        violations.append("WORK_USED_INVALID")
     for name in required_lists:
         if not isinstance(report.get(name), list):
             violations.append(f"{name.upper()}_INVALID")
@@ -451,6 +551,23 @@ def summarize_readiness(
             if _error_status_violation(row):
                 violations.append("ERROR_STATUS_MISMATCH")
 
+    dependencies = report.get("dependencies", [])
+    if isinstance(dependencies, list) and any(
+        not _base_row_valid(row, products, expected_as_of=expected)
+        for row in dependencies
+    ):
+        violations.append("DEPENDENCY_IDENTITY_INVALID")
+    repair_rows = report.get("repair_targets", [])
+    if isinstance(repair_rows, list) and any(
+        not _repair_row_valid(row, products) for row in repair_rows
+    ):
+        violations.append("REPAIR_SCHEMA_INVALID")
+    metadata_rows = report.get("metadata_proposals", [])
+    if isinstance(metadata_rows, list) and any(
+        not _metadata_row_valid(row, products, expected) for row in metadata_rows
+    ):
+        violations.append("METADATA_SCHEMA_INVALID")
+
     exhausted = report.get("budget_exhausted")
     if type(exhausted) is not bool:
         violations.append("BUDGET_FLAG_INVALID")
@@ -467,8 +584,6 @@ def summarize_readiness(
         f"{item['source']}:{item['status']}:{item['reason'] or '-'}"
         for item in pending
     )
-    repair_rows = report.get("repair_targets", [])
-    metadata_rows = report.get("metadata_proposals", [])
     repair_counts = Counter(_outcome_key(row) for row in repair_rows)
     metadata_counts = Counter(_outcome_key(row) for row in metadata_rows)
     return {
