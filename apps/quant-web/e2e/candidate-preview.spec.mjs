@@ -9,7 +9,10 @@ test('preview identifies both sources, fixes cutoff and never subscribes to live
   const sockets = []
   page.on('request', request => requests.push(request.url()))
   page.on('websocket', socket => sockets.push(socket.url()))
-  await installNewowProductFixtures(page, { frozenNow: '2026-09-07T08:00:00.000Z' })
+  await installNewowProductFixtures(page, {
+    frozenNow: '2026-09-07T08:00:00.000Z',
+    apiAsOf: NEWOW_AS_OF,
+  })
   // Actual-preview wire shape: Decimal strings plus the API's non-null bounded echo.
   const quoteRequests = []
   await page.route('**/api/v1/market/bars/page?**', route => {
@@ -48,6 +51,7 @@ test('preview identifies both sources, fixes cutoff and never subscribes to live
   const strategy = requests.filter(url => url.includes('/newow/strategy-detail'))
   expect(strategy.length).toBeGreaterThan(0)
   expect(strategy.every(url => new URL(url).searchParams.get('as_of') === NEWOW_AS_OF)).toBe(true)
+  expect(requests.filter(url => new URL(url).pathname === '/api/v1/market/newow/product-capabilities')).toHaveLength(1)
   expect(requests.every(url => new URL(url).origin === 'http://127.0.0.1:5182')).toBe(true)
   expect(requests.filter(url => url.includes('/market/state'))).toEqual([])
   expect(sockets.filter(url => !url.includes('token='))).toEqual([])

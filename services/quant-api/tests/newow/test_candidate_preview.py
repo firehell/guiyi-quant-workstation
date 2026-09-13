@@ -90,6 +90,23 @@ def test_identity_is_current_git_and_lightweight(preview, monkeypatch):
     )
 
 
+def test_weekly_release_capabilities_are_available_without_database(preview):
+    app, sessions, _factory = preview
+
+    response = TestClient(app).get("/api/v1/market/newow/product-capabilities")
+
+    assert response.status_code == 200
+    assert response.json()["release_stage"] == "weekly"
+    assert response.json()["open_frequencies"] == ["1w"]
+    assert response.json()["open_sections"] == [
+        "chart",
+        "auxiliary",
+        "reference",
+        "comparator",
+    ]
+    assert sessions == []
+
+
 @pytest.mark.parametrize(
     "path",
     [

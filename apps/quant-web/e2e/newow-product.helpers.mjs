@@ -134,7 +134,7 @@ export async function installNewowProductFixtures(page, options = {}) {
         section,
         strategy,
         frequency,
-        options.frozenNow ?? NEWOW_AS_OF,
+        options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
       )
       if (queryError !== null) return unexpected(route, state, queryError)
       const key = [strategy, frequency, section, url.searchParams.get('component') || '', url.searchParams.get('chart_before') || '', url.searchParams.get('history_before') || ''].join(':')
@@ -274,7 +274,7 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
 }
 
 function validateFixtureEnvelope(payload, section, strategy, frequency, url, options = {}, companions = {}) {
-  const expectedAsOf = options.frozenNow ?? NEWOW_AS_OF
+  const expectedAsOf = options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF
   if (payload.section !== section || payload.meta.identity.strategy !== strategy || payload.meta.identity.frequency !== frequency || payload.meta.as_of !== expectedAsOf) throw new Error('fixture envelope identity drift')
   const expectedToken = `snapshot:${strategy}:${frequency}:${payload.meta.data_revision_identity}`
   if (payload.meta.snapshot_token !== null && payload.meta.snapshot_token !== expectedToken) throw new Error('fixture snapshot token drift')

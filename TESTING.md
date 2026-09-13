@@ -698,7 +698,8 @@ API 固定只绑定 `127.0.0.1:8010`，Web 固定 `127.0.0.1:5174`，端口占�
 启动后核对 `/api/preview/identity` 与横幅的 SHA/cutoff；改变代码后须停止候选进程并重新核对启动。
 K线 `before` 是排他上界，牛哇保留既有 `as_of` completed 语义；首页投影/主力元数据与正式
 Runtime health/当前事件不伪装成同一历史快照，各自保留响应时间戳。页面身份不匹配时不加载业务查询。
-代理只允许既有两项正式 GET，其他请求返回 `PREVIEW_ROUTE_FORBIDDEN`，无 Live subscription。
+代理只允许显式列出的只读业务 GET（包括 Newow capability）及两项正式状态 GET，其他请求返回
+`PREVIEW_ROUTE_FORBIDDEN`，无 Live subscription。
 停止候选进程即关闭预览；没有数据写入需要回滚，正式 Runtime 与 release Gate 不因预览通过而改变。
 
 Newow P5 路由/偏好、typed section consumer、九组合图层、参考历史与解释面板定向回归：

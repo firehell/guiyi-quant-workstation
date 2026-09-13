@@ -56,8 +56,11 @@ database connections remain separately authorized operations, not a consequence 
 ### Requirement: Read-only readiness enumerates independent dependencies
 
 Readiness audit SHALL use the existing reader and shared validated MDS rank1 owner enumeration before
-reading physical prefixes. It SHALL collect every independent contract/frequency failure across chart,
-auxiliary, reference and three-frequency explanation inputs, preserving owner segments and consumer provenance.
+reading physical prefixes. It SHALL enumerate the complete planned matrix, but only read dependencies for the
+currently opened release scope. In the weekly stage this means `1w` chart, auxiliary, reference and comparator;
+`1d/60m` main cases and all explanation cases remain visible as `UNOPENED`, cause no reader calls and do not count
+as incomplete readiness. When a later stage opens them, the audit SHALL collect every independent
+contract/frequency failure across that newly opened scope, preserving owner segments and consumer provenance.
 Missing metadata SHALL retain UNKNOWN enumeration and null counts, with only bounded repair proposals.
 Exact repair requests SHALL be deduplicated and use the same read-only contract warm-up planner as maintenance;
 source nonpositive rows and integrity errors MUST NOT become blind download targets.
@@ -68,9 +71,10 @@ Any source/integrity finding in that scope SHALL yield REVIEW_REQUIRED with no o
 
 The audit SHALL require fixed timezone-aware as_of, an active symbol or mutually exclusive active universe,
 serial work and deadline budgets. Budget interruption MUST retain UNSTARTED cases and explicit incomplete
-coverage. The 60-product matrix SHALL contain 540 main strategy/frequency cases and preserve actual section
-EVIDENCE_REQUIRED/NOT_APPLICABLE/WARMING states independently of readiness counts. Only a real section service
-READY result may count as main ready. Completed auditing MUST NOT imply all dependencies are ready.
+coverage within the opened scope. The 60-product matrix SHALL contain 540 planned main strategy/frequency cases,
+including explicitly UNOPENED cases, and preserve actual section EVIDENCE_REQUIRED/NOT_APPLICABLE/WARMING states
+independently of readiness counts. Only a real section service READY result may count as main ready. Completed
+auditing MUST NOT imply all dependencies are ready.
 
 Composition SHALL contain only read authorities and the pure planner, never a provider, metadata writer,
 maintenance apply pipeline or Redis. A fresh read-only database transaction SHALL use no-autoflush and always

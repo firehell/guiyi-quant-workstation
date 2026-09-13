@@ -22,6 +22,7 @@ PREVIEW_PATHS = frozenset(
         "/api/v1/market/bars/page",
         "/api/v1/market/dominants",
         "/api/v1/market/research/home-overview",
+        "/api/v1/market/newow/product-capabilities",
         "/api/v1/market/newow/strategy-detail",
         "/api/v1/market/newow/historical-snapshot",
     }
