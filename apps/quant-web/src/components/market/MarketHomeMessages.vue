@@ -81,7 +81,7 @@ function loadQuery(): { startDay: string; endDay: string; symbol: string; ruleCo
         <small>{{ event.notification_attempted_at ? `已尝试发送 · ${time(event.notification_attempted_at)}` : '未记录发送尝试' }}</small>
       </button>
     </div>
-    <button v-if="messages.nextBefore.value" class="market-message-more" type="button" :disabled="messages.loadingMore.value" @click="messages.loadMore()">{{ messages.loadingMore.value ? '读取中…' : '加载更多' }}</button>
+    <button v-if="messages.nextBefore.value" class="market-message-more" type="button" :disabled="messages.refreshing.value || messages.loadingMore.value" @click="messages.loadMore()">{{ messages.refreshing.value ? '刷新中…' : messages.loadingMore.value ? '读取中…' : '加载更多' }}</button>
     <p v-if="messages.error.value && messages.items.value.length" class="market-dashboard-page__error" role="alert">下一页读取失败；已保留当前消息。</p>
   </section>
 </template>

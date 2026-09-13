@@ -23,6 +23,7 @@ export function useMarketMessages(options: MarketMessagesOptions = {}) {
   const items = shallowRef<AlertEvent[]>([])
   const nextBefore = shallowRef<string | null>(null)
   const loading = shallowRef(false)
+  const refreshing = shallowRef(false)
   const loadingMore = shallowRef(false)
   const error = shallowRef<'request-failed' | null>(null)
   const fetchHistory = options.fetchHistory ?? (async (query, signal) => (await import('../api/alerts.ts')).getAlertHistory(query, signal))
@@ -39,6 +40,7 @@ export function useMarketMessages(options: MarketMessagesOptions = {}) {
     controller = null
     morePromise = null
     loadingMore.value = false
+    refreshing.value = false
     currentQuery = { ...query }
     const cached = readCache(query)
     items.value = cached?.items ?? []
@@ -51,6 +53,7 @@ export function useMarketMessages(options: MarketMessagesOptions = {}) {
     const requestController = new AbortController()
     controller = requestController
     loading.value = cached === null
+    refreshing.value = true
     try {
       const page = await fetchHistory(query, requestController.signal)
       if (current !== generation) return
@@ -60,11 +63,15 @@ export function useMarketMessages(options: MarketMessagesOptions = {}) {
     } catch {
       if (current === generation && !requestController.signal.aborted) error.value = 'request-failed'
     } finally {
-      if (current === generation) loading.value = false
+      if (current === generation) {
+        loading.value = false
+        refreshing.value = false
+      }
     }
   }
 
   function loadMore(): Promise<void> {
+    if (refreshing.value) return Promise.resolve()
     if (morePromise) return morePromise
     if (!currentQuery || !nextBefore.value) return Promise.resolve()
     const current = generation
@@ -132,6 +139,6 @@ export function useMarketMessages(options: MarketMessagesOptions = {}) {
     return `${options.cacheKey}:${JSON.stringify([query.startDay, query.endDay, query.symbol, query.ruleCode])}`
   }
 
-  function dispose() { generation += 1; controller?.abort(); controller = null; morePromise = null; loading.value = false; loadingMore.value = false }
-  return { items, nextBefore, loading, loadingMore, error, load, loadMore, rememberScrollTop, restoreScrollTop, dispose }
+  function dispose() { generation += 1; controller?.abort(); controller = null; morePromise = null; loading.value = false; refreshing.value = false; loadingMore.value = false }
+  return { items, nextBefore, loading, refreshing, loadingMore, error, load, loadMore, rememberScrollTop, restoreScrollTop, dispose }
 }

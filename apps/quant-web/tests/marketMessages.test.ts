@@ -111,6 +111,127 @@ test('keys cached pages by query and lets manual refresh replace a fresh hit', a
   assert.equal(messages.items.value[0].id, 3)
 })
 
+for (const refreshKind of ['expired', 'force'] as const) {
+  test(`${refreshKind} refresh blocks the cached cursor until its first page is accepted`, async () => {
+    let now = 1_000
+    const query = { startDay: '2026-09-07', endDay: '2026-09-13', symbol: '', ruleCode: null } as const
+    const cacheKey = `messages-${refreshKind}-guard`
+    const seed = useMarketMessages({
+      cacheKey,
+      now: () => now,
+      fetchHistory: async () => page([event(3), event(2)], 'page-3'),
+    })
+    await seed.load(query)
+    seed.dispose()
+    if (refreshKind === 'expired') now += 5 * 60_000 + 1
+
+    let resolveRefresh!: (value: ReturnType<typeof page>) => void
+    const calls: Array<string | null> = []
+    const messages = useMarketMessages({
+      cacheKey,
+      now: () => now,
+      fetchHistory: (request) => {
+        calls.push(request.before ?? null)
+        return new Promise((resolve) => { resolveRefresh = resolve })
+      },
+    })
+    const refresh = messages.load(query, { force: refreshKind === 'force' })
+    assert.equal(messages.refreshing.value, true)
+    assert.deepEqual(messages.items.value.map((item) => item.id), [3, 2])
+    assert.equal(messages.nextBefore.value, 'page-3')
+    await messages.loadMore()
+    assert.deepEqual(calls, [null])
+
+    resolveRefresh(page([event(4)], 'new-page'))
+    await refresh
+    assert.equal(messages.refreshing.value, false)
+    assert.deepEqual(messages.items.value.map((item) => item.id), [4])
+    assert.equal(messages.nextBefore.value, 'new-page')
+  })
+}
+
+for (const firstToFinish of ['old-more', 'refresh'] as const) {
+  test(`an existing page cannot pollute a replacement refresh when ${firstToFinish} finishes first`, async () => {
+    const query = { startDay: '2026-09-07', endDay: '2026-09-13', symbol: '', ruleCode: null } as const
+    let resolveMore!: (value: ReturnType<typeof page>) => void
+    let resolveRefresh!: (value: ReturnType<typeof page>) => void
+    const signals: AbortSignal[] = []
+    let firstPage = true
+    const messages = useMarketMessages({
+      cacheKey: `messages-completion-${firstToFinish}`,
+      fetchHistory: (request, signal) => {
+        signals.push(signal)
+        if (firstPage) {
+          firstPage = false
+          return Promise.resolve(page([event(3), event(2)], 'page-3'))
+        }
+        if (request.before === 'page-3') return new Promise((resolve) => { resolveMore = resolve })
+        return new Promise((resolve) => { resolveRefresh = resolve })
+      },
+    })
+    await messages.load(query)
+    const oldMore = messages.loadMore()
+    const refresh = messages.load(query, { force: true })
+    assert.equal(signals[1].aborted, true)
+    assert.equal(messages.refreshing.value, true)
+
+    if (firstToFinish === 'old-more') {
+      resolveMore(page([event(1)], null))
+      await oldMore
+      assert.deepEqual(messages.items.value.map((item) => item.id), [3, 2])
+      resolveRefresh(page([event(4)], 'new-page'))
+      await refresh
+    } else {
+      resolveRefresh(page([event(4)], 'new-page'))
+      await refresh
+      resolveMore(page([event(1)], null))
+      await oldMore
+    }
+    assert.equal(messages.refreshing.value, false)
+    assert.deepEqual(messages.items.value.map((item) => item.id), [4])
+    assert.equal(messages.nextBefore.value, 'new-page')
+  })
+}
+
+test('a failed refresh releases the preserved complete cache for its old cursor', async () => {
+  let now = 1_000
+  const query = { startDay: '2026-09-07', endDay: '2026-09-13', symbol: '', ruleCode: null } as const
+  const cacheKey = 'messages-refresh-failure'
+  const seed = useMarketMessages({
+    cacheKey,
+    now: () => now,
+    fetchHistory: async () => page([event(3), event(2)], 'page-3'),
+  })
+  await seed.load(query)
+  seed.dispose()
+  now += 5 * 60_000 + 1
+
+  let rejectRefresh!: (reason: Error) => void
+  const calls: Array<string | null> = []
+  const messages = useMarketMessages({
+    cacheKey,
+    now: () => now,
+    fetchHistory: (request) => {
+      calls.push(request.before ?? null)
+      if (request.before === 'page-3') return Promise.resolve(page([event(1)], null))
+      return new Promise((_resolve, reject) => { rejectRefresh = reject })
+    },
+  })
+  const refresh = messages.load(query)
+  await messages.loadMore()
+  assert.deepEqual(calls, [null])
+  rejectRefresh(new Error('refresh failed'))
+  await refresh
+  assert.equal(messages.refreshing.value, false)
+  assert.deepEqual(messages.items.value.map((item) => item.id), [3, 2])
+  assert.equal(messages.nextBefore.value, 'page-3')
+
+  await messages.loadMore()
+  assert.deepEqual(calls, [null, 'page-3'])
+  assert.deepEqual(messages.items.value.map((item) => item.id), [3, 2, 1])
+  assert.equal(messages.nextBefore.value, null)
+})
+
 for (const outcome of ['resolve', 'reject'] as const) {
   test(`query replacement releases pagination when the old page later ${outcome}s`, async () => {
     let settleOld!: (value?: ReturnType<typeof normalizeAlertHistoryResponse>) => void
