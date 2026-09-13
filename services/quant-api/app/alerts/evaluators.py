@@ -7,7 +7,7 @@ from datetime import date, datetime
 from typing import Protocol
 
 from app.alerts.registry import HTDY_RULE, SUBING_THS_RULE
-from app.market_data.domain import CanonicalBar
+from app.market_data.domain import CanonicalBar, INTRADAY_FREQUENCIES
 from app.market_data.market_read_service import (
     CurrentContractReplayWindow,
     MarketReadService,
@@ -102,7 +102,11 @@ class HtdyOriginalEvaluator:
         market_read: MarketReadService,
         window: MarketReadWindow,
     ) -> tuple[AlertObservationCandidate, ...]:
-        del market_read
+        if window.frequency in {item.value for item in INTRADAY_FREQUENCIES}:
+            market_read.validate_htdy_alert_window(
+                window,
+                context_bars=self.context_bars,
+            )
         return tuple(
             AlertObservationCandidate(
                 bar_end=candidate.bar_end,

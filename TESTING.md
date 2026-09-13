@@ -816,6 +816,26 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 未配置时该项明确 skip，其余测试使用内存 provider/Redis、临时 SQLite/Parquet 与进程锁。测试不运行
 现役 Runtime，不调用真实 RQData，不发送通知。
 
+预警审查补充回归固定 HTDY 与苏冰输入合同分离、canonical 零评价/状态失败发送边界，以及周一
+60 个冻结身份与 45 个夜盘目标经真实 Session authority、fake SDK 的正式 adapter、`recover_product`、
+隔离 Redis 聚合和 MarketRead 的组合链：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/data_foundation/test_live_recovery.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
+  services/quant-api/tests/test_alert_recovery_boundary.py \
+  services/quant-api/tests/test_live_recovery_guard.py
+```
+
+组合回归默认不会连接 Redis；实际 Lua 原子提交仍须按下方合同给 `GUIYI_TEST_REDIS_PORT` 配置本次创建、
+非 6379、无持久卷的一次性实例，并只单独运行对应测试。未配置造成的 skip 不计为 Lua Gate 通过。
+
 逐品种诊断命令为 `guiyi runtime subing-readiness --trading-day YYYY-MM-DD --as-of OFFSET_DATETIME`；
 `as-of` 必须带时区且不晚于执行时刻。命令只读 PostgreSQL/Redis/Canonical，逐品种报告当前输入与 Scope，
 非全部 ready 时退出 1；参数错误退出 2。该结果不证明 provider acceptance 或实际收件，真实连接仍须

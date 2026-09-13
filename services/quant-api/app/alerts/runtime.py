@@ -404,6 +404,7 @@ class AlertRuntime:
         messages: list[AlertNotificationMessage] = []
         event_count = 0
         failed = False
+        recorded_rule_result = False
         try:
             with self._session_factory() as session:
                 rules = session.scalars(
@@ -417,15 +418,16 @@ class AlertRuntime:
                     operational_products=tuple(sorted(self._operational_products)),
                 )
                 for rule in rules:
-                    definition = get_alert_rule_definition(rule.rule_code)
-                    evaluator = self._evaluators.get(rule.rule_code)
-                    if evaluator is None:
+                    try:
+                        definition = get_alert_rule_definition(rule.rule_code)
+                        market_read = self._market_read_factory(session)
+                    except Exception:
                         failed = True
                         _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
                         continue
-                    market_read = self._market_read_factory(session)
                     for symbol in sorted(self._operational_products):
                         for frequency in _CANONICAL_ALERT_FREQUENCIES:
+                            item_messages: list[AlertNotificationMessage] = []
                             try:
                                 if frequency.value not in definition.input_frequencies:
                                     continue
@@ -433,6 +435,9 @@ class AlertRuntime:
                                     rule, symbol=symbol, frequency=frequency.value
                                 ):
                                     continue
+                                evaluator = self._evaluators.get(rule.rule_code)
+                                if evaluator is None:
+                                    raise ValueError("ALERT_EVALUATOR_MISSING")
                                 window = market_read.latest_canonical_window(
                                     SeriesPageQuery(
                                         SeriesKind.ACTUAL_DOMINANT,
@@ -474,7 +479,11 @@ class AlertRuntime:
                                             error_type=prepared.notification_error_type,
                                         )
                                     if prepared.message is not None:
-                                        messages.append(prepared.message)
+                                        item_messages.append(prepared.message)
+                                if candidates and not rule_event_created:
+                                    raise AlertEvaluationSkipped(
+                                        "ALERT_EVALUATION_DUPLICATE"
+                                    )
                                 self._record_rule_result(
                                     rule.rule_code,
                                     evaluated_bar_at=window.cutoff,
@@ -482,16 +491,26 @@ class AlertRuntime:
                                     event_created=rule_event_created,
                                     error_type=None,
                                 )
+                                messages.extend(item_messages)
+                                recorded_rule_result = True
+                            except AlertEvaluationSkipped:
+                                if session.in_transaction():
+                                    session.rollback()
                             except (AlertEvaluationError, MarketReadWindowError) as exc:
                                 if session.in_transaction():
                                     session.rollback()
-                                self._record_rule_result(
-                                    rule.rule_code,
-                                    evaluated_bar_at=None,
-                                    at=processing_now,
-                                    event_created=False,
-                                    error_type=_rule_error_type(str(exc)),
-                                )
+                                try:
+                                    self._record_rule_result(
+                                        rule.rule_code,
+                                        evaluated_bar_at=None,
+                                        at=processing_now,
+                                        event_created=False,
+                                        error_type=_rule_error_type(str(exc)),
+                                    )
+                                    recorded_rule_result = True
+                                except Exception:
+                                    failed = True
+                                    _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
                             except Exception:
                                 if session.in_transaction():
                                     session.rollback()
@@ -505,11 +524,12 @@ class AlertRuntime:
             _LOGGER.warning("ALERT_PROCESSING_FAILED")
         if event_count:
             self._update_runtime_status(last_event_at=_iso_timestamp(processing_now))
-        self._record_processing_result(
-            processing_now=processing_now,
-            bar_at=None,
-            failed=failed,
-        )
+        if recorded_rule_result or failed:
+            self._record_processing_result(
+                processing_now=processing_now,
+                bar_at=None,
+                failed=failed,
+            )
         if not failed or messages:
             self._send_messages_once(messages, processing_now=processing_now)
 
