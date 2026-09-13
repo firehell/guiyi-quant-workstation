@@ -104,7 +104,8 @@ def test_metadata_failure_keeps_unknown_counts_and_never_invokes_warmup():
         item["expected_bar_count"] is None for item in report["metadata_proposals"]
     )
     assert all(
-        item["status"] == ("UNOPENED" if item["section"] == "explanation" else "UNKNOWN")
+        item["status"]
+        == ("UNOPENED" if item["section"] == "explanation" else "UNKNOWN")
         for item in report["enumerations"]
     )
 
@@ -128,7 +129,7 @@ def test_budget_preserves_weekly_cases_and_marks_deferred_frequencies_unopened()
     assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 360
 
 
-def test_weekly_scope_preserves_exact_three_strategy_matrix_without_hourly_dependencies():
+def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_dependencies():
     module = _audit_module()
     from guiyi_quant.newow.product_contracts import ProductFrequency
 
@@ -142,8 +143,8 @@ def test_weekly_scope_preserves_exact_three_strategy_matrix_without_hourly_depen
         )
     )
 
-    assert len(report["cases"]) == 6
-    assert {row["frequency"] for row in report["cases"]} == {"1w"}
+    assert len(report["cases"]) == 18
+    assert {row["frequency"] for row in report["cases"]} == {"1w", "1d", "60m"}
     assert len(report["enumerations"]) == 8
     assert {row["frequency"] for row in report["enumerations"]} == {"1w"}
     assert report["frequency_scope"] == ["1w"]
@@ -158,7 +159,8 @@ def test_weekly_scope_preserves_exact_three_strategy_matrix_without_hourly_depen
         for dependency in report["dependencies"]
         for consumer in dependency["consumers"]
     )
-    assert all(item["main"]["status"] == "UNSTARTED" for item in report["cases"])
+    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 6
+    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 12
 
 
 @pytest.mark.parametrize(
@@ -230,7 +232,11 @@ def test_matrix_preserves_section_evidence_states_and_fixed_asof():
         for case in report["cases"]
         if case["frequency"] == "1w"
     )
-    assert all(case["main"]["status"] == "UNOPENED" for case in report["cases"] if case["frequency"] != "1w")
+    assert all(
+        case["main"]["status"] == "UNOPENED"
+        for case in report["cases"]
+        if case["frequency"] != "1w"
+    )
     assert {(frequency, section) for frequency, section, _ in seen} == {
         ("1w", "chart"),
         ("1w", "auxiliary"),
@@ -267,7 +273,8 @@ def test_deadline_discards_late_result_and_keeps_later_case_unstarted():
     assert report["dependencies"] == []
     assert owner_calls == []
     assert all(
-        row["status"] == ("UNOPENED" if row["section"] == "explanation" else "UNSTARTED")
+        row["status"]
+        == ("UNOPENED" if row["section"] == "explanation" else "UNSTARTED")
         for row in report["enumerations"]
     )
 

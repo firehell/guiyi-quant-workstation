@@ -93,9 +93,7 @@ class _InitialClearReader:
 @pytest.fixture
 def pt_results(product_cases):
     base = product_cases.initial_clear_input("1w")
-    segment = build_segment_id(
-        "pt", "PT2610", datetime(2025, 1, 1, tzinfo=UTC)
-    )
+    segment = build_segment_id("pt", "PT2610", datetime(2025, 1, 1, tzinfo=UTC))
     bars = tuple(
         ProductBar(
             replace(
@@ -137,28 +135,41 @@ def _report() -> dict:
     cases = []
     for product_index, product in enumerate(PRODUCTS):
         for strategy in STRATEGIES:
-            ready = product_index == 0
-            chart = (
-                {
-                    "status": "READY",
-                    "evidence_status": "ACTIVE_CODE_VERIFIED",
-                    "reason": None,
-                }
-                if ready
-                else {
-                    "status": "DATA_UNAVAILABLE",
-                    "reason": "REPLAY_PREFIX_MISSING",
-                    "error": {"diagnostic": {"reason": "REPLAY_PREFIX_MISSING"}},
-                }
-            )
-            reference = dict(chart)
-            cases.append(
-                {
-                    "symbol": product,
-                    "strategy": strategy,
-                    "frequency": "1w",
-                    "main": dict(chart),
-                    "sections": {
+            for frequency in ("1w", "1d", "60m"):
+                deferred_reason = {
+                    "1d": "NEWOW_DAILY_RELEASE_PENDING",
+                    "60m": "NEWOW_HOURLY_RELEASE_PENDING",
+                }.get(frequency)
+                if deferred_reason is not None:
+                    chart = {"status": "UNOPENED", "reason": deferred_reason}
+                    sections = {
+                        name: {"status": "UNOPENED", "reason": deferred_reason}
+                        for name in (
+                            "chart",
+                            *AUXILIARY,
+                            "reference",
+                            "explanation",
+                            "comparator",
+                        )
+                    }
+                else:
+                    ready = product_index == 0
+                    chart = (
+                        {
+                            "status": "READY",
+                            "evidence_status": "ACTIVE_CODE_VERIFIED",
+                            "reason": None,
+                        }
+                        if ready
+                        else {
+                            "status": "DATA_UNAVAILABLE",
+                            "reason": "REPLAY_PREFIX_MISSING",
+                            "error": {
+                                "diagnostic": {"reason": "REPLAY_PREFIX_MISSING"}
+                            },
+                        }
+                    )
+                    sections = {
                         "chart": dict(chart),
                         **{
                             name: {
@@ -168,7 +179,7 @@ def _report() -> dict:
                             }
                             for name in AUXILIARY
                         },
-                        "reference": reference,
+                        "reference": dict(chart),
                         "explanation": {
                             "status": "UNOPENED",
                             "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
@@ -178,9 +189,16 @@ def _report() -> dict:
                             "evidence_status": "ACTIVE_CODE_VERIFIED",
                             "reason": "NEWOW_COMPARATOR_SAMPLE_INSUFFICIENT",
                         },
-                    },
-                }
-            )
+                    }
+                cases.append(
+                    {
+                        "symbol": product,
+                        "strategy": strategy,
+                        "frequency": frequency,
+                        "main": dict(chart),
+                        "sections": sections,
+                    }
+                )
     enumerations = [
         {
             "symbol": product,
@@ -217,7 +235,7 @@ def _report() -> dict:
         "matrix": True,
         "frequency_scope": ["1w"],
         "product_count": 60,
-        "main_case_count": 180,
+        "main_case_count": 540,
         "main_ready_count": 3,
         "budget_exhausted": False,
         "work_used": 1000,
@@ -423,21 +441,113 @@ def _with_invalid_initial_clear(chart, field, value):
 @pytest.mark.parametrize(
     "mutate,code",
     [
-        (lambda chart, reference: (replace(chart, section=ProductSection.REFERENCE), reference), "CHART_SECTION_MISMATCH"),
-        (lambda chart, reference: (replace(chart, chart=replace(chart.chart, delivery="deferred")), reference), "CHART_NOT_DELIVERED"),
-        (lambda chart, reference: (replace(chart, chart=replace(chart.chart, value=None)), reference), "CHART_VALUE_MISSING"),
-        (lambda chart, reference: (replace(chart, meta=replace(chart.meta, snapshot_token="")), reference), "CHART_SNAPSHOT_TOKEN_MISSING"),
-        (lambda chart, reference: (replace(chart, meta=replace(chart.meta, as_of=AS_OF.replace(day=12))), reference), "CHART_AS_OF_MISMATCH"),
-        (lambda chart, reference: (replace(chart, meta=replace(chart.meta, schema_version="v1")), reference), "CHART_SCHEMA_MISMATCH"),
-        (lambda chart, reference: (replace(chart, meta=replace(chart.meta, futures_adaptation_version="wrong")), reference), "CHART_CONTRACT_MISMATCH"),
-        (lambda chart, reference: (_with_invalid_identity(chart, "strategy", ProductStrategy.TREND), reference), "CHART_IDENTITY_MISMATCH"),
-        (lambda chart, reference: (_with_invalid_identity(chart, "frequency", ProductFrequency.DAILY), reference), "CHART_IDENTITY_MISMATCH"),
-        (lambda chart, reference: (_with_invalid_identity(chart, "series_kind", "continuous"), reference), "CHART_IDENTITY_MISMATCH"),
-        (lambda chart, reference: (_with_invalid_identity(chart, "profile_id", "wrong"), reference), "CHART_IDENTITY_MISMATCH"),
-        (lambda chart, reference: (_with_invalid_identity(chart, "formula_versions", ("wrong",)), reference), "CHART_IDENTITY_MISMATCH"),
-        (lambda chart, reference: (_with_invalid_initial_clear(chart, "trade_eligibility", "ELIGIBLE"), reference), "INITIAL_CLEAR_COUNT_INVALID"),
-        (lambda chart, reference: (_with_invalid_initial_clear(chart, "related_build_id", "fake-build"), reference), "INITIAL_CLEAR_FIELDS_INVALID"),
-        (lambda chart, reference: (_with_invalid_initial_clear(chart, "sequence", 1), reference), "INITIAL_CLEAR_FIELDS_INVALID"),
+        (
+            lambda chart, reference: (
+                replace(chart, section=ProductSection.REFERENCE),
+                reference,
+            ),
+            "CHART_SECTION_MISMATCH",
+        ),
+        (
+            lambda chart, reference: (
+                replace(chart, chart=replace(chart.chart, delivery="deferred")),
+                reference,
+            ),
+            "CHART_NOT_DELIVERED",
+        ),
+        (
+            lambda chart, reference: (
+                replace(chart, chart=replace(chart.chart, value=None)),
+                reference,
+            ),
+            "CHART_VALUE_MISSING",
+        ),
+        (
+            lambda chart, reference: (
+                replace(chart, meta=replace(chart.meta, snapshot_token="")),
+                reference,
+            ),
+            "CHART_SNAPSHOT_TOKEN_MISSING",
+        ),
+        (
+            lambda chart, reference: (
+                replace(chart, meta=replace(chart.meta, as_of=AS_OF.replace(day=12))),
+                reference,
+            ),
+            "CHART_AS_OF_MISMATCH",
+        ),
+        (
+            lambda chart, reference: (
+                replace(chart, meta=replace(chart.meta, schema_version="v1")),
+                reference,
+            ),
+            "CHART_SCHEMA_MISMATCH",
+        ),
+        (
+            lambda chart, reference: (
+                replace(
+                    chart, meta=replace(chart.meta, futures_adaptation_version="wrong")
+                ),
+                reference,
+            ),
+            "CHART_CONTRACT_MISMATCH",
+        ),
+        (
+            lambda chart, reference: (
+                _with_invalid_identity(chart, "strategy", ProductStrategy.TREND),
+                reference,
+            ),
+            "CHART_IDENTITY_MISMATCH",
+        ),
+        (
+            lambda chart, reference: (
+                _with_invalid_identity(chart, "frequency", ProductFrequency.DAILY),
+                reference,
+            ),
+            "CHART_IDENTITY_MISMATCH",
+        ),
+        (
+            lambda chart, reference: (
+                _with_invalid_identity(chart, "series_kind", "continuous"),
+                reference,
+            ),
+            "CHART_IDENTITY_MISMATCH",
+        ),
+        (
+            lambda chart, reference: (
+                _with_invalid_identity(chart, "profile_id", "wrong"),
+                reference,
+            ),
+            "CHART_IDENTITY_MISMATCH",
+        ),
+        (
+            lambda chart, reference: (
+                _with_invalid_identity(chart, "formula_versions", ("wrong",)),
+                reference,
+            ),
+            "CHART_IDENTITY_MISMATCH",
+        ),
+        (
+            lambda chart, reference: (
+                _with_invalid_initial_clear(chart, "trade_eligibility", "ELIGIBLE"),
+                reference,
+            ),
+            "INITIAL_CLEAR_COUNT_INVALID",
+        ),
+        (
+            lambda chart, reference: (
+                _with_invalid_initial_clear(chart, "related_build_id", "fake-build"),
+                reference,
+            ),
+            "INITIAL_CLEAR_FIELDS_INVALID",
+        ),
+        (
+            lambda chart, reference: (
+                _with_invalid_initial_clear(chart, "sequence", 1),
+                reference,
+            ),
+            "INITIAL_CLEAR_FIELDS_INVALID",
+        ),
     ],
 )
 def test_pt_validator_rejects_each_frozen_contract_boundary(pt_results, mutate, code):
@@ -449,7 +559,7 @@ def test_pt_validator_rejects_each_frozen_contract_boundary(pt_results, mutate, 
     assert code in result["violations"]
 
 
-def test_summary_recomputes_three_of_180_ready_but_keeps_audit_complete():
+def test_summary_recomputes_three_of_540_ready_but_keeps_audit_complete():
     from scripts.newow_weekly_acceptance import summarize_readiness
 
     result = summarize_readiness(_report(), PRODUCTS, AS_OF)
@@ -459,7 +569,7 @@ def test_summary_recomputes_three_of_180_ready_but_keeps_audit_complete():
     assert result["matrix_covered"] is True
     assert result["scope_covered"] is True
     assert result["counts"] == {
-        "total": 180,
+        "total": 540,
         "main_ready": 3,
         "reference_ready": 3,
         "joint_ready": 3,
@@ -469,7 +579,9 @@ def test_summary_recomputes_three_of_180_ready_but_keeps_audit_complete():
         for strategy in STRATEGIES
     ]
     assert result["non_joint_ready_outcome_counts"] == {
-        "DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING|DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 177
+        "DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING|DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 177,
+        "UNOPENED:NEWOW_DAILY_RELEASE_PENDING|UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+        "UNOPENED:NEWOW_HOURLY_RELEASE_PENDING|UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
     }
 
 
@@ -534,9 +646,7 @@ def test_summary_accepts_native_unfinished_repair_without_planner_fields(
 
     assert result["valid"] is True
     assert result["audit_complete"] is False
-    assert result["pending_outcome_counts"] == {
-        f"repair:{status}:{reason or '-'}": 1
-    }
+    assert result["pending_outcome_counts"] == {f"repair:{status}:{reason or '-'}": 1}
 
 
 def test_summary_accepts_native_repair_metadata_failure_without_planner_fields():
@@ -615,9 +725,7 @@ def test_summary_accepts_native_enumeration_metadata_proposal():
             "status": "UNKNOWN",
             "as_of": AS_OF.isoformat(),
             "reason": "HISTORICAL_SESSION_FACT_MISSING",
-            "error": {
-                "diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}
-            },
+            "error": {"diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}},
             "expected_bar_count": None,
             "provider_request_count": None,
             "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
@@ -646,9 +754,7 @@ def test_summary_rejects_cross_origin_fields_in_enumeration_metadata_proposal():
             "status": "UNKNOWN",
             "as_of": AS_OF.isoformat(),
             "reason": "HISTORICAL_SESSION_FACT_MISSING",
-            "error": {
-                "diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}
-            },
+            "error": {"diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}},
             "expected_bar_count": None,
             "provider_request_count": None,
             "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
@@ -687,9 +793,7 @@ def test_summary_aggregates_repair_and_metadata_rows_without_large_private_detai
             "expected_bar_count": None,
             "provider_request_count": None,
             "owners": [{"since": "2026-01-01", "through": "2026-09-11"}],
-            "consumers": [
-                {"strategy": "trend", "frequency": "1w", "section": "chart"}
-            ],
+            "consumers": [{"strategy": "trend", "frequency": "1w", "section": "chart"}],
             "error": {
                 "diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"},
                 "private": "discard",
@@ -715,10 +819,19 @@ def test_summary_aggregates_repair_and_metadata_rows_without_large_private_detai
 @pytest.mark.parametrize(
     "mutate,code",
     [
-        (lambda report: report.update(schema_version="newow_readiness_compact_v1"), "REPORT_SCHEMA_INVALID"),
+        (
+            lambda report: report.update(schema_version="newow_readiness_compact_v1"),
+            "REPORT_SCHEMA_INVALID",
+        ),
         (lambda report: report.update(matrix=False), "MATRIX_REQUIRED"),
-        (lambda report: report.update(as_of="2026-09-12T00:00:00+00:00"), "AS_OF_MISMATCH"),
-        (lambda report: report.update(provider_requests=None), "PROVIDER_REQUESTS_NOT_ZERO"),
+        (
+            lambda report: report.update(as_of="2026-09-12T00:00:00+00:00"),
+            "AS_OF_MISMATCH",
+        ),
+        (
+            lambda report: report.update(provider_requests=None),
+            "PROVIDER_REQUESTS_NOT_ZERO",
+        ),
         (lambda report: report.update(writes="0"), "WRITES_NOT_ZERO"),
         (lambda report: report.pop("work_used"), "WORK_USED_INVALID"),
         (
@@ -745,7 +858,10 @@ def test_summary_aggregates_repair_and_metadata_rows_without_large_private_detai
             ),
             "REPAIR_SCHEMA_INVALID",
         ),
-        (lambda report: report["cases"].append(deepcopy(report["cases"][0])), "CASE_KEYS_INVALID"),
+        (
+            lambda report: report["cases"].append(deepcopy(report["cases"][0])),
+            "CASE_KEYS_INVALID",
+        ),
         (lambda report: report["cases"].pop(), "CASE_KEYS_INVALID"),
         (
             lambda report: report["cases"][0]["sections"]["reference"].update(
@@ -757,7 +873,10 @@ def test_summary_aggregates_repair_and_metadata_rows_without_large_private_detai
             lambda report: report["enumerations"][0].update(status="BANANA"),
             "ENUMERATION_IDENTITY_INVALID",
         ),
-        (lambda report: report.update(main_ready_count=180), "MAIN_READY_COUNT_MISMATCH"),
+        (
+            lambda report: report.update(main_ready_count=180),
+            "MAIN_READY_COUNT_MISMATCH",
+        ),
         (lambda report: report.update(complete=False), "COMPLETE_FLAG_MISMATCH"),
         (lambda report: report.update(status="incomplete"), "STATUS_MISMATCH"),
         (

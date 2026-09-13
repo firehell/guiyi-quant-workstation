@@ -191,8 +191,8 @@ Runtime 正常静默。浏览器不得调用 product dominants、发起 per-prod
 
 #### Scenario: A resource becomes unavailable after a successful snapshot
 
-- **WHEN** overview、Runtime 或 current Event 任一刷新失败
-- **THEN** 页面保留该资源的最后成功快照并仅将该资源标为 stale；其他两项事实保持独立
+- **WHEN** overview、Runtime、消息或批量行情任一资源刷新失败
+- **THEN** 页面保留该资源的最后成功快照并仅将该资源标为 stale；其他资源事实保持独立
 
 #### Scenario: Maintenance progress and historical audit remain distinct
 

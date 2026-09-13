@@ -152,7 +152,7 @@ class NewowReadinessAudit:
                 }
                 for symbol in request.products
                 for strategy in ProductStrategy
-                for frequency in request.frequencies
+                for frequency in ProductFrequency
             ]
             if request.matrix
             else []

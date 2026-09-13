@@ -74,7 +74,10 @@ def _instant(value: datetime | str) -> datetime:
 
 def _json_value(value: object) -> object:
     if is_dataclass(value) and not isinstance(value, type):
-        return {field.name: _json_value(getattr(value, field.name)) for field in fields(value)}
+        return {
+            field.name: _json_value(getattr(value, field.name))
+            for field in fields(value)
+        }
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, (datetime, date)):
@@ -133,7 +136,11 @@ def validate_pt_initial_clear(
     if not isinstance(reference_result, NewowProductResult):
         violations.append("REFERENCE_RESULT_TYPE_INVALID")
     if violations:
-        return {"schema_version": "newow_weekly_pt_acceptance_v1", "accepted": False, "violations": violations}
+        return {
+            "schema_version": "newow_weekly_pt_acceptance_v1",
+            "accepted": False,
+            "violations": violations,
+        }
 
     violations.extend(_meta_violations(chart_result.meta, "CHART", expected))
     violations.extend(_meta_violations(reference_result.meta, "REFERENCE", expected))
@@ -373,12 +380,15 @@ def _case_state_valid(row: object) -> bool:
     status = row.get("status")
     reason = row.get("reason")
     if status in _FEATURE_STATUSES:
-        return (
-            row.get("evidence_status") in _EVIDENCE_STATUSES
-            and (reason is None if status == "READY" else isinstance(reason, str))
+        return row.get("evidence_status") in _EVIDENCE_STATUSES and (
+            reason is None if status == "READY" else isinstance(reason, str)
         )
     if status == "UNOPENED":
-        return reason == "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        return reason in {
+            "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
+            "NEWOW_DAILY_RELEASE_PENDING",
+            "NEWOW_HOURLY_RELEASE_PENDING",
+        }
     if status in {"UNKNOWN", "UNSTARTED"}:
         if isinstance(row.get("error"), dict):
             return not _error_status_violation(row)
@@ -444,10 +454,7 @@ def _base_row_valid(
         or row.get("frequency") != ProductFrequency.WEEKLY.value
         or not _date_text(row.get("through"))
         or not _consumers_valid(row.get("consumers"))
-        or (
-            require_owners
-            and not _owners_valid(row.get("owners"), row.get("through"))
-        )
+        or (require_owners and not _owners_valid(row.get("owners"), row.get("through")))
     ):
         return False
     if expected_as_of is None:
@@ -582,9 +589,7 @@ def _repair_row_valid(row: object, products: tuple[str, ...]) -> bool:
     if len(datasets) != len(set(datasets)):
         return False
     if status == "REVIEW_REQUIRED":
-        return (
-            reason == "REPAIR_SCOPE_SOURCE_OR_INTEGRITY" and counts_unavailable
-        )
+        return reason == "REPAIR_SCOPE_SOURCE_OR_INTEGRITY" and counts_unavailable
     if status == "UNKNOWN":
         return reason == "PLANNER_SCOPE_DIAGNOSTICS_MISSING" and counts_unavailable
     if status != "PROPOSED" or reason is not None:
@@ -653,17 +658,25 @@ def summarize_readiness(
     except ValueError:
         expected = FROZEN_AS_OF
         violations.append("EXPECTED_AS_OF_INVALID")
-    products = tuple(expected_products) if not isinstance(expected_products, str) else ()
+    products = (
+        tuple(expected_products) if not isinstance(expected_products, str) else ()
+    )
     if (
         len(products) != 60
         or len(set(products)) != 60
         or any(re.fullmatch(r"[a-z]{1,8}", item or "") is None for item in products)
     ):
         violations.append("EXPECTED_SCOPE_INVALID")
-    expected_keys = {
+    opened_keys = {
         (product, strategy, ProductFrequency.WEEKLY.value)
         for product in products
         for strategy in _STRATEGIES
+    }
+    expected_keys = {
+        (product, strategy, frequency.value)
+        for product in products
+        for strategy in _STRATEGIES
+        for frequency in ProductFrequency
     }
 
     if not isinstance(report, dict):
@@ -695,9 +708,12 @@ def summarize_readiness(
         violations.append("AS_OF_MISMATCH")
     if report.get("product_count") != 60:
         violations.append("PRODUCT_COUNT_MISMATCH")
-    if report.get("main_case_count") != 180:
+    if report.get("main_case_count") != 540:
         violations.append("MAIN_CASE_COUNT_MISMATCH")
-    if type(report.get("provider_requests")) is not int or report.get("provider_requests") != 0:
+    if (
+        type(report.get("provider_requests")) is not int
+        or report.get("provider_requests") != 0
+    ):
         violations.append("PROVIDER_REQUESTS_NOT_ZERO")
     if type(report.get("writes")) is not int or report.get("writes") != 0:
         violations.append("WRITES_NOT_ZERO")
@@ -709,7 +725,11 @@ def summarize_readiness(
 
     cases = report.get("cases") if isinstance(report.get("cases"), list) else []
     case_keys = [_case_key(case) for case in cases]
-    if len(case_keys) != 180 or len(set(case_keys)) != 180 or set(case_keys) != expected_keys:
+    if (
+        len(case_keys) != 540
+        or len(set(case_keys)) != 540
+        or set(case_keys) != expected_keys
+    ):
         violations.append("CASE_KEYS_INVALID")
 
     main_ready = 0
@@ -738,7 +758,9 @@ def summarize_readiness(
         if main != chart:
             violations.append("MAIN_CHART_MISMATCH")
         chart_status = chart.get("status") if isinstance(chart, dict) else None
-        reference_status = reference.get("status") if isinstance(reference, dict) else None
+        reference_status = (
+            reference.get("status") if isinstance(reference, dict) else None
+        )
         if chart_status == "READY":
             main_ready += 1
         if reference_status == "READY":
@@ -749,7 +771,9 @@ def summarize_readiness(
                 {"symbol": key[0], "strategy": key[1], "frequency": key[2]}
             )
         else:
-            non_joint_ready_counts[f"{_outcome_key(chart)}|{_outcome_key(reference)}"] += 1
+            non_joint_ready_counts[
+                f"{_outcome_key(chart)}|{_outcome_key(reference)}"
+            ] += 1
         for section_name, state in sections.items():
             if isinstance(state, dict):
                 reason_counts[
@@ -761,17 +785,30 @@ def summarize_readiness(
             if _error_status_violation(state):
                 violations.append("ERROR_STATUS_MISMATCH")
 
-    if type(report.get("main_ready_count")) is not int or report.get("main_ready_count") != main_ready:
+    if (
+        type(report.get("main_ready_count")) is not int
+        or report.get("main_ready_count") != main_ready
+    ):
         violations.append("MAIN_READY_COUNT_MISMATCH")
 
-    enumerations = report.get("enumerations") if isinstance(report.get("enumerations"), list) else []
+    enumerations = (
+        report.get("enumerations")
+        if isinstance(report.get("enumerations"), list)
+        else []
+    )
     enumeration_keys = []
     for row in enumerations:
         if isinstance(row, dict):
-            enumeration_keys.append((row.get("symbol"), row.get("frequency"), row.get("section")))
+            enumeration_keys.append(
+                (row.get("symbol"), row.get("frequency"), row.get("section"))
+            )
             if not _enumeration_row_valid(row, products, expected):
                 violations.append("ENUMERATION_IDENTITY_INVALID")
-        item = _pending_row("enumeration", row, identity=enumeration_keys[-1] if enumeration_keys else None)
+        item = _pending_row(
+            "enumeration",
+            row,
+            identity=enumeration_keys[-1] if enumeration_keys else None,
+        )
         if item is not None:
             pending.append(item)
         if _error_status_violation(row):
@@ -804,8 +841,7 @@ def summarize_readiness(
 
     dependencies = report.get("dependencies", [])
     if isinstance(dependencies, list) and any(
-        not _dependency_row_valid(row, products, expected)
-        for row in dependencies
+        not _dependency_row_valid(row, products, expected) for row in dependencies
     ):
         violations.append("DEPENDENCY_IDENTITY_INVALID")
     repair_rows = report.get("repair_targets", [])
@@ -824,7 +860,10 @@ def summarize_readiness(
         violations.append("BUDGET_FLAG_INVALID")
         exhausted = True
     recomputed_complete = not pending and not exhausted
-    if type(report.get("complete")) is not bool or report.get("complete") != recomputed_complete:
+    if (
+        type(report.get("complete")) is not bool
+        or report.get("complete") != recomputed_complete
+    ):
         violations.append("COMPLETE_FLAG_MISMATCH")
     expected_status = "audited" if recomputed_complete else "incomplete"
     if report.get("status") != expected_status:
@@ -832,8 +871,7 @@ def summarize_readiness(
 
     unique_violations = sorted(set(violations))
     pending_counts = Counter(
-        f"{item['source']}:{item['status']}:{item['reason'] or '-'}"
-        for item in pending
+        f"{item['source']}:{item['status']}:{item['reason'] or '-'}" for item in pending
     )
     repair_counts = Counter(_outcome_key(row) for row in repair_rows)
     metadata_counts = Counter(_outcome_key(row) for row in metadata_rows)
@@ -843,8 +881,10 @@ def summarize_readiness(
         "violations": unique_violations,
         "as_of": expected.isoformat(),
         "audit_complete": recomputed_complete,
-        "scope_covered": set(case_keys) == expected_keys,
-        "matrix_covered": len(case_keys) == 180 and len(set(case_keys)) == 180 and set(case_keys) == expected_keys,
+        "scope_covered": opened_keys.issubset(case_keys),
+        "matrix_covered": len(case_keys) == 540
+        and len(set(case_keys)) == 540
+        and set(case_keys) == expected_keys,
         "counts": {
             "total": len(cases),
             "main_ready": main_ready,
@@ -906,7 +946,10 @@ def run_pt_probe(
 
         session_factory = SessionLocal
     builder = service_factory or _build_pt_service
-    with session_factory() as session, readonly_transaction(session, timeout_seconds=300):
+    with (
+        session_factory() as session,
+        readonly_transaction(session, timeout_seconds=300),
+    ):
         service = builder(session, FROZEN_AS_OF)
         chart = service.query(
             ProductServiceQuery(
