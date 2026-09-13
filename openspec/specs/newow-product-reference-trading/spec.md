@@ -482,7 +482,11 @@ current snapshot explanation MUST NOT be presented as historical reasoning.
 
 The chart SHALL share one timeline across price, same-Bar volume and one selected auxiliary pane.
 MACD SHALL load by default after chart acceptance; reselecting the selected component MUST NOT
-close or reload it. The quote SHALL use an independent bounded completed actual-dominant D1
+close or reload it. Every selected auxiliary request SHALL carry the accepted chart's exact
+`chart_from/chart_through` window and snapshot proof. A compatible chart-window change SHALL move
+the auxiliary lifecycle out of ready until that exact window is loaded or restored from its own
+window-keyed cache; same-window chart pagination MUST NOT cause a duplicate auxiliary request.
+The quote SHALL use an independent bounded completed actual-dominant D1
 read of two Bars with physical-owner validation, labeled as non-live. Reference SHALL load once
 on first visibility, preserve explicit retry and manual cursor pagination, and render vertical
 cards with raw identities accessible in details. Filtering and chart location MUST NOT alter
@@ -494,6 +498,13 @@ server statistics. Explanation and comparator SHALL remain user-requested and di
 - **WHEN** it leaves and re-enters the viewport
 - **THEN** the client SHALL reuse it without prefetching every history cursor
 - **AND** a failed first request SHALL require explicit retry
+
+#### Scenario: Chart navigation changes auxiliary ownership
+
+- **GIVEN** the current auxiliary is ready for the accepted default chart window
+- **WHEN** exact reference location loads an older owner window and the user later returns to current
+- **THEN** each accepted window selects auxiliary facts by the same snapshot and exact from/through bounds
+- **AND** no prior ready auxiliary is aligned to a different owner window or exposed as ready-empty
 
 ### Requirement: MACD auxiliary display preserves the generic kernel contract
 
@@ -738,6 +749,8 @@ pagination SHALL preserve provenance; explicit historical windows, older-window 
 historical snapshot mode SHALL suppress it. Default reload SHALL restore it only after acceptance.
 Loading/stale, token rebuild, identity reset and dispose SHALL suppress the current claim; late or
 rejected responses MUST NOT restore it.
+Historical-window labelling SHALL likewise come from accepted explicit/older/historical-snapshot request
+provenance; absence of a current claim alone MUST NOT relabel retained loading or stale content as history.
 History filters SHALL affect only history rows and SHALL preserve the server summary and waiting state.
 
 Reference-card intraday labels SHALL show Shanghai MM-DD HH:mm; cross-year comparisons SHALL retain
@@ -777,6 +790,8 @@ All prices and returns SHALL remain server Decimal strings; no frontend return f
 - **WHEN** 当前请求遭遇允许重建的 409
 - **THEN** 关联旧资源与其他在途请求失效，当前请求可保留身份完成最多一次去除旧绑定的重建
 - **AND** 第二次失败不再重建，429 不得触发自动重试
+- **AND** auxiliary 不得去除 snapshot proof 后直接重试；首次 409 先按原 current 或 explicit/older
+  chart window 重建主图，再至多发起一次带新 snapshot proof 的 auxiliary 请求，重复 409 后显式停止
 
 #### Scenario: Compatible navigation preserves independent reference state
 

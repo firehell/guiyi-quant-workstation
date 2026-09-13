@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore
 
 import anyio
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import json
 from typing import cast
 
@@ -27,11 +27,16 @@ from app.market_data.domain import (
     ContractError,
     SeriesKind,
     SeriesPageQuery,
+    normalize_contract_for_symbol,
     parse_rfc3339_instant,
 )
-from app.market_data.live_market import LIVE_STATE_CHANNEL, live_bar_channel
+from app.market_data.live_market import LIVE_STATE_CHANNEL, LiveBarObservation, live_bar_channel
 from app.market_data.market_home_live import MarketHomeLiveItem, MarketHomeLiveSnapshot
-from app.market_data.market_read_service import MarketReadService, MarketReadState
+from app.market_data.market_read_service import (
+    MarketDisplaySnapshot,
+    MarketReadService,
+    MarketReadState,
+)
 from app.market_data.operational_universe import load_operational_products
 from app.redis_connections import get_async_redis_connection
 from app.schemas.market import MarketReadStateResponse
@@ -48,6 +53,7 @@ router = APIRouter(prefix="/api/v1/market", tags=["market"])
 # Admission precedes submit: no unbounded executor queue, including cancellation.
 _READ_SLOTS = BoundedSemaphore(4)
 _READ_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="market-ws-read")
+_MARKET_DETAIL_REFRESH_SECONDS = 5.0
 _HOME_LIVE_STATUS_REFRESH_SECONDS = 5.0
 _HOME_LIVE_AUTHORITY_REFRESH_SECONDS = 60.0
 
@@ -117,9 +123,23 @@ async def market_websocket(websocket: WebSocket) -> None:
         )
         last_sent = snapshot[-1].bar_end if snapshot else cutoff
         current_state = initial_state
+        current_authority = _detail_display_authority(display)
+        loop = asyncio.get_running_loop()
+        last_refresh = loop.time()
 
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            now_tick = loop.time()
+            if now_tick - last_refresh >= _MARKET_DETAIL_REFRESH_SECONDS:
+                current_state, current_authority, last_sent = await _refresh_detail_display(
+                    websocket,
+                    identity,
+                    after=after,
+                    last_sent=last_sent,
+                    current_state=current_state,
+                    current_authority=current_authority,
+                )
+                last_refresh = now_tick
             if message is None:
                 if await _client_disconnected(websocket):
                     break
@@ -127,34 +147,33 @@ async def market_websocket(websocket: WebSocket) -> None:
                 continue
             channel = _text(message.get("channel"))
             if channel == LIVE_STATE_CHANNEL:
-                next_state = await _read_in_worker(
-                    lambda service: service.state(identity, datetime.now(UTC)),
+                current_state, current_authority, last_sent = await _refresh_detail_display(
+                    websocket,
+                    identity,
+                    after=after,
+                    last_sent=last_sent,
+                    current_state=current_state,
+                    current_authority=current_authority,
+                    force_state=True,
                 )
-                if (
-                    next_state.trading_day != current_state.trading_day
-                    or next_state.live_contract != current_state.live_contract
-                ):
-                    await websocket.send_json(
-                        {
-                            "type": "reset",
-                            "trading_day": (
-                                None
-                                if next_state.trading_day is None
-                                else next_state.trading_day.isoformat()
-                            ),
-                            "contract": next_state.live_contract,
-                        }
-                    )
-                    last_sent = next_state.canonical_end
-                current_state = next_state
-                await _send_state(websocket, next_state)
+                last_refresh = now_tick
                 continue
             if channel != channels[0]:
                 continue
-            bar = _bar_from_message(message.get("data"))
+            observation = _bar_observation_from_message(
+                message.get("data"),
+                symbol=identity.symbol,
+            )
             if not current_state.live_eligible or not current_state.live_available:
                 continue
-            if bar is None or (current_state.canonical_end is not None and bar.bar_end <= current_state.canonical_end):
+            if (
+                observation is None
+                or observation.contract != current_authority[1]
+                or observation.bar.trading_day != current_authority[0]
+            ):
+                continue
+            bar = observation.bar
+            if current_state.canonical_end is not None and bar.bar_end <= current_state.canonical_end:
                 continue
             if last_sent is not None and bar.bar_end <= last_sent:
                 continue
@@ -424,6 +443,18 @@ def _home_item_authority(item: MarketHomeLiveItem) -> tuple[object, ...]:
     )
 
 
+def _detail_display_authority(
+    snapshot: MarketDisplaySnapshot,
+) -> tuple[date | None, str | None]:
+    if snapshot.source == "none":
+        return (None, None)
+    state = snapshot.state
+    return (
+        snapshot.trading_day or state.trading_day,
+        snapshot.contract or state.live_contract,
+    )
+
+
 def _home_snapshot_authority(
     items: dict[str, MarketHomeLiveItem],
 ) -> tuple[tuple[object, ...], ...]:
@@ -493,6 +524,58 @@ async def _send_state(websocket: WebSocket, state: MarketReadState) -> None:
     await websocket.send_json({"type": "state", "state": _state_response(state).model_dump(mode="json")})
 
 
+async def _refresh_detail_display(
+    websocket: WebSocket,
+    identity: SeriesPageQuery,
+    *,
+    after: datetime | None,
+    last_sent: datetime | None,
+    current_state: MarketReadState,
+    current_authority: tuple[date | None, str | None],
+    force_state: bool = False,
+) -> tuple[MarketReadState, tuple[date | None, str | None], datetime | None]:
+    refreshed = await _read_in_worker(
+        lambda service: service.display_snapshot(identity, last_sent, datetime.now(UTC)),
+    )
+    next_state = refreshed.state
+    next_authority = _detail_display_authority(refreshed)
+    if next_authority != current_authority:
+        await websocket.send_json(
+            {
+                "type": "reset",
+                "trading_day": (
+                    None if next_authority[0] is None else next_authority[0].isoformat()
+                ),
+                "contract": next_authority[1],
+            }
+        )
+        last_sent = _later(after, next_state.canonical_end)
+    if force_state or next_state != current_state:
+        await _send_state(websocket, next_state)
+    refreshed_bars = _newer_bars(
+        refreshed.bars,
+        canonical_end=next_state.canonical_end,
+        after=last_sent,
+    )
+    if refreshed.source == "post_close" and refreshed_bars:
+        await websocket.send_json(
+            {
+                "type": "snapshot",
+                "source": "post_close",
+                "trading_day": (
+                    None if refreshed.trading_day is None else refreshed.trading_day.isoformat()
+                ),
+                "contract": refreshed.contract,
+                "bars": [_bar_response(bar) for bar in refreshed_bars],
+            }
+        )
+        return next_state, next_authority, refreshed_bars[-1].bar_end
+    for bar in refreshed_bars:
+        await websocket.send_json({"type": "bar", "bar": _bar_response(bar)})
+        last_sent = bar.bar_end
+    return next_state, next_authority, last_sent
+
+
 async def _client_disconnected(websocket: WebSocket) -> bool:
     """在 Pub/Sub 空轮询时探测客户端断连，避免遗留每连接的 Redis subscription。"""
     try:
@@ -545,12 +628,20 @@ def _newer_bars(
     return tuple(deduped[key] for key in sorted(deduped))
 
 
-def _bar_from_message(value: object) -> CanonicalBar | None:
+def _bar_observation_from_message(
+    value: object,
+    *,
+    symbol: str,
+) -> LiveBarObservation | None:
     try:
         payload = json.loads(_text(value))
         if not isinstance(payload, dict):
             return None
-        return CanonicalBar(
+        raw_contract = payload.get("contract")
+        contract = normalize_contract_for_symbol(symbol, raw_contract)
+        if not isinstance(raw_contract, str) or contract is None or raw_contract != contract:
+            return None
+        bar = CanonicalBar(
             bar_end=datetime.fromisoformat(str(payload["bar_end"])),
             trading_day=datetime.fromisoformat(str(payload["trading_day"])).date(),
             open=payload["open"],
@@ -561,6 +652,7 @@ def _bar_from_message(value: object) -> CanonicalBar | None:
             turnover=payload.get("turnover"),
             open_interest=payload.get("open_interest"),
         )
+        return LiveBarObservation(bar=bar, contract=contract)
     except (ContractError, KeyError, TypeError, ValueError):
         return None
 

@@ -767,11 +767,20 @@ class MarketReadService:
             and state.trading_day is not None
             and state.live_contract is not None
         ):
-            bars = self._snapshot_bars(identity, state, after=after, through=now)
+            bars = self._display_snapshot_bars(
+                identity,
+                state,
+                contract=state.live_contract,
+                after=after,
+                through=now,
+            )
             if bars is None:
                 return _empty_display_snapshot(state)
+            post_read_state = self.state(identity, now)
+            if _observation_authority(state) != _observation_authority(post_read_state):
+                return _empty_display_snapshot(post_read_state)
             return MarketDisplaySnapshot(
-                state=state,
+                state=post_read_state,
                 source="realtime",
                 trading_day=state.trading_day,
                 contract=state.live_contract,
@@ -799,16 +808,75 @@ class MarketReadService:
         ):
             return _empty_display_snapshot(state)
 
-        bars = self._snapshot_bars(identity, state, after=after, through=now)
+        bars = self._display_snapshot_bars(
+            identity,
+            state,
+            contract=contract,
+            after=after,
+            through=now,
+        )
         if bars is None:
             return _empty_display_snapshot(state)
+        post_read_state = self.state(identity, now)
+        post_read_contract = self._subscription_contract(
+            symbol=identity.symbol,
+            trading_day=state.trading_day,
+        )
+        if (
+            _observation_authority(state) != _observation_authority(post_read_state)
+            or post_read_contract != contract
+        ):
+            return _empty_display_snapshot(post_read_state)
         return MarketDisplaySnapshot(
-            state=state,
+            state=post_read_state,
             source="post_close",
             trading_day=state.trading_day,
             contract=contract,
             bars=bars,
         )
+
+    def _display_snapshot_bars(
+        self,
+        identity: SeriesPageQuery,
+        state: MarketReadState,
+        *,
+        contract: str,
+        after: datetime | None,
+        through: datetime,
+    ) -> tuple[CanonicalBar, ...] | None:
+        assert state.trading_day is not None
+        cutoff = _later(after, state.canonical_end)
+        try:
+            observations = (
+                ()
+                if cutoff is not None and cutoff > through
+                else self._live_store.bar_observations(
+                    state.trading_day,
+                    identity.symbol,
+                    identity.frequency.value,
+                    cutoff,
+                    through,
+                    inclusive_after=False,
+                    expected_contract=contract,
+                )
+            )
+            if any(
+                type(item) is not LiveBarObservation
+                or type(item.bar) is not CanonicalBar
+                or item.contract != contract
+                for item in observations
+            ):
+                raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+        except Exception:  # noqa: BLE001 - transient Redis must not escape without owner proof
+            return None
+        deduped = {
+            item.bar.bar_end: item.bar
+            for item in observations
+            if item.bar.trading_day == state.trading_day
+            and (cutoff is None or item.bar.bar_end > cutoff)
+            and item.bar.bar_end <= through
+        }
+        return tuple(deduped[key] for key in sorted(deduped))
 
     def _canonical_end(self, identity: SeriesPageQuery) -> datetime | None:
         latest = self.history_page(replace(identity, before=None, limit=1))

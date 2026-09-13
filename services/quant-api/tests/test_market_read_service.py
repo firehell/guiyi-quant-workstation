@@ -981,6 +981,45 @@ def test_observation_snapshot_accepts_matching_bar_provenance(
     assert snapshot.bars == (boundary,)
 
 
+def test_display_snapshot_rejects_a_bar_bound_to_a_previous_contract() -> None:
+    """Catches a detail snapshot relabelling a delayed old-owner Bar as the current owner."""
+    boundary = _bar(HISTORICAL_END_2, DAY_2)
+    live = _bar(LIVE_END, DAY_2)
+    snapshot = _provenance_observation_service(
+        historical=(boundary,),
+        live=(live,),
+        bar_contracts=("JM2705",),
+    ).display_snapshot(
+        SeriesPageQuery("actual_dominant", "jm", "15m"),
+        after=boundary.bar_end,
+        now=LIVE_END,
+    )
+
+    assert snapshot.source == "none"
+    assert snapshot.bars == ()
+
+
+@pytest.mark.parametrize("drift", ["subscription", "heartbeat"])
+def test_display_snapshot_discards_bars_when_authority_changes_during_read(
+    drift: str,
+) -> None:
+    """Catches snapshot Bars escaping after their owner or availability changed."""
+    boundary = _bar(HISTORICAL_END_2, DAY_2)
+    live = _bar(LIVE_END, DAY_2)
+    snapshot = _mutating_observation_service(
+        historical=(boundary,),
+        live=(live,),
+        drift=drift,
+    ).display_snapshot(
+        SeriesPageQuery("actual_dominant", "jm", "15m"),
+        after=boundary.bar_end,
+        now=LIVE_END,
+    )
+
+    assert snapshot.source == "none"
+    assert snapshot.bars == ()
+
+
 def test_bars_until_aligns_historical_and_live_rank1_contract_owners() -> None:
     historical = (
         _bar(HISTORICAL_END_1, DAY_1),

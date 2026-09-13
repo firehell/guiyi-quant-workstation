@@ -125,7 +125,13 @@ export async function installNewowProductFixtures(page, options = {}) {
       const section = url.searchParams.get('section') || 'chart'
       const strategy = url.searchParams.get('strategy') || 'trend'
       const frequency = url.searchParams.get('frequency') || '1d'
-      const queryError = validateProductQuery(url, section, strategy, frequency)
+      const queryError = validateProductQuery(
+        url,
+        section,
+        strategy,
+        frequency,
+        options.frozenNow ?? NEWOW_AS_OF,
+      )
       if (queryError !== null) return unexpected(route, state, queryError)
       const key = [strategy, frequency, section, url.searchParams.get('component') || '', url.searchParams.get('chart_before') || '', url.searchParams.get('history_before') || ''].join(':')
       const count = (state.counts.get(key) || 0) + 1
@@ -208,7 +214,7 @@ function validateFixtureScenario(strategy, frequency, options) {
   }
 }
 
-function validateProductQuery(url, section, strategy, frequency) {
+function validateProductQuery(url, section, strategy, frequency, expectedAsOf = NEWOW_AS_OF) {
   const allowedBySection = {
     chart: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'from', 'through', 'chart_limit', 'chart_before', 'snapshot_token'],
     auxiliary: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'component', 'from', 'through', 'snapshot_token'],
@@ -222,13 +228,13 @@ function validateProductQuery(url, section, strategy, frequency) {
   }
   if (url.searchParams.get('product') !== 'rb' || url.searchParams.get('series_kind') !== 'actual_dominant') return `invalid Newow identity ${url.search}`
   if (!NEWOW_STRATEGIES.includes(strategy) || !NEWOW_FREQUENCIES.includes(frequency)) return `invalid Newow combination ${strategy}/${frequency}`
-  if (url.searchParams.get('as_of') !== NEWOW_AS_OF) return `unfrozen Newow as_of ${url.searchParams.get('as_of')}`
+  if (url.searchParams.get('as_of') !== expectedAsOf) return `unfrozen Newow as_of ${url.searchParams.get('as_of')}`
   const actual = [...url.searchParams.keys()]
   if (new Set(actual).size !== actual.length || actual.some((key) => !allowedBySection[section].includes(key))) return `unexpected Newow query ${url.search}`
   const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of'].includes(key)).sort().join(',')
   const allowedShapes = {
     chart: ['', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
-    auxiliary: ['component', 'component,snapshot_token', 'component,from,snapshot_token,through'],
+    auxiliary: ['component', 'component,snapshot_token', 'component,from,through', 'component,from,snapshot_token,through'],
     reference: ['', 'snapshot_token', 'performance_since,performance_through', 'performance_since,performance_through,snapshot_token', 'history_limit,performance_since,performance_through', 'history_before,history_limit,performance_since,performance_through,snapshot_token'],
     explanation: ['', 'snapshot_token'],
     comparator: ['', 'snapshot_token'],
@@ -252,7 +258,8 @@ function validateProductQuery(url, section, strategy, frequency) {
 }
 
 function validateFixtureEnvelope(payload, section, strategy, frequency, url, options = {}, companions = {}) {
-  if (payload.section !== section || payload.meta.identity.strategy !== strategy || payload.meta.identity.frequency !== frequency || payload.meta.as_of !== NEWOW_AS_OF) throw new Error('fixture envelope identity drift')
+  const expectedAsOf = options.frozenNow ?? NEWOW_AS_OF
+  if (payload.section !== section || payload.meta.identity.strategy !== strategy || payload.meta.identity.frequency !== frequency || payload.meta.as_of !== expectedAsOf) throw new Error('fixture envelope identity drift')
   const expectedToken = `snapshot:${strategy}:${frequency}:${payload.meta.data_revision_identity}`
   if (payload.meta.snapshot_token !== null && payload.meta.snapshot_token !== expectedToken) throw new Error('fixture snapshot token drift')
   const delivered = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'].filter((candidate) => payload[candidate].delivery === 'delivered')

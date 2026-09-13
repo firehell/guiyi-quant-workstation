@@ -420,16 +420,28 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         return
       }
       if (payload.type === 'bar') {
+        if (overlayIdentity === null || payload.bar.trading_day !== overlayIdentity.tradingDay) return
         liveUnavailable.value = false
-        const accepted = applyLiveBars([payload.bar], overlayIdentity?.contract)
+        const accepted = applyLiveBars([payload.bar], overlayIdentity.contract)
         if (accepted || liveBars.length > 0) {
           overlaySource.value = 'realtime'
-          if (overlayIdentity) overlayIdentity.source = 'realtime'
+          overlayIdentity.source = 'realtime'
         }
         return
       }
       if (payload.type === 'reset') {
         clearOverlay()
+        const resetContract = normalizePhysicalContract(payload.contract)
+        if (payload.trading_day !== null && resetContract !== undefined && !(
+          nextIdentity.seriesKind === 'contract'
+          && resetContract !== normalizePhysicalContract(nextIdentity.contract)
+        )) {
+          overlayIdentity = {
+            source: 'realtime',
+            tradingDay: payload.trading_day,
+            contract: resetContract,
+          }
+        }
         publishMerged({ kind: 'replace' })
         return
       }

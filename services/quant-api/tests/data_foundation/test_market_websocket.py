@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections import deque
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -46,12 +47,19 @@ def _state(*, contract: str = "J2505", trading_day: date = date(2025, 1, 2)) -> 
         live_eligible=True,
         live_available=True,
         live_contract=contract,
-        canonical_end=_bar(1).bar_end,
+        canonical_end=datetime(
+            trading_day.year,
+            trading_day.month,
+            trading_day.day,
+            1,
+            1,
+            tzinfo=UTC,
+        ),
         after_market={},
     )
 
 
-def _payload(bar: CanonicalBar) -> str:
+def _payload(bar: CanonicalBar, *, contract: str = "J2505") -> str:
     return json.dumps(
         {
             "bar_end": bar.bar_end.isoformat(),
@@ -63,6 +71,7 @@ def _payload(bar: CanonicalBar) -> str:
             "volume": str(bar.volume),
             "turnover": str(bar.turnover),
             "open_interest": str(bar.open_interest),
+            "contract": contract,
         }
     )
 
@@ -71,6 +80,7 @@ class FakeReadService:
     def __init__(self) -> None:
         self.subscribed = False
         self.snapshot_after: datetime | None = None
+        self.snapshot_afters: list[datetime | None] = []
         self._states = deque((_state(), _state(contract="J2509", trading_day=date(2025, 1, 3))))
         self.race_bar = _bar(2)
 
@@ -93,6 +103,7 @@ class FakeReadService:
         state = self.state(identity, now)
         assert state.canonical_end is not None
         self.snapshot_after = state.canonical_end if after is None else max(after, state.canonical_end)
+        self.snapshot_afters.append(self.snapshot_after)
         return MarketDisplaySnapshot(
             state=state,
             source="realtime",
@@ -168,7 +179,7 @@ def test_market_websocket_subscribes_before_snapshot_dedupes_race_and_resets(mon
 
     assert [message["type"] for message in messages] == ["state", "snapshot", "bar", "reset", "state"]
     assert pubsub.channels == ("live:bar:j:1m", "market:state")
-    assert read_service.snapshot_after == _bar(1).bar_end
+    assert read_service.snapshot_afters[0] == _bar(1).bar_end
     assert messages[1]["source"] == "realtime"
     assert messages[1]["trading_day"] == "2025-01-02"
     assert messages[1]["contract"] == "J2505"
@@ -279,6 +290,228 @@ def test_market_websocket_never_forwards_bars_when_live_state_disallows_overlay(
 class IdlePubSub(ClosingPubSub):
     async def get_message(self, *, ignore_subscribe_messages: bool, timeout: float) -> dict[str, Any] | None:
         return None
+
+
+class RecoveringWithoutStatePubSub(ClosingPubSub):
+    def __init__(self, bar: CanonicalBar) -> None:
+        super().__init__()
+        self._bar = bar
+        self._reads = 0
+
+    async def subscribe(self, *channels: str) -> None:
+        self.channels = channels
+
+    async def get_message(self, *, ignore_subscribe_messages: bool, timeout: float) -> dict[str, Any] | None:
+        self._reads += 1
+        if self._reads == 1:
+            return {"type": "message", "channel": self.channels[0], "data": _payload(self._bar)}
+        if self._reads == 2:
+            return None
+        raise RuntimeError("fake pubsub complete")
+
+
+class RecoveringReadService:
+    def __init__(self, *, initial: MarketDisplaySnapshot, recovered: MarketDisplaySnapshot) -> None:
+        self._snapshots = deque((initial, recovered))
+
+    def display_snapshot(self, identity: object, after: datetime | None, now: datetime) -> MarketDisplaySnapshot:
+        return self._snapshots[0] if len(self._snapshots) == 1 else self._snapshots.popleft()
+
+
+def test_market_websocket_recovers_same_connection_without_a_state_event(monkeypatch) -> None:
+    """Catches an unavailable connection permanently dropping Bars after producer recovery."""
+    unavailable = replace(_state(), live_available=False)
+    recovered_bar = _bar(2)
+    service = RecoveringReadService(
+        initial=MarketDisplaySnapshot(unavailable, "none", unavailable.trading_day, unavailable.live_contract, ()),
+        recovered=MarketDisplaySnapshot(_state(), "realtime", _state().trading_day, _state().live_contract, (recovered_bar,)),
+    )
+    pubsub = RecoveringWithoutStatePubSub(recovered_bar)
+    redis = FakeAsyncRedis(pubsub)  # type: ignore[arg-type]
+    _mock_read_scope(monkeypatch, service)
+    monkeypatch.setattr("app.api.market_live._MARKET_DETAIL_REFRESH_SECONDS", 0, raising=False)
+    monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
+
+    with TestClient(app).websocket_connect(
+        "/api/v1/market/ws?series_kind=actual_dominant&symbol=j&frequency=1m"
+    ) as websocket:
+        messages: list[dict[str, Any]] = []
+        with pytest.raises(WebSocketDisconnect):
+            while True:
+                messages.append(websocket.receive_json())
+
+    assert [message["type"] for message in messages] == ["state", "snapshot", "reset", "state", "bar"]
+    assert messages[2] == {"type": "reset", "trading_day": "2025-01-02", "contract": "J2505"}
+    assert messages[-1]["bar"]["bar_end"] == "2025-01-02T01:02:00Z"
+
+
+def test_market_websocket_periodic_refresh_resets_before_new_owner_bars(monkeypatch) -> None:
+    """Catches a delayed old-owner watermark suppressing a new trading-day snapshot."""
+    next_day = date(2025, 1, 3)
+    recovered_bar = replace(
+        _bar(2),
+        bar_end=datetime(2025, 1, 3, 1, 2, tzinfo=UTC),
+        trading_day=next_day,
+    )
+    next_state = _state(contract="J2509", trading_day=next_day)
+    service = RecoveringReadService(
+        initial=MarketDisplaySnapshot(_state(), "realtime", _state().trading_day, _state().live_contract, ()),
+        recovered=MarketDisplaySnapshot(next_state, "realtime", next_day, "J2509", (recovered_bar,)),
+    )
+    pubsub = RecoveringWithoutStatePubSub(recovered_bar)
+    redis = FakeAsyncRedis(pubsub)  # type: ignore[arg-type]
+    _mock_read_scope(monkeypatch, service)
+    monkeypatch.setattr("app.api.market_live._MARKET_DETAIL_REFRESH_SECONDS", 0, raising=False)
+    monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
+
+    with TestClient(app).websocket_connect(
+        "/api/v1/market/ws?series_kind=actual_dominant&symbol=j&frequency=1m"
+    ) as websocket:
+        messages: list[dict[str, Any]] = []
+        with pytest.raises(WebSocketDisconnect):
+            while True:
+                messages.append(websocket.receive_json())
+
+    assert [message["type"] for message in messages] == ["state", "snapshot", "reset", "state", "bar"]
+    assert messages[2] == {"type": "reset", "trading_day": "2025-01-03", "contract": "J2509"}
+    assert messages[-1]["bar"]["trading_day"] == "2025-01-03"
+
+
+def test_market_websocket_periodic_post_close_bars_keep_their_display_source(monkeypatch) -> None:
+    """Catches delayed post-close completions being mislabeled as realtime ticks."""
+    initial = _state()
+    closed = replace(
+        initial,
+        phase="CLOSED",
+        live_eligible=False,
+        live_available=False,
+        live_contract=None,
+    )
+    delayed_bar = _bar(2)
+    service = RecoveringReadService(
+        initial=MarketDisplaySnapshot(closed, "post_close", initial.trading_day, initial.live_contract, ()),
+        recovered=MarketDisplaySnapshot(closed, "post_close", initial.trading_day, initial.live_contract, (delayed_bar,)),
+    )
+    pubsub = RecoveringWithoutStatePubSub(delayed_bar)
+    redis = FakeAsyncRedis(pubsub)  # type: ignore[arg-type]
+    _mock_read_scope(monkeypatch, service)
+    monkeypatch.setattr("app.api.market_live._MARKET_DETAIL_REFRESH_SECONDS", 0, raising=False)
+    monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
+
+    with TestClient(app).websocket_connect(
+        "/api/v1/market/ws?series_kind=actual_dominant&symbol=j&frequency=1m"
+    ) as websocket:
+        messages: list[dict[str, Any]] = []
+        with pytest.raises(WebSocketDisconnect):
+            while True:
+                messages.append(websocket.receive_json())
+
+    assert [message["type"] for message in messages] == ["state", "snapshot", "snapshot"]
+    assert messages[-1]["source"] == "post_close"
+    assert messages[-1]["contract"] == "J2505"
+    assert messages[-1]["bars"][0]["bar_end"] == "2025-01-02T01:02:00Z"
+
+
+class OwnerSwitchPubSub(ClosingPubSub):
+    async def subscribe(self, *channels: str) -> None:
+        self.channels = channels
+        next_day = date(2025, 1, 3)
+        old_owner = replace(_bar(2), bar_end=datetime(2025, 1, 3, 1, 2, tzinfo=UTC), trading_day=next_day)
+        malformed_owner = replace(_bar(2), bar_end=datetime(2025, 1, 3, 1, 2, 30, tzinfo=UTC), trading_day=next_day)
+        before_client_watermark = replace(_bar(2), bar_end=datetime(2025, 1, 3, 1, 2, 15, tzinfo=UTC), trading_day=next_day)
+        new_owner = replace(_bar(3), bar_end=datetime(2025, 1, 3, 1, 3, tzinfo=UTC), trading_day=next_day)
+        self.messages.extend((
+            {"type": "message", "channel": "market:state", "data": '{"state":"changed"}'},
+            {"type": "message", "channel": channels[0], "data": _payload(old_owner, contract="J2505")},
+            {"type": "message", "channel": channels[0], "data": _payload(malformed_owner, contract="j2509")},
+            {"type": "message", "channel": channels[0], "data": _payload(before_client_watermark, contract="J2509")},
+            {"type": "message", "channel": channels[0], "data": _payload(new_owner, contract="J2509")},
+        ))
+
+
+class OwnerSwitchReadService:
+    def __init__(self) -> None:
+        self.initial = _state()
+        self.next = _state(contract="J2509", trading_day=date(2025, 1, 3))
+        self._snapshots = deque((
+            MarketDisplaySnapshot(self.initial, "realtime", self.initial.trading_day, self.initial.live_contract, ()),
+            MarketDisplaySnapshot(self.next, "realtime", self.next.trading_day, self.next.live_contract, ()),
+        ))
+
+    def display_snapshot(self, identity: object, after: datetime | None, now: datetime) -> MarketDisplaySnapshot:
+        return self._snapshots[0] if len(self._snapshots) == 1 else self._snapshots.popleft()
+
+    def state(self, identity: object, now: datetime) -> MarketReadState:
+        return self.next
+
+
+def test_market_websocket_drops_late_old_owner_pubsub_bars_after_reset(monkeypatch) -> None:
+    """Catches late old-writer payloads leaking into the replacement owner segment."""
+    service = OwnerSwitchReadService()
+    pubsub = OwnerSwitchPubSub()
+    redis = FakeAsyncRedis(pubsub)  # type: ignore[arg-type]
+    _mock_read_scope(monkeypatch, service)
+    monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
+
+    with TestClient(app).websocket_connect(
+        "/api/v1/market/ws?series_kind=actual_dominant&symbol=j&frequency=1m"
+        "&after=2025-01-03T01%3A02%3A30Z"
+    ) as websocket:
+        messages: list[dict[str, Any]] = []
+        with pytest.raises(WebSocketDisconnect):
+            while True:
+                messages.append(websocket.receive_json())
+
+    assert [message["type"] for message in messages] == ["state", "snapshot", "reset", "state", "bar"]
+    assert messages[-1]["bar"]["bar_end"] == "2025-01-03T01:03:00Z"
+
+
+class ClosingDisplayReadService:
+    def __init__(self) -> None:
+        initial = _state()
+        closed = replace(
+            initial,
+            phase="CLOSED",
+            live_eligible=False,
+            live_available=False,
+            live_contract=None,
+        )
+        self._snapshots = deque((
+            MarketDisplaySnapshot(initial, "realtime", initial.trading_day, initial.live_contract, ()),
+            MarketDisplaySnapshot(closed, "post_close", initial.trading_day, initial.live_contract, ()),
+        ))
+
+    def display_snapshot(self, identity: object, after: datetime | None, now: datetime) -> MarketDisplaySnapshot:
+        return self._snapshots[0] if len(self._snapshots) == 1 else self._snapshots.popleft()
+
+    def state(self, identity: object, now: datetime) -> MarketReadState:
+        return self._snapshots[0].state
+
+
+class StateThenClosePubSub(ClosingPubSub):
+    async def subscribe(self, *channels: str) -> None:
+        self.channels = channels
+        self.messages.append({"type": "message", "channel": "market:state", "data": '{"state":"closed"}'})
+
+
+def test_market_websocket_state_event_preserves_proven_post_close_owner(monkeypatch) -> None:
+    """Catches a delayed CLOSED state event resetting a proven post-close owner to null."""
+    service = ClosingDisplayReadService()
+    pubsub = StateThenClosePubSub()
+    redis = FakeAsyncRedis(pubsub)  # type: ignore[arg-type]
+    _mock_read_scope(monkeypatch, service)
+    monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
+
+    with TestClient(app).websocket_connect(
+        "/api/v1/market/ws?series_kind=actual_dominant&symbol=j&frequency=1m"
+    ) as websocket:
+        messages: list[dict[str, Any]] = []
+        with pytest.raises(WebSocketDisconnect):
+            while True:
+                messages.append(websocket.receive_json())
+
+    assert [message["type"] for message in messages] == ["state", "snapshot", "state"]
+    assert messages[-1]["state"]["phase"] == "CLOSED"
 
 
 class DisconnectingWebSocket:

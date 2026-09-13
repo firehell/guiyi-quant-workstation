@@ -76,7 +76,7 @@ flowchart LR
 - `MarketDataService` 是唯一 Historical Bar reader；`actual_dominant` 只通过 `MainContractMap rank=1` 解析，identity、coverage 或物理可读性异常 fail-closed。
 - 默认关闭的 `app.preview` 只组合 Market/Newow routers 与共享 read-only transaction，固定 code SHA / cutoff；不导入正常 app 或创建 Live/Alert/EOD/provider。候选 Web 精确白名单代理到 8010，只有既有 health/current-events 两项 GET 到受监督的 8000，并显示独立来源与时间口径；启动入口与 fixture 验证见 `TESTING.md`。
 - Web 只消费 typed Market/Alert API，不计算策略、建仓或清仓。
-- Market WebSocket 先订阅再读快照；快照与 state 更新在同一有界后台读取入口执行，每次在 worker 内新建、使用并关闭 Session 与同步 Redis。每进程最多四项读取，满额立即失败，无无界队列；调用取消后仍待实际 worker 结束才释放额度。Pub/Sub 与发送继续在事件循环执行。
+- Market WebSocket 先订阅再读快照；快照、state 更新和单连接定时恢复读取在同一有界后台入口执行，每次在 worker 内新建、使用并关闭 Session 与同步 Redis。每进程最多四项读取，满额立即失败，无无界队列；调用取消后仍待实际 worker 结束才释放额度。内部 Bar Pub/Sub 携带物理合约，详情连接只转发与当前交易日/owner 一致的 Bar，并在 owner 变化后先 reset；定时恢复保留 `realtime/post_close` 来源，盘后延迟完成 Bar 不冒充 tick 实时。Pub/Sub 与发送继续在事件循环执行。
 - `chart.vue` 只挂载 `MarketDetailPage`。无 `view` 旧链接按 overlay 明确迁移到 HTDY 或 Free，保留合法品种、序列、合约、周期与定位；参数缺省使用 actual_dominant/15m，非法组合拒绝并提供恢复入口。首页普通进入仍为 Newow 趋势日线，Event 经统一身份构造器精确定位。固定 D1 `view=trend` 兼容产品继续存在，旧页面及返回入口不再保留；工程与用户视觉验收状态见 `STATUS.md`。
 - Newow P1–P6 active 代码路径在图中以实线表示：`MarketDataService` 后的 completed `1w/1d/60m` reader 取得物理 owner 区段和同合约 warm-up，typed adapter 输出主状态、`BUILD/CLEAR` Action 与 `quantity_effect=none` Hint；MACD display adapter 只把同一 owner Bar 送入通用 MACD kernel，并保留参数/hash/点级状态。sectioned product service 负责统计截止、来源事实、snapshot/cursor 验证、有限进程内复用和有界重型执行，`GET /api/v1/market/newow/strategy-detail` 只做 typed 序列化；Newow Web 逐 section 消费并显示九组合、参考历史、解释、独立比较器和单一辅助图层。这些 active 代码事实不等于 Release、Runtime、OOS、原站完整 parity 或真实工作站验收。
 - Newow 的只读历史快照解析沿用同一 reader 与 MarketDataService：只有用户显式请求才检查最近完成交易日的有限候选，验证主图/照妖镜输入后返回截止时间；Web 全部面板随该截止时间切换，当前日期缺数不触发自动历史回退。

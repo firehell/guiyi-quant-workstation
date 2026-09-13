@@ -615,6 +615,105 @@ test('rebuilds a 409 snapshot or cursor conflict at most once and never loops a 
   busy.dispose()
 })
 
+test('an auxiliary 409 rebuilds chart provenance without a tokenless auxiliary retry', async () => {
+  const calls: NewowProductRequest[] = []
+  let chartAttempts = 0
+  let auxiliaryAttempts = 0
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      calls.push(request)
+      if (request.section === 'chart') {
+        chartAttempts += 1
+        return normalizedChart(request, { token: chartAttempts === 1 ? 'old-token' : 'new-token' })
+      }
+      if (request.section === 'auxiliary') {
+        auxiliaryAttempts += 1
+        if (auxiliaryAttempts === 1) throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+        return normalizedAuxiliary(request)
+      }
+      throw new Error(`unexpected section ${request.section}`)
+    },
+  })
+  await flush()
+
+  await state.loadAuxiliary('main_force_control', { from: '2025-01-01', through: '2026-08-15' })
+  await flush()
+
+  assert.equal(chartAttempts, 2)
+  assert.equal(auxiliaryAttempts, 1)
+  assert.deepEqual(
+    calls.filter((request) => request.section === 'auxiliary').map((request) => [request.snapshotToken, request.from, request.through]),
+    [['old-token', '2025-01-01', '2026-08-15']],
+  )
+  assert.equal(state.sections.chart.data.value?.meta.snapshot_token, 'new-token')
+  assert.equal(state.sections.auxiliary.state.value, 'not_requested')
+  state.dispose()
+})
+
+test('repeated auxiliary 409 stops after one chart rebuild across watcher-equivalent requests', async () => {
+  let chartAttempts = 0
+  let auxiliaryAttempts = 0
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      if (request.section === 'chart') {
+        chartAttempts += 1
+        return normalizedChart(request, { token: `token-${chartAttempts}` })
+      }
+      if (request.section === 'auxiliary') {
+        auxiliaryAttempts += 1
+        throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+      }
+      throw new Error(`unexpected section ${request.section}`)
+    },
+  })
+  await flush()
+
+  const window = { from: '2025-01-01', through: '2026-08-15' }
+  await state.loadAuxiliary('main_force_control', window)
+  await state.loadAuxiliary('main_force_control', window)
+  await flush()
+
+  assert.equal(auxiliaryAttempts, 2)
+  assert.equal(chartAttempts, 2, 'the second conflict must not start another chart/auxiliary chain')
+  assert.equal(state.sections.chart.state.value, 'not_requested')
+  assert.equal(state.sections.auxiliary.state.value, 'input_conflict')
+  state.dispose()
+})
+
+test('an auxiliary 409 rebuilds the accepted explicit chart window, not the default window', async () => {
+  const calls: NewowProductRequest[] = []
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      calls.push(request)
+      if (request.section === 'chart') return normalizedChart(request, { token: `token-${calls.length}` })
+      if (request.section === 'auxiliary') throw new NewowProductRequestError('NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict')
+      throw new Error(`unexpected section ${request.section}`)
+    },
+  })
+  await flush()
+  const window = { from: '2026-01-05', through: '2026-01-05' }
+  await state.loadChart(window)
+
+  await state.loadAuxiliary('main_force_control', window)
+  await flush()
+
+  const chartRequests = calls.filter((request) => request.section === 'chart')
+  assert.equal(chartRequests.length, 3)
+  assert.deepEqual(
+    chartRequests.slice(-2).map((request) => [request.from, request.through]),
+    [['2026-01-05', '2026-01-05'], ['2026-01-05', '2026-01-05']],
+  )
+  assert.equal(state.currentChartWindow.value, false)
+  assert.equal(state.historicalChartWindow.value, true)
+  state.dispose()
+})
+
 test('a rejected reference cursor clears every old-token section before one unbound page-one rebuild', async () => {
   const calls: NewowProductRequest[] = []
   let referenceCalls = 0
@@ -1055,6 +1154,30 @@ test('accepts an identity-valid auxiliary warming response without a partial val
   assert.equal(state.sections.auxiliary.state.value, 'warming')
   assert.equal(state.sections.auxiliary.data.value?.section, 'auxiliary')
   assert.equal(state.sections.auxiliary.data.value?.value, null)
+  state.dispose()
+})
+
+test('a proven warming auxiliary value retains its exact accepted chart window', async () => {
+  const window = { from: '2025-01-01', through: '2026-08-15' }
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => new Date(AS_OF),
+    fetchSection: async (request) => {
+      if (request.section === 'chart') return normalizedChart(request)
+      if (request.section !== 'auxiliary') throw new Error(`unexpected section ${request.section}`)
+      const response = normalizedAuxiliary(request)
+      return {
+        ...response,
+        status: { status: 'warming', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: 'NEWOW_WARMING' },
+      }
+    },
+  })
+  await flush()
+
+  await state.loadAuxiliary('main_force_control', window)
+
+  assert.equal(state.sections.auxiliary.state.value, 'warming')
+  assert.deepEqual(state.acceptedAuxiliaryWindow.value, window)
   state.dispose()
 })
 

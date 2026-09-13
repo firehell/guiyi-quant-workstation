@@ -394,7 +394,7 @@ def test_public_pubsub_channel_contract_and_compact_payloads() -> None:
     bar = _bar(1)
 
     store.set_heartbeat({"state": "healthy"})
-    store.publish_bar("RB", "1m", bar)
+    store.publish_bar("RB", "1m", bar, contract="RB2505")
     store.publish_state({"state": "healthy"})
 
     assert module.live_bar_channel("RB", "1m") == "live:bar:RB:1m"
@@ -404,7 +404,7 @@ def test_public_pubsub_channel_contract_and_compact_payloads() -> None:
     assert fake.published == [
         (
             "live:bar:RB:1m",
-            '{"bar_end":"2025-01-02T01:01:00+00:00","trading_day":"2025-01-02","open":"100.1250","high":"101.0000","low":"99.0000","close":"100.7500","volume":"12.500","turnover":"1253.125000","open_interest":"70.000"}',
+            '{"bar_end":"2025-01-02T01:01:00+00:00","trading_day":"2025-01-02","open":"100.1250","high":"101.0000","low":"99.0000","close":"100.7500","volume":"12.500","turnover":"1253.125000","open_interest":"70.000","contract":"RB2505"}',
         ),
         ("market:state", '{"state":"healthy"}'),
     ]
@@ -993,7 +993,10 @@ def test_mid_batch_publish_failure_stops_later_due_bar_publication() -> None:
 
     assert service.flush_due(third.bar_end + timedelta(seconds=2)) == (first,)
     assert [event for event in fake.published if event[0].startswith("live:bar:")] == [
-        ("live:bar:j:1m", json.dumps(_bar_payload(first), separators=(",", ":")))
+        (
+            "live:bar:j:1m",
+            json.dumps({**_bar_payload(first), "contract": "J2505"}, separators=(",", ":")),
+        )
     ]
     assert len(service._pending) == 2
     assert json.loads(fake.values["live:heartbeat"])["available"] is False
@@ -1515,7 +1518,10 @@ def test_redis_failure_keeps_due_bar_pending_for_exact_recovery_retry() -> None:
     assert service.flush_due(datetime(2025, 1, 2, 1, 1, 2, tzinfo=UTC)) == (bar,)
     assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == (bar,)
     live_events = [item for item in fake.published if item[0] == "live:bar:j:1m"]
-    assert live_events == [("live:bar:j:1m", json.dumps(_bar_payload(bar), separators=(",", ":")))]
+    assert live_events == [(
+        "live:bar:j:1m",
+        json.dumps({**_bar_payload(bar), "contract": "J2505"}, separators=(",", ":")),
+    )]
 
 
 def test_due_bar_retains_ingested_contract_if_mapping_changes_before_flush() -> None:

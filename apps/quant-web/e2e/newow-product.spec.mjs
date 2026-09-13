@@ -358,6 +358,44 @@ test('exact locate loads an unloaded window and never falls back to nearest mark
   assertNoUnexpectedRequests(fixture)
 })
 
+test('default completed D1 and W1 windows remain current on a weekend', async ({ browser }) => {
+  for (const frequency of ['1d', '1w']) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    const page = await context.newPage()
+    const fixture = await installNewowProductFixtures(page, { frozenNow: '2026-09-06T03:00:00.000Z' })
+    await page.goto(newowRoute('trend', frequency))
+    await expect(page.locator('.newow-summary__facts')).toContainText('已读取窗口最近主动作')
+    await showReference(page)
+    await expect(page.locator('.newow-summary__facts')).toContainText('当前参考交易 未清仓')
+    assertNoUnexpectedRequests(fixture)
+    await context.close()
+  }
+})
+
+test('auxiliary requests follow the accepted default, located owner, and returned current chart windows', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page)
+  await page.goto(newowRoute())
+  await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(1)
+  let request = productRequests(fixture, 'auxiliary').at(-1).url.searchParams
+  expect(request.get('from')).toBe('2025-01-01')
+  expect(request.get('through')).toBe('2026-09-03')
+
+  await showReference(page)
+  await page.getByRole('button', { name: '加载更多参考历史' }).click()
+  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
+  await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(2)
+  request = productRequests(fixture, 'auxiliary').at(-1).url.searchParams
+  expect(request.get('from')).toBe('2026-01-05')
+  expect(request.get('through')).toBe('2026-01-05')
+
+  await page.getByRole('button', { name: '刷新当前', exact: true }).click()
+  await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(3)
+  request = productRequests(fixture, 'auxiliary').at(-1).url.searchParams
+  expect(request.get('from')).toBe('2025-01-01')
+  expect(request.get('through')).toBe('2026-09-03')
+  assertNoUnexpectedRequests(fixture)
+})
+
 test('absent exact locate stays unavailable without selecting a neighbor or changing performance', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page, { noAction: true })
   await page.goto(newowRoute())
@@ -471,15 +509,75 @@ test('reference cursor generation conflict rebuilds from an unbound first page o
   assertNoUnexpectedRequests(fixture)
 })
 
-test('tokenless in-flight auxiliary is cancelled by identity change', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page, { tokenlessSections: ['chart'], deferOnce: 'trend:1d:auxiliary' })
+test('a tokenless chart never requests or exposes an unproven auxiliary', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { tokenlessSections: ['chart'] })
   await page.goto(newowRoute())
-  await expect.poll(() => productRequests(fixture, 'auxiliary').length).toBe(1)
-  expect(productRequests(fixture, 'auxiliary')[0].url.searchParams.has('snapshot_token')).toBe(false)
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  expect(productRequests(fixture, 'auxiliary')).toHaveLength(0)
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-auxiliary-component', '')
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-auxiliary-state', 'not_requested')
   await page.getByRole('button', { name: '震荡', exact: true }).click()
   await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-strategy', 'oscillation')
-  await expect.poll(() => fixture.aborted.some((url) => url.includes('section=auxiliary'))).toBe(true)
-  await releaseDeferred(fixture, 'trend:1d:auxiliary')
+  expect(productRequests(fixture, 'auxiliary')).toHaveLength(0)
+  assertNoUnexpectedRequests(fixture)
+})
+
+test('an auxiliary 409 rebuilds chart proof before its single retry', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, section, count }) => {
+    if (section === 'auxiliary' && count === 1) {
+      await route.fulfill({ status: 409, json: { detail: { code: 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' } } })
+      return 'handled'
+    }
+  } })
+  await page.goto(newowRoute())
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-auxiliary-state', 'ready')
+
+  const auxiliaryRequests = productRequests(fixture, 'auxiliary')
+  expect(auxiliaryRequests).toHaveLength(2)
+  for (const { url } of auxiliaryRequests) {
+    expect(url.searchParams.get('snapshot_token')).toBeTruthy()
+    expect(url.searchParams.get('from')).toBe('2025-01-01')
+    expect(url.searchParams.get('through')).toBe('2026-09-03')
+  }
+  expect(productRequests(fixture, 'chart')).toHaveLength(2)
+  assertNoUnexpectedRequests(fixture)
+})
+
+test('repeated auxiliary 409 stops after one chart rebuild', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, section }) => {
+    if (section === 'auxiliary') {
+      await route.fulfill({ status: 409, json: { detail: { code: 'NEWOW_SNAPSHOT_GENERATION_CONFLICT' } } })
+      return 'handled'
+    }
+  } })
+  await page.goto(newowRoute())
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-auxiliary-state', 'input_conflict')
+
+  expect(productRequests(fixture, 'auxiliary')).toHaveLength(2)
+  expect(productRequests(fixture, 'chart')).toHaveLength(2)
+  for (const { url } of productRequests(fixture, 'auxiliary')) {
+    expect(url.searchParams.get('snapshot_token')).toBeTruthy()
+  }
+  assertNoUnexpectedRequests(fixture)
+})
+
+test('an auxiliary refresh failure cannot retain the prior chart window', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, section, count }) => {
+    if (section === 'auxiliary' && count === 2) {
+      await route.fulfill({ status: 429, json: { detail: { code: 'NEWOW_RESOURCE_BUSY' } } })
+      return 'handled'
+    }
+  } })
+  await page.goto(newowRoute())
+  const chart = page.getByTestId('newow-product-chart-stage')
+  await expect(chart).toHaveAttribute('data-auxiliary-component', 'macd')
+  await showReference(page)
+  await page.getByRole('button', { name: '加载更多参考历史' }).click()
+  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-auxiliary-state', 'stale')
+  await expect(chart).toHaveAttribute('data-auxiliary-state', 'stale')
+  await expect(chart).toHaveAttribute('data-auxiliary-component', '')
+  expect(productRequests(fixture, 'auxiliary')).toHaveLength(2)
   assertNoUnexpectedRequests(fixture)
 })
 

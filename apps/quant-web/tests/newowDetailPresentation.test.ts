@@ -18,17 +18,46 @@ test('state is the eligible last frame with its actual date, never inferred from
 test('historical window is explicitly labelled and unloaded sections invent no numbers', () => {
   const response = chart()
   response.value.chart_through = '2025-12-01'
-  const model = projectNewowDetail(response, 'ready')
+  const model = projectNewowDetail(response, 'ready', null, 'not_requested', false, null, 'not_requested', false, false, true)
   assert.equal(model.status.historical, true)
   assert.equal(model.target, null)
   assert.equal(model.openReference, null)
 })
+test('a default window without a current claim is unavailable, not historical', () => {
+  const response = chart()
+  for (const lifecycle of ['loading', 'stale', 'input_conflict']) {
+    const model = projectNewowDetail(response, lifecycle, null, 'not_requested', false, null, 'not_requested', false, false, false)
+    assert.equal(model.status.historical, false, lifecycle)
+  }
+})
+test('accepted default D1 and W1 windows stay current before the next completed bar exists', () => {
+  for (const frequency of ['1d', '1w']) {
+    const c = response('chart')
+    const e = response('explanation')
+    const r = response('reference')
+    const latest = c.value.bars.at(-1)
+    const asOf = '2026-09-06T03:00:00.000Z'
+    const price = { raw_value: '0108.2500', display_value: '108.2500', branch: 'fixture', source_frequency: frequency, bar_end: latest.bar_end, physical_contract: latest.physical_contract, segment_id: latest.segment_id }
+    c.meta.identity.frequency = frequency
+    c.meta.as_of = asOf
+    e.meta.identity.frequency = frequency
+    e.meta.as_of = asOf
+    e.value.target_absorb = { ...e.value.target_absorb, status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null, as_of: asOf, value: { target: price, absorb: price } }
+    r.meta.identity.frequency = frequency
+    r.meta.as_of = asOf
+
+    const model = projectNewowDetail(c, 'ready', e, 'ready', true, r, 'ready', true, true, false)
+    assert.equal(model.status.historical, false, `${frequency} default window`)
+    assert.equal(model.target?.display_value, '108.2500', `${frequency} target`)
+    assert.equal(model.openReference?.status, 'OPEN', `${frequency} open reference`)
+  }
+})
 test('target requires compatible snapshot, status and source identity', () => {
   const c = chart()
   const e = response('explanation')
-  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', false).target, null)
+  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', false, null, 'not_requested', false, true).target, null)
   e.meta.as_of = '2020-01-01T00:00:00Z'
-  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true).target, null)
+  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target, null)
 })
 test('price badge preserves neutral zero and rejects missing values', () => {
   assert.deepEqual([null, 0, 1, -1].map(priceDirection), ['neutral', 'neutral', 'up', 'down'])
@@ -37,16 +66,16 @@ test('proven target retains original price strings and source time, rejecting st
   const c = chart(); const e = response('explanation'); const latest = c.value.bars.at(-1)
   const price = { raw_value: '0108.2500', display_value: '108.2500', branch: 'fixture', source_frequency: '1d', bar_end: latest.bar_end, physical_contract: latest.physical_contract, segment_id: latest.segment_id }
   e.value.target_absorb = { ...e.value.target_absorb, status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null, value: { target: price, absorb: { ...price, display_value: '98.5000' } } }
-  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true).target.display_value, '108.2500')
-  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true).target.bar_end, latest.bar_end)
-  assert.equal(projectNewowDetail(c, 'ready', e, 'stale', true).target, null)
+  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target.display_value, '108.2500')
+  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target.bar_end, latest.bar_end)
+  assert.equal(projectNewowDetail(c, 'ready', e, 'stale', true, null, 'not_requested', false, true).target, null)
   e.value.target_absorb.value.target = { ...price, physical_contract: 'OTHER' }
-  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true).target, null)
+  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target, null)
 })
 test('reference summary requires ready compatible current identity and never derives floating returns', () => {
   const c = chart(); const r = response('reference')
   assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, r, 'ready', false).openReference, null)
-  const open = projectNewowDetail(c, 'ready', null, 'not_requested', false, r, 'ready', true).openReference
+  const open = projectNewowDetail(c, 'ready', null, 'not_requested', false, r, 'ready', true, true).openReference
   assert.equal(open.mark_change_pct, '-1.2500')
   assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, r, 'stale', true).openReference, null)
 })

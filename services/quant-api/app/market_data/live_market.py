@@ -243,8 +243,21 @@ class RedisLiveStore:
         keys.append(self._subscription_key(trading_day))
         self._redis.delete(*keys)
 
-    def publish_bar(self, symbol: str, frequency: BarFrequency | str, bar: CanonicalBar) -> None:
-        self._redis.publish(live_bar_channel(symbol, frequency), _compact_json(_bar_payload(bar)))
+    def publish_bar(
+        self,
+        symbol: str,
+        frequency: BarFrequency | str,
+        bar: CanonicalBar,
+        *,
+        contract: str,
+    ) -> None:
+        normalized_contract = normalize_contract_for_symbol(symbol, contract)
+        if normalized_contract is None or normalized_contract != contract:
+            raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+        self._redis.publish(
+            live_bar_channel(symbol, frequency),
+            _compact_json(_bar_payload(bar, contract=normalized_contract)),
+        )
 
     def publish_state(self, payload: Mapping[str, Any]) -> None:
         self._redis.publish(LIVE_STATE_CHANNEL, _compact_json(dict(payload)))
@@ -754,7 +767,12 @@ class LiveMarketService:
         for key, bar, window, frozen_contract in due:
             symbol, _ = key
             try:
-                self._store.publish_bar(symbol, BarFrequency.M1, bar)
+                self._store.publish_bar(
+                    symbol,
+                    BarFrequency.M1,
+                    bar,
+                    contract=frozen_contract,
+                )
             except Exception:  # noqa: BLE001 - Redis is an explicit unavailable boundary
                 self._mark_redis_unavailable(now, phases)
                 self._last_flush_failed = True
@@ -881,7 +899,7 @@ class LiveMarketService:
                 derived,
                 contract=contract,
             )
-            self._store.publish_bar(symbol, frequency, derived)
+            self._store.publish_bar(symbol, frequency, derived, contract=contract)
 
     def _phases(self, now: datetime) -> dict[str, ProductMarketPhase]:
         phases = {symbol: self._phase_resolver.resolve(symbol, now) for symbol in self._products}

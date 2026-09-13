@@ -72,9 +72,12 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const inFlightSnapshotTokens = new Map<NewowProductSection, string | undefined>()
   const sectionGenerations = new Map<NewowProductSection, number>()
   const auxiliaryCache = new Map<string, NewowProductSectionResponse<'auxiliary'>>()
+  const auxiliaryRebuildAttempts = new Set<string>()
   let generation = 0
   let disposed = false
   const acceptedCurrentChartWindow = shallowRef(false)
+  const acceptedHistoricalChartWindow = shallowRef(false)
+  const acceptedAuxiliaryWindow = shallowRef<{ from: string; through: string } | null>(null)
   let chartWindow: { from: string; through: string } | null = null
   let chartFingerprint: string | null = null
   let acceptedChartGenerationSignature: string | null = null
@@ -164,7 +167,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     if (cached !== undefined) {
       auxiliaryCache.delete(cacheKey)
       auxiliaryCache.set(cacheKey, cached)
-      restoreCachedAuxiliary(cached)
+      restoreCachedAuxiliary(cached, request)
       return
     }
     await run(request)
@@ -260,7 +263,26 @@ export function useNewowProduct(options: UseNewowProductOptions) {
           if (!rebuilt && isRebuildable(error)) {
             rebuilt = true
             const rejectedToken = request.snapshotToken ?? resource.data.value?.meta.snapshot_token ?? undefined
+            const auxiliaryRebuild = request.section === 'auxiliary' ? auxiliaryRebuildKey(request) : null
+            const rebuildExhausted = auxiliaryRebuild !== null && auxiliaryRebuildAttempts.has(auxiliaryRebuild)
+            const rebuildChartWindow = request.section !== 'auxiliary' || acceptedCurrentChartWindow.value
+              ? {}
+              : request.from !== undefined && request.through !== undefined
+                ? { from: request.from, through: request.through }
+                : null
             invalidateTokenDependents(rejectedToken, section)
+            if (section === 'auxiliary') {
+              if (rebuildExhausted || rebuildChartWindow === null) {
+                failConflict(section, error instanceof NewowProductRequestError ? error.code : 'NEWOW_SNAPSHOT_GENERATION_CONFLICT')
+                return
+              }
+              // Auxiliary responses are never retried without chart proof. Rebuild the
+              // chart generation; the chart-window consumer may then issue one proven request.
+              auxiliaryRebuildAttempts.add(auxiliaryRebuild!)
+              invalidateSection('auxiliary')
+              await loadChart(rebuildChartWindow)
+              return
+            }
             request = withoutGenerationBindings(request)
             continue
           }
@@ -300,6 +322,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       if (request.section === 'chart' && request.chartBefore === undefined) {
         acceptedCurrentChartWindow.value = request.from === undefined && request.through === undefined
           && request.chartOlderWindow === undefined && historicalSnapshot.value === null
+        acceptedHistoricalChartWindow.value = !acceptedCurrentChartWindow.value
       }
       resource.data.value = accepted
       acceptedChartGenerationSignature = nextGeneration
@@ -312,8 +335,14 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
     resource.state.value = response.status.status
     resource.error.value = null
-    if (section === 'auxiliary' && request.section === 'auxiliary' && response.section === 'auxiliary' && response.status.status === 'ready' && response.value !== null) {
-      cacheAuxiliary(response, request)
+    if (section === 'auxiliary' && request.section === 'auxiliary') {
+      auxiliaryRebuildAttempts.delete(auxiliaryRebuildKey(request))
+    }
+    if (section === 'auxiliary' && request.section === 'auxiliary' && response.section === 'auxiliary' && response.value !== null) {
+      acceptedAuxiliaryWindow.value = request.from !== undefined && request.through !== undefined
+        ? { from: request.from, through: request.through }
+        : null
+      if (response.status.status === 'ready') cacheAuxiliary(response, request)
     }
   }
 
@@ -479,6 +508,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
     inFlightSnapshotTokens.delete(section)
     resources[section].data.value = null
+    if (section === 'auxiliary') acceptedAuxiliaryWindow.value = null
     if (section === 'chart' || section === 'reference') resetPagination(section)
     resources[section].state.value = options.state ?? 'not_requested'
     resources[section].error.value = options.error ?? null
@@ -487,6 +517,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   function resetPagination(section: 'chart' | 'reference'): void {
     if (section === 'chart') {
       acceptedCurrentChartWindow.value = false
+      acceptedHistoricalChartWindow.value = false
       chartWindow = null
       chartFingerprint = null
       acceptedChartGenerationSignature = null
@@ -532,9 +563,13 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const currentChartWindow = computed(() => acceptedCurrentChartWindow.value
     && historicalSnapshot.value === null && resources.chart.state.value === 'ready'
     && resources.chart.data.value?.section === 'chart' && resources.chart.data.value.value !== null)
+  const historicalChartWindow = computed(() => acceptedHistoricalChartWindow.value
+    && resources.chart.data.value?.section === 'chart' && resources.chart.data.value.value !== null)
 
   return {
+    acceptedAuxiliaryWindow: readonly(acceptedAuxiliaryWindow),
     currentChartWindow: readonly(currentChartWindow),
+    historicalChartWindow: readonly(historicalChartWindow),
     explanationChartCompatible: readonly(explanationChartCompatible),
     identity: readonly(currentIdentity),
     asOf: readonly(asOf),
@@ -549,6 +584,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   function resetAll(): void {
     for (const section of ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const) invalidateSection(section)
     invalidateAuxiliaryCache()
+    auxiliaryRebuildAttempts.clear()
   }
   function cacheAuxiliary(response: NewowProductSectionResponse<'auxiliary'>, request: Extract<NewowProductRequest, { section: 'auxiliary' }>): void {
     if (response.value?.component === undefined) return
@@ -560,14 +596,21 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
     auxiliaryCache.set(key, response)
   }
-  function restoreCachedAuxiliary(response: NewowProductSectionResponse<'auxiliary'>): void {
+  function restoreCachedAuxiliary(response: NewowProductSectionResponse<'auxiliary'>, request: Extract<NewowProductRequest, { section: 'auxiliary' }>): void {
     const section = 'auxiliary' as const
     invalidateSection(section)
     resources[section].data.value = response
     resources[section].state.value = response.status.status
     resources[section].error.value = null
+    acceptedAuxiliaryWindow.value = request.from !== undefined && request.through !== undefined
+      ? { from: request.from, through: request.through }
+      : null
   }
   function invalidateAuxiliaryCache(): void { auxiliaryCache.clear() }
+  function auxiliaryRebuildKey(request: Extract<NewowProductRequest, { section: 'auxiliary' }>): string {
+    return JSON.stringify([generation, request.identity.product, request.identity.strategy,
+      request.identity.frequency, request.identity.seriesKind, request.asOf, request.component])
+  }
 }
 
 function auxiliaryCacheKey(request: Extract<NewowProductRequest, { section: 'auxiliary' }>): string {

@@ -54,14 +54,25 @@ const auxiliaryResponse = computed(() => (
     ? loader.sections.auxiliary.data.value as NewowProductSectionResponse<'auxiliary'>
     : null
 ))
+function chartWindowProof(response: NewowProductSectionResponse<'chart'> | null): string | null {
+  const snapshot = newowChartSnapshotKey(response)
+  return snapshot === null || response?.value === null || response === null
+    ? null
+    : JSON.stringify([snapshot, response.value.chart_from, response.value.chart_through])
+}
 // A display-only retention of the accepted selected pane while the same loader serves the cup dialog.
 const retainedPane = shallowRef<{ response: NewowProductSectionResponse<'auxiliary'> | null; lifecycle: NewowResourceLifecycle; error: string | null; proof: string | null; component: NewowAuxiliaryComponent } | null>(null)
 const retainedPaneCompatible = computed(() => dialogKind.value === 'cup_handle' && retainedPane.value !== null
-  && retainedPane.value.proof !== null && retainedPane.value.proof === newowChartSnapshotKey(chartResponse.value)
+  && retainedPane.value.proof !== null && retainedPane.value.proof === chartWindowProof(chartResponse.value)
   && retainedPane.value.component === selectedAuxiliary.value)
 const currentAuxiliaryResponse = computed(() => {
   const response = retainedPaneCompatible.value ? retainedPane.value!.response : auxiliaryResponse.value
-  return response?.value?.component === selectedAuxiliary.value && newowChartSnapshotKey(response) !== null
+  const lifecycle = retainedPaneCompatible.value ? retainedPane.value!.lifecycle : loader.sections.auxiliary.state.value
+  const acceptedWindow = loader.acceptedAuxiliaryWindow.value
+  return (lifecycle === 'ready' || lifecycle === 'warming')
+    && acceptedWindow !== null && auxiliaryChartWindow.value !== null
+    && acceptedWindow.from === auxiliaryChartWindow.value.from && acceptedWindow.through === auxiliaryChartWindow.value.through
+    && response?.value?.component === selectedAuxiliary.value && newowChartSnapshotKey(response) !== null
     && newowChartSnapshotKey(response) === newowChartSnapshotKey(chartResponse.value) ? response : null
 })
 const currentAuxiliaryLifecycle = computed(() => loader.sections.auxiliary.state.value === 'input_conflict' ? 'input_conflict'
@@ -70,28 +81,36 @@ const currentAuxiliaryLifecycle = computed(() => loader.sections.auxiliary.state
 const currentAuxiliaryError = computed(() => loader.sections.auxiliary.state.value === 'input_conflict' ? loader.sections.auxiliary.error.value
   : retainedPaneCompatible.value ? retainedPane.value!.error
   : dialogKind.value === 'cup_handle' ? null : loader.sections.auxiliary.error.value)
+const auxiliaryChartWindow = computed(() => chartResponse.value?.value === null || chartResponse.value === null
+  ? null
+  : { from: chartResponse.value.value.chart_from, through: chartResponse.value.value.chart_through })
 
 const summary = computed(() => projectNewowDetail(chartResponse.value, loader.sections.chart.state.value,
   explanationResponse.value, loader.sections.explanation.state.value, loader.explanationChartCompatible.value,
-  referenceResponse.value, loader.sections.reference.state.value, loader.referenceChartCompatible.value))
+  referenceResponse.value, loader.sections.reference.state.value, loader.referenceChartCompatible.value,
+  loader.currentChartWindow.value, loader.historicalChartWindow.value))
 const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '60m', currentAuxiliaryLifecycle.value))
 const auxiliaryOptions = [{ id: 'macd', label: 'MACD' }, { id: 'zhaoyao_mirror', label: '照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }] as const
 const historicalAsOfLabel = computed(() => loader.historicalSnapshot.value ? formatChartTimeInShanghai(loader.historicalSnapshot.value.as_of) : '')
 const dialogTitle = computed(() => ({ explanation: '策略解释', action: '历史主动作事实', hint: '历史过程提示', indicator: '指标解读', comparator: '页面比较说明', cup_handle: '杯柄说明' }[dialogKind.value ?? 'explanation']))
 async function loadExplanation() { if (loader.sections.explanation.state.value === 'not_requested') await loader.loadExplanation() }
+async function loadAuxiliaryForChart(component: NewowAuxiliaryComponent = selectedAuxiliary.value) {
+  if (auxiliaryChartWindow.value === null || !chartResponse.value?.meta.snapshot_token) return
+  await loader.loadAuxiliary(component, auxiliaryChartWindow.value)
+}
 async function toggleDetails() { detailsOpen.value = !detailsOpen.value; if (detailsOpen.value) await loadExplanation() }
 async function openDialog(kind: NonNullable<typeof dialogKind.value>) {
   if (kind === 'cup_handle') retainedPane.value = { response: currentAuxiliaryResponse.value, lifecycle: currentAuxiliaryLifecycle.value,
-    error: currentAuxiliaryError.value, proof: newowChartSnapshotKey(chartResponse.value), component: selectedAuxiliary.value }
+    error: currentAuxiliaryError.value, proof: chartWindowProof(chartResponse.value), component: selectedAuxiliary.value }
   dialogKind.value = kind
   if (kind === 'explanation') await loadExplanation()
   if (kind === 'comparator' && loader.sections.comparator.state.value === 'not_requested') await loader.loadComparator()
-  if (kind === 'cup_handle' && props.identity.frequency === '1d') await loader.loadAuxiliary('cup_handle')
+  if (kind === 'cup_handle' && props.identity.frequency === '1d') await loadAuxiliaryForChart('cup_handle')
 }
 function closeDialog() {
   const wasCup = dialogKind.value === 'cup_handle'
   dialogKind.value = null
-  if (wasCup) void loader.loadAuxiliary(selectedAuxiliary.value)
+  if (wasCup) void loadAuxiliaryForChart()
   retainedPane.value = null
 }
 function selectSignal(signalId: string) {
@@ -107,7 +126,7 @@ function selectHint(hintId: string) {
 async function toggleAuxiliary(component: NewowAuxiliaryComponent) {
   if (selectedAuxiliary.value === component) return
   selectedAuxiliary.value = component
-  await loader.loadAuxiliary(component)
+  await loadAuxiliaryForChart(component)
 }
 function loadReferenceOnce() { if (loader.sections.reference.state.value === 'not_requested') void loader.loadReference() }
 function observeReference() {
@@ -154,15 +173,19 @@ watch(loader.historicalSnapshot, async () => {
 watch(loader.sections.auxiliary.state, state => {
   if (state === 'input_conflict' || state === 'not_requested') retainedPane.value = null
 }, { flush: 'sync' })
-watch(() => newowChartSnapshotKey(chartResponse.value), (proof, previous) => {
+watch(() => chartWindowProof(chartResponse.value), (proof, previous) => {
   if (proof === previous) return
   retainedPane.value = null
   if (dialogKind.value === 'cup_handle') dialogKind.value = null
 }, { flush: 'sync' })
 // Load the default auxiliary only after chart acceptance, so its request carries the chart snapshot proof.
-watch(() => [chartResponse.value?.meta.snapshot_token, chartResponse.value?.value?.page_identity], () => {
-  if (chartResponse.value && loader.sections.auxiliary.state.value === 'not_requested') void loader.loadAuxiliary(selectedAuxiliary.value)
-}, { immediate: true })
+watch(() => auxiliaryChartWindow.value === null ? null : [
+  chartResponse.value?.meta.snapshot_token,
+  auxiliaryChartWindow.value.from,
+  auxiliaryChartWindow.value.through,
+].join('|'), () => {
+  if (chartResponse.value) void loadAuxiliaryForChart()
+}, { immediate: true, flush: 'sync' })
 watch([chartModel, () => props.identity.focusBarEnd], ([model, focusBarEnd]) => {
   if (!focusBarEnd || model === null || selectedSignalId.value !== null) return
   selectedSignalId.value = model.actions.find(action => action.barEnd === focusBarEnd)?.id ?? null
@@ -214,7 +237,7 @@ onBeforeUnmount(() => { observer?.disconnect(); loader.dispose() })
         <button aria-label="指标解读" @click="openDialog('indicator')">ⓘ</button>
         <button @click="openDialog('cup_handle')">杯柄说明</button>
       </div>
-      <p v-if="currentAuxiliaryError" role="status">{{ currentAuxiliaryError }} · 辅助图层不可用 <button @click="loader.loadAuxiliary(selectedAuxiliary)">重试指标</button></p>
+      <p v-if="currentAuxiliaryError" role="status">{{ currentAuxiliaryError }} · 辅助图层不可用 <button @click="loadAuxiliaryForChart()">重试指标</button></p>
     </section>
     </template>
     </NewowProductChartStage>
