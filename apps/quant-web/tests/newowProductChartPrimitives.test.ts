@@ -34,6 +34,37 @@ test('projects each server-owned main layer for all nine strategy-period identit
   }
 })
 
+test('preserves initial-clear eligibility into the marker label and detail model', () => {
+  const response = chartResponse('main_rise', '1d')
+  const value = response.value!
+  const source = value.bars[1]!
+  value.actions.push({
+    signal_id: 'initial-clear', kind: 'CLEAR', bar_end: source.bar_end,
+    trading_day: source.trading_day, reference_price: '100',
+    physical_contract: source.physical_contract, segment_id: source.segment_id,
+    related_build_id: null, trade_eligibility: 'INITIAL_CLEAR_NO_ENTRY', sequence: 0,
+  } as any)
+  value.frames[1]!.action_ids = ['initial-clear']
+  value.frames[1]!.main_state = 'CLEAR'
+
+  const model = buildNewowProductChartModel(response)
+  const action = model.actions[0]!
+  assert.equal(action.tradeEligibility, 'INITIAL_CLEAR_NO_ENTRY')
+  assert.equal(
+    primitives.productChartMarker(action, null, { year: 2026, month: 8, day: 15 }).text,
+    '清仓（无入场）',
+  )
+  assert.deepEqual(primitives.describeNewowProductAction(action), {
+    label: '清仓（无入场）',
+    explanation: '初始无入场：未观察到可配对 BUILD，不生成参考交易。',
+  })
+  assert.equal(
+    primitives.newowInitialClearLabel('INITIAL_CLEAR_NO_ENTRY'),
+    '清仓（无入场）',
+  )
+  assert.equal(primitives.newowInitialClearLabel('ELIGIBLE'), null)
+})
+
 test('preserves same-Bar CLEAR then BUILD identities and keeps hint anchor separate from action reference price', () => {
   const response = chartResponse('oscillation', '60m')
   const value = response.value!
@@ -196,10 +227,10 @@ function chartResponse(
   ]
   return {
     meta: {
-      schema_version: 'newow_product_detail_v1',
+      schema_version: 'newow_product_detail_v2',
       identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64),
-      data_revision_identity: null, snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v1',
+      data_revision_identity: null, snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v2',
       futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     },
     section: 'chart',

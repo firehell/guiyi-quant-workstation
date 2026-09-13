@@ -3,12 +3,14 @@ from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from guiyi_quant.newow.product_contracts import (
     EvidenceStatus,
     FeatureRuntimeStatus,
     FeatureStatus,
     ProductFrequency,
 )
+from app.market_data.domain import BarFrequency
 
 from app.api import market_newow
 from app.db.session import get_db
@@ -21,6 +23,11 @@ from app.market_data.newow.product_service import (
 )
 from app.market_data.newow.historical_snapshot import HistoricalSnapshot
 from app.market_data.newow.resource_gate import NewowResourceBusy
+from app.schemas.market_newow_product import (
+    NewowProductResponse,
+    ProductActionOut,
+    ReferenceTradeOut,
+)
 
 
 def _service_result(product_cases):
@@ -31,6 +38,33 @@ def _service_result(product_cases):
         ProductServiceQuery("rb", "trend", "1w", as_of=clear.bar_end, chart_limit=10)
     )
     return result, clear.bar_end
+
+
+def _initial_clear_service_result(product_cases):
+    reader, _query, fake = product_cases.paged_reader(
+        prefix_bars=36, page_size=20, frequency="1w"
+    )
+    values = (*(["100"] * 35), "90")
+    physical = tuple(
+        replace(bar, open=value, high=value, low=value, close=value)
+        for bar, value in zip(
+            fake.physical[("RB2605", BarFrequency.W1)], values, strict=True
+        )
+    )
+    fake.physical[("RB2605", BarFrequency.W1)] = physical
+    fake.expected_physical[("RB2605", BarFrequency.W1)] = physical
+    fake.actual[BarFrequency.W1] = tuple(
+        bar for bar in physical if bar.trading_day >= fake.segments[0].start_trading_day
+    )
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: fake.as_of,
+    )
+    return service.query(
+        ProductServiceQuery(
+            "rb", "main_rise", "1w", as_of=fake.as_of, chart_limit=2
+        )
+    )
 
 
 def test_weekly_release_capabilities_are_public_without_database_access():
@@ -180,6 +214,11 @@ def test_strategy_detail_returns_only_requested_typed_section(
         body["chart"]["value"]["chart_from"] <= body["chart"]["value"]["chart_through"]
     )
     assert len(body["chart"]["value"]["page_identity"]) == 64
+    assert body["meta"]["schema_version"] == "newow_product_detail_v2"
+    assert (
+        body["meta"]["reference_model_version"]
+        == "newow_marker_reference_zero_cost_v2"
+    )
     assert body["chart"]["value"]["next_older_window"] is None
     assert body["chart"]["value"]["formal_signal_eligible"] is True
     channel = body["chart"]["value"]["trend_channel"]
@@ -201,6 +240,80 @@ def test_strategy_detail_returns_only_requested_typed_section(
         isinstance(action["sequence"], int)
         for action in body["chart"]["value"]["actions"]
     )
+
+
+def test_typed_api_serializes_verified_initial_clear_without_entry(product_cases):
+    result = _initial_clear_service_result(product_cases)
+    payload = market_newow._product_response(result).model_dump(mode="json")
+
+    assert payload["meta"]["schema_version"] == "newow_product_detail_v2"
+    assert (
+        payload["meta"]["reference_model_version"]
+        == "newow_marker_reference_zero_cost_v2"
+    )
+    assert payload["chart"]["value"]["actions"] == [
+        {
+            **payload["chart"]["value"]["actions"][0],
+            "kind": "CLEAR",
+            "related_build_id": None,
+            "trade_eligibility": "INITIAL_CLEAR_NO_ENTRY",
+            "sequence": 0,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("kind", "BUILD"), ("related_build_id", "forged-build"), ("sequence", 7)),
+)
+def test_typed_action_rejects_invalid_initial_clear_cross_fields(field, value):
+    payload = {
+        "signal_id": "initial-clear",
+        "kind": "CLEAR",
+        "bar_end": "2026-08-14T07:00:00Z",
+        "trading_day": "2026-08-14",
+        "reference_price": "100.100",
+        "physical_contract": "PT2610",
+        "segment_id": "pt:PT2610:2025-01-01T00:00:00+00:00",
+        "related_build_id": None,
+        "trade_eligibility": "INITIAL_CLEAR_NO_ENTRY",
+        "sequence": 0,
+    }
+    payload[field] = value
+
+    with pytest.raises(ValidationError, match="INITIAL_CLEAR_NO_ENTRY"):
+        ProductActionOut.model_validate(payload)
+
+
+def test_typed_v2_rejects_v1_reference_model_in_meta_and_trade(product_cases):
+    result, _as_of = _service_result(product_cases)
+    payload = market_newow._product_response(result).model_dump(mode="json")
+    payload["meta"]["reference_model_version"] = (
+        "newow_marker_reference_zero_cost_v1"
+    )
+    with pytest.raises(ValidationError):
+        NewowProductResponse.model_validate(payload)
+
+    from newow.test_product_service import _service
+
+    service, _reader, build, clear = _service(product_cases)
+    reference = service.query(
+        ProductServiceQuery(
+            "rb",
+            "trend",
+            "1d",
+            section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+        )
+    )
+    trade = market_newow._product_response(reference).model_dump(mode="json")[
+        "reference"
+    ]["value"]["items"][0]
+    trade["reference_model_version"] = "newow_marker_reference_zero_cost_v1"
+    with pytest.raises(ValidationError):
+        ReferenceTradeOut.model_validate(trade)
 
 
 def test_strategy_detail_serializes_unavailable_channel_point_without_values(

@@ -46,6 +46,22 @@ async function clickLastBarMarker(page, expectedSignalId, verticalRatios) {
   throw new Error(`marker ${expectedSignalId} was not clickable`)
 }
 
+test('main-rise initial clear stays action-only and explains that no entry exists', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { initialClear: true })
+  await page.goto(newowRoute('main_rise', '1w'))
+
+  await clickLastBarMarker(page, 'main_rise-1w-initial-clear-no-entry', [0.25, 0.30, 0.35, 0.40, 0.45])
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('历史主动作 清仓（无入场）')
+  await expect(page.locator('.newow-summary__facts')).toContainText('清仓（无入场）')
+  await expect(dialog).toContainText('初始无入场：未观察到可配对 BUILD，不生成参考交易。')
+
+  await showReference(page)
+  await expect(page.getByTestId('newow-reference-summary')).toContainText('暂无已完成参考交易')
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(0)
+  assertNoUnexpectedRequests(fixture)
+})
+
 for (const strategy of NEWOW_STRATEGIES) {
   for (const frequency of ['1w']) {
     test(`${strategy} × ${frequency} owns an independent chart and reference lifecycle`, async ({ page }) => {

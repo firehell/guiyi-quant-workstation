@@ -380,7 +380,7 @@ function chartResponse(): Mutable<NewowProductSectionResponse<'chart'>> {
 function trade(id: string, overrides: Partial<Mutable<NewowReferenceTrade>>): Mutable<NewowReferenceTrade> {
   return {
     reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'segment-1',
-    formula_versions: ['newow_trend_band_page_v2'], reference_model_version: 'newow_marker_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+    formula_versions: ['newow_trend_band_page_v2'], reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     entry_signal_id: `entry-${id}`, entry_sequence: 0, entry_bar_end: '2026-08-01T07:00:00Z', entry_trading_day: '2026-08-01', entry_reference_price: '100.000',
     exit_signal_id: null, exit_bar_end: null, exit_trading_day: null, exit_reference_price: null,
     status: 'OPEN', holding_bars: 1, reference_return_pct: null,
@@ -395,10 +395,10 @@ function bar(barEnd: string, tradingDay: string) {
 
 function meta() {
   return {
-    schema_version: 'newow_product_detail_v1' as const,
+    schema_version: 'newow_product_detail_v2' as const,
     identity: { product: 'jm', strategy: 'trend' as const, frequency: '1d' as const, series_kind: 'actual_dominant' as const, profile_id: 'profile-1', formula_versions: ['newow_trend_band_page_v2'] },
     as_of: '2026-08-15T07:00:00Z', read_at: '2026-08-15T07:00:01Z', input_content_sha256: 'a'.repeat(64), data_revision_identity: null, snapshot_token: 'snapshot-1',
-    reference_model_version: 'newow_marker_reference_zero_cost_v1' as const, futures_adaptation_version: 'newow_futures_segment_interrupt_v1' as const,
+    reference_model_version: 'newow_marker_reference_zero_cost_v2' as const, futures_adaptation_version: 'newow_futures_segment_interrupt_v1' as const,
   }
 }
 

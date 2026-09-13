@@ -296,10 +296,10 @@ function comparatorResponse(): NewowProductSectionResponse<'comparator'> {
 
 function meta() {
   return {
-    schema_version: 'newow_product_detail_v1' as const,
+    schema_version: 'newow_product_detail_v2' as const,
     identity: { product: 'jm', strategy: 'trend' as const, frequency: '1d' as const, series_kind: 'actual_dominant' as const, profile_id: 'profile-1', formula_versions: ['daily-rule-v1'] },
     as_of: '2026-08-15T07:00:00Z', read_at: '2026-08-15T07:00:01Z', input_content_sha256: 'a'.repeat(64), data_revision_identity: null, snapshot_token: 'snapshot-1',
-    reference_model_version: 'newow_marker_reference_zero_cost_v1' as const, futures_adaptation_version: 'newow_futures_segment_interrupt_v1' as const,
+    reference_model_version: 'newow_marker_reference_zero_cost_v2' as const, futures_adaptation_version: 'newow_futures_segment_interrupt_v1' as const,
   }
 }
 function ready() { return { status: 'ready' as const, evidence_status: 'ACTIVE_CODE_VERIFIED' as const, reason_code: null } }

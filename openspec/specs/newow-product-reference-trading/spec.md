@@ -304,6 +304,42 @@ Action MUST 带稳定 identity、策略及公式、周期、品种、物理合�
 - **WHEN** 投影历史
 - **THEN** 先关闭原交易，再建立新交易并保留两个 ID；不按日期去重，也不反转顺序
 
+### Requirement: Initial main-rise CLEAR without an entry remains an action-only fact
+
+当主升浪某个物理 owner/segment 的完整、未左裁生命周期重放从有效黄带开始，之前没有任何真实或 warm-up
+BUILD，且首次黄转蓝产生 CLEAR 时，产品 SHALL 输出
+`CLEAR + trade_eligibility=INITIAL_CLEAR_NO_ENTRY + related_build_id=null`。该资格只允许用于
+`main_rise`、eligible completed Bar、`main_state=CLEAR` 和同 Bar `sequence=0`；不得用于趋势、震荡、BUILD、
+已有 Action 的 owner、带关联 BUILD 或带持仓/收益事实的转换。
+
+生产 replay MUST 由 `NewowProductReader` 在既有 MDS lifecycle coverage 验证成功后传递按
+product/frequency/physical_contract/segment、首尾 Bar、数量、有序输入 SHA-256、source 和 cutoff 绑定的
+evidence。adapter 与 ReferenceTradeProjector MUST 各自验证 evidence 与输入完全一致；缺失、错 owner、错周期、
+左裁、Bar 替换、旧 cutoff 或重复 evidence 均 fail-closed。warm-up 中发生的初始 CLEAR 只消费一次资格而不输出，
+后续不能重建资格；物理 owner/segment 切换后独立重置。
+
+ReferenceTradeProjector SHALL 独立验证该 Action 的完整先前 frame/action 历史、MA35/MA45 状态和参考价；
+验证成功后只追加一次 `INITIAL_CLEAR_NO_ENTRY` diagnostic，不创建或关闭 ReferenceTrade，不制造零收益，
+closed/open/interrupted/initial-before-window 计数均不因此增加。之后真实 BUILD/CLEAR 仍按既有合同形成正常交易。
+未来 Action 不得泄露到较早 as-of；viewport、分页和 chart limit 只能在完整 replay 后裁剪。
+
+typed product schema 与 ReferenceTrade model SHALL 分别使用 `newow_product_detail_v2` 和
+`newow_marker_reference_zero_cost_v2`。合同组须参与 cache、dependency proof、chart/reference page identity 与
+ReferenceTrade ID；v2 Web MUST 拒绝 v1 envelope，旧 token/cursor 不得跨版本复用。公式、profile、
+`newow_futures_segment_interrupt_v1`、Action/Hint ID、capability/historical 与旧 `/trend-detail` 合同不变。
+
+#### Scenario: The first observed main-rise exit has no entry
+
+- **GIVEN** reader 证明同一 owner 的完整前缀从黄带开始，之前没有 BUILD，当前首次黄转蓝
+- **WHEN** adapter 和 projector 重放该前缀
+- **THEN** 图表显示“清仓（无入场）”，详情说明未观察到可配对 BUILD，投影为零交易且不产生收益
+
+#### Scenario: Lifecycle evidence does not bind the replay
+
+- **GIVEN** evidence 缺失、错配、左裁、过期或被复用于替换过 Bar 的输入
+- **WHEN** adapter 或 projector 尝试认可初始 CLEAR
+- **THEN** 以 pairing/evidence conflict fail-closed，不从空 Action 历史推断生命周期完整
+
 ### Requirement: Reference return is not an account return
 
 `ReferenceTrade` SHALL 是从当前数据和固定版本规则重算的只读投影，绝不是 Position、Order、Account、
@@ -568,8 +604,8 @@ The MACD-only envelope SHALL add `display_adapter_version`, `parameters` and `pa
 each segment's `data.dif/dea/histogram` SHALL contain aligned points with `bar_end`, `value`,
 `ready`, `valid` and `reason`. DIF MAY be ready while DEA and histogram remain warming.
 The branch SHALL set `repainting=false`, `formal_signal_eligible=false`, `page_parity=false`,
-and `allowed_uses=["research_display"]`. Existing auxiliary shapes and the top-level
-`newow_product_detail_v1` SHALL remain compatible. MACD MUST NOT feed actions, reference returns
+and `allowed_uses=["research_display"]`. Existing auxiliary branch shapes SHALL remain compatible;
+the top-level envelope SHALL use `newow_product_detail_v2`. MACD MUST NOT feed actions, reference returns
 or Alert. The client SHALL reject malformed, non-finite, misaligned or contradictory points.
 
 #### Scenario: Display windows share a physical MACD prefix

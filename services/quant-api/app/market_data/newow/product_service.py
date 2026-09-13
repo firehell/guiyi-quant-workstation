@@ -73,7 +73,7 @@ from .source_facts import (
 )
 
 
-SCHEMA_VERSION = "newow_product_detail_v1"
+SCHEMA_VERSION = "newow_product_detail_v2"
 
 
 class ProductSection(StrEnum):
@@ -374,6 +374,11 @@ def _snapshot_namespace(identity: ProductIdentity, as_of: datetime) -> str:
             identity.formula_versions,
         ),
         "as_of": as_of.isoformat(),
+        "contract": (
+            SCHEMA_VERSION,
+            REFERENCE_MODEL_VERSION,
+            FUTURES_ADAPTATION_VERSION,
+        ),
     }
     return sha256(
         json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
@@ -459,6 +464,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
     proof["version|product"] = sha256(
         "|".join(
             (
+                SCHEMA_VERSION,
                 FUTURES_ADAPTATION_VERSION,
                 REFERENCE_MODEL_VERSION,
                 SOURCE_FACT_ADAPTER_VERSION,
@@ -735,6 +741,9 @@ class NewowProductService:
         as_of: datetime,
     ) -> str:
         payload = (
+            SCHEMA_VERSION,
+            REFERENCE_MODEL_VERSION,
+            FUTURES_ADAPTATION_VERSION,
             request.product,
             request.strategy.value,
             request.frequency.value,
@@ -826,7 +835,11 @@ class NewowProductService:
         fact_key: str,
         page_identity: str,
     ) -> SectionDelivery:
-        replay = replay_strategy(identity, read.replay_bars)
+        replay = replay_strategy(
+            identity,
+            read.replay_bars,
+            lifecycle_evidence=read.lifecycle_evidence,
+        )
         frames = tuple(
             frame
             for frame in replay.frames
@@ -900,7 +913,11 @@ class NewowProductService:
         page_identity: str,
         resolved: ResolvedPerformanceWindow,
     ) -> SectionDelivery:
-        replay = replay_strategy(identity, read.replay_bars)
+        replay = replay_strategy(
+            identity,
+            read.replay_bars,
+            lifecycle_evidence=read.lifecycle_evidence,
+        )
         projection = ReferenceTradeProjector().project(
             replay, read.boundaries, resolved.cutoff
         )
@@ -991,6 +1008,9 @@ class NewowProductService:
                     identity.product, ProductStrategy.TREND, frequency
                 ),
                 bars,
+                lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(
+                    frequency, ()
+                ),
             )
             for frequency, bars in read.bars_by_frequency.items()
         }
@@ -1000,6 +1020,9 @@ class NewowProductService:
                     identity.product, ProductStrategy.OSCILLATION, frequency
                 ),
                 bars,
+                lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(
+                    frequency, ()
+                ),
             )
             for frequency, bars in read.bars_by_frequency.items()
         }
