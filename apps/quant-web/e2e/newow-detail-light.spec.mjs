@@ -154,7 +154,7 @@ for (const [width, height] of [[1280, 800], [1440, 900], [1920, 1080], [2560, 14
     })
     await expect(page.locator('.market-navigation__brand')).toBeInViewport()
     await page.mouse.move(0, 0)
-    await expect(page.locator('.market-detail-page')).toHaveScreenshot(`newow-light-${width}.png`, { animations: 'disabled', maxDiffPixels: 500 })
+    await expect(page).toHaveScreenshot(`newow-light-${width}.png`, { animations: 'disabled', maxDiffPixels: 500 })
     const trigger = page.getByRole('button', { name: '查看依据', exact: true })
     await trigger.click()
     const dialog = page.getByRole('dialog')
