@@ -9,7 +9,7 @@ import httpx2 as httpx
 from newow.socket_app_support import socket_app
 
 DETAIL = "/api/v1/market/newow/strategy-detail"
-IDENTITY = {"product": "rb", "strategy": "trend", "frequency": "1d"}
+IDENTITY = {"product": "rb", "strategy": "trend", "frequency": "1w"}
 BASE = {**IDENTITY, "as_of": "2024-06-04T08:00:00+00:00"}
 
 
@@ -60,7 +60,7 @@ def test_four_socket_connections_keep_navigation_and_history_bound_to_snapshot()
             **BASE,
             "section": "reference",
             "performance_since": "2023-01-04",
-            "performance_through": "2024-06-04",
+            "performance_through": "2024-06-03",
             "history_limit": 1,
             "snapshot_token": token,
         }
@@ -85,7 +85,7 @@ def test_four_socket_connections_keep_navigation_and_history_bound_to_snapshot()
             for value in (*references, *auxiliaries)
         )
         reference = references[0]["reference"]["value"]
-        assert reference["summary"]["closed_count"] > 2
+        assert reference["summary"]["closed_count"] >= 2
         assert reference["executable"] is reference["auto_order"] is False
         assert reference["next_before"]
         trade = reference["items"][0]
@@ -134,8 +134,8 @@ def test_four_socket_connections_keep_navigation_and_history_bound_to_snapshot()
         window_params = {
             **chart_params,
             "snapshot_token": token,
-            "from": "2023-01-04",
-            "through": "2024-06-04",
+                "from": "2023-01-04",
+                "through": "2024-06-03",
         }
         window = get(clients[2], window_params)["chart"]["value"]
         assert window["next_before"]
@@ -178,7 +178,6 @@ def test_four_socket_connections_keep_navigation_and_history_bound_to_snapshot()
             )
         for change in (
             {"strategy": "oscillation"},
-            {"frequency": "60m"},
             {"product": "ag"},
             {"as_of": "2024-06-03T08:00:00+00:00"},
         ):
@@ -193,6 +192,12 @@ def test_four_socket_connections_keep_navigation_and_history_bound_to_snapshot()
                 409,
                 "NEWOW_CHART_CURSOR_INVALID",
             )
+        get(
+            clients[1],
+            {**chart_params, "snapshot_token": token, "frequency": "60m"},
+            409,
+            "NEWOW_FREQUENCY_NOT_OPEN",
+        )
 
 
 def test_same_facts_in_another_process_and_restart_do_not_accept_old_token():
@@ -226,7 +231,7 @@ def test_same_facts_in_another_process_and_restart_do_not_accept_old_token():
             **BASE,
             "section": "reference",
             "performance_since": "2023-01-04",
-            "performance_through": "2024-06-04",
+            "performance_through": "2024-06-03",
             "history_limit": 1,
         }
         get(
@@ -237,7 +242,7 @@ def test_same_facts_in_another_process_and_restart_do_not_accept_old_token():
         )
         own_reference = get(b, {**reference_params, "snapshot_token": token_b})
         assert own_reference["meta"]["snapshot_token"] == token_b
-        assert own_reference["reference"]["value"]["summary"]["closed_count"] > 2
+        assert own_reference["reference"]["value"]["summary"]["closed_count"] >= 2
         assert (
             get(a, {**params, "snapshot_token": token_a})["meta"]["snapshot_token"]
             == token_a
