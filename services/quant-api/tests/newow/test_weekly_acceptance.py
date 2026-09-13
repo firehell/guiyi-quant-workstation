@@ -539,6 +539,42 @@ def test_summary_accepts_native_unfinished_repair_without_planner_fields(
     }
 
 
+def test_summary_accepts_native_repair_metadata_failure_without_planner_fields():
+    from scripts.newow_weekly_acceptance import summarize_readiness
+
+    report = _report()
+    repair = report["repair_targets"][0]
+    report["repair_targets"] = [
+        {
+            key: repair[key]
+            for key in (
+                "symbol",
+                "contract",
+                "frequency",
+                "through",
+                "consumers",
+            )
+        }
+    ]
+    report["repair_targets"][0].update(
+        status="UNKNOWN",
+        reason="HISTORICAL_SESSION_FACT_MISSING",
+        error={"diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}},
+        expected_bar_count=None,
+        provider_request_count=None,
+        plan_sha256=None,
+    )
+    report.update(complete=False, status="incomplete")
+
+    result = summarize_readiness(report, PRODUCTS, AS_OF)
+
+    assert result["valid"] is True
+    assert result["audit_complete"] is False
+    assert result["pending_outcome_counts"] == {
+        "repair:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 1
+    }
+
+
 def test_summary_accepts_native_enumeration_metadata_proposal():
     from scripts.newow_weekly_acceptance import summarize_readiness
 

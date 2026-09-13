@@ -506,6 +506,8 @@ def _repair_row_valid(row: object, products: tuple[str, ...]) -> bool:
         if status == "UNSTARTED":
             return counts_unavailable and reason in {None, "BUDGET_EXHAUSTED"}
         if status == "UNKNOWN":
+            if isinstance(row.get("error"), dict):
+                return counts_unavailable and not _error_status_violation(row)
             return counts_unavailable and reason == "PLANNER_UNAVAILABLE"
         return (
             counts_unavailable
