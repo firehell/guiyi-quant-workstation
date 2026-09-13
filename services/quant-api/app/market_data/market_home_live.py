@@ -260,13 +260,18 @@ class MarketHomeLiveService:
                 now=now,
             )
             if observation is not None:
-                baseline = self._cached_baseline(previous, live_contract, live_day, now)
-                if baseline is None and not self._cached_missing_baseline(
+                if self._has_fresh_cached_baseline(
                     previous, live_contract, live_day, now
                 ):
+                    assert previous is not None
+                    assert previous.facts_observed_at is not None
+                    baseline = previous.previous_close
+                    baseline_observed_at = previous.facts_observed_at
+                else:
                     baseline = self._previous_close(
                         symbol, live_contract, before_day=observation.bar.trading_day, now=now
                     )
+                    baseline_observed_at = now
                 return _priced_item(
                     symbol=symbol,
                     contract=live_contract,
@@ -275,7 +280,7 @@ class MarketHomeLiveService:
                     source="completed_1m",
                     availability="live",
                     phase=phase.phase.value,
-                    now=now,
+                    facts_observed_at=baseline_observed_at,
                 )
 
         if (
@@ -302,7 +307,7 @@ class MarketHomeLiveService:
                 source="completed_1d",
                 availability="historical",
                 phase=phase.phase.value,
-                now=now,
+                facts_observed_at=now,
             )
         return MarketHomeLiveItem(
             symbol=symbol,
@@ -416,27 +421,7 @@ class MarketHomeLiveService:
             return ()
 
     @staticmethod
-    def _cached_baseline(
-        previous: MarketHomeLiveItem | None,
-        contract: str,
-        trading_day: date,
-        now: datetime,
-    ) -> Decimal | None:
-        if (
-            previous is not None
-            and previous.physical_contract == contract
-            and previous.trading_day == trading_day
-            and previous.source == "completed_1m"
-            and previous.facts_observed_at is not None
-            and timedelta(0)
-            <= now - previous.facts_observed_at
-            <= _HISTORICAL_CACHE_TTL
-        ):
-            return previous.previous_close
-        return None
-
-    @staticmethod
-    def _cached_missing_baseline(
+    def _has_fresh_cached_baseline(
         previous: MarketHomeLiveItem | None,
         contract: str,
         trading_day: date,
@@ -447,8 +432,10 @@ class MarketHomeLiveService:
             and previous.physical_contract == contract
             and previous.trading_day == trading_day
             and previous.source == "completed_1m"
-            and previous.previous_close is None
-            and previous.reason == "PREVIOUS_CLOSE_UNAVAILABLE"
+            and (
+                previous.previous_close is not None
+                or previous.reason == "PREVIOUS_CLOSE_UNAVAILABLE"
+            )
             and previous.facts_observed_at is not None
             and timedelta(0)
             <= now - previous.facts_observed_at
@@ -465,7 +452,7 @@ def _priced_item(
     source: Literal["completed_1m", "completed_1d"],
     availability: Literal["live", "historical"],
     phase: Literal["TRADING", "BREAK", "CLOSED", "UNKNOWN"] | str,
-    now: datetime,
+    facts_observed_at: datetime,
 ) -> MarketHomeLiveItem:
     if previous_close is None:
         price_change = None
@@ -488,7 +475,7 @@ def _priced_item(
         availability=availability,
         phase=phase,  # type: ignore[arg-type]
         reason=reason,
-        facts_observed_at=now,
+        facts_observed_at=facts_observed_at,
     )
 
 

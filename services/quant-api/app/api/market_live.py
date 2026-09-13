@@ -292,14 +292,16 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
             pass
     finally:
         with anyio.CancelScope(shield=True):
-            if pubsub is not None:
-                try:
-                    if channels:
-                        await pubsub.unsubscribe(*channels)
-                finally:
-                    await pubsub.aclose()
-            if redis is not None:
-                await redis.aclose()
+            try:
+                if pubsub is not None:
+                    try:
+                        if channels:
+                            await pubsub.unsubscribe(*channels)
+                    finally:
+                        await pubsub.aclose()
+            finally:
+                if redis is not None:
+                    await redis.aclose()
 
 
 async def _read_in_worker[T](operation: Callable[[MarketReadService], T]) -> T:

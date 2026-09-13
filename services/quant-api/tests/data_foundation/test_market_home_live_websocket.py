@@ -6,6 +6,7 @@ from decimal import Decimal
 import json
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import app
 from app.market_data.domain import CanonicalBar
@@ -215,6 +216,40 @@ def test_home_live_checks_availability_while_pubsub_messages_are_continuous(
     assert recovered["items"][0]["availability"] == "live"
 
 
+@pytest.mark.parametrize("cleanup_failure", ("unsubscribe", "aclose"))
+def test_home_live_websocket_closes_redis_when_pubsub_cleanup_fails(
+    monkeypatch,
+    cleanup_failure,
+) -> None:
+    """Catches a Pub/Sub cleanup error skipping the outer Redis client close."""
+    initial = MarketHomeLiveSnapshot(
+        NOW,
+        (_item("j", "J2609", "101", NOW - timedelta(minutes=1)),),
+    )
+    pubsub = FakeHomePubSub((), cleanup_failure=cleanup_failure)
+    redis = FakeAsyncRedis(pubsub)
+
+    async def read(previous=None):
+        return initial
+
+    monkeypatch.setattr("app.api.market_live.load_operational_products", lambda: ("j",))
+    monkeypatch.setattr("app.api.market_live._read_home_live_snapshot", read)
+    monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
+
+    try:
+        with TestClient(app).websocket_connect(
+            "/api/v1/market/research/home-live/ws"
+        ) as websocket:
+            assert websocket.receive_json()["type"] == "snapshot"
+            assert websocket.receive_json()["type"] == "unavailable"
+    except RuntimeError as exc:
+        assert str(exc) == f"fake {cleanup_failure} failed"
+
+    assert pubsub.unsubscribe_attempted
+    assert pubsub.close_attempted
+    assert redis.closed
+
+
 def _item(
     symbol: str,
     contract: str,
@@ -259,11 +294,14 @@ def _payload(close: str, bar_end: datetime) -> str:
 
 
 class FakeHomePubSub:
-    def __init__(self, messages) -> None:
+    def __init__(self, messages, *, cleanup_failure=None) -> None:
         self.messages = deque(messages)
+        self.cleanup_failure = cleanup_failure
         self.subscribed = False
         self.channels = ()
         self.closed = False
+        self.unsubscribe_attempted = False
+        self.close_attempted = False
 
     async def subscribe(self, *channels):
         self.subscribed = True
@@ -275,9 +313,15 @@ class FakeHomePubSub:
         raise RuntimeError("fake stream ended")
 
     async def unsubscribe(self, *channels):
+        self.unsubscribe_attempted = True
+        if self.cleanup_failure == "unsubscribe":
+            raise RuntimeError("fake unsubscribe failed")
         return None
 
     async def aclose(self):
+        self.close_attempted = True
+        if self.cleanup_failure == "aclose":
+            raise RuntimeError("fake aclose failed")
         self.closed = True
 
 

@@ -153,6 +153,80 @@ def test_snapshot_reuses_same_day_authority_without_requerying_d1() -> None:
     assert len(market.requests) == 1
 
 
+def test_missing_live_baseline_is_reread_after_cache_ttl_during_repeated_refreshes() -> None:
+    """Catches each quote refresh indefinitely renewing a missing-baseline cache."""
+    quote_day = date(2026, 8, 14)
+    market = FakeMarketData(
+        dominants={"j": ("J2609", quote_day)},
+        bars={"J2609": ()},
+        previous_days={quote_day: date(2026, 8, 13)},
+    )
+    service = _service(
+        market=market,
+        phases={"j": _phase("j", MarketPhase.CLOSED, None)},
+        store=FakeLiveStore(
+            subscriptions={quote_day: {"j": "J2609"}},
+            latest={
+                "j": LiveBarObservation(
+                    _bar(quote_day, NOW - timedelta(hours=1), "108"),
+                    "J2609",
+                )
+            },
+        ),
+    )
+
+    snapshot = service.snapshot(NOW)
+    market.bars["J2609"] = (
+        _bar(date(2026, 8, 13), NOW - timedelta(days=2), "100"),
+    )
+    for minute in range(1, 8):
+        snapshot = service.snapshot(NOW + timedelta(minutes=minute), previous=snapshot)
+
+    assert snapshot.items[0].previous_close == Decimal("100")
+    assert snapshot.items[0].price_change == Decimal("0.08")
+    assert snapshot.items[0].facts_observed_at == NOW + timedelta(minutes=6)
+    assert len(market.requests) == 2
+
+
+def test_existing_live_baseline_is_reread_after_cache_ttl_during_repeated_refreshes() -> None:
+    """Catches each quote refresh indefinitely renewing a stale positive baseline."""
+    quote_day = date(2026, 8, 14)
+    market = FakeMarketData(
+        dominants={"j": ("J2609", quote_day)},
+        bars={
+            "J2609": (
+                _bar(date(2026, 8, 13), NOW - timedelta(days=2), "100"),
+            )
+        },
+        previous_days={quote_day: date(2026, 8, 13)},
+    )
+    service = _service(
+        market=market,
+        phases={"j": _phase("j", MarketPhase.CLOSED, None)},
+        store=FakeLiveStore(
+            subscriptions={quote_day: {"j": "J2609"}},
+            latest={
+                "j": LiveBarObservation(
+                    _bar(quote_day, NOW - timedelta(hours=1), "111.1"),
+                    "J2609",
+                )
+            },
+        ),
+    )
+
+    snapshot = service.snapshot(NOW)
+    market.bars["J2609"] = (
+        _bar(date(2026, 8, 13), NOW - timedelta(days=2), "101"),
+    )
+    for minute in range(1, 8):
+        snapshot = service.snapshot(NOW + timedelta(minutes=minute), previous=snapshot)
+
+    assert snapshot.items[0].previous_close == Decimal("101")
+    assert snapshot.items[0].price_change == Decimal("0.1")
+    assert snapshot.items[0].facts_observed_at == NOW + timedelta(minutes=6)
+    assert len(market.requests) == 2
+
+
 def test_closed_snapshot_keeps_last_completed_minute_for_latest_authority_day() -> None:
     """Catches the visible price moving backwards to D1 immediately after close."""
     final_minute = _bar(date(2026, 8, 14), NOW - timedelta(hours=1), "108")
