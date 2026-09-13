@@ -127,6 +127,10 @@ class WindowMarketDataService:
             resolved_contract_segments=self.segments,
         )
 
+    @staticmethod
+    def validate_actual_dominant_alert_window(**_kwargs) -> None:
+        return None
+
 
 class WindowLiveStore(FakeLiveStore):
     def __init__(

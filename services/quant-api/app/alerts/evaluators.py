@@ -55,8 +55,19 @@ class _SubingCursor:
     state: SubingThs15mState
 
 
+@dataclass(frozen=True, slots=True)
+class _SubingWindowIdentity:
+    cutoff: datetime
+    trading_day: date
+    contract: str
+
+
 class AlertEvaluationError(RuntimeError):
     """Evaluator 输入或 capability 不满足固定合同时 fail closed。"""
+
+
+class AlertEvaluationSkipped(RuntimeError):
+    """A previously handled or stale trigger is not a successful evaluation."""
 
 
 class AlertEvaluator(Protocol):
@@ -164,6 +175,7 @@ class SubingThs15mEvaluator:
     def __init__(self, *, kernel: SubingThs15mKernel | None = None) -> None:
         self._kernel = kernel or SubingThs15mKernel()
         self._cursors: dict[str, _SubingCursor] = {}
+        self._latest_windows: dict[str, _SubingWindowIdentity] = {}
 
     def evaluate_candidates(
         self,
@@ -171,9 +183,20 @@ class SubingThs15mEvaluator:
         window: MarketReadWindow,
     ) -> tuple[AlertObservationCandidate, ...]:
         self._validate_window(window)
+        identity = _SubingWindowIdentity(
+            cutoff=window.cutoff,
+            trading_day=window.trading_day,
+            contract=window.contract,
+        )
+        previous = self._latest_windows.get(window.symbol)
+        if previous is not None:
+            if identity.cutoff < previous.cutoff:
+                raise AlertEvaluationSkipped("ALERT_EVALUATION_STALE")
+            if identity.cutoff == previous.cutoff:
+                if identity != previous:
+                    raise AlertEvaluationError("ALERT_EVALUATION_INPUT_INVALID")
+                raise AlertEvaluationSkipped("ALERT_EVALUATION_DUPLICATE")
         cursor = self._cursors.get(window.symbol)
-        if cursor is not None and cursor.contract == window.contract and window.cutoff <= cursor.last_bar_end:
-            return ()
         after = cursor.last_bar_end if cursor is not None and cursor.contract == window.contract else None
         try:
             replay = market_read.current_contract_replay_window(window, after=after)
@@ -190,6 +213,7 @@ class SubingThs15mEvaluator:
                 last_bar_end=replay.bars[-1].bar_end,
                 state=state,
             )
+            self._latest_windows[window.symbol] = identity
         if final is None:
             return ()
         if not final.valid:

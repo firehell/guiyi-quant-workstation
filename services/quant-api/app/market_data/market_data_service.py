@@ -36,6 +36,7 @@ from app.market_data.domain import (
     ContractTradingDayQuery,
     DatasetKey,
     DatasetKind,
+    INTRADAY_FREQUENCIES,
     MarketSeriesPageResult,
     MarketSeriesResult,
     ResolvedContractSegment,
@@ -393,6 +394,80 @@ class MarketDataService:
                 context={"symbol": symbol, "contract": contract, "frequency": frequency,
                          "trading_day": trading_day, "cutoff": cutoff},
             ) from exc
+
+    def validate_actual_dominant_alert_window(
+        self,
+        *,
+        symbol: str,
+        frequency: BarFrequency | str,
+        trading_day: date,
+        current_contract: str,
+        cutoff: datetime,
+        bars: tuple[CanonicalBar, ...],
+        bar_contracts: tuple[str, ...],
+    ) -> None:
+        """Prove an owned intraday Alert window against Calendar/Session endpoints."""
+        try:
+            normalized_frequency = BarFrequency(frequency)
+            if (
+                normalized_frequency not in INTRADAY_FREQUENCIES
+                or not bars
+                or len(bars) != len(bar_contracts)
+                or bars[-1].bar_end != cutoff
+                or bars[-1].trading_day != trading_day
+                or bar_contracts[-1] != current_contract
+            ):
+                raise ValueError
+            first_day = bars[0].trading_day
+            if first_day > trading_day:
+                raise ValueError
+            calendar = self._exact_calendar(symbol, first_day, trading_day)
+            days = tuple(day for day, is_trading in calendar if is_trading)
+            if not days or days[-1] != trading_day:
+                raise ValueError
+
+            historical_days = tuple(day for day in days if day < trading_day)
+            mappings = (
+                self.catalog.main_map(symbol, historical_days[0], historical_days[-1])
+                if historical_days
+                else ()
+            )
+            owner_by_day = {item.trade_date: item.contract for item in mappings}
+            if set(owner_by_day) != set(historical_days):
+                raise ValueError
+            current_mapping = self.catalog.main_map(symbol, trading_day, trading_day)
+            if current_mapping and (
+                len(current_mapping) != 1
+                or current_mapping[0].contract != current_contract
+            ):
+                raise ValueError
+            owner_by_day[trading_day] = current_contract
+
+            expected: list[tuple[datetime, date, str]] = []
+            for day in days:
+                owner = owner_by_day.get(day)
+                if owner is None:
+                    raise ValueError
+                expected.extend(
+                    (bar_end, endpoint_day, owner)
+                    for bar_end, endpoint_day in self.expected_contract_replay_endpoints(
+                        symbol=symbol,
+                        contract=owner,
+                        frequency=normalized_frequency,
+                        trading_day=day,
+                        cutoff=cutoff,
+                        since=day,
+                    )
+                    if bar_end >= bars[0].bar_end
+                )
+            actual = tuple(
+                (bar.bar_end, bar.trading_day, owner)
+                for bar, owner in zip(bars, bar_contracts, strict=True)
+            )
+            if actual != tuple(expected):
+                raise ValueError
+        except (CatalogError, MarketDataError, ValueError) as exc:
+            raise MarketDataError("ACTUAL_DOMINANT_ALERT_WINDOW_UNAVAILABLE") from exc
 
     def _trading_day_window(
         self,

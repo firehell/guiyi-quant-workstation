@@ -12,7 +12,11 @@ import numpy as np
 import pytest
 
 from app.alerts import evaluators as evaluator_module
-from app.alerts.evaluators import AlertEvaluationError, SubingThs15mEvaluator
+from app.alerts.evaluators import (
+    AlertEvaluationError,
+    AlertEvaluationSkipped,
+    SubingThs15mEvaluator,
+)
 from app.market_data.domain import CanonicalBar
 from app.market_data.market_read_service import (
     CurrentContractReplayWindow,
@@ -503,7 +507,8 @@ def test_subing_repaired_rb2610_replay_advances_only_from_its_cursor() -> None:
             observation_types=("buy",),
         ),
     )
-    assert evaluator.evaluate_candidates(reader, current) == ()
+    with pytest.raises(AlertEvaluationSkipped, match="ALERT_EVALUATION_DUPLICATE"):
+        evaluator.evaluate_candidates(reader, current)
     assert evaluator.evaluate_candidates(reader, next_current) == (
         evaluator_module.AlertObservationCandidate(
             bar_end=next_current.cutoff,
@@ -603,7 +608,8 @@ def test_subing_rollover_restarts_with_after_none_and_emits_only_final_candidate
     candidates = evaluator.evaluate_candidates(reader, first)
     assert len(candidates) == 1
     assert candidates[0].bar_end == first.cutoff
-    assert evaluator.evaluate_candidates(reader, first) == ()
+    with pytest.raises(AlertEvaluationSkipped, match="ALERT_EVALUATION_DUPLICATE"):
+        evaluator.evaluate_candidates(reader, first)
     assert evaluator.evaluate_candidates(reader, rollover)[0].contract == "J2509"
     assert reader.afters == [None, None]
 
@@ -641,3 +647,75 @@ def test_subing_invalid_continuity_break_updates_cursor_without_candidate() -> N
     with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_INPUT_INVALID"):
         evaluator.evaluate_candidates(reader, second)
     assert reader.afters == [None, first.cutoff]
+
+
+def test_subing_failed_cutoff_duplicate_is_typed_skip_not_success() -> None:
+    class Kernel:
+        def initial_state(self):
+            return 0
+
+        def step(self, state, close, *, bar_end):
+            del close, bar_end
+            return state + 1, SimpleNamespace(valid=False, ready=False, result_codes=())
+
+    class Reader:
+        def __init__(self) -> None:
+            self.afters: list[datetime | None] = []
+
+        def current_contract_replay_window(self, window, *, after):
+            self.afters.append(after)
+            return CurrentContractReplayWindow(
+                window.symbol,
+                window.frequency,
+                window.trading_day,
+                window.contract,
+                window.cutoff,
+                after,
+                (window.bars[-1],),
+            )
+
+    reader = Reader()
+    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+    window = _window(32)
+
+    with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_INPUT_INVALID"):
+        evaluator.evaluate_candidates(reader, window)
+    with pytest.raises(AlertEvaluationSkipped, match="ALERT_EVALUATION_DUPLICATE"):
+        evaluator.evaluate_candidates(reader, window)
+
+    assert reader.afters == [None]
+
+
+def test_subing_late_old_contract_is_skipped_without_displacing_new_cursor() -> None:
+    class Kernel:
+        def initial_state(self):
+            return 0
+
+        def step(self, state, close, *, bar_end):
+            del close, bar_end
+            return state + 1, SimpleNamespace(valid=True, ready=True, result_codes=())
+
+    class Reader:
+        def current_contract_replay_window(self, window, *, after):
+            return CurrentContractReplayWindow(
+                window.symbol,
+                window.frequency,
+                window.trading_day,
+                window.contract,
+                window.cutoff,
+                after,
+                (window.bars[-1],),
+            )
+
+    evaluator = SubingThs15mEvaluator(kernel=Kernel())
+    old = replace(_window(32), contract="J2505", bar_contracts=("J2505",) * 32)
+    current = replace(_window(34), contract="J2509", bar_contracts=("J2509",) * 34)
+    late_old = replace(_window(33), contract="J2505", bar_contracts=("J2505",) * 33)
+
+    assert evaluator.evaluate_candidates(Reader(), old) == ()
+    assert evaluator.evaluate_candidates(Reader(), current) == ()
+    with pytest.raises(AlertEvaluationSkipped, match="ALERT_EVALUATION_STALE"):
+        evaluator.evaluate_candidates(Reader(), late_old)
+
+    assert evaluator._cursors["j"].contract == "J2509"
+    assert evaluator._cursors["j"].last_bar_end == current.cutoff

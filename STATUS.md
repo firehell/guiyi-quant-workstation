@@ -83,12 +83,14 @@
 `a8c2c5758461e89697e2375dff3a89b120bae5e86b5a2f3db53fca901841c6e3`，59 项一次执行成功并读回，未改变
 JM 原周期、苏冰 Scope、Rule/audience、行情或 Runtime。该次执行意图已消费，不授权新会话重做。
 
-2026-09-13 开盘前独立审计发现 HTDY Live 计算窗口内部缺 Bar 未拒绝、苏冰失败 cutoff 去重可误清健康、
-共享 Runtime 错误误分类，修复尚待实施，现役仍不声明预警可靠性验收通过。审计相关回归 490 passed；这是
-旧基线证据，不是修复验收。60 个 9 月 11 日 rank1 合约完整 15m 历史前缀/苏冰预热通过，9 月 14 日 Session
-60/60 可解析；但周日新读回仍无 9 月 14 日冻结 Live snapshot，45 品种夜盘恢复目标尚不能绑定物理合约，
-当前手工恢复入口的同日/五根边界也不适用，provider 与恢复写入均为 0。证据与后续执行见
-[预警修复计划](docs/superpowers/plans/2026-09-13-alert-preopen-fixes.md)。
+2026-09-13 开盘前独立审计发现的三项缺陷已在本次候选中修复并完成回归与独立 Review：HTDY actual-dominant
+Live 计算窗口现在按 Calendar、Session 和 MainContractMap owner 精确校验，苏冰重复 cutoff 只作 typed skip 且不会
+清除既有失败，Runtime 区分恢复锁不可用与内部处理失败；Event 已提交但状态写入失败时禁止发送通知。当前生产
+Scope 只读复核仍为 HTDY 60 品种/61 对、苏冰 60 品种/60 对，61 个既有 Canonical 输入窗口全部通过；隔离的
+周一开盘恢复回归覆盖 60 个冻结合约、45 个夜盘目标且 provider/生产写入为 0。该代码尚未发布或切换 Runtime，
+现役仍不声明修复已生效或自然预警闭环通过。周日 10:24 CST 的最近可用只读证据仍无 9 月 14 日冻结 Live
+snapshot；本轮因生产 Redis 鉴权 URL 不在允许读取边界内，未重试、未改配置、未执行恢复或发送。首次自然
+completed Bar、Event/transport、健康读回仍是发布和 Runtime promotion 之后的独立现场 Gate。
 
 ## 周检有界读回证据
 

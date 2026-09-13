@@ -26,7 +26,14 @@ from app.market_data.market_read_service import (
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
-from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
+from app.models import (
+    Contract,
+    Exchange,
+    Instrument,
+    MainContractMap,
+    TradingCalendar,
+    TradingSession,
+)
 
 
 DAY_1 = date(2026, 8, 30)
@@ -153,6 +160,131 @@ def test_replay_endpoint_queries_are_bounded_across_long_exact_session_history(
     assert len(endpoints) == 1000
     assert {day for _bar_end, day in endpoints} == set(trading_days)
     assert len(selects) <= 6
+
+
+@pytest.mark.parametrize("frequency", ("5m", "15m", "60m"))
+def test_actual_dominant_alert_window_rejects_a_missing_owned_session_endpoint(
+    tmp_path, frequency: str
+) -> None:
+    """Catches compressing a legal Session gap into the HTDY 32-bar input."""
+    first = date(2026, 8, 27)
+    through = date(2026, 9, 2)
+    calendar_days = tuple(
+        first + timedelta(days=offset)
+        for offset in range((through - first).days + 1)
+    )
+    trading_days = tuple(day for day in calendar_days if day.weekday() < 5)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Exchange(code="SHFE", name="SHFE"),
+                Instrument(symbol="rb", name="RB", exchange_code="SHFE", is_active=True),
+                Contract(
+                    contract_code="RB2605",
+                    instrument_symbol="rb",
+                    exchange_code="SHFE",
+                    listed_date=first,
+                    expired_date=date(2027, 1, 1),
+                ),
+                Contract(
+                    contract_code="RB2610",
+                    instrument_symbol="rb",
+                    exchange_code="SHFE",
+                    listed_date=first,
+                    expired_date=date(2027, 1, 1),
+                ),
+                *(
+                    TradingCalendar(
+                        exchange_code="SHFE",
+                        trade_date=day,
+                        is_trading_day=day in trading_days,
+                        provider="rqdata",
+                    )
+                    for day in calendar_days
+                ),
+                *(
+                    MainContractMap(
+                        symbol="rb",
+                        trade_date=day,
+                        rank=1,
+                        contract_code=(
+                            "RB2605" if day == trading_days[-2] else "RB2610"
+                        ),
+                    )
+                    for day in trading_days[:-1]
+                ),
+            ]
+        )
+        for day in trading_days:
+            sessions = (
+                ("morning_1", time(9), time(10, 15)),
+                ("morning_2", time(10, 30), time(11, 30)),
+                ("afternoon", time(13, 30), time(15)),
+            )
+            if day != trading_days[0]:
+                sessions = (("night", time(21), time(23)), *sessions)
+            for name, start, end in sessions:
+                session.add(
+                    TradingSession(
+                        exchange_code="SHFE",
+                        instrument_symbol="rb",
+                        session_name=name,
+                        start_time=start,
+                        end_time=end,
+                        effective_from=day,
+                        effective_to=day,
+                        crosses_midnight=False,
+                        is_active=True,
+                        provider="rqdata",
+                    )
+                )
+        session.commit()
+        mds = MarketDataService(
+            MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path)
+        )
+        endpoints = tuple(
+            (*item, "RB2605" if day == trading_days[-2] else "RB2610")
+            for day in trading_days
+            for item in mds.expected_contract_replay_endpoints(
+                symbol="rb",
+                contract="RB2605" if day == trading_days[-2] else "RB2610",
+                frequency=frequency,
+                trading_day=day,
+                cutoff=datetime.max.replace(tzinfo=UTC),
+                since=day,
+            )
+        )
+        selected = endpoints[-33:]
+        bars = tuple(_bar(bar_end, day) for bar_end, day, _owner in selected)
+        owners = tuple(owner for _bar_end, _day, owner in selected)
+        if frequency == "60m":
+            assert set(owners) == {"RB2605", "RB2610"}
+
+        mds.validate_actual_dominant_alert_window(
+            symbol="rb",
+            frequency=frequency,
+            trading_day=trading_days[-1],
+            current_contract="RB2610",
+            cutoff=bars[-1].bar_end,
+            bars=bars,
+            bar_contracts=owners,
+        )
+
+        sparse = bars[:10] + bars[11:]
+        sparse_owners = owners[:10] + owners[11:]
+        with pytest.raises(MarketDataError, match="ACTUAL_DOMINANT_ALERT_WINDOW_UNAVAILABLE"):
+            mds.validate_actual_dominant_alert_window(
+                symbol="rb",
+                frequency=frequency,
+                trading_day=trading_days[-1],
+                current_contract="RB2610",
+                cutoff=bars[-1].bar_end,
+                bars=sparse,
+                bar_contracts=sparse_owners,
+            )
+    engine.dispose()
 
 
 def test_input_readiness_separates_historical_prefix_from_live_gap(tmp_path):
@@ -445,6 +577,10 @@ class _MarketPageReader:
             next_before=None,
             resolved_contract_segments=self._segments,
         )
+
+    @staticmethod
+    def validate_actual_dominant_alert_window(**_kwargs) -> None:
+        return None
 
 
 class _LiveStore:
@@ -875,6 +1011,79 @@ def test_bars_until_aligns_historical_and_live_rank1_contract_owners() -> None:
         (DAY_2, "JM2705"),
     )
     assert window.bar_contracts[-1] == window.contract == "JM2705"
+
+
+def test_bars_until_rejects_fixed_in_session_gap_before_htdy_signal_changes() -> None:
+    from app.alerts.evaluators import HtdyOriginalEvaluator
+
+    prior = date(2026, 8, 27)
+
+    def endpoints(day: date, night_day: date) -> tuple[datetime, ...]:
+        return tuple(
+            [datetime(night_day.year, night_day.month, night_day.day, 13, minute, tzinfo=UTC) for minute in (15, 30, 45)]
+            + [datetime(night_day.year, night_day.month, night_day.day, hour, minute, tzinfo=UTC) for hour, minute in ((14, 0), (14, 15), (14, 30), (14, 45), (15, 0))]
+            + [datetime(day.year, day.month, day.day, 1, minute, tzinfo=UTC) for minute in (15, 30, 45)]
+            + [datetime(day.year, day.month, day.day, 2, minute, tzinfo=UTC) for minute in (0, 15, 45)]
+            + [datetime(day.year, day.month, day.day, 3, minute, tzinfo=UTC) for minute in (0, 15, 30)]
+            + [datetime(day.year, day.month, day.day, 5, 45, tzinfo=UTC)]
+            + [datetime(day.year, day.month, day.day, 6, minute, tzinfo=UTC) for minute in (0, 15, 30, 45)]
+            + [datetime(day.year, day.month, day.day, 7, 0, tzinfo=UTC)]
+        )
+
+    points = tuple(
+        (bar_end, day)
+        for day, night_day in ((prior, date(2026, 8, 26)), (date(2026, 8, 28), prior))
+        for bar_end in endpoints(day, night_day)
+    )[-41:] + tuple((bar_end, DAY_2) for bar_end in endpoints(DAY_2, date(2026, 8, 28)))
+    prices = (
+        103.048, 93.344, 90.627, 102.765, 91.059, 100.975, 109.429, 99.274,
+        96.241, 92.124, 96.038, 96.405, 92.342, 104.05, 102.047, 104.357,
+        92.143, 95.009, 108.501, 90.176, 97.397, 106.359, 94.577, 94.401,
+        102.749, 95.035, 96.721, 97.832, 95.974, 103.181, 104.692, 105.222,
+        109.608, 91.456, 95.134, 109.73, 105.961, 105.209, 94.446, 92.567,
+        95.507, 107.857, 105.01, 97.339, 103.173, 104.705, 95.732, 92.128,
+        106.222, 104.157, 106.144, 104.855, 97.309, 103.089, 97.336, 108.071,
+        92.478, 103.932, 96.928, 108.192, 106.077, 93.499, 90.313, 94.675,
+    )
+    all_bars = tuple(
+        _bar_with_close(bar_end, day, str(price))
+        for (bar_end, day), price in zip(points, prices, strict=True)
+    )
+
+    class ValidatingReader(_MarketPageReader):
+        def validate_actual_dominant_alert_window(self, **kwargs) -> None:
+            actual = tuple(
+                (bar.bar_end, bar.trading_day, owner)
+                for bar, owner in zip(kwargs["bars"], kwargs["bar_contracts"], strict=True)
+            )
+            expected = tuple(
+                (bar.bar_end, bar.trading_day, "JM2705")
+                for bar in all_bars
+                if actual[0][0] <= bar.bar_end <= kwargs["cutoff"]
+            )
+            if actual != expected:
+                raise MarketDataError("ACTUAL_DOMINANT_ALERT_WINDOW_UNAVAILABLE")
+
+    def read(live: tuple[CanonicalBar, ...]) -> MarketReadWindow:
+        return MarketReadService(
+            market_data=ValidatingReader(
+                all_bars[:41], (ResolvedContractSegment("JM2705", prior, DAY_2),)
+            ),
+            phase_resolver=_ForbiddenPhaseReader(),
+            operational_products=("jm",),
+            live_store=_LiveStore(live, "JM2705"),
+        ).bars_until(
+            SeriesPageQuery("actual_dominant", "jm", "15m"),
+            trading_day=DAY_2,
+            end=all_bars[-1].bar_end,
+            limit=64,
+        )
+
+    full = read(all_bars[41:])
+    assert HtdyOriginalEvaluator().evaluate_candidates(object(), full)[0].observation_types == ("buy",)
+    sparse_live = all_bars[41:61] + all_bars[62:]
+    with pytest.raises(MarketReadWindowError, match="MARKET_READ_WINDOW_INCOMPLETE"):
+        read(sparse_live)
 
 
 def test_live_snapshot_excludes_bars_after_observation_time() -> None:

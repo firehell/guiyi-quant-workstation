@@ -230,6 +230,84 @@ def test_all_60_products_recover_afternoon_first_minute_and_all_derived_buckets(
     assert redis.published == []
 
 
+def test_monday_open_freezes_60_contracts_and_schedules_45_night_prefixes():
+    """The normal foreground snapshot owns Monday recovery identity and sessions."""
+    from app.market_data.live_market import LiveMarketService, RQDataLiveProvider
+    from app.market_data.operational_universe import load_operational_products
+    from tests.data_foundation.test_live_market import (
+        FakeDominants,
+        FakeLiveClient,
+        FakePhases,
+        _phase,
+    )
+
+    products = load_operational_products()
+    trading_day = date(2026, 9, 14)
+    now = datetime(2026, 9, 14, 1, 0, tzinfo=UTC)
+    morning = SessionWindow(now, now + timedelta(hours=1))
+    night = SessionWindow(
+        datetime(2026, 9, 11, 13, 0, tzinfo=UTC),
+        datetime(2026, 9, 11, 15, 0, tzinfo=UTC),
+    )
+    night_products = frozenset(
+        (
+            "a", "ag", "al", "ao", "au", "b", "bu", "bz", "c", "cf", "cu",
+            "eb", "eg", "fg", "fu", "hc", "i", "j", "jm", "l", "m", "ma",
+            "ni", "oi", "p", "pb", "pf", "pg", "pl", "pp", "pr", "px", "rb",
+            "rm", "ru", "sa", "sc", "sh", "sn", "sr", "ss", "ta", "v", "y",
+            "zn",
+        )
+    )
+    assert len(products) == 60
+    assert len(night_products) == 45
+    assert night_products < set(products)
+    contracts = {symbol: f"{symbol.upper()}2701" for symbol in products}
+    fake_redis = FakeRedis()
+
+    class RecordingWorker:
+        requests = ()
+
+        @staticmethod
+        def due(_now):
+            return True
+
+        def schedule(self, requests, _now):
+            self.requests = requests
+
+    worker = RecordingWorker()
+    service = LiveMarketService(
+        provider_factory=lambda: RQDataLiveProvider(FakeLiveClient()),
+        dominant_source=FakeDominants(
+            {(symbol, trading_day): contract for symbol, contract in contracts.items()}
+        ),
+        phase_resolver=FakePhases(
+            {symbol: _phase(symbol, trading_day, morning) for symbol in products}
+        ),
+        store=RedisLiveStore(fake_redis),
+        operational_products=products,
+    )
+    service._recovery_sessions = lambda symbol, _day: (
+        (night, morning) if symbol in night_products else (morning,)
+    )
+    service._recovery_worker = worker
+
+    assert service.reconcile(now) is None
+
+    snapshot = RedisLiveStore(fake_redis).subscriptions(trading_day)
+    assert snapshot == contracts
+    assert len(worker.requests) == 60
+    for request in worker.requests:
+        assert dict(request.snapshot) == contracts
+        assert request.contract == contracts[request.symbol]
+        assert request.trading_day == trading_day
+        assert request.sessions == (
+            (night, morning) if request.symbol in night_products else (morning,)
+        )
+    assert fake_redis.published == [
+        ("market:state", '{"trading_day":"2026-09-14"}')
+    ]
+
+
 def test_night_endpoints_keep_exchange_trading_day():
     from app.market_data.live_recovery import LiveRecoveryRequest, recover_product
 

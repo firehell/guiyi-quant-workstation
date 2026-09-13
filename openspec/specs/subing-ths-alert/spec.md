@@ -170,10 +170,24 @@ HTDY Topic audience SHALL 由 PushPlus 外部人工维护，范围不得超过 o
 
 HTDY 五个日内周期 SHALL 只消费同周期 completed Live Bar；D1/W1 SHALL 只响应
 `market:state(reason=canonical_updated)` 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。
+日内 evaluator 使用最后 32 根前，MarketRead SHALL 以 Calendar、逐日 Session 与逐 Bar rank1 owner 证明
+从首根到 cutoff 的预期端点精确相等。午休、周末、夜盘归属和短 Session 尾桶只按 authority 解释；缺失、
+重复、额外、错误 trading_day 或 owner 均 MUST fail closed。当日 MainContractMap 尚未发布时可使用同一次读取
+冻结的 Live rank1 identity，但历史日 owner 仍必须来自 MainContractMap；不得缩窗、补值或改读 continuous。
 forward-only `first_seen` 只比较触发时的 previous/current prefix，历史重绘候选只限 Kernel repaint zone。
 `AlertEvent.bar_end` SHALL 是观察 Bar 时间，`detected_at` SHALL 是 Runtime 首次识别时间；Event 冻结后，
 重绘消失、重现或方向变化均不得改写或重发。startup、repair、replay、backfill 与 EOD recalculation MUST NOT
 创建历史 HTDY Event 或通知。
+
+#### Scenario: A 5m, 15m or 60m context has an internal Session gap
+
+- **WHEN** cutoff 仍存在且窗口数量仍足够，但 Calendar/Session/owner 预期端点中有一根缺失
+- **THEN** Kernel 不运行，Rule 记录公开评价失败，Event 与通知均不增加
+
+#### Scenario: An actual-dominant context crosses a legal owner boundary
+
+- **WHEN** 历史日 owner 由 MainContractMap 证明、当日 frozen owner 有效且每个 Session 端点完整
+- **THEN** HTDY 可保留跨物理合约的 actual-dominant 策略窗口，不强制退化为单合约预热
 
 #### Scenario: A daily or weekly Canonical update is observed
 
@@ -274,6 +288,28 @@ Rule的last_failure_at MUST 保留，现有全局失败事实继续按原合同�
 - **GIVEN** Rule保留last_failure_at，但成功eval已清空当前error_type
 - **WHEN** 计算聚合health
 - **THEN** 允许当前health为ok并继续呈现历史失败；若error_type仍存在则不能回绿
+
+#### Scenario: A failed or warming SuBing cutoff is delivered again
+
+- **WHEN** evaluator 已推进同合约 kernel 状态但该 cutoff 未完成一次成功评价，随后收到相同 trigger
+- **THEN** 重复项作为 typed skip，不更新成功评价时间、不清当前 Rule/global failure，也不重跑 Event 或通知
+
+#### Scenario: An older contract arrives after a newer accepted cutoff
+
+- **WHEN** 新主力窗口已成为该 symbol 的最新 identity，随后收到更早 cutoff 或旧合约 trigger
+- **THEN** evaluator 单调跳过，不恢复旧合约 cursor、不产生历史 Candidate
+
+### Requirement: Runtime failure classification preserves the failing boundary
+
+`ALERT_RECOVERY_GUARD_UNAVAILABLE` SHALL 只表示 recovery guard 获取或释放失败。DB、evaluator、Event、status
+或编排体异常 SHALL 保留为 processing/rule failure，不能伪报 guard；任何日志只包含 bounded public code 与
+既有允许身份，不输出 provider、SQL、地址、stack 或凭据。Event commit 后的状态失败 MUST 阻止 sender，
+且不得借重复 trigger 重试 Event 或清除失败。
+
+#### Scenario: Event commits and runtime status then fails
+
+- **WHEN** Event 已 commit，但随后的 status/CAS 写失败
+- **THEN** Event 保留、sender 不调用，日志为 processing failure 且没有 guard failure；相同 Bar 不补发
 
 ### Requirement: Runtime status and acknowledgment stay bounded
 

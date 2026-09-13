@@ -28,6 +28,18 @@ from app.market_data.live_market import LiveBarObservation, LiveRecoveryState
 
 
 class MarketPageReader(Protocol):
+    def validate_actual_dominant_alert_window(
+        self,
+        *,
+        symbol: str,
+        frequency: BarFrequency | str,
+        trading_day: date,
+        current_contract: str,
+        cutoff: datetime,
+        bars: tuple[CanonicalBar, ...],
+        bar_contracts: tuple[str, ...],
+    ) -> None: ...
+
     def expected_contract_replay_endpoints(self, *, symbol: str, contract: str, frequency: BarFrequency | str,
                                           trading_day: date, cutoff: datetime, after: datetime | None = None,
                                           since: date | None = None) -> tuple[tuple[datetime, date], ...]: ...
@@ -268,6 +280,20 @@ class MarketReadService:
             raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
         if len(bar_contracts) != len(bars) or bar_contracts[-1] != contract:
             raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+        context_bars = bars[-32:]
+        context_owners = bar_contracts[-32:]
+        try:
+            self._market_data.validate_actual_dominant_alert_window(
+                symbol=identity.symbol,
+                frequency=identity.frequency,
+                trading_day=trading_day,
+                current_contract=contract,
+                cutoff=cutoff,
+                bars=context_bars,
+                bar_contracts=context_owners,
+            )
+        except MarketDataError as exc:
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE") from exc
         window = MarketReadWindow(
             symbol=identity.symbol,
             series_kind=identity.series_kind.value,

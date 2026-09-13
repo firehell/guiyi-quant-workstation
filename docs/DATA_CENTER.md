@@ -244,6 +244,11 @@ Event commit 与 one-shot send 持有同一锁，因此水位不能穿过 Event/
 MainContractMap，盘中使用既有冻结 rank1 Live snapshot；当日 MainContractMap 尚未由盘后发布不构成
 新的隐藏 Gate。分别报告历史 15m、当日 1m/15m 缺口；不可读历史保持未知，不能假装缺失数为零。
 
+Alert 的 HTDY 5m/15m/60m 计算窗口还须在进入 kernel 前，以 Calendar、逐日 Session 和逐 Bar owner 对最后
+32 根做精确端点证明。午休、周末、夜盘归属和短尾桶不是连续时钟缺口；缺失、重复、额外、错误交易日或
+owner 则公开失败，不缩窗、不补值、不回退 continuous。历史 owner 来自 MainContractMap；当日 owner 可来自
+同一次窗口读取的冻结 Live snapshot。该检查不改变 SuBing 只回放当前物理合约完整 lifecycle 的独立合同。
+
 ### 已捕获源数据的五根 Live 恢复
 
 显式人工入口 `runtime recover-live-captured` 默认只读规划；`--apply` 必须携带新计划及精确计划哈希，
