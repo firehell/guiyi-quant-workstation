@@ -1,7 +1,10 @@
 # 当前状态
 
-文档整理：2026-09-13；最新现场记录截至 `2026-09-13 20:15:15 CST`。
+文档整理：2026-09-13；最新候选验证截至 `2026-09-13 23:39:16 CST`，现场记录截至
+`2026-09-13 20:15:15 CST`。
 正式 Release 与现役 Runtime 为 `v1.10.8@82860ee3f5f63c49397ab11b0d0ab60c601376b9`。
+develop 冻结基线 `74d7a71fcd061d25eb23d7d2142a075420125886` 正在准备为未发布的 v1.10.9
+`RELEASE_CANDIDATE`；发布、main/tag/GitHub Release、Runtime promotion 与自然验收仍分别取证。
 六服务切换、即时服务和页面验收已通过；自然 Live、盘后、后续增量及首次自然周检仍待验收，
 不声明 `RUNTIME_READY`。本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
@@ -13,6 +16,7 @@
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.8@82860ee3f`，PR #364 合入 main，tree `6df9ebdce`、annotated tag object `b1a52b239` 与 GitHub Release 已读回 |
 | 现役 Runtime | v1.10.8 `RUNTIME_PROMOTED / IMMEDIATE_ACCEPTANCE_PASSED`，未声明 `RUNTIME_READY` | 六服务均绑定 `v1.10.8@82860ee3f`；API/Web 200、单 API worker、Live/Alert fresh heartbeat；after-market 等待自然运行，既有 degraded/failed health 事实保留 |
+| v1.10.9 候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_PENDING` | 基于 develop `74d7a71f` 的完整集成版已完成版本身份与新 tree 验证；最终 Review、main/tag/Release 与 Runtime promotion 尚未完成 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
 | Weekly audit | `ENABLED / CURRENT_WEEK_READBACK_PASSED / NATURAL_RUN_PENDING` | exact v1.10.8 root 已 loaded、周六 09:00、当前 idle、runs 0 / not_run；840/840 endpoint 与 120/120 周线归属核对通过；首次自然及全历史周检待验 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
@@ -22,6 +26,26 @@
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
+
+## v1.10.9 Release candidate（测试完成；Review 待完成）
+
+v1.10.9 发布范围是 `v1.10.8...74d7a71f` 的完整 develop 集成差异，不反向拆散已接受提交，也不把本版
+缩称为单一告警补丁。主要交付包括：Market Home 报价与历史消息、统一详情页与 Newow 展示；Newow 周线
+readiness/验收、趋势点图层及 `INITIAL_CLEAR_NO_ENTRY` v2；开盘恢复队列、typed Live provenance、正常追加与
+恢复提交串行化、共享锁释放异常边界。数据库 schema、正式 Scope、通知受众、策略公式、Newow 周期开放范围
+和数据写入授权均不随版本号改变；本次 diff 未新增 Alembic migration。
+
+版本更新后的新 tree 验证为：后端完整组 3724 passed / 47 skipped / 31 deselected，另在允许 loopback 的
+隔离环境补齐同一 tree 的 2 项真实 socket 测试；Web 600 tests 为 599 passed / 1 既有可选 golden skip，
+production build 通过；关键首页、统一详情、Newow 与苏冰 126 项 fixture E2E 全部通过。真实 Lua/并发/文件锁
+在一次性非 6379、无持久卷 Redis 上 70 passed，容器已移除；工程/launchd 86 passed，Mypy 162 files、Ruff、
+OpenSpec 9/9、两套锁文件、secret scan 0、render-only 与 diff check 均通过。首次 E2E 与完整后端并跑时一项
+既有 fullscreen 用例超时；源码自 v1.10.8 未变，单项隔离重放通过，随后无重型并发的 126 项完整重跑通过，
+未修改代码或放宽断言。候选尚须冻结 commit/tree 并完成独立 Review。
+
+完成 main merge、annotated tag 与 GitHub Release 只证明 `RELEASED`；本地六服务切换须另经
+fresh render-only、正式只读 promotion preflight 和 exact Runtime 身份读回。自然 completed Live Bar、真实收件、
+自然 18:05 盘后、后续增量/MDS 与首次自然周检继续保持 pending，不由启动或即时 health 代替。
 
 ## 共享锁释放异常修复（开发验收）
 
@@ -374,8 +398,9 @@ Web 优化信息层级、布局、可读性、图表操作、加载体验和移�
 
 ## 唯一下一步
 
-等待并验证 exact v1.10.8 的第一根自然 completed Live Bar；随后按自然时序分别验收 after-market 与后续增量/MDS。
-首次自然 weekly audit 保持独立 Gate。当前休市不手工制造 Bar、不手工执行盘后或周检；data、Scope、notification
-及 D/E/F 均不重跑。
+完成 v1.10.9 候选的新 tree 验证与独立 Review；通过后按本轮精确意图发布 main/tag/GitHub Release，并仅在
+fresh promotion preflight 通过时切换本机既有六服务。自然 Live、after-market、后续增量/MDS 与 weekly audit
+继续按各自时序验收；不手工制造 Bar、不重跑 D/E/F、不变更 data、Scope、audience 或 notification 状态。
 
-本文件不构成元数据/行情修复、发布或 Runtime promotion 批准。
+本文件不构成元数据/行情修复、Scope、通知或交易批准；v1.10.9 发布与本机 Runtime promotion 仅使用 owner
+本轮已给出的精确一次执行意图，失败、结果不明或范围变化后不自动重试。
