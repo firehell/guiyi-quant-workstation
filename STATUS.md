@@ -23,6 +23,18 @@
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
 
+## 首页市场、消息与分钟行情（开发验收）
+
+2026-09-13 首页改进候选 `056958632` 已完成 `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE`，
+允许集成 develop。市场/消息分区、自由看盘入口、SVG 状态图标、详情返回缓存与位置恢复、固定 operational
+60 品种 completed 1m 只读报价及历史消息分页已实现。分钟报价和已完成 D1/W1 指标分别标识；
+换主力接受后端确认的新 owner，缺同合约昨收不借旧合约涨跌；日周未同向不表述为账户空仓。
+独立复核发现的普通 quote 误触发 overview 刷新、缓存分页恢复、换主力显示和刷新/续页竞态均已关闭。
+组合后端测试 227 passed；Web 555 passed / 1 原有可选 golden skip；首页 fixture E2E 25 passed；
+最后分页修复另经 13 项定向测试与 build/typecheck 验证。OpenSpec 9 passed、secret scan 0 findings。
+命令与验证边界见 `TESTING.md`。本地预览验收不构成 main/tag 发布或 Runtime promotion，
+自然开市 completed 1m 与通知收件继续按各自证据验收。
+
 ## v1.10.8 Release（已发布；Runtime 已切换）
 
 - 已审冻结候选 `6c724f730238c54a30b69d0930d5dcbdc61921e3` 与发布 tree
