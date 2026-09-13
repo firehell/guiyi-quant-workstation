@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 from datetime import UTC, date, datetime
 from typing import Any, TextIO
@@ -35,14 +36,23 @@ def build_request(args: argparse.Namespace):
         return None
     if args.data_command == "newow-readiness":
         from app.market_data.newow.readiness import ReadinessRequest
+        from guiyi_quant.newow.product_contracts import ProductFrequency
 
         as_of = datetime.fromisoformat(args.as_of.replace("Z", "+00:00"))
         if as_of.utcoffset() is None or as_of > datetime.now(UTC):
             raise ValueError("CLI_ARGUMENT_INVALID")
         return ReadinessRequest(
-            products=load_active_products() if args.universe == "active" else (_active_product(args.symbol),),
+            products=(
+                _products(None, args.universe)
+                if args.universe is not None
+                else (_active_product(args.symbol),)
+            ),
             as_of=as_of, matrix=args.matrix, max_work=args.max_work,
             timeout_seconds=args.timeout_seconds,
+            frequencies=tuple(
+                ProductFrequency(item)
+                for item in (args.frequency or tuple(ProductFrequency))
+            ),
         )
     if args.data_command == "update":
         return UpdateRequest(
@@ -175,6 +185,79 @@ def contract_warmup_payload(result: ContractWarmupResult) -> dict[str, object]:
         "targets": [dict(item) for item in plan.target_windows],
         "scope_diagnostics": [dict(item) for item in plan.scope_diagnostics],
         "failures": [dict(item) for item in result.failures],
+    }
+
+
+def compact_readiness_payload(report: dict[str, Any]) -> dict[str, object]:
+    """Keep release evidence and Gate identities without verbose dependency rows."""
+
+    def counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+        counter = Counter(
+            ":".join(
+                part
+                for part in (str(row.get("status", "UNKNOWN")), row.get("reason"))
+                if part
+            )
+            for row in rows
+        )
+        return dict(sorted(counter.items()))
+
+    repair_fields = (
+        "symbol",
+        "contract",
+        "frequency",
+        "through",
+        "status",
+        "reason",
+        "expected_bar_count",
+        "provider_request_count",
+        "plan_sha256",
+    )
+    metadata_fields = (
+        "symbol",
+        "contract",
+        "frequency",
+        "through",
+        "status",
+        "reason",
+        "proposal",
+    )
+    enumerations = report["enumerations"]
+    dependencies = report["dependencies"]
+    repairs = report["repair_targets"]
+    metadata = report["metadata_proposals"]
+    return {
+        "schema_version": "newow_readiness_compact_v1",
+        **{
+            key: report[key]
+            for key in (
+                "command",
+                "readonly",
+                "status",
+                "complete",
+                "as_of",
+                "matrix",
+                "frequency_scope",
+                "product_count",
+                "main_case_count",
+                "main_ready_count",
+                "budget_exhausted",
+                "work_used",
+                "provider_requests",
+                "writes",
+            )
+        },
+        "enumeration_counts": counts(enumerations),
+        "dependency_counts": counts(dependencies),
+        "repair_counts": counts(repairs),
+        "metadata_counts": counts(metadata),
+        "repair_targets": [
+            {key: row.get(key) for key in repair_fields} for row in repairs
+        ],
+        "metadata_proposals": [
+            {key: row.get(key) for key in metadata_fields} for row in metadata
+        ],
+        "cases": report["cases"],
     }
 
 

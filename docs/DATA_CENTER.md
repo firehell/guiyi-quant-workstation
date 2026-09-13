@@ -510,8 +510,9 @@ endpoint authority：先枚举各 section 必需的 owner，再独立验证每�
 窗口，explanation 使用三周期输入；每个依赖保留 owner 区间及 strategy/frequency/section consumer provenance。
 W1 合法零 Bar owner 标为 `NOT_APPLICABLE`，不得填 Bar 或计入 data-ready。
 
-`newow-readiness` 只接受互斥的单 active symbol 或 active universe，必须固定带时区 `as_of`；串行工作量和
-deadline 均有界。metadata 不足时返回 `UNKNOWN` 与 bounded metadata repair proposal，预计根数/请求数
+`newow-readiness` 只接受互斥的单 active symbol、active universe 或 operational universe，并可显式重复
+`--frequency` 收窄到 `1w/1d/60m` 的任意非空、不重复子集；未传时保持三周期兼容审计。必须固定带时区
+`as_of`，串行工作量和 deadline 均有界。metadata 不足时返回 `UNKNOWN` 与 bounded metadata repair proposal，预计根数/请求数
 为 null；预算耗尽明确 `incomplete`，保留未启动枚举/依赖/case，不能报告完整覆盖。未知异常仅公开固定内部
 错误，原始非正价格单列 `SOURCE_EXCEPTION`，完整性错误单列 `INTEGRITY_ERROR`，两者不生成盲目下载目标。
 
@@ -525,11 +526,14 @@ no-autoflush、statement timeout 和 finally rollback。
 `REVIEW_REQUIRED`，不提供 plan hash 或总下载请求数；不能借缺 W1/60m 重新纳入已排除的损坏/非正源输入。
 SQLite 的 connection-level `query_only` 必须在 rollback 归还连接池前恢复原值；恢复或回读失败即丢弃该连接。
 
-matrix 模式保留 active 60 × 三策略 × 三周期的 540 main cases，同时独立运行实际 section service，
+matrix 模式按所选 universe × 三策略 × 显式 frequency scope 生成 main cases，同时独立运行实际 section service，
 保留 `EVIDENCE_REQUIRED`、`NOT_APPLICABLE`、`WARMING` 等业务状态。`complete=true/status=audited`
 仅表示本次限定审计已完成，不表示全部数据 ready、原站 parity、Release 或 Runtime acceptance；
 main ready count 只计算实际主图 READY，不把其他 section 的证据状态算作数据成功。真实只读连接亦须位于
 用户授权范围，fixture 验证与命令存在不构成真实连接或数据修复授权。用法与定向测试见 `TESTING.md`。
+`--compact` 只压缩公开结果：保留状态计数、每个 repair 的 symbol/contract/frequency/through/hash/工作量、
+metadata proposal 与 matrix case，省略逐 dependency、逐月窗口和 consumer 明细；默认完整 JSON 仍是精确审计事实，
+compact 结果不能单独替代 apply 前的原生 `contract-warmup` plan/hash 重读。
 
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
@@ -538,6 +542,7 @@ guiyi data current-day-metadata-recovery --phase {capture,plan,apply} --runtime-
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}] [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe {active,operational}) [--through DATE] [--progress]
+guiyi data newow-readiness (--symbol X | --universe {active,operational}) --as-of TIMESTAMP [--frequency {1w,1d,60m}]... [--matrix] [--compact] [--max-work N] [--timeout-seconds N]
 guiyi data session-anchor-repair --phase plan
 guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply

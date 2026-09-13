@@ -1,0 +1,96 @@
+{
+  "schema_version": "newow_weekly_60_readiness_summary_v1",
+  "generated_at": "2026-09-13T15:04:55+08:00",
+  "scope": {
+    "as_of": "2026-09-13T06:36:13+00:00",
+    "frequencies": [
+      "1w"
+    ],
+    "product_count": 60,
+    "strategy_count": 3,
+    "expected_main_case_count": 180,
+    "operational_products_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d",
+    "product_window_starts_sha256": "b5f9693bab9dd0174d835038e7ca49823d183b61c2a124405d8d003da611f9a2"
+  },
+  "audit": {
+    "status": "incomplete",
+    "complete": false,
+    "matrix_run": false,
+    "budget_exhausted": false,
+    "work_used": 3587,
+    "full_result_sha256": "dbde511f28c6742c76a4c90b62411e63d07eca3b5155a3a9a18d8b9f6cd93514",
+    "compact_result_sha256": "673253b62acb0e992730c5a0e60cf67fcbad673098030f4d77542bbf49579107",
+    "provider_requests": 0,
+    "writes": 0
+  },
+  "dependency_counts": {
+    "total": 2440,
+    "data_ready": 94,
+    "data_unavailable": 1832,
+    "not_applicable": 18,
+    "source_exception": 2,
+    "unknown": 494
+  },
+  "repair_counts": {
+    "unique_contract_frequency_targets": 907,
+    "proposed": 898,
+    "review_required": 9,
+    "proposed_expected_bars": 204217,
+    "proposed_provider_requests": 17561,
+    "review_required_symbol": "rs"
+  },
+  "metadata_counts": {
+    "proposal_rows": 494,
+    "unique_contract_frequency_through_targets": 247,
+    "reason": "HISTORICAL_SESSION_FACT_MISSING"
+  },
+  "source_exceptions": [
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1w",
+      "reason": "SOURCE_NONPOSITIVE_PRICE"
+    }
+  ],
+  "rqdata_quota": {
+    "observed_at": "2026-09-13T15:04:55+08:00",
+    "bytes_limit": 1073741824,
+    "bytes_used": 491412,
+    "license_type": "FULL",
+    "task_daily_ceiling_bytes": 900000000,
+    "note": "Quota evidence does not estimate this repair scope's transfer bytes."
+  },
+  "calibration_batch_candidate": {
+    "status": "AWAITING_OWNER_INTENT",
+    "symbol": "pt",
+    "frequency": "1w",
+    "dependency_frequencies": [
+      "1d"
+    ],
+    "expected_bar_count": 345,
+    "provider_request_count": 32,
+    "targets": [
+      {
+        "contract": "PT2608",
+        "through": "2026-07-21",
+        "expected_bar_count": 146,
+        "provider_request_count": 14,
+        "plan_sha256": "de256d1eb2f3a8117b1d4b5e071c13dd02e7b48ff60e57761437fa4dd871e6c6"
+      },
+      {
+        "contract": "PT2610",
+        "through": "2026-09-11",
+        "expected_bar_count": 199,
+        "provider_request_count": 18,
+        "plan_sha256": "9341907dd0b8eadfe75161a4de8fdde21ecca397053da4e269ea99295098c234"
+      }
+    ],
+    "stop_conditions": [
+      "maintenance_lock_busy",
+      "plan_hash_drift",
+      "first_target_failure_or_unknown_result",
+      "rqdata_bytes_used_reaches_900000000",
+      "first_target_consumes_more_than_10000000_bytes"
+    ]
+  }
+}

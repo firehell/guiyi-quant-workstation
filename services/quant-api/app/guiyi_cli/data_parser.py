@@ -199,9 +199,15 @@ def add_data_commands(
     readiness = commands.add_parser("newow-readiness", allow_abbrev=False)
     selector = readiness.add_mutually_exclusive_group(required=True)
     selector.add_argument("--symbol")
-    selector.add_argument("--universe", choices=("active",))
+    selector.add_argument("--universe", choices=("active", "operational"))
     readiness.add_argument("--as-of", required=True)
+    readiness.add_argument(
+        "--frequency",
+        action="append",
+        choices=("1w", "1d", "60m"),
+    )
     readiness.add_argument("--matrix", action="store_true")
+    readiness.add_argument("--compact", action="store_true")
     readiness.add_argument("--max-work", type=int, default=10000)
     readiness.add_argument("--timeout-seconds", type=int, default=300)
 

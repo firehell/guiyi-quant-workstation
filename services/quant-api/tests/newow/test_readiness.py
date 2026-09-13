@@ -125,6 +125,28 @@ def test_budget_preserves_all_540_main_cases_as_unstarted():
     assert all(item["main"]["status"] == "UNSTARTED" for item in report["cases"])
 
 
+def test_weekly_scope_preserves_exact_three_strategy_matrix_without_hourly_dependencies():
+    module = _audit_module()
+    from guiyi_quant.newow.product_contracts import ProductFrequency
+
+    report = module.NewowReadinessAudit(reader=AuditReader()).run(
+        module.ReadinessRequest(
+            ("rb", "au"),
+            datetime(2026, 9, 4, 8, tzinfo=UTC),
+            matrix=True,
+            frequencies=(ProductFrequency.WEEKLY,),
+            max_work=1,
+        )
+    )
+
+    assert len(report["cases"]) == 6
+    assert {row["frequency"] for row in report["cases"]} == {"1w"}
+    assert len(report["enumerations"]) == 8
+    assert {row["frequency"] for row in report["enumerations"]} == {"1w"}
+    assert report["frequency_scope"] == ["1w"]
+    assert all(item["main"]["status"] == "UNSTARTED" for item in report["cases"])
+
+
 @pytest.mark.parametrize(
     "reason,expected",
     [
@@ -454,3 +476,54 @@ def test_known_daily_integrity_cannot_be_hidden_by_weekly_missing_candidate():
     weekly = [row for row in report["repair_targets"] if row["frequency"] == "1w"]
     assert weekly and all(row["status"] == "REVIEW_REQUIRED" for row in weekly)
     assert all(row["scope_conflicts"][0]["frequency"] == "1d" for row in weekly)
+
+
+def test_repair_scope_coalesces_one_contract_to_latest_required_through():
+    module = _audit_module()
+    from app.market_data.domain import ResolvedContractSegment
+
+    class Reader(AuditReader):
+        def resolve_chart_window(self, product, frequency, limit, as_of):
+            from app.market_data.newow.product_query import ProductReadWindow
+
+            return ProductReadWindow(date(2026, 8, 1), date(2026, 8, 15))
+
+        def resolve_performance_window(self, product, frequency, since, through, as_of):
+            return SimpleNamespace(
+                requested_since=date(2026, 8, 1),
+                actual_through=date(2026, 9, 4),
+                cutoff=as_of,
+            )
+
+        def dependency_owners(self, product, since, through):
+            return (ResolvedContractSegment("RB2701", since, through),)
+
+    planned = []
+
+    def plan(request):
+        planned.append(request)
+        return {
+            "plan_sha256": "a" * 64,
+            "expected_bar_count": 3,
+            "provider_request_count": 1,
+            "frequencies": ("1d", "1w"),
+            "scope_diagnostics": (),
+        }
+
+    report = module.NewowReadinessAudit(reader=Reader(), plan=plan).run(
+        module.ReadinessRequest(
+            ("rb",),
+            datetime(2026, 9, 4, 8, tzinfo=UTC),
+            frequencies=("1w",),
+        )
+    )
+
+    assert len(planned) == len(report["repair_targets"]) == 1
+    assert planned[0].through == date(2026, 9, 4)
+    assert report["repair_targets"][0]["through"] == "2026-09-04"
+    assert {item["section"] for item in report["repair_targets"][0]["consumers"]} == {
+        "chart",
+        "auxiliary",
+        "reference",
+        "explanation",
+    }

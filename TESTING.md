@@ -36,10 +36,14 @@ Web 验证返回保留列表和位置、有效快照不重复加载、过期后�
 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
   services/quant-api/tests/data_foundation \
   services/quant-api/tests/newow/test_product_reader.py \
-  services/quant-api/tests/newow/test_readiness.py
+  services/quant-api/tests/newow/test_readiness.py \
+  services/quant-api/tests/data_foundation/test_newow_readiness_cli.py
 ```
 
 覆盖周五夜盘首边界、未完成尾周、逐日交易所夜盘证据、来源全集身份和生命周期、局部无夜盘不得覆盖共享 Calendar，以及元数据提交结果不明时停止并独立回读。隔离工作树可显式使用既有 Python 环境；这些离线检查不代表实际历史补齐、未来 Calendar 自动扩展或浏览器验收。
+`newow-readiness --universe operational --frequency 1w` 只审计周版及其 D1 companion；`--compact`
+只生成 Gate 索引，默认完整结果仍用于逐 dependency 与原生 plan 核对。真实 Catalog/Canonical 只读审计须另获
+当前现场权限，且即使结果为 `audited` 也不授权任何 `--apply`。
 
 ## Newow 新版参考卡片定向验证
 
