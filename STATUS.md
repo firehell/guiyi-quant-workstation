@@ -86,14 +86,15 @@
 `a8c2c5758461e89697e2375dff3a89b120bae5e86b5a2f3db53fca901841c6e3`，59 项一次执行成功并读回，未改变
 JM 原周期、苏冰 Scope、Rule/audience、行情或 Runtime。该次执行意图已消费，不授权新会话重做。
 
-2026-09-13 开盘前独立审计发现的三项缺陷已在本次候选中修复并完成回归与独立 Review：HTDY actual-dominant
-Live 计算窗口现在按 Calendar、Session 和 MainContractMap owner 精确校验，苏冰重复 cutoff 只作 typed skip 且不会
-清除既有失败，Runtime 区分恢复锁不可用与内部处理失败；Event 已提交但状态写入失败时禁止发送通知。当前生产
-Scope 只读复核仍为 HTDY 60 品种/61 对、苏冰 60 品种/60 对，61 个既有 Canonical 输入窗口全部通过；隔离的
-周一开盘恢复回归覆盖 60 个冻结合约、45 个夜盘目标且 provider/生产写入为 0。该代码尚未发布或切换 Runtime，
-现役仍不声明修复已生效或自然预警闭环通过。周日 10:24 CST 的最近可用只读证据仍无 9 月 14 日冻结 Live
-snapshot；本轮因生产 Redis 鉴权 URL 不在允许读取边界内，未重试、未改配置、未执行恢复或发送。首次自然
-completed Bar、Event/transport、健康读回仍是发布和 Runtime promotion 之后的独立现场 Gate。
+2026-09-13 开盘前候选复核现为 `REVIEW_REOPENED`：受审补丁 `c7bc03360` 仍有三项待修——共享
+`bars_until` 将 HTDY 最后 32 根 actual-dominant 完整性校验误套到苏冰当前物理生命周期 replay；
+`canonical_updated` 在零实际评价时会错误清除全局失败；D1/W1 Event commit 后状态登记失败仍可能发送。
+另需把周一 60 个冻结身份、45 个夜盘目标从仅调度测试补为 Session authority → provider adapter →
+`recover_product` → 隔离 Redis/聚合 → MarketRead 的集成回归。当前生产 Scope 只读复核仍为 HTDY
+60 品种/61 对、苏冰 60 品种/60 对；该复核不改变现役 Runtime，也不授权重做 Scope、恢复、补数或发送。
+周日 10:24 CST 的最近可用只读证据仍无 9 月 14 日冻结 Live snapshot；本轮因生产 Redis 鉴权 URL 不在允许读取
+边界内，未重试、未改配置、未执行恢复或发送。首次自然 completed Bar、Event/transport、健康读回仍是发布和
+Runtime promotion 之后的独立现场 Gate。
 
 ## 周检有界读回证据
 
