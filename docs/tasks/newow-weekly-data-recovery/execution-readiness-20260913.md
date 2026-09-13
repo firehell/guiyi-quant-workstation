@@ -6,7 +6,7 @@ Canonical、Runtime、通知、Scope、main、tag 或 release 写入。
 ## 固定身份与原始证据
 
 - task branch：`codex/newow-weekly-data-recovery`
-- task base / current HEAD：`74d7a71fcd061d25eb23d7d2142a075420125886`
+- task base：`74d7a71fcd061d25eb23d7d2142a075420125886`
 - 固定只读源码：`5b31cf7c1ceb5350d4a5ea0a3d9328635d0ea62d`
 - 固定源码清单摘要：`cb0eb0aacf38442a54c43496e251301586cd1c62daf65110201fd2461eb8e1fe`
 - as-of：`2026-09-13T06:36:13+00:00`
