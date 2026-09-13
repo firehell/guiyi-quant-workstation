@@ -86,15 +86,18 @@
 `a8c2c5758461e89697e2375dff3a89b120bae5e86b5a2f3db53fca901841c6e3`，59 项一次执行成功并读回，未改变
 JM 原周期、苏冰 Scope、Rule/audience、行情或 Runtime。该次执行意图已消费，不授权新会话重做。
 
-2026-09-13 开盘前候选复核现为 `REVIEW_REOPENED`：受审补丁 `c7bc03360` 仍有三项待修——共享
-`bars_until` 将 HTDY 最后 32 根 actual-dominant 完整性校验误套到苏冰当前物理生命周期 replay；
-`canonical_updated` 在零实际评价时会错误清除全局失败；D1/W1 Event commit 后状态登记失败仍可能发送。
-另需把周一 60 个冻结身份、45 个夜盘目标从仅调度测试补为 Session authority → provider adapter →
-`recover_product` → 隔离 Redis/聚合 → MarketRead 的集成回归。当前生产 Scope 只读复核仍为 HTDY
-60 品种/61 对、苏冰 60 品种/60 对；该复核不改变现役 Runtime，也不授权重做 Scope、恢复、补数或发送。
-周日 10:24 CST 的最近可用只读证据仍无 9 月 14 日冻结 Live snapshot；本轮因生产 Redis 鉴权 URL 不在允许读取
-边界内，未重试、未改配置、未执行恢复或发送。首次自然 completed Bar、Event/transport、健康读回仍是发布和
-Runtime promotion 之后的独立现场 Gate。
+2026-09-13 开盘前修正现为 `REVIEW_COMPLETE / LOCAL_INTEGRATION_READY`：实现候选
+`8803bdaa046b261e2a4eb675bc418dcb7d30a55f` 已把 HTDY actual-dominant 完整性校验限定在日内频率，
+苏冰继续只验证当前物理合约生命周期；D1/W1 只读 Canonical，不触碰 Live/Recovery。canonical Event 已提交但
+rule-status 登记失败时不会发送，重复触发按 typed skip 处理，不清除既有 rule/global failure；零实际评价也不再
+冒充成功。真实 SQLite/Catalog/Parquet/MDS fixture 已覆盖旧 owner 缺口拒绝及补齐后的固定 HTDY `buy`；周一
+集成回归已由 Catalog Session authority 独立推导 endpoint，并贯通 provider adapter、`recover_product`、隔离
+Redis/聚合与 MarketRead，覆盖 60 个冻结身份及 45 个夜盘目标。Sol high 独立复审为 0 Critical / 0 Important，
+其受影响组为 282 passed / 1 isolated-Redis skip；本地完整后端为 3523 passed / 16 skipped / 31 deselected。
+当前生产 Scope 只读复核仍为 HTDY 60 品种/61 对、苏冰 60 品种/60 对；本轮未改变现役 Runtime，也不授权重做
+Scope、恢复、补数或发送。周日 10:24 CST 的最近可用只读证据仍无 9 月 14 日冻结 Live snapshot；未重试、未改
+配置、未执行恢复或发送。release、Runtime promotion、首次自然 completed Bar、Event/transport 与健康读回
+继续作为互相独立的外部 Gate。
 
 ## 周检有界读回证据
 
