@@ -17,6 +17,7 @@ from app.market_data.domain import (
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.market_data.market_read_service import MarketReadService, MarketReadWindowError
+from app.market_data.live_market import LiveBarObservation
 
 
 def _bar(minute: int) -> CanonicalBar:
@@ -100,6 +101,24 @@ class FakeLiveStore:
         assert (trading_day, symbol, frequency) == (date(2025, 1, 2), "j", "1m")
         return tuple(bar for bar in self.bars if after is None or bar.bar_end > after)
 
+    def bar_observations(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: str,
+        after: datetime | None,
+        until: datetime,
+        *,
+        inclusive_after: bool,
+        expected_contract: str,
+    ) -> tuple[LiveBarObservation, ...]:
+        bars = self.bars_after(trading_day, symbol, frequency, after)
+        return tuple(
+            LiveBarObservation(bar, expected_contract)
+            for bar in bars
+            if bar.bar_end <= until
+        )
+
 
 class WindowMarketDataService:
     def __init__(
@@ -126,6 +145,10 @@ class WindowMarketDataService:
             next_before=None,
             resolved_contract_segments=self.segments,
         )
+
+    @staticmethod
+    def validate_actual_dominant_alert_window(**_kwargs) -> None:
+        return None
 
 
 class WindowLiveStore(FakeLiveStore):

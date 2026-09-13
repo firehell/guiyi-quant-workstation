@@ -336,6 +336,22 @@ export async function mockMarketDetail(page, options = {}) {
     const symbol = url.searchParams.get('symbol') || options.defaultSymbol || 'jm'
     const upper = symbol.toUpperCase()
 
+    if (url.pathname.endsWith('/newow/product-capabilities')) {
+      return route.fulfill({ json: {
+        schema_version: 'newow_product_capabilities_v1',
+        release_stage: 'weekly',
+        open_frequencies: ['1w'],
+        open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
+        deferred_frequencies: [
+          { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
+          { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+        ],
+        deferred_sections: [
+          { section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' },
+        ],
+      } })
+    }
+
     if (url.pathname.endsWith('/newow/trend-detail')) {
       newowRequests.push(url)
       const product = url.searchParams.get('product') || 'jm'

@@ -1,10 +1,25 @@
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from dataclasses import replace
+from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import Session
 
+from app.alerts.evaluators import AlertObservationCandidate
+from app.alerts.models import AlertEvent, AlertRule
+from app.alerts.notification import ProviderAcceptance
+from app.alerts.registry import HTDY_ALERT_RULE_CODE
+from app.alerts.runtime import AlertRuntime
+from app.db.base import Base
 from app.market_data.aggregation import SessionWindow
+from app.market_data.domain import CanonicalBar, MarketSeriesPageResult, SeriesPageQuery
 from app.market_data.live_market import RedisLiveStore
+from app.market_data.market_phase import MarketPhaseResolver
+from app.market_data.market_read_service import MarketReadService
+from app.market_data.session_clock import SHANGHAI, resolved_session_windows_for_trading_day
+from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
 from tests.data_foundation.test_live_market import FakeRedis, _bar
 
 
@@ -144,7 +159,7 @@ def test_retry_budget_survives_store_restart_and_new_session_resets():
             RedisLiveStore(redis),
             replace(request, cutoff=request.cutoff + timedelta(minutes=3)),
             fetch,
-            clock=lambda: request.cutoff,
+            clock=lambda: request.cutoff + timedelta(minutes=3),
         )
         == "RETRY_BUDGET_BLOCKED"
     )
@@ -166,7 +181,7 @@ def test_permission_circuit_stops_other_products_and_restart():
             RedisLiveStore(redis),
             replace(request, cutoff=request.cutoff + timedelta(minutes=2)),
             lambda _: pytest.fail("network after circuit"),
-            clock=lambda: request.cutoff,
+            clock=lambda: request.cutoff + timedelta(minutes=2),
         )
         == "RETRY_BUDGET_BLOCKED"
     )
@@ -230,6 +245,664 @@ def test_all_60_products_recover_afternoon_first_minute_and_all_derived_buckets(
     assert redis.published == []
 
 
+def test_monday_open_freezes_60_contracts_and_schedules_45_night_prefixes():
+    """The normal foreground snapshot owns Monday recovery identity and sessions."""
+    from app.market_data.live_market import LiveMarketService, RQDataLiveProvider
+    from app.market_data.operational_universe import load_operational_products
+    from tests.data_foundation.test_live_market import (
+        FakeDominants,
+        FakeLiveClient,
+        FakePhases,
+        _phase,
+    )
+
+    products = load_operational_products()
+    trading_day = date(2026, 9, 14)
+    now = datetime(2026, 9, 14, 1, 0, tzinfo=UTC)
+    morning = SessionWindow(now, now + timedelta(hours=1))
+    night = SessionWindow(
+        datetime(2026, 9, 11, 13, 0, tzinfo=UTC),
+        datetime(2026, 9, 11, 15, 0, tzinfo=UTC),
+    )
+    night_products = frozenset(
+        (
+            "a", "ag", "al", "ao", "au", "b", "bu", "bz", "c", "cf", "cu",
+            "eb", "eg", "fg", "fu", "hc", "i", "j", "jm", "l", "m", "ma",
+            "ni", "oi", "p", "pb", "pf", "pg", "pl", "pp", "pr", "px", "rb",
+            "rm", "ru", "sa", "sc", "sh", "sn", "sr", "ss", "ta", "v", "y",
+            "zn",
+        )
+    )
+    assert len(products) == 60
+    assert len(night_products) == 45
+    assert night_products < set(products)
+    contracts = {symbol: f"{symbol.upper()}2701" for symbol in products}
+    fake_redis = FakeRedis()
+
+    class RecordingWorker:
+        requests = ()
+
+        @staticmethod
+        def due(_now):
+            return True
+
+        def schedule(self, requests, _now):
+            self.requests = requests
+
+    worker = RecordingWorker()
+    service = LiveMarketService(
+        provider_factory=lambda: RQDataLiveProvider(FakeLiveClient()),
+        dominant_source=FakeDominants(
+            {(symbol, trading_day): contract for symbol, contract in contracts.items()}
+        ),
+        phase_resolver=FakePhases(
+            {symbol: _phase(symbol, trading_day, morning) for symbol in products}
+        ),
+        store=RedisLiveStore(fake_redis),
+        operational_products=products,
+    )
+    service._recovery_sessions = lambda symbol, _day: (
+        (night, morning) if symbol in night_products else (morning,)
+    )
+    service._recovery_worker = worker
+
+    assert service.reconcile(now) is None
+    assert worker.requests == ()
+    assert service.poll(now) is None
+
+    snapshot = RedisLiveStore(fake_redis).subscriptions(trading_day)
+    assert snapshot == contracts
+    assert len(worker.requests) == 60
+    for request in worker.requests:
+        assert dict(request.snapshot) == contracts
+        assert request.contract == contracts[request.symbol]
+        assert request.trading_day == trading_day
+        assert request.sessions == (
+            (night, morning) if request.symbol in night_products else (morning,)
+        )
+    assert fake_redis.published == [
+        ("market:state", '{"trading_day":"2026-09-14"}')
+    ]
+
+
+def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
+    """Catches replacing the 60/45 recovery chain with a schedule-only double."""
+    from app.market_data.live_market import LiveMarketService, RQDataLiveProvider
+    from app.market_data.live_recovery import recover_product
+    from app.market_data.operational_universe import load_operational_products
+    from app.market_data.rqdata_adapter import RQDataLiveRecoveryAdapter
+    from tests.data_foundation.test_live_market import FakeDominants, FakeLiveClient
+
+    products = load_operational_products()
+    night_products = frozenset(
+        (
+            "a", "ag", "al", "ao", "au", "b", "bu", "bz", "c", "cf", "cu",
+            "eb", "eg", "fg", "fu", "hc", "i", "j", "jm", "l", "m", "ma",
+            "ni", "oi", "p", "pb", "pf", "pg", "pl", "pp", "pr", "px", "rb",
+            "rm", "ru", "sa", "sc", "sh", "sn", "sr", "ss", "ta", "v", "y",
+            "zn",
+        )
+    )
+    assert len(products) == 60
+    assert len(night_products) == 45
+    trading_day = date(2026, 9, 14)
+    prior_trading_day = date(2026, 9, 11)
+    contracts = {symbol: f"{symbol.upper()}2701" for symbol in products}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(Exchange(code="SHFE", name="SHFE"))
+        session.add_all(
+            Instrument(
+                symbol=symbol,
+                name=symbol.upper(),
+                exchange_code="SHFE",
+                is_active=True,
+            )
+            for symbol in products
+        )
+        session.add_all(
+            Contract(
+                contract_code=contract,
+                instrument_symbol=symbol,
+                exchange_code="SHFE",
+                listed_date=date(2026, 1, 1),
+                expired_date=date(2027, 1, 1),
+            )
+            for symbol, contract in contracts.items()
+        )
+        session.add_all(
+            TradingCalendar(
+                exchange_code="SHFE",
+                trade_date=day,
+                is_trading_day=day in {prior_trading_day, trading_day},
+                has_night_session=day == trading_day,
+                provider="rqdata",
+            )
+            for day in (
+                prior_trading_day,
+                date(2026, 9, 12),
+                date(2026, 9, 13),
+                trading_day,
+            )
+        )
+        for symbol in products:
+            if symbol in night_products:
+                session.add(
+                    TradingSession(
+                        exchange_code="SHFE",
+                        instrument_symbol=symbol,
+                        session_name="night",
+                        start_time=time(21),
+                        end_time=time(22, 30),
+                        effective_from=trading_day,
+                        effective_to=trading_day,
+                        crosses_midnight=False,
+                        is_active=True,
+                        provider="rqdata",
+                    )
+                )
+            session.add(
+                TradingSession(
+                    exchange_code="SHFE",
+                    instrument_symbol=symbol,
+                    session_name="day",
+                    start_time=time(9),
+                    end_time=time(10),
+                    effective_from=trading_day,
+                    effective_to=trading_day,
+                    crosses_midnight=False,
+                    is_active=True,
+                    provider="rqdata",
+                )
+            )
+        session.commit()
+
+        def recovery_sessions(symbol: str, day: date) -> tuple[SessionWindow, ...]:
+            calendar = session.scalar(
+                select(TradingCalendar).where(
+                    TradingCalendar.exchange_code == "SHFE",
+                    TradingCalendar.trade_date == day,
+                )
+            )
+            assert calendar is not None and calendar.is_trading_day
+            return tuple(
+                resolved.window
+                for resolved in resolved_session_windows_for_trading_day(
+                    session,
+                    exchange="SHFE",
+                    symbol=symbol,
+                    trading_day=day,
+                )
+                if not resolved.is_night or calendar.has_night_session
+            )
+
+        def authority_endpoints(symbol: str, cutoff: datetime) -> tuple[datetime, ...]:
+            """Independent endpoint oracle derived from Catalog session authority."""
+            return tuple(
+                window.start + timedelta(minutes=minute)
+                for window in recovery_sessions(symbol, trading_day)
+                for minute in range(
+                    1, int((window.end - window.start).total_seconds() // 60) + 1
+                )
+                if window.start + timedelta(minutes=minute, seconds=2) <= cutoff
+            )
+
+        class RecoveryClient:
+            def __init__(self) -> None:
+                self.expected_endpoints: dict[str, tuple[datetime, ...]] = {}
+                self.calls: list[tuple[str, date, date, str]] = []
+
+            def price(self, contract, start, end, frequency):
+                self.calls.append((contract, start, end, frequency))
+                rows = []
+                for index, endpoint in enumerate(
+                    self.expected_endpoints[contract], start=1
+                ):
+                    value = Decimal(100 + index)
+                    rows.append(
+                        {
+                            "order_book_id": contract,
+                            "datetime": endpoint.isoformat(),
+                            "trading_date": trading_day.isoformat(),
+                            "open": str(value),
+                            "high": str(value + 1),
+                            "low": str(value - 1),
+                            "close": str(value + Decimal("0.5")),
+                            "volume": str(index),
+                            "turnover": str(index * 100),
+                            "open_interest": str(1000 + index),
+                        }
+                    )
+                return rows
+
+        client = RecoveryClient()
+        adapter = RQDataLiveRecoveryAdapter(client)
+        redis = FakeRedis()
+        store = RedisLiveStore(redis)
+
+        class SynchronousRecoveryWorker:
+            def __init__(self) -> None:
+                self.batches: list[tuple[object, ...]] = []
+                self.outcomes: list[tuple[str, str]] = []
+
+            @staticmethod
+            def due(_now):
+                return True
+
+            def schedule(self, requests, _now):
+                self.batches.append(requests)
+                for request in requests:
+                    expected = authority_endpoints(request.symbol, request.cutoff)
+                    assert request.sessions == recovery_sessions(
+                        request.symbol, trading_day
+                    )
+                    assert request.endpoints() == expected
+                    client.expected_endpoints[request.contract] = expected
+                    outcome = recover_product(
+                        store,
+                        request,
+                        adapter,
+                        clock=lambda request=request: request.cutoff
+                        + timedelta(seconds=1),
+                    )
+                    self.outcomes.append((request.symbol, outcome))
+
+        worker = SynchronousRecoveryWorker()
+        service = LiveMarketService(
+            provider_factory=lambda: RQDataLiveProvider(FakeLiveClient()),
+            dominant_source=FakeDominants(
+                {
+                    (symbol, trading_day): contract
+                    for symbol, contract in contracts.items()
+                }
+            ),
+            phase_resolver=MarketPhaseResolver(session),
+            store=store,
+            operational_products=products,
+            recovery_sessions=recovery_sessions,
+        )
+        service._recovery_worker = worker
+
+        monday_open = datetime(2026, 9, 14, 9, 0, 3, tzinfo=SHANGHAI)
+        assert service.poll(monday_open) is None
+        snapshot = store.subscriptions(trading_day)
+        assert snapshot == contracts
+        assert len(worker.batches[0]) == 60
+        open_night_targets = {
+            request.symbol
+            for request in worker.batches[0]
+            if request.endpoints()
+        }
+        assert open_night_targets == night_products
+        assert len(client.calls) == 45
+        assert all(
+            start == end == trading_day and frequency == "1m"
+            for _contract, start, end, frequency in client.calls
+        )
+
+        later_cutoff = datetime(2026, 9, 14, 9, 15, 3, tzinfo=SHANGHAI)
+        assert service.poll(later_cutoff) is None
+        assert len(worker.batches[1]) == 60
+        assert len(client.calls) == 105
+        assert all(
+            start == end == trading_day and frequency == "1m"
+            for _contract, start, end, frequency in client.calls
+        )
+        assert all(
+            request.sessions == recovery_sessions(request.symbol, trading_day)
+            for batch in worker.batches
+            for request in batch
+        )
+
+        night_symbol = min(night_products)
+        day_symbol = next(symbol for symbol in products if symbol not in night_products)
+        assert len(store.bars_after(trading_day, night_symbol, "15m", None)) == 7
+        assert len(store.bars_after(trading_day, night_symbol, "60m", None)) == 2
+        assert len(store.bars_after(trading_day, day_symbol, "15m", None)) == 1
+        assert store.bars_after(trading_day, day_symbol, "60m", None) == ()
+
+        class EmptyHistory:
+            @staticmethod
+            def query_page(request):
+                return MarketSeriesPageResult(
+                    request_identity={"symbol": request.symbol},
+                    bars=(),
+                    canonical_coverage=None,
+                    has_more_before=False,
+                    next_before=None,
+                    resolved_contract_segments=(),
+                )
+
+            @staticmethod
+            def validate_actual_dominant_alert_window(**_kwargs):
+                return None
+
+        market_read = MarketReadService(
+            market_data=EmptyHistory(),
+            phase_resolver=MarketPhaseResolver(session),
+            operational_products=products,
+            live_store=store,
+        )
+        day_end = datetime(2026, 9, 14, 9, 15, tzinfo=SHANGHAI).astimezone(UTC)
+        night_window = market_read.bars_until(
+            SeriesPageQuery("actual_dominant", night_symbol, "15m"),
+            trading_day=trading_day,
+            end=day_end,
+            limit=64,
+        )
+        day_window = market_read.bars_until(
+            SeriesPageQuery("actual_dominant", day_symbol, "15m"),
+            trading_day=trading_day,
+            end=day_end,
+            limit=64,
+        )
+        assert night_window.contract == contracts[night_symbol]
+        assert day_window.contract == contracts[day_symbol]
+        assert night_window.bars[-1] == CanonicalBar(
+            day_end,
+            trading_day,
+            Decimal("191"),
+            Decimal("206"),
+            Decimal("190"),
+            Decimal("205.5"),
+            Decimal("1470"),
+            Decimal("147000"),
+            Decimal("1105"),
+        )
+        assert day_window.bars[-1] == CanonicalBar(
+            day_end,
+            trading_day,
+            Decimal("101"),
+            Decimal("116"),
+            Decimal("100"),
+            Decimal("115.5"),
+            Decimal("120"),
+            Decimal("12000"),
+            Decimal("1015"),
+        )
+        night_end = datetime(
+            2026, 9, 11, 22, 30, tzinfo=SHANGHAI
+        ).astimezone(UTC)
+        hour_window = market_read.bars_until(
+            SeriesPageQuery("actual_dominant", night_symbol, "60m"),
+            trading_day=trading_day,
+            end=night_end,
+            limit=64,
+        )
+        assert hour_window.bars[-1] == CanonicalBar(
+            night_end,
+            trading_day,
+            Decimal("161"),
+            Decimal("191"),
+            Decimal("160"),
+            Decimal("190.5"),
+            Decimal("2265"),
+            Decimal("226500"),
+            Decimal("1090"),
+        )
+        assert not night_window.notification_eligible
+
+        class Evaluator:
+            @staticmethod
+            def evaluate_candidates(_market_read, window):
+                return (
+                    AlertObservationCandidate(
+                        window.cutoff,
+                        window.trading_day,
+                        window.contract,
+                        ("buy",),
+                    ),
+                )
+
+        class Sender:
+            calls = 0
+
+            def send(self, _message):
+                self.calls += 1
+                return ProviderAcceptance("accepted")
+
+        session.add(
+            AlertRule(
+                rule_code=HTDY_ALERT_RULE_CODE,
+                enabled=True,
+                scope_product_frequencies={night_symbol: ["15m"]},
+            )
+        )
+        session.commit()
+        sender = Sender()
+        runtime = AlertRuntime(
+            session_factory=lambda: Session(engine),
+            market_read_factory=lambda _session: market_read,
+            evaluators={HTDY_ALERT_RULE_CODE: Evaluator()},
+            sender=sender,
+            operational_products=(night_symbol,),
+            taxonomy={night_symbol: SimpleNamespace(name=night_symbol.upper())},
+            clock=lambda: datetime(2026, 9, 14, 9, 31, tzinfo=SHANGHAI),
+        )
+
+        def trigger_payload(bar: CanonicalBar) -> dict[str, str | None]:
+            return {
+                "bar_end": bar.bar_end.isoformat(),
+                "trading_day": bar.trading_day.isoformat(),
+                "open": str(bar.open),
+                "high": str(bar.high),
+                "low": str(bar.low),
+                "close": str(bar.close),
+                "volume": str(bar.volume),
+                "turnover": None if bar.turnover is None else str(bar.turnover),
+                "open_interest": (
+                    None if bar.open_interest is None else str(bar.open_interest)
+                ),
+            }
+
+        runtime.process_message(
+            f"live:bar:{night_symbol}:15m",
+            trigger_payload(night_window.bars[-1]),
+        )
+        with Session(engine) as event_session:
+            assert event_session.scalar(select(func.count()).select_from(AlertEvent)) == 0
+        assert sender.calls == 0
+
+        new_end = datetime(2026, 9, 14, 9, 30, tzinfo=SHANGHAI).astimezone(UTC)
+        store.put_bar(
+            trading_day,
+            night_symbol,
+            "15m",
+            replace(night_window.bars[-1], bar_end=new_end),
+            contract=contracts[night_symbol],
+        )
+        new_window = market_read.bars_until(
+            SeriesPageQuery("actual_dominant", night_symbol, "15m"),
+            trading_day=trading_day,
+            end=new_end,
+            limit=64,
+        )
+        assert new_window.notification_eligible
+        runtime.process_message(
+            f"live:bar:{night_symbol}:15m",
+            trigger_payload(new_window.bars[-1]),
+        )
+        assert redis.published == [
+            ("market:state", '{"trading_day":"2026-09-14"}')
+        ]
+        with Session(engine) as event_session:
+            assert event_session.scalar(select(func.count()).select_from(AlertEvent)) == 1
+        assert sender.calls == 1
+
+    engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ("missing", "wrong_day", "wrong_contract", "future", "snapshot_drift"),
+)
+def test_catalog_derived_recovery_failure_never_commits_partial_results(
+    failure: str,
+) -> None:
+    """Catches accepting corrupt provider facts after real Session resolution."""
+    from app.market_data.live_recovery import LiveRecoveryRequest, recover_product
+    from app.market_data.rqdata_adapter import RQDataLiveRecoveryAdapter
+
+    trading_day = date(2026, 9, 14)
+    contract = "RB2701"
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add_all(
+            (
+                Exchange(code="SHFE", name="SHFE"),
+                Instrument(
+                    symbol="rb",
+                    name="RB",
+                    exchange_code="SHFE",
+                    is_active=True,
+                ),
+                Contract(
+                    contract_code=contract,
+                    instrument_symbol="rb",
+                    exchange_code="SHFE",
+                    listed_date=date(2026, 1, 1),
+                    expired_date=date(2027, 1, 1),
+                ),
+            )
+        )
+        session.add_all(
+            TradingCalendar(
+                exchange_code="SHFE",
+                trade_date=day,
+                is_trading_day=day in {date(2026, 9, 11), trading_day},
+                has_night_session=day == trading_day,
+                provider="rqdata",
+            )
+            for day in (
+                date(2026, 9, 11),
+                date(2026, 9, 12),
+                date(2026, 9, 13),
+                trading_day,
+            )
+        )
+        session.add_all(
+            (
+                TradingSession(
+                    exchange_code="SHFE",
+                    instrument_symbol="rb",
+                    session_name="night",
+                    start_time=time(21),
+                    end_time=time(22, 30),
+                    effective_from=trading_day,
+                    effective_to=trading_day,
+                    crosses_midnight=False,
+                    is_active=True,
+                    provider="rqdata",
+                ),
+                TradingSession(
+                    exchange_code="SHFE",
+                    instrument_symbol="rb",
+                    session_name="day",
+                    start_time=time(9),
+                    end_time=time(10),
+                    effective_from=trading_day,
+                    effective_to=trading_day,
+                    crosses_midnight=False,
+                    is_active=True,
+                    provider="rqdata",
+                ),
+            )
+        )
+        session.commit()
+        sessions = tuple(
+            resolved.window
+            for resolved in resolved_session_windows_for_trading_day(
+                session,
+                exchange="SHFE",
+                symbol="rb",
+                trading_day=trading_day,
+            )
+        )
+
+    cutoff = datetime(2026, 9, 14, 9, 0, 3, tzinfo=SHANGHAI)
+    request = LiveRecoveryRequest(
+        trading_day,
+        "rb",
+        contract,
+        (("rb", contract),),
+        sessions,
+        cutoff,
+    )
+    rows = [
+        {
+            "order_book_id": contract,
+            "datetime": endpoint.isoformat(),
+            "trading_date": trading_day.isoformat(),
+            "open": "100",
+            "high": "101",
+            "low": "99",
+            "close": "100",
+            "volume": "1",
+            "turnover": "100",
+            "open_interest": "10",
+        }
+        for endpoint in request.endpoints()
+    ]
+    assert len(rows) == 90
+    if failure == "missing":
+        rows.pop(0)
+    elif failure == "wrong_day":
+        rows[0]["trading_date"] = "2026-09-11"
+    elif failure == "wrong_contract":
+        rows[0]["order_book_id"] = "RB2705"
+
+    class Client:
+        calls = 0
+
+        def price(self, requested_contract, start, end, frequency):
+            self.calls += 1
+            assert (requested_contract, start, end, frequency) == (
+                contract,
+                trading_day,
+                trading_day,
+                "1m",
+            )
+            return rows
+
+    client = Client()
+    redis = FakeRedis()
+    store = RedisLiveStore(redis)
+    store.set_subscriptions(trading_day, {"rb": contract})
+    if failure == "snapshot_drift":
+        store.set_subscriptions(trading_day, {"rb": "RB2705"})
+    adapter = RQDataLiveRecoveryAdapter(client)
+    if failure == "future":
+        source = adapter(request)
+        future = replace(
+            source[-1],
+            bar_end=source[-1].bar_end + timedelta(minutes=1),
+        )
+
+        def fetch(_request):
+            return (*source, future)
+    else:
+        fetch = adapter
+
+    with pytest.raises((ValueError, RuntimeError)):
+        recover_product(
+            store,
+            request,
+            fetch,
+            clock=lambda: cutoff + timedelta(seconds=1),
+        )
+
+    for frequency in ("1m", "5m", "15m", "30m", "60m"):
+        assert store.bars_after(trading_day, "rb", frequency, None) == ()
+    assert store.recovery_state(trading_day, "rb", contract) is None
+    assert redis.published == []
+    if failure == "snapshot_drift":
+        assert client.calls == 0
+    engine.dispose()
+
+
 def test_night_endpoints_keep_exchange_trading_day():
     from app.market_data.live_recovery import LiveRecoveryRequest, recover_product
 
@@ -285,12 +958,17 @@ def test_lua_atomic_commit_and_concurrent_live_conflict_on_isolated_redis():
         client.delete(store._bars_key(request.trading_day, request.symbol, frequency))
     original = store.bars_after(request.trading_day, "rb", "1m", None)
 
-    def concurrent(req):
-        store.put_bar(req.trading_day, "rb", "1m", bars[0], contract="RB2505")
-        return bars
+    real_eval = client.eval
 
+    def concurrent_eval(script, *args):
+        if script.startswith("-- live-recovery-v1"):
+            store.put_bar(request.trading_day, "rb", "1m", bars[0], contract="RB2505")
+        return real_eval(script, *args)
+
+    client.eval = concurrent_eval
     with pytest.raises(ValueError, match="SNAPSHOT_DRIFT"):
-        recover_product(store, request, concurrent, clock=lambda: request.cutoff)
+        recover_product(store, request, lambda _: bars, clock=lambda: request.cutoff)
+    client.eval = real_eval
     assert store.recovery_state(request.trading_day, "rb", "RB2505") is None
     assert store.bars_after(request.trading_day, "rb", "15m", None) == ()
     # Recreate the gap only in the isolated fixture, then run the successful script.
@@ -494,12 +1172,13 @@ def test_provider_initialization_failure_opens_persisted_circuit(monkeypatch, ki
     assert redis.get("live:recovery:circuit:2025-01-02") == "STOPPED"
 
 
-def test_recovery_samples_clock_and_commits_only_inside_guard():
+def test_recovery_checks_clock_before_provider_and_rechecks_inside_commit_guard():
     from contextlib import contextmanager
     from app.market_data.live_recovery import recover_product
 
     _, store, request, bars = _setup()
     entered = []
+    samples = []
 
     @contextmanager
     def guard():
@@ -508,14 +1187,20 @@ def test_recovery_samples_clock_and_commits_only_inside_guard():
         entered.pop()
 
     def clock():
-        assert entered == [True]
+        samples.append(tuple(entered))
         return request.cutoff
 
+    def fetch(_):
+        assert samples == [()]
+        assert entered == []
+        return bars
+
     assert (
-        recover_product(store, request, lambda _: bars, clock=clock, commit_guard=guard)
+        recover_product(store, request, fetch, clock=clock, commit_guard=guard)
         == "RECOVERED"
     )
     assert entered == []
+    assert samples == [(), (True,)]
 
 
 def test_busy_commit_guard_aborts_bars_and_barrier():

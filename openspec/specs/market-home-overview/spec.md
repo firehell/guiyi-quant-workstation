@@ -2,8 +2,8 @@
 
 ## Purpose
 
-定义 Market 首页在不恢复任何退役策略的前提下读取 completed D1/W1 市场事实和当前 Alert Events
-的只读 HTTP 合同。Market Home overview 使用可删除、可重建的 derived projection
+定义 Market 首页在不恢复任何退役策略的前提下读取 completed D1/W1 市场事实、独立 completed 1m
+行情以及 immutable Alert Events 的只读合同。Market Home overview 使用可删除、可重建的 derived projection
 加速常态读取，但 `MarketHomeOverviewService -> MarketDataService` 始终是唯一计算 authority。
 该能力只为用户复核提供事实，不构成交易建议，且 `auto_order=false`。
 
@@ -178,15 +178,21 @@ registry-owned active Alert Rules 的 exact trading day `AlertEvent`。`limit` M
 
 ### Requirement: Market Home Web preserves independent read authorities
 
-`/market` SHALL 在首屏并行读取且只读取一次 Market Home overview、Runtime health 和 current Alert
-Events。页面 MUST 保留各资源最后一次成功快照，并把失败单独标识为 stale/unavailable；它不得由
-Runtime heartbeat 推导 overview/Alert 状态，也不得由 Event 空列表推导 Runtime 正常静默。浏览器不得调用
-product dominants、发起 per-product 请求、WebSocket 或任何写请求。
+`/market` SHALL 独立读取 Market Home overview、Runtime health、消息和本规范定义的批量行情资源。
+消息按需加载且不阻塞市场列表。页面 MUST 保留各资源最后一次成功快照，并把失败单独标识为
+stale/unavailable；它不得由 Runtime heartbeat 推导 overview/Alert 状态，也不得由 Event 空列表推导
+Runtime 正常静默。浏览器不得调用 product dominants、发起 per-product 请求或任何写请求；行情增量
+只允许一个 server 固定 operational Scope 的批量 WebSocket，不复用60个单品种详情连接。
+
+返回首页 SHALL 立即恢复已成功的列表、筛选、排序和滚动位置；有效缓存不得因重新挂载或浏览器重新
+可见而被清空并强制全量刷新。缓存 MUST 有有界失效条件；必要刷新在保留旧结果的同时执行，旧结果
+仍保持自己的时间与 freshness。并发请求 MUST 去重，过期身份响应不得覆盖新资源；timer/listener/socket
+由单一生命周期 owner 管理。
 
 #### Scenario: A resource becomes unavailable after a successful snapshot
 
-- **WHEN** overview、Runtime 或 current Event 任一刷新失败
-- **THEN** 页面保留该资源的最后成功快照并仅将该资源标为 stale；其他两项事实保持独立
+- **WHEN** overview、Runtime、消息或批量行情任一资源刷新失败
+- **THEN** 页面保留该资源的最后成功快照并仅将该资源标为 stale；其他资源事实保持独立
 
 #### Scenario: Maintenance progress and historical audit remain distinct
 
@@ -198,7 +204,10 @@ product dominants、发起 per-product 请求、WebSocket 或任何写请求。
 
 共享图标默认色值 SHALL 为上行 `#E63935`、周期同向 `#FF9601`、下行 `#35C759`、中性 `#017AFF`、数据不足
 `#98A2B3`，默认尺寸为 Legend 40px、表格状态 28px、Trend/HTDY micro 24px。白色首页 SHALL 仅在自身根节点将上行设为 `#FF403A`、下行设为 `#22B95D`、中性蓝设为 `#365AF5`、Legend 压缩为28px，保留表格28px与方向 micro 24px；不得改变详情页或全局指标颜色。图标必须有中文可访问语义，
-业务文案只能使用上行、周期同向、下行、中性、数据不足；不得改写为买入、持股、卖出、空仓、建仓、清仓或订单语义。
+业务文案只能使用上行、周期同向、下行、中性、日周未同向、数据不足；不得改写为买入、持股、卖出、空仓、建仓、清仓或订单语义。
+
+日周不同向 SHALL 使用浅灰底分向图标与“日周未同向”可访问语义，不使用无解释横线；数据不足
+MUST 保持独立图标与状态，不得改写为未同向。桌面与窄屏 SHALL 使用一致映射。
 
 #### Scenario: A user reads a state icon without color
 
@@ -208,7 +217,12 @@ product dominants、发起 per-product 请求、WebSocket 或任何写请求。
 
 ### Requirement: Market Home uses an approved light full-width desktop layout
 
-`/market` SHALL 使用白色全宽布局、期货板块选择、紧凑图例与直接表头排序，不显示搜索、独立排序工具条、常驻观察侧栏或底部移动导航。研究观察默认收起但可键盘展开，保留已有合法偏好。板块与总数 SHALL 读取 overview authority；缺失品种不得在浏览器补造事实行。普通行进入 Newow 趋势 actual_dominant 1d；页头各视角菜单 SHALL 从当前可用品种显式选择，再委托既有 route serializer。
+`/market` SHALL 使用白色全宽布局、市场/消息 Tab、期货板块选择、紧凑图例与直接表头排序。
+市场 Tab 不显示搜索、独立排序工具条、研究观察折叠区、常驻观察侧栏或底部移动导航；消息 Tab
+单独提供其查询控件。页头“更多” SHALL 改名“自由看盘”，真正的下拉入口使用统一细线 SVG
+chevron，展开状态旋转且支持键盘操作。板块按钮换行不得把单个尾项拉伸整行。
+板块与总数 SHALL 读取 overview authority；缺失品种不得在浏览器补造事实行。普通行进入 Newow
+趋势 actual_dominant 1d；页头各视角菜单 SHALL 从当前可用品种显式选择，再委托既有 route serializer。
 
 #### Scenario: A user sorts or filters the available futures locally
 
@@ -227,3 +241,98 @@ product dominants、发起 per-product 请求、WebSocket 或任何写请求。
 - **WHEN** 以受控60品种fixture在1280、1440、1920、2560宽度验收
 - **THEN** 表格撑满可用宽度、页面无横向溢出，所有行纵向可达且表头保持可见；390px保留可访问列表
 - **AND** 非实时日期、真实参与/总数、缺失及过期计数和独立Runtime/Event异常可见；fixture截图不代表生产或原站page parity验收
+
+### Requirement: Home quotes use a separate completed minute authority
+
+`/api/v1/market/research/home-live/ws` SHALL 使用 `schema_version=1`，拒绝客户端自选品种/周期参数。
+`snapshot` 包含 `scope=operational` 和完整 items；`quote` 包含单项 item；`reset` 包含新身份 items
+并替换旧 overlay；`unavailable` 提供安全 typed code 并结束故障连接。各 frame 保留 observed_at。
+价格和比率 MUST 以 Decimal string 或 null 传输；phase 为 TRADING/BREAK/CLOSED/UNKNOWN，source 为
+completed_1m/completed_1d/none，availability 为 live/historical/unavailable。availability=live
+只表示该值来自合法 completed Live 数据，不代表 tick 级即时价格或策略已确认。
+
+`reset/AUTHORITY_CHANGED` MUST 仅用于 operational symbol 身份集合、physical contract 或 trading day
+变化。相同身份的定时补读、价格更新及同 Bar 的 phase/source/availability/昨收状态修订 SHALL 使用
+`quote`，不得使 overview 缓存失效；仅用于服务器缓存管理的时间不得成为可见身份变化。同批 quote
+可以共享 observed_at，消费者 MUST 逐品种处理，拒绝旧 observed_at/旧 Bar 和未经 reset 的合约/交易日变化。
+
+首页分钟报价 MUST 使用版本化批量 read contract，固定读取 server operational products 的当日 rank1
+物理合约。每项 SHALL 携带 symbol、physical contract、trading day、bar end、source、availability 和
+phase，以及最新有效 completed 1m close。未完成 Bar、heartbeat、其他合约或 synthetic price 不得成为报价。
+行情 overlay 不得修改 completed D1/W1 overview，也不得使其 generic 指标成为策略或账户事实。
+当日 Live 冻结 subscription 与最近已发布 Historical Map 的物理合约允许不同；Historical owner
+不得成为合法 Live 报价的显示 Gate。此时 SHALL 明确显示报价合约，保留原日周字段及其身份，
+涨跌幅只消费该报价自身的同合约昨收结果，不借用旧 overview 基准。
+
+价格 SHALL 显示来源与时间，明确分钟级更新而非 tick 实时。涨跌幅 MUST 由后端用 Decimal 按
+`(price / previous_close - 1)` 计算；previous close MUST 来自当前 physical contract 上一完整交易日
+的权威 D1，不是 actual-dominant 上一项，更不是昨结算。缺失、零基准或合约不匹配 MUST 返回 null
+及可识别原因。日周趋势、量比、增仓率 SHALL 继续按 completed-period authority 展示并标明收盘口径。
+前端排序 MUST 使用当前显示的价格/涨跌幅，空值始终排后，不通过浏览器重算指标或补齐基准。
+
+该 reader MUST 复用现有 Calendar/Session、MainContractMap、MarketDataService 与 Live 读取能力；
+不新增 provider、Runtime、数据副本或 production 写入。首帧和恢复读取 SHALL 有界，不能把60个
+重型详情 snapshot 连接并发当作批量实现，不能每分钟重算整个 completed D1/W1 overview。
+
+#### Scenario: A browser subscribes or reconnects
+
+- **WHEN** 首页首次订阅或断线重连
+- **THEN** server 先订阅再读取同身份快照，随后提供增量，处理快照与流间重复/乱序；前端只维护一个连接
+- **AND** 断线保留最后成功值和 stale 标记；重连有界且恢复时补读快照，不等待下一根 Bar 才恢复
+
+#### Scenario: Periodic reconciliation observes a new minute price
+
+- **WHEN** 定时补读与新分钟 Bar 同时到达，且 operational Scope、物理合约、交易日均未改变
+- **THEN** 只更新行情 overlay，不发送 authority reset，也不增加 completed D1/W1 overview 请求
+
+#### Scenario: Live recovers without a contract change
+
+- **WHEN** 同日同合约 Live availability 从不可用恢复且没有新的合约 state 通知
+- **THEN** 批量 reader 仍能重新核对当前 availability 并恢复有效快照和后续 completed Bar，不能永久使用旧 unavailable 状态
+
+#### Scenario: Trading day or physical contract changes
+
+- **WHEN** server 的权威交易日或 rank1 物理合约发生变化
+- **THEN** 旧 overlay 身份失效，新快照确认前不得沿用旧价格或旧昨收计算新合约变动；旧 generation 的迟到消息不得恢复旧值
+- **AND** 即使完成周期 overview 仍返回旧 Historical owner，已确认的新 owner 报价仍显示；新合约无昨收时涨跌幅为 null，日周指标不变
+
+#### Scenario: The market is closed or quotes are unavailable
+
+- **WHEN** 品种处于休市、日间间歇、Live 不可用或数据质量异常
+- **THEN** 可保留仍有效的最近 completed 值并明确 phase/source/time；没有有效分钟值时只显示明确标注的历史收盘事实或不可用
+- **AND** 休市不等于断线，断线不等于已收盘，缺数据不得伪造零变动
+
+### Requirement: Message tab reads bounded immutable event history
+
+`GET /api/alerts/history` SHALL 接受 inclusive `start_day/end_day`、可选 symbol/rule_code、1到100
+之间的 limit 和 opaque before；日期范围最多366天。响应保留查询身份、typed Event items 和
+next_before；不提供无法由该查询证明的全量/未读数量。空结果为 ready 空列表，失败为安全 typed error。
+
+消息 Tab SHALL 提供单个全局、有界、只读的历史查询，支持日期范围、品种与 registry Rule 筛选，以及
+稳定游标分页。日期范围和 page size MUST 校验上下界；分页排序 SHALL 绑定 detected_at、bar_end
+及唯一 Event id，游标与筛选条件绑定，不能对当前最近30条本地筛选后冒充全量历史结果或总数。
+
+消息 SHALL 按全部、火天大有、苏冰分类，只有真实 registry-owned immutable Event 可以成为消息。
+周末日期查询不依赖 current trading day resolver 成功。未知或不兼容身份 MUST fail closed，不把异常
+当空列表。点击消息 MUST 保留 Rule、product、contract、frequency、bar_end 和 Event id 的既有定位语义。
+
+Event 生成、notification attempted 与真实收件 MUST 分别表达；没有单条送达证据不得展示“已送达”。
+该查询 MUST NOT 创建/删除 Event、重发、改变 Rule/Scope/audience/transport、执行 migration，或把
+Runtime health 包装成不存在的历史系统消息。
+
+#### Scenario: A user filters and pages through messages
+
+- **WHEN** 用户按规则、品种、日期查询，并继续读取下一页
+- **THEN** 筛选与分页在全局只读查询中执行，响应具有稳定边界且无重复跳项；筛选变化会清除旧游标，旧响应不能覆盖新查询
+
+#### Scenario: A user returns from a later message page
+
+- **WHEN** 用户从已经加载的第二页或后续页消息进入详情，再返回首页
+- **THEN** 页面按查询身份先恢复成功列表、next cursor 与真实滚动位置，能够继续分页；不得先清空再只重取第一页
+- **AND** 消息缓存具有数量与时间上限，有效缓存不重复读取；失效缓存可保留结果后台刷新，人工刷新显式重新查询
+- **AND** 后台或人工刷新重新确定第一页与游标期间暂停续页请求；刷新前已发出的旧分页响应不得覆盖或追加到新结果，刷新失败仍保留可继续分页的旧完整结果
+
+#### Scenario: Event storage is unavailable
+
+- **WHEN** 消息查询失败或事件身份不兼容
+- **THEN** 页面显示不可用/失败状态，保留已知快照的时间，不得写成“暂无消息”或展示伪造的发送成功状态

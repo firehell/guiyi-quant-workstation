@@ -1,43 +1,35 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
+import MarketNavigation from './MarketNavigation.vue'
+import ProductSelector from './ProductSelector.vue'
 import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
+import type { ProductOption } from '@/utils/productSearch'
 
 type HomeView = 'newow' | 'htdy' | 'subing' | 'free'
-defineProps<{ rows: MarketHomeRow[]; loading: boolean }>()
-const emit = defineEmits<{ openView: [view: HomeView, symbol: string]; refresh: [] }>()
-const views: Array<{ view: HomeView; label: string }> = [
-  { view: 'newow', label: '牛哇' }, { view: 'htdy', label: '火天大有' },
-  { view: 'subing', label: '苏冰预警' }, { view: 'free', label: '更多' },
-]
-function openView(event: MouseEvent, view: HomeView, symbol: string) {
-  const button = event.currentTarget as HTMLButtonElement
-  button.closest('details')?.removeAttribute('open')
-  emit('openView', view, symbol)
-}
-function closeMenu(event: KeyboardEvent) {
-  const menu = event.currentTarget as HTMLDetailsElement
-  menu.open = false
-  menu.querySelector('summary')?.focus()
+const props = defineProps<{ rows: MarketHomeRow[]; loading: boolean; activeTab: 'market' | 'messages' }>()
+const emit = defineEmits<{ openView: [view: HomeView, symbol: string]; refresh: []; selectTab: [tab: 'market' | 'messages'] }>()
+const options = computed<ProductOption[]>(() => props.rows.map((row) => ({
+  symbol: row.symbol.toLowerCase(), name: row.product_name, contract: row.actual_contract || null,
+})).sort((left, right) => left.symbol.localeCompare(right.symbol)))
+
+function openProduct(option: ProductOption) {
+  emit('openView', 'newow', option.symbol)
 }
 </script>
 
 <template>
-  <header class="market-home-header">
-    <a class="market-home-brand" href="/market" aria-label="归一量化市场首页">归一量化</a>
-    <nav aria-label="行情视角">
-      <span class="market-home-nav-current" aria-current="page">市场</span>
-      <details v-for="item in views" :key="item.view" @keydown.esc.prevent="closeMenu">
-        <summary>{{ item.label }}<span v-if="item.view === 'free'" aria-hidden="true">⌄</span></summary>
-        <div class="market-home-view-menu">
-          <strong>{{ item.view === 'free' ? '自由看盘 · 选择品种' : `${item.label} · 选择品种` }}</strong>
-          <p v-if="!rows.length">当前快照暂无可用品种，暂时无法进入该视角。</p>
-          <div v-else class="market-home-view-products">
-            <button v-for="row in rows" :key="row.symbol" type="button" @click="openView($event, item.view, row.symbol)">
-              {{ row.product_name }} <span>{{ row.symbol.toUpperCase() }}</span>
-            </button>
-          </div>
-        </div>
-      </details>
-    </nav>
-    <button class="market-home-refresh" type="button" :disabled="loading" @click="$emit('refresh')">{{ loading ? '刷新中…' : '刷新' }}</button>
-  </header>
+  <MarketNavigation :active-tab="activeTab" @market="emit('selectTab', 'market')" @messages="emit('selectTab', 'messages')">
+    <template #search>
+      <ProductSelector
+        :options="options"
+        :status="loading && options.length === 0 ? 'loading' : options.length > 0 ? 'ready' : 'error'"
+        label="搜索60品种"
+        @select="openProduct"
+      />
+    </template>
+    <template #actions>
+      <button class="market-home-refresh" type="button" :disabled="loading" @click="$emit('refresh')">{{ loading ? '刷新中…' : '刷新' }}</button>
+    </template>
+  </MarketNavigation>
 </template>

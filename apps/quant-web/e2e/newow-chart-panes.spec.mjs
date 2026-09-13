@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
-import { NEWOW_FREQUENCIES, NEWOW_STRATEGIES, installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
+import { NEWOW_STRATEGIES, installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
-for (const strategy of NEWOW_STRATEGIES) for (const frequency of NEWOW_FREQUENCIES) {
+for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1w']) {
   test(`${strategy} ${frequency}: native panes, indicator replacement and exact Hint dialog`, async ({ page }) => {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
@@ -47,7 +47,7 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of NEWOW_FREQUENCI
     await expect(dialog).toContainText('known_at')
     expect(productRequests(fixture, 'explanation')).toHaveLength(0)
     await page.keyboard.press('Escape')
-    if (strategy === 'trend' && frequency === '1d') {
+    if (strategy === 'trend' && frequency === '1w') {
       await page.getByRole('button', { name: '图表全屏', exact: true }).click()
       await expect.poll(() => stage.evaluate(element => document.fullscreenElement === element)).toBe(true)
       await page.getByRole('button', { name: '退出图表全屏', exact: true }).click()
@@ -60,96 +60,23 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of NEWOW_FREQUENCI
   })
 }
 
-test('cup failure retains the selected pane and its lifecycle, then restores through the single loader', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, url }) => {
-    if (url.searchParams.get('component') === 'cup_handle') {
-      await route.fulfill({ status: 503, json: { detail: { code: 'NEWOW_API_UNAVAILABLE' } } })
-      return 'handled'
-    }
-  } })
+test('weekly cup disclosure stays local and never requests the deferred daily component', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute())
   const stage = page.getByTestId('newow-product-chart-stage')
   await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
   await page.getByRole('button', { name: '杯柄说明', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('NEWOW_API_UNAVAILABLE')
+  await expect(page.getByRole('dialog')).toContainText('杯柄仅适用于 1d')
   await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
   await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
   await page.keyboard.press('Escape')
   await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
   await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
   expect(productRequests(fixture, 'chart')).toHaveLength(1)
-  expect(productRequests(fixture, 'auxiliary').map(item => item.url.searchParams.get('component'))).toEqual(['macd', 'cup_handle'])
-  await page.getByRole('button', { name: '60m', exact: true }).click()
-  await expect(stage).toHaveAttribute('data-frequency', '60m')
+  expect(productRequests(fixture, 'auxiliary').map(item => item.url.searchParams.get('component'))).toEqual(['macd'])
+  await expect(page.getByRole('button', { name: '60m', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '1d', exact: true })).toHaveCount(0)
+  await expect(stage).toHaveAttribute('data-frequency', '1w')
   await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
   assertNoUnexpectedRequests(fixture)
 })
-
-
-test('late cup response cannot restore a pane from a previous strategy identity', async ({ page }) => {
-  let releaseCup
-  const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, url }) => {
-    if (url.searchParams.get('component') !== 'cup_handle') return
-    await new Promise(resolve => { releaseCup = async () => {
-      try { await route.fulfill({ status: 503, json: { detail: { code: 'NEWOW_API_UNAVAILABLE' } } }) } catch {}
-      resolve()
-    } })
-    return 'handled'
-  } })
-  await page.goto(newowRoute())
-  const stage = page.getByTestId('newow-product-chart-stage')
-  await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
-  await page.getByRole('button', { name: '杯柄说明', exact: true }).click()
-  await expect.poll(() => typeof releaseCup).toBe('function')
-  await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
-  await page.getByRole('button', { name: '震荡', exact: true }).evaluate(element => element.click())
-  await expect(stage).toHaveAttribute('data-strategy', 'oscillation')
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-  await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
-  await releaseCup()
-  await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
-  expect(productRequests(fixture, 'chart')).toHaveLength(2)
-  expect(productRequests(fixture, 'auxiliary').filter(item => item.strategy === 'oscillation')).toHaveLength(1)
-  assertNoUnexpectedRequests(fixture)
-})
-
-for (const conflict of ['malformed', 'identity-conflict']) {
-  test(`cup invalidation ${conflict} clears retained pane until a fresh selected response is accepted`, async ({ page }) => {
-    let releaseRestore
-    const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, url, count }) => {
-      if (url.searchParams.get('component') === 'cup_handle') {
-        if (conflict === 'malformed') await route.fulfill({ json: { malformed: true } })
-        else await route.fulfill({ status: 409, json: { detail: { code: 'NEWOW_DATA_IDENTITY_INVALID' } } })
-        return 'handled'
-      }
-      if (url.searchParams.get('component') === 'macd' && count === 2) {
-        await new Promise(resolve => { releaseRestore = async () => {
-          await route.fulfill({ status: 503, json: { detail: { code: 'NEWOW_API_UNAVAILABLE' } } })
-          resolve()
-        } })
-        return 'handled'
-      }
-    } })
-    await page.goto(newowRoute())
-    const workspace = page.locator('[data-detail-workspace="newow"]')
-    const stage = page.getByTestId('newow-product-chart-stage')
-    await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
-    await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
-    await page.getByRole('button', { name: '杯柄说明', exact: true }).click()
-    await expect(workspace).toHaveAttribute('data-auxiliary-state', 'input_conflict')
-    await expect(workspace).toHaveAttribute('data-chart-state', 'ready')
-    await expect(stage).toHaveAttribute('data-auxiliary-component', '')
-    await expect(stage).toHaveAttribute('data-auxiliary-state', 'error')
-    await page.keyboard.press('Escape')
-    await expect.poll(() => typeof releaseRestore).toBe('function')
-    await expect(stage).toHaveAttribute('data-auxiliary-state', 'loading')
-    await expect(stage).toHaveAttribute('data-auxiliary-component', '')
-    // A late failed restore cannot resurrect the invalidated cache/presentation.
-    await releaseRestore()
-    await expect(stage).toHaveAttribute('data-auxiliary-state', 'error')
-    await expect(stage).toHaveAttribute('data-auxiliary-component', '')
-    expect(productRequests(fixture, 'chart')).toHaveLength(1)
-    expect(productRequests(fixture, 'auxiliary').map(item => item.url.searchParams.get('component'))).toEqual(['macd', 'cup_handle', 'macd'])
-    assertNoUnexpectedRequests(fixture)
-  })
-}

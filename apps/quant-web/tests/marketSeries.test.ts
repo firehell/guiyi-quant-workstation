@@ -514,10 +514,10 @@ describe('market Live overlay', () => {
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
     sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 101) })
 
-    assert.equal(series.bars.value[series.bars.value.length - 1]?.physicalContract, undefined)
+    assert.equal(series.bars.value[series.bars.value.length - 1]?.close, 100)
   })
 
-  it('clears the overlay identity on reset before the next ordinary bar', async () => {
+  it('uses reset authority for the next matching bar and rejects the prior trading day', async () => {
     const sockets: FakeSocket[] = []
     const series = useMarketSeries({
       fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
@@ -533,8 +533,10 @@ describe('market Live overlay', () => {
     sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [] })
     sockets[0].message({ type: 'reset', trading_day: '2026-08-08', contract: 'AG2605' })
     sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 101) })
+    assert.equal(series.bars.value[series.bars.value.length - 1]?.close, 100)
+    sockets[0].message({ type: 'bar', bar: liveBar('2026-08-08T09:45:00Z', 102) })
 
-    assert.equal(series.bars.value[series.bars.value.length - 1]?.physicalContract, undefined)
+    assert.equal(series.bars.value[series.bars.value.length - 1]?.physicalContract, 'AG2605')
   })
 
   it('replaces the overlay identity when a snapshot changes physical contract', async () => {
@@ -601,6 +603,7 @@ describe('market Live overlay', () => {
     })
 
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [] })
     sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 101) })
     sockets[0].message({ type: 'reset', trading_day: '2026-08-10', contract: 'AG2610' })
 
@@ -656,6 +659,7 @@ describe('market Live overlay', () => {
     })
 
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [] })
     sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 101) })
     sockets[0].disconnect()
     assert.equal(series.liveUnavailable.value, true)
@@ -663,6 +667,7 @@ describe('market Live overlay', () => {
     scheduled[0]()
 
     assert.match(sockets[1].url, /after=2026-08-07T09%3A45%3A00Z/)
+    sockets[1].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [] })
     sockets[1].message({ type: 'bar', bar: liveBar('2026-08-07T10:00:00Z', 102) })
     assert.equal(series.liveUnavailable.value, false)
   })

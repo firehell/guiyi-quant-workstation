@@ -2,16 +2,201 @@
 
 以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
 
+## 开盘恢复队列与预警合约身份
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/data_foundation/test_live_recovery.py \
+  services/quant-api/tests/data_foundation/test_live_recovery_queue.py \
+  services/quant-api/tests/data_foundation/test_live_recovery_concurrency.py \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_alert_recovery_boundary.py \
+  services/quant-api/tests/test_subing_readiness.py \
+  services/quant-api/tests/test_live_recovery_guard.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
+  services/quant-api/tests/data_foundation/test_after_market.py \
+  services/quant-api/tests/test_runtime_health.py
+```
+
+使用仓库自有合成fixture和假时钟验证60品种/45缺口慢队列、新鲜轮次收敛、过期预算不变、
+真实尝试超时仍计数及恢复前旧cutoff不具备通知资格。typed Live读取覆盖错误/缺失合约、错误交易日、
+重复端点、截止点边界与合法跨历史owner。不得依赖生产数据或Git外审计文件，也不使用真实等待模拟延迟。
+Lua项仅按下文`GUIYI_TEST_REDIS_PORT`规则使用本次新建的非6379、无持久卷一次性Redis；未配置时skip不算通过。
+
+活动 Session 组使用线程事件选择确定性交错及真实文件锁，验证 JM5m/JM15m/RB60m/RB15m 正常通知资格、
+一致追加后剩余缺口恢复、全部补齐不推进水位、原事实漂移拒绝、busy pending 与跨品种继续、正常 flush 后调度。
+异常组覆盖 pending/provider 两个 flush 位置的锁获取失败，以及三条调度路径的 authority/worker 失败，
+确认统一不可用、保留 pending 和健康 provider、不误触发重连。
+释放故障使用真实文件锁和定点 OS 错误，覆盖 pending/provider/cooldown/BREAK、close 实际关闭前后报错，
+在测试手工清理 fd 之前验证锁可再入、重复 Bar 不发布及下一分钟继续写入；独立锁测试还覆盖 unlock 失败仍关闭。
+同一组默认运行内存 Redis；显式配置专用 Redis 时还会运行真实 Lua 版本，只清理该一次性实例的测试 DB 9。
+既有 Lua 原子性测试仍在最终重读后注入变更，验证 CAS 不会容忍提交前的再次漂移。
+
+```bash
+GUIYI_TEST_REDIS_PORT=<专用非6379端口> PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/data_foundation/test_live_recovery_concurrency.py \
+  services/quant-api/tests/data_foundation/test_live_recovery.py::test_lua_atomic_commit_and_concurrent_live_conflict_on_isolated_redis \
+  services/quant-api/tests/test_live_recovery_guard.py
+```
+
+
+## Newow 初始无入场 CLEAR v2（实施验收）
+
+以下组验证已实现的 `INITIAL_CLEAR_NO_ENTRY` v2 合同；离线通过不替代固定 PT 截点的生产只读验收 Gate。
+在本任务隔离树中执行，Python/Node 使用已有环境；依赖路径若不同，先确认解释器和本树源码导入身份。
+
+Core/投影 RED→GREEN 与公式金样：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_product_adapters.py \
+  services/quant-api/tests/newow/test_product_contracts.py \
+  services/quant-api/tests/newow/test_reference_trades.py \
+  services/quant-api/tests/newow/test_reference_interruptions.py \
+  services/quant-api/tests/newow/test_reference_statistics.py \
+  services/quant-api/tests/newow/test_product_replay_invariants.py \
+  services/quant-api/tests/newow/test_main_rise_page_v1.py
+```
+
+API、token/cursor、旧入口兼容：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/newow/test_market_newow_product_api.py \
+  services/quant-api/tests/newow/test_product_service.py \
+  services/quant-api/tests/newow/test_product_snapshot_cache.py \
+  services/quant-api/tests/newow/test_product_readonly_compatibility.py \
+  services/quant-api/tests/newow/test_older_chart_windows.py \
+  services/quant-api/tests/newow/test_historical_snapshot.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts
+```
+
+共享 v2 迁移后的模块回归和静态检查：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow tests/engineering/test_repository_hygiene.py tests/engineering/test_canonical_consistency.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web test
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web build
+openspec validate --specs --strict --no-interactive
+python3 scripts/engineering/secret_scan.py --json
+git diff --check
+```
+
+Ruff/Mypy 沿用下方 Newow Core/API 专项配置，限实际修改的生产模块；不降低现有检查规则。
+浏览器执行本文件“Newow 新版参考卡片定向验证”的三个 fixture E2E（product/detail-light/chart-panes），
+加上本功能新用例；仅使用空闲隔离端口，正常验收不带 `--update-snapshots`。明确核验 Marker 点击后可见
+“清仓（无入场）”、详情解释、零交易空态、后续真实交易定位与旧响应失效。
+
+以下现场命令仅在当前任务的真实只读连接获准后执行；固定已冻结截点，不调用 provider、不提供修复开关：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/guiyi data newow-readiness \
+  --symbol pt --frequency 1w --as-of 2026-09-13T06:36:13+00:00 --matrix --max-work 10000 --timeout-seconds 300
+```
+
+验收检查 main 3/3 READY、main_rise chart/reference 无 pairing failure、新资格 CLEAR 与零伪造交易；
+通过既有 MDS/product service 的有界只读结果补齐 CLI 未公开的 Action/Trade 证据。provider_requests/writes
+必须为 0，explanation 继续 UNOPENED，comparator 正常样本不足独立披露。不能用报告 exit 0 替代逐项判定。
+此前两笔 PT apply 不重跑；权限不足时保留现场 Gate，继续完成离线工程验收。
+
+## Newow 周线剩余工程收口
+
+确定性验收脚本只有两个模式：`summary` 只离线读取显式完整 JSON 和冻结 scope；`pt` 只在一个
+`readonly_transaction` 中读取固定 `pt/main_rise/1w` chart 与同 snapshot reference。两者均无 provider、
+repair、apply 或通知能力。先验证 parser 与离线行为：
+
+```bash
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
+  scripts/newow_weekly_acceptance.py --help
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_weekly_acceptance.py \
+  services/quant-api/tests/newow/test_readiness.py \
+  services/quant-api/tests/data_foundation/test_newow_readiness_cli.py \
+  services/quant-api/tests/newow/test_product_readonly_compatibility.py
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
+  scripts/newow_weekly_acceptance.py summary \
+  --report /absolute/full-readiness.json \
+  --scope data/universe/operational_products.txt \
+  --expected-as-of 2026-09-13T06:36:13+00:00
+```
+
+以下是获准生产只读连接后的单次现场命令，不构成写入、重试或 Runtime 授权。完整报告 stdout 必须保存到
+本任务新的显式 evidence 文件；summary 只读取该同一文件，不得用 `--compact` 再查询一次。维护锁忙、现场失败、
+预算耗尽或代码修复后均停止，不循环复跑。
+
+```bash
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
+  scripts/newow_weekly_acceptance.py pt
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/guiyi \
+  data newow-readiness --universe operational --frequency 1w --matrix \
+  --as-of 2026-09-13T06:36:13+00:00 --max-work 100000 --timeout-seconds 1800
+```
+
+UI 依赖整合后的完整 Web 验收：
+
+```bash
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web test
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web build
+env -u NO_COLOR -u FORCE_COLOR pnpm_config_verify_deps_before_run=false \
+  pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
+  e2e/market-detail.spec.mjs e2e/newow-product.spec.mjs \
+  e2e/newow-detail-light.spec.mjs e2e/newow-chart-panes.spec.mjs
+```
+
+脚本 exit 0 只证明 PT 合同检查或完整 JSON 结构/计数校验通过；`audit_complete`、180 case 覆盖、
+chart/reference 联合 READY 与真实页面回读仍分别报告，不因 known gap、WARMING、NOT_APPLICABLE 或
+UNOPENED 被改写为全 READY。
+
+## 首页返回恢复、消息与分钟行情
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/test_alert_history_api.py \
+  services/quant-api/tests/data_foundation/test_market_home_live.py \
+  services/quant-api/tests/data_foundation/test_market_home_live_websocket.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
+  services/quant-api/tests/data_foundation/test_market_pagination.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web test
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web build
+env -u VITE_API_BASE_URL -u VITE_MARKET_WS_URL REAL_BACKEND=0 \
+  PLAYWRIGHT_PORT=5182 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5182 \
+  PLAYWRIGHT_CANDIDATE_PREVIEW=0 PLAYWRIGHT_SKIP_WEBSERVER= \
+  pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec playwright test \
+  -c playwright.config.mjs e2e/market-home.spec.mjs
+```
+
+后端使用 fake Redis、临时数据库与测试 Bar，验证固定 operational 批量订阅、先订阅后快照、
+同合约昨收、缺失/零基准、收盘保持、乱序与身份 reset、同日恢复、资源释放及历史消息稳定分页。
+Web 验证返回保留列表和位置、有效快照不重复加载、过期后台刷新、消息查询与独立错误、SVG/键盘
+导航及单连接 overlay。浏览器 fixture 只证明代码行为；生产收件、自然 completed 1m、休市真实
+数据与 Runtime 版本仍需独立读回。不得把当前正式 API 尚未提供的新端点用模拟数据补成可用。
+
+共享依赖的隔离 worktree 可以使用既有 Python 环境并显式设置本树 PYTHONPATH，不提交环境 symlink。
+5182 必须空闲，禁止复用其他工作区服务。新行情只读连接与本地开发服务不授权启动 provider、
+修改 production Scope、发送通知或切换正式 Runtime。
+
 ## Newow 历史恢复通用边界
 
 ```bash
 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
   services/quant-api/tests/data_foundation \
   services/quant-api/tests/newow/test_product_reader.py \
-  services/quant-api/tests/newow/test_readiness.py
+  services/quant-api/tests/newow/test_readiness.py \
+  services/quant-api/tests/data_foundation/test_newow_readiness_cli.py
 ```
 
 覆盖周五夜盘首边界、未完成尾周、逐日交易所夜盘证据、来源全集身份和生命周期、局部无夜盘不得覆盖共享 Calendar，以及元数据提交结果不明时停止并独立回读。隔离工作树可显式使用既有 Python 环境；这些离线检查不代表实际历史补齐、未来 Calendar 自动扩展或浏览器验收。
+`newow-readiness --universe operational --frequency 1w` 只审计周版及其 D1 companion；`--compact`
+只生成 Gate 索引，默认完整结果仍用于逐 dependency 与原生 plan 核对。真实 Catalog/Canonical 只读审计须另获
+当前现场权限，且即使结果为 `audited` 也不授权任何 `--apply`。
 
 ## Newow 新版参考卡片定向验证
 
@@ -468,6 +653,11 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_subing_scope_activation.py
 ```
 
+其中 MarketRead/Alert 组还固定验证 HTDY 5m/15m/60m 的 Calendar/Session/owner 完整性、窗口数量足够但中间
+缺 Bar 时 kernel/Event/sender 均不运行、SuBing failed cutoff 的 typed skip 不清健康、迟到旧合约不倒退，
+以及 guard enter/exit 与内部 DB/status/evaluator 失败的日志分类。Event persistence 失败后的同 Bar 不重试；
+只有下一次真实成功评价才可清当前错误，并保留历史失败时间。
+
 RQData session 首分钟锚点、0045 与 shadow repair 的定向合同：
 
 ```bash
@@ -661,7 +851,8 @@ API 固定只绑定 `127.0.0.1:8010`，Web 固定 `127.0.0.1:5174`，端口占�
 启动后核对 `/api/preview/identity` 与横幅的 SHA/cutoff；改变代码后须停止候选进程并重新核对启动。
 K线 `before` 是排他上界，牛哇保留既有 `as_of` completed 语义；首页投影/主力元数据与正式
 Runtime health/当前事件不伪装成同一历史快照，各自保留响应时间戳。页面身份不匹配时不加载业务查询。
-代理只允许既有两项正式 GET，其他请求返回 `PREVIEW_ROUTE_FORBIDDEN`，无 Live subscription。
+代理只允许显式列出的只读业务 GET（包括 Newow capability）及两项正式状态 GET，其他请求返回
+`PREVIEW_ROUTE_FORBIDDEN`，无 Live subscription。
 停止候选进程即关闭预览；没有数据写入需要回滚，正式 Runtime 与 release Gate 不因预览通过而改变。
 
 Newow P5 路由/偏好、typed section consumer、九组合图层、参考历史与解释面板定向回归：
@@ -669,7 +860,6 @@ Newow P5 路由/偏好、typed section consumer、九组合图层、参考历史
 ```bash
 pnpm -C apps/quant-web exec node --test \
   tests/newowProductRoutes.test.ts \
-  tests/marketDetailRoute.test.ts \
   tests/marketDetailPreferences.test.ts \
   tests/marketHomeRoute.test.ts \
   tests/marketHomePageRoute.test.ts \
@@ -706,7 +896,8 @@ SuBing Alert Rule/API/Event-backed `S↑/S↓` 与 Market Home 定向检查：
 pnpm -C apps/quant-web exec node --test \
   tests/alertRuleOwnership.test.ts \
   tests/alerts.test.ts \
-  tests/productCurrentAlertEvents.test.ts \
+  tests/useHtdyAlertFacts.test.ts \
+  tests/useSubingAlertFacts.test.ts \
   tests/marketHomeTypes.test.ts \
   tests/marketHomeViewModel.test.ts \
   tests/marketHomeRoute.test.ts
@@ -767,6 +958,29 @@ PYTHONPATH=packages/quant-core uv run --project services/quant-api python \
 
 浏览器原站观察只用于设计依据；受控截图与 API fixture 不证明真实工作站或原站完整 parity。
 
+Newow 趋势通道圆点使用仓库内冻结 30-Bar fixture，同时校验 Python Decimal Core 与独立 JavaScript
+HHV10/LLV10 序列；Core/API/Web 测试覆盖部分窗口、孤立 Bar、owner 重置、缺值、分页 prefix、
+价格坐标、颜色、半径与身份清理：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/newow/test_oscillation_channel.py \
+  services/quant-api/tests/newow/test_trend_channel_display.py \
+  services/quant-api/tests/newow/test_product_service.py \
+  services/quant-api/tests/newow/test_market_newow_product_api.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
+  tests/newowTrendChannelParity.test.ts tests/newowProductTypes.test.ts \
+  tests/newowProductChartPrimitives.test.ts tests/NewowProductChartStage.test.ts \
+  tests/useNewowProduct.test.ts
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec playwright test \
+  -c playwright.config.mjs \
+  e2e/newow-product.spec.mjs e2e/newow-detail-light.spec.mjs e2e/newow-chart-panes.spec.mjs
+```
+
+冻结 fixture 记录 v3.2.82 两份源码 SHA-256 与 30 组逐值输出；测试本身不读取 Git 外冻结包、不联网、
+不连接 MDS/RQData/production DB/Redis/Runtime/通知。五档视觉基线为 1280、1440、1920、2560 与 390。
+
 苏冰当日缺口、恢复水位、只读诊断及日志：
 
 ```bash
@@ -782,6 +996,26 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
 实际 Lua 测试仅接受显式 `GUIYI_TEST_REDIS_PORT` 指向一次性、无持久卷的隔离 Redis；不得填生产端口。
 未配置时该项明确 skip，其余测试使用内存 provider/Redis、临时 SQLite/Parquet 与进程锁。测试不运行
 现役 Runtime，不调用真实 RQData，不发送通知。
+
+预警审查补充回归固定 HTDY 与苏冰输入合同分离、canonical 零评价/状态失败发送边界，以及周一
+60 个冻结身份与 45 个夜盘目标经真实 Session authority、fake SDK 的正式 adapter、`recover_product`、
+隔离 Redis 聚合和 MarketRead 的组合链：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_runtime_health.py \
+  services/quant-api/tests/data_foundation/test_live_recovery.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
+  services/quant-api/tests/test_alert_recovery_boundary.py \
+  services/quant-api/tests/test_live_recovery_guard.py
+```
+
+组合回归默认不会连接 Redis；实际 Lua 原子提交仍须按下方合同给 `GUIYI_TEST_REDIS_PORT` 配置本次创建、
+非 6379、无持久卷的一次性实例，并只单独运行对应测试。未配置造成的 skip 不计为 Lua Gate 通过。
 
 逐品种诊断命令为 `guiyi runtime subing-readiness --trading-day YYYY-MM-DD --as-of OFFSET_DATETIME`；
 `as-of` 必须带时区且不晚于执行时刻。命令只读 PostgreSQL/Redis/Canonical，逐品种报告当前输入与 Scope，

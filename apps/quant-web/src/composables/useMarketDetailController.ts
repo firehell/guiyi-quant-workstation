@@ -103,12 +103,40 @@ export function useMarketDetailController(
   })
   const productCatalog = ref<DominantContractItem[]>([])
   let currentDominants: DominantContractListResponse = { items: [] }
+  let dominantsRequest: Promise<DominantContractListResponse> | null = null
+  let activeSeriesKey: string | null = null
+  let activeResearchKey: string | null = null
   const currentResearch = ref<ProductResearchResponse | null>(null)
   const researchError = ref(false)
   let headerGeneration = 0
   let disposed = false
   const publicBars = computed(() => series.bars.value)
   const publicMutation = computed(() => series.mutation.value)
+
+  function seriesKey(identity: MarketDetailIdentity): string {
+    return [identity.symbol, identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
+  }
+
+  function researchKey(identity: MarketDetailIdentity): string {
+    return [identity.symbol, identity.seriesKind, identity.contract ?? ''].join(':')
+  }
+
+  function canKeepHeader(previous: MarketDetailIdentity | null, next: MarketDetailIdentity): boolean {
+    if (!previous || !state.value.header || seriesKey(previous) !== seriesKey(next)) return false
+    return (previous.view === 'newow') === (next.view === 'newow')
+  }
+
+  async function loadDominants(): Promise<DominantContractListResponse> {
+    if (currentDominants.items.length > 0) return currentDominants
+    if (!dominantsRequest) {
+      dominantsRequest = fetchDominants().then((value) => {
+        currentDominants = value
+        productCatalog.value = value.items
+        return value
+      }).finally(() => { dominantsRequest = null })
+    }
+    return dominantsRequest
+  }
 
   function rebuildHeader(identity: MarketDetailIdentity): void {
     state.value.header = buildMarketDetailHeaderModel({
@@ -142,35 +170,56 @@ export function useMarketDetailController(
 
   async function switchIdentity(identity: MarketDetailIdentity): Promise<void> {
     const generation = state.value.generation + 1
+    const previousIdentity = state.value.identity
+    const retainedHeader = canKeepHeader(previousIdentity, identity) ? state.value.header : null
+    const usesGenericSeries = identity.view !== 'newow'
+    const nextSeriesKey = seriesKey(identity)
+    const reuseSeries = usesGenericSeries && activeSeriesKey === nextSeriesKey
+    const nextResearchKey = researchKey(identity)
+    const reuseResearch = usesGenericSeries && activeResearchKey === nextResearchKey && currentResearch.value !== null
     state.value = {
       route: { kind: 'valid', identity },
       identity,
       generation,
-      header: null,
-      loading: true,
+      header: retainedHeader,
+      loading: retainedHeader === null,
       error: null,
     }
-    headerGeneration = 0
-    currentDominants = { items: [] }
-    currentResearch.value = null
-    researchError.value = false
-    const metadataRequest = fetchDominants().then(
+    headerGeneration = retainedHeader ? generation : 0
+    if (!reuseResearch) {
+      currentResearch.value = null
+      activeResearchKey = null
+      researchError.value = false
+    }
+    const metadataRequest = loadDominants().then(
       (value) => ({ ok: true as const, value }),
       () => ({ ok: false as const }),
     )
-    const usesGenericSeries = identity.view !== 'newow'
-    if (!usesGenericSeries) series.clearSeries()
-    const researchRequest = usesGenericSeries
+    if (!usesGenericSeries && previousIdentity?.view !== 'newow') {
+      series.clearSeries()
+      activeSeriesKey = null
+    }
+    // replaceSeries invalidates its previous generation synchronously. Revoke
+    // the completed-key cache at the same boundary so A -> B(pending) -> A
+    // cannot mistake B's cleared/in-flight source for the completed A source.
+    if (usesGenericSeries && !reuseSeries) activeSeriesKey = null
+    const seriesRequest = usesGenericSeries
+      ? reuseSeries ? Promise.resolve({ ok: true as const }) : series.replaceSeries(identity).then(
+          () => ({ ok: true as const }),
+          () => ({ ok: false as const }),
+        )
+      : Promise.resolve({ ok: true as const })
+    const researchRequest = usesGenericSeries && !reuseResearch
       ? fetchResearch({
           symbol: identity.symbol,
           seriesKind: identity.seriesKind,
           contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
         }).catch(() => null)
-      : Promise.resolve(null)
+      : Promise.resolve(reuseResearch ? currentResearch.value : null)
     try {
-      const [metadata] = await Promise.all([
+      const [metadata, seriesResult] = await Promise.all([
         metadataRequest,
-        usesGenericSeries ? series.replaceSeries(identity) : Promise.resolve(),
+        seriesRequest,
       ])
       if (disposed || state.value.generation !== generation) return
       const hasCurrentProduct = metadata.ok && metadata.value.items.some(
@@ -183,8 +232,14 @@ export function useMarketDetailController(
         state.value.error = '品种元数据不可用'
         return
       }
-      currentDominants = metadata.value
-      productCatalog.value = metadata.value.items
+      if (!seriesResult.ok) {
+        activeSeriesKey = null
+        state.value.header = null
+        state.value.loading = false
+        state.value.error = '详情行情加载失败'
+        return
+      }
+      activeSeriesKey = usesGenericSeries ? nextSeriesKey : null
       headerGeneration = generation
       rebuildHeader(identity)
       state.value.loading = false
@@ -192,6 +247,7 @@ export function useMarketDetailController(
       if (disposed || state.value.generation !== generation) return
       currentResearch.value = research
       researchError.value = research === null
+      activeResearchKey = research === null ? null : nextResearchKey
       rebuildHeader(identity)
     } catch {
       if (disposed || state.value.generation !== generation) return

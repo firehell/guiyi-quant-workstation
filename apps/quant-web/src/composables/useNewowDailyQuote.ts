@@ -46,7 +46,7 @@ export function projectNewowDailyQuote(page: MarketBarsPageResponse, symbol: str
   if (owners.at(-1) !== contract.toUpperCase()) invalid()
   const prior = page.bars.at(-2)
   const change = prior && owners[0] === owners[1] ? latest.close - prior.close : null
-  return { close: latest.close, open: latest.open, high: latest.high, low: latest.low, volume: latest.volume, openInterest: latest.open_interest, asOf: latest.bar_end, change, pct: change === null || !prior ? null : change / prior.close * 100 }
+  return { close: latest.close, open: latest.open, high: latest.high, low: latest.low, volume: latest.volume, openInterest: latest.open_interest, asOf: latest.bar_end, tradingDay: latest.trading_day, change, pct: change === null || !prior ? null : change / prior.close * 100 }
 }
 
 export function useNewowDailyQuote(options: {

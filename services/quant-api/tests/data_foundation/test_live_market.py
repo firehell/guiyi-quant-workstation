@@ -114,6 +114,21 @@ class FakeRedis:
             if (score > lower if lower_exclusive else score >= lower) and score <= upper
         ]
 
+    def zrevrangebyscore(self, key, maximum, minimum, *, start, num):
+        assert minimum == "-inf"
+        assert start == 0 and num == 1
+        upper = int(maximum)
+        values = [
+            member
+            for member, score in sorted(
+                self.zsets.get(key, {}).items(),
+                key=lambda item: (item[1], item[0]),
+                reverse=True,
+            )
+            if score <= upper
+        ]
+        return values[:1]
+
     def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
         if key == "live:heartbeat" and self.fail_heartbeat_set:
             self.fail_heartbeat_set -= 1
@@ -281,6 +296,35 @@ def test_provenance_read_rejects_legacy_invalid_or_mismatched_rows(
         )
 
 
+def test_latest_observation_is_bounded_by_completed_cutoff_and_contract() -> None:
+    """Catches a homepage snapshot reading a future or wrong-contract Live row."""
+    fake = FakeRedis()
+    store = _store(fake)
+    day = date(2025, 1, 2)
+    store.put_bar(day, "j", "1m", _bar(1), contract="J2505")
+    store.put_bar(day, "j", "1m", _bar(2), contract="J2505")
+
+    observation = store.latest_observation(
+        day,
+        "j",
+        "1m",
+        until=_bar(1).bar_end,
+        expected_contract="J2505",
+    )
+
+    assert observation is not None
+    assert observation.bar == _bar(1)
+    assert observation.contract == "J2505"
+    with pytest.raises(ValueError, match="LIVE_BAR_PROVENANCE_INVALID"):
+        store.latest_observation(
+            day,
+            "j",
+            "1m",
+            until=_bar(2).bar_end,
+            expected_contract="J2509",
+        )
+
+
 def test_subscriptions_are_trading_day_isolated_and_expire() -> None:
     """Catches subscription state leaking across trading days or losing its TTL."""
     fake = FakeRedis()
@@ -350,7 +394,7 @@ def test_public_pubsub_channel_contract_and_compact_payloads() -> None:
     bar = _bar(1)
 
     store.set_heartbeat({"state": "healthy"})
-    store.publish_bar("RB", "1m", bar)
+    store.publish_bar("RB", "1m", bar, contract="RB2505")
     store.publish_state({"state": "healthy"})
 
     assert module.live_bar_channel("RB", "1m") == "live:bar:RB:1m"
@@ -360,7 +404,7 @@ def test_public_pubsub_channel_contract_and_compact_payloads() -> None:
     assert fake.published == [
         (
             "live:bar:RB:1m",
-            '{"bar_end":"2025-01-02T01:01:00+00:00","trading_day":"2025-01-02","open":"100.1250","high":"101.0000","low":"99.0000","close":"100.7500","volume":"12.500","turnover":"1253.125000","open_interest":"70.000"}',
+            '{"bar_end":"2025-01-02T01:01:00+00:00","trading_day":"2025-01-02","open":"100.1250","high":"101.0000","low":"99.0000","close":"100.7500","volume":"12.500","turnover":"1253.125000","open_interest":"70.000","contract":"RB2505"}',
         ),
         ("market:state", '{"state":"healthy"}'),
     ]
@@ -949,7 +993,10 @@ def test_mid_batch_publish_failure_stops_later_due_bar_publication() -> None:
 
     assert service.flush_due(third.bar_end + timedelta(seconds=2)) == (first,)
     assert [event for event in fake.published if event[0].startswith("live:bar:")] == [
-        ("live:bar:j:1m", json.dumps(_bar_payload(first), separators=(",", ":")))
+        (
+            "live:bar:j:1m",
+            json.dumps({**_bar_payload(first), "contract": "J2505"}, separators=(",", ":")),
+        )
     ]
     assert len(service._pending) == 2
     assert json.loads(fake.values["live:heartbeat"])["available"] is False
@@ -1471,7 +1518,10 @@ def test_redis_failure_keeps_due_bar_pending_for_exact_recovery_retry() -> None:
     assert service.flush_due(datetime(2025, 1, 2, 1, 1, 2, tzinfo=UTC)) == (bar,)
     assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == (bar,)
     live_events = [item for item in fake.published if item[0] == "live:bar:j:1m"]
-    assert live_events == [("live:bar:j:1m", json.dumps(_bar_payload(bar), separators=(",", ":")))]
+    assert live_events == [(
+        "live:bar:j:1m",
+        json.dumps({**_bar_payload(bar), "contract": "J2505"}, separators=(",", ":")),
+    )]
 
 
 def test_due_bar_retains_ingested_contract_if_mapping_changes_before_flush() -> None:

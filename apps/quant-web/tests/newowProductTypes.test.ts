@@ -4,6 +4,7 @@ import kernelMacdFixture from '../e2e/fixtures/newow-rich-macd.json' with { type
 import { buildNewowFixtureEnvelopeForTest, NEWOW_AS_OF } from '../e2e/newow-product.helpers.mjs'
 
 import {
+  getNewowProductCapabilities,
   getNewowProductSection,
   NewowProductRequestError,
 } from '../src/api/newowProduct.ts'
@@ -67,6 +68,63 @@ test('unwraps only the delivered requested section and preserves every Decimal a
   assert.throws(() => chartCoordinate('1e999'), /finite chart coordinate/)
 })
 
+test('normalizes an aligned independent trend channel and requires it for trend', () => {
+  const missing = chartWire()
+  delete (missing.chart.value as Record<string, unknown>).trend_channel
+  assert.throws(() => normalizeNewowProductResponse(missing, expected), /missing or unexpected fields/)
+
+  const raw = chartWire()
+  const bar = raw.chart.value!.bars[0]!
+  raw.chart.value!.trend_channel = {
+    kind: 'trend_channel', period: 10, formula_version: 'newow_hhv_llv_channel_page_v1',
+    points: [{
+      bar_end: bar.bar_end, upper: '102.000', lower: '99.500', formula_version: 'newow_hhv_llv_channel_page_v1',
+      status: featureStatus('ready'), physical_contract: bar.physical_contract,
+      segment_id: bar.segment_id, source_identity: bar.source_identity,
+    }],
+  }
+
+  const result = normalizeNewowProductResponse(raw, expected)
+
+  assert.deepEqual(result.value.trend_channel?.points.map((point) => [point.upper, point.lower]), [['102.000', '99.500']])
+  assert.deepEqual(result.meta.identity.formula_versions, FORMULAS)
+
+  const nonTrend = normalizeNewowProductResponse(
+    chartWire({ strategy: 'oscillation' }),
+    { ...expected, strategy: 'oscillation' },
+  )
+  assert.equal(nonTrend.value.trend_channel, null)
+})
+
+test('rejects trend channel count, formula, owner, evidence, price, and unavailable-value contradictions', () => {
+  const withChannel = () => {
+    const raw = chartWire()
+    const bar = raw.chart.value!.bars[0]!
+    raw.chart.value!.trend_channel = {
+      kind: 'trend_channel', period: 10, formula_version: 'newow_hhv_llv_channel_page_v1',
+      points: [{
+        bar_end: bar.bar_end, upper: '102', lower: '99.5', formula_version: 'newow_hhv_llv_channel_page_v1',
+        status: featureStatus('ready'), physical_contract: bar.physical_contract,
+        segment_id: bar.segment_id, source_identity: bar.source_identity,
+      }],
+    }
+    return raw
+  }
+
+  const count = withChannel(); count.chart.value!.trend_channel.points = []
+  assert.throws(() => normalizeNewowProductResponse(count, expected), /align exactly with bars/)
+  const formula = withChannel(); formula.chart.value!.trend_channel.points[0]!.formula_version = 'forged'
+  assert.throws(() => normalizeNewowProductResponse(formula, expected), /formula_version/)
+  const owner = withChannel(); owner.chart.value!.trend_channel.points[0]!.segment_id = 'other-segment'
+  assert.throws(() => normalizeNewowProductResponse(owner, expected), /owner conflicts/)
+  const status = withChannel(); status.chart.value!.trend_channel.points[0]!.status = featureStatus('unavailable', 'NEWOW_TREND_CHANNEL_BAR_MISSING')
+  assert.throws(() => normalizeNewowProductResponse(status, expected), /unavailable point must not contain values/)
+  const evidence = withChannel(); evidence.chart.value!.trend_channel.points[0]!.status.evidence_status = 'EVIDENCE_REQUIRED'
+  assert.throws(() => normalizeNewowProductResponse(evidence, expected), /evidence_status/)
+  const price = withChannel(); price.chart.value!.trend_channel.points[0]!.upper = '0'; price.chart.value!.trend_channel.points[0]!.lower = '-1'
+  assert.throws(() => normalizeNewowProductResponse(price, expected), /positive prices/)
+})
+
 test('fails closed before unwrap when fields or the five delivery wrappers violate the P4 envelope', () => {
   const missing = chartWire()
   delete (missing.meta as Record<string, unknown>).read_at
@@ -119,6 +177,42 @@ test('rejects non-finite Decimal text and wrong contract, frequency, formula, so
 test('shares one Newow strategy and frequency allowlist authority across route and product contracts', () => {
   assert.equal(NEWOW_PRODUCT_STRATEGIES, NEWOW_STRATEGIES)
   assert.equal(NEWOW_PRODUCT_FREQUENCIES, NEWOW_FREQUENCIES)
+})
+
+test('loads the server-owned weekly release capability and rejects widened payloads', async () => {
+  const payload = {
+    schema_version: 'newow_product_capabilities_v1',
+    release_stage: 'weekly',
+    open_frequencies: ['1w'],
+    deferred_frequencies: [
+      { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+    open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
+    deferred_sections: [
+      { section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' },
+    ],
+  }
+  const calls: Array<{ path: string; params: Record<string, unknown> }> = []
+  const result = await getNewowProductCapabilities({
+    request: async (path, config) => {
+      calls.push({ path, params: config.params })
+      return payload
+    },
+  })
+
+  assert.deepEqual(calls, [{ path: '/market/newow/product-capabilities', params: {} }])
+  assert.deepEqual(result, payload)
+  assert.equal(Object.isFrozen(result), true)
+
+  await assert.rejects(
+    getNewowProductCapabilities({
+      request: async () => ({ ...payload, open_frequencies: ['1w', '1d'] }),
+    }),
+    (error: unknown) =>
+      error instanceof NewowProductRequestError
+      && error.code === 'NEWOW_RESPONSE_INVALID',
+  )
 })
 
 test('rejects chart facts later than the fixed snapshot as_of', () => {
@@ -198,6 +292,7 @@ test('orders actions by bar_end then per-Bar sequence and permits sequence reset
   reset.chart.value!.bars.push({ ...reset.chart.value!.bars[0]!, bar_end: '2026-08-15T07:00:00Z', trading_day: '2026-08-15' })
   reset.chart.value!.frames.push({ ...reset.chart.value!.frames[0]!, bar_end: '2026-08-15T07:00:00Z', main_state: 'CLEAR', action_ids: ['clear-2'] })
   reset.chart.value!.actions.push(action('clear-2', 'CLEAR', 0, '2026-08-15T07:00:00Z'))
+  reset.chart.value!.trend_channel = trendChannelForBars(reset.chart.value!.bars)
   assert.doesNotThrow(() => normalizeNewowProductResponse(reset, expected))
 
   const duplicate = chartWire()
@@ -233,6 +328,8 @@ test('builds the exact P4 query for every section and omits cross-section parame
 test('maps 409 and 429 into safe classified errors without leaking transport details', async () => {
   const cases = [
     [409, 'NEWOW_DATA_UNAVAILABLE', 'unavailable'],
+    [409, 'NEWOW_FREQUENCY_NOT_OPEN', 'unavailable'],
+    [409, 'NEWOW_SECTION_NOT_OPEN', 'unavailable'],
     [409, 'NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'],
     [429, 'NEWOW_RESOURCE_BUSY', 'busy'],
     [429, 'NEWOW_REQUEST_CANCELLED', 'cancelled'],
@@ -452,15 +549,16 @@ export function chartWire(options: { product?: string; strategy?: 'trend' | 'osc
   const frequency = options.frequency ?? '1d'
   const formulas = strategy === 'trend' ? FORMULAS : strategy === 'oscillation'
     ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
-    : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
+      : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
   const close = options.close ?? '101.500'
+  const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close, volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
   return {
     meta: {
-      schema_version: 'newow_product_detail_v1',
+      schema_version: 'newow_product_detail_v2',
       identity: { product, strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64),
       data_revision_identity: null, snapshot_token: options.token === undefined ? 'snapshot-a' : options.token,
-      reference_model_version: 'newow_marker_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+      reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     },
     section: 'chart' as const,
     chart: {
@@ -468,14 +566,69 @@ export function chartWire(options: { product?: string; strategy?: 'trend' | 'osc
       status: featureStatus('ready'),
       value: {
         chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64),
-        bars: [{ bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close, volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }],
+        bars: [bar],
         frames: [{ bar_end: '2026-08-14T07:00:00Z', main_state: 'BUILD', main_values: { B: '100.100', nullable: null }, status: featureStatus('ready'), action_ids: options.actions === undefined ? ['build-1'] : [], hint_ids: [] }],
+        trend_channel: strategy === 'trend' ? trendChannelForBars([bar]) : null,
         actions: options.actions ?? [action('build-1', 'BUILD', 1, '2026-08-14T07:00:00Z')],
         hints: [], diagnostics: [], next_before: null, repainting: false, formal_signal_eligible: true,
         allowed_uses: ['product_chart', 'reference_input'],
       },
     },
     auxiliary: notRequested(), reference: notRequested(), explanation: notRequested(), comparator: notRequested(),
+  }
+}
+
+test('accepts only a structurally valid main-rise initial clear without entry', () => {
+  const wire = chartWire({ strategy: 'main_rise', actions: [{
+    signal_id: 'initial-clear', kind: 'CLEAR', bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14',
+    reference_price: '100.100', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+    related_build_id: null, trade_eligibility: 'INITIAL_CLEAR_NO_ENTRY', sequence: 0,
+  }] })
+  wire.chart.value.frames[0]!.action_ids = ['initial-clear']
+  wire.chart.value.frames[0]!.main_state = 'CLEAR'
+
+  const parsed = normalizeNewowProductResponse(wire, { ...expectedIdentity('main_rise'), section: 'chart', asOf: AS_OF })
+  assert.equal(parsed.value!.actions[0]!.trade_eligibility, 'INITIAL_CLEAR_NO_ENTRY')
+
+  const mutations = [
+    (copy: typeof wire) => { copy.meta.identity.strategy = 'trend' },
+    (copy: typeof wire) => { copy.chart.value.actions[0]!.kind = 'BUILD' },
+    (copy: typeof wire) => { copy.chart.value.actions[0]!.related_build_id = 'forged-build' },
+    (copy: typeof wire) => { copy.chart.value.actions[0]!.sequence = 1 },
+    (copy: typeof wire) => { copy.chart.value.bars[0]!.observation_eligible = false },
+  ]
+  for (const mutate of mutations) {
+    const copy = structuredClone(wire); mutate(copy)
+    const expectedStrategy = copy.meta.identity.strategy
+    assert.throws(() => normalizeNewowProductResponse(copy, { ...expectedIdentity(expectedStrategy), section: 'chart', asOf: AS_OF }))
+  }
+})
+
+test('rejects the retired v1 product and reference contracts', () => {
+  const schemaV1 = chartWire()
+  schemaV1.meta.schema_version = 'newow_product_detail_v1'
+  assert.throws(() => normalizeNewowProductResponse(schemaV1, { ...expectedIdentity(), section: 'chart', asOf: AS_OF }))
+
+  const referenceV1 = chartWire()
+  referenceV1.meta.reference_model_version = 'newow_marker_reference_zero_cost_v1'
+  assert.throws(() => normalizeNewowProductResponse(referenceV1, { ...expectedIdentity(), section: 'chart', asOf: AS_OF }))
+})
+
+function trendChannelForBars(bars: ReadonlyArray<{ bar_end: string; high: string; low: string; physical_contract: string; segment_id: string; source_identity: string }>) {
+  return {
+    kind: 'trend_channel' as const,
+    period: 10 as const,
+    formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+    points: bars.map((bar) => ({
+      bar_end: bar.bar_end,
+      upper: bar.high,
+      lower: bar.low,
+      formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+      status: featureStatus('ready'),
+      physical_contract: bar.physical_contract,
+      segment_id: bar.segment_id,
+      source_identity: bar.source_identity,
+    })),
   }
 }
 
@@ -582,7 +735,7 @@ function comparatorWire() {
 export function referenceItem(id: string, returnPct: string) {
   return {
     reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
-    formula_versions: FORMULAS, reference_model_version: 'newow_marker_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+    formula_versions: FORMULAS, reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     entry_signal_id: `entry-${id}`, entry_sequence: 1, entry_bar_end: '2026-08-14T07:00:00Z', entry_trading_day: '2026-08-14', entry_reference_price: '100.100',
     exit_signal_id: `exit-${id}`, exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15', exit_reference_price: '101.35125',
     status: 'CLOSED', holding_bars: 1, reference_return_pct: returnPct, mark_bar_end: null, mark_reference_price: null, mark_change_pct: null,

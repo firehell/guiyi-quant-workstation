@@ -128,6 +128,63 @@ def test_query_page_returns_latest_physical_bars_ascending(session, tmp_path) ->
     assert result.canonical_coverage == (result.bars[0].bar_end, result.bars[-1].bar_end)
 
 
+def test_contract_daily_bars_as_of_reads_exact_contract_and_rejects_future(
+    session, tmp_path
+) -> None:
+    """Catches a homepage D1 read crossing contracts or accepting post-cutoff facts."""
+    catalog, service, store = _service(session, tmp_path)
+    _publish(
+        catalog,
+        store,
+        DatasetKey("contract", "jm", "JM2505", "1d"),
+        (_bar(2, 100), _bar(3, 101)),
+    )
+    session.commit()
+
+    bars = service.contract_daily_bars_as_of(
+        symbol="jm",
+        contract="JM2505",
+        as_of=datetime(2025, 1, 3, 8, tzinfo=UTC),
+        limit=2,
+    )
+
+    assert tuple(bar.close for bar in bars) == (Decimal("100"), Decimal("101"))
+    with pytest.raises(MarketDataError, match="MARKET_HOME_LIVE_DAILY_AFTER_CUTOFF"):
+        service.contract_daily_bars_as_of(
+            symbol="jm",
+            contract="JM2505",
+            as_of=datetime(2025, 1, 3, 6, tzinfo=UTC),
+            limit=2,
+        )
+
+
+def test_previous_trading_day_requires_complete_calendar_interval(session, tmp_path) -> None:
+    """Catches a missing calendar date being treated as a proven prior trading day."""
+    _catalog, service, _store = _service(session, tmp_path)
+    session.add(
+        TradingCalendar(
+            exchange_code="DCE",
+            trade_date=date(2025, 1, 1),
+            is_trading_day=True,
+        )
+    )
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="TRADING_CALENDAR_MISSING"):
+        service.previous_trading_day("jm", date(2025, 1, 3))
+
+    session.add(
+        TradingCalendar(
+            exchange_code="DCE",
+            trade_date=date(2025, 1, 2),
+            is_trading_day=False,
+        )
+    )
+    session.commit()
+
+    assert service.previous_trading_day("jm", date(2025, 1, 3)) == date(2025, 1, 1)
+
+
 def test_query_page_cursor_is_exclusive(session, tmp_path) -> None:
     catalog, service, store = _service(session, tmp_path)
     _publish(

@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore
 
 import anyio
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import json
 from typing import cast
 
@@ -16,25 +16,46 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.market_data.composition import build_market_read_service, open_market_read_service
+from app.market_data.composition import (
+    build_market_read_service,
+    open_market_home_live_service,
+    open_market_read_service,
+)
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
     ContractError,
     SeriesKind,
     SeriesPageQuery,
+    normalize_contract_for_symbol,
     parse_rfc3339_instant,
 )
-from app.market_data.live_market import LIVE_STATE_CHANNEL, live_bar_channel
-from app.market_data.market_read_service import MarketReadService, MarketReadState
+from app.market_data.live_market import LIVE_STATE_CHANNEL, LiveBarObservation, live_bar_channel
+from app.market_data.market_home_live import MarketHomeLiveItem, MarketHomeLiveSnapshot
+from app.market_data.market_read_service import (
+    MarketDisplaySnapshot,
+    MarketReadService,
+    MarketReadState,
+)
+from app.market_data.operational_universe import load_operational_products
 from app.redis_connections import get_async_redis_connection
 from app.schemas.market import MarketReadStateResponse
+from app.schemas.market_home_live import (
+    MarketHomeLiveItemResponse,
+    MarketHomeLiveQuoteFrame,
+    MarketHomeLiveResetFrame,
+    MarketHomeLiveSnapshotFrame,
+    MarketHomeLiveUnavailableFrame,
+)
 
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 # Admission precedes submit: no unbounded executor queue, including cancellation.
 _READ_SLOTS = BoundedSemaphore(4)
 _READ_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="market-ws-read")
+_MARKET_DETAIL_REFRESH_SECONDS = 5.0
+_HOME_LIVE_STATUS_REFRESH_SECONDS = 5.0
+_HOME_LIVE_AUTHORITY_REFRESH_SECONDS = 60.0
 
 
 @router.get("/state", response_model=MarketReadStateResponse)
@@ -102,9 +123,23 @@ async def market_websocket(websocket: WebSocket) -> None:
         )
         last_sent = snapshot[-1].bar_end if snapshot else cutoff
         current_state = initial_state
+        current_authority = _detail_display_authority(display)
+        loop = asyncio.get_running_loop()
+        last_refresh = loop.time()
 
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            now_tick = loop.time()
+            if now_tick - last_refresh >= _MARKET_DETAIL_REFRESH_SECONDS:
+                current_state, current_authority, last_sent = await _refresh_detail_display(
+                    websocket,
+                    identity,
+                    after=after,
+                    last_sent=last_sent,
+                    current_state=current_state,
+                    current_authority=current_authority,
+                )
+                last_refresh = now_tick
             if message is None:
                 if await _client_disconnected(websocket):
                     break
@@ -112,34 +147,33 @@ async def market_websocket(websocket: WebSocket) -> None:
                 continue
             channel = _text(message.get("channel"))
             if channel == LIVE_STATE_CHANNEL:
-                next_state = await _read_in_worker(
-                    lambda service: service.state(identity, datetime.now(UTC)),
+                current_state, current_authority, last_sent = await _refresh_detail_display(
+                    websocket,
+                    identity,
+                    after=after,
+                    last_sent=last_sent,
+                    current_state=current_state,
+                    current_authority=current_authority,
+                    force_state=True,
                 )
-                if (
-                    next_state.trading_day != current_state.trading_day
-                    or next_state.live_contract != current_state.live_contract
-                ):
-                    await websocket.send_json(
-                        {
-                            "type": "reset",
-                            "trading_day": (
-                                None
-                                if next_state.trading_day is None
-                                else next_state.trading_day.isoformat()
-                            ),
-                            "contract": next_state.live_contract,
-                        }
-                    )
-                    last_sent = next_state.canonical_end
-                current_state = next_state
-                await _send_state(websocket, next_state)
+                last_refresh = now_tick
                 continue
             if channel != channels[0]:
                 continue
-            bar = _bar_from_message(message.get("data"))
+            observation = _bar_observation_from_message(
+                message.get("data"),
+                symbol=identity.symbol,
+            )
             if not current_state.live_eligible or not current_state.live_available:
                 continue
-            if bar is None or (current_state.canonical_end is not None and bar.bar_end <= current_state.canonical_end):
+            if (
+                observation is None
+                or observation.contract != current_authority[1]
+                or observation.bar.trading_day != current_authority[0]
+            ):
+                continue
+            bar = observation.bar
+            if current_state.canonical_end is not None and bar.bar_end <= current_state.canonical_end:
                 continue
             if last_sent is not None and bar.bar_end <= last_sent:
                 continue
@@ -159,6 +193,141 @@ async def market_websocket(websocket: WebSocket) -> None:
                     await redis.aclose()
 
 
+@router.websocket("/research/home-live/ws")
+async def market_home_live_websocket(websocket: WebSocket) -> None:
+    """Stream all operational completed-minute quotes through one fixed subscription."""
+
+    redis = None
+    pubsub = None
+    channels: tuple[str, ...] = ()
+    accepted = False
+    try:
+        if websocket.query_params:
+            await websocket.close(code=1008, reason="MARKET_HOME_LIVE_SCOPE_FIXED")
+            return
+        products = load_operational_products()
+        channels = tuple(live_bar_channel(symbol, BarFrequency.M1) for symbol in products) + (
+            LIVE_STATE_CHANNEL,
+        )
+        redis = get_async_redis_connection()
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(*channels)
+        snapshot = await _read_home_live_snapshot()
+        current = {item.symbol: item for item in snapshot.items}
+        await websocket.accept()
+        accepted = True
+        await websocket.send_json(
+            MarketHomeLiveSnapshotFrame(
+                observed_at=_instant(snapshot.observed_at),
+                items=[_home_item_response(item) for item in snapshot.items],
+            ).model_dump(mode="json")
+        )
+        status_signature = await _home_live_status_signature(redis)
+        loop = asyncio.get_running_loop()
+        last_status_check = loop.time()
+        last_authority_check = loop.time()
+
+        while True:
+            message = await pubsub.get_message(
+                ignore_subscribe_messages=True,
+                timeout=1.0,
+            )
+            now_tick = loop.time()
+            if now_tick - last_status_check >= _HOME_LIVE_STATUS_REFRESH_SECONDS:
+                next_signature = await _home_live_status_signature(redis)
+                if next_signature != status_signature:
+                    snapshot, current = await _refresh_home_live(
+                        websocket,
+                        snapshot,
+                        current,
+                    )
+                status_signature = next_signature
+                last_status_check = now_tick
+            if now_tick - last_authority_check >= _HOME_LIVE_AUTHORITY_REFRESH_SECONDS:
+                snapshot, current = await _refresh_home_live(
+                    websocket,
+                    snapshot,
+                    current,
+                )
+                last_authority_check = now_tick
+            if message is None:
+                if await _client_disconnected(websocket):
+                    break
+                await asyncio.sleep(0.01)
+                continue
+
+            channel = _text(message.get("channel"))
+            if channel == LIVE_STATE_CHANNEL:
+                snapshot, current = await _refresh_home_live(
+                    websocket,
+                    snapshot,
+                    current,
+                    force=True,
+                )
+                status_signature = await _home_live_status_signature(redis)
+                last_status_check = now_tick
+                last_authority_check = now_tick
+                continue
+            if not channel.startswith("live:bar:") or not channel.endswith(":1m"):
+                continue
+            symbol = channel.removeprefix("live:bar:").removesuffix(":1m")
+            old_item = current.get(symbol)
+            if old_item is None:
+                continue
+            item = await _read_home_live_item(symbol, old_item)
+            if item == old_item:
+                continue
+            if _home_item_authority(item) != _home_item_authority(old_item):
+                current[symbol] = item
+                snapshot = MarketHomeLiveSnapshot(_home_live_now(), tuple(current.values()))
+                await websocket.send_json(
+                    MarketHomeLiveResetFrame(
+                        observed_at=_instant(snapshot.observed_at),
+                        items=[_home_item_response(value) for value in current.values()],
+                    ).model_dump(mode="json")
+                )
+            elif (
+                item.bar_end is None
+                or old_item.bar_end is None
+                or item.bar_end >= old_item.bar_end
+            ):
+                current[symbol] = item
+                if _home_item_response(item) == _home_item_response(old_item):
+                    continue
+                await websocket.send_json(
+                    MarketHomeLiveQuoteFrame(
+                        observed_at=_instant(_home_live_now()),
+                        item=_home_item_response(item),
+                    ).model_dump(mode="json")
+                )
+    except Exception:  # noqa: BLE001 - transport/read failures have one typed WS boundary
+        try:
+            if not accepted:
+                await websocket.accept()
+                accepted = True
+            if websocket.client_state.name != "DISCONNECTED":
+                await websocket.send_json(
+                    MarketHomeLiveUnavailableFrame(
+                        observed_at=_instant(_home_live_now())
+                    ).model_dump(mode="json")
+                )
+                await websocket.close(code=1013, reason="MARKET_HOME_LIVE_UNAVAILABLE")
+        except Exception:  # noqa: BLE001 - peer may already be gone
+            pass
+    finally:
+        with anyio.CancelScope(shield=True):
+            try:
+                if pubsub is not None:
+                    try:
+                        if channels:
+                            await pubsub.unsubscribe(*channels)
+                    finally:
+                        await pubsub.aclose()
+            finally:
+                if redis is not None:
+                    await redis.aclose()
+
+
 async def _read_in_worker[T](operation: Callable[[MarketReadService], T]) -> T:
     """Keep admission until the actual worker exits, even if its caller cancels."""
     if not _READ_SLOTS.acquire(blocking=False):
@@ -175,6 +344,149 @@ async def _read_in_worker[T](operation: Callable[[MarketReadService], T]) -> T:
         raise
     future.add_done_callback(lambda _: _READ_SLOTS.release())
     return await asyncio.wrap_future(future)
+
+
+async def _read_home_live_snapshot(
+    previous: MarketHomeLiveSnapshot | None = None,
+) -> MarketHomeLiveSnapshot:
+    if not _READ_SLOTS.acquire(blocking=False):
+        raise RuntimeError("MARKET_READ_BUSY")
+
+    def read() -> MarketHomeLiveSnapshot:
+        with open_market_home_live_service() as service:
+            return service.snapshot(_home_live_now(), previous=previous)
+
+    try:
+        future = _READ_EXECUTOR.submit(read)
+    except BaseException:
+        _READ_SLOTS.release()
+        raise
+    future.add_done_callback(lambda _: _READ_SLOTS.release())
+    return await asyncio.wrap_future(future)
+
+
+async def _read_home_live_item(
+    symbol: str,
+    previous: MarketHomeLiveItem,
+) -> MarketHomeLiveItem:
+    if not _READ_SLOTS.acquire(blocking=False):
+        raise RuntimeError("MARKET_READ_BUSY")
+
+    def read() -> MarketHomeLiveItem:
+        with open_market_home_live_service() as service:
+            return service.refresh_item(
+                symbol,
+                _home_live_now(),
+                previous=previous,
+            )
+
+    try:
+        future = _READ_EXECUTOR.submit(read)
+    except BaseException:
+        _READ_SLOTS.release()
+        raise
+    future.add_done_callback(lambda _: _READ_SLOTS.release())
+    return await asyncio.wrap_future(future)
+
+
+async def _refresh_home_live(
+    websocket: WebSocket,
+    previous: MarketHomeLiveSnapshot,
+    current: dict[str, MarketHomeLiveItem],
+    *,
+    force: bool = False,
+) -> tuple[MarketHomeLiveSnapshot, dict[str, MarketHomeLiveItem]]:
+    refreshed = await _read_home_live_snapshot(None if force else previous)
+    refreshed_items = {item.symbol: item for item in refreshed.items}
+    if _home_snapshot_authority(refreshed_items) != _home_snapshot_authority(current):
+        await websocket.send_json(
+            MarketHomeLiveResetFrame(
+                observed_at=_instant(refreshed.observed_at),
+                items=[_home_item_response(item) for item in refreshed.items],
+            ).model_dump(mode="json")
+        )
+    else:
+        for item in refreshed.items:
+            old_item = current[item.symbol]
+            if _home_item_response(item) == _home_item_response(old_item):
+                continue
+            await websocket.send_json(
+                MarketHomeLiveQuoteFrame(
+                    observed_at=_instant(refreshed.observed_at),
+                    item=_home_item_response(item),
+                ).model_dump(mode="json")
+            )
+    return refreshed, refreshed_items
+
+
+async def _home_live_status_signature(redis: object) -> tuple[object, ...]:
+    try:
+        raw = await redis.get("live:heartbeat")  # type: ignore[attr-defined]
+        payload = json.loads(_text(raw))
+        if not isinstance(payload, dict):
+            raise ValueError("heartbeat")
+        phase_counts = payload.get("phase_counts")
+        return (
+            payload.get("available"),
+            payload.get("operational_count"),
+            payload.get("subscribed_count"),
+            tuple(sorted(phase_counts.items())) if isinstance(phase_counts, dict) else None,
+        )
+    except Exception:  # noqa: BLE001 - invalid/absent status triggers bounded refresh
+        return ("unavailable",)
+
+
+def _home_item_authority(item: MarketHomeLiveItem) -> tuple[object, ...]:
+    return (
+        item.physical_contract,
+        item.trading_day,
+    )
+
+
+def _detail_display_authority(
+    snapshot: MarketDisplaySnapshot,
+) -> tuple[date | None, str | None]:
+    if snapshot.source == "none":
+        return (None, None)
+    state = snapshot.state
+    return (
+        snapshot.trading_day or state.trading_day,
+        snapshot.contract or state.live_contract,
+    )
+
+
+def _home_snapshot_authority(
+    items: dict[str, MarketHomeLiveItem],
+) -> tuple[tuple[object, ...], ...]:
+    return tuple(
+        (symbol, *_home_item_authority(item)) for symbol, item in items.items()
+    )
+
+
+def _home_item_response(item: MarketHomeLiveItem) -> MarketHomeLiveItemResponse:
+    return MarketHomeLiveItemResponse(
+        symbol=item.symbol,
+        physical_contract=item.physical_contract,
+        trading_day=None if item.trading_day is None else item.trading_day.isoformat(),
+        bar_end=None if item.bar_end is None else _instant(item.bar_end),
+        price=None if item.price is None else str(item.price),
+        previous_close=(
+            None if item.previous_close is None else str(item.previous_close)
+        ),
+        price_change=None if item.price_change is None else str(item.price_change),
+        source=item.source,
+        availability=item.availability,
+        phase=item.phase,
+        reason=item.reason,
+    )
+
+
+def _home_live_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _instant(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _identity(
@@ -210,6 +522,58 @@ def _state_response(state: MarketReadState) -> MarketReadStateResponse:
 
 async def _send_state(websocket: WebSocket, state: MarketReadState) -> None:
     await websocket.send_json({"type": "state", "state": _state_response(state).model_dump(mode="json")})
+
+
+async def _refresh_detail_display(
+    websocket: WebSocket,
+    identity: SeriesPageQuery,
+    *,
+    after: datetime | None,
+    last_sent: datetime | None,
+    current_state: MarketReadState,
+    current_authority: tuple[date | None, str | None],
+    force_state: bool = False,
+) -> tuple[MarketReadState, tuple[date | None, str | None], datetime | None]:
+    refreshed = await _read_in_worker(
+        lambda service: service.display_snapshot(identity, last_sent, datetime.now(UTC)),
+    )
+    next_state = refreshed.state
+    next_authority = _detail_display_authority(refreshed)
+    if next_authority != current_authority:
+        await websocket.send_json(
+            {
+                "type": "reset",
+                "trading_day": (
+                    None if next_authority[0] is None else next_authority[0].isoformat()
+                ),
+                "contract": next_authority[1],
+            }
+        )
+        last_sent = _later(after, next_state.canonical_end)
+    if force_state or next_state != current_state:
+        await _send_state(websocket, next_state)
+    refreshed_bars = _newer_bars(
+        refreshed.bars,
+        canonical_end=next_state.canonical_end,
+        after=last_sent,
+    )
+    if refreshed.source == "post_close" and refreshed_bars:
+        await websocket.send_json(
+            {
+                "type": "snapshot",
+                "source": "post_close",
+                "trading_day": (
+                    None if refreshed.trading_day is None else refreshed.trading_day.isoformat()
+                ),
+                "contract": refreshed.contract,
+                "bars": [_bar_response(bar) for bar in refreshed_bars],
+            }
+        )
+        return next_state, next_authority, refreshed_bars[-1].bar_end
+    for bar in refreshed_bars:
+        await websocket.send_json({"type": "bar", "bar": _bar_response(bar)})
+        last_sent = bar.bar_end
+    return next_state, next_authority, last_sent
 
 
 async def _client_disconnected(websocket: WebSocket) -> bool:
@@ -264,12 +628,20 @@ def _newer_bars(
     return tuple(deduped[key] for key in sorted(deduped))
 
 
-def _bar_from_message(value: object) -> CanonicalBar | None:
+def _bar_observation_from_message(
+    value: object,
+    *,
+    symbol: str,
+) -> LiveBarObservation | None:
     try:
         payload = json.loads(_text(value))
         if not isinstance(payload, dict):
             return None
-        return CanonicalBar(
+        raw_contract = payload.get("contract")
+        contract = normalize_contract_for_symbol(symbol, raw_contract)
+        if not isinstance(raw_contract, str) or contract is None or raw_contract != contract:
+            return None
+        bar = CanonicalBar(
             bar_end=datetime.fromisoformat(str(payload["bar_end"])),
             trading_day=datetime.fromisoformat(str(payload["trading_day"])).date(),
             open=payload["open"],
@@ -280,6 +652,7 @@ def _bar_from_message(value: object) -> CanonicalBar | None:
             turnover=payload.get("turnover"),
             open_interest=payload.get("open_interest"),
         )
+        return LiveBarObservation(bar=bar, contract=contract)
     except (ContractError, KeyError, TypeError, ValueError):
         return None
 

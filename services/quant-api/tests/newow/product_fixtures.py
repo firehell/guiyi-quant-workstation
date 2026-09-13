@@ -306,6 +306,75 @@ def _main_rise_oracle(
 
 
 class ProductCases:
+    def initial_clear_input(self, frequency: str = "1d") -> PrimitiveInput:
+        """Hand-checkable main-rise lifecycle: 35 yellow Bars, then first CLEAR."""
+        return self.main_rise_lifecycle_input(
+            (*([Decimal("100")] * 35), Decimal("90")), frequency
+        )
+
+    def main_rise_lifecycle_input(
+        self, closes: tuple[Decimal, ...], frequency: str = "1d"
+    ) -> PrimitiveInput:
+        identity = self.primitive_input("main_rise", frequency).identity
+        start = date(2026, 1, 2)
+        owner_start = datetime(2026, 1, 2, 1, tzinfo=UTC)
+        segment = build_segment_id("rb", "RB2710", owner_start)
+        bars = []
+        for index, close in enumerate(closes):
+            if frequency == "60m":
+                trading_day = start + timedelta(days=index // 4)
+                bar_end = datetime.combine(trading_day, datetime.min.time(), UTC) + timedelta(
+                    hours=2 + index % 4
+                )
+            else:
+                trading_day = start + timedelta(
+                    days=index * (7 if frequency == "1w" else 1)
+                )
+                bar_end = datetime.combine(
+                    trading_day, datetime.min.time(), UTC
+                ) + timedelta(hours=7)
+            bars.append(
+                ProductBar(
+                    NewowDailyBar(
+                        product="rb",
+                        physical_contract="RB2710",
+                        segment_id=segment,
+                        trading_day=trading_day,
+                        bar_end=bar_end,
+                        open=close,
+                        high=close,
+                        low=close,
+                        close=close,
+                        volume=1,
+                        open_interest=1,
+                        source_identity=f"owned:initial-clear:{frequency}:{index}",
+                        observation_eligible=True,
+                        completed=True,
+                    ),
+                    ProductFrequency(frequency),
+                )
+            )
+        return PrimitiveInput(identity, tuple(bars))
+
+    def synthetic_lifecycle_evidence(self, bars: tuple[ProductBar, ...]):
+        """Explicit test-only evidence; service tests must use NewowProductReader."""
+        from guiyi_quant.newow import product_contracts as contracts
+
+        first = bars[0]
+        last = bars[-1]
+        return contracts.LifecycleReplayEvidence(
+            product=first.bar.product,
+            frequency=first.frequency,
+            physical_contract=first.bar.physical_contract,
+            segment_id=first.bar.segment_id,
+            first_bar_end=first.bar.bar_end,
+            last_bar_end=last.bar.bar_end,
+            bar_count=len(bars),
+            input_sha256=contracts.lifecycle_input_sha256(bars),
+            source_identity=contracts.LIFECYCLE_REPLAY_EVIDENCE_SOURCE,
+            verified_cutoff=last.bar.bar_end,
+        )
+
     def primitive_input(self, strategy: str, frequency: str) -> PrimitiveInput:
         """Owned synthetic OHLC with enough turns to exercise every active wrapper."""
         formulas = {

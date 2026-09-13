@@ -49,6 +49,7 @@ def _file_guard(name: str, *, root: Path | None, wait: bool) -> Iterator[None]:
         fd = os.open(directory / name, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     except OSError:
         raise ValueError("LIVE_RECOVERY_GUARD_UNSAFE") from None
+    acquired = False
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
@@ -57,6 +58,12 @@ def _file_guard(name: str, *, root: Path | None, wait: bool) -> Iterator[None]:
             fcntl.flock(fd, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         except BlockingIOError:
             raise RuntimeError("LIVE_RECOVERY_BUSY") from None
+        acquired = True
         yield
     finally:
-        os.close(fd)
+        try:
+            if acquired:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            # Do not retry close: an error may follow actual closure/FD reuse.
+            os.close(fd)

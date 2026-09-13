@@ -66,3 +66,51 @@ def test_after_market_guard_rejects_symlink(tmp_path):
         with after_market_recovery_guard(root=tmp_path):
             pass
     assert target.read_text() == "keep"
+
+
+@pytest.mark.parametrize("closed_before_error", (False, True))
+def test_close_failure_does_not_leave_process_holding_product_lock(tmp_path, monkeypatch, closed_before_error):
+    from app.market_data.live_recovery_guard import recovery_guard
+
+    original_close = os.close
+    failed_fd = None
+
+    def fail_close(fd):
+        nonlocal failed_fd
+        failed_fd = fd
+        if closed_before_error:
+            original_close(fd)
+        raise OSError("injected close failure")
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "close", fail_close)
+            with pytest.raises(OSError, match="injected close failure"):
+                with recovery_guard("jm", root=tmp_path):
+                    pass
+        # This must work BEFORE test cleanup closes a potentially still-open fd.
+        with recovery_guard("jm", root=tmp_path):
+            pass
+    finally:
+        if failed_fd is not None and not closed_before_error:
+            original_close(failed_fd)
+
+
+def test_unlock_failure_still_closes_descriptor_and_releases_kernel_lock(tmp_path, monkeypatch):
+    import fcntl
+    from app.market_data.live_recovery_guard import recovery_guard
+
+    original_flock = fcntl.flock
+
+    def fail_unlock(fd, operation):
+        if operation == fcntl.LOCK_UN:
+            raise OSError("injected unlock failure")
+        return original_flock(fd, operation)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(fcntl, "flock", fail_unlock)
+        with pytest.raises(OSError, match="injected unlock failure"):
+            with recovery_guard("jm", root=tmp_path):
+                pass
+    with recovery_guard("jm", root=tmp_path):
+        pass

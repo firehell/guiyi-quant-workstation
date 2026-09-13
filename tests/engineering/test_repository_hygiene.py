@@ -182,6 +182,7 @@ def test_local_browser_capture_directory_is_not_tracked_and_is_ignored() -> None
 
 def test_noncanonical_superpowers_documents_are_not_tracked() -> None:
     assert _tracked_paths("docs/superpowers/**") == ()
+    assert _tracked_paths(".superpowers/**") == ()
 
 
 def test_newow_screenshot_distribution_owner_decision_is_explicit() -> None:

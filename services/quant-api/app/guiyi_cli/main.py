@@ -29,6 +29,7 @@ from app.alerts.subing_scope_activation import (
 )
 from app.guiyi_cli.data_commands import (
     build_request,
+    compact_readiness_payload,
     contract_warmup_payload,
     run_data_command,
     run_metadata_repair,
@@ -345,7 +346,14 @@ def _run_data(
         request = build_request(args)
         with session_factory() as session:
             with readonly_transaction(session, timeout_seconds=request.timeout_seconds):
-                return (newow_readiness_builder or build_newow_readiness)(session, request=request)
+                report = (newow_readiness_builder or build_newow_readiness)(
+                    session, request=request
+                )
+                return (
+                    compact_readiness_payload(report)
+                    if args.compact
+                    else report
+                )
     if args.data_command == "after-market":
         return run_after_market(
             session_factory=session_factory,

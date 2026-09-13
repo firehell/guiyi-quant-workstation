@@ -26,9 +26,9 @@ test('uses only actual-dominant chart route intents for products and immutable H
 })
 
 test('sends the ordinary unified product entry to Newow while preserving Event identity', () => {
-  assert.deepEqual(marketHomeUnifiedProductChartQuery('ag'), {
+  assert.deepEqual(marketHomeUnifiedProductChartQuery('ag', '1w'), {
     view: 'newow', symbol: 'ag', strategy: 'trend', series_kind: 'actual_dominant', contract: undefined,
-    frequency: '1d', focus_bar_end: undefined,
+    frequency: '1w', focus_bar_end: undefined,
   })
   assert.deepEqual(marketHomeUnifiedEventChartQuery({
     symbol: 'jm', frequency: '15m', rule_code: 'subing_ths_alert_15m_v1',
@@ -42,10 +42,14 @@ test('sends the ordinary unified product entry to Newow while preserving Event i
 
 
 test('explicit Home view choices preserve symbol and fixed view frequency', () => {
-  for (const [view, frequency] of [['newow', '1d'], ['htdy', '1d'], ['subing', '15m'], ['free', '1d']] as const) {
-    assert.deepEqual(marketHomeViewChartQuery(view, 'ag'), {
+  for (const [view, frequency] of [['newow', '1w'], ['htdy', '1d'], ['subing', '15m'], ['free', '1d']] as const) {
+    assert.deepEqual(marketHomeViewChartQuery(view, 'ag', view === 'newow' ? '1w' : null), {
       view, symbol: 'ag', ...(view === 'newow' ? { strategy: 'trend' } : {}),
       series_kind: 'actual_dominant', contract: undefined, frequency, focus_bar_end: undefined,
     })
   }
+})
+
+test('fails closed when Home has not discovered an open Newow frequency', () => {
+  assert.throws(() => marketHomeViewChartQuery('newow', 'ag', null), /capability is required/)
 })

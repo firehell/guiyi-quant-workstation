@@ -111,6 +111,50 @@ Live recovery 最终提交与 Alert 窗口读取至 Event commit/one-shot send M
 该锁 MUST 随进程退出释放，不以可在 Event commit 中途到期的租约替代。启用恢复前 MUST 证明 Live、
 Alert 的 exact Runtime root/version 与恢复开关一致；发布或 Runtime promotion 不隐含恢复启用授权。
 
+恢复缺失 1m 的请求 MUST 在领取 provider 尝试预算前校验带时区的当前时钟与冻结 cutoff，只有
+`0 <= now - cutoff <= 60 秒` 时才允许领取预算及查询。已过期、未来或无时区时钟 MUST 以
+`LIVE_RECOVERY_CLOCK_INVALID` 拒绝，不初始化 provider、不消耗尝试预算、不写 Bar 或水位；后续请求
+仍由前台下一轮正常调度重新采集 authority，后台 MUST NOT 刷新 cutoff、扩大预算或补发旧通知。
+查询实际开始后发生超时仍计一次尝试，最终提交 MUST 在共享锁内再次检查同一60秒边界。
+
+#### Scenario: A recovery request expires behind other products
+
+- **WHEN** 单worker处理前序品种后，后排缺口请求已经超过冻结cutoff的60秒有效期
+- **THEN** 后排请求在领取预算和查询前失败关闭，已有预算保持不变
+- **AND** 后续前台新鲜请求可使用剩余预算恢复；恢复后旧触发仍不能创建Event或通知
+
+#### Scenario: A provider query starts fresh but finishes too late
+
+- **WHEN** 请求在有效时效内领取预算，查询或等待提交锁后已超过60秒
+- **THEN** 已消耗的尝试不撤销，Bar和恢复水位不提交，不扩大预算或静默重试
+
+正常 Live 的同品种 completed 1m、ready heartbeat、发布与派生写入/发布 MUST 与恢复初始快照、最终
+提交共用同一进程间锁；不同品种 MUST NOT 被同一次持锁串成全局临界区。锁忙时 MUST 保留 pending，
+不得丢弃正常 Bar 或把锁忙报告为 Redis 故障。恢复调度 MUST 位于本轮正常 ingest/flush 收尾之后，
+已有 completed pending 的品种 MUST 暂缓恢复，纯 BREAK、provider cooldown 或订阅失败不得新增调度。
+provider 查询 MUST 保持锁外；提交锁内 MUST 重读订阅、state 与各周期前像，拒绝旧事实删除/改写或身份
+漂移，对与查询源一致的正常追加重新计算缺口。全部缺口已消失时 MUST 返回 NO_GAP，不推进水位；
+否则仍以重读前像执行严格 Lua CAS，并在重算后检查原 cutoff 的提交时效。真实派生缺口仍可无 provider 修复。
+
+#### Scenario: Normal completed bars arrive during a recovery query
+
+- **WHEN** provider 查询期间正常 Live 写入与查询源完全一致的 Bar，冻结订阅和原事实均未改变
+- **THEN** 恢复在提交锁内重读并只提交剩余缺口，不因一致追加浪费后续尝试
+- **AND** 若前台已补齐所有周期，则返回 NO_GAP，不创建恢复水位、不改变正常通知资格
+
+#### Scenario: A normal derived bucket is being completed
+
+- **WHEN** 前台已写入最后一根 1m、尚未完成当前 5m/15m/60m 桶的正常派生和发布
+- **THEN** 恢复不得观察并修复该临界区的中间态，正常 Bar 完成后仍保有原通知资格
+- **AND** 因锁忙保留的 completed pending 不得在本轮被恢复线程抢先生成
+
+#### Scenario: Releasing the normal Live guard fails
+
+- **WHEN** 正常 Bar 已完成写入及发布，但退出共享锁时发生异常
+- **THEN** Live MUST 报告不可用、保留已完成事实，不重放 Bar、不丢弃健康 provider 或安排 provider 重连
+- **AND** 只有获取阶段的 busy 可以视为普通等待；锁拥有者 MUST 先显式解锁并在 finally 中关闭一次 fd，
+  解锁失败仍执行关闭，不根据 close 异常盲目重关可能已被复用的 fd
+
 #### Scenario: An old trigger remains queued when recovery completes
 
 - **WHEN** trigger cutoff 不晚于恢复提交水位，包含进程重启后的重复触发
@@ -170,10 +214,33 @@ HTDY Topic audience SHALL 由 PushPlus 外部人工维护，范围不得超过 o
 
 HTDY 五个日内周期 SHALL 只消费同周期 completed Live Bar；D1/W1 SHALL 只响应
 `market:state(reason=canonical_updated)` 并读取 Canonical，不新增 scheduler、Scope 表或 Live 日/周聚合。
-forward-only `first_seen` 只比较触发时的 previous/current prefix，历史重绘候选只限 Kernel repaint zone。
+日内 evaluator 使用最后 32 根前，MarketRead SHALL 以 Calendar、逐日 Session 与逐 Bar rank1 owner 证明
+从首根到 cutoff 的预期端点精确相等。午休、周末、夜盘归属和短 Session 尾桶只按 authority 解释；缺失、
+重复、额外、错误 trading_day 或 owner 均 MUST fail closed。当日 MainContractMap 尚未发布时可使用同一次读取
+冻结的 Live rank1 identity，但历史日 owner 仍必须来自 MainContractMap；不得缩窗、补值或改读 continuous。
+共享预警窗口 MUST 通过 typed `LiveBarObservation` 保留并逐根校验 Live payload contract、trading_day
+和端点唯一性，读取范围 MUST 不晚于事件 cutoff。缺失、错误或非规范的合约身份 MUST 拒绝，
+不得丢弃原始 contract 后以冻结 snapshot 为其补写身份；历史多 owner 窗口仍按 MainContractMap 校验。
+forward-only `first_seen` 只接受触发窗口的最新 completed Bar；Kernel repaint zone 中的历史 Bar 仅供
+Web retrospective 研究展示，不创建持久 Event 或通知。
 `AlertEvent.bar_end` SHALL 是观察 Bar 时间，`detected_at` SHALL 是 Runtime 首次识别时间；Event 冻结后，
 重绘消失、重现或方向变化均不得改写或重发。startup、repair、replay、backfill 与 EOD recalculation MUST NOT
 创建历史 HTDY Event 或通知。
+
+#### Scenario: A 5m, 15m or 60m context has an internal Session gap
+
+- **WHEN** cutoff 仍存在且窗口数量仍足够，但 Calendar/Session/owner 预期端点中有一根缺失
+- **THEN** Kernel 不运行，Rule 记录公开评价失败，Event 与通知均不增加
+
+#### Scenario: An actual-dominant context crosses a legal owner boundary
+
+- **WHEN** 历史日 owner 由 MainContractMap 证明、当日 frozen owner 有效且每个 Session 端点完整
+- **THEN** HTDY 可保留跨物理合约的 actual-dominant 策略窗口，不强制退化为单合约预热
+
+#### Scenario: A Live payload disagrees with the frozen owner
+
+- **WHEN** HTDY 5m、15m或60m窗口包含错误/缺失contract、错误trading_day或重复Live端点
+- **THEN** 共享MarketRead返回`MARKET_READ_LIVE_UNAVAILABLE`，不以snapshot覆盖payload身份，不运行Kernel或创建Event/通知
 
 #### Scenario: A daily or weekly Canonical update is observed
 
@@ -274,6 +341,28 @@ Rule的last_failure_at MUST 保留，现有全局失败事实继续按原合同�
 - **GIVEN** Rule保留last_failure_at，但成功eval已清空当前error_type
 - **WHEN** 计算聚合health
 - **THEN** 允许当前health为ok并继续呈现历史失败；若error_type仍存在则不能回绿
+
+#### Scenario: A failed or warming SuBing cutoff is delivered again
+
+- **WHEN** evaluator 已推进同合约 kernel 状态但该 cutoff 未完成一次成功评价，随后收到相同 trigger
+- **THEN** 重复项作为 typed skip，不更新成功评价时间、不清当前 Rule/global failure，也不重跑 Event 或通知
+
+#### Scenario: An older contract arrives after a newer accepted cutoff
+
+- **WHEN** 新主力窗口已成为该 symbol 的最新 identity，随后收到更早 cutoff 或旧合约 trigger
+- **THEN** evaluator 单调跳过，不恢复旧合约 cursor、不产生历史 Candidate
+
+### Requirement: Runtime failure classification preserves the failing boundary
+
+`ALERT_RECOVERY_GUARD_UNAVAILABLE` SHALL 只表示 recovery guard 获取或释放失败。DB、evaluator、Event、status
+或编排体异常 SHALL 保留为 processing/rule failure，不能伪报 guard；任何日志只包含 bounded public code 与
+既有允许身份，不输出 provider、SQL、地址、stack 或凭据。Event commit 后的状态失败 MUST 阻止 sender，
+且不得借重复 trigger 重试 Event 或清除失败。
+
+#### Scenario: Event commits and runtime status then fails
+
+- **WHEN** Event 已 commit，但随后的 status/CAS 写失败
+- **THEN** Event 保留、sender 不调用，日志为 processing failure 且没有 guard failure；相同 Bar 不补发
 
 ### Requirement: Runtime status and acknowledgment stay bounded
 

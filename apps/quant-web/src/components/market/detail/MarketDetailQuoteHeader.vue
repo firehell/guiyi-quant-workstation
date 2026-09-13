@@ -1,25 +1,34 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { priceDirection, shortNewowTime } from '@/utils/newowDetailPresentation'
+import { priceDirection } from '@/utils/newowDetailPresentation'
+import {
+  formatMarketNumber,
+  formatMarketTime,
+  marketChangeBasisLabel,
+  marketQuoteBasisLabel,
+  quoteAvailabilityLabel,
+} from '@/utils/marketDisplay'
 import type { MarketDetailHeaderModel } from '@/types/marketDetail'
 import MarketDetailIcon from './MarketDetailIcon.vue'
 import MarketFactsDisclosure from './MarketFactsDisclosure.vue'
 
 const props = defineProps<{
   header: MarketDetailHeaderModel
+  unified?: boolean
   newow?: boolean
   identityKey: string
 }>()
 
 const direction = computed(() => priceDirection(props.header.change))
-const statusLabel = computed(() => props.header.afterMarketFailed ? '最近盘后更新失败' : ({ fresh: '数据正常', stale: '数据可能过时', unavailable: '数据不可用' })[props.header.freshness])
-const phaseLabel = computed(() => ({ TRADING: '交易中', BREAK: '盘中休市', CLOSED: '已收盘', UNKNOWN: '状态未知' })[props.header.phase] ?? '状态未知')
-const seriesLabel = computed(() => ({ actual_dominant: '真实主力', continuous: '主连', contract: '指定合约' })[props.header.seriesKind])
-const displaySourceLabel = computed(() => ({ 实时观察: 'Live', 盘后观察: '收盘快照', Canonical: 'Historical' })[props.header.displaySource] ?? 'Historical')
+const statusLabel = computed(() => quoteAvailabilityLabel(props.header.freshness, Boolean(props.header.afterMarketFailed)))
+const displayFrequency = computed(() => props.newow ? '1d' as const : props.header.frequency)
+const quoteBasis = computed(() => marketQuoteBasisLabel(displayFrequency.value, Boolean(props.newow)))
+const changeBasis = computed(() => marketChangeBasisLabel(displayFrequency.value, Boolean(props.newow)))
+const asOfText = computed(() => formatMarketTime(props.header.asOf, displayFrequency.value, props.header.tradingDay))
 
 function number(value: number | null, digits = 2): string {
-  return value === null ? '—' : value.toLocaleString('zh-CN', { maximumFractionDigits: digits, minimumFractionDigits: digits })
+  return formatMarketNumber(value, digits)
 }
 
 function integer(value: number | null): string {
@@ -28,33 +37,21 @@ function integer(value: number | null): string {
 </script>
 
 <template>
-  <section class="quote-header" :class="{ 'quote-header--newow': newow }" data-detail-section="quote">
-    <div class="quote-header__identity">
-      <div>
-        <p class="quote-header__eyebrow">{{ header.exchange }} · {{ header.sector }}</p>
-        <h1>{{ header.productName }}</h1>
-        <p>{{ header.displayContract || (header.seriesKind === 'continuous' ? '主连序列' : header.symbol.toUpperCase()) }}</p>
+  <section class="quote-header" :class="{ 'quote-header--unified': unified }" data-detail-section="quote">
+    <div class="quote-header__primary">
+      <div class="quote-header__price" :class="`quote-header__price--${direction}`">
+        <strong>{{ number(header.close) }}</strong>
+        <span>{{ header.change === null ? `${changeBasis} —` : `${changeBasis} ${header.change >= 0 ? '+' : ''}${number(header.change)}` }}</span>
+        <span>{{ header.pct === null ? '比例 —' : `${header.pct >= 0 ? '+' : ''}${number(header.pct)}%` }}</span>
       </div>
       <span class="quote-header__status" :class="`quote-header__status--${header.afterMarketFailed ? 'stale' : header.freshness}`">
         <MarketDetailIcon :name="!header.afterMarketFailed && header.freshness === 'fresh' ? 'data' : 'warning'" :size="16" />
         {{ statusLabel }}
       </span>
     </div>
+    <p class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · {{ newow ? '非实时 · ' : '' }}截至 {{ asOfText }}</p>
 
-    <div v-if="!newow" class="quote-header__statuses" aria-label="行情状态">
-      <span>{{ seriesLabel }}</span>
-      <span>{{ header.exchange || '交易所未知' }}</span>
-      <span>{{ phaseLabel }}</span>
-      <span>{{ displaySourceLabel }}</span>
-    </div>
-
-    <div class="quote-header__price" :class="`quote-header__price--${direction}`">
-      <strong>{{ number(header.close) }}</strong>
-      <span>{{ header.change === null ? '变动 —' : `${header.change >= 0 ? '+' : ''}${number(header.change)}` }}</span>
-      <span>{{ header.pct === null ? '涨跌幅 —' : `${header.pct >= 0 ? '+' : ''}${number(header.pct)}%` }}</span>
-    </div>
-    <p class="quote-header__asof" :title="header.asOf ?? undefined">{{ newow ? '最近日线收盘 · 非实时 · 截至' : '截至' }} {{ newow ? shortNewowTime(header.asOf) : header.asOf || '—' }}</p>
-
+    <p class="quote-header__facts-label">OHLCV · {{ quoteBasis }}</p>
     <dl class="quote-header__facts">
       <div><dt>开</dt><dd>{{ number(header.open) }}</dd></div>
       <div><dt>高</dt><dd>{{ number(header.high) }}</dd></div>
@@ -74,31 +71,28 @@ function integer(value: number | null): string {
 </template>
 
 <style scoped>
-.quote-header { padding: var(--gy-space-5) 0; border-bottom: 1px solid var(--gy-border-subtle); }
-.quote-header__identity { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gy-space-4); }
-.quote-header__identity h1 { margin: var(--gy-space-1) 0; color: var(--gy-text-primary); font-size: var(--gy-font-size-2xl); }
-.quote-header__identity p { margin: 0; color: var(--gy-text-muted); }
-.quote-header__eyebrow { font-size: var(--gy-font-size-xs); }
+.quote-header { padding: var(--gy-space-3) 0; border-bottom: 1px solid var(--gy-border-subtle); }
+.quote-header__primary { display: flex; align-items: center; justify-content: space-between; gap: var(--gy-space-3); }
 .quote-header__status { display: inline-flex; align-items: center; gap: var(--gy-space-1); padding: var(--gy-space-1) var(--gy-space-2); border-radius: var(--gy-radius-pill); font-size: var(--gy-font-size-sm); white-space: nowrap; }
 .quote-header__status--fresh { color: var(--gy-status-ok); background: var(--gy-status-ok-soft); }
 .quote-header__status--stale { color: var(--gy-status-warning); background: var(--gy-status-warning-soft); }
 .quote-header__status--unavailable { color: var(--gy-status-error); background: var(--gy-status-error-soft); }
-.quote-header__price { display: flex; align-items: baseline; gap: var(--gy-space-3); margin-top: var(--gy-space-4); }
+.quote-header__price { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--gy-space-2) var(--gy-space-3); }
 .quote-header__price strong { color: var(--gy-text-primary); font-family: var(--gy-font-mono); font-size: var(--gy-font-size-2xl); line-height: 1; }
 .quote-header__price span { font-weight: 600; }
 .quote-header__price--up span { color: var(--gy-up); }
 .quote-header__price--down span { color: var(--gy-down); }
 .quote-header__price--neutral span { color: var(--gy-text-muted); }
-.quote-header__asof { margin: var(--gy-space-2) 0 var(--gy-space-4); color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
-.quote-header__statuses { display: flex; flex-wrap: wrap; gap: var(--gy-space-2); margin-top: var(--gy-space-3); }
-.quote-header__statuses span { padding: 2px var(--gy-space-2); border-radius: var(--gy-radius-pill); color: var(--gy-text-muted); background: var(--gy-detail-section-bg); font-size: var(--gy-font-size-xs); }
+.quote-header__asof { margin: var(--gy-space-1) 0 var(--gy-space-2); color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
+.quote-header__facts-label { margin: 0 0 var(--gy-space-1); color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .quote-header__facts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--gy-space-2); margin: 0; }
 .quote-header__facts div { min-width: 0; padding: var(--gy-space-2) var(--gy-space-3); border-radius: var(--gy-radius-md); background: var(--gy-detail-section-bg); }
 .quote-header__facts dt { color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
 .quote-header__facts dd { margin: var(--gy-space-1) 0 0; color: var(--gy-text-primary); font-family: var(--gy-font-mono); }
 
 @media (max-width: 640px) {
-  .quote-header { padding-top: var(--gy-space-4); }
+  .quote-header { padding-top: var(--gy-space-2); }
+  .quote-header__primary { align-items: flex-start; }
   .quote-header__price { flex-wrap: wrap; }
   .quote-header__price strong { flex-basis: 100%; font-size: var(--gy-font-size-2xl); }
   .quote-header__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }

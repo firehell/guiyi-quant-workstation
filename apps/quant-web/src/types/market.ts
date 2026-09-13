@@ -234,6 +234,40 @@ export interface CurrentAlertEventsResponse {
   trading_day: string | null
   items: AlertEvent[]
 }
+
+export interface AlertHistoryResponse {
+  status: 'ready'
+  start_day: string
+  end_day: string
+  symbol: string | null
+  rule_code: AlertRuleCode | null
+  items: AlertEvent[]
+  next_before: string | null
+}
+
+export type MarketHomeLiveSource = 'completed_1m' | 'completed_1d' | 'none'
+export type MarketHomeLiveAvailability = 'live' | 'historical' | 'unavailable'
+export type MarketHomeLivePhase = 'TRADING' | 'BREAK' | 'CLOSED' | 'UNKNOWN'
+
+export interface MarketHomeLiveItem {
+  symbol: string
+  physicalContract: string | null
+  tradingDay: string | null
+  barEnd: string | null
+  price: number | null
+  previousClose: number | null
+  priceChange: number | null
+  source: MarketHomeLiveSource
+  availability: MarketHomeLiveAvailability
+  phase: MarketHomeLivePhase
+  reason: string | null
+}
+
+export type MarketHomeLiveFrame =
+  | { type: 'snapshot'; schemaVersion: 1; observedAt: string; scope: 'operational'; items: MarketHomeLiveItem[] }
+  | { type: 'quote'; schemaVersion: 1; observedAt: string; item: MarketHomeLiveItem }
+  | { type: 'reset'; schemaVersion: 1; observedAt: string; reason: 'AUTHORITY_CHANGED'; items: MarketHomeLiveItem[] }
+  | { type: 'unavailable'; schemaVersion: 1; observedAt: string; code: 'MARKET_HOME_LIVE_UNAVAILABLE' }
 export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'range_detector' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 

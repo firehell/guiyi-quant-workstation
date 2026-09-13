@@ -1,0 +1,198 @@
+{
+  "schema_version": "newow_weekly_60_closeout_summary_v2",
+  "generated_at": "2026-09-13T20:15:15+08:00",
+  "scope": {
+    "as_of": "2026-09-13T06:36:13+00:00",
+    "frequencies": ["1w"],
+    "product_count": 60,
+    "strategy_count": 3,
+    "expected_main_case_count": 180,
+    "coverage_contract": "legacy_weekly_scope_v1",
+    "current_planned_matrix_case_count": 540,
+    "operational_products_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d",
+    "normalized_operational_products_sha256": "f71bd64943beecb0e01dd420add827e3f7f9402f020c45c6988192b7e56da2c6",
+    "product_window_starts_sha256": "b5f9693bab9dd0174d835038e7ca49823d183b61c2a124405d8d003da611f9a2"
+  },
+  "evidence": {
+    "capture_code_sha": "c412b354efff6539e4279c89578147e6490b0bab",
+    "summary_generator_code_sha": "d0387bb1e7a64f783da22daeb56dc6b7db8da5e7",
+    "local_directory": "outputs/newow-weekly-60-20260913/local-evidence-closeout-20260913",
+    "tracked": false,
+    "pt_probe_sha256": "3e9eae1c998dd1189e84d4e15c54495a982d3b323a9633e100dd2fc089aa3e5b",
+    "full_readiness_sha256": "787393d159b0bde955b7258e1251ad24730d45cd18b5a6dfc073db6f33879ff8",
+    "offline_summary_sha256": "2c2360a4cf76b12fb745f565daabd29c6f293363d6cf523f015af5d04485bf3a"
+  },
+  "pt_acceptance": {
+    "status": "ACCEPTED",
+    "accepted": true,
+    "chart_status": "ready",
+    "reference_status": "ready",
+    "snapshot_token_equal": true,
+    "physical_contract": "PT2610",
+    "bar_end": "2026-09-04T07:00:00+00:00",
+    "sequence": 0,
+    "related_build_id": null,
+    "trade_eligibility": "INITIAL_CLEAR_NO_ENTRY",
+    "reference_trade_count": 0,
+    "historical_false_failure": "The earlier handwritten checker compared typed wire value ready with uppercase READY; its exit 1 record remains historical and was not rewritten."
+  },
+  "audit": {
+    "status": "incomplete",
+    "complete": false,
+    "audit_complete": false,
+    "matrix_run": true,
+    "legacy_weekly_scope_covered": true,
+    "current_matrix_covered": false,
+    "budget_exhausted": false,
+    "work_used": 4965,
+    "enumeration_count": 240,
+    "main_case_count": 180,
+    "main_ready_count": 6,
+    "reference_ready_count": 9,
+    "chart_reference_joint_ready_count": 6,
+    "joint_ready_cases": [
+      "pd/trend/1w",
+      "pd/oscillation/1w",
+      "pd/main_rise/1w",
+      "pt/trend/1w",
+      "pt/oscillation/1w",
+      "pt/main_rise/1w"
+    ],
+    "pending_count": 2233,
+    "provider_requests": 0,
+    "writes": 0
+  },
+  "case_outcomes": {
+    "chart": {
+      "READY": 6,
+      "DATASET_OR_PARTITION_MISSING": 6,
+      "REPLAY_PREFIX_MISSING": 9,
+      "HISTORICAL_SESSION_FACT_MISSING_UNKNOWN": 24,
+      "MAIN_CONTRACT_MAP_MISSING_UNKNOWN": 135
+    },
+    "reference": {
+      "READY": 9,
+      "DATASET_OR_PARTITION_MISSING": 9,
+      "REPLAY_PREFIX_MISSING": 27,
+      "SOURCE_NONPOSITIVE_PRICE_SOURCE_EXCEPTION": 3,
+      "HISTORICAL_SESSION_FACT_MISSING_UNKNOWN": 132
+    },
+    "explanation": {
+      "UNOPENED_NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN": 180
+    },
+    "comparator_for_joint_ready_cases": {
+      "NOT_APPLICABLE_NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE": 4,
+      "UNAVAILABLE_NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS": 2
+    },
+    "auxiliary_for_joint_ready_cases": {
+      "main_force_control_READY": 6,
+      "up_down_energy_READY": 6,
+      "zhaoyao_mirror_READY": 6,
+      "macd_WARMING": 6,
+      "cup_handle_NOT_APPLICABLE": 6
+    }
+  },
+  "dependency_counts": {
+    "total_rows": 2440,
+    "unique_rows_without_consumer_duplication": 1220,
+    "DATA_READY": 98,
+    "DATASET_OR_PARTITION_MISSING": 12,
+    "REPLAY_PREFIX_MISSING": 1816,
+    "OWNER_HAS_NO_COMPLETED_BAR_NOT_APPLICABLE": 18,
+    "SOURCE_NONPOSITIVE_PRICE_SOURCE_EXCEPTION": 2,
+    "HISTORICAL_SESSION_FACT_MISSING_UNKNOWN": 494
+  },
+  "repair_counts": {
+    "unique_contract_frequency_targets": 905,
+    "proposed": 896,
+    "review_required": 9,
+    "proposed_expected_bars": 203872,
+    "proposed_provider_requests": 17529,
+    "review_required_symbol": "rs",
+    "review_required_reason": "REPAIR_SCOPE_SOURCE_OR_INTEGRITY"
+  },
+  "metadata_counts": {
+    "proposal_rows": 494,
+    "unique_contract_frequency_through_targets": 247,
+    "status": "UNKNOWN",
+    "reason": "HISTORICAL_SESSION_FACT_MISSING"
+  },
+  "source_and_integrity": {
+    "pf": {
+      "contract": "PF2611",
+      "frequency": "1w",
+      "trading_day": "2025-11-21",
+      "status": "SOURCE_EXCEPTION",
+      "reason": "SOURCE_NONPOSITIVE_PRICE",
+      "historical_candidate_recoverable": false,
+      "ordinary_repair_excluded": true
+    },
+    "rs": {
+      "review_required_contract_count": 9,
+      "contracts": ["RS2407", "RS2409", "RS2411", "RS2507", "RS2509", "RS2511", "RS2607", "RS2608", "RS2609"],
+      "reason": "REPAIR_SCOPE_SOURCE_OR_INTEGRITY",
+      "plan_sha256": null,
+      "ordinary_repair_excluded": true
+    }
+  },
+  "next_data_batch_candidate": {
+    "status": "READONLY_PLAN_EXTRACTED_DRY_RUN_RECHECK_PENDING",
+    "symbol": "ec",
+    "contract": "EC2607",
+    "frequency": "1w",
+    "requested_through": "2026-06-30",
+    "effective_through": "2026-06-30",
+    "dependency_frequencies": ["1d"],
+    "expected_bar_count": 84,
+    "provider_request_count": 8,
+    "plan_sha256_from_full_audit": "5c7a1debdae9001497638f747b9ec0eb8cca2c8b3cf66e32ec28351b353dae72",
+    "target_windows": [
+      ["1d", "2026-02-10T07:00:00+00:00", "2026-02-27T07:00:00+00:00", 8],
+      ["1d", "2026-03-02T07:00:00+00:00", "2026-03-31T07:00:00+00:00", 22],
+      ["1d", "2026-04-01T07:00:00+00:00", "2026-04-30T07:00:00+00:00", 21],
+      ["1d", "2026-05-06T07:00:00+00:00", "2026-05-29T07:00:00+00:00", 18],
+      ["1w", "2026-02-13T07:00:00+00:00", "2026-02-27T07:00:00+00:00", 2],
+      ["1w", "2026-03-06T07:00:00+00:00", "2026-03-27T07:00:00+00:00", 4],
+      ["1w", "2026-04-03T07:00:00+00:00", "2026-04-30T07:00:00+00:00", 5],
+      ["1w", "2026-05-08T07:00:00+00:00", "2026-05-29T07:00:00+00:00", 4]
+    ],
+    "consumers": [
+      "trend/chart/1w",
+      "oscillation/chart/1w",
+      "main_rise/chart/1w",
+      "trend/auxiliary/1w",
+      "oscillation/auxiliary/1w",
+      "main_rise/auxiliary/1w",
+      "trend/reference/1w",
+      "oscillation/reference/1w",
+      "main_rise/reference/1w"
+    ],
+    "selection_basis": "Smallest proposed non-PT target by provider_request_count then expected_bar_count; no matching metadata proposal and no source or integrity diagnostic.",
+    "dry_run": {
+      "first_attempt": "CLI_ARGUMENT_INVALID because expected plan hash is apply-only",
+      "correct_retry": "NOT_EXECUTED_HOST_REJECTED_RETRY",
+      "provider_requests": 0,
+      "writes": 0
+    },
+    "future_gate": "A fresh successful dry-run must reproduce this exact scope and hash before a separate one-shot apply approval.",
+    "idempotency_and_recovery": "Apply must replan under the maintenance lock and fail before the first provider request on identity, lifecycle, Calendar, Session, target, or hash drift. Targets stop on first provider, derive, or publish failure; partial success is reported and never auto-retried. Post-apply replan must be zero before closeout.",
+    "rollback": "No apply occurred in this task. A future apply is partition-by-partition rather than globally atomic; failed unpublished partitions retain their prior active pointer, while successful published partitions are durable evidence and must not be broadly deleted or silently rolled back."
+  },
+  "browser_field_acceptance": {
+    "status": "PENDING_PORT_BUSY",
+    "candidate_api_started": false,
+    "candidate_web_started": false,
+    "port": 5174,
+    "occupied_by_cwd": "/Volumes/扩展盘/guiyi-quant-workstation/apps/quant-web",
+    "reason": "The fixed candidate Web port was already owned by another process. It was not stopped, reused, or bypassed with an alternate port, so PT, normal-trade, and gap/source real-page readback remain separate field evidence pending."
+  },
+  "calibration_batch_history": {
+    "status": "APPLIED_AND_VERIFIED",
+    "contracts": [
+      {"contract": "PT2608", "applied_target_count": 14, "provider_request_count": 14, "post_apply_target_count": 0},
+      {"contract": "PT2610", "applied_target_count": 18, "provider_request_count": 18, "post_apply_target_count": 0}
+    ],
+    "rqdata_bytes_used_delta": 5109123,
+    "write_intent": "CONSUMED_NO_RETRY"
+  }
+}

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 ProductFrequencyValue = Literal["1w", "1d", "60m"]
@@ -20,6 +20,8 @@ EvidenceStatusValue = Literal[
     "OUT_OF_SCOPE",
 ]
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
+ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v2"]
+FuturesAdaptationVersionValue = Literal["newow_futures_segment_interrupt_v1"]
 
 
 class _Out(BaseModel):
@@ -42,15 +44,15 @@ class ProductIdentityOut(_Out):
 
 
 class ProductMetaOut(_Out):
-    schema_version: Literal["newow_product_detail_v1"]
+    schema_version: Literal["newow_product_detail_v2"]
     identity: ProductIdentityOut
     as_of: datetime
     read_at: datetime
     input_content_sha256: str
     data_revision_identity: str | None
     snapshot_token: str | None
-    reference_model_version: str
-    futures_adaptation_version: str
+    reference_model_version: ReferenceModelVersionValue
+    futures_adaptation_version: FuturesAdaptationVersionValue
 
 
 class ProductBarOut(_Out):
@@ -78,8 +80,23 @@ class ProductActionOut(_Out):
     physical_contract: str
     segment_id: str
     related_build_id: str | None
-    trade_eligibility: Literal["ELIGIBLE", "WARMUP_ONLY", "NO_ELIGIBLE_ENTRY"]
+    trade_eligibility: Literal[
+        "ELIGIBLE",
+        "WARMUP_ONLY",
+        "NO_ELIGIBLE_ENTRY",
+        "INITIAL_CLEAR_NO_ENTRY",
+    ]
     sequence: int
+
+    @model_validator(mode="after")
+    def validate_initial_clear_without_entry(self) -> ProductActionOut:
+        if self.trade_eligibility == "INITIAL_CLEAR_NO_ENTRY" and (
+            self.kind != "CLEAR"
+            or self.related_build_id is not None
+            or self.sequence != 0
+        ):
+            raise ValueError("INITIAL_CLEAR_NO_ENTRY has invalid action fields")
+        return self
 
 
 class ProductHintOut(_Out):
@@ -104,12 +121,31 @@ class ProductFrameOut(_Out):
     hint_ids: list[str]
 
 
+class TrendChannelPointOut(_Out):
+    bar_end: datetime
+    upper: str | None
+    lower: str | None
+    formula_version: Literal["newow_hhv_llv_channel_page_v1"]
+    status: ProductFeatureStatusOut
+    physical_contract: str
+    segment_id: str
+    source_identity: str
+
+
+class TrendChannelLayerOut(_Out):
+    kind: Literal["trend_channel"]
+    period: Literal[10]
+    formula_version: Literal["newow_hhv_llv_channel_page_v1"]
+    points: list[TrendChannelPointOut]
+
+
 class ChartValueOut(_Out):
     chart_from: date
     chart_through: date
     page_identity: str
     bars: list[ProductBarOut]
     frames: list[ProductFrameOut]
+    trend_channel: TrendChannelLayerOut | None
     actions: list[ProductActionOut]
     hints: list[ProductHintOut]
     diagnostics: list[str]
@@ -128,8 +164,8 @@ class ReferenceTradeOut(_Out):
     physical_contract: str
     segment_id: str
     formula_versions: list[str]
-    reference_model_version: str
-    futures_adaptation_version: str
+    reference_model_version: ReferenceModelVersionValue
+    futures_adaptation_version: FuturesAdaptationVersionValue
     entry_signal_id: str
     entry_sequence: int
     entry_bar_end: datetime
@@ -681,3 +717,24 @@ class NewowHistoricalSnapshotResponse(_Out):
     trading_day: date
     as_of: datetime
     validated_sections: list[Literal["chart", "zhaoyao_mirror"]]
+
+
+class DeferredFrequencyOut(_Out):
+    frequency: ProductFrequencyValue
+    reason_code: str
+
+
+class DeferredSectionOut(_Out):
+    section: Literal["chart", "auxiliary", "reference", "explanation", "comparator"]
+    reason_code: str
+
+
+class NewowProductCapabilitiesResponse(_Out):
+    schema_version: Literal["newow_product_capabilities_v1"]
+    release_stage: Literal["weekly"]
+    open_frequencies: list[ProductFrequencyValue]
+    deferred_frequencies: list[DeferredFrequencyOut]
+    open_sections: list[
+        Literal["chart", "auxiliary", "reference", "explanation", "comparator"]
+    ]
+    deferred_sections: list[DeferredSectionOut]

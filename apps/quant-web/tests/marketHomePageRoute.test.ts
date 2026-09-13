@@ -8,7 +8,7 @@ import { createRenderer, nextTick } from 'vue'
 
 const pageUrl = new URL('../src/pages/market/index.vue', import.meta.url)
 
-test('ordinary Market Home product clicks use fixed Newow Trend D1 identity', async () => {
+test('ordinary Market Home product clicks use the discovered weekly Newow identity', async () => {
   const pushes: unknown[] = []
   Object.assign(globalThis, { __marketHomeRoutePushes: pushes })
   const Page = await loadPage()
@@ -26,7 +26,7 @@ test('ordinary Market Home product clicks use fixed Newow Trend D1 identity', as
       name: 'market-chart',
       query: {
         view: 'newow', symbol: 'ag', strategy: 'trend', series_kind: 'actual_dominant',
-        contract: undefined, frequency: '1d', focus_bar_end: undefined,
+        contract: undefined, frequency: '1w', focus_bar_end: undefined,
       },
     }])
   } finally {
@@ -100,6 +100,19 @@ async function loadPage() {
       return { overview: resource(), runtime: resource(), events: resource(), refreshAll: async () => {}, start() {}, dispose() {} }
     }
   `)
+  const liveModule = moduleUrl(`
+    import { ref } from '${vueUrl}'
+    export function useMarketHomeLive() { return { items: ref(new Map()), stale: ref(false), connection: ref('idle'), observedAt: ref(null), start() {}, restart() {}, dispose() {} } }
+  `)
+  const capabilitiesModule = moduleUrl(`
+    import { ref } from '${vueUrl}'
+    export function useNewowCapabilities() {
+      return {
+        state: ref('ready'), error: ref(null), openFrequencies: ref(['1w']),
+        load: async () => {},
+      }
+    }
+  `)
   const viewModelModule = moduleUrl(`
     export function buildMarketHomeViewModel() {
       return { rows: [], overview: { availability: 'unavailable' }, runtime: { status: 'unavailable' }, events: { availability: 'unavailable' } }
@@ -126,10 +139,13 @@ async function loadPage() {
     ))
     .replace(/from ['"]@\/api\/(?:market|alerts|runtime)['"]/g, `from '${apiModule}'`)
     .replace(/from ['"]@\/composables\/useMarketHome['"]/g, `from '${homeModule}'`)
+    .replace(/from ['"]@\/composables\/useMarketHomeLive['"]/g, `from '${liveModule}'`)
+    .replace(/from ['"]@\/composables\/useNewowCapabilities['"]/g, `from '${capabilitiesModule}'`)
     .replace(/from ['"]@\/utils\/marketHomeViewModel['"]/g, `from '${viewModelModule}'`)
     .replace(/from ['"]@\/utils\/marketHomePreferences['"]/g, `from '${preferencesModule}'`)
     .replace(/from ['"]@\/utils\/marketHomeRoutes['"]/g, `from '${routesUrl}'`)
     .replace(/from ['"]@\/utils\/marketHomeWorkspace['"]/g, `from '${workspaceModule}'`)
+    .replace(/from ['"]@\/utils\/marketHomeLiveView['"]/g, `from '${new URL('../src/utils/marketHomeLiveView.ts', import.meta.url).href}'`)
   return (await import(moduleUrl(transpiled))).default
 }
 

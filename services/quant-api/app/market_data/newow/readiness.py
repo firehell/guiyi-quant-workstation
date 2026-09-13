@@ -25,6 +25,11 @@ from app.market_data.newow.product_service import (
     ProductServiceQuery,
 )
 from app.market_data.newow.public_errors import public_product_error
+from app.market_data.newow.product_release import (
+    RELEASE_STAGE,
+    deferred_frequency_reason,
+    deferred_section_reason,
+)
 
 _METADATA = MISSING_REASONS - {
     "REPLAY_PREFIX_MISSING",
@@ -46,8 +51,13 @@ class ReadinessRequest:
     matrix: bool = False
     max_work: int = 10000
     timeout_seconds: int = 300
+    frequencies: tuple[ProductFrequency, ...] = tuple(ProductFrequency)
 
     def __post_init__(self) -> None:
+        try:
+            frequencies = tuple(ProductFrequency(item) for item in self.frequencies)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("NEWOW_READINESS_ARGUMENT_INVALID") from exc
         if (
             not self.products
             or len(self.products) > 60
@@ -58,9 +68,12 @@ class ReadinessRequest:
             or type(self.timeout_seconds) is not int
             or not 1 <= self.timeout_seconds <= 3600
             or type(self.matrix) is not bool
+            or not frequencies
+            or len(set(frequencies)) != len(frequencies)
         ):
             raise ValueError("NEWOW_READINESS_ARGUMENT_INVALID")
         object.__setattr__(self, "as_of", utc_timestamp(self.as_of))
+        object.__setattr__(self, "frequencies", frequencies)
 
 
 class AuditBudgetExceeded(RuntimeError):
@@ -151,7 +164,7 @@ class NewowReadinessAudit:
         # Every section's window is obtained from the same reader used by the API.
         # Full reference history may own contracts outside the latest chart window.
         for symbol in request.products:
-            for selected in ProductFrequency:
+            for selected in request.frequencies:
                 for section in ("chart", "auxiliary", "reference", "explanation"):
                     row: dict[str, Any] = {
                         "symbol": symbol,
@@ -161,6 +174,10 @@ class NewowReadinessAudit:
                         "as_of": request.as_of.isoformat(),
                     }
                     enumerations.append(row)
+                    deferred_reason = deferred_section_reason(section)
+                    if deferred_reason is not None:
+                        row.update(status="UNOPENED", reason=deferred_reason)
+                        continue
                     try:
                         budget.take()
                         if section == "reference":
@@ -192,7 +209,7 @@ class NewowReadinessAudit:
                             owner_count=len(owners),
                         )
                         frequencies = (
-                            tuple(ProductFrequency)
+                            request.frequencies
                             if section == "explanation"
                             else (selected,)
                         )
@@ -279,7 +296,8 @@ class NewowReadinessAudit:
                         provider_request_count=None,
                         proposal="BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
                     )
-        # Planner deduplication is exact request identity, retaining every consumer.
+        # Coalesce each contract/frequency to its latest required owner end while
+        # retaining every consumer; one apply plan must cover the full needed prefix.
         repair_groups: dict[tuple, dict[str, Any]] = {}
         for dependency in dependencies.values():
             if dependency.get("reason") not in _DOWNLOAD:
@@ -288,15 +306,15 @@ class NewowReadinessAudit:
                 dependency["symbol"],
                 dependency["contract"],
                 dependency["frequency"],
-                dependency["_owner"].end_trading_day,
             )
+            required_through = dependency["_owner"].end_trading_day.isoformat()
             repair = repair_groups.setdefault(
                 repair_key,
                 {
                     "symbol": repair_key[0],
                     "contract": repair_key[1],
                     "frequency": repair_key[2],
-                    "through": repair_key[3].isoformat(),
+                    "through": required_through,
                     "consumers": [],
                     "status": "UNSTARTED",
                     "expected_bar_count": None,
@@ -304,6 +322,8 @@ class NewowReadinessAudit:
                     "plan_sha256": None,
                 },
             )
+            if required_through > repair["through"]:
+                repair["through"] = required_through
             for consumer in dependency["consumers"]:
                 if consumer not in repair["consumers"]:
                     repair["consumers"].append(consumer)
@@ -314,12 +334,13 @@ class NewowReadinessAudit:
                 if self.plan is None:
                     repair.update(status="UNKNOWN", reason="PLANNER_UNAVAILABLE")
                     continue
+                repair_through = datetime.fromisoformat(repair["through"]).date()
                 plan_result = self.plan(
                     ContractWarmupRequest(
                         symbol=repair_key[0],
                         contract=repair_key[1],
                         frequency=repair_key[2],
-                        through=repair_key[3],
+                        through=repair_through,
                     )
                 )
                 budget.checkpoint()
@@ -340,7 +361,7 @@ class NewowReadinessAudit:
                     if item["symbol"] == repair_key[0]
                     and item["contract"] == repair_key[1]
                     and item["frequency"] in plan_result.get("frequencies", ())
-                    and item["_owner"].end_trading_day <= repair_key[3]
+                    and item["_owner"].end_trading_day <= repair_through
                     and item["status"] in {"SOURCE_EXCEPTION", "INTEGRITY_ERROR"}
                 ]
                 if scope_conflicts or any(
@@ -406,6 +427,12 @@ class NewowReadinessAudit:
                 case["sections"][section_name] = state
                 if section is ProductSection.CHART:
                     case["main"] = state
+                deferred_reason = deferred_frequency_reason(
+                    ProductFrequency(case["frequency"])
+                ) or deferred_section_reason(section.value)
+                if deferred_reason is not None:
+                    state.update(status="UNOPENED", reason=deferred_reason)
+                    continue
                 try:
                     budget.take()
                     if self.service is None:
@@ -459,7 +486,9 @@ class NewowReadinessAudit:
             "status": "incomplete" if incomplete or budget.exhausted else "audited",
             "complete": not incomplete and not budget.exhausted,
             "as_of": request.as_of.isoformat(),
+            "release_stage": RELEASE_STAGE,
             "matrix": request.matrix,
+            "frequency_scope": [item.value for item in request.frequencies],
             "product_count": len(request.products),
             "main_case_count": len(cases),
             "main_ready_count": sum(

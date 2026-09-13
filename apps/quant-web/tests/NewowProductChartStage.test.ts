@@ -39,6 +39,36 @@ test('empty main chart legend follows the selected strategy instead of defaultin
   }
 })
 
+test('trend A/B boundaries render as lightweight one-pixel lines above the columns', async () => {
+  const Stage = await loadComponent()
+  const response = chartResponse()
+  response.meta.identity.strategy = 'trend'
+  response.meta.identity.profile_id = 'newow_product_trend_60m_v1'
+  response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+  response.value!.frames[0]!.main_state = 'HOLD'
+  response.value!.frames[0]!.main_values = { a: '99', b: '101' }
+  response.value!.actions = []
+  response.value!.hints = []
+  const lineOptions: Array<Record<string, unknown>> = []
+  const fakeChart = {
+    addSeries(definition: { type: string }, options: Record<string, unknown>) {
+      if (definition.type === 'Line' && options.lineVisible !== false) lineOptions.push(options)
+      return { setData() {}, attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {} }
+    },
+    removeSeries() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response, strategy: 'trend', selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+
+  assert.deepEqual(lineOptions.map(options => options.lineWidth), [1, 1])
+  app.unmount()
+})
+
 test('emits stable signal selection and preserves an established viewport and focus when earlier data arrives', async () => {
   const Stage = await loadComponent()
   let range = { from: 0, to: 1 }
@@ -77,6 +107,7 @@ test('emits stable signal selection and preserves an established viewport and fo
   const root = element('root')
 
   app.mount(root)
+  await nextTick()
   await nextTick()
   assert.equal(stage.value!.revealSignal('build-stable'), true)
   assert.deepEqual(focused, ['build-stable'])
@@ -145,11 +176,171 @@ test('dense same-Bar hints stay queryable by exact ID without adding native mark
   for (const hint of value.hints) {
     const button = findNode(root, (node) => node.props['data-hint-id'] === hint.hint_id)
     assert.ok(button, `complete Hint entry remains available: ${hint.hint_id}`)
+    assert.equal(button.props['data-hint-tone'], 'entry')
     ;(button.props.onClick as () => void)()
   }
   assert.deepEqual(selected, value.hints.map(hint => hint.hint_id), 'same-kind same-Bar entries retain distinct selection IDs')
   assert.doesNotMatch(source, /<ul[\s\S]*来源/)
   app.unmount()
+})
+
+test('connects action labels to the exact server reference price coordinate', async () => {
+  const Stage = await loadComponent()
+  const response = chartResponse()
+  const fakeChart = {
+    addSeries: () => ({
+      setData() {}, createPriceLine() {}, attachPrimitive() {}, detachPrimitive() {},
+      priceToCoordinate: (price: number) => price * 2,
+    }),
+    removeSeries() {}, panes: () => [{ getHeight: () => 400, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }],
+    timeScale: () => ({
+      width: () => 500, timeToCoordinate: () => 210,
+      fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {},
+    }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response, strategy: response.meta.identity.strategy, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  const root = element('root')
+  app.mount(root); await nextTick(); await nextTick()
+
+  const label = findNode(root, node => node.props['data-action-id'] === 'build-stable')
+  assert.ok(label)
+  assert.equal(label.props['data-reference-price'], '90')
+  assert.equal(label.props['data-anchor-y'], 180)
+  assert.match(textContent(label), /建仓.*参考价 90/)
+  const line = findNode(root, node => node.type === 'line')
+  assert.equal(line?.props.y1, 180)
+  app.unmount()
+})
+
+test('reprojects server-price action labels while the user changes the price scale', async () => {
+  const Stage = await loadComponent()
+  const response = chartResponse()
+  let coordinateFactor = 2
+  const fakeChart = {
+    addSeries: () => ({
+      setData() {}, createPriceLine() {}, attachPrimitive() {}, detachPrimitive() {},
+      priceToCoordinate: (price: number) => price * coordinateFactor,
+    }),
+    removeSeries() {}, panes: () => [{ getHeight: () => 400, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }],
+    timeScale: () => ({
+      width: () => 500, timeToCoordinate: () => 210,
+      fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {},
+    }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response, strategy: response.meta.identity.strategy, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  const root = element('root')
+  app.mount(root); await nextTick(); await nextTick()
+
+  assert.equal(findNode(root, node => node.props['data-action-id'] === 'build-stable')?.props['data-anchor-y'], 180)
+  coordinateFactor = 3
+  const chartSurface = findNode(root, node => node.props.class === 'newow-product-chart-stage__chart')
+  assert.equal(typeof chartSurface?.props.onPointermove, 'function')
+  ;(chartSurface!.props.onPointermove as () => void)()
+  await new Promise<void>((resolve) => queueMicrotask(resolve))
+  await nextTick()
+  assert.equal(findNode(root, node => node.props['data-action-id'] === 'build-stable')?.props['data-anchor-y'], 270)
+  app.unmount()
+})
+
+test('same identity resets a retained viewport when a loading transition returns a different time axis', async () => {
+  const Stage = await loadComponent()
+  let range = { from: 12, to: 42 }
+  const ranges: Array<typeof range> = []
+  const response = ref<MutableChartResponse | null>(strategyResponse('trend'))
+  const fakeChart = {
+    addSeries: () => ({ setData() {}, createPriceLine() {} }), removeSeries() {},
+    timeScale: () => ({
+      fitContent() {},
+      setVisibleLogicalRange(value: typeof range) { range = value; ranges.push(value) },
+      getVisibleLogicalRange: () => range,
+      scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {},
+    }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: response.value, strategy: 'trend', selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+  range = { from: 12, to: 42 }
+
+  response.value = null; await nextTick()
+  const incompatible = strategyResponse('trend')
+  incompatible.value!.bars[0]!.bar_end = '2026-08-16T07:00:00Z'
+  incompatible.value!.frames[0]!.bar_end = '2026-08-16T07:00:00Z'
+  response.value = incompatible; await nextTick()
+
+  assert.notDeepEqual(range, { from: 12, to: 42 })
+  assert.equal(ranges.length >= 2, true)
+  app.unmount()
+})
+
+test('same product and frequency strategy switches keep viewport while replacing mutually exclusive overlays', async () => {
+  const Stage = await loadComponent()
+  let range = { from: 12, to: 42 }
+  const ranges: Array<typeof range> = []
+  const bandCalls: unknown[][] = []
+  const channelCalls: unknown[][] = []
+  const { NewowProductBandPrimitive } = await import('../src/components/market/detail/newow/newowProductBandPrimitive.ts')
+  const { NewowTrendChannelPrimitive } = await import('../src/components/market/detail/newow/newowTrendChannelPrimitive.ts')
+  const originalBand = NewowProductBandPrimitive.prototype.setData
+  const originalChannel = NewowTrendChannelPrimitive.prototype.setData
+  NewowProductBandPrimitive.prototype.setData = function (items) { bandCalls.push([...items]); return originalBand.call(this, items) }
+  NewowTrendChannelPrimitive.prototype.setData = function (items) { channelCalls.push([...items]); return originalChannel.call(this, items) }
+  try {
+    const response = ref<MutableChartResponse | null>(strategyResponse('trend'))
+    const strategy = ref<'trend' | 'oscillation' | 'main_rise'>('trend')
+    const fakeChart = {
+      addSeries: () => ({ setData() {}, createPriceLine() {} }), removeSeries() {},
+      timeScale: () => ({
+        fitContent() {},
+        setVisibleLogicalRange(value: typeof range) { range = value; ranges.push(value) },
+        getVisibleLogicalRange: () => range,
+        scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {},
+      }),
+      subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+    }
+    const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+      response: response.value, strategy: strategy.value, selectedSignalId: null,
+    }) }))
+    app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+    app.mount(element('root')); await nextTick()
+    range = { from: 12, to: 42 }
+
+    response.value = null; strategy.value = 'oscillation'; await nextTick()
+    assert.deepEqual(bandCalls.at(-1), [])
+    assert.deepEqual(channelCalls.at(-1), [])
+    response.value = strategyResponse('oscillation'); await nextTick()
+    assert.deepEqual(range, { from: 12, to: 42 })
+    assert.deepEqual(bandCalls.at(-1), [])
+    assert.equal(channelCalls.at(-1)?.length, 1)
+
+    response.value = strategyResponse('main_rise'); await nextTick()
+    assert.deepEqual(range, { from: 12, to: 42 })
+    assert.equal(bandCalls.at(-1)?.length, 1)
+    assert.deepEqual(channelCalls.at(-1), [])
+
+    const incompatible = strategyResponse('trend')
+    incompatible.value!.bars[0]!.bar_end = '2026-08-15T06:00:00Z'
+    incompatible.value!.frames[0]!.bar_end = '2026-08-15T06:00:00Z'
+    response.value = incompatible; await nextTick()
+    assert.notDeepEqual(range, { from: 12, to: 42 })
+    assert.equal(ranges.length >= 4, true)
+    app.unmount()
+  } finally {
+    NewowProductBandPrimitive.prototype.setData = originalBand
+    NewowTrendChannelPrimitive.prototype.setData = originalChannel
+  }
 })
 
 test('creates three native panes with volume zero/color and releases resources', async () => {
@@ -188,6 +379,68 @@ test('creates three native panes with volume zero/color and releases resources',
   assert.equal(resizeCalls.at(-1)?.[2], true, 'pane labels require completed native layout before reading pane heights')
   app.unmount()
   assert.equal(removed, true); assert.equal(disconnected, true)
+})
+
+test('channel primitive replaces strategy-owned data on snapshot pagination and clears invalidated snapshots', async () => {
+  const { NewowTrendChannelPrimitive } = await import('../src/components/market/detail/newow/newowTrendChannelPrimitive.ts')
+  const calls: unknown[][] = []
+  const original = NewowTrendChannelPrimitive.prototype.setData
+  NewowTrendChannelPrimitive.prototype.setData = function (points) {
+    calls.push([...points])
+    return original.call(this, points)
+  }
+  try {
+    const Stage = await loadComponent()
+    const response = ref<MutableChartResponse | null>(chartResponse())
+    response.value!.meta.identity.strategy = 'trend'
+    response.value!.meta.identity.profile_id = 'newow_product_trend_60m_v1'
+    response.value!.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+    response.value!.value!.frames[0]!.main_values = { a: '99', b: '101' }
+    response.value!.value!.trend_channel = channelFor(response.value!.value!.bars, 110, 90)
+    const attached: string[] = []
+    const fakeChart = {
+      addSeries() {
+        return {
+          setData() {}, createPriceLine() {},
+          attachPrimitive(value: object) { attached.push(value.constructor.name) },
+          detachPrimitive() {},
+        }
+      }, removeSeries() {},
+      timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+      subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+    }
+    const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+      response: response.value,
+      strategy: response.value?.meta.identity.strategy ?? 'trend',
+      selectedSignalId: null,
+    }) }))
+    app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+    app.mount(element('root')); await nextTick()
+    assert.equal(attached.includes('NewowTrendChannelPrimitive'), true)
+    assert.equal(calls.at(-1)?.length, 1)
+
+    response.value = JSON.parse(JSON.stringify(response.value))
+    response.value!.meta.snapshot_token = 'snapshot-b'
+    response.value!.value!.page_identity = 'c'.repeat(64)
+    response.value!.value!.trend_channel = channelFor(response.value!.value!.bars, 120, 80)
+    await nextTick()
+    assert.deepEqual(calls.at(-1), [{ time: 1786777200, upper: 120, lower: 80 }])
+
+    response.value = prependBar(response.value!)
+    response.value!.value!.trend_channel = channelFor(response.value!.value!.bars, 121, 79)
+    await nextTick()
+    assert.equal(calls.at(-1)?.length, 2, 'pagination replaces the primitive with the merged aligned page')
+
+    response.value = chartResponse()
+    await nextTick()
+    assert.deepEqual(calls.at(-1), [{ time: 1786777200, upper: 110, lower: 90 }], 'strategy switch replaces trend facts with oscillation facts')
+    response.value = null
+    await nextTick()
+    assert.deepEqual(calls.at(-1), [], 'snapshot invalidation clears trend points')
+    app.unmount()
+  } finally {
+    NewowTrendChannelPrimitive.prototype.setData = original
+  }
 })
 
 test('signed MACD bars share pane 2 and switch/invalidated snapshots remove every old series', async () => {
@@ -282,10 +535,10 @@ function chartResponse(): MutableChartResponse {
   const bars = [bar('2026-08-15T07:00:00Z', '2026-08-15')]
   return {
     meta: {
-      schema_version: 'newow_product_detail_v1',
+      schema_version: 'newow_product_detail_v2',
       identity: { product: 'jm', strategy: 'oscillation', frequency: '60m', series_kind: 'actual_dominant', profile_id: 'newow_product_oscillation_60m_v1', formula_versions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1'] },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64), data_revision_identity: null,
-      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     },
     section: 'chart', status: ready(), value: {
       chart_from: '2026-08-15', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), bars,
@@ -297,6 +550,20 @@ function chartResponse(): MutableChartResponse {
   } as MutableChartResponse
 }
 
+function strategyResponse(strategy: 'trend' | 'oscillation' | 'main_rise'): MutableChartResponse {
+  const response = chartResponse()
+  response.meta.identity.strategy = strategy
+  response.meta.identity.profile_id = `newow_product_${strategy}_60m_v1`
+  if (strategy === 'trend') {
+    response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+    response.value!.frames[0]!.main_values = { a: '99', b: '101' }
+  } else if (strategy === 'main_rise') {
+    response.meta.identity.formula_versions = ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
+    response.value!.frames[0]!.main_values = { ma35: '99', ma45: '101' }
+  }
+  return response
+}
+
 function prependBar(response: MutableChartResponse): MutableChartResponse {
   const earlier = bar('2026-08-15T06:00:00Z', '2026-08-15')
   return {
@@ -306,6 +573,24 @@ function prependBar(response: MutableChartResponse): MutableChartResponse {
       bars: [earlier, ...response.value!.bars],
       frames: [{ bar_end: earlier.bar_end, main_state: 'FLAT', main_values: { upper: '109', lower: '89' }, status: ready(), action_ids: [], hint_ids: [] }, ...response.value!.frames],
     },
+  }
+}
+
+function channelFor(bars: NonNullable<MutableChartResponse['value']>['bars'], upper: number, lower: number) {
+  return {
+    kind: 'trend_channel' as const,
+    period: 10 as const,
+    formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+    points: bars.map((item) => ({
+      bar_end: item.bar_end,
+      upper: String(upper),
+      lower: String(lower),
+      formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+      status: ready(),
+      physical_contract: item.physical_contract,
+      segment_id: item.segment_id,
+      source_identity: item.source_identity,
+    })),
   }
 }
 

@@ -142,9 +142,19 @@ RETIRED_MODULE_ATTRIBUTES = {
 ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_ths_alert_15m_v1"})
 SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v3"
 ACTIVE_MARKET_ROUTE_OWNERS = {
+    (
+        "WEBSOCKET",
+        "/api/v1/market/research/home-live/ws",
+        "app.api.market_live:market_home_live_websocket",
+    ),
     ("GET", "/api/v1/market/{symbol}/subing/reference", "app.api.market_subing_reference:subing_reference"),
     ("GET", "/api/v1/market/bars/page", "app.api.market:canonical_market_bars_page"),
     ("GET", "/api/v1/market/dominants", "app.api.market:market_dominants"),
+    (
+        "GET",
+        "/api/v1/market/newow/product-capabilities",
+        "app.api.market_newow:newow_product_capabilities",
+    ),
     (
         "GET",
         "/api/v1/market/newow/trend-detail",
@@ -441,7 +451,7 @@ def test_release_versions_are_consistent() -> None:
         web["version"],
         *lock_versions,
         *app_versions,
-    } == {"1.10.8"}
+    } == {"1.10.9"}
     assert "version=APP_VERSION" in api
     assert '"version": APP_VERSION' in api
 

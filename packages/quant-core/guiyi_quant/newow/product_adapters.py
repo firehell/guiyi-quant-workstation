@@ -26,6 +26,7 @@ from .product_contracts import (
     EvidenceStatus,
     FeatureRuntimeStatus,
     FeatureStatus,
+    LifecycleReplayEvidence,
     MainState,
     ProductBar,
     ProductFrequency,
@@ -36,6 +37,7 @@ from .product_contracts import (
     StrategyHint,
     StrategyReplay,
     TradeEligibility,
+    validate_lifecycle_replay_evidence,
 )
 from .profile import NEWOW_TREND_D1_PAGE_V2
 from .trend_band import (
@@ -76,6 +78,8 @@ class _PairingState:
     eligible_build: StrategyAction | None = None
     prewarm_build: StrategyAction | None = None
     source_builds: dict[str, StrategyAction] = field(default_factory=dict)
+    initial_clear_possible: bool = True
+    initial_yellow_seen: bool = False
 
 
 def build_product_identity(
@@ -500,12 +504,72 @@ def _main_rise_actions(
     product_bar: ProductBar,
     result: MainRiseStepResult,
     pairing: _PairingState,
+    previous_state: MainRiseState,
+    *,
+    verified_lifecycle: bool,
 ) -> tuple[StrategyAction, ...]:
     if result.band_signal is None:
+        _advance_initial_clear_state(pairing, result)
         return ()
     signal = result.band_signal
-    action = _new_action(identity, product_bar, signal.action, signal.price, 0)
+    qualifies = _qualifies_initial_clear(
+        pairing, previous_state, result, verified_lifecycle=verified_lifecycle
+    )
+    _advance_initial_clear_state(pairing, result)
+    action = _new_action(
+        identity,
+        product_bar,
+        signal.action,
+        signal.price,
+        0,
+        trade_eligibility=(
+            TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+            if qualifies
+            else TradeEligibility.ELIGIBLE
+        ),
+    )
+    if qualifies:
+        return (action,)
     return (_pair_action(pairing, action),)
+
+
+def _qualifies_initial_clear(
+    pairing: _PairingState,
+    previous_state: MainRiseState,
+    result: MainRiseStepResult,
+    *,
+    verified_lifecycle: bool,
+) -> bool:
+    signal = result.band_signal
+    return bool(
+        verified_lifecycle
+        and pairing.initial_clear_possible
+        and pairing.initial_yellow_seen
+        and signal is not None
+        and signal.action == ActionKind.CLEAR
+        and previous_state.band_state is TrendBandState.YELLOW
+        and result.band_state is TrendBandState.BLUE
+        and previous_state.last_buy_price is None
+        and previous_state.bars_since_buy is None
+        and signal.profit_pct is None
+        and signal.hold_bars is None
+        and pairing.eligible_build is None
+        and pairing.prewarm_build is None
+        and not pairing.source_builds
+    )
+
+
+def _advance_initial_clear_state(
+    pairing: _PairingState, result: MainRiseStepResult
+) -> None:
+    if (
+        result.diagnostics
+        or result.band_state is not TrendBandState.YELLOW
+        or result.band_signal is not None
+    ):
+        pairing.initial_clear_possible = False
+        return
+    pairing.initial_yellow_seen = True
 
 
 def _main_rise_witnesses(
@@ -521,7 +585,9 @@ def _main_rise_witnesses(
     )
     signal = shadow.band_signal
     if signal is None:
+        _advance_initial_clear_state(pairing, shadow)
         return ()
+    _advance_initial_clear_state(pairing, shadow)
     if signal.action == ActionKind.CLEAR:
         pairing.prewarm_build = None
         return ()
@@ -566,10 +632,19 @@ def _main_rise_frame(
     product_bar: ProductBar,
     state: MainRiseState,
     pairing: _PairingState,
+    *,
+    verified_lifecycle: bool,
 ) -> tuple[StrategyFrame, MainRiseState, tuple[str, ...]]:
     result = step_main_rise(state, product_bar.bar, formulas=MAIN_RISE_PAGE_V1)
     actions = (
-        _main_rise_actions(identity, product_bar, result, pairing)
+        _main_rise_actions(
+            identity,
+            product_bar,
+            result,
+            pairing,
+            state,
+            verified_lifecycle=verified_lifecycle,
+        )
         if product_bar.bar.observation_eligible
         else _main_rise_witnesses(identity, product_bar, state, pairing)
     )
@@ -578,6 +653,11 @@ def _main_rise_frame(
         "NO_ELIGIBLE_ENTRY"
         for action in actions
         if action.trade_eligibility is TradeEligibility.NO_ELIGIBLE_ENTRY
+    )
+    diagnostics.extend(
+        "INITIAL_CLEAR_NO_ENTRY"
+        for action in actions
+        if action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
     )
     main_state = (
         MainState.BUILD
@@ -607,11 +687,16 @@ def _main_rise_frame(
 
 
 def replay_strategy(
-    identity: ProductIdentity, bars: tuple[ProductBar, ...]
+    identity: ProductIdentity,
+    bars: tuple[ProductBar, ...],
+    *,
+    lifecycle_evidence: tuple[LifecycleReplayEvidence, ...] = (),
 ) -> StrategyReplay:
     """Replay one strategy, resetting all state at each authoritative segment."""
     inputs = tuple(bars)
     _validate_inputs(identity, inputs)
+    evidence = tuple(lifecycle_evidence)
+    verified_owners = validate_lifecycle_replay_evidence(identity, inputs, evidence)
     frames: list[StrategyFrame] = []
     diagnostics: list[str] = []
     current_segment: str | None = None
@@ -639,7 +724,15 @@ def replay_strategy(
             )
         else:
             frame, main_rise_state, found = _main_rise_frame(
-                identity, product_bar, main_rise_state, pairing
+                identity,
+                product_bar,
+                main_rise_state,
+                pairing,
+                verified_lifecycle=(
+                    product_bar.bar.physical_contract,
+                    product_bar.bar.segment_id,
+                )
+                in verified_owners,
             )
         frames.append(frame)
         diagnostics.extend(found)
@@ -651,4 +744,6 @@ def replay_strategy(
         tuple(action for frame in frame_tuple for action in frame.actions),
         tuple(hint for frame in frame_tuple for hint in frame.hints),
         tuple(dict.fromkeys(diagnostics)),
+        evidence,
+        inputs,
     )

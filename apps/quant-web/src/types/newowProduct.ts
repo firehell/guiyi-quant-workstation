@@ -7,6 +7,28 @@ export {
 export type NewowProductStrategy = NewowStrategy
 export type NewowProductFrequency = NewowFrequency
 
+export interface NewowDeferredFrequency {
+  readonly frequency: NewowProductFrequency
+  readonly reason_code: string
+}
+
+export interface NewowDeferredSection {
+  readonly section: NewowProductSection
+  readonly reason_code: string
+}
+
+export interface NewowProductCapabilities {
+  readonly schema_version: 'newow_product_capabilities_v1'
+  readonly release_stage: 'weekly'
+  readonly open_frequencies: readonly ['1w']
+  readonly deferred_frequencies: readonly [
+    NewowDeferredFrequency,
+    NewowDeferredFrequency,
+  ]
+  readonly open_sections: readonly ['chart', 'auxiliary', 'reference', 'comparator']
+  readonly deferred_sections: readonly [NewowDeferredSection]
+}
+
 export interface NewowHistoricalSnapshot {
   readonly schema_version: 'newow_historical_snapshot_v1'
   readonly product: string
@@ -48,14 +70,14 @@ export interface NewowFeatureStatus {
 }
 
 export interface NewowProductMeta {
-  readonly schema_version: 'newow_product_detail_v1'
+  readonly schema_version: 'newow_product_detail_v2'
   readonly identity: NewowProductWireIdentity
   readonly as_of: string
   readonly read_at: string
   readonly input_content_sha256: string
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v1'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v2'
   readonly futures_adaptation_version: 'newow_futures_segment_interrupt_v1'
 }
 
@@ -84,6 +106,24 @@ export interface NewowProductFrame {
   readonly hint_ids: readonly string[]
 }
 
+export interface NewowTrendChannelPoint {
+  readonly bar_end: string
+  readonly upper: string | null
+  readonly lower: string | null
+  readonly formula_version: 'newow_hhv_llv_channel_page_v1'
+  readonly status: NewowFeatureStatus
+  readonly physical_contract: string
+  readonly segment_id: string
+  readonly source_identity: string
+}
+
+export interface NewowTrendChannelLayer {
+  readonly kind: 'trend_channel'
+  readonly period: 10
+  readonly formula_version: 'newow_hhv_llv_channel_page_v1'
+  readonly points: readonly NewowTrendChannelPoint[]
+}
+
 export interface NewowProductAction {
   readonly signal_id: string
   readonly kind: 'BUILD' | 'CLEAR'
@@ -93,7 +133,7 @@ export interface NewowProductAction {
   readonly physical_contract: string
   readonly segment_id: string
   readonly related_build_id: string | null
-  readonly trade_eligibility: 'ELIGIBLE' | 'WARMUP_ONLY' | 'NO_ELIGIBLE_ENTRY'
+  readonly trade_eligibility: 'ELIGIBLE' | 'WARMUP_ONLY' | 'NO_ELIGIBLE_ENTRY' | 'INITIAL_CLEAR_NO_ENTRY'
   readonly sequence: number
 }
 
@@ -116,6 +156,7 @@ export interface NewowChartValue {
   readonly page_identity: string
   readonly bars: readonly NewowProductBar[]
   readonly frames: readonly NewowProductFrame[]
+  readonly trend_channel: NewowTrendChannelLayer | null
   readonly actions: readonly NewowProductAction[]
   readonly hints: readonly NewowProductHint[]
   readonly diagnostics: readonly string[]
@@ -148,7 +189,7 @@ export interface NewowReferenceTrade {
   readonly physical_contract: string
   readonly segment_id: string
   readonly formula_versions: readonly string[]
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v1'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v2'
   readonly futures_adaptation_version: 'newow_futures_segment_interrupt_v1'
   readonly entry_signal_id: string
   readonly entry_sequence: number

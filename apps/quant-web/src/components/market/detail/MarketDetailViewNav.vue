@@ -3,8 +3,6 @@ import { computed, ref, watch } from 'vue'
 
 import { type DominantContractItem, MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
 import {
-  NEWOW_FREQUENCIES,
-  NEWOW_STRATEGIES,
   type MarketDetailIdentity,
   type MarketDetailView,
   type MarketDetailViewRestore,
@@ -18,6 +16,7 @@ const props = withDefaults(defineProps<{
   restore: MarketDetailViewRestore
   seriesKinds?: readonly SeriesKind[]
   frequencies?: readonly MarketFrequency[]
+  newowFrequencies: readonly MarketFrequency[]
 }>(), {
   seriesKinds: () => ['actual_dominant', 'continuous', 'contract'],
   frequencies: () => MARKET_FREQUENCIES,
@@ -29,20 +28,25 @@ const emit = defineEmits<{
   'contract-cleared': [identity: MarketDetailIdentity]
 }>()
 
-const views: readonly { value: MarketDetailView; label: string }[] = [
-  { value: 'newow', label: 'Newow' },
+type AnalysisChoice = NewowStrategy | Extract<MarketDetailView, 'htdy' | 'subing' | 'free'>
+
+const views: readonly { value: AnalysisChoice; label: string }[] = [
+  { value: 'oscillation', label: '震荡策略' },
+  { value: 'trend', label: '趋势策略' },
+  { value: 'main_rise', label: '主升浪' },
   { value: 'htdy', label: '火天大有' },
-  { value: 'subing', label: '新苏冰' },
+  { value: 'subing', label: '苏冰预警' },
   { value: 'free', label: '自由看盘' },
 ]
+const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'newow'
+  ? props.identity.strategy ?? 'trend'
+  : props.identity.view === 'trend' ? 'trend' : props.identity.view)
 const seriesLabels: Record<SeriesKind, string> = { actual_dominant: '真实主力', continuous: '主连', contract: '指定合约' }
 const showSeriesControls = computed(() => props.identity.view === 'htdy' || props.identity.view === 'free')
 const showFrequencyControls = computed(() => props.identity.view === 'newow' || showSeriesControls.value)
-const availableFrequencies = computed(() => props.identity.view === 'newow' ? NEWOW_FREQUENCIES : props.frequencies)
+const availableFrequencies = computed(() => props.identity.view === 'newow' ? props.newowFrequencies : props.frequencies)
 const availableSeriesKinds = computed(() => props.seriesKinds.filter((kind) => kind !== 'contract'))
 const allowsContract = computed(() => (props.identity.view === 'free' || props.identity.view === 'htdy') && props.seriesKinds.includes('contract'))
-const symbolControl = ref<HTMLInputElement | HTMLSelectElement | null>(null)
-defineExpose({ focusSymbol: () => symbolControl.value?.focus() })
 const symbol = ref(props.identity.symbol)
 const contract = ref(props.identity.contract ?? '')
 
@@ -51,7 +55,18 @@ watch(() => props.identity, (identity) => {
   contract.value = identity.contract ?? ''
 }, { deep: true })
 
-function chooseView(view: MarketDetailView) {
+function chooseView(view: AnalysisChoice) {
+  if (view === 'trend' || view === 'oscillation' || view === 'main_rise') {
+    const restored = resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
+    const frequency = props.identity.view === 'newow'
+      ? props.identity.frequency
+      : props.newowFrequencies.includes(restored.frequency) ? restored.frequency : props.newowFrequencies[0] ?? restored.frequency
+    emit('select', {
+      view: 'newow', symbol: props.identity.symbol, strategy: view,
+      seriesKind: 'actual_dominant', frequency,
+    })
+    return
+  }
   emit('select', resolveViewSwitchIdentity(view, props.identity.symbol, props.identity, props.restore))
 }
 
@@ -69,15 +84,8 @@ function chooseFrequency(frequency: MarketFrequency) {
   emit('select', { ...props.identity, frequency, focusBarEnd: undefined })
 }
 
-function chooseStrategy(strategy: NewowStrategy) {
-  emit('select', {
-    view: 'newow', symbol: props.identity.symbol, strategy,
-    seriesKind: 'actual_dominant', frequency: props.identity.frequency,
-  })
-}
-
-function chooseSymbol() {
-  const nextSymbol = symbol.value.trim().toLowerCase()
+function chooseSymbol(nextValue = symbol.value) {
+  const nextSymbol = nextValue.trim().toLowerCase()
   if (!/^[a-z]+$/.test(nextSymbol)) return
   if (nextSymbol !== props.identity.symbol && props.identity.seriesKind === 'contract') {
     contract.value = ''
@@ -92,6 +100,8 @@ function chooseSymbol() {
   emit('select', { ...props.identity, symbol: nextSymbol, focusBarEnd: undefined })
 }
 
+defineExpose({ selectSymbol: chooseSymbol })
+
 function periodLabel(value: MarketFrequency) {
   if (props.identity.view === 'newow') return value
   return value === '1d' ? '日K' : value === '1w' ? '周K' : value
@@ -100,37 +110,20 @@ function periodLabel(value: MarketFrequency) {
 
 <template>
   <nav class="detail-view-nav" aria-label="分析视角" data-detail-section="view-nav">
-    <div class="detail-view-nav__views" role="tablist" aria-label="分析视角">
-      <template v-if="identity.view === 'newow'"><RouterLink class="newow-brand" to="/market">归一量化</RouterLink><RouterLink to="/market">市场</RouterLink></template>
+    <div class="detail-view-nav__views" role="tablist" aria-label="分析选项">
       <button
         v-for="view in views"
         :key="view.value"
         type="button"
         role="tab"
-        :aria-selected="identity.view === view.value"
-        :class="{ 'is-active': identity.view === view.value }"
+        :aria-selected="activeChoice === view.value"
+        :class="{ 'is-active': activeChoice === view.value }"
         @click="chooseView(view.value)"
-      >{{ identity.view === 'newow' ? ({ newow: '牛哇', htdy: '火天大有', subing: '苏冰预警', free: '更多' }[view.value as 'newow' | 'htdy' | 'subing' | 'free']) : view.label }}</button>
+      >{{ view.label }}</button>
     </div>
 
     <div class="detail-view-nav__controls">
-      <span v-if="identity.view === 'trend'" class="detail-view-nav__fixed">固定日K</span>
-      <span v-else-if="identity.view === 'subing'" class="detail-view-nav__fixed">固定15m</span>
-      <div v-if="identity.view === 'newow'" class="detail-view-nav__group" role="group" aria-label="Newow策略">
-        <select ref="symbolControl" v-model="symbol" aria-label="全部品种" @change="chooseSymbol">
-          <option v-if="!products.some(item => item.product.toLowerCase() === symbol)" :value="symbol">{{ symbol.toUpperCase() }} · 目录未读取</option>
-          <option v-for="product in products" :key="product.product" :value="product.product.toLowerCase()">{{ product.product_name }} {{ product.product.toUpperCase() }}</option>
-        </select>
-        <button
-          v-for="strategy in NEWOW_STRATEGIES"
-          :key="strategy"
-          type="button"
-          :aria-pressed="identity.strategy === strategy"
-          :class="{ 'is-active': identity.strategy === strategy }"
-          @click="chooseStrategy(strategy)"
-        >{{ strategy === 'trend' ? '趋势' : strategy === 'oscillation' ? '震荡' : '主升浪' }}</button>
-      </div>
-      <input v-if="identity.view !== 'newow'" ref="symbolControl" v-model="symbol" class="detail-view-nav__symbol" aria-label="品种代码" @change="chooseSymbol">
+      <span v-if="identity.view === 'subing'" class="detail-view-nav__fixed">固定15m</span>
       <div v-if="showSeriesControls" class="detail-view-nav__group" role="group" aria-label="序列">
         <button
           v-for="kind in availableSeriesKinds"
@@ -165,11 +158,11 @@ function periodLabel(value: MarketFrequency) {
 </template>
 
 <style scoped>
-.detail-view-nav { display: grid; gap: var(--gy-space-3); padding: var(--gy-space-4) 0; border-bottom: 1px solid var(--gy-border-subtle); }
+.detail-view-nav { display: grid; gap: var(--gy-space-2); padding: var(--gy-space-2) 0; border-bottom: 1px solid var(--gy-border-subtle); }
 .detail-view-nav__views,
 .detail-view-nav__group { display: flex; align-items: center; gap: var(--gy-space-1); overflow-x: auto; }
 .detail-view-nav button,
-.detail-view-nav__fixed { min-height: 44px; padding: 0 var(--gy-space-3); border: 1px solid transparent; border-radius: var(--gy-radius-pill); color: var(--gy-text-secondary); background: transparent; font: inherit; white-space: nowrap; }
+.detail-view-nav__fixed { min-height: 36px; padding: 0 var(--gy-space-3); border: 1px solid transparent; border-radius: var(--gy-radius-pill); color: var(--gy-text-secondary); background: transparent; font: inherit; white-space: nowrap; }
 .detail-view-nav button { cursor: pointer; }
 .detail-view-nav button:hover { background: var(--gy-bg-hover); }
 .detail-view-nav button:focus-visible { outline: 2px solid var(--gy-border-focus); outline-offset: 2px; }
@@ -181,8 +174,12 @@ function periodLabel(value: MarketFrequency) {
 .detail-view-nav__group input { min-width: 0; min-height: 36px; max-width: 128px; padding: 0 var(--gy-space-2); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); color: var(--gy-text-primary); background: var(--gy-bg-panel); font: inherit; }
 .detail-view-nav__group button.is-active { border-color: var(--gy-accent); color: var(--gy-text-on-accent); background: var(--gy-accent); }
 .detail-view-nav__fixed { display: inline-flex; align-items: center; min-height: 32px; border-color: var(--gy-border); background: var(--gy-detail-section-bg); font-size: var(--gy-font-size-sm); }
-
 @media (max-width: 640px) {
+  .detail-view-nav { margin-inline: calc(-1 * var(--gy-space-3)); }
+  .detail-view-nav__views,
+  .detail-view-nav__controls { padding-inline: var(--gy-space-3); }
+  .detail-view-nav__views { width: auto; scroll-padding-inline: var(--gy-space-3); }
+  .detail-view-nav__views button { min-height: 44px; }
   .detail-view-nav__controls { align-items: flex-start; flex-direction: column; }
   .detail-view-nav__group { width: 100%; }
   .detail-view-nav__group button { min-height: 44px; }

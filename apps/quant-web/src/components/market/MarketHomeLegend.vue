@@ -9,6 +9,7 @@ import MarketStateIcon from './MarketStateIcon.vue'
     <span><MarketStateIcon state="down" size="legend" />下行</span>
     <span><MarketStateIcon state="neutral" size="legend" />中性</span>
     <span><MarketStateIcon state="aligned" size="legend" />同向</span>
+    <span><MarketStateIcon state="mixed" size="legend" />日周未同向</span>
     <span><MarketStateIcon state="unavailable" size="legend" />数据不足</span>
     <small>仅表示已完成周期状态</small>
   </section>

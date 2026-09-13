@@ -27,6 +27,7 @@ from app.market_data.domain import (
 )
 from app.market_data.live_market import (
     RedisLiveStore,
+    LiveRecoveryState,
     _LIVE_TTL_SECONDS,
     _as_text,
     _bar_observation_from_payload,
@@ -122,18 +123,25 @@ def _recovery_additions(request, source, existing):
     return additions
 
 
-def recover_product(
-    store: RedisLiveStore,
-    request: LiveRecoveryRequest,
-    fetch: Callable[[LiveRecoveryRequest], tuple[CanonicalBar, ...]],
-    *,
-    clock: Callable[[], datetime],
-    commit_guard: Callable[[], ContextManager] = nullcontext,
-) -> str:
-    """Validate a full completed prefix and atomically add only missing observations."""
-    ends = request.endpoints()
-    if not ends:
-        return "NO_GAP"
+def _validated_recovery_clock(now: datetime, cutoff: datetime) -> datetime:
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("LIVE_RECOVERY_CLOCK_INVALID")
+    now = now.astimezone(UTC)
+    if not timedelta(0) <= now - cutoff <= timedelta(seconds=60):
+        raise ValueError("LIVE_RECOVERY_CLOCK_INVALID")
+    return now
+
+
+@dataclass(frozen=True, slots=True)
+class _RecoverySnapshot:
+    subscription: str
+    state_raw: str | None
+    state: LiveRecoveryState | None
+    before: tuple[tuple[str, ...], ...]
+    existing: tuple[dict[datetime, CanonicalBar], ...]
+
+
+def _read_recovery_snapshot(store, request, ends) -> _RecoverySnapshot:
     redis = store._redis
     subscription_key = store._subscription_key(request.trading_day)
     subscription = redis.get(subscription_key)
@@ -141,10 +149,12 @@ def recover_product(
         request.snapshot
     ):
         raise ValueError("LIVE_RECOVERY_SNAPSHOT_DRIFT")
+    subscription = _as_text(subscription)
     state_key = store._recovery_key(
         request.trading_day, request.symbol, request.contract
     )
-    state_raw = redis.get(state_key)
+    raw_state = redis.get(state_key)
+    state_raw = None if raw_state is None else _as_text(raw_state)
     state = store.recovery_state(request.trading_day, request.symbol, request.contract)
     before = []
     existing = []
@@ -174,10 +184,35 @@ def recover_product(
     expected = set(ends)
     if any(end not in expected for end in existing[0]):
         raise ValueError("LIVE_RECOVERY_SESSION_INVALID")
-    missing = expected - existing[0].keys()
-    if not missing:
-        source = tuple(existing[0][end] for end in ends)
-    else:
+    return _RecoverySnapshot(subscription, state_raw, state, tuple(before), tuple(existing))
+
+
+def recover_product(
+    store: RedisLiveStore,
+    request: LiveRecoveryRequest,
+    fetch: Callable[[LiveRecoveryRequest], tuple[CanonicalBar, ...]],
+    *,
+    clock: Callable[[], datetime],
+    commit_guard: Callable[[], ContextManager] = nullcontext,
+) -> str:
+    """Validate a full completed prefix and atomically add only missing observations."""
+    ends = request.endpoints()
+    if not ends:
+        return "NO_GAP"
+    redis = store._redis
+    subscription_key = store._subscription_key(request.trading_day)
+    state_key = store._recovery_key(request.trading_day, request.symbol, request.contract)
+    with commit_guard():
+        initial = _read_recovery_snapshot(store, request, ends)
+        missing = set(ends) - initial.existing[0].keys()
+        if not missing:
+            source = tuple(initial.existing[0][end] for end in ends)
+            if not any(_recovery_additions(request, source, initial.existing)):
+                return "NO_GAP"
+    if missing:
+        # A stale queued request cannot commit; leave its provider budget intact
+        # for the next normally scheduled foreground request with a fresh cutoff.
+        _validated_recovery_clock(clock(), request.cutoff)
         # Budget is persisted before the provider call, including failures/restarts.
         active_session = next(
             (w for w in reversed(request.sessions) if w.start <= request.cutoff), None
@@ -205,15 +240,24 @@ def recover_product(
             if str(exc) in ("PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED"):
                 redis.set(circuit_key, "STOPPED", ex=_LIVE_TTL_SECONDS)
             raise
-    additions = _recovery_additions(request, source, existing)
-    if not any(additions):
-        return "NO_GAP"
     with commit_guard():
-        committed_at = clock().astimezone(UTC)
-        if committed_at < request.cutoff or committed_at - request.cutoff > timedelta(
-            seconds=60
+        current = _read_recovery_snapshot(store, request, ends)
+        if (
+            current.subscription != initial.subscription
+            or current.state_raw != initial.state_raw
+            or any(
+                not set(old).issubset(new)
+                for old, new in zip(initial.before, current.before, strict=True)
+            )
         ):
-            raise ValueError("LIVE_RECOVERY_CLOCK_INVALID")
+            raise ValueError("LIVE_RECOVERY_SNAPSHOT_DRIFT")
+        # Normal completed writes may have filled part or all of the request
+        # while the provider was outside the lock. Never overwrite their facts.
+        additions = _recovery_additions(request, source, current.existing)
+        if not any(additions):
+            return "NO_GAP"
+        state = current.state
+        committed_at = _validated_recovery_clock(clock(), request.cutoff)
         through = max(committed_at, state.recovered_through) if state else committed_at
         payload = _compact_json(
             {
@@ -235,7 +279,7 @@ def recover_product(
                         for v in bars
                     ],
                 }
-                for raw, bars in zip(before, additions, strict=True)
+                for raw, bars in zip(current.before, additions, strict=True)
             ],
             separators=(",", ":"),
         )
@@ -251,8 +295,8 @@ def recover_product(
             COMMIT_RECOVERY,
             len(keys),
             *keys,
-            _as_text(subscription),
-            "" if state_raw is None else _as_text(state_raw),
+            current.subscription,
+            current.state_raw or "",
             plan,
             _epoch_millis(ends[-1]),
             payload,

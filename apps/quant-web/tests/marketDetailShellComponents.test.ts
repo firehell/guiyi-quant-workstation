@@ -10,6 +10,7 @@ const componentNames = [
   'MarketFactsDisclosure',
   'MarketDetailViewNav',
   'MarketDetailFactStrip',
+  'MarketDetailStatusStrip',
   'MarketDetailInsightDeck',
   'MarketDetailDisclosure',
   'MarketDetailSectionTabs',
@@ -40,8 +41,8 @@ test('top bar keeps text semantics and capability-gates alert actions', () => {
   for (const event of ['back', 'select-symbol', 'open-history', 'open-alert']) {
     assert.match(source, new RegExp(`(?:'${event}'|${event}):`))
   }
-  assert.match(template, /aria-label="返回"/)
-  assert.match(template, /aria-label="历史记录"/)
+  assert.match(template, /aria-label="返回市场"/)
+  assert.match(template, /historyLabel/)
   assert.doesNotMatch(template, /aria-label="更多"/)
   assert.match(template, /role="group" aria-label="详情页操作"/)
   assert.match(template, /canManageAlert/)
@@ -49,19 +50,35 @@ test('top bar keeps text semantics and capability-gates alert actions', () => {
   assert.doesNotMatch(template, /收藏|star/i)
 })
 
-test('view navigation retains the four business names and emits exact identities', () => {
+test('quote header names the comparison basis and limits status to quote availability', () => {
+  const { source, template } = parsedComponent('MarketDetailQuoteHeader')
+  assert.match(source, /marketQuoteBasisLabel/)
+  assert.match(source, /marketChangeBasisLabel/)
+  assert.match(source, /quoteAvailabilityLabel/)
+  assert.match(source, /formatMarketTime/)
+  assert.match(template, /quoteBasis/)
+  assert.match(template, /changeBasis/)
+  assert.match(template, /OHLCV/)
+  assert.match(source, /unified\?: boolean/)
+  assert.match(template, /'quote-header--unified': unified/)
+  assert.match(source, /props\.newow \? '1d'/)
+  assert.doesNotMatch(source, /props\.unified \? '1d'/)
+  assert.doesNotMatch(template, />\s*数据正常\s*</)
+})
+
+test('view navigation exposes six flat analysis choices and emits exact identities', () => {
   const { source, template } = parsedComponent('MarketDetailViewNav')
-  for (const label of ['Newow', '火天大有', '新苏冰', '自由看盘']) {
+  for (const label of ['震荡策略', '趋势策略', '主升浪', '火天大有', '苏冰预警', '自由看盘']) {
     assert.match(source, new RegExp(label))
   }
-  assert.match(source, /NEWOW_STRATEGIES/)
-  assert.match(source, /NEWOW_FREQUENCIES/)
+  assert.match(source, /newowFrequencies/)
   assert.match(source, /select:\s*\[identity:\s*MarketDetailIdentity\]/)
-  assert.match(template, /role="group" aria-label="Newow策略"/)
+  assert.match(template, /role="tablist" aria-label="分析选项"/)
   assert.match(template, /v-if="showSeriesControls"/)
   assert.match(template, /v-if="showFrequencyControls"/)
   assert.match(template, /role="group" aria-label="序列"/)
   assert.match(template, /role="group" aria-label="周期"/)
+  assert.doesNotMatch(template, /Newow策略|detail-view-nav__mobile/)
   assert.doesNotMatch(template, /disabled/)
 })
 
@@ -92,7 +109,10 @@ test('history uses one source and mobile drawer restores focus', () => {
   assert.equal((tabs.source.match(/history:\s*readonly MarketDetailHistoryItem\[\]/g) ?? []).length, 1)
   assert.doesNotMatch(tabs.source, /首次识别 \{\{ item\.occurredAt \}\}/)
   assert.match(tabs.source, /item\.timeLabel \?\? item\.occurredAt/)
-  assert.match(tabs.template, /v-if="history\.length > 0"/)
+  assert.doesNotMatch(tabs.template, /v-if="history\.length > 0"[^>]*role="tab"/)
+  assert.match(tabs.source, /await nextTick\(\)/)
+  assert.match(tabs.source, /scrollIntoView/)
+  assert.match(tabs.template, /暂无历史记录/)
   assert.match(tabs.template, /<MarketDetailDrawer/)
   assert.match(drawer.source, /previousFocus/)
   assert.match(drawer.source, /event\.key === 'Escape'/)

@@ -16,6 +16,13 @@ export const ALERT_RULE_CODES = {
   SUBING_THS: SUBING_THS_ALERT_RULE_CODE,
 } as const
 
+export function alertRuleCodeFromWireRecord(value: Record<string, unknown>): AlertRuleCode | null {
+  const ruleCode = value.rule_code
+  if (ruleCode === null) return null
+  if (typeof ruleCode !== 'string' || !ALERT_RULE_PRESENTATIONS.some((item) => item.ruleCode === ruleCode)) throw new Error('rule_code is invalid')
+  return ruleCode as AlertRuleCode
+}
+
 export type { AlertRuleCode } from '../types/market.ts'
 
 interface AlertRuleIdentity { readonly rule_code: string }

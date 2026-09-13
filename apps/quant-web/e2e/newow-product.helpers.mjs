@@ -2,7 +2,7 @@ import { performance } from 'node:perf_hooks'
 import richMacd from './fixtures/newow-rich-macd.json' with { type: 'json' }
 
 export const NEWOW_AS_OF = '2026-09-03T08:00:00.000Z'
-export const NEWOW_PATH = '/market/chart?symbol=rb&view=newow&strategy=trend&frequency=1d&series_kind=actual_dominant'
+export const NEWOW_PATH = '/market/chart?symbol=rb&view=newow&strategy=trend&frequency=1w&series_kind=actual_dominant'
 export const NEWOW_STRATEGIES = ['trend', 'oscillation', 'main_rise']
 export const NEWOW_FREQUENCIES = ['1w', '1d', '60m']
 
@@ -40,7 +40,7 @@ const STRATEGY_WIRE_FACTS = Object.freeze({
   }),
 })
 
-export function newowRoute(strategy = 'trend', frequency = '1d', extra = '') {
+export function newowRoute(strategy = 'trend', frequency = '1w', extra = '') {
   return `/market/chart?symbol=rb&view=newow&strategy=${strategy}&frequency=${frequency}&series_kind=actual_dominant${extra}`
 }
 
@@ -87,6 +87,7 @@ export async function installNewowProductFixtures(page, options = {}) {
     const [strategy, frequency] = options.longHistory.split(':')
     validateFixtureScenario(strategy, frequency, { longHistory: options.longHistory })
   }
+  if (options.initialClear === true) validateFixtureScenario('main_rise', '1w', options)
   const state = {
     requests: [], productRequests: [], unexpected: [], aborted: [],
     counts: new Map(), requestStartedAt: new Map(), deferred: new Map(),
@@ -117,15 +118,25 @@ export async function installNewowProductFixtures(page, options = {}) {
     const request = route.request()
     const url = new URL(request.url())
     const startedAt = performance.now()
-    if (url.origin === 'http://127.0.0.1:5182' && !url.pathname.startsWith('/api/')) return route.continue()
+    if ((url.hostname === '127.0.0.1' || url.hostname === 'localhost') && !url.pathname.startsWith('/api/')) return route.continue()
     state.requests.push({ url, method: request.method(), startedAt })
     if (request.method() !== 'GET') return unexpected(route, state, `non-GET ${request.method()} ${url.pathname}`)
+
+    if (url.pathname === '/api/v1/market/newow/product-capabilities') {
+      return route.fulfill({ json: weeklyCapabilities() })
+    }
 
     if (url.pathname === '/api/v1/market/newow/strategy-detail') {
       const section = url.searchParams.get('section') || 'chart'
       const strategy = url.searchParams.get('strategy') || 'trend'
       const frequency = url.searchParams.get('frequency') || '1d'
-      const queryError = validateProductQuery(url, section, strategy, frequency)
+      const queryError = validateProductQuery(
+        url,
+        section,
+        strategy,
+        frequency,
+        options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
+      )
       if (queryError !== null) return unexpected(route, state, queryError)
       const key = [strategy, frequency, section, url.searchParams.get('component') || '', url.searchParams.get('chart_before') || '', url.searchParams.get('history_before') || ''].join(':')
       const count = (state.counts.get(key) || 0) + 1
@@ -193,6 +204,18 @@ export async function installNewowProductFixtures(page, options = {}) {
   return state
 }
 
+function weeklyCapabilities() {
+  return {
+    schema_version: 'newow_product_capabilities_v1', release_stage: 'weekly', open_frequencies: ['1w'],
+    deferred_frequencies: [
+      { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+    open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
+    deferred_sections: [{ section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' }],
+  }
+}
+
 function validateFixtureScenario(strategy, frequency, options) {
   const make = (section, cursor = false, locateFrom = null) => {
     const url = fixtureValidationUrl(section, strategy, frequency, cursor, locateFrom)
@@ -208,7 +231,7 @@ function validateFixtureScenario(strategy, frequency, options) {
   }
 }
 
-function validateProductQuery(url, section, strategy, frequency) {
+function validateProductQuery(url, section, strategy, frequency, expectedAsOf = NEWOW_AS_OF) {
   const allowedBySection = {
     chart: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'from', 'through', 'chart_limit', 'chart_before', 'snapshot_token'],
     auxiliary: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'component', 'from', 'through', 'snapshot_token'],
@@ -222,13 +245,13 @@ function validateProductQuery(url, section, strategy, frequency) {
   }
   if (url.searchParams.get('product') !== 'rb' || url.searchParams.get('series_kind') !== 'actual_dominant') return `invalid Newow identity ${url.search}`
   if (!NEWOW_STRATEGIES.includes(strategy) || !NEWOW_FREQUENCIES.includes(frequency)) return `invalid Newow combination ${strategy}/${frequency}`
-  if (url.searchParams.get('as_of') !== NEWOW_AS_OF) return `unfrozen Newow as_of ${url.searchParams.get('as_of')}`
+  if (url.searchParams.get('as_of') !== expectedAsOf) return `unfrozen Newow as_of ${url.searchParams.get('as_of')}`
   const actual = [...url.searchParams.keys()]
   if (new Set(actual).size !== actual.length || actual.some((key) => !allowedBySection[section].includes(key))) return `unexpected Newow query ${url.search}`
   const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of'].includes(key)).sort().join(',')
   const allowedShapes = {
     chart: ['', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
-    auxiliary: ['component', 'component,snapshot_token', 'component,from,snapshot_token,through'],
+    auxiliary: ['component', 'component,snapshot_token', 'component,from,through', 'component,from,snapshot_token,through'],
     reference: ['', 'snapshot_token', 'performance_since,performance_through', 'performance_since,performance_through,snapshot_token', 'history_limit,performance_since,performance_through', 'history_before,history_limit,performance_since,performance_through,snapshot_token'],
     explanation: ['', 'snapshot_token'],
     comparator: ['', 'snapshot_token'],
@@ -252,7 +275,8 @@ function validateProductQuery(url, section, strategy, frequency) {
 }
 
 function validateFixtureEnvelope(payload, section, strategy, frequency, url, options = {}, companions = {}) {
-  if (payload.section !== section || payload.meta.identity.strategy !== strategy || payload.meta.identity.frequency !== frequency || payload.meta.as_of !== NEWOW_AS_OF) throw new Error('fixture envelope identity drift')
+  const expectedAsOf = options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF
+  if (payload.section !== section || payload.meta.identity.strategy !== strategy || payload.meta.identity.frequency !== frequency || payload.meta.as_of !== expectedAsOf) throw new Error('fixture envelope identity drift')
   const expectedToken = `snapshot:${strategy}:${frequency}:${payload.meta.data_revision_identity}`
   if (payload.meta.snapshot_token !== null && payload.meta.snapshot_token !== expectedToken) throw new Error('fixture snapshot token drift')
   const delivered = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'].filter((candidate) => payload[candidate].delivery === 'delivered')
@@ -274,7 +298,9 @@ function validateFixtureEnvelope(payload, section, strategy, frequency, url, opt
     const framedIds = payload.chart.value.frames.flatMap((frame) => frame.action_ids)
     if (JSON.stringify(framedIds) !== JSON.stringify(actionIds)) throw new Error('fixture frame/action order drift')
     const locateFrom = url?.searchParams.has('snapshot_token') && !url.searchParams.has('chart_before') ? url.searchParams.get('from') : null
-    let expected = facts.standardActions
+    let expected = options.initialClear === true && strategy === 'main_rise' && frequency === '1w'
+      ? payload.chart.value.actions
+      : facts.standardActions
     if (url?.searchParams.has('chart_before')) expected = []
     else if (locateFrom !== null) expected = [facts.interrupted.entry, facts.initial.entry, facts.initial.exit].filter((item) => item.trading_day === locateFrom)
     if (payload.chart.value.diagnostics.includes('NO_MAIN_ACTION_IS_VALID')) expected = []
@@ -282,7 +308,9 @@ function validateFixtureEnvelope(payload, section, strategy, frequency, url, opt
   }
   if (section === 'reference' && payload.reference.value !== null) {
     validateReferenceWire(payload.reference.value, companions.charts ?? [])
-    const expected = url?.searchParams.has('history_before')
+    const expected = options.initialClear === true && strategy === 'main_rise' && frequency === '1w'
+      ? []
+      : url?.searchParams.has('history_before')
       ? [facts.interrupted.trade, facts.initial.trade]
       : [facts.open.trade, ...(payload.reference.value.summary.closed_count === 0 ? [] : [facts.closed.trade])]
     if (JSON.stringify(payload.reference.value.items.map(tradeRelation)) !== JSON.stringify(expected.map(tradeRelation))) throw new Error('fixture ReferenceTrade/Action relation drift')
@@ -313,6 +341,19 @@ function validateChartWire(chart, strategy) {
     else if (strategy === 'main_rise') semanticPrice = frame.main_values.ma45
     else semanticPrice = actionItem.kind === 'BUILD' ? bar.low : bar.high
     if (Number(actionItem.reference_price) !== Number(semanticPrice)) throw new Error('fixture main-line semantic price drift')
+  }
+  if (strategy !== 'trend') {
+    if (chart.trend_channel !== null) throw new Error('fixture non-trend chart has trend channel')
+  } else {
+    const layer = chart.trend_channel
+    if (!layer || layer.kind !== 'trend_channel' || layer.period !== 10 || layer.formula_version !== 'newow_hhv_llv_channel_page_v1') throw new Error('fixture trend channel identity drift')
+    if (layer.points.length !== chart.bars.length) throw new Error('fixture trend channel alignment drift')
+    for (let index = 0; index < chart.bars.length; index++) {
+      const point = layer.points[index]
+      const bar = chart.bars[index]
+      if (JSON.stringify([point.bar_end, point.physical_contract, point.segment_id, point.source_identity]) !== JSON.stringify([bar.bar_end, bar.physical_contract, bar.segment_id, bar.source_identity])) throw new Error('fixture trend channel owner drift')
+      if (point.formula_version !== layer.formula_version || point.status.status !== 'ready' || point.upper === null || point.lower === null) throw new Error('fixture trend channel value/status drift')
+    }
   }
 }
 
@@ -395,12 +436,12 @@ function envelope(url, section, strategy, frequency, options) {
 function meta(url, strategy, frequency, section, options) {
   const revision = typeof options.revision === 'function' ? options.revision({ url, section, strategy, frequency }) : options.revision || 'fixture-revision-1'
   return {
-    schema_version: 'newow_product_detail_v1',
+    schema_version: 'newow_product_detail_v2',
     identity: { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas(strategy) },
     as_of: url.searchParams.get('as_of') || NEWOW_AS_OF,
     read_at: '2026-09-03T08:00:01.000Z', input_content_sha256: section === 'chart' && url.searchParams.has('snapshot_token') && url.searchParams.has('from') && !url.searchParams.has('chart_before') ? 'f'.repeat(64) : HASH[section] || HASH.chart,
     data_revision_identity: revision, snapshot_token: options.tokenlessSections?.includes(section) ? null : `snapshot:${strategy}:${frequency}:${revision}`,
-    reference_model_version: 'newow_marker_reference_zero_cost_v1',
+    reference_model_version: 'newow_marker_reference_zero_cost_v2',
     futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
   }
 }
@@ -461,6 +502,13 @@ function chartValue(url, strategy, frequency, options) {
   let actions = before ? [] : facts.standardActions
   if (locateFrom !== null) actions = [facts.interrupted.entry, facts.initial.entry, facts.initial.exit].filter((item) => item.trading_day === locateFrom)
   if (options.noAction) actions = []
+  if (options.initialClear === true && strategy === 'main_rise' && frequency === '1w' && !before && locateFrom === null) {
+    const owner = bars.at(-1)
+    actions = [{
+      ...action('main_rise-1w-initial-clear-no-entry', 'CLEAR', owner, MAIN_VALUES.main_rise.ma45, 0),
+      trade_eligibility: 'INITIAL_CLEAR_NO_ENTRY',
+    }]
+  }
   if (options.visualRich) bars = bars.map(bar => {
     const atBar = actions.find(item => item.bar_end === bar.bar_end)
     if (atBar) return actionOwnerBar(atBar, strategy, frequency)
@@ -480,26 +528,52 @@ function chartValue(url, strategy, frequency, options) {
   return {
     chart_from: locateFrom ?? '2025-01-01', chart_through: locateFrom ?? '2026-09-03', page_identity: HASH.page,
     bars,
-    frames: bars.map((bar) => ({ bar_end: bar.bar_end, main_state: actions.some((item) => item.bar_end === bar.bar_end && item.kind === 'BUILD') ? 'BUILD' : 'HOLD', main_values: frameMainValues(strategy, actions.filter((item) => item.bar_end === bar.bar_end), bar, options.visualRich), status: ready(), action_ids: actions.filter((item) => item.bar_end === bar.bar_end).map((item) => item.signal_id), hint_ids: hints.filter((item) => item.bar_end === bar.bar_end).map((item) => item.hint_id) })),
+    frames: bars.map((bar) => ({ bar_end: bar.bar_end, main_state: actions.some((item) => item.bar_end === bar.bar_end && item.kind === 'BUILD') ? 'BUILD' : actions.some((item) => item.bar_end === bar.bar_end && item.trade_eligibility === 'INITIAL_CLEAR_NO_ENTRY') ? 'CLEAR' : 'HOLD', main_values: frameMainValues(strategy, actions.filter((item) => item.bar_end === bar.bar_end), bar, options.visualRich), status: ready(), action_ids: actions.filter((item) => item.bar_end === bar.bar_end).map((item) => item.signal_id), hint_ids: hints.filter((item) => item.bar_end === bar.bar_end).map((item) => item.hint_id) })),
+    trend_channel: trendChannelValue(strategy, bars),
     actions,
     hints,
-    diagnostics: options.noAction ? ['NO_MAIN_ACTION_IS_VALID'] : [], next_before: before || locateFrom ? null : 'chart-page-2',
+    diagnostics: options.initialClear === true && strategy === 'main_rise' && frequency === '1w' ? ['INITIAL_CLEAR_NO_ENTRY'] : options.noAction ? ['NO_MAIN_ACTION_IS_VALID'] : [], next_before: before || locateFrom ? null : 'chart-page-2',
     repainting: false, formal_signal_eligible: true, allowed_uses: ['product_chart', 'reference_input'],
   }
+}
+
+function trendChannelValue(strategy, bars) {
+  if (strategy !== 'trend') return null
+  let owner = null
+  let highs = []
+  let lows = []
+  const points = bars.map((bar) => {
+    const nextOwner = `${bar.physical_contract}:${bar.segment_id}`
+    if (nextOwner !== owner) { highs = []; lows = []; owner = nextOwner }
+    highs = [...highs, Number(bar.high)].slice(-10)
+    lows = [...lows, Number(bar.low)].slice(-10)
+    return {
+      bar_end: bar.bar_end,
+      upper: String(Math.max(...highs)),
+      lower: String(Math.min(...lows)),
+      formula_version: 'newow_hhv_llv_channel_page_v1',
+      status: ready(),
+      physical_contract: bar.physical_contract,
+      segment_id: bar.segment_id,
+      source_identity: bar.source_identity,
+    }
+  })
+  return { kind: 'trend_channel', period: 10, formula_version: 'newow_hhv_llv_channel_page_v1', points }
 }
 
 function referenceValue(url, strategy, frequency, options) {
   const page = Boolean(url.searchParams.get('history_before'))
   const zero = options.zeroClosed === true
   const facts = scenarioFacts(strategy, frequency, options.longHistory === `${strategy}:${frequency}`)
+  const initialClear = options.initialClear === true && strategy === 'main_rise' && frequency === '1w'
   const summary = {
-    membership_policy: 'entry_in_window_v1', closed_count: zero ? 0 : 1, win_count: zero ? 0 : 1, loss_count: 0, flat_count: 0,
-    win_rate_pct: zero ? null : '100', mean_return_pct: zero ? null : facts.closed.trade.reference_return_pct, sum_return_percentage_points: zero ? null : facts.closed.trade.reference_return_pct,
-    open_count: 1, interrupted_count: 1, initial_count: 1,
+    membership_policy: 'entry_in_window_v1', closed_count: zero || initialClear ? 0 : 1, win_count: zero || initialClear ? 0 : 1, loss_count: 0, flat_count: 0,
+    win_rate_pct: zero || initialClear ? null : '100', mean_return_pct: zero || initialClear ? null : facts.closed.trade.reference_return_pct, sum_return_percentage_points: zero || initialClear ? null : facts.closed.trade.reference_return_pct,
+    open_count: initialClear ? 0 : 1, interrupted_count: initialClear ? 0 : 1, initial_count: initialClear ? 0 : 1,
   }
   return {
     performance_since: '2026-01-01', performance_through: '2026-09-03', actual_available_through: '2026-09-03', reference_cutoff: url.searchParams.get('as_of') || NEWOW_AS_OF,
-    reference_input_sha256: HASH.reference, summary, items: page ? [facts.interrupted.trade, facts.initial.trade] : [facts.open.trade, ...(zero ? [] : [facts.closed.trade])], next_before: page ? null : 'reference-page-2',
+    reference_input_sha256: HASH.reference, summary, items: initialClear ? [] : page ? [facts.interrupted.trade, facts.initial.trade] : [facts.open.trade, ...(zero ? [] : [facts.closed.trade])], next_before: initialClear || page ? null : 'reference-page-2',
     executable: false, auto_order: false, allowed_uses: ['page_parity_reference', 'research_display'],
   }
 }
@@ -507,7 +581,7 @@ function referenceValue(url, strategy, frequency, options) {
 function trade(tradeId, strategy, frequency, entry, exit, status, result, mark, entrySignalId, entrySequence, entryPrice, exitSignalId, exitPrice, markOwner, markPrice, membership = 'entry_in_window_v1') {
   return {
     reference_trade_id: tradeId, product: 'rb', strategy_code: strategy, frequency, physical_contract: entry.physical_contract, segment_id: entry.segment_id,
-    formula_versions: formulas(strategy), reference_model_version: 'newow_marker_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+    formula_versions: formulas(strategy), reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     entry_signal_id: entrySignalId, entry_sequence: entrySequence, entry_bar_end: entry.bar_end, entry_trading_day: entry.trading_day, entry_reference_price: entryPrice,
     exit_signal_id: exit ? exitSignalId : null, exit_bar_end: exit?.bar_end || null, exit_trading_day: exit?.trading_day || null, exit_reference_price: exit ? exitPrice : null,
     status, holding_bars: 1, reference_return_pct: result, mark_bar_end: exit ? null : markOwner.bar_end, mark_reference_price: exit ? null : markPrice, mark_change_pct: mark,

@@ -29,6 +29,15 @@ from app.market_data.newow.historical_snapshot import (
     NewowHistoricalSnapshotResolver,
 )
 from app.market_data.newow.public_errors import public_product_error
+from app.market_data.newow.product_release import (
+    DEFERRED_FREQUENCIES,
+    DEFERRED_SECTIONS,
+    OPEN_FREQUENCIES,
+    OPEN_SECTIONS,
+    RELEASE_STAGE,
+    require_open_frequency,
+    require_open_section,
+)
 from app.market_data.newow.inflight import (
     InFlightCoordinator,
 )
@@ -64,7 +73,10 @@ from app.schemas.market_newow import (
     NewowTrendDetailResponse,
 )
 from app.schemas.market_newow_product import (
+    DeferredFrequencyOut,
+    DeferredSectionOut,
     NewowHistoricalSnapshotResponse,
+    NewowProductCapabilitiesResponse,
     NewowProductResponse,
 )
 
@@ -109,6 +121,27 @@ _PRODUCT_QUERY_FIELDS = frozenset(
     }
 )
 _HISTORICAL_QUERY_FIELDS = frozenset({"product", "strategy", "frequency"})
+
+
+@router.get(
+    "/product-capabilities", response_model=NewowProductCapabilitiesResponse
+)
+def newow_product_capabilities() -> NewowProductCapabilitiesResponse:
+    """Return the single public scope used by clients for this staged release."""
+    return NewowProductCapabilitiesResponse(
+        schema_version="newow_product_capabilities_v1",
+        release_stage=RELEASE_STAGE,
+        open_frequencies=[item.value for item in OPEN_FREQUENCIES],
+        deferred_frequencies=[
+            DeferredFrequencyOut(frequency=frequency.value, reason_code=reason)
+            for frequency, reason in DEFERRED_FREQUENCIES
+        ],
+        open_sections=list(OPEN_SECTIONS),
+        deferred_sections=[
+            DeferredSectionOut(section=section, reason_code=reason)
+            for section, reason in DEFERRED_SECTIONS
+        ],
+    )
 
 
 @router.get("/trend-detail", response_model=NewowTrendDetailResponse)
@@ -231,6 +264,7 @@ def newow_historical_snapshot(
 
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
+        require_open_frequency(ProductFrequency(frequency))
         result = _build_historical_resolver(session, cancelled, lambda: now).resolve(
             product, ProductStrategy(strategy), ProductFrequency(frequency)
         )
@@ -294,6 +328,8 @@ def newow_strategy_detail(
     ):
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
     try:
+        require_open_frequency(ProductFrequency(frequency))
+        require_open_section(section)
 
         def cancelled() -> bool:
             try:
@@ -462,6 +498,26 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                 }
                 for frame in value.replay.frames
             ],
+            "trend_channel": None
+            if value.trend_channel is None
+            else {
+                "kind": value.trend_channel.kind,
+                "period": value.trend_channel.period,
+                "formula_version": value.trend_channel.formula_version,
+                "points": [
+                    {
+                        "bar_end": point.bar_end,
+                        "upper": _decimal(point.upper),
+                        "lower": _decimal(point.lower),
+                        "formula_version": point.formula_version,
+                        "status": _status(point.availability),
+                        "physical_contract": point.physical_contract,
+                        "segment_id": point.segment_id,
+                        "source_identity": point.source_identity,
+                    }
+                    for point in value.trend_channel.points
+                ],
+            },
             "actions": [
                 {
                     "signal_id": item.signal_id,

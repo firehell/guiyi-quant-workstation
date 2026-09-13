@@ -89,6 +89,8 @@ export interface MarketDetailHeaderModel {
   productName: string
   exchange: string
   sector: string
+  frequency: MarketFrequency
+  tradingDay: string | null
   seriesKind: SeriesKind
   displayContract: string | null
   asOf: string | null

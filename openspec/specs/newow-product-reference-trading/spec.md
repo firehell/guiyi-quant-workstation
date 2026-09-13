@@ -56,8 +56,11 @@ database connections remain separately authorized operations, not a consequence 
 ### Requirement: Read-only readiness enumerates independent dependencies
 
 Readiness audit SHALL use the existing reader and shared validated MDS rank1 owner enumeration before
-reading physical prefixes. It SHALL collect every independent contract/frequency failure across chart,
-auxiliary, reference and three-frequency explanation inputs, preserving owner segments and consumer provenance.
+reading physical prefixes. It SHALL enumerate the complete planned matrix, but only read dependencies for the
+currently opened release scope. In the weekly stage this means `1w` chart, auxiliary, reference and comparator;
+`1d/60m` main cases and all explanation cases remain visible as `UNOPENED`, cause no reader calls and do not count
+as incomplete readiness. When a later stage opens them, the audit SHALL collect every independent
+contract/frequency failure across that newly opened scope, preserving owner segments and consumer provenance.
 Missing metadata SHALL retain UNKNOWN enumeration and null counts, with only bounded repair proposals.
 Exact repair requests SHALL be deduplicated and use the same read-only contract warm-up planner as maintenance;
 source nonpositive rows and integrity errors MUST NOT become blind download targets.
@@ -68,9 +71,10 @@ Any source/integrity finding in that scope SHALL yield REVIEW_REQUIRED with no o
 
 The audit SHALL require fixed timezone-aware as_of, an active symbol or mutually exclusive active universe,
 serial work and deadline budgets. Budget interruption MUST retain UNSTARTED cases and explicit incomplete
-coverage. The 60-product matrix SHALL contain 540 main strategy/frequency cases and preserve actual section
-EVIDENCE_REQUIRED/NOT_APPLICABLE/WARMING states independently of readiness counts. Only a real section service
-READY result may count as main ready. Completed auditing MUST NOT imply all dependencies are ready.
+coverage within the opened scope. The 60-product matrix SHALL contain 540 planned main strategy/frequency cases,
+including explicitly UNOPENED cases, and preserve actual section EVIDENCE_REQUIRED/NOT_APPLICABLE/WARMING states
+independently of readiness counts. Only a real section service READY result may count as main ready. Completed
+auditing MUST NOT imply all dependencies are ready.
 
 Composition SHALL contain only read authorities and the pure planner, never a provider, metadata writer,
 maintenance apply pipeline or Redis. A fresh read-only database transaction SHALL use no-autoflush and always
@@ -112,6 +116,7 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 | 能力 | 适用策略与周期 | formula identity | evidence status | warming / repaint / as-of 边界 |
 |---|---|---|---|---|
 | 趋势主状态 | `trend × 1w/1d/60m` | `newow_trend_band_page_v2` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
+| 趋势通道圆点 | `trend × 1w/1d/60m`，chart-layer only | `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | 同批 completed Bar 的 HHV(high,10) 绿色上轨与 LLV(low,10) 红色下轨；按物理合约和 Segment 重置，不进入趋势策略或 ReferenceTrade 身份 |
 | 震荡主状态 | `oscillation × 1w/1d/60m` | `newow_oscillation_hhv_llv10_page_v1` + `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；HHV/LLV10 与同 Bar `CLEAR → BUILD` |
 | 主升浪主状态 | `main_rise × 1w/1d/60m` | `newow_main_rise_ma35_ma45_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；MA35/MA45 主动作不由 Hint 改写 |
 | S 跑 / D1–D3 | `trend/main_rise × 1w/1d/60m`，Hint only | `newow_escape_d123_page_v2` | `ACTIVE_CODE_VERIFIED` | 必须报告公式所需 warming 与已验证 repaint 属性；只使用当时 completed 输入，不改变 BUILD/CLEAR |
@@ -299,6 +304,42 @@ Action MUST 带稳定 identity、策略及公式、周期、品种、物理合�
 - **WHEN** 投影历史
 - **THEN** 先关闭原交易，再建立新交易并保留两个 ID；不按日期去重，也不反转顺序
 
+### Requirement: Initial main-rise CLEAR without an entry remains an action-only fact
+
+当主升浪某个物理 owner/segment 的完整、未左裁生命周期重放从有效黄带开始，之前没有任何真实或 warm-up
+BUILD，且首次黄转蓝产生 CLEAR 时，产品 SHALL 输出
+`CLEAR + trade_eligibility=INITIAL_CLEAR_NO_ENTRY + related_build_id=null`。该资格只允许用于
+`main_rise`、eligible completed Bar、`main_state=CLEAR` 和同 Bar `sequence=0`；不得用于趋势、震荡、BUILD、
+已有 Action 的 owner、带关联 BUILD 或带持仓/收益事实的转换。
+
+生产 replay MUST 由 `NewowProductReader` 在既有 MDS lifecycle coverage 验证成功后传递按
+product/frequency/physical_contract/segment、首尾 Bar、数量、有序输入 SHA-256、source 和 cutoff 绑定的
+evidence。adapter 与 ReferenceTradeProjector MUST 各自验证 evidence 与输入完全一致；缺失、错 owner、错周期、
+左裁、Bar 替换、旧 cutoff 或重复 evidence 均 fail-closed。warm-up 中发生的初始 CLEAR 只消费一次资格而不输出，
+后续不能重建资格；物理 owner/segment 切换后独立重置。
+
+ReferenceTradeProjector SHALL 独立验证该 Action 的完整先前 frame/action 历史、MA35/MA45 状态和参考价；
+验证成功后只追加一次 `INITIAL_CLEAR_NO_ENTRY` diagnostic，不创建或关闭 ReferenceTrade，不制造零收益，
+closed/open/interrupted/initial-before-window 计数均不因此增加。之后真实 BUILD/CLEAR 仍按既有合同形成正常交易。
+未来 Action 不得泄露到较早 as-of；viewport、分页和 chart limit 只能在完整 replay 后裁剪。
+
+typed product schema 与 ReferenceTrade model SHALL 分别使用 `newow_product_detail_v2` 和
+`newow_marker_reference_zero_cost_v2`。合同组须参与 cache、dependency proof、chart/reference page identity 与
+ReferenceTrade ID；v2 Web MUST 拒绝 v1 envelope，旧 token/cursor 不得跨版本复用。公式、profile、
+`newow_futures_segment_interrupt_v1`、Action/Hint ID、capability/historical 与旧 `/trend-detail` 合同不变。
+
+#### Scenario: The first observed main-rise exit has no entry
+
+- **GIVEN** reader 证明同一 owner 的完整前缀从黄带开始，之前没有 BUILD，当前首次黄转蓝
+- **WHEN** adapter 和 projector 重放该前缀
+- **THEN** 图表显示“清仓（无入场）”，详情说明未观察到可配对 BUILD，投影为零交易且不产生收益
+
+#### Scenario: Lifecycle evidence does not bind the replay
+
+- **GIVEN** evidence 缺失、错配、左裁、过期或被复用于替换过 Bar 的输入
+- **WHEN** adapter 或 projector 尝试认可初始 CLEAR
+- **THEN** 以 pairing/evidence conflict fail-closed，不从空 Action 历史推断生命周期完整
+
 ### Requirement: Reference return is not an account return
 
 `ReferenceTrade` SHALL 是从当前数据和固定版本规则重算的只读投影，绝不是 Position、Order、Account、
@@ -472,6 +513,42 @@ MUST NOT 截断 warm-up、owner 验证、参考统计或比较器的必要计算
 - **WHEN** 服务装配响应
 - **THEN** 不调用 ReferenceTrade 统计、三副图、多周期解释或比较器，主图不等待未请求研究
 
+### Requirement: Trend channel dots are independent aligned display facts
+
+`strategy=trend` 的 `chart.value` SHALL 返回独立 `trend_channel` 图层。绿色上轨逐 Bar 使用冻结
+v3.2.82 页面 `HHV(high,10)`，红色下轨逐 Bar 使用 `LLV(low,10)`；两者只读取该 chart replay
+已经读取的同批 completed Bars，并按 `(physical_contract, segment_id)` 重置。少于十根的真实
+Segment 前缀 SHALL 保留页面的部分窗口语义，第一根的 upper/high 与 lower/low 即为可用值；不得以
+固定十根门槛删除这些页面事实。若权威 Bar 缺失、Bar 与图层 owner/source 身份冲突或无法建立有效
+同 Segment prefix，则对应点 SHALL 为 `status=unavailable`、`upper/lower=null` 并返回 reason code，
+不得跨换月借值或补造坐标。同一 owner run 的唯一 Bar 时间倒序时整个 run SHALL fail-closed；重复 Bar
+及其后不足十根可信 Bars 的污染前缀 SHALL unavailable，只有重新积累十根严格递增、非重复 Bars 后才可
+恢复 ready。`source_identity` 是逐 Bar 来源身份，图层必须逐点原样对齐，不能误当成 owner-run 常量。
+
+图层及每个点 SHALL 保留 `formula_version=newow_hhv_llv_channel_page_v1`；每个点 SHALL 与返回 Bar
+按数量、顺序、`bar_end`、physical contract、Segment 和 source identity 一一对齐。该公式身份 MUST
+NOT 加入 trend `ProductIdentity.formula_versions`，也不得改变 `main_state`、主图 A/B、Action、Hint、
+ReferenceTrade 或收益。非 trend chart SHALL 返回 `trend_channel=null`；trend 响应缺少该字段或返回 null
+时 Web SHALL 拒绝该 chart，不能把合同缺失静默解释为无图层，也不得在浏览器计算替代值。
+
+Web SHALL 使用独立 primitive 在真实价格坐标绘制圆点，不连线：upper 为
+`rgba(52,199,89,0.9)`、lower 为 `rgba(255,59,48,0.9)`、媒体坐标半径固定 `2.5px`。趋势柱继续位于
+bottom layer，圆点位于 normal layer，K 线与 Action marker 交互保持可见。product、strategy、
+frequency、snapshot、page identity 或分页累积变化时，primitive SHALL 以当前已验证图层整包替换；
+null 或非 trend 响应 SHALL 清空旧点。
+
+#### Scenario: A new physical owner begins after a high prior segment
+
+- **GIVEN** 前一 Segment 的十根 high 均高于新物理合约第一根 high
+- **WHEN** trend chart 计算新 Segment 的第一个通道点
+- **THEN** upper 等于新 Bar high、lower 等于新 Bar low，不继承旧 Segment 极值
+
+#### Scenario: An unavailable point is aligned but not drawn
+
+- **GIVEN** chart 返回与 Bar 同位置但 `status=unavailable` 且 upper/lower 为 null 的通道点
+- **WHEN** Web 验证并投影主图
+- **THEN** 保留显式不可用事实但不生成绿色或红色圆点，也不使用邻近 Bar 补点
+
 ### Requirement: White detail preserves section ownership and accessible disclosure
 
 The Newow route SHALL use a white full-width shell with document scrolling, a compact two-line
@@ -482,7 +559,11 @@ current snapshot explanation MUST NOT be presented as historical reasoning.
 
 The chart SHALL share one timeline across price, same-Bar volume and one selected auxiliary pane.
 MACD SHALL load by default after chart acceptance; reselecting the selected component MUST NOT
-close or reload it. The quote SHALL use an independent bounded completed actual-dominant D1
+close or reload it. Every selected auxiliary request SHALL carry the accepted chart's exact
+`chart_from/chart_through` window and snapshot proof. A compatible chart-window change SHALL move
+the auxiliary lifecycle out of ready until that exact window is loaded or restored from its own
+window-keyed cache; same-window chart pagination MUST NOT cause a duplicate auxiliary request.
+The quote SHALL use an independent bounded completed actual-dominant D1
 read of two Bars with physical-owner validation, labeled as non-live. Reference SHALL load once
 on first visibility, preserve explicit retry and manual cursor pagination, and render vertical
 cards with raw identities accessible in details. Filtering and chart location MUST NOT alter
@@ -494,6 +575,13 @@ server statistics. Explanation and comparator SHALL remain user-requested and di
 - **WHEN** it leaves and re-enters the viewport
 - **THEN** the client SHALL reuse it without prefetching every history cursor
 - **AND** a failed first request SHALL require explicit retry
+
+#### Scenario: Chart navigation changes auxiliary ownership
+
+- **GIVEN** the current auxiliary is ready for the accepted default chart window
+- **WHEN** exact reference location loads an older owner window and the user later returns to current
+- **THEN** each accepted window selects auxiliary facts by the same snapshot and exact from/through bounds
+- **AND** no prior ready auxiliary is aligned to a different owner window or exposed as ready-empty
 
 ### Requirement: MACD auxiliary display preserves the generic kernel contract
 
@@ -516,8 +604,8 @@ The MACD-only envelope SHALL add `display_adapter_version`, `parameters` and `pa
 each segment's `data.dif/dea/histogram` SHALL contain aligned points with `bar_end`, `value`,
 `ready`, `valid` and `reason`. DIF MAY be ready while DEA and histogram remain warming.
 The branch SHALL set `repainting=false`, `formal_signal_eligible=false`, `page_parity=false`,
-and `allowed_uses=["research_display"]`. Existing auxiliary shapes and the top-level
-`newow_product_detail_v1` SHALL remain compatible. MACD MUST NOT feed actions, reference returns
+and `allowed_uses=["research_display"]`. Existing auxiliary branch shapes SHALL remain compatible;
+the top-level envelope SHALL use `newow_product_detail_v2`. MACD MUST NOT feed actions, reference returns
 or Alert. The client SHALL reject malformed, non-finite, misaligned or contradictory points.
 
 #### Scenario: Display windows share a physical MACD prefix
@@ -651,6 +739,28 @@ repainting、formal-signal eligibility、允许用途、实际图表/统计窗�
 Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置及重试/历史入口提示；未知 reason
 不得透传文本或诱导历史回退。其他面板缺失不得清除已验证主图。
 
+分阶段发布 MUST 由无数据库依赖的 `GET /api/v1/market/newow/product-capabilities` 返回唯一公开边界，
+并由当前与历史 typed endpoint 在进入 reader/service 前执行同一 server-owned Gate。当前周版 stage 只开放
+`1w` 的 chart/auxiliary/reference/comparator；`1d/60m` 分别返回 `NEWOW_FREQUENCY_NOT_OPEN`，依赖未开放
+跨周期输入的 explanation 返回 `NEWOW_SECTION_NOT_OPEN`。Web 必须严格校验 capability envelope；旧链接和
+存储偏好不得把未开放周期静默改写为 `1w`，而要显示本版未开放并提供明确回到周线的操作。
+该 stage 不删除 kernel/reader 的三周期能力，不改变 HTDY/SuBing/Free，也不改变旧 `/trend-detail` 的固定 D1
+兼容语义。后续日版或 60m 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
+
+#### Scenario: Deferred direct request cannot bypass the weekly stage
+
+- **GIVEN** 当前 capability 的 `release_stage=weekly`
+- **WHEN** 客户端直接请求 typed current/historical endpoint 的 `1d` 或 `60m`
+- **THEN** 服务在构造 reader/service 前返回分类 409 `NEWOW_FREQUENCY_NOT_OPEN`
+- **AND** 不改写 frequency、不请求其他周期、不影响旧固定 D1 兼容 endpoint
+
+#### Scenario: Cross-frequency explanation remains closed
+
+- **GIVEN** 周线主图和独立同周期面板可用，但 explanation 仍需要未开放的 D1/60m 输入
+- **WHEN** 客户端请求 `1w section=explanation`
+- **THEN** 返回分类 409 `NEWOW_SECTION_NOT_OPEN`
+- **AND** 不删除输入后沿用综合总分，也不创造周线简化评分
+
 #### Scenario: A requested explanation has an evidence gap
 
 - **GIVEN** 主策略事实可用，但某解释输入来源无法证明
@@ -738,6 +848,8 @@ pagination SHALL preserve provenance; explicit historical windows, older-window 
 historical snapshot mode SHALL suppress it. Default reload SHALL restore it only after acceptance.
 Loading/stale, token rebuild, identity reset and dispose SHALL suppress the current claim; late or
 rejected responses MUST NOT restore it.
+Historical-window labelling SHALL likewise come from accepted explicit/older/historical-snapshot request
+provenance; absence of a current claim alone MUST NOT relabel retained loading or stale content as history.
 History filters SHALL affect only history rows and SHALL preserve the server summary and waiting state.
 
 Reference-card intraday labels SHALL show Shanghai MM-DD HH:mm; cross-year comparisons SHALL retain
@@ -777,6 +889,8 @@ All prices and returns SHALL remain server Decimal strings; no frontend return f
 - **WHEN** 当前请求遭遇允许重建的 409
 - **THEN** 关联旧资源与其他在途请求失效，当前请求可保留身份完成最多一次去除旧绑定的重建
 - **AND** 第二次失败不再重建，429 不得触发自动重试
+- **AND** auxiliary 不得去除 snapshot proof 后直接重试；首次 409 先按原 current 或 explicit/older
+  chart window 重建主图，再至多发起一次带新 snapshot proof 的 auxiliary 请求，重复 409 后显式停止
 
 #### Scenario: Compatible navigation preserves independent reference state
 

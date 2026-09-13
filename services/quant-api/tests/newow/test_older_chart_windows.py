@@ -63,6 +63,38 @@ def test_hourly_exhausts_all_pages_before_issuing_older_window(product_cases):
     assert older.chart.value.bars[-1].bar.bar_end < last.chart.value.bars[0].bar.bar_end
 
 
+def test_chart_page_cursor_from_v1_contract_is_rejected_after_v2_upgrade(
+    product_cases, monkeypatch
+):
+    import app.market_data.newow.product_service as product_service_module
+
+    service, _, facts = setup_service(product_cases, count=72)
+    request = ProductServiceQuery(
+        "rb",
+        "trend",
+        "1d",
+        since=facts.coverage.start,
+        through=facts.coverage.through,
+        as_of=facts.as_of,
+        chart_limit=11,
+    )
+    monkeypatch.setattr(
+        product_service_module,
+        "REFERENCE_MODEL_VERSION",
+        "newow_marker_reference_zero_cost_v1",
+    )
+    v1_cursor = service.query(request).chart.value.next_before
+    assert v1_cursor is not None
+
+    monkeypatch.setattr(
+        product_service_module,
+        "REFERENCE_MODEL_VERSION",
+        "newow_marker_reference_zero_cost_v2",
+    )
+    with pytest.raises(ValueError, match="NEWOW_CURSOR_GENERATION_CONFLICT"):
+        service.query(replace(request, chart_before=v1_cursor))
+
+
 def test_disjoint_physical_windows_revalidate_authoritative_anchor(product_cases):
     service, reader, facts = setup_service(product_cases, count=1040)
     bars = facts.physical[("RB2605", BarFrequency.D1)]

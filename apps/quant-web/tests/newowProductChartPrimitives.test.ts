@@ -7,6 +7,9 @@ import {
   buildNewowAuxiliaryDisclosure,
   buildNewowProductChartModel,
   chartMarkerTime,
+  classifyNewowHintTone,
+  preserveNewowViewport,
+  buildNewowActionCallouts,
   resolveNewowAuxiliaryRenderState,
 } from '../src/components/market/detail/newow/newowProductChartPrimitives.ts'
 import type {
@@ -32,6 +35,38 @@ test('projects each server-owned main layer for all nine strategy-period identit
       assert.equal(model.mainLines.every((line) => line.segmentId === 'segment-1'), true)
     }
   }
+})
+
+test('preserves initial-clear eligibility into the marker label and detail model', () => {
+  const response = chartResponse('main_rise', '1d')
+  const value = response.value!
+  const source = value.bars[1]!
+  value.actions.push({
+    signal_id: 'initial-clear', kind: 'CLEAR', bar_end: source.bar_end,
+    trading_day: source.trading_day, reference_price: '100',
+    physical_contract: source.physical_contract, segment_id: source.segment_id,
+    related_build_id: null, trade_eligibility: 'INITIAL_CLEAR_NO_ENTRY', sequence: 0,
+  } as any)
+  value.frames[1]!.action_ids = ['initial-clear']
+  value.frames[1]!.main_state = 'CLEAR'
+
+  const model = buildNewowProductChartModel(response)
+  const action = model.actions[0]!
+  assert.equal(action.tradeEligibility, 'INITIAL_CLEAR_NO_ENTRY')
+  assert.equal(
+    primitives.productChartMarker(action, null, { year: 2026, month: 8, day: 15 }).text,
+    '清仓（无入场）',
+  )
+  assert.equal(buildNewowActionCallouts(model)[0]?.title, '清仓（无入场）')
+  assert.deepEqual(primitives.describeNewowProductAction(action), {
+    label: '清仓（无入场）',
+    explanation: '初始无入场：未观察到可配对 BUILD，不生成参考交易。',
+  })
+  assert.equal(
+    primitives.newowInitialClearLabel('INITIAL_CLEAR_NO_ENTRY'),
+    '清仓（无入场）',
+  )
+  assert.equal(primitives.newowInitialClearLabel('ELIGIBLE'), null)
 })
 
 test('preserves same-Bar CLEAR then BUILD identities and keeps hint anchor separate from action reference price', () => {
@@ -196,10 +231,10 @@ function chartResponse(
   ]
   return {
     meta: {
-      schema_version: 'newow_product_detail_v1',
+      schema_version: 'newow_product_detail_v2',
       identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64),
-      data_revision_identity: null, snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v1',
+      data_revision_identity: null, snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v2',
       futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     },
     section: 'chart',
@@ -233,7 +268,7 @@ type MutableChartResponse = {
 type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly (infer U)[] ? Mutable<U>[] : T[K] extends object ? Mutable<T[K]> : T[K] }
 
 
-test('missing and warming main values break runs and trend band, including an absent frame', () => {
+test('trend columns keep valid isolated Bars and omit missing or warming facts', () => {
   const response = chartResponse('trend', '60m')
   const value = response.value!
   const third = bar('2026-08-16T07:00:00Z', '2026-08-16', '102')
@@ -242,12 +277,19 @@ test('missing and warming main values break runs and trend band, including an ab
   value.frames[1]!.main_values.a = null
   let model = buildNewowProductChartModel(response)
   assert.deepEqual(model.mainLines.filter(line => line.key === 'a').map(line => line.points.length), [1, 1])
-  assert.equal(model.bandAreas.length, 0)
+  assert.deepEqual(model.bandAreas.map(area => area.time), [
+    chartMarkerTime(value.bars[0]!.bar_end, '60m', value.bars[0]!.trading_day),
+    chartMarkerTime(value.bars[2]!.bar_end, '60m', value.bars[2]!.trading_day),
+  ])
   value.frames.splice(1, 1)
   model = buildNewowProductChartModel(response)
   assert.deepEqual(model.mainLines.filter(line => line.key === 'b').map(line => line.points.length), [1, 1])
   value.frames[1]!.status.status = 'warming'
-  assert.equal(buildNewowProductChartModel(response).mainLines.filter(line => line.key === 'b').length, 1)
+  model = buildNewowProductChartModel(response)
+  assert.equal(model.mainLines.filter(line => line.key === 'b').length, 1)
+  assert.deepEqual(model.bandAreas.map(area => area.time), [
+    chartMarkerTime(value.bars[0]!.bar_end, '60m', value.bars[0]!.trading_day),
+  ])
 })
 
 test('MACD uses point times, preserves signed zero and splits invalid or warming points', () => {
@@ -276,23 +318,210 @@ test('aligns auxiliary by chart owner and exact time, never auxiliary array inde
 })
 
 
-test('band primitive paints authoritative coordinates and releases attachment on detach', async () => {
+test('trend model projects one 35%-opacity column per ready Bar with its own state', () => {
+  const response = chartResponse('trend', '1d')
+  const model = buildNewowProductChartModel(response)
+
+  assert.deepEqual(model.bandAreas, [
+    {
+      time: { year: 2026, month: 8, day: 14 },
+      a: 99,
+      b: 101,
+      color: 'rgba(54, 90, 245, 0.35)',
+    },
+    {
+      time: { year: 2026, month: 8, day: 15 },
+      a: 100,
+      b: 102,
+      color: 'rgba(245, 183, 38, 0.35)',
+    },
+  ])
+
+  response.value!.bars.splice(1, 1)
+  response.value!.frames.splice(1, 1)
+  assert.equal(buildNewowProductChartModel(response).bandAreas.length, 1, 'an isolated valid Bar remains visible')
+})
+
+test('trend model projects only ready channel facts at their real prices', () => {
+  const response = chartResponse('trend', '1d')
+  const value = response.value!
+  ;(value as any).trend_channel = {
+    kind: 'trend_channel', period: 10, formula_version: 'newow_hhv_llv_channel_page_v1',
+    points: value.bars.map((bar, index) => ({
+      bar_end: bar.bar_end,
+      upper: index === 0 ? '110.25' : null,
+      lower: index === 0 ? '89.75' : null,
+      formula_version: 'newow_hhv_llv_channel_page_v1',
+      status: index === 0
+        ? { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null }
+        : { status: 'unavailable', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: 'NEWOW_TREND_CHANNEL_BAR_MISSING' },
+      physical_contract: bar.physical_contract,
+      segment_id: bar.segment_id,
+      source_identity: bar.source_identity,
+    })),
+  }
+
+  const model = buildNewowProductChartModel(response)
+
+  assert.deepEqual((model as any).channelPoints, [{
+    barEnd: value.bars[0]!.bar_end,
+    tradingDay: value.bars[0]!.trading_day,
+    upper: 110.25,
+    lower: 89.75,
+  }])
+
+  const nonTrend = chartResponse('oscillation', '1d')
+  assert.deepEqual((buildNewowProductChartModel(nonTrend) as any).channelPoints, [{
+    barEnd: nonTrend.value!.bars[0]!.bar_end,
+    tradingDay: nonTrend.value!.bars[0]!.trading_day,
+    upper: 101,
+    lower: 99,
+  }, {
+    barEnd: nonTrend.value!.bars[1]!.bar_end,
+    tradingDay: nonTrend.value!.bars[1]!.trading_day,
+    upper: 102,
+    lower: 100,
+  }])
+})
+
+test('strategy overlays stay mutually exclusive and preserve only their own server values', () => {
+  const trend = buildNewowProductChartModel(chartResponse('trend', '1d'))
+  assert.equal(trend.bandAreas.length, 2)
+  assert.deepEqual(trend.channelPoints, [])
+
+  const oscillationResponse = chartResponse('oscillation', '1d')
+  oscillationResponse.value!.frames[1]!.status.status = 'warming'
+  const oscillation = buildNewowProductChartModel(oscillationResponse)
+  assert.deepEqual(oscillation.bandAreas, [])
+  assert.deepEqual(oscillation.channelPoints, [{
+    barEnd: oscillationResponse.value!.bars[0]!.bar_end,
+    tradingDay: oscillationResponse.value!.bars[0]!.trading_day,
+    upper: 101,
+    lower: 99,
+  }])
+
+  const mainRise = buildNewowProductChartModel(chartResponse('main_rise', '1d'))
+  assert.deepEqual(mainRise.channelPoints, [])
+  assert.deepEqual(mainRise.bandAreas.map(({ a, b, color }) => ({ a, b, color })), [
+    { a: 101, b: 99, color: 'rgba(54, 90, 245, 0.35)' },
+    { a: 102, b: 100, color: 'rgba(245, 183, 38, 0.35)' },
+  ])
+})
+
+test('classifies real hint kinds for display without changing their identities or anchors', () => {
+  assert.equal(classifyNewowHintTone('J'), 'risk')
+  assert.equal(classifyNewowHintTone('NEWOW_ESCAPE_D2'), 'risk')
+  assert.equal(classifyNewowHintTone('D4'), 'entry')
+  assert.equal(classifyNewowHintTone('D6'), 'entry')
+  assert.equal(classifyNewowHintTone('MAGIC11:7'), 'cycle')
+  assert.equal(classifyNewowHintTone('UNKNOWN_SERVER_KIND'), 'neutral')
+})
+
+test('projects action labels from exact server reference prices without deriving returns', () => {
+  const response = chartResponse('oscillation', '1d')
+  const model = buildNewowProductChartModel(response)
+  assert.deepEqual(buildNewowActionCallouts(model), model.actions.map(action => ({
+    id: action.id,
+    time: action.barEnd,
+    physicalContract: action.physicalContract,
+    price: action.referencePrice,
+    title: action.kind === 'BUILD' ? '建仓' : '清仓',
+    detail: `参考价 ${action.referencePrice}`,
+    tone: action.kind === 'BUILD' ? 'gain' : 'loss',
+    above: action.kind === 'CLEAR',
+  })))
+})
+
+test('preserves Newow viewport only for compatible product frequency and time axes', () => {
+  const before = buildNewowProductChartModel(chartResponse('trend', '60m'))
+  const compatible = buildNewowProductChartModel(chartResponse('oscillation', '60m'))
+  assert.equal(preserveNewowViewport(before, compatible), true)
+
+  compatible.identity.product = 'rb'
+  assert.equal(preserveNewowViewport(before, compatible), false)
+  compatible.identity.product = 'jm'
+  compatible.bars[0]!.barEnd = '2026-08-13T07:00:00Z'
+  assert.equal(preserveNewowViewport(before, compatible), false)
+})
+
+test('band primitive paints centered per-Bar rectangles that scale with bar spacing and releases attachment', async () => {
   const { NewowProductBandPrimitive } = await import('../src/components/market/detail/newow/newowProductBandPrimitive.ts')
   const model = buildNewowProductChartModel(chartResponse('trend', '1d'))
-  assert.equal(model.bandAreas.length, 1)
+  assert.equal(model.bandAreas.length, 2)
   const primitive = new NewowProductBandPrimitive()
   const coordinates: unknown[] = []
-  const polygons: number[][] = []
+  const rectangles: number[][] = []
+  const colors: string[] = []
+  let barSpacing = 10
   let updates = 0
-  const target = { useMediaCoordinateSpace(callback: (scope: { context: object }) => void) { callback({ context: { save() {}, restore() {}, beginPath() {}, closePath() {}, fill() {}, moveTo(x: number, y: number) { polygons.push([x, y]) }, lineTo(x: number, y: number) { polygons.push([x, y]) } } }) } }
-  primitive.attached({ chart: { timeScale: () => ({ timeToCoordinate(time: unknown) { coordinates.push(time); return coordinates.length * 10 } }) }, series: { priceToCoordinate: (price: number) => price }, requestUpdate: () => { updates++ } } as never)
+  const context = {
+    save() {}, restore() {},
+    set fillStyle(value: string) { colors.push(value) },
+    fillRect(x: number, y: number, width: number, height: number) { rectangles.push([x, y, width, height]) },
+  }
+  const target = { useMediaCoordinateSpace(callback: (scope: { context: object }) => void) { callback({ context }) } }
+  primitive.attached({ chart: { timeScale: () => ({
+    options: () => ({ barSpacing }),
+    timeToCoordinate(time: unknown) { coordinates.push(time); return coordinates.length % 2 === 1 ? 10 : 20 },
+  }) }, series: { priceToCoordinate: (price: number) => price }, requestUpdate: () => { updates++ } } as never)
   primitive.setData(model.bandAreas)
   primitive.paneViews()[0]!.renderer()!.draw(target as never)
   assert.equal(updates, 1)
   assert.deepEqual(coordinates, [{ year: 2026, month: 8, day: 14 }, { year: 2026, month: 8, day: 15 }])
-  assert.deepEqual(polygons, [[10, 99], [20, 100], [20, 102], [10, 101]])
+  assert.deepEqual(rectangles, [[6, 99, 8, 2], [16, 100, 8, 2]])
+  assert.deepEqual(colors, ['rgba(54, 90, 245, 0.35)', 'rgba(245, 183, 38, 0.35)'])
+
+  barSpacing = 20
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.deepEqual(rectangles.slice(2), [[2, 99, 16, 2], [12, 100, 16, 2]])
+
+  barSpacing = 0.5
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.deepEqual(rectangles.slice(4), [[9.8, 99, 0.4, 2], [19.8, 100, 0.4, 2]])
+
   primitive.detached(); primitive.setData(model.bandAreas)
   primitive.paneViews()[0]!.renderer()!.draw(target as never)
   assert.equal(updates, 1)
-  assert.equal(polygons.length, 4)
+  assert.equal(rectangles.length, 6)
+})
+
+test('trend channel primitive paints unconnected price-coordinate dots with fixed colors radius and normal z-order', async () => {
+  const { NewowTrendChannelPrimitive } = await import('../src/components/market/detail/newow/newowTrendChannelPrimitive.ts')
+  const primitive = new NewowTrendChannelPrimitive()
+  const arcs: Array<[number, number, number, string]> = []
+  let fill = ''
+  let timeScale = 1
+  let priceScale = 1
+  let updates = 0
+  const context = {
+    save() {}, restore() {}, beginPath() {}, fill() {},
+    set fillStyle(value: string) { fill = value },
+    arc(x: number, y: number, radius: number) { arcs.push([x, y, radius, fill]) },
+  }
+  const target = { useMediaCoordinateSpace(callback: (scope: { context: object }) => void) { callback({ context }) } }
+  primitive.attached({
+    chart: { timeScale: () => ({ timeToCoordinate: () => 10 * timeScale }) },
+    series: { priceToCoordinate: (price: number) => price * priceScale },
+    requestUpdate: () => { updates++ },
+  } as never)
+  primitive.setData([{ time: { year: 2026, month: 8, day: 14 }, upper: 110, lower: 90 }])
+
+  assert.equal(primitive.paneViews()[0]!.zOrder?.(), 'normal')
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.deepEqual(arcs, [
+    [10, 110, 2.5, 'rgba(52, 199, 89, 0.9)'],
+    [10, 90, 2.5, 'rgba(255, 59, 48, 0.9)'],
+  ])
+  assert.equal(updates, 1)
+
+  timeScale = 2; priceScale = 3
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.deepEqual(arcs.slice(2), [
+    [20, 330, 2.5, 'rgba(52, 199, 89, 0.9)'],
+    [20, 270, 2.5, 'rgba(255, 59, 48, 0.9)'],
+  ])
+
+  primitive.detached()
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.equal(arcs.length, 4)
 })

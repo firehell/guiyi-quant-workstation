@@ -1,7 +1,16 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
+import pytest
 from fastapi.testclient import TestClient
-from guiyi_quant.newow.product_contracts import ProductFrequency
+from pydantic import ValidationError
+from guiyi_quant.newow.product_contracts import (
+    EvidenceStatus,
+    FeatureRuntimeStatus,
+    FeatureStatus,
+    ProductFrequency,
+)
+from app.market_data.domain import BarFrequency
 
 from app.api import market_newow
 from app.db.session import get_db
@@ -14,16 +23,156 @@ from app.market_data.newow.product_service import (
 )
 from app.market_data.newow.historical_snapshot import HistoricalSnapshot
 from app.market_data.newow.resource_gate import NewowResourceBusy
+from app.schemas.market_newow_product import (
+    NewowProductResponse,
+    ProductActionOut,
+    ReferenceTradeOut,
+)
 
 
 def _service_result(product_cases):
     from newow.test_product_service import _service
 
-    service, _reader, _build, clear = _service(product_cases)
+    service, _reader, _build, clear = _service(product_cases, "1w")
     result = service.query(
-        ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end, chart_limit=10)
+        ProductServiceQuery("rb", "trend", "1w", as_of=clear.bar_end, chart_limit=10)
     )
     return result, clear.bar_end
+
+
+def _initial_clear_service_result(product_cases):
+    reader, _query, fake = product_cases.paged_reader(
+        prefix_bars=36, page_size=20, frequency="1w"
+    )
+    values = (*(["100"] * 35), "90")
+    physical = tuple(
+        replace(bar, open=value, high=value, low=value, close=value)
+        for bar, value in zip(
+            fake.physical[("RB2605", BarFrequency.W1)], values, strict=True
+        )
+    )
+    fake.physical[("RB2605", BarFrequency.W1)] = physical
+    fake.expected_physical[("RB2605", BarFrequency.W1)] = physical
+    fake.actual[BarFrequency.W1] = tuple(
+        bar for bar in physical if bar.trading_day >= fake.segments[0].start_trading_day
+    )
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: fake.as_of,
+    )
+    return service.query(
+        ProductServiceQuery(
+            "rb", "main_rise", "1w", as_of=fake.as_of, chart_limit=2
+        )
+    )
+
+
+def test_weekly_release_capabilities_are_public_without_database_access():
+    with TestClient(app) as client:
+        response = client.get("/api/v1/market/newow/product-capabilities")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "schema_version": "newow_product_capabilities_v1",
+        "release_stage": "weekly",
+        "open_frequencies": ["1w"],
+        "deferred_frequencies": [
+            {"frequency": "1d", "reason_code": "NEWOW_DAILY_RELEASE_PENDING"},
+            {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"},
+        ],
+        "open_sections": ["chart", "auxiliary", "reference", "comparator"],
+        "deferred_sections": [
+            {
+                "section": "explanation",
+                "reason_code": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize("frequency", ["1d", "60m"])
+def test_weekly_release_rejects_deferred_product_frequencies_before_service(
+    monkeypatch, frequency
+):
+    monkeypatch.setattr(
+        market_newow,
+        "_build_product_service",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("deferred frequency reached product service")
+        ),
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/market/newow/strategy-detail",
+                params={
+                    "product": "rb",
+                    "strategy": "trend",
+                    "frequency": frequency,
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
+
+
+@pytest.mark.parametrize("frequency", ["1d", "60m"])
+def test_weekly_release_rejects_deferred_historical_frequencies_before_resolver(
+    monkeypatch, frequency
+):
+    monkeypatch.setattr(
+        market_newow,
+        "_build_historical_resolver",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("deferred frequency reached historical resolver")
+        ),
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/market/newow/historical-snapshot",
+                params={
+                    "product": "rb",
+                    "strategy": "trend",
+                    "frequency": frequency,
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
+
+
+def test_weekly_release_defers_cross_frequency_explanation_before_service(monkeypatch):
+    monkeypatch.setattr(
+        market_newow,
+        "_build_product_service",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("deferred section reached product service")
+        ),
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/market/newow/strategy-detail",
+                params={
+                    "product": "rb",
+                    "strategy": "trend",
+                    "frequency": "1w",
+                    "section": "explanation",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "NEWOW_SECTION_NOT_OPEN"}}
 
 
 def test_strategy_detail_returns_only_requested_typed_section(
@@ -45,7 +194,7 @@ def test_strategy_detail_returns_only_requested_typed_section(
             params={
                 "product": "rb",
                 "strategy": "trend",
-                "frequency": "1d",
+                "frequency": "1w",
                 "as_of": as_of.isoformat(),
             },
         )
@@ -65,12 +214,141 @@ def test_strategy_detail_returns_only_requested_typed_section(
         body["chart"]["value"]["chart_from"] <= body["chart"]["value"]["chart_through"]
     )
     assert len(body["chart"]["value"]["page_identity"]) == 64
+    assert body["meta"]["schema_version"] == "newow_product_detail_v2"
+    assert (
+        body["meta"]["reference_model_version"]
+        == "newow_marker_reference_zero_cost_v2"
+    )
     assert body["chart"]["value"]["next_older_window"] is None
     assert body["chart"]["value"]["formal_signal_eligible"] is True
+    channel = body["chart"]["value"]["trend_channel"]
+    assert channel["kind"] == "trend_channel"
+    assert channel["period"] == 10
+    assert channel["formula_version"] == "newow_hhv_llv_channel_page_v1"
+    assert len(channel["points"]) == len(body["chart"]["value"]["bars"])
+    for point, bar in zip(channel["points"], body["chart"]["value"]["bars"], strict=True):
+        assert point["bar_end"] == bar["bar_end"]
+        assert point["physical_contract"] == bar["physical_contract"]
+        assert point["segment_id"] == bar["segment_id"]
+        assert point["source_identity"] == bar["source_identity"]
+        assert point["formula_version"] == "newow_hhv_llv_channel_page_v1"
+        assert point["status"]["status"] == "ready"
+        assert isinstance(point["upper"], str)
+        assert isinstance(point["lower"], str)
+    assert "newow_hhv_llv_channel_page_v1" not in body["meta"]["identity"]["formula_versions"]
     assert all(
         isinstance(action["sequence"], int)
         for action in body["chart"]["value"]["actions"]
     )
+
+
+def test_typed_api_serializes_verified_initial_clear_without_entry(product_cases):
+    result = _initial_clear_service_result(product_cases)
+    payload = market_newow._product_response(result).model_dump(mode="json")
+
+    assert payload["meta"]["schema_version"] == "newow_product_detail_v2"
+    assert (
+        payload["meta"]["reference_model_version"]
+        == "newow_marker_reference_zero_cost_v2"
+    )
+    assert payload["chart"]["value"]["actions"] == [
+        {
+            **payload["chart"]["value"]["actions"][0],
+            "kind": "CLEAR",
+            "related_build_id": None,
+            "trade_eligibility": "INITIAL_CLEAR_NO_ENTRY",
+            "sequence": 0,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("kind", "BUILD"), ("related_build_id", "forged-build"), ("sequence", 7)),
+)
+def test_typed_action_rejects_invalid_initial_clear_cross_fields(field, value):
+    payload = {
+        "signal_id": "initial-clear",
+        "kind": "CLEAR",
+        "bar_end": "2026-08-14T07:00:00Z",
+        "trading_day": "2026-08-14",
+        "reference_price": "100.100",
+        "physical_contract": "PT2610",
+        "segment_id": "pt:PT2610:2025-01-01T00:00:00+00:00",
+        "related_build_id": None,
+        "trade_eligibility": "INITIAL_CLEAR_NO_ENTRY",
+        "sequence": 0,
+    }
+    payload[field] = value
+
+    with pytest.raises(ValidationError, match="INITIAL_CLEAR_NO_ENTRY"):
+        ProductActionOut.model_validate(payload)
+
+
+def test_typed_v2_rejects_v1_reference_model_in_meta_and_trade(product_cases):
+    result, _as_of = _service_result(product_cases)
+    payload = market_newow._product_response(result).model_dump(mode="json")
+    payload["meta"]["reference_model_version"] = (
+        "newow_marker_reference_zero_cost_v1"
+    )
+    with pytest.raises(ValidationError):
+        NewowProductResponse.model_validate(payload)
+
+    from newow.test_product_service import _service
+
+    service, _reader, build, clear = _service(product_cases)
+    reference = service.query(
+        ProductServiceQuery(
+            "rb",
+            "trend",
+            "1d",
+            section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+        )
+    )
+    trade = market_newow._product_response(reference).model_dump(mode="json")[
+        "reference"
+    ]["value"]["items"][0]
+    trade["reference_model_version"] = "newow_marker_reference_zero_cost_v1"
+    with pytest.raises(ValidationError):
+        ReferenceTradeOut.model_validate(trade)
+
+
+def test_strategy_detail_serializes_unavailable_channel_point_without_values(
+    product_cases,
+):
+    result, _as_of = _service_result(product_cases)
+    chart = result.chart.value
+    assert chart is not None and chart.trend_channel is not None
+    first = chart.trend_channel.points[0]
+    unavailable = replace(
+        first,
+        upper=None,
+        lower=None,
+        availability=FeatureStatus(
+            FeatureRuntimeStatus.UNAVAILABLE,
+            EvidenceStatus.ACTIVE_CODE_VERIFIED,
+            "NEWOW_TREND_CHANNEL_BAR_MISSING",
+        ),
+    )
+    layer = replace(
+        chart.trend_channel,
+        points=(unavailable, *chart.trend_channel.points[1:]),
+    )
+    payload = market_newow._product_response(
+        replace(result, chart=replace(result.chart, value=replace(chart, trend_channel=layer)))
+    ).model_dump(mode="json")
+
+    point = payload["chart"]["value"]["trend_channel"]["points"][0]
+    assert point["upper"] is None
+    assert point["lower"] is None
+    assert point["status"] == {
+        "status": "unavailable",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason_code": "NEWOW_TREND_CHANNEL_BAR_MISSING",
+    }
 
 
 def test_historical_snapshot_strict_query_and_exact_cutoff(monkeypatch):
@@ -89,17 +367,17 @@ def test_historical_snapshot_strict_query_and_exact_cutoff(monkeypatch):
     with TestClient(app) as client:
         ok = client.get(
             "/api/v1/market/newow/historical-snapshot",
-            params={"product": "rb", "strategy": "trend", "frequency": "1d"},
+            params={"product": "rb", "strategy": "trend", "frequency": "1w"},
         )
         duplicate = client.get(
-            "/api/v1/market/newow/historical-snapshot?product=rb&product=ag&strategy=trend&frequency=1d"
+            "/api/v1/market/newow/historical-snapshot?product=rb&product=ag&strategy=trend&frequency=1w"
         )
         unknown = client.get(
             "/api/v1/market/newow/historical-snapshot",
             params={
                 "product": "rb",
                 "strategy": "trend",
-                "frequency": "1d",
+                "frequency": "1w",
                 "as_of": cutoff.isoformat(),
             },
         )
@@ -113,11 +391,10 @@ def test_historical_snapshot_strict_query_and_exact_cutoff(monkeypatch):
 def test_older_chart_window_round_trip_and_invalid_binding(monkeypatch, product_cases):
     from newow.test_older_chart_windows import setup_service
 
-    service, _, facts = setup_service(product_cases)
+    service, _, facts = setup_service(product_cases, "1w")
     monkeypatch.setattr(market_newow, "_build_product_service", lambda *_args: service)
     app.dependency_overrides[get_db] = lambda: object()
-    params = {"product": "rb", "strategy": "trend", "frequency": "1d",
-              "as_of": facts.as_of.isoformat()}
+    params = {"product": "rb", "strategy": "trend", "frequency": "1w"}
     try:
         with TestClient(app) as client:
             first = client.get("/api/v1/market/newow/strategy-detail", params=params)
@@ -173,7 +450,7 @@ def test_historical_snapshot_preserves_typed_resource_and_service_errors(monkeyp
             resolver.error = error
             response = client.get(
                 "/api/v1/market/newow/historical-snapshot",
-                params={"product": "rb", "strategy": "trend", "frequency": "1d"},
+                params={"product": "rb", "strategy": "trend", "frequency": "1w"},
             )
             assert response.status_code == status
             assert response.json() == {"detail": {"code": code}}
@@ -197,7 +474,7 @@ def test_strategy_detail_rejects_unknown_or_cross_section_inputs(monkeypatch):
                 params={
                     "product": "rb",
                     "strategy": "trend",
-                    "frequency": "1d",
+                    "frequency": "1w",
                     "evidence": "forged",
                 },
             ).status_code
@@ -209,7 +486,7 @@ def test_strategy_detail_rejects_unknown_or_cross_section_inputs(monkeypatch):
                 params={
                     "product": "rb",
                     "strategy": "trend",
-                    "frequency": "1d",
+                    "frequency": "1w",
                     "history_limit": 3,
                 },
             ).status_code
@@ -221,7 +498,7 @@ def test_strategy_detail_rejects_unknown_or_cross_section_inputs(monkeypatch):
                 params={
                     "product": "rb",
                     "strategy": "trend",
-                    "frequency": "1d",
+                    "frequency": "1w",
                     "as_of": "2026-01-01T00:00:00",
                 },
             ).status_code
@@ -235,12 +512,12 @@ def test_reference_uses_decimal_strings_and_null_empty_closed_metrics(
 ):
     from newow.test_product_service import _service
 
-    service, _reader, build, clear = _service(product_cases)
+    service, _reader, build, clear = _service(product_cases, "1w")
     result = service.query(
         ProductServiceQuery(
             "rb",
             "trend",
-            "1d",
+            "1w",
             section="reference",
             performance_since=build.trading_day,
             performance_through=build.trading_day,
@@ -261,7 +538,7 @@ def test_reference_uses_decimal_strings_and_null_empty_closed_metrics(
             params={
                 "product": "rb",
                 "strategy": "trend",
-                "frequency": "1d",
+                "frequency": "1w",
                 "section": "reference",
                 "performance_since": build.trading_day.isoformat(),
                 "performance_through": build.trading_day.isoformat(),
@@ -297,13 +574,13 @@ def test_strategy_detail_maps_future_as_of_and_safe_internal_errors(monkeypatch)
             params={
                 "product": "rb",
                 "strategy": "trend",
-                "frequency": "1d",
+                "frequency": "1w",
                 "as_of": datetime(2100, 1, 1, tzinfo=UTC).isoformat(),
             },
         )
         internal = client.get(
             "/api/v1/market/newow/strategy-detail",
-            params={"product": "rb", "strategy": "trend", "frequency": "1d"},
+            params={"product": "rb", "strategy": "trend", "frequency": "1w"},
         )
     app.dependency_overrides.clear()
     assert future.status_code == 422
@@ -327,14 +604,14 @@ def test_strategy_detail_normalizes_mds_failure_to_public_conflict(monkeypatch):
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.get(
             "/api/v1/market/newow/strategy-detail",
-            params={"product": "rb", "strategy": "trend", "frequency": "1d"},
+            params={"product": "rb", "strategy": "trend", "frequency": "1w"},
         )
     app.dependency_overrides.clear()
 
     assert response.status_code == 409
     assert response.json() == {"detail": {
         "code": "NEWOW_DATA_UNAVAILABLE",
-        "diagnostic": {"reason": "MAIN_CONTRACT_MAP_MISSING", "context": {"symbol": "rb", "frequency": "1d"},
+        "diagnostic": {"reason": "MAIN_CONTRACT_MAP_MISSING", "context": {"symbol": "rb", "frequency": "1w"},
                        "historical_candidate_recoverable": True},
     }}
 

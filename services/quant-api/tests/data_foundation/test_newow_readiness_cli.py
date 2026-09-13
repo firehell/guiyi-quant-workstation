@@ -80,6 +80,167 @@ def test_readiness_has_one_readonly_transaction_and_always_rolls_back(fails):
     assert "private backend detail" not in output.getvalue()
 
 
+def test_weekly_operational_readiness_builds_one_readonly_60_product_scope(monkeypatch):
+    from app.guiyi_cli import data_commands
+    from guiyi_quant.newow.product_contracts import ProductFrequency
+
+    products = tuple(
+        f"{chr(97 + index // 26)}{chr(97 + index % 26)}" for index in range(60)
+    )
+    monkeypatch.setattr(data_commands, "load_operational_products", lambda: products)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+
+    def run(session, *, request):
+        assert session.scalar(text("PRAGMA query_only")) == 1
+        assert request.products == products
+        assert request.frequencies == (ProductFrequency.WEEKLY,)
+        return {"status": "audited", "readonly": True, "complete": True}
+
+    output = io.StringIO()
+    code = main(
+        [
+            "data",
+            "newow-readiness",
+            "--universe",
+            "operational",
+            "--frequency",
+            "1w",
+            "--as-of",
+            "2026-09-04T08:00:00Z",
+        ],
+        session_factory=lambda: Session(engine),
+        newow_readiness_builder=run,
+        stdout=output,
+        stderr=output,
+    )
+
+    assert code == 0
+
+
+def test_compact_readiness_keeps_gate_identities_and_counts_without_full_rows():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+
+    def run(_session, *, request):
+        assert request.frequencies[0].value == "1w"
+        return {
+            "schema_version": 1,
+            "command": "data.newow-readiness",
+            "readonly": True,
+            "status": "incomplete",
+            "complete": False,
+            "as_of": request.as_of.isoformat(),
+            "release_stage": "weekly",
+            "matrix": True,
+            "frequency_scope": ["1w"],
+            "product_count": 1,
+            "main_case_count": 3,
+            "main_ready_count": 1,
+            "budget_exhausted": False,
+            "work_used": 12,
+            "enumerations": [
+                {"status": "ENUMERATED"},
+                {"status": "UNKNOWN", "reason": "HISTORICAL_SESSION_FACT_MISSING"},
+            ],
+            "dependencies": [
+                {"status": "DATA_READY"},
+                {"status": "DATA_UNAVAILABLE", "reason": "REPLAY_PREFIX_MISSING"},
+            ],
+            "repair_targets": [
+                {
+                    "symbol": "rb",
+                    "contract": "RB2701",
+                    "frequency": "1w",
+                    "through": "2026-09-04",
+                    "status": "PROPOSED",
+                    "expected_bar_count": 22,
+                    "provider_request_count": 2,
+                    "plan_sha256": "a" * 64,
+                    "target_windows": [{"large": "discard"}],
+                    "scope_diagnostics": [{"large": "discard"}],
+                    "consumers": [{"large": "discard"}],
+                }
+            ],
+            "metadata_proposals": [
+                {
+                    "symbol": "ag",
+                    "contract": "AG2302",
+                    "frequency": "1w",
+                    "through": "2023-01-11",
+                    "status": "UNKNOWN",
+                    "reason": "HISTORICAL_SESSION_FACT_MISSING",
+                    "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+                    "error": {"private": "discard"},
+                }
+            ],
+            "cases": [{"symbol": "rb", "strategy": "trend", "frequency": "1w"}],
+            "provider_requests": 0,
+            "writes": 0,
+        }
+
+    output = io.StringIO()
+    code = main(
+        [
+            "data",
+            "newow-readiness",
+            "--symbol",
+            "rb",
+            "--frequency",
+            "1w",
+            "--matrix",
+            "--compact",
+            "--as-of",
+            "2026-09-04T08:00:00Z",
+        ],
+        session_factory=lambda: Session(engine),
+        newow_readiness_builder=run,
+        stdout=output,
+        stderr=output,
+    )
+
+    assert code == 1
+    payload = json.loads(output.getvalue())
+    assert payload["schema_version"] == "newow_readiness_compact_v1"
+    assert payload["enumeration_counts"] == {
+        "ENUMERATED": 1,
+        "UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 1,
+    }
+    assert payload["dependency_counts"] == {
+        "DATA_READY": 1,
+        "DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 1,
+    }
+    assert payload["repair_counts"] == {"PROPOSED": 1}
+    assert payload["metadata_counts"] == {
+        "UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 1
+    }
+    assert payload["repair_targets"] == [
+        {
+            "symbol": "rb",
+            "contract": "RB2701",
+            "frequency": "1w",
+            "through": "2026-09-04",
+            "status": "PROPOSED",
+            "reason": None,
+            "expected_bar_count": 22,
+            "provider_request_count": 2,
+            "plan_sha256": "a" * 64,
+        }
+    ]
+    assert payload["metadata_proposals"][0] == {
+        "symbol": "ag",
+        "contract": "AG2302",
+        "frequency": "1w",
+        "through": "2023-01-11",
+        "status": "UNKNOWN",
+        "reason": "HISTORICAL_SESSION_FACT_MISSING",
+        "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+    }
+    assert payload["cases"] == [
+        {"symbol": "rb", "strategy": "trend", "frequency": "1w"}
+    ]
+    assert "dependencies" not in payload
+    assert "enumerations" not in payload
+
+
 def test_real_composition_missing_metadata_never_constructs_provider_writer_or_redis(
     monkeypatch, tmp_path
 ):

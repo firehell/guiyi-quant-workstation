@@ -51,6 +51,16 @@ class RedisClient(Protocol):
 
     def zrangebyscore(self, key: str, minimum: str | int, maximum: str | int) -> list[str | bytes]: ...
 
+    def zrevrangebyscore(
+        self,
+        key: str,
+        maximum: str | int,
+        minimum: str | int,
+        *,
+        start: int,
+        num: int,
+    ) -> list[str | bytes]: ...
+
     def set(self, key: str, value: str, *, ex: int | None = None) -> bool: ...
 
     def get(self, key: str) -> str | bytes | None: ...
@@ -173,6 +183,35 @@ class RedisLiveStore:
             for member in members
         )
 
+    def latest_observation(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: BarFrequency | str,
+        *,
+        until: datetime,
+        expected_contract: str,
+    ) -> LiveBarObservation | None:
+        """Read at most one completed observation under an exact contract authority."""
+
+        normalized_expected = normalize_contract_for_symbol(symbol, expected_contract)
+        if normalized_expected is None or expected_contract != normalized_expected:
+            raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+        members = self._redis.zrevrangebyscore(
+            self._bars_key(trading_day, symbol, frequency),
+            _epoch_millis(until),
+            "-inf",
+            start=0,
+            num=1,
+        )
+        if not members:
+            return None
+        return _bar_observation_from_payload(
+            _as_text(members[0]),
+            symbol=symbol,
+            expected_contract=normalized_expected,
+        )
+
     def set_subscriptions(self, trading_day: date, mapping: Mapping[str, Any]) -> None:
         key = self._subscription_key(trading_day)
         self._redis.set(key, _compact_json(dict(mapping)))
@@ -204,8 +243,21 @@ class RedisLiveStore:
         keys.append(self._subscription_key(trading_day))
         self._redis.delete(*keys)
 
-    def publish_bar(self, symbol: str, frequency: BarFrequency | str, bar: CanonicalBar) -> None:
-        self._redis.publish(live_bar_channel(symbol, frequency), _compact_json(_bar_payload(bar)))
+    def publish_bar(
+        self,
+        symbol: str,
+        frequency: BarFrequency | str,
+        bar: CanonicalBar,
+        *,
+        contract: str,
+    ) -> None:
+        normalized_contract = normalize_contract_for_symbol(symbol, contract)
+        if normalized_contract is None or normalized_contract != contract:
+            raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+        self._redis.publish(
+            live_bar_channel(symbol, frequency),
+            _compact_json(_bar_payload(bar, contract=normalized_contract)),
+        )
 
     def publish_state(self, payload: Mapping[str, Any]) -> None:
         self._redis.publish(LIVE_STATE_CHANNEL, _compact_json(dict(payload)))
@@ -533,6 +585,7 @@ class LiveMarketService:
         self.next_provider_retry_at: datetime | None = None
         self.rejections: list[str] = []
         self._recovery_sessions = recovery_sessions
+        self._recovery_guard_factory = recovery_guard_factory
         self._recovery_guard_enabled = (
             recovery_fetch_factory is not None and recovery_guard_factory is not None
         )
@@ -613,7 +666,6 @@ class LiveMarketService:
         } | self._channels_in_session_grace(now)
         self._sync_provider_channels(desired, create_if_missing=True)
         self._publish_heartbeat(now, phases)
-        self._schedule_recovery(now, phases)
         return None
 
     def _schedule_recovery(self, now: datetime, phases: Mapping[str, ProductMarketPhase]) -> None:
@@ -623,7 +675,14 @@ class LiveMarketService:
         # All DB-bound authority calls stay on this foreground thread. Unknown
         # or other-day products are excluded before any worker/provider activity.
         requests = []
+        pending_symbols = {
+            symbol for (symbol, _), (bar, _, _) in self._pending.items()
+            if bar.bar_end + _FINALIZATION_DELAY <= now
+        }
         for symbol in self._products:
+            # A completed normal observation waiting for its lock is not a gap.
+            if symbol in pending_symbols:
+                continue
             phase = phases[symbol]
             if phase.trading_day != self._trading_day or phase.phase not in (MarketPhase.TRADING, MarketPhase.BREAK):
                 continue
@@ -672,8 +731,35 @@ class LiveMarketService:
     ) -> tuple[CanonicalBar, ...]:
         """仅在 ready heartbeat 确认后发布一次 completed 1m，并增量生成派生频率。"""
         self._last_flush_failed = False
+        pending = tuple(self._pending.items())
+        if self._recovery_guard_factory is None:
+            return self._flush_pending(now, phases, pending)
+        grouped: dict[str, list[tuple[tuple[str, datetime], tuple[CanonicalBar, SessionWindow, str]]]] = {}
+        for item in pending:
+            if now >= item[1][0].bar_end + _FINALIZATION_DELAY:
+                grouped.setdefault(item[0][0], []).append(item)
+        finalized: list[CanonicalBar] = []
+        for symbol, items in grouped.items():
+            guard_entered = False
+            try:
+                with self._recovery_guard_factory(symbol):
+                    guard_entered = True
+                    finalized.extend(self._flush_pending(now, phases, items))
+            except Exception as exc:  # noqa: BLE001 - includes body and lock release failures
+                if not guard_entered and isinstance(exc, RuntimeError) and str(exc) == "LIVE_RECOVERY_BUSY":
+                    # Keep this symbol pending; unrelated products still flush.
+                    continue
+                # Published facts remain finalized even if lock release failed.
+                self._mark_redis_unavailable(now, phases)
+                self._last_flush_failed = True
+            if self._last_flush_failed:
+                break
+        return tuple(finalized)
+
+    def _flush_pending(self, now, phases, pending) -> tuple[CanonicalBar, ...]:
+        """One symbol's completed writes and publications share the recovery lock."""
         due: list[tuple[tuple[str, datetime], CanonicalBar, SessionWindow, str]] = []
-        for key, (bar, window, frozen_contract) in tuple(self._pending.items()):
+        for key, (bar, window, frozen_contract) in pending:
             if now < bar.bar_end + _FINALIZATION_DELAY:
                 continue
             symbol, _ = key
@@ -715,7 +801,12 @@ class LiveMarketService:
         for key, bar, window, frozen_contract in due:
             symbol, _ = key
             try:
-                self._store.publish_bar(symbol, BarFrequency.M1, bar)
+                self._store.publish_bar(
+                    symbol,
+                    BarFrequency.M1,
+                    bar,
+                    contract=frozen_contract,
+                )
             except Exception:  # noqa: BLE001 - Redis is an explicit unavailable boundary
                 self._mark_redis_unavailable(now, phases)
                 self._last_flush_failed = True
@@ -777,7 +868,7 @@ class LiveMarketService:
         if result is not None:
             return result
         if not self._channels:
-            return None
+            return self._schedule_recovery_safely(now, phases)
         try:
             provider = self._provider_or_create()
             for contract, bar in provider.poll():
@@ -789,7 +880,18 @@ class LiveMarketService:
                 self._provider_available = True
                 self._publish_heartbeat(now, phases)
         except Exception:  # noqa: BLE001 - provider exception is normalized at boundary
-            return self._schedule_provider_retry(now, phases)
+            result = self._schedule_provider_retry(now, phases)
+            return self._schedule_recovery_safely(now, phases) or result
+        return self._schedule_recovery_safely(now, phases)
+
+    def _schedule_recovery_safely(
+        self, now: datetime, phases: Mapping[str, ProductMarketPhase],
+    ) -> str | None:
+        try:
+            self._schedule_recovery(now, phases)
+        except Exception:  # noqa: BLE001 - authority/worker failure is not a provider failure
+            self._mark_redis_unavailable(now, phases)
+            return "LIVE_REDIS_UNAVAILABLE"
         return None
 
     def run_forever(self) -> None:
@@ -842,7 +944,7 @@ class LiveMarketService:
                 derived,
                 contract=contract,
             )
-            self._store.publish_bar(symbol, frequency, derived)
+            self._store.publish_bar(symbol, frequency, derived, contract=contract)
 
     def _phases(self, now: datetime) -> dict[str, ProductMarketPhase]:
         phases = {symbol: self._phase_resolver.resolve(symbol, now) for symbol in self._products}

@@ -1,5 +1,6 @@
 import type {
   NewowHistoricalSnapshot,
+  NewowProductCapabilities,
   NewowProductRequest,
   NewowProductSectionResponse,
 } from '../types/newowProduct.ts'
@@ -18,7 +19,11 @@ const CONFLICT_CODES = new Set([
   'NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'NEWOW_CURSOR_GENERATION_CONFLICT', 'NEWOW_CURSOR_INVALID',
   'NEWOW_REFERENCE_PAIRING_CONFLICT', 'NEWOW_PAGE_COMPARATOR_CONFLICTING_FACT',
 ])
-const UNAVAILABLE_CODES = new Set(['NEWOW_DATA_UNAVAILABLE', 'NEWOW_SOURCE_NONPOSITIVE_PRICE', 'NEWOW_COMPLETE_TRADING_DAY_MISSING', 'NEWOW_COMPLETE_PERIOD_MISSING', 'NEWOW_HISTORICAL_SNAPSHOT_UNAVAILABLE'])
+const UNAVAILABLE_CODES = new Set([
+  'NEWOW_DATA_UNAVAILABLE', 'NEWOW_SOURCE_NONPOSITIVE_PRICE', 'NEWOW_COMPLETE_TRADING_DAY_MISSING',
+  'NEWOW_COMPLETE_PERIOD_MISSING', 'NEWOW_HISTORICAL_SNAPSHOT_UNAVAILABLE',
+  'NEWOW_FREQUENCY_NOT_OPEN', 'NEWOW_SECTION_NOT_OPEN',
+])
 
 export class NewowProductRequestError extends Error {
   readonly code: string
@@ -32,6 +37,74 @@ export class NewowProductRequestError extends Error {
     this.classification = classification
     this.diagnostic = diagnostic
   }
+}
+
+export async function getNewowProductCapabilities(
+  options: NewowProductRequestOptions = {},
+): Promise<NewowProductCapabilities> {
+  const transport = options.request ?? defaultRequest
+  let payload: unknown
+  try {
+    payload = await transport('/market/newow/product-capabilities', {
+      params: {},
+      signal: options.signal,
+    })
+  } catch (error) {
+    if (error instanceof NewowProductRequestError) throw error
+    throw classifyTransportError(error)
+  }
+  if (!isProductCapabilities(payload)) {
+    throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
+  }
+  return freezeProductCapabilities(payload)
+}
+
+function isProductCapabilities(value: unknown): value is NewowProductCapabilities {
+  if (!isRecord(value) || Object.keys(value).sort().join(',') !== [
+    'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
+    'release_stage', 'schema_version',
+  ].join(',')) return false
+  if (
+    value.schema_version !== 'newow_product_capabilities_v1'
+    || value.release_stage !== 'weekly'
+    || !sameLiteralArray(value.open_frequencies, ['1w'])
+    || !sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])
+  ) return false
+  if (!Array.isArray(value.deferred_frequencies) || value.deferred_frequencies.length !== 2) return false
+  if (!Array.isArray(value.deferred_sections) || value.deferred_sections.length !== 1) return false
+  return isDeferred(value.deferred_frequencies[0], '1d', 'NEWOW_DAILY_RELEASE_PENDING')
+    && isDeferred(value.deferred_frequencies[1], '60m', 'NEWOW_HOURLY_RELEASE_PENDING')
+    && isDeferred(value.deferred_sections[0], 'explanation', 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN')
+}
+
+function sameLiteralArray(value: unknown, expected: readonly string[]): boolean {
+  return Array.isArray(value)
+    && value.length === expected.length
+    && value.every((item, index) => item === expected[index])
+}
+
+function isDeferred(value: unknown, identity: string, reason: string): boolean {
+  if (!isRecord(value)) return false
+  const keys = Object.keys(value).sort().join(',')
+  if (keys === 'frequency,reason_code') {
+    return value.frequency === identity && value.reason_code === reason
+  }
+  if (keys === 'reason_code,section') {
+    return value.section === identity && value.reason_code === reason
+  }
+  return false
+}
+
+function freezeProductCapabilities(
+  value: NewowProductCapabilities,
+): NewowProductCapabilities {
+  for (const item of value.deferred_frequencies) Object.freeze(item)
+  for (const item of value.deferred_sections) Object.freeze(item)
+  Object.freeze(value.open_frequencies)
+  Object.freeze(value.deferred_frequencies)
+  Object.freeze(value.open_sections)
+  Object.freeze(value.deferred_sections)
+  return Object.freeze(value)
 }
 
 export async function getNewowHistoricalSnapshot(

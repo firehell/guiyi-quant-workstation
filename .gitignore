@@ -16,7 +16,7 @@ __pycache__/
 .ruff_cache/
 
 # node
-node_modules/
+node_modules
 .pnpm-store/
 dist/
 build/
@@ -42,12 +42,13 @@ private_sources/
 logs/
 *.log
 
-# local dev runtime (PID / logs from scripts/dev-up.sh)
+# local development runtime (PID / logs)
 .run/
 
 # local AI / agent runtime artifacts (not canonical)
 .ai/
 .workbuddy/
+.superpowers/
 .worktrees/
 
 # local browser capture artifacts
@@ -70,6 +71,3 @@ secrets/
 .idea/
 .vscode/*
 !.vscode/settings.json
-
-# workstation scaffold local artifacts
-scripts/ai/.out/

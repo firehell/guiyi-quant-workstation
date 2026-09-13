@@ -233,16 +233,49 @@ fail-closed，不跨合约、不插值、不缩短前缀。数据仅进入当日
 存入当日 Redis，重启不重置。初始化及查询阶段的权限/额度失败停止当日后续 provider 请求。已有完整
 1m 但派生周期缺失时，直接用原 1m 重建完整桶，不下载、不消耗 provider 次数。
 
+缺失 1m 的请求在领取 provider 尝试预算前，必须用带时区的当前时钟证明
+`0 <= now - cutoff <= 60 秒`。排队过期、未来或无时区的时钟以 `LIVE_RECOVERY_CLOCK_INVALID`
+失败关闭，不领取预算、不初始化或调用 provider、不修改 Bar/水位；下一轮仍由前台按正常调度重新
+采集 Session 与冻结订阅 authority。后台不得刷新 cutoff 或增加尝试次数。已在有效时间内开始的真实查询
+仍计入一次尝试；查询或等待锁期间过期时，最终提交继续拒绝，不能撤销预算来形成隐藏重试。
+纯 `NO_GAP` 保持只读幂等；有效源 1m 重建派生桶仍须通过提交时效检查。
+
 缺失 1m、完整的 5m/15m/30m/60m 桶及单调恢复水位通过一次 Lua CAS 提交；提交前核对冻结订阅、原
 series 与 recovery revision。已有相同内容幂等跳过，冲突拒绝，正常 completed 写入同样不得覆盖冲突。
+正常 Live 按品种持有同一进程间锁，完整完成 1m 写入、ready heartbeat、发布及各派生桶写入/发布，
+不同时持有多个品种锁。锁忙时保留该品种 pending，其他品种继续；下一正常 poll 再尝试，不把锁忙当作
+Redis 故障。恢复仅在本轮正常 ingest/flush 收尾后调度，已有 completed pending 的品种暂不交给恢复。
+纯 BREAK、provider cooldown 和订阅失败不因此新增恢复调度。
+锁获取的非 busy 异常、临界区与锁释放异常，以及恢复 authority/worker 调度异常沿用
+`LIVE_REDIS_UNAVAILABLE` 不可用边界，不退出前台轮询，也不因此丢弃健康 provider 或安排 provider 重连。
+只有锁获取阶段的 busy 可以暂缓该品种；释放失败保留已写入/发布和 finalized 事实，不回滚或重放。
+
+恢复初始快照也在同品种锁内读取，避免把正常派生中间态误判缺口。查询返回后在提交锁内重新读取完整
+快照：冻结订阅、恢复 revision/水位以及旧 raw payload 不得被改写或删除；与源数据一致的正常追加允许
+重新计算真实缺口。Lua 仍严格核对这次重读的完整前像，真实数据冲突、身份漂移或提交前再次漂移均拒绝。
+所有周期实际缺口均已消失时返回 `NO_GAP`，不创建或推进水位；真实派生缺口仍允许无 provider 修复。
+重新核验和聚合后仍检查原 cutoff 的 60 秒提交边界，不刷新 cutoff、不撤销已发生的 provider 尝试。
+
 恢复不发布历史 Bar 消息。数据查询在锁外，最终 CAS 和提交时钟在同品种进程间锁内；Alert 的窗口读取、
 Event commit 与 one-shot send 持有同一锁，因此水位不能穿过 Event/send。锁由 OS 持有，无超时租约；
 进程退出自动释放。锁文件限于 Runtime `.run/live-recovery-guards/{symbol}.lock`，按品种有界复用，不在
 运行中删除。锁或身份不可证明时不继续提交。
+退出已获得的锁时先显式解锁，再在 finally 中关闭一次文件描述符；解锁失败也必须执行关闭。
+close 报错不能证明描述符仍然打开，不盲目重关可能被复用的 fd。显式解锁避免单独 close 失败遗留持锁；
+描述符是否已关闭仍可能不确定，不把解锁成功表述为描述符清理成功。
 
 诊断复用 MarketReadService、MDS lifecycle/session coverage 与已有物理分页入口：历史使用 Catalog
 MainContractMap，盘中使用既有冻结 rank1 Live snapshot；当日 MainContractMap 尚未由盘后发布不构成
 新的隐藏 Gate。分别报告历史 15m、当日 1m/15m 缺口；不可读历史保持未知，不能假装缺失数为零。
+
+Alert 的 HTDY 5m/15m/60m 计算窗口还须在进入 kernel 前，以 Calendar、逐日 Session 和逐 Bar owner 对最后
+32 根做精确端点证明。午休、周末、夜盘归属和短尾桶不是连续时钟缺口；缺失、重复、额外、错误交易日或
+owner 则公开失败，不缩窗、不补值、不回退 continuous。历史 owner 来自 MainContractMap；当日 owner 可来自
+同一次窗口读取的冻结 Live snapshot。该检查不改变 SuBing 只回放当前物理合约完整 lifecycle 的独立合同。
+共享预警窗口读取 Live 时使用带合约身份的 `LiveBarObservation`：逐根证明 payload contract 与冻结订阅
+相等、trading_day 正确且端点不重复，并限定至事件 cutoff。不得先丢弃 payload 合约再用 snapshot 补写
+owner；相同端点的 Canonical/Live 只有事实和合约均一致时才可去重，Live provenance 异常公开为
+`MARKET_READ_LIVE_UNAVAILABLE`，不进入 Kernel、Event 或发送。
 
 ### 已捕获源数据的五根 Live 恢复
 
@@ -504,9 +537,13 @@ endpoint authority：先枚举各 section 必需的 owner，再独立验证每�
 一个缺失合约不能阻止发现后续独立合约。chart/auxiliary 使用权威近期窗口，reference 使用独立统计
 窗口，explanation 使用三周期输入；每个依赖保留 owner 区间及 strategy/frequency/section consumer provenance。
 W1 合法零 Bar owner 标为 `NOT_APPLICABLE`，不得填 Bar 或计入 data-ready。
+当前 staged capability 已标记的未开放 frequency/section 在 matrix 中为 `UNOPENED`；尤其周版
+`explanation` 不枚举 D1/60m 依赖、不调用 section service，也不计为 incomplete。显式 data audit 仍可按
+`--frequency` 检查未开放周期的 Canonical 准备度，但不能因此把产品面标成已开放。
 
-`newow-readiness` 只接受互斥的单 active symbol 或 active universe，必须固定带时区 `as_of`；串行工作量和
-deadline 均有界。metadata 不足时返回 `UNKNOWN` 与 bounded metadata repair proposal，预计根数/请求数
+`newow-readiness` 只接受互斥的单 active symbol、active universe 或 operational universe，并可显式重复
+`--frequency` 收窄到 `1w/1d/60m` 的任意非空、不重复子集；未传时保持三周期兼容审计。必须固定带时区
+`as_of`，串行工作量和 deadline 均有界。metadata 不足时返回 `UNKNOWN` 与 bounded metadata repair proposal，预计根数/请求数
 为 null；预算耗尽明确 `incomplete`，保留未启动枚举/依赖/case，不能报告完整覆盖。未知异常仅公开固定内部
 错误，原始非正价格单列 `SOURCE_EXCEPTION`，完整性错误单列 `INTEGRITY_ERROR`，两者不生成盲目下载目标。
 
@@ -520,11 +557,14 @@ no-autoflush、statement timeout 和 finally rollback。
 `REVIEW_REQUIRED`，不提供 plan hash 或总下载请求数；不能借缺 W1/60m 重新纳入已排除的损坏/非正源输入。
 SQLite 的 connection-level `query_only` 必须在 rollback 归还连接池前恢复原值；恢复或回读失败即丢弃该连接。
 
-matrix 模式保留 active 60 × 三策略 × 三周期的 540 main cases，同时独立运行实际 section service，
+matrix 模式按所选 universe × 三策略 × 显式 frequency scope 生成 main cases，同时独立运行实际 section service，
 保留 `EVIDENCE_REQUIRED`、`NOT_APPLICABLE`、`WARMING` 等业务状态。`complete=true/status=audited`
 仅表示本次限定审计已完成，不表示全部数据 ready、原站 parity、Release 或 Runtime acceptance；
 main ready count 只计算实际主图 READY，不把其他 section 的证据状态算作数据成功。真实只读连接亦须位于
 用户授权范围，fixture 验证与命令存在不构成真实连接或数据修复授权。用法与定向测试见 `TESTING.md`。
+`--compact` 只压缩公开结果：保留状态计数、每个 repair 的 symbol/contract/frequency/through/hash/工作量、
+metadata proposal 与 matrix case，省略逐 dependency、逐月窗口和 consumer 明细；默认完整 JSON 仍是精确审计事实，
+compact 结果不能单独替代 apply 前的原生 `contract-warmup` plan/hash 重读。
 
 ```bash
 guiyi data update (--symbol X | --universe active) [--since DATE] [--through DATE] [--apply]
@@ -533,6 +573,7 @@ guiyi data current-day-metadata-recovery --phase {capture,plan,apply} --runtime-
 guiyi data refresh --symbol X --since DATE --through DATE [--apply]
 guiyi data contract-warmup --symbol X --contract CONTRACT --through DATE [--frequency {1d,1w,15m,60m}] [--expected-plan-sha256 HASH] [--apply]
 guiyi data audit (--symbol X | --universe {active,operational}) [--through DATE] [--progress]
+guiyi data newow-readiness (--symbol X | --universe {active,operational}) --as-of TIMESTAMP [--frequency {1w,1d,60m}]... [--matrix] [--compact] [--max-work N] [--timeout-seconds N]
 guiyi data session-anchor-repair --phase plan
 guiyi data session-anchor-repair --phase prepare --shadow-root PATH --manifest PATH --apply
 guiyi data session-anchor-repair --phase publish --shadow-root PATH --manifest PATH --apply
