@@ -476,8 +476,43 @@ def _dependency_row_valid(
 
 
 def _repair_row_valid(row: object, products: tuple[str, ...]) -> bool:
-    if not _base_row_valid(row, products, require_owners=False) or not isinstance(row, dict):
+    if not isinstance(row, dict):
         return False
+    if (
+        row.get("symbol") not in products
+        or not _contract_matches(row.get("symbol"), row.get("contract"))
+        or row.get("frequency") != ProductFrequency.WEEKLY.value
+        or not _date_text(row.get("through"))
+        or not _consumers_valid(row.get("consumers"))
+    ):
+        return False
+    status = row.get("status")
+    reason = row.get("reason")
+    counts_unavailable = (
+        row.get("plan_sha256") is None
+        and row.get("expected_bar_count") is None
+        and row.get("provider_request_count") is None
+    )
+    planner_fields = {
+        "dependency_frequencies",
+        "frequencies",
+        "requested_through",
+        "effective_through",
+        "direct_target_count",
+        "derived_target_count",
+        "target_windows",
+    }
+    if not planner_fields.intersection(row):
+        if status == "UNSTARTED":
+            return counts_unavailable and reason in {None, "BUDGET_EXHAUSTED"}
+        if status == "UNKNOWN":
+            return counts_unavailable and reason == "PLANNER_UNAVAILABLE"
+        return (
+            counts_unavailable
+            and status in _FAILURE_STATUSES
+            and isinstance(row.get("error"), dict)
+            and not _error_status_violation(row)
+        )
     if (
         row.get("dependency_frequencies") != ["1d"]
         or row.get("frequencies") != ["1d", "1w"]
@@ -531,14 +566,13 @@ def _repair_row_valid(row: object, products: tuple[str, ...]) -> bool:
         target_expected += expected_count
     if len(datasets) != len(set(datasets)):
         return False
-    if row.get("status") == "REVIEW_REQUIRED":
+    if status == "REVIEW_REQUIRED":
         return (
-            row.get("reason") == "REPAIR_SCOPE_SOURCE_OR_INTEGRITY"
-            and row.get("plan_sha256") is None
-            and row.get("expected_bar_count") is None
-            and row.get("provider_request_count") is None
+            reason == "REPAIR_SCOPE_SOURCE_OR_INTEGRITY" and counts_unavailable
         )
-    if row.get("status") != "PROPOSED" or row.get("reason") is not None:
+    if status == "UNKNOWN":
+        return reason == "PLANNER_SCOPE_DIAGNOSTICS_MISSING" and counts_unavailable
+    if status != "PROPOSED" or reason is not None:
         return False
     if (
         not isinstance(row.get("plan_sha256"), str)
@@ -556,14 +590,37 @@ def _repair_row_valid(row: object, products: tuple[str, ...]) -> bool:
 def _metadata_row_valid(
     row: object, products: tuple[str, ...], expected_as_of: datetime
 ) -> bool:
-    return bool(
-        _base_row_valid(row, products, expected_as_of=expected_as_of)
-        and isinstance(row, dict)
-        and row.get("status") == "UNKNOWN"
-        and row.get("reason") == "HISTORICAL_SESSION_FACT_MISSING"
-        and row.get("proposal") == "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED"
-        and row.get("expected_bar_count") is None
-        and row.get("provider_request_count") is None
+    if (
+        not isinstance(row, dict)
+        or row.get("symbol") not in products
+        or row.get("frequency") != ProductFrequency.WEEKLY.value
+        or row.get("status") != "UNKNOWN"
+        or row.get("reason") != "HISTORICAL_SESSION_FACT_MISSING"
+        or row.get("proposal") != "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED"
+        or row.get("expected_bar_count") is not None
+        or row.get("provider_request_count") is not None
+        or not isinstance(row.get("error"), dict)
+        or _error_status_violation(row)
+    ):
+        return False
+    if "section" in row:
+        if (
+            row.get("section") not in _ENUMERATION_SECTIONS
+            or row.get("as_of") != expected_as_of.isoformat()
+        ):
+            return False
+        has_window = "since" in row or "through" in row
+        return not has_window or (
+            _date_text(row.get("since"))
+            and _date_text(row.get("through"))
+            and row["since"] <= row["through"]
+        )
+    if "owners" in row:
+        return _base_row_valid(row, products, expected_as_of=expected_as_of)
+    return (
+        _contract_matches(row.get("symbol"), row.get("contract"))
+        and _date_text(row.get("through"))
+        and _consumers_valid(row.get("consumers"))
     )
 
 

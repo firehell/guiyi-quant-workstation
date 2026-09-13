@@ -495,6 +495,81 @@ def test_summary_accepts_honest_incomplete_audit_and_preserves_pending_reason():
     }
 
 
+@pytest.mark.parametrize(
+    "status,reason",
+    [("UNSTARTED", None), ("UNKNOWN", "PLANNER_UNAVAILABLE")],
+)
+def test_summary_accepts_native_unfinished_repair_without_planner_fields(
+    status, reason
+):
+    from scripts.newow_weekly_acceptance import summarize_readiness
+
+    report = _report()
+    repair = report["repair_targets"][0]
+    report["repair_targets"] = [
+        {
+            key: repair[key]
+            for key in (
+                "symbol",
+                "contract",
+                "frequency",
+                "through",
+                "consumers",
+                "expected_bar_count",
+                "provider_request_count",
+                "plan_sha256",
+            )
+        }
+    ]
+    report["repair_targets"][0].update(
+        status=status,
+        reason=reason,
+        expected_bar_count=None,
+        provider_request_count=None,
+        plan_sha256=None,
+    )
+    report.update(complete=False, status="incomplete")
+
+    result = summarize_readiness(report, PRODUCTS, AS_OF)
+
+    assert result["valid"] is True
+    assert result["audit_complete"] is False
+    assert result["pending_outcome_counts"] == {
+        f"repair:{status}:{reason or '-'}": 1
+    }
+
+
+def test_summary_accepts_native_enumeration_metadata_proposal():
+    from scripts.newow_weekly_acceptance import summarize_readiness
+
+    report = _report()
+    report["metadata_proposals"] = [
+        {
+            "symbol": "ag",
+            "frequency": "1w",
+            "section": "chart",
+            "status": "UNKNOWN",
+            "as_of": AS_OF.isoformat(),
+            "reason": "HISTORICAL_SESSION_FACT_MISSING",
+            "error": {
+                "diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}
+            },
+            "expected_bar_count": None,
+            "provider_request_count": None,
+            "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+        }
+    ]
+    report.update(complete=False, status="incomplete")
+
+    result = summarize_readiness(report, PRODUCTS, AS_OF)
+
+    assert result["valid"] is True
+    assert result["audit_complete"] is False
+    assert result["pending_outcome_counts"] == {
+        "metadata:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 1
+    }
+
+
 def test_summary_aggregates_repair_and_metadata_rows_without_large_private_details():
     from scripts.newow_weekly_acceptance import summarize_readiness
 
