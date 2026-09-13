@@ -436,16 +436,28 @@ def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
                 if not resolved.is_night or calendar.has_night_session
             )
 
+        def authority_endpoints(symbol: str, cutoff: datetime) -> tuple[datetime, ...]:
+            """Independent endpoint oracle derived from Catalog session authority."""
+            return tuple(
+                window.start + timedelta(minutes=minute)
+                for window in recovery_sessions(symbol, trading_day)
+                for minute in range(
+                    1, int((window.end - window.start).total_seconds() // 60) + 1
+                )
+                if window.start + timedelta(minutes=minute, seconds=2) <= cutoff
+            )
+
         class RecoveryClient:
             def __init__(self) -> None:
-                self.requests: dict[str, object] = {}
+                self.expected_endpoints: dict[str, tuple[datetime, ...]] = {}
                 self.calls: list[tuple[str, date, date, str]] = []
 
             def price(self, contract, start, end, frequency):
                 self.calls.append((contract, start, end, frequency))
-                request = self.requests[contract]
                 rows = []
-                for index, endpoint in enumerate(request.endpoints(), start=1):
+                for index, endpoint in enumerate(
+                    self.expected_endpoints[contract], start=1
+                ):
                     value = Decimal(100 + index)
                     rows.append(
                         {
@@ -480,7 +492,12 @@ def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
             def schedule(self, requests, _now):
                 self.batches.append(requests)
                 for request in requests:
-                    client.requests[request.contract] = request
+                    expected = authority_endpoints(request.symbol, request.cutoff)
+                    assert request.sessions == recovery_sessions(
+                        request.symbol, trading_day
+                    )
+                    assert request.endpoints() == expected
+                    client.expected_endpoints[request.contract] = expected
                     outcome = recover_product(
                         store,
                         request,

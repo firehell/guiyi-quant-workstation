@@ -1206,6 +1206,9 @@ def test_rule_specific_alert_windows_keep_subing_on_current_contract_lifecycle(
         session.commit()
 
         class Live:
+            def __init__(self, bars: tuple[CanonicalBar, ...]) -> None:
+                self._bars = bars
+
             @staticmethod
             def subscriptions(_day):
                 return {"rb": "RB2610"}
@@ -1214,21 +1217,19 @@ def test_rule_specific_alert_windows_keep_subing_on_current_contract_lifecycle(
             def recovery_state(*_args):
                 return None
 
-            @staticmethod
-            def bars_after(*_args):
-                return current_bars[-8:]
+            def bars_after(self, *_args):
+                return self._bars[-8:]
 
-            @staticmethod
-            def bar_observations(*_args, **_kwargs):
+            def bar_observations(self, *_args, **_kwargs):
                 return tuple(
-                    LiveBarObservation(bar, "RB2610") for bar in current_bars[-8:]
+                    LiveBarObservation(bar, "RB2610") for bar in self._bars[-8:]
                 )
 
         market_read = MarketReadService(
             market_data=market_data,
             phase_resolver=_ForbiddenPhaseReader(),
             operational_products=("rb",),
-            live_store=Live(),
+            live_store=Live(current_bars),
         )
         actual_page = market_data.query_page(
             SeriesPageQuery(
@@ -1259,6 +1260,109 @@ def test_rule_specific_alert_windows_keep_subing_on_current_contract_lifecycle(
             MarketReadWindowError, match="MARKET_READ_WINDOW_INCOMPLETE"
         ):
             HtdyOriginalEvaluator().evaluate_candidates(market_read, window)
+
+        htdy_prices = (
+            103.048, 93.344, 90.627, 102.765, 91.059, 100.975, 109.429, 99.274,
+            96.241, 92.124, 96.038, 96.405, 92.342, 104.05, 102.047, 104.357,
+            92.143, 95.009, 108.501, 90.176, 97.397, 106.359, 94.577, 94.401,
+            102.749, 95.035, 96.721, 97.832, 95.974, 103.181, 104.692, 105.222,
+            109.608, 91.456, 95.134, 109.73, 105.961, 105.209, 94.446, 92.567,
+            95.507, 107.857, 105.01, 97.339, 103.173, 104.705, 95.732, 92.128,
+            106.222, 104.157, 106.144, 104.855, 97.309, 103.089, 97.336, 108.071,
+            92.478, 103.932, 96.928, 108.192, 106.077, 93.499, 90.313, 94.675,
+        )
+        htdy_close = {
+            endpoint: str(price)
+            for endpoint, price in zip(endpoints[-64:], htdy_prices, strict=True)
+        }
+
+        def repaired_bars(
+            owned_endpoints: list[tuple[datetime, date]],
+        ) -> tuple[CanonicalBar, ...]:
+            return tuple(
+                _bar_with_close(
+                    bar_end,
+                    day,
+                    htdy_close.get(
+                        (bar_end, day),
+                        str(Decimal("100") + Decimal(index % 17) / 10),
+                    ),
+                )
+                for index, (bar_end, day) in enumerate(owned_endpoints)
+            )
+
+        repaired_old_bars = repaired_bars(endpoints[:-8])
+        repaired_current_bars = repaired_bars(endpoints)
+        for contract, bars in (
+            ("RB2605", repaired_old_bars),
+            ("RB2610", repaired_current_bars),
+        ):
+            artifact = store.publish(
+                PublishRequest(
+                    DatasetKey("contract", "rb", contract, "15m"),
+                    2026,
+                    9,
+                    bars,
+                    tuple(bar.bar_end for bar in bars),
+                )
+            )
+            catalog.register_partition(artifact)
+        session.commit()
+        repaired_read = MarketReadService(
+            market_data=market_data,
+            phase_resolver=_ForbiddenPhaseReader(),
+            operational_products=("rb",),
+            live_store=Live(repaired_current_bars),
+        )
+        repaired_window = repaired_read.bars_until(
+            SeriesPageQuery("actual_dominant", "rb", "15m"),
+            trading_day=trading_days[-1],
+            end=repaired_current_bars[-1].bar_end,
+            limit=64,
+        )
+
+        repaired_candidates = HtdyOriginalEvaluator().evaluate_candidates(
+            repaired_read, repaired_window
+        )
+        assert len(repaired_candidates) == 1
+        assert repaired_candidates[0].observation_types == ("buy",)
+
+
+@pytest.mark.parametrize("frequency", ("1d", "1w"))
+def test_htdy_canonical_window_never_reads_live_recovery(frequency: str) -> None:
+    """D1/W1 evaluation is canonical-only even when the live seam is unavailable."""
+    from app.alerts.evaluators import HtdyOriginalEvaluator
+
+    first = date(2026, 8, 1)
+    bars = tuple(
+        _bar_with_close(
+            datetime.combine(first + timedelta(days=index), time(7), tzinfo=UTC),
+            first + timedelta(days=index),
+            str(Decimal("100") + Decimal(index) / 10),
+        )
+        for index in range(32)
+    )
+
+    class ForbiddenLive:
+        def __getattr__(self, name: str):
+            raise AssertionError(f"canonical evaluation touched live seam: {name}")
+
+    service = MarketReadService(
+        market_data=_MarketPageReader(
+            bars,
+            (ResolvedContractSegment("RB2610", first, bars[-1].trading_day),),
+        ),
+        phase_resolver=_ForbiddenPhaseReader(),
+        operational_products=("rb",),
+        live_store=ForbiddenLive(),
+    )
+    window = service.latest_canonical_window(
+        SeriesPageQuery("actual_dominant", "rb", frequency),
+        trading_day=bars[-1].trading_day,
+        limit=64,
+    )
+
+    assert HtdyOriginalEvaluator().evaluate_candidates(service, window) == ()
 
 
 def test_live_snapshot_excludes_bars_after_observation_time() -> None:

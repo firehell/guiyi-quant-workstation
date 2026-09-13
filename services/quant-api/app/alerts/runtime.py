@@ -480,6 +480,10 @@ class AlertRuntime:
                                         )
                                     if prepared.message is not None:
                                         item_messages.append(prepared.message)
+                                if candidates and not rule_event_created:
+                                    raise AlertEvaluationSkipped(
+                                        "ALERT_EVALUATION_DUPLICATE"
+                                    )
                                 self._record_rule_result(
                                     rule.rule_code,
                                     evaluated_bar_at=window.cutoff,
