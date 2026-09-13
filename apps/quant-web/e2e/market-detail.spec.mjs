@@ -395,218 +395,20 @@ test('invalid identity fails closed and only recovers after an explicit click', 
   expect(new URL(page.url()).searchParams.get('frequency')).toBe('15m')
 })
 
-test('Trend uses one fixed Newow authority and preserves same-Bar facts in history', async ({ page }) => {
-  const fixture = newowTrendDetailFixture({ product: 'jm' })
-  expect(() => assertNewowCupFixtureLifecycle(fixture)).not.toThrow()
-  await installDetailFakeWebSocket(page)
-  const requests = await mockReadyTrend(page)
-  await page.goto(trendJm)
+test('legacy Trend route migrates once into the unified Newow trend identity', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.route('**/api/v1/market/newow/strategy-detail**', route => route.abort('blockedbyclient'))
+  await page.goto('/market/chart?symbol=jm&view=trend&focus_bar_end=2026-09-03T07%3A00%3A00Z')
 
-  const workspace = page.locator('[data-detail-workspace="trend"]')
-  await expect(workspace).toHaveAttribute('data-newow-state', 'ready')
-  await expect(page.getByText('固定日K', { exact: true })).toBeVisible()
-  await expect(page.getByRole('group', { name: '序列' })).toHaveCount(0)
-  await expect(page.getByRole('group', { name: '周期' })).toHaveCount(0)
-  await expect(page.getByLabel('指定合约')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '预警', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
-
+  await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('newow')
   const route = new URL(page.url())
-  expect([...route.searchParams.keys()].sort()).toEqual(['symbol', 'view'])
-  expect(route.searchParams.get('view')).toBe('trend')
-  expect(route.searchParams.has('focus_bar_end')).toBe(false)
-
-  const facts = await workspace.locator('[data-detail-section="facts"] > div').evaluateAll((nodes) => nodes.map((node) => ({
-    label: node.querySelector('dt')?.textContent?.trim(),
-    value: node.querySelector('dd')?.textContent?.trim(),
-  })))
-  expect(facts).toEqual([
-    { label: '周线背景', value: '中性' },
-    { label: '日线趋势', value: '持有' },
-    { label: '当前风险', value: 'D1' },
-  ])
-  await expect(workspace.getByRole('status').first()).toContainText('趋势引擎状态，不代表实际账户持仓')
-  await expect(workspace.getByText('仅展示已完成 D1；未完成 Bar 不进入 Newow 事实。')).toBeVisible()
-  await expect(workspace.getByText('蓝色仅表示 Newow 的空仓或风险阶段，不表示建立期货空单。')).toBeVisible()
-  await expect(workspace.getByText(/主力换月.*不表示交易机会/)).toBeVisible()
-
-  const chart = page.getByTestId('newow-trend-chart-stage')
-  await expect(chart).toHaveAttribute('data-chart-source', 'newow')
-  await expect(chart).toHaveAttribute('data-pane-count', '2')
-  await expect(chart).toHaveAttribute('data-newow-band-area-count', '8')
-  await expect(chart).toHaveAttribute('data-newow-marker-count', '17')
-  await expect(chart).toHaveAttribute('data-newow-rollover-count', '1')
-  await expect(chart).toHaveAttribute('data-newow-marker-ids', /escape-latest-d1/)
-  await expect(chart).not.toHaveAttribute('data-newow-marker-ids', /escape-latest-d2|escape-latest-d3/)
-  await expect(page.getByTestId('kline-shell')).toHaveCount(0)
-  await expect(page.getByLabel('箱体识别（Range）')).toHaveCount(0)
-  await expect(page.getByText('火天大有（原始观察）', { exact: true })).toHaveCount(0)
-
-  await expect(workspace.getByText('newow_trend_v1', { exact: true })).toBeVisible()
-  await expect(workspace.getByText('newow_trend_d1_page_v2', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '风险与形态', exact: false })).toBeVisible()
-  await expect(page.getByRole('button', { name: '主力与数据', exact: false })).toBeVisible()
-
-  await page.getByRole('tab', { name: '历史记录', exact: true }).first().click()
-  const history = workspace.locator('.detail-section-tabs__history')
-  await expect(history).toContainText('类型 NEWOW_ESCAPE_D1')
-  await expect(history).toContainText('类型 NEWOW_ESCAPE_D2')
-  await expect(history).toContainText('类型 NEWOW_ESCAPE_D3')
-  await expect(history).toContainText('类型 CUP_HANDLE_READY')
-  await expect(history).toContainText('类型 CUP_HANDLE_BREAKOUT')
-  await expect(history).toContainText('类型 CUP_HANDLE_WEAKENED')
-  await expect(history).toContainText('类型 CUP_HANDLE_INVALIDATED')
-  await expect(history).toContainText('类型 CUP_HANDLE_EXPIRED')
-  await expect(history).toContainText('合约 JM2601')
-  await expect(history).toContainText('合约 JM2605')
-  await expect(history).not.toContainText(/AlertEvent|已尝试通知|送达/)
-
-  expect(requests.newowRequests).toHaveLength(1)
-  const newowRequest = requests.newowRequests[0]
-  expect(newowRequest.pathname).toBe('/api/v1/market/newow/trend-detail')
-  expect(Object.fromEntries(newowRequest.searchParams)).toEqual({
-    product: 'jm',
-    from: '2026-08-21',
-    through: '2026-09-03',
-    frequency: '1d',
-    series_kind: 'actual_dominant',
+  expect(Object.fromEntries(route.searchParams)).toEqual({
+    symbol: 'jm', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant',
+    frequency: '1d', focus_bar_end: '2026-09-03T07:00:00Z',
   })
-  expect(requests.alertRequests).toEqual([])
-  expect(requests.runtimeRequests).toEqual([])
-  expect(await page.evaluate(() => (
-    window.__marketDetailSockets?.filter((socket) => socket.url.includes('/api/v1/market/ws')).length ?? 0
-  ))).toBe(0)
-  expect(requests.every((url) => [
-    '/api/v1/market/dominants',
-    '/api/v1/market/research/product',
-    '/api/v1/market/state',
-    '/api/v1/market/bars/page',
-    '/api/v1/market/newow/trend-detail',
-  ].includes(url.pathname))).toBe(true)
-})
-
-test('Trend unavailable and contract-mismatched responses fall back to generic D1 without overlays', async ({ page }) => {
-  let responseMode = 'unavailable'
-  const requests = await mockReadyTrend(page, {
-    newowTrendDetail({ url, product }) {
-      if (responseMode === 'unavailable') return 'error'
-      const payload = newowTrendDetailFixture({
-        product,
-        from: url.searchParams.get('from'),
-        through: url.searchParams.get('through'),
-      })
-      payload.instrument.last_visible_physical_contract = `${product.toUpperCase()}9999`
-      return payload
-    },
-  })
-  await page.goto(trendJm)
-
-  const workspace = page.locator('[data-detail-workspace="trend"]')
-  const chart = page.getByTestId('newow-trend-chart-stage')
-  await expect(workspace).toHaveAttribute('data-newow-state', 'unavailable')
-  await expect(chart).toHaveAttribute('data-chart-source', 'generic-fallback')
-  await expect(chart).toHaveAttribute('data-newow-band-area-count', '0')
-  await expect(chart).toHaveAttribute('data-newow-marker-count', '0')
-  await expect(chart).toHaveAttribute('data-newow-rollover-count', '0')
-  await expect(page.getByTestId('newow-trend-chart-unavailable')).toContainText('仅显示 completed D1 K 线与成交量')
-  await expect(workspace.getByText('趋势策略数据不可用；当前页面不会从基础 K 线推断 Newow 状态。')).toBeVisible()
-  await expect(workspace.locator('[data-detail-section="facts"] dd')).toHaveText(['中性', '不可用', '不可用'])
-  await expect(page.getByRole('tab', { name: '历史记录', exact: true })).toBeVisible()
-  await page.getByRole('tab', { name: '历史记录', exact: true }).click()
-  await expect(workspace.getByText('暂无历史记录', { exact: true })).toBeVisible()
-
-  responseMode = 'contract-mismatch'
-  await page.reload()
-  await expect(workspace).toHaveAttribute('data-newow-state', 'unavailable')
-  await expect(chart).toHaveAttribute('data-chart-source', 'generic-fallback')
-  await expect(chart).toHaveAttribute('data-newow-marker-count', '0')
-  expect(requests.newowRequests).toHaveLength(2)
-  expect(requests.alertRequests).toEqual([])
-  expect(requests.runtimeRequests).toEqual([])
-})
-
-test('Trend controller paging expands the parity window and history focus restores latest and fullscreen', async ({ page }) => {
-  const requests = await mockReadyTrend(page, {
-    newowTrendDetail({ url, product }) {
-      const payload = newowTrendDetailFixture({ product, from: url.searchParams.get('from'), through: url.searchParams.get('through') })
-      payload.bars = payload.bars.filter((bar) => bar.trading_day >= url.searchParams.get('from'))
-      const visible = new Set(payload.bars.map((bar) => bar.bar_end))
-      for (const key of ['trend_band', 'trend_markers', 'escape_markers', 'cup_markers']) {
-        payload[key] = payload[key].filter((item) => visible.has(item.bar_end))
-      }
-      payload.rollover_seams = payload.rollover_seams.filter((seam) => visible.has(seam.previous_bar_end) && visible.has(seam.next_bar_end))
-      return payload
-    },
-    barsPage({ url, symbol }) {
-      const all = trendGenericBars(symbol)
-      const earlier = url.searchParams.has('before')
-      const bars = earlier ? all.slice(0, 4) : all.slice(4)
-      return { bars, page: { has_more_before: !earlier, next_before: earlier ? null : bars[0].bar_end },
-        resolvedContractSegments: [{ contract: bars[0].physical_contract,
-          start_trading_day: bars[0].trading_day, end_trading_day: bars.at(-1).trading_day }] }
-    },
-  })
-  await page.goto(`${trendJm}&focus_bar_end=2026-09-03T07%3A00%3A00Z`)
-  const workspace = page.locator('[data-detail-workspace="trend"]')
-  const chart = page.getByTestId('newow-trend-chart-stage')
-  await expect(workspace).toHaveAttribute('data-newow-state', 'ready')
-  await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
-  await page.getByRole('button', { name: '加载更早', exact: true }).click()
-  await expect(chart).toHaveAttribute('data-newow-rollover-count', '1')
-  expect(requests.newowRequests.at(-1).searchParams.get('from')).toBe('2026-08-21')
-  await page.getByRole('tab', { name: '历史记录', exact: true }).first().click()
-  const historical = workspace.locator('.detail-section-tabs__history button').filter({ hasText: '合约 JM2601' }).first()
-  await historical.click()
-  await expect(page.getByTestId('newow-selected-marker')).toContainText('JM2601')
-  await expect(chart.getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
-  await chart.getByRole('button', { name: '回到最新', exact: true }).click()
-  await expect(chart.getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
-  await chart.getByRole('button', { name: '全屏图表', exact: true }).click()
-  await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true)
-  await chart.getByRole('button', { name: '退出全屏', exact: true }).click()
-  await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(false)
-  await navigateClient(page, '/market/chart?symbol=rb&view=trend')
-  await expect(page.getByTestId('newow-selected-marker')).toHaveCount(0)
-  expect(requests.alertRequests).toEqual([])
-  expect(requests.runtimeRequests).toEqual([])
-})
-
-test('Trend OHLCV parity conflict clears every Newow layer and shows the stable identity code', async ({ page }) => {
-  await mockReadyTrend(page, { barsPage({ symbol }) {
-    const bars = trendGenericBars(symbol)
-    bars.at(-1).volume += 1
-    const upper = symbol.toUpperCase()
-    return { bars, resolvedContractSegments: [
-      { contract: `${upper}2601`, start_trading_day: bars[0].trading_day, end_trading_day: bars[3].trading_day },
-      { contract: `${upper}2605`, start_trading_day: bars[4].trading_day, end_trading_day: bars.at(-1).trading_day },
-    ] }
-  } })
-  await page.goto(trendJm)
-  const chart = page.getByTestId('newow-trend-chart-stage')
-  await expect(page.getByText(/NEWOW_DATA_IDENTITY_INVALID：/)).toBeVisible()
-  await expect(chart).toHaveAttribute('data-chart-source', 'generic-fallback')
-  for (const attr of ['data-newow-band-area-count', 'data-newow-marker-count', 'data-newow-rollover-count']) {
-    await expect(chart).toHaveAttribute(attr, '0')
-  }
-  await expect(page.getByRole('tab', { name: '历史记录', exact: true })).toBeVisible()
-})
-
-test('a stale Trend response cannot overwrite a newer product identity', async ({ page }) => {
-  const requests = await mockReadyTrend(page, { newowDelayMs: { jm: 400 } })
-  await page.goto(trendJm)
-  await expect.poll(() => requests.newowRequests.length).toBe(1)
-  await navigateClient(page, '/market/chart?symbol=rb&view=trend')
-
-  const workspace = page.locator('[data-detail-workspace="trend"]')
-  await expect(workspace).toHaveAttribute('data-newow-state', 'ready')
-  await expect(page.locator('.detail-topbar__name')).toHaveText('螺纹钢')
-  await expect(page.locator('.detail-topbar__contract')).toHaveText('RB')
-  await expect(page.getByTestId('newow-trend-chart-stage')).toHaveAttribute('data-chart-source', 'newow')
-  await expect(workspace.getByText('RB2605', { exact: true }).first()).toBeVisible()
-  await expect.poll(() => requests.newowCompletedProducts.includes('jm')).toBe(true)
-  await expect(page.locator('.detail-topbar__name')).toHaveText('螺纹钢')
-  await expect(page.locator('.detail-topbar__contract')).toHaveText('RB')
-  await expect(workspace.getByText('RB2605', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toBeVisible()
+  await expect(page.locator('[data-detail-workspace="trend"]')).toHaveCount(0)
+  await expect(page.getByTestId('newow-trend-chart-stage')).toHaveCount(0)
 })
 
 test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event facts', async ({ page }) => {
@@ -728,26 +530,6 @@ test('SuBing focus remains visible after viewport readiness settles', async ({ p
   expect(range.to - range.from).toBeLessThan(100)
 })
 
-test('Trend has stable desktop and narrow viewport visuals', async ({ page }) => {
-  await page.setViewportSize({ width: 1920, height: 1080 })
-  await mockReadyTrend(page)
-  await page.goto(trendJm)
-  await expect(page.locator('[data-detail-workspace="trend"]')).toHaveAttribute('data-newow-state', 'ready')
-  const chart = page.getByTestId('newow-trend-chart-stage')
-  await chart.scrollIntoViewIfNeeded()
-  await expect(page).toHaveScreenshot('market-detail-trend-1920x1080.png', {
-    animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
-  })
-
-  await page.setViewportSize({ width: 390, height: 844 })
-  await expect(page.locator('[data-detail-workspace="trend"]')).toBeVisible()
-  await chart.scrollIntoViewIfNeeded()
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await expect(page).toHaveScreenshot('market-detail-trend-390x844.png', {
-    animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
-  })
-})
-
 test('HTDY resolves immutable Event focus across every official frequency', async ({ page }) => {
   const cases = [
     ['1m', '2026-09-03T02:30:00.000Z', '2026-09-03'],
@@ -843,6 +625,7 @@ test('a late JM response cannot overwrite a newer RB identity', async ({ page })
 test('leaving the Free shell closes its live series resource', async ({ page }) => {
   await installDetailFakeWebSocket(page)
   await mockMarketDetail(page, { live: true })
+  await page.route('**/api/v1/market/newow/strategy-detail**', route => route.abort('blockedbyclient'))
   await page.goto(freeJm)
 
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
@@ -850,8 +633,8 @@ test('leaving the Free shell closes its live series resource', async ({ page }) 
     window.__marketDetailSockets?.filter((socket) => socket.url.includes('/api/v1/market/ws') && !socket.closed).length ?? 0
   ))).toBeGreaterThan(0)
 
-  await navigateClient(page, '/market/chart?symbol=jm&view=trend')
-  await expect(page.locator('[data-detail-workspace="trend"]')).toHaveAttribute('data-newow-state', 'unavailable')
+  await navigateClient(page, '/market/chart?symbol=jm&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1w')
+  await expect(page.locator('[data-detail-workspace="newow"]')).toBeVisible()
   await expect.poll(() => page.evaluate(() => (
     window.__marketDetailSockets
       ?.filter((socket) => socket.url.includes('/api/v1/market/ws'))
