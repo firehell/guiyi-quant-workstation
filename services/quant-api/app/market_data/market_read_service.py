@@ -280,20 +280,6 @@ class MarketReadService:
             raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
         if len(bar_contracts) != len(bars) or bar_contracts[-1] != contract:
             raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
-        context_bars = bars[-32:]
-        context_owners = bar_contracts[-32:]
-        try:
-            self._market_data.validate_actual_dominant_alert_window(
-                symbol=identity.symbol,
-                frequency=identity.frequency,
-                trading_day=trading_day,
-                current_contract=contract,
-                cutoff=cutoff,
-                bars=context_bars,
-                bar_contracts=context_owners,
-            )
-        except MarketDataError as exc:
-            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE") from exc
         window = MarketReadWindow(
             symbol=identity.symbol,
             series_kind=identity.series_kind.value,
@@ -307,6 +293,35 @@ class MarketReadService:
         )
         self.assert_window_current(window)
         return window
+
+    def validate_htdy_alert_window(
+        self,
+        window: MarketReadWindow,
+        *,
+        context_bars: int,
+    ) -> None:
+        """Prove HTDY's cross-owner actual-dominant context endpoints."""
+        if (
+            isinstance(context_bars, bool)
+            or not isinstance(context_bars, int)
+            or context_bars < 1
+            or len(window.bars) < context_bars
+            or len(window.bar_contracts) != len(window.bars)
+        ):
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
+        self.assert_window_current(window)
+        try:
+            self._market_data.validate_actual_dominant_alert_window(
+                symbol=window.symbol,
+                frequency=window.frequency,
+                trading_day=window.trading_day,
+                current_contract=window.contract,
+                cutoff=window.cutoff,
+                bars=window.bars[-context_bars:],
+                bar_contracts=window.bar_contracts[-context_bars:],
+            )
+        except MarketDataError as exc:
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE") from exc
 
     def _read_recovery_state(self, trading_day: date, symbol: str, contract: str) -> LiveRecoveryState | None:
         try:

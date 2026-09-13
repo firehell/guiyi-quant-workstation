@@ -18,6 +18,7 @@ from app.market_data.domain import (
     SeriesPageQuery,
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
+from app.market_data.live_market import LiveBarObservation
 from app.market_data.market_read_service import (
     MarketObservationSnapshotError,
     MarketReadService,
@@ -1064,26 +1065,200 @@ def test_bars_until_rejects_fixed_in_session_gap_before_htdy_signal_changes() ->
             if actual != expected:
                 raise MarketDataError("ACTUAL_DOMINANT_ALERT_WINDOW_UNAVAILABLE")
 
-    def read(live: tuple[CanonicalBar, ...]) -> MarketReadWindow:
-        return MarketReadService(
+    def read(live: tuple[CanonicalBar, ...]) -> tuple[MarketReadService, MarketReadWindow]:
+        service = MarketReadService(
             market_data=ValidatingReader(
                 all_bars[:41], (ResolvedContractSegment("JM2705", prior, DAY_2),)
             ),
             phase_resolver=_ForbiddenPhaseReader(),
             operational_products=("jm",),
             live_store=_LiveStore(live, "JM2705"),
-        ).bars_until(
+        )
+        window = service.bars_until(
             SeriesPageQuery("actual_dominant", "jm", "15m"),
             trading_day=DAY_2,
             end=all_bars[-1].bar_end,
             limit=64,
         )
+        return service, window
 
-    full = read(all_bars[41:])
-    assert HtdyOriginalEvaluator().evaluate_candidates(object(), full)[0].observation_types == ("buy",)
+    service, full = read(all_bars[41:])
+    assert HtdyOriginalEvaluator().evaluate_candidates(service, full)[0].observation_types == ("buy",)
     sparse_live = all_bars[41:61] + all_bars[62:]
+    service, sparse = read(sparse_live)
     with pytest.raises(MarketReadWindowError, match="MARKET_READ_WINDOW_INCOMPLETE"):
-        read(sparse_live)
+        HtdyOriginalEvaluator().evaluate_candidates(service, sparse)
+
+
+def test_rule_specific_alert_windows_keep_subing_on_current_contract_lifecycle(
+    tmp_path,
+) -> None:
+    """Catches applying HTDY's cross-owner 32-bar proof to SuBing replay."""
+    from app.alerts.evaluators import HtdyOriginalEvaluator, SubingThs15mEvaluator
+
+    first = date(2026, 9, 1)
+    through = date(2026, 9, 21)
+    calendar_days = tuple(
+        first + timedelta(days=offset)
+        for offset in range((through - first).days + 1)
+    )
+    trading_days = tuple(day for day in calendar_days if day.weekday() < 5)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add_all(
+            (
+                Exchange(code="SHFE", name="SHFE"),
+                Instrument(
+                    symbol="rb",
+                    name="RB",
+                    exchange_code="SHFE",
+                    is_active=True,
+                ),
+                Contract(
+                    contract_code="RB2605",
+                    instrument_symbol="rb",
+                    exchange_code="SHFE",
+                    listed_date=first,
+                    expired_date=date(2027, 1, 1),
+                ),
+                Contract(
+                    contract_code="RB2610",
+                    instrument_symbol="rb",
+                    exchange_code="SHFE",
+                    listed_date=first,
+                    expired_date=date(2027, 1, 1),
+                ),
+            )
+        )
+        session.add_all(
+            TradingCalendar(
+                exchange_code="SHFE",
+                trade_date=day,
+                is_trading_day=day in trading_days,
+                provider="rqdata",
+            )
+            for day in calendar_days
+        )
+        session.add_all(
+            MainContractMap(
+                symbol="rb",
+                trade_date=day,
+                rank=1,
+                contract_code="RB2610" if day == trading_days[-1] else "RB2605",
+            )
+            for day in trading_days
+        )
+        session.add_all(
+            TradingSession(
+                exchange_code="SHFE",
+                instrument_symbol="rb",
+                session_name="day",
+                start_time=time(9),
+                end_time=time(11),
+                effective_from=day,
+                effective_to=day,
+                crosses_midnight=False,
+                is_active=True,
+                provider="rqdata",
+            )
+            for day in trading_days
+        )
+        session.commit()
+
+        catalog = MarketCatalog(session, tmp_path)
+        store = CanonicalMonthlyStore(tmp_path)
+        market_data = MarketDataService(catalog, store)
+        endpoints: list[tuple[datetime, date]] = []
+        for day in trading_days:
+            endpoints.extend(
+                market_data.expected_contract_replay_endpoints(
+                    symbol="rb",
+                    contract="RB2610",
+                    frequency="15m",
+                    trading_day=day,
+                    cutoff=datetime.max.replace(tzinfo=UTC),
+                    since=day,
+                )
+            )
+        current_bars = tuple(
+            _bar_with_close(bar_end, day, str(Decimal("100") + Decimal(index % 17) / 10))
+            for index, (bar_end, day) in enumerate(endpoints)
+        )
+        old_endpoints = list(endpoints[:-8])
+        missing_old_owner = old_endpoints.pop(-12)
+        old_bars = tuple(
+            _bar_with_close(bar_end, day, str(Decimal("100") + Decimal(index % 17) / 10))
+            for index, (bar_end, day) in enumerate(old_endpoints)
+        )
+        for contract, bars in (("RB2605", old_bars), ("RB2610", current_bars)):
+            artifact = store.publish(
+                PublishRequest(
+                    DatasetKey("contract", "rb", contract, "15m"),
+                    2026,
+                    9,
+                    bars,
+                    tuple(bar.bar_end for bar in bars),
+                )
+            )
+            catalog.register_partition(artifact)
+        session.commit()
+
+        class Live:
+            @staticmethod
+            def subscriptions(_day):
+                return {"rb": "RB2610"}
+
+            @staticmethod
+            def recovery_state(*_args):
+                return None
+
+            @staticmethod
+            def bars_after(*_args):
+                return current_bars[-8:]
+
+            @staticmethod
+            def bar_observations(*_args, **_kwargs):
+                return tuple(
+                    LiveBarObservation(bar, "RB2610") for bar in current_bars[-8:]
+                )
+
+        market_read = MarketReadService(
+            market_data=market_data,
+            phase_resolver=_ForbiddenPhaseReader(),
+            operational_products=("rb",),
+            live_store=Live(),
+        )
+        actual_page = market_data.query_page(
+            SeriesPageQuery(
+                "actual_dominant",
+                "rb",
+                "15m",
+                before=current_bars[-1].bar_end + timedelta(microseconds=1),
+                limit=64,
+            )
+        )
+        assert len(current_bars) == 120
+        assert len(actual_page.bars) == 64
+        assert missing_old_owner not in tuple(
+            (bar.bar_end, bar.trading_day) for bar in old_bars
+        )
+
+        window = market_read.bars_until(
+            SeriesPageQuery("actual_dominant", "rb", "15m"),
+            trading_day=trading_days[-1],
+            end=current_bars[-1].bar_end,
+            limit=64,
+        )
+        candidates = SubingThs15mEvaluator().evaluate_candidates(market_read, window)
+
+        assert len(candidates) == 1
+        assert candidates[0].bar_end == current_bars[-1].bar_end
+        with pytest.raises(
+            MarketReadWindowError, match="MARKET_READ_WINDOW_INCOMPLETE"
+        ):
+            HtdyOriginalEvaluator().evaluate_candidates(market_read, window)
 
 
 def test_live_snapshot_excludes_bars_after_observation_time() -> None:

@@ -102,7 +102,10 @@ class HtdyOriginalEvaluator:
         market_read: MarketReadService,
         window: MarketReadWindow,
     ) -> tuple[AlertObservationCandidate, ...]:
-        del market_read
+        market_read.validate_htdy_alert_window(
+            window,
+            context_bars=self.context_bars,
+        )
         return tuple(
             AlertObservationCandidate(
                 bar_end=candidate.bar_end,
