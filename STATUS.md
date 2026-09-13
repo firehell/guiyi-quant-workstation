@@ -1,11 +1,11 @@
 # 当前状态
 
-文档整理：2026-09-14；最新候选验证截至 `2026-09-14 00:03:44 CST`，现场记录截至
-`2026-09-13 20:15:15 CST`。
-正式 Release 与现役 Runtime 为 `v1.10.8@82860ee3f5f63c49397ab11b0d0ab60c601376b9`。
-develop 冻结基线 `74d7a71fcd061d25eb23d7d2142a075420125886` 正在准备为未发布的 v1.10.9
-`RELEASE_CANDIDATE`；发布、main/tag/GitHub Release、Runtime promotion 与自然验收仍分别取证。
-六服务切换、即时服务和页面验收已通过；自然 Live、盘后、后续增量及首次自然周检仍待验收，
+文档整理：2026-09-14；最新候选验证截至 `2026-09-14 00:19:07 CST`，现场记录截至
+`2026-09-14 00:31:27 CST`。
+正式 Release 为 `v1.10.9@94414c26ef9ae784fddb3758acc45a5b4c6b5c51`；现役 Runtime 仍为
+`v1.10.8@82860ee3f5f63c49397ab11b0d0ab60c601376b9`。v1.10.9 已完成 main、annotated tag 与
+GitHub Release，Runtime promotion 在任何安装/切换前被 fresh preflight 阻断，两个 Gate 分别取证。
+现役 v1.10.8 的六服务切换、即时服务和页面验收已通过；自然 Live、盘后、后续增量及首次自然周检仍待验收，
 不声明 `RUNTIME_READY`。本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
@@ -14,9 +14,9 @@ develop 冻结基线 `74d7a71fcd061d25eb23d7d2142a075420125886` 正在准备为�
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.8@82860ee3f`，PR #364 合入 main，tree `6df9ebdce`、annotated tag object `b1a52b239` 与 GitHub Release 已读回 |
+| 正式 Release | `RELEASED` | `v1.10.9@94414c26e`，PR #365 合入 main；annotated tag object `6f8369417` 与 GitHub Release 已读回，API/Web 版本均为 1.10.9 |
 | 现役 Runtime | v1.10.8 `RUNTIME_PROMOTED / IMMEDIATE_ACCEPTANCE_PASSED`，未声明 `RUNTIME_READY` | 六服务均绑定 `v1.10.8@82860ee3f`；API/Web 200、单 API worker、Live/Alert fresh heartbeat；after-market 等待自然运行，既有 degraded/failed health 事实保留 |
-| v1.10.9 候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASE_CANDIDATE` | 基于 develop `74d7a71f` 的完整集成版已完成版本身份、新 tree 验证及独立 Review；main/tag/Release 与 Runtime promotion 尚未完成 |
+| v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / EXTERNAL_GATE_PENDING` | main/tag/GitHub Release 已完成；新 exact-tag root 已构建，但 Runtime promotion preflight 因 60/60 `phase=UNKNOWN` 阻断，未执行安装或切换 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
 | Weekly audit | `ENABLED / CURRENT_WEEK_READBACK_PASSED / NATURAL_RUN_PENDING` | exact v1.10.8 root 已 loaded、周六 09:00、当前 idle、runs 0 / not_run；840/840 endpoint 与 120/120 周线归属核对通过；首次自然及全历史周检待验 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
@@ -27,7 +27,7 @@ develop 冻结基线 `74d7a71fcd061d25eb23d7d2142a075420125886` 正在准备为�
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
 
-## v1.10.9 Release candidate（测试与 Review 完成）
+## v1.10.9 Release（已发布；Runtime promotion 阻断）
 
 v1.10.9 发布范围是 `v1.10.8...74d7a71f` 的完整 develop 集成差异，不反向拆散已接受提交，也不把本版
 缩称为单一告警补丁。主要交付包括：Market Home 报价与历史消息、统一详情页与 Newow 展示；Newow 周线
@@ -46,9 +46,17 @@ OpenSpec 9/9、两套锁文件、secret scan 0、render-only 与 diff check 均�
 证据已明确降级为 legacy weekly scope，不再冒充当前完整 matrix。最终独立 Review 为 0 finding，允许进入
 main/tag Release Gate。
 
-完成 main merge、annotated tag 与 GitHub Release 只证明 `RELEASED`；本地六服务切换须另经
-fresh render-only、正式只读 promotion preflight 和 exact Runtime 身份读回。自然 completed Live Bar、真实收件、
-自然 18:05 盘后、后续增量/MDS 与首次自然周检继续保持 pending，不由启动或即时 health 代替。
+PR #365 已以 merge commit `94414c26e` 合入 main；`v1.10.9` 是 annotated tag（object `6f8369417`），
+peeled commit、origin/main、GitHub Release target 与 API/Web 版本身份均已读回一致。新 detached exact-tag root
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.9-r1` 已完成独立 Python 环境、离线 Web lock 校验、production build
+与 render-only，旧 v1.10.8 root 保留为回滚。
+
+2026-09-14 午夜窗口的 fresh Market promotion preflight 在任何 launchd 安装/切换前返回
+`MARKET_RUNTIME_PROMOTION_STATE_UNAVAILABLE`。同一现场以 v1.10.8 代码对照结果相同；现役只读 health 显示
+Live heartbeat fresh、DB/Redis ok，但 60/60 operational 品种 `phase=UNKNOWN`，after-market 保留 2026-09-11
+missed/2026-09-13 non-trading-day skipped，overall degraded。按 fail-closed 合同未重试、未安装、未切服务、
+未修改 Runtime 状态或生产数据；现役六服务仍全部绑定 v1.10.8。自然 completed Live Bar、真实收件、自然
+18:05 盘后、后续增量/MDS 与首次自然周检继续保持 pending，不由 Release 或候选 build 代替。
 
 ## 共享锁释放异常修复（开发验收）
 
