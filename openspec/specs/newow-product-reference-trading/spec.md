@@ -662,6 +662,28 @@ repainting、formal-signal eligibility、允许用途、实际图表/统计窗�
 Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置及重试/历史入口提示；未知 reason
 不得透传文本或诱导历史回退。其他面板缺失不得清除已验证主图。
 
+分阶段发布 MUST 由无数据库依赖的 `GET /api/v1/market/newow/product-capabilities` 返回唯一公开边界，
+并由当前与历史 typed endpoint 在进入 reader/service 前执行同一 server-owned Gate。当前周版 stage 只开放
+`1w` 的 chart/auxiliary/reference/comparator；`1d/60m` 分别返回 `NEWOW_FREQUENCY_NOT_OPEN`，依赖未开放
+跨周期输入的 explanation 返回 `NEWOW_SECTION_NOT_OPEN`。Web 必须严格校验 capability envelope；旧链接和
+存储偏好不得把未开放周期静默改写为 `1w`，而要显示本版未开放并提供明确回到周线的操作。
+该 stage 不删除 kernel/reader 的三周期能力，不改变 HTDY/SuBing/Free，也不改变旧 `/trend-detail` 的固定 D1
+兼容语义。后续日版或 60m 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
+
+#### Scenario: Deferred direct request cannot bypass the weekly stage
+
+- **GIVEN** 当前 capability 的 `release_stage=weekly`
+- **WHEN** 客户端直接请求 typed current/historical endpoint 的 `1d` 或 `60m`
+- **THEN** 服务在构造 reader/service 前返回分类 409 `NEWOW_FREQUENCY_NOT_OPEN`
+- **AND** 不改写 frequency、不请求其他周期、不影响旧固定 D1 兼容 endpoint
+
+#### Scenario: Cross-frequency explanation remains closed
+
+- **GIVEN** 周线主图和独立同周期面板可用，但 explanation 仍需要未开放的 D1/60m 输入
+- **WHEN** 客户端请求 `1w section=explanation`
+- **THEN** 返回分类 409 `NEWOW_SECTION_NOT_OPEN`
+- **AND** 不删除输入后沿用综合总分，也不创造周线简化评分
+
 #### Scenario: A requested explanation has an evidence gap
 
 - **GIVEN** 主策略事实可用，但某解释输入来源无法证明

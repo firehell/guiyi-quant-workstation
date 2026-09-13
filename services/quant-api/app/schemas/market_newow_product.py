@@ -681,3 +681,24 @@ class NewowHistoricalSnapshotResponse(_Out):
     trading_day: date
     as_of: datetime
     validated_sections: list[Literal["chart", "zhaoyao_mirror"]]
+
+
+class DeferredFrequencyOut(_Out):
+    frequency: ProductFrequencyValue
+    reason_code: str
+
+
+class DeferredSectionOut(_Out):
+    section: Literal["chart", "auxiliary", "reference", "explanation", "comparator"]
+    reason_code: str
+
+
+class NewowProductCapabilitiesResponse(_Out):
+    schema_version: Literal["newow_product_capabilities_v1"]
+    release_stage: Literal["weekly"]
+    open_frequencies: list[ProductFrequencyValue]
+    deferred_frequencies: list[DeferredFrequencyOut]
+    open_sections: list[
+        Literal["chart", "auxiliary", "reference", "explanation", "comparator"]
+    ]
+    deferred_sections: list[DeferredSectionOut]

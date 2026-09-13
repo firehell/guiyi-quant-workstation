@@ -63,8 +63,24 @@ class _Reader:
         )
 
 
-def _service(product_cases):
-    case = product_cases.primitive_input("trend", "1d")
+def _service(product_cases, frequency="1d"):
+    case = product_cases.primitive_input("trend", frequency)
+    if frequency == "1w":
+        shift = timedelta(days=364)
+        case = replace(
+            case,
+            bars=tuple(
+                replace(
+                    product_bar,
+                    bar=replace(
+                        product_bar.bar,
+                        trading_day=product_bar.bar.trading_day - shift,
+                        bar_end=product_bar.bar.bar_end - shift,
+                    ),
+                )
+                for product_bar in case.bars
+            ),
+        )
     replay = replay_strategy(case.identity, case.bars)
     build, clear = replay.actions[:2]
     reader = _Reader(case.bars, build.bar_end, clear.bar_end)

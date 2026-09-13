@@ -4,6 +4,7 @@ import kernelMacdFixture from '../e2e/fixtures/newow-rich-macd.json' with { type
 import { buildNewowFixtureEnvelopeForTest, NEWOW_AS_OF } from '../e2e/newow-product.helpers.mjs'
 
 import {
+  getNewowProductCapabilities,
   getNewowProductSection,
   NewowProductRequestError,
 } from '../src/api/newowProduct.ts'
@@ -121,6 +122,42 @@ test('shares one Newow strategy and frequency allowlist authority across route a
   assert.equal(NEWOW_PRODUCT_FREQUENCIES, NEWOW_FREQUENCIES)
 })
 
+test('loads the server-owned weekly release capability and rejects widened payloads', async () => {
+  const payload = {
+    schema_version: 'newow_product_capabilities_v1',
+    release_stage: 'weekly',
+    open_frequencies: ['1w'],
+    deferred_frequencies: [
+      { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+    open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
+    deferred_sections: [
+      { section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' },
+    ],
+  }
+  const calls: Array<{ path: string; params: Record<string, unknown> }> = []
+  const result = await getNewowProductCapabilities({
+    request: async (path, config) => {
+      calls.push({ path, params: config.params })
+      return payload
+    },
+  })
+
+  assert.deepEqual(calls, [{ path: '/market/newow/product-capabilities', params: {} }])
+  assert.deepEqual(result, payload)
+  assert.equal(Object.isFrozen(result), true)
+
+  await assert.rejects(
+    getNewowProductCapabilities({
+      request: async () => ({ ...payload, open_frequencies: ['1w', '1d'] }),
+    }),
+    (error: unknown) =>
+      error instanceof NewowProductRequestError
+      && error.code === 'NEWOW_RESPONSE_INVALID',
+  )
+})
+
 test('rejects chart facts later than the fixed snapshot as_of', () => {
   const bar = chartWire()
   bar.chart.value!.bars[0]!.bar_end = '2026-08-15T07:00:01Z'
@@ -233,6 +270,8 @@ test('builds the exact P4 query for every section and omits cross-section parame
 test('maps 409 and 429 into safe classified errors without leaking transport details', async () => {
   const cases = [
     [409, 'NEWOW_DATA_UNAVAILABLE', 'unavailable'],
+    [409, 'NEWOW_FREQUENCY_NOT_OPEN', 'unavailable'],
+    [409, 'NEWOW_SECTION_NOT_OPEN', 'unavailable'],
     [409, 'NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'conflict'],
     [429, 'NEWOW_RESOURCE_BUSY', 'busy'],
     [429, 'NEWOW_REQUEST_CANCELLED', 'cancelled'],

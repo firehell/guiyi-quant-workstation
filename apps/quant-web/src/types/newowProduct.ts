@@ -7,6 +7,28 @@ export {
 export type NewowProductStrategy = NewowStrategy
 export type NewowProductFrequency = NewowFrequency
 
+export interface NewowDeferredFrequency {
+  readonly frequency: NewowProductFrequency
+  readonly reason_code: string
+}
+
+export interface NewowDeferredSection {
+  readonly section: NewowProductSection
+  readonly reason_code: string
+}
+
+export interface NewowProductCapabilities {
+  readonly schema_version: 'newow_product_capabilities_v1'
+  readonly release_stage: 'weekly'
+  readonly open_frequencies: readonly ['1w']
+  readonly deferred_frequencies: readonly [
+    NewowDeferredFrequency,
+    NewowDeferredFrequency,
+  ]
+  readonly open_sections: readonly ['chart', 'auxiliary', 'reference', 'comparator']
+  readonly deferred_sections: readonly [NewowDeferredSection]
+}
+
 export interface NewowHistoricalSnapshot {
   readonly schema_version: 'newow_historical_snapshot_v1'
   readonly product: string
