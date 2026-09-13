@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+import json
+from pathlib import Path
 
 import pytest
 
@@ -17,38 +19,9 @@ from guiyi_quant.newow.oscillation_channel import (
 )
 
 
-_GOLDEN = (
-    (14.49, 14.78, 14.26, 14.5, 315418),
-    (14.49, 14.7, 14.07, 14.22, 315540),
-    (14.28, 14.48, 14.01, 14.14, 236589),
-    (14.1, 14.27, 13.9, 14.23, 308357),
-    (14.23, 14.54, 14.19, 14.54, 312176),
-    (14.53, 15.4, 14.25, 15.4, 522845),
-    (15.25, 15.38, 14.59, 14.69, 351232),
-    (14.7, 14.8, 14.33, 14.5, 262878),
-    (14.5, 14.69, 14.32, 14.68, 268597),
-    (14.65, 14.75, 14.2, 14.54, 280953),
-    (14.51, 14.58, 14.16, 14.23, 241889),
-    (14.22, 14.65, 13.96, 14.32, 246079),
-    (14.37, 14.38, 14.16, 14.33, 135159),
-    (14.34, 14.41, 13.92, 14, 232414),
-    (14, 14.23, 13.95, 14.16, 150414),
-    (14.08, 14.11, 13.7, 13.86, 259663),
-    (13.83, 13.87, 13.21, 13.56, 435883),
-    (13.54, 14.03, 13.53, 13.99, 259971),
-    (13.94, 14.14, 13.86, 13.98, 200620),
-    (14.08, 15.33, 14.07, 14.83, 855038),
-    (14.82, 14.88, 14.52, 14.85, 314919),
-    (14.84, 14.96, 14.61, 14.89, 231040),
-    (15.02, 15.02, 14.16, 14.54, 379864),
-    (14.45, 15.02, 14.35, 14.83, 320414),
-    (14.28, 14.53, 13.6, 13.96, 472712),
-    (13.93, 14.12, 13.22, 13.31, 427408),
-    (13.38, 13.58, 13.28, 13.5, 188458),
-    (13.5, 13.62, 13.31, 13.37, 166690),
-    (13.36, 13.58, 12.94, 12.97, 195587),
-    (13.15, 13.37, 13, 13.13, 188252),
-)
+_FIXTURE_PATH = Path(__file__).with_name("fixtures") / "trend-channel-v3.2.82-30-bars.json"
+_FIXTURE = json.loads(_FIXTURE_PATH.read_text())
+_GOLDEN = tuple(tuple(row) for row in _FIXTURE["bars"])
 
 
 def make_bar(
@@ -95,6 +68,21 @@ def test_browser_prefix_reproduces_channel_and_scored_state_machine() -> None:
         (13, OscillationAction.BUILD, 2, "⚠假突破"),
         (19, OscillationAction.CLEAR, 5, "⚠真突破"),
         (28, OscillationAction.BUILD, 2, "⚠假突破"),
+    ]
+
+
+def test_frozen_v3_2_82_channel_matches_all_30_page_values() -> None:
+    assert _FIXTURE["source"] == {
+        "product_version": "v3.2.82",
+        "stock_detail_sha256": "cd962170085dc2145fbaebf28a47ce6764b9f519e6032b54a896e37f0c9d0cf9",
+        "strategy_calc_sha256": "80dcfa39afe5511b073ec66858e697243a3e4e994cd610a00568e602610a6192",
+        "upper_expression": "HHV(high,10)",
+        "lower_expression": "LLV(low,10)",
+    }
+    actual = calculate_channel_series(golden_bars(), period=10)
+
+    assert [(point.upper, point.lower) for point in actual] == [
+        (Decimal(upper), Decimal(lower)) for upper, lower in _FIXTURE["expected"]
     ]
 
 

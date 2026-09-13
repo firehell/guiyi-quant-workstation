@@ -123,6 +123,7 @@ for (const [width, height] of [[1280, 800], [1440, 900], [1920, 1080], [2560, 14
     await page.goto(newowRoute())
     const stage = page.getByTestId('newow-product-chart-stage')
     await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
+    await expect(stage).toHaveAttribute('data-trend-channel-point-count', '64')
     expect(productRequests(fixture, 'explanation')).toHaveLength(0)
     expect(productRequests(fixture, 'comparator')).toHaveLength(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

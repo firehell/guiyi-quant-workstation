@@ -38,6 +38,10 @@ from guiyi_quant.newow.product_identity import (
     REFERENCE_MODEL_VERSION,
     utc_timestamp,
 )
+from guiyi_quant.newow.trend_channel_display import (
+    TrendChannelLayer,
+    build_trend_channel_layer,
+)
 from guiyi_quant.newow.reference_statistics import (
     PerformanceWindow,
     ReferenceSummary,
@@ -179,6 +183,7 @@ class ChartSectionValue:
     diagnostics: tuple[str, ...]
     actual_window: ProductReadWindow
     page_identity: str
+    trend_channel: TrendChannelLayer | None
     next_older_window: str | None = None
 
 
@@ -878,6 +883,11 @@ class NewowProductService:
                 replay.diagnostics,
                 read.display_window,
                 page_identity,
+                build_trend_channel_layer(
+                    read.replay_bars, tuple(frame.bar for frame in selected)
+                )
+                if identity.strategy is ProductStrategy.TREND
+                else None,
             ),
         )
 

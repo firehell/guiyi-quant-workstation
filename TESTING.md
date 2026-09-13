@@ -866,6 +866,29 @@ PYTHONPATH=packages/quant-core uv run --project services/quant-api python \
 
 浏览器原站观察只用于设计依据；受控截图与 API fixture 不证明真实工作站或原站完整 parity。
 
+Newow 趋势通道圆点使用仓库内冻结 30-Bar fixture，同时校验 Python Decimal Core 与独立 JavaScript
+HHV10/LLV10 序列；Core/API/Web 测试覆盖部分窗口、孤立 Bar、owner 重置、缺值、分页 prefix、
+价格坐标、颜色、半径与身份清理：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q \
+  services/quant-api/tests/newow/test_oscillation_channel.py \
+  services/quant-api/tests/newow/test_trend_channel_display.py \
+  services/quant-api/tests/newow/test_product_service.py \
+  services/quant-api/tests/newow/test_market_newow_product_api.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
+  tests/newowTrendChannelParity.test.ts tests/newowProductTypes.test.ts \
+  tests/newowProductChartPrimitives.test.ts tests/NewowProductChartStage.test.ts \
+  tests/useNewowProduct.test.ts
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec playwright test \
+  -c playwright.config.mjs \
+  e2e/newow-product.spec.mjs e2e/newow-detail-light.spec.mjs e2e/newow-chart-panes.spec.mjs
+```
+
+冻结 fixture 记录 v3.2.82 两份源码 SHA-256 与 30 组逐值输出；测试本身不读取 Git 外冻结包、不联网、
+不连接 MDS/RQData/production DB/Redis/Runtime/通知。五档视觉基线为 1280、1440、1920、2560 与 390。
+
 苏冰当日缺口、恢复水位、只读诊断及日志：
 
 ```bash

@@ -1,8 +1,14 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
-from fastapi.testclient import TestClient
-from guiyi_quant.newow.product_contracts import ProductFrequency
 import pytest
+from fastapi.testclient import TestClient
+from guiyi_quant.newow.product_contracts import (
+    EvidenceStatus,
+    FeatureRuntimeStatus,
+    FeatureStatus,
+    ProductFrequency,
+)
 
 from app.api import market_newow
 from app.db.session import get_db
@@ -176,10 +182,60 @@ def test_strategy_detail_returns_only_requested_typed_section(
     assert len(body["chart"]["value"]["page_identity"]) == 64
     assert body["chart"]["value"]["next_older_window"] is None
     assert body["chart"]["value"]["formal_signal_eligible"] is True
+    channel = body["chart"]["value"]["trend_channel"]
+    assert channel["kind"] == "trend_channel"
+    assert channel["period"] == 10
+    assert channel["formula_version"] == "newow_hhv_llv_channel_page_v1"
+    assert len(channel["points"]) == len(body["chart"]["value"]["bars"])
+    for point, bar in zip(channel["points"], body["chart"]["value"]["bars"], strict=True):
+        assert point["bar_end"] == bar["bar_end"]
+        assert point["physical_contract"] == bar["physical_contract"]
+        assert point["segment_id"] == bar["segment_id"]
+        assert point["source_identity"] == bar["source_identity"]
+        assert point["formula_version"] == "newow_hhv_llv_channel_page_v1"
+        assert point["status"]["status"] == "ready"
+        assert isinstance(point["upper"], str)
+        assert isinstance(point["lower"], str)
+    assert "newow_hhv_llv_channel_page_v1" not in body["meta"]["identity"]["formula_versions"]
     assert all(
         isinstance(action["sequence"], int)
         for action in body["chart"]["value"]["actions"]
     )
+
+
+def test_strategy_detail_serializes_unavailable_channel_point_without_values(
+    product_cases,
+):
+    result, _as_of = _service_result(product_cases)
+    chart = result.chart.value
+    assert chart is not None and chart.trend_channel is not None
+    first = chart.trend_channel.points[0]
+    unavailable = replace(
+        first,
+        upper=None,
+        lower=None,
+        availability=FeatureStatus(
+            FeatureRuntimeStatus.UNAVAILABLE,
+            EvidenceStatus.ACTIVE_CODE_VERIFIED,
+            "NEWOW_TREND_CHANNEL_BAR_MISSING",
+        ),
+    )
+    layer = replace(
+        chart.trend_channel,
+        points=(unavailable, *chart.trend_channel.points[1:]),
+    )
+    payload = market_newow._product_response(
+        replace(result, chart=replace(result.chart, value=replace(chart, trend_channel=layer)))
+    ).model_dump(mode="json")
+
+    point = payload["chart"]["value"]["trend_channel"]["points"][0]
+    assert point["upper"] is None
+    assert point["lower"] is None
+    assert point["status"] == {
+        "status": "unavailable",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason_code": "NEWOW_TREND_CHANNEL_BAR_MISSING",
+    }
 
 
 def test_historical_snapshot_strict_query_and_exact_cutoff(monkeypatch):

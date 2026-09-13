@@ -220,6 +220,68 @@ test('creates three native panes with volume zero/color and releases resources',
   assert.equal(removed, true); assert.equal(disconnected, true)
 })
 
+test('trend channel primitive replaces data on snapshot pagination and identity changes then clears', async () => {
+  const { NewowTrendChannelPrimitive } = await import('../src/components/market/detail/newow/newowTrendChannelPrimitive.ts')
+  const calls: unknown[][] = []
+  const original = NewowTrendChannelPrimitive.prototype.setData
+  NewowTrendChannelPrimitive.prototype.setData = function (points) {
+    calls.push([...points])
+    return original.call(this, points)
+  }
+  try {
+    const Stage = await loadComponent()
+    const response = ref<MutableChartResponse | null>(chartResponse())
+    response.value!.meta.identity.strategy = 'trend'
+    response.value!.meta.identity.profile_id = 'newow_product_trend_60m_v1'
+    response.value!.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+    response.value!.value!.frames[0]!.main_values = { a: '99', b: '101' }
+    response.value!.value!.trend_channel = channelFor(response.value!.value!.bars, 110, 90)
+    const attached: string[] = []
+    const fakeChart = {
+      addSeries() {
+        return {
+          setData() {}, createPriceLine() {},
+          attachPrimitive(value: object) { attached.push(value.constructor.name) },
+          detachPrimitive() {},
+        }
+      }, removeSeries() {},
+      timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+      subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+    }
+    const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+      response: response.value,
+      strategy: response.value?.meta.identity.strategy ?? 'trend',
+      selectedSignalId: null,
+    }) }))
+    app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+    app.mount(element('root')); await nextTick()
+    assert.equal(attached.includes('NewowTrendChannelPrimitive'), true)
+    assert.equal(calls.at(-1)?.length, 1)
+
+    response.value = JSON.parse(JSON.stringify(response.value))
+    response.value!.meta.snapshot_token = 'snapshot-b'
+    response.value!.value!.page_identity = 'c'.repeat(64)
+    response.value!.value!.trend_channel = channelFor(response.value!.value!.bars, 120, 80)
+    await nextTick()
+    assert.deepEqual(calls.at(-1), [{ time: 1786777200, upper: 120, lower: 80 }])
+
+    response.value = prependBar(response.value!)
+    response.value!.value!.trend_channel = channelFor(response.value!.value!.bars, 121, 79)
+    await nextTick()
+    assert.equal(calls.at(-1)?.length, 2, 'pagination replaces the primitive with the merged aligned page')
+
+    response.value = chartResponse()
+    await nextTick()
+    assert.deepEqual(calls.at(-1), [], 'strategy identity switch clears trend points')
+    response.value = null
+    await nextTick()
+    assert.deepEqual(calls.at(-1), [], 'snapshot invalidation clears trend points')
+    app.unmount()
+  } finally {
+    NewowTrendChannelPrimitive.prototype.setData = original
+  }
+})
+
 test('signed MACD bars share pane 2 and switch/invalidated snapshots remove every old series', async () => {
   const Stage = await loadComponent()
   const records: Array<{ definition: { type: string }; pane: number; data: Array<{ value?: number; color?: string; time: unknown }>; removed: boolean }> = []
@@ -336,6 +398,24 @@ function prependBar(response: MutableChartResponse): MutableChartResponse {
       bars: [earlier, ...response.value!.bars],
       frames: [{ bar_end: earlier.bar_end, main_state: 'FLAT', main_values: { upper: '109', lower: '89' }, status: ready(), action_ids: [], hint_ids: [] }, ...response.value!.frames],
     },
+  }
+}
+
+function channelFor(bars: NonNullable<MutableChartResponse['value']>['bars'], upper: number, lower: number) {
+  return {
+    kind: 'trend_channel' as const,
+    period: 10 as const,
+    formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+    points: bars.map((item) => ({
+      bar_end: item.bar_end,
+      upper: String(upper),
+      lower: String(lower),
+      formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+      status: ready(),
+      physical_contract: item.physical_contract,
+      segment_id: item.segment_id,
+      source_identity: item.source_identity,
+    })),
   }
 }
 

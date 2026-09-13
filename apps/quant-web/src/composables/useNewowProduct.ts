@@ -374,11 +374,30 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       chartPageLimit = request.section === 'chart' ? request.chartLimit ?? 500 : 500
       return response
     }
-    const bars = mergeUnique(value.bars, priorValue.bars, (item) => item.bar_end, 'chart bars')
-    const frames = mergeUnique(value.frames, priorValue.frames, (item) => item.bar_end, 'chart frames')
-    const actions = mergeUnique(value.actions, priorValue.actions, (item) => item.signal_id, 'chart actions')
-    const hints = mergeUnique(value.hints, priorValue.hints, (item) => item.hint_id, 'chart hints')
-    if ([bars, frames, actions, hints].some((items) => items === null)) {
+    const bars = mergeTimelineUnique(value.bars, priorValue.bars, (item) => item.bar_end)
+    const frames = mergeTimelineUnique(value.frames, priorValue.frames, (item) => item.bar_end)
+    const actions = mergeUnique(value.actions, priorValue.actions, (item) => item.signal_id)
+    const hints = mergeUnique(value.hints, priorValue.hints, (item) => item.hint_id)
+    let trendChannel: NewowChartValue['trend_channel'] = null
+    let trendChannelConflict = false
+    if (value.trend_channel === null || priorValue.trend_channel === null) {
+      trendChannelConflict = value.trend_channel !== priorValue.trend_channel
+    } else if (
+      value.trend_channel.kind !== priorValue.trend_channel.kind
+      || value.trend_channel.period !== priorValue.trend_channel.period
+      || value.trend_channel.formula_version !== priorValue.trend_channel.formula_version
+    ) {
+      trendChannelConflict = true
+    } else {
+      const points = mergeTimelineUnique(
+        value.trend_channel.points,
+        priorValue.trend_channel.points,
+        (item) => item.bar_end,
+      )
+      if (points === null) trendChannelConflict = true
+      else trendChannel = { ...value.trend_channel, points }
+    }
+    if ([bars, frames, actions, hints].some((items) => items === null) || trendChannelConflict) {
       failConflict('chart', 'NEWOW_CHART_PAGE_CONFLICT')
       return null
     }
@@ -389,13 +408,22 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     const boundedFrames = frames!.filter((item) => retainedEnds.has(item.bar_end))
     const boundedActions = actions!.filter((item) => retainedEnds.has(item.bar_end))
     const boundedHints = hints!.filter((item) => retainedEnds.has(item.bar_end))
+    const boundedTrendChannel = trendChannel === null ? null : {
+      ...trendChannel,
+      points: trendChannel.points.filter((item) => retainedEnds.has(item.bar_end)),
+    }
+    if (boundedTrendChannel !== null && boundedTrendChannel.points.length !== boundedBars.length) {
+      failConflict('chart', 'NEWOW_CHART_PAGE_CONFLICT')
+      return null
+    }
     return {
       meta: response.meta,
       section: 'chart',
       status: prior!.status,
       value: {
         ...value,
-        bars: boundedBars, frames: boundedFrames, actions: boundedActions, hints: boundedHints,
+        bars: boundedBars, frames: boundedFrames, trend_channel: boundedTrendChannel,
+        actions: boundedActions, hints: boundedHints,
         diagnostics: [...new Set([...priorValue.diagnostics, ...value.diagnostics])],
         next_before: bars!.length >= MAX_ACCUMULATED_CHART_ROWS ? null : value.next_before,
         next_older_window: bars!.length >= MAX_ACCUMULATED_CHART_ROWS ? null : value.next_older_window,
@@ -667,7 +695,7 @@ function chartGenerationSignature(meta: NewowProductSectionResponse['meta']): st
   ])
 }
 
-function mergeUnique<T>(left: readonly T[], right: readonly T[], key: (item: T) => string, field: string): T[] | null {
+function mergeUnique<T>(left: readonly T[], right: readonly T[], key: (item: T) => string): T[] | null {
   const byKey = new Map<string, T>()
   for (const item of [...left, ...right]) {
     const identity = key(item)
@@ -675,9 +703,13 @@ function mergeUnique<T>(left: readonly T[], right: readonly T[], key: (item: T) 
     if (existing !== undefined && JSON.stringify(existing) !== JSON.stringify(item)) return null
     byKey.set(identity, item)
   }
-  const result = [...byKey.values()]
-  if (field === 'chart bars' || field === 'chart frames') result.sort((a, b) => Date.parse(key(a)) - Date.parse(key(b)))
-  return result
+  return [...byKey.values()]
+}
+
+function mergeTimelineUnique<T>(left: readonly T[], right: readonly T[], key: (item: T) => string): T[] | null {
+  const merged = mergeUnique(left, right, key)
+  if (merged === null) return null
+  return merged.sort((a, b) => Date.parse(key(a)) - Date.parse(key(b)))
 }
 
 function referenceIdentity(meta: NewowProductSectionResponse['meta'], value: NewowReferenceValue): string {
