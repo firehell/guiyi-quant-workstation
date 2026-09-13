@@ -67,7 +67,10 @@ export interface NewowProductHintMarker {
   readonly physicalContract: string
   readonly segmentId: string
   readonly sequence: number | null
+  readonly tone: NewowHintTone
 }
+
+export type NewowHintTone = 'risk' | 'entry' | 'cycle' | 'neutral'
 
 export interface NewowProductChartModel {
   readonly identity: {
@@ -77,14 +80,14 @@ export interface NewowProductChartModel {
   }
   readonly bars: readonly NewowProductChartBar[]
   readonly bandAreas: readonly NewowProductBandArea[]
-  readonly trendChannelPoints: readonly NewowTrendChannelChartPoint[]
+  readonly channelPoints: readonly NewowPriceChannelChartPoint[]
   readonly mainLines: readonly NewowProductMainLine[]
   readonly actions: readonly NewowProductActionMarker[]
   readonly hints: readonly NewowProductHintMarker[]
   readonly nextBefore: string | null
 }
 
-export interface NewowTrendChannelChartPoint {
+export interface NewowPriceChannelChartPoint {
   readonly barEnd: string
   readonly tradingDay: string
   readonly upper: number
@@ -115,7 +118,7 @@ export function buildNewowProductChartModel(
         strategy: response.meta.identity.strategy,
         frequency: response.meta.identity.frequency,
       },
-      bars: [], bandAreas: [], trendChannelPoints: [], mainLines: [], actions: [], hints: [], nextBefore: null,
+      bars: [], bandAreas: [], channelPoints: [], mainLines: [], actions: [], hints: [], nextBefore: null,
     }
   }
   const value = response.value
@@ -152,31 +155,47 @@ export function buildNewowProductChartModel(
     }
   }
   const bandAreas: NewowProductBandArea[] = []
-  if (response.meta.identity.strategy === 'trend') {
+  const bandKeys = response.meta.identity.strategy === 'trend' ? ['a', 'b'] as const
+    : response.meta.identity.strategy === 'main_rise' ? ['ma35', 'ma45'] as const : null
+  if (bandKeys !== null) {
     for (const bar of bars) {
       const frame = frameByEnd.get(bar.barEnd)
+      const [firstKey, secondKey] = bandKeys
       if (frame?.status.status !== 'ready'
-        || frame.main_values.a == null || frame.main_values.b == null
+        || frame.main_values[firstKey] == null || frame.main_values[secondKey] == null
         || !['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(frame.main_state)) continue
       bandAreas.push({
         time: chartMarkerTime(bar.barEnd, response.meta.identity.frequency, bar.tradingDay),
-        a: chartCoordinate(frame.main_values.a),
-        b: chartCoordinate(frame.main_values.b),
+        a: chartCoordinate(frame.main_values[firstKey]),
+        b: chartCoordinate(frame.main_values[secondKey]),
         color: ['BUILD', 'HOLD'].includes(frame.main_state) ? 'rgba(245, 183, 38, 0.35)' : 'rgba(54, 90, 245, 0.35)',
       })
     }
   }
-  const trendChannelPoints: NewowTrendChannelChartPoint[] = []
-  for (const point of value.trend_channel?.points ?? []) {
-    if (point.status.status !== 'ready' || point.upper === null || point.lower === null) continue
-    const bar = barByEnd.get(point.bar_end)
-    if (bar === undefined) continue
-    trendChannelPoints.push({
-      barEnd: point.bar_end,
-      tradingDay: bar.tradingDay,
-      upper: chartCoordinate(point.upper),
-      lower: chartCoordinate(point.lower),
-    })
+  const channelPoints: NewowPriceChannelChartPoint[] = []
+  if (response.meta.identity.strategy === 'trend') {
+    for (const point of value.trend_channel?.points ?? []) {
+      if (point.status.status !== 'ready' || point.upper === null || point.lower === null) continue
+      const bar = barByEnd.get(point.bar_end)
+      if (bar === undefined) continue
+      channelPoints.push({
+        barEnd: point.bar_end,
+        tradingDay: bar.tradingDay,
+        upper: chartCoordinate(point.upper),
+        lower: chartCoordinate(point.lower),
+      })
+    }
+  } else if (response.meta.identity.strategy === 'oscillation') {
+    for (const bar of bars) {
+      const frame = frameByEnd.get(bar.barEnd)
+      if (frame?.status.status !== 'ready' || frame.main_values.upper == null || frame.main_values.lower == null) continue
+      channelPoints.push({
+        barEnd: bar.barEnd,
+        tradingDay: bar.tradingDay,
+        upper: chartCoordinate(frame.main_values.upper),
+        lower: chartCoordinate(frame.main_values.lower),
+      })
+    }
   }
   const actions = value.actions.map((action): NewowProductActionMarker => ({
     id: action.signal_id,
@@ -202,6 +221,7 @@ export function buildNewowProductChartModel(
     physicalContract: hint.physical_contract,
     segmentId: hint.segment_id,
     sequence: hint.sequence,
+    tone: classifyNewowHintTone(hint.kind),
   }))
   return {
     identity: {
@@ -209,8 +229,27 @@ export function buildNewowProductChartModel(
       strategy: response.meta.identity.strategy,
       frequency: response.meta.identity.frequency,
     },
-    bars, bandAreas, trendChannelPoints, mainLines, actions, hints, nextBefore: value.next_before,
+    bars, bandAreas, channelPoints, mainLines, actions, hints, nextBefore: value.next_before,
   }
+}
+
+/** Display-only classification of server-owned Hint kinds. */
+export function classifyNewowHintTone(kind: string): NewowHintTone {
+  if (kind === 'J' || /^D[1-3]$/.test(kind) || /^NEWOW_ESCAPE_D[1-3]$/.test(kind)) return 'risk'
+  if (/^D[4-6]$/.test(kind)) return 'entry'
+  if (kind.startsWith('MAGIC11:')) return 'cycle'
+  return 'neutral'
+}
+
+/** Keeps zoom only when both strategy snapshots describe the exact same product time axis. */
+export function preserveNewowViewport(
+  previous: Pick<NewowProductChartModel, 'identity' | 'bars'>,
+  next: Pick<NewowProductChartModel, 'identity' | 'bars'>,
+): boolean {
+  return previous.identity.product === next.identity.product
+    && previous.identity.frequency === next.identity.frequency
+    && previous.bars.length === next.bars.length
+    && previous.bars.every((bar, index) => bar.barEnd === next.bars[index]?.barEnd)
 }
 
 export interface NewowAuxiliaryChartPoint {
@@ -435,7 +474,7 @@ export function productChartMarker(
     position: action ? (build ? 'belowBar' : 'aboveBar') : 'inBar',
     shape: action ? (build ? 'arrowUp' : 'arrowDown') : 'circle',
     color: item.id === selectedSignalId ? '#7C3AED' : action ? (build ? '#FF403A' : '#22B95D') : '#64748B',
-    text: action ? (build ? '建仓' : '清仓') : item.kind,
+    text: action ? `${build ? '建仓' : '清仓'} ${item.referencePrice}` : item.kind,
     size: action ? 1.5 : 1,
   }
 }

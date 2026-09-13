@@ -31,6 +31,7 @@ import {
   chartMarkerTime,
   createNewowProductChartDisposer,
   NEWOW_PRODUCT_CHART_ADAPTER_KEY,
+  preserveNewowViewport,
   productChartMarker,
   type NewowProductChartModel,
   type NewowProductResizeObserver,
@@ -66,7 +67,7 @@ const followLatest = ref(true)
 const model = computed(() => props.response === null ? null : buildNewowProductChartModel(props.response))
 const auxiliaryModel = computed(() => alignNewowAuxiliaryChartModel(props.response, props.auxiliaryResponse ?? null))
 const auxiliaryPresentation = computed(() => resolveNewowAuxiliaryRenderState(props.auxiliaryLifecycle ?? 'not_requested', auxiliaryModel.value !== null, props.auxiliaryError ?? null))
-const mainLineColors: Record<string, string> = { b: '#F59E0B', a: '#2563EB', upper: '#DC2626', lower: '#16A34A', ma35: '#F59E0B', ma45: '#7C3AED' }
+const mainLineColors: Record<string, string> = { b: '#F59E0B', a: '#2563EB', upper: '#16A34A', lower: '#DC2626', ma35: '#F59E0B', ma45: '#2563EB' }
 const legend = computed(() => [...new Map(model.value?.mainLines.map(line => [line.key, line]) ?? []).values()])
 const mainLegendLabel = computed(() => ({ trend: '趋势带', oscillation: '震荡区间', main_rise: '主升浪' })[props.strategy])
 const adapter = inject(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
@@ -177,7 +178,10 @@ function renderModel(value: NewowProductChartModel | null): void {
     return
   }
   const nextIdentity = identityKey(value)
-  const resetViewport = nextIdentity !== renderedIdentity
+  const strategyChanged = renderedIdentity !== '' && nextIdentity !== renderedIdentity
+  const resetViewport = strategyChanged && renderedBars.length > 0
+    ? !preserveNewowViewport({ identity: parseRenderedIdentity(renderedIdentity), bars: renderedBars }, value)
+    : renderedIdentity !== '' && nextIdentity !== renderedIdentity
   const previousRange = chart.timeScale().getVisibleLogicalRange()
   const previousFirst = renderedBars[0]?.barEnd
   const prepended = previousFirst === undefined ? 0 : Math.max(0, value.bars.findIndex((bar) => bar.barEnd === previousFirst))
@@ -189,7 +193,7 @@ function renderModel(value: NewowProductChartModel | null): void {
   volume?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: bar.close >= bar.open ? '#FF403A' : '#22B95D' })))
   auxiliaryAnchor?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })))
   band.setData(value.bandAreas)
-  trendChannel.setData(value.trendChannelPoints.map((point) => ({
+  trendChannel.setData(value.channelPoints.map((point) => ({
     time: chartMarkerTime(point.barEnd, value.identity.frequency, point.tradingDay),
     upper: point.upper,
     lower: point.lower,
@@ -212,6 +216,11 @@ function renderModel(value: NewowProductChartModel | null): void {
   renderedIdentity = nextIdentity
   rendering = false
   resolveSelectedSignal()
+}
+
+function parseRenderedIdentity(value: string): NewowProductChartModel['identity'] {
+  const [product, strategy, frequency] = value.split(':')
+  return { product: product!, strategy: strategy! as NewowProductChartModel['identity']['strategy'], frequency: frequency! as NewowProductChartModel['identity']['frequency'] }
 }
 
 function syncMainLines(value: NewowProductChartModel): void {
@@ -362,7 +371,7 @@ defineExpose({ revealSignal, scrollToLatest })
     :data-auxiliary-component="auxiliaryModel?.component ?? ''"
     :data-auxiliary-state="auxiliaryPresentation.mode"
     :data-band-area-count="model?.bandAreas.length ?? 0"
-    :data-trend-channel-point-count="model?.trendChannelPoints.length ?? 0"
+    :data-channel-point-count="model?.channelPoints.length ?? 0"
     data-testid="newow-product-chart-stage"
     :data-strategy="strategy"
     :data-frequency="model?.identity.frequency ?? ''"
@@ -370,7 +379,7 @@ defineExpose({ revealSignal, scrollToLatest })
     :data-action-ids="model?.actions.map((action) => action.id).join(',') ?? ''"
   >
     <div class="newow-product-chart-stage__toolbar">
-    <div class="newow-product-chart-stage__legend" aria-label="Newow 主图图例"><button class="newow-product-chart-stage__main-legend" type="button" @click="emit('explain-main')">{{ mainLegendLabel }}<span v-for="line in legend" :key="line.key" :style="{ color: mainLineColors[line.key] }">{{ line.label }}</span>ⓘ</button><details v-if="model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" @click="emit('select-hint', hint.id)">{{ hint.kind }} · {{ hint.barEnd }}</button></details></div>
+    <div class="newow-product-chart-stage__legend" aria-label="Newow 主图图例"><button class="newow-product-chart-stage__main-legend" type="button" @click="emit('explain-main')">{{ mainLegendLabel }}<span v-for="line in legend" :key="line.key" :style="{ color: mainLineColors[line.key] }">{{ line.label }}</span>ⓘ</button><details v-if="model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" :data-hint-tone="hint.tone" @click="emit('select-hint', hint.id)"><span class="newow-product-chart-stage__hint-kind" :class="`is-${hint.tone}`">{{ hint.kind }}</span> · {{ hint.barEnd }}</button></details></div>
     <div class="newow-product-chart-stage__controls">
       <button v-if="hasMoreBefore" type="button" data-testid="newow-load-earlier" :disabled="loading" @click="emit('loadEarlier')">加载更早</button>
       <button v-if="!followLatest" type="button" @click="scrollToLatest">回到最新</button>
@@ -401,6 +410,11 @@ summary { display:flex; align-items:center; }
 .newow-product-chart-stage__auxiliary-toolbar { position:absolute; left:1px; right:70px; min-height:32px; background:#fff; z-index:3; }
 details { position:relative; } details[open] { z-index:6; } details[open] > button { display:block; white-space:nowrap; }
 details[open] { position:absolute; top:0; left:90px; max-height:240px; max-width:calc(100% - 100px); overflow:auto; border:1px solid #ebedf0; background:#fff; box-shadow:0 8px 24px #20242b14; }
+.newow-product-chart-stage__hint-kind { display:inline-flex; min-width:28px; justify-content:center; border:1px solid currentColor; border-radius:3px; padding:2px 5px; font-weight:600; }
+.newow-product-chart-stage__hint-kind.is-risk { color:#DC2626; }
+.newow-product-chart-stage__hint-kind.is-entry { color:#16A34A; }
+.newow-product-chart-stage__hint-kind.is-cycle { color:#D97706; }
+.newow-product-chart-stage__hint-kind.is-neutral { color:#64748B; }
 .newow-product-chart-stage__auxiliary-status { margin:0; padding:6px 12px; color:#b45309; font-size:12px; }
 .newow-product-chart-stage__status { position:absolute; z-index:5; top:64px; left:12px; margin:0; color:#b45309; background:#fff; }
 @media(max-width:640px) { .newow-product-chart-stage { height:640px; } .newow-product-chart-stage__chart { min-height:500px; } }
