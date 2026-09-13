@@ -21,7 +21,7 @@ API 和 Web 成套迁移到 v2；沿用唯一 MDS reader、现有分页、统计
 - 新建任务的默认基线若尚不含文档提交，从同一本地 Git object database 读取/引入交接提交，保留其完整依赖；
   不用 cherry-pick 单个文档提交来假装依赖代码已在树中，不使用 reset/force update。
 - 固定依赖顺序：当前 develop（已含 UI unification `a755b0694`）→ 趋势点
-  `a83dd60eec47c53a6cec7527549deeeec67390ec` → CLEAR v2。先检查祖先关系；若趋势点尚未合入 develop，
+  `faa963d2a717f4cd2127ca8edb145ad9f1352afa`（替代初审 `a83dd60e`）→ CLEAR v2。先检查祖先关系；若趋势点尚未合入 develop，
   在新实施分支显式整合该 exact commit，核查其 Review/测试结果，然后才修改共享 API/Web/OpenSpec 文件。
   若作者已修订，协调替代 exact commit；不要自行覆盖或退回旧趋势点行为，独立 Core 工作可继续。
 - 只有本地实现、离线验证、独立 Review、commit 与条件满足的本地 develop 集成属于执行范围。

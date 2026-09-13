@@ -226,7 +226,8 @@ main/tag/Release、Runtime、生产写入和通知按独立 Gate 处理。真实
 实现/Review，明确保留现场验收未完成，不能凭旧回执宣称成功。
 
 集成顺序固定为：已包含 `codex/ui-unification@a755b0694` 的 develop → 趋势点依赖
-`codex/newow-trend-channel-points@a83dd60eec47c53a6cec7527549deeeec67390ec` → 本次 CLEAR v2。
+`codex/newow-trend-channel-points@faa963d2a717f4cd2127ca8edb145ad9f1352afa` → 本次 CLEAR v2。
+该提交替代初审的 `a83dd60e`：补齐重复时间掩盖乱序的 fail-closed 检查，并明确 timeline merge seam；不变更本设计目标。
 Sol 新隔离分支先核对当前 develop 是否已包含趋势点 exact commit；已包含则直接使用，否则在本实施分支
 显式引入该提交并保留其变更，不修改其他任务工作树。它作为前置依赖同样须有 Review/测试证据，不因引入即
 宣布通过。涉及 API schema、product_service、Web parser/primitives/composable、OpenSpec 的 v2 修改必须在
