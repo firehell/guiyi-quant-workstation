@@ -33,6 +33,7 @@ from app.market_data.market_home_projection import (
     MarketHomeProjectionStore,
     market_home_projection_path,
 )
+from app.market_data.market_home_live import MarketHomeLiveService
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.market_read_service import MarketReadService
 from app.market_data.market_research_service import MarketResearchService
@@ -254,6 +255,23 @@ def open_market_read_service() -> Iterator[MarketReadService]:
         redis = get_redis_connection()
         try:
             yield build_market_read_service(session, redis=cast(RedisClient, redis))
+        finally:
+            redis.close()
+
+
+@contextmanager
+def open_market_home_live_service() -> Iterator[MarketHomeLiveService]:
+    """Compose one bounded homepage snapshot reader; never constructs a provider."""
+
+    with SessionLocal() as session:
+        redis = get_redis_connection()
+        try:
+            yield MarketHomeLiveService(
+                market_data=build_market_data_service(session),
+                phase_resolver=MarketPhaseResolver(session),
+                live_store=RedisLiveStore(cast(RedisClient, redis)),
+                operational_products=load_operational_products(),
+            )
         finally:
             redis.close()
 

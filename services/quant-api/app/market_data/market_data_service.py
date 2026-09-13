@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -130,6 +130,55 @@ class MarketDataService:
             bars,
             (),
         )
+
+    def contract_daily_bars_as_of(
+        self,
+        *,
+        symbol: str,
+        contract: str,
+        as_of: datetime,
+        limit: int = 5,
+    ) -> tuple[CanonicalBar, ...]:
+        """Read recent physical D1 bars and reject any fact beyond the read cutoff."""
+
+        if as_of.tzinfo is None or as_of.utcoffset() is None:
+            raise MarketDataError("MARKET_HOME_LIVE_CUTOFF_INVALID")
+        result = self.query_page(
+            SeriesPageQuery(
+                SeriesKind.CONTRACT,
+                symbol,
+                BarFrequency.D1,
+                limit=limit,
+                contract=contract,
+            )
+        )
+        cutoff = as_of.astimezone(UTC)
+        if any(bar.bar_end > cutoff for bar in result.bars):
+            raise MarketDataError("MARKET_HOME_LIVE_DAILY_AFTER_CUTOFF")
+        return result.bars
+
+    def previous_trading_day(self, symbol: str, trading_day: date) -> date:
+        """Resolve and prove the exact Calendar trading day before one quote day."""
+
+        try:
+            previous = DatabaseCoverageSource(
+                self.catalog.session,
+                PROJECT_ROOT / "data/universe/product_window_starts.csv",
+            ).previous_trading_day(symbol, trading_day)
+            calendar = self.catalog.calendar_days(
+                symbol, previous, trading_day - timedelta(days=1)
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        except InfrastructureError as exc:
+            raise MarketDataError(exc.code) from exc
+        expected = tuple(
+            previous + timedelta(days=offset)
+            for offset in range((trading_day - previous).days)
+        )
+        if tuple(day for day, _ in calendar) != expected:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        return previous
 
     def session_windows(
         self,

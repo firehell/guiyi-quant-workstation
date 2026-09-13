@@ -51,3 +51,15 @@ class CurrentAlertEventsResponse(BaseModel):
     status: Literal["ready", "unavailable"]
     trading_day: date | None
     items: list[AlertEventOut]
+
+
+class AlertEventHistoryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ready"]
+    start_day: date
+    end_day: date
+    symbol: str | None
+    rule_code: AlertRuleCode | None
+    items: list[AlertEventOut]
+    next_before: str | None
