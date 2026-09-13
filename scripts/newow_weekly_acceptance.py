@@ -269,10 +269,23 @@ def _error_status_violation(row: object) -> bool:
     if not isinstance(row, dict) or not isinstance(row.get("error"), dict):
         return False
     diagnostic = row["error"].get("diagnostic")
+    if not isinstance(diagnostic, dict):
+        return not (
+            row["error"].get("code") == "NEWOW_INTERNAL_ERROR"
+            and row.get("reason") is None
+            and row.get("status") == "UNKNOWN"
+        )
     reason = diagnostic.get("reason") if isinstance(diagnostic, dict) else None
     if reason != row.get("reason"):
         return True
-    from app.market_data.diagnostics import INTEGRITY_REASONS, MISSING_REASONS
+    from app.market_data.diagnostics import (
+        DATA_REASONS,
+        INTEGRITY_REASONS,
+        MISSING_REASONS,
+    )
+
+    if reason not in DATA_REASONS:
+        return True
 
     metadata = MISSING_REASONS - {
         "REPLAY_PREFIX_MISSING",
@@ -609,6 +622,7 @@ def _metadata_row_valid(
         if (
             row.get("section") not in _ENUMERATION_SECTIONS
             or row.get("as_of") != expected_as_of.isoformat()
+            or {"contract", "owners", "consumers"}.intersection(row)
         ):
             return False
         has_window = "since" in row or "through" in row

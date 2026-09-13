@@ -575,6 +575,34 @@ def test_summary_accepts_native_repair_metadata_failure_without_planner_fields()
     }
 
 
+def test_summary_rejects_foreign_reason_in_native_repair_failure():
+    from scripts.newow_weekly_acceptance import summarize_readiness
+
+    report = _report()
+    repair = report["repair_targets"][0]
+    report["repair_targets"] = [
+        {
+            "symbol": repair["symbol"],
+            "contract": repair["contract"],
+            "frequency": repair["frequency"],
+            "through": repair["through"],
+            "consumers": repair["consumers"],
+            "status": "UNKNOWN",
+            "reason": "FOREIGN_SCHEMA_REASON",
+            "error": {"diagnostic": {"reason": "FOREIGN_SCHEMA_REASON"}},
+            "expected_bar_count": None,
+            "provider_request_count": None,
+            "plan_sha256": None,
+        }
+    ]
+    report.update(complete=False, status="incomplete")
+
+    result = summarize_readiness(report, PRODUCTS, AS_OF)
+
+    assert result["valid"] is False
+    assert "REPAIR_SCHEMA_INVALID" in result["violations"]
+
+
 def test_summary_accepts_native_enumeration_metadata_proposal():
     from scripts.newow_weekly_acceptance import summarize_readiness
 
@@ -604,6 +632,38 @@ def test_summary_accepts_native_enumeration_metadata_proposal():
     assert result["pending_outcome_counts"] == {
         "metadata:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 1
     }
+
+
+def test_summary_rejects_cross_origin_fields_in_enumeration_metadata_proposal():
+    from scripts.newow_weekly_acceptance import summarize_readiness
+
+    report = _report()
+    report["metadata_proposals"] = [
+        {
+            "symbol": "ag",
+            "frequency": "1w",
+            "section": "chart",
+            "status": "UNKNOWN",
+            "as_of": AS_OF.isoformat(),
+            "reason": "HISTORICAL_SESSION_FACT_MISSING",
+            "error": {
+                "diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}
+            },
+            "expected_bar_count": None,
+            "provider_request_count": None,
+            "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+            "contract": "RB9999",
+            "consumers": [
+                {"strategy": "foreign", "frequency": "1w", "section": "chart"}
+            ],
+        }
+    ]
+    report.update(complete=False, status="incomplete")
+
+    result = summarize_readiness(report, PRODUCTS, AS_OF)
+
+    assert result["valid"] is False
+    assert "METADATA_SCHEMA_INVALID" in result["violations"]
 
 
 def test_summary_aggregates_repair_and_metadata_rows_without_large_private_details():
