@@ -1,6 +1,6 @@
 # 当前状态
 
-文档整理：2026-09-13；最新现场记录截至 `2026-09-13 16:53:56 CST`。
+文档整理：2026-09-13；最新现场记录截至 `2026-09-13 20:15:15 CST`。
 正式 Release 与现役 Runtime 为 `v1.10.8@82860ee3f5f63c49397ab11b0d0ab60c601376b9`。
 六服务切换、即时服务和页面验收已通过；自然 Live、盘后、后续增量及首次自然周检仍待验收，
 不声明 `RUNTIME_READY`。本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
@@ -42,14 +42,22 @@
 0 provider request。RQData `bytes_used` 整批增加 5,109,123 bytes，未触发异常流量停止线。本次写入意图已消费，
 不授权重试或扩大范围。PT 写后依赖 readiness 为 `audited / complete=true`，6 项依赖均 `DATA_READY`。
 
-随后只读 PT 三策略周线 matrix 中趋势、震荡主图 READY；当时主升浪主图和参考层仍因内部
-`NEWOW_PRODUCT_PAIRING_CONFLICT` 失败。已确认这不是行情缺口：PT2610 共 41 根周线，从上市首根即为黄带且没有
-真实 BUILD 转换，第 40 根首次转蓝并产生 CLEAR。owner 已批准采用“显式初始无入场 CLEAR”合同；本地 develop
-`db23dfc9b` 已集成
-`INITIAL_CLEAR_NO_ENTRY`、reader lifecycle evidence、零交易投影、v2 API/Web 合同及“清仓（无入场）”展示，
-离线 Core/API/Web/E2E/OpenSpec 验证与独立 Review 修正已完成。固定 PT 截点的本次 v2 生产只读验收因宿主凭据
-权限 Gate 未执行，仍为 `EXTERNAL_GATE_PENDING`；不得以旧 matrix 或本地 fixture 替代。全 60 品种审计仍为
-incomplete，未运行 180 主组合矩阵，不得声明周线 60 品种完成。紧凑旧证据见
+旧 PT matrix 中主升浪曾因 `NEWOW_PRODUCT_PAIRING_CONFLICT` 失败；已确认 PT2610 从首根即处于黄带、历史没有
+真实 BUILD，第 40 根首次转蓝。owner 批准的“显式初始无入场 CLEAR”合同已进入本地 develop 基线
+`db23dfc9b`。本轮固定代码 `c412b354e` 的新只读检查实际 `accepted=true`：PT2610 唯一 CLEAR 为 sequence 0、
+related BUILD 为空、资格 `INITIAL_CLEAR_NO_ENTRY`，chart/reference typed READY 且同 snapshot，不产生
+ReferenceTrade。旧手写检查器因把 wire `ready` 与大写 `READY` 比较而 exit 1 的原记录保留，不倒改历史。
+
+同一固定代码完成了 operational 60 × 三策略 × 1w 的 180 case 全量 matrix；scope/matrix 覆盖均通过，主图
+READY 6、参考层 READY 9、联合 READY 6（仅 `pd`、`pt` 各三策略），provider request/writes 均为 0。
+`AUDIT_COMPLETE=false`：2,233 个 UNKNOWN 未决项仍在，包含 494 行 Session metadata proposal；另有 896 个
+普通 PROPOSED、9 个 RS source/integrity review 和 PF2611 非正价格异常，不能声称 180/180 READY。
+
+唯一下一普通数据候选已从完整报告提取为 `ec/EC2607/1w`，连同 D1 companion 共 84 根/8 请求，原生 plan hash
+`5c7a1debdae9001497638f747b9ec0eb8cca2c8b3cf66e32ec28351b353dae72`。首次 dry-run 因误传 apply-only hash
+在 CLI 参数层失败，正确重试被宿主拒绝；两者均未触发 provider/写入，因此候选仍须新的只读重算 Gate，apply
+更未授权。真实候选浏览器回读也因固定 5174 端口被其他工作树进程占用而保持 pending，本任务未停止或复用该进程。
+紧凑结果与本地完整 evidence hash 见
 [周线 60 品种 readiness 摘要](outputs/newow-weekly-60-20260913/readiness-summary.json)。
 
 ## v1.10.8 Release（已发布；Runtime 已切换）

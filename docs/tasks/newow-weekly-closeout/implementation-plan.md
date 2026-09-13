@@ -129,3 +129,16 @@ if reference_result.reference.status is None or reference_result.reference.statu
 新增 TESTING 小节包含新脚本两个模式的实际usage、离线新增pytest及已有readiness/CLI tests、Task3完整CLI
 固定参数、Webunit/build与market-detail/newow-product/newow-detail-light/newow-chart-panes E2E命令。
 命令先验证 --help/parser，不抄不存在的flag；不得把命令可运行等同数据可用。实际fixture期望从上述行为表逐项断言。
+
+## 执行结果
+
+- 验收脚本和离线测试已实现；PT/full-readiness 各执行一次，完整输出留在本工作树未跟踪 evidence 目录。
+- PT `accepted=true`；180 case scope/matrix 全覆盖，但 `audit_complete=false`，chart/reference 联合 READY 为 6。
+- UI 作者 clean commit `84af8f381` 已整体整合，完整 Web unit/build 与四个 fixture E2E 通过；候选真实页面因
+  固定 5174 端口被其他工作树进程占用而独立 pending。
+- PF2611 source exception、9 个 RS review-required、494 行 metadata UNKNOWN 均保持 fail-closed；没有修改
+  readiness、MDS、公式或数据合同。
+- 唯一下一普通数据候选为 `ec/EC2607/1w` 的 84 bars/8 requests。原生审计 plan 已提取；正确 dry-run 重试
+  被宿主拒绝，因此没有申请或执行 apply。
+- 未执行 provider、Canonical/DB/Redis、通知、Runtime、main/tag/Release 操作；最终 Review 与本地 develop
+  集成结果由本任务交付记录补充。
