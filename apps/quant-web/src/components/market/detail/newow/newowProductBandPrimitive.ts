@@ -24,7 +24,7 @@ export class NewowProductBandPrimitive implements ISeriesPrimitive<Time> {
     target.useMediaCoordinateSpace(({ context }) => {
       context.save()
       const timeScale = attachment.chart.timeScale()
-      const width = Math.max(1, timeScale.options().barSpacing * 0.8)
+      const width = timeScale.options().barSpacing * 0.8
       for (const area of this.areas) {
         const x = timeScale.timeToCoordinate(area.time)
         const a = attachment.series.priceToCoordinate(area.a)

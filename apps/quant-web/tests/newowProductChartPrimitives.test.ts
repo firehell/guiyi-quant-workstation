@@ -338,8 +338,12 @@ test('band primitive paints centered per-Bar rectangles that scale with bar spac
   primitive.paneViews()[0]!.renderer()!.draw(target as never)
   assert.deepEqual(rectangles.slice(2), [[2, 99, 16, 2], [12, 100, 16, 2]])
 
+  barSpacing = 0.5
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.deepEqual(rectangles.slice(4), [[9.8, 99, 0.4, 2], [19.8, 100, 0.4, 2]])
+
   primitive.detached(); primitive.setData(model.bandAreas)
   primitive.paneViews()[0]!.renderer()!.draw(target as never)
   assert.equal(updates, 1)
-  assert.equal(rectangles.length, 4)
+  assert.equal(rectangles.length, 6)
 })
