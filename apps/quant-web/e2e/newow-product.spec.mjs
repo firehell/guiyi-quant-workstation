@@ -53,6 +53,7 @@ test('main-rise initial clear stays action-only and explains that no entry exist
   await clickLastBarMarker(page, 'main_rise-1w-initial-clear-no-entry', [0.25, 0.30, 0.35, 0.40, 0.45])
   const dialog = page.getByRole('dialog')
   await expect(dialog).toContainText('历史主动作 清仓（无入场）')
+  await expect(page.locator('.newow-summary__facts')).toContainText('清仓（无入场）')
   await expect(dialog).toContainText('初始无入场：未观察到可配对 BUILD，不生成参考交易。')
 
   await showReference(page)

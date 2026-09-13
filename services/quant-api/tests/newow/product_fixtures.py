@@ -371,7 +371,7 @@ class ProductCases:
             last_bar_end=last.bar.bar_end,
             bar_count=len(bars),
             input_sha256=contracts.lifecycle_input_sha256(bars),
-            source_identity="synthetic:test-only",
+            source_identity=contracts.LIFECYCLE_REPLAY_EVIDENCE_SOURCE,
             verified_cutoff=last.bar.bar_end,
         )
 

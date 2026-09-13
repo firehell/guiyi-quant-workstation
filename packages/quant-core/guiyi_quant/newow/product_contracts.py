@@ -54,6 +54,9 @@ class FeatureRuntimeStatus(StrEnum):
     EVIDENCE_REQUIRED = "evidence_required"
 
 
+LIFECYCLE_REPLAY_EVIDENCE_SOURCE = "market_data_service:canonical_v2"
+
+
 class EvidenceStatus(StrEnum):
     ACTIVE_CODE_VERIFIED = "ACTIVE_CODE_VERIFIED"
     RESEARCH_EVIDENCE_ONLY = "RESEARCH_EVIDENCE_ONLY"
@@ -223,6 +226,7 @@ class LifecycleReplayEvidence:
             or self.bar_count <= 0
             or first > last
             or cutoff != last
+            or self.source_identity != LIFECYCLE_REPLAY_EVIDENCE_SOURCE
             or len(self.input_sha256) != 64
             or any(char not in "0123456789abcdef" for char in self.input_sha256)
         ):
@@ -256,6 +260,7 @@ def validate_lifecycle_replay_evidence(
             owner in verified
             or evidence_item.product != identity.product
             or evidence_item.frequency is not identity.frequency
+            or evidence_item.source_identity != LIFECYCLE_REPLAY_EVIDENCE_SOURCE
             or not segment_bars
             or segment_bars[0].bar.bar_end != evidence_item.first_bar_end
             or segment_bars[-1].bar.bar_end != evidence_item.last_bar_end

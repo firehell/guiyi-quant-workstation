@@ -42,11 +42,13 @@
 0 provider request。RQData `bytes_used` 整批增加 5,109,123 bytes，未触发异常流量停止线。本次写入意图已消费，
 不授权重试或扩大范围。PT 写后依赖 readiness 为 `audited / complete=true`，6 项依赖均 `DATA_READY`。
 
-随后只读 PT 三策略周线 matrix 中趋势、震荡主图 READY；主升浪主图和参考层仍因内部
+随后只读 PT 三策略周线 matrix 中趋势、震荡主图 READY；当时主升浪主图和参考层仍因内部
 `NEWOW_PRODUCT_PAIRING_CONFLICT` 失败。已确认这不是行情缺口：PT2610 共 41 根周线，从上市首根即为黄带且没有
-真实 BUILD 转换，第 40 根首次转蓝并产生 CLEAR；当前稳定配对合同禁止制造入场，因而 fail-closed。处理该情形
-会改变动作/ReferenceTrade 表达合同，尚待 owner 选择。全 60 品种审计仍为 incomplete，未运行 180 主组合矩阵，
-不得声明周线 60 品种完成。紧凑证据见
+真实 BUILD 转换，第 40 根首次转蓝并产生 CLEAR。owner 已批准采用“显式初始无入场 CLEAR”合同；本地候选已完成
+`INITIAL_CLEAR_NO_ENTRY`、reader lifecycle evidence、零交易投影、v2 API/Web 合同及“清仓（无入场）”展示，
+离线 Core/API/Web/E2E/OpenSpec 验证与独立 Review 修正已完成。固定 PT 截点的本次 v2 生产只读验收因宿主凭据
+权限 Gate 未执行，仍为 `EXTERNAL_GATE_PENDING`；不得以旧 matrix 或本地 fixture 替代。全 60 品种审计仍为
+incomplete，未运行 180 主组合矩阵，不得声明周线 60 品种完成。紧凑旧证据见
 [周线 60 品种 readiness 摘要](outputs/newow-weekly-60-20260913/readiness-summary.json)。
 
 ## v1.10.8 Release（已发布；Runtime 已切换）

@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_contracts import (
+    LIFECYCLE_REPLAY_EVIDENCE_SOURCE,
     LifecycleReplayEvidence,
     OwnerBoundary,
     ProductBar,
@@ -43,7 +44,7 @@ _PAGE_SIZE = 2000
 _MICROSECOND = timedelta(microseconds=1)
 _HISTORICAL_CANDIDATE_BATCH = timedelta(days=59)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
-_CANONICAL_SOURCE = "market_data_service:canonical_v2"
+_CANONICAL_SOURCE = LIFECYCLE_REPLAY_EVIDENCE_SOURCE
 _OWNER_SOURCE = "main_contract_map:rank1:calendar_session_v1"
 
 

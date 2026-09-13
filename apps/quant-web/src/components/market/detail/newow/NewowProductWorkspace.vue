@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useNewowProduct } from '@/composables/useNewowProduct'
 import type { MarketDetailIdentity } from '@/types/marketDetail'
-import type { NewowAuxiliaryComponent, NewowProductCapabilities, NewowProductSection, NewowProductStrategy, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
+import type { NewowAuxiliaryComponent, NewowProductAction, NewowProductCapabilities, NewowProductSection, NewowProductStrategy, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
 import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
 import { describeNewowState, projectNewowDetail, newowDisplayLabel, shortNewowTime, referencePercentDisplay } from '@/utils/newowDetailPresentation'
 import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, describeNewowProductAction, newowChartSnapshotKey } from './newowProductChartPrimitives'
@@ -38,6 +38,9 @@ const chartModel = computed(() => chartResponse.value === null ? null : buildNew
 const selectedHint = computed(() => chartModel.value?.hints.find(hint => hint.id === selectedHintId.value) ?? null)
 const selectedAction = computed(() => chartModel.value?.actions.find((action) => action.id === selectedSignalId.value) ?? null)
 const selectedActionDescription = computed(() => selectedAction.value === null ? null : describeNewowProductAction(selectedAction.value))
+const summaryActionLabel = (action: NewowProductAction) => action.trade_eligibility === 'INITIAL_CLEAR_NO_ENTRY'
+  ? '清仓（无入场）'
+  : newowDisplayLabel(action.kind)
 const referenceResponse = computed(() => (
   loader.sections.reference.data.value?.section === 'reference'
     ? loader.sections.reference.data.value as NewowProductSectionResponse<'reference'>
@@ -211,7 +214,7 @@ onBeforeUnmount(() => loader.dispose())
         <button class="newow-summary__evidence" @click="openDialog('explanation')">查看依据</button>
       </div>
       <div class="newow-summary__facts">
-        <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口最近主动作' : '已读取窗口最近主动作' }} <button v-if="summary.latestAction" :title="summary.latestAction.bar_end" @click="selectSignal(summary.latestAction.signal_id)">{{ newowDisplayLabel(summary.latestAction.kind) }} · {{ formatMarketDecimal(summary.latestAction.reference_price) }} · {{ shortNewowTime(summary.latestAction.bar_end) }}</button><template v-else>—</template></span>
+        <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口最近主动作' : '已读取窗口最近主动作' }} <button v-if="summary.latestAction" :title="summary.latestAction.bar_end" @click="selectSignal(summary.latestAction.signal_id)">{{ summaryActionLabel(summary.latestAction) }} · {{ formatMarketDecimal(summary.latestAction.reference_price) }} · {{ shortNewowTime(summary.latestAction.bar_end) }}</button><template v-else>—</template></span>
         <span>当前参考交易 {{ summary.openReference ? '未清仓' : '—' }} <small v-if="!summary.openReference">{{ loader.sections.reference.state.value === 'not_requested' ? '未读取' : '当前窗口不可用' }}</small></span>
         <span>参考浮动 <span class="newow-return-badge" :data-direction="referencePercentDisplay(summary.openReference?.mark_change_pct).direction">{{ referencePercentDisplay(summary.openReference?.mark_change_pct).text }}</span> · {{ shortNewowTime(summary.openReference?.mark_bar_end) }}</span>
         <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</span>

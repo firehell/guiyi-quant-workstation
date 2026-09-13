@@ -595,6 +595,7 @@ test('accepts only a structurally valid main-rise initial clear without entry', 
     (copy: typeof wire) => { copy.chart.value.actions[0]!.kind = 'BUILD' },
     (copy: typeof wire) => { copy.chart.value.actions[0]!.related_build_id = 'forged-build' },
     (copy: typeof wire) => { copy.chart.value.actions[0]!.sequence = 1 },
+    (copy: typeof wire) => { copy.chart.value.bars[0]!.observation_eligible = false },
   ]
   for (const mutate of mutations) {
     const copy = structuredClone(wire); mutate(copy)

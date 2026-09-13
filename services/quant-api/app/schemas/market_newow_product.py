@@ -20,6 +20,8 @@ EvidenceStatusValue = Literal[
     "OUT_OF_SCOPE",
 ]
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
+ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v2"]
+FuturesAdaptationVersionValue = Literal["newow_futures_segment_interrupt_v1"]
 
 
 class _Out(BaseModel):
@@ -49,8 +51,8 @@ class ProductMetaOut(_Out):
     input_content_sha256: str
     data_revision_identity: str | None
     snapshot_token: str | None
-    reference_model_version: str
-    futures_adaptation_version: str
+    reference_model_version: ReferenceModelVersionValue
+    futures_adaptation_version: FuturesAdaptationVersionValue
 
 
 class ProductBarOut(_Out):
@@ -152,8 +154,8 @@ class ReferenceTradeOut(_Out):
     physical_contract: str
     segment_id: str
     formula_versions: list[str]
-    reference_model_version: str
-    futures_adaptation_version: str
+    reference_model_version: ReferenceModelVersionValue
+    futures_adaptation_version: FuturesAdaptationVersionValue
     entry_signal_id: str
     entry_sequence: int
     entry_bar_end: datetime

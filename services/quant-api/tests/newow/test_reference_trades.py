@@ -7,7 +7,11 @@ from decimal import Decimal
 
 import pytest
 
-from guiyi_quant.newow.product_contracts import StrategyHint, TradeEligibility
+from guiyi_quant.newow.product_contracts import (
+    FeatureRuntimeStatus,
+    StrategyHint,
+    TradeEligibility,
+)
 from guiyi_quant.newow.reference_trades import ReferenceTradeProjector
 
 
@@ -15,6 +19,13 @@ def _forged_actions(replay, actions):
     """Bypass upstream validation to exercise the projector's trust boundary."""
     forged = copy(replay)
     object.__setattr__(forged, "actions", tuple(actions))
+    return forged
+
+
+def _forged_lifecycle_evidence(replay, evidence):
+    """Bypass upstream validation to exercise the projector's trust boundary."""
+    forged = copy(replay)
+    object.__setattr__(forged, "lifecycle_evidence", tuple(evidence))
     return forged
 
 
@@ -288,6 +299,33 @@ def test_initial_clear_projector_independently_rejects_missing_or_stale_evidence
             )
 
 
+def test_initial_clear_projector_rejects_an_unavailable_current_frame(product_cases):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,)
+    )
+    current = replay.frames[-1]
+    unavailable = replace(
+        current.availability,
+        status=FeatureRuntimeStatus.UNAVAILABLE,
+        reason_code="TEST_UNAVAILABLE",
+    )
+    damaged = copy(replay)
+    object.__setattr__(
+        damaged,
+        "frames",
+        (*replay.frames[:-1], replace(current, availability=unavailable)),
+    )
+
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        ReferenceTradeProjector().project(
+            damaged, (), case.bars[-1].bar.bar_end
+        )
+
+
 def test_future_initial_clear_does_not_leak_a_diagnostic(product_cases):
     from guiyi_quant.newow.product_adapters import replay_strategy
 
@@ -296,6 +334,9 @@ def test_future_initial_clear_does_not_leak_a_diagnostic(product_cases):
     replay = replay_strategy(
         case.identity, case.bars, lifecycle_evidence=(evidence,)
     )
+
+    future_damaged_evidence = replace(evidence, input_sha256="f" * 64)
+    replay = _forged_lifecycle_evidence(replay, (future_damaged_evidence,))
 
     result = ReferenceTradeProjector().project(
         replay, (), case.bars[34].bar.bar_end

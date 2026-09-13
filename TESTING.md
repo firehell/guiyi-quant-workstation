@@ -4,7 +4,7 @@
 
 ## Newow 初始无入场 CLEAR v2（实施验收）
 
-以下组用于 `INITIAL_CLEAR_NO_ENTRY` 实施后的验收；命令存在不表示当前 v1 代码已实现该合同。
+以下组验证已实现的 `INITIAL_CLEAR_NO_ENTRY` v2 合同；离线通过不替代固定 PT 截点的生产只读验收 Gate。
 在本任务隔离树中执行，Python/Node 使用已有环境；依赖路径若不同，先确认解释器和本树源码导入身份。
 
 Core/投影 RED→GREEN 与公式金样：

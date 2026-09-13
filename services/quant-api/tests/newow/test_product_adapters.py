@@ -1,5 +1,6 @@
 """Typed wrappers over the original Newow primitives, without formula mirrors."""
 
+from copy import copy
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -280,6 +281,8 @@ def test_verified_main_rise_lifecycle_emits_initial_clear_without_entry(
 def test_initial_clear_requires_exact_untrimmed_lifecycle_evidence(product_cases):
     case = product_cases.initial_clear_input()
     evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    forged_source = copy(evidence)
+    object.__setattr__(forged_source, "source_identity", "forged:reader")
 
     with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
         replay_strategy(case.identity, case.bars)
@@ -303,6 +306,7 @@ def test_initial_clear_requires_exact_untrimmed_lifecycle_evidence(product_cases
         ),
         (case.bars, (replace(evidence, segment_id="rb:RB2710:other"),)),
         (case.bars, (replace(evidence, frequency="60m"),)),
+        (case.bars, (forged_source,)),
         (case.bars, (evidence, evidence)),
     ):
         with pytest.raises(ValueError, match="LIFECYCLE_EVIDENCE"):

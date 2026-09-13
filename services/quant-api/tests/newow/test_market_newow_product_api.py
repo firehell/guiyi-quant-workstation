@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from guiyi_quant.newow.product_contracts import (
     EvidenceStatus,
     FeatureRuntimeStatus,
@@ -22,6 +23,7 @@ from app.market_data.newow.product_service import (
 )
 from app.market_data.newow.historical_snapshot import HistoricalSnapshot
 from app.market_data.newow.resource_gate import NewowResourceBusy
+from app.schemas.market_newow_product import NewowProductResponse, ReferenceTradeOut
 
 
 def _service_result(product_cases):
@@ -254,6 +256,37 @@ def test_typed_api_serializes_verified_initial_clear_without_entry(product_cases
             "sequence": 0,
         }
     ]
+
+
+def test_typed_v2_rejects_v1_reference_model_in_meta_and_trade(product_cases):
+    result, _as_of = _service_result(product_cases)
+    payload = market_newow._product_response(result).model_dump(mode="json")
+    payload["meta"]["reference_model_version"] = (
+        "newow_marker_reference_zero_cost_v1"
+    )
+    with pytest.raises(ValidationError):
+        NewowProductResponse.model_validate(payload)
+
+    from newow.test_product_service import _service
+
+    service, _reader, build, clear = _service(product_cases)
+    reference = service.query(
+        ProductServiceQuery(
+            "rb",
+            "trend",
+            "1d",
+            section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+        )
+    )
+    trade = market_newow._product_response(reference).model_dump(mode="json")[
+        "reference"
+    ]["value"]["items"][0]
+    trade["reference_model_version"] = "newow_marker_reference_zero_cost_v1"
+    with pytest.raises(ValidationError):
+        ReferenceTradeOut.model_validate(trade)
 
 
 def test_strategy_detail_serializes_unavailable_channel_point_without_values(

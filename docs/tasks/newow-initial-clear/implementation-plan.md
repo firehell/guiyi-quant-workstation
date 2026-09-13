@@ -214,3 +214,10 @@ else:
 设计审查与计划审查由主任务和同一位独立 reviewer 完成；最终修订与 review 结论以文档交接提交和主任务记录绑定。
 实施开始后，复用现有计划，不重新要求 owner 批准已经确定的 A 方案。只有新发现会改变公式、收益口径或外部
 操作范围的重要歧义才停受影响部分，其余安全的已授权工作继续。
+
+## 执行状态
+
+- 离线实现、定向/模块回归、Web build、fixture E2E、OpenSpec、secret scan、diff check 与独立 Review 修正已完成。
+- task commit 已生成；Review 修正与本地 develop 集成状态以 Git history 和最终交付记录为准。
+- 固定 PT 截点的生产只读验收因宿主凭据权限 Gate 未执行，保持 `EXTERNAL_GATE_PENDING`；未更新 readiness output。
+- 未执行远端 push、main/tag/Release、Runtime、通知、provider、Canonical、数据库或 Redis mutation。

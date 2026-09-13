@@ -234,6 +234,5 @@ Sol 新隔离分支先核对当前 develop 是否已包含趋势点 exact commit
 该依赖整合后进行；最终复测全部重叠路径。若依赖被作者修订，先协调确认替代 commit，独立 Core 工作可继续。
 无需重做整页布局、主状态公式或扩建账户链路，不清理其他任务或复用其服务端口。
 
-本设计/计划存放于 `docs/tasks/newow-initial-clear/`，是未完成 change 的交接材料；实施时同步 active OpenSpec、DECISIONS、PROJECT_SOURCE 中受影响
-的合同，并在 STATUS 中记录真实完成级别。已完成后按 `docs/DEVELOPMENT.md` 由 canonical/代码/Git history
-承接，不保留第二套 active 产品 authority。
+本设计/计划存放于 `docs/tasks/newow-initial-clear/`，现由 active OpenSpec、DECISIONS、PROJECT_SOURCE、
+实现代码与 Git history 共同承接；STATUS 只记录真实完成级别，不保留第二套 active 产品 authority。

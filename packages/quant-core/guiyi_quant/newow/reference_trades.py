@@ -287,9 +287,9 @@ def _validate_initial_clear_no_entry(
     replay: StrategyReplay,
     action: StrategyAction,
     positions: dict[tuple[str, str, datetime], int],
-    frames_by_owner: dict[tuple[str, str], tuple[StrategyFrame, ...]],
+    frames_by_owner: dict[tuple[str, str], list[StrategyFrame]],
     verified_owners: frozenset[tuple[str, str]],
-    prior_actions: tuple[StrategyAction, ...],
+    has_prior_actions: bool,
 ) -> int:
     owner = (action.physical_contract, action.segment_id)
     key = (*owner, action.bar_end)
@@ -305,7 +305,7 @@ def _validate_initial_clear_no_entry(
         or action.source_related_marker_ids
         or owner not in verified_owners
         or key not in positions
-        or prior_actions
+        or has_prior_actions
         or len(matching) != 1
     ):
         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
@@ -318,6 +318,7 @@ def _validate_initial_clear_no_entry(
     if (
         not prior
         or current is not prefix[-1]
+        or current.availability.status is not FeatureRuntimeStatus.READY
         or not current.bar.bar.observation_eligible
         or current.main_state is not MainState.CLEAR
         or current.actions != (action,)
@@ -537,7 +538,8 @@ class ReferenceTradeProjector:
         initial_actions = tuple(
             action
             for action in actions
-            if action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+            if action.bar_end <= as_of
+            and action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
         )
         verified_owners: frozenset[tuple[str, str]] = frozenset()
         if initial_actions:
@@ -549,10 +551,10 @@ class ReferenceTradeProjector:
                 )
             except ValueError as error:
                 raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT") from error
-        frames_by_owner: dict[tuple[str, str], tuple[StrategyFrame, ...]] = {}
+        frames_by_owner: dict[tuple[str, str], list[StrategyFrame]] = {}
         for frame in replay.frames:
             owner = (frame.bar.bar.physical_contract, frame.bar.bar.segment_id)
-            frames_by_owner[owner] = (*frames_by_owner.get(owner, ()), frame)
+            frames_by_owner.setdefault(owner, []).append(frame)
         diagnostics = [
             diagnostic
             for diagnostic in dict.fromkeys(replay.diagnostics)
@@ -561,9 +563,7 @@ class ReferenceTradeProjector:
         trades: list[ReferenceTrade] = []
         open_by_owner: dict[tuple[str, str], tuple[int, StrategyAction, int]] = {}
         warmup_witnesses: dict[str, StrategyAction] = {}
-        prior_actions_by_owner: dict[
-            tuple[str, str], tuple[StrategyAction, ...]
-        ] = {}
+        owners_with_prior_actions: set[tuple[str, str]] = set()
 
         for action in actions:
             if action.bar_end > as_of:
@@ -583,12 +583,9 @@ class ReferenceTradeProjector:
                     positions,
                     frames_by_owner,
                     verified_owners,
-                    prior_actions_by_owner.get(owner, ()),
+                    owner in owners_with_prior_actions,
                 )
-                prior_actions_by_owner[owner] = (
-                    *prior_actions_by_owner.get(owner, ()),
-                    action,
-                )
+                owners_with_prior_actions.add(owner)
                 if "INITIAL_CLEAR_NO_ENTRY" not in diagnostics:
                     diagnostics.append("INITIAL_CLEAR_NO_ENTRY")
                 continue
@@ -615,10 +612,7 @@ class ReferenceTradeProjector:
                 ):
                     raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
                 warmup_witnesses[action.signal_id] = action
-                prior_actions_by_owner[owner] = (
-                    *prior_actions_by_owner.get(owner, ()),
-                    action,
-                )
+                owners_with_prior_actions.add(owner)
                 continue
 
             if action.trade_eligibility is TradeEligibility.NO_ELIGIBLE_ENTRY:
@@ -634,10 +628,7 @@ class ReferenceTradeProjector:
                     raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
                 if "NO_ELIGIBLE_ENTRY" not in diagnostics:
                     diagnostics.append("NO_ELIGIBLE_ENTRY")
-                prior_actions_by_owner[owner] = (
-                    *prior_actions_by_owner.get(owner, ()),
-                    action,
-                )
+                owners_with_prior_actions.add(owner)
                 continue
 
             if action.trade_eligibility is not TradeEligibility.ELIGIBLE:
@@ -656,10 +647,7 @@ class ReferenceTradeProjector:
                 trade = _open_trade(action)
                 trades.append(trade)
                 open_by_owner[owner] = (len(trades) - 1, action, action_index)
-                prior_actions_by_owner[owner] = (
-                    *prior_actions_by_owner.get(owner, ()),
-                    action,
-                )
+                owners_with_prior_actions.add(owner)
                 continue
 
             current = open_by_owner.get(owner)
@@ -683,10 +671,7 @@ class ReferenceTradeProjector:
                 ),
             )
             del open_by_owner[owner]
-            prior_actions_by_owner[owner] = (
-                *prior_actions_by_owner.get(owner, ()),
-                action,
-            )
+            owners_with_prior_actions.add(owner)
 
         for owner, (trade_position, _entry, entry_index) in open_by_owner.items():
             owner_boundary = effective_boundaries.get(owner)

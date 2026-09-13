@@ -323,7 +323,7 @@ function validateChartRelationships(
     if (!sameStrings(frame.action_ids, expectedActions)) throw new Error('frame.action_ids conflict with chart actions')
     if (!sameStrings(frame.hint_ids, expectedHints)) throw new Error('frame.hint_ids conflict with chart hints')
     const initialClears = actions.filter((action) => action.bar_end === frame.bar_end && action.trade_eligibility === 'INITIAL_CLEAR_NO_ENTRY')
-    if (initialClears.length > 0 && (strategy !== 'main_rise' || frame.main_state !== 'CLEAR' || expectedActions.length !== 1)) {
+    if (initialClears.length > 0 && (strategy !== 'main_rise' || frame.main_state !== 'CLEAR' || expectedActions.length !== 1 || !barByEnd.get(frame.bar_end)!.observation_eligible)) {
       throw new Error('INITIAL_CLEAR_NO_ENTRY conflicts with its main-rise CLEAR frame')
     }
   }
