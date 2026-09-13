@@ -36,17 +36,20 @@
 
 ## 运行与恢复目录
 
-- 现役 Runtime：`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.8-r1`；compatible-recovery：
-  `/Volumes/扩展盘/guiyi-quant-recovery-v1.10.8-r1`。两者均为非 symlink、detached、tracked clean，
-  绑定 exact `82860ee3f5f63c49397ab11b0d0ab60c601376b9` / tree `6df9ebdce760d7d5d67f83e47e613cf8b0d71e3c`。
-- 两个 root 的独立 Python env、前端依赖与一致 dist、frozen/offline 安装和 build 已验证。
-  Runtime root 的相关隔离测试 463 passed；recovery root 失败恢复合同 5/5 passed；两根 render-only 通过。
-  这些是部署准备证据，不证明自然业务验收。
+- 现役 Runtime 只保留 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.8-r1`；该 root 为非 symlink、detached、
+  tracked clean，绑定 exact `82860ee3f5f63c49397ab11b0d0ab60c601376b9` / tree
+  `6df9ebdce760d7d5d67f83e47e613cf8b0d71e3c`。独立 Python env、前端依赖与 dist、frozen/offline 安装、
+  build、相关隔离测试 463 passed 及 render-only 均已验证；这些是部署准备证据，不证明自然业务验收。
+- owner 于 2026-09-13 明确要求发布 worktree 只保留最新在用根；未被服务引用、同为 v1.10.8 的
+  `guiyi-quant-recovery-v1.10.8-r1` 已随本次收敛移除。其历史失败恢复合同 5/5 passed 仍只作为历史证据；
+  如后续需要 compatible recovery，须从 exact annotated tag 重新建立独立 detached root 并重新完成当时 Gate，
+  不能把已删除根或旧验证当作当前可用恢复能力。
 - 最新记录中现役 root 尚无 after-market terminal status 文件，没有可用于 `compatible-recovery-proof`
   的现场 SHA；实际恢复必须重新绑定届时状态与独立一次意图，不重用旧 terminal SHA。
-- 9 月 13 日已按精确范围移除六棵过时任务/运行树，保留主 develop、active Codex 工作区及上述两根。
-  临时开发 worktree 清单以 Git 当前读回为准。旧 v1.10.5/v1.10.7 Runtime 与 v1.10.7 recovery 已删除，
-  不再列为可用恢复路径。旧 `.run/after-market-status.json` 不能从 Git 恢复；已审终态摘要与 SHA 保留在下文。
+- 9 月 13 日已按精确范围移除过时任务/运行树；本次收敛后只保留主 develop 与上述现役 Runtime。
+  临时开发 worktree 清单以 Git 当前读回为准。旧 v1.10.5/v1.10.7 Runtime、v1.10.7 recovery 及 v1.10.8
+  recovery 均已删除，不再列为可用恢复路径。旧 `.run/after-market-status.json` 不能从 Git 恢复；已审终态摘要
+  与 SHA 保留在下文。
 
 ## v1.10.8 Runtime promotion 与即时验收（已完成；自然验收未完成）
 
