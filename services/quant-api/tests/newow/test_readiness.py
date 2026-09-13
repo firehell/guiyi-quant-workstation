@@ -85,7 +85,6 @@ def test_collects_all_contract_frequency_failures_and_deduplicates_provenance():
         "chart",
         "auxiliary",
         "reference",
-        "explanation",
     }
 
 
@@ -104,10 +103,13 @@ def test_metadata_failure_keeps_unknown_counts_and_never_invokes_warmup():
     assert all(
         item["expected_bar_count"] is None for item in report["metadata_proposals"]
     )
-    assert all(item["status"] == "UNKNOWN" for item in report["enumerations"])
+    assert all(
+        item["status"] == ("UNOPENED" if item["section"] == "explanation" else "UNKNOWN")
+        for item in report["enumerations"]
+    )
 
 
-def test_budget_preserves_all_540_main_cases_as_unstarted():
+def test_budget_preserves_weekly_cases_and_marks_deferred_frequencies_unopened():
     module = _audit_module()
     from app.market_data.operational_universe import load_active_products
 
@@ -122,7 +124,8 @@ def test_budget_preserves_all_540_main_cases_as_unstarted():
     assert len(report["cases"]) == 540
     assert report["complete"] is False
     assert report["budget_exhausted"] is True
-    assert all(item["main"]["status"] == "UNSTARTED" for item in report["cases"])
+    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 180
+    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 360
 
 
 def test_weekly_scope_preserves_exact_three_strategy_matrix_without_hourly_dependencies():
@@ -144,6 +147,17 @@ def test_weekly_scope_preserves_exact_three_strategy_matrix_without_hourly_depen
     assert len(report["enumerations"]) == 8
     assert {row["frequency"] for row in report["enumerations"]} == {"1w"}
     assert report["frequency_scope"] == ["1w"]
+    assert report["release_stage"] == "weekly"
+    assert all(
+        row["status"] == "UNOPENED"
+        for row in report["enumerations"]
+        if row["section"] == "explanation"
+    )
+    assert all(
+        consumer["section"] != "explanation"
+        for dependency in report["dependencies"]
+        for consumer in dependency["consumers"]
+    )
     assert all(item["main"]["status"] == "UNSTARTED" for item in report["cases"])
 
 
@@ -181,7 +195,7 @@ def test_matrix_preserves_section_evidence_states_and_fixed_asof():
 
     class Service:
         def query(self, request):
-            seen.append(request.as_of)
+            seen.append((request.frequency.value, request.section.value, request.as_of))
             status = {
                 "explanation": "evidence_required",
                 "comparator": "not_applicable",
@@ -205,16 +219,25 @@ def test_matrix_preserves_section_evidence_states_and_fixed_asof():
     report = module.NewowReadinessAudit(reader=AuditReader(), service=Service()).run(
         module.ReadinessRequest(("rb",), as_of, matrix=True)
     )
-    assert len(report["cases"]) == report["main_ready_count"] == 9
+    assert len(report["cases"]) == 9
+    assert report["main_ready_count"] == 3
     assert all(
-        case["sections"]["explanation"]["status"] == "EVIDENCE_REQUIRED"
+        case["sections"]["explanation"]["status"] == "UNOPENED"
         for case in report["cases"]
     )
     assert all(
         case["sections"]["comparator"]["status"] == "NOT_APPLICABLE"
         for case in report["cases"]
+        if case["frequency"] == "1w"
     )
-    assert set(seen) == {as_of}
+    assert all(case["main"]["status"] == "UNOPENED" for case in report["cases"] if case["frequency"] != "1w")
+    assert {(frequency, section) for frequency, section, _ in seen} == {
+        ("1w", "chart"),
+        ("1w", "auxiliary"),
+        ("1w", "reference"),
+        ("1w", "comparator"),
+    }
+    assert {observed for _, _, observed in seen} == {as_of}
 
 
 def test_deadline_discards_late_result_and_keeps_later_case_unstarted():
@@ -243,7 +266,10 @@ def test_deadline_discards_late_result_and_keeps_later_case_unstarted():
     assert report["budget_exhausted"] is True
     assert report["dependencies"] == []
     assert owner_calls == []
-    assert all(row["status"] == "UNSTARTED" for row in report["enumerations"])
+    assert all(
+        row["status"] == ("UNOPENED" if row["section"] == "explanation" else "UNSTARTED")
+        for row in report["enumerations"]
+    )
 
 
 def test_real_reader_collects_two_missing_lifecycle_prefixes(product_cases):
@@ -525,5 +551,4 @@ def test_repair_scope_coalesces_one_contract_to_latest_required_through():
         "chart",
         "auxiliary",
         "reference",
-        "explanation",
     }

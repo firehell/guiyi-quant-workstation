@@ -8,6 +8,10 @@
 也不能声称 60 品种周版数据完成。repair candidate、Session metadata proposal、RS source/integrity review
 以及 PF2611 非正价格须分别处理。
 
+周版 staged capability 只开放 `1w` 的 chart、auxiliary、reference 和 comparator。60 个 explanation 枚举项
+均明确为 `UNOPENED / NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN`，不会读取 D1/60m，也不计入 incomplete；完整
+审计仍由其余权威依赖的真实缺口判定为 incomplete。
+
 `calibration_batch_candidate` 仅是一份待 owner 单次明确授权的小批次建议。执行前必须重新运行两个
 `contract-warmup` dry-run 并核对原生 plan hash；串行 apply，第一目标失败、结果不明、锁忙、hash 漂移、
 配额到达任务日上限或异常流量时停止，不自动重试。该建议不授权 metadata、main/tag、Release 或 Runtime。

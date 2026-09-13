@@ -38,3 +38,18 @@ def require_open_section(section: ProductSectionName) -> None:
     """Reject sections whose authoritative inputs are outside this release."""
     if section not in OPEN_SECTIONS:
         raise ValueError("NEWOW_SECTION_NOT_OPEN")
+
+
+def deferred_frequency_reason(frequency: ProductFrequency) -> str | None:
+    """Return the public staged-release reason without opening data readers."""
+    selected = ProductFrequency(frequency)
+    return next(
+        (reason for item, reason in DEFERRED_FREQUENCIES if item == selected), None
+    )
+
+
+def deferred_section_reason(section: ProductSectionName) -> str | None:
+    """Return the public staged-release reason without opening data readers."""
+    return next(
+        (reason for item, reason in DEFERRED_SECTIONS if item == section), None
+    )

@@ -25,6 +25,11 @@ from app.market_data.newow.product_service import (
     ProductServiceQuery,
 )
 from app.market_data.newow.public_errors import public_product_error
+from app.market_data.newow.product_release import (
+    RELEASE_STAGE,
+    deferred_frequency_reason,
+    deferred_section_reason,
+)
 
 _METADATA = MISSING_REASONS - {
     "REPLAY_PREFIX_MISSING",
@@ -169,6 +174,10 @@ class NewowReadinessAudit:
                         "as_of": request.as_of.isoformat(),
                     }
                     enumerations.append(row)
+                    deferred_reason = deferred_section_reason(section)
+                    if deferred_reason is not None:
+                        row.update(status="UNOPENED", reason=deferred_reason)
+                        continue
                     try:
                         budget.take()
                         if section == "reference":
@@ -418,6 +427,12 @@ class NewowReadinessAudit:
                 case["sections"][section_name] = state
                 if section is ProductSection.CHART:
                     case["main"] = state
+                deferred_reason = deferred_frequency_reason(
+                    ProductFrequency(case["frequency"])
+                ) or deferred_section_reason(section.value)
+                if deferred_reason is not None:
+                    state.update(status="UNOPENED", reason=deferred_reason)
+                    continue
                 try:
                     budget.take()
                     if self.service is None:
@@ -471,6 +486,7 @@ class NewowReadinessAudit:
             "status": "incomplete" if incomplete or budget.exhausted else "audited",
             "complete": not incomplete and not budget.exhausted,
             "as_of": request.as_of.isoformat(),
+            "release_stage": RELEASE_STAGE,
             "matrix": request.matrix,
             "frequency_scope": [item.value for item in request.frequencies],
             "product_count": len(request.products),

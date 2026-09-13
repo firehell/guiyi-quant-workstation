@@ -509,6 +509,9 @@ endpoint authority：先枚举各 section 必需的 owner，再独立验证每�
 一个缺失合约不能阻止发现后续独立合约。chart/auxiliary 使用权威近期窗口，reference 使用独立统计
 窗口，explanation 使用三周期输入；每个依赖保留 owner 区间及 strategy/frequency/section consumer provenance。
 W1 合法零 Bar owner 标为 `NOT_APPLICABLE`，不得填 Bar 或计入 data-ready。
+当前 staged capability 已标记的未开放 frequency/section 在 matrix 中为 `UNOPENED`；尤其周版
+`explanation` 不枚举 D1/60m 依赖、不调用 section service，也不计为 incomplete。显式 data audit 仍可按
+`--frequency` 检查未开放周期的 Canonical 准备度，但不能因此把产品面标成已开放。
 
 `newow-readiness` 只接受互斥的单 active symbol、active universe 或 operational universe，并可显式重复
 `--frequency` 收窄到 `1w/1d/60m` 的任意非空、不重复子集；未传时保持三周期兼容审计。必须固定带时区

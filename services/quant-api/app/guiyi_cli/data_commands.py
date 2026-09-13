@@ -236,6 +236,7 @@ def compact_readiness_payload(report: dict[str, Any]) -> dict[str, object]:
                 "status",
                 "complete",
                 "as_of",
+                "release_stage",
                 "matrix",
                 "frequency_scope",
                 "product_count",

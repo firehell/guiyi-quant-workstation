@@ -1,6 +1,6 @@
 {
   "schema_version": "newow_weekly_60_readiness_summary_v1",
-  "generated_at": "2026-09-13T15:04:55+08:00",
+  "generated_at": "2026-09-13T15:34:39+08:00",
   "scope": {
     "as_of": "2026-09-13T06:36:13+00:00",
     "frequencies": [
@@ -15,11 +15,15 @@
   "audit": {
     "status": "incomplete",
     "complete": false,
+    "release_stage": "weekly",
     "matrix_run": false,
     "budget_exhausted": false,
-    "work_used": 3587,
-    "full_result_sha256": "dbde511f28c6742c76a4c90b62411e63d07eca3b5155a3a9a18d8b9f6cd93514",
-    "compact_result_sha256": "673253b62acb0e992730c5a0e60cf67fcbad673098030f4d77542bbf49579107",
+    "work_used": 3527,
+    "enumerated_section_count": 180,
+    "unopened_section_count": 60,
+    "unopened_reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
+    "full_result_sha256": "86186690b9e20fe665826974a667284920ca3d802ad73357762a8adc7b071556",
+    "compact_result_sha256": "566601d7cf4085a180e72ae8bbabeb0e3f0c183c59472dd3cbda6d7bd205ed9f",
     "provider_requests": 0,
     "writes": 0
   },
@@ -75,16 +79,19 @@
         "through": "2026-07-21",
         "expected_bar_count": 146,
         "provider_request_count": 14,
-        "plan_sha256": "de256d1eb2f3a8117b1d4b5e071c13dd02e7b48ff60e57761437fa4dd871e6c6"
+        "plan_sha256": "de256d1eb2f3a8117b1d4b5e071c13dd02e7b48ff60e57761437fa4dd871e6c6",
+        "dry_run_output_sha256": "0706013a5638320f2776307825cd91e0b9769340bbc18cb2f5a40e9b09287567"
       },
       {
         "contract": "PT2610",
         "through": "2026-09-11",
         "expected_bar_count": 199,
         "provider_request_count": 18,
-        "plan_sha256": "9341907dd0b8eadfe75161a4de8fdde21ecca397053da4e269ea99295098c234"
+        "plan_sha256": "9341907dd0b8eadfe75161a4de8fdde21ecca397053da4e269ea99295098c234",
+        "dry_run_output_sha256": "02aaa39388c11198a551f31da3762dffc36f4c05c28bfda7410538824e09ce7a"
       }
     ],
+    "dry_run_verified_at": "2026-09-13T15:17:55+08:00",
     "stop_conditions": [
       "maintenance_lock_busy",
       "plan_hash_drift",
