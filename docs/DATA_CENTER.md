@@ -233,6 +233,13 @@ fail-closed，不跨合约、不插值、不缩短前缀。数据仅进入当日
 存入当日 Redis，重启不重置。初始化及查询阶段的权限/额度失败停止当日后续 provider 请求。已有完整
 1m 但派生周期缺失时，直接用原 1m 重建完整桶，不下载、不消耗 provider 次数。
 
+缺失 1m 的请求在领取 provider 尝试预算前，必须用带时区的当前时钟证明
+`0 <= now - cutoff <= 60 秒`。排队过期、未来或无时区的时钟以 `LIVE_RECOVERY_CLOCK_INVALID`
+失败关闭，不领取预算、不初始化或调用 provider、不修改 Bar/水位；下一轮仍由前台按正常调度重新
+采集 Session 与冻结订阅 authority。后台不得刷新 cutoff 或增加尝试次数。已在有效时间内开始的真实查询
+仍计入一次尝试；查询或等待锁期间过期时，最终提交继续拒绝，不能撤销预算来形成隐藏重试。
+纯 `NO_GAP` 保持只读幂等；有效源 1m 重建派生桶仍须通过提交时效检查。
+
 缺失 1m、完整的 5m/15m/30m/60m 桶及单调恢复水位通过一次 Lua CAS 提交；提交前核对冻结订阅、原
 series 与 recovery revision。已有相同内容幂等跳过，冲突拒绝，正常 completed 写入同样不得覆盖冲突。
 恢复不发布历史 Bar 消息。数据查询在锁外，最终 CAS 和提交时钟在同品种进程间锁内；Alert 的窗口读取、
@@ -248,6 +255,10 @@ Alert 的 HTDY 5m/15m/60m 计算窗口还须在进入 kernel 前，以 Calendar�
 32 根做精确端点证明。午休、周末、夜盘归属和短尾桶不是连续时钟缺口；缺失、重复、额外、错误交易日或
 owner 则公开失败，不缩窗、不补值、不回退 continuous。历史 owner 来自 MainContractMap；当日 owner 可来自
 同一次窗口读取的冻结 Live snapshot。该检查不改变 SuBing 只回放当前物理合约完整 lifecycle 的独立合同。
+共享预警窗口读取 Live 时使用带合约身份的 `LiveBarObservation`：逐根证明 payload contract 与冻结订阅
+相等、trading_day 正确且端点不重复，并限定至事件 cutoff。不得先丢弃 payload 合约再用 snapshot 补写
+owner；相同端点的 Canonical/Live 只有事实和合约均一致时才可去重，Live provenance 异常公开为
+`MARKET_READ_LIVE_UNAVAILABLE`，不进入 Kernel、Event 或发送。
 
 ### 已捕获源数据的五根 Live 恢复
 

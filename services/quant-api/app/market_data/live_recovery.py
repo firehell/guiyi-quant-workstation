@@ -122,6 +122,15 @@ def _recovery_additions(request, source, existing):
     return additions
 
 
+def _validated_recovery_clock(now: datetime, cutoff: datetime) -> datetime:
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("LIVE_RECOVERY_CLOCK_INVALID")
+    now = now.astimezone(UTC)
+    if not timedelta(0) <= now - cutoff <= timedelta(seconds=60):
+        raise ValueError("LIVE_RECOVERY_CLOCK_INVALID")
+    return now
+
+
 def recover_product(
     store: RedisLiveStore,
     request: LiveRecoveryRequest,
@@ -178,6 +187,9 @@ def recover_product(
     if not missing:
         source = tuple(existing[0][end] for end in ends)
     else:
+        # A stale queued request cannot commit; leave its provider budget intact
+        # for the next normally scheduled foreground request with a fresh cutoff.
+        _validated_recovery_clock(clock(), request.cutoff)
         # Budget is persisted before the provider call, including failures/restarts.
         active_session = next(
             (w for w in reversed(request.sessions) if w.start <= request.cutoff), None
@@ -209,11 +221,7 @@ def recover_product(
     if not any(additions):
         return "NO_GAP"
     with commit_guard():
-        committed_at = clock().astimezone(UTC)
-        if committed_at < request.cutoff or committed_at - request.cutoff > timedelta(
-            seconds=60
-        ):
-            raise ValueError("LIVE_RECOVERY_CLOCK_INVALID")
+        committed_at = _validated_recovery_clock(clock(), request.cutoff)
         through = max(committed_at, state.recovered_through) if state else committed_at
         payload = _compact_json(
             {

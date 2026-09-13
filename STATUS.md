@@ -23,6 +23,23 @@
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
 
+## 开盘预警可靠性修复（开发验收）
+
+2026-09-13 在 `ef2e087d1` 基线上完成恢复队列与 Live 合约身份两项修复，
+`CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE`，允许集成 develop。慢队列中过期请求在领取预算前
+失败关闭，下一正常调度可使用剩余预算；真实慢查询仍计次，提交时效、三次预算和恢复水位均未放宽。
+HTDY 与苏冰 replay 共用 typed Live 读取，逐根校验合约、交易日及唯一端点，异常不进入策略和通知。
+JM 5m/15m、其余品种 60m、苏冰 15m 的策略和 Scope 均保持原合同；盘后调度与写入链未修改。
+
+新增回归先复现失败，再验证修复。完整后端 3692 passed / 16 skipped / 31 deselected；
+其中 Lua 集成项另在新建的非生产、无持久卷 Redis 实跑 1 passed，测试容器已移除。
+工程一致性 22 passed、OpenSpec 9 passed、定向 Ruff/mypy 与 secret scan 通过；独立 Review 无阻塞项，
+独立回归 218 passed / 1 隔离 Redis skip。测试命令及隔离边界见 `TESTING.md`，实施范围见
+[开盘预警可靠性修复计划](docs/tasks/preopen-reliability/implementation-plan.md)。
+
+本记录只关闭开发验证，不关闭 release、Runtime promotion、自然开市预警收件和自然 18:05 盘后验收。
+现役仍为本文件列出的 v1.10.8；这两项修复须进入后续批准的发布及 Runtime 才会正式生效。
+
 ## 首页市场、消息与分钟行情（开发验收）
 
 2026-09-13 首页改进候选 `056958632` 已完成 `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE`，

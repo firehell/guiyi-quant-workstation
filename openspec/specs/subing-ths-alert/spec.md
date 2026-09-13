@@ -111,6 +111,23 @@ Live recovery 最终提交与 Alert 窗口读取至 Event commit/one-shot send M
 该锁 MUST 随进程退出释放，不以可在 Event commit 中途到期的租约替代。启用恢复前 MUST 证明 Live、
 Alert 的 exact Runtime root/version 与恢复开关一致；发布或 Runtime promotion 不隐含恢复启用授权。
 
+恢复缺失 1m 的请求 MUST 在领取 provider 尝试预算前校验带时区的当前时钟与冻结 cutoff，只有
+`0 <= now - cutoff <= 60 秒` 时才允许领取预算及查询。已过期、未来或无时区时钟 MUST 以
+`LIVE_RECOVERY_CLOCK_INVALID` 拒绝，不初始化 provider、不消耗尝试预算、不写 Bar 或水位；后续请求
+仍由前台下一轮正常调度重新采集 authority，后台 MUST NOT 刷新 cutoff、扩大预算或补发旧通知。
+查询实际开始后发生超时仍计一次尝试，最终提交 MUST 在共享锁内再次检查同一60秒边界。
+
+#### Scenario: A recovery request expires behind other products
+
+- **WHEN** 单worker处理前序品种后，后排缺口请求已经超过冻结cutoff的60秒有效期
+- **THEN** 后排请求在领取预算和查询前失败关闭，已有预算保持不变
+- **AND** 后续前台新鲜请求可使用剩余预算恢复；恢复后旧触发仍不能创建Event或通知
+
+#### Scenario: A provider query starts fresh but finishes too late
+
+- **WHEN** 请求在有效时效内领取预算，查询或等待提交锁后已超过60秒
+- **THEN** 已消耗的尝试不撤销，Bar和恢复水位不提交，不扩大预算或静默重试
+
 #### Scenario: An old trigger remains queued when recovery completes
 
 - **WHEN** trigger cutoff 不晚于恢复提交水位，包含进程重启后的重复触发
@@ -174,6 +191,9 @@ HTDY 五个日内周期 SHALL 只消费同周期 completed Live Bar；D1/W1 SHAL
 从首根到 cutoff 的预期端点精确相等。午休、周末、夜盘归属和短 Session 尾桶只按 authority 解释；缺失、
 重复、额外、错误 trading_day 或 owner 均 MUST fail closed。当日 MainContractMap 尚未发布时可使用同一次读取
 冻结的 Live rank1 identity，但历史日 owner 仍必须来自 MainContractMap；不得缩窗、补值或改读 continuous。
+共享预警窗口 MUST 通过 typed `LiveBarObservation` 保留并逐根校验 Live payload contract、trading_day
+和端点唯一性，读取范围 MUST 不晚于事件 cutoff。缺失、错误或非规范的合约身份 MUST 拒绝，
+不得丢弃原始 contract 后以冻结 snapshot 为其补写身份；历史多 owner 窗口仍按 MainContractMap 校验。
 forward-only `first_seen` 只比较触发时的 previous/current prefix，历史重绘候选只限 Kernel repaint zone。
 `AlertEvent.bar_end` SHALL 是观察 Bar 时间，`detected_at` SHALL 是 Runtime 首次识别时间；Event 冻结后，
 重绘消失、重现或方向变化均不得改写或重发。startup、repair、replay、backfill 与 EOD recalculation MUST NOT
@@ -188,6 +208,11 @@ forward-only `first_seen` 只比较触发时的 previous/current prefix，历史
 
 - **WHEN** 历史日 owner 由 MainContractMap 证明、当日 frozen owner 有效且每个 Session 端点完整
 - **THEN** HTDY 可保留跨物理合约的 actual-dominant 策略窗口，不强制退化为单合约预热
+
+#### Scenario: A Live payload disagrees with the frozen owner
+
+- **WHEN** HTDY 5m、15m或60m窗口包含错误/缺失contract、错误trading_day或重复Live端点
+- **THEN** 共享MarketRead返回`MARKET_READ_LIVE_UNAVAILABLE`，不以snapshot覆盖payload身份，不运行Kernel或创建Event/通知
 
 #### Scenario: A daily or weekly Canonical update is observed
 

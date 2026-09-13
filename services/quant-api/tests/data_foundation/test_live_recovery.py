@@ -159,7 +159,7 @@ def test_retry_budget_survives_store_restart_and_new_session_resets():
             RedisLiveStore(redis),
             replace(request, cutoff=request.cutoff + timedelta(minutes=3)),
             fetch,
-            clock=lambda: request.cutoff,
+            clock=lambda: request.cutoff + timedelta(minutes=3),
         )
         == "RETRY_BUDGET_BLOCKED"
     )
@@ -181,7 +181,7 @@ def test_permission_circuit_stops_other_products_and_restart():
             RedisLiveStore(redis),
             replace(request, cutoff=request.cutoff + timedelta(minutes=2)),
             lambda _: pytest.fail("network after circuit"),
-            clock=lambda: request.cutoff,
+            clock=lambda: request.cutoff + timedelta(minutes=2),
         )
         == "RETRY_BUDGET_BLOCKED"
     )
@@ -1165,12 +1165,13 @@ def test_provider_initialization_failure_opens_persisted_circuit(monkeypatch, ki
     assert redis.get("live:recovery:circuit:2025-01-02") == "STOPPED"
 
 
-def test_recovery_samples_clock_and_commits_only_inside_guard():
+def test_recovery_checks_clock_before_provider_and_rechecks_inside_commit_guard():
     from contextlib import contextmanager
     from app.market_data.live_recovery import recover_product
 
     _, store, request, bars = _setup()
     entered = []
+    samples = []
 
     @contextmanager
     def guard():
@@ -1179,14 +1180,20 @@ def test_recovery_samples_clock_and_commits_only_inside_guard():
         entered.pop()
 
     def clock():
-        assert entered == [True]
+        samples.append(tuple(entered))
         return request.cutoff
 
+    def fetch(_):
+        assert samples == [()]
+        assert entered == []
+        return bars
+
     assert (
-        recover_product(store, request, lambda _: bars, clock=clock, commit_guard=guard)
+        recover_product(store, request, fetch, clock=clock, commit_guard=guard)
         == "RECOVERED"
     )
     assert entered == []
+    assert samples == [(), (True,)]
 
 
 def test_busy_commit_guard_aborts_bars_and_barrier():

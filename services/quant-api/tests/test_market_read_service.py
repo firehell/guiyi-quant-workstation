@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -1051,6 +1052,106 @@ def test_bars_until_aligns_historical_and_live_rank1_contract_owners() -> None:
         (DAY_2, "JM2705"),
     )
     assert window.bar_contracts[-1] == window.contract == "JM2705"
+
+
+@pytest.mark.parametrize("symbol,frequency,contract", [
+    ("jm", "5m", "JM2701"),
+    ("jm", "15m", "JM2701"),
+    ("rb", "60m", "RB2610"),
+])
+@pytest.mark.parametrize("defect", [
+    "wrong_contract", "missing_contract", "noncanonical_contract",
+    "wrong_trading_day", "duplicate_endpoint", "beyond_cutoff",
+])
+def test_bars_until_rejects_malformed_redis_provenance(
+    symbol: str, frequency: str, contract: str, defect: str,
+) -> None:
+    from app.market_data.live_market import RedisLiveStore
+    from tests.data_foundation.test_live_market import FakeRedis
+
+    redis = FakeRedis()
+    store = RedisLiveStore(redis)
+    store.set_subscriptions(DAY_2, {symbol: contract})
+    store.put_bar(DAY_2, symbol, frequency, _bar(LIVE_END, DAY_2), contract=contract)
+    key = next(iter(redis.zsets))
+    raw, score = next(iter(redis.zsets[key].items()))
+    payload = json.loads(raw)
+    if defect == "wrong_contract":
+        payload["contract"] = "JM2705" if symbol == "jm" else "RB2701"
+    elif defect == "missing_contract":
+        del payload["contract"]
+    elif defect == "noncanonical_contract":
+        payload["contract"] = contract.lower()
+    elif defect == "wrong_trading_day":
+        payload["trading_day"] = DAY_1.isoformat()
+    elif defect == "beyond_cutoff":
+        payload["bar_end"] = (LIVE_END + timedelta(minutes=1)).isoformat()
+    if defect != "duplicate_endpoint":
+        del redis.zsets[key][raw]
+    # Different JSON whitespace creates distinct members with identical endpoints.
+    redis.zadd(key, {json.dumps(payload): score})
+    # A valid historical cutoff exposes silently discarded future payloads.
+    service = MarketReadService(
+        market_data=_MarketPageReader(
+            (_bar(LIVE_END, DAY_2),) if defect == "beyond_cutoff" else (),
+            (ResolvedContractSegment(contract, DAY_2, DAY_2),),
+        ),
+        phase_resolver=_ForbiddenPhaseReader(),
+        operational_products=(symbol,),
+        live_store=store,
+    )
+    with pytest.raises(MarketReadWindowError, match="^MARKET_READ_LIVE_UNAVAILABLE$"):
+        service.bars_until(
+            SeriesPageQuery("actual_dominant", symbol, frequency),
+            trading_day=DAY_2, end=LIVE_END,
+        )
+
+
+@pytest.mark.parametrize("malformed", [object(), LiveBarObservation(object(), "JM2705")])
+def test_bars_until_rejects_invalid_typed_observation(malformed: object) -> None:
+    class InvalidObservationStore(_LiveStore):
+        def bar_observations(self, *_args, **_kwargs):
+            return (malformed,)
+
+    service = _service(historical=(), segments=(), live=(_bar(LIVE_END, DAY_2),))
+    service._live_store = InvalidObservationStore((_bar(LIVE_END, DAY_2),), "JM2705")
+    with pytest.raises(MarketReadWindowError, match="^MARKET_READ_LIVE_UNAVAILABLE$"):
+        service.bars_until(
+            SeriesPageQuery("actual_dominant", "jm", "15m"),
+            trading_day=DAY_2, end=LIVE_END,
+        )
+
+
+def test_bars_until_bounds_redis_read_and_dedupes_matching_canonical_overlap() -> None:
+    from app.market_data.live_market import RedisLiveStore
+    from tests.data_foundation.test_live_market import FakeRedis
+
+    redis = FakeRedis()
+    store = RedisLiveStore(redis)
+    store.set_subscriptions(DAY_2, {"jm": "JM2705"})
+    boundary = _bar(HISTORICAL_END_2, DAY_2)
+    cutoff_bar = _bar(LIVE_END, DAY_2)
+    for bar in (boundary, cutoff_bar):
+        store.put_bar(DAY_2, "jm", "15m", bar, contract="JM2705")
+    # Corrupt future data must not poison this completed, cutoff-bounded read.
+    key = next(iter(redis.zsets))
+    redis.zadd(key, {"invalid future payload": int((LIVE_END + timedelta(minutes=15)).timestamp() * 1000)})
+    service = MarketReadService(
+        market_data=_MarketPageReader(
+            (_bar(HISTORICAL_END_1, DAY_1), boundary),
+            (ResolvedContractSegment("JM2701", DAY_1, DAY_1),
+             ResolvedContractSegment("JM2705", DAY_2, DAY_2)),
+        ),
+        phase_resolver=_ForbiddenPhaseReader(),
+        operational_products=("jm",),
+        live_store=store,
+    )
+    window = service.bars_until(
+        SeriesPageQuery("actual_dominant", "jm", "15m"),
+        trading_day=DAY_2, end=LIVE_END,
+    )
+    assert window.bars == (_bar(HISTORICAL_END_1, DAY_1), boundary, cutoff_bar)
+    assert window.bar_contracts == ("JM2701", "JM2705", "JM2705")
 
 
 def test_bars_until_rejects_fixed_in_session_gap_before_htdy_signal_changes() -> None:

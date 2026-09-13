@@ -242,15 +242,13 @@ class MarketReadService:
             replace(identity, before=cutoff + timedelta(microseconds=1), limit=limit)
         )
         historical = historical_page.bars
-        try:
-            live = self._live_store.bars_after(
-                trading_day,
-                identity.symbol,
-                identity.frequency.value,
-                None,
-            )
-        except Exception as exc:  # noqa: BLE001 - incomplete Alert input must not degrade
-            raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE") from exc
+        live = self._verified_live_bars(
+            trading_day=trading_day,
+            symbol=identity.symbol,
+            frequency=identity.frequency,
+            cutoff=cutoff,
+            contract=contract,
+        )
 
         deduped: dict[datetime, tuple[CanonicalBar, str]] = {}
         for bar in historical:
@@ -263,16 +261,15 @@ class MarketReadService:
             )
             deduped[bar.bar_end] = (bar, owner)
         for bar in live:
-            if bar.bar_end <= cutoff:
-                existing = deduped.get(bar.bar_end)
-                if existing is not None:
-                    historical_bar, historical_owner = existing
-                    if historical_bar != bar:
-                        raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE")
-                    if historical_owner != contract:
-                        raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
-                    continue
-                deduped[bar.bar_end] = (bar, contract)
+            existing = deduped.get(bar.bar_end)
+            if existing is not None:
+                historical_bar, historical_owner = existing
+                if historical_bar != bar:
+                    raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE")
+                if historical_owner != contract:
+                    raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
+                continue
+            deduped[bar.bar_end] = (bar, contract)
         aligned = tuple(deduped[key] for key in sorted(deduped))[-limit:]
         bars = tuple(bar for bar, _owner in aligned)
         bar_contracts = tuple(owner for _bar, owner in aligned)
@@ -293,6 +290,44 @@ class MarketReadService:
         )
         self.assert_window_current(window)
         return window
+
+    def _verified_live_bars(
+        self,
+        *,
+        trading_day: date,
+        symbol: str,
+        frequency: BarFrequency,
+        cutoff: datetime,
+        contract: str,
+    ) -> tuple[CanonicalBar, ...]:
+        """Keep payload ownership and endpoint evidence at the shared Alert seam."""
+        try:
+            observations = self._live_store.bar_observations(
+                trading_day,
+                symbol,
+                frequency.value,
+                None,
+                cutoff,
+                inclusive_after=False,
+                expected_contract=contract,
+            )
+            seen: set[datetime] = set()
+            bars: list[CanonicalBar] = []
+            for item in observations:
+                if (
+                    type(item) is not LiveBarObservation
+                    or type(item.bar) is not CanonicalBar
+                    or item.contract != contract
+                    or item.bar.trading_day != trading_day
+                    or item.bar.bar_end > cutoff
+                    or item.bar.bar_end in seen
+                ):
+                    raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+                seen.add(item.bar.bar_end)
+                bars.append(item.bar)
+            return tuple(bars)
+        except Exception as exc:  # noqa: BLE001 - incomplete Alert input must not degrade
+            raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE") from exc
 
     def validate_htdy_alert_window(
         self,
@@ -389,31 +424,16 @@ class MarketReadService:
             cutoff=cutoff,
             after=normalized_after,
         )
-        try:
-            observations = self._live_store.bar_observations(
-                decision_window.trading_day,
-                decision_window.symbol,
-                frequency.value,
-                None,
-                cutoff,
-                inclusive_after=False,
-                expected_contract=contract,
-            )
-            if any(
-                type(item) is not LiveBarObservation
-                or item.contract != contract
-                or item.bar.trading_day != decision_window.trading_day
-                for item in observations
-            ):
-                raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
-            live = tuple(item.bar for item in observations)
-        except Exception as exc:  # noqa: BLE001 - Alert input must be complete
-            raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE") from exc
+        live = self._verified_live_bars(
+            trading_day=decision_window.trading_day,
+            symbol=decision_window.symbol,
+            frequency=frequency,
+            cutoff=cutoff,
+            contract=contract,
+        )
 
         merged = {bar.bar_end: bar for bar in canonical}
         for bar in live:
-            if bar.bar_end > cutoff:
-                continue
             if normalized_after is not None and bar.bar_end <= normalized_after:
                 continue
             existing = merged.get(bar.bar_end)

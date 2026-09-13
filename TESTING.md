@@ -2,6 +2,29 @@
 
 以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
 
+## 开盘恢复队列与预警合约身份
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/data_foundation/test_live_recovery.py \
+  services/quant-api/tests/data_foundation/test_live_recovery_queue.py \
+  services/quant-api/tests/test_market_read_service.py \
+  services/quant-api/tests/test_alert_evaluator.py \
+  services/quant-api/tests/test_alert_runtime.py \
+  services/quant-api/tests/test_alert_recovery_boundary.py \
+  services/quant-api/tests/test_subing_readiness.py \
+  services/quant-api/tests/test_live_recovery_guard.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
+  services/quant-api/tests/data_foundation/test_after_market.py \
+  services/quant-api/tests/test_runtime_health.py
+```
+
+使用仓库自有合成fixture和假时钟验证60品种/45缺口慢队列、新鲜轮次收敛、过期预算不变、
+真实尝试超时仍计数及恢复前旧cutoff不具备通知资格。typed Live读取覆盖错误/缺失合约、错误交易日、
+重复端点、截止点边界与合法跨历史owner。不得依赖生产数据或Git外审计文件，也不使用真实等待模拟延迟。
+Lua项仅按下文`GUIYI_TEST_REDIS_PORT`规则使用本次新建的非6379、无持久卷一次性Redis；未配置时skip不算通过。
+
 ## Newow 初始无入场 CLEAR v2（实施验收）
 
 以下组验证已实现的 `INITIAL_CLEAR_NO_ENTRY` v2 合同；离线通过不替代固定 PT 截点的生产只读验收 Gate。
