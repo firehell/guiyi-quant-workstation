@@ -5,11 +5,13 @@
 `local-evidence-closeout-20260913/`，其 SHA-256 已绑定在 `readiness-summary.json`；生产明细不提交 Git，
 也不构成长期行情事实源。
 
-本轮固定代码 `c412b354e` 的全量只读审计未执行 RQData 行情请求或任何写入。180 个主组合已全部运行并通过
-exact scope 校验，主图 READY 6、参考层 READY 9、两者联合 READY 6；联合 READY 仅为 `pd`、`pt` 各三策略。
-审计结果仍为 `incomplete`，因为 2,233 个枚举/dependency/metadata/case-section 项保持 `UNKNOWN`；这与
-`MATRIX_COVERED=true` 分开，不能声称 60 品种周版数据完成。当前原生结果有 896 个普通 PROPOSED、9 个 RS
-source/integrity `REVIEW_REQUIRED`、494 行 Session metadata proposal（247 个唯一目标）和 PF2611 非正价格。
+本轮固定代码 `c412b354e` 的只读审计未执行 RQData 行情请求或任何写入。历史 validator 只枚举了
+60 品种 × 三策略 × `1w` 的 180 个 opened-scope 主组合；这些组合通过旧 scope 校验，但不满足后来冻结的
+`1w/1d/60m` 540-case 完整 planned-matrix 合同，因此不得继续表述为完整 matrix coverage。旧 scoped 结果为
+主图 READY 6、参考层 READY 9、两者联合 READY 6；联合 READY 仅为 `pd`、`pt` 各三策略。审计结果仍为
+`incomplete`，因为 2,233 个枚举/dependency/metadata/case-section 项保持 `UNKNOWN`。当前原生结果有 896 个
+普通 PROPOSED、9 个 RS source/integrity `REVIEW_REQUIRED`、494 行 Session metadata proposal（247 个唯一
+目标）和 PF2611 非正价格。
 
 周版 staged capability 只开放 `1w` 的 chart、auxiliary、reference 和 comparator。60 个 explanation 枚举项
 均明确为 `UNOPENED / NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN`，不会读取 D1/60m，也不计入 incomplete；联合

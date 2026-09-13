@@ -403,6 +403,31 @@ def _case_state_valid(row: object) -> bool:
     )
 
 
+def _case_release_gate_valid(
+    key: tuple[object, object, object], sections: object
+) -> bool:
+    if not isinstance(sections, dict):
+        return False
+    frequency = key[2]
+    deferred_reason = {
+        ProductFrequency.DAILY.value: "NEWOW_DAILY_RELEASE_PENDING",
+        ProductFrequency.HOURLY.value: "NEWOW_HOURLY_RELEASE_PENDING",
+    }.get(frequency)
+    if deferred_reason is not None:
+        expected = {"status": "UNOPENED", "reason": deferred_reason}
+        return all(state == expected for state in sections.values())
+    if frequency != ProductFrequency.WEEKLY.value:
+        return False
+    return sections.get("explanation") == {
+        "status": "UNOPENED",
+        "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
+    } and all(
+        not isinstance(state, dict) or state.get("status") != "UNOPENED"
+        for name, state in sections.items()
+        if name != "explanation"
+    )
+
+
 def _enumeration_row_valid(
     row: object, products: tuple[str, ...], expected_as_of: datetime
 ) -> bool:
@@ -753,6 +778,8 @@ def summarize_readiness(
             violations.append("CASE_SECTIONS_INVALID")
         if any(not _case_state_valid(state) for state in sections.values()):
             violations.append("CASE_STATE_INVALID")
+        if not _case_release_gate_valid(key, sections):
+            violations.append("CASE_RELEASE_GATE_MISMATCH")
         chart = sections.get("chart")
         reference = sections.get("reference")
         if main != chart:

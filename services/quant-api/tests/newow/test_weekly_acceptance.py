@@ -585,6 +585,54 @@ def test_summary_recomputes_three_of_540_ready_but_keeps_audit_complete():
     }
 
 
+def test_summary_rejects_deferred_frequency_claimed_ready():
+    from scripts.newow_weekly_acceptance import summarize_readiness
+
+    report = _report()
+    case = next(item for item in report["cases"] if item["frequency"] == "1d")
+    ready = {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": None,
+    }
+    case["main"] = dict(ready)
+    case["sections"] = {name: dict(ready) for name in case["sections"]}
+    report["main_ready_count"] += 1
+
+    result = summarize_readiness(report, PRODUCTS, AS_OF)
+
+    assert result["valid"] is False
+    assert "CASE_RELEASE_GATE_MISMATCH" in result["violations"]
+
+
+def test_summary_rejects_deferred_frequency_reason_from_other_stage():
+    from scripts.newow_weekly_acceptance import summarize_readiness
+
+    report = _report()
+    case = next(item for item in report["cases"] if item["frequency"] == "1d")
+    case["main"]["reason"] = "NEWOW_HOURLY_RELEASE_PENDING"
+    for state in case["sections"].values():
+        state["reason"] = "NEWOW_HOURLY_RELEASE_PENDING"
+
+    result = summarize_readiness(report, PRODUCTS, AS_OF)
+
+    assert result["valid"] is False
+    assert "CASE_RELEASE_GATE_MISMATCH" in result["violations"]
+
+
+def test_summary_rejects_wrong_weekly_explanation_gate_reason():
+    from scripts.newow_weekly_acceptance import summarize_readiness
+
+    report = _report()
+    case = next(item for item in report["cases"] if item["frequency"] == "1w")
+    case["sections"]["explanation"]["reason"] = "NEWOW_DAILY_RELEASE_PENDING"
+
+    result = summarize_readiness(report, PRODUCTS, AS_OF)
+
+    assert result["valid"] is False
+    assert "CASE_RELEASE_GATE_MISMATCH" in result["violations"]
+
+
 def test_summary_accepts_honest_incomplete_audit_and_preserves_pending_reason():
     from scripts.newow_weekly_acceptance import summarize_readiness
 

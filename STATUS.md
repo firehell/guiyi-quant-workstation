@@ -133,8 +133,9 @@ JM 5m/15m、其余品种 60m、苏冰 15m 的策略和 Scope 均保持原合同�
 related BUILD 为空、资格 `INITIAL_CLEAR_NO_ENTRY`，chart/reference typed READY 且同 snapshot，不产生
 ReferenceTrade。旧手写检查器因把 wire `ready` 与大写 `READY` 比较而 exit 1 的原记录保留，不倒改历史。
 
-同一固定代码完成了 operational 60 × 三策略 × 1w 的 180 case 全量 matrix；scope/matrix 覆盖均通过，主图
-READY 6、参考层 READY 9、联合 READY 6（仅 `pd`、`pt` 各三策略），provider request/writes 均为 0。
+同一固定代码完成了 operational 60 × 三策略 × 1w 的 180 case 旧 opened-scope 审计；旧 scope 校验通过，
+但它没有枚举当前合同要求显式可见的 1d/60m `UNOPENED`，因此不再作为 540-case 完整 matrix coverage 证据。
+主图 READY 6、参考层 READY 9、联合 READY 6（仅 `pd`、`pt` 各三策略），provider request/writes 均为 0。
 `AUDIT_COMPLETE=false`：2,233 个 UNKNOWN 未决项仍在，包含 494 行 Session metadata proposal；另有 896 个
 普通 PROPOSED、9 个 RS source/integrity review 和 PF2611 非正价格异常，不能声称 180/180 READY。
 
