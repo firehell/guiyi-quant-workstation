@@ -6,7 +6,12 @@ from time import sleep
 import pytest
 
 from guiyi_quant.newow.product_adapters import replay_strategy
-from guiyi_quant.newow.product_contracts import ProductFrequency
+from guiyi_quant.newow.product_contracts import (
+    ActionKind,
+    ProductFrequency,
+    TradeEligibility,
+)
+from app.market_data.domain import BarFrequency
 from guiyi_quant.newow.oscillation_channel import CHANNEL_FORMULA_VERSION
 
 from app.market_data.domain import ResolvedContractSegment
@@ -151,6 +156,48 @@ def test_chart_does_not_call_reference_or_auxiliary(monkeypatch, product_cases):
     assert result.chart.delivery == "delivered"
     assert result.reference.delivery == "not_requested"
     assert reader.loads[-1].performance_since == reader.loads[-1].since
+
+
+def test_chart_authenticates_full_lifecycle_before_applying_small_limit(product_cases):
+    reader, _query, fake = product_cases.paged_reader(
+        prefix_bars=36, page_size=20, frequency="1d"
+    )
+    values = (*(["100"] * 35), "90")
+    physical = tuple(
+        replace(
+            bar,
+            open=value,
+            high=value,
+            low=value,
+            close=value,
+        )
+        for bar, value in zip(
+            fake.physical[("RB2605", BarFrequency.D1)], values, strict=True
+        )
+    )
+    fake.physical[("RB2605", BarFrequency.D1)] = physical
+    fake.expected_physical[("RB2605", BarFrequency.D1)] = physical
+    fake.actual[BarFrequency.D1] = tuple(
+        bar for bar in physical if bar.trading_day >= fake.segments[0].start_trading_day
+    )
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: fake.as_of,
+    )
+
+    result = service.query(
+        ProductServiceQuery(
+            "rb", "main_rise", "1d", as_of=fake.as_of, chart_limit=2
+        )
+    )
+
+    assert result.chart.value is not None
+    assert len(result.chart.value.bars) == 2
+    assert len(result.chart.value.replay.actions) == 1
+    clear = result.chart.value.replay.actions[0]
+    assert clear.kind is ActionKind.CLEAR
+    assert clear.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+    assert clear.related_build_id is None
 
 
 def test_trend_chart_delivers_independent_channel_without_changing_strategy_identity(
@@ -432,6 +479,47 @@ def test_reference_cursor_moves_strictly_left_without_repeating_trade(product_ca
         NewowProductServiceError, match="NEWOW_CURSOR_GENERATION_CONFLICT"
     ):
         service.query(replace(request, history_before=cursor, history_limit=2))
+
+
+def test_reference_cursor_from_v1_contract_is_rejected_after_v2_upgrade(
+    product_cases, monkeypatch
+):
+    import app.market_data.newow.product_service as product_service_module
+
+    case = product_cases.primitive_input("trend", "1d")
+    replay = replay_strategy(case.identity, case.bars)
+    reader = _Reader(case.bars, replay.actions[0].bar_end, case.bars[-1].bar.bar_end)
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: case.bars[-1].bar.bar_end,
+    )
+    request = ProductServiceQuery(
+        "rb",
+        "trend",
+        "1d",
+        section="reference",
+        performance_since=replay.actions[0].trading_day,
+        performance_through=case.bars[-1].bar.trading_day,
+        as_of=case.bars[-1].bar.bar_end,
+        history_limit=1,
+    )
+    monkeypatch.setattr(
+        product_service_module,
+        "REFERENCE_MODEL_VERSION",
+        "newow_marker_reference_zero_cost_v1",
+    )
+    v1_cursor = service.query(request).reference.value.next_before
+    assert v1_cursor is not None
+
+    monkeypatch.setattr(
+        product_service_module,
+        "REFERENCE_MODEL_VERSION",
+        "newow_marker_reference_zero_cost_v2",
+    )
+    with pytest.raises(
+        NewowProductServiceError, match="NEWOW_CURSOR_GENERATION_CONFLICT"
+    ):
+        service.query(replace(request, history_before=v1_cursor))
 
 
 def test_incomplete_requested_reference_window_is_warming_and_not_cached(

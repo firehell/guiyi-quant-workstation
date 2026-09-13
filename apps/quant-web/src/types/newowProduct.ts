@@ -70,14 +70,14 @@ export interface NewowFeatureStatus {
 }
 
 export interface NewowProductMeta {
-  readonly schema_version: 'newow_product_detail_v1'
+  readonly schema_version: 'newow_product_detail_v2'
   readonly identity: NewowProductWireIdentity
   readonly as_of: string
   readonly read_at: string
   readonly input_content_sha256: string
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v1'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v2'
   readonly futures_adaptation_version: 'newow_futures_segment_interrupt_v1'
 }
 
@@ -133,7 +133,7 @@ export interface NewowProductAction {
   readonly physical_contract: string
   readonly segment_id: string
   readonly related_build_id: string | null
-  readonly trade_eligibility: 'ELIGIBLE' | 'WARMUP_ONLY' | 'NO_ELIGIBLE_ENTRY'
+  readonly trade_eligibility: 'ELIGIBLE' | 'WARMUP_ONLY' | 'NO_ELIGIBLE_ENTRY' | 'INITIAL_CLEAR_NO_ENTRY'
   readonly sequence: number
 }
 
@@ -189,7 +189,7 @@ export interface NewowReferenceTrade {
   readonly physical_contract: string
   readonly segment_id: string
   readonly formula_versions: readonly string[]
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v1'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v2'
   readonly futures_adaptation_version: 'newow_futures_segment_interrupt_v1'
   readonly entry_signal_id: string
   readonly entry_sequence: number

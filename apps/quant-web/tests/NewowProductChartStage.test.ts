@@ -535,10 +535,10 @@ function chartResponse(): MutableChartResponse {
   const bars = [bar('2026-08-15T07:00:00Z', '2026-08-15')]
   return {
     meta: {
-      schema_version: 'newow_product_detail_v1',
+      schema_version: 'newow_product_detail_v2',
       identity: { product: 'jm', strategy: 'oscillation', frequency: '60m', series_kind: 'actual_dominant', profile_id: 'newow_product_oscillation_60m_v1', formula_versions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1'] },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64), data_revision_identity: null,
-      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     },
     section: 'chart', status: ready(), value: {
       chart_from: '2026-08-15', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), bars,

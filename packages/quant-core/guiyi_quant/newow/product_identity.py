@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from .product_contracts import ProductIdentity, StrategyAction
 
 
-REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v1"
+REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v2"
 FUTURES_ADAPTATION_VERSION = "newow_futures_segment_interrupt_v1"
 
 

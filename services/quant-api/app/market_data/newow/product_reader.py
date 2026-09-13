@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
 from types import MappingProxyType
 from typing import Protocol
@@ -11,9 +11,12 @@ from zoneinfo import ZoneInfo
 
 from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_contracts import (
+    LIFECYCLE_REPLAY_EVIDENCE_SOURCE,
+    LifecycleReplayEvidence,
     OwnerBoundary,
     ProductBar,
     ProductFrequency,
+    lifecycle_input_sha256,
 )
 from guiyi_quant.newow.product_identity import build_segment_id, utc_timestamp
 
@@ -41,7 +44,7 @@ _PAGE_SIZE = 2000
 _MICROSECOND = timedelta(microseconds=1)
 _HISTORICAL_CANDIDATE_BATCH = timedelta(days=59)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
-_CANONICAL_SOURCE = "market_data_service:canonical_v2"
+_CANONICAL_SOURCE = LIFECYCLE_REPLAY_EVIDENCE_SOURCE
 _OWNER_SOURCE = "main_contract_map:rank1:calendar_session_v1"
 
 
@@ -94,11 +97,18 @@ class ProductReadSet:
     performance_window: ProductReadWindow
     sources: Mapping[ProductFrequency, ProductReadSource]
     as_of: datetime
+    lifecycle_evidence_by_frequency: Mapping[
+        ProductFrequency, tuple[LifecycleReplayEvidence, ...]
+    ] = field(default_factory=lambda: MappingProxyType({}))
 
     @property
     def replay_bars(self) -> tuple[ProductBar, ...]:
         """Segment-ordered inputs; each segment has its own lifecycle prefix."""
         return self.bars_by_frequency[self.frequency]
+
+    @property
+    def lifecycle_evidence(self) -> tuple[LifecycleReplayEvidence, ...]:
+        return self.lifecycle_evidence_by_frequency.get(self.frequency, ())
 
 
 class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
@@ -511,6 +521,9 @@ class NewowProductReader:
         )
         grouped: dict[ProductFrequency, tuple[ProductBar, ...]] = {}
         sources: dict[ProductFrequency, ProductReadSource] = {}
+        lifecycle_evidence: dict[
+            ProductFrequency, tuple[LifecycleReplayEvidence, ...]
+        ] = {}
         for frequency in frequencies:
             actual = loaded.results[BarFrequency(frequency)].bars
             ranked = tuple(
@@ -537,6 +550,7 @@ class NewowProductReader:
                 for contract, end in contract_ends.items()
             }
             output: list[ProductBar] = []
+            segment_outputs: list[tuple[ProductBar, ...]] = []
             for owner, segment_id, rank_bars in zip(
                 owners, segment_ids, ranked, strict=True
             ):
@@ -557,7 +571,7 @@ class NewowProductReader:
                 # Equality includes time, OHLCV, turnover and OI.
                 if owned != rank_bars:
                     raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
-                output.extend(
+                converted = tuple(
                     _product_bar(
                         query.product,
                         frequency,
@@ -568,9 +582,26 @@ class NewowProductReader:
                     )
                     for bar in prefix
                 )
+                output.extend(converted)
+                segment_outputs.append(converted)
             for contract, prefix in prefixes.items():
                 self._validate_prefix(query.product, contract, frequency, prefix[-1].bar_end, prefix)
             grouped[frequency] = tuple(output)
+            lifecycle_evidence[frequency] = tuple(
+                LifecycleReplayEvidence(
+                    product=query.product,
+                    frequency=frequency,
+                    physical_contract=segment[0].bar.physical_contract,
+                    segment_id=segment[0].bar.segment_id,
+                    first_bar_end=segment[0].bar.bar_end,
+                    last_bar_end=segment[-1].bar.bar_end,
+                    bar_count=len(segment),
+                    input_sha256=lifecycle_input_sha256(segment),
+                    source_identity=_CANONICAL_SOURCE,
+                    verified_cutoff=segment[-1].bar.bar_end,
+                )
+                for segment in segment_outputs
+            )
             sources[frequency] = ProductReadSource(
                 frequency,
                 _CANONICAL_SOURCE,
@@ -587,6 +618,7 @@ class NewowProductReader:
             performance,
             MappingProxyType(sources),
             cutoff,
+            MappingProxyType(lifecycle_evidence),
         )
 
     def dependency_owners(

@@ -11,6 +11,7 @@ import type {
   NewowAuxiliaryData,
   NewowAuxiliaryValue,
   NewowProductFrequency,
+  NewowProductAction,
   NewowProductSectionResponse,
   NewowResourceLifecycle,
 } from '../../../../types/newowProduct.ts'
@@ -53,6 +54,7 @@ export interface NewowProductActionMarker {
   readonly physicalContract: string
   readonly segmentId: string
   readonly sequence: number
+  readonly tradeEligibility: NewowProductAction['trade_eligibility']
 }
 
 export interface NewowProductHintMarker {
@@ -208,6 +210,7 @@ export function buildNewowProductChartModel(
     physicalContract: action.physical_contract,
     segmentId: action.segment_id,
     sequence: action.sequence,
+    tradeEligibility: action.trade_eligibility,
   }))
   const hints = value.hints.map((hint): NewowProductHintMarker => ({
     id: hint.hint_id,
@@ -262,7 +265,7 @@ export function buildNewowActionCallouts(
     time: action.barEnd,
     physicalContract: action.physicalContract,
     price: action.referencePrice,
-    title: action.kind === 'BUILD' ? '建仓' : '清仓',
+    title: newowInitialClearLabel(action.tradeEligibility) ?? (action.kind === 'BUILD' ? '建仓' : '清仓'),
     detail: `参考价 ${action.referencePrice}`,
     tone: action.kind === 'BUILD' ? 'gain' : 'loss',
     above: action.kind === 'CLEAR',
@@ -491,8 +494,33 @@ export function productChartMarker(
     position: action ? (build ? 'belowBar' : 'aboveBar') : 'inBar',
     shape: action ? (build ? 'arrowUp' : 'arrowDown') : 'circle',
     color: item.id === selectedSignalId ? '#7C3AED' : action ? (build ? '#FF403A' : '#22B95D') : '#64748B',
-    text: action ? '' : item.kind,
+    text: action
+      ? newowInitialClearLabel(item.tradeEligibility) ?? ''
+      : item.kind,
     size: action ? 1.5 : 1,
+  }
+}
+
+export function newowInitialClearLabel(
+  tradeEligibility: NewowProductAction['trade_eligibility'],
+): '清仓（无入场）' | null {
+  return tradeEligibility === 'INITIAL_CLEAR_NO_ENTRY' ? '清仓（无入场）' : null
+}
+
+export function describeNewowProductAction(item: NewowProductActionMarker): {
+  readonly label: string
+  readonly explanation: string
+} {
+  const initialClearLabel = newowInitialClearLabel(item.tradeEligibility)
+  if (initialClearLabel !== null) {
+    return {
+      label: initialClearLabel,
+      explanation: '初始无入场：未观察到可配对 BUILD，不生成参考交易。',
+    }
+  }
+  return {
+    label: item.kind === 'BUILD' ? '参考建仓' : '参考清仓',
+    explanation: '仅为所选历史主动作事实，不代表账户成交。',
   }
 }
 
