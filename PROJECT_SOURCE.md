@@ -14,14 +14,14 @@
 - 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页；原研究观察折叠入口移除。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
-- Market 详情的已接受产品合同使用 `Newow / HTDY / SuBing / Free` 四个视角。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；旧 `view=trend` 与 `/api/v1/market/newow/trend-detail` 仅保留固定 `actual_dominant + 1d` 兼容语义。其他视角不得消费或复制这些 Newow 事实。
+- Market 详情的已接受产品合同使用同一稳定工作台中的六个扁平入口：`震荡策略 / 趋势策略 / 主升浪 / HTDY / SuBing / Free`；前三者仍是三个独立 Newow 身份。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
 - Web 不显示模糊的“全历史策略效果”、账户收益、模拟或真实持仓、订单、成交或已退役策略事件。Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，不属于这些账户/执行事实。
 
 ## Newow 与参考交易
 
 - 本节冻结允许实现的稳定产品合同，不声明 Newow 三策略 × 三周期、ReferenceTrade 或新 Workspace 已发布、已部署或通过生产验收。
 - Newow 主产品范围为趋势、震荡、主升浪 × `1w/1d/60m` 九个独立组合，全部只消费 completed Canonical `actual_dominant`，并继续通过 `MarketDataService`、Catalog 与 `MainContractMap` 取得行情和物理 owner。浏览器不聚合周期、不重算公式、不配对交易。
-- Newow 详情采用局部白色全宽 Shell、两行策略摘要、原位展开解释与原生弹窗；K 线、成交量和单一副图共享时间轴。默认 MACD 为既有内核的只读显示（12/26/9、sma_window、histogram×2），不声明牛哇 MACD 原站 parity；其他副图替换同一 pane。
+- Newow 详情采用局部白色全宽 Shell、单层策略入口、唯一周期入口、原位展开解释与原生弹窗；K 线、成交量和单一副图共享时间轴。同品种同周期切换 Newow 策略时只替换策略所属图层，加载态清空旧事实但保留兼容窗口元数据，并仅在新时间轴完全兼容时恢复缩放；身份或时间轴不兼容时清空旧图层并重置。默认 MACD 为既有内核的只读显示（12/26/9、sma_window、histogram×2），不声明牛哇 MACD 原站 parity；其他副图替换同一 pane。
 - 日线收盘报价通过有界 `actual_dominant + 1d + limit=2` 独立读取并标记时间/非实时。参考记录随文档纵向滚动，首次可见读取一次、cursor 手动加载更多；解释和独立比较器按需读取。长身份/原始时间仍可在来源和详情中查询，缺失或不兼容证据不填示例值。
 - 主动作只有各策略自己的 `BUILD/CLEAR`；J、D1–D6、4/7/11、阶段、风险和结构信息是 `quantity_effect=none` 的 Hint。无主动作是有效策略结果，不能与 `EVIDENCE_REQUIRED`、`NOT_APPLICABLE` 或照妖镜重绘混写成“无信号”。
 - 主升浪完整物理 owner 生命周期从黄带开始、此前无真实或 warm-up BUILD、首次黄转蓝时，允许输出经 reader lifecycle evidence 证明的 `CLEAR + INITIAL_CLEAR_NO_ENTRY`。页面标为“清仓（无入场）”，不制造 BUILD、ReferenceTrade、零收益、订单或账户事实；裁剪窗口与分页不承担生命周期证明。

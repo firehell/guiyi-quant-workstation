@@ -10,7 +10,7 @@ const UPPER_COLOR = 'rgba(52, 199, 89, 0.9)'
 const LOWER_COLOR = 'rgba(255, 59, 48, 0.9)'
 const RADIUS = 2.5
 
-/** Paints independent HHV/LLV dots in true time/price coordinates. */
+/** Paints independent server-owned channel dots in true time/price coordinates. */
 export class NewowTrendChannelPrimitive implements ISeriesPrimitive<Time> {
   private attachment: SeriesAttachedParameter<Time> | null = null
   private points: readonly NewowTrendChannelPrimitivePoint[] = []

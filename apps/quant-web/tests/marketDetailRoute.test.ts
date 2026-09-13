@@ -14,10 +14,19 @@ test('migrates an omitted view deterministically to Free', () => {
   })
 })
 
-test('trend and subing inject only their omitted fixed identities', () => {
+test('legacy Trend migrates to the unified Newow trend identity and preserves a legal focus', () => {
   assert.deepEqual(parseMarketDetailRoute({ view: 'trend', symbol: 'jm' }), {
     kind: 'valid',
-    identity: { view: 'trend', symbol: 'jm', seriesKind: 'actual_dominant', frequency: '1d' },
+    identity: { view: 'newow', symbol: 'jm', strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' },
+  })
+  assert.deepEqual(parseMarketDetailRoute({
+    view: 'trend', symbol: 'jm', focus_bar_end: '2026-09-02T07:00:00Z',
+  }), {
+    kind: 'valid',
+    identity: {
+      view: 'newow', symbol: 'jm', strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d',
+      focusBarEnd: '2026-09-02T07:00:00Z',
+    },
   })
   assert.deepEqual(parseMarketDetailRoute({
     view: 'subing', symbol: 'jm', focus_bar_end: '2026-09-02T02:45:00Z',
@@ -30,9 +39,10 @@ test('trend and subing inject only their omitted fixed identities', () => {
   })
 })
 
-test('roundtrips a completed D1 Trend focus through the typed generic route', () => {
-  const identity = { view: 'trend' as const, symbol: 'rb', seriesKind: 'actual_dominant' as const,
-    frequency: '1d' as const, focusBarEnd: '2026-09-02T07:00:00Z' }
+test('roundtrips a completed Newow focus through the unified route', () => {
+  const identity = { view: 'newow' as const, symbol: 'rb', strategy: 'trend' as const,
+    seriesKind: 'actual_dominant' as const, frequency: '1d' as const,
+    focusBarEnd: '2026-09-02T07:00:00Z' }
   assert.deepEqual(parseMarketDetailRoute(serializeMarketDetailIdentity(identity)), { kind: 'valid', identity })
 })
 
@@ -86,13 +96,14 @@ test('serializes only concrete contract and allowed focus fields', () => {
   })
 })
 
-test('switching views uses fixed identities and only restores flexible view state', () => {
+test('switching views restores only active unified view state', () => {
   const restore = {
+    newow: { strategy: 'main_rise' as const, frequency: '1w' as const },
     htdy: { seriesKind: 'continuous' as const, frequency: '60m' as const },
     free: { seriesKind: 'actual_dominant' as const, frequency: '5m' as const },
   }
-  assert.deepEqual(resolveViewSwitchIdentity('trend', 'rb', null, restore), {
-    view: 'trend', symbol: 'rb', seriesKind: 'actual_dominant', frequency: '1d',
+  assert.deepEqual(resolveViewSwitchIdentity('newow', 'rb', null, restore), {
+    view: 'newow', symbol: 'rb', strategy: 'main_rise', seriesKind: 'actual_dominant', frequency: '1w',
   })
   assert.deepEqual(resolveViewSwitchIdentity('free', 'rb', null, restore), {
     view: 'free', symbol: 'rb', seriesKind: 'actual_dominant', frequency: '5m',

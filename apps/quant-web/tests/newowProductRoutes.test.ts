@@ -24,9 +24,12 @@ function storage(initial: Record<string, string> = {}) {
   }
 }
 
-test('legacy Trend remains a fixed D1 deep link', () => {
+test('legacy Trend redirects semantically to the unified fixed D1 Newow trend identity', () => {
   assert.equal(parseMarketDetailRoute({ symbol: 'rb', view: 'trend', frequency: '15m' }).kind, 'invalid')
-  assert.equal(parseMarketDetailRoute({ symbol: 'rb', view: 'trend', frequency: '1d' }).kind, 'valid')
+  assert.deepEqual(parseMarketDetailRoute({ symbol: 'rb', view: 'trend', frequency: '1d' }), {
+    kind: 'valid',
+    identity: { view: 'newow', symbol: 'rb', strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' },
+  })
 })
 
 test('Newow accepts only its three strategies and independent completed periods', () => {
@@ -47,8 +50,12 @@ test('Newow accepts only its three strategies and independent completed periods'
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'contract', contract: 'RB2610', frequency: '1d' },
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', contract: ['RB2610'], frequency: '1d' },
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '15m' },
-    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '1d', focus_bar_end: '2026-09-02T07:00:00Z' },
   ]) assert.equal(parseMarketDetailRoute(query).kind, 'invalid')
+
+  assert.equal(parseMarketDetailRoute({
+    symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant',
+    frequency: '1d', focus_bar_end: '2026-09-02T07:00:00Z',
+  }).kind, 'valid')
 })
 
 test('Newow defaults, serializes, and switches with one route identity authority', () => {

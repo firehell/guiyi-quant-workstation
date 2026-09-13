@@ -19,10 +19,10 @@ test('home and detail share one global market navigation and one product selecto
   assert.doesNotMatch(homeHeader, /market-home-view-products/)
 })
 
-test('detail analysis navigation uses one fixed Chinese view order on every view', () => {
+test('detail analysis navigation uses one flat six-choice order on every view', () => {
   const source = read('../src/components/market/detail/MarketDetailViewNav.vue')
   const page = read('../src/pages/market/MarketDetailPage.vue')
-  const labels = ['牛哇', '火天大有', '苏冰预警', '自由看盘']
+  const labels = ['震荡策略', '趋势策略', '主升浪', '火天大有', '苏冰预警', '自由看盘']
   let previous = -1
   for (const label of labels) {
     const next = source.indexOf(`label: '${label}'`)
@@ -31,9 +31,16 @@ test('detail analysis navigation uses one fixed Chinese view order on every view
   }
   assert.match(page, /<ProductSelector/)
   assert.doesNotMatch(source, /aria-label="品种代码"|aria-label="全部品种"/)
-  assert.match(source, /detail-view-nav__mobile/)
-  assert.match(source, /分析视角 ·/)
-  assert.doesNotMatch(source, /label: 'Newow'|label: '新苏冰'|free: '更多'/)
+  assert.doesNotMatch(source, /detail-view-nav__mobile|分析视角 ·/)
+  assert.equal((source.match(/aria-label="周期"/g) ?? []).length, 1)
+  assert.doesNotMatch(source, /aria-label="Newow策略"|label: '牛哇'|label: 'Newow'|label: '新苏冰'|free: '更多'/)
+})
+
+test('Market Home renders the complete filtered list without a fake load-more footer', () => {
+  const page = read('../src/pages/market/index.vue')
+  const styles = read('../src/styles/marketHome.css')
+  assert.doesNotMatch(page, /已显示|向下滚动查看更多|market-home-list-footer/)
+  assert.doesNotMatch(styles, /market-home-list-footer/)
 })
 
 test('the top bar is the only product identity header above the chart', () => {

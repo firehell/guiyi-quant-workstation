@@ -119,7 +119,7 @@ Canonical/Catalog、`DatasetKey`、Trading Calendar/Session、`MainContractMap`�
 不生成 Marker；HTDY actual_dominant 各正式周期保留 exact Bar focus。其他不支持的组合或非法时间明确拒绝。
 有效迁移以 replace 规范化地址，不增加历史条目；导航取消、更新或销毁后的旧迁移不得激活旧行情身份。
 
-显式 `view=trend` 继续保持固定 `actual_dominant + 1d` 产品兼容，它与已删除旧页面是独立概念。
+显式 `view=trend` 显示一次迁移提示后规范化到固定 `actual_dominant + 1d` Newow 趋势身份；它与已删除旧页面是独立概念。
 首页普通品种仍进入 Newow 趋势日线；HTDY 与 SuBing Event 使用明确 view 和精确 focus。
 品种选择位于统一导航，数据失败时仍可用；更换品种清除不兼容 contract 和 focus。
 成功态保留 TopBar → Quote → ViewNav → workspace 顺序。盘后 last_failure 独立披露为最近盘后更新失败，
