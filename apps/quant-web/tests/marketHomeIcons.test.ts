@@ -14,6 +14,7 @@ test('freezes the approved Market Home icon palette and sizes', () => {
     aligned: { color: '#FF9601', label: '周期同向' },
     down: { color: '#35C759', label: '下行' },
     neutral: { color: '#017AFF', label: '中性' },
+    mixed: { color: '#667085', label: '日周未同向' },
     unavailable: { color: '#98A2B3', label: '数据不足' },
   })
 })
@@ -23,6 +24,7 @@ test('uses the approved glyph geometry without trading semantics', () => {
   assert.equal(MARKET_HOME_ICON_GLYPHS.aligned, 'M6.5 12.3 10.2 16 17.8 8.3')
   assert.equal(MARKET_HOME_ICON_GLYPHS.down, 'M5 6.5h14L12 17.5Z')
   assert.equal(MARKET_HOME_ICON_GLYPHS.neutral, 'm7.2 7.2 9.6 9.6m0-9.6-9.6 9.6')
+  assert.equal(MARKET_HOME_ICON_GLYPHS.mixed, 'M6.5 8.5h4l-2-2m2 2-2 2m1.5 5h-3.5m3.5 0-2-2m2 2-2 2m4-5h3.5m-3.5 0 2-2m-2 2 2 2')
   assert.equal(MARKET_HOME_ICON_GLYPHS.unavailable, 'circle:12:12:2.2')
   assert.equal(MARKET_HOME_ICON_GLYPHS.microUp, 'M6 15.5 10 11.5 13 13.5 18 8.5')
 })
