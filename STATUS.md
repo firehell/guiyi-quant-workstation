@@ -76,8 +76,19 @@
 |---|---|
 | Database | 最近生产 readback 为 Alembic `20260903_0045` |
 | Market Scope | `operational_products.txt` 的 60 个品种 |
-| Alert Scope | `2026-09-07T06:49:43Z` 审计：HTDY 仅 `jm × 5m/15m`；苏冰 60 品种 × 15m；两 Rule enabled。HTDY“焦煤 15m/5m，其余 59 品种 60m”共 61 对仍是未应用目标 |
+| Alert Scope | `2026-09-13T02:22:46Z` 按 owner 本轮明确意图新增 59 品种 × 60m 并逐项及全量读回：HTDY `jm × 5m/15m`，其余 59 品种各 `60m`，共 60 品种/61 对；苏冰保持 60 品种 × 15m，两 Rule enabled。没有发送通知；Scope 启用不证明输入完整性或自然预警成功 |
 | 最近自然 After-market | v1.10.3 于 2026-09-08 18:05:05–19:05:52 自然运行，passed、attempts=1、60 品种。状态随后带入旧 Runtime，SHA `cece65929ba734c37cf91ee47af1b0d23b5dc3dd413c9d703888f669428347d5`；不证明任何后续版本的自然成功 |
+
+本轮 Scope 证据为 `/private/tmp/guiyi-alert-fixes-20260913/scope-plan.json`、`scope-apply.json`；计划 SHA-256
+`a8c2c5758461e89697e2375dff3a89b120bae5e86b5a2f3db53fca901841c6e3`，59 项一次执行成功并读回，未改变
+JM 原周期、苏冰 Scope、Rule/audience、行情或 Runtime。该次执行意图已消费，不授权新会话重做。
+
+2026-09-13 开盘前独立审计发现 HTDY Live 计算窗口内部缺 Bar 未拒绝、苏冰失败 cutoff 去重可误清健康、
+共享 Runtime 错误误分类，修复尚待实施，现役仍不声明预警可靠性验收通过。审计相关回归 490 passed；这是
+旧基线证据，不是修复验收。60 个 9 月 11 日 rank1 合约完整 15m 历史前缀/苏冰预热通过，9 月 14 日 Session
+60/60 可解析；但周日新读回仍无 9 月 14 日冻结 Live snapshot，45 品种夜盘恢复目标尚不能绑定物理合约，
+当前手工恢复入口的同日/五根边界也不适用，provider 与恢复写入均为 0。证据与后续执行见
+[预警修复计划](docs/superpowers/plans/2026-09-13-alert-preopen-fixes.md)。
 
 ## 周检有界读回证据
 
@@ -160,7 +171,7 @@ weekly 仍为可选服务，不参与 required operational health。临时 evide
 - 其他品种全部历史补齐、真实全品种九组合矩阵。
 - 已接受的原站差异，包括震荡 60 分钟同根重建。
 - 正常空仓、未完成周线、样本不足；不得改成“有结果”。
-- HTDY 61 对 Scope 未应用；BU/BZ D1/W1 异常。
+- BU/BZ D1/W1 异常；HTDY 61 对 Scope 已启用，但自然预警与输入完整性修复须分别验收。
 - 原件缺口继续 `EVIDENCE_REQUIRED`：诊断 token、六组合评分/排序、AI 逐字 copy、目标/吸筹权威昨收与期货 owner parity、比较器 browser-final/tie golden。
 - 旧苏冰 failure 时间戳、Topic 其他成员送达人数。
 
