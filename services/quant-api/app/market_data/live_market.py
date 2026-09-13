@@ -51,6 +51,16 @@ class RedisClient(Protocol):
 
     def zrangebyscore(self, key: str, minimum: str | int, maximum: str | int) -> list[str | bytes]: ...
 
+    def zrevrangebyscore(
+        self,
+        key: str,
+        maximum: str | int,
+        minimum: str | int,
+        *,
+        start: int,
+        num: int,
+    ) -> list[str | bytes]: ...
+
     def set(self, key: str, value: str, *, ex: int | None = None) -> bool: ...
 
     def get(self, key: str) -> str | bytes | None: ...
@@ -171,6 +181,35 @@ class RedisLiveStore:
                 expected_contract=normalized_expected,
             )
             for member in members
+        )
+
+    def latest_observation(
+        self,
+        trading_day: date,
+        symbol: str,
+        frequency: BarFrequency | str,
+        *,
+        until: datetime,
+        expected_contract: str,
+    ) -> LiveBarObservation | None:
+        """Read at most one completed observation under an exact contract authority."""
+
+        normalized_expected = normalize_contract_for_symbol(symbol, expected_contract)
+        if normalized_expected is None or expected_contract != normalized_expected:
+            raise ValueError("LIVE_BAR_PROVENANCE_INVALID")
+        members = self._redis.zrevrangebyscore(
+            self._bars_key(trading_day, symbol, frequency),
+            _epoch_millis(until),
+            "-inf",
+            start=0,
+            num=1,
+        )
+        if not members:
+            return None
+        return _bar_observation_from_payload(
+            _as_text(members[0]),
+            symbol=symbol,
+            expected_contract=normalized_expected,
         )
 
     def set_subscriptions(self, trading_day: date, mapping: Mapping[str, Any]) -> None:

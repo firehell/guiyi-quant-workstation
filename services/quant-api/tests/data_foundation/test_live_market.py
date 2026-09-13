@@ -114,6 +114,21 @@ class FakeRedis:
             if (score > lower if lower_exclusive else score >= lower) and score <= upper
         ]
 
+    def zrevrangebyscore(self, key, maximum, minimum, *, start, num):
+        assert minimum == "-inf"
+        assert start == 0 and num == 1
+        upper = int(maximum)
+        values = [
+            member
+            for member, score in sorted(
+                self.zsets.get(key, {}).items(),
+                key=lambda item: (item[1], item[0]),
+                reverse=True,
+            )
+            if score <= upper
+        ]
+        return values[:1]
+
     def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
         if key == "live:heartbeat" and self.fail_heartbeat_set:
             self.fail_heartbeat_set -= 1
@@ -278,6 +293,35 @@ def test_provenance_read_rejects_legacy_invalid_or_mismatched_rows(
             bar.bar_end,
             inclusive_after=False,
             expected_contract="J2505",
+        )
+
+
+def test_latest_observation_is_bounded_by_completed_cutoff_and_contract() -> None:
+    """Catches a homepage snapshot reading a future or wrong-contract Live row."""
+    fake = FakeRedis()
+    store = _store(fake)
+    day = date(2025, 1, 2)
+    store.put_bar(day, "j", "1m", _bar(1), contract="J2505")
+    store.put_bar(day, "j", "1m", _bar(2), contract="J2505")
+
+    observation = store.latest_observation(
+        day,
+        "j",
+        "1m",
+        until=_bar(1).bar_end,
+        expected_contract="J2505",
+    )
+
+    assert observation is not None
+    assert observation.bar == _bar(1)
+    assert observation.contract == "J2505"
+    with pytest.raises(ValueError, match="LIVE_BAR_PROVENANCE_INVALID"):
+        store.latest_observation(
+            day,
+            "j",
+            "1m",
+            until=_bar(2).bar_end,
+            expected_contract="J2509",
         )
 
 

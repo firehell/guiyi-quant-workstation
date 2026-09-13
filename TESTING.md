@@ -2,6 +2,34 @@
 
 以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
 
+## 首页返回恢复、消息与分钟行情
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/test_alert_history_api.py \
+  services/quant-api/tests/data_foundation/test_market_home_live.py \
+  services/quant-api/tests/data_foundation/test_market_home_live_websocket.py \
+  services/quant-api/tests/data_foundation/test_live_market.py \
+  services/quant-api/tests/data_foundation/test_market_pagination.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web test
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web build
+env -u VITE_API_BASE_URL -u VITE_MARKET_WS_URL REAL_BACKEND=0 \
+  PLAYWRIGHT_PORT=5182 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5182 \
+  PLAYWRIGHT_CANDIDATE_PREVIEW=0 PLAYWRIGHT_SKIP_WEBSERVER= \
+  pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec playwright test \
+  -c playwright.config.mjs e2e/market-home.spec.mjs
+```
+
+后端使用 fake Redis、临时数据库与测试 Bar，验证固定 operational 批量订阅、先订阅后快照、
+同合约昨收、缺失/零基准、收盘保持、乱序与身份 reset、同日恢复、资源释放及历史消息稳定分页。
+Web 验证返回保留列表和位置、有效快照不重复加载、过期后台刷新、消息查询与独立错误、SVG/键盘
+导航及单连接 overlay。浏览器 fixture 只证明代码行为；生产收件、自然 completed 1m、休市真实
+数据与 Runtime 版本仍需独立读回。不得把当前正式 API 尚未提供的新端点用模拟数据补成可用。
+
+共享依赖的隔离 worktree 可以使用既有 Python 环境并显式设置本树 PYTHONPATH，不提交环境 symlink。
+5182 必须空闲，禁止复用其他工作区服务。新行情只读连接与本地开发服务不授权启动 provider、
+修改 production Scope、发送通知或切换正式 Runtime。
+
 ## Newow 历史恢复通用边界
 
 ```bash

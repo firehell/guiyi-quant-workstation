@@ -1,6 +1,7 @@
 import request from './request'
 import { getRuntimeHealth } from './runtime'
-import type { AlertEvent, AlertRuleCode, MarketFrequency } from '@/types/market'
+import type { AlertEvent, AlertHistoryResponse, AlertRuleCode, MarketFrequency } from '@/types/market'
+import { normalizeAlertHistoryResponse } from '@/utils/alertHistory'
 import {
   normalizeAlertEventListResponse,
   normalizeCurrentAlertEventsResponse,
@@ -41,4 +42,11 @@ export function getAlertEvents(params: { symbol: string; start: string; end: str
   return request.get<never, unknown>('/api/alerts/events', {
     params: { symbol: params.symbol, rule_code: params.ruleCode, start: params.start, end: params.end },
   }).then(normalizeAlertEventListResponse)
+}
+
+export function getAlertHistory(params: { startDay: string; endDay: string; symbol?: string; ruleCode?: AlertRuleCode | null; before?: string | null; limit?: number }, signal?: AbortSignal): Promise<AlertHistoryResponse> {
+  return request.get<never, unknown>('/api/alerts/history', {
+    params: { start_day: params.startDay, end_day: params.endDay, symbol: params.symbol || undefined, rule_code: params.ruleCode || undefined, before: params.before || undefined, limit: params.limit ?? 30 },
+    signal,
+  }).then(normalizeAlertHistoryResponse)
 }

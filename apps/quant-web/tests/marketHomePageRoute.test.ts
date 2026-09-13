@@ -100,6 +100,10 @@ async function loadPage() {
       return { overview: resource(), runtime: resource(), events: resource(), refreshAll: async () => {}, start() {}, dispose() {} }
     }
   `)
+  const liveModule = moduleUrl(`
+    import { ref } from '${vueUrl}'
+    export function useMarketHomeLive() { return { items: ref(new Map()), stale: ref(false), connection: ref('idle'), observedAt: ref(null), start() {}, restart() {}, dispose() {} } }
+  `)
   const viewModelModule = moduleUrl(`
     export function buildMarketHomeViewModel() {
       return { rows: [], overview: { availability: 'unavailable' }, runtime: { status: 'unavailable' }, events: { availability: 'unavailable' } }
@@ -126,10 +130,12 @@ async function loadPage() {
     ))
     .replace(/from ['"]@\/api\/(?:market|alerts|runtime)['"]/g, `from '${apiModule}'`)
     .replace(/from ['"]@\/composables\/useMarketHome['"]/g, `from '${homeModule}'`)
+    .replace(/from ['"]@\/composables\/useMarketHomeLive['"]/g, `from '${liveModule}'`)
     .replace(/from ['"]@\/utils\/marketHomeViewModel['"]/g, `from '${viewModelModule}'`)
     .replace(/from ['"]@\/utils\/marketHomePreferences['"]/g, `from '${preferencesModule}'`)
     .replace(/from ['"]@\/utils\/marketHomeRoutes['"]/g, `from '${routesUrl}'`)
     .replace(/from ['"]@\/utils\/marketHomeWorkspace['"]/g, `from '${workspaceModule}'`)
+    .replace(/from ['"]@\/utils\/marketHomeLiveView['"]/g, `from '${new URL('../src/utils/marketHomeLiveView.ts', import.meta.url).href}'`)
   return (await import(moduleUrl(transpiled))).default
 }
 

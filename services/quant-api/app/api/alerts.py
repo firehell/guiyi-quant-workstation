@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.alerts.current_trading_day import (
     CurrentTradingDayResult,
     CurrentTradingDayStatus,
     resolve_current_trading_day,
+)
+from app.alerts.history import (
+    AlertHistoryCursorError,
+    AlertHistoryFactsError,
+    AlertHistoryQuery,
+    read_alert_history,
 )
 from app.alerts.models import AlertEvent, AlertRule
 from app.alerts.registry import (
@@ -32,6 +39,7 @@ from app.market_data.operational_universe import load_operational_products
 from app.market_data.product_retirement import normalize_symbol
 from app.schemas.alerts import (
     AlertEventListResponse,
+    AlertEventHistoryResponse,
     AlertEventOut,
     AlertRuleCode,
     AlertScopeUpdate,
@@ -135,6 +143,98 @@ def current_alert_events(
         status="ready",
         trading_day=current_day.trading_day,
         items=_event_outs(session, events)[:limit],
+    )
+
+
+@router.get("/history", response_model=AlertEventHistoryResponse)
+def alert_event_history(
+    start_day: date = Query(...),
+    end_day: date = Query(...),
+    symbol: str | None = Query(default=None),
+    rule_code: str | None = Query(default=None),
+    limit: int = Query(default=30, ge=1, le=100),
+    before: str | None = Query(default=None),
+    session: Session = Depends(get_db),
+) -> AlertEventHistoryResponse:
+    if start_day > end_day or (end_day - start_day).days >= 366:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "ALERT_EVENT_QUERY_INVALID"},
+        )
+
+    normalized_symbol: str | None = None
+    if symbol is not None:
+        normalized_symbol = normalize_symbol(symbol)
+        try:
+            operational_products = frozenset(load_operational_products())
+        except Exception:  # noqa: BLE001 - authority failures have one safe API shape
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "ALERT_EVENT_QUERY_UNAVAILABLE"},
+            ) from None
+        if normalized_symbol not in operational_products:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "ALERT_SYMBOL_NOT_OPERATIONAL"},
+            )
+
+    parsed_rule_code: AlertRuleCode | None = None
+    if rule_code is not None:
+        try:
+            parsed_rule_code = _RULE_CODE.validate_python(rule_code)
+        except ValidationError:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "ALERT_RULE_NOT_FOUND"},
+            ) from None
+        try:
+            stored_rule_id = session.scalar(
+                select(AlertRule.id).where(AlertRule.rule_code == parsed_rule_code)
+            )
+        except SQLAlchemyError:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "ALERT_EVENT_QUERY_UNAVAILABLE"},
+            ) from None
+        if stored_rule_id is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "ALERT_RULE_NOT_FOUND"},
+            )
+
+    try:
+        page = read_alert_history(
+            session,
+            AlertHistoryQuery(
+                start_day=start_day,
+                end_day=end_day,
+                symbol=normalized_symbol,
+                rule_code=parsed_rule_code,
+                limit=limit,
+                before=before,
+            ),
+        )
+        items = _event_outs(session, page.items)
+    except AlertHistoryCursorError:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "ALERT_EVENT_CURSOR_INVALID"},
+        ) from None
+    except AlertHistoryFactsError:
+        raise _invalid_event_facts() from None
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ALERT_EVENT_QUERY_UNAVAILABLE"},
+        ) from None
+    return AlertEventHistoryResponse(
+        status="ready",
+        start_day=start_day,
+        end_day=end_day,
+        symbol=normalized_symbol,
+        rule_code=parsed_rule_code,
+        items=items,
+        next_before=page.next_before,
     )
 
 

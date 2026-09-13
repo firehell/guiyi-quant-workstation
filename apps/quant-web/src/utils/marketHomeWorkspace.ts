@@ -18,10 +18,10 @@ export function nextMarketHomeSort(
   return { sort: 'default', sortDirection: 'desc' }
 }
 
-export function filterAndSortMarketHomeRows(
-  rows: readonly MarketHomeRow[],
+export function filterAndSortMarketHomeRows<T extends MarketHomeRow>(
+  rows: readonly T[],
   options: { query: string; sector: string; filter: MarketHomeLocalFilter; sort: MarketHomeSort; sortDirection?: MarketHomeSortDirection; daily?: MarketHomeTrendFilter; weekly?: MarketHomeTrendFilter; alignment?: MarketHomeAlignmentFilter; event?: MarketHomeEventFilter; data?: MarketHomeDataFilter },
-): MarketHomeRow[] {
+): T[] {
   const query = options.query.trim().toLowerCase()
   const filtered = rows.filter((row) => {
     const textMatches = !query || `${row.symbol} ${row.product_name}`.toLowerCase().includes(query)

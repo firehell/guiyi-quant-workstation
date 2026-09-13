@@ -33,6 +33,7 @@ const mainGlyphTransform = computed(() => {
         <path v-else-if="state === 'aligned'" :d="MARKET_HOME_ICON_GLYPHS.aligned" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
         <path v-else-if="state === 'down'" :d="MARKET_HOME_ICON_GLYPHS.down" fill="currentColor" />
         <path v-else-if="state === 'neutral'" :d="MARKET_HOME_ICON_GLYPHS.neutral" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+        <path v-else-if="state === 'mixed'" :d="MARKET_HOME_ICON_GLYPHS.mixed" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" />
         <circle v-else cx="12" cy="12" r="2.2" fill="currentColor" />
       </g>
     </svg>
@@ -47,6 +48,7 @@ const mainGlyphTransform = computed(() => {
 .market-state-icon--aligned { background: var(--gy-market-icon-aligned); }
 .market-state-icon--down { background: var(--gy-market-icon-down); }
 .market-state-icon--neutral { background: var(--gy-market-icon-neutral); }
+.market-state-icon--mixed { background: #667085; }
 .market-state-icon--unavailable { background: var(--gy-market-icon-unavailable); }
 .market-state-icon:has(svg) { position: relative; }
 .market-state-icon--micro.market-state-icon--up { background: var(--gy-market-pill-up-soft); color: var(--gy-market-icon-up); }
