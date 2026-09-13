@@ -2,7 +2,7 @@ import { performance } from 'node:perf_hooks'
 import richMacd from './fixtures/newow-rich-macd.json' with { type: 'json' }
 
 export const NEWOW_AS_OF = '2026-09-03T08:00:00.000Z'
-export const NEWOW_PATH = '/market/chart?symbol=rb&view=newow&strategy=trend&frequency=1d&series_kind=actual_dominant'
+export const NEWOW_PATH = '/market/chart?symbol=rb&view=newow&strategy=trend&frequency=1w&series_kind=actual_dominant'
 export const NEWOW_STRATEGIES = ['trend', 'oscillation', 'main_rise']
 export const NEWOW_FREQUENCIES = ['1w', '1d', '60m']
 
@@ -40,7 +40,7 @@ const STRATEGY_WIRE_FACTS = Object.freeze({
   }),
 })
 
-export function newowRoute(strategy = 'trend', frequency = '1d', extra = '') {
+export function newowRoute(strategy = 'trend', frequency = '1w', extra = '') {
   return `/market/chart?symbol=rb&view=newow&strategy=${strategy}&frequency=${frequency}&series_kind=actual_dominant${extra}`
 }
 
@@ -117,9 +117,13 @@ export async function installNewowProductFixtures(page, options = {}) {
     const request = route.request()
     const url = new URL(request.url())
     const startedAt = performance.now()
-    if (url.origin === 'http://127.0.0.1:5182' && !url.pathname.startsWith('/api/')) return route.continue()
+    if ((url.hostname === '127.0.0.1' || url.hostname === 'localhost') && !url.pathname.startsWith('/api/')) return route.continue()
     state.requests.push({ url, method: request.method(), startedAt })
     if (request.method() !== 'GET') return unexpected(route, state, `non-GET ${request.method()} ${url.pathname}`)
+
+    if (url.pathname === '/api/v1/market/newow/product-capabilities') {
+      return route.fulfill({ json: weeklyCapabilities() })
+    }
 
     if (url.pathname === '/api/v1/market/newow/strategy-detail') {
       const section = url.searchParams.get('section') || 'chart'
@@ -197,6 +201,18 @@ export async function installNewowProductFixtures(page, options = {}) {
     return unexpected(route, state, `${request.method()} ${url.href}`)
   })
   return state
+}
+
+function weeklyCapabilities() {
+  return {
+    schema_version: 'newow_product_capabilities_v1', release_stage: 'weekly', open_frequencies: ['1w'],
+    deferred_frequencies: [
+      { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+    open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
+    deferred_sections: [{ section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' }],
+  }
 }
 
 function validateFixtureScenario(strategy, frequency, options) {

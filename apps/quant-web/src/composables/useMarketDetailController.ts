@@ -160,6 +160,12 @@ export function useMarketDetailController(
     )
     const usesGenericSeries = identity.view !== 'newow'
     if (!usesGenericSeries) series.clearSeries()
+    const seriesRequest = usesGenericSeries
+      ? series.replaceSeries(identity).then(
+          () => ({ ok: true as const }),
+          () => ({ ok: false as const }),
+        )
+      : Promise.resolve({ ok: true as const })
     const researchRequest = usesGenericSeries
       ? fetchResearch({
           symbol: identity.symbol,
@@ -168,9 +174,9 @@ export function useMarketDetailController(
         }).catch(() => null)
       : Promise.resolve(null)
     try {
-      const [metadata] = await Promise.all([
+      const [metadata, seriesResult] = await Promise.all([
         metadataRequest,
-        usesGenericSeries ? series.replaceSeries(identity) : Promise.resolve(),
+        seriesRequest,
       ])
       if (disposed || state.value.generation !== generation) return
       const hasCurrentProduct = metadata.ok && metadata.value.items.some(
@@ -185,6 +191,12 @@ export function useMarketDetailController(
       }
       currentDominants = metadata.value
       productCatalog.value = metadata.value.items
+      if (!seriesResult.ok) {
+        state.value.header = null
+        state.value.loading = false
+        state.value.error = '详情行情加载失败'
+        return
+      }
       headerGeneration = generation
       rebuildHeader(identity)
       state.value.loading = false

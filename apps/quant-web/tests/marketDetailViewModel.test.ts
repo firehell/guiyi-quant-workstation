@@ -52,6 +52,8 @@ test('builds sourced market facts from the latest completed bar without syntheti
   assert.equal(model.change, 10)
   assert.equal(model.pct, 10)
   assert.equal(model.displayContract, 'JM2601')
+  assert.equal(model.frequency, '15m')
+  assert.equal(model.tradingDay, '2026-09-02')
   assert.equal(model.displaySource, '实时观察')
   assert.equal(model.freshness, 'fresh')
   assert.equal('score' in model, false)

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
+import { formatMarketDecimal } from '@/utils/marketDisplay'
 
 import type {
   NewowProductSectionResponse,
@@ -37,6 +38,7 @@ const filter = ref<'all' | NewowReferenceCategory | 'initial'>('all')
 const expanded = ref<readonly string[]>([])
 const performanceSince = ref('')
 const performanceThrough = ref('')
+const invalidWindow = computed(() => !!performanceSince.value && !!performanceThrough.value && performanceSince.value > performanceThrough.value)
 const presentation = computed(() => resolveNewowPanelRenderState(props.lifecycle, props.response, props.error))
 const model = computed(() => (
   presentation.value.showValue && props.response?.value
@@ -83,7 +85,7 @@ function toggle(id: string): void {
 }
 
 function reload(): void {
-  if (!performanceSince.value || !performanceThrough.value || performanceSince.value > performanceThrough.value) return
+  if (!performanceSince.value || !performanceThrough.value || invalidWindow.value || props.loadingPage) return
   emit('reload', { performanceSince: performanceSince.value, performanceThrough: performanceThrough.value })
 }
 
@@ -103,9 +105,10 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
       <form class="newow-reference__window" @submit.prevent="reload">
         <label>统计起点 <input :value="performanceSince" type="date" @input="updateSince" /></label>
         <label>统计终点 <input :value="performanceThrough" type="date" @input="updateThrough" /></label>
-        <button type="submit">读取统计窗口</button>
+        <button type="submit" :disabled="loadingPage || invalidWindow">{{ loadingPage ? '读取中…' : '应用统计窗口' }}</button>
       </form>
     </header>
+    <p v-if="invalidWindow" class="newow-reference__state" role="alert">统计起点不能晚于统计终点。</p>
 
     <p v-if="presentation.message" class="newow-reference__state" role="status">
       {{ presentation.message }}
@@ -138,10 +141,10 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
         <label>
           记录筛选
           <select :value="filter" aria-label="筛选参考历史" @change="updateFilter">
-            <option value="all">全部记录</option>
-            <option value="closed">CLOSED</option>
-            <option value="open">OPEN</option>
-            <option value="interrupted">ROLLOVER_INTERRUPTED</option>
+            <option value="all">全部</option>
+            <option value="closed">已清仓</option>
+            <option value="open">未清仓</option>
+            <option value="interrupted">换月中断</option>
             <option value="initial">期初已有</option>
           </select>
         </label>
@@ -152,10 +155,10 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
         <article v-for="row in visibleModel?.rows ?? []" :key="row.id" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id">
           <header :title="`${row.trade.entry_bar_end} → ${row.trade.exit_bar_end ?? row.trade.mark_bar_end ?? row.trade.interrupted_at}`"><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : '换月中断' }}</strong><span>{{ row.trade.physical_contract }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.trade.exit_bar_end ? rowTime(row.trade, row.trade.exit_bar_end) : row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.interrupted_at) }}</span><span v-if="row.initial">期初已有</span></header>
           <div class="newow-reference__card-body">
-            <p>▲ 参考建仓 {{ row.trade.entry_reference_price }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} <template v-if="row.category === 'closed'">　▼ 参考清仓 {{ row.trade.exit_reference_price }} · {{ rowTime(row.trade, row.trade.exit_bar_end) }}</template><template v-else-if="row.category === 'interrupted'">　换月中断 · {{ referenceInterruptionLabel(row.trade.interruption_reason) }}</template></p>
+            <p>▲ 参考建仓 {{ formatMarketDecimal(row.trade.entry_reference_price) }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} <template v-if="row.category === 'closed'">　▼ 参考清仓 {{ formatMarketDecimal(row.trade.exit_reference_price) }} · {{ rowTime(row.trade, row.trade.exit_bar_end) }}</template><template v-else-if="row.category === 'interrupted'">　换月中断 · {{ referenceInterruptionLabel(row.trade.interruption_reason) }}</template></p>
             <p class="newow-reference__return">{{ row.category === 'open' ? '参考浮动' : row.category === 'closed' ? '已清仓收益' : '中断浮动' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</span><small v-if="row.category !== 'closed'" :title="row.valuationText"> · 估值 {{ rowTime(row.trade, row.trade.mark_bar_end) }}</small></p>
-            <button type="button" :aria-label="`定位参考记录 ${row.id} 的建仓信号`" @click="emit('locate', row.trade)">定位</button>
-            <button type="button" :aria-label="`展开参考记录 ${row.id}`" :aria-expanded="expanded.includes(row.id)" @click="toggle(row.id)">详情</button>
+            <button type="button" :aria-label="`定位参考记录 ${row.id} 的建仓信号`" @click="emit('locate', row.trade)">定位图表</button>
+            <button type="button" :aria-label="`展开参考记录 ${row.id}`" :aria-expanded="expanded.includes(row.id)" @click="toggle(row.id)">查看详情</button>
           </div>
           <div v-if="expanded.includes(row.id)" class="newow-reference__details">
             <p>{{ row.returnText }} · 估值 {{ row.valuationText }} · 中断原始原因 {{ row.trade.interruption_reason ?? '—' }}</p><p>{{ row.statusText }} · 建仓 {{ row.trade.entry_bar_end }} · 清仓 {{ row.trade.exit_bar_end ?? '—' }}</p><p>{{ row.trade.strategy_code }} / {{ row.trade.frequency }} · {{ row.trade.holding_bars }} Bars</p><p>{{ row.id }} · {{ row.trade.segment_id }}</p>
