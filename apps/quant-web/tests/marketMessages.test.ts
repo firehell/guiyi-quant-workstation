@@ -46,3 +46,37 @@ test('loads cursor pages once and appends immutable event identities', async () 
   assert.deepEqual(calls, [null, 'page-2'])
   assert.deepEqual(messages.items.value.map((item) => item.id), [1, 2])
 })
+
+for (const outcome of ['resolve', 'reject'] as const) {
+  test(`query replacement releases pagination when the old page later ${outcome}s`, async () => {
+    let settleOld!: (value?: ReturnType<typeof normalizeAlertHistoryResponse>) => void
+    const calls: Array<{ symbol: string; before: string | null }> = []
+    const messages = useMarketMessages({ fetchHistory: async (query) => {
+      calls.push({ symbol: query.symbol, before: query.before ?? null })
+      if (!query.symbol && !query.before) return page([event(1)], 'old-page')
+      if (!query.symbol && query.before === 'old-page') {
+        return new Promise((resolve, reject) => {
+          settleOld = outcome === 'resolve' ? (value) => resolve(value!) : () => reject(new Error('old page failed'))
+        })
+      }
+      if (query.symbol === 'jm' && !query.before) return page([{ ...event(3), symbol: 'jm', contract: 'JM2609' }], 'new-page')
+      if (query.symbol === 'jm' && query.before === 'new-page') return page([{ ...event(4), symbol: 'jm', contract: 'JM2609' }], null)
+      throw new Error('unexpected query')
+    } })
+    await messages.load({ startDay: '2026-09-07', endDay: '2026-09-13', symbol: '', ruleCode: null })
+    const oldMore = messages.loadMore()
+    await messages.load({ startDay: '2026-09-07', endDay: '2026-09-13', symbol: 'jm', ruleCode: null })
+    assert.equal(messages.loadingMore.value, false)
+    await messages.loadMore()
+    assert.deepEqual(calls.at(-1), { symbol: 'jm', before: 'new-page' })
+    settleOld(page([event(2)], null))
+    await oldMore
+    assert.deepEqual(messages.items.value.map((item) => item.id), [3, 4])
+    assert.equal(messages.loadingMore.value, false)
+    assert.equal(messages.nextBefore.value, null)
+  })
+}
+
+function page(items: ReturnType<typeof event>[], nextBefore: string | null) {
+  return normalizeAlertHistoryResponse({ status: 'ready', start_day: '2026-09-07', end_day: '2026-09-13', symbol: null, rule_code: null, items, next_before: nextBefore })
+}

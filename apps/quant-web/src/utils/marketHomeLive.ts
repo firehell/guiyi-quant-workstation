@@ -43,7 +43,7 @@ function item(payload: unknown): MarketHomeLiveItem {
   if ((source === 'completed_1m') !== (availability === 'live')) throw new Error('completed_1m must be a live value')
   if ((source === 'completed_1d') !== (availability === 'historical')) throw new Error('completed_1d must be a historical value')
   if ((source === 'none') !== (availability === 'unavailable')) throw new Error('none source must be unavailable')
-  if (source === 'none' && [physicalContract, tradingDay, barEnd, price, previousClose, priceChange].some((entry) => entry !== null)) throw new Error('none source cannot carry a completed value')
+  if (source === 'none' && [tradingDay, barEnd, price, previousClose, priceChange].some((entry) => entry !== null)) throw new Error('none source cannot carry a completed value')
   if (source !== 'none' && (physicalContract === null || tradingDay === null || barEnd === null || price === null)) throw new Error('completed source requires a complete identity and price')
   if (priceChange !== null && (previousClose === null || previousClose === 0 || physicalContract === null)) throw new Error('price_change requires a nonzero same-contract baseline')
   return { symbol: text(value.symbol, 'symbol').toLowerCase(), physicalContract, tradingDay, barEnd, price, previousClose, priceChange, source, availability, phase: literal(value.phase, PHASES, 'phase'), reason }

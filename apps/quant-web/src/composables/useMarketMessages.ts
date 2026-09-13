@@ -20,6 +20,8 @@ export function useMarketMessages(options: { fetchHistory?: FetchHistory } = {})
   async function load(query: MarketMessageQuery): Promise<void> {
     const current = ++generation
     controller?.abort()
+    morePromise = null
+    loadingMore.value = false
     controller = new AbortController()
     currentQuery = { ...query }
     items.value = []

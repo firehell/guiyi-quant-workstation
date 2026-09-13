@@ -14,12 +14,27 @@ test('normalizes Decimal strings and preserves typed unavailable reasons', () =>
   assert.equal(frame.items[1].reason, 'NO_COMPLETED_VALUE')
 })
 
+test('accepts a complete 60-item snapshot when one unavailable product retains its contract identity', () => {
+  const unavailable = quote({ symbol: 'p59', physical_contract: 'P592701', trading_day: null, bar_end: null, price: null, previous_close: null, price_change: null, source: 'none', availability: 'unavailable', phase: 'CLOSED', reason: 'PRICE_UNAVAILABLE' })
+  const payload = {
+    type: 'snapshot', schema_version: 1, observed_at: '2026-09-13T02:31:01Z', scope: 'operational',
+    items: Array.from({ length: 59 }, (_, index) => quote({ symbol: `p${index}`, physical_contract: `P${index}2701` })).concat(unavailable),
+  }
+  const frame = normalizeMarketHomeLiveFrame(payload)
+  assert.equal(frame.type, 'snapshot')
+  if (frame.type !== 'snapshot') return
+  assert.equal(frame.items.length, 60)
+  assert.equal(frame.items[59].physicalContract, 'P592701')
+  assert.equal(frame.items[59].availability, 'unavailable')
+})
+
 test('rejects contradictory source, availability, and completed-value identities', () => {
   const frame = (item: unknown) => ({ type: 'snapshot', schema_version: 1, observed_at: '2026-09-13T02:31:01Z', scope: 'operational', items: [item] })
   assert.throws(() => normalizeMarketHomeLiveFrame(frame(quote({ physical_contract: null }))))
   assert.throws(() => normalizeMarketHomeLiveFrame(frame(quote({ source: 'completed_1d', availability: 'live' }))))
   assert.throws(() => normalizeMarketHomeLiveFrame(frame(quote({ source: 'none', availability: 'historical' }))))
   assert.throws(() => normalizeMarketHomeLiveFrame(frame(quote({ availability: 'unavailable', source: 'none', price: null, bar_end: null, reason: null }))))
+  assert.throws(() => normalizeMarketHomeLiveFrame(frame(quote({ availability: 'unavailable', source: 'none', trading_day: null, bar_end: null, price: '1', previous_close: null, price_change: null, reason: 'PRICE_UNAVAILABLE' }))))
 })
 
 test('applies reset atomically and ignores messages from an older socket generation', () => {
