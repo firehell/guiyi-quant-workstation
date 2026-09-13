@@ -21,6 +21,9 @@ const jmIdentity: MarketDetailIdentity = {
 const rbIdentity: MarketDetailIdentity = {
   view: 'free', symbol: 'rb', seriesKind: 'actual_dominant', frequency: '15m',
 }
+const cuIdentity: MarketDetailIdentity = {
+  view: 'free', symbol: 'cu', seriesKind: 'actual_dominant', frequency: '15m',
+}
 const newowIdentity: MarketDetailIdentity = {
   view: 'newow', symbol: 'jm', strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d',
 }
@@ -113,6 +116,8 @@ function fakeSeries() {
   const mutation = ref<MarketSeriesMutation>({ kind: 'replace' })
   let disposed = false
   let loadMoreCalls = 0
+  let replaceCalls = 0
+  let clearCalls = 0
 
   return {
     bars,
@@ -125,44 +130,116 @@ function fakeSeries() {
     overlaySource,
     mutation,
     async replaceSeries(identity: MarketDetailIdentity) {
+      replaceCalls += 1
       bars.value = [bar(identity.symbol, identity.symbol === 'jm' ? 100 : 200)]
       marketStateRef.value = marketState(identity.symbol)
       canonicalCoverage.value = { start: '2026-09-01T02:45:00Z', end: '2026-09-03T02:45:00Z' }
     },
-    clearSeries() { bars.value = [] },
+    clearSeries() { clearCalls += 1; bars.value = [] },
     async loadMoreBefore() { loadMoreCalls += 1 },
     dispose() { disposed = true },
     get disposed() { return disposed },
     get loadMoreCalls() { return loadMoreCalls },
+    get replaceCalls() { return replaceCalls },
+    get clearCalls() { return clearCalls },
   }
 }
 
-test('late responses cannot overwrite a newer identity', async () => {
+test('keeps the quote header and cached metadata while switching Newow strategies', async () => {
   const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
-  const jmResearch = deferred<ProductResearchResponse>()
-  const rbResearch = deferred<ProductResearchResponse>()
+  const series = fakeSeries()
+  let metadataCalls = 0
+  const controller = useMarketDetailController({
+    routeQuery: () => ({ symbol: 'jm', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '1d' }),
+    createSeries: () => series,
+    fetchDominants: async () => { metadataCalls += 1; return { items: [dominant('jm')] } },
+    fetchResearch: async () => research('jm'),
+  })
+  const trend = { ...newowIdentity }
+  const oscillation = { ...newowIdentity, strategy: 'oscillation' as const }
+
+  await controller.switchIdentity(trend)
+  const retainedHeader = controller.state.value.header
+  assert.ok(retainedHeader)
+  const switching = controller.switchIdentity(oscillation)
+
+  assert.equal(controller.state.value.header, retainedHeader)
+  assert.equal(controller.state.value.loading, false)
+  await switching
+  assert.equal(metadataCalls, 1)
+  assert.equal(series.clearCalls, 1)
+  assert.equal(controller.state.value.identity?.strategy, 'oscillation')
+})
+
+test('reuses one generic source when only the analysis view changes', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
   const series = fakeSeries()
   const controller = useMarketDetailController({
     routeQuery: () => ({ symbol: 'jm', view: 'free', series_kind: 'actual_dominant', frequency: '15m' }),
     createSeries: () => series,
-    fetchDominants: async () => ({ items: [dominant('jm'), dominant('rb')] }),
-    fetchResearch: ({ symbol }) => symbol === 'jm' ? jmResearch.promise : rbResearch.promise,
+    fetchDominants: async () => ({ items: [dominant('jm')] }),
+    fetchResearch: async () => research('jm'),
+  })
+  await controller.switchIdentity(jmIdentity)
+  const retainedHeader = controller.state.value.header
+  await controller.switchIdentity({ ...jmIdentity, view: 'htdy' })
+
+  assert.equal(series.replaceCalls, 1)
+  assert.equal(controller.state.value.header?.close, retainedHeader?.close)
+  assert.equal(controller.state.value.identity?.view, 'htdy')
+})
+
+test('an incompatible product identity clears the old header immediately', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const pendingMetadata = deferred<{ items: DominantContractItem[] }>()
+  let calls = 0
+  const controller = useMarketDetailController({
+    routeQuery: () => ({ symbol: 'jm', view: 'free', series_kind: 'actual_dominant', frequency: '15m' }),
+    createSeries: () => fakeSeries(),
+    fetchDominants: async () => {
+      calls += 1
+      return calls === 1 ? { items: [dominant('jm'), dominant('rb')] } : pendingMetadata.promise
+    },
+    fetchResearch: async ({ symbol }) => research(symbol),
+  })
+  await controller.switchIdentity(jmIdentity)
+  const switching = controller.switchIdentity(rbIdentity)
+
+  assert.equal(controller.state.value.header, null)
+  assert.equal(controller.state.value.loading, true)
+  pendingMetadata.resolve({ items: [dominant('jm'), dominant('rb')] })
+  await switching
+})
+
+test('late A and B responses cannot overwrite the active C identity', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const jmResearch = deferred<ProductResearchResponse>()
+  const rbResearch = deferred<ProductResearchResponse>()
+  const cuResearch = deferred<ProductResearchResponse>()
+  const series = fakeSeries()
+  const controller = useMarketDetailController({
+    routeQuery: () => ({ symbol: 'jm', view: 'free', series_kind: 'actual_dominant', frequency: '15m' }),
+    createSeries: () => series,
+    fetchDominants: async () => ({ items: [dominant('jm'), dominant('rb'), dominant('cu')] }),
+    fetchResearch: ({ symbol }) => symbol === 'jm' ? jmResearch.promise : symbol === 'rb' ? rbResearch.promise : cuResearch.promise,
   })
 
   const first = controller.switchIdentity(jmIdentity)
   const second = controller.switchIdentity(rbIdentity)
-  rbResearch.resolve(research('rb'))
-  await second
+  const third = controller.switchIdentity(cuIdentity)
+  cuResearch.resolve(research('cu'))
+  await third
 
-  assert.equal(controller.state.value.identity?.symbol, 'rb')
-  assert.equal(controller.state.value.header?.symbol, 'rb')
+  assert.equal(controller.state.value.identity?.symbol, 'cu')
+  assert.equal(controller.state.value.header?.symbol, 'cu')
   assert.equal(controller.state.value.header?.close, 200)
   assert.equal(controller.state.value.loading, false)
 
+  rbResearch.resolve(research('rb'))
   jmResearch.resolve(research('jm'))
-  await first
-  assert.equal(controller.state.value.identity?.symbol, 'rb')
-  assert.equal(controller.state.value.header?.symbol, 'rb')
+  await Promise.all([first, second])
+  assert.equal(controller.state.value.identity?.symbol, 'cu')
+  assert.equal(controller.state.value.header?.symbol, 'cu')
   assert.equal(controller.state.value.header?.close, 200)
 })
 

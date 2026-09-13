@@ -218,27 +218,29 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         @select-symbol="productSelector?.focus()"
         @open-history="openHistory"
       />
-      <p v-if="controller.state.value.loading" class="market-detail-page__loading" role="status">
-        {{ routeResult.identity.view === 'newow' ? '正在加载品种元数据…' : '正在加载行情事实…' }}
-      </p>
-      <MarketDetailUnavailable
-        v-else-if="controller.state.value.error || !header"
-        :title="routeResult.identity.view === 'newow' ? '品种元数据不可用' : '行情事实不可用'"
-        :message="controller.state.value.error || '当前身份没有可用的已完成 Bar。'"
-        :can-return-market="true"
-        @return-market="goBack"
+      <MarketDetailQuoteHeader v-if="!controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :newow="isNewowView" />
+      <MarketDetailViewNav
+        :identity="routeResult.identity"
+        :products="controller.productCatalog.value"
+        :newow-frequencies="newowCapabilities.openFrequencies.value"
+        :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
+        @select="selectIdentity"
+        @contract-cleared="selectContractCleared"
       />
-        <MarketDetailQuoteHeader v-if="!controller.state.value.loading && !controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :newow="isNewowView" />
-        <MarketDetailViewNav
-          :identity="routeResult.identity"
-          :products="controller.productCatalog.value"
-          :newow-frequencies="newowCapabilities.openFrequencies.value"
-          :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
-          @select="selectIdentity"
-          @contract-cleared="selectContractCleared"
-        />
-      <template v-if="routeResult.identity.view === 'newow' || (!controller.state.value.loading && !controller.state.value.error && header)">
-        <section class="market-detail-page__workspace" data-detail-section="workspace-slot">
+        <section
+          class="market-detail-page__workspace"
+          data-detail-section="workspace-slot"
+          :data-active-view="routeResult.identity.view"
+          :aria-busy="controller.state.value.loading"
+        >
+          <p v-if="controller.state.value.loading && routeResult.identity.view !== 'newow'" class="market-detail-page__loading" role="status">正在加载当前图表…</p>
+          <MarketDetailUnavailable
+            v-else-if="routeResult.identity.view !== 'newow' && (controller.state.value.error || !header)"
+            title="行情事实不可用"
+            :message="controller.state.value.error || '当前身份没有可用的已完成 Bar。'"
+            :can-return-market="true"
+            @return-market="goBack"
+          />
           <NewowProductWorkspace
             v-if="routeResult.identity.view === 'newow' && newowCapabilities.capabilities.value && newowFrequencyOpen"
             ref="newowWorkspace"
@@ -309,7 +311,6 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @focus-resolved="resolveFocus"
           />
         </section>
-      </template>
     </template>
   </main>
 </template>
@@ -324,11 +325,16 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 }
 
 .market-detail-page__loading {
-  margin: var(--gy-space-6) 0;
+  min-height: 320px;
+  margin: 0;
+  display: grid;
+  place-items: center;
   color: var(--gy-text-muted);
+  background: var(--gy-bg-panel);
 }
 
 .market-detail-page__workspace {
+  min-height: 420px;
   padding: var(--gy-space-2) 0 var(--gy-space-5);
 }
 

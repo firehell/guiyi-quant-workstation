@@ -66,6 +66,16 @@ test('canonicalizes omitted and legacy Trend routes without presenting the retir
   assert.doesNotMatch(template, /routeResult\.identity\.view === 'trend'/)
 })
 
+test('keeps navigation and one workspace slot mounted while source data changes locally', () => {
+  const { template } = page()
+  assert.match(template, /<MarketDetailViewNav[\s\S]+<section\s+class="market-detail-page__workspace"/)
+  assert.match(template, /data-detail-section="workspace-slot"/)
+  assert.match(template, /:data-active-view="routeResult\.identity\.view"/)
+  assert.match(template, /:aria-busy="controller\.state\.value\.loading"/)
+  assert.match(template, /<p\s+v-if="controller\.state\.value\.loading && routeResult\.identity\.view !== 'newow'"[\s\S]+正在加载当前图表/)
+  assert.doesNotMatch(template, /<p v-if="controller\.state\.value\.loading" class="market-detail-page__loading"[\s\S]+<MarketDetailViewNav/)
+})
+
 test('accepted Newow chart starts first-screen research once without viewport observation', () => {
   const workspace = readFileSync(newowWorkspaceUrl, 'utf8')
 
@@ -82,7 +92,7 @@ test('historical Newow mode hides the independent current quote and contract hea
   const { source, template } = page()
   const workspace = readFileSync(newowWorkspaceUrl, 'utf8')
   assert.match(source, /const newowHistoricalAsOf = ref<string \| null>\(null\)/)
-  assert.match(template, /MarketDetailQuoteHeader v-if="!controller.state.value.loading && !controller.state.value.error && header && !\(isNewowView && newowHistoricalAsOf\)"/)
+  assert.match(template, /MarketDetailQuoteHeader v-if="!controller.state.value.error && header && !\(isNewowView && newowHistoricalAsOf\)"/)
   assert.match(template, /@snapshot-mode="newowHistoricalAsOf = \$event"/)
   assert.match(workspace, /查看最近可用历史快照/)
   assert.match(workspace, /返回当前/)
