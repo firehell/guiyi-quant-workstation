@@ -343,3 +343,90 @@ def test_recovery_schedule_failure_stays_in_unavailable_boundary(
         assert _attempts(live_store) == []
     finally:
         service._recovery_worker._executor.shutdown(wait=True)
+
+
+@pytest.mark.parametrize("arrival", ("pending", "provider", "cooldown", "break"))
+@pytest.mark.parametrize("closed_before_error", (False, True))
+def test_real_guard_release_failure_preserves_completed_bars_without_provider_retry(
+    live_store, tmp_path, monkeypatch, arrival, closed_before_error,
+):
+    from pathlib import Path
+    from app.market_data.market_phase import MarketPhase
+
+    service, request, guard = _fixture(live_store, tmp_path)
+    service.reconcile(request.cutoff)
+    _seed(service, live_store, request, range(1, 15), derived=True)
+    provider = service._provider
+    publications = []
+    original_publish = live_store.publish_bar
+
+    def publish(product, frequency, bar, **kwargs):
+        original_publish(product, frequency, bar, **kwargs)
+        publications.append((frequency, bar.bar_end))
+
+    monkeypatch.setattr(live_store, "publish_bar", publish)
+    if arrival == "provider":
+        monkeypatch.setattr(provider, "poll", lambda: ((request.contract, _bar(15)),))
+    else:
+        service.ingest(request.contract, _bar(15), now=request.cutoff)
+    if arrival == "cooldown":
+        service.next_provider_retry_at = request.cutoff + timedelta(seconds=10)
+    elif arrival == "break":
+        monkeypatch.setattr(service._phase_resolver, "resolve", lambda *_:
+                            _phase("rb", request.trading_day, None, MarketPhase.BREAK))
+    expected_retry = service.next_provider_retry_at
+    original_open, original_close = os.open, os.close
+    owned_fd = None
+    fd_closed = False
+
+    def capture_open(path, *args, **kwargs):
+        nonlocal owned_fd
+        fd = original_open(path, *args, **kwargs)
+        if Path(path) == tmp_path / "guards" / "rb.lock":
+            owned_fd = fd
+        return fd
+
+    def fail_guard_close(fd):
+        nonlocal fd_closed
+        if fd == owned_fd:
+            if closed_before_error:
+                original_close(fd)
+                fd_closed = True
+            raise OSError("injected lock release failure")
+        return original_close(fd)
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "open", capture_open)
+            patch.setattr(os, "close", fail_guard_close)
+            assert service.poll(request.cutoff) == "LIVE_REDIS_UNAVAILABLE"
+            assert service._last_flush_failed and not service._available
+            assert service._provider is provider
+            assert service.next_provider_retry_at == expected_retry
+            assert service._pending == {}
+            assert publications == [("1m", _bar(15).bar_end), ("5m", _bar(15).bar_end),
+                                    ("15m", _bar(15).bar_end)]
+            assert len(live_store.bars_after(request.trading_day, "rb", "1m", None)) == 15
+            assert live_store.recovery_state(request.trading_day, "rb", request.contract) is None
+            assert _attempts(live_store) == []
+            assert json.loads(live_store._redis.get("live:heartbeat"))["available"] is False
+        # Do not let fixture cleanup conceal a lock left held by a failed close.
+        with guard("rb"):
+            pass
+        monkeypatch.setattr(service._phase_resolver, "resolve", lambda *_:
+                            _phase("rb", request.trading_day, request.sessions[0]))
+        # Once the OS boundary is healthy, duplicate input must not republish.
+        assert service.ingest(request.contract, _bar(15), now=request.cutoff) == "LIVE_BAR_FINALIZED"
+        assert service.flush_due(request.cutoff) == ()
+        assert len(publications) == 3
+        with guard("rb"):
+            pass
+        assert service.ingest(request.contract, _bar(16), now=request.cutoff + timedelta(minutes=1)) is None
+        assert service.flush_due(request.cutoff + timedelta(minutes=1)) == (_bar(16),)
+        assert not service._last_flush_failed and service._available
+        assert publications[-1] == ("1m", _bar(16).bar_end)
+        assert len(publications) == 4
+    finally:
+        if owned_fd is not None and not fd_closed:
+            original_close(owned_fd)
+        service._recovery_worker._executor.shutdown(wait=True)

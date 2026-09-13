@@ -23,6 +23,28 @@
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
 
+## 共享锁释放异常修复（开发验收）
+
+2026-09-13 在 `10c0d43c4` 基线上完成共享锁释放异常修复，
+`CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE`，允许集成 develop、允许进入 release candidate。
+正常 Live 将获取、临界区和释放纳入同一错误边界，仅获取阶段的 busy 保留 pending 后继续；
+释放异常报告不可用，不退出轮询、不误重连、不回滚或重放已完成 Bar。
+共享文件锁在主体结束后先显式解锁，再在 finally 中单次 close，避免单独 close 失败遗留持锁；
+unlock 失败也执行 close，不盲目重关可能已被复用的 fd，保留描述符关闭结果可能不确定的事实。
+
+释放异常回归先 RED 8 failed，锁层故障回归先 RED 2 failed；最终后端完整组
+3726 passed / 47 skipped / 31 deselected。广义行情、恢复、预警、盘后、health 定向组
+410 passed / 32 isolated Redis skipped；本轮新建无持久卷 Redis 上的并发、真实 Lua 和文件锁组
+70 passed，实例已移除。新增用例在人工清理 fd 之前证明锁可再入、重复 Bar 不发布、下一分钟正常写入。
+独立 Review 80 passed / 31 isolated Redis skipped，无剩余可行动 finding；额外四组正常发布到 Alert
+消费验证通过（临时 SQLite、假 evaluator/sender，仅证明时序与 Event 提交，不代表真实信号或收件）。
+工程一致性 22 passed、OpenSpec 9 passed、定向 Ruff/mypy、secret scan 与 diff 检查通过。
+验证入口见 `TESTING.md`。此前预算、provenance、并发提交、pending、调度异常与通知边界均重新复核。
+
+本轮只读现场仍为 v1.10.8：API/Web 200、DB/Redis/Live 为 ok；总 health 为 degraded，保留
+9 月 11 日盘后 missed、通知历史失败及苏冰 rule evaluation_failed。未修改这些状态或生产数据。
+代码修复尚未正式生效，release、Runtime promotion、自然开市收件和自然 18:05 盘后验收仍独立待完成。
+
 ## 正常行情与恢复提交并发修复（开发验收）
 
 2026-09-13 在 `5b31cf7c1` 基线上完成复审发现的并发边界修复，

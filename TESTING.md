@@ -30,6 +30,8 @@ Lua项仅按下文`GUIYI_TEST_REDIS_PORT`规则使用本次新建的非6379、�
 一致追加后剩余缺口恢复、全部补齐不推进水位、原事实漂移拒绝、busy pending 与跨品种继续、正常 flush 后调度。
 异常组覆盖 pending/provider 两个 flush 位置的锁获取失败，以及三条调度路径的 authority/worker 失败，
 确认统一不可用、保留 pending 和健康 provider、不误触发重连。
+释放故障使用真实文件锁和定点 OS 错误，覆盖 pending/provider/cooldown/BREAK、close 实际关闭前后报错，
+在测试手工清理 fd 之前验证锁可再入、重复 Bar 不发布及下一分钟继续写入；独立锁测试还覆盖 unlock 失败仍关闭。
 同一组默认运行内存 Redis；显式配置专用 Redis 时还会运行真实 Lua 版本，只清理该一次性实例的测试 DB 9。
 既有 Lua 原子性测试仍在最终重读后注入变更，验证 CAS 不会容忍提交前的再次漂移。
 
@@ -38,7 +40,8 @@ GUIYI_TEST_REDIS_PORT=<专用非6379端口> PYTHONDONTWRITEBYTECODE=1 \
   PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
   services/quant-api/tests/data_foundation/test_live_recovery_concurrency.py \
-  services/quant-api/tests/data_foundation/test_live_recovery.py::test_lua_atomic_commit_and_concurrent_live_conflict_on_isolated_redis
+  services/quant-api/tests/data_foundation/test_live_recovery.py::test_lua_atomic_commit_and_concurrent_live_conflict_on_isolated_redis \
+  services/quant-api/tests/test_live_recovery_guard.py
 ```
 
 

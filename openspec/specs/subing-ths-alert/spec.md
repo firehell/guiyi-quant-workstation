@@ -148,6 +148,13 @@ provider 查询 MUST 保持锁外；提交锁内 MUST 重读订阅、state 与�
 - **THEN** 恢复不得观察并修复该临界区的中间态，正常 Bar 完成后仍保有原通知资格
 - **AND** 因锁忙保留的 completed pending 不得在本轮被恢复线程抢先生成
 
+#### Scenario: Releasing the normal Live guard fails
+
+- **WHEN** 正常 Bar 已完成写入及发布，但退出共享锁时发生异常
+- **THEN** Live MUST 报告不可用、保留已完成事实，不重放 Bar、不丢弃健康 provider 或安排 provider 重连
+- **AND** 只有获取阶段的 busy 可以视为普通等待；锁拥有者 MUST 先显式解锁并在 finally 中关闭一次 fd，
+  解锁失败仍执行关闭，不根据 close 异常盲目重关可能已被复用的 fd
+
 #### Scenario: An old trigger remains queued when recovery completes
 
 - **WHEN** trigger cutoff 不晚于恢复提交水位，包含进程重启后的重复触发

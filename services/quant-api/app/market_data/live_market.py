@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from contextlib import ExitStack
 from collections import Counter
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping as MappingABC
@@ -741,19 +740,20 @@ class LiveMarketService:
                 grouped.setdefault(item[0][0], []).append(item)
         finalized: list[CanonicalBar] = []
         for symbol, items in grouped.items():
-            with ExitStack() as stack:
-                try:
-                    stack.enter_context(self._recovery_guard_factory(symbol))
-                except Exception as exc:  # noqa: BLE001 - guard failure closes the write boundary
-                    if isinstance(exc, RuntimeError) and str(exc) == "LIVE_RECOVERY_BUSY":
-                        # Keep this symbol pending; unrelated products still flush.
-                        continue
-                    self._mark_redis_unavailable(now, phases)
-                    self._last_flush_failed = True
-                    break
-                finalized.extend(self._flush_pending(now, phases, items))
-                if self._last_flush_failed:
-                    break
+            guard_entered = False
+            try:
+                with self._recovery_guard_factory(symbol):
+                    guard_entered = True
+                    finalized.extend(self._flush_pending(now, phases, items))
+            except Exception as exc:  # noqa: BLE001 - includes body and lock release failures
+                if not guard_entered and isinstance(exc, RuntimeError) and str(exc) == "LIVE_RECOVERY_BUSY":
+                    # Keep this symbol pending; unrelated products still flush.
+                    continue
+                # Published facts remain finalized even if lock release failed.
+                self._mark_redis_unavailable(now, phases)
+                self._last_flush_failed = True
+            if self._last_flush_failed:
+                break
         return tuple(finalized)
 
     def _flush_pending(self, now, phases, pending) -> tuple[CanonicalBar, ...]:

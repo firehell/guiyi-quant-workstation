@@ -246,8 +246,9 @@ series 与 recovery revision。已有相同内容幂等跳过，冲突拒绝，�
 不同时持有多个品种锁。锁忙时保留该品种 pending，其他品种继续；下一正常 poll 再尝试，不把锁忙当作
 Redis 故障。恢复仅在本轮正常 ingest/flush 收尾后调度，已有 completed pending 的品种暂不交给恢复。
 纯 BREAK、provider cooldown 和订阅失败不因此新增恢复调度。
-锁获取的非 busy 异常及恢复 authority/worker 调度异常沿用 `LIVE_REDIS_UNAVAILABLE` 不可用边界，
-不退出前台轮询，也不因这类错误丢弃健康 provider 或安排 provider 重连。
+锁获取的非 busy 异常、临界区与锁释放异常，以及恢复 authority/worker 调度异常沿用
+`LIVE_REDIS_UNAVAILABLE` 不可用边界，不退出前台轮询，也不因此丢弃健康 provider 或安排 provider 重连。
+只有锁获取阶段的 busy 可以暂缓该品种；释放失败保留已写入/发布和 finalized 事实，不回滚或重放。
 
 恢复初始快照也在同品种锁内读取，避免把正常派生中间态误判缺口。查询返回后在提交锁内重新读取完整
 快照：冻结订阅、恢复 revision/水位以及旧 raw payload 不得被改写或删除；与源数据一致的正常追加允许
@@ -259,6 +260,9 @@ Redis 故障。恢复仅在本轮正常 ingest/flush 收尾后调度，已有 co
 Event commit 与 one-shot send 持有同一锁，因此水位不能穿过 Event/send。锁由 OS 持有，无超时租约；
 进程退出自动释放。锁文件限于 Runtime `.run/live-recovery-guards/{symbol}.lock`，按品种有界复用，不在
 运行中删除。锁或身份不可证明时不继续提交。
+退出已获得的锁时先显式解锁，再在 finally 中关闭一次文件描述符；解锁失败也必须执行关闭。
+close 报错不能证明描述符仍然打开，不盲目重关可能被复用的 fd。显式解锁避免单独 close 失败遗留持锁；
+描述符是否已关闭仍可能不确定，不把解锁成功表述为描述符清理成功。
 
 诊断复用 MarketReadService、MDS lifecycle/session coverage 与已有物理分页入口：历史使用 Catalog
 MainContractMap，盘中使用既有冻结 rank1 Live snapshot；当日 MainContractMap 尚未由盘后发布不构成
