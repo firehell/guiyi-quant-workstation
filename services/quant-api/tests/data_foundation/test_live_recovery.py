@@ -307,6 +307,8 @@ def test_monday_open_freezes_60_contracts_and_schedules_45_night_prefixes():
     service._recovery_worker = worker
 
     assert service.reconcile(now) is None
+    assert worker.requests == ()
+    assert service.poll(now) is None
 
     snapshot = RedisLiveStore(fake_redis).subscriptions(trading_day)
     assert snapshot == contracts
@@ -524,7 +526,7 @@ def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
         service._recovery_worker = worker
 
         monday_open = datetime(2026, 9, 14, 9, 0, 3, tzinfo=SHANGHAI)
-        assert service.reconcile(monday_open) is None
+        assert service.poll(monday_open) is None
         snapshot = store.subscriptions(trading_day)
         assert snapshot == contracts
         assert len(worker.batches[0]) == 60
@@ -541,7 +543,7 @@ def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
         )
 
         later_cutoff = datetime(2026, 9, 14, 9, 15, 3, tzinfo=SHANGHAI)
-        assert service.reconcile(later_cutoff) is None
+        assert service.poll(later_cutoff) is None
         assert len(worker.batches[1]) == 60
         assert len(client.calls) == 105
         assert all(
@@ -956,12 +958,17 @@ def test_lua_atomic_commit_and_concurrent_live_conflict_on_isolated_redis():
         client.delete(store._bars_key(request.trading_day, request.symbol, frequency))
     original = store.bars_after(request.trading_day, "rb", "1m", None)
 
-    def concurrent(req):
-        store.put_bar(req.trading_day, "rb", "1m", bars[0], contract="RB2505")
-        return bars
+    real_eval = client.eval
 
+    def concurrent_eval(script, *args):
+        if script.startswith("-- live-recovery-v1"):
+            store.put_bar(request.trading_day, "rb", "1m", bars[0], contract="RB2505")
+        return real_eval(script, *args)
+
+    client.eval = concurrent_eval
     with pytest.raises(ValueError, match="SNAPSHOT_DRIFT"):
-        recover_product(store, request, concurrent, clock=lambda: request.cutoff)
+        recover_product(store, request, lambda _: bars, clock=lambda: request.cutoff)
+    client.eval = real_eval
     assert store.recovery_state(request.trading_day, "rb", "RB2505") is None
     assert store.bars_after(request.trading_day, "rb", "15m", None) == ()
     # Recreate the gap only in the isolated fixture, then run the successful script.

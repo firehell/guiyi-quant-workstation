@@ -128,6 +128,26 @@ Alert 的 exact Runtime root/version 与恢复开关一致；发布或 Runtime p
 - **WHEN** 请求在有效时效内领取预算，查询或等待提交锁后已超过60秒
 - **THEN** 已消耗的尝试不撤销，Bar和恢复水位不提交，不扩大预算或静默重试
 
+正常 Live 的同品种 completed 1m、ready heartbeat、发布与派生写入/发布 MUST 与恢复初始快照、最终
+提交共用同一进程间锁；不同品种 MUST NOT 被同一次持锁串成全局临界区。锁忙时 MUST 保留 pending，
+不得丢弃正常 Bar 或把锁忙报告为 Redis 故障。恢复调度 MUST 位于本轮正常 ingest/flush 收尾之后，
+已有 completed pending 的品种 MUST 暂缓恢复，纯 BREAK、provider cooldown 或订阅失败不得新增调度。
+provider 查询 MUST 保持锁外；提交锁内 MUST 重读订阅、state 与各周期前像，拒绝旧事实删除/改写或身份
+漂移，对与查询源一致的正常追加重新计算缺口。全部缺口已消失时 MUST 返回 NO_GAP，不推进水位；
+否则仍以重读前像执行严格 Lua CAS，并在重算后检查原 cutoff 的提交时效。真实派生缺口仍可无 provider 修复。
+
+#### Scenario: Normal completed bars arrive during a recovery query
+
+- **WHEN** provider 查询期间正常 Live 写入与查询源完全一致的 Bar，冻结订阅和原事实均未改变
+- **THEN** 恢复在提交锁内重读并只提交剩余缺口，不因一致追加浪费后续尝试
+- **AND** 若前台已补齐所有周期，则返回 NO_GAP，不创建恢复水位、不改变正常通知资格
+
+#### Scenario: A normal derived bucket is being completed
+
+- **WHEN** 前台已写入最后一根 1m、尚未完成当前 5m/15m/60m 桶的正常派生和发布
+- **THEN** 恢复不得观察并修复该临界区的中间态，正常 Bar 完成后仍保有原通知资格
+- **AND** 因锁忙保留的 completed pending 不得在本轮被恢复线程抢先生成
+
 #### Scenario: An old trigger remains queued when recovery completes
 
 - **WHEN** trigger cutoff 不晚于恢复提交水位，包含进程重启后的重复触发
@@ -194,7 +214,8 @@ HTDY 五个日内周期 SHALL 只消费同周期 completed Live Bar；D1/W1 SHAL
 共享预警窗口 MUST 通过 typed `LiveBarObservation` 保留并逐根校验 Live payload contract、trading_day
 和端点唯一性，读取范围 MUST 不晚于事件 cutoff。缺失、错误或非规范的合约身份 MUST 拒绝，
 不得丢弃原始 contract 后以冻结 snapshot 为其补写身份；历史多 owner 窗口仍按 MainContractMap 校验。
-forward-only `first_seen` 只比较触发时的 previous/current prefix，历史重绘候选只限 Kernel repaint zone。
+forward-only `first_seen` 只接受触发窗口的最新 completed Bar；Kernel repaint zone 中的历史 Bar 仅供
+Web retrospective 研究展示，不创建持久 Event 或通知。
 `AlertEvent.bar_end` SHALL 是观察 Bar 时间，`detected_at` SHALL 是 Runtime 首次识别时间；Event 冻结后，
 重绘消失、重现或方向变化均不得改写或重发。startup、repair、replay、backfill 与 EOD recalculation MUST NOT
 创建历史 HTDY Event 或通知。

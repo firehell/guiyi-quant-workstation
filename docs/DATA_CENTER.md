@@ -242,6 +242,19 @@ fail-closed，不跨合约、不插值、不缩短前缀。数据仅进入当日
 
 缺失 1m、完整的 5m/15m/30m/60m 桶及单调恢复水位通过一次 Lua CAS 提交；提交前核对冻结订阅、原
 series 与 recovery revision。已有相同内容幂等跳过，冲突拒绝，正常 completed 写入同样不得覆盖冲突。
+正常 Live 按品种持有同一进程间锁，完整完成 1m 写入、ready heartbeat、发布及各派生桶写入/发布，
+不同时持有多个品种锁。锁忙时保留该品种 pending，其他品种继续；下一正常 poll 再尝试，不把锁忙当作
+Redis 故障。恢复仅在本轮正常 ingest/flush 收尾后调度，已有 completed pending 的品种暂不交给恢复。
+纯 BREAK、provider cooldown 和订阅失败不因此新增恢复调度。
+锁获取的非 busy 异常及恢复 authority/worker 调度异常沿用 `LIVE_REDIS_UNAVAILABLE` 不可用边界，
+不退出前台轮询，也不因这类错误丢弃健康 provider 或安排 provider 重连。
+
+恢复初始快照也在同品种锁内读取，避免把正常派生中间态误判缺口。查询返回后在提交锁内重新读取完整
+快照：冻结订阅、恢复 revision/水位以及旧 raw payload 不得被改写或删除；与源数据一致的正常追加允许
+重新计算真实缺口。Lua 仍严格核对这次重读的完整前像，真实数据冲突、身份漂移或提交前再次漂移均拒绝。
+所有周期实际缺口均已消失时返回 `NO_GAP`，不创建或推进水位；真实派生缺口仍允许无 provider 修复。
+重新核验和聚合后仍检查原 cutoff 的 60 秒提交边界，不刷新 cutoff、不撤销已发生的 provider 尝试。
+
 恢复不发布历史 Bar 消息。数据查询在锁外，最终 CAS 和提交时钟在同品种进程间锁内；Alert 的窗口读取、
 Event commit 与 one-shot send 持有同一锁，因此水位不能穿过 Event/send。锁由 OS 持有，无超时租约；
 进程退出自动释放。锁文件限于 Runtime `.run/live-recovery-guards/{symbol}.lock`，按品种有界复用，不在

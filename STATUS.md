@@ -23,6 +23,28 @@
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
 
+## 正常行情与恢复提交并发修复（开发验收）
+
+2026-09-13 在 `5b31cf7c1` 基线上完成复审发现的并发边界修复，
+`CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE`，允许集成 develop、允许进入 release candidate。
+正常 completed 1m、ready heartbeat、发布与派生桶共用同品种恢复锁；锁忙保留 pending，其他品种继续。
+恢复在正常 flush 后调度，提交锁内重读并重新计算剩余缺口，兼容一致追加、拒绝旧事实改写或身份漂移；
+全周期无缺口不推进恢复水位，provider 保持锁外。锁获取失败阻止本次写入，调度异常报告不可用，
+均不误触发 provider 重连。
+HTDY latest-completed-bar-only 的文档歧义同步纠正，公式、Scope、通知受众、预算和盘后链路均未改变。
+
+原始并发及新增异常回归均先复现失败再转绿。最终后端完整组 3715 passed / 39 skipped / 31 deselected；
+其中 23 个活动 Session 用例的真实 Redis 版本及既有 Lua CAS 项另在本次隔离实例验证，通过组为 47 passed
+（含 23 个内存版本）。该无持久卷实例已清理，skip 不计通过；人工和隔离 PostgreSQL 项保持独立边界。
+最终定向组及独立 Review 均为 124 passed / 24 isolated Redis skipped；工程一致性 22 passed、
+OpenSpec 9 passed、定向 Ruff/mypy、secret scan 与 diff 检查通过。独立 Review 无剩余阻断。
+测试命令、Session 交错和隔离规则见 `TESTING.md`。
+
+本轮只读确认现役仍为 `v1.10.8@82860ee3f`，API/Web 200、DB/Redis/Live health 为 ok；总 health 为
+degraded，保留 `after_market_run_missed`（expected 2026-09-11）、通知历史失败及苏冰 rule
+`evaluation_failed`。未清状态、补发、重跑盘后或切换 Runtime，代码测试不关闭这些现场证据。
+release、Runtime promotion、自然开市预警收件与自然 18:05 盘后验收仍分别待完成；本次修复尚未正式生效。
+
 ## 开盘预警可靠性修复（开发验收）
 
 2026-09-13 在 `ef2e087d1` 基线上完成恢复队列与 Live 合约身份两项修复，

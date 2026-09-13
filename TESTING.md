@@ -9,6 +9,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
   services/quant-api/tests/data_foundation/test_live_recovery.py \
   services/quant-api/tests/data_foundation/test_live_recovery_queue.py \
+  services/quant-api/tests/data_foundation/test_live_recovery_concurrency.py \
   services/quant-api/tests/test_market_read_service.py \
   services/quant-api/tests/test_alert_evaluator.py \
   services/quant-api/tests/test_alert_runtime.py \
@@ -24,6 +25,22 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
 真实尝试超时仍计数及恢复前旧cutoff不具备通知资格。typed Live读取覆盖错误/缺失合约、错误交易日、
 重复端点、截止点边界与合法跨历史owner。不得依赖生产数据或Git外审计文件，也不使用真实等待模拟延迟。
 Lua项仅按下文`GUIYI_TEST_REDIS_PORT`规则使用本次新建的非6379、无持久卷一次性Redis；未配置时skip不算通过。
+
+活动 Session 组使用线程事件选择确定性交错及真实文件锁，验证 JM5m/JM15m/RB60m/RB15m 正常通知资格、
+一致追加后剩余缺口恢复、全部补齐不推进水位、原事实漂移拒绝、busy pending 与跨品种继续、正常 flush 后调度。
+异常组覆盖 pending/provider 两个 flush 位置的锁获取失败，以及三条调度路径的 authority/worker 失败，
+确认统一不可用、保留 pending 和健康 provider、不误触发重连。
+同一组默认运行内存 Redis；显式配置专用 Redis 时还会运行真实 Lua 版本，只清理该一次性实例的测试 DB 9。
+既有 Lua 原子性测试仍在最终重读后注入变更，验证 CAS 不会容忍提交前的再次漂移。
+
+```bash
+GUIYI_TEST_REDIS_PORT=<专用非6379端口> PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/data_foundation/test_live_recovery_concurrency.py \
+  services/quant-api/tests/data_foundation/test_live_recovery.py::test_lua_atomic_commit_and_concurrent_live_conflict_on_isolated_redis
+```
+
 
 ## Newow 初始无入场 CLEAR v2（实施验收）
 

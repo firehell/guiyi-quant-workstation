@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import ExitStack
 from collections import Counter
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping as MappingABC
@@ -585,6 +586,7 @@ class LiveMarketService:
         self.next_provider_retry_at: datetime | None = None
         self.rejections: list[str] = []
         self._recovery_sessions = recovery_sessions
+        self._recovery_guard_factory = recovery_guard_factory
         self._recovery_guard_enabled = (
             recovery_fetch_factory is not None and recovery_guard_factory is not None
         )
@@ -665,7 +667,6 @@ class LiveMarketService:
         } | self._channels_in_session_grace(now)
         self._sync_provider_channels(desired, create_if_missing=True)
         self._publish_heartbeat(now, phases)
-        self._schedule_recovery(now, phases)
         return None
 
     def _schedule_recovery(self, now: datetime, phases: Mapping[str, ProductMarketPhase]) -> None:
@@ -675,7 +676,14 @@ class LiveMarketService:
         # All DB-bound authority calls stay on this foreground thread. Unknown
         # or other-day products are excluded before any worker/provider activity.
         requests = []
+        pending_symbols = {
+            symbol for (symbol, _), (bar, _, _) in self._pending.items()
+            if bar.bar_end + _FINALIZATION_DELAY <= now
+        }
         for symbol in self._products:
+            # A completed normal observation waiting for its lock is not a gap.
+            if symbol in pending_symbols:
+                continue
             phase = phases[symbol]
             if phase.trading_day != self._trading_day or phase.phase not in (MarketPhase.TRADING, MarketPhase.BREAK):
                 continue
@@ -724,8 +732,34 @@ class LiveMarketService:
     ) -> tuple[CanonicalBar, ...]:
         """仅在 ready heartbeat 确认后发布一次 completed 1m，并增量生成派生频率。"""
         self._last_flush_failed = False
+        pending = tuple(self._pending.items())
+        if self._recovery_guard_factory is None:
+            return self._flush_pending(now, phases, pending)
+        grouped: dict[str, list[tuple[tuple[str, datetime], tuple[CanonicalBar, SessionWindow, str]]]] = {}
+        for item in pending:
+            if now >= item[1][0].bar_end + _FINALIZATION_DELAY:
+                grouped.setdefault(item[0][0], []).append(item)
+        finalized: list[CanonicalBar] = []
+        for symbol, items in grouped.items():
+            with ExitStack() as stack:
+                try:
+                    stack.enter_context(self._recovery_guard_factory(symbol))
+                except Exception as exc:  # noqa: BLE001 - guard failure closes the write boundary
+                    if isinstance(exc, RuntimeError) and str(exc) == "LIVE_RECOVERY_BUSY":
+                        # Keep this symbol pending; unrelated products still flush.
+                        continue
+                    self._mark_redis_unavailable(now, phases)
+                    self._last_flush_failed = True
+                    break
+                finalized.extend(self._flush_pending(now, phases, items))
+                if self._last_flush_failed:
+                    break
+        return tuple(finalized)
+
+    def _flush_pending(self, now, phases, pending) -> tuple[CanonicalBar, ...]:
+        """One symbol's completed writes and publications share the recovery lock."""
         due: list[tuple[tuple[str, datetime], CanonicalBar, SessionWindow, str]] = []
-        for key, (bar, window, frozen_contract) in tuple(self._pending.items()):
+        for key, (bar, window, frozen_contract) in pending:
             if now < bar.bar_end + _FINALIZATION_DELAY:
                 continue
             symbol, _ = key
@@ -834,7 +868,7 @@ class LiveMarketService:
         if result is not None:
             return result
         if not self._channels:
-            return None
+            return self._schedule_recovery_safely(now, phases)
         try:
             provider = self._provider_or_create()
             for contract, bar in provider.poll():
@@ -846,7 +880,18 @@ class LiveMarketService:
                 self._provider_available = True
                 self._publish_heartbeat(now, phases)
         except Exception:  # noqa: BLE001 - provider exception is normalized at boundary
-            return self._schedule_provider_retry(now, phases)
+            result = self._schedule_provider_retry(now, phases)
+            return self._schedule_recovery_safely(now, phases) or result
+        return self._schedule_recovery_safely(now, phases)
+
+    def _schedule_recovery_safely(
+        self, now: datetime, phases: Mapping[str, ProductMarketPhase],
+    ) -> str | None:
+        try:
+            self._schedule_recovery(now, phases)
+        except Exception:  # noqa: BLE001 - authority/worker failure is not a provider failure
+            self._mark_redis_unavailable(now, phases)
+            return "LIVE_REDIS_UNAVAILABLE"
         return None
 
     def run_forever(self) -> None:
