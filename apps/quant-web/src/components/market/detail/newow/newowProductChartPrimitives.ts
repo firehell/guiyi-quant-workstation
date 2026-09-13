@@ -77,10 +77,18 @@ export interface NewowProductChartModel {
   }
   readonly bars: readonly NewowProductChartBar[]
   readonly bandAreas: readonly NewowProductBandArea[]
+  readonly trendChannelPoints: readonly NewowTrendChannelChartPoint[]
   readonly mainLines: readonly NewowProductMainLine[]
   readonly actions: readonly NewowProductActionMarker[]
   readonly hints: readonly NewowProductHintMarker[]
   readonly nextBefore: string | null
+}
+
+export interface NewowTrendChannelChartPoint {
+  readonly barEnd: string
+  readonly tradingDay: string
+  readonly upper: number
+  readonly lower: number
 }
 
 export interface NewowProductBandArea {
@@ -107,7 +115,7 @@ export function buildNewowProductChartModel(
         strategy: response.meta.identity.strategy,
         frequency: response.meta.identity.frequency,
       },
-      bars: [], bandAreas: [], mainLines: [], actions: [], hints: [], nextBefore: null,
+      bars: [], bandAreas: [], trendChannelPoints: [], mainLines: [], actions: [], hints: [], nextBefore: null,
     }
   }
   const value = response.value
@@ -158,6 +166,18 @@ export function buildNewowProductChartModel(
       })
     }
   }
+  const trendChannelPoints: NewowTrendChannelChartPoint[] = []
+  for (const point of value.trend_channel?.points ?? []) {
+    if (point.status.status !== 'ready' || point.upper === null || point.lower === null) continue
+    const bar = barByEnd.get(point.bar_end)
+    if (bar === undefined) continue
+    trendChannelPoints.push({
+      barEnd: point.bar_end,
+      tradingDay: bar.tradingDay,
+      upper: chartCoordinate(point.upper),
+      lower: chartCoordinate(point.lower),
+    })
+  }
   const actions = value.actions.map((action): NewowProductActionMarker => ({
     id: action.signal_id,
     kind: action.kind,
@@ -189,7 +209,7 @@ export function buildNewowProductChartModel(
       strategy: response.meta.identity.strategy,
       frequency: response.meta.identity.frequency,
     },
-    bars, bandAreas, mainLines, actions, hints, nextBefore: value.next_before,
+    bars, bandAreas, trendChannelPoints, mainLines, actions, hints, nextBefore: value.next_before,
   }
 }
 

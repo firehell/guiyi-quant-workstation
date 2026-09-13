@@ -307,6 +307,38 @@ test('trend model projects one 35%-opacity column per ready Bar with its own sta
   assert.equal(buildNewowProductChartModel(response).bandAreas.length, 1, 'an isolated valid Bar remains visible')
 })
 
+test('trend model projects only ready channel facts at their real prices', () => {
+  const response = chartResponse('trend', '1d')
+  const value = response.value!
+  ;(value as any).trend_channel = {
+    kind: 'trend_channel', period: 10, formula_version: 'newow_hhv_llv_channel_page_v1',
+    points: value.bars.map((bar, index) => ({
+      bar_end: bar.bar_end,
+      upper: index === 0 ? '110.25' : null,
+      lower: index === 0 ? '89.75' : null,
+      formula_version: 'newow_hhv_llv_channel_page_v1',
+      status: index === 0
+        ? { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null }
+        : { status: 'unavailable', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: 'NEWOW_TREND_CHANNEL_BAR_MISSING' },
+      physical_contract: bar.physical_contract,
+      segment_id: bar.segment_id,
+      source_identity: bar.source_identity,
+    })),
+  }
+
+  const model = buildNewowProductChartModel(response)
+
+  assert.deepEqual((model as any).trendChannelPoints, [{
+    barEnd: value.bars[0]!.bar_end,
+    tradingDay: value.bars[0]!.trading_day,
+    upper: 110.25,
+    lower: 89.75,
+  }])
+
+  const nonTrend = chartResponse('oscillation', '1d')
+  assert.deepEqual((buildNewowProductChartModel(nonTrend) as any).trendChannelPoints, [])
+})
+
 test('band primitive paints centered per-Bar rectangles that scale with bar spacing and releases attachment', async () => {
   const { NewowProductBandPrimitive } = await import('../src/components/market/detail/newow/newowProductBandPrimitive.ts')
   const model = buildNewowProductChartModel(chartResponse('trend', '1d'))
@@ -346,4 +378,45 @@ test('band primitive paints centered per-Bar rectangles that scale with bar spac
   primitive.paneViews()[0]!.renderer()!.draw(target as never)
   assert.equal(updates, 1)
   assert.equal(rectangles.length, 6)
+})
+
+test('trend channel primitive paints unconnected price-coordinate dots with fixed colors radius and normal z-order', async () => {
+  const { NewowTrendChannelPrimitive } = await import('../src/components/market/detail/newow/newowTrendChannelPrimitive.ts')
+  const primitive = new NewowTrendChannelPrimitive()
+  const arcs: Array<[number, number, number, string]> = []
+  let fill = ''
+  let timeScale = 1
+  let priceScale = 1
+  let updates = 0
+  const context = {
+    save() {}, restore() {}, beginPath() {}, fill() {},
+    set fillStyle(value: string) { fill = value },
+    arc(x: number, y: number, radius: number) { arcs.push([x, y, radius, fill]) },
+  }
+  const target = { useMediaCoordinateSpace(callback: (scope: { context: object }) => void) { callback({ context }) } }
+  primitive.attached({
+    chart: { timeScale: () => ({ timeToCoordinate: () => 10 * timeScale }) },
+    series: { priceToCoordinate: (price: number) => price * priceScale },
+    requestUpdate: () => { updates++ },
+  } as never)
+  primitive.setData([{ time: { year: 2026, month: 8, day: 14 }, upper: 110, lower: 90 }])
+
+  assert.equal(primitive.paneViews()[0]!.zOrder?.(), 'normal')
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.deepEqual(arcs, [
+    [10, 110, 2.5, 'rgba(52, 199, 89, 0.9)'],
+    [10, 90, 2.5, 'rgba(255, 59, 48, 0.9)'],
+  ])
+  assert.equal(updates, 1)
+
+  timeScale = 2; priceScale = 3
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.deepEqual(arcs.slice(2), [
+    [20, 330, 2.5, 'rgba(52, 199, 89, 0.9)'],
+    [20, 270, 2.5, 'rgba(255, 59, 48, 0.9)'],
+  ])
+
+  primitive.detached()
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.equal(arcs.length, 4)
 })

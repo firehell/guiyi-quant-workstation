@@ -498,6 +498,26 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                 }
                 for frame in value.replay.frames
             ],
+            "trend_channel": None
+            if value.trend_channel is None
+            else {
+                "kind": value.trend_channel.kind,
+                "period": value.trend_channel.period,
+                "formula_version": value.trend_channel.formula_version,
+                "points": [
+                    {
+                        "bar_end": point.bar_end,
+                        "upper": _decimal(point.upper),
+                        "lower": _decimal(point.lower),
+                        "formula_version": point.formula_version,
+                        "status": _status(point.availability),
+                        "physical_contract": point.physical_contract,
+                        "segment_id": point.segment_id,
+                        "source_identity": point.source_identity,
+                    }
+                    for point in value.trend_channel.points
+                ],
+            },
             "actions": [
                 {
                     "signal_id": item.signal_id,

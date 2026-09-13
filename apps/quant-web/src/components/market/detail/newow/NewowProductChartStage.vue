@@ -18,6 +18,7 @@ import {
 } from 'lightweight-charts'
 
 import { NewowProductBandPrimitive } from '@/components/market/detail/newow/newowProductBandPrimitive'
+import { NewowTrendChannelPrimitive } from '@/components/market/detail/newow/newowTrendChannelPrimitive'
 import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
@@ -78,6 +79,7 @@ let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
 const band = new NewowProductBandPrimitive()
+const trendChannel = new NewowTrendChannelPrimitive()
 const zhaoyaoMirror = new NewowZhaoyaoMirrorPrimitive()
 let auxiliaryAnchor: ISeriesApi<'Line'> | null = null
 let auxiliaryZeroLine: { applyOptions(options: { color: string }): void } | null = null
@@ -114,6 +116,7 @@ onMounted(async () => {
   chart.addPane().setStretchFactor(1.2)
   chart.addPane().setStretchFactor(2)
   candles.attachPrimitive(band)
+  candles.attachPrimitive(trendChannel)
   volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false }, 1)
   // Whitespace keeps the auxiliary pane/timeline present during loading, without inventing zero values.
   auxiliaryAnchor = chart.addSeries(LineSeries, { lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }, 2)
@@ -136,6 +139,7 @@ onUnmounted(createNewowProductChartDisposer({
   removeChart: () => {
     if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', onFullscreenChange)
     candles?.detachPrimitive(band)
+    candles?.detachPrimitive(trendChannel)
     auxiliaryAnchor?.detachPrimitive(zhaoyaoMirror)
     chart?.remove()
     chart = null; candles = null; volume = null; auxiliaryAnchor = null; auxiliaryZeroLine = null
@@ -162,6 +166,7 @@ function renderModel(value: NewowProductChartModel | null): void {
     volume?.setData([])
     auxiliaryAnchor?.setData([])
     band.setData([])
+    trendChannel.setData([])
     renderAuxiliary()
     for (const series of mainLines.values()) chart.removeSeries(series)
     mainLines.clear()
@@ -184,6 +189,11 @@ function renderModel(value: NewowProductChartModel | null): void {
   volume?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: bar.close >= bar.open ? '#FF403A' : '#22B95D' })))
   auxiliaryAnchor?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })))
   band.setData(value.bandAreas)
+  trendChannel.setData(value.trendChannelPoints.map((point) => ({
+    time: chartMarkerTime(point.barEnd, value.identity.frequency, point.tradingDay),
+    upper: point.upper,
+    lower: point.lower,
+  })))
   renderAuxiliary()
   syncMainLines(value)
   renderMarkers(value)
@@ -352,6 +362,7 @@ defineExpose({ revealSignal, scrollToLatest })
     :data-auxiliary-component="auxiliaryModel?.component ?? ''"
     :data-auxiliary-state="auxiliaryPresentation.mode"
     :data-band-area-count="model?.bandAreas.length ?? 0"
+    :data-trend-channel-point-count="model?.trendChannelPoints.length ?? 0"
     data-testid="newow-product-chart-stage"
     :data-strategy="strategy"
     :data-frequency="model?.identity.frequency ?? ''"

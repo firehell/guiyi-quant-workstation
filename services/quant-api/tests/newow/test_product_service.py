@@ -7,6 +7,7 @@ import pytest
 
 from guiyi_quant.newow.product_adapters import replay_strategy
 from guiyi_quant.newow.product_contracts import ProductFrequency
+from guiyi_quant.newow.oscillation_channel import CHANNEL_FORMULA_VERSION
 
 from app.market_data.domain import ResolvedContractSegment
 
@@ -150,6 +151,64 @@ def test_chart_does_not_call_reference_or_auxiliary(monkeypatch, product_cases):
     assert result.chart.delivery == "delivered"
     assert result.reference.delivery == "not_requested"
     assert reader.loads[-1].performance_since == reader.loads[-1].since
+
+
+def test_trend_chart_delivers_independent_channel_without_changing_strategy_identity(
+    product_cases,
+):
+    service, _reader, _build, clear = _service(product_cases)
+
+    result = service.query(
+        ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end, chart_limit=10)
+    )
+
+    chart = result.chart.value
+    assert chart is not None
+    assert chart.trend_channel is not None
+    assert chart.trend_channel.formula_version == CHANNEL_FORMULA_VERSION
+    assert len(chart.trend_channel.points) == len(chart.bars)
+    assert [point.bar_end for point in chart.trend_channel.points] == [
+        item.bar.bar_end for item in chart.bars
+    ]
+    assert CHANNEL_FORMULA_VERSION not in result.meta.identity.formula_versions
+    assert result.meta.identity.formula_versions == (
+        "newow_escape_d123_page_v2",
+        "newow_trend_band_page_v2",
+    )
+
+
+def test_non_trend_chart_has_no_trend_channel_layer(product_cases):
+    case = product_cases.primitive_input("oscillation", "1d")
+    reader = _Reader(case.bars, case.bars[0].bar.bar_end, case.bars[-1].bar.bar_end)
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: case.bars[-1].bar.bar_end,
+    )
+
+    result = service.query(
+        ProductServiceQuery(
+            "rb", "oscillation", "1d", as_of=case.bars[-1].bar.bar_end
+        )
+    )
+
+    assert result.chart.value is not None
+    assert result.chart.value.trend_channel is None
+
+
+def test_trend_channel_page_uses_full_lifecycle_prefix(product_cases):
+    service, _reader, _build, clear = _service(product_cases)
+
+    full = service.query(
+        ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end, chart_limit=500)
+    )
+    page = service.query(
+        ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end, chart_limit=10)
+    )
+
+    assert full.chart.value is not None and page.chart.value is not None
+    assert full.chart.value.trend_channel is not None
+    assert page.chart.value.trend_channel is not None
+    assert page.chart.value.trend_channel.points == full.chart.value.trend_channel.points[-10:]
 
 
 def test_chart_projection_does_not_mix_same_timestamp_events_across_physical_segments(product_cases):

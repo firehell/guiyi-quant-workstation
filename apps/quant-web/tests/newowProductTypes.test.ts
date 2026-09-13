@@ -68,6 +68,63 @@ test('unwraps only the delivered requested section and preserves every Decimal a
   assert.throws(() => chartCoordinate('1e999'), /finite chart coordinate/)
 })
 
+test('normalizes an aligned independent trend channel and requires it for trend', () => {
+  const missing = chartWire()
+  delete (missing.chart.value as Record<string, unknown>).trend_channel
+  assert.throws(() => normalizeNewowProductResponse(missing, expected), /missing or unexpected fields/)
+
+  const raw = chartWire()
+  const bar = raw.chart.value!.bars[0]!
+  raw.chart.value!.trend_channel = {
+    kind: 'trend_channel', period: 10, formula_version: 'newow_hhv_llv_channel_page_v1',
+    points: [{
+      bar_end: bar.bar_end, upper: '102.000', lower: '99.500', formula_version: 'newow_hhv_llv_channel_page_v1',
+      status: featureStatus('ready'), physical_contract: bar.physical_contract,
+      segment_id: bar.segment_id, source_identity: bar.source_identity,
+    }],
+  }
+
+  const result = normalizeNewowProductResponse(raw, expected)
+
+  assert.deepEqual(result.value.trend_channel?.points.map((point) => [point.upper, point.lower]), [['102.000', '99.500']])
+  assert.deepEqual(result.meta.identity.formula_versions, FORMULAS)
+
+  const nonTrend = normalizeNewowProductResponse(
+    chartWire({ strategy: 'oscillation' }),
+    { ...expected, strategy: 'oscillation' },
+  )
+  assert.equal(nonTrend.value.trend_channel, null)
+})
+
+test('rejects trend channel count, formula, owner, evidence, price, and unavailable-value contradictions', () => {
+  const withChannel = () => {
+    const raw = chartWire()
+    const bar = raw.chart.value!.bars[0]!
+    raw.chart.value!.trend_channel = {
+      kind: 'trend_channel', period: 10, formula_version: 'newow_hhv_llv_channel_page_v1',
+      points: [{
+        bar_end: bar.bar_end, upper: '102', lower: '99.5', formula_version: 'newow_hhv_llv_channel_page_v1',
+        status: featureStatus('ready'), physical_contract: bar.physical_contract,
+        segment_id: bar.segment_id, source_identity: bar.source_identity,
+      }],
+    }
+    return raw
+  }
+
+  const count = withChannel(); count.chart.value!.trend_channel.points = []
+  assert.throws(() => normalizeNewowProductResponse(count, expected), /align exactly with bars/)
+  const formula = withChannel(); formula.chart.value!.trend_channel.points[0]!.formula_version = 'forged'
+  assert.throws(() => normalizeNewowProductResponse(formula, expected), /formula_version/)
+  const owner = withChannel(); owner.chart.value!.trend_channel.points[0]!.segment_id = 'other-segment'
+  assert.throws(() => normalizeNewowProductResponse(owner, expected), /owner conflicts/)
+  const status = withChannel(); status.chart.value!.trend_channel.points[0]!.status = featureStatus('unavailable', 'NEWOW_TREND_CHANNEL_BAR_MISSING')
+  assert.throws(() => normalizeNewowProductResponse(status, expected), /unavailable point must not contain values/)
+  const evidence = withChannel(); evidence.chart.value!.trend_channel.points[0]!.status.evidence_status = 'EVIDENCE_REQUIRED'
+  assert.throws(() => normalizeNewowProductResponse(evidence, expected), /evidence_status/)
+  const price = withChannel(); price.chart.value!.trend_channel.points[0]!.upper = '0'; price.chart.value!.trend_channel.points[0]!.lower = '-1'
+  assert.throws(() => normalizeNewowProductResponse(price, expected), /positive prices/)
+})
+
 test('fails closed before unwrap when fields or the five delivery wrappers violate the P4 envelope', () => {
   const missing = chartWire()
   delete (missing.meta as Record<string, unknown>).read_at
@@ -235,6 +292,7 @@ test('orders actions by bar_end then per-Bar sequence and permits sequence reset
   reset.chart.value!.bars.push({ ...reset.chart.value!.bars[0]!, bar_end: '2026-08-15T07:00:00Z', trading_day: '2026-08-15' })
   reset.chart.value!.frames.push({ ...reset.chart.value!.frames[0]!, bar_end: '2026-08-15T07:00:00Z', main_state: 'CLEAR', action_ids: ['clear-2'] })
   reset.chart.value!.actions.push(action('clear-2', 'CLEAR', 0, '2026-08-15T07:00:00Z'))
+  reset.chart.value!.trend_channel = trendChannelForBars(reset.chart.value!.bars)
   assert.doesNotThrow(() => normalizeNewowProductResponse(reset, expected))
 
   const duplicate = chartWire()
@@ -491,8 +549,9 @@ export function chartWire(options: { product?: string; strategy?: 'trend' | 'osc
   const frequency = options.frequency ?? '1d'
   const formulas = strategy === 'trend' ? FORMULAS : strategy === 'oscillation'
     ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
-    : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
+      : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
   const close = options.close ?? '101.500'
+  const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close, volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
   return {
     meta: {
       schema_version: 'newow_product_detail_v1',
@@ -507,14 +566,33 @@ export function chartWire(options: { product?: string; strategy?: 'trend' | 'osc
       status: featureStatus('ready'),
       value: {
         chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64),
-        bars: [{ bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close, volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }],
+        bars: [bar],
         frames: [{ bar_end: '2026-08-14T07:00:00Z', main_state: 'BUILD', main_values: { B: '100.100', nullable: null }, status: featureStatus('ready'), action_ids: options.actions === undefined ? ['build-1'] : [], hint_ids: [] }],
+        trend_channel: strategy === 'trend' ? trendChannelForBars([bar]) : null,
         actions: options.actions ?? [action('build-1', 'BUILD', 1, '2026-08-14T07:00:00Z')],
         hints: [], diagnostics: [], next_before: null, repainting: false, formal_signal_eligible: true,
         allowed_uses: ['product_chart', 'reference_input'],
       },
     },
     auxiliary: notRequested(), reference: notRequested(), explanation: notRequested(), comparator: notRequested(),
+  }
+}
+
+function trendChannelForBars(bars: ReadonlyArray<{ bar_end: string; high: string; low: string; physical_contract: string; segment_id: string; source_identity: string }>) {
+  return {
+    kind: 'trend_channel' as const,
+    period: 10 as const,
+    formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+    points: bars.map((bar) => ({
+      bar_end: bar.bar_end,
+      upper: bar.high,
+      lower: bar.low,
+      formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+      status: featureStatus('ready'),
+      physical_contract: bar.physical_contract,
+      segment_id: bar.segment_id,
+      source_identity: bar.source_identity,
+    })),
   }
 }
 

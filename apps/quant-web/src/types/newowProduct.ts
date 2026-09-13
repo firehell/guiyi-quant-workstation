@@ -106,6 +106,24 @@ export interface NewowProductFrame {
   readonly hint_ids: readonly string[]
 }
 
+export interface NewowTrendChannelPoint {
+  readonly bar_end: string
+  readonly upper: string | null
+  readonly lower: string | null
+  readonly formula_version: 'newow_hhv_llv_channel_page_v1'
+  readonly status: NewowFeatureStatus
+  readonly physical_contract: string
+  readonly segment_id: string
+  readonly source_identity: string
+}
+
+export interface NewowTrendChannelLayer {
+  readonly kind: 'trend_channel'
+  readonly period: 10
+  readonly formula_version: 'newow_hhv_llv_channel_page_v1'
+  readonly points: readonly NewowTrendChannelPoint[]
+}
+
 export interface NewowProductAction {
   readonly signal_id: string
   readonly kind: 'BUILD' | 'CLEAR'
@@ -138,6 +156,7 @@ export interface NewowChartValue {
   readonly page_identity: string
   readonly bars: readonly NewowProductBar[]
   readonly frames: readonly NewowProductFrame[]
+  readonly trend_channel: NewowTrendChannelLayer | null
   readonly actions: readonly NewowProductAction[]
   readonly hints: readonly NewowProductHint[]
   readonly diagnostics: readonly string[]

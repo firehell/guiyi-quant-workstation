@@ -868,7 +868,12 @@ test('merges an older chart cursor page atomically without changing the fixed re
   pending[2]!.resolve(normalizedChartPage(pending[2]!.request, '2026-08-13', null))
   await page
 
-  assert.deepEqual(state.sections.chart.data.value?.section === 'chart' && state.sections.chart.data.value.value?.bars.map((bar) => bar.trading_day), ['2026-08-13', '2026-08-14'])
+  const merged = state.sections.chart.data.value?.section === 'chart' ? state.sections.chart.data.value.value : null
+  assert.deepEqual(merged?.bars.map((bar) => bar.trading_day), ['2026-08-13', '2026-08-14'])
+  assert.deepEqual(
+    merged?.trend_channel?.points.map((point) => point.bar_end),
+    ['2026-08-13T07:00:00Z', '2026-08-14T07:00:00Z'],
+  )
   const refreshReference = state.loadReference()
   assert.equal(pending[3]!.request.section === 'reference' && pending[3]!.request.performanceSince, '2025-01-01')
   pending[3]!.resolve(normalizedReference(pending[3]!.request, { token: 'snapshot-a' }))
@@ -885,8 +890,11 @@ test('bounds cumulative chart and reference pages and stops exposing an older cu
   const chartPage = state.loadNextChartPage()
   pending[1]!.resolve(bulkChart(pending[1]!.request, 2000, 2000, 'must-not-survive'))
   await chartPage
-  assert.equal(state.sections.chart.data.value?.section === 'chart' && state.sections.chart.data.value.value?.bars.length, 3000)
-  assert.equal(state.sections.chart.data.value?.section === 'chart' && state.sections.chart.data.value.value?.next_before, null)
+  const boundedChart = state.sections.chart.data.value?.section === 'chart' ? state.sections.chart.data.value.value : null
+  assert.equal(boundedChart?.bars.length, 3000)
+  assert.equal(boundedChart?.trend_channel?.points.length, 3000)
+  assert.equal(boundedChart?.trend_channel?.points[0]?.bar_end, boundedChart?.bars[0]?.bar_end)
+  assert.equal(boundedChart?.next_before, null)
 
   const reference = state.loadReference({ performanceSince: '2025-01-01', performanceThrough: '2026-08-15', historyLimit: 200 })
   pending[2]!.resolve(bulkReference(pending[2]!.request, 0, 200, 'reference-older'))
@@ -1589,6 +1597,7 @@ function normalizedChartPage(request: NewowProductRequest, day: string, nextBefo
   raw.chart.value.bars[0]!.bar_end = `${day}T07:00:00Z`
   raw.chart.value.bars[0]!.trading_day = day
   raw.chart.value.frames[0]!.bar_end = `${day}T07:00:00Z`
+  raw.chart.value.trend_channel.points[0]!.bar_end = `${day}T07:00:00Z`
   raw.chart.value.frames[0]!.action_ids = [`build-${day}`]
   raw.chart.value.actions[0]!.signal_id = `build-${day}`
   raw.chart.value.actions[0]!.bar_end = `${day}T07:00:00Z`
@@ -1608,7 +1617,8 @@ function bulkChart(request: NewowProductRequest, offset: number, count: number, 
       frame: { ...seedFrame, bar_end: instant, action_ids: [], hint_ids: [] },
     }
   })
-  return { ...base, value: { ...base.value!, chart_from: '2010-01-01', bars: rows.map(({ bar }) => bar), frames: rows.map(({ frame }) => frame), actions: [], hints: [], next_before: nextBefore } }
+  const bars = rows.map(({ bar }) => bar)
+  return { ...base, value: { ...base.value!, chart_from: '2010-01-01', bars, frames: rows.map(({ frame }) => frame), trend_channel: trendChannelForBars(bars), actions: [], hints: [], next_before: nextBefore } }
 }
 
 function bulkReference(request: NewowProductRequest, offset: number, count: number, nextBefore: string | null): NewowProductSectionResponse<'reference'> {
@@ -1625,6 +1635,7 @@ function chartWire(options: { strategy?: 'trend' | 'oscillation' | 'main_rise'; 
     : strategy === 'oscillation'
       ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
+  const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close: options.close ?? '101.500', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
   return {
     meta: {
       schema_version: 'newow_product_detail_v1', identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
@@ -1635,12 +1646,31 @@ function chartWire(options: { strategy?: 'trend' | 'oscillation' | 'main_rise'; 
     section: 'chart',
     chart: { delivery: 'delivered', status: readyStatus(), value: {
       chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64),
-      bars: [{ bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close: options.close ?? '101.500', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }],
+      bars: [bar],
       frames: [{ bar_end: '2026-08-14T07:00:00Z', main_state: 'BUILD', main_values: { B: '100.100' }, status: readyStatus(), action_ids: ['build-1'], hint_ids: [] }],
+      trend_channel: strategy === 'trend' ? trendChannelForBars([bar]) : null,
       actions: [{ signal_id: 'build-1', kind: 'BUILD', bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', reference_price: '100.100', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', related_build_id: null, trade_eligibility: 'ELIGIBLE', sequence: 1 }],
       hints: [], diagnostics: [], next_before: null, repainting: false, formal_signal_eligible: true, allowed_uses: ['product_chart', 'reference_input'],
     } },
     auxiliary: notRequested(), reference: notRequested(), explanation: notRequested(), comparator: notRequested(),
+  }
+}
+
+function trendChannelForBars(bars: ReadonlyArray<{ bar_end: string; high: string; low: string; physical_contract: string; segment_id: string; source_identity: string }>) {
+  return {
+    kind: 'trend_channel' as const,
+    period: 10 as const,
+    formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+    points: bars.map((bar) => ({
+      bar_end: bar.bar_end,
+      upper: bar.high,
+      lower: bar.low,
+      formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+      status: readyStatus(),
+      physical_contract: bar.physical_contract,
+      segment_id: bar.segment_id,
+      source_identity: bar.source_identity,
+    })),
   }
 }
 

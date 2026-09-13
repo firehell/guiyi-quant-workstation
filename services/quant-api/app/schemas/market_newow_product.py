@@ -104,12 +104,31 @@ class ProductFrameOut(_Out):
     hint_ids: list[str]
 
 
+class TrendChannelPointOut(_Out):
+    bar_end: datetime
+    upper: str | None
+    lower: str | None
+    formula_version: Literal["newow_hhv_llv_channel_page_v1"]
+    status: ProductFeatureStatusOut
+    physical_contract: str
+    segment_id: str
+    source_identity: str
+
+
+class TrendChannelLayerOut(_Out):
+    kind: Literal["trend_channel"]
+    period: Literal[10]
+    formula_version: Literal["newow_hhv_llv_channel_page_v1"]
+    points: list[TrendChannelPointOut]
+
+
 class ChartValueOut(_Out):
     chart_from: date
     chart_through: date
     page_identity: str
     bars: list[ProductBarOut]
     frames: list[ProductFrameOut]
+    trend_channel: TrendChannelLayerOut | None
     actions: list[ProductActionOut]
     hints: list[ProductHintOut]
     diagnostics: list[str]

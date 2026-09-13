@@ -116,6 +116,7 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 | 能力 | 适用策略与周期 | formula identity | evidence status | warming / repaint / as-of 边界 |
 |---|---|---|---|---|
 | 趋势主状态 | `trend × 1w/1d/60m` | `newow_trend_band_page_v2` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
+| 趋势通道圆点 | `trend × 1w/1d/60m`，chart-layer only | `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | 同批 completed Bar 的 HHV(high,10) 绿色上轨与 LLV(low,10) 红色下轨；按物理合约和 Segment 重置，不进入趋势策略或 ReferenceTrade 身份 |
 | 震荡主状态 | `oscillation × 1w/1d/60m` | `newow_oscillation_hhv_llv10_page_v1` + `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；HHV/LLV10 与同 Bar `CLEAR → BUILD` |
 | 主升浪主状态 | `main_rise × 1w/1d/60m` | `newow_main_rise_ma35_ma45_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；MA35/MA45 主动作不由 Hint 改写 |
 | S 跑 / D1–D3 | `trend/main_rise × 1w/1d/60m`，Hint only | `newow_escape_d123_page_v2` | `ACTIVE_CODE_VERIFIED` | 必须报告公式所需 warming 与已验证 repaint 属性；只使用当时 completed 输入，不改变 BUILD/CLEAR |
@@ -475,6 +476,42 @@ MUST NOT 截断 warm-up、owner 验证、参考统计或比较器的必要计算
 - **GIVEN** 客户端只请求默认 `chart`
 - **WHEN** 服务装配响应
 - **THEN** 不调用 ReferenceTrade 统计、三副图、多周期解释或比较器，主图不等待未请求研究
+
+### Requirement: Trend channel dots are independent aligned display facts
+
+`strategy=trend` 的 `chart.value` SHALL 返回独立 `trend_channel` 图层。绿色上轨逐 Bar 使用冻结
+v3.2.82 页面 `HHV(high,10)`，红色下轨逐 Bar 使用 `LLV(low,10)`；两者只读取该 chart replay
+已经读取的同批 completed Bars，并按 `(physical_contract, segment_id)` 重置。少于十根的真实
+Segment 前缀 SHALL 保留页面的部分窗口语义，第一根的 upper/high 与 lower/low 即为可用值；不得以
+固定十根门槛删除这些页面事实。若权威 Bar 缺失、Bar 与图层 owner/source 身份冲突或无法建立有效
+同 Segment prefix，则对应点 SHALL 为 `status=unavailable`、`upper/lower=null` 并返回 reason code，
+不得跨换月借值或补造坐标。同一 owner run 的唯一 Bar 时间倒序时整个 run SHALL fail-closed；重复 Bar
+及其后不足十根可信 Bars 的污染前缀 SHALL unavailable，只有重新积累十根严格递增、非重复 Bars 后才可
+恢复 ready。`source_identity` 是逐 Bar 来源身份，图层必须逐点原样对齐，不能误当成 owner-run 常量。
+
+图层及每个点 SHALL 保留 `formula_version=newow_hhv_llv_channel_page_v1`；每个点 SHALL 与返回 Bar
+按数量、顺序、`bar_end`、physical contract、Segment 和 source identity 一一对齐。该公式身份 MUST
+NOT 加入 trend `ProductIdentity.formula_versions`，也不得改变 `main_state`、主图 A/B、Action、Hint、
+ReferenceTrade 或收益。非 trend chart SHALL 返回 `trend_channel=null`；trend 响应缺少该字段或返回 null
+时 Web SHALL 拒绝该 chart，不能把合同缺失静默解释为无图层，也不得在浏览器计算替代值。
+
+Web SHALL 使用独立 primitive 在真实价格坐标绘制圆点，不连线：upper 为
+`rgba(52,199,89,0.9)`、lower 为 `rgba(255,59,48,0.9)`、媒体坐标半径固定 `2.5px`。趋势柱继续位于
+bottom layer，圆点位于 normal layer，K 线与 Action marker 交互保持可见。product、strategy、
+frequency、snapshot、page identity 或分页累积变化时，primitive SHALL 以当前已验证图层整包替换；
+null 或非 trend 响应 SHALL 清空旧点。
+
+#### Scenario: A new physical owner begins after a high prior segment
+
+- **GIVEN** 前一 Segment 的十根 high 均高于新物理合约第一根 high
+- **WHEN** trend chart 计算新 Segment 的第一个通道点
+- **THEN** upper 等于新 Bar high、lower 等于新 Bar low，不继承旧 Segment 极值
+
+#### Scenario: An unavailable point is aligned but not drawn
+
+- **GIVEN** chart 返回与 Bar 同位置但 `status=unavailable` 且 upper/lower 为 null 的通道点
+- **WHEN** Web 验证并投影主图
+- **THEN** 保留显式不可用事实但不生成绿色或红色圆点，也不使用邻近 Bar 补点
 
 ### Requirement: White detail preserves section ownership and accessible disclosure
 

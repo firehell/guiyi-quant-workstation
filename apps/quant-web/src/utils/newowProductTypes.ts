@@ -211,7 +211,7 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
   const source = record(payload, 'chart.value')
   const value = exactRecord({ next_older_window: null, ...source }, 'chart.value', [
     'chart_from', 'chart_through', 'page_identity', 'bars', 'frames', 'actions', 'hints',
-    'diagnostics', 'next_before', 'next_older_window', 'repainting', 'formal_signal_eligible', 'allowed_uses',
+    'trend_channel', 'diagnostics', 'next_before', 'next_older_window', 'repainting', 'formal_signal_eligible', 'allowed_uses',
   ])
   const chartFrom = day(value.chart_from, 'chart_from')
   const chartThrough = day(value.chart_through, 'chart_through')
@@ -226,6 +226,7 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
   const hints = array(value.hints, 'hints').map((hint, index) => normalizeHint(hint, index, barEnds, meta.as_of))
   requireTimelineOrder(hints, 'hints')
   validateChartRelationships(bars, frames, actions, hints)
+  const trendChannel = normalizeTrendChannel(value.trend_channel, bars, meta)
   requireExact(value.repainting, false, 'chart.repainting')
   requireExact(value.formal_signal_eligible, true, 'chart.formal_signal_eligible')
   const allowed = exactStringArray(value.allowed_uses, ['product_chart', 'reference_input'] as const, 'chart.allowed_uses')
@@ -233,10 +234,68 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
   if (older !== null && (older.length > 256 || meta.snapshot_token === null || value.next_before !== null)) throw new Error('older window requires an exhausted snapshot window')
   return {
     chart_from: chartFrom, chart_through: chartThrough, page_identity: sha256(value.page_identity, 'chart.page_identity'),
-    bars, frames, actions, hints, diagnostics: stringArray(value.diagnostics, 'chart.diagnostics'),
+    bars, frames, trend_channel: trendChannel, actions, hints, diagnostics: stringArray(value.diagnostics, 'chart.diagnostics'),
     next_before: nullableText(value.next_before, 'chart.next_before'), repainting: false,
     next_older_window: older,
     formal_signal_eligible: true, allowed_uses: allowed,
+  }
+}
+
+function normalizeTrendChannel(
+  payload: unknown,
+  bars: readonly NewowProductBar[],
+  meta: NewowProductMeta,
+): NewowChartValue['trend_channel'] {
+  if (payload === null) {
+    if (meta.identity.strategy === 'trend') throw new Error('trend_channel is required for trend strategy')
+    return null
+  }
+  if (meta.identity.strategy !== 'trend') throw new Error('trend_channel is only valid for trend strategy')
+  const value = exactRecord(payload, 'trend_channel', ['kind', 'period', 'formula_version', 'points'])
+  requireExact(value.kind, 'trend_channel', 'trend_channel.kind')
+  requireExact(value.period, 10, 'trend_channel.period')
+  requireExact(value.formula_version, 'newow_hhv_llv_channel_page_v1', 'trend_channel.formula_version')
+  const points = array(value.points, 'trend_channel.points').map((payloadPoint, index) => {
+    const field = `trend_channel.points[${index}]`
+    const point = exactRecord(payloadPoint, field, [
+      'bar_end', 'upper', 'lower', 'formula_version', 'status',
+      'physical_contract', 'segment_id', 'source_identity',
+    ])
+    const barEnd = instant(point.bar_end, `${field}.bar_end`)
+    requireNotAfter(barEnd, meta.as_of, `${field}.bar_end`, 'meta.as_of')
+    requireExact(point.formula_version, 'newow_hhv_llv_channel_page_v1', `${field}.formula_version`)
+    const status = normalizeStatus(point.status, `${field}.status`)
+    if (status.status !== 'ready' && status.status !== 'unavailable') throw new Error(`${field}.status must be ready or unavailable`)
+    requireExact(status.evidence_status, 'ACTIVE_CODE_VERIFIED', `${field}.status.evidence_status`)
+    const upper = point.upper === null ? null : decimal(point.upper, `${field}.upper`)
+    const lower = point.lower === null ? null : decimal(point.lower, `${field}.lower`)
+    if (status.status === 'ready' && (upper === null || lower === null)) throw new Error(`${field} ready point requires both values`)
+    if (status.status === 'unavailable' && (upper !== null || lower !== null)) throw new Error(`${field} unavailable point must not contain values`)
+    if ((upper !== null && compareDecimal(upper, '0') <= 0) || (lower !== null && compareDecimal(lower, '0') <= 0)) throw new Error(`${field} requires positive prices`)
+    if (upper !== null && lower !== null && compareDecimal(upper, lower) < 0) throw new Error(`${field} upper is below lower`)
+    return {
+      bar_end: barEnd,
+      upper,
+      lower,
+      formula_version: 'newow_hhv_llv_channel_page_v1' as const,
+      status,
+      physical_contract: contract(point.physical_contract, `${field}.physical_contract`),
+      segment_id: text(point.segment_id, `${field}.segment_id`),
+      source_identity: text(point.source_identity, `${field}.source_identity`),
+    }
+  })
+  if (points.length !== bars.length) throw new Error('trend_channel points must align exactly with bars')
+  for (let index = 0; index < bars.length; index++) {
+    const point = points[index]!
+    const bar = bars[index]!
+    if (point.bar_end !== bar.bar_end) throw new Error('trend_channel points must align exactly with bars')
+    if (point.physical_contract !== bar.physical_contract || point.segment_id !== bar.segment_id || point.source_identity !== bar.source_identity) throw new Error('trend_channel point owner conflicts with its Bar')
+  }
+  return {
+    kind: 'trend_channel',
+    period: 10,
+    formula_version: 'newow_hhv_llv_channel_page_v1',
+    points,
   }
 }
 

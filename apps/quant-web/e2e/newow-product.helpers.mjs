@@ -337,6 +337,19 @@ function validateChartWire(chart, strategy) {
     else semanticPrice = actionItem.kind === 'BUILD' ? bar.low : bar.high
     if (Number(actionItem.reference_price) !== Number(semanticPrice)) throw new Error('fixture main-line semantic price drift')
   }
+  if (strategy !== 'trend') {
+    if (chart.trend_channel !== null) throw new Error('fixture non-trend chart has trend channel')
+  } else {
+    const layer = chart.trend_channel
+    if (!layer || layer.kind !== 'trend_channel' || layer.period !== 10 || layer.formula_version !== 'newow_hhv_llv_channel_page_v1') throw new Error('fixture trend channel identity drift')
+    if (layer.points.length !== chart.bars.length) throw new Error('fixture trend channel alignment drift')
+    for (let index = 0; index < chart.bars.length; index++) {
+      const point = layer.points[index]
+      const bar = chart.bars[index]
+      if (JSON.stringify([point.bar_end, point.physical_contract, point.segment_id, point.source_identity]) !== JSON.stringify([bar.bar_end, bar.physical_contract, bar.segment_id, bar.source_identity])) throw new Error('fixture trend channel owner drift')
+      if (point.formula_version !== layer.formula_version || point.status.status !== 'ready' || point.upper === null || point.lower === null) throw new Error('fixture trend channel value/status drift')
+    }
+  }
 }
 
 function validateReferenceWire(reference, charts) {
@@ -504,11 +517,36 @@ function chartValue(url, strategy, frequency, options) {
     chart_from: locateFrom ?? '2025-01-01', chart_through: locateFrom ?? '2026-09-03', page_identity: HASH.page,
     bars,
     frames: bars.map((bar) => ({ bar_end: bar.bar_end, main_state: actions.some((item) => item.bar_end === bar.bar_end && item.kind === 'BUILD') ? 'BUILD' : 'HOLD', main_values: frameMainValues(strategy, actions.filter((item) => item.bar_end === bar.bar_end), bar, options.visualRich), status: ready(), action_ids: actions.filter((item) => item.bar_end === bar.bar_end).map((item) => item.signal_id), hint_ids: hints.filter((item) => item.bar_end === bar.bar_end).map((item) => item.hint_id) })),
+    trend_channel: trendChannelValue(strategy, bars),
     actions,
     hints,
     diagnostics: options.noAction ? ['NO_MAIN_ACTION_IS_VALID'] : [], next_before: before || locateFrom ? null : 'chart-page-2',
     repainting: false, formal_signal_eligible: true, allowed_uses: ['product_chart', 'reference_input'],
   }
+}
+
+function trendChannelValue(strategy, bars) {
+  if (strategy !== 'trend') return null
+  let owner = null
+  let highs = []
+  let lows = []
+  const points = bars.map((bar) => {
+    const nextOwner = `${bar.physical_contract}:${bar.segment_id}`
+    if (nextOwner !== owner) { highs = []; lows = []; owner = nextOwner }
+    highs = [...highs, Number(bar.high)].slice(-10)
+    lows = [...lows, Number(bar.low)].slice(-10)
+    return {
+      bar_end: bar.bar_end,
+      upper: String(Math.max(...highs)),
+      lower: String(Math.min(...lows)),
+      formula_version: 'newow_hhv_llv_channel_page_v1',
+      status: ready(),
+      physical_contract: bar.physical_contract,
+      segment_id: bar.segment_id,
+      source_identity: bar.source_identity,
+    }
+  })
+  return { kind: 'trend_channel', period: 10, formula_version: 'newow_hhv_llv_channel_page_v1', points }
 }
 
 function referenceValue(url, strategy, frequency, options) {
