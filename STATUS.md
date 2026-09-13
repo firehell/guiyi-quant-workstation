@@ -86,7 +86,7 @@
 `a8c2c5758461e89697e2375dff3a89b120bae5e86b5a2f3db53fca901841c6e3`，59 项一次执行成功并读回，未改变
 JM 原周期、苏冰 Scope、Rule/audience、行情或 Runtime。该次执行意图已消费，不授权新会话重做。
 
-2026-09-13 开盘前修正现为 `REVIEW_COMPLETE / LOCAL_INTEGRATION_READY`：实现候选
+2026-09-13 开盘前修正现为 `REVIEW_COMPLETE / LOCAL_INTEGRATED`：实现候选
 `8803bdaa046b261e2a4eb675bc418dcb7d30a55f` 已把 HTDY actual-dominant 完整性校验限定在日内频率，
 苏冰继续只验证当前物理合约生命周期；D1/W1 只读 Canonical，不触碰 Live/Recovery。canonical Event 已提交但
 rule-status 登记失败时不会发送，重复触发按 typed skip 处理，不清除既有 rule/global failure；零实际评价也不再
