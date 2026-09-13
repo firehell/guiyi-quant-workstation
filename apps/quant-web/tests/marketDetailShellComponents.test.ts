@@ -62,19 +62,19 @@ test('quote header names the comparison basis and limits status to quote availab
   assert.doesNotMatch(template, />\s*数据正常\s*</)
 })
 
-test('view navigation retains the four business names and emits exact identities', () => {
+test('view navigation exposes six flat analysis choices and emits exact identities', () => {
   const { source, template } = parsedComponent('MarketDetailViewNav')
-  for (const label of ['牛哇', '火天大有', '苏冰预警', '自由看盘']) {
+  for (const label of ['震荡策略', '趋势策略', '主升浪', '火天大有', '苏冰预警', '自由看盘']) {
     assert.match(source, new RegExp(label))
   }
-  assert.match(source, /NEWOW_STRATEGIES/)
   assert.match(source, /newowFrequencies/)
   assert.match(source, /select:\s*\[identity:\s*MarketDetailIdentity\]/)
-  assert.match(template, /role="group" aria-label="Newow策略"/)
+  assert.match(template, /role="tablist" aria-label="分析选项"/)
   assert.match(template, /v-if="showSeriesControls"/)
   assert.match(template, /v-if="showFrequencyControls"/)
   assert.match(template, /role="group" aria-label="序列"/)
   assert.match(template, /role="group" aria-label="周期"/)
+  assert.doesNotMatch(template, /Newow策略|detail-view-nav__mobile/)
   assert.doesNotMatch(template, /disabled/)
 })
 

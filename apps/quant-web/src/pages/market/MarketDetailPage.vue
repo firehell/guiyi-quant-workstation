@@ -8,7 +8,6 @@ import MarketDetailQuoteHeader from '@/components/market/detail/MarketDetailQuot
 import MarketDetailTopBar from '@/components/market/detail/MarketDetailTopBar.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 import MarketDetailViewNav from '@/components/market/detail/MarketDetailViewNav.vue'
-import TrendDetailWorkspace from '@/components/market/detail/TrendDetailWorkspace.vue'
 import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
@@ -37,7 +36,7 @@ const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
-const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'trend', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
+const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
 const newowHistoricalAsOf = ref<string | null>(null)
 const newowCapabilities = useNewowCapabilities()
@@ -48,10 +47,8 @@ const shellReady = computed(() => isWorkspacePreview.value && (
 ))
 const htdyWorkspace = ref<InstanceType<typeof HtdyDetailWorkspace> | null>(null)
 const newowWorkspace = ref<InstanceType<typeof NewowProductWorkspace> | null>(null)
-const trendWorkspace = ref<InstanceType<typeof TrendDetailWorkspace> | null>(null)
 const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(null)
 const hasHtdyHistory = ref(false)
-const hasTrendHistory = ref(false)
 const hasSubingHistory = ref(false)
 const dailyQuote = useNewowDailyQuote({
   symbol: computed(() => isNewowView.value ? explicitIdentity.value!.symbol : null),
@@ -83,11 +80,10 @@ async function activateRoute() {
   const generation = ++activationGeneration
   newowHistoricalAsOf.value = null
   hasHtdyHistory.value = false
-  hasTrendHistory.value = false
   hasSubingHistory.value = false
   const result = routeResult.value
-  if (result.kind !== 'valid' || !['newow', 'free', 'htdy', 'trend', 'subing'].includes(result.identity.view)) return
-  if (route.query.view === undefined) {
+  if (result.kind !== 'valid' || !['newow', 'free', 'htdy', 'subing'].includes(result.identity.view)) return
+  if (route.query.view === undefined || route.query.view === 'trend') {
     const failure = await router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(result.identity) })
     if (failure) return
   }
@@ -116,7 +112,7 @@ function selectIdentity(identity: MarketDetailIdentity) {
       frequency: identity.frequency,
     })
   }
-  if (identity.view !== 'trend') preferences.value = { ...preferences.value, lastView: identity.view }
+  preferences.value = { ...preferences.value, lastView: identity.view === 'trend' ? 'newow' : identity.view }
   saveMarketDetailPreferences(preferences.value)
   void router.push({ path: '/market/chart', query: serializeMarketDetailIdentity(identity) })
 }
@@ -158,7 +154,7 @@ function updateHtdyPreferences(htdy: FlexibleDetailPreferences) {
 
 function resolveFocus(focusBarEnd: string) {
   const identity = explicitIdentity.value
-  if ((identity?.view !== 'free' && identity?.view !== 'newow' && identity?.view !== 'htdy' && identity?.view !== 'subing' && identity?.view !== 'trend') || identity.focusBarEnd !== focusBarEnd) return
+  if ((identity?.view !== 'free' && identity?.view !== 'newow' && identity?.view !== 'htdy' && identity?.view !== 'subing') || identity.focusBarEnd !== focusBarEnd) return
   const { focusBarEnd: _focus, ...next } = identity
   void router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(next) })
 }
@@ -166,7 +162,6 @@ function resolveFocus(focusBarEnd: string) {
 function openHistory() {
   const view = explicitIdentity.value?.view
   if (view === 'newow') newowWorkspace.value?.openHistory()
-  else if (view === 'trend') trendWorkspace.value?.openHistory()
   else if (view === 'htdy') htdyWorkspace.value?.openHistory()
   else if (view === 'subing') subingWorkspace.value?.openHistory()
 }
@@ -218,7 +213,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         :symbol="routeResult.identity.symbol"
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"
         :history-label="routeResult.identity.view === 'htdy' || routeResult.identity.view === 'subing' ? '预警记录' : '参考记录'"
-        :actions="{ canOpenHistory: ['trend', 'htdy', 'subing'].includes(routeResult.identity.view) || (routeResult.identity.view === 'newow' && newowFrequencyOpen && newowCapabilities.state.value === 'ready' && newowCapabilities.isSectionOpen('reference')), canManageAlert: false }"
+        :actions="{ canOpenHistory: ['htdy', 'subing'].includes(routeResult.identity.view) || (routeResult.identity.view === 'newow' && newowFrequencyOpen && newowCapabilities.state.value === 'ready' && newowCapabilities.isSectionOpen('reference')), canManageAlert: false }"
         @back="goBack"
         @select-symbol="productSelector?.focus()"
         @open-history="openHistory"
@@ -295,20 +290,6 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             :identity-warning="identityWarning"
             @update-preferences="updateHtdyPreferences"
             @history-availability="hasHtdyHistory = $event"
-            @focus-resolved="resolveFocus"
-          />
-          <TrendDetailWorkspace
-            v-else-if="routeResult.identity.view === 'trend' && header"
-            ref="trendWorkspace"
-            :identity="routeResult.identity"
-            :header="header"
-            :bars="controller.bars.value"
-            :research="controller.research.value"
-            @history-availability="hasTrendHistory = $event"
-            :mutation="controller.mutation.value"
-            :loading="controller.state.value.loading"
-            :has-more-before="controller.hasMoreBefore.value"
-            :load-earlier="controller.loadMoreBefore"
             @focus-resolved="resolveFocus"
           />
           <SubingDetailWorkspace
