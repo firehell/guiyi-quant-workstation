@@ -1,6 +1,6 @@
 # 当前状态
 
-文档整理：2026-09-13；最新候选验证截至 `2026-09-13 23:39:16 CST`，现场记录截至
+文档整理：2026-09-14；最新候选验证截至 `2026-09-14 00:03:44 CST`，现场记录截至
 `2026-09-13 20:15:15 CST`。
 正式 Release 与现役 Runtime 为 `v1.10.8@82860ee3f5f63c49397ab11b0d0ab60c601376b9`。
 develop 冻结基线 `74d7a71fcd061d25eb23d7d2142a075420125886` 正在准备为未发布的 v1.10.9
@@ -16,7 +16,7 @@ develop 冻结基线 `74d7a71fcd061d25eb23d7d2142a075420125886` 正在准备为�
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.8@82860ee3f`，PR #364 合入 main，tree `6df9ebdce`、annotated tag object `b1a52b239` 与 GitHub Release 已读回 |
 | 现役 Runtime | v1.10.8 `RUNTIME_PROMOTED / IMMEDIATE_ACCEPTANCE_PASSED`，未声明 `RUNTIME_READY` | 六服务均绑定 `v1.10.8@82860ee3f`；API/Web 200、单 API worker、Live/Alert fresh heartbeat；after-market 等待自然运行，既有 degraded/failed health 事实保留 |
-| v1.10.9 候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_PENDING` | 基于 develop `74d7a71f` 的完整集成版已完成版本身份与新 tree 验证；最终 Review、main/tag/Release 与 Runtime promotion 尚未完成 |
+| v1.10.9 候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASE_CANDIDATE` | 基于 develop `74d7a71f` 的完整集成版已完成版本身份、新 tree 验证及独立 Review；main/tag/Release 与 Runtime promotion 尚未完成 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
 | Weekly audit | `ENABLED / CURRENT_WEEK_READBACK_PASSED / NATURAL_RUN_PENDING` | exact v1.10.8 root 已 loaded、周六 09:00、当前 idle、runs 0 / not_run；840/840 endpoint 与 120/120 周线归属核对通过；首次自然及全历史周检待验 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
@@ -27,7 +27,7 @@ develop 冻结基线 `74d7a71fcd061d25eb23d7d2142a075420125886` 正在准备为�
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
 
-## v1.10.9 Release candidate（测试完成；Review 待完成）
+## v1.10.9 Release candidate（测试与 Review 完成）
 
 v1.10.9 发布范围是 `v1.10.8...74d7a71f` 的完整 develop 集成差异，不反向拆散已接受提交，也不把本版
 缩称为单一告警补丁。主要交付包括：Market Home 报价与历史消息、统一详情页与 Newow 展示；Newow 周线
@@ -41,7 +41,10 @@ production build 通过；关键首页、统一详情、Newow 与苏冰 126 项 
 在一次性非 6379、无持久卷 Redis 上 70 passed，容器已移除；工程/launchd 86 passed，Mypy 162 files、Ruff、
 OpenSpec 9/9、两套锁文件、secret scan 0、render-only 与 diff check 均通过。首次 E2E 与完整后端并跑时一项
 既有 fullscreen 用例超时；源码自 v1.10.8 未变，单项隔离重放通过，随后无重型并发的 126 项完整重跑通过，
-未修改代码或放宽断言。候选尚须冻结 commit/tree 并完成独立 Review。
+未修改代码或放宽断言。Review 首轮发现的 readiness 540-case 合同和 Market Home canonical 问题已修复；
+第二轮对抗性 Review 暴露的 deferred READY/错周期 reason 漏洞亦经先 RED 后 GREEN 的测试关闭。旧 180-case
+证据已明确降级为 legacy weekly scope，不再冒充当前完整 matrix。最终独立 Review 为 0 finding，允许进入
+main/tag Release Gate。
 
 完成 main merge、annotated tag 与 GitHub Release 只证明 `RELEASED`；本地六服务切换须另经
 fresh render-only、正式只读 promotion preflight 和 exact Runtime 身份读回。自然 completed Live Bar、真实收件、
