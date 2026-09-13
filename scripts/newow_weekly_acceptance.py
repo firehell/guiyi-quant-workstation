@@ -19,6 +19,7 @@ from typing import Callable, TextIO
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import (
     ActionKind,
+    EvidenceStatus,
     FeatureRuntimeStatus,
     ProductFrequency,
     ProductStrategy,
@@ -51,6 +52,12 @@ _CASE_SECTIONS = frozenset(
 )
 _STRATEGIES = tuple(item.value for item in ProductStrategy)
 _HEX64 = re.compile(r"[0-9a-f]{64}")
+_FEATURE_STATUSES = frozenset(item.value.upper() for item in FeatureRuntimeStatus)
+_EVIDENCE_STATUSES = frozenset(item.value for item in EvidenceStatus)
+_FAILURE_STATUSES = frozenset(
+    {"DATA_UNAVAILABLE", "INTEGRITY_ERROR", "SOURCE_EXCEPTION"}
+)
+_CONSUMER_SECTIONS = frozenset({"chart", "auxiliary", "reference"})
 
 
 def _instant(value: datetime | str) -> datetime:
@@ -300,6 +307,114 @@ def _date_text(value: object) -> bool:
         return False
 
 
+def _contract_matches(symbol: object, contract: object) -> bool:
+    if not isinstance(symbol, str) or not isinstance(contract, str):
+        return False
+    match = re.fullmatch(r"([A-Z]{1,8})[0-9]{3,4}", contract)
+    return match is not None and match.group(1).lower() == symbol
+
+
+def _consumers_valid(value: object) -> bool:
+    if not isinstance(value, list) or not value:
+        return False
+    identities: list[tuple[object, object, object]] = []
+    for row in value:
+        if not isinstance(row, dict) or set(row) != {
+            "strategy",
+            "frequency",
+            "section",
+        }:
+            return False
+        identity = (row.get("strategy"), row.get("frequency"), row.get("section"))
+        if (
+            identity[0] not in _STRATEGIES
+            or identity[1] != ProductFrequency.WEEKLY.value
+            or identity[2] not in _CONSUMER_SECTIONS
+        ):
+            return False
+        identities.append(identity)
+    return len(identities) == len(set(identities))
+
+
+def _owners_valid(value: object, through: object) -> bool:
+    if not isinstance(value, list) or not value:
+        return False
+    identities: list[tuple[str, str]] = []
+    for row in value:
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"since", "through"}
+            or not _date_text(row.get("since"))
+            or not _date_text(row.get("through"))
+            or row["since"] > row["through"]
+            or row["through"] != through
+        ):
+            return False
+        identities.append((row["since"], row["through"]))
+    return len(identities) == len(set(identities))
+
+
+def _case_state_valid(row: object) -> bool:
+    if not isinstance(row, dict):
+        return False
+    status = row.get("status")
+    reason = row.get("reason")
+    if status in _FEATURE_STATUSES:
+        return (
+            row.get("evidence_status") in _EVIDENCE_STATUSES
+            and (reason is None if status == "READY" else isinstance(reason, str))
+        )
+    if status == "UNOPENED":
+        return reason == "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+    if status in {"UNKNOWN", "UNSTARTED"}:
+        if isinstance(row.get("error"), dict):
+            return not _error_status_violation(row)
+        return reason is None or reason in {
+            "BUDGET_EXHAUSTED",
+            "VALIDATION_SERVICE_UNAVAILABLE",
+        }
+    return (
+        status in _FAILURE_STATUSES
+        and isinstance(row.get("error"), dict)
+        and not _error_status_violation(row)
+    )
+
+
+def _enumeration_row_valid(
+    row: object, products: tuple[str, ...], expected_as_of: datetime
+) -> bool:
+    if (
+        not isinstance(row, dict)
+        or row.get("symbol") not in products
+        or row.get("frequency") != ProductFrequency.WEEKLY.value
+        or row.get("section") not in _ENUMERATION_SECTIONS
+        or row.get("as_of") != expected_as_of.isoformat()
+    ):
+        return False
+    status = row.get("status")
+    if status == "ENUMERATED":
+        return (
+            row.get("section") != "explanation"
+            and _date_text(row.get("since"))
+            and _date_text(row.get("through"))
+            and row["since"] <= row["through"]
+            and type(row.get("owner_count")) is int
+            and row["owner_count"] >= 0
+        )
+    if status == "UNOPENED":
+        return (
+            row.get("section") == "explanation"
+            and row.get("reason") == "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        )
+    if status in {"UNKNOWN", "UNSTARTED"}:
+        return row.get("reason") is None or isinstance(row.get("reason"), str)
+    return (
+        status in _FAILURE_STATUSES
+        and isinstance(row.get("error"), dict)
+        and not _error_status_violation(row)
+    )
+
+
 def _base_row_valid(
     row: object,
     products: tuple[str, ...],
@@ -312,12 +427,14 @@ def _base_row_valid(
     contract = row.get("contract")
     if (
         row.get("symbol") not in products
-        or not isinstance(contract, str)
-        or re.fullmatch(r"[A-Z]{1,8}[0-9]{3,4}", contract) is None
+        or not _contract_matches(row.get("symbol"), contract)
         or row.get("frequency") != ProductFrequency.WEEKLY.value
         or not _date_text(row.get("through"))
-        or not isinstance(row.get("consumers"), list)
-        or (require_owners and not isinstance(row.get("owners"), list))
+        or not _consumers_valid(row.get("consumers"))
+        or (
+            require_owners
+            and not _owners_valid(row.get("owners"), row.get("through"))
+        )
     ):
         return False
     if expected_as_of is None:
@@ -326,6 +443,36 @@ def _base_row_valid(
         return _instant(row.get("as_of")) <= expected_as_of
     except ValueError:
         return False
+
+
+def _dependency_row_valid(
+    row: object, products: tuple[str, ...], expected_as_of: datetime
+) -> bool:
+    if not _base_row_valid(row, products, expected_as_of=expected_as_of):
+        return False
+    assert isinstance(row, dict)
+    status = row.get("status")
+    reason = row.get("reason")
+    if status == "DATA_READY":
+        return (
+            reason is None
+            and type(row.get("actual_bar_count")) is int
+            and type(row.get("expected_bar_count")) is int
+            and row["actual_bar_count"] == row["expected_bar_count"]
+            and row["actual_bar_count"] >= 0
+            and isinstance(row.get("cutoff"), str)
+        )
+    if status == "NOT_APPLICABLE":
+        return reason == "OWNER_HAS_NO_COMPLETED_BAR"
+    if status in {"UNKNOWN", "UNSTARTED"}:
+        if isinstance(row.get("error"), dict):
+            return not _error_status_violation(row)
+        return reason is None or isinstance(reason, str)
+    return (
+        status in _FAILURE_STATUSES
+        and isinstance(row.get("error"), dict)
+        and not _error_status_violation(row)
+    )
 
 
 def _repair_row_valid(row: object, products: tuple[str, ...]) -> bool:
@@ -337,9 +484,52 @@ def _repair_row_valid(row: object, products: tuple[str, ...]) -> bool:
         or not _date_text(row.get("requested_through"))
         or not _date_text(row.get("effective_through"))
         or type(row.get("direct_target_count")) is not int
+        or row["direct_target_count"] < 0
         or type(row.get("derived_target_count")) is not int
+        or row["derived_target_count"] < 0
         or not isinstance(row.get("target_windows"), list)
+        or not row["target_windows"]
     ):
+        return False
+    targets = row["target_windows"]
+    if row["direct_target_count"] + row["derived_target_count"] != len(targets):
+        return False
+    datasets: list[tuple[object, ...]] = []
+    target_expected = 0
+    for target in targets:
+        if not isinstance(target, dict):
+            return False
+        dataset = target.get("dataset")
+        expected_count = target.get("expected_bar_count")
+        missing_count = target.get("missing_bar_count")
+        try:
+            expected_start = _instant(target.get("expected_start"))
+            expected_end = _instant(target.get("expected_end"))
+            missing_start = _instant(target.get("missing_start"))
+            missing_end = _instant(target.get("missing_end"))
+        except ValueError:
+            return False
+        if (
+            not isinstance(dataset, list)
+            or len(dataset) != 4
+            or dataset[:3] != ["contract", row["symbol"], row["contract"]]
+            or dataset[3] not in {"1d", "1w"}
+            or type(expected_count) is not int
+            or expected_count < 0
+            or type(missing_count) is not int
+            or not 0 <= missing_count <= expected_count
+            or expected_start > expected_end
+            or missing_start > missing_end
+            or not expected_start <= missing_start <= missing_end <= expected_end
+            or type(target.get("year")) is not int
+            or target["year"] != expected_start.year
+            or type(target.get("month")) is not int
+            or target["month"] != expected_start.month
+        ):
+            return False
+        datasets.append((*dataset, target["year"], target["month"]))
+        target_expected += expected_count
+    if len(datasets) != len(set(datasets)):
         return False
     if row.get("status") == "REVIEW_REQUIRED":
         return (
@@ -350,7 +540,6 @@ def _repair_row_valid(row: object, products: tuple[str, ...]) -> bool:
         )
     if row.get("status") != "PROPOSED" or row.get("reason") is not None:
         return False
-    targets = row["target_windows"]
     if (
         not isinstance(row.get("plan_sha256"), str)
         or _HEX64.fullmatch(row["plan_sha256"]) is None
@@ -358,22 +547,9 @@ def _repair_row_valid(row: object, products: tuple[str, ...]) -> bool:
         or row["expected_bar_count"] < 0
         or type(row.get("provider_request_count")) is not int
         or row["provider_request_count"] != len(targets)
+        or row["expected_bar_count"] != target_expected
     ):
         return False
-    for target in targets:
-        if not isinstance(target, dict):
-            return False
-        dataset = target.get("dataset")
-        count = target.get("missing_bar_count")
-        if (
-            not isinstance(dataset, list)
-            or len(dataset) != 4
-            or dataset[:3] != ["contract", row["symbol"], row["contract"]]
-            or dataset[3] not in {"1d", "1w"}
-            or type(count) is not int
-            or count < 0
-        ):
-            return False
     return True
 
 
@@ -482,6 +658,8 @@ def summarize_readiness(
             continue
         if set(sections) != _CASE_SECTIONS:
             violations.append("CASE_SECTIONS_INVALID")
+        if any(not _case_state_valid(state) for state in sections.values()):
+            violations.append("CASE_STATE_INVALID")
         chart = sections.get("chart")
         reference = sections.get("reference")
         if main != chart:
@@ -518,7 +696,7 @@ def summarize_readiness(
     for row in enumerations:
         if isinstance(row, dict):
             enumeration_keys.append((row.get("symbol"), row.get("frequency"), row.get("section")))
-            if row.get("frequency") != "1w" or row.get("as_of") != expected.isoformat():
+            if not _enumeration_row_valid(row, products, expected):
                 violations.append("ENUMERATION_IDENTITY_INVALID")
         item = _pending_row("enumeration", row, identity=enumeration_keys[-1] if enumeration_keys else None)
         if item is not None:
@@ -553,7 +731,7 @@ def summarize_readiness(
 
     dependencies = report.get("dependencies", [])
     if isinstance(dependencies, list) and any(
-        not _base_row_valid(row, products, expected_as_of=expected)
+        not _dependency_row_valid(row, products, expected)
         for row in dependencies
     ):
         violations.append("DEPENDENCY_IDENTITY_INVALID")

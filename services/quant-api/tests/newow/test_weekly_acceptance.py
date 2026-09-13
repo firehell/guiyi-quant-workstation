@@ -139,11 +139,16 @@ def _report() -> dict:
         for strategy in STRATEGIES:
             ready = product_index == 0
             chart = (
-                {"status": "READY", "reason": None}
+                {
+                    "status": "READY",
+                    "evidence_status": "ACTIVE_CODE_VERIFIED",
+                    "reason": None,
+                }
                 if ready
                 else {
                     "status": "DATA_UNAVAILABLE",
                     "reason": "REPLAY_PREFIX_MISSING",
+                    "error": {"diagnostic": {"reason": "REPLAY_PREFIX_MISSING"}},
                 }
             )
             reference = dict(chart)
@@ -158,6 +163,7 @@ def _report() -> dict:
                         **{
                             name: {
                                 "status": "WARMING",
+                                "evidence_status": "ACTIVE_CODE_VERIFIED",
                                 "reason": "NEWOW_AUXILIARY_WARMING",
                             }
                             for name in AUXILIARY
@@ -169,6 +175,7 @@ def _report() -> dict:
                         },
                         "comparator": {
                             "status": "NOT_APPLICABLE",
+                            "evidence_status": "ACTIVE_CODE_VERIFIED",
                             "reason": "NEWOW_COMPARATOR_SAMPLE_INSUFFICIENT",
                         },
                     },
@@ -186,6 +193,15 @@ def _report() -> dict:
                 else None
             ),
             "as_of": AS_OF.isoformat(),
+            **(
+                {}
+                if section == "explanation"
+                else {
+                    "since": "2026-01-01",
+                    "through": "2026-09-11",
+                    "owner_count": 1,
+                }
+            ),
         }
         for product in PRODUCTS
         for section in ("chart", "auxiliary", "reference", "explanation")
@@ -215,6 +231,7 @@ def _report() -> dict:
                 "as_of": AS_OF.isoformat(),
                 "status": "DATA_UNAVAILABLE",
                 "reason": "REPLAY_PREFIX_MISSING",
+                "error": {"diagnostic": {"reason": "REPLAY_PREFIX_MISSING"}},
                 "owners": [{"since": "2026-01-01", "through": "2026-09-11"}],
                 "consumers": [
                     {"strategy": "trend", "frequency": "1w", "section": "chart"}
@@ -232,7 +249,9 @@ def _report() -> dict:
                 "expected_bar_count": 10,
                 "provider_request_count": 1,
                 "plan_sha256": "a" * 64,
-                "consumers": [],
+                "consumers": [
+                    {"strategy": "trend", "frequency": "1w", "section": "chart"}
+                ],
                 "dependency_frequencies": ["1d"],
                 "frequencies": ["1d", "1w"],
                 "requested_through": "2026-09-11",
@@ -242,9 +261,14 @@ def _report() -> dict:
                 "target_windows": [
                     {
                         "dataset": ["contract", PRODUCTS[1], "AG2701", "1w"],
+                        "expected_bar_count": 10,
+                        "expected_start": "2026-09-11T07:00:00+00:00",
+                        "expected_end": "2026-09-11T07:00:00+00:00",
                         "missing_start": "2026-09-11T07:00:00+00:00",
                         "missing_end": "2026-09-11T07:00:00+00:00",
                         "missing_bar_count": 10,
+                        "month": 9,
+                        "year": 2026,
                     }
                 ],
             }
@@ -454,7 +478,9 @@ def test_summary_accepts_honest_incomplete_audit_and_preserves_pending_reason():
 
     report = _report()
     report["dependencies"][0].update(
-        status="UNKNOWN", reason="HISTORICAL_SESSION_FACT_MISSING"
+        status="UNKNOWN",
+        reason="HISTORICAL_SESSION_FACT_MISSING",
+        error={"diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"}},
     )
     report.update(complete=False, status="incomplete")
 
@@ -529,11 +555,37 @@ def test_summary_aggregates_repair_and_metadata_rows_without_large_private_detai
             "DEPENDENCY_IDENTITY_INVALID",
         ),
         (
+            lambda report: report["dependencies"][0].update(contract="RB9999"),
+            "DEPENDENCY_IDENTITY_INVALID",
+        ),
+        (
+            lambda report: report["dependencies"][0]["consumers"][0].update(
+                strategy="foreign"
+            ),
+            "DEPENDENCY_IDENTITY_INVALID",
+        ),
+        (
             lambda report: report["repair_targets"][0].pop("plan_sha256"),
+            "REPAIR_SCHEMA_INVALID",
+        ),
+        (
+            lambda report: report["repair_targets"][0]["target_windows"][0].update(
+                expected_bar_count=11
+            ),
             "REPAIR_SCHEMA_INVALID",
         ),
         (lambda report: report["cases"].append(deepcopy(report["cases"][0])), "CASE_KEYS_INVALID"),
         (lambda report: report["cases"].pop(), "CASE_KEYS_INVALID"),
+        (
+            lambda report: report["cases"][0]["sections"]["reference"].update(
+                status="BANANA"
+            ),
+            "CASE_STATE_INVALID",
+        ),
+        (
+            lambda report: report["enumerations"][0].update(status="BANANA"),
+            "ENUMERATION_IDENTITY_INVALID",
+        ),
         (lambda report: report.update(main_ready_count=180), "MAIN_READY_COUNT_MISMATCH"),
         (lambda report: report.update(complete=False), "COMPLETE_FLAG_MISMATCH"),
         (lambda report: report.update(status="incomplete"), "STATUS_MISMATCH"),
