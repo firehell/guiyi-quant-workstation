@@ -7,6 +7,9 @@ import {
   buildNewowAuxiliaryDisclosure,
   buildNewowProductChartModel,
   chartMarkerTime,
+  classifyNewowHintTone,
+  preserveNewowViewport,
+  buildNewowActionCallouts,
   resolveNewowAuxiliaryRenderState,
 } from '../src/components/market/detail/newow/newowProductChartPrimitives.ts'
 import type {
@@ -54,6 +57,7 @@ test('preserves initial-clear eligibility into the marker label and detail model
     primitives.productChartMarker(action, null, { year: 2026, month: 8, day: 15 }).text,
     '清仓（无入场）',
   )
+  assert.equal(buildNewowActionCallouts(model)[0]?.title, '清仓（无入场）')
   assert.deepEqual(primitives.describeNewowProductAction(action), {
     label: '清仓（无入场）',
     explanation: '初始无入场：未观察到可配对 BUILD，不生成参考交易。',
@@ -359,7 +363,7 @@ test('trend model projects only ready channel facts at their real prices', () =>
 
   const model = buildNewowProductChartModel(response)
 
-  assert.deepEqual((model as any).trendChannelPoints, [{
+  assert.deepEqual((model as any).channelPoints, [{
     barEnd: value.bars[0]!.bar_end,
     tradingDay: value.bars[0]!.trading_day,
     upper: 110.25,
@@ -367,7 +371,77 @@ test('trend model projects only ready channel facts at their real prices', () =>
   }])
 
   const nonTrend = chartResponse('oscillation', '1d')
-  assert.deepEqual((buildNewowProductChartModel(nonTrend) as any).trendChannelPoints, [])
+  assert.deepEqual((buildNewowProductChartModel(nonTrend) as any).channelPoints, [{
+    barEnd: nonTrend.value!.bars[0]!.bar_end,
+    tradingDay: nonTrend.value!.bars[0]!.trading_day,
+    upper: 101,
+    lower: 99,
+  }, {
+    barEnd: nonTrend.value!.bars[1]!.bar_end,
+    tradingDay: nonTrend.value!.bars[1]!.trading_day,
+    upper: 102,
+    lower: 100,
+  }])
+})
+
+test('strategy overlays stay mutually exclusive and preserve only their own server values', () => {
+  const trend = buildNewowProductChartModel(chartResponse('trend', '1d'))
+  assert.equal(trend.bandAreas.length, 2)
+  assert.deepEqual(trend.channelPoints, [])
+
+  const oscillationResponse = chartResponse('oscillation', '1d')
+  oscillationResponse.value!.frames[1]!.status.status = 'warming'
+  const oscillation = buildNewowProductChartModel(oscillationResponse)
+  assert.deepEqual(oscillation.bandAreas, [])
+  assert.deepEqual(oscillation.channelPoints, [{
+    barEnd: oscillationResponse.value!.bars[0]!.bar_end,
+    tradingDay: oscillationResponse.value!.bars[0]!.trading_day,
+    upper: 101,
+    lower: 99,
+  }])
+
+  const mainRise = buildNewowProductChartModel(chartResponse('main_rise', '1d'))
+  assert.deepEqual(mainRise.channelPoints, [])
+  assert.deepEqual(mainRise.bandAreas.map(({ a, b, color }) => ({ a, b, color })), [
+    { a: 101, b: 99, color: 'rgba(54, 90, 245, 0.35)' },
+    { a: 102, b: 100, color: 'rgba(245, 183, 38, 0.35)' },
+  ])
+})
+
+test('classifies real hint kinds for display without changing their identities or anchors', () => {
+  assert.equal(classifyNewowHintTone('J'), 'risk')
+  assert.equal(classifyNewowHintTone('NEWOW_ESCAPE_D2'), 'risk')
+  assert.equal(classifyNewowHintTone('D4'), 'entry')
+  assert.equal(classifyNewowHintTone('D6'), 'entry')
+  assert.equal(classifyNewowHintTone('MAGIC11:7'), 'cycle')
+  assert.equal(classifyNewowHintTone('UNKNOWN_SERVER_KIND'), 'neutral')
+})
+
+test('projects action labels from exact server reference prices without deriving returns', () => {
+  const response = chartResponse('oscillation', '1d')
+  const model = buildNewowProductChartModel(response)
+  assert.deepEqual(buildNewowActionCallouts(model), model.actions.map(action => ({
+    id: action.id,
+    time: action.barEnd,
+    physicalContract: action.physicalContract,
+    price: action.referencePrice,
+    title: action.kind === 'BUILD' ? '建仓' : '清仓',
+    detail: `参考价 ${action.referencePrice}`,
+    tone: action.kind === 'BUILD' ? 'gain' : 'loss',
+    above: action.kind === 'CLEAR',
+  })))
+})
+
+test('preserves Newow viewport only for compatible product frequency and time axes', () => {
+  const before = buildNewowProductChartModel(chartResponse('trend', '60m'))
+  const compatible = buildNewowProductChartModel(chartResponse('oscillation', '60m'))
+  assert.equal(preserveNewowViewport(before, compatible), true)
+
+  compatible.identity.product = 'rb'
+  assert.equal(preserveNewowViewport(before, compatible), false)
+  compatible.identity.product = 'jm'
+  compatible.bars[0]!.barEnd = '2026-08-13T07:00:00Z'
+  assert.equal(preserveNewowViewport(before, compatible), false)
 })
 
 test('band primitive paints centered per-Bar rectangles that scale with bar spacing and releases attachment', async () => {

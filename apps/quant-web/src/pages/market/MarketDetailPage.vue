@@ -8,7 +8,6 @@ import MarketDetailQuoteHeader from '@/components/market/detail/MarketDetailQuot
 import MarketDetailTopBar from '@/components/market/detail/MarketDetailTopBar.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 import MarketDetailViewNav from '@/components/market/detail/MarketDetailViewNav.vue'
-import TrendDetailWorkspace from '@/components/market/detail/TrendDetailWorkspace.vue'
 import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
@@ -37,7 +36,7 @@ const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
-const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'trend', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
+const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
 const newowHistoricalAsOf = ref<string | null>(null)
 const newowCapabilities = useNewowCapabilities()
@@ -48,10 +47,8 @@ const shellReady = computed(() => isWorkspacePreview.value && (
 ))
 const htdyWorkspace = ref<InstanceType<typeof HtdyDetailWorkspace> | null>(null)
 const newowWorkspace = ref<InstanceType<typeof NewowProductWorkspace> | null>(null)
-const trendWorkspace = ref<InstanceType<typeof TrendDetailWorkspace> | null>(null)
 const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(null)
 const hasHtdyHistory = ref(false)
-const hasTrendHistory = ref(false)
 const hasSubingHistory = ref(false)
 const dailyQuote = useNewowDailyQuote({
   symbol: computed(() => isNewowView.value ? explicitIdentity.value!.symbol : null),
@@ -72,6 +69,11 @@ const identityWarning = ref(
     ? '已切换品种，指定合约已清除并回到真实主力。'
     : null,
 )
+const migrationNotice = ref<string | null>(
+  route.query.view === 'trend'
+    ? '旧趋势详情已迁移到牛哇趋势策略（1d）；当前页面使用新的牛哇策略身份与公式版本。'
+    : null,
+)
 const identityKey = computed(() => {
   const identity = explicitIdentity.value
   return identity
@@ -83,11 +85,13 @@ async function activateRoute() {
   const generation = ++activationGeneration
   newowHistoricalAsOf.value = null
   hasHtdyHistory.value = false
-  hasTrendHistory.value = false
   hasSubingHistory.value = false
   const result = routeResult.value
-  if (result.kind !== 'valid' || !['newow', 'free', 'htdy', 'trend', 'subing'].includes(result.identity.view)) return
-  if (route.query.view === undefined) {
+  if (result.kind !== 'valid' || !['newow', 'free', 'htdy', 'subing'].includes(result.identity.view)) return
+  if (route.query.view === undefined || route.query.view === 'trend') {
+    if (route.query.view === 'trend') {
+      migrationNotice.value = '旧趋势详情已迁移到牛哇趋势策略（1d）；当前页面使用新的牛哇策略身份与公式版本。'
+    }
     const failure = await router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(result.identity) })
     if (failure) return
   }
@@ -110,13 +114,14 @@ function switchNewowToOpenFrequency() {
 }
 
 function selectIdentity(identity: MarketDetailIdentity) {
+  migrationNotice.value = null
   if (identity.view === 'newow') {
     preferences.value = replaceNewowDetailPreferences(preferences.value, {
       strategy: identity.strategy,
       frequency: identity.frequency,
     })
   }
-  if (identity.view !== 'trend') preferences.value = { ...preferences.value, lastView: identity.view }
+  preferences.value = { ...preferences.value, lastView: identity.view === 'trend' ? 'newow' : identity.view }
   saveMarketDetailPreferences(preferences.value)
   void router.push({ path: '/market/chart', query: serializeMarketDetailIdentity(identity) })
 }
@@ -158,7 +163,7 @@ function updateHtdyPreferences(htdy: FlexibleDetailPreferences) {
 
 function resolveFocus(focusBarEnd: string) {
   const identity = explicitIdentity.value
-  if ((identity?.view !== 'free' && identity?.view !== 'newow' && identity?.view !== 'htdy' && identity?.view !== 'subing' && identity?.view !== 'trend') || identity.focusBarEnd !== focusBarEnd) return
+  if ((identity?.view !== 'free' && identity?.view !== 'newow' && identity?.view !== 'htdy' && identity?.view !== 'subing') || identity.focusBarEnd !== focusBarEnd) return
   const { focusBarEnd: _focus, ...next } = identity
   void router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(next) })
 }
@@ -166,7 +171,6 @@ function resolveFocus(focusBarEnd: string) {
 function openHistory() {
   const view = explicitIdentity.value?.view
   if (view === 'newow') newowWorkspace.value?.openHistory()
-  else if (view === 'trend') trendWorkspace.value?.openHistory()
   else if (view === 'htdy') htdyWorkspace.value?.openHistory()
   else if (view === 'subing') subingWorkspace.value?.openHistory()
 }
@@ -218,32 +222,35 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         :symbol="routeResult.identity.symbol"
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"
         :history-label="routeResult.identity.view === 'htdy' || routeResult.identity.view === 'subing' ? '预警记录' : '参考记录'"
-        :actions="{ canOpenHistory: ['trend', 'htdy', 'subing'].includes(routeResult.identity.view) || (routeResult.identity.view === 'newow' && newowFrequencyOpen && newowCapabilities.state.value === 'ready' && newowCapabilities.isSectionOpen('reference')), canManageAlert: false }"
+        :actions="{ canOpenHistory: ['htdy', 'subing'].includes(routeResult.identity.view) || (routeResult.identity.view === 'newow' && newowFrequencyOpen && newowCapabilities.state.value === 'ready' && newowCapabilities.isSectionOpen('reference')), canManageAlert: false }"
         @back="goBack"
         @select-symbol="productSelector?.focus()"
         @open-history="openHistory"
       />
-      <p v-if="controller.state.value.loading" class="market-detail-page__loading" role="status">
-        {{ routeResult.identity.view === 'newow' ? '正在加载品种元数据…' : '正在加载行情事实…' }}
-      </p>
-      <MarketDetailUnavailable
-        v-else-if="controller.state.value.error || !header"
-        :title="routeResult.identity.view === 'newow' ? '品种元数据不可用' : '行情事实不可用'"
-        :message="controller.state.value.error || '当前身份没有可用的已完成 Bar。'"
-        :can-return-market="true"
-        @return-market="goBack"
+      <MarketDetailQuoteHeader v-if="!controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :newow="isNewowView" />
+      <MarketDetailViewNav
+        :identity="routeResult.identity"
+        :products="controller.productCatalog.value"
+        :newow-frequencies="newowCapabilities.openFrequencies.value"
+        :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
+        @select="selectIdentity"
+        @contract-cleared="selectContractCleared"
       />
-        <MarketDetailQuoteHeader v-if="!controller.state.value.loading && !controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :newow="isNewowView" />
-        <MarketDetailViewNav
-          :identity="routeResult.identity"
-          :products="controller.productCatalog.value"
-          :newow-frequencies="newowCapabilities.openFrequencies.value"
-          :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
-          @select="selectIdentity"
-          @contract-cleared="selectContractCleared"
-        />
-      <template v-if="routeResult.identity.view === 'newow' || (!controller.state.value.loading && !controller.state.value.error && header)">
-        <section class="market-detail-page__workspace" data-detail-section="workspace-slot">
+        <p v-if="migrationNotice" class="market-detail-page__notice" data-testid="market-detail-migration-notice" role="status">{{ migrationNotice }}</p>
+        <section
+          class="market-detail-page__workspace"
+          data-detail-section="workspace-slot"
+          :data-active-view="routeResult.identity.view"
+          :aria-busy="controller.state.value.loading"
+        >
+          <p v-if="controller.state.value.loading && routeResult.identity.view !== 'newow'" class="market-detail-page__loading" role="status">正在加载当前图表…</p>
+          <MarketDetailUnavailable
+            v-else-if="routeResult.identity.view !== 'newow' && (controller.state.value.error || !header)"
+            title="行情事实不可用"
+            :message="controller.state.value.error || '当前身份没有可用的已完成 Bar。'"
+            :can-return-market="true"
+            @return-market="goBack"
+          />
           <NewowProductWorkspace
             v-if="routeResult.identity.view === 'newow' && newowCapabilities.capabilities.value && newowFrequencyOpen"
             ref="newowWorkspace"
@@ -297,20 +304,6 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @history-availability="hasHtdyHistory = $event"
             @focus-resolved="resolveFocus"
           />
-          <TrendDetailWorkspace
-            v-else-if="routeResult.identity.view === 'trend' && header"
-            ref="trendWorkspace"
-            :identity="routeResult.identity"
-            :header="header"
-            :bars="controller.bars.value"
-            :research="controller.research.value"
-            @history-availability="hasTrendHistory = $event"
-            :mutation="controller.mutation.value"
-            :loading="controller.state.value.loading"
-            :has-more-before="controller.hasMoreBefore.value"
-            :load-earlier="controller.loadMoreBefore"
-            @focus-resolved="resolveFocus"
-          />
           <SubingDetailWorkspace
             v-else-if="routeResult.identity.view === 'subing' && header"
             ref="subingWorkspace"
@@ -328,7 +321,6 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @focus-resolved="resolveFocus"
           />
         </section>
-      </template>
     </template>
   </main>
 </template>
@@ -343,12 +335,26 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 }
 
 .market-detail-page__loading {
-  margin: var(--gy-space-6) 0;
+  min-height: 320px;
+  margin: 0;
+  display: grid;
+  place-items: center;
   color: var(--gy-text-muted);
+  background: var(--gy-bg-panel);
 }
 
 .market-detail-page__workspace {
+  min-height: 420px;
   padding: var(--gy-space-2) 0 var(--gy-space-5);
+}
+
+.market-detail-page__notice {
+  margin: var(--gy-space-2) 0 0;
+  padding: 8px 12px;
+  border: 1px solid #F5C89A;
+  color: #9A4D12;
+  background: #FFF8F0;
+  font-size: var(--gy-font-size-sm);
 }
 
 .market-detail-page > :deep(.market-navigation) {

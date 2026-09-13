@@ -33,6 +33,8 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
   }
   if (omittedView) query = { ...query, series_kind: query.series_kind === undefined ? 'actual_dominant' : query.series_kind, frequency: query.frequency === undefined ? '15m' : query.frequency }
 
+  if (viewValue === 'trend') return parseLegacyTrendRoute(query, symbol)
+
   const isNewow = viewValue === 'newow'
   const strategy = isNewow
     ? query.strategy === undefined ? 'trend' : parseNewowStrategy(query.strategy)
@@ -41,7 +43,7 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     return invalid('DETAIL_STRATEGY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
 
-  const fixed = viewValue === 'trend' || viewValue === 'subing' ? FIXED_IDENTITIES[viewValue] : null
+  const fixed = viewValue === 'subing' ? FIXED_IDENTITIES.subing : null
   const seriesKind = query.series_kind === undefined && (fixed || isNewow)
     ? fixed?.seriesKind ?? 'actual_dominant'
     : parseSeriesKind(query.series_kind)
@@ -52,7 +54,7 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
   if (!frequency) return invalid('DETAIL_FREQUENCY_INVALID', symbol, recoveryFor(viewValue, symbol))
 
   if (fixed && (seriesKind !== fixed.seriesKind || frequency !== fixed.frequency)) {
-    return invalid(viewValue === 'trend' ? 'DETAIL_TREND_IDENTITY_INVALID' : 'DETAIL_SUBING_IDENTITY_INVALID', symbol, {
+    return invalid('DETAIL_SUBING_IDENTITY_INVALID', symbol, {
       view: viewValue, symbol, ...fixed,
     })
   }
@@ -112,7 +114,10 @@ export function resolveViewSwitchIdentity(
       seriesKind: 'actual_dominant', frequency: restore.newow.frequency,
     }
   }
-  if (view === 'trend' || view === 'subing') return { view, symbol, ...FIXED_IDENTITIES[view] }
+  if (view === 'trend') {
+    return { view: 'newow', symbol, strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' }
+  }
+  if (view === 'subing') return { view, symbol, ...FIXED_IDENTITIES.subing }
   if (previous?.view === view && sameSymbol(previous.symbol, symbol)) {
     if (previous.seriesKind !== 'contract' || previous.contract) {
       return {
@@ -178,10 +183,13 @@ function invalid(
 }
 
 function recoveryFor(view: MarketDetailView, symbol: string): MarketDetailIdentity {
+  if (view === 'trend') {
+    return { view: 'newow', symbol, strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' }
+  }
   if (view === 'newow') {
     return { view, symbol, strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' }
   }
-  if (view === 'trend' || view === 'subing') return { view, symbol, ...FIXED_IDENTITIES[view] }
+  if (view === 'subing') return { view, symbol, ...FIXED_IDENTITIES.subing }
   return { view, symbol, seriesKind: 'actual_dominant', frequency: '15m' }
 }
 
@@ -231,6 +239,19 @@ function allowsFocus(view: MarketDetailView, seriesKind: SeriesKind, frequency: 
     || (view === 'htdy' && seriesKind === 'actual_dominant')
     || (view === 'subing' && seriesKind === 'actual_dominant' && frequency === '15m')
     || (view === 'trend' && seriesKind === 'actual_dominant' && frequency === '1d')
+    || (view === 'newow' && seriesKind === 'actual_dominant' && NEWOW_FREQUENCY_SET.has(frequency))
+}
+
+function parseLegacyTrendRoute(query: Record<string, unknown>, symbol: string): MarketDetailRouteResult {
+  if (query.strategy !== undefined || query.contract !== undefined) {
+    return invalid('DETAIL_TREND_IDENTITY_INVALID', symbol, recoveryFor('trend', symbol))
+  }
+  const seriesKind = query.series_kind === undefined ? 'actual_dominant' : parseSeriesKind(query.series_kind)
+  const frequency = query.frequency === undefined ? '1d' : parseFrequency(query.frequency)
+  if (seriesKind !== 'actual_dominant' || frequency !== '1d') {
+    return invalid('DETAIL_TREND_IDENTITY_INVALID', symbol, recoveryFor('trend', symbol))
+  }
+  return valid('newow', symbol, 'actual_dominant', '1d', undefined, query.focus_bar_end, 'trend')
 }
 
 function isIsoInstant(value: string | undefined): value is string {

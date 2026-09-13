@@ -181,7 +181,6 @@ onBeforeUnmount(() => {
         <MarketHomeTable :rows="rows" :compact="compactDensity" :sort="sort" :sort-direction="sortDirection" :live-stale="live.stale.value" @sort="changeSort" @open="openProduct" />
         <MarketHomeMobileList :rows="rows" :live-stale="live.stale.value" @open="openProduct" />
         <p v-if="!rows.length && home.overview.data.value" class="market-home-empty">当前{{ sector ? productSectorLabel(sector) : '快照' }}暂无可用品种。<span v-if="selectedSector">可用 {{ selectedSector.participant_count }} / 总数 {{ selectedSector.active_count }}；缺失品种不生成行情行。</span></p>
-        <footer class="market-home-list-footer">已显示 {{ rows.length }} / {{ selectedSector?.active_count ?? home.overview.data.value?.active_count ?? '—' }} 品种 · {{ rows.length ? '向下滚动查看更多' : '等待可用快照' }}</footer>
       </template>
       </section>
     </template>
