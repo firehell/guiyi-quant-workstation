@@ -258,8 +258,8 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
             item = await _read_home_live_item(symbol, old_item)
             if item == old_item:
                 continue
-            current[symbol] = item
             if _home_item_authority(item) != _home_item_authority(old_item):
+                current[symbol] = item
                 snapshot = MarketHomeLiveSnapshot(_home_live_now(), tuple(current.values()))
                 await websocket.send_json(
                     MarketHomeLiveResetFrame(
@@ -267,9 +267,14 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
                         items=[_home_item_response(value) for value in current.values()],
                     ).model_dump(mode="json")
                 )
-            elif item.bar_end is not None and (
-                old_item.bar_end is None or item.bar_end > old_item.bar_end
+            elif (
+                item.bar_end is None
+                or old_item.bar_end is None
+                or item.bar_end >= old_item.bar_end
             ):
+                current[symbol] = item
+                if _home_item_response(item) == _home_item_response(old_item):
+                    continue
                 await websocket.send_json(
                     MarketHomeLiveQuoteFrame(
                         observed_at=_instant(_home_live_now()),
@@ -374,19 +379,24 @@ async def _refresh_home_live(
 ) -> tuple[MarketHomeLiveSnapshot, dict[str, MarketHomeLiveItem]]:
     refreshed = await _read_home_live_snapshot(None if force else previous)
     refreshed_items = {item.symbol: item for item in refreshed.items}
-    if tuple(
-        _home_item_response(item).model_dump(mode="json")
-        for item in refreshed_items.values()
-    ) != tuple(
-        _home_item_response(item).model_dump(mode="json")
-        for item in current.values()
-    ):
+    if _home_snapshot_authority(refreshed_items) != _home_snapshot_authority(current):
         await websocket.send_json(
             MarketHomeLiveResetFrame(
                 observed_at=_instant(refreshed.observed_at),
                 items=[_home_item_response(item) for item in refreshed.items],
             ).model_dump(mode="json")
         )
+    else:
+        for item in refreshed.items:
+            old_item = current[item.symbol]
+            if _home_item_response(item) == _home_item_response(old_item):
+                continue
+            await websocket.send_json(
+                MarketHomeLiveQuoteFrame(
+                    observed_at=_instant(refreshed.observed_at),
+                    item=_home_item_response(item),
+                ).model_dump(mode="json")
+            )
     return refreshed, refreshed_items
 
 
@@ -411,11 +421,14 @@ def _home_item_authority(item: MarketHomeLiveItem) -> tuple[object, ...]:
     return (
         item.physical_contract,
         item.trading_day,
-        item.source,
-        item.availability,
-        item.phase,
-        item.previous_close,
-        item.reason,
+    )
+
+
+def _home_snapshot_authority(
+    items: dict[str, MarketHomeLiveItem],
+) -> tuple[tuple[object, ...], ...]:
+    return tuple(
+        (symbol, *_home_item_authority(item)) for symbol, item in items.items()
     )
 
 

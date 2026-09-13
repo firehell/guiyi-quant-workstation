@@ -66,6 +66,23 @@ test('requires a snapshot before quotes and rejects out-of-order or cross-identi
   live.dispose()
 })
 
+test('accepts same-bar status updates without treating them as overview authority changes', () => {
+  const sockets: FakeSocket[] = []
+  let authorityChanges = 0
+  const live = useMarketHomeLive({
+    createWebSocket: () => { const socket = new FakeSocket(); sockets.push(socket); return socket },
+    onAuthorityChanged: () => { authorityChanges += 1 },
+  })
+  live.start()
+  sockets[0].message({ type: 'snapshot', schema_version: 1, observed_at: '2026-09-13T02:31:01Z', scope: 'operational', items: [quote()] })
+  sockets[0].message({ type: 'quote', schema_version: 1, observed_at: '2026-09-13T02:32:01Z', item: quote({ source: 'completed_1d', availability: 'historical', phase: 'CLOSED' }) })
+  sockets[0].message({ type: 'quote', schema_version: 1, observed_at: '2026-09-13T02:32:01Z', item: quote({ phase: 'TRADING', previous_close: '7990', price_change: '0.0167083854818523153942428035' }) })
+  assert.equal(live.items.value.get('ag')?.phase, 'TRADING')
+  assert.equal(live.items.value.get('ag')?.previousClose, 7990)
+  assert.equal(authorityChanges, 0)
+  live.dispose()
+})
+
 test('ignores an older frame observed after a newer accepted quote', () => {
   const sockets: FakeSocket[] = []
   const live = useMarketHomeLive({ createWebSocket: () => { const socket = new FakeSocket(); sockets.push(socket); return socket } })

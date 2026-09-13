@@ -49,6 +49,23 @@ function mixedEvents() {
 function historyPage(items = mixedEvents().items, nextBefore = null) {
   return { status: 'ready', start_day: '2026-09-07', end_day: '2026-09-13', symbol: null, rule_code: null, items, next_before: nextBefore }
 }
+function historyEvents(start, count) {
+  return Array.from({ length: count }, (_, offset) => {
+    const id = start + offset
+    const instant = new Date(Date.UTC(2026, 8, 2, 1, 0, id)).toISOString()
+    return {
+      id, rule_code: 'htdy_original_15m', symbol: 'ag', contract: 'AG2601', trading_day: '2026-09-02', frequency: '15m',
+      bar_end: instant, result_codes: ['buy'], detected_at: instant, notification_attempted_at: null,
+    }
+  })
+}
+function actualHomeScrollTop() {
+  const content = document.querySelector('.content--market-home')
+  const nested = content?.querySelector('.n-layout-scroll-container')
+  const scrolling = [content, nested, document.scrollingElement]
+    .find((element) => element && element.scrollHeight > element.clientHeight + 1)
+  return scrolling?.scrollTop ?? 0
+}
 async function emitHomeLive(page, payload) {
   await page.evaluate((value) => {
     const socket = window.__marketDetailSockets.find((item) => new URL(item.url, location.href).pathname === '/api/v1/market/research/home-live/ws')
@@ -125,6 +142,41 @@ test('messages use bounded server history filters and immutable event navigation
   await expect(page.getByLabel('开始交易日')).toHaveValue(/\d{4}-\d{2}-\d{2}/)
 })
 
+test('messages restore two loaded pages, the next cursor, and the real home scroll position after detail', async ({ page }) => {
+  const requests = []
+  const currentHistory = (url) => {
+    const before = url.searchParams.get('before')
+    if (before === 'page-2') return historyPage(historyEvents(25, 24), 'page-3')
+    if (before === 'page-3') return historyPage(historyEvents(49, 1), null)
+    return historyPage(historyEvents(1, 24), 'page-2')
+  }
+  await mockMarketHomeApi(page, requests, events(), overview(), runtime(), currentHistory)
+  await page.goto('/market')
+  await page.getByRole('tab', { name: '消息' }).click()
+  const messageButtons = page.locator('.market-message-list > button')
+  await expect(messageButtons).toHaveCount(24)
+  await page.getByRole('button', { name: '加载更多' }).click()
+  await expect(messageButtons).toHaveCount(48)
+  const last = messageButtons.last()
+  await last.scrollIntoViewIfNeeded()
+  const before = await page.evaluate(actualHomeScrollTop)
+  expect(before).toBeGreaterThan(500)
+  const historyReads = requests.filter((value) => String(value).startsWith('history:')).length
+  expect(historyReads).toBe(2)
+
+  await last.click()
+  await expect(page).toHaveURL(/\/market\/chart/)
+  await page.goBack()
+  await expect(messageButtons).toHaveCount(48)
+  await expect.poll(() => page.evaluate(actualHomeScrollTop)).toBeGreaterThan(before - 10)
+  expect(requests.filter((value) => String(value).startsWith('history:')).length).toBe(historyReads)
+  const more = page.getByRole('button', { name: '加载更多' })
+  await expect(more).toBeEnabled()
+  await more.click()
+  await expect(messageButtons).toHaveCount(49)
+  expect(requests.filter((value) => String(value).endsWith(':page-3'))).toHaveLength(1)
+})
+
 test('one operational socket overlays same-contract 1m price and keeps stale value on disconnect', async ({ page }) => {
   const requests = []
   await mockMarketHomeApi(page, requests)
@@ -145,11 +197,8 @@ test('one operational socket overlays same-contract 1m price and keeps stale val
 })
 
 test('authority reset invalidates the overview identity before applying a new contract price', async ({ page }) => {
-  let reads = 0
   const currentOverview = () => {
     const value = overview()
-    reads += 1
-    if (reads > 1) value.items[0].actual_contract = 'AG2701'
     return value
   }
   const requests = []
@@ -157,9 +206,16 @@ test('authority reset invalidates the overview identity before applying a new co
   await page.goto('/market')
   await expect(page.locator('tbody tr')).toHaveCount(2)
   await emitHomeLive(page, { type: 'snapshot', schema_version: 1, observed_at: '2026-09-02T02:31:01Z', scope: 'operational', items: [liveItem()] })
-  await emitHomeLive(page, { type: 'reset', schema_version: 1, observed_at: '2026-09-03T02:31:01Z', reason: 'AUTHORITY_CHANGED', items: [liveItem({ physical_contract: 'AG2701', trading_day: '2026-09-03', price: '120' })] })
+  await emitHomeLive(page, { type: 'quote', schema_version: 1, observed_at: '2026-09-02T02:32:01Z', item: liveItem({ bar_end: '2026-09-02T02:32:00Z', price: '113' }) })
+  await emitHomeLive(page, { type: 'quote', schema_version: 1, observed_at: '2026-09-02T02:33:01Z', item: liveItem({ bar_end: '2026-09-02T02:33:00Z', price: '114' }) })
+  await expect(page.locator('tbody tr[data-symbol="ag"] .close-price')).toContainText('114')
+  expect(requests.filter((value) => value.endsWith?.('/home-overview'))).toHaveLength(1)
+  await emitHomeLive(page, { type: 'reset', schema_version: 1, observed_at: '2026-09-03T02:31:01Z', reason: 'AUTHORITY_CHANGED', items: [liveItem({ physical_contract: 'AG2701', trading_day: '2026-09-03', price: '120', previous_close: null, price_change: null })] })
   await expect.poll(() => requests.filter((value) => value.endsWith?.('/home-overview')).length).toBe(2)
-  await expect(page.locator('tbody tr[data-symbol="ag"] .close-price')).toContainText('120')
+  const row = page.locator('tbody tr[data-symbol="ag"]')
+  await expect(row.locator('.close-price')).toContainText('120')
+  await expect(row.locator('.close-price')).toContainText('AG2701')
+  await expect(row.locator('.change-badge')).toHaveText('—')
 })
 
 function expectHomeReads(requests, overviewCount = 1, runtimeCount = overviewCount) {

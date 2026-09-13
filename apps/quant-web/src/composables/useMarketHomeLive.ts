@@ -53,7 +53,7 @@ export function useMarketHomeLive(dependencies: Dependencies = {}) {
       try {
         const frame = normalizeMarketHomeLiveFrame(JSON.parse(event.data))
         const frameTime = Date.parse(frame.observedAt)
-        if (frameTime <= lastObservedAt) return
+        if (frameTime < lastObservedAt) return
         if (frame.type === 'unavailable') { lastObservedAt = frameTime; observedAt.value = frame.observedAt; stale.value = items.value.size > 0; connection.value = 'unavailable'; return }
         if (frame.type === 'snapshot' || frame.type === 'reset') {
           items.value = new Map(frame.items.map((item) => [item.symbol, item]))
@@ -65,7 +65,7 @@ export function useMarketHomeLive(dependencies: Dependencies = {}) {
           if (!previous || (
             previous.physicalContract !== frame.item.physicalContract
             || previous.tradingDay !== frame.item.tradingDay
-            || (previous.barEnd !== null && frame.item.barEnd !== null && Date.parse(frame.item.barEnd) <= Date.parse(previous.barEnd))
+            || (previous.barEnd !== null && frame.item.barEnd !== null && Date.parse(frame.item.barEnd) < Date.parse(previous.barEnd))
           )) return
           items.value = new Map(items.value).set(frame.item.symbol, frame.item)
         }

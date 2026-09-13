@@ -251,10 +251,18 @@ chevron，展开状态旋转且支持键盘操作。板块按钮换行不得把�
 completed_1m/completed_1d/none，availability 为 live/historical/unavailable。availability=live
 只表示该值来自合法 completed Live 数据，不代表 tick 级即时价格或策略已确认。
 
+`reset/AUTHORITY_CHANGED` MUST 仅用于 operational symbol 身份集合、physical contract 或 trading day
+变化。相同身份的定时补读、价格更新及同 Bar 的 phase/source/availability/昨收状态修订 SHALL 使用
+`quote`，不得使 overview 缓存失效；仅用于服务器缓存管理的时间不得成为可见身份变化。同批 quote
+可以共享 observed_at，消费者 MUST 逐品种处理，拒绝旧 observed_at/旧 Bar 和未经 reset 的合约/交易日变化。
+
 首页分钟报价 MUST 使用版本化批量 read contract，固定读取 server operational products 的当日 rank1
 物理合约。每项 SHALL 携带 symbol、physical contract、trading day、bar end、source、availability 和
 phase，以及最新有效 completed 1m close。未完成 Bar、heartbeat、其他合约或 synthetic price 不得成为报价。
 行情 overlay 不得修改 completed D1/W1 overview，也不得使其 generic 指标成为策略或账户事实。
+当日 Live 冻结 subscription 与最近已发布 Historical Map 的物理合约允许不同；Historical owner
+不得成为合法 Live 报价的显示 Gate。此时 SHALL 明确显示报价合约，保留原日周字段及其身份，
+涨跌幅只消费该报价自身的同合约昨收结果，不借用旧 overview 基准。
 
 价格 SHALL 显示来源与时间，明确分钟级更新而非 tick 实时。涨跌幅 MUST 由后端用 Decimal 按
 `(price / previous_close - 1)` 计算；previous close MUST 来自当前 physical contract 上一完整交易日
@@ -272,6 +280,11 @@ phase，以及最新有效 completed 1m close。未完成 Bar、heartbeat、其�
 - **THEN** server 先订阅再读取同身份快照，随后提供增量，处理快照与流间重复/乱序；前端只维护一个连接
 - **AND** 断线保留最后成功值和 stale 标记；重连有界且恢复时补读快照，不等待下一根 Bar 才恢复
 
+#### Scenario: Periodic reconciliation observes a new minute price
+
+- **WHEN** 定时补读与新分钟 Bar 同时到达，且 operational Scope、物理合约、交易日均未改变
+- **THEN** 只更新行情 overlay，不发送 authority reset，也不增加 completed D1/W1 overview 请求
+
 #### Scenario: Live recovers without a contract change
 
 - **WHEN** 同日同合约 Live availability 从不可用恢复且没有新的合约 state 通知
@@ -281,6 +294,7 @@ phase，以及最新有效 completed 1m close。未完成 Bar、heartbeat、其�
 
 - **WHEN** server 的权威交易日或 rank1 物理合约发生变化
 - **THEN** 旧 overlay 身份失效，新快照确认前不得沿用旧价格或旧昨收计算新合约变动；旧 generation 的迟到消息不得恢复旧值
+- **AND** 即使完成周期 overview 仍返回旧 Historical owner，已确认的新 owner 报价仍显示；新合约无昨收时涨跌幅为 null，日周指标不变
 
 #### Scenario: The market is closed or quotes are unavailable
 
@@ -310,6 +324,12 @@ Runtime health 包装成不存在的历史系统消息。
 
 - **WHEN** 用户按规则、品种、日期查询，并继续读取下一页
 - **THEN** 筛选与分页在全局只读查询中执行，响应具有稳定边界且无重复跳项；筛选变化会清除旧游标，旧响应不能覆盖新查询
+
+#### Scenario: A user returns from a later message page
+
+- **WHEN** 用户从已经加载的第二页或后续页消息进入详情，再返回首页
+- **THEN** 页面按查询身份先恢复成功列表、next cursor 与真实滚动位置，能够继续分页；不得先清空再只重取第一页
+- **AND** 消息缓存具有数量与时间上限，有效缓存不重复读取；失效缓存可保留结果后台刷新，人工刷新显式重新查询
 
 #### Scenario: Event storage is unavailable
 

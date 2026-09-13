@@ -8,9 +8,7 @@ export function projectMarketHomeLiveRows<T extends { symbol: string; actual_con
 ): Array<MarketHomeLiveDisplayRow<T>> {
   return rows.map((row) => {
     const item = liveItems.get(row.symbol)
-    const matches = item?.physicalContract?.toUpperCase() === row.actual_contract.toUpperCase()
-      && item.price !== null && item.source !== 'none' && item.availability !== 'unavailable'
-    if (!item || !matches) return { ...row, liveQuote: null }
+    if (!item || item.price === null || item.source === 'none' || item.availability === 'unavailable') return { ...row, liveQuote: null }
     return { ...row, close: item.price, price_change_1d: item.priceChange, liveQuote: item }
   })
 }

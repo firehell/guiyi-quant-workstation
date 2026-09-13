@@ -216,6 +216,76 @@ def test_home_live_checks_availability_while_pubsub_messages_are_continuous(
     assert recovered["items"][0]["availability"] == "live"
 
 
+def test_home_live_periodic_review_streams_same_authority_updates_as_quotes(
+    monkeypatch,
+) -> None:
+    """Catches a minute/phase refresh being mislabeled as an overview authority reset."""
+    initial = MarketHomeLiveSnapshot(
+        NOW,
+        (
+            _item("j", "J2609", "101", NOW - timedelta(minutes=1)),
+            _item("jm", "JM2609", "901", NOW - timedelta(minutes=1)),
+            _item(
+                "rb",
+                "RB2610",
+                "3500",
+                NOW - timedelta(minutes=1),
+                source="completed_1d",
+                availability="historical",
+                trading_day=DAY,
+            ),
+        ),
+    )
+    refreshed = MarketHomeLiveSnapshot(
+        NOW + timedelta(minutes=1),
+        (
+            _item("j", "J2609", "102", NOW),
+            _item(
+                "jm",
+                "JM2609",
+                "901",
+                NOW - timedelta(minutes=1),
+                phase="BREAK",
+            ),
+            _item(
+                "rb",
+                "RB2610",
+                "3500",
+                NOW - timedelta(minutes=1),
+                trading_day=DAY,
+            ),
+        ),
+    )
+    pubsub = FakeHomePubSub(({"channel": "unrelated", "data": "{}"},))
+    redis = FakeAsyncRedis(pubsub)
+    snapshots = deque((initial, refreshed))
+
+    async def read(previous=None):
+        return snapshots.popleft()
+
+    monkeypatch.setattr("app.api.market_live.load_operational_products", lambda: ("j", "jm", "rb"))
+    monkeypatch.setattr("app.api.market_live._read_home_live_snapshot", read)
+    monkeypatch.setattr("app.api.market_live._HOME_LIVE_AUTHORITY_REFRESH_SECONDS", 0)
+    monkeypatch.setattr("app.api.market_live.get_async_redis_connection", lambda: redis)
+
+    with TestClient(app).websocket_connect("/api/v1/market/research/home-live/ws") as websocket:
+        messages = [websocket.receive_json() for _ in range(4)]
+
+    assert [message["type"] for message in messages] == [
+        "snapshot",
+        "quote",
+        "quote",
+        "quote",
+    ]
+    assert messages[1]["item"]["symbol"] == "j"
+    assert messages[1]["item"]["price"] == "102"
+    assert messages[2]["item"]["symbol"] == "jm"
+    assert messages[2]["item"]["phase"] == "BREAK"
+    assert messages[3]["item"]["symbol"] == "rb"
+    assert messages[3]["item"]["source"] == "completed_1m"
+    assert messages[3]["item"]["availability"] == "live"
+
+
 @pytest.mark.parametrize("cleanup_failure", ("unsubscribe", "aclose"))
 def test_home_live_websocket_closes_redis_when_pubsub_cleanup_fails(
     monkeypatch,
@@ -258,19 +328,21 @@ def _item(
     *,
     source="completed_1m",
     availability="live",
+    phase=None,
+    trading_day=None,
 ) -> MarketHomeLiveItem:
     value = Decimal(price)
     return MarketHomeLiveItem(
         symbol,
         contract,
-        DAY if source == "completed_1m" else DAY - timedelta(days=1),
+        trading_day or (DAY if source == "completed_1m" else DAY - timedelta(days=1)),
         bar_end,
         value,
         Decimal("100"),
         value / Decimal("100") - Decimal(1),
         source,
         availability,
-        "TRADING" if source == "completed_1m" else "CLOSED",
+        phase or ("TRADING" if source == "completed_1m" else "CLOSED"),
         None,
     )
 

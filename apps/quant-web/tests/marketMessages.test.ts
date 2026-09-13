@@ -47,6 +47,70 @@ test('loads cursor pages once and appends immutable event identities', async () 
   assert.deepEqual(messages.items.value.map((item) => item.id), [1, 2])
 })
 
+test('restores successful pages, cursor, and scroll by query before a fresh reentry fetch', async () => {
+  let now = 1_000
+  const calls: Array<string | null> = []
+  const fetchHistory = async (query: { before?: string | null }) => {
+    calls.push(query.before ?? null)
+    if (query.before === 'page-2') return page([event(2)], 'page-3')
+    if (query.before === 'page-3') return page([event(3)], null)
+    return page([event(1)], 'page-2')
+  }
+  const query = { startDay: '2026-09-07', endDay: '2026-09-13', symbol: '', ruleCode: null } as const
+  const first = useMarketMessages({ fetchHistory, cacheKey: 'messages-reentry', now: () => now })
+  await first.load(query)
+  await first.loadMore()
+  first.rememberScrollTop(640)
+  first.dispose()
+
+  const second = useMarketMessages({ fetchHistory, cacheKey: 'messages-reentry', now: () => now })
+  const reentry = second.load(query)
+  assert.deepEqual(second.items.value.map((item) => item.id), [1, 2])
+  assert.equal(second.nextBefore.value, 'page-3')
+  assert.equal(second.restoreScrollTop(), 640)
+  await reentry
+  assert.deepEqual(calls, [null, 'page-2'])
+  await second.loadMore()
+  assert.deepEqual(second.items.value.map((item) => item.id), [1, 2, 3])
+
+  now += 5 * 60_000 + 1
+  let resolveRefresh!: (value: ReturnType<typeof page>) => void
+  const expired = useMarketMessages({
+    cacheKey: 'messages-reentry',
+    now: () => now,
+    fetchHistory: () => new Promise((resolve) => { resolveRefresh = resolve }),
+  })
+  const background = expired.load(query)
+  assert.deepEqual(expired.items.value.map((item) => item.id), [1, 2, 3])
+  assert.equal(expired.restoreScrollTop(), 640)
+  resolveRefresh(page([event(4)], null))
+  await background
+  assert.deepEqual(expired.items.value.map((item) => item.id), [4])
+})
+
+test('keys cached pages by query and lets manual refresh replace a fresh hit', async () => {
+  let nextId = 0
+  const calls: string[] = []
+  const messages = useMarketMessages({
+    cacheKey: 'messages-query-and-force',
+    fetchHistory: async (query) => {
+      calls.push(query.symbol)
+      return page([{ ...event(++nextId), symbol: query.symbol || 'ag' }], null)
+    },
+  })
+  const all = { startDay: '2026-09-07', endDay: '2026-09-13', symbol: '', ruleCode: null } as const
+  const jm = { ...all, symbol: 'jm' }
+  await messages.load(all)
+  await messages.load(all)
+  await messages.load(jm)
+  await messages.load(all)
+  assert.deepEqual(calls, ['', 'jm'])
+  assert.equal(messages.items.value[0].id, 1)
+  await messages.load(all, { force: true })
+  assert.deepEqual(calls, ['', 'jm', ''])
+  assert.equal(messages.items.value[0].id, 3)
+})
+
 for (const outcome of ['resolve', 'reject'] as const) {
   test(`query replacement releases pagination when the old page later ${outcome}s`, async () => {
     let settleOld!: (value?: ReturnType<typeof normalizeAlertHistoryResponse>) => void

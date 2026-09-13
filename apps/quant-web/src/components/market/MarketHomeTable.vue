@@ -15,10 +15,11 @@ function quoteLabel(row: DisplayRow) {
   const quote = row.liveQuote
   if (!quote?.barEnd) return '日线收盘'
   const time = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(quote.barEnd))
-  if (props.liveStale) return `断线保留 · ${time}`
-  if (quote.source === 'completed_1d') return `历史收盘 · ${time}`
-  if (quote.phase === 'CLOSED' || quote.phase === 'BREAK') return `休市 · 1m ${time}`
-  return `1m · ${time}`
+  const contract = quote.physicalContract ?? '合约未知'
+  if (props.liveStale) return `${contract} · 断线保留 · ${time}`
+  if (quote.source === 'completed_1d') return `${contract} · 历史收盘 · ${time}`
+  if (quote.phase === 'CLOSED' || quote.phase === 'BREAK') return `${contract} · 休市 · 1m ${time}`
+  return `${contract} · 1m · ${time}`
 }
 </script>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AlertEvent, AlertRuleCode } from '@/types/market'
 import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
 import { ALERT_RULE_CODES, alertEventHomeResultLabel, alertEventRuleShortLabel } from '@/utils/alertRules'
@@ -16,20 +16,33 @@ const startDay = ref(saved?.startDay ?? localDay(rangeStart))
 const endDay = ref(saved?.endDay ?? today)
 const symbol = ref(saved?.symbol ?? '')
 const ruleCode = ref<AlertRuleCode | null>(saved?.ruleCode ?? null)
-const messages = useMarketMessages()
+const messages = useMarketMessages({ cacheKey: 'market-home-messages-v1' })
 const validRange = computed(() => startDay.value <= endDay.value)
 const query = () => ({ startDay: startDay.value, endDay: endDay.value, symbol: symbol.value, ruleCode: ruleCode.value })
 let mounted = false
 
-function load() { if (validRange.value) void messages.load(query()) }
+function load(force = false) { if (validRange.value) void messages.load(query(), { force }) }
 function persistQuery() {
   try { sessionStorage.setItem('guiyi.market-home.messages.v1', JSON.stringify(query())) } catch {}
 }
-function open(event: AlertEvent) { persistQuery(); emit('open', event) }
+function messageScrollElement(): HTMLElement | null {
+  if (typeof document === 'undefined') return null
+  const content = document.querySelector<HTMLElement>('.content--market-home')
+  const nested = content?.querySelector<HTMLElement>('.n-layout-scroll-container') ?? null
+  return [content, nested, document.scrollingElement as HTMLElement | null]
+    .find((element) => Boolean(element && element.scrollHeight > element.clientHeight + 1)) ?? content ?? nested
+}
+function rememberScroll() { messages.rememberScrollTop(messageScrollElement()?.scrollTop ?? 0) }
+async function restoreScroll() {
+  await nextTick()
+  const top = messages.restoreScrollTop()
+  if (top > 0) window.requestAnimationFrame(() => messageScrollElement()?.scrollTo({ top }))
+}
+function open(event: AlertEvent) { rememberScroll(); persistQuery(); emit('open', event) }
 watch([startDay, endDay, symbol, ruleCode], () => { persistQuery(); if (mounted) load() })
-watch(() => props.reloadSequence, () => { if (mounted) load() })
-onMounted(() => { mounted = true; load() })
-onBeforeUnmount(() => messages.dispose())
+watch(() => props.reloadSequence, () => { if (mounted) load(true) })
+onMounted(() => { mounted = true; load(); void restoreScroll() })
+onBeforeUnmount(() => { rememberScroll(); messages.dispose() })
 
 function localDay(value: Date) { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}` }
 function time(value: string) { return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value)) }
