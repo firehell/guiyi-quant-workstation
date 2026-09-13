@@ -491,7 +491,7 @@ defineExpose({ revealSignal, scrollToLatest })
         :key="item.callout.id"
         type="button"
         class="newow-product-chart-stage__action-label"
-        :class="[{ 'is-compact': item.compact, 'is-active': activeActionLabel === item.callout.id, 'is-selected': selectedSignalId === item.callout.id }, `is-${item.callout.tone}`]"
+        :class="[{ 'is-compact': item.compact && activeActionLabel !== item.callout.id && selectedSignalId !== item.callout.id, 'is-active': activeActionLabel === item.callout.id, 'is-selected': selectedSignalId === item.callout.id }, `is-${item.callout.tone}`]"
         :style="{ left: `${item.left}px`, top: `${item.top}px` }"
         :data-action-id="item.callout.id"
         :data-reference-price="item.callout.price"
@@ -503,7 +503,7 @@ defineExpose({ revealSignal, scrollToLatest })
         @focus="activeActionLabel = item.callout.id"
         @blur="activeActionLabel = null"
         @click="emit('select-signal', item.callout.id)"
-      ><template v-if="!item.compact || activeActionLabel === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></button>
+      ><template v-if="!item.compact || activeActionLabel === item.callout.id || selectedSignalId === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></button>
     </div>
     <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量</span>
     <div class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>

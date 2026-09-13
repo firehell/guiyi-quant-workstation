@@ -27,6 +27,15 @@ async function showReference(page) {
   await page.locator('.newow-reference').scrollIntoViewIfNeeded()
 }
 
+async function resetPageScroll(page) {
+  await page.evaluate(() => {
+    window.scrollTo(0, 0)
+    for (const element of document.querySelectorAll('*')) {
+      if (['auto', 'scroll'].includes(getComputedStyle(element).overflowY)) element.scrollTop = 0
+    }
+  })
+}
+
 function expectExactQuery(request, expected) {
   expect(Object.fromEntries([...request.url.searchParams.entries()].sort())).toEqual(Object.fromEntries(Object.entries(expected).sort()))
 }
@@ -667,7 +676,7 @@ test('auxiliary cache, applicability and disclosures remain section-local', asyn
   // Fix the modal's background at a completed read, independent of toolbar scroll timing.
   await showReference(page)
   await expect(page.getByTestId('newow-reference-summary')).toContainText('100')
-  await page.evaluate(() => window.scrollTo(0, 0))
+  await resetPageScroll(page)
   for (const label of ['主力控盘', '涨跌动能', '照妖镜']) {
     await page.getByRole('button', { name: label, exact: true }).click()
     await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-auxiliary-state', 'ready')
@@ -675,6 +684,8 @@ test('auxiliary cache, applicability and disclosures remain section-local', asyn
   await page.getByRole('button', { name: '照妖镜', exact: true }).click()
   await page.getByRole('button', { name: '指标解读', exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('会重绘')
+  await resetPageScroll(page)
+  await expect(page.locator('.market-navigation__brand')).toBeInViewport()
   await expect(page).toHaveScreenshot('newow-mirror-repaint-disclosure.png', { animations: 'disabled', caret: 'hide', maxDiffPixels: 500 })
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: '主力控盘', exact: true }).click()
