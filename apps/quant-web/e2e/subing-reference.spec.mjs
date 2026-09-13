@@ -38,7 +38,7 @@ test('historical unavailable keeps immutable events and Rule facts visible', asy
   await page.goto('/market/chart?symbol=jm&view=subing')
   await expect(page.getByText('历史参考不可用，请核查数据覆盖或重新读取。实际预警记录独立展示。')).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
-  await page.getByRole('button', { name: '历史记录', exact: true }).click()
+  await page.getByRole('tab', { name: '历史记录', exact: true }).click()
   await expect(page.locator('.detail-section-tabs__history')).toContainText(`Bar ${referenceBars[8].bar_end}`)
 })
 
@@ -59,7 +59,7 @@ test('date range and cursor keep a fixed summary and row selects its reference r
   await expect(page.locator('.subing-reference tbody tr')).toHaveCount(4)
   expect(await page.locator('.subing-reference__summary').innerText()).toBe(summary)
   expect(requests.at(-1).searchParams.get('as_of')).toBe('2026-09-08T16:00:00+08:00')
-  await page.locator('.subing-reference tbody button').first().click()
+  await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
   await expect(page.getByRole('dialog', { name: '历史参考记录详情' })).toContainText('尚无配对平仓')
 })
 
@@ -68,7 +68,7 @@ test('wrong physical owner stays unanchored and a date refresh closes prior hist
   await mockSubingReference(page, { response() { const data = subingReferenceFixture(); return mismatch ? { ...data, signals: data.signals.map(signal => ({ ...signal, physical_contract: 'JM2605' })), input_snapshot_hash: 'b'.repeat(64) } : data } })
   await page.goto('/market/chart?symbol=jm&view=subing')
   await expect(page.locator('.reference-callout')).toHaveCount(4)
-  await page.locator('.subing-reference tbody button').first().click()
+  await page.getByRole('button', { name: '查看详情', exact: true }).first().click()
   await expect(page.getByRole('dialog', { name: '历史参考记录详情' })).toBeVisible()
   await page.keyboard.press('Escape')
   mismatch = true
@@ -81,9 +81,8 @@ test('wrong physical owner stays unanchored and a date refresh closes prior hist
 test('explicit same-row focus recenters after pan and highlights its exact physical entry and exit', async ({ page }) => {
   await mockSubingReference(page)
   await page.goto('/market/chart?symbol=jm&view=subing')
-  const row = page.locator('.subing-reference tbody button').nth(1)
+  const row = page.getByRole('button', { name: '定位图表', exact: true }).nth(1)
   await row.click()
-  await page.keyboard.press('Escape')
   await page.getByTestId('kline-shell').scrollIntoViewIfNeeded()
   const selected = page.locator('.reference-candle-selection').last()
   await expect(page.locator('.reference-candle-selection')).toHaveCount(2)
@@ -96,7 +95,6 @@ test('explicit same-row focus recenters after pan and highlights its exact physi
   await page.mouse.up()
   await expect.poll(async () => Math.abs((await selected.boundingBox()).x - original.x)).toBeGreaterThan(50)
   await row.click()
-  await page.keyboard.press('Escape')
   await page.getByTestId('kline-shell').scrollIntoViewIfNeeded()
   await expect.poll(async () => Math.abs((await selected.boundingBox()).x - original.x)).toBeLessThan(3)
   await page.getByRole('button', { name: '读取参考', exact: true }).click()

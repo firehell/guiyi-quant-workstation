@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import MarketDetailFactStrip from '@/components/market/detail/MarketDetailFactStrip.vue'
 import MarketDetailInsightDeck from '@/components/market/detail/MarketDetailInsightDeck.vue'
+import MarketDetailStatusStrip from '@/components/market/detail/MarketDetailStatusStrip.vue'
 import FreeChartStage from '@/components/market/detail/free/FreeChartStage.vue'
 import { useRangeDetectorOverlayWarmup } from '@/composables/useRangeDetectorOverlayWarmup'
 import type { BarData, OptionalEmaIndicatorId, ProductResearchResponse } from '@/types/market'
@@ -128,16 +128,7 @@ function loadEarlier() { void props.loadEarlier() }
 
 <template>
   <section class="free-workspace" data-detail-workspace="free" :data-range-detector-warmup="rangeState" :data-range-detector-anchor="rangeWarmup.anchorTime.value" :data-range-detector-source-identity="sourceIdentity">
-    <div class="free-workspace__indicators">
-      <details open>
-        <summary>指标设置</summary>
-        <label v-for="item in [['ema_10', 'EMA10'], ['ema_21', 'EMA21'], ['ema_60', 'EMA60']] as const" :key="item[0]"><input type="checkbox" :checked="optionalEmaIndicators.includes(item[0])" @change="toggleEma(item[0])">{{ item[1] }}</label>
-        <label><input v-model="showRangeDetector" type="checkbox">箱体识别（Range）</label>
-      </details>
-    </div>
-
-    <p class="free-workspace__semantic" :class="{ 'free-workspace__warning': model.semanticBanner.tone === 'warning' }" role="status">{{ model.semanticBanner.text }}</p>
-    <MarketDetailFactStrip :facts="model.facts" />
+    <MarketDetailStatusStrip :banner="model.semanticBanner.text" :tone="model.semanticBanner.tone" :facts="model.facts" :identity-key="sourceIdentity" title="自由看盘依据" />
     <p v-if="identityWarning" class="free-workspace__hint" role="status">{{ identityWarning }}</p>
     <FreeChartStage
       :bars="bars"
@@ -154,6 +145,13 @@ function loadEarlier() { void props.loadEarlier() }
       @focus-resolved="emit('focus-resolved', $event)"
       @load-earlier="loadEarlier"
     />
+    <div class="free-workspace__indicators">
+      <details>
+        <summary>指标设置</summary>
+        <label v-for="item in [['ema_10', 'EMA10'], ['ema_21', 'EMA21'], ['ema_60', 'EMA60']] as const" :key="item[0]"><input type="checkbox" :checked="optionalEmaIndicators.includes(item[0])" @change="toggleEma(item[0])">{{ item[1] }}</label>
+        <label><input v-model="showRangeDetector" type="checkbox">箱体识别（Range）</label>
+      </details>
+    </div>
     <MarketDetailInsightDeck :identity-key="sourceIdentity" :sections="backgroundSections" :default-open="false" />
     <MarketDetailInsightDeck :identity-key="sourceIdentity" :sections="dataSections" :default-open="false" />
   </section>

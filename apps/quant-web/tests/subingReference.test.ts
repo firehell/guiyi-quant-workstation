@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { normalizeSubingReference } from '../src/utils/subingReference.ts'
 import { useSubingReference } from '../src/composables/useSubingReference.ts'
+import { formatMarketDecimal } from '../src/utils/marketDisplay.ts'
 
 export const referenceFixture = (symbol = 'jm') => ({ symbol, frequency: '15m', series_kind: 'actual_dominant', formula_version: 'subing_ths_15m_v3', reference_model_version: 'subing_reference_reverse_close_v1', as_of: '2026-09-08T16:00:00+08:00', performance_since: '2026-08-12', performance_through: '2026-09-08', reference_cutoff: '2026-09-08T15:00:00+08:00', input_snapshot_hash: 'a'.repeat(64), executable: false, auto_order: false, source: 'historical_replay', summary: { closed_count: 0, win_count: 0, loss_count: 0, flat_count: 0, open_count: 0, interrupted_count: 0, initial_count: 0, win_rate_pct: null, mean_return_pct: null, sum_return_percentage_points: '0' }, signals: [], items: [], next_before: null })
 
@@ -73,4 +75,18 @@ test('display rounds Decimal text without binary floating point or changing raw 
   assert.equal(referenceDecimalDisplay('-0.004'), '0.00')
   assert.equal(referenceDecimalDisplay('99999999999999999999.995'), '+100000000000000000000.00')
   assert.equal(referenceDecimalDisplay('66.666666666666666666', false), '66.67')
+})
+
+test('reference prices keep exact Decimal display text without meaningless trailing zeroes', () => {
+  assert.equal(formatMarketDecimal('718.070000000000000000'), '718.07')
+})
+
+test('reference records separate precise chart location from detail inspection', () => {
+  const panel = readFileSync(new URL('../src/components/market/detail/subing/SubingReferencePanel.vue', import.meta.url), 'utf8')
+  const workspace = readFileSync(new URL('../src/components/market/detail/subing/SubingDetailWorkspace.vue', import.meta.url), 'utf8')
+  assert.match(panel, />定位图表</)
+  assert.match(panel, />查看详情</)
+  assert.match(panel, /formatMarketDecimal\(trade\.entry_reference_price\)/)
+  assert.match(panel, /开始交易日不能晚于结束交易日/)
+  assert.match(workspace, /chartRegion\.value\?\.scrollIntoView/)
 })

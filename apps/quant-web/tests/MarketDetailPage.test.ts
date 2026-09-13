@@ -30,7 +30,9 @@ test('activates generic facts and mounts the isolated Newow product workspace', 
   assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy' && header"/)
   assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing' && header"/)
   assert.match(source, /import NewowProductWorkspace/)
-  assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow'"/)
+  assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow' && newowCapabilities\.capabilities\.value && newowFrequencyOpen"/)
+  assert.match(template, /:capabilities="newowCapabilities\.capabilities\.value"/)
+  assert.match(template, /切换到已开放周线/)
   assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free' && header"/)
   assert.doesNotMatch(template, /<HtdyDetailWorkspace\s+v-else(?:\s|>)/)
 })
@@ -39,9 +41,12 @@ test('gives SuBing and Trend history, while alert management remains unavailable
   const { source, template } = page()
 
   assert.match(source, /subingWorkspace\.value\?\.openHistory\(\)/)
+  assert.match(source, /newowWorkspace\.value\?\.openHistory\(\)/)
   assert.match(source, /hasTrendHistory/)
   assert.match(source, /trendWorkspace\.value\?\.openHistory\(\)/)
-  assert.match(template, /routeResult\.identity\.view === 'subing'\s*\?\s*hasSubingHistory/s)
+  assert.match(template, /canOpenHistory:/)
+  assert.match(template, /newowCapabilities\.isSectionOpen\('reference'\)/)
+  assert.match(template, /'预警记录'\s*:\s*'参考记录'/)
   assert.match(template, /canManageAlert:\s*false/)
   assert.match(template, /@history-availability="hasTrendHistory = \$event"/)
   assert.match(template, /<SubingDetailWorkspace[^>]+focus-bar-end/s)
@@ -52,21 +57,23 @@ test('gives SuBing and Trend history, while alert management remains unavailable
 test('keeps Free and HTDY as separate explicit workspaces', () => {
   const { template } = page()
 
-  assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow'"/)
+  assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow' && newowCapabilities\.capabilities\.value && newowFrequencyOpen"/)
   assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free' && header"/)
   assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy' && header"/)
   assert.match(template, /<TrendDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'trend' && header"/)
   assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing' && header"/)
 })
 
-test('initial Newow startup does not request research sections', () => {
+test('accepted Newow chart starts first-screen research once without viewport observation', () => {
   const workspace = readFileSync(newowWorkspaceUrl, 'utf8')
 
-  assert.doesNotMatch(
-    workspace,
-    /watch\(chartResponse,[\s\S]*loader\.loadReference\(\)/,
-    'a successful chart load must not implicitly request reference or other research sections',
-  )
+  assert.match(workspace, /loadFirstScreenResearch/)
+  assert.match(workspace, /loader\.loadReference\(\)/)
+  assert.match(workspace, /sectionOpen\('explanation'\)/)
+  assert.doesNotMatch(workspace, /IntersectionObserver/)
+  assert.equal((workspace.match(/<NewowExplanationPanel/g) ?? []).length, 1)
+  assert.doesNotMatch(workspace, /detailsOpen|newow-details/)
+  assert.match(workspace, /<MarketDetailUnavailable v-if="chartResponse === null/)
 })
 
 test('historical Newow mode hides the independent current quote and contract header', () => {

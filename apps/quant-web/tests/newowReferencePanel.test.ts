@@ -70,7 +70,7 @@ test('zero CLOSED stays unavailable while negative interruption and initial-posi
   })
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.category, 'interrupted')
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.returnText, '-12.5000%（中断浮动）')
-  assert.equal(model.rows.find((row) => row.id === 'interrupted')?.valuationText, '2026-04-30T07:00:00Z · 87.500')
+  assert.equal(model.rows.find((row) => row.id === 'interrupted')?.valuationText, '2026-04-30T07:00:00Z · 87.5')
   assert.equal(model.rows.find((row) => row.id === 'initial')?.category, 'closed')
   assert.equal(model.rows.find((row) => row.id === 'initial')?.initial, true)
   assert.equal(model.rows.find((row) => row.id === 'initial')?.lifecycle, 'CLOSED')
@@ -173,6 +173,8 @@ test('reference panel keeps the server summary while native controls filter, exp
     assert.match(fullText, new RegExp(phrase))
   }
   assert.match(fullText, /同 Bar Close 仅属于独立 comparator/)
+  for (const label of ['已清仓', '未清仓', '换月中断', '期初已有', '定位图表', '查看详情']) assert.match(fullText, new RegExp(label))
+  assert.match(readFileSync(componentUrl, 'utf8'), /<option value="all">全部<\/option>/)
   assert.doesNotMatch(fullText, /Reference[^。]*采用同 Bar Close/)
   const expand = findNode(root, (node) => node.props['aria-label'] === '展开参考记录 open')!
   assert.equal(expand.type, 'button')
@@ -184,6 +186,7 @@ test('reference panel keeps the server summary while native controls filter, exp
 
   const locate = findNode(root, (node) => node.props['aria-label'] === '定位参考记录 open 的建仓信号')!
   assert.equal(locate.type, 'button')
+  assert.equal(nodeText(locate), '定位图表')
   ;(locate.props.onClick as () => void)()
   assert.deepEqual(located.map(({ reference_trade_id, entry_signal_id, entry_bar_end }) => ({ reference_trade_id, entry_signal_id, entry_bar_end })), [
     { reference_trade_id: 'open', entry_signal_id: 'entry-open', entry_bar_end: '2026-08-14T07:00:00Z' },
@@ -197,6 +200,28 @@ test('reference panel keeps the server summary while native controls filter, exp
   assert.equal(findNode(root, node => node.type === 'table'), undefined)
   assert.match(nodeText(summary), /胜率\s*—/, 'filter must not change the server-owned summary')
   app.unmount()
+})
+
+test('reference date application blocks an invalid range with visible feedback', async () => {
+  const Panel = await loadComponent()
+  let reloads = 0
+  const Host = defineComponent({ setup: () => () => h(Panel, {
+    response: referenceResponse(), chartResponse: chartResponse(), crossSectionCompatible: true, lifecycle: 'ready', error: null,
+    selectedSignalId: null, locateMessage: null, loadingPage: false, onReload: () => { reloads += 1 },
+  }) })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  await nextTick()
+  const inputs = findNodes(root, (node) => node.type === 'input')
+  ;(inputs[0]!.props.onInput as (event: { target: { value: string } }) => void)({ target: { value: '2026-09-01' } })
+  ;(inputs[1]!.props.onInput as (event: { target: { value: string } }) => void)({ target: { value: '2026-08-01' } })
+  await nextTick()
+  assert.match(nodeText(root), /统计起点不能晚于统计终点/)
+  const submit = findNode(root, (node) => node.type === 'button' && nodeText(node) === '应用统计窗口')!
+  assert.equal(submit.props.disabled, true)
+  app.unmount()
+  assert.equal(reloads, 0)
 })
 
 test('reference date drafts clear when a new identity has no retained response', async () => {

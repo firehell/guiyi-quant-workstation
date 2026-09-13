@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import type { MarketDetailHistoryItem } from '@/types/marketDetail'
 import MarketDetailDrawer from './MarketDetailDrawer.vue'
@@ -18,6 +18,8 @@ const emit = defineEmits<{
 
 const mobile = ref(false)
 const historyDrawerOpen = ref(false)
+const root = ref<HTMLElement | null>(null)
+const historyButton = ref<HTMLButtonElement | null>(null)
 let media: MediaQueryList | null = null
 
 function syncMedia(event: MediaQueryListEvent | MediaQueryList) {
@@ -25,10 +27,15 @@ function syncMedia(event: MediaQueryListEvent | MediaQueryList) {
   if (!mobile.value) historyDrawerOpen.value = false
 }
 
-function openHistory() {
-  if (props.history.length === 0) return
-  if (mobile.value) historyDrawerOpen.value = true
-  else emit('select', 'history')
+async function openHistory() {
+  if (mobile.value) {
+    historyDrawerOpen.value = true
+    return
+  }
+  emit('select', 'history')
+  await nextTick()
+  root.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  historyButton.value?.focus({ preventScroll: true })
 }
 
 function selectHistory(item: MarketDetailHistoryItem) {
@@ -48,7 +55,7 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
 </script>
 
 <template>
-  <section class="detail-section-tabs" data-detail-section="detail-tabs">
+  <section ref="root" class="detail-section-tabs" data-detail-section="detail-tabs">
     <div class="detail-section-tabs__nav" role="tablist" aria-label="详情内容">
       <button
         v-for="tab in tabs"
@@ -60,7 +67,7 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
         @click="emit('select', tab.id)"
       >{{ tab.label }}</button>
       <button
-        v-if="history.length > 0"
+        ref="historyButton"
         type="button"
         role="tab"
         :aria-selected="!mobile && activeId === 'history'"
@@ -71,6 +78,7 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
 
     <div class="detail-section-tabs__content">
       <slot :active-id="activeId" />
+      <p v-if="!mobile && activeId === 'history' && history.length === 0" class="detail-section-tabs__empty" role="status">暂无历史记录</p>
       <ol v-if="!mobile && activeId === 'history' && history.length > 0" class="detail-section-tabs__history">
         <li v-for="item in history" :key="item.id">
           <button v-if="historySelectable" type="button" @click="selectHistory(item)">
@@ -102,7 +110,8 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
     </div>
 
     <MarketDetailDrawer :open="historyDrawerOpen" title="历史记录" @close="historyDrawerOpen = false">
-      <ol class="detail-section-tabs__history">
+      <p v-if="history.length === 0" class="detail-section-tabs__empty" role="status">暂无历史记录</p>
+      <ol v-else class="detail-section-tabs__history">
         <li v-for="item in history" :key="item.id">
           <button v-if="historySelectable" type="button" @click="selectHistory(item)">
           <span>
@@ -147,4 +156,5 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
 .detail-section-tabs__history li > button { display: flex; width: 100%; justify-content: space-between; gap: var(--gy-space-3); padding: 0; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }
 .detail-section-tabs__history time { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); white-space: nowrap; }
 .detail-section-tabs__history small { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
+.detail-section-tabs__empty { margin: 0; padding: var(--gy-space-4); border-radius: var(--gy-radius-md); color: var(--gy-text-muted); background: var(--gy-detail-section-bg); }
 </style>

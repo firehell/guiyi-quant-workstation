@@ -32,7 +32,6 @@ function quoteLabel(row: DisplayRow) {
         <th scope="col">板块</th>
         <th scope="col" :aria-sort="ariaSort('close')"><button type="button" @click="$emit('sort', 'close')">最新收盘 <span aria-hidden="true">{{ sortGlyph('close') }}</span></button></th>
         <th scope="col" :aria-sort="ariaSort('change')"><button type="button" @click="$emit('sort', 'change')">涨跌幅 <span aria-hidden="true">{{ sortGlyph('change') }}</span></button></th>
-        <th scope="col" title="尚未接入同身份目标参考价">目标参考价</th>
         <th scope="col" :aria-sort="ariaSort('volume')" title="最近完整日线收盘口径"><button type="button" @click="$emit('sort', 'volume')">日量比 <span aria-hidden="true">{{ sortGlyph('volume') }}</span></button></th>
         <th scope="col" :aria-sort="ariaSort('oi')" title="最近完整日线收盘口径"><button type="button" @click="$emit('sort', 'oi')">日增仓率 <span aria-hidden="true">{{ sortGlyph('oi') }}</span></button></th>
         <th scope="col">1d</th><th scope="col">1w</th><th scope="col">同向</th>
@@ -43,7 +42,6 @@ function quoteLabel(row: DisplayRow) {
         <td class="sector-label">{{ productSectorLabel(row.sector) }}</td>
         <td class="close-price" :class="marketHomeDirection(row.price_change_1d)"><strong>{{ marketHomePrice(row.close) }}</strong><small>{{ quoteLabel(row) }}</small></td>
         <td><span class="change-badge" :class="marketHomeDirection(row.price_change_1d)" :title="row.liveQuote ? '同物理合约较上一完整交易日收盘' : '完整日线 1d 涨跌幅'">{{ marketHomePercent(row.price_change_1d) }}</span></td>
-        <td class="target-unavailable"><span title="尚未接入同身份目标参考价">—</span></td>
         <td>{{ marketHomeRatio(row.volume_ratio20) }}</td>
         <td class="oi-change">{{ marketHomePercent(row.oi_change_1d) }}</td>
         <td><MarketStateIcon :state="row.dailyState" /></td>

@@ -40,6 +40,17 @@ function degradedStaleOverview() {
   return value
 }
 function runtime(status = 'degraded') { return { status, generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
+function weeklyCapabilities() {
+  return {
+    schema_version: 'newow_product_capabilities_v1', release_stage: 'weekly', open_frequencies: ['1w'],
+    deferred_frequencies: [
+      { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+    open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
+    deferred_sections: [{ section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' }],
+  }
+}
 function events() { return { status: 'ready', trading_day: '2026-09-02', items: [{ id: 1, rule_code: 'htdy_original_15m', symbol: 'ag', contract: 'AG2601', trading_day: '2026-09-02', frequency: '15m', bar_end: '2026-09-02T02:45:00Z', result_codes: ['buy'], detected_at: '2026-09-02T02:45:01Z', notification_attempted_at: null }] } }
 function mixedEvents() {
   const value = events()
@@ -89,6 +100,10 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
   await page.route(url => url.pathname.startsWith('/api/'), async (route) => {
     const url = new URL(route.request().url())
     if (route.request().method() !== 'GET') { requests.unexpected.push(route.request().method()); return route.abort('blockedbyclient') }
+    if (url.pathname === '/api/v1/market/newow/product-capabilities') {
+      requests.push(url.pathname)
+      return route.fulfill({ json: weeklyCapabilities() })
+    }
     if (new URL(page.url()).pathname === '/market/chart') return route.fallback()
     const allowed = new Set(['/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events', '/api/alerts/history'])
     if (route.request().method() !== 'GET' || !allowed.has(url.pathname)) {
@@ -106,20 +121,18 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
   })
 }
 
-test('top navigation exposes market, messages, and four explicit product view menus', async ({ page }) => {
+test('top navigation exposes market, messages, and one keyboard product search', async ({ page }) => {
   const requests = []
   await mockMarketHomeApi(page, requests)
   await page.goto('/market')
   await expect(page.getByRole('tab', { name: '市场' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tab', { name: '消息' })).toHaveAttribute('aria-selected', 'false')
-  for (const label of ['牛哇', '火天大有', '苏冰预警', '自由看盘']) {
-    const menu = page.locator('.market-home-header details').filter({ has: page.locator('summary', { hasText: label }) })
-    await expect(menu.locator('svg.market-chevron')).toHaveCount(1)
-  }
-  const free = page.locator('.market-home-header details').filter({ has: page.locator('summary', { hasText: '自由看盘' }) })
-  await free.locator('summary').press('ArrowDown')
-  await expect(free).toHaveAttribute('open', '')
-  await expect(free.getByRole('button').first()).toBeFocused()
+  await expect(page.locator('.market-home-header details')).toHaveCount(0)
+  const search = page.getByRole('combobox', { name: '搜索60品种' })
+  await search.fill('jm')
+  await expect(page.getByRole('option', { name: /焦煤.*JM/ })).toBeVisible()
+  await search.press('Enter')
+  await expect(page).toHaveURL(/view=newow.*symbol=jm.*strategy=trend.*frequency=1w/)
 })
 
 test('messages use bounded server history filters and immutable event navigation', async ({ page }) => {
@@ -131,14 +144,14 @@ test('messages use bounded server history filters and immutable event navigation
   await expect(page.getByText('苏冰预警', { exact: true }).last()).toBeVisible()
   await page.getByRole('button', { name: '苏冰', exact: true }).click()
   await expect.poll(() => requests.filter((value) => String(value).startsWith('history:subing_ths_alert_15m_v1')).length).toBe(1)
-  await page.getByLabel('品种').selectOption('jm')
+  await page.locator('.market-message-filters select').selectOption('jm')
   await expect.poll(() => requests.filter((value) => String(value).startsWith('history:subing_ths_alert_15m_v1:jm')).length).toBe(1)
   await page.getByRole('button', { name: /焦煤.*空头预警/ }).click()
   await expect(page).toHaveURL(/view=subing.*symbol=jm.*focus_bar_end=2026-09-02T02:45:00Z/)
   await page.goBack()
   await expect(page.getByRole('tab', { name: '消息' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('button', { name: '苏冰', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByLabel('品种')).toHaveValue('jm')
+  await expect(page.locator('.market-message-filters select')).toHaveValue('jm')
   await expect(page.getByLabel('开始交易日')).toHaveValue(/\d{4}-\d{2}-\d{2}/)
 })
 
@@ -224,6 +237,7 @@ function expectHomeReads(requests, overviewCount = 1, runtimeCount = overviewCou
   expect(requests.filter(path => path.endsWith('/home-overview'))).toHaveLength(overviewCount)
   expect(requests.filter(path => path === '/api/runtime/health')).toHaveLength(runtimeCount)
   expect(requests.filter(path => path === '/api/alerts/current-events')).toHaveLength(0)
+  expect(requests.filter(path => path === '/api/v1/market/newow/product-capabilities')).toHaveLength(Math.max(1, overviewCount))
 }
 
 for (const width of [1440, 390]) {
@@ -260,7 +274,8 @@ test('white full-width market uses only overview and Runtime reads without a res
   await page.goto('/market')
   await expect(page.locator('tbody tr')).toHaveCount(2)
   await expect(page.locator('.market-dashboard-page')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
-  await expect(page.locator('.n-layout-sider, .n-layout-header, input, .toolbar')).toHaveCount(0)
+  await expect(page.locator('.n-layout-sider, .n-layout-header, .toolbar')).toHaveCount(0)
+  await expect(page.getByRole('combobox', { name: '搜索60品种' })).toBeVisible()
   await expect(page.getByText(/非实时行情/).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /研究观察/ })).toHaveCount(0)
   await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toHaveCount(0)
@@ -304,11 +319,8 @@ test('renders the five states and soft percentage badges without inventing targe
   }
   await expect(page.getByTestId('market-state-icon-neutral-table').first()).toHaveCSS('background-color', 'rgb(54, 90, 245)')
   await expect(page.getByTestId('market-state-icon-up-micro').first()).toHaveCSS('border-radius', '50%')
-  await expect(page.getByRole('columnheader', { name: /目标参考价/ })).not.toContainText('↕')
-  await expect(page.getByRole('columnheader', { name: /目标参考价/ }).getByRole('button')).toHaveCount(0)
-  const targets = page.locator('td.target-unavailable')
-  await expect(targets).toHaveCount(5)
-  expect(await targets.allTextContents()).toEqual(Array(5).fill('—'))
+  await expect(page.getByRole('columnheader', { name: /目标参考价/ })).toHaveCount(0)
+  await expect(page.locator('td.target-unavailable')).toHaveCount(0)
   await expect(page.getByText('+2.18%', { exact: true })).toBeVisible()
   const badge = page.locator('tbody tr').first().locator('.change-badge')
   await expect(badge).toHaveCSS('border-radius', '7px')
@@ -355,11 +367,9 @@ test('keeps 60 target-day D1 participants visible when RS2609 price change is un
   await expect(page.locator('tbody tr')).toHaveCount(60)
   await expect(page.getByText('涨跌不可用 1', { exact: true })).toBeVisible()
   await expect(page.locator('tbody tr[data-symbol="rs"] .change-badge')).toHaveText('—')
-  for (const label of ['牛哇', '火天大有', '苏冰预警', '自由看盘']) {
-    const menu = page.locator('.market-home-header details').filter({ has: page.locator('summary', { hasText: label }) })
-    await menu.locator('summary').click()
-    await expect(menu.getByRole('button', { name: new RegExp(rs.product_name) })).toBeVisible()
-  }
+  const search = page.getByRole('combobox', { name: '搜索60品种' })
+  await search.fill('rs')
+  await expect(page.getByRole('option', { name: new RegExp(`${rs.product_name}.*RS`) })).toBeVisible()
   expectHomeReads(requests)
 })
 
@@ -377,7 +387,7 @@ test('sector counts use authority and filtering toggles locally with keyboard ro
   await expect(page.locator('tbody tr')).toHaveCount(60)
   expectHomeReads(requests)
   await page.locator('tbody tr[data-symbol="ag"]').press('Enter')
-  await expect(page).toHaveURL(/view=newow.*symbol=ag.*strategy=trend.*series_kind=actual_dominant.*frequency=1d/)
+  await expect(page).toHaveURL(/view=newow.*symbol=ag.*strategy=trend.*series_kind=actual_dominant.*frequency=1w/)
 })
 
 test('sort and sector survive refresh and browser back while absent sector recovers to all', async ({ page }) => {
@@ -465,27 +475,21 @@ test('invalid and blocked preferences fall back safely without hiding available 
   expectHomeReads(requests, 2)
 })
 
-test('header view menus require an explicit available product and produce exact view routes', async ({ page }) => {
+test('header product search opens the safe default Newow route', async ({ page }) => {
   const requests = []
   await mockMarketHomeApi(page, requests, events(), overview())
-  for (const [label, view, frequency] of [['牛哇', 'newow', '1d'], ['火天大有', 'htdy', '1d'], ['苏冰预警', 'subing', '15m'], ['自由看盘', 'free', '1d']]) {
-    requests.length = 0
-    await page.goto('/market')
-    await expect(page.locator('tbody tr')).toHaveCount(2)
-    const menu = page.locator('.market-home-header details').filter({ has: page.locator('summary', { hasText: label }) })
-    await menu.locator('summary').click()
-    const choice = menu.getByRole('button', { name: /白银/ })
-    await expect(choice).toBeVisible()
-    expectHomeReads(requests)
-    await choice.click()
-    await expect(page).toHaveURL(/\/market\/chart\?/)
-    const url = new URL(page.url())
-    expect(url.pathname).toBe('/market/chart')
-    expect(url.searchParams.get('view')).toBe(view)
-    expect(url.searchParams.get('symbol')).toBe('ag')
-    expect(url.searchParams.get('frequency')).toBe(frequency)
-    expect(url.searchParams.get('series_kind')).toBe('actual_dominant')
-  }
+  await page.goto('/market')
+  await expect(page.locator('tbody tr')).toHaveCount(2)
+  const search = page.getByRole('combobox', { name: '搜索60品种' })
+  await search.fill('白银')
+  await page.getByRole('option', { name: /白银.*AG/ }).click()
+  await expect(page).toHaveURL(/\/market\/chart\?/)
+  const url = new URL(page.url())
+  expect(url.pathname).toBe('/market/chart')
+  expect(url.searchParams.get('view')).toBe('newow')
+  expect(url.searchParams.get('symbol')).toBe('ag')
+  expect(url.searchParams.get('frequency')).toBe('1w')
+  expect(url.searchParams.get('series_kind')).toBe('actual_dominant')
   expect(requests.unexpected).toEqual([])
 })
 
@@ -510,9 +514,8 @@ test('initial unavailable snapshot invents no counts and no target or product ro
   await expect(page.getByText(/没有可展示的上一份成功快照/)).toBeVisible()
   await expect(page.locator('tbody tr')).toHaveCount(0)
   await expect(page.getByText(/可用\s*—\s*\/\s*—/)).toBeVisible()
-  const menu = page.locator('.market-home-header details').filter({ has: page.locator('summary', { hasText: '牛哇' }) })
-  await menu.locator('summary').click()
-  await expect(menu.getByRole('button')).toHaveCount(0)
+  await page.getByRole('combobox', { name: '搜索60品种' }).focus()
+  await expect(page.getByText('目录加载失败，无法安全切换品种。', { exact: true })).toBeVisible()
   expectHomeReads(requests)
 })
 

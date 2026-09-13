@@ -32,7 +32,7 @@ test('preview identifies both sources, fixes cutoff and never subscribes to live
     as_of: NEWOW_AS_OF, realtime: false,
     candidate_origin: 'http://127.0.0.1:8010', status_origin: 'http://127.0.0.1:8000',
   } }))
-  await page.goto(newowRoute('trend', '60m'))
+  await page.goto(newowRoute('trend', '1w'))
   await expect(page.getByTestId('candidate-preview-banner')).toContainText('本地候选只读预览')
   await expect(page.getByTestId('candidate-preview-banner')).toContainText('非实时')
   await expect(page.getByTestId('candidate-preview-banner')).toContainText('8010')

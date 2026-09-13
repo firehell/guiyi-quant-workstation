@@ -15,6 +15,7 @@ import { getMarketHomeOverview } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
 import { useMarketHome } from '@/composables/useMarketHome'
 import { useMarketHomeLive } from '@/composables/useMarketHomeLive'
+import { useNewowCapabilities } from '@/composables/useNewowCapabilities'
 import type { AlertEvent } from '@/types/market'
 import { buildMarketHomeViewModel, type MarketHomeRow } from '@/utils/marketHomeViewModel'
 import { loadMarketHomePreferences, saveMarketHomePreferences } from '@/utils/marketHomePreferences'
@@ -30,6 +31,8 @@ const sortDirection = ref<MarketHomeSortDirection>(initialPreferences.sortDirect
 const compactDensity = ref(initialPreferences.compactDensity)
 const activeTab = ref<'market' | 'messages'>(loadActiveTab())
 const messageReloadSequence = ref(0)
+const navigationError = ref<string | null>(null)
+const newowCapabilities = useNewowCapabilities()
 const home = useMarketHome({
   fetchOverview: getMarketHomeOverview,
   fetchRuntime: getRuntimeHealth,
@@ -61,17 +64,29 @@ async function refreshAll() {
 }
 
 function openProduct(item: MarketHomeRow) {
+  const frequency = newowCapabilities.openFrequencies.value[0]
+  if (newowCapabilities.state.value !== 'ready' || !frequency) {
+    navigationError.value = newowCapabilities.error.value ?? '牛哇开放能力仍在读取，暂不能安全进入。'
+    return
+  }
   rememberPageState()
+  navigationError.value = null
   void router.push({
     name: 'market-chart',
-    query: marketHomeUnifiedProductChartQuery(item.symbol),
+    query: marketHomeUnifiedProductChartQuery(item.symbol, frequency),
   })
 }
 
 function openEvent(event: AlertEvent) { rememberPageState(); void router.push({ name: 'market-chart', query: marketHomeEventChartQuery(event) }) }
 function openView(view: 'newow' | 'htdy' | 'subing' | 'free', symbol: string) {
+  const frequency = newowCapabilities.openFrequencies.value[0] ?? null
+  if (view === 'newow' && (newowCapabilities.state.value !== 'ready' || frequency === null)) {
+    navigationError.value = newowCapabilities.error.value ?? '牛哇开放能力仍在读取，暂不能安全进入。'
+    return
+  }
   rememberPageState()
-  void router.push({ name: 'market-chart', query: marketHomeViewChartQuery(view, symbol) })
+  navigationError.value = null
+  void router.push({ name: 'market-chart', query: marketHomeViewChartQuery(view, symbol, frequency) })
 }
 
 function selectTab(tab: 'market' | 'messages') {
@@ -134,6 +149,7 @@ watch([sector, sort, sortDirection, compactDensity], () => saveMarketHomePrefere
 onMounted(() => {
   home.start()
   live.start()
+  void newowCapabilities.load()
   void nextTick(restorePageScroll)
 })
 
@@ -148,6 +164,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="market-dashboard-page">
     <MarketHomeHeader :rows="model.rows" :loading="activeTab === 'market' && loading" :active-tab="activeTab" @select-tab="selectTab" @open-view="openView" @refresh="refreshAll" />
+    <p v-if="navigationError" class="market-dashboard-page__navigation-error" role="alert">{{ navigationError }}</p>
     <template v-if="activeTab === 'market'">
       <MarketHomeSectorTicker :sectors="sectors" :active="home.overview.data.value?.active_count ?? null" :selected="sector" @select="sector = $event" />
       <MarketHomeLegend />

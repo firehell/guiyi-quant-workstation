@@ -222,12 +222,13 @@ test('comparator renders a natural insufficient-owner boundary without a conflic
 
 test('workspace uses a disclosure and dialog while keeping one selected signal authority', () => {
   const source = readFileSync(workspaceUrl, 'utf8')
-  assert.match(source, /:aria-expanded="detailsOpen"/)
-  assert.match(source, /aria-controls="newow-details"/)
+  assert.match(source, />查看依据</)
+  assert.doesNotMatch(source, /detailsOpen|newow-details/)
   assert.match(source, /<NewowDetailDialog/)
   assert.doesNotMatch(source, /role="tablist"|researchTab/)
   assert.match(source, /<NewowReferencePanel/)
-  assert.match(source, /<NewowExplanationPanel/)
+  assert.equal((source.match(/<NewowExplanationPanel/g) ?? []).length, 1)
+  assert.match(source, /loadFirstScreenResearch/)
   assert.match(source, /@locate="locateReferenceTrade"/)
   assert.doesNotMatch(source, /selectedTradeId|selectedReferenceSignalId/)
 })

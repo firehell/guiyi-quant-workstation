@@ -303,6 +303,7 @@ test('reports only an active generation market-series failure', async () => {
   assert.equal(controller.state.value.header, null)
   assert.equal(controller.state.value.loading, false)
   assert.equal(controller.state.value.error, '详情行情加载失败')
+  assert.deepEqual(controller.productCatalog.value, [dominant('jm')])
 })
 
 test('Newow chart starts while generic series is still pending', async () => {
