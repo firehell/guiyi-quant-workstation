@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import json
 from types import SimpleNamespace
 
@@ -931,4 +931,447 @@ def test_event_commit_then_status_failure_keeps_event_and_blocks_sender(
     assert expected_log in messages
     assert "ALERT_RECOVERY_GUARD_UNAVAILABLE" not in messages
     assert sender.calls == 0
+    engine.dispose()
+
+
+@pytest.mark.parametrize("frequency", ("1d", "1w"))
+@pytest.mark.parametrize("failure_mode", ("always", "once"))
+def test_canonical_event_commit_then_status_failure_blocks_sender(
+    frequency: str,
+    failure_mode: str,
+) -> None:
+    """Catches releasing a canonical message before its rule status is recorded."""
+    trading_day = date(2026, 9, 11)
+    bar_at = datetime(2026, 9, 11, 7, tzinfo=UTC)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AlertRule.__table__.create(engine)
+    AlertEvent.__table__.create(engine)
+    with OrmSession(engine) as session:
+        session.add(
+            AlertRule(
+                rule_code=HTDY_ALERT_RULE_CODE,
+                enabled=True,
+                scope_product_frequencies={"rb": [frequency]},
+            )
+        )
+        session.commit()
+
+    window = MarketReadWindow(
+        "rb",
+        "actual_dominant",
+        frequency,
+        trading_day,
+        "RB2610",
+        bar_at,
+        (CanonicalBar(bar_at, trading_day, 1, 1, 1, 1, 1, None, None),),
+        ("RB2610",),
+    )
+
+    class MarketRead:
+        @staticmethod
+        def latest_canonical_window(_query, *, trading_day, limit):
+            assert trading_day == window.trading_day
+            assert limit == 64
+            return window
+
+    class Evaluator:
+        @staticmethod
+        def evaluate_candidates(_market_read, candidate_window):
+            return (
+                AlertObservationCandidate(
+                    candidate_window.cutoff,
+                    candidate_window.trading_day,
+                    candidate_window.contract,
+                    ("buy",),
+                ),
+            )
+
+    class Sender:
+        calls = 0
+
+        def send(self, _message):
+            self.calls += 1
+            return ProviderAcceptance("accepted")
+
+    class FailingStatusStore:
+        def __init__(self) -> None:
+            self.status = empty_alert_runtime_status()
+            self.updates = 0
+
+        def read(self):
+            return self.status
+
+        def update(self, changes):
+            self.updates += 1
+            if failure_mode == "always" or self.updates == 1:
+                raise ConnectionError("isolated canonical status failure")
+            self.status = {**self.status, **changes}
+            return self.status
+
+    sender = Sender()
+    runtime = AlertRuntime(
+        session_factory=lambda: OrmSession(engine),
+        market_read_factory=lambda _session: MarketRead(),
+        evaluators={HTDY_ALERT_RULE_CODE: Evaluator()},
+        sender=sender,
+        operational_products=("rb",),
+        taxonomy={"rb": SimpleNamespace(name="螺纹钢")},
+        runtime_status_store=FailingStatusStore(),
+        clock=lambda: bar_at + timedelta(seconds=1),
+    )
+
+    if failure_mode == "always":
+        with pytest.raises(
+            ConnectionError, match="isolated canonical status failure"
+        ):
+            runtime.process_message(
+                "market:state",
+                {
+                    "reason": "canonical_updated",
+                    "trading_day": trading_day.isoformat(),
+                },
+            )
+    else:
+        runtime.process_message(
+            "market:state",
+            {
+                "reason": "canonical_updated",
+                "trading_day": trading_day.isoformat(),
+            },
+        )
+
+    with OrmSession(engine) as session:
+        assert session.scalar(select(func.count()).select_from(AlertEvent)) == 1
+    assert sender.calls == 0
+    engine.dispose()
+
+
+def test_unscoped_canonical_update_does_not_clear_processing_failure() -> None:
+    """Catches treating a canonical notification with zero evaluations as success."""
+    trading_day = date(2026, 9, 11)
+    rule = AlertRule(
+        rule_code=HTDY_ALERT_RULE_CODE,
+        enabled=True,
+        scope_product_frequencies={"rb": ["15m"]},
+    )
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        @staticmethod
+        def in_transaction():
+            return False
+
+        @staticmethod
+        def scalars(_statement):
+            return SimpleNamespace(all=lambda: [rule])
+
+    class MarketRead:
+        @staticmethod
+        def latest_canonical_window(*_args, **_kwargs):
+            raise AssertionError("unscoped canonical path must not read")
+
+    now = datetime(2026, 9, 11, 8, tzinfo=UTC)
+    runtime = AlertRuntime(
+        session_factory=Session,
+        market_read_factory=lambda _session: MarketRead(),
+        evaluators={HTDY_ALERT_RULE_CODE: object()},  # type: ignore[dict-item]
+        sender=object(),  # type: ignore[arg-type]
+        operational_products=("rb",),
+        taxonomy={},
+        clock=lambda: now,
+    )
+    runtime._record_processing_result(
+        processing_now=now,
+        bar_at=now,
+        failed=True,
+    )
+    failed = dict(runtime._current_runtime_status())
+
+    runtime.process_message(
+        "market:state",
+        {"reason": "canonical_updated", "trading_day": trading_day.isoformat()},
+    )
+
+    current = runtime._current_runtime_status()
+    assert current["processing_error_type"] == failed["processing_error_type"]
+    assert current["last_processing_success_at"] == failed[
+        "last_processing_success_at"
+    ]
+
+
+def test_canonical_status_failure_discards_only_its_unapproved_message() -> None:
+    """Catches mixing a failed item's message into another item's approved batch."""
+    trading_day = date(2026, 9, 11)
+    bar_at = datetime(2026, 9, 11, 7, tzinfo=UTC)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AlertRule.__table__.create(engine)
+    AlertEvent.__table__.create(engine)
+    with OrmSession(engine) as session:
+        session.add(
+            AlertRule(
+                rule_code=HTDY_ALERT_RULE_CODE,
+                enabled=True,
+                scope_product_frequencies={"jm": ["1d"], "rb": ["1d"]},
+            )
+        )
+        session.commit()
+
+    class MarketRead:
+        @staticmethod
+        def latest_canonical_window(query, *, trading_day, limit):
+            assert limit == 64
+            contract = f"{query.symbol.upper()}2610"
+            bar = CanonicalBar(
+                bar_at,
+                trading_day,
+                1,
+                1,
+                1,
+                1,
+                1,
+                None,
+                None,
+            )
+            return MarketReadWindow(
+                query.symbol,
+                "actual_dominant",
+                "1d",
+                trading_day,
+                contract,
+                bar_at,
+                (bar,),
+                (contract,),
+            )
+
+    class Evaluator:
+        @staticmethod
+        def evaluate_candidates(_market_read, window):
+            return (
+                AlertObservationCandidate(
+                    window.cutoff,
+                    window.trading_day,
+                    window.contract,
+                    ("buy",),
+                ),
+            )
+
+    class Sender:
+        def __init__(self) -> None:
+            self.symbols: list[str] = []
+
+        def send(self, message):
+            self.symbols.append(message.symbol)
+            return ProviderAcceptance("accepted")
+
+    class FailSecondRuleStatus:
+        def __init__(self) -> None:
+            self.status = empty_alert_runtime_status()
+            self.rule_updates = 0
+
+        def read(self):
+            return self.status
+
+        def update(self, changes):
+            if "rule_status" in changes:
+                self.rule_updates += 1
+                if self.rule_updates == 2:
+                    raise ConnectionError("isolated second item status failure")
+            self.status = {**self.status, **changes}
+            return self.status
+
+    sender = Sender()
+    runtime = AlertRuntime(
+        session_factory=lambda: OrmSession(engine),
+        market_read_factory=lambda _session: MarketRead(),
+        evaluators={HTDY_ALERT_RULE_CODE: Evaluator()},
+        sender=sender,
+        operational_products=("rb", "jm"),
+        taxonomy={
+            "jm": SimpleNamespace(name="焦煤"),
+            "rb": SimpleNamespace(name="螺纹钢"),
+        },
+        runtime_status_store=FailSecondRuleStatus(),
+        clock=lambda: bar_at + timedelta(seconds=1),
+    )
+
+    runtime.process_message(
+        "market:state",
+        {"reason": "canonical_updated", "trading_day": trading_day.isoformat()},
+    )
+
+    with OrmSession(engine) as session:
+        assert session.scalar(select(func.count()).select_from(AlertEvent)) == 2
+    assert sender.symbols == ["jm"]
+    engine.dispose()
+
+
+@pytest.mark.parametrize("frequency", ("1d", "1w"))
+@pytest.mark.parametrize("recovers", (False, True), ids=("persistent", "recovers"))
+def test_canonical_typed_evaluation_failure_preserves_history_and_can_recover(
+    frequency: str,
+    recovers: bool,
+) -> None:
+    trading_day = date(2026, 9, 11)
+    bar_at = datetime(2026, 9, 11, 7, tzinfo=UTC)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AlertRule.__table__.create(engine)
+    AlertEvent.__table__.create(engine)
+    with OrmSession(engine) as session:
+        session.add(
+            AlertRule(
+                rule_code=HTDY_ALERT_RULE_CODE,
+                enabled=True,
+                scope_product_frequencies={"rb": [frequency]},
+            )
+        )
+        session.commit()
+
+    window = MarketReadWindow(
+        "rb",
+        "actual_dominant",
+        frequency,
+        trading_day,
+        "RB2610",
+        bar_at,
+        (CanonicalBar(bar_at, trading_day, 1, 1, 1, 1, 1, None, None),),
+        ("RB2610",),
+    )
+
+    class MarketRead:
+        @staticmethod
+        def latest_canonical_window(_query, *, trading_day, limit):
+            assert trading_day == window.trading_day
+            assert limit == 64
+            return window
+
+    class Evaluator:
+        calls = 0
+
+        def evaluate_candidates(self, _market_read, _window):
+            self.calls += 1
+            if self.calls == 1 or not recovers:
+                raise AlertEvaluationError("ALERT_EVALUATION_FAILED")
+            return ()
+
+    evaluator = Evaluator()
+    times = iter(
+        (
+            bar_at + timedelta(seconds=1),
+            bar_at + timedelta(seconds=2),
+        )
+    )
+    runtime = AlertRuntime(
+        session_factory=lambda: OrmSession(engine),
+        market_read_factory=lambda _session: MarketRead(),
+        evaluators={HTDY_ALERT_RULE_CODE: evaluator},
+        sender=object(),  # type: ignore[arg-type]
+        operational_products=("rb",),
+        taxonomy={},
+        clock=lambda: next(times),
+    )
+    payload = {
+        "reason": "canonical_updated",
+        "trading_day": trading_day.isoformat(),
+    }
+
+    runtime.process_message("market:state", payload)
+    first = runtime._current_runtime_status()["rule_status"][HTDY_ALERT_RULE_CODE]
+    assert first["error_type"] == "evaluation_failed"
+    first_failure = first["last_failure_at"]
+
+    runtime.process_message("market:state", payload)
+    second = runtime._current_runtime_status()["rule_status"][HTDY_ALERT_RULE_CODE]
+    if recovers:
+        assert second["last_failure_at"] == first_failure
+    else:
+        assert second["last_failure_at"] != first_failure
+    assert second["error_type"] == (None if recovers else "evaluation_failed")
+    assert second["last_evaluated_bar_at"] == (
+        bar_at.isoformat() if recovers else None
+    )
+    engine.dispose()
+
+
+@pytest.mark.parametrize("frequency", ("1d", "1w"))
+def test_duplicate_canonical_update_neither_recommits_nor_resends(
+    frequency: str,
+) -> None:
+    trading_day = date(2026, 9, 11)
+    bar_at = datetime(2026, 9, 11, 7, tzinfo=UTC)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AlertRule.__table__.create(engine)
+    AlertEvent.__table__.create(engine)
+    with OrmSession(engine) as session:
+        session.add(
+            AlertRule(
+                rule_code=HTDY_ALERT_RULE_CODE,
+                enabled=True,
+                scope_product_frequencies={"rb": [frequency]},
+            )
+        )
+        session.commit()
+
+    window = MarketReadWindow(
+        "rb",
+        "actual_dominant",
+        frequency,
+        trading_day,
+        "RB2610",
+        bar_at,
+        (CanonicalBar(bar_at, trading_day, 1, 1, 1, 1, 1, None, None),),
+        ("RB2610",),
+    )
+
+    class MarketRead:
+        @staticmethod
+        def latest_canonical_window(_query, *, trading_day, limit):
+            assert trading_day == window.trading_day
+            assert limit == 64
+            return window
+
+    class Evaluator:
+        @staticmethod
+        def evaluate_candidates(_market_read, _window):
+            return (
+                AlertObservationCandidate(
+                    window.cutoff,
+                    window.trading_day,
+                    window.contract,
+                    ("buy",),
+                ),
+            )
+
+    class Sender:
+        calls = 0
+
+        def send(self, _message):
+            self.calls += 1
+            return ProviderAcceptance("accepted")
+
+    sender = Sender()
+    runtime = AlertRuntime(
+        session_factory=lambda: OrmSession(engine),
+        market_read_factory=lambda _session: MarketRead(),
+        evaluators={HTDY_ALERT_RULE_CODE: Evaluator()},
+        sender=sender,
+        operational_products=("rb",),
+        taxonomy={"rb": SimpleNamespace(name="螺纹钢")},
+        clock=lambda: bar_at + timedelta(seconds=1),
+    )
+    payload = {
+        "reason": "canonical_updated",
+        "trading_day": trading_day.isoformat(),
+    }
+
+    runtime.process_message("market:state", payload)
+    runtime.process_message("market:state", payload)
+
+    with OrmSession(engine) as session:
+        assert session.scalar(select(func.count()).select_from(AlertEvent)) == 1
+    assert sender.calls == 1
     engine.dispose()
