@@ -39,6 +39,36 @@ test('empty main chart legend follows the selected strategy instead of defaultin
   }
 })
 
+test('trend A/B boundaries render as lightweight one-pixel lines above the columns', async () => {
+  const Stage = await loadComponent()
+  const response = chartResponse()
+  response.meta.identity.strategy = 'trend'
+  response.meta.identity.profile_id = 'newow_product_trend_60m_v1'
+  response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2']
+  response.value!.frames[0]!.main_state = 'HOLD'
+  response.value!.frames[0]!.main_values = { a: '99', b: '101' }
+  response.value!.actions = []
+  response.value!.hints = []
+  const lineOptions: Array<Record<string, unknown>> = []
+  const fakeChart = {
+    addSeries(definition: { type: string }, options: Record<string, unknown>) {
+      if (definition.type === 'Line' && options.lineVisible !== false) lineOptions.push(options)
+      return { setData() {}, attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {} }
+    },
+    removeSeries() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response, strategy: 'trend', selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+
+  assert.deepEqual(lineOptions.map(options => options.lineWidth), [1, 1])
+  app.unmount()
+})
+
 test('emits stable signal selection and preserves an established viewport and focus when earlier data arrives', async () => {
   const Stage = await loadComponent()
   let range = { from: 0, to: 1 }

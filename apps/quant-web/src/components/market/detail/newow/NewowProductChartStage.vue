@@ -216,7 +216,7 @@ function syncMainLines(value: NewowProductChartModel): void {
   for (const line of value.mainLines) {
     let series = mainLines.get(line.id)
     if (series === undefined) {
-      series = chart.addSeries(LineSeries, { color: mainLineColors[line.key] ?? '#64748B', lineWidth: 2, lastValueVisible: false, priceLineVisible: false })
+      series = chart.addSeries(LineSeries, { color: mainLineColors[line.key] ?? '#64748B', lineWidth: value.identity.strategy === 'trend' ? 1 : 2, lastValueVisible: false, priceLineVisible: false })
       mainLines.set(line.id, series)
     }
     series.setData(line.points.map((point): LineData<Time> => ({
