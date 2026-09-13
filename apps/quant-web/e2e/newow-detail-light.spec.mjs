@@ -10,7 +10,7 @@ test('weekly summary eagerly loads open reference data and keeps deferred explan
   await expect(workspace).toHaveAttribute('data-auxiliary-state', 'ready')
   const chartBox = await page.getByTestId('newow-product-chart-stage').boundingBox()
   expect(chartBox?.y).toBeLessThanOrEqual(400)
-  await expect(page.locator('.newow-detail-light')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+  await expect(page.locator('.unified-detail-light')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
   expect(productRequests(fixture, 'explanation')).toHaveLength(0)
   expect(productRequests(fixture, 'comparator')).toHaveLength(0)
   await expect.poll(() => productRequests(fixture, 'reference').length).toBe(1)
