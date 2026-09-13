@@ -85,6 +85,39 @@ def test_closed_returns_are_summed_as_points_not_compounded(product_cases):
     )
 
 
+def test_initial_clear_without_entry_keeps_all_trade_statistics_empty(product_cases):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,)
+    )
+    projection = ReferenceTradeProjector().project(
+        replay, (), case.bars[-1].bar.bar_end
+    )
+
+    summary = summarize_reference(
+        projection,
+        PerformanceWindow(
+            case.bars[0].bar.trading_day,
+            case.bars[-1].bar.trading_day,
+            case.bars[-1].bar.bar_end,
+        ),
+    )
+
+    assert summary.closed_count == 0
+    assert summary.open_count == 0
+    assert summary.interrupted_count == 0
+    assert summary.initial_count == 0
+    assert summary.win_count == 0
+    assert summary.loss_count == 0
+    assert summary.flat_count == 0
+    assert summary.win_rate_pct is None
+    assert summary.mean_return_pct is None
+    assert summary.sum_return_percentage_points is None
+
+
 def test_one_losing_closed_trade_has_zero_win_rate_and_negative_mean(product_cases):
     projection = _project(product_cases.closed(entry="100", exit="90"))
 

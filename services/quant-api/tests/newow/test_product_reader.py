@@ -64,6 +64,17 @@ def test_reader_consumes_all_prefix_pages(product_cases):
             None,
         )
     ]
+    assert len(result.lifecycle_evidence) == 1
+    evidence = result.lifecycle_evidence[0]
+    assert evidence.product == "rb"
+    assert evidence.frequency is ProductFrequency.HOURLY
+    assert evidence.physical_contract == "RB2605"
+    assert evidence.segment_id == result.replay_bars[0].bar.segment_id
+    assert evidence.first_bar_end == result.replay_bars[0].bar.bar_end
+    assert evidence.last_bar_end == result.replay_bars[-1].bar.bar_end
+    assert evidence.bar_count == 4001
+    assert evidence.verified_cutoff == result.replay_bars[-1].bar.bar_end
+    assert evidence.source_identity == "market_data_service:canonical_v2"
 
 
 @pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])

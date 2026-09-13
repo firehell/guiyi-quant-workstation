@@ -554,11 +554,11 @@ export function chartWire(options: { product?: string; strategy?: 'trend' | 'osc
   const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close, volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
   return {
     meta: {
-      schema_version: 'newow_product_detail_v1',
+      schema_version: 'newow_product_detail_v2',
       identity: { product, strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64),
       data_revision_identity: null, snapshot_token: options.token === undefined ? 'snapshot-a' : options.token,
-      reference_model_version: 'newow_marker_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+      reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     },
     section: 'chart' as const,
     chart: {
@@ -577,6 +577,41 @@ export function chartWire(options: { product?: string; strategy?: 'trend' | 'osc
     auxiliary: notRequested(), reference: notRequested(), explanation: notRequested(), comparator: notRequested(),
   }
 }
+
+test('accepts only a structurally valid main-rise initial clear without entry', () => {
+  const wire = chartWire({ strategy: 'main_rise', actions: [{
+    signal_id: 'initial-clear', kind: 'CLEAR', bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14',
+    reference_price: '100.100', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+    related_build_id: null, trade_eligibility: 'INITIAL_CLEAR_NO_ENTRY', sequence: 0,
+  }] })
+  wire.chart.value.frames[0]!.action_ids = ['initial-clear']
+  wire.chart.value.frames[0]!.main_state = 'CLEAR'
+
+  const parsed = normalizeNewowProductResponse(wire, { ...expectedIdentity('main_rise'), section: 'chart', asOf: AS_OF })
+  assert.equal(parsed.value!.actions[0]!.trade_eligibility, 'INITIAL_CLEAR_NO_ENTRY')
+
+  const mutations = [
+    (copy: typeof wire) => { copy.meta.identity.strategy = 'trend' },
+    (copy: typeof wire) => { copy.chart.value.actions[0]!.kind = 'BUILD' },
+    (copy: typeof wire) => { copy.chart.value.actions[0]!.related_build_id = 'forged-build' },
+    (copy: typeof wire) => { copy.chart.value.actions[0]!.sequence = 1 },
+  ]
+  for (const mutate of mutations) {
+    const copy = structuredClone(wire); mutate(copy)
+    const expectedStrategy = copy.meta.identity.strategy
+    assert.throws(() => normalizeNewowProductResponse(copy, { ...expectedIdentity(expectedStrategy), section: 'chart', asOf: AS_OF }))
+  }
+})
+
+test('rejects the retired v1 product and reference contracts', () => {
+  const schemaV1 = chartWire()
+  schemaV1.meta.schema_version = 'newow_product_detail_v1'
+  assert.throws(() => normalizeNewowProductResponse(schemaV1, { ...expectedIdentity(), section: 'chart', asOf: AS_OF }))
+
+  const referenceV1 = chartWire()
+  referenceV1.meta.reference_model_version = 'newow_marker_reference_zero_cost_v1'
+  assert.throws(() => normalizeNewowProductResponse(referenceV1, { ...expectedIdentity(), section: 'chart', asOf: AS_OF }))
+})
 
 function trendChannelForBars(bars: ReadonlyArray<{ bar_end: string; high: string; low: string; physical_contract: string; segment_id: string; source_identity: string }>) {
   return {
@@ -699,7 +734,7 @@ function comparatorWire() {
 export function referenceItem(id: string, returnPct: string) {
   return {
     reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
-    formula_versions: FORMULAS, reference_model_version: 'newow_marker_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+    formula_versions: FORMULAS, reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
     entry_signal_id: `entry-${id}`, entry_sequence: 1, entry_bar_end: '2026-08-14T07:00:00Z', entry_trading_day: '2026-08-14', entry_reference_price: '100.100',
     exit_signal_id: `exit-${id}`, exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15', exit_reference_price: '101.35125',
     status: 'CLOSED', holding_bars: 1, reference_return_pct: returnPct, mark_bar_end: null, mark_reference_price: null, mark_change_pct: null,

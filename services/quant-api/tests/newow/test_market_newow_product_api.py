@@ -9,6 +9,7 @@ from guiyi_quant.newow.product_contracts import (
     FeatureStatus,
     ProductFrequency,
 )
+from app.market_data.domain import BarFrequency
 
 from app.api import market_newow
 from app.db.session import get_db
@@ -31,6 +32,33 @@ def _service_result(product_cases):
         ProductServiceQuery("rb", "trend", "1w", as_of=clear.bar_end, chart_limit=10)
     )
     return result, clear.bar_end
+
+
+def _initial_clear_service_result(product_cases):
+    reader, _query, fake = product_cases.paged_reader(
+        prefix_bars=36, page_size=20, frequency="1w"
+    )
+    values = (*(["100"] * 35), "90")
+    physical = tuple(
+        replace(bar, open=value, high=value, low=value, close=value)
+        for bar, value in zip(
+            fake.physical[("RB2605", BarFrequency.W1)], values, strict=True
+        )
+    )
+    fake.physical[("RB2605", BarFrequency.W1)] = physical
+    fake.expected_physical[("RB2605", BarFrequency.W1)] = physical
+    fake.actual[BarFrequency.W1] = tuple(
+        bar for bar in physical if bar.trading_day >= fake.segments[0].start_trading_day
+    )
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: fake.as_of,
+    )
+    return service.query(
+        ProductServiceQuery(
+            "rb", "main_rise", "1w", as_of=fake.as_of, chart_limit=2
+        )
+    )
 
 
 def test_weekly_release_capabilities_are_public_without_database_access():
@@ -180,6 +208,11 @@ def test_strategy_detail_returns_only_requested_typed_section(
         body["chart"]["value"]["chart_from"] <= body["chart"]["value"]["chart_through"]
     )
     assert len(body["chart"]["value"]["page_identity"]) == 64
+    assert body["meta"]["schema_version"] == "newow_product_detail_v2"
+    assert (
+        body["meta"]["reference_model_version"]
+        == "newow_marker_reference_zero_cost_v2"
+    )
     assert body["chart"]["value"]["next_older_window"] is None
     assert body["chart"]["value"]["formal_signal_eligible"] is True
     channel = body["chart"]["value"]["trend_channel"]
@@ -201,6 +234,26 @@ def test_strategy_detail_returns_only_requested_typed_section(
         isinstance(action["sequence"], int)
         for action in body["chart"]["value"]["actions"]
     )
+
+
+def test_typed_api_serializes_verified_initial_clear_without_entry(product_cases):
+    result = _initial_clear_service_result(product_cases)
+    payload = market_newow._product_response(result).model_dump(mode="json")
+
+    assert payload["meta"]["schema_version"] == "newow_product_detail_v2"
+    assert (
+        payload["meta"]["reference_model_version"]
+        == "newow_marker_reference_zero_cost_v2"
+    )
+    assert payload["chart"]["value"]["actions"] == [
+        {
+            **payload["chart"]["value"]["actions"][0],
+            "kind": "CLEAR",
+            "related_build_id": None,
+            "trade_eligibility": "INITIAL_CLEAR_NO_ENTRY",
+            "sequence": 0,
+        }
+    ]
 
 
 def test_strategy_detail_serializes_unavailable_channel_point_without_values(

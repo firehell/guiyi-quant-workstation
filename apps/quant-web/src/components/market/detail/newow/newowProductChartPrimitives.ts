@@ -10,6 +10,7 @@ import type {
   NewowAuxiliaryData,
   NewowAuxiliaryValue,
   NewowProductFrequency,
+  NewowProductAction,
   NewowProductSectionResponse,
   NewowResourceLifecycle,
 } from '../../../../types/newowProduct.ts'
@@ -52,6 +53,7 @@ export interface NewowProductActionMarker {
   readonly physicalContract: string
   readonly segmentId: string
   readonly sequence: number
+  readonly tradeEligibility: NewowProductAction['trade_eligibility']
 }
 
 export interface NewowProductHintMarker {
@@ -188,6 +190,7 @@ export function buildNewowProductChartModel(
     physicalContract: action.physical_contract,
     segmentId: action.segment_id,
     sequence: action.sequence,
+    tradeEligibility: action.trade_eligibility,
   }))
   const hints = value.hints.map((hint): NewowProductHintMarker => ({
     id: hint.hint_id,
@@ -435,8 +438,28 @@ export function productChartMarker(
     position: action ? (build ? 'belowBar' : 'aboveBar') : 'inBar',
     shape: action ? (build ? 'arrowUp' : 'arrowDown') : 'circle',
     color: item.id === selectedSignalId ? '#7C3AED' : action ? (build ? '#FF403A' : '#22B95D') : '#64748B',
-    text: action ? (build ? '建仓' : '清仓') : item.kind,
+    text: action
+      ? item.tradeEligibility === 'INITIAL_CLEAR_NO_ENTRY'
+        ? describeNewowProductAction(item).label
+        : build ? '建仓' : '清仓'
+      : item.kind,
     size: action ? 1.5 : 1,
+  }
+}
+
+export function describeNewowProductAction(item: NewowProductActionMarker): {
+  readonly label: string
+  readonly explanation: string
+} {
+  if (item.tradeEligibility === 'INITIAL_CLEAR_NO_ENTRY') {
+    return {
+      label: '清仓（无入场）',
+      explanation: '初始无入场：未观察到可配对 BUILD，不生成参考交易。',
+    }
+  }
+  return {
+    label: item.kind === 'BUILD' ? '参考建仓' : '参考清仓',
+    explanation: '仅为所选历史主动作事实，不代表账户成交。',
   }
 }
 

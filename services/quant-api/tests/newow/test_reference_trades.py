@@ -40,7 +40,7 @@ def test_closed_trade_covers_the_reference_contract_and_uses_action_prices(
     assert trade.physical_contract == "RB2605"
     assert trade.segment_id == case.entry.segment_id
     assert trade.formula_versions == ("newow_trend_band_page_v2",)
-    assert trade.reference_model_version == "newow_marker_reference_zero_cost_v1"
+    assert trade.reference_model_version == "newow_marker_reference_zero_cost_v2"
     assert trade.futures_adaptation_version == "newow_futures_segment_interrupt_v1"
     assert trade.entry_signal_id == case.entry.signal_id
     assert trade.entry_bar_end == case.entry.bar_end
@@ -58,6 +58,32 @@ def test_closed_trade_covers_the_reference_contract_and_uses_action_prices(
     assert trade.interruption_reason is None
     assert trade.statistics_membership is None
     assert trade.hint_ids == ()
+
+
+def test_reference_trade_id_changes_when_reference_model_moves_from_v1_to_v2(
+    product_cases, monkeypatch
+):
+    import guiyi_quant.newow.product_identity as product_identity
+
+    case = product_cases.closed(entry="100", exit="110")
+    monkeypatch.setattr(
+        product_identity,
+        "REFERENCE_MODEL_VERSION",
+        "newow_marker_reference_zero_cost_v1",
+    )
+    v1_id = ReferenceTradeProjector().project(
+        case.replay, case.boundaries, case.as_of
+    ).trades[0].reference_trade_id
+    monkeypatch.setattr(
+        product_identity,
+        "REFERENCE_MODEL_VERSION",
+        "newow_marker_reference_zero_cost_v2",
+    )
+    v2_id = ReferenceTradeProjector().project(
+        case.replay, case.boundaries, case.as_of
+    ).trades[0].reference_trade_id
+
+    assert v1_id != v2_id
 
 
 def test_open_trade_has_no_manufactured_exit_or_realized_return(product_cases):
@@ -220,6 +246,97 @@ def test_warmup_build_witnesses_do_not_fabricate_a_trade(product_cases):
 
     assert result.trades == ()
     assert result.diagnostics == ("NO_ELIGIBLE_ENTRY",)
+
+
+def test_verified_initial_clear_is_a_diagnostic_without_a_reference_trade(
+    product_cases,
+):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,)
+    )
+
+    result = ReferenceTradeProjector().project(
+        replay, (), case.bars[-1].bar.bar_end
+    )
+
+    assert result.trades == ()
+    assert result.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+
+
+def test_initial_clear_projector_independently_rejects_missing_or_stale_evidence(
+    product_cases,
+):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,)
+    )
+
+    for damaged in (
+        replace(replay, lifecycle_evidence=()),
+        _forged_actions(replace(replay, lifecycle_evidence=()), replay.actions),
+    ):
+        with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+            ReferenceTradeProjector().project(
+                damaged, (), case.bars[-1].bar.bar_end
+            )
+
+
+def test_future_initial_clear_does_not_leak_a_diagnostic(product_cases):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,)
+    )
+
+    result = ReferenceTradeProjector().project(
+        replay, (), case.bars[34].bar.bar_end
+    )
+
+    assert result.trades == ()
+    assert "INITIAL_CLEAR_NO_ENTRY" not in result.diagnostics
+
+
+@pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
+def test_initial_clear_then_real_build_and_clear_projects_exactly_one_trade(
+    product_cases, frequency
+):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    closes = tuple(
+        Decimal(value)
+        for value in (*(["100"] * 35), "90", *(["110"] * 60), "80")
+    )
+    case = product_cases.main_rise_lifecycle_input(closes, frequency)
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,)
+    )
+
+    assert [
+        case.bars.index(next(bar for bar in case.bars if bar.bar.bar_end == action.bar_end))
+        for action in replay.actions
+    ] == [35, 36, 96]
+    assert [action.kind for action in replay.actions] == ["CLEAR", "BUILD", "CLEAR"]
+    assert replay.actions[0].trade_eligibility == "INITIAL_CLEAR_NO_ENTRY"
+    projection = ReferenceTradeProjector().project(
+        replay, (), case.bars[-1].bar.bar_end
+    )
+
+    assert projection.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+    assert len(projection.trades) == 1
+    trade = projection.trades[0]
+    assert trade.entry_signal_id == replay.actions[1].signal_id
+    assert trade.exit_signal_id == replay.actions[2].signal_id
+    assert trade.status == "CLOSED"
 
 
 def test_stray_upstream_no_entry_diagnostic_needs_validated_pairing_evidence(

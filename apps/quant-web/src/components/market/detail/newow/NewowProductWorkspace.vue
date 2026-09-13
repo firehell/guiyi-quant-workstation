@@ -5,7 +5,7 @@ import type { MarketDetailIdentity } from '@/types/marketDetail'
 import type { NewowAuxiliaryComponent, NewowProductCapabilities, NewowProductSection, NewowProductStrategy, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
 import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
 import { describeNewowState, projectNewowDetail, newowDisplayLabel, shortNewowTime, referencePercentDisplay } from '@/utils/newowDetailPresentation'
-import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, newowChartSnapshotKey } from './newowProductChartPrimitives'
+import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, describeNewowProductAction, newowChartSnapshotKey } from './newowProductChartPrimitives'
 import { formatChartTimeInShanghai } from '@/utils/barTime'
 import { newowErrorDisplay } from '@/utils/newowDataDiagnostics'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
@@ -37,6 +37,7 @@ const chartResponse = computed(() => (
 const chartModel = computed(() => chartResponse.value === null ? null : buildNewowProductChartModel(chartResponse.value))
 const selectedHint = computed(() => chartModel.value?.hints.find(hint => hint.id === selectedHintId.value) ?? null)
 const selectedAction = computed(() => chartModel.value?.actions.find((action) => action.id === selectedSignalId.value) ?? null)
+const selectedActionDescription = computed(() => selectedAction.value === null ? null : describeNewowProductAction(selectedAction.value))
 const referenceResponse = computed(() => (
   loader.sections.reference.data.value?.section === 'reference'
     ? loader.sections.reference.data.value as NewowProductSectionResponse<'reference'>
@@ -253,8 +254,8 @@ onBeforeUnmount(() => loader.dispose())
         <details v-if="selectedHint"><summary>来源与原始事实</summary><p>{{ selectedHint.id }} · {{ selectedHint.barEnd }}</p><p>known_at {{ selectedHint.confirmedAt }} · sequence {{ selectedHint.sequence ?? '—' }}</p><p>owner {{ selectedHint.physicalContract }} · {{ selectedHint.segmentId }}</p><p>来源 {{ selectedHint.sourceIdentity ?? '—' }} · 响应公式 {{ selectedHint.formulaVersions.join(' / ') }}</p><p>anchor_price {{ selectedHint.anchorPrice ?? '—' }}</p></details>
       </template>
       <template v-else-if="dialogKind === 'action'">
-        <p v-if="selectedAction">历史主动作 {{ newowDisplayLabel(selectedAction.kind) }} · {{ formatMarketDecimal(selectedAction.referencePrice) }} · {{ shortNewowTime(selectedAction.barEnd) }}</p>
-        <p>仅为所选历史主动作事实，不代表账户成交。</p>
+        <p v-if="selectedAction">历史主动作 {{ selectedActionDescription?.label }} · {{ formatMarketDecimal(selectedAction.referencePrice) }} · {{ shortNewowTime(selectedAction.barEnd) }}</p>
+        <p>{{ selectedActionDescription?.explanation ?? '仅为所选历史主动作事实，不代表账户成交。' }}</p>
         <details><summary>来源与关联 Hint</summary><p>{{ selectedSignalId }} · {{ selectedAction?.barEnd }}</p><p v-for="hint in chartResponse?.value?.hints.filter(hint => chartResponse?.value?.frames.find(frame => frame.bar_end === selectedAction?.barEnd)?.hint_ids.includes(hint.hint_id)) ?? []" :key="hint.hint_id">{{ hint.kind }} · {{ hint.hint_id }} · known_at {{ hint.known_at }} · {{ hint.anchor_price ?? '—' }}</p></details>
       </template>
       <template v-else-if="dialogKind === 'indicator'"><p>{{ auxiliaryDisclosure.title }}</p><p>{{ auxiliaryDisclosure.disclosure }}</p><p>{{ currentAuxiliaryLifecycle }} · {{ currentAuxiliaryError ?? '—' }}</p><details><summary>来源</summary><p>{{ currentAuxiliaryResponse?.value?.formula_version ?? '未读取' }}</p><p>截至 {{ currentAuxiliaryResponse?.meta.as_of ?? '—' }}</p></details></template>

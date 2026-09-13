@@ -150,7 +150,7 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
     'schema_version', 'identity', 'as_of', 'read_at', 'input_content_sha256', 'data_revision_identity',
     'snapshot_token', 'reference_model_version', 'futures_adaptation_version',
   ])
-  requireExact(value.schema_version, 'newow_product_detail_v1', 'meta.schema_version')
+  requireExact(value.schema_version, 'newow_product_detail_v2', 'meta.schema_version')
   const normalizedIdentity = normalizeWireIdentity(value.identity, 'meta.identity', expected)
   requireExact(expected.seriesKind, 'actual_dominant', 'expected.seriesKind')
   const asOf = instant(value.as_of, 'meta.as_of')
@@ -159,13 +159,13 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
   const inputHash = sha256(value.input_content_sha256, 'meta.input_content_sha256')
   const revision = nullableText(value.data_revision_identity, 'meta.data_revision_identity')
   const token = nullableText(value.snapshot_token, 'meta.snapshot_token')
-  requireExact(value.reference_model_version, 'newow_marker_reference_zero_cost_v1', 'meta.reference_model_version')
+  requireExact(value.reference_model_version, 'newow_marker_reference_zero_cost_v2', 'meta.reference_model_version')
   requireExact(value.futures_adaptation_version, 'newow_futures_segment_interrupt_v1', 'meta.futures_adaptation_version')
   return {
-    schema_version: 'newow_product_detail_v1',
+    schema_version: 'newow_product_detail_v2',
     identity: normalizedIdentity,
     as_of: asOf, read_at: readAt, input_content_sha256: inputHash, data_revision_identity: revision,
-    snapshot_token: token, reference_model_version: 'newow_marker_reference_zero_cost_v1',
+    snapshot_token: token, reference_model_version: 'newow_marker_reference_zero_cost_v2',
     futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
   }
 }
@@ -221,11 +221,11 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
   const barEnds = new Set(bars.map((bar) => bar.bar_end))
   const frames = array(value.frames, 'frames').map((frame, index) => normalizeFrame(frame, index, barEnds, meta.as_of))
   requireOrderedUnique(frames, (frame) => frame.bar_end, 'frames')
-  const actions = array(value.actions, 'actions').map((action, index) => normalizeAction(action, index, barEnds, meta.as_of))
+  const actions = array(value.actions, 'actions').map((action, index) => normalizeAction(action, index, barEnds, meta.as_of, meta.identity.strategy))
   requireSequenceOrder(actions, 'actions')
   const hints = array(value.hints, 'hints').map((hint, index) => normalizeHint(hint, index, barEnds, meta.as_of))
   requireTimelineOrder(hints, 'hints')
-  validateChartRelationships(bars, frames, actions, hints)
+  validateChartRelationships(bars, frames, actions, hints, meta.identity.strategy)
   const trendChannel = normalizeTrendChannel(value.trend_channel, bars, meta)
   requireExact(value.repainting, false, 'chart.repainting')
   requireExact(value.formal_signal_eligible, true, 'chart.formal_signal_eligible')
@@ -304,6 +304,7 @@ function validateChartRelationships(
   frames: readonly NewowProductFrame[],
   actions: readonly NewowProductAction[],
   hints: readonly NewowProductHint[],
+  strategy: NewowProductMeta['identity']['strategy'],
 ): void {
   const barByEnd = new Map(bars.map((bar) => [bar.bar_end, bar]))
   for (const action of actions) {
@@ -321,6 +322,10 @@ function validateChartRelationships(
     const expectedHints = hints.filter((hint) => hint.bar_end === frame.bar_end).map((hint) => hint.hint_id)
     if (!sameStrings(frame.action_ids, expectedActions)) throw new Error('frame.action_ids conflict with chart actions')
     if (!sameStrings(frame.hint_ids, expectedHints)) throw new Error('frame.hint_ids conflict with chart hints')
+    const initialClears = actions.filter((action) => action.bar_end === frame.bar_end && action.trade_eligibility === 'INITIAL_CLEAR_NO_ENTRY')
+    if (initialClears.length > 0 && (strategy !== 'main_rise' || frame.main_state !== 'CLEAR' || expectedActions.length !== 1)) {
+      throw new Error('INITIAL_CLEAR_NO_ENTRY conflicts with its main-rise CLEAR frame')
+    }
   }
 }
 
@@ -366,19 +371,33 @@ function normalizeFrame(payload: unknown, index: number, barEnds: Set<string>, a
   }
 }
 
-function normalizeAction(payload: unknown, index: number, barEnds: Set<string>, asOf: string): NewowProductAction {
+function normalizeAction(
+  payload: unknown,
+  index: number,
+  barEnds: Set<string>,
+  asOf: string,
+  strategy: NewowProductMeta['identity']['strategy'],
+): NewowProductAction {
   const field = `actions[${index}]`
   const value = exactRecord(payload, field, ['signal_id', 'kind', 'bar_end', 'trading_day', 'reference_price', 'physical_contract', 'segment_id', 'related_build_id', 'trade_eligibility', 'sequence'])
   const barEnd = instant(value.bar_end, `${field}.bar_end`)
   requireNotAfter(barEnd, asOf, `${field}.bar_end`, 'meta.as_of')
   if (!barEnds.has(barEnd)) throw new Error(`${field} does not reference a chart bar`)
+  const kind = literal(value.kind, ['BUILD', 'CLEAR'], `${field}.kind`)
+  const relatedBuildId = nullableText(value.related_build_id, `${field}.related_build_id`)
+  const eligibility = literal(value.trade_eligibility, ['ELIGIBLE', 'WARMUP_ONLY', 'NO_ELIGIBLE_ENTRY', 'INITIAL_CLEAR_NO_ENTRY'], `${field}.trade_eligibility`)
+  const sequence = count(value.sequence, `${field}.sequence`)
+  if (eligibility === 'INITIAL_CLEAR_NO_ENTRY'
+    && (strategy !== 'main_rise' || kind !== 'CLEAR' || relatedBuildId !== null || sequence !== 0)) {
+    throw new Error(`${field} has an invalid INITIAL_CLEAR_NO_ENTRY contract`)
+  }
   return {
-    signal_id: text(value.signal_id, `${field}.signal_id`), kind: literal(value.kind, ['BUILD', 'CLEAR'], `${field}.kind`),
+    signal_id: text(value.signal_id, `${field}.signal_id`), kind,
     bar_end: barEnd, trading_day: day(value.trading_day, `${field}.trading_day`), reference_price: decimal(value.reference_price, `${field}.reference_price`),
     physical_contract: contract(value.physical_contract, `${field}.physical_contract`), segment_id: text(value.segment_id, `${field}.segment_id`),
-    related_build_id: nullableText(value.related_build_id, `${field}.related_build_id`),
-    trade_eligibility: literal(value.trade_eligibility, ['ELIGIBLE', 'WARMUP_ONLY', 'NO_ELIGIBLE_ENTRY'], `${field}.trade_eligibility`),
-    sequence: count(value.sequence, `${field}.sequence`),
+    related_build_id: relatedBuildId,
+    trade_eligibility: eligibility,
+    sequence,
   }
 }
 

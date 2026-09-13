@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal
@@ -41,6 +43,7 @@ class TradeEligibility(StrEnum):
     ELIGIBLE = "ELIGIBLE"
     WARMUP_ONLY = "WARMUP_ONLY"
     NO_ELIGIBLE_ENTRY = "NO_ELIGIBLE_ENTRY"
+    INITIAL_CLEAR_NO_ENTRY = "INITIAL_CLEAR_NO_ENTRY"
 
 
 class FeatureRuntimeStatus(StrEnum):
@@ -153,6 +156,117 @@ class ProductBar:
         )
 
 
+def lifecycle_input_sha256(bars: tuple[ProductBar, ...]) -> str:
+    """Bind every ordered lifecycle input fact without re-running a formula."""
+    values = tuple(bars)
+    if not values or not all(isinstance(item, ProductBar) for item in values):
+        raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
+    payload = [
+        {
+            "product": item.bar.product,
+            "frequency": item.frequency.value,
+            "series_kind": item.series_kind,
+            "physical_contract": item.bar.physical_contract,
+            "segment_id": item.bar.segment_id,
+            "trading_day": item.bar.trading_day.isoformat(),
+            "bar_end": item.bar.bar_end.isoformat(),
+            "open": str(item.bar.open),
+            "high": str(item.bar.high),
+            "low": str(item.bar.low),
+            "close": str(item.bar.close),
+            "volume": item.bar.volume,
+            "open_interest": item.bar.open_interest,
+            "source_identity": item.bar.source_identity,
+            "observation_eligible": item.bar.observation_eligible,
+            "completed": item.bar.completed,
+        }
+        for item in values
+    ]
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class LifecycleReplayEvidence:
+    product: str
+    frequency: ProductFrequency
+    physical_contract: str
+    segment_id: str
+    first_bar_end: datetime
+    last_bar_end: datetime
+    bar_count: int
+    input_sha256: str
+    source_identity: str
+    verified_cutoff: datetime
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.product,
+            self.physical_contract,
+            self.segment_id,
+            self.input_sha256,
+            self.source_identity,
+        ):
+            _text(value)
+        object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
+        first = utc_timestamp(self.first_bar_end)
+        last = utc_timestamp(self.last_bar_end)
+        cutoff = utc_timestamp(self.verified_cutoff)
+        object.__setattr__(self, "first_bar_end", first)
+        object.__setattr__(self, "last_bar_end", last)
+        object.__setattr__(self, "verified_cutoff", cutoff)
+        if (
+            self.product != self.product.lower()
+            or self.physical_contract != self.physical_contract.upper()
+            or type(self.bar_count) is not int
+            or self.bar_count <= 0
+            or first > last
+            or cutoff != last
+            or len(self.input_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in self.input_sha256)
+        ):
+            raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
+
+
+def validate_lifecycle_replay_evidence(
+    identity: ProductIdentity,
+    bars: tuple[ProductBar, ...],
+    evidence: tuple[LifecycleReplayEvidence, ...],
+) -> frozenset[tuple[str, str]]:
+    """Validate supplied evidence against exact, untrimmed segment-local inputs."""
+    if not isinstance(identity, ProductIdentity):
+        raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
+    inputs = tuple(bars)
+    supplied = tuple(evidence)
+    grouped: dict[tuple[str, str], list[ProductBar]] = {}
+    for item in inputs:
+        if not isinstance(item, ProductBar):
+            raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
+        grouped.setdefault(
+            (item.bar.physical_contract, item.bar.segment_id), []
+        ).append(item)
+    verified: set[tuple[str, str]] = set()
+    for evidence_item in supplied:
+        if not isinstance(evidence_item, LifecycleReplayEvidence):
+            raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
+        owner = (evidence_item.physical_contract, evidence_item.segment_id)
+        segment_bars = tuple(grouped.get(owner, ()))
+        if (
+            owner in verified
+            or evidence_item.product != identity.product
+            or evidence_item.frequency is not identity.frequency
+            or not segment_bars
+            or segment_bars[0].bar.bar_end != evidence_item.first_bar_end
+            or segment_bars[-1].bar.bar_end != evidence_item.last_bar_end
+            or len(segment_bars) != evidence_item.bar_count
+            or lifecycle_input_sha256(segment_bars) != evidence_item.input_sha256
+        ):
+            raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
+        verified.add(owner)
+    return frozenset(verified)
+
+
 @dataclass(frozen=True, slots=True)
 class OwnerBoundary:
     product: str
@@ -237,6 +351,15 @@ class StrategyAction:
         object.__setattr__(
             self, "source_related_marker_ids", _strings(self.source_related_marker_ids)
         )
+        if self.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY and (
+            self.identity.strategy is not ProductStrategy.MAIN_RISE
+            or self.kind is not ActionKind.CLEAR
+            or self.related_build_id is not None
+            or self.sequence != 0
+            or self.source_marker_id is not None
+            or self.source_related_marker_ids
+        ):
+            raise ValueError("NEWOW_PRODUCT_INVALID_INITIAL_CLEAR")
         object.__setattr__(
             self,
             "signal_id",
@@ -391,6 +514,18 @@ class StrategyFrame:
                 and event.trade_eligibility == TradeEligibility.ELIGIBLE
             ):
                 raise ValueError("NEWOW_PRODUCT_WARMUP_ACTION_ELIGIBLE")
+        initial_clears = tuple(
+            action
+            for action in self.actions
+            if action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+        )
+        if initial_clears and (
+            not self.bar.bar.observation_eligible
+            or self.main_state is not MainState.CLEAR
+            or len(initial_clears) != 1
+            or len(self.actions) != 1
+        ):
+            raise ValueError("NEWOW_PRODUCT_INVALID_INITIAL_CLEAR_FRAME")
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,6 +535,7 @@ class StrategyReplay:
     actions: tuple[StrategyAction, ...]
     hints: tuple[StrategyHint, ...]
     diagnostics: tuple[str, ...]
+    lifecycle_evidence: tuple[LifecycleReplayEvidence, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, ProductIdentity):
@@ -408,6 +544,7 @@ class StrategyReplay:
         object.__setattr__(self, "actions", _unique(self.actions, StrategyAction))
         object.__setattr__(self, "hints", _unique(self.hints, StrategyHint))
         object.__setattr__(self, "diagnostics", _strings(self.diagnostics))
+        object.__setattr__(self, "lifecycle_evidence", tuple(self.lifecycle_evidence))
         seen_segments: set[str] = set()
         current_segment: str | None = None
         current_contract: str | None = None
@@ -452,6 +589,11 @@ class StrategyReplay:
         if self.actions != frame_actions or self.hints != frame_hints:
             raise ValueError("NEWOW_PRODUCT_REPLAY_FRAME_MISMATCH")
         _ordered_actions(self.actions)
+        validate_lifecycle_replay_evidence(
+            self.identity,
+            tuple(frame.bar for frame in self.frames),
+            self.lifecycle_evidence,
+        )
 
     @property
     def main_values(

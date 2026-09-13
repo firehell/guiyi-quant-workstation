@@ -250,6 +250,85 @@ def test_main_rise_requires_a_real_prewarm_build_witness_for_an_isolated_clear(
     assert clear.related_build_id == warmup_build.signal_id
 
 
+@pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
+def test_verified_main_rise_lifecycle_emits_initial_clear_without_entry(
+    product_cases, frequency
+):
+    case = product_cases.initial_clear_input(frequency)
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+
+    replay = replay_strategy(
+        case.identity,
+        case.bars,
+        lifecycle_evidence=(evidence,),
+    )
+
+    assert len(replay.actions) == 1
+    clear = replay.actions[0]
+    assert clear.kind is ActionKind.CLEAR
+    assert clear.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+    assert clear.related_build_id is None
+    assert clear.sequence == 0
+    assert clear.bar_end == case.bars[35].bar.bar_end
+    assert replay.frames[35].main_state == "CLEAR"
+    assert replay.frames[35].actions == (clear,)
+    assert replay.lifecycle_evidence == (evidence,)
+    assert "INITIAL_CLEAR_NO_ENTRY" in replay.diagnostics
+    assert all(action.kind is not ActionKind.BUILD for action in replay.actions)
+
+
+def test_initial_clear_requires_exact_untrimmed_lifecycle_evidence(product_cases):
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        replay_strategy(case.identity, case.bars)
+    for bars, supplied in (
+        (case.bars[1:], (evidence,)),
+        (
+            (
+                *case.bars[:-1],
+                replace(
+                    case.bars[-1],
+                    bar=replace(
+                        case.bars[-1].bar,
+                        open=Decimal("89"),
+                        high=Decimal("89"),
+                        low=Decimal("89"),
+                        close=Decimal("89"),
+                    ),
+                ),
+            ),
+            (evidence,),
+        ),
+        (case.bars, (replace(evidence, segment_id="rb:RB2710:other"),)),
+        (case.bars, (replace(evidence, frequency="60m"),)),
+        (case.bars, (evidence, evidence)),
+    ):
+        with pytest.raises(ValueError, match="LIFECYCLE_EVIDENCE"):
+            replay_strategy(case.identity, bars, lifecycle_evidence=supplied)
+
+
+def test_warmup_initial_clear_consumes_qualification_without_emitting_action(
+    product_cases,
+):
+    case = product_cases.initial_clear_input()
+    bars = tuple(
+        replace(bar, bar=replace(bar.bar, observation_eligible=index > 35))
+        for index, bar in enumerate(case.bars)
+    )
+    evidence = product_cases.synthetic_lifecycle_evidence(bars)
+
+    replay = replay_strategy(
+        case.identity,
+        bars,
+        lifecycle_evidence=(evidence,),
+    )
+
+    assert replay.actions == ()
+    assert "INITIAL_CLEAR_NO_ENTRY" not in replay.diagnostics
+
+
 def test_trend_prewarm_clear_expires_its_build_witness(product_cases, monkeypatch):
     case = product_cases.primitive_input("trend", "1d")
     original = adapters.step_trend_band

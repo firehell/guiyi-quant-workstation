@@ -7,10 +7,12 @@ from decimal import Decimal
 import pytest
 
 from guiyi_quant.newow.product_contracts import (
+    ActionKind,
     FeatureStatus,
     ProductBar,
     ProductIdentity,
     StrategyHint,
+    TradeEligibility,
 )
 from guiyi_quant.newow.product_identity import (
     build_reference_trade_id,
@@ -491,6 +493,45 @@ def test_replay_and_frames_are_immutable_and_validate_input(product_cases):
         )
     with pytest.raises(ValueError):
         replace(case.replay, frames=tuple(reversed(case.replay.frames)))
+
+
+def test_initial_clear_action_and_frame_enforce_layered_invariants(product_cases):
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,)
+    )
+    clear = replay.actions[0]
+
+    assert clear.kind is ActionKind.CLEAR
+    assert clear.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+    for changes in (
+        {"kind": "BUILD"},
+        {"related_build_id": "owned:build"},
+        {"sequence": 1},
+        {"source_marker_id": "owned:marker"},
+        {"source_related_marker_ids": ("owned:related",)},
+        {"identity": product_cases.initial_clear_input().identity.__class__(
+            "rb", "trend", "1d", ("newow_trend_band_page_v2",)
+        )},
+    ):
+        with pytest.raises(ValueError, match="INVALID_INITIAL_CLEAR"):
+            replace(clear, **changes)
+    with pytest.raises(ValueError, match="INITIAL_CLEAR_FRAME"):
+        replace(replay.frames[-1], main_state="FLAT")
+    with pytest.raises(ValueError, match="INITIAL_CLEAR_FRAME"):
+        replace(
+            replay.frames[-1],
+            bar=replace(
+                replay.frames[-1].bar,
+                bar=replace(
+                    replay.frames[-1].bar.bar,
+                    observation_eligible=False,
+                ),
+            ),
+        )
 
 
 def test_replay_order_resets_at_each_contiguous_owner_segment(product_cases):

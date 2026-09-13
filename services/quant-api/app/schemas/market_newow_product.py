@@ -42,7 +42,7 @@ class ProductIdentityOut(_Out):
 
 
 class ProductMetaOut(_Out):
-    schema_version: Literal["newow_product_detail_v1"]
+    schema_version: Literal["newow_product_detail_v2"]
     identity: ProductIdentityOut
     as_of: datetime
     read_at: datetime
@@ -78,7 +78,12 @@ class ProductActionOut(_Out):
     physical_contract: str
     segment_id: str
     related_build_id: str | None
-    trade_eligibility: Literal["ELIGIBLE", "WARMUP_ONLY", "NO_ELIGIBLE_ENTRY"]
+    trade_eligibility: Literal[
+        "ELIGIBLE",
+        "WARMUP_ONLY",
+        "NO_ELIGIBLE_ENTRY",
+        "INITIAL_CLEAR_NO_ENTRY",
+    ]
     sequence: int
 
 
