@@ -12,7 +12,7 @@ import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspa
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
 import NewowProductWorkspace from '@/components/market/detail/newow/NewowProductWorkspace.vue'
-import '@/styles/newowDetail.css'
+import '@/styles/marketDetailUnified.css'
 import { useNewowDailyQuote } from '@/composables/useNewowDailyQuote'
 import { useNewowCapabilities } from '@/composables/useNewowCapabilities'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
@@ -192,7 +192,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 </script>
 
 <template>
-  <main class="market-detail-page" :class="{ 'newow-detail-light': isNewowView }" :data-detail-ready="shellReady ? 'true' : 'false'">
+  <main class="market-detail-page unified-detail-light" :data-detail-ready="shellReady ? 'true' : 'false'">
     <MarketNavigation @market="goHome('market')" @messages="goHome('messages')">
       <template #search>
         <ProductSelector
@@ -227,7 +227,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         @select-symbol="productSelector?.focus()"
         @open-history="openHistory"
       />
-      <MarketDetailQuoteHeader v-if="!controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :newow="isNewowView" />
+      <MarketDetailQuoteHeader v-if="!controller.state.value.error && header && !(isNewowView && newowHistoricalAsOf)" :header="header" :identity-key="identityKey" :unified="isWorkspacePreview" :newow="isNewowView" />
       <MarketDetailViewNav
         :identity="routeResult.identity"
         :products="controller.productCatalog.value"

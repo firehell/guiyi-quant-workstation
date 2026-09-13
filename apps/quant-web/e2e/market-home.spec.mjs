@@ -401,10 +401,11 @@ test('sort and sector survive refresh and browser back while absent sector recov
   await expect(page.getByRole('columnheader', { name: /最新收盘/ })).toHaveAttribute('aria-sort', 'descending')
   expectHomeReads(requests, 2)
   const detailDirectoryReady = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/market/dominants' && response.ok())
+  const detailStrategySettled = page.waitForEvent('requestfailed', request => new URL(request.url()).pathname === '/api/v1/market/newow/strategy-detail')
   await page.locator('tbody tr[data-symbol="ag"]').click()
   await expect(page).toHaveURL(/view=newow.*symbol=ag/)
   await expect(page.locator('.market-dashboard-page')).toHaveCount(0)
-  await detailDirectoryReady
+  await Promise.all([detailDirectoryReady, detailStrategySettled])
   await expect(page.locator('[data-detail-workspace="newow"]')).toBeVisible()
   requests.length = 0
   await page.goBack()

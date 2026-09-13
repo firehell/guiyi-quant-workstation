@@ -178,7 +178,7 @@ onUnmounted(() => {
           <time class="header__clock gy-number">{{ clockText }}</time>
         </div>
       </NLayoutHeader>
-      <NLayoutContent class="content" :class="{ 'content--fullscreen': isFullscreenMarketRoute, 'content--market-home': route.name === 'market', 'content--newow-detail': route.name === 'market-chart' && route.query.view === 'newow' }">
+      <NLayoutContent class="content" :class="{ 'content--fullscreen': isFullscreenMarketRoute, 'content--market-home': route.name === 'market', 'content--market-detail': route.name === 'market-chart' }">
         <RouteErrorFallback
           v-if="routeError"
           :error="routeError"
@@ -368,8 +368,8 @@ onUnmounted(() => {
     display: none;
   }
 }
-/* The white Home canvas must not change detail or other route themes. */
-.content.content--newow-detail { padding: 0; background: #fff; }
+/* Market Home and every unified detail view own their full-width white canvas. */
+.content.content--market-detail { padding: 0; background: #fff; }
 .content.content--market-home {
   padding: 0;
   background: #fff;

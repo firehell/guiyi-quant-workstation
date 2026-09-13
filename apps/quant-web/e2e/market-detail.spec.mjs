@@ -60,6 +60,30 @@ async function mockReadyTrend(page, options = {}) {
   })
 }
 
+async function unifiedShellVisual(page) {
+  return page.locator('main.market-detail-page').evaluate((element) => {
+    const style = getComputedStyle(element)
+    const navigation = element.querySelector('.market-navigation')
+    const quote = element.querySelector('.quote-header')
+    if (!navigation || !quote) throw new Error('unified shell chrome is missing')
+    const navigationStyle = getComputedStyle(navigation)
+    const quoteStyle = getComputedStyle(quote)
+    const navigationBox = navigation.getBoundingClientRect()
+    return {
+      background: style.backgroundColor,
+      color: style.color,
+      paddingLeft: style.paddingLeft,
+      paddingRight: style.paddingRight,
+      navigationMarginLeft: navigationStyle.marginLeft,
+      navigationMarginRight: navigationStyle.marginRight,
+      navigationLeft: navigationBox.left,
+      navigationRight: navigationBox.right,
+      quoteDisplay: quoteStyle.display,
+      quoteClass: quote.className,
+    }
+  })
+}
+
 async function enableRangeDetector(page) {
   await page.getByText('指标设置', { exact: true }).click()
   await page.getByLabel('箱体识别（Range）').check()
@@ -117,6 +141,37 @@ test('Free mounts its generic workspace without the legacy sidebar or strategy m
 
   const order = await shell.locator('[data-detail-section]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-detail-section')))
   expect(order.slice(0, 4)).toEqual(['topbar', 'quote', 'view-nav', 'workspace-slot'])
+})
+
+test('Newow HTDY and Free share one visual shell while preserving quote semantics', async ({ page }) => {
+  await mockReadyTrend(page)
+  await page.goto('/market/chart?symbol=jm&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1w')
+
+  const quote = page.locator('.quote-header')
+  await expect(quote).toContainText('最近日线收盘')
+  await expect(quote).toContainText('非实时')
+  const newowVisual = await unifiedShellVisual(page)
+  expect(newowVisual.quoteClass).toContain('quote-header--unified')
+  expect(newowVisual.navigationMarginLeft).toBe('-24px')
+  expect(newowVisual.navigationMarginRight).toBe('-24px')
+  expect(newowVisual.navigationLeft).toBe(0)
+  expect(newowVisual.navigationRight).toBe(page.viewportSize().width)
+
+  await page.getByRole('tab', { name: '火天大有' }).click()
+  await expect(page).toHaveURL(/view=htdy/)
+  await expect(page.locator('[data-detail-workspace="htdy"]')).toBeVisible()
+  await expect(quote).toContainText('15分钟收盘')
+  await expect(quote).not.toContainText('最近日线收盘')
+  await expect(quote).not.toContainText('非实时')
+  expect(await unifiedShellVisual(page)).toEqual(newowVisual)
+
+  await page.getByRole('tab', { name: '自由看盘' }).click()
+  await expect(page).toHaveURL(/view=free/)
+  await expect(page.locator('[data-detail-workspace="free"]')).toBeVisible()
+  await expect(quote).toContainText('15分钟收盘')
+  await expect(quote).not.toContainText('最近日线收盘')
+  await expect(quote).not.toContainText('非实时')
+  expect(await unifiedShellVisual(page)).toEqual(newowVisual)
 })
 
 test('Free Range warm-up has a 1280 by 800 baseline and does not create a strategy marker', async ({ page }) => {
