@@ -439,21 +439,26 @@ export function productChartMarker(
     shape: action ? (build ? 'arrowUp' : 'arrowDown') : 'circle',
     color: item.id === selectedSignalId ? '#7C3AED' : action ? (build ? '#FF403A' : '#22B95D') : '#64748B',
     text: action
-      ? item.tradeEligibility === 'INITIAL_CLEAR_NO_ENTRY'
-        ? describeNewowProductAction(item).label
-        : build ? '建仓' : '清仓'
+      ? newowInitialClearLabel(item.tradeEligibility) ?? (build ? '建仓' : '清仓')
       : item.kind,
     size: action ? 1.5 : 1,
   }
+}
+
+export function newowInitialClearLabel(
+  tradeEligibility: NewowProductAction['trade_eligibility'],
+): '清仓（无入场）' | null {
+  return tradeEligibility === 'INITIAL_CLEAR_NO_ENTRY' ? '清仓（无入场）' : null
 }
 
 export function describeNewowProductAction(item: NewowProductActionMarker): {
   readonly label: string
   readonly explanation: string
 } {
-  if (item.tradeEligibility === 'INITIAL_CLEAR_NO_ENTRY') {
+  const initialClearLabel = newowInitialClearLabel(item.tradeEligibility)
+  if (initialClearLabel !== null) {
     return {
-      label: '清仓（无入场）',
+      label: initialClearLabel,
       explanation: '初始无入场：未观察到可配对 BUILD，不生成参考交易。',
     }
   }

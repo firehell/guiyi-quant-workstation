@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 ProductFrequencyValue = Literal["1w", "1d", "60m"]
@@ -87,6 +87,16 @@ class ProductActionOut(_Out):
         "INITIAL_CLEAR_NO_ENTRY",
     ]
     sequence: int
+
+    @model_validator(mode="after")
+    def validate_initial_clear_without_entry(self) -> ProductActionOut:
+        if self.trade_eligibility == "INITIAL_CLEAR_NO_ENTRY" and (
+            self.kind != "CLEAR"
+            or self.related_build_id is not None
+            or self.sequence != 0
+        ):
+            raise ValueError("INITIAL_CLEAR_NO_ENTRY has invalid action fields")
+        return self
 
 
 class ProductHintOut(_Out):

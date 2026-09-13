@@ -19,6 +19,7 @@ from .product_contracts import (
     StrategyHint,
     StrategyReplay,
     TradeEligibility,
+    derive_lifecycle_replay_evidence,
     validate_lifecycle_replay_evidence,
 )
 from .product_identity import (
@@ -544,15 +545,29 @@ class ReferenceTradeProjector:
         verified_owners: frozenset[tuple[str, str]] = frozenset()
         if initial_actions:
             try:
-                verified_owners = validate_lifecycle_replay_evidence(
+                effective_frames = tuple(
+                    frame
+                    for frame in replay.frames
+                    if frame.bar.bar.bar_end <= as_of
+                )
+                effective_bars = tuple(frame.bar for frame in effective_frames)
+                effective_evidence = derive_lifecycle_replay_evidence(
                     replay.identity,
                     tuple(frame.bar for frame in replay.frames),
                     replay.lifecycle_evidence,
+                    as_of,
+                )
+                verified_owners = validate_lifecycle_replay_evidence(
+                    replay.identity,
+                    effective_bars,
+                    effective_evidence,
                 )
             except ValueError as error:
                 raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT") from error
         frames_by_owner: dict[tuple[str, str], list[StrategyFrame]] = {}
         for frame in replay.frames:
+            if frame.bar.bar.bar_end > as_of:
+                continue
             owner = (frame.bar.bar.physical_contract, frame.bar.bar.segment_id)
             frames_by_owner.setdefault(owner, []).append(frame)
         diagnostics = [

@@ -346,6 +346,44 @@ def test_future_initial_clear_does_not_leak_a_diagnostic(product_cases):
     assert "INITIAL_CLEAR_NO_ENTRY" not in result.diagnostics
 
 
+def test_visible_initial_clear_projection_ignores_a_damaged_future_suffix(
+    product_cases,
+):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    closes = tuple(
+        Decimal(value)
+        for value in (*(["100"] * 35), "90", *(["110"] * 60), "80")
+    )
+    case = product_cases.main_rise_lifecycle_input(closes, "1d")
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,)
+    )
+    future = replay.frames[-1]
+    damaged_bar = replace(
+        future.bar,
+        bar=replace(future.bar.bar, source_identity="tampered:future"),
+    )
+    damaged = copy(replay)
+    object.__setattr__(
+        damaged,
+        "frames",
+        (*replay.frames[:-1], replace(future, bar=damaged_bar)),
+    )
+
+    result = ReferenceTradeProjector().project(
+        damaged, (), replay.actions[0].bar_end
+    )
+
+    assert result.trades == ()
+    assert result.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        ReferenceTradeProjector().project(
+            damaged, (), case.bars[-1].bar.bar_end
+        )
+
+
 @pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
 def test_initial_clear_then_real_build_and_clear_projects_exactly_one_trade(
     product_cases, frequency

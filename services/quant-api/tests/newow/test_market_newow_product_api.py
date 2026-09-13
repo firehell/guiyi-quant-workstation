@@ -23,7 +23,11 @@ from app.market_data.newow.product_service import (
 )
 from app.market_data.newow.historical_snapshot import HistoricalSnapshot
 from app.market_data.newow.resource_gate import NewowResourceBusy
-from app.schemas.market_newow_product import NewowProductResponse, ReferenceTradeOut
+from app.schemas.market_newow_product import (
+    NewowProductResponse,
+    ProductActionOut,
+    ReferenceTradeOut,
+)
 
 
 def _service_result(product_cases):
@@ -256,6 +260,29 @@ def test_typed_api_serializes_verified_initial_clear_without_entry(product_cases
             "sequence": 0,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("kind", "BUILD"), ("related_build_id", "forged-build"), ("sequence", 7)),
+)
+def test_typed_action_rejects_invalid_initial_clear_cross_fields(field, value):
+    payload = {
+        "signal_id": "initial-clear",
+        "kind": "CLEAR",
+        "bar_end": "2026-08-14T07:00:00Z",
+        "trading_day": "2026-08-14",
+        "reference_price": "100.100",
+        "physical_contract": "PT2610",
+        "segment_id": "pt:PT2610:2025-01-01T00:00:00+00:00",
+        "related_build_id": None,
+        "trade_eligibility": "INITIAL_CLEAR_NO_ENTRY",
+        "sequence": 0,
+    }
+    payload[field] = value
+
+    with pytest.raises(ValidationError, match="INITIAL_CLEAR_NO_ENTRY"):
+        ProductActionOut.model_validate(payload)
 
 
 def test_typed_v2_rejects_v1_reference_model_in_meta_and_trade(product_cases):

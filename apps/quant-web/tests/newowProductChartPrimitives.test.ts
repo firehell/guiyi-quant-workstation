@@ -58,6 +58,11 @@ test('preserves initial-clear eligibility into the marker label and detail model
     label: '清仓（无入场）',
     explanation: '初始无入场：未观察到可配对 BUILD，不生成参考交易。',
   })
+  assert.equal(
+    primitives.newowInitialClearLabel('INITIAL_CLEAR_NO_ENTRY'),
+    '清仓（无入场）',
+  )
+  assert.equal(primitives.newowInitialClearLabel('ELIGIBLE'), null)
 })
 
 test('preserves same-Bar CLEAR then BUILD identities and keeps hint anchor separate from action reference price', () => {

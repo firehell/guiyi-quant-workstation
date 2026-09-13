@@ -5,7 +5,7 @@ import type { MarketDetailIdentity } from '@/types/marketDetail'
 import type { NewowAuxiliaryComponent, NewowProductAction, NewowProductCapabilities, NewowProductSection, NewowProductStrategy, NewowResourceLifecycle, NewowProductSectionResponse, NewowReferenceTrade } from '@/types/newowProduct'
 import { resolveNewowReferenceLocate } from '@/utils/newowProductViewModel'
 import { describeNewowState, projectNewowDetail, newowDisplayLabel, shortNewowTime, referencePercentDisplay } from '@/utils/newowDetailPresentation'
-import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, describeNewowProductAction, newowChartSnapshotKey } from './newowProductChartPrimitives'
+import { buildNewowProductChartModel, buildNewowAuxiliaryDisclosure, describeNewowProductAction, newowChartSnapshotKey, newowInitialClearLabel } from './newowProductChartPrimitives'
 import { formatChartTimeInShanghai } from '@/utils/barTime'
 import { newowErrorDisplay } from '@/utils/newowDataDiagnostics'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
@@ -38,9 +38,7 @@ const chartModel = computed(() => chartResponse.value === null ? null : buildNew
 const selectedHint = computed(() => chartModel.value?.hints.find(hint => hint.id === selectedHintId.value) ?? null)
 const selectedAction = computed(() => chartModel.value?.actions.find((action) => action.id === selectedSignalId.value) ?? null)
 const selectedActionDescription = computed(() => selectedAction.value === null ? null : describeNewowProductAction(selectedAction.value))
-const summaryActionLabel = (action: NewowProductAction) => action.trade_eligibility === 'INITIAL_CLEAR_NO_ENTRY'
-  ? '清仓（无入场）'
-  : newowDisplayLabel(action.kind)
+const summaryActionLabel = (action: NewowProductAction) => newowInitialClearLabel(action.trade_eligibility) ?? newowDisplayLabel(action.kind)
 const referenceResponse = computed(() => (
   loader.sections.reference.data.value?.section === 'reference'
     ? loader.sections.reference.data.value as NewowProductSectionResponse<'reference'>
