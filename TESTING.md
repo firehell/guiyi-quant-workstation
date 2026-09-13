@@ -2,6 +2,67 @@
 
 以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
 
+## Newow 初始无入场 CLEAR v2（实施验收）
+
+以下组用于 `INITIAL_CLEAR_NO_ENTRY` 实施后的验收；命令存在不表示当前 v1 代码已实现该合同。
+在本任务隔离树中执行，Python/Node 使用已有环境；依赖路径若不同，先确认解释器和本树源码导入身份。
+
+Core/投影 RED→GREEN 与公式金样：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_product_adapters.py \
+  services/quant-api/tests/newow/test_product_contracts.py \
+  services/quant-api/tests/newow/test_reference_trades.py \
+  services/quant-api/tests/newow/test_reference_interruptions.py \
+  services/quant-api/tests/newow/test_reference_statistics.py \
+  services/quant-api/tests/newow/test_product_replay_invariants.py \
+  services/quant-api/tests/newow/test_main_rise_page_v1.py
+```
+
+API、token/cursor、旧入口兼容：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_product_reader.py \
+  services/quant-api/tests/newow/test_market_newow_product_api.py \
+  services/quant-api/tests/newow/test_product_service.py \
+  services/quant-api/tests/newow/test_product_snapshot_cache.py \
+  services/quant-api/tests/newow/test_product_readonly_compatibility.py \
+  services/quant-api/tests/newow/test_older_chart_windows.py \
+  services/quant-api/tests/newow/test_historical_snapshot.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/newowProductTypes.test.ts tests/newowProductChartPrimitives.test.ts tests/NewowProductChartStage.test.ts tests/useNewowProduct.test.ts tests/newowReferencePanel.test.ts
+```
+
+共享 v2 迁移后的模块回归和静态检查：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow tests/engineering/test_repository_hygiene.py tests/engineering/test_canonical_consistency.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web test
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web build
+openspec validate --specs --strict --no-interactive
+python3 scripts/engineering/secret_scan.py --json
+git diff --check
+```
+
+Ruff/Mypy 沿用下方 Newow Core/API 专项配置，限实际修改的生产模块；不降低现有检查规则。
+浏览器执行本文件“Newow 新版参考卡片定向验证”的三个 fixture E2E（product/detail-light/chart-panes），
+加上本功能新用例；仅使用空闲隔离端口，正常验收不带 `--update-snapshots`。明确核验 Marker 点击后可见
+“清仓（无入场）”、详情解释、零交易空态、后续真实交易定位与旧响应失效。
+
+以下现场命令仅在当前任务的真实只读连接获准后执行；固定已冻结截点，不调用 provider、不提供修复开关：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/guiyi data newow-readiness \
+  --symbol pt --frequency 1w --as-of 2026-09-13T06:36:13+00:00 --matrix --max-work 10000 --timeout-seconds 300
+```
+
+验收检查 main 3/3 READY、main_rise chart/reference 无 pairing failure、新资格 CLEAR 与零伪造交易；
+通过既有 MDS/product service 的有界只读结果补齐 CLI 未公开的 Action/Trade 证据。provider_requests/writes
+必须为 0，explanation 继续 UNOPENED，comparator 正常样本不足独立披露。不能用报告 exit 0 替代逐项判定。
+此前两笔 PT apply 不重跑；权限不足时保留现场 Gate，继续完成离线工程验收。
+
 ## 首页返回恢复、消息与分钟行情
 
 ```bash
