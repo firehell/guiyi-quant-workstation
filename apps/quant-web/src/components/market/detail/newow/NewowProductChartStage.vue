@@ -24,8 +24,10 @@ import { resolveChartTheme } from '@/styles/chartTheme'
 import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { initialChartLogicalRange } from '@/utils/chartViewport'
+import { layoutReferenceCallouts, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import {
   buildNewowProductChartModel,
+  buildNewowActionCallouts,
   alignNewowAuxiliaryChartModel,
   resolveNewowAuxiliaryRenderState,
   chartMarkerTime,
@@ -62,6 +64,10 @@ const fullscreen = ref(false)
 const fullscreenError = ref<string | null>(null)
 const volumeTop = ref(0)
 const auxiliaryTop = ref(0)
+const actionOverlayTop = ref(0)
+const actionOverlayHeight = ref(0)
+const positionedActions = ref<PositionedCallout[]>([])
+const activeActionLabel = ref<string | null>(null)
 const container = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
 const model = computed(() => props.response === null ? null : buildNewowProductChartModel(props.response))
@@ -88,9 +94,12 @@ const auxiliaryLines = new Map<string, ISeriesApi<'Line'> | ISeriesApi<'Histogra
 let actionMarkers: ISeriesMarkersPluginApi<Time> | null = null
 let observer: NewowProductResizeObserver | null = null
 let renderedBars: NewowProductChartModel['bars'] = []
-let renderedIdentity = ''
+let renderedIdentity: NewowProductChartModel['identity'] | null = null
+let retainedVisibleRange: LogicalRange | null = null
 let rendering = false
 let nearLeftBoundary = false
+let paginationArmed = false
+let paginationArmFrame: number | null = null
 let programmaticRange: { from: number; to: number } | null = null
 let resolvedSignalKey: string | null = null
 const mainLines = new Map<string, ISeriesApi<'Line'>>()
@@ -138,6 +147,7 @@ onUnmounted(createNewowProductChartDisposer({
   unsubscribeClick: () => chart?.unsubscribeClick(onClick),
   disconnectResizeObserver: () => observer?.disconnect(),
   removeChart: () => {
+    if (paginationArmFrame !== null) cancelAnimationFrame(paginationArmFrame)
     if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', onFullscreenChange)
     candles?.detachPrimitive(band)
     candles?.detachPrimitive(trendChannel)
@@ -163,6 +173,10 @@ function identityKey(value: NewowProductChartModel): string {
 function renderModel(value: NewowProductChartModel | null): void {
   if (chart === null || candles === null) return
   if (value === null) {
+    paginationArmed = false
+    if (renderedIdentity !== null && renderedBars.length > 0) {
+      retainedVisibleRange = chart.timeScale().getVisibleLogicalRange()
+    }
     candles.setData([])
     volume?.setData([])
     auxiliaryAnchor?.setData([])
@@ -172,17 +186,21 @@ function renderModel(value: NewowProductChartModel | null): void {
     for (const series of mainLines.values()) chart.removeSeries(series)
     mainLines.clear()
     actionMarkers?.setMarkers([])
-    renderedBars = []
-    renderedIdentity = ''
+    positionedActions.value = []
+    activeActionLabel.value = null
     resolvedSignalKey = null
     return
   }
-  const nextIdentity = identityKey(value)
-  const strategyChanged = renderedIdentity !== '' && nextIdentity !== renderedIdentity
-  const resetViewport = strategyChanged && renderedBars.length > 0
-    ? !preserveNewowViewport({ identity: parseRenderedIdentity(renderedIdentity), bars: renderedBars }, value)
-    : renderedIdentity !== '' && nextIdentity !== renderedIdentity
-  const previousRange = chart.timeScale().getVisibleLogicalRange()
+  const previousModel = renderedIdentity === null ? null : { identity: renderedIdentity, bars: renderedBars }
+  const identityChanged = renderedIdentity !== null && (
+    value.identity.product !== renderedIdentity.product
+    || value.identity.strategy !== renderedIdentity.strategy
+    || value.identity.frequency !== renderedIdentity.frequency
+  )
+  const resetViewport = identityChanged && previousModel !== null
+    ? !preserveNewowViewport(previousModel, value)
+    : false
+  const previousRange = retainedVisibleRange ?? chart.timeScale().getVisibleLogicalRange()
   const previousFirst = renderedBars[0]?.barEnd
   const prepended = previousFirst === undefined ? 0 : Math.max(0, value.bars.findIndex((bar) => bar.barEnd === previousFirst))
   rendering = true
@@ -201,7 +219,7 @@ function renderModel(value: NewowProductChartModel | null): void {
   renderAuxiliary()
   syncMainLines(value)
   renderMarkers(value)
-  if (resetViewport || renderedBars.length === 0) {
+  if (resetViewport || previousModel === null || renderedBars.length === 0) {
     followLatest.value = true
     resolvedSignalKey = null
     const range = initialChartLogicalRange(value.bars.length)
@@ -213,14 +231,11 @@ function renderModel(value: NewowProductChartModel | null): void {
     setRange(previousRange)
   }
   renderedBars = value.bars
-  renderedIdentity = nextIdentity
+  renderedIdentity = { ...value.identity }
+  retainedVisibleRange = null
   rendering = false
+  projectActionLabels(value)
   resolveSelectedSignal()
-}
-
-function parseRenderedIdentity(value: string): NewowProductChartModel['identity'] {
-  const [product, strategy, frequency] = value.split(':')
-  return { product: product!, strategy: strategy! as NewowProductChartModel['identity']['strategy'], frequency: frequency! as NewowProductChartModel['identity']['frequency'] }
 }
 
 function syncMainLines(value: NewowProductChartModel): void {
@@ -254,6 +269,34 @@ function renderMarkers(value: NewowProductChartModel | null): void {
       chartMarkerTime(item.barEnd, value.identity.frequency, item.tradingDay),
     ))
   actionMarkers.setMarkers(actions)
+}
+
+function projectActionLabels(value: NewowProductChartModel | null = model.value): void {
+  if (chart === null || candles === null || container.value === null || value === null) {
+    positionedActions.value = []
+    return
+  }
+  const scale = chart.timeScale()
+  const timeToCoordinate = (scale as unknown as { timeToCoordinate?: (time: Time) => number | null }).timeToCoordinate
+  const priceToCoordinate = (candles as unknown as { priceToCoordinate?: (price: number) => number | null }).priceToCoordinate
+  if (timeToCoordinate === undefined || priceToCoordinate === undefined) {
+    positionedActions.value = []
+    return
+  }
+  const widthFn = (scale as unknown as { width?: () => number }).width
+  const panesFn = (chart as unknown as { panes?: () => Array<{ getHeight?: () => number }> }).panes
+  const width = widthFn?.call(scale) ?? container.value.clientWidth
+  const height = panesFn?.call(chart)[0]?.getHeight?.() ?? container.value.clientHeight
+  actionOverlayTop.value = container.value.offsetTop
+  actionOverlayHeight.value = height
+  const actionById = new Map(value.actions.map(action => [action.id, action]))
+  positionedActions.value = layoutReferenceCallouts(buildNewowActionCallouts(value).flatMap(callout => {
+    const action = actionById.get(callout.id)
+    if (action === undefined) return []
+    const x = timeToCoordinate.call(scale, chartMarkerTime(action.barEnd, value.identity.frequency, action.tradingDay))
+    const y = priceToCoordinate.call(candles, action.value)
+    return x === null || y === null ? [] : [{ callout, x, y }]
+  }), width, height)
 }
 
 function revealSignal(signalId: string): boolean {
@@ -290,6 +333,8 @@ function onClick(event: MouseEventParams<Time>): void {
 function onRangeChange(range: LogicalRange | null): void {
   if (rendering || range === null) return
   if (range.from === programmaticRange?.from && range.to === programmaticRange.to) return
+  projectActionLabels()
+  if (!paginationArmed) return
   const length = model.value?.bars.length ?? 0
   followLatest.value = range.to >= length - 2
   const nearLeft = range.from < 10
@@ -298,14 +343,33 @@ function onRangeChange(range: LogicalRange | null): void {
 }
 
 function setRange(range: { from: number; to: number }): void {
+  paginationArmed = false
   programmaticRange = range
   nearLeftBoundary = range.from < 10
   chart?.timeScale().setVisibleLogicalRange(range as LogicalRange)
+  armPagination()
+}
+
+function armPagination(): void {
+  const finish = () => {
+    paginationArmFrame = null
+    const range = chart?.timeScale().getVisibleLogicalRange()
+    nearLeftBoundary = range !== null && range !== undefined && range.from < 10
+    paginationArmed = true
+    projectActionLabels()
+  }
+  if (typeof requestAnimationFrame === 'undefined') queueMicrotask(finish)
+  else {
+    if (paginationArmFrame !== null) cancelAnimationFrame(paginationArmFrame)
+    paginationArmFrame = requestAnimationFrame(finish)
+  }
 }
 
 function scrollToLatest(): void {
   followLatest.value = true
+  paginationArmed = false
   chart?.timeScale().scrollToRealTime()
+  armPagination()
 }
 
 function resize(): void {
@@ -314,6 +378,7 @@ function resize(): void {
     chart.resize(container.value.clientWidth, container.value.clientHeight, true)
     volumeTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
     auxiliaryTop.value = volumeTop.value + chart.panes()[1]!.getHeight()
+    projectActionLabels()
   }
 }
 
@@ -387,6 +452,32 @@ defineExpose({ revealSignal, scrollToLatest })
     </div>
     </div>
     <div ref="container" class="newow-product-chart-stage__chart" />
+    <div
+      v-if="model?.actions.length"
+      class="newow-product-chart-stage__action-callouts"
+      :style="{ top: `${actionOverlayTop}px`, height: `${actionOverlayHeight}px` }"
+      aria-label="策略参考动作"
+    >
+      <svg aria-hidden="true"><line v-for="item in positionedActions.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.left + 66" :y2="item.top + (item.callout.above ? 44 : 0)" /></svg>
+      <button
+        v-for="item in positionedActions"
+        :key="item.callout.id"
+        type="button"
+        class="newow-product-chart-stage__action-label"
+        :class="[{ 'is-compact': item.compact, 'is-active': activeActionLabel === item.callout.id, 'is-selected': selectedSignalId === item.callout.id }, `is-${item.callout.tone}`]"
+        :style="{ left: `${item.left}px`, top: `${item.top}px` }"
+        :data-action-id="item.callout.id"
+        :data-reference-price="item.callout.price"
+        :data-anchor-y="item.y"
+        :aria-label="`${item.callout.title}，${item.callout.detail}，策略参考动作`"
+        :title="`${item.callout.title} · ${item.callout.detail}`"
+        @mouseenter="activeActionLabel = item.callout.id"
+        @mouseleave="activeActionLabel = null"
+        @focus="activeActionLabel = item.callout.id"
+        @blur="activeActionLabel = null"
+        @click="emit('select-signal', item.callout.id)"
+      ><template v-if="!item.compact || activeActionLabel === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></button>
+    </div>
     <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量</span>
     <div class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
     <p v-if="auxiliaryPresentation.message || fullscreenError" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
@@ -400,6 +491,15 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage { --gy-chart-bg:#FFFFFF; --gy-chart-text:#667085; --gy-chart-grid:#F2F4F7; --gy-chart-axis:#EBEDF0; --gy-up:#FF403A; --gy-down:#22B95D; position:relative; min-width:0; height:clamp(580px, 70vh, 920px); display:flex; flex-direction:column; border:1px solid #ebedf0; background:#fff; }
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
 .newow-product-chart-stage__chart { width:100%; flex:1; min-height:500px; }
+.newow-product-chart-stage__action-callouts { position:absolute; inset-inline:0; pointer-events:none; z-index:4; overflow:hidden; }
+.newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
+.newow-product-chart-stage__action-label { position:absolute; pointer-events:auto; display:grid; align-content:center; gap:3px; width:132px; min-height:44px; padding:4px; border:1px solid #AA927B; border-radius:2px; background:#FFFEFA; color:#665343; font-size:11px; cursor:pointer; box-shadow:0 1px 3px #8C73551A; }
+.newow-product-chart-stage__action-label strong { font-size:12px; font-weight:500; }
+.newow-product-chart-stage__action-label.is-gain span { color:#CB3737; }
+.newow-product-chart-stage__action-label.is-loss span { color:#188052; }
+.newow-product-chart-stage__action-label.is-compact { width:24px; min-height:26px; }
+.newow-product-chart-stage__action-label.is-active { z-index:5; width:132px; min-height:44px; outline:2px solid #AA927B; }
+.newow-product-chart-stage__action-label.is-selected { outline:2px solid #8B653D; background:#FFF3D9; }
 .newow-product-chart-stage__toolbar { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; min-height:48px; border-bottom:1px solid #ebedf0; padding:0 8px; }
 .newow-product-chart-stage__controls,.newow-product-chart-stage__legend { display:flex; align-items:center; gap:8px; }
 button,summary { min-height:44px; padding:0 10px; border:0; color:#667085; background:#fff; cursor:pointer; font-size:12px; }

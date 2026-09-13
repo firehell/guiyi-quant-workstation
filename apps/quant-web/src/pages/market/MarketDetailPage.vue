@@ -69,6 +69,11 @@ const identityWarning = ref(
     ? '已切换品种，指定合约已清除并回到真实主力。'
     : null,
 )
+const migrationNotice = ref<string | null>(
+  route.query.view === 'trend'
+    ? '旧趋势详情已迁移到牛哇趋势策略（1d）；当前页面使用新的牛哇策略身份与公式版本。'
+    : null,
+)
 const identityKey = computed(() => {
   const identity = explicitIdentity.value
   return identity
@@ -84,6 +89,9 @@ async function activateRoute() {
   const result = routeResult.value
   if (result.kind !== 'valid' || !['newow', 'free', 'htdy', 'subing'].includes(result.identity.view)) return
   if (route.query.view === undefined || route.query.view === 'trend') {
+    if (route.query.view === 'trend') {
+      migrationNotice.value = '旧趋势详情已迁移到牛哇趋势策略（1d）；当前页面使用新的牛哇策略身份与公式版本。'
+    }
     const failure = await router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(result.identity) })
     if (failure) return
   }
@@ -106,6 +114,7 @@ function switchNewowToOpenFrequency() {
 }
 
 function selectIdentity(identity: MarketDetailIdentity) {
+  migrationNotice.value = null
   if (identity.view === 'newow') {
     preferences.value = replaceNewowDetailPreferences(preferences.value, {
       strategy: identity.strategy,
@@ -227,6 +236,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
         @select="selectIdentity"
         @contract-cleared="selectContractCleared"
       />
+        <p v-if="migrationNotice" class="market-detail-page__notice" data-testid="market-detail-migration-notice" role="status">{{ migrationNotice }}</p>
         <section
           class="market-detail-page__workspace"
           data-detail-section="workspace-slot"
@@ -336,6 +346,15 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
 .market-detail-page__workspace {
   min-height: 420px;
   padding: var(--gy-space-2) 0 var(--gy-space-5);
+}
+
+.market-detail-page__notice {
+  margin: var(--gy-space-2) 0 0;
+  padding: 8px 12px;
+  border: 1px solid #F5C89A;
+  color: #9A4D12;
+  background: #FFF8F0;
+  font-size: var(--gy-font-size-sm);
 }
 
 .market-detail-page > :deep(.market-navigation) {

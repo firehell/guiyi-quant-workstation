@@ -199,6 +199,10 @@ export function useMarketDetailController(
       series.clearSeries()
       activeSeriesKey = null
     }
+    // replaceSeries invalidates its previous generation synchronously. Revoke
+    // the completed-key cache at the same boundary so A -> B(pending) -> A
+    // cannot mistake B's cleared/in-flight source for the completed A source.
+    if (usesGenericSeries && !reuseSeries) activeSeriesKey = null
     const seriesRequest = usesGenericSeries
       ? reuseSeries ? Promise.resolve({ ok: true as const }) : series.replaceSeries(identity).then(
           () => ({ ok: true as const }),

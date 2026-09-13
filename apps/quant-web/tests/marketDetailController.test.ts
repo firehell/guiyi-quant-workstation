@@ -145,6 +145,23 @@ function fakeSeries() {
   }
 }
 
+function deferredSeries() {
+  const series = fakeSeries()
+  let generation = 0
+  const requests: Array<{ identity: MarketDetailIdentity; gate: ReturnType<typeof deferred<void>>; generation: number }> = []
+  series.replaceSeries = async (identity: MarketDetailIdentity) => {
+    const request = { identity, gate: deferred<void>(), generation: ++generation }
+    requests.push(request)
+    series.bars.value = []
+    series.marketState.value = null
+    await request.gate.promise
+    if (request.generation !== generation) return
+    series.bars.value = [bar(identity.symbol, identity.symbol === 'jm' ? 100 : 200)]
+    series.marketState.value = marketState(identity.symbol)
+  }
+  return { series, requests }
+}
+
 test('keeps the quote header and cached metadata while switching Newow strategies', async () => {
   const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
   const series = fakeSeries()
@@ -241,6 +258,34 @@ test('late A and B responses cannot overwrite the active C identity', async () =
   assert.equal(controller.state.value.identity?.symbol, 'cu')
   assert.equal(controller.state.value.header?.symbol, 'cu')
   assert.equal(controller.state.value.header?.close, 200)
+})
+
+test('returning to the last completed identity invalidates an intervening series request', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const { series, requests } = deferredSeries()
+  const controller = useMarketDetailController({
+    routeQuery: () => ({ symbol: 'jm', view: 'free', series_kind: 'actual_dominant', frequency: '15m' }),
+    createSeries: () => series,
+    fetchDominants: async () => ({ items: [dominant('jm'), dominant('rb')] }),
+    fetchResearch: async ({ symbol }) => research(symbol),
+  })
+
+  const first = controller.switchIdentity(jmIdentity)
+  requests[0]!.gate.resolve()
+  await first
+  const second = controller.switchIdentity(rbIdentity)
+  const third = controller.switchIdentity(jmIdentity)
+
+  assert.deepEqual(requests.map(request => request.identity.symbol), ['jm', 'rb', 'jm'])
+  requests[2]!.gate.resolve()
+  await third
+  requests[1]!.gate.resolve()
+  await second
+
+  assert.equal(controller.state.value.identity?.symbol, 'jm')
+  assert.equal(controller.state.value.header?.symbol, 'jm')
+  assert.equal(controller.state.value.header?.close, 100)
+  assert.equal(series.bars.value[0]?.physicalContract, 'JM2601')
 })
 
 test('keeps route state explicit and delegates pagination and disposal to useMarketSeries seam', async () => {

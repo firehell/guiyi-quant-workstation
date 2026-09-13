@@ -5,6 +5,7 @@ import type {
 } from 'lightweight-charts'
 import type { InjectionKey } from 'vue'
 
+import type { KlineReferenceCallout } from '../../../../types/referenceCallout.ts'
 import type {
   NewowAuxiliaryComponent,
   NewowAuxiliaryData,
@@ -252,6 +253,22 @@ export function preserveNewowViewport(
     && previous.bars.every((bar, index) => bar.barEnd === next.bars[index]?.barEnd)
 }
 
+/** Keeps the action label bound to the server's exact time, owner, and Decimal price. */
+export function buildNewowActionCallouts(
+  model: Pick<NewowProductChartModel, 'actions'>,
+): KlineReferenceCallout[] {
+  return model.actions.map(action => ({
+    id: action.id,
+    time: action.barEnd,
+    physicalContract: action.physicalContract,
+    price: action.referencePrice,
+    title: action.kind === 'BUILD' ? '建仓' : '清仓',
+    detail: `参考价 ${action.referencePrice}`,
+    tone: action.kind === 'BUILD' ? 'gain' : 'loss',
+    above: action.kind === 'CLEAR',
+  }))
+}
+
 export interface NewowAuxiliaryChartPoint {
   readonly barEnd: string
   readonly index: number
@@ -474,7 +491,7 @@ export function productChartMarker(
     position: action ? (build ? 'belowBar' : 'aboveBar') : 'inBar',
     shape: action ? (build ? 'arrowUp' : 'arrowDown') : 'circle',
     color: item.id === selectedSignalId ? '#7C3AED' : action ? (build ? '#FF403A' : '#22B95D') : '#64748B',
-    text: action ? `${build ? '建仓' : '清仓'} ${item.referencePrice}` : item.kind,
+    text: action ? '' : item.kind,
     size: action ? 1.5 : 1,
   }
 }

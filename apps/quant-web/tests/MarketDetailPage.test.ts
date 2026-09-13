@@ -63,6 +63,8 @@ test('keeps Free HTDY and SuBing as separate explicit adapters inside the stable
 test('canonicalizes omitted and legacy Trend routes without presenting the retired workspace', () => {
   const { source, template } = page()
   assert.match(source, /route\.query\.view === undefined \|\| route\.query\.view === 'trend'/)
+  assert.match(source, /旧趋势详情已迁移到牛哇趋势策略/)
+  assert.match(template, /data-testid="market-detail-migration-notice"/)
   assert.doesNotMatch(template, /routeResult\.identity\.view === 'trend'/)
 })
 

@@ -407,6 +407,7 @@ test('legacy Trend route migrates once into the unified Newow trend identity', a
     frequency: '1d', focus_bar_end: '2026-09-03T07:00:00Z',
   })
   await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('market-detail-migration-notice')).toContainText('旧趋势详情已迁移到牛哇趋势策略')
   await expect(page.locator('[data-detail-workspace="trend"]')).toHaveCount(0)
   await expect(page.getByTestId('newow-trend-chart-stage')).toHaveCount(0)
 })

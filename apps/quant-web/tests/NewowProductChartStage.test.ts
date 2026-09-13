@@ -108,6 +108,7 @@ test('emits stable signal selection and preserves an established viewport and fo
 
   app.mount(root)
   await nextTick()
+  await nextTick()
   assert.equal(stage.value!.revealSignal('build-stable'), true)
   assert.deepEqual(focused, ['build-stable'])
 
@@ -183,6 +184,39 @@ test('dense same-Bar hints stay queryable by exact ID without adding native mark
   app.unmount()
 })
 
+test('connects action labels to the exact server reference price coordinate', async () => {
+  const Stage = await loadComponent()
+  const response = chartResponse()
+  const fakeChart = {
+    addSeries: () => ({
+      setData() {}, createPriceLine() {}, attachPrimitive() {}, detachPrimitive() {},
+      priceToCoordinate: (price: number) => price * 2,
+    }),
+    removeSeries() {}, panes: () => [{ getHeight: () => 400, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }],
+    timeScale: () => ({
+      width: () => 500, timeToCoordinate: () => 210,
+      fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {},
+    }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response, strategy: response.meta.identity.strategy, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  const root = element('root')
+  app.mount(root); await nextTick(); await nextTick()
+
+  const label = findNode(root, node => node.props['data-action-id'] === 'build-stable')
+  assert.ok(label)
+  assert.equal(label.props['data-reference-price'], '90')
+  assert.equal(label.props['data-anchor-y'], 180)
+  assert.match(textContent(label), /建仓.*参考价 90/)
+  const line = findNode(root, node => node.type === 'line')
+  assert.equal(line?.props.y1, 180)
+  app.unmount()
+})
+
 test('same product and frequency strategy switches keep viewport while replacing mutually exclusive overlays', async () => {
   const Stage = await loadComponent()
   let range = { from: 12, to: 42 }
@@ -196,7 +230,8 @@ test('same product and frequency strategy switches keep viewport while replacing
   NewowProductBandPrimitive.prototype.setData = function (items) { bandCalls.push([...items]); return originalBand.call(this, items) }
   NewowTrendChannelPrimitive.prototype.setData = function (items) { channelCalls.push([...items]); return originalChannel.call(this, items) }
   try {
-    const response = ref(strategyResponse('trend'))
+    const response = ref<MutableChartResponse | null>(strategyResponse('trend'))
+    const strategy = ref<'trend' | 'oscillation' | 'main_rise'>('trend')
     const fakeChart = {
       addSeries: () => ({ setData() {}, createPriceLine() {} }), removeSeries() {},
       timeScale: () => ({
@@ -208,12 +243,15 @@ test('same product and frequency strategy switches keep viewport while replacing
       subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
     }
     const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
-      response: response.value, strategy: response.value.meta.identity.strategy, selectedSignalId: null,
+      response: response.value, strategy: strategy.value, selectedSignalId: null,
     }) }))
     app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
     app.mount(element('root')); await nextTick()
     range = { from: 12, to: 42 }
 
+    response.value = null; strategy.value = 'oscillation'; await nextTick()
+    assert.deepEqual(bandCalls.at(-1), [])
+    assert.deepEqual(channelCalls.at(-1), [])
     response.value = strategyResponse('oscillation'); await nextTick()
     assert.deepEqual(range, { from: 12, to: 42 })
     assert.deepEqual(bandCalls.at(-1), [])

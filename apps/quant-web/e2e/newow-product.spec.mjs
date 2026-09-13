@@ -159,7 +159,7 @@ test('dense same-Bar hints use the disclosure and exact historical facts while n
   await page.goto(newowRoute('oscillation', '1w'))
   const chart = page.getByTestId('newow-product-chart-stage')
   await expect(chart).toHaveAttribute('data-auxiliary-state', 'ready')
-  await expect.poll(() => page.evaluate(() => window.__newowPaintedMarkerText.some(text => text.startsWith('建仓 ')))).toBe(true)
+  await expect(chart.locator('[data-action-id="oscillation-1w-build-open"]')).toHaveAttribute('title', /参考价/)
   expect(await page.evaluate(() => window.__newowPaintedMarkerText.filter(text => /^D[1-6]$/.test(text)))).toEqual([])
   const entries = chart.locator('[data-hint-id]')
   await expect(entries).toHaveCount(24)

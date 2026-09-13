@@ -9,6 +9,7 @@ import {
   chartMarkerTime,
   classifyNewowHintTone,
   preserveNewowViewport,
+  buildNewowActionCallouts,
   resolveNewowAuxiliaryRenderState,
 } from '../src/components/market/detail/newow/newowProductChartPrimitives.ts'
 import type {
@@ -382,6 +383,21 @@ test('classifies real hint kinds for display without changing their identities o
   assert.equal(classifyNewowHintTone('D6'), 'entry')
   assert.equal(classifyNewowHintTone('MAGIC11:7'), 'cycle')
   assert.equal(classifyNewowHintTone('UNKNOWN_SERVER_KIND'), 'neutral')
+})
+
+test('projects action labels from exact server reference prices without deriving returns', () => {
+  const response = chartResponse('oscillation', '1d')
+  const model = buildNewowProductChartModel(response)
+  assert.deepEqual(buildNewowActionCallouts(model), model.actions.map(action => ({
+    id: action.id,
+    time: action.barEnd,
+    physicalContract: action.physicalContract,
+    price: action.referencePrice,
+    title: action.kind === 'BUILD' ? '建仓' : '清仓',
+    detail: `参考价 ${action.referencePrice}`,
+    tone: action.kind === 'BUILD' ? 'gain' : 'loss',
+    above: action.kind === 'CLEAR',
+  })))
 })
 
 test('preserves Newow viewport only for compatible product frequency and time axes', () => {
