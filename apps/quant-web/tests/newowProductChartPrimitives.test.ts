@@ -233,7 +233,7 @@ type MutableChartResponse = {
 type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly (infer U)[] ? Mutable<U>[] : T[K] extends object ? Mutable<T[K]> : T[K] }
 
 
-test('missing and warming main values break runs and trend band, including an absent frame', () => {
+test('trend columns keep valid isolated Bars and omit missing or warming facts', () => {
   const response = chartResponse('trend', '60m')
   const value = response.value!
   const third = bar('2026-08-16T07:00:00Z', '2026-08-16', '102')
@@ -242,12 +242,19 @@ test('missing and warming main values break runs and trend band, including an ab
   value.frames[1]!.main_values.a = null
   let model = buildNewowProductChartModel(response)
   assert.deepEqual(model.mainLines.filter(line => line.key === 'a').map(line => line.points.length), [1, 1])
-  assert.equal(model.bandAreas.length, 0)
+  assert.deepEqual(model.bandAreas.map(area => area.time), [
+    chartMarkerTime(value.bars[0]!.bar_end, '60m', value.bars[0]!.trading_day),
+    chartMarkerTime(value.bars[2]!.bar_end, '60m', value.bars[2]!.trading_day),
+  ])
   value.frames.splice(1, 1)
   model = buildNewowProductChartModel(response)
   assert.deepEqual(model.mainLines.filter(line => line.key === 'b').map(line => line.points.length), [1, 1])
   value.frames[1]!.status.status = 'warming'
-  assert.equal(buildNewowProductChartModel(response).mainLines.filter(line => line.key === 'b').length, 1)
+  model = buildNewowProductChartModel(response)
+  assert.equal(model.mainLines.filter(line => line.key === 'b').length, 1)
+  assert.deepEqual(model.bandAreas.map(area => area.time), [
+    chartMarkerTime(value.bars[0]!.bar_end, '60m', value.bars[0]!.trading_day),
+  ])
 })
 
 test('MACD uses point times, preserves signed zero and splits invalid or warming points', () => {
@@ -276,23 +283,67 @@ test('aligns auxiliary by chart owner and exact time, never auxiliary array inde
 })
 
 
-test('band primitive paints authoritative coordinates and releases attachment on detach', async () => {
+test('trend model projects one 35%-opacity column per ready Bar with its own state', () => {
+  const response = chartResponse('trend', '1d')
+  const model = buildNewowProductChartModel(response)
+
+  assert.deepEqual(model.bandAreas, [
+    {
+      time: { year: 2026, month: 8, day: 14 },
+      a: 99,
+      b: 101,
+      color: 'rgba(54, 90, 245, 0.35)',
+    },
+    {
+      time: { year: 2026, month: 8, day: 15 },
+      a: 100,
+      b: 102,
+      color: 'rgba(245, 183, 38, 0.35)',
+    },
+  ])
+
+  response.value!.bars.splice(1, 1)
+  response.value!.frames.splice(1, 1)
+  assert.equal(buildNewowProductChartModel(response).bandAreas.length, 1, 'an isolated valid Bar remains visible')
+})
+
+test('band primitive paints centered per-Bar rectangles that scale with bar spacing and releases attachment', async () => {
   const { NewowProductBandPrimitive } = await import('../src/components/market/detail/newow/newowProductBandPrimitive.ts')
   const model = buildNewowProductChartModel(chartResponse('trend', '1d'))
-  assert.equal(model.bandAreas.length, 1)
+  assert.equal(model.bandAreas.length, 2)
   const primitive = new NewowProductBandPrimitive()
   const coordinates: unknown[] = []
-  const polygons: number[][] = []
+  const rectangles: number[][] = []
+  const colors: string[] = []
+  let barSpacing = 10
   let updates = 0
-  const target = { useMediaCoordinateSpace(callback: (scope: { context: object }) => void) { callback({ context: { save() {}, restore() {}, beginPath() {}, closePath() {}, fill() {}, moveTo(x: number, y: number) { polygons.push([x, y]) }, lineTo(x: number, y: number) { polygons.push([x, y]) } } }) } }
-  primitive.attached({ chart: { timeScale: () => ({ timeToCoordinate(time: unknown) { coordinates.push(time); return coordinates.length * 10 } }) }, series: { priceToCoordinate: (price: number) => price }, requestUpdate: () => { updates++ } } as never)
+  const context = {
+    save() {}, restore() {},
+    set fillStyle(value: string) { colors.push(value) },
+    fillRect(x: number, y: number, width: number, height: number) { rectangles.push([x, y, width, height]) },
+  }
+  const target = { useMediaCoordinateSpace(callback: (scope: { context: object }) => void) { callback({ context }) } }
+  primitive.attached({ chart: { timeScale: () => ({
+    options: () => ({ barSpacing }),
+    timeToCoordinate(time: unknown) { coordinates.push(time); return coordinates.length % 2 === 1 ? 10 : 20 },
+  }) }, series: { priceToCoordinate: (price: number) => price }, requestUpdate: () => { updates++ } } as never)
   primitive.setData(model.bandAreas)
   primitive.paneViews()[0]!.renderer()!.draw(target as never)
   assert.equal(updates, 1)
   assert.deepEqual(coordinates, [{ year: 2026, month: 8, day: 14 }, { year: 2026, month: 8, day: 15 }])
-  assert.deepEqual(polygons, [[10, 99], [20, 100], [20, 102], [10, 101]])
+  assert.deepEqual(rectangles, [[6, 99, 8, 2], [16, 100, 8, 2]])
+  assert.deepEqual(colors, ['rgba(54, 90, 245, 0.35)', 'rgba(245, 183, 38, 0.35)'])
+
+  barSpacing = 20
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.deepEqual(rectangles.slice(2), [[2, 99, 16, 2], [12, 100, 16, 2]])
+
+  barSpacing = 0.5
+  primitive.paneViews()[0]!.renderer()!.draw(target as never)
+  assert.deepEqual(rectangles.slice(4), [[9.8, 99, 0.4, 2], [19.8, 100, 0.4, 2]])
+
   primitive.detached(); primitive.setData(model.bandAreas)
   primitive.paneViews()[0]!.renderer()!.draw(target as never)
   assert.equal(updates, 1)
-  assert.equal(polygons.length, 4)
+  assert.equal(rectangles.length, 6)
 })

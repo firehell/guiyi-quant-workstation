@@ -84,8 +84,9 @@ export interface NewowProductChartModel {
 }
 
 export interface NewowProductBandArea {
-  readonly from: { readonly time: Time; readonly a: number; readonly b: number }
-  readonly through: { readonly time: Time; readonly a: number; readonly b: number }
+  readonly time: Time
+  readonly a: number
+  readonly b: number
   readonly color: string
 }
 
@@ -144,19 +145,16 @@ export function buildNewowProductChartModel(
   }
   const bandAreas: NewowProductBandArea[] = []
   if (response.meta.identity.strategy === 'trend') {
-    for (let index = 1; index < bars.length; index++) {
-      const previous = bars[index - 1]!
-      const current = bars[index]!
-      const left = frameByEnd.get(previous.barEnd)
-      const right = frameByEnd.get(current.barEnd)
-      if (previous.physicalContract !== current.physicalContract || previous.segmentId !== current.segmentId
-        || left?.status.status !== 'ready' || right?.status.status !== 'ready'
-        || left.main_values.a == null || left.main_values.b == null || right.main_values.a == null || right.main_values.b == null
-        || !['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(left.main_state) || !['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(right.main_state)) continue
+    for (const bar of bars) {
+      const frame = frameByEnd.get(bar.barEnd)
+      if (frame?.status.status !== 'ready'
+        || frame.main_values.a == null || frame.main_values.b == null
+        || !['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(frame.main_state)) continue
       bandAreas.push({
-        from: { time: chartMarkerTime(previous.barEnd, response.meta.identity.frequency, previous.tradingDay), a: chartCoordinate(left.main_values.a), b: chartCoordinate(left.main_values.b) },
-        through: { time: chartMarkerTime(current.barEnd, response.meta.identity.frequency, current.tradingDay), a: chartCoordinate(right.main_values.a), b: chartCoordinate(right.main_values.b) },
-        color: ['BUILD', 'HOLD'].includes(right.main_state) ? 'rgba(245, 183, 38, 0.24)' : 'rgba(54, 90, 245, 0.18)',
+        time: chartMarkerTime(bar.barEnd, response.meta.identity.frequency, bar.tradingDay),
+        a: chartCoordinate(frame.main_values.a),
+        b: chartCoordinate(frame.main_values.b),
+        color: ['BUILD', 'HOLD'].includes(frame.main_state) ? 'rgba(245, 183, 38, 0.35)' : 'rgba(54, 90, 245, 0.35)',
       })
     }
   }
