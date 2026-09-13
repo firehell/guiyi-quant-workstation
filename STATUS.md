@@ -1,6 +1,6 @@
 # 当前状态
 
-文档整理：2026-09-13；最新现场记录截至 `2026-09-13 09:00:49 CST`。本轮整理没有重新执行现场验收。
+文档整理：2026-09-13；最新现场记录截至 `2026-09-13 16:53:56 CST`。
 正式 Release 与现役 Runtime 为 `v1.10.8@82860ee3f5f63c49397ab11b0d0ab60c601376b9`。
 六服务切换、即时服务和页面验收已通过；自然 Live、盘后、后续增量及首次自然周检仍待验收，
 不声明 `RUNTIME_READY`。本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
@@ -34,6 +34,20 @@
 最后分页修复另经 13 项定向测试与 build/typecheck 验证。OpenSpec 9 passed、secret scan 0 findings。
 命令与验证边界见 `TESTING.md`。本地预览验收不构成 main/tag 发布或 Runtime promotion，
 自然开市 completed 1m 与通知收件继续按各自证据验收。
+
+## 牛哇周线 60 品种准备（小批次现场证据）
+
+2026-09-13 owner 单次批准的 PT 周线 calibration batch 已严格按冻结 plan hash 串行执行一次：PT2608
+14/14 target、PT2610 18/18 target 均 passed，blocked/failed 均为 0；两者写后重规划均为 0 target / 0 bar /
+0 provider request。RQData `bytes_used` 整批增加 5,109,123 bytes，未触发异常流量停止线。本次写入意图已消费，
+不授权重试或扩大范围。PT 写后依赖 readiness 为 `audited / complete=true`，6 项依赖均 `DATA_READY`。
+
+随后只读 PT 三策略周线 matrix 中趋势、震荡主图 READY；主升浪主图和参考层仍因内部
+`NEWOW_PRODUCT_PAIRING_CONFLICT` 失败。已确认这不是行情缺口：PT2610 共 41 根周线，从上市首根即为黄带且没有
+真实 BUILD 转换，第 40 根首次转蓝并产生 CLEAR；当前稳定配对合同禁止制造入场，因而 fail-closed。处理该情形
+会改变动作/ReferenceTrade 表达合同，尚待 owner 选择。全 60 品种审计仍为 incomplete，未运行 180 主组合矩阵，
+不得声明周线 60 品种完成。紧凑证据见
+[周线 60 品种 readiness 摘要](outputs/newow-weekly-60-20260913/readiness-summary.json)。
 
 ## v1.10.8 Release（已发布；Runtime 已切换）
 
