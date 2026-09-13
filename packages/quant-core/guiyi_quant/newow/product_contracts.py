@@ -272,71 +272,6 @@ def validate_lifecycle_replay_evidence(
     return frozenset(verified)
 
 
-def derive_lifecycle_replay_evidence(
-    identity: ProductIdentity,
-    bars: tuple[ProductBar, ...],
-    evidence: tuple[LifecycleReplayEvidence, ...],
-    cutoff: datetime,
-) -> tuple[LifecycleReplayEvidence, ...]:
-    """Rebind reader evidence to an untrimmed as-of prefix without reading its suffix."""
-    if not isinstance(identity, ProductIdentity):
-        raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
-    cutoff = utc_timestamp(cutoff)
-    inputs = tuple(bars)
-    grouped: dict[tuple[str, str], list[ProductBar]] = {}
-    for item in inputs:
-        if not isinstance(item, ProductBar):
-            raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
-        grouped.setdefault(
-            (item.bar.physical_contract, item.bar.segment_id), []
-        ).append(item)
-
-    derived: list[LifecycleReplayEvidence] = []
-    seen: set[tuple[str, str]] = set()
-    for evidence_item in tuple(evidence):
-        if not isinstance(evidence_item, LifecycleReplayEvidence):
-            raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
-        owner = (evidence_item.physical_contract, evidence_item.segment_id)
-        prefix = tuple(
-            item for item in grouped.get(owner, ()) if item.bar.bar_end <= cutoff
-        )
-        if not prefix:
-            continue
-        if (
-            owner in seen
-            or evidence_item.product != identity.product
-            or evidence_item.frequency is not identity.frequency
-            or evidence_item.source_identity != LIFECYCLE_REPLAY_EVIDENCE_SOURCE
-            or evidence_item.first_bar_end != prefix[0].bar.bar_end
-            or evidence_item.last_bar_end < prefix[-1].bar.bar_end
-            or evidence_item.verified_cutoff < prefix[-1].bar.bar_end
-            or evidence_item.bar_count < len(prefix)
-        ):
-            raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
-        if evidence_item.last_bar_end <= cutoff and (
-            evidence_item.last_bar_end != prefix[-1].bar.bar_end
-            or evidence_item.bar_count != len(prefix)
-            or evidence_item.input_sha256 != lifecycle_input_sha256(prefix)
-        ):
-            raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
-        seen.add(owner)
-        derived.append(
-            LifecycleReplayEvidence(
-                product=evidence_item.product,
-                frequency=evidence_item.frequency,
-                physical_contract=evidence_item.physical_contract,
-                segment_id=evidence_item.segment_id,
-                first_bar_end=prefix[0].bar.bar_end,
-                last_bar_end=prefix[-1].bar.bar_end,
-                bar_count=len(prefix),
-                input_sha256=lifecycle_input_sha256(prefix),
-                source_identity=evidence_item.source_identity,
-                verified_cutoff=prefix[-1].bar.bar_end,
-            )
-        )
-    return tuple(derived)
-
-
 @dataclass(frozen=True, slots=True)
 class OwnerBoundary:
     product: str
@@ -606,6 +541,7 @@ class StrategyReplay:
     hints: tuple[StrategyHint, ...]
     diagnostics: tuple[str, ...]
     lifecycle_evidence: tuple[LifecycleReplayEvidence, ...] = ()
+    lifecycle_input_bars: tuple[ProductBar, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, ProductIdentity):
@@ -659,9 +595,16 @@ class StrategyReplay:
         if self.actions != frame_actions or self.hints != frame_hints:
             raise ValueError("NEWOW_PRODUCT_REPLAY_FRAME_MISMATCH")
         _ordered_actions(self.actions)
+        frame_bars = tuple(frame.bar for frame in self.frames)
+        lifecycle_input_bars: tuple[ProductBar, ...] = ()
+        if self.lifecycle_evidence:
+            lifecycle_input_bars = tuple(self.lifecycle_input_bars) or frame_bars
+            if lifecycle_input_bars != frame_bars:
+                raise ValueError("NEWOW_PRODUCT_REPLAY_LIFECYCLE_INPUT_MISMATCH")
+        object.__setattr__(self, "lifecycle_input_bars", lifecycle_input_bars)
         validate_lifecycle_replay_evidence(
             self.identity,
-            tuple(frame.bar for frame in self.frames),
+            lifecycle_input_bars,
             self.lifecycle_evidence,
         )
 

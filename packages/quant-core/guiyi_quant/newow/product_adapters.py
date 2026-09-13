@@ -745,4 +745,5 @@ def replay_strategy(
         tuple(hint for frame in frame_tuple for hint in frame.hints),
         tuple(dict.fromkeys(diagnostics)),
         evidence,
+        inputs,
     )

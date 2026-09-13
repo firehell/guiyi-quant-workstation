@@ -2,7 +2,7 @@
 
 from copy import copy
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -378,6 +378,30 @@ def test_visible_initial_clear_projection_ignores_a_damaged_future_suffix(
 
     assert result.trades == ()
     assert result.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        ReferenceTradeProjector().project(
+            damaged, (), case.bars[-1].bar.bar_end
+        )
+
+
+def test_initial_clear_projector_rejects_phantom_future_evidence(product_cases):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,)
+    )
+    phantom_end = evidence.last_bar_end + timedelta(days=1)
+    phantom = replace(
+        evidence,
+        last_bar_end=phantom_end,
+        verified_cutoff=phantom_end,
+        bar_count=evidence.bar_count + 1,
+        input_sha256="f" * 64,
+    )
+    damaged = _forged_lifecycle_evidence(replay, (phantom,))
+
     with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
         ReferenceTradeProjector().project(
             damaged, (), case.bars[-1].bar.bar_end

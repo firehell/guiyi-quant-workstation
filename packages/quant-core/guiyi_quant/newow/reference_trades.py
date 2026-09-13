@@ -19,7 +19,6 @@ from .product_contracts import (
     StrategyHint,
     StrategyReplay,
     TradeEligibility,
-    derive_lifecycle_replay_evidence,
     validate_lifecycle_replay_evidence,
 )
 from .product_identity import (
@@ -551,17 +550,18 @@ class ReferenceTradeProjector:
                     if frame.bar.bar.bar_end <= as_of
                 )
                 effective_bars = tuple(frame.bar for frame in effective_frames)
-                effective_evidence = derive_lifecycle_replay_evidence(
-                    replay.identity,
-                    tuple(frame.bar for frame in replay.frames),
-                    replay.lifecycle_evidence,
-                    as_of,
-                )
                 verified_owners = validate_lifecycle_replay_evidence(
                     replay.identity,
-                    effective_bars,
-                    effective_evidence,
+                    replay.lifecycle_input_bars,
+                    replay.lifecycle_evidence,
                 )
+                lifecycle_prefix = tuple(
+                    bar
+                    for bar in replay.lifecycle_input_bars
+                    if bar.bar.bar_end <= as_of
+                )
+                if effective_bars != lifecycle_prefix:
+                    raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
             except ValueError as error:
                 raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT") from error
         frames_by_owner: dict[tuple[str, str], list[StrategyFrame]] = {}
