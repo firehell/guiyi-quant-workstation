@@ -15,6 +15,7 @@ import MarketFactsDisclosure from './MarketFactsDisclosure.vue'
 
 const props = defineProps<{
   header: MarketDetailHeaderModel
+  unified?: boolean
   newow?: boolean
   identityKey: string
 }>()
@@ -36,7 +37,7 @@ function integer(value: number | null): string {
 </script>
 
 <template>
-  <section class="quote-header" :class="{ 'quote-header--newow': newow }" data-detail-section="quote">
+  <section class="quote-header" :class="{ 'quote-header--unified': unified }" data-detail-section="quote">
     <div class="quote-header__primary">
       <div class="quote-header__price" :class="`quote-header__price--${direction}`">
         <strong>{{ number(header.close) }}</strong>

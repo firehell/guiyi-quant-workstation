@@ -59,6 +59,10 @@ test('quote header names the comparison basis and limits status to quote availab
   assert.match(template, /quoteBasis/)
   assert.match(template, /changeBasis/)
   assert.match(template, /OHLCV/)
+  assert.match(source, /unified\?: boolean/)
+  assert.match(template, /'quote-header--unified': unified/)
+  assert.match(source, /props\.newow \? '1d'/)
+  assert.doesNotMatch(source, /props\.unified \? '1d'/)
   assert.doesNotMatch(template, />\s*数据正常\s*</)
 })
 

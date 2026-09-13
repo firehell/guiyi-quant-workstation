@@ -6,6 +6,7 @@ import { parse } from '@vue/compiler-sfc'
 
 const componentUrl = new URL('../src/pages/market/MarketDetailPage.vue', import.meta.url)
 const newowWorkspaceUrl = new URL('../src/components/market/detail/newow/NewowProductWorkspace.vue', import.meta.url)
+const mainLayoutUrl = new URL('../src/layouts/MainLayout.vue', import.meta.url)
 
 function page() {
   const source = readFileSync(componentUrl, 'utf8')
@@ -69,13 +70,25 @@ test('canonicalizes omitted and legacy Trend routes without presenting the retir
 })
 
 test('keeps navigation and one workspace slot mounted while source data changes locally', () => {
-  const { template } = page()
+  const { source, template } = page()
+  assert.match(template, /<main class="market-detail-page unified-detail-light"/)
+  assert.doesNotMatch(template, /'newow-detail-light': isNewowView/)
+  assert.match(template, /<MarketDetailQuoteHeader[^>]+:unified="isWorkspacePreview"/)
+  assert.match(template, /<MarketDetailQuoteHeader[^>]+:newow="isNewowView"/)
+  assert.doesNotMatch(source, /\.newow-detail-light/)
   assert.match(template, /<MarketDetailViewNav[\s\S]+<section\s+class="market-detail-page__workspace"/)
   assert.match(template, /data-detail-section="workspace-slot"/)
   assert.match(template, /:data-active-view="routeResult\.identity\.view"/)
   assert.match(template, /:aria-busy="controller\.state\.value\.loading"/)
   assert.match(template, /<p\s+v-if="controller\.state\.value\.loading && routeResult\.identity\.view !== 'newow'"[\s\S]+正在加载当前图表/)
   assert.doesNotMatch(template, /<p v-if="controller\.state\.value\.loading" class="market-detail-page__loading"[\s\S]+<MarketDetailViewNav/)
+})
+
+test('gives every market detail route the same full-width layout canvas', () => {
+  const source = readFileSync(mainLayoutUrl, 'utf8')
+  assert.match(source, /'content--market-detail': route\.name === 'market-chart'/)
+  assert.match(source, /\.content\.content--market-detail \{ padding: 0; background: #fff; \}/)
+  assert.doesNotMatch(source, /content--newow-detail|route\.query\.view === 'newow'/)
 })
 
 test('accepted Newow chart starts first-screen research once without viewport observation', () => {
