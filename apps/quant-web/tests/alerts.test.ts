@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
-import { ref } from 'vue'
 import { usePersistentAlertMarkers } from '../src/composables/usePersistentAlertMarkers.ts'
-import { useProductAlertScope } from '../src/composables/useProductAlertScope.ts'
 import type { AlertEvent, BarData } from '../src/types/market.ts'
 import {
   alertEventsToMarkers,
@@ -16,55 +13,6 @@ import {
   alertResultLabel,
   alertRuleShortLabel,
 } from '../src/utils/alertRules.ts'
-
-describe('HTDY Alert scope', () => {
-  test('uses only the product-frequency mutation API', () => {
-    const source = readFileSync(new URL('../src/api/alerts.ts', import.meta.url), 'utf-8')
-    assert.match(source, /scope\/\$\{symbol\}\/\$\{frequency\}/)
-    assert.doesNotMatch(source, /scope\/\$\{symbol\}\x60/)
-  })
-
-  test('loads and mutates the exact current frequency pair', async () => {
-    const symbol = ref('jm')
-    const frequency = ref<'15m'>('15m')
-    const calls: unknown[][] = []
-    const controller = useProductAlertScope({
-      symbol,
-      frequency,
-      fetchProductAlerts: async () => ({ symbol: 'jm', rules: [rule(false)] }),
-      fetchRuntimeStatus: async () => 'healthy',
-      setProductFrequencyEnabled: async (...args) => {
-        calls.push(args)
-        return rule(true)
-      },
-      notifyError: () => undefined,
-    })
-    await controller.refresh()
-    await controller.toggleHtdyCurrentFrequency(ALERT_RULE_CODES.HTDY, true)
-    assert.deepEqual(calls, [[ALERT_RULE_CODES.HTDY, 'jm', '15m', true]])
-    assert.equal(controller.alertRules.value[0]?.enabled_for_product, true)
-    controller.dispose()
-  })
-
-  test('wrong or unknown Rule identity fails closed before mutation', async () => {
-    let calls = 0
-    const controller = useProductAlertScope({
-      symbol: ref('jm'),
-      frequency: ref('15m'),
-      fetchProductAlerts: async () => ({ symbol: 'jm', rules: [rule(false)] }),
-      fetchRuntimeStatus: async () => 'healthy',
-      setProductFrequencyEnabled: async () => {
-        calls += 1
-        return rule(true)
-      },
-      notifyError: () => undefined,
-    })
-    await controller.refresh()
-    await controller.toggleHtdyCurrentFrequency('future_rule', true)
-    assert.equal(calls, 0)
-    controller.dispose()
-  })
-})
 
 describe('two-Rule Alert presentation', () => {
   test('owns the exact SuBing observation labels', () => {
@@ -526,17 +474,6 @@ function deferred<T>() {
   let reject!: (reason?: unknown) => void
   const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
   return { promise, resolve, reject }
-}
-
-function rule(enabled: boolean) {
-  return {
-    rule_code: ALERT_RULE_CODES.HTDY,
-    display_name: '火天大有',
-    kind: 'indicator_observation' as const,
-    input_frequencies: ['15m'] as const,
-    enabled_for_product: enabled,
-    enabled_frequencies: enabled ? ['15m'] as const : [],
-  }
 }
 
 function event(id: number, resultCodes: AlertEvent['result_codes']): AlertEvent {

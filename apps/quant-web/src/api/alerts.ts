@@ -1,6 +1,6 @@
 import request from './request'
 import { getRuntimeHealth } from './runtime'
-import type { AlertEvent, AlertRuleCode, CurrentAlertEventsResponse, MarketFrequency } from '@/types/market'
+import type { AlertEvent, AlertRuleCode, MarketFrequency } from '@/types/market'
 import {
   normalizeAlertEventListResponse,
   normalizeCurrentAlertEventsResponse,
@@ -21,7 +21,6 @@ export interface ProductAlertRuleState {
 
 export interface ProductAlertStateResponse { symbol: string; rules: ProductAlertRuleState[] }
 export interface AlertEventListResponse { items: AlertEvent[] }
-export type ProductCurrentAlertEventsResponse = CurrentAlertEventsResponse
 
 export type { CurrentAlertEventsResponse } from '@/types/market'
 
@@ -34,26 +33,8 @@ export function getProductAlerts(symbol: string) {
   return request.get<never, ProductAlertStateResponse>(`/api/alerts/products/${symbol}`)
 }
 
-export function setAlertProductFrequencyEnabled(
-  ruleCode: string,
-  symbol: string,
-  frequency: MarketFrequency,
-  enabled: boolean,
-) {
-  return request.put<never, ProductAlertRuleState>(
-    `/api/alerts/rules/${ruleCode}/scope/${symbol}/${frequency}`,
-    { enabled },
-  )
-}
-
 export function getAlertRuntimeStatus() {
   return getRuntimeHealth().then((response) => response.components.alert.status)
-}
-
-export function getProductCurrentAlertEvents(symbol: string) {
-  return request.get<never, unknown>(
-    `/api/alerts/products/${symbol}/current-events`,
-  ).then(normalizeCurrentAlertEventsResponse)
 }
 
 export function getAlertEvents(params: { symbol: string; start: string; end: string; ruleCode: AlertRuleCode }) {

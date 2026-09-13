@@ -150,43 +150,6 @@ test('after-market failure notification acceptance is explicit that delivery is 
   assert.match(afterMarket.detail, /失败通知：服务商已接受（不代表送达）/)
 })
 
-test('latest-resource generations retain success on current failure and ignore stale completions', async () => {
-  const module = await import('../src/composables/useLatestResource.ts').catch(() => null)
-  assert.ok(module, 'latest-resource composable must exist')
-
-  let rejectFirst!: (reason?: unknown) => void
-  let resolveSecond!: (value: string) => void
-  const first = new Promise<string>((_resolve, reject) => { rejectFirst = reject })
-  const second = new Promise<string>((resolve) => { resolveSecond = resolve })
-  let attempt = 0
-  const resource = module.useLatestResource({
-    fetch: () => {
-      const currentAttempt = attempt++
-      if (currentAttempt === 0) return first
-      if (currentAttempt === 1) return second
-      return Promise.reject(new Error('current failure'))
-    },
-  })
-
-  const older = resource.refresh()
-  const newer = resource.refresh()
-  rejectFirst(new Error('old failure'))
-  await older
-  assert.equal(resource.loading.value, true)
-  assert.equal(resource.failed.value, false)
-
-  resolveSecond('new')
-  await newer
-  assert.equal(resource.data.value, 'new')
-  assert.equal(resource.loading.value, false)
-  assert.equal(resource.failed.value, false)
-
-  const failedRefresh = resource.refresh()
-  await failedRefresh
-  assert.equal(resource.data.value, 'new')
-  assert.equal(resource.failed.value, true)
-})
-
 for (const classification of ['not_verified_missing', 'verified_match']) {
   test(`v5 interruption ${classification} remains visible during later runs`, async () => {
     const { runtimeStatusPresentation } = await import('../src/utils/runtimePresentation.ts')

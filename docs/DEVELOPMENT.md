@@ -126,4 +126,6 @@ RQData、Canonical、DB、Redis、Scope、Runtime、通知或发布操作。
 - 验证命令：`TESTING.md`
 - 本机部署导航：`deploy/README.md`
 
-已完成的实现笔记只从 Git history 追溯，不把 `docs/superpowers/` 当当前设计源。
+已完成的实现笔记只从 Git history 追溯，不把 `docs/superpowers/` 或 `.superpowers/` 当当前设计源。
+已完成 OpenSpec change 在确认全部 delta 已同步到 `openspec/specs/`、实现已集成后移除，历史从 Git 追溯。
+研究报告、原始截图和冻结验收脚本按证据用途保留；本机 `node_modules` 目录或符号链接不进入 Git。

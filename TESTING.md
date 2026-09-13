@@ -669,7 +669,6 @@ Newow P5 路由/偏好、typed section consumer、九组合图层、参考历史
 ```bash
 pnpm -C apps/quant-web exec node --test \
   tests/newowProductRoutes.test.ts \
-  tests/marketDetailRoute.test.ts \
   tests/marketDetailPreferences.test.ts \
   tests/marketHomeRoute.test.ts \
   tests/marketHomePageRoute.test.ts \
@@ -706,7 +705,8 @@ SuBing Alert Rule/API/Event-backed `S↑/S↓` 与 Market Home 定向检查：
 pnpm -C apps/quant-web exec node --test \
   tests/alertRuleOwnership.test.ts \
   tests/alerts.test.ts \
-  tests/productCurrentAlertEvents.test.ts \
+  tests/useHtdyAlertFacts.test.ts \
+  tests/useSubingAlertFacts.test.ts \
   tests/marketHomeTypes.test.ts \
   tests/marketHomeViewModel.test.ts \
   tests/marketHomeRoute.test.ts
