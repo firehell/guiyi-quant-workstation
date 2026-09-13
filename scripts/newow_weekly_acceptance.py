@@ -287,6 +287,12 @@ def _error_status_violation(row: object) -> bool:
     return row.get("status") != expected
 
 
+def _outcome_key(row: object) -> str:
+    if not isinstance(row, dict):
+        return "MISSING:-"
+    return f"{row.get('status', 'MISSING')}:{row.get('reason') or '-'}"
+
+
 def summarize_readiness(
     report: object,
     expected_products: tuple[str, ...] | list[str],
@@ -360,7 +366,8 @@ def summarize_readiness(
     main_ready = 0
     reference_ready = 0
     joint_ready = 0
-    non_joint_ready: list[dict[str, object]] = []
+    joint_ready_cases: list[dict[str, object]] = []
+    non_joint_ready_counts: Counter[str] = Counter()
     pending: list[dict[str, object]] = []
     reason_counts: Counter[str] = Counter()
     for case in cases:
@@ -387,18 +394,11 @@ def summarize_readiness(
             reference_ready += 1
         if chart_status == reference_status == "READY":
             joint_ready += 1
-        else:
-            non_joint_ready.append(
-                {
-                    "symbol": key[0],
-                    "strategy": key[1],
-                    "frequency": key[2],
-                    "chart_status": chart_status,
-                    "chart_reason": chart.get("reason") if isinstance(chart, dict) else None,
-                    "reference_status": reference_status,
-                    "reference_reason": reference.get("reason") if isinstance(reference, dict) else None,
-                }
+            joint_ready_cases.append(
+                {"symbol": key[0], "strategy": key[1], "frequency": key[2]}
             )
+        else:
+            non_joint_ready_counts[f"{_outcome_key(chart)}|{_outcome_key(reference)}"] += 1
         for section_name, state in sections.items():
             if isinstance(state, dict):
                 reason_counts[
@@ -463,6 +463,14 @@ def summarize_readiness(
         violations.append("STATUS_MISMATCH")
 
     unique_violations = sorted(set(violations))
+    pending_counts = Counter(
+        f"{item['source']}:{item['status']}:{item['reason'] or '-'}"
+        for item in pending
+    )
+    repair_rows = report.get("repair_targets", [])
+    metadata_rows = report.get("metadata_proposals", [])
+    repair_counts = Counter(_outcome_key(row) for row in repair_rows)
+    metadata_counts = Counter(_outcome_key(row) for row in metadata_rows)
     return {
         "schema_version": "newow_weekly_readiness_summary_v1",
         "valid": not unique_violations,
@@ -477,11 +485,15 @@ def summarize_readiness(
             "reference_ready": reference_ready,
             "joint_ready": joint_ready,
         },
-        "pending": pending,
-        "non_joint_ready_cases": non_joint_ready,
+        "pending_count": len(pending),
+        "pending_outcome_counts": dict(sorted(pending_counts.items())),
+        "joint_ready_cases": joint_ready_cases,
+        "non_joint_ready_outcome_counts": dict(sorted(non_joint_ready_counts.items())),
         "section_outcome_counts": dict(sorted(reason_counts.items())),
-        "repair_targets": _json_value(report.get("repair_targets", [])),
-        "metadata_proposals": _json_value(report.get("metadata_proposals", [])),
+        "repair_target_count": len(repair_rows),
+        "repair_target_outcome_counts": dict(sorted(repair_counts.items())),
+        "metadata_proposal_count": len(metadata_rows),
+        "metadata_proposal_outcome_counts": dict(sorted(metadata_counts.items())),
         "provider_requests": report.get("provider_requests"),
         "writes": report.get("writes"),
     }

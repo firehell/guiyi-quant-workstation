@@ -378,7 +378,13 @@ def test_summary_recomputes_three_of_180_ready_but_keeps_audit_complete():
         "reference_ready": 3,
         "joint_ready": 3,
     }
-    assert len(result["non_joint_ready_cases"]) == 177
+    assert result["joint_ready_cases"] == [
+        {"symbol": PRODUCTS[0], "strategy": strategy, "frequency": "1w"}
+        for strategy in STRATEGIES
+    ]
+    assert result["non_joint_ready_outcome_counts"] == {
+        "DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING|DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 177
+    }
 
 
 def test_summary_accepts_honest_incomplete_audit_and_preserves_pending_reason():
@@ -395,14 +401,49 @@ def test_summary_accepts_honest_incomplete_audit_and_preserves_pending_reason():
     assert result["valid"] is True
     assert result["audit_complete"] is False
     assert result["counts"]["joint_ready"] == 3
-    assert result["pending"] == [
+    assert result["pending_count"] == 1
+    assert result["pending_outcome_counts"] == {
+        "dependency:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 1
+    }
+
+
+def test_summary_aggregates_repair_and_metadata_rows_without_large_private_details():
+    from scripts.newow_weekly_acceptance import summarize_readiness
+
+    report = _report()
+    report["repair_targets"][0].update(
+        targets=[{"large": "discard"}],
+        scope_diagnostics=[{"large": "discard"}],
+    )
+    report["metadata_proposals"] = [
         {
-            "source": "dependency",
-            "identity": 0,
+            "symbol": "ag",
+            "contract": "AG2701",
+            "frequency": "1w",
+            "through": "2026-09-11",
             "status": "UNKNOWN",
             "reason": "HISTORICAL_SESSION_FACT_MISSING",
+            "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+            "error": {
+                "diagnostic": {"reason": "HISTORICAL_SESSION_FACT_MISSING"},
+                "private": "discard",
+            },
         }
     ]
+    report.update(complete=False, status="incomplete")
+
+    result = summarize_readiness(report, PRODUCTS, AS_OF)
+
+    assert result["valid"] is True
+    assert result["repair_target_count"] == 1
+    assert result["repair_target_outcome_counts"] == {"PROPOSED:-": 1}
+    assert result["metadata_proposal_count"] == 1
+    assert result["metadata_proposal_outcome_counts"] == {
+        "UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 1
+    }
+    assert "repair_targets" not in result
+    assert "metadata_proposals" not in result
+    assert "discard" not in __import__("json").dumps(result)
 
 
 @pytest.mark.parametrize(
