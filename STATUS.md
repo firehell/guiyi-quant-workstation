@@ -44,7 +44,8 @@
 
 随后只读 PT 三策略周线 matrix 中趋势、震荡主图 READY；当时主升浪主图和参考层仍因内部
 `NEWOW_PRODUCT_PAIRING_CONFLICT` 失败。已确认这不是行情缺口：PT2610 共 41 根周线，从上市首根即为黄带且没有
-真实 BUILD 转换，第 40 根首次转蓝并产生 CLEAR。owner 已批准采用“显式初始无入场 CLEAR”合同；本地候选已完成
+真实 BUILD 转换，第 40 根首次转蓝并产生 CLEAR。owner 已批准采用“显式初始无入场 CLEAR”合同；本地 develop
+`db23dfc9b` 已集成
 `INITIAL_CLEAR_NO_ENTRY`、reader lifecycle evidence、零交易投影、v2 API/Web 合同及“清仓（无入场）”展示，
 离线 Core/API/Web/E2E/OpenSpec 验证与独立 Review 修正已完成。固定 PT 截点的本次 v2 生产只读验收因宿主凭据
 权限 Gate 未执行，仍为 `EXTERNAL_GATE_PENDING`；不得以旧 matrix 或本地 fixture 替代。全 60 品种审计仍为
