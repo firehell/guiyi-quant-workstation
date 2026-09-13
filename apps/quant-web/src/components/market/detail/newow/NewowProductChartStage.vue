@@ -100,6 +100,8 @@ let rendering = false
 let nearLeftBoundary = false
 let paginationArmed = false
 let paginationArmFrame: number | null = null
+let actionProjectionFrame: number | null = null
+let actionProjectionScheduled = false
 let programmaticRange: { from: number; to: number } | null = null
 let resolvedSignalKey: string | null = null
 const mainLines = new Map<string, ISeriesApi<'Line'>>()
@@ -148,6 +150,7 @@ onUnmounted(createNewowProductChartDisposer({
   disconnectResizeObserver: () => observer?.disconnect(),
   removeChart: () => {
     if (paginationArmFrame !== null) cancelAnimationFrame(paginationArmFrame)
+    if (actionProjectionFrame !== null) cancelAnimationFrame(actionProjectionFrame)
     if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', onFullscreenChange)
     candles?.detachPrimitive(band)
     candles?.detachPrimitive(trendChannel)
@@ -197,12 +200,17 @@ function renderModel(value: NewowProductChartModel | null): void {
     || value.identity.strategy !== renderedIdentity.strategy
     || value.identity.frequency !== renderedIdentity.frequency
   )
-  const resetViewport = identityChanged && previousModel !== null
-    ? !preserveNewowViewport(previousModel, value)
-    : false
   const previousRange = retainedVisibleRange ?? chart.timeScale().getVisibleLogicalRange()
   const previousFirst = renderedBars[0]?.barEnd
-  const prepended = previousFirst === undefined ? 0 : Math.max(0, value.bars.findIndex((bar) => bar.barEnd === previousFirst))
+  const previousOffset = previousFirst === undefined ? -1 : value.bars.findIndex((bar) => bar.barEnd === previousFirst)
+  const prepended = Math.max(0, previousOffset)
+  const retainsPreviousAxis = previousModel !== null && (
+    preserveNewowViewport(previousModel, value)
+    || (!identityChanged
+      && previousOffset >= 0
+      && previousModel.bars.every((bar, index) => bar.barEnd === value.bars[previousOffset + index]?.barEnd))
+  )
+  const resetViewport = previousModel !== null && !retainsPreviousAxis
   rendering = true
   candles.setData(value.bars.map((bar) => ({
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
@@ -297,6 +305,18 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     const y = priceToCoordinate.call(candles, action.value)
     return x === null || y === null ? [] : [{ callout, x, y }]
   }), width, height)
+}
+
+function scheduleActionProjection(): void {
+  if (actionProjectionScheduled) return
+  actionProjectionScheduled = true
+  const finish = () => {
+    actionProjectionScheduled = false
+    actionProjectionFrame = null
+    projectActionLabels()
+  }
+  if (typeof requestAnimationFrame === 'undefined') queueMicrotask(finish)
+  else actionProjectionFrame = requestAnimationFrame(finish)
 }
 
 function revealSignal(signalId: string): boolean {
@@ -451,7 +471,14 @@ defineExpose({ revealSignal, scrollToLatest })
       <button type="button" :aria-label="fullscreen ? '退出图表全屏' : '图表全屏'" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '全屏' }}</button>
     </div>
     </div>
-    <div ref="container" class="newow-product-chart-stage__chart" />
+    <div
+      ref="container"
+      class="newow-product-chart-stage__chart"
+      @pointermove="scheduleActionProjection"
+      @pointerup="scheduleActionProjection"
+      @wheel="scheduleActionProjection"
+      @dblclick="scheduleActionProjection"
+    />
     <div
       v-if="model?.actions.length"
       class="newow-product-chart-stage__action-callouts"

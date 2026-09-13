@@ -217,6 +217,74 @@ test('connects action labels to the exact server reference price coordinate', as
   app.unmount()
 })
 
+test('reprojects server-price action labels while the user changes the price scale', async () => {
+  const Stage = await loadComponent()
+  const response = chartResponse()
+  let coordinateFactor = 2
+  const fakeChart = {
+    addSeries: () => ({
+      setData() {}, createPriceLine() {}, attachPrimitive() {}, detachPrimitive() {},
+      priceToCoordinate: (price: number) => price * coordinateFactor,
+    }),
+    removeSeries() {}, panes: () => [{ getHeight: () => 400, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }],
+    timeScale: () => ({
+      width: () => 500, timeToCoordinate: () => 210,
+      fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {},
+    }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response, strategy: response.meta.identity.strategy, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  const root = element('root')
+  app.mount(root); await nextTick(); await nextTick()
+
+  assert.equal(findNode(root, node => node.props['data-action-id'] === 'build-stable')?.props['data-anchor-y'], 180)
+  coordinateFactor = 3
+  const chartSurface = findNode(root, node => node.props.class === 'newow-product-chart-stage__chart')
+  assert.equal(typeof chartSurface?.props.onPointermove, 'function')
+  ;(chartSurface!.props.onPointermove as () => void)()
+  await new Promise<void>((resolve) => queueMicrotask(resolve))
+  await nextTick()
+  assert.equal(findNode(root, node => node.props['data-action-id'] === 'build-stable')?.props['data-anchor-y'], 270)
+  app.unmount()
+})
+
+test('same identity resets a retained viewport when a loading transition returns a different time axis', async () => {
+  const Stage = await loadComponent()
+  let range = { from: 12, to: 42 }
+  const ranges: Array<typeof range> = []
+  const response = ref<MutableChartResponse | null>(strategyResponse('trend'))
+  const fakeChart = {
+    addSeries: () => ({ setData() {}, createPriceLine() {} }), removeSeries() {},
+    timeScale: () => ({
+      fitContent() {},
+      setVisibleLogicalRange(value: typeof range) { range = value; ranges.push(value) },
+      getVisibleLogicalRange: () => range,
+      scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {},
+    }),
+    subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    response: response.value, strategy: 'trend', selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+  range = { from: 12, to: 42 }
+
+  response.value = null; await nextTick()
+  const incompatible = strategyResponse('trend')
+  incompatible.value!.bars[0]!.bar_end = '2026-08-16T07:00:00Z'
+  incompatible.value!.frames[0]!.bar_end = '2026-08-16T07:00:00Z'
+  response.value = incompatible; await nextTick()
+
+  assert.notDeepEqual(range, { from: 12, to: 42 })
+  assert.equal(ranges.length >= 2, true)
+  app.unmount()
+})
+
 test('same product and frequency strategy switches keep viewport while replacing mutually exclusive overlays', async () => {
   const Stage = await loadComponent()
   let range = { from: 12, to: 42 }
