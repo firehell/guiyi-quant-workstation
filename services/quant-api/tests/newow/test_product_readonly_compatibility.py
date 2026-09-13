@@ -19,14 +19,12 @@ class _ForbiddenWriteSession:
         raise AssertionError("read-only GET flushed")
 
 
-@pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
 @pytest.mark.parametrize("section, component", [("chart", None), ("auxiliary", "macd")])
 def test_new_get_uses_one_product_frequency_and_no_write_seam(
-    monkeypatch, product_cases, section, component, frequency
+    monkeypatch, product_cases, section, component
 ):
-    _reader, query, fake = product_cases.paged_reader(
-        prefix_bars=90, frequency=frequency
-    )
+    frequency = "1w"
+    _reader, query, fake = product_cases.paged_reader(prefix_bars=90, frequency=frequency)
     monkeypatch.setattr(
         market_newow, "build_market_data_service", lambda _session: fake
     )

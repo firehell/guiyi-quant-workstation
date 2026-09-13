@@ -145,7 +145,7 @@ def test_both_endpoints_sanitize_unknown_errors(
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.get(
                 f"/api/v1/market/newow/{endpoint}",
-                params={"product": "rb", "strategy": "trend", "frequency": "1d"},
+                params={"product": "rb", "strategy": "trend", "frequency": "1w"},
             )
         assert response.status_code == status
         detail = response.json()["detail"]
@@ -156,7 +156,7 @@ def test_both_endpoints_sanitize_unknown_errors(
             assert detail["diagnostic"]["reason"] == reason
             assert detail["diagnostic"]["context"] == {
                 "symbol": "rb",
-                "frequency": "1d",
+                "frequency": "1w",
             }
     finally:
         app.dependency_overrides.clear()
