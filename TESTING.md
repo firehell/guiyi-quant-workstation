@@ -63,6 +63,55 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/g
 必须为 0，explanation 继续 UNOPENED，comparator 正常样本不足独立披露。不能用报告 exit 0 替代逐项判定。
 此前两笔 PT apply 不重跑；权限不足时保留现场 Gate，继续完成离线工程验收。
 
+## Newow 周线剩余工程收口
+
+确定性验收脚本只有两个模式：`summary` 只离线读取显式完整 JSON 和冻结 scope；`pt` 只在一个
+`readonly_transaction` 中读取固定 `pt/main_rise/1w` chart 与同 snapshot reference。两者均无 provider、
+repair、apply 或通知能力。先验证 parser 与离线行为：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
+  scripts/newow_weekly_acceptance.py --help
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_weekly_acceptance.py \
+  services/quant-api/tests/newow/test_readiness.py \
+  services/quant-api/tests/data_foundation/test_newow_readiness_cli.py \
+  services/quant-api/tests/newow/test_product_readonly_compatibility.py
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
+  scripts/newow_weekly_acceptance.py summary \
+  --report /absolute/full-readiness.json \
+  --scope data/universe/operational_products.txt \
+  --expected-as-of 2026-09-13T06:36:13+00:00
+```
+
+以下是获准生产只读连接后的单次现场命令，不构成写入、重试或 Runtime 授权。完整报告 stdout 必须保存到
+本任务新的显式 evidence 文件；summary 只读取该同一文件，不得用 `--compact` 再查询一次。维护锁忙、现场失败、
+预算耗尽或代码修复后均停止，不循环复跑。
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
+  scripts/newow_weekly_acceptance.py pt
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/guiyi \
+  data newow-readiness --universe operational --frequency 1w --matrix \
+  --as-of 2026-09-13T06:36:13+00:00 --max-work 100000 --timeout-seconds 1800
+```
+
+UI 依赖整合后的完整 Web 验收：
+
+```bash
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web test
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web build
+env -u NO_COLOR -u FORCE_COLOR pnpm_config_verify_deps_before_run=false \
+  pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
+  e2e/market-detail.spec.mjs e2e/newow-product.spec.mjs \
+  e2e/newow-detail-light.spec.mjs e2e/newow-chart-panes.spec.mjs
+```
+
+脚本 exit 0 只证明 PT 合同检查或完整 JSON 结构/计数校验通过；`audit_complete`、180 case 覆盖、
+chart/reference 联合 READY 与真实页面回读仍分别报告，不因 known gap、WARMING、NOT_APPLICABLE 或
+UNOPENED 被改写为全 READY。
+
 ## 首页返回恢复、消息与分钟行情
 
 ```bash
