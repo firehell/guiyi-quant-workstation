@@ -186,7 +186,16 @@ JM 5m/15m、其余品种 60m、苏冰 15m 的策略和 Scope 均保持原合同�
 
 ## 牛哇周线 60 品种准备（恢复进度与历史证据）
 
-2026-09-14 当前只读余额已重新审计，不再使用旧清单扣减估算：固定 operational 60、`frequency=1w`、
+2026-09-14 普通总包一次真实执行为 `PARTIAL`，已在 batch-006/B2411 来源校验失败时停止，未重试。
+冻结的 1,117 单元结算为 102 成功、1 失败、1,014 未尝试、0 未知；累计发布 2,066 个分区，补齐
+22,899 个 missing endpoints。新进程对全部 102 成功单元 Catalog/Parquet/MDS 严格读回通过且 replan=0；
+B2411 applied=0，独立 replan 仍为原 hash/22 targets。原始 2023-12-27 来源为 O/H/L=0、volume=2、
+close=3929，正确报 `RQDATA_ZERO_OHL_INVALID`，不能套用零成交规范化。原 9 个 RS 与该新增 B2411
+来源异常分开保留；未重新跑全域后审计，不能把 1,015 个未完成单元说成新审计的普通余额。
+精确总包 SHA `cd54323832a1d8f325fb1ed3d4ae1bdad4d6fbbceed35ce9cef15985e891f8b5` 的本次意图已消费；
+后续需独立处理来源异常、只读重审剩余范围及新的精确执行意图，不自动续跑。未修改 Runtime 或发布。
+
+以下为执行前完整只读审计基线，不再作为执行后的当前余额：固定 operational 60、`frequency=1w`、
 `as_of=2026-09-13T06:36:13+00:00`，dependency-only 审计 `complete=true`、`budget_exhausted=false`，
 普通 `PROPOSED=1,117`、`REVIEW_REQUIRED=9`、metadata proposal=0。普通范围可分成 56 个最多 20 单元的
 内部批次；22,695 个月分区目标、264,546 个预计端点，其中实际缺失端点 251,384。预计端点和缺失端点
@@ -197,10 +206,10 @@ Session 247 目标/33,224 行、SI2308、EC2607、普通首批 20 单元及 RS23
 本轮总包编排已完成实现、隔离验证和专项独立 Review：组合测试 576 passed，Ruff/Mypy、OpenSpec 与
 secret scan 通过，两轮修复后的专项 Review 无阻断；总审补充的 repair 反向覆盖及来源 journal 核对
 已在 `4c18a9a23` 修复并覆盖回归，完整工程结论以交付 Review 及 Git 集成记录为准。
-当前为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；
-尚未执行剩余普通总包。代码冻结后的全域审计和精确子包以本地专用 evidence 根为记录位置，真实执行仍须
-匹配冻结总包的一次下载/写入意图；准备包本身不消费此意图。完整 matrix、浏览器验收、Release 与 Runtime 均非本次数据准备的
-完成结论。当前数字、完整审计 SHA-256 和旧批次证据见
+工程已集成 `develop@4c891d8df`，最终独立复核无阻断。冻结代码的新审计和 56 子包已完成，实际总包
+expected bars 为 264,551；相较旧摘要多 5 个已存在的后续 D1 bar，缺失窗口未扩大。真实执行和独立读回
+以本地专用 evidence 根为记录位置，当前为上述 `PARTIAL`，不是普通缺口归零。
+完整 matrix、浏览器验收、Release 与 Runtime 均非本次数据执行的完成结论。当前数字、完整审计 SHA-256 和旧批次证据见
 [恢复执行证据](docs/tasks/newow-weekly-data-recovery/remaining-123-execution-evidence.md)，
 [普通总包计划](docs/tasks/newow-weekly-data-recovery/ordinary-full-closeout-plan.md)。
 
