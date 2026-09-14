@@ -1596,6 +1596,77 @@ def test_campaign_counts_proven_post_commit_readback_failure_as_stopping(
     }
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    ["request", "sequence", "bool_sequence", "bool_schema", "state", "payload"],
+)
+def test_campaign_treats_same_count_failed_journal_tampering_as_unknown(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    manifest = _campaign(tmp_path, 3, with_source_requests=True)
+    calls: list[str] = []
+    invoke_native = _native_exception_invoker("readback_failed", calls)
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        value = invoke_native(child, digest, attempt)
+        unit_dir = attempt / "native" / "unit-002-ag-AG1001"
+        journal_path = unit_dir / "journal.jsonl"
+        records = [json.loads(line) for line in journal_path.read_text().splitlines()]
+        if mutation == "request":
+            records[0]["request"]["contract"] = "AG9999"
+        elif mutation == "sequence":
+            records[0]["sequence"] = 9
+            records[1]["sequence"] = 9
+        elif mutation == "bool_sequence":
+            records[0]["sequence"] = True
+            records[1]["sequence"] = True
+        elif mutation == "bool_schema":
+            records[0]["schema_version"] = True
+        elif mutation == "state":
+            records.insert(
+                -1,
+                {"schema_version": 1, "sequence": 1, "state": "ignored"},
+            )
+        else:
+            payload_path = unit_dir / "source-response-0001.json"
+            payload = json.loads(payload_path.read_text())
+            payload["request"]["contract"] = "AG9999"
+            content = (
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            )
+            payload_path.write_text(content)
+            records[1]["payload_sha256"] = hashlib.sha256(content.encode()).hexdigest()
+        journal_path.write_text(
+            "".join(json.dumps(record) + "\n" for record in records)
+        )
+        return value
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert calls == ["AG1000", "AG1001"]
+    assert result["status"] == "unknown"
+    assert result["failed_batch"] is None
+    assert result["summary"] == {
+        "denominator_unit_count": 3,
+        "success_unit_count": 1,
+        "isolated_unit_count": 0,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 1,
+        "unknown_unit_count": 1,
+    }
+
+
 def test_campaign_accounts_for_known_stopping_failure_as_distinct_partition(
     tmp_path: Path,
 ) -> None:
@@ -1969,7 +2040,10 @@ def test_prior_known_source_isolation_rejects_unproven_or_drifted_evidence(
 
 def test_prior_known_isolation_rejects_symlinked_unit_directory_before_prepare(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from scripts import newow_weekly_recovery_campaign as module
+
     prior = _campaign(tmp_path, 1, with_source_requests=True, name="prior")
     prior_attempt = tmp_path / "prior-attempt"
     execute_campaign(
@@ -1982,6 +2056,18 @@ def test_prior_known_isolation_rejects_symlinked_unit_directory_before_prepare(
     escaped = tmp_path.parent / f"{tmp_path.name}-escaped-unit"
     unit_dir.rename(escaped)
     unit_dir.symlink_to(escaped, target_is_directory=True)
+    escaped_bytes = {
+        path.name: path.read_bytes() for path in escaped.iterdir() if path.is_file()
+    }
+    outside_reads: list[Path] = []
+    real_read_json = module.native._read_json_file
+
+    def tracked_read_json(path: Path):
+        if Path(path).parent in {unit_dir, escaped}:
+            outside_reads.append(Path(path))
+        return real_read_json(path)
+
+    monkeypatch.setattr(module.native, "_read_json_file", tracked_read_json)
 
     try:
         with pytest.raises(RecoveryError, match="^PRIOR_ISOLATION_INVALID$"):
@@ -2002,6 +2088,10 @@ def test_prior_known_isolation_rejects_symlinked_unit_directory_before_prepare(
                 prior_attempt_path=prior_attempt,
             )
         assert not (tmp_path / "fresh.prepare.json").exists()
+        assert outside_reads == []
+        assert {
+            path.name: path.read_bytes() for path in escaped.iterdir() if path.is_file()
+        } == escaped_bytes
     finally:
         unit_dir.unlink()
         escaped.rename(unit_dir)

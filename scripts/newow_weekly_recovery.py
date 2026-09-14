@@ -168,9 +168,11 @@ class AttemptJournal:
         allowed_requests: tuple[ExchangeDailySourceRequest, ...],
     ) -> None:
         self.attempt_dir = Path(attempt_dir)
+        self._expected_parent = self.attempt_dir.parent
         self.allowed_requests = tuple(allowed_requests)
         if len(set(self.allowed_requests)) != len(self.allowed_requests):
             raise RecoveryError("SOURCE_SCOPE_INVALID")
+        self._validated_attempt_dir()
         self._started: dict[ExchangeDailySourceRequest, int] = {}
         self._failure_recorded = False
         journal = self.attempt_dir / "journal.jsonl"
@@ -258,8 +260,9 @@ class AttemptJournal:
 
     def _append(self, record: Mapping[str, Any]) -> None:
         content = (_canonical_json(record) + "\n").encode("utf-8")
+        attempt_dir = self._validated_attempt_dir()
         fd = os.open(
-            self.attempt_dir / "journal.jsonl",
+            attempt_dir / "journal.jsonl",
             os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW,
         )
         try:
@@ -274,9 +277,10 @@ class AttemptJournal:
         request: ExchangeDailySourceRequest,
         response: tuple[dict[str, Any], ...],
     ) -> tuple[str, str]:
+        attempt_dir = self._validated_attempt_dir()
         name = f"source-response-{sequence:04d}.json"
-        target = self.attempt_dir / name
-        temporary = self.attempt_dir / f".{name}.tmp"
+        target = attempt_dir / name
+        temporary = attempt_dir / f".{name}.tmp"
         payload = {
             "schema_version": 1,
             "request": _request_payload(request),
@@ -304,8 +308,15 @@ class AttemptJournal:
             temporary.unlink(missing_ok=True)
             raise OSError
         os.replace(temporary, target)
-        _fsync_directory(self.attempt_dir)
+        _fsync_directory(attempt_dir)
         return name, hashlib.sha256(content).hexdigest()
+
+    def _validated_attempt_dir(self) -> Path:
+        return _validated_direct_child_directory(
+            self.attempt_dir,
+            self._expected_parent,
+            "SOURCE_EVIDENCE_PATH_INVALID",
+        )
 
 
 def create_attempt_directory(output_root: Path, attempt_id: str) -> Path:
@@ -427,6 +438,121 @@ def _validated_direct_child_directory(
     ):
         raise RecoveryError(error_code)
     return resolved_child
+
+
+def _validated_source_attempt_outcome(
+    unit_dir: Path,
+    frozen_requests: tuple[ExchangeDailySourceRequest, ...],
+) -> dict[str, object]:
+    """Validate a failed attempt journal against its frozen source prefix."""
+    records = _read_journal_records(unit_dir)
+    if not records:
+        raise RecoveryError("SOURCE_JOURNAL_INVALID")
+    terminal = records[-1]
+    terminal_sequence = terminal.get("sequence")
+    if (
+        set(terminal) != {"schema_version", "sequence", "state", "error_code"}
+        or not isinstance(terminal.get("schema_version"), int)
+        or isinstance(terminal.get("schema_version"), bool)
+        or terminal.get("schema_version") != 1
+        or terminal.get("state") != "failed"
+        or not isinstance(terminal.get("error_code"), str)
+        or re.fullmatch(r"[A-Z0-9_]{1,64}", terminal["error_code"]) is None
+    ):
+        raise RecoveryError("SOURCE_JOURNAL_INVALID")
+    body = records[:-1]
+    offset = 0
+    started_count = 0
+    saved_count = 0
+    expected_files: set[str] = set()
+    while offset < len(body):
+        sequence = started_count + 1
+        if sequence > len(frozen_requests):
+            raise RecoveryError("SOURCE_JOURNAL_INVALID")
+        request_payload = _request_payload(frozen_requests[started_count])
+        started = body[offset]
+        if (
+            started
+            != {
+                "schema_version": 1,
+                "sequence": sequence,
+                "state": "started",
+                "request": request_payload,
+            }
+            or isinstance(started.get("schema_version"), bool)
+            or isinstance(started.get("sequence"), bool)
+        ):
+            raise RecoveryError("SOURCE_JOURNAL_INVALID")
+        started_count += 1
+        offset += 1
+        if offset == len(body):
+            break
+        saved = body[offset]
+        expected_file = f"source-response-{sequence:04d}.json"
+        row_count = saved.get("row_count")
+        payload_sha256 = saved.get("payload_sha256")
+        if (
+            set(saved)
+            != {
+                "schema_version",
+                "sequence",
+                "state",
+                "payload_file",
+                "payload_sha256",
+                "row_count",
+            }
+            or not isinstance(saved.get("schema_version"), int)
+            or isinstance(saved.get("schema_version"), bool)
+            or saved.get("schema_version") != 1
+            or not isinstance(saved.get("sequence"), int)
+            or isinstance(saved.get("sequence"), bool)
+            or saved.get("sequence") != sequence
+            or saved.get("state") != "response_saved"
+            or saved.get("payload_file") != expected_file
+            or not isinstance(payload_sha256, str)
+            or not isinstance(row_count, int)
+            or isinstance(row_count, bool)
+            or row_count < 0
+        ):
+            raise RecoveryError("SOURCE_JOURNAL_INVALID")
+        payload = _read_source_payload(unit_dir / expected_file, payload_sha256)
+        rows = payload.get("rows")
+        if (
+            set(payload) != {"schema_version", "request", "rows"}
+            or not isinstance(payload.get("schema_version"), int)
+            or isinstance(payload.get("schema_version"), bool)
+            or payload.get("schema_version") != 1
+            or payload.get("request") != request_payload
+            or not isinstance(rows, list)
+            or len(rows) != row_count
+            or any(not isinstance(row, dict) for row in rows)
+        ):
+            raise RecoveryError("SOURCE_JOURNAL_INVALID")
+        expected_files.add(expected_file)
+        saved_count += 1
+        offset += 1
+    if (
+        started_count - saved_count not in {0, 1}
+        or terminal_sequence is not None
+        and (
+            not isinstance(terminal_sequence, int)
+            or isinstance(terminal_sequence, bool)
+            or terminal_sequence != started_count
+            or saved_count != started_count
+        )
+    ):
+        raise RecoveryError("SOURCE_JOURNAL_INVALID")
+    actual_files = {path.name for path in unit_dir.glob("source-response-*.json")}
+    if actual_files != expected_files:
+        raise RecoveryError("SOURCE_JOURNAL_INVALID")
+    outcome_unknown = started_count != saved_count
+    return {
+        "state": "outcome_unknown" if outcome_unknown else "failed",
+        "outcome_unknown": outcome_unknown,
+        "retry_allowed": False,
+        "requests_started": started_count,
+        "responses_saved": saved_count,
+    }
 
 
 def _source_isolation_evidence(
@@ -802,6 +928,14 @@ def execute_prepared_batch(
         unit = _validated_unit(raw_unit)
         unit_id = f"unit-{index + 1:03d}-{unit['symbol']}-{unit['contract']}"
         unit_dir = create_attempt_directory(attempt_dir, unit_id)
+
+        def validated_unit_dir() -> Path:
+            return _validated_direct_child_directory(
+                unit_dir,
+                Path(attempt_dir),
+                "SOURCE_EVIDENCE_PATH_INVALID",
+            )
+
         observer = AttemptJournal(
             unit_dir,
             tuple(
@@ -825,14 +959,15 @@ def execute_prepared_batch(
                     before_apply=invalidate_projection,
                 )
             except Exception as exc:  # noqa: BLE001 - raw provider/storage text is forbidden
+                safe_unit_dir = validated_unit_dir()
                 observer.mark_failed(_error_code(exc))
                 failure = {
                     **unit,
                     "status": "failed",
                     "error_code": _error_code(exc),
-                    "attempt": read_attempt_outcome(unit_dir),
+                    "attempt": read_attempt_outcome(safe_unit_dir),
                 }
-                _write_json_exclusive(unit_dir / "unit-result.json", failure)
+                _write_json_exclusive(safe_unit_dir / "unit-result.json", failure)
                 return _finish_batch(
                     attempt_dir,
                     _batch_result(
@@ -842,6 +977,7 @@ def execute_prepared_batch(
                         isolated=isolated,
                     ),
                 )
+            validated_unit_dir()
             result_payload = {
                 "status": result.status,
                 "applied": result.applied,
@@ -852,16 +988,17 @@ def execute_prepared_batch(
             }
             if result.status not in {"passed", "noop"}:
                 observer.mark_failed("RECOVERY_RESULT_NOT_PASSED")
+                safe_unit_dir = validated_unit_dir()
                 failure = {
                     **unit,
                     "status": result.status,
                     "result": result_payload,
-                    "attempt": read_attempt_outcome(unit_dir),
+                    "attempt": read_attempt_outcome(safe_unit_dir),
                 }
                 if policy is not None:
                     try:
                         source_evidence = _source_isolation_evidence(
-                            unit_dir,
+                            safe_unit_dir,
                             unit,
                             result_payload,
                             policy,
@@ -880,10 +1017,14 @@ def execute_prepared_batch(
                             "source_evidence": source_evidence,
                             "readback": readback,
                         }
-                        _write_json_exclusive(unit_dir / "unit-result.json", isolation)
+                        safe_unit_dir = validated_unit_dir()
+                        _write_json_exclusive(
+                            safe_unit_dir / "unit-result.json", isolation
+                        )
                         isolated.append(isolation)
                         continue
-                _write_json_exclusive(unit_dir / "unit-result.json", failure)
+                safe_unit_dir = validated_unit_dir()
+                _write_json_exclusive(safe_unit_dir / "unit-result.json", failure)
                 return _finish_batch(
                     attempt_dir,
                     _batch_result(
@@ -909,15 +1050,16 @@ def execute_prepared_batch(
                 code = _error_code(exc)
                 if code == "RECOVERY_EXECUTION_FAILED":
                     code = "POST_COMMIT_READBACK_FAILED"
+                safe_unit_dir = validated_unit_dir()
                 observer.mark_failed(code)
                 failure = {
                     **unit,
                     "status": "partial" if result.applied else "failed",
                     "error_code": code,
                     "result": result_payload,
-                    "attempt": read_attempt_outcome(unit_dir),
+                    "attempt": read_attempt_outcome(safe_unit_dir),
                 }
-                _write_json_exclusive(unit_dir / "unit-result.json", failure)
+                _write_json_exclusive(safe_unit_dir / "unit-result.json", failure)
                 return _finish_batch(
                     attempt_dir,
                     _batch_result(
@@ -927,16 +1069,17 @@ def execute_prepared_batch(
                         isolated=isolated,
                     ),
                 )
+            safe_unit_dir = validated_unit_dir()
             success = {
                 **unit,
                 "status": result.status,
                 "result": result_payload,
                 "replan_sha256": replan.plan.plan_sha256,
                 "remaining_target_count": 0,
-                "attempt": read_attempt_outcome(unit_dir),
+                "attempt": read_attempt_outcome(safe_unit_dir),
                 "readback": readback,
             }
-            _write_json_exclusive(unit_dir / "unit-result.json", success)
+            _write_json_exclusive(safe_unit_dir / "unit-result.json", success)
             completed.append(success)
         finally:
             cleanup()

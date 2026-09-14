@@ -938,6 +938,7 @@ def test_source_isolation_rejects_symlinked_unit_directory_before_next_unit(
         "units": units,
     }
     calls: list[str] = []
+    escaped_journal_before: list[bytes] = []
     escaped = tmp_path.parent / f"{tmp_path.name}-escaped-unit"
 
     class Manager:
@@ -961,6 +962,7 @@ def test_source_isolation_rejects_symlinked_unit_directory_before_next_unit(
             self.observer.after_response(source, tuple(_rows(invalid=True)))
             self.observer.attempt_dir.rename(escaped)
             self.observer.attempt_dir.symlink_to(escaped, target_is_directory=True)
+            escaped_journal_before.append((escaped / "journal.jsonl").read_bytes())
             return SimpleNamespace(
                 status="failed",
                 applied=0,
@@ -996,6 +998,8 @@ def test_source_isolation_rejects_symlinked_unit_directory_before_next_unit(
             )
         assert calls == ["EC2607"]
         assert not (attempt / "unit-002-si-SI2401").exists()
+        assert (escaped / "journal.jsonl").read_bytes() == escaped_journal_before[0]
+        assert not (escaped / "unit-result.json").exists()
     finally:
         unit_dir.unlink()
         escaped.rename(unit_dir)

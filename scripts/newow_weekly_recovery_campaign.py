@@ -678,11 +678,16 @@ def _derive_prior_isolations(
         result = failed.get("result")
         if not isinstance(result, Mapping):
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        persisted_unit = native._read_json_file(unit_dir / "unit-result.json")
+        safe_unit_dir = native._validated_direct_child_directory(
+            unit_dir,
+            native_attempt,
+            "PRIOR_ISOLATION_INVALID",
+        )
+        persisted_unit = native._read_json_file(safe_unit_dir / "unit-result.json")
         if persisted_unit != failed:
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
         source_evidence = native._source_isolation_evidence(
-            unit_dir,
+            safe_unit_dir,
             unit,
             result,
             policy,
@@ -690,11 +695,13 @@ def _derive_prior_isolations(
         )
         source_count = cast(int, source_evidence["responses_saved"])
         evidence_artifacts = {
-            "unit_result_sha256": _regular_file_sha256(unit_dir / "unit-result.json"),
-            "journal_sha256": _regular_file_sha256(unit_dir / "journal.jsonl"),
+            "unit_result_sha256": _regular_file_sha256(
+                safe_unit_dir / "unit-result.json"
+            ),
+            "journal_sha256": _regular_file_sha256(safe_unit_dir / "journal.jsonl"),
             "source_response_sha256s": {
                 f"source-response-{sequence:04d}.json": _regular_file_sha256(
-                    unit_dir / f"source-response-{sequence:04d}.json"
+                    safe_unit_dir / f"source-response-{sequence:04d}.json"
                 )
                 for sequence in range(1, source_count + 1)
             },
@@ -1990,8 +1997,17 @@ def _failed_unit_evidence_outcome(
             "CAMPAIGN_EVIDENCE_PATH_INVALID",
         )
         persisted = native._read_json_file(safe_unit / "unit-result.json")
-        actual_attempt = native.read_attempt_outcome(safe_unit)
-    except (OSError, RecoveryError):
+        source_payloads = frozen.get("source_requests")
+        if not isinstance(source_payloads, list):
+            return None
+        frozen_requests = tuple(
+            native._source_request_from_payload(item) for item in source_payloads
+        )
+        actual_attempt = native._validated_source_attempt_outcome(
+            safe_unit,
+            frozen_requests,
+        )
+    except (OSError, TypeError, RecoveryError):
         return None
     if persisted != failed or actual_attempt != dict(attempt):
         return None
@@ -2029,14 +2045,19 @@ def _isolated_unit_matches(
     ):
         return False
     try:
-        source_evidence = native._source_isolation_evidence(
+        safe_unit = native._validated_direct_child_directory(
             unit_dir,
+            unit_dir.parent,
+            "CAMPAIGN_EVIDENCE_PATH_INVALID",
+        )
+        source_evidence = native._source_isolation_evidence(
+            safe_unit,
             frozen,
             value["result"],
             policy,
             expected_parent=unit_dir.parent,
         )
-        persisted = native._read_json_file(unit_dir / "unit-result.json")
+        persisted = native._read_json_file(safe_unit / "unit-result.json")
     except RecoveryError:
         return False
     targets = frozen.get("targets")
