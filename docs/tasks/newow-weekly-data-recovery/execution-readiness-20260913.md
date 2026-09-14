@@ -74,10 +74,25 @@ RS2309/RS2311；后两者不得替代专项对象，也不自动扩大已冻结�
 明确 supersede，不得用于候选或完成结论。单品种 a 在外部 `project.env` 下复现为 16 `DATA_READY`、
 22 真缺口及 11 `PROPOSED`，证明问题属于执行配置身份，而非 readiness 生产代码缺陷。
 
-R5 最小健康试点候选为 SI2308/W1，through `2023-07-05`，plan SHA-256
+R5 最小健康试点选择 SI2308/W1，through `2023-07-05`，plan SHA-256
 `20bff8500814cf062e12cd6301962aa05be02671c558d6153295634e776f751a`：只含 2022-12 的 1d companion
 7 个 bars 与 1w 2 个 bars，共 2 个原生 provider requests、9 个 expected bars；scope diagnostics 无
-source/integrity reason。它只是 apply 候选，尚无 provider 或 Canonical 写入意图。
+source/integrity reason。owner 于 2026-09-14 明确授权后已完成单次 apply；证据位于
+`/Volumes/扩展盘/guiyi-quant-workstation/outputs/newow-weekly-data-recovery-20260913/canonical-pilot-si2308-20bff850/`。
+
+preflight 确认 hash 未漂移、维护锁空闲、两个目标分区原先均不存在且 Market Home projection 不存在。
+执行结果为 applied=2、blocked=0、failed=0；两个逻辑 direct provider requests 在适配器同源缓存内合并为
+一次 `exchange_daily(SI2308, 2022-12-22, 2022-12-30)` 物理调用，retries=0。新分区为：
+
+- D1：7 bars，文件 SHA-256
+  `008af5bb345df3f243de39658db2afcf55a55ddaa46b125c30037fd799a5be27`；
+- W1：2 bars，文件 SHA-256
+  `de1a2bd53c722cfe1ff6f32d78a20f6e1b591eeb1c3ae5ba2591e7a1789e73ba`。
+
+新只读事务经 Catalog/MDS 逐 bar 严格读回 9/9，全部 OHLC 为正；写后原生计划
+`97b858b60dbd35025309434aa5c9a29d7992c1ac7e85989060fd52f6d2dcc772` 为 0 targets、0 provider requests。
+固定源码与配置元数据未变，projection 仍不存在，Runtime/通知均为 0。该次 provider + Canonical apply
+意图已消费，不授权继续普通队列。
 
 ## PF2611 与九个 RS 的隔离结论
 
