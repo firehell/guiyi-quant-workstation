@@ -1,6 +1,6 @@
 # 牛哇周线剩余 1–3 项当前证据
 
-日期：2026-09-14。状态：`CODE_REVIEW_PENDING / EXTERNAL_GATE_PENDING`。本文件只记录本任务的只读事实与
+日期：2026-09-14。状态：`REVIEW_COMPLETE / EXTERNAL_GATE_PENDING`。本文件只记录本任务的只读事实与
 待批准包，不代表 RQData 下载、Canonical 写入、发布或 Runtime 操作已获授权。
 
 ## 当前依赖队列
@@ -106,7 +106,9 @@ D1/W1。非正 bars 与缺口一起形成未来来源核验集合，但来源核
 
 ## Gate
 
-- 工程：完成 fresh 定向测试、静态检查、secret/diff 检查及独立 Review 后方可集成 develop。
+- 工程：396 项定向测试、Ruff、mypy、OpenSpec strict 9/9、secret scan 0 findings 与 diff check 均通过。
+  最终独立 Review：Standards 为 P1/P2/P3/smell 全 0；Spec 为 P1/P2/P3 全 0、1 个非阻断的 readback
+  seam smell。结论均为允许集成 develop。
 - EC2607：prepared hash 形成后，需 owner 对该 exact artifact 给出一次下载+Canonical 写入意图。
 - 普通首批：需独立 prepared hash 和 fresh 一次执行意图；EC 成功 readback 前不执行。
 - RS2309/RS2311：先对上述精确来源集合取得“仅来源下载”意图；禁止 Canonical 写入。分类后如有本地可修复

@@ -52,7 +52,7 @@ assert daily_and_weekly_use_same_snapshot
 - [x] 验证来源 payload 序列化保留 Decimal/日期/非正数含义，并有 hash；它不是自动 replay 可写资产。验证 unknown 只能只读对账，不可自动 retry。
 - [x] 使用真实 manager 的测试路径覆盖锁内 replan、正常 projection invalidation、一次批准批次的串行执行、前项成功后后项失败及未尝试尾项；不要求 projection 路径不存在。
 - [ ] 记录 projection 失效及恢复影响；COMMIT_OUTCOME_UNKNOWN 中断后只读查 Catalog/文件/MDS，不主动删文件或重设 active 指针。
-- [ ] 更新 TESTING 命令、定向测试、静态检查、自审；独立 Review 修正全部 P1/P2 问题后方进入真实执行准备。
+- [x] 更新 TESTING 命令、定向测试、静态检查、自审；独立 Review 修正全部 P1/P2 问题后方进入真实执行准备。
 
 关键失败断言示例：
 
