@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AlertEvent, AlertRuleCode } from '@/types/market'
-import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
+import type { ProductOption } from '@/utils/productSearch'
 import { ALERT_RULE_CODES, alertEventHomeResultLabel, alertEventRuleShortLabel } from '@/utils/alertRules'
 import { useMarketMessages } from '@/composables/useMarketMessages'
 import MarketChevron from './MarketChevron.vue'
 
-const props = defineProps<{ rows: MarketHomeRow[]; reloadSequence: number }>()
+const props = defineProps<{ options: ProductOption[]; directoryStatus: 'ready' | 'loading' | 'error'; reloadSequence: number }>()
 const emit = defineEmits<{ open: [event: AlertEvent] }>()
 const today = localDay(new Date())
 const rangeStart = new Date()
@@ -65,10 +65,12 @@ function loadQuery(): { startDay: string; endDay: string; symbol: string; ruleCo
         <button type="button" :aria-pressed="ruleCode === ALERT_RULE_CODES.HTDY" @click="ruleCode = ALERT_RULE_CODES.HTDY">火天大有</button>
         <button type="button" :aria-pressed="ruleCode === ALERT_RULE_CODES.SUBING_THS" @click="ruleCode = ALERT_RULE_CODES.SUBING_THS">苏冰</button>
       </div>
-      <label>品种<span class="market-message-select"><select v-model="symbol"><option value="">全部品种</option><option v-for="row in rows" :key="row.symbol" :value="row.symbol">{{ row.product_name }} {{ row.symbol.toUpperCase() }}</option></select><MarketChevron /></span></label>
+      <label>品种<span class="market-message-select"><select v-model="symbol"><option value="">全部品种</option><option v-for="row in options" :key="row.symbol" :value="row.symbol">{{ row.name }} {{ row.symbol.toUpperCase() }}</option></select><MarketChevron /></span></label>
       <label>开始交易日<input v-model="startDay" type="date" /></label>
       <label>结束交易日<input v-model="endDay" type="date" /></label>
     </div>
+    <p v-if="directoryStatus === 'loading'" class="market-message-status">正在读取品种目录…</p>
+    <p v-else-if="directoryStatus === 'error'" class="market-dashboard-page__error" role="alert">品种目录刷新失败；已保留可用选项，可点击刷新重试。</p>
     <p v-if="!validRange" class="market-dashboard-page__error" role="alert">开始日期不能晚于结束日期。</p>
     <p v-else-if="messages.error.value && !messages.items.value.length" class="market-dashboard-page__error" role="alert">消息暂不可用，请稍后重试。</p>
     <p v-else-if="messages.loading.value" class="market-message-status">正在读取消息…</p>
@@ -76,7 +78,7 @@ function loadQuery(): { startDay: string; endDay: string; symbol: string; ruleCo
     <div v-else class="market-message-list">
       <button v-for="event in messages.items.value" :key="event.id" type="button" @click="open(event)">
         <span class="market-message-rule">{{ alertEventRuleShortLabel(event) }}</span>
-        <strong>{{ rows.find((row) => row.symbol === event.symbol)?.product_name ?? event.symbol.toUpperCase() }} · {{ alertEventHomeResultLabel(event) }}</strong>
+        <strong>{{ options.find((row) => row.symbol === event.symbol)?.name ?? event.symbol.toUpperCase() }} · {{ alertEventHomeResultLabel(event) }}</strong>
         <span>{{ event.symbol.toUpperCase() }} · {{ event.contract }} · {{ event.frequency }} · {{ time(event.bar_end) }}</span>
         <small>{{ event.notification_attempted_at ? `已尝试发送 · ${time(event.notification_attempted_at)}` : '未记录发送尝试' }}</small>
       </button>

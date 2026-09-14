@@ -1178,3 +1178,16 @@ guiyi runtime recover-live-captured --trading-day YYYY-MM-DD --symbol rs --contr
 成功返回 `passed`，证明已修复的重复调用仅只读 `noop`；错误非零退出，禁止自动重试。
 验收核对五根/原值、恢复水位、provider 请求为零、预算/circuit 未变，再走独立只读 readiness；
 不调用历史 evaluator、不重置错误或游标、不发送测试通知，不能由恢复成功宣称 RUNTIME_READY。
+
+
+## 首页慢请求、目录独立与恢复回归
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/data_foundation/test_market_pagination.py services/quant-api/tests/data_foundation/test_market_home_overview.py services/quant-api/tests/data_foundation/test_market_home_projection.py
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test tests/marketHomeResource.test.ts tests/marketHomePageRoute.test.ts
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-home.spec.mjs
+```
+
+隔离回归覆盖 W1 同周日历查询次数、下一次读取看到日历变更、分页/缺失映射语义，及慢/失败/零行 overview
+下黄金和焦煤的独立搜索与消息筛选。可见页恢复覆盖成功缓存 TTL、失败重读、并发去重和旧响应隔离。
+这些测试不启用生产投影，不下载行情，不写生产数据库或切换 Runtime。

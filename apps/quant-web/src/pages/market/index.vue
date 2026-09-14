@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import '@/styles/marketHome.css'
 import MarketHomeHeader from '@/components/market/MarketHomeHeader.vue'
+import { normalizeProductOptions } from '@/utils/productSearch'
 import { productSectorLabel } from '@/utils/productDirectory'
 import MarketHomeLegend from '@/components/market/MarketHomeLegend.vue'
 import MarketHomeMessages from '@/components/market/MarketHomeMessages.vue'
@@ -11,7 +12,7 @@ import MarketHomeSectorTicker from '@/components/market/MarketHomeSectorTicker.v
 import MarketHomeSkeleton from '@/components/market/MarketHomeSkeleton.vue'
 import MarketHomeTable from '@/components/market/MarketHomeTable.vue'
 import MarketHomeTrustStrip from '@/components/market/MarketHomeTrustStrip.vue'
-import { getMarketHomeOverview } from '@/api/market'
+import { getMarketDominants, getMarketHomeOverview } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
 import { useMarketHome } from '@/composables/useMarketHome'
 import { useMarketHomeLive } from '@/composables/useMarketHomeLive'
@@ -35,9 +36,12 @@ const navigationError = ref<string | null>(null)
 const newowCapabilities = useNewowCapabilities()
 const home = useMarketHome({
   fetchOverview: getMarketHomeOverview,
+  fetchDirectory: getMarketDominants,
   fetchRuntime: getRuntimeHealth,
   overviewCacheKey: 'market-home-overview-v1',
 })
+const productOptions = computed(() => normalizeProductOptions(home.directory.data.value?.items ?? []))
+const directoryStatus = computed(() => home.directory.unavailable.value ? 'error' : home.directory.data.value == null ? 'loading' : 'ready')
 const model = computed(() => buildMarketHomeViewModel({ overview: home.overview.data.value ?? null, overviewStale: home.overview.stale.value ?? false, runtime: home.runtime.data.value ?? null, runtimeStale: home.runtime.stale.value ?? false }))
 const live = useMarketHomeLive({ onAuthorityChanged: () => { home.invalidateOverview(); void home.refreshOverviewIfExpired() } })
 const loading = computed(() => Boolean(home.overview.loading.value || home.runtime.loading.value))
@@ -56,6 +60,7 @@ let restoreFrame: number | null = null
 
 async function refreshAll() {
   if (activeTab.value === 'messages') {
+    void home.directory.refresh()
     messageReloadSequence.value += 1
     return
   }
@@ -163,7 +168,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="market-dashboard-page">
-    <MarketHomeHeader :rows="model.rows" :loading="activeTab === 'market' && loading" :active-tab="activeTab" @select-tab="selectTab" @open-view="openView" @refresh="refreshAll" />
+    <MarketHomeHeader :options="productOptions" :directory-status="directoryStatus" :loading="activeTab === 'market' && loading" :active-tab="activeTab" @select-tab="selectTab" @open-view="openView" @refresh="refreshAll" />
     <p v-if="navigationError" class="market-dashboard-page__navigation-error" role="alert">{{ navigationError }}</p>
     <template v-if="activeTab === 'market'">
       <MarketHomeSectorTicker :sectors="sectors" :active="home.overview.data.value?.active_count ?? null" :selected="sector" @select="sector = $event" />
@@ -184,6 +189,6 @@ onBeforeUnmount(() => {
       </template>
       </section>
     </template>
-    <MarketHomeMessages v-else :rows="model.rows" :reload-sequence="messageReloadSequence" @open="openEvent" />
+    <MarketHomeMessages v-else :options="productOptions" :directory-status="directoryStatus" :reload-sequence="messageReloadSequence" @open="openEvent" />
   </div>
 </template>

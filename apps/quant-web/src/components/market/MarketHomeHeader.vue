@@ -1,17 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 
 import MarketNavigation from './MarketNavigation.vue'
 import ProductSelector from './ProductSelector.vue'
-import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
 import type { ProductOption } from '@/utils/productSearch'
 
 type HomeView = 'newow' | 'htdy' | 'subing' | 'free'
-const props = defineProps<{ rows: MarketHomeRow[]; loading: boolean; activeTab: 'market' | 'messages' }>()
+defineProps<{ options: ProductOption[]; directoryStatus: 'ready' | 'loading' | 'error'; loading: boolean; activeTab: 'market' | 'messages' }>()
 const emit = defineEmits<{ openView: [view: HomeView, symbol: string]; refresh: []; selectTab: [tab: 'market' | 'messages'] }>()
-const options = computed<ProductOption[]>(() => props.rows.map((row) => ({
-  symbol: row.symbol.toLowerCase(), name: row.product_name, contract: row.actual_contract || null,
-})).sort((left, right) => left.symbol.localeCompare(right.symbol)))
 
 function openProduct(option: ProductOption) {
   emit('openView', 'newow', option.symbol)
@@ -23,10 +18,11 @@ function openProduct(option: ProductOption) {
     <template #search>
       <ProductSelector
         :options="options"
-        :status="loading && options.length === 0 ? 'loading' : options.length > 0 ? 'ready' : 'error'"
+        :status="options.length > 0 ? 'ready' : directoryStatus"
         label="搜索60品种"
         @select="openProduct"
       />
+      <span v-if="directoryStatus === 'error' && options.length" role="alert">目录刷新失败，已保留上次选项。</span>
     </template>
     <template #actions>
       <button class="market-home-refresh" type="button" :disabled="loading" @click="$emit('refresh')">{{ loading ? '刷新中…' : '刷新' }}</button>

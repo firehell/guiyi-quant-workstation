@@ -105,12 +105,13 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
       return route.fulfill({ json: weeklyCapabilities() })
     }
     if (new URL(page.url()).pathname === '/market/chart') return route.fallback()
-    const allowed = new Set(['/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events', '/api/alerts/history'])
+    const allowed = new Set(['/api/v1/market/dominants', '/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events', '/api/alerts/history'])
     if (route.request().method() !== 'GET' || !allowed.has(url.pathname)) {
       requests.unexpected.push(`${route.request().method()} ${url.pathname}`)
       return route.abort('blockedbyclient')
     }
     requests.push(url.pathname)
+    if (url.pathname === '/api/v1/market/dominants') return route.fulfill({ json: { items: lightHomeOverview().items.map(({ symbol, product_name, actual_contract, dominant_mapping_date }) => ({ product: symbol, product_name, actual_contract, dominant_mapping_date })) } })
     if (url.pathname.endsWith('/market/research/home-overview')) { const value = typeof currentOverview === 'function' ? currentOverview() : currentOverview; return value === null ? route.abort() : route.fulfill({ json: value }) }
     if (url.pathname === '/api/runtime/health') return route.fulfill({ json: typeof currentRuntime === 'function' ? currentRuntime() : currentRuntime })
     if (url.pathname === '/api/alerts/history') {
@@ -516,7 +517,8 @@ test('initial unavailable snapshot invents no counts and no target or product ro
   await expect(page.locator('tbody tr')).toHaveCount(0)
   await expect(page.getByText(/可用\s*—\s*\/\s*—/)).toBeVisible()
   await page.getByRole('combobox', { name: '搜索60品种' }).focus()
-  await expect(page.getByText('目录加载失败，无法安全切换品种。', { exact: true })).toBeVisible()
+  await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
+  await expect(page.getByText('目录加载失败，无法安全切换品种。', { exact: true })).toHaveCount(0)
   expectHomeReads(requests)
 })
 
@@ -556,4 +558,65 @@ test('390px compatibility retains readable market and messages without horizonta
   await page.getByRole('tab', { name: '市场' }).click()
   await list.getByRole('button').first().click()
   await expect(page).toHaveURL(/view=newow.*symbol=ag/)
+})
+
+for (const state of ['loading', 'failed', 'empty']) {
+  test(`product directory remains usable when overview is ${state}`, async ({ page }) => {
+    const requests = []
+    await mockMarketHomeApi(page, requests)
+    let release
+    const pending = new Promise(resolve => { release = resolve })
+    await page.route('**/market/research/home-overview', async route => {
+      if (state === 'loading') await pending
+      if (state !== 'empty') return route.abort()
+      const value = overview()
+      value.status = 'degraded'; value.freshness = 'unavailable'
+      value.participant_count = 0; value.unavailable_count = 2; value.items = []
+      value.summary = Object.fromEntries(Object.keys(value.summary).map(key => [key, 0]))
+      value.sectors = value.sectors.map(item => ({ ...item, participant_count: 0, median_price_change_1d: null }))
+      return route.fulfill({ json: value })
+    })
+    try {
+      await page.goto('/market')
+      if (state === 'empty') {
+        await expect(page.locator('.market-home-empty')).toContainText('暂无可用品种')
+        await expect(page.getByText('行情快照暂不可用；没有可展示的上一份成功快照。')).toHaveCount(0)
+      }
+      const search = page.getByRole('combobox', { name: '搜索60品种' })
+      await search.fill('黄金')
+      await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
+      await search.press('Escape')
+      await page.getByRole('tab', { name: '消息' }).click()
+      await page.locator('.market-message-filters select').selectOption('au')
+      await expect.poll(() => requests.includes('history:all:au:first')).toBe(true)
+      await page.locator('.market-message-filters select').selectOption('jm')
+      await expect.poll(() => requests.includes('history:all:jm:first')).toBe(true)
+      expect(requests.filter(path => path === '/api/v1/market/dominants')).toHaveLength(1)
+      expect(requests.unexpected).toEqual([])
+      expect(requests.pageErrors).toEqual([])
+    } finally { release() }
+  })
+}
+
+
+test('directory failure and recovery stay independent from quote rows and retain accepted options', async ({ page }) => {
+  const requests = []
+  await mockMarketHomeApi(page, requests)
+  let fail = true
+  await page.route('**/market/dominants', route => fail ? route.abort() : route.fallback())
+  await page.goto('/market')
+  await expect(page.locator('tbody tr')).toHaveCount(2)
+  const search = page.getByRole('combobox', { name: '搜索60品种' })
+  await search.fill('黄金')
+  await expect(page.getByText('目录加载失败，无法安全切换品种。', { exact: true })).toBeVisible()
+  fail = false
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await search.focus()
+  await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
+  fail = true
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await search.focus()
+  await expect(page.getByText('目录刷新失败，已保留上次选项。')).toBeVisible()
+  await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
+  await expect(page.locator('tbody tr')).toHaveCount(2)
 })
