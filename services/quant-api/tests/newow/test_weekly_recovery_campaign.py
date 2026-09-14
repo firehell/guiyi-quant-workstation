@@ -362,14 +362,38 @@ def _native_apply_result(
             )
         completed_unit.setdefault("attempt", read_attempt_outcome(unit_dir))
     failure_index = len(completed_value)
+    failed_value = None
+    if status != "passed":
+        failed_unit = child["units"][failure_index]
+        failed_unit_dir = native_attempt / (
+            f"unit-{failure_index + 1:03d}-{failed_unit['symbol']}-"
+            f"{failed_unit['contract']}"
+        )
+        failed_unit_dir.mkdir()
+        source_requests = tuple(
+            ExchangeDailySourceRequest(
+                contract=item["contract"],
+                start=date.fromisoformat(item["start"]),
+                end=date.fromisoformat(item["end"]),
+                expected_dates=tuple(
+                    date.fromisoformat(value) for value in item["expected_dates"]
+                ),
+            )
+            for item in failed_unit["source_requests"]
+        )
+        journal = AttemptJournal(failed_unit_dir, source_requests)
+        journal.mark_failed("PROVIDER_UNAVAILABLE")
+        failed_value = {
+            **failed_unit,
+            "status": status,
+            "error_code": "PROVIDER_UNAVAILABLE",
+            "attempt": read_attempt_outcome(failed_unit_dir),
+        }
+        _write_json_exclusive(failed_unit_dir / "unit-result.json", failed_value)
     native_result = {
         "status": status,
         "completed": completed_value,
-        "failed": (
-            None
-            if status == "passed"
-            else {**child["units"][failure_index], "status": status}
-        ),
+        "failed": failed_value,
         "unattempted": (
             [] if status == "passed" else child["units"][failure_index + 1 :]
         ),
@@ -1417,6 +1441,161 @@ def _native_isolation_invoker(
     return invoke
 
 
+def _native_exception_invoker(mode: str, calls: list[str]):
+    def invoke(child_path: Path, digest: str, batch_attempt: Path):
+        child = load_prepared_manifest(child_path, digest)
+
+        class Manager:
+            def __init__(self, observer, unit):
+                self.observer = observer
+                self.unit = unit
+
+            def contract_warmup(self, request, *, before_apply=None):
+                if not request.apply:
+                    return SimpleNamespace(
+                        plan=SimpleNamespace(
+                            plan_sha256=self.unit["plan_sha256"],
+                            target_windows=(),
+                        )
+                    )
+                calls.append(self.unit["contract"])
+                assert before_apply is not None
+                before_apply()
+                raw = self.unit["source_requests"][0]
+                source = ExchangeDailySourceRequest(
+                    contract=raw["contract"],
+                    start=date.fromisoformat(raw["start"]),
+                    end=date.fromisoformat(raw["end"]),
+                    expected_dates=tuple(
+                        date.fromisoformat(value) for value in raw["expected_dates"]
+                    ),
+                )
+                self.observer.before_request(source)
+                if self.unit["contract"] == "AG1001" and mode != "readback_failed":
+                    if mode != "provider_unknown":
+                        self.observer.after_response(
+                            source,
+                            tuple({"date": value} for value in source.expected_dates),
+                        )
+                    raise RecoveryError(
+                        "COMMIT_OUTCOME_UNKNOWN"
+                        if mode == "commit_unknown"
+                        else "PROVIDER_UNAVAILABLE"
+                    )
+                self.observer.after_response(
+                    source,
+                    tuple({"date": value} for value in source.expected_dates),
+                )
+                return SimpleNamespace(
+                    status="passed",
+                    applied=self.unit["target_count"],
+                    blocked=0,
+                    failed=0,
+                    provider_requests=self.unit["target_count"],
+                    failures=(),
+                )
+
+        def open_unit(observer, unit):
+            def post_commit_readback():
+                if mode == "readback_failed" and unit["contract"] == "AG1001":
+                    raise RecoveryError("POST_COMMIT_MDS_INVALID")
+                return {
+                    "catalog_physical_mds": "passed",
+                    "mds_target_count": unit["target_count"],
+                    "catalog_partitions": [],
+                }
+
+            return (
+                Manager(observer, unit),
+                lambda: None,
+                post_commit_readback,
+                lambda: None,
+            )
+
+        native_attempt = batch_attempt / "native"
+        native_attempt.mkdir()
+        native_result = execute_prepared_batch(
+            manifest=child,
+            attempt_dir=native_attempt,
+            prepared_sha256=digest,
+            current_code_commit=IDENTITY["code_commit"],
+            current_execution_code_sha256=IDENTITY["execution_code_sha256"],
+            current_config_sha256=IDENTITY["config_sha256"],
+            current_canonical_root_sha256=IDENTITY["canonical_root_sha256"],
+            open_unit=open_unit,
+        )
+        if mode == "missing_unit_result":
+            (native_attempt / "unit-002-ag-AG1001" / "unit-result.json").unlink()
+        return {
+            "return_code": 1,
+            "batch_result": {
+                "schema_version": "newow_weekly_recovery_result_v1",
+                "status": native_result["status"],
+                "readonly": False,
+                "attempt_dir": str(native_attempt),
+                "result": native_result,
+            },
+        }
+
+    return invoke
+
+
+@pytest.mark.parametrize(
+    "mode", ["provider_unknown", "commit_unknown", "missing_unit_result"]
+)
+def test_campaign_preserves_prefix_but_counts_unproven_failed_unit_unknown(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    manifest = _campaign(tmp_path, 3, with_source_requests=True)
+    calls: list[str] = []
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=_native_exception_invoker(mode, calls),
+    )
+
+    assert calls == ["AG1000", "AG1001"]
+    assert result["status"] == "unknown"
+    assert result["failed_batch"] is None
+    assert result["unknown_batch"]["batch_id"] == "batch-001"
+    assert result["summary"] == {
+        "denominator_unit_count": 3,
+        "success_unit_count": 1,
+        "isolated_unit_count": 0,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 1,
+        "unknown_unit_count": 1,
+    }
+
+
+def test_campaign_counts_proven_post_commit_readback_failure_as_stopping(
+    tmp_path: Path,
+) -> None:
+    manifest = _campaign(tmp_path, 3, with_source_requests=True)
+    calls: list[str] = []
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=_native_exception_invoker("readback_failed", calls),
+    )
+
+    assert calls == ["AG1000", "AG1001"]
+    assert result["status"] == "partial"
+    assert result["unknown_batch"] is None
+    assert result["failed_batch"]["batch_id"] == "batch-001"
+    assert result["summary"] == {
+        "denominator_unit_count": 3,
+        "success_unit_count": 1,
+        "isolated_unit_count": 0,
+        "stopping_failure_unit_count": 1,
+        "unattempted_unit_count": 1,
+        "unknown_unit_count": 0,
+    }
+
+
 def test_campaign_accounts_for_known_stopping_failure_as_distinct_partition(
     tmp_path: Path,
 ) -> None:
@@ -1528,6 +1707,46 @@ def test_campaign_accounts_for_multiple_and_all_isolated_units(
         "unattempted_unit_count": 0,
         "unknown_unit_count": 0,
     }
+
+
+def test_campaign_rejects_symlinked_current_isolation_evidence(tmp_path: Path) -> None:
+    manifest = _campaign(
+        tmp_path,
+        1,
+        with_source_requests=True,
+        continuation_policy=_campaign_isolation_policy(),
+    )
+    calls: list[str] = []
+    invoke_native = _native_isolation_invoker({"AG1000"}, calls)
+    escaped = tmp_path.parent / f"{tmp_path.name}-escaped-current-unit"
+    unit_dir = tmp_path / "attempt-001" / "batch-001" / "native" / "unit-001-ag-AG1000"
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        value = invoke_native(child, digest, attempt)
+        unit_dir.rename(escaped)
+        unit_dir.symlink_to(escaped, target_is_directory=True)
+        return value
+
+    try:
+        result = execute_campaign(
+            manifest,
+            attempt_root=tmp_path / "attempt-001",
+            invoke_batch=invoke,
+        )
+        assert result["status"] == "unknown"
+        assert result["isolated_units"] == []
+        assert result["summary"] == {
+            "denominator_unit_count": 1,
+            "success_unit_count": 0,
+            "isolated_unit_count": 0,
+            "stopping_failure_unit_count": 0,
+            "unattempted_unit_count": 0,
+            "unknown_unit_count": 1,
+        }
+    finally:
+        unit_dir.unlink()
+        escaped.rename(unit_dir)
+    assert calls == ["AG1000"]
 
 
 @pytest.mark.parametrize("field", ["mode", "policy_sha256"])
@@ -1642,6 +1861,56 @@ def test_prior_known_source_isolation_excludes_only_proven_fresh_identity(
     assert not (tmp_path / "fresh-attempt-after-drift").exists()
 
 
+def test_prepare_with_only_prior_isolated_units_is_anomaly_bearing_not_completed(
+    tmp_path: Path,
+) -> None:
+    prior = _campaign(tmp_path, 1, with_source_requests=True, name="prior")
+    prior_attempt = tmp_path / "prior-attempt"
+    execute_campaign(
+        prior,
+        attempt_root=prior_attempt,
+        invoke_batch=_native_isolation_invoker({"AG1000"}, []),
+    )
+    prior_path = tmp_path / "prior.prepare.json"
+    policy = _campaign_isolation_policy()
+
+    fresh = prepare_campaign(
+        _report([_ordinary_unit(0)]),
+        report_sha256="e" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda *_args: pytest.fail("prior-only scope prepared a child"),
+        name="fresh",
+        continuation_policy=policy,
+        prior_campaign_path=prior_path,
+        expected_prior_campaign_sha256=hashlib.sha256(
+            prior_path.read_bytes()
+        ).hexdigest(),
+        prior_attempt_path=prior_attempt,
+    )
+
+    assert fresh["status"] == "prepared"
+    assert fresh["children"] == []
+    assert fresh["scope"]["denominator_unit_count"] == 1
+    assert fresh["scope"]["execution_unit_count"] == 0
+    assert fresh["scope"]["prior_known_isolation_count"] == 1
+
+    result = execute_campaign(
+        fresh,
+        attempt_root=tmp_path / "fresh-attempt",
+        invoke_batch=lambda *_args: pytest.fail("prior-only scope invoked native"),
+    )
+    assert result["status"] == "partial"
+    assert result["summary"] == {
+        "denominator_unit_count": 1,
+        "success_unit_count": 0,
+        "isolated_unit_count": 1,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 0,
+        "unknown_unit_count": 0,
+    }
+
+
 @pytest.mark.parametrize(
     "mutation",
     ["missing_source", "corrupt_source", "mismatched_request", "fresh_plan"],
@@ -1696,6 +1965,46 @@ def test_prior_known_source_isolation_rejects_unproven_or_drifted_evidence(
             expected_prior_campaign_sha256=prior_sha256,
             prior_attempt_path=prior_attempt,
         )
+
+
+def test_prior_known_isolation_rejects_symlinked_unit_directory_before_prepare(
+    tmp_path: Path,
+) -> None:
+    prior = _campaign(tmp_path, 1, with_source_requests=True, name="prior")
+    prior_attempt = tmp_path / "prior-attempt"
+    execute_campaign(
+        prior,
+        attempt_root=prior_attempt,
+        invoke_batch=_native_isolation_invoker({"AG1000"}, []),
+    )
+    prior_path = tmp_path / "prior.prepare.json"
+    unit_dir = prior_attempt / "batch-001" / "native" / "unit-001-ag-AG1000"
+    escaped = tmp_path.parent / f"{tmp_path.name}-escaped-unit"
+    unit_dir.rename(escaped)
+    unit_dir.symlink_to(escaped, target_is_directory=True)
+
+    try:
+        with pytest.raises(RecoveryError, match="^PRIOR_ISOLATION_INVALID$"):
+            prepare_campaign(
+                _report([_ordinary_unit(0)]),
+                report_sha256="e" * 64,
+                evidence_root=tmp_path,
+                execution_identity=IDENTITY,
+                invoke_batch=lambda *_args: pytest.fail(
+                    "symlinked prior evidence prepared a child"
+                ),
+                name="fresh",
+                continuation_policy=_campaign_isolation_policy(),
+                prior_campaign_path=prior_path,
+                expected_prior_campaign_sha256=hashlib.sha256(
+                    prior_path.read_bytes()
+                ).hexdigest(),
+                prior_attempt_path=prior_attempt,
+            )
+        assert not (tmp_path / "fresh.prepare.json").exists()
+    finally:
+        unit_dir.unlink()
+        escaped.rename(unit_dir)
 
 
 @pytest.mark.parametrize("contradiction", ["completed", "failure_partial", "applied"])
@@ -1763,6 +2072,12 @@ def test_execute_accepts_zero_completed_partial_current_unit_write(
         )
         native_result = value["batch_result"]["result"]
         native_result["failed"]["result"] = {"applied": 1}
+        unit_result = (
+            Path(value["batch_result"]["attempt_dir"])
+            / "unit-001-ag-AG1000"
+            / "unit-result.json"
+        )
+        unit_result.write_text(json.dumps(native_result["failed"]), encoding="utf-8")
         (attempt / "native" / "batch-result.json").write_text(
             json.dumps(native_result), encoding="utf-8"
         )

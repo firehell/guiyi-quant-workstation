@@ -330,15 +330,7 @@ def create_attempt_directory(output_root: Path, attempt_id: str) -> Path:
 
 
 def read_attempt_outcome(attempt_dir: Path) -> dict[str, object]:
-    path = Path(attempt_dir) / "journal.jsonl"
-    try:
-        records = tuple(
-            json.loads(line)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line
-        )
-    except (OSError, ValueError, TypeError) as exc:
-        raise RecoveryError("SOURCE_JOURNAL_INVALID") from exc
+    records = _read_journal_records(attempt_dir)
     started = {
         record.get("sequence") for record in records if record.get("state") == "started"
     }
@@ -411,13 +403,46 @@ def _read_source_payload(path: Path, expected_sha256: str) -> dict[str, Any]:
     return value
 
 
+def _validated_direct_child_directory(
+    path: Path,
+    expected_parent: Path,
+    error_code: str,
+) -> Path:
+    child = Path(path)
+    parent = Path(expected_parent)
+    try:
+        parent_info = parent.lstat()
+        child_info = child.lstat()
+        resolved_parent = parent.resolve(strict=True)
+        resolved_child = child.resolve(strict=True)
+    except OSError as exc:
+        raise RecoveryError(error_code) from exc
+    if (
+        child.parent != parent
+        or not stat.S_ISDIR(parent_info.st_mode)
+        or stat.S_ISLNK(parent_info.st_mode)
+        or not stat.S_ISDIR(child_info.st_mode)
+        or stat.S_ISLNK(child_info.st_mode)
+        or resolved_child.parent != resolved_parent
+    ):
+        raise RecoveryError(error_code)
+    return resolved_child
+
+
 def _source_isolation_evidence(
     unit_dir: Path,
     unit: Mapping[str, Any],
     result: Mapping[str, Any],
     policy: Mapping[str, object],
+    *,
+    expected_parent: Path,
 ) -> dict[str, object]:
     """Re-prove one known source-quality result from its saved raw responses."""
+    unit_dir = _validated_direct_child_directory(
+        unit_dir,
+        expected_parent,
+        "SOURCE_EVIDENCE_PATH_INVALID",
+    )
     allowed_codes = policy.get("allowed_error_codes")
     source_payloads = unit.get("source_requests")
     targets = unit.get("targets")
@@ -840,9 +865,12 @@ def execute_prepared_batch(
                             unit,
                             result_payload,
                             policy,
+                            expected_parent=Path(attempt_dir),
                         )
                         readback = _zero_commit_readback(manager, unit)
-                    except RecoveryError:
+                    except RecoveryError as exc:
+                        if str(exc) == "SOURCE_EVIDENCE_PATH_INVALID":
+                            raise
                         pass
                     else:
                         isolation = {

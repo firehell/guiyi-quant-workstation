@@ -63,6 +63,9 @@ _REPORT_STRUCTURAL = {
     "metadata_proposals",
     "cases",
 }
+_UNKNOWN_UNIT_ERROR_CODES = {
+    "COMMIT_OUTCOME_UNKNOWN",
+}
 
 
 def parser() -> argparse.ArgumentParser:
@@ -409,8 +412,21 @@ def execute_campaign(
                 and bool(native_result.get("isolated"))
             )
             if terminal["status"] != "passed" and not safely_exhausted:
-                failed = {"batch_id": batch_id, "native_result": terminal}
-                stopping_failure_unit_count = 1
+                failure_outcome = _native_failed_unit_outcome(
+                    terminal,
+                    child_path=root / child["path"],
+                    digest=child["sha256"],
+                )
+                if failure_outcome == "known":
+                    failed = {"batch_id": batch_id, "native_result": terminal}
+                    stopping_failure_unit_count = 1
+                else:
+                    unknown = {
+                        "batch_id": batch_id,
+                        "error_code": "CAMPAIGN_UNIT_OUTCOME_UNKNOWN",
+                        "native_result": terminal,
+                    }
+                    unknown_unit_count = 1
                 unattempted_unit_count = len(native_result["unattempted"])
                 stopped_index = index
                 break
@@ -439,7 +455,7 @@ def execute_campaign(
             if child["batch_id"] in unattempted
         )
         unattempted_unit_count += later_unattempted_unit_count
-        if unknown is not None:
+        if unknown is not None and unknown_unit_count == 0:
             unknown_unit_count = next(
                 (
                     child["unit_count"]
@@ -670,6 +686,7 @@ def _derive_prior_isolations(
             unit,
             result,
             policy,
+            expected_parent=native_attempt,
         )
         source_count = cast(int, source_evidence["responses_saved"])
         evidence_artifacts = {
@@ -878,7 +895,7 @@ def prepare_campaign(
 
     manifest: dict[str, Any] = {
         "schema_version": _CAMPAIGN_SCHEMA,
-        "status": "prepared" if children else "completed",
+        "status": "prepared" if proposed else "completed",
         "readonly": True,
         "provider_requests": 0,
         "writes": 0,
@@ -1049,9 +1066,6 @@ def validate_campaign_manifest(
             actual_totals[key] += value
     if totals != actual_totals:
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
-    expected_status = "prepared" if children else "completed"
-    if manifest.get("status") != expected_status:
-        raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     validated_prior: list[dict[str, Any]] = []
     prior_unit_keys: set[tuple[str, str, str, str, str]] = set()
     executable_unit_keys = {
@@ -1098,6 +1112,9 @@ def validate_campaign_manifest(
     included = scope["included_status_counts"]
     denominator = len(seen) + len(validated_prior)
     if included != {"PROPOSED": denominator}:
+        raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+    expected_status = "prepared" if denominator else "completed"
+    if manifest.get("status") != expected_status:
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     if policy is not None and (
         scope.get("denominator_unit_count") != denominator
@@ -1743,21 +1760,25 @@ def _validated_batch_invocation(
     attempt_value = result.get("attempt_dir")
     if not isinstance(attempt_value, str):
         return None
-    native_attempt = Path(attempt_value)
+    native_attempt_value = Path(attempt_value)
     try:
-        native_attempt_info = native_attempt.lstat()
-        native_attempt = native_attempt.resolve(strict=True)
-        allowed_attempts = {batch_attempt.resolve(strict=True)}
+        validated_batch_attempt = native._validated_direct_child_directory(
+            batch_attempt,
+            batch_attempt.parent,
+            "CAMPAIGN_EVIDENCE_PATH_INVALID",
+        )
         nested_attempt = batch_attempt / "native"
-        if nested_attempt.exists():
-            allowed_attempts.add(nested_attempt.resolve(strict=True))
-    except OSError:
-        return None
-    if (
-        not stat.S_ISDIR(native_attempt_info.st_mode)
-        or stat.S_ISLNK(native_attempt_info.st_mode)
-        or native_attempt not in allowed_attempts
-    ):
+        if native_attempt_value == batch_attempt:
+            native_attempt = validated_batch_attempt
+        elif native_attempt_value == nested_attempt:
+            native_attempt = native._validated_direct_child_directory(
+                nested_attempt,
+                batch_attempt,
+                "CAMPAIGN_EVIDENCE_PATH_INVALID",
+            )
+        else:
+            return None
+    except RecoveryError:
         return None
     try:
         receipt = native._read_json_file(native_attempt / "invocation-receipt.json")
@@ -1893,6 +1914,95 @@ def _validated_native_terminal(
     )
 
 
+def _native_failed_unit_outcome(
+    terminal: Mapping[str, Any],
+    *,
+    child_path: Path,
+    digest: str,
+) -> Literal["known", "unknown"] | None:
+    native_result = terminal.get("result")
+    if not isinstance(native_result, Mapping):
+        return None
+    completed = native_result.get("completed")
+    isolated = native_result.get("isolated", [])
+    failed = native_result.get("failed")
+    if (
+        not isinstance(completed, list)
+        or not isinstance(isolated, list)
+        or not isinstance(failed, Mapping)
+    ):
+        return None
+    try:
+        frozen = _load_native_child(child_path, digest)
+        units = frozen["units"]
+        unit_index = len(completed) + len(isolated)
+        unit = units[unit_index]
+        native_attempt = Path(terminal["attempt_dir"])
+        unit_dir = native_attempt / (
+            f"unit-{unit_index + 1:03d}-{unit['symbol']}-{unit['contract']}"
+        )
+    except (KeyError, IndexError, TypeError, RecoveryError):
+        return None
+    return _failed_unit_evidence_outcome(
+        failed,
+        unit,
+        unit_dir=unit_dir,
+        native_attempt=native_attempt,
+    )
+
+
+def _failed_unit_evidence_outcome(
+    failed: Mapping[str, Any],
+    frozen: Mapping[str, Any],
+    *,
+    unit_dir: Path,
+    native_attempt: Path,
+) -> Literal["known", "unknown"] | None:
+    if not _unit_payload_matches(failed, frozen):
+        return None
+    attempt = failed.get("attempt")
+    if not isinstance(attempt, Mapping) or set(attempt) != {
+        "state",
+        "outcome_unknown",
+        "retry_allowed",
+        "requests_started",
+        "responses_saved",
+    }:
+        return None
+    started = attempt.get("requests_started")
+    saved = attempt.get("responses_saved")
+    if (
+        not isinstance(started, int)
+        or isinstance(started, bool)
+        or started < 0
+        or not isinstance(saved, int)
+        or isinstance(saved, bool)
+        or saved < 0
+        or saved > started
+        or attempt.get("retry_allowed") is not False
+        or not isinstance(attempt.get("outcome_unknown"), bool)
+    ):
+        return None
+    try:
+        safe_unit = native._validated_direct_child_directory(
+            unit_dir,
+            native_attempt,
+            "CAMPAIGN_EVIDENCE_PATH_INVALID",
+        )
+        persisted = native._read_json_file(safe_unit / "unit-result.json")
+        actual_attempt = native.read_attempt_outcome(safe_unit)
+    except (OSError, RecoveryError):
+        return None
+    if persisted != failed or actual_attempt != dict(attempt):
+        return None
+    if (
+        attempt["outcome_unknown"] is True
+        or failed.get("error_code") in _UNKNOWN_UNIT_ERROR_CODES
+    ):
+        return "unknown"
+    return "known"
+
+
 def _unit_key(value: object) -> tuple[object, object, object]:
     if not isinstance(value, Mapping):
         return (None, None, None)
@@ -1924,6 +2034,7 @@ def _isolated_unit_matches(
             frozen,
             value["result"],
             policy,
+            expected_parent=unit_dir.parent,
         )
         persisted = native._read_json_file(unit_dir / "unit-result.json")
     except RecoveryError:

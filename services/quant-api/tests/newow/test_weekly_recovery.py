@@ -924,6 +924,83 @@ def test_source_quality_policy_isolates_one_unit_and_runs_its_next_sibling(
     assert isolated["source_evidence"]["responses_saved"] == 1
 
 
+def test_source_isolation_rejects_symlinked_unit_directory_before_next_unit(
+    tmp_path,
+) -> None:
+    units = [_isolation_unit("EC2607"), _isolation_unit("SI2401")]
+    manifest = {
+        "schema_version": "newow_weekly_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "continuation_policy": _source_isolation_policy(),
+        "units": units,
+    }
+    calls: list[str] = []
+    escaped = tmp_path.parent / f"{tmp_path.name}-escaped-unit"
+
+    class Manager:
+        def __init__(self, observer, unit):
+            self.observer = observer
+            self.unit = unit
+
+        def contract_warmup(self, request, *, before_apply=None):
+            if not request.apply:
+                return SimpleNamespace(
+                    plan=SimpleNamespace(
+                        plan_sha256=self.unit["plan_sha256"],
+                        target_windows=tuple(self.unit["targets"]),
+                    )
+                )
+            calls.append(self.unit["contract"])
+            assert before_apply is not None
+            before_apply()
+            source = _source_request()
+            self.observer.before_request(source)
+            self.observer.after_response(source, tuple(_rows(invalid=True)))
+            self.observer.attempt_dir.rename(escaped)
+            self.observer.attempt_dir.symlink_to(escaped, target_is_directory=True)
+            return SimpleNamespace(
+                status="failed",
+                applied=0,
+                blocked=0,
+                failed=1,
+                provider_requests=1,
+                failures=(
+                    {
+                        "dataset": ["contract", "ec", "EC2607", "1w"],
+                        "year": 2026,
+                        "month": 4,
+                        "reason_code": "RQDATA_ZERO_OHL_INVALID",
+                    },
+                ),
+            )
+
+    def open_unit(observer, unit):
+        return Manager(observer, unit), lambda: None, lambda: {}, lambda: None
+
+    attempt = create_attempt_directory(tmp_path, "batch-001")
+    unit_dir = attempt / "unit-001-ec-EC2607"
+    try:
+        with pytest.raises(RecoveryError, match="^SOURCE_EVIDENCE_PATH_INVALID$"):
+            execute_prepared_batch(
+                manifest=manifest,
+                attempt_dir=attempt,
+                prepared_sha256="9" * 64,
+                current_code_commit="b" * 40,
+                current_execution_code_sha256="d" * 64,
+                current_config_sha256="c" * 64,
+                current_canonical_root_sha256="e" * 64,
+                open_unit=open_unit,
+            )
+        assert calls == ["EC2607"]
+        assert not (attempt / "unit-002-si-SI2401").exists()
+    finally:
+        unit_dir.unlink()
+        escaped.rename(unit_dir)
+
+
 def test_source_quality_failure_still_stops_without_explicit_policy(tmp_path) -> None:
     unit = _isolation_unit("EC2607")
     manifest = {
