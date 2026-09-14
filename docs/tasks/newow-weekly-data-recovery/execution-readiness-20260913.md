@@ -116,6 +116,11 @@ Runtime mutations=0、notifications=0。`failure-readback.json` SHA-256 为
 记录根因、零部分写入和禁止重试结论。任何 EC2607 重试均须基于重新冻结的执行器与 fresh plan 获得新的
 精确单次意图，不能复用本次授权。
 
+失败 runner 保持原 hash 不变。另行冻结的 corrected retry runner SHA-256 为
+`dc8a77ddfb58f5d553d47bee26c418049f5f3f5791c548df457b4bd820e97b10`，只将 April 物理源窗口纠正为
+`2026-03-30..2026-04-30`；fresh preflight 再次通过相同 plan hash、8 targets、84 bars、目标分区 0、
+output absent，provider requests=0、writes=0。该只读准备不授权执行 retry。
+
 ## PF2611 与九个 RS 的隔离结论
 
 PF2611 的 `1w/2025-11/part.parquet` SHA-256 为
