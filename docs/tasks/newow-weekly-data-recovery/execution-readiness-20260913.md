@@ -103,10 +103,10 @@ turnover、open interest 均为 0。当前普通 warm-up plan 为 0 targets / 0 
 | RS2607 | 14 | 7 / 7 | 6 / 18 | 12 |
 | RS2609 | 26 | 21 / 5 | 7 / 14 | 10 |
 
-因此 PF2611 与九个 RS 均保持 `REVIEW_REQUIRED`。在来源核验完成前，不生成普通 Canonical apply hash，
-不使用 settlement 填 OHLC，不放宽 Newow 正价策略。
+初始隔离结论因此将 PF2611 与九个 RS 均置为 `REVIEW_REQUIRED`。来源核验本身不生成普通 Canonical apply
+hash，不使用 settlement 填 OHLC，也不放宽 Newow 正价策略。
 
-## 来源核验候选（尚未授权）
+## 来源核验结果（COMPLETED）
 
 已将完整只读 provider 计划固定为 [source-verification-plan.json](source-verification-plan.json)：语义 plan
 SHA-256 `ab15a71dac6fbed376d77b58cfdf4f544b634bc1f68bd37e44e3754bdf60afb4`，持久文件 SHA-256
@@ -115,12 +115,28 @@ SHA-256 `ab15a71dac6fbed376d77b58cfdf4f544b634bc1f68bd37e44e3754bdf60afb4`，持
 异常 bar；比较 date/OHLC/volume/total_turnover/open_interest，并把 settlement/prev_settlement 仅作证据。
 
 执行规则为：首次错误停止、无重试、保留 provider 规范化响应、不做 OHLC 替代、零 DB/Canonical 写入。
-获明确单次 provider 意图后，唯一持久输出目录固定为
+owner 于 2026-09-14 明确授权后，唯一一次 provider 调用链已完成；持久输出目录为
 `/Volumes/扩展盘/guiyi-quant-workstation/outputs/newow-weekly-data-recovery-20260913/source-verification-ab15a71d/`；
-该目录当前不存在，只新建 `source-verification-plan.json`、`source-responses.jsonl`、
+只新建 `source-verification-plan.json`、`source-responses.jsonl`、
 `source-verification-result.json`、`source-verification-invocation.json` 与 `source-verification-execution.json`，
-不覆盖现有 evidence。任何来源下载需要新的明确单次 provider 意图；来源响应即使证明本地损坏，也不自动
-授权 Canonical 覆盖。
+未覆盖现有 evidence。41/41 个请求均返回，146/146 个预期源行和全部预期日期齐全；retries=0、
+database writes=0、Canonical writes=0，固定源码、配置元数据与本地 41 个目标快照前后未变。
+
+`source-responses.jsonl` SHA-256 为
+`c9171f3529fde145876319e659bce0cf8277f9d88993155406965adcda686fc4`，
+`source-verification-result.json` 为
+`741238014cc1edc92243488688a688f31ef457c19bf4a605803a2d583c6898da`，
+`source-verification-execution.json` 为
+`372c6d5ba1758be8a30ddb50ec5076705a5513d8293ff1d10ea783d714ef40b8`。
+
+41 个目标全部分类为 `AUTHORITATIVE_SOURCE_NONPOSITIVE_MATCHES_CANONICAL`：RQData 原始交易所日行情按
+现有 D1/W1 口径聚合后，与本地 Canonical 的 OHLC、volume、turnover、open interest 逐字段相等；其中
+low 非正 41 个、open 非正 26 个、high 非正 15 个、close 非正 30 个。41 个目标的 settlement 与
+prev_settlement 均为正，但只保留为来源证据，不替代 OHLC。因此 PF2611 与专项九个 RS 的根因已闭环为
+权威源本身非正价格，继续保持 `REVIEW_REQUIRED` 和 Newow 阻断，不生成 Canonical 修复计划。
+
+RS2309/RS2311 不在该冻结来源计划内，仍作为独立 `REVIEW_REQUIRED` 保留；不得用本结果外推。该次 provider
+意图已消费，任何新增来源下载或 Canonical apply 均需新的精确单次意图。
 
 ## 当前工程验证
 
