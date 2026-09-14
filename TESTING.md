@@ -403,7 +403,8 @@ production 路径、hash 或 attempt 身份：
 : "${NEWOW_CAMPAIGN_OUTPUT_ROOT:?set one fixed evidence root}"
 : "${NEWOW_CAMPAIGN_NAME:?set campaign name}"
 
-python scripts/newow_weekly_recovery_campaign.py prepare \
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign prepare \
   --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
   --report "$NEWOW_CAMPAIGN_REPORT" \
   --expected-report-sha256 "$NEWOW_CAMPAIGN_REPORT_SHA256" \
@@ -417,7 +418,8 @@ python scripts/newow_weekly_recovery_campaign.py prepare \
 : "${NEWOW_CAMPAIGN_SHA256:?set exact campaign sha256}"
 : "${NEWOW_CAMPAIGN_ATTEMPT_ID:?set one new attempt id}"
 
-python scripts/newow_weekly_recovery_campaign.py apply \
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign apply \
   --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
   --campaign "$NEWOW_CAMPAIGN_OUTPUT_ROOT/$NEWOW_CAMPAIGN_NAME.prepare.json" \
   --expected-campaign-sha256 "$NEWOW_CAMPAIGN_SHA256" \
@@ -425,7 +427,8 @@ python scripts/newow_weekly_recovery_campaign.py apply \
   --attempt-id "$NEWOW_CAMPAIGN_ATTEMPT_ID" \
   --apply
 
-python scripts/newow_weekly_recovery_campaign.py inspect \
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign inspect \
   --attempt "$NEWOW_CAMPAIGN_OUTPUT_ROOT/$NEWOW_CAMPAIGN_ATTEMPT_ID"
 ```
 

@@ -17,6 +17,8 @@ import stat
 import sys
 from typing import Any, Callable, Literal, Mapping, cast
 
+from guiyi_quant.newow.product_contracts import ProductStrategy
+
 from app.market_data.newow.product_release import deferred_section_reason
 from app.market_data.operational_universe import load_operational_products
 from scripts import newow_weekly_recovery as native
@@ -793,6 +795,7 @@ def _validate_native_report_sections(
         for section in _REPORT_SECTIONS
     }
     actual_enumerations: set[tuple[str, str, str]] = set()
+    enumeration_owner_counts: dict[tuple[str, str], int] = {}
     for raw in enumerations:
         if not isinstance(raw, Mapping):
             raise RecoveryError("CAMPAIGN_REPORT_INVALID")
@@ -822,10 +825,14 @@ def _validate_native_report_sections(
             or owner_count < 0
         ):
             raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        enumeration_owner_counts[(key[0], key[2])] = owner_count
     if actual_enumerations != expected_enumerations:
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
 
     dependency_keys: set[tuple[str, str, str]] = set()
+    dependency_identities: set[tuple[str, str, str, str, str]] = set()
+    covered_owners: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
+    covered_owner_counts: Counter[tuple[str, str]] = Counter()
     operational_set = set(operational)
     for raw in dependencies:
         if not isinstance(raw, Mapping):
@@ -840,8 +847,16 @@ def _validate_native_report_sections(
         except (KeyError, TypeError, ValueError) as exc:
             raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
         status_value = raw.get("status")
+        dependency_identity = (
+            symbol,
+            contract,
+            str(raw.get("frequency")),
+            raw["through"],
+            raw["as_of"],
+        )
         if (
-            symbol not in operational_set
+            not isinstance(symbol, str)
+            or symbol not in operational_set
             or not isinstance(contract, str)
             or _CONTRACT.fullmatch(contract) is None
             or not contract.startswith(symbol.upper())
@@ -862,6 +877,9 @@ def _validate_native_report_sections(
             or not owners
         ):
             raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        if dependency_identity in dependency_identities:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        dependency_identities.add(dependency_identity)
         if status_value == "DATA_READY":
             try:
                 cutoff = datetime.fromisoformat(raw["cutoff"])
@@ -892,6 +910,8 @@ def _validate_native_report_sections(
             )
         ):
             raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        consumer_identities: set[tuple[str, str, str]] = set()
+        consumer_sections: set[str] = set()
         for consumer in consumers:
             if (
                 not isinstance(consumer, Mapping)
@@ -901,6 +921,23 @@ def _validate_native_report_sections(
                 or not isinstance(consumer.get("strategy"), str)
             ):
                 raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+            consumer_identity = (
+                consumer["strategy"],
+                consumer["frequency"],
+                consumer["section"],
+            )
+            if consumer_identity in consumer_identities:
+                raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+            consumer_identities.add(consumer_identity)
+            consumer_sections.add(consumer["section"])
+        expected_consumers = {
+            (strategy.value, "1w", section)
+            for section in consumer_sections
+            for strategy in ProductStrategy
+        }
+        if consumer_identities != expected_consumers:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        owner_identities: set[tuple[str, str, str]] = set()
         for owner in owners:
             if not isinstance(owner, Mapping):
                 raise RecoveryError("CAMPAIGN_REPORT_INVALID")
@@ -909,9 +946,26 @@ def _validate_native_report_sections(
                 owner_through = date.fromisoformat(owner["through"])
             except (KeyError, TypeError, ValueError) as exc:
                 raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
-            if owner_since > owner_through or owner_through > through:
+            owner_identity = (contract, owner["since"], owner["through"])
+            if (
+                owner_since > owner_through
+                or owner_through != through
+                or owner_identity in owner_identities
+            ):
                 raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+            owner_identities.add(owner_identity)
+        for section in consumer_sections:
+            coverage_key = (symbol, section)
+            covered_owners.setdefault(coverage_key, set()).update(owner_identities)
+            covered_owner_counts[coverage_key] += len(owner_identities)
         dependency_keys.add((symbol, contract, "1w"))
+
+    if any(
+        len(covered_owners.get(key, set())) != owner_count
+        or covered_owner_counts[key] != owner_count
+        for key, owner_count in enumeration_owner_counts.items()
+    ):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
 
     if any(
         not isinstance(repair, Mapping)
@@ -1275,6 +1329,26 @@ def _validated_native_terminal(
         return False
     failed_unit = frozen_units[len(completed)]
     if not _unit_payload_matches(failed, failed_unit):
+        return False
+    failure_status = failed.get("status")
+    nested_result = failed.get("result")
+    if not isinstance(failure_status, str) or not failure_status:
+        return False
+    if "result" in failed and not isinstance(nested_result, Mapping):
+        return False
+    applied = nested_result.get("applied", 0) if isinstance(nested_result, Mapping) else 0
+    if (
+        not isinstance(applied, int)
+        or isinstance(applied, bool)
+        or applied < 0
+    ):
+        return False
+    derived = native._batch_result(
+        [{} for _item in completed],
+        dict(failed),
+        [],
+    )
+    if status_value != derived["status"]:
         return False
     expected_unattempted = frozen_units[len(completed) + 1 :]
     return len(unattempted) == len(expected_unattempted) and all(

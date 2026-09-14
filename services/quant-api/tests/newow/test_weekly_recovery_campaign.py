@@ -86,6 +86,16 @@ def _ordinary_unit(index: int = 0) -> dict[str, Any]:
 def _report(units: list[dict[str, Any]]) -> dict[str, Any]:
     as_of = "2026-09-13T06:36:13+00:00"
     products = load_operational_products()
+    requested: dict[str, dict[str, str]] = {}
+    for item in units:
+        requested.setdefault(item["symbol"], {})[item["contract"]] = item["through"]
+    owners_by_symbol = {
+        symbol: (
+            requested.get(symbol)
+            or {f"{symbol.upper()}1000": "2026-09-11"}
+        )
+        for symbol in products
+    }
     enumerations = []
     for symbol in products:
         for section in ("chart", "auxiliary", "reference", "explanation"):
@@ -103,26 +113,48 @@ def _report(units: list[dict[str, Any]]) -> dict[str, Any]:
                 row.update(
                     since="2024-01-01",
                     through="2026-09-11",
-                    owner_count=1,
+                    owner_count=len(owners_by_symbol[symbol]),
                 )
             enumerations.append(row)
-    dependencies = [
-        {
-            "symbol": item["symbol"],
-            "contract": item["contract"],
-            "frequency": "1w",
-            "through": item["through"],
-            "as_of": as_of,
-            "status": "DATA_UNAVAILABLE",
-            "reason": "REPLAY_PREFIX_MISSING",
-            "error": {"code": "NEWOW_DATA_UNAVAILABLE", "diagnostic": {}},
-            "consumers": [
-                {"strategy": "trend", "frequency": "1w", "section": "chart"}
-            ],
-            "owners": [{"since": "2024-01-01", "through": item["through"]}],
-        }
-        for item in units
-    ]
+    dependencies = []
+    repair_keys = {(item["symbol"], item["contract"]) for item in units}
+    for symbol, contracts in owners_by_symbol.items():
+        for contract, through in contracts.items():
+            for cutoff, sections in (
+                (as_of, ("chart", "auxiliary")),
+                ("2026-09-11T07:00:00+00:00", ("reference",)),
+            ):
+                dependency: dict[str, Any] = {
+                    "symbol": symbol,
+                    "contract": contract,
+                    "frequency": "1w",
+                    "through": through,
+                    "as_of": cutoff,
+                    "consumers": [
+                        {
+                            "strategy": strategy,
+                            "frequency": "1w",
+                            "section": section,
+                        }
+                        for section in sections
+                        for strategy in ("trend", "oscillation", "main_rise")
+                    ],
+                    "owners": [{"since": "2024-01-01", "through": through}],
+                }
+                if (symbol, contract) in repair_keys:
+                    dependency.update(
+                        status="DATA_UNAVAILABLE",
+                        reason="REPLAY_PREFIX_MISSING",
+                        error={"code": "NEWOW_DATA_UNAVAILABLE", "diagnostic": {}},
+                    )
+                else:
+                    dependency.update(
+                        status="DATA_READY",
+                        cutoff=f"{through}T07:00:00+00:00",
+                        actual_bar_count=1,
+                        expected_bar_count=1,
+                    )
+                dependencies.append(dependency)
     return {
         "schema_version": 1,
         "command": "data.newow-readiness",
@@ -377,6 +409,41 @@ def test_partition_rejects_inconsistent_native_report_sections(mutation: str) ->
         report["main_case_count"] = 1
     elif mutation == "wrong_work_used":
         report["work_used"] += 1
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
+
+
+def test_partition_rejects_missing_dependency_even_when_work_used_is_synced() -> None:
+    report = _report([_ordinary_unit()])
+    report["dependencies"].pop(0)
+    report["work_used"] -= 1
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
+
+
+def test_partition_rejects_duplicate_full_dependency_identity() -> None:
+    report = _report([_ordinary_unit()])
+    report["dependencies"].append(deepcopy(report["dependencies"][0]))
+    report["work_used"] += 1
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
+
+
+def test_partition_rejects_owner_removed_from_one_section_coverage() -> None:
+    report = _report([])
+    symbol = load_operational_products()[0]
+    rows = [row for row in report["dependencies"] if row["symbol"] == symbol]
+    assert len(rows) == 2
+    second_owner = {"since": "2024-02-01", "through": rows[0]["through"]}
+    for row in rows:
+        row["owners"].append(second_owner)
+    for enumeration in report["enumerations"]:
+        if enumeration["symbol"] == symbol and enumeration["status"] == "ENUMERATED":
+            enumeration["owner_count"] = 2
+    rows[0]["owners"].remove(second_owner)
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
         partition_ordinary_units(report)
@@ -963,6 +1030,86 @@ def test_execute_rejects_unclosed_passed_native_terminal(
 
     assert result["status"] == "unknown"
     assert result["completed_batch_ids"] == []
+
+
+@pytest.mark.parametrize("contradiction", ["completed", "failure_partial", "applied"])
+def test_execute_rejects_failed_status_that_native_would_classify_partial(
+    tmp_path: Path,
+    contradiction: str,
+) -> None:
+    manifest = _campaign(tmp_path, 2)
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        prepared = json.loads(child.read_text())
+        completed = None
+        if contradiction == "completed":
+            unit = prepared["units"][0]
+            completed = [
+                {
+                    **unit,
+                    "status": "passed",
+                    "remaining_target_count": 0,
+                    "readback": {
+                        "catalog_physical_mds": "passed",
+                        "mds_target_count": unit["target_count"],
+                    },
+                }
+            ]
+        value = _native_apply_result(
+            child,
+            digest,
+            attempt,
+            status="failed",
+            completed=completed,
+        )
+        native_result = value["batch_result"]["result"]
+        if contradiction == "failure_partial":
+            native_result["failed"]["status"] = "partial"
+        elif contradiction == "applied":
+            native_result["failed"]["result"] = {"applied": 1}
+        (attempt / "native" / "batch-result.json").write_text(
+            json.dumps(native_result), encoding="utf-8"
+        )
+        return value
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert result["status"] == "unknown"
+    assert result["completed_batch_ids"] == []
+
+
+def test_execute_accepts_zero_completed_partial_current_unit_write(
+    tmp_path: Path,
+) -> None:
+    manifest = _campaign(tmp_path, 1)
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        value = _native_apply_result(
+            child,
+            digest,
+            attempt,
+            status="partial",
+            completed=[],
+        )
+        native_result = value["batch_result"]["result"]
+        native_result["failed"]["result"] = {"applied": 1}
+        (attempt / "native" / "batch-result.json").write_text(
+            json.dumps(native_result), encoding="utf-8"
+        )
+        return value
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert result["status"] == "partial"
+    assert result["failed_batch"]["native_result"]["result"]["completed"] == []
 
 
 def test_campaign_started_persistence_failure_invokes_no_child(
