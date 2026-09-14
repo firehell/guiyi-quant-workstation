@@ -85,10 +85,10 @@ assert retries == 0
 
 - [x] 只读定位当前 Catalog 分区、hash、物理文件、异常 timestamp、Calendar/Session 与完整周上下文；旧诊断月份仅定位线索。
 - [x] 精确列出每个异常 bar、缺失 bar、损坏对象及其来源窗口；生成去重后的请求清单，禁止先猜一个请求数。
-- [ ] 为这两个 RS 单独取得当前一次来源下载意图，不继承原九个 RS 或 EC 意图；仅来源核验，禁止包含 Canonical 写入。
-- [ ] 测试并执行七字段/时间身份比较，分类 SOURCE_NONPOSITIVE_MATCH、LOCAL_SOURCE_CONFLICT、SOURCE_MISSING、UNKNOWN；每个分类注明证据覆盖和未验证范围。
-- [ ] 来源一致非正保持原阻断；本地可修复冲突另列原生修复 plan、独立 Review 与精确写入意图。不从专项静默移动到普通自动队列。
-- [ ] 保存原 41 异常点证据及新增两合约证据的独立身份，不外推或覆盖旧事实。
+- [x] 为这两个 RS 单独取得当前一次来源下载意图，不继承原九个 RS 或 EC 意图；仅来源核验，禁止包含 Canonical 写入。
+- [x] 测试并执行七字段/时间身份比较，分类 SOURCE_NONPOSITIVE_MATCH、LOCAL_SOURCE_CONFLICT、SOURCE_MISSING、UNKNOWN；每个分类注明证据覆盖和未验证范围。
+- [x] 来源一致非正保持原阻断；缺失目标另列原生修复 plan、独立 Review 与精确写入意图。不从专项静默移动到普通自动队列。
+- [x] 保存原 41 异常点证据及新增两合约证据的独立身份，不外推或覆盖旧事实。
 
 ## P6：工程收尾与事实交接
 

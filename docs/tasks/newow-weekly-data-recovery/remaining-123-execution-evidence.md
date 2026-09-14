@@ -1,7 +1,8 @@
 # 牛哇周线剩余 1–3 项当前证据
 
-日期：2026-09-14。状态：`EC2607_AND_ORDINARY_BATCH_001_COMPLETED / RS_EXTERNAL_GATE_PENDING`。本文件记录
-本任务的工程、只读事实及两个已消费的一次执行证据；不代表 RS、发布或 Runtime 操作已获授权。
+日期：2026-09-14。状态：`EC2607_AND_ORDINARY_BATCH_001_COMPLETED / RS_SOURCE_VERIFIED /
+RS_REPAIR_GATE_PENDING`。本文件记录本任务的工程、两个恢复批次与已消费的 RS 仅来源核验意图；不代表
+RS Canonical 修复、发布或 Runtime 操作已获授权。
 
 ## 执行前冻结依赖队列
 
@@ -84,19 +85,18 @@ completed，378/378 targets、4,383 bars 均 `passed`，failed/unattempted 均�
 下一批或扩大范围。完整执行材料保存在
 `outputs/newow-weekly-recovery-attempts/ordinary-batch-001-20260914-001/`。
 
-## RS2309 / RS2311 本地专项
+## RS2309 / RS2311 专项
 
-本次仅读取当前 Catalog、Calendar、Session 与 Canonical 文件；`provider_requests=0`、`writes=0`。全部列出的
-Catalog row count 与物理 Parquet row count 一致，未发现行数型文件损坏。当前分类只能是
-`SOURCE_VERIFICATION_PENDING`，不得提前写成 `SOURCE_NONPOSITIVE_MATCH`。
+来源执行前只读 Catalog、Calendar、Session 与 Canonical 文件；`provider_requests=0`、`writes=0`。全部列出的
+Catalog row count 与物理 Parquet row count 一致，未发现行数型文件损坏。
 
 | contract | through | plan targets / bars | plan sha256 | 去重来源日期范围 |
 | --- | --- | --- | --- | --- |
 | RS2309 | 2023-06-28 | 20 / 226 | `787702047f51edc3f3c8e80616353c8c74f3fd6d2af2ce846b84c514ad5a7fb5` | 2022-09-16..2023-06-16，181 日，日期 hash `9f2dc8c66ce5b70365e1b48f2e6dda487b83929654dd01a7ef3a03ea946ae39e` |
 | RS2311 | 2023-11-01 | 6 / 66 | `1a0e9bb2fb854bf3f1267b8af8acbe5c2b49bcec126b90c8c7148eff5df6394e` | 2022-11-15..2023-06-28，150 日，hash `f85a53ea5d97a23e694db4658801b956c787cb8466782b5077c9eb3a46f7b104`；另 2023-11-01，hash `bc1a430d1edabce59ba95dc1d4e413d4b91751ff348daa806ad7cf35937000df` |
 
-三个来源日期组的 Calendar 与有效 Session 均完整。它们是未来“仅来源核验”的最大精确边界，不授权下载，
-更不授权 Canonical 写入。
+三个来源日期组的 Calendar 与有效 Session 均完整。owner 随后批准且仅执行了一次该精确来源边界；未授权
+Canonical 写入。
 
 当前非正 bars：
 
@@ -126,7 +126,31 @@ Catalog row count 与物理 Parquet row count 一致，未发现行数型文件�
 | RS2311/1w/2023-06 | 3 | `e855e6f6e0cab9b1eecf82f8cc49969564f4318f116a2f0ecdc4d7f7cfa5c5dd` |
 
 RS2309 缺口覆盖 2022-09 至 2023-06 的 D1/W1；RS2311 缺口为 2022-11/12 与 2023-06 的
-D1/W1。非正 bars 与缺口一起形成未来来源核验集合，但来源核验和正式修复是两个独立 Gate。
+D1/W1。仅来源计划 SHA-256 为
+`3fa210078c867a72177156fdc80090fc7d2c3c8845f6ad0995571829c9ac403f`，绑定代码
+`07ae059ab02835d6680f92248fd8bc9c5e55de4b`、3 个请求、332 个预期交易日和 44 根非正 D1/W1 目标。
+
+一次执行得到 3 started/3 response_saved、332/332 来源行、零 retry，全部 332 行均保留 settlement 与
+prev_settlement。来源响应 SHA-256 为
+`12b9b625a119e626f04ea64e02b9301f5eec8b0a023eb6868de37e55c9681f39`；原执行 receipt SHA-256 为
+`68f0d2b34debc11efb2877247ee9083cb30c4b22a22439a964b64c2a8776fd6b`，`outcome_unknown=false`。
+相关 23 个 Catalog/物理文件的前后快照均为
+`94ed1f742df90425ab7f4298ad9825ed076633b2d0470099017af5d06bf7e5ce`；DB/Canonical writes 均为 0。
+
+首版离线结果错误地按字符串比较 Decimal，因 `0E-18` 与 `0.0` 表示不同将 44 项误记为
+`LOCAL_SOURCE_CONFLICT`。未覆盖或重跑任何 provider 请求；保留原结果
+`1e26426a30c627c8918209deb99fcf7892d91377f957062b0218a3b56b077fc0`，再对已落盘响应以七字段 Decimal
+数值相等规则执行零 provider 重分类。修正结果 SHA-256 为
+`9286597a0ade23ec6484a809b42d580912a47896fe89bd1200586f0c84f05721`，执行 receipt 为
+`5dab054b318158fcf0d1667bc626eecb9628e21c8344c52b2ca2ea2e25956a9c`：44/44 均为
+`SOURCE_NONPOSITIVE_MATCH`，结论为 `AUTHORITATIVE_SOURCE_NONPOSITIVE_MATCHES_CANONICAL`。
+
+因此这些非正 bars 是来源事实，不能修正成正价格或用替代数据覆盖。332 个来源日期全部返回也证明缺失
+目标具备来源，但正式补齐仍是另一个 Gate。原生双单元 repair prepared artifact 为
+`db0d394c4872c41f1f637a83663a30e9561094e685fab4281683a280b52d9360`：RS2309 20 targets/226 bars，
+RS2311 6 targets/66 bars；本轮没有执行它。完整只读来源及修正链保存在
+`outputs/newow-weekly-recovery-attempts/rs-source-verification-20260914-001/`，本次仅来源意图已消费，
+不授权重试或 repair apply。
 
 ## Gate
 
@@ -135,6 +159,6 @@ D1/W1。非正 bars 与缺口一起形成未来来源核验集合，但来源核
   seam smell。结论均为允许集成 develop。
 - EC2607：一次执行已完成且严格读回通过；该意图已消费，不授权重试。
 - 普通首批：一次执行已完成且严格读回通过；该意图已消费，不授权重试或下一批。
-- RS2309/RS2311：先对上述精确来源集合取得“仅来源下载”意图；禁止 Canonical 写入。分类后如有本地可修复
-  冲突，再形成独立修复 plan、Review 和正式写入意图。
+- RS2309/RS2311：仅来源核验已完成且意图已消费；44/44 非正 bars 与权威来源数值一致，必须保留其来源阻断。
+  26 targets/292 missing bars 的原生 repair plan 已冻结但未执行；需要独立 Review 与精确 Canonical 写入意图。
 - 第 4 项完整矩阵、main/tag/release、Runtime、Scope、通知和交易均不在本任务。
