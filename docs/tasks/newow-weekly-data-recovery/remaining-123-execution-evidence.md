@@ -36,7 +36,8 @@ provider requests=0、生产 writes=0。审计通过 fresh read-only transaction
 
 owner 已确认[普通全量收口计划](ordinary-full-closeout-plan.md)。总包工程已在 `84df05552` 实现，
 `f3a30ec79`、`842844a19` 两轮修复关闭完整报告/owner 覆盖、根数对账、可信终态、稳定 guard inode、
-多总包证据命名与 CLI 命令问题，专项复审无阻断。主会话组合测试 564 passed；Ruff/Mypy、OpenSpec
+多总包证据命名与 CLI 命令问题，专项复审无阻断。总审补充的 repair 反向覆盖和来源 journal 核对
+由 `4c18a9a23` 修复并覆盖回归。主会话组合测试 576 passed；Ruff/Mypy、OpenSpec
 9 项、secret scan 0 findings、diff check 均通过，三阶段 help smoke 通过。测试使用隔离数据库、临时
 Canonical 与 fake provider，不代表真实补数。完整工程总审与 develop 包含关系以本分支交付记录为准。
 
