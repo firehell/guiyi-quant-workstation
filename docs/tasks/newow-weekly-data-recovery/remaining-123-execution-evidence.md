@@ -3,6 +3,40 @@
 日期：2026-09-14。状态：`EC2607_ORDINARY_BATCH_001_AND_RS_REPAIR_COMPLETED`。本文件记录本任务的工程、
 三个恢复批次与已消费的 RS 来源核验/修复意图；不代表下一批、发布或 Runtime 操作已获授权。
 
+## 2026-09-14 全域普通余额重新审计
+
+在代码 `7982c8c921245853d52c0740e20278ec144e7464` 上完成新的原生完整 dependency-only 审计：
+operational 60 品种、`frequency=1w`、`as_of=2026-09-13T06:36:13+00:00`。结果为
+`status=audited`、`complete=true`、`budget_exhausted=false`，work_used=3,746、耗时 808.91 秒，
+provider requests=0、生产 writes=0。审计通过 fresh read-only transaction 读取 Catalog/Canonical/MDS，
+没有重新下载或执行恢复。
+
+| 当前分类 | 数量 | 计数单位 |
+| --- | ---: | --- |
+| 普通 PROPOSED | 1,117 | 唯一物理合约 W1 恢复单元，覆盖 55 品种 |
+| REVIEW_REQUIRED | 9 | 隔离的 RS 恢复单元 |
+| metadata proposal | 0 | 元数据提案 |
+| DATA_READY | 142 | dependency，不是 matrix case |
+| DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING | 12 | dependency |
+| DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING | 2,258 | dependency |
+| NOT_APPLICABLE:OWNER_HAS_NO_COMPLETED_BAR | 20 | dependency |
+| SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE | 8 | dependency |
+
+普通全集为 22,695 个月分区目标（D1 11,421、W1 11,274），预计端点 264,546，实际缺失端点
+251,384（D1 207,716、W1 43,668）。按既有原生每批最多 20 单元边界，为 55 批 × 20 加末批 17，
+共 56 个内部批次。上述目标数和预计端点不是底层 SDK 请求数，不作流量估算。
+9 个待审对象为 RS2407、RS2409、RS2411、RS2507、RS2509、RS2511、RS2607、RS2608、RS2609；
+不因普通补数计划而授权修复它们，也不覆盖已证实的非正源行情。
+
+完整报告 SHA-256：`3f4a5693194bf6844c8e4134e614297755535c2a83a97c4468cc51bdf9991ec1`。
+报告与只读审计脚本保存在本地
+`outputs/newow-weekly-recovery-attempts/ordinary-audit-20260914/`，包含 `full-report.json`、
+`compact-report.json`、`summary.json` 与 `audit.py`。审计只证明该固定截点的当前数据余额，不证明页面
+矩阵通过。旧表中的 1,138 是 EC/首批/RS 修复前历史快照，下面保留原文，不再作为当前余额。
+
+owner 已确认[普通全量收口计划](ordinary-full-closeout-plan.md)，当前为工程实现与 readonly 准备阶段；
+真实总包执行意图仍待全部子包和代码身份冻结后单独取得。当前未执行这 1,117 个剩余普通单元。
+
 ## 执行前冻结依赖队列
 
 冻结参数：`operational` 60 品种、`frequency=1w`、

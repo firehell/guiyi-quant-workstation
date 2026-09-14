@@ -184,7 +184,23 @@ JM 5m/15m、其余品种 60m、苏冰 15m 的策略和 Scope 均保持原合同�
 命令与验证边界见 `TESTING.md`。本地预览验收不构成 main/tag 发布或 Runtime promotion，
 自然开市 completed 1m 与通知收件继续按各自证据验收。
 
-## 牛哇周线 60 品种准备（小批次现场证据）
+## 牛哇周线 60 品种准备（恢复进度与历史证据）
+
+2026-09-14 当前只读余额已重新审计，不再使用旧清单扣减估算：固定 operational 60、`frequency=1w`、
+`as_of=2026-09-13T06:36:13+00:00`，dependency-only 审计 `complete=true`、`budget_exhausted=false`，
+普通 `PROPOSED=1,117`、`REVIEW_REQUIRED=9`、metadata proposal=0。普通范围可分成 56 个最多 20 单元的
+内部批次；22,695 个月分区目标、264,546 个预计端点，其中实际缺失端点 251,384。预计端点和缺失端点
+不是同一计数，也不是底层 SDK 请求数。本次仅只读，provider requests=0、生产 writes=0。
+
+Session 247 目标/33,224 行、SI2308、EC2607、普通首批 20 单元及 RS2309/RS2311 专项均已有独立执行和
+读回证据；不重复下载。其余 9 个 RS 待审目标与已核实的非正价格来源事实继续隔离，不能混入普通补数。
+本轮总包编排设计已获批准，正在实现与验证；尚未执行剩余普通总包。代码冻结和全部精确子包准备后，
+还须匹配总包的一次真实下载/写入意图。完整 matrix、浏览器验收、Release 与 Runtime 均非本次数据准备的
+完成结论。当前数字、完整审计 SHA-256 和旧批次证据见
+[恢复执行证据](docs/tasks/newow-weekly-data-recovery/remaining-123-execution-evidence.md)，
+[普通总包计划](docs/tasks/newow-weekly-data-recovery/ordinary-full-closeout-plan.md)。
+
+以下为 2026-09-13 历史现场记录，保留原结果；其中 896/494/EC pending 已被上述新证据取代。
 
 2026-09-13 owner 单次批准的 PT 周线 calibration batch 已严格按冻结 plan hash 串行执行一次：PT2608
 14/14 target、PT2610 18/18 target 均 passed，blocked/failed 均为 0；两者写后重规划均为 0 target / 0 bar /
