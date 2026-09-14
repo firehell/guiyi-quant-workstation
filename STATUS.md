@@ -1,11 +1,11 @@
 # 当前状态
 
 文档整理：2026-09-14；最新候选验证截至 `2026-09-14 00:19:07 CST`，现场记录截至
-`2026-09-14 08:13:27 CST`；promotion/安装边界追加验证为 107 passed。
-正式 Release 为 `v1.10.9@94414c26ef9ae784fddb3758acc45a5b4c6b5c51`；现役 Runtime 仍为
-`v1.10.8@82860ee3f5f63c49397ab11b0d0ab60c601376b9`。v1.10.9 已完成 main、annotated tag 与
-GitHub Release，Runtime promotion 在任何安装/切换前被 fresh preflight 阻断，两个 Gate 分别取证。
-现役 v1.10.8 的六服务切换、即时服务和页面验收已通过；自然 Live、盘后、后续增量及首次自然周检仍待验收，
+`2026-09-14 10:35:42 CST`；promotion/安装边界追加验证为 107 passed。
+正式 Release 与现役 Runtime 均为 `v1.10.9@94414c26ef9ae784fddb3758acc45a5b4c6b5c51`。
+10:15 休市窗口的 fresh preflight 通过后，已完成本次授权的六服务切换；v1.10.8 root 保留。
+即时服务身份、HTTP、heartbeat、自然 Live 1m 与新 HTDY 5m 处理验收通过；页面具体缺口、新 15m/60m
+评价、实际收件、盘后、后续增量及首次自然周检仍待验收，
 不声明 `RUNTIME_READY`。本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
@@ -15,19 +15,19 @@ GitHub Release，Runtime promotion 在任何安装/切换前被 fresh preflight 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.9@94414c26e`，PR #365 合入 main；annotated tag object `6f8369417` 与 GitHub Release 已读回，API/Web 版本均为 1.10.9 |
-| 现役 Runtime | v1.10.8 `RUNTIME_PROMOTED / IMMEDIATE_ACCEPTANCE_PASSED`，未声明 `RUNTIME_READY` | 六服务均绑定 `v1.10.8@82860ee3f`；API/Web 200、单 API worker、Live/Alert fresh heartbeat；after-market 等待自然运行，既有 degraded/failed health 事实保留 |
-| v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / EXTERNAL_GATE_PENDING` | main/tag/GitHub Release 已完成；新 exact-tag root 已构建；午夜 UNKNOWN、08:12 当日 Live snapshot 缺失分别阻断 preflight，未执行安装或切换 |
+| 现役 Runtime | v1.10.9 `RUNTIME_PROMOTED / SERVICE_READBACK_PASSED`，未声明 `RUNTIME_READY` | 六服务 installed/loaded 均绑定 `94414c26e`；API/Web 200、单 API worker、Live/Alert fresh heartbeat；页面具体缺口与自然业务 Gate 保留 |
+| v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
-| Weekly audit | `ENABLED / CURRENT_WEEK_READBACK_PASSED / NATURAL_RUN_PENDING` | exact v1.10.8 root 已 loaded、周六 09:00、当前 idle、runs 0 / not_run；840/840 endpoint 与 120/120 周线归属核对通过；首次自然及全历史周检待验 |
+| Weekly audit | `ENABLED / NATURAL_RUN_PENDING` | exact v1.10.9 root 已 loaded，保留周六 09:00，当前 not_run；旧版本 840/840 endpoint 与 120/120 周线归属只作历史证据，首次自然及全历史周检待验 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 已进入现役 v1.10.8 Runtime；仅自然盘后及后续交易日增量验收未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
-| 本轮稳定版 | v1.10.8 `RELEASED / DEPLOYMENT_PREPARED / RUNTIME_PROMOTED / IMMEDIATE_ACCEPTANCE_PASSED` | 候选、Review、Release、六服务 promotion 与修复版页面即时验收已收口；自然业务验收仍独立待完成 |
+| 本轮稳定版 | v1.10.9 `RELEASED / RUNTIME_PROMOTED / SERVICE_READBACK_PASSED` | 六服务切换与首根自然 Live 1m 已读回；页面具体缺口及自然预警、盘后和周检验收保留 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
 
-## v1.10.9 Release（已发布；Runtime promotion 阻断）
+## v1.10.9 Release 与 Runtime 切换（自然验收未完成）
 
 v1.10.9 发布范围是 `v1.10.8...74d7a71f` 的完整 develop 集成差异，不反向拆散已接受提交，也不把本版
 缩称为单一告警补丁。主要交付包括：Market Home 报价与历史消息、统一详情页与 Newow 展示；Newow 周线
@@ -58,7 +58,41 @@ missed/2026-09-13 non-trading-day skipped，overall degraded。按 fail-closed �
 未修改 Runtime 状态或生产数据；现役六服务仍全部绑定 v1.10.8。自然 completed Live Bar、真实收件、自然
 18:05 盘后、后续增量/MDS 与首次自然周检继续保持 pending，不由 Release 或候选 build 代替。
 
-### 9 月 14 日开市前追加诊断
+### 9 月 14 日 10:15 休市切换
+
+按 owner 选定的本次休市窗口，10:15 现场为 BREAK 60/60、自然 subscription snapshot 60/60，
+exact candidate preflight 返回 `passed / snapshot_ready`。维护 advisory lock 的 holders/waiters 为 0；
+候选与保留旧 root 都是干净 detached annotated tag，operational 文件 hash 相同，现役 status 字节未变且
+两版 reader 兼容。随后仅执行一次既有安装顺序：after-market/Live → API/Web/日志轮转 → Alert →
+已启用 weekly-audit，四阶段均成功退出；未重试、未回退、未修改 Scope、通知受众或手工生产数据。
+
+10:19 读回六服务 installed/loaded root 与 40 位 commit 均为 v1.10.9；API 单 worker（PID 91257）、
+API/Web 200，API version=1.10.9，DB/Redis/Live/Alert 与总 health 为 ok。盘后仍为 18:05、weekly 仍为
+周六 09:00。新 Live 在 BREAK 下 subscribed=0、last_bar=null，恢复交易后的自然 evidence 尚未取得。
+新 root 不继承旧 `.run`，故 after-market 为 pending；旧 schema-v3 skipped/missed 状态字节仍保留在
+v1.10.8 root，不能将新 health 的 ok 解释为历史盘后问题已消失。既有通知历史字段未清除。
+逐项只读 API Scope 验收亦通过：HTDY JM 5m/15m、其余 59 品种 60m 共 60/60 匹配；苏冰
+全品种 15m 为 60/60 匹配，未写 Scope。
+
+真实浏览器：首页可用 60/60、过期/缺失 0、分钟连接已建立；JM HTDY 5m/15m 与苏冰 15m 图表读取到
+10:15 completed 行情。页面验收不全绿：HTDY 显示 `AlertEvent 暂不可用`，其 Event API 同一窗口会返回
+混合周期（本次读取到 2 条 5m）；develop 的频率筛选修复 `50d421124` 在 v1.10.9 tag 之后，不包含于
+本次 exact release。JM Newow W1 当前主图返回主力映射缺失 409；苏冰历史参考返回
+`SUBING_REFERENCE_DATA_UNAVAILABLE` 409，页面状态不可判定亦
+保留，未通过改范围、切换历史窗口或手工补数造绿。服务切换成功不证明这些页面或新版本自然预警已通过。
+
+10:30 后已自然恢复 TRADING 60/60、订阅 60/60；首根 Bar 产生前短暂 `live_unavailable`，10:32
+只读验收确认 60/60 均有 10:31 completed 1m，正式 Live reader 的物理合约归属校验无错误。
+subscription snapshot SHA-256 为 `82cb7e54545fb228d4a7452634391386c8304a8f246482829aa3012036907c2a`，
+与 10:25 基线相同；Live/Alert/总 health 为 ok。此时 Alert 最近处理仍是切换前 10:15，不能把它算作
+v1.10.9 的新 5m/15m/60m 评价或真实发送。部署自动任务已暂停，防止再次执行切换。
+10:33:48 再次读回：60/60 均连续持有 10:31、10:32、10:33 三根新 1m，合约归属无错误，snapshot
+hash 不变，服务状态脚本 overall=passed。10:35:42 health 为 ok，Live 已到 10:35，Alert 最近处理 Bar
+与 HTDY 最近评价均推进至 10:35，处理成功时间 10:35:03；没有新处理错误。最近 Event/发送仍为切换前
+10:15，新 15m/60m 评价与实际收件未据此通过。文档工程检查 22 passed、OpenSpec 9/9、secret scan 0，
+diff check 通过；本次未修改 Runtime 源码、已发布身份或后续 develop 修复。
+
+### 9 月 14 日开市前追加诊断（切换前历史）
 
 08:13 的生产只读事务确认：当日 Calendar 与 Session 覆盖 60/60；9 月 15 日 Calendar 存在，但
 Session 为 0/60。使用同一现场事实分别输入 00:10、08:10、09:10、18:10、21:10，既有 resolver
@@ -429,9 +463,9 @@ Web 优化信息层级、布局、可读性、图表操作、加载体验和移�
 
 ## 唯一下一步
 
-完成 v1.10.9 候选的新 tree 验证与独立 Review；通过后按本轮精确意图发布 main/tag/GitHub Release，并仅在
-fresh promotion preflight 通过时切换本机既有六服务。自然 Live、after-market、后续增量/MDS 与 weekly audit
-继续按各自时序验收；不手工制造 Bar、不重跑 D/E/F、不变更 data、Scope、audience 或 notification 状态。
+收敛已记录的页面验收缺口，develop 上 tag 之后的修复另走候选、发布和 Runtime Gate。现役 v1.10.9 的
+新 15m/60m 评价、实际收件、18:05 after-market、后续增量/MDS 与 weekly audit 按各自时序验收；
+不手工制造 Bar、不重跑 D/E/F、不变更 data、Scope、audience 或 notification 状态。
 
 本文件不构成元数据/行情修复、Scope、通知或交易批准；v1.10.9 发布与本机 Runtime promotion 仅使用 owner
 本轮已给出的精确一次执行意图，失败、结果不明或范围变化后不自动重试。
