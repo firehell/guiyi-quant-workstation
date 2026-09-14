@@ -33,8 +33,24 @@ class _SafeFormatter(logging.Formatter):
                         payload["progress"] = progress
                 except (ValueError, TypeError, OverflowError):
                     pass
-            for key in ("symbol", "contract", "bar_end", "trading_day", "missing_count", "attempt", "stage", "detail_code"):
+            for key in ("rule_code", "symbol", "contract", "frequency", "bar_end", "trading_day", "missing_count", "attempt", "stage", "detail_code"):
                 value = fields.get(key)
+                if key == "rule_code":
+                    from app.alerts.registry import alert_rule_definitions
+
+                    allowed_rule_codes = {
+                        definition.rule_code for definition in alert_rule_definitions()
+                    }
+                    if isinstance(value, str) and value in allowed_rule_codes:
+                        payload[key] = value
+                    continue
+                if key == "frequency":
+                    from app.market_data.domain import BarFrequency
+
+                    allowed_frequencies = {frequency.value for frequency in BarFrequency}
+                    if isinstance(value, str) and value in allowed_frequencies:
+                        payload[key] = value
+                    continue
                 if key in {"stage", "detail_code"}:
                     from app.market_data.after_market import _AFTER_MARKET_STAGES, _PUBLIC_ERROR_CODES
                     allowed = (_AFTER_MARKET_STAGES | {"metadata_readiness", "canonical_update", "canonical_update_result"}

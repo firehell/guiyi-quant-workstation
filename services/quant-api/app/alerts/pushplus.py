@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Mapping, Protocol, TypeGuard, cast
 
-from perk_pushplus import Channel, PushPlusClient, PushPlusError, SendRequest, Template
+from perk_pushplus import Channel, ErrorCode, PushPlusClient, PushPlusError, SendRequest, Template
 
 from app.alerts.notification import (
     ALERT_AUDIENCE_HTDY_OBSERVERS,
@@ -74,15 +74,36 @@ class PushPlusTransport:
         )
         try:
             reference = self._client.send(request)
-        except PushPlusError:
+        except PushPlusError as exc:
             raise NotificationTransportError(
-                "ALERT_NOTIFICATION_TRANSPORT_FAILED"
+                "ALERT_NOTIFICATION_TRANSPORT_FAILED",
+                diagnostic_code=_sdk_diagnostic_code(exc),
             ) from None
         if not _valid_provider_reference(reference):
             raise NotificationTransportError(
-                "ALERT_NOTIFICATION_TRANSPORT_FAILED"
+                "ALERT_NOTIFICATION_TRANSPORT_FAILED",
+                diagnostic_code="PUSHPLUS_ACCEPTANCE_INVALID",
             )
         return ProviderAcceptance(reference)
+
+
+def _sdk_diagnostic_code(exc: PushPlusError) -> str:
+    try:
+        code = exc.code
+    except Exception:
+        return "UNKNOWN"
+    if type(code) is not int:
+        return "UNKNOWN"
+    if code == 900:
+        return "PUSHPLUS_RATE_LIMITED"
+    if code == -1:
+        return "PUSHPLUS_REQUEST_OUTCOME_UNKNOWN"
+    known_rejections = {
+        item.value for item in ErrorCode if item not in {ErrorCode.OK, ErrorCode.UNKNOWN}
+    }
+    if code in known_rejections:
+        return "PUSHPLUS_PROVIDER_REJECTED"
+    return "UNKNOWN"
 
 
 def _valid_provider_reference(value: object) -> TypeGuard[str]:

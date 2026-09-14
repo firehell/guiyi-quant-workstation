@@ -128,6 +128,88 @@ def test_event_range_returns_typed_htdy_event() -> None:
     }
 
 
+def test_event_range_filters_same_rule_events_by_requested_frequency() -> None:
+    factory = session_factory()
+    five_minute_id = seed_event(factory, frequency="5m")
+    fifteen_minute_id = seed_event(factory, frequency="15m")
+
+    with client(factory) as value:
+        five_minute = value.get(
+            "/api/alerts/events",
+            params={
+                "symbol": "jm",
+                "rule_code": "htdy_original_15m",
+                "frequency": "5m",
+                "start": (BAR_END - timedelta(minutes=1)).isoformat(),
+                "end": (BAR_END + timedelta(minutes=1)).isoformat(),
+            },
+        )
+        fifteen_minute = value.get(
+            "/api/alerts/events",
+            params={
+                "symbol": "jm",
+                "rule_code": "htdy_original_15m",
+                "frequency": "15m",
+                "start": (BAR_END - timedelta(minutes=1)).isoformat(),
+                "end": (BAR_END + timedelta(minutes=1)).isoformat(),
+            },
+        )
+        legacy = value.get(
+            "/api/alerts/events",
+            params={
+                "symbol": "jm",
+                "rule_code": "htdy_original_15m",
+                "start": (BAR_END - timedelta(minutes=1)).isoformat(),
+                "end": (BAR_END + timedelta(minutes=1)).isoformat(),
+            },
+        )
+
+    assert five_minute.status_code == fifteen_minute.status_code == legacy.status_code == 200
+    assert [item["id"] for item in five_minute.json()["items"]] == [five_minute_id]
+    assert [item["id"] for item in fifteen_minute.json()["items"]] == [fifteen_minute_id]
+    assert [item["id"] for item in legacy.json()["items"]] == [
+        five_minute_id,
+        fifteen_minute_id,
+    ]
+
+
+def test_event_range_rejects_frequency_not_supported_by_rule() -> None:
+    with client() as value:
+        response = value.get(
+            "/api/alerts/events",
+            params={
+                "symbol": "jm",
+                "rule_code": "htdy_original_15m",
+                "frequency": "4m",
+                "start": (BAR_END - timedelta(minutes=1)).isoformat(),
+                "end": (BAR_END + timedelta(minutes=1)).isoformat(),
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "ALERT_FREQUENCY_UNSUPPORTED"}}
+
+
+def test_event_range_rejects_global_frequency_not_supported_by_specific_rule() -> None:
+    factory = session_factory()
+    seed_subing_event(factory)
+
+    with client(factory) as value:
+        response = value.get(
+            "/api/alerts/events",
+            params={
+                "symbol": "jm",
+                "rule_code": "subing_ths_alert_15m_v1",
+                "frequency": "5m",
+                "start": (BAR_END - timedelta(minutes=1)).isoformat(),
+                "end": (BAR_END + timedelta(minutes=1)).isoformat(),
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "ALERT_FREQUENCY_UNSUPPORTED"}}
+
+
 def test_event_range_returns_actual_subing_rule_fact() -> None:
     factory = session_factory()
     event_id = seed_subing_event(factory)
@@ -335,6 +417,7 @@ def client(
 def seed_event(
     factory: sessionmaker[Session],
     *,
+    frequency: str = "15m",
     bar_end: datetime = BAR_END,
     detected_at: datetime | None = None,
 ) -> int:
@@ -348,7 +431,7 @@ def seed_event(
             symbol="jm",
             contract="JM2609",
             trading_day=TRADING_DAY,
-            frequency="15m",
+            frequency=frequency,
             bar_end=bar_end,
             result_codes=["sell"],
             detected_at=detected_at or bar_end + timedelta(seconds=1),

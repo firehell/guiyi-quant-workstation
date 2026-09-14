@@ -44,8 +44,26 @@ class AlertNotificationPolicy:
 class NotificationTransportError(RuntimeError):
     code = "ALERT_NOTIFICATION_TRANSPORT_FAILED"
 
-    def __init__(self, code: str = "ALERT_NOTIFICATION_TRANSPORT_FAILED") -> None:
+    _DIAGNOSTIC_CODES: Final = frozenset(
+        {
+            "PUSHPLUS_ACCEPTANCE_INVALID",
+            "PUSHPLUS_PROVIDER_REJECTED",
+            "PUSHPLUS_RATE_LIMITED",
+            "PUSHPLUS_REQUEST_OUTCOME_UNKNOWN",
+            "UNKNOWN",
+        }
+    )
+
+    def __init__(
+        self,
+        code: str = "ALERT_NOTIFICATION_TRANSPORT_FAILED",
+        *,
+        diagnostic_code: str = "UNKNOWN",
+    ) -> None:
         self.code = code
+        self.diagnostic_code = (
+            diagnostic_code if diagnostic_code in self._DIAGNOSTIC_CODES else "UNKNOWN"
+        )
         super().__init__(code)
 
 

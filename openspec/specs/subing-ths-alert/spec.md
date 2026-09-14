@@ -186,12 +186,29 @@ HTDY Rule SHALL 保持 forward-only `first_seen`；SuBing Rule SHALL 使用 `exa
 - **WHEN** 相同 identity 的 contract、trading_day 或 result_codes 不同
 - **THEN** 系统报告 consistency failure，不覆盖既有 Event
 
+### Requirement: Event reads preserve the requested frequency
+
+`GET /api/alerts/events` SHALL 接受可选 `frequency`；省略时保持原查询行为，传入时 MUST 校验该 Rule 的
+支持周期并在数据库查询中精确过滤。不支持的周期 MUST 返回明确 4xx，不能退回全周期结果。
+Web 持久 Event 查询 SHALL 携带当前页面周期，并继续对 Rule、symbol、frequency 不一致的响应失败关闭；
+切换页面身份后，旧异步响应不得覆盖新身份的数据。本接口不修改既有 Event、Scope 或公式。
+
+#### Scenario: One Rule has observations at two frequencies
+
+- **WHEN** 同一品种同一 Rule 有 5m 与 15m Event，页面查询 5m
+- **THEN** 只返回 5m Event；合法的 15m Event 不应令 5m 页面整体不可用
+
 ### Requirement: Event persistence precedes one-shot transport
 
 系统 MUST 先 commit AlertEvent，随后才可调用该 Rule 固定 formatter、固定 audience 与 shared PushPlus
 transport；每个新 Event 最多一次 transport attempt，无 retry、queue、outbox、replay、backfill、fallback
 或逐收件人状态。formatter、taxonomy、transport 或 provider acceptance 失败 MUST 保留 Event。
 provider accepted MUST NOT 表述为微信实际送达。
+transport 失败 SHALL 在既有有界 Runtime 日志中仅记录固定白名单诊断码，并用 `rule_code`、`symbol`、
+`contract`、`frequency`、`bar_end` 关联已保存 Event；不得记录 provider message/body、URL、token、通知正文、
+原始异常或 cause。SDK 明确返回拒绝码时可分类为 provider rejected，`900` 分类为 rate limited；SDK 的
+`-1` 或无法证明请求结果的异常必须保守分类为 request outcome unknown，无法安全分类时回落 `UNKNOWN`。
+诊断分类不得改变 schema v6 聚合状态、通用 `notification_transport_failed` 兼容语义或发送次数。
 
 #### Scenario: Transport fails after Event commit
 

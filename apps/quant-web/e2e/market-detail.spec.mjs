@@ -622,6 +622,9 @@ test('HTDY resolves immutable Event focus across every official frequency', asyn
   }
   const eventRequests = requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))
   expect(eventRequests.length).toBeGreaterThanOrEqual(7)
+  expect(new Set(eventRequests.map(({ url }) => url.searchParams.get('frequency'))))
+    .toEqual(new Set(cases.map(([frequency]) => frequency)))
+  expect(eventRequests.every(({ url }) => url.searchParams.get('rule_code') === 'htdy_original_15m')).toBe(true)
   expect(requests.alertRequests.every(({ method }) => method !== 'PUT')).toBe(true)
 
   const before = eventRequests.length

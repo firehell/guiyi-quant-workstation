@@ -95,11 +95,11 @@ describe('persistent Alert markers', () => {
   })
 
   test('fetches both 15m rules and clears its timer on dispose', async () => {
-    const requests: string[] = []
+    const requests: Array<{ ruleCode: string; frequency: string }> = []
     let cleared = false
     const controller = usePersistentAlertMarkers({
-      fetchEvents: async ({ ruleCode }) => {
-        requests.push(ruleCode)
+      fetchEvents: async ({ ruleCode, frequency }) => {
+        requests.push({ ruleCode, frequency })
         return { items: [ruleCode === ALERT_RULE_CODES.HTDY ? event(1, ['buy']) : subingEvent(2, 'buy')] }
       },
       scheduleInterval: () => 1,
@@ -110,10 +110,45 @@ describe('persistent Alert markers', () => {
       symbol: 'jm',
       frequency: '15m',
     }, bars(), 'replace')
-    assert.deepEqual(requests, [ALERT_RULE_CODES.HTDY, ALERT_RULE_CODES.SUBING_THS])
+    assert.deepEqual(requests, [
+      { ruleCode: ALERT_RULE_CODES.HTDY, frequency: '15m' },
+      { ruleCode: ALERT_RULE_CODES.SUBING_THS, frequency: '15m' },
+    ])
     assert.equal(controller.markers.value.length, 2)
     controller.dispose()
     assert.equal(cleared, true)
+  })
+
+  test('reverse frequency switching ignores a stale slow response and requests each exact frequency', async () => {
+    const slowFiveMinute = deferred<{ items: AlertEvent[] }>()
+    const requests: string[] = []
+    const controller = usePersistentAlertMarkers({
+      fetchEvents: async ({ frequency }) => {
+        requests.push(frequency)
+        if (frequency === '5m') return slowFiveMinute.promise
+        return { items: [{ ...event(2, ['sell']), frequency: '15m' }] }
+      },
+      scheduleInterval: () => 1,
+      clearInterval: () => undefined,
+    }, { resolveRuleCodes: () => [ALERT_RULE_CODES.HTDY] })
+
+    const fiveMinute = controller.sync(
+      { seriesKind: 'actual_dominant', symbol: 'jm', frequency: '5m' },
+      bars(),
+      'replace',
+    )
+    await controller.sync(
+      { seriesKind: 'actual_dominant', symbol: 'jm', frequency: '15m' },
+      bars(),
+      'replace',
+    )
+    slowFiveMinute.resolve({ items: [{ ...event(1, ['buy']), frequency: '5m' }] })
+    await fiveMinute
+
+    assert.deepEqual(requests, ['5m', '15m'])
+    assert.deepEqual(controller.events.value.map((item) => [item.id, item.frequency]), [[2, '15m']])
+    assert.equal(controller.unavailable.value, false)
+    controller.dispose()
   })
 
   test('HTDY workspace narrows read-only Event requests to HTDY and exposes immutable Event facts', async () => {

@@ -12,9 +12,21 @@ from app.alerts.notification import (
     AlertNotificationMessage,
     AlertNotificationPolicy,
     NotificationDelivery,
+    NotificationTransportError,
     ProviderAcceptance,
     format_alert_message,
 )
+
+
+def test_transport_error_rejects_unlisted_diagnostic_attributes() -> None:
+    sensitive_marker = "provider-body-fixture-sensitive-marker"
+
+    error = NotificationTransportError(diagnostic_code=sensitive_marker)
+
+    assert error.code == "ALERT_NOTIFICATION_TRANSPORT_FAILED"
+    assert error.diagnostic_code == "UNKNOWN"
+    assert sensitive_marker not in str(error)
+    assert sensitive_marker not in repr(error)
 
 
 class Transport:

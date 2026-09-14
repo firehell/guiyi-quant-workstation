@@ -105,6 +105,7 @@ def set_product_frequency_alert_scope(
 def alert_events(
     symbol: str = Query(...),
     rule_code: str = Query(...),
+    frequency: str | None = Query(default=None),
     start: datetime = Query(...),
     end: datetime = Query(...),
     session: Session = Depends(get_db),
@@ -114,6 +115,7 @@ def alert_events(
             session,
             symbol=symbol,
             rule_code=rule_code,
+            frequency=frequency,
             start=start,
             end=end,
         )
@@ -286,6 +288,7 @@ def _list_events(
     *,
     symbol: str,
     rule_code: str,
+    frequency: str | None,
     start: datetime,
     end: datetime,
 ) -> tuple[AlertEvent, ...]:
@@ -298,24 +301,23 @@ def _list_events(
     if start >= end:
         raise AlertScopeError("ALERT_EVENT_RANGE_INVALID")
     try:
-        get_alert_rule_definition(rule_code)
+        definition = get_alert_rule_definition(rule_code)
     except KeyError:
         raise AlertRuleNotFoundError() from None
+    if frequency is not None and frequency not in definition.input_frequencies:
+        raise AlertScopeError("ALERT_FREQUENCY_UNSUPPORTED")
     rule = session.scalar(select(AlertRule).where(AlertRule.rule_code == rule_code))
     if rule is None:
         raise AlertRuleNotFoundError()
-    return tuple(
-        session.scalars(
-            select(AlertEvent)
-            .where(
-                AlertEvent.rule_id == rule.id,
-                AlertEvent.symbol == normalize_symbol(symbol),
-                AlertEvent.bar_end >= start,
-                AlertEvent.bar_end <= end,
-            )
-            .order_by(AlertEvent.bar_end)
-        ).all()
+    statement = select(AlertEvent).where(
+        AlertEvent.rule_id == rule.id,
+        AlertEvent.symbol == normalize_symbol(symbol),
+        AlertEvent.bar_end >= start,
+        AlertEvent.bar_end <= end,
     )
+    if frequency is not None:
+        statement = statement.where(AlertEvent.frequency == frequency)
+    return tuple(session.scalars(statement.order_by(AlertEvent.bar_end)).all())
 
 
 def _event_outs(session: Session, events: tuple[AlertEvent, ...]) -> list[AlertEventOut]:
