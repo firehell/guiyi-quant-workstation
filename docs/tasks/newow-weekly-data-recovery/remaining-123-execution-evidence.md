@@ -3,6 +3,54 @@
 日期：2026-09-14。状态：`PARTIAL`。已有 EC、首批普通和 RS 专项成功证据保留；本轮全量普通总包
 因新发现的 B2411 来源异常停止。本次意图已消费，不授权重试、续跑、发布或 Runtime 操作。
 
+## 证据丢失后的当前只读重建
+
+当前执行入口为同目录 implementation plan 顶部的 2026-09-14 修订。代码工作树已纳入当前本地
+`develop@01a68f175`；共同持久证据根固定为
+`/Volumes/扩展盘/guiyi-quant-workstation/outputs/newow-weekly-recovery-attempts/`。旧 102 成功对象身份、
+B2411 原响应/journal、旧 1,014 后审计和旧 26 个 prepared 批次经有界检查仍为 `EVIDENCE_MISSING`，
+不能从历史数量或排序重造。`evidence-rebuild-20260914-001/` 只恢复了补数前四份审计文件，完整报告
+SHA `3f4a5693194bf6844c8e4134e614297755535c2a83a97c4468cc51bdf9991ec1`，不证明当前余额。
+
+脱敏诊断确认上一轮 `OperationalError` 来自当前沙箱连接限制；同一只读探针在宿主环境通过，未修改凭据、
+服务或 Runtime。随后在 `fresh-audit-20260914-002/` 仅运行一次固定
+`as_of=2026-09-13T06:36:13+00:00` 的 operational-60/W1 dependency-only 原生审计。完整报告 SHA
+`d5ee0c61906cded4ee5e1e20b0ed187f4deb38ac3dfc37921e1670f0aecb211b`，结果
+`complete=true`、`budget_exhausted=false`、provider requests=0、writes=0。
+
+| 当前原生分类 | 数量 | 说明 |
+| --- | ---: | --- |
+| PROPOSED | 1,015 | 包含 B2411；20 单元上限下为 51 批 |
+| REVIEW_REQUIRED | 9 | RS2407/2409/2411/2507/2509/2511/2607/2608/2609 |
+| metadata proposal | 0 | 无元数据提案 |
+
+1,015 个 PROPOSED 覆盖 20,629 targets、240,515 expected bars、228,485 missing endpoints。
+若后续通过新来源证据合法排除 B2411，条件性普通范围才是 1,014 units、20,607 targets、
+240,255 expected bars、228,231 missing endpoints，仍为 `NOT_FROZEN`；当前不得申请普通 apply。
+
+九个 RS 的既有 hash-bound 来源取证原文件与原始响应已重新核验：旧包总计 41 个请求，其中 40 个属于九个
+RS、1 个属于 PF2611；
+41/41 响应、146/146 行、0 retry、0 DB/Canonical write，plan/responses/result 文件 SHA 分别为
+`6c35272a8bf5f16f5532f30c6bf7106052b9070895635e023a895744407a85a5`、
+`c9171f3529fde145876319e659bce0cf8277f9d88993155406965adcda686fc4`、
+`741238014cc1edc92243488688a688f31ef457c19bf4a605803a2d583c6898da`。旧原始结果分类为
+`AUTHORITATIVE_SOURCE_NONPOSITIVE_MATCHES_CANONICAL`，当前 assessment 将 40 个 RS 异常点归纳为
+`SOURCE_NONPOSITIVE_MATCH`；九个 repair 对象继续保留 `REVIEW_REQUIRED`，相关 source dependency 保留
+`SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE`，无需重复来源查询。这些响应不是 prior campaign/zero-commit
+isolation receipt，当前调查 plan hash 也不得进入普通冻结或 apply Gate。
+
+B2411 当前原生 plan 为
+`a76be7007a77bb8554b4d9d9dd9bea7a73e56599dd764cdd9ab8fa88105da74b`，22 targets、260 expected
+bars、254 missing endpoints。旧异常响应不存在，分类保持 `EVIDENCE_INSUFFICIENT`。已冻结唯一待取证请求：
+`B2411 / futures.get_exchange_daily / 2023-11-27..2023-12-29 / 25 dates`，request SHA
+`eb3078eeaed2db56f0e1f692110d8693c7a9a11e429788eae031391ff33d0fe6`。独立 Review 发现首版证据根
+runner 未受 execution digest 约束，因此它与旧 prepared SHA
+`03b3b465c328f849a8bac9351be86928a0544ea7dc82502c41aecdddc7d9186a` 一并废止；仓库内最小修订将
+source-only runner 纳入 clean exact commit/digest，必须在新提交上重新生成 prepared。preflight 同时绑定共同
+输出根、未使用 attempt、maintenance lock 与完整当前 plan。
+即使真实响应保存成功，也只返回 `REVIEW_REQUIRED`，必须离线逐行确认 2023-12-27 的精确 OHLCV 后才可
+形成排除证明。本节尚未执行该真实来源请求，也不授权 Canonical/数据库写入。
+
 ## 已确认的后续有界工程修订
 
 修订实现提交为 `208ce6550` 至 `eab1bc7ea`，主会话组合验证 609 passed，最终独立复审无剩余 finding，
