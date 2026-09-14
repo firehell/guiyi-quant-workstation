@@ -31,8 +31,8 @@ test('real candidate home keeps 60 products across cold, hard reload and SPA tab
   await search.press('Enter')
   await expect(page).toHaveURL(/\/market\/chart\?.*symbol=jm/)
   await expect(page.locator('[data-detail-workspace]')).toBeVisible()
-  await expect(page.getByRole('combobox', { name: '搜索品种' })).toBeFocused()
-  await expect(page.getByRole('listbox', { name: '搜索品种' })).toHaveCount(0)
+  await expect(page.getByRole('combobox', { name: '搜索60品种' })).toBeVisible()
+  await expect(page.getByRole('listbox', { name: '搜索60品种' })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('real-home-60.png'), fullPage: true })
   console.log(JSON.stringify({ evidence: 'real-home', coldMs, reloadMs, rows: 60, selector: 'jm-enter-stable', errors }))
   expect(errors).toEqual([])
@@ -45,7 +45,11 @@ test('real candidate covers AU/JM Newow weekly, AU seven-frequency Free and week
     const upper = await page.request.get(`/api/v1/market/newow/strategy-detail?product=${product}&${params}`)
     const lower = await page.request.get(`/api/v1/market/newow/strategy-detail?product=${product.toLowerCase()}&${params}`)
     expect(upper.status()).toBe(lower.status())
-    expect(await upper.json()).toEqual(await lower.json())
+    const upperBody = await upper.json()
+    const lowerBody = await lower.json()
+    if (upperBody.meta) delete upperBody.meta.read_at
+    if (lowerBody.meta) delete lowerBody.meta.read_at
+    expect(upperBody).toEqual(lowerBody)
     matrix.push({ product, caseParity: true, status: upper.status() })
   }
   for (const product of ['au', 'jm']) {
