@@ -414,6 +414,33 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
 
 `apply` 是一次受控真实写入 Gate；只有 owner 对精确 campaign hash 和 attempt 明确授权后才运行：
 
+需要按已批准设计隔离单元级来源质量异常时，必须在新的 `prepare` 显式加入
+`--isolate-known-source-quality`；无此选项保持原有首次失败停批。当前 allowlist 仅为
+`RQDATA_ZERO_OHL_INVALID`，仍须通过零提交、来源 artifact/journal 和原计划未变的完整校验。
+若要避免重复下载旧尝试中已证实的来源异常，同时传入以下三个参数；不能只提供其中一部分，
+也不能用手工合约名单替代原执行证据。例子只做只读准备，不代表 apply 授权：
+
+```bash
+: "${NEWOW_PRIOR_CAMPAIGN:?set prior campaign manifest path}"
+: "${NEWOW_PRIOR_CAMPAIGN_SHA256:?set prior campaign sha256}"
+: "${NEWOW_PRIOR_ATTEMPT:?set prior attempt path}"
+
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign prepare \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --report "$NEWOW_CAMPAIGN_REPORT" \
+  --expected-report-sha256 "$NEWOW_CAMPAIGN_REPORT_SHA256" \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --name "$NEWOW_CAMPAIGN_NAME" \
+  --isolate-known-source-quality \
+  --prior-campaign "$NEWOW_PRIOR_CAMPAIGN" \
+  --expected-prior-campaign-sha256 "$NEWOW_PRIOR_CAMPAIGN_SHA256" \
+  --prior-attempt "$NEWOW_PRIOR_ATTEMPT"
+```
+
+新策略和旧来源排除证据均进入新 manifest hash，apply 不接受临时覆盖策略。隔离对象继续计入未完成分母；
+额度、网络、锁冲突、身份漂移、提交未知、读回/清理或证据失败仍全局停止。真实 apply 命令如下：
+
 ```bash
 : "${NEWOW_CAMPAIGN_SHA256:?set exact campaign sha256}"
 : "${NEWOW_CAMPAIGN_ATTEMPT_ID:?set one new attempt id}"
@@ -435,7 +462,8 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
 `prepare` 只读读取锁定配置、Catalog、Calendar/Session 和 Canonical，要求 checkout clean 且 HEAD 精确，
 输出 plan、执行代码、配置及 Canonical 根的非敏感身份；它不得初始化 provider。`apply` 同样要求 clean exact
 commit，并在首次 provider 前保存绑定 prepared hash 的 invocation receipt。`apply` 是真实 RQData/Canonical/生产写入 Gate，只有
-owner 对精确 prepared hash 和 attempt 明确给出一次执行意图后才可运行；任何失败或 unknown 都停止且不自动重试。
+owner 对精确 prepared hash 和 attempt 明确给出一次执行意图后才可运行。默认任何失败或 unknown 都停止；
+仅新 prepare 显式冻结的来源隔离策略允许在证据充分时继续独立单元，所有路径均不自动重试。
 prepared 与 attempt 默认只写入已忽略的 `outputs/newow-weekly-recovery-attempts/`；除该专用 evidence 根外，
 任何 tracked 或 untracked checkout 变化都会使 clean exact commit 门禁失败。
 
