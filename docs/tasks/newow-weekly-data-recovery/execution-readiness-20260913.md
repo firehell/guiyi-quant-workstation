@@ -94,6 +94,28 @@ preflight 确认 hash 未漂移、维护锁空闲、两个目标分区原先均�
 固定源码与配置元数据未变，projection 仍不存在，Runtime/通知均为 0。该次 provider + Canonical apply
 意图已消费，不授权继续普通队列。
 
+## EC2607 后续尝试（BLOCKED / NO PARTIAL WRITE）
+
+SI2308 通过后，实时原生重规划确认下一最小候选为 EC2607/W1，through `2026-06-30`，plan SHA-256
+`5c7a1debdae9001497638f747b9ec0eb8cca2c8b3cf66e32ec28351b353dae72`。计划包含 2026-02 至
+2026-05 的 D1 companion 69 bars 和 W1 15 bars，共 8 个 direct targets、84 个 expected bars。
+owner 于 2026-09-14 对该精确范围批准一次 provider + Canonical apply；持久 evidence 位于
+`/Volumes/扩展盘/guiyi-quant-workstation/outputs/newow-weekly-data-recovery-20260913/canonical-pilot-ec2607-5c7a1deb/`。
+
+最终 preflight 通过：计划 hash 未漂移、maintenance lock 空闲、8 个目标 Catalog 分区与目标物理文件均不
+存在、Market Home projection 不存在，provider requests=0、writes=0。正式尝试随后 exit 2 / `ASSERTION_FAILED`；
+本地执行器把 2026-04 W1 的物理日线源窗口误断言为 `2026-04-01..2026-04-30`，而 week ending
+`2026-04-03` 必须包含完整 ISO 周，固定代码从 Session 推导的正确窗口为
+`2026-03-30..2026-04-30`。该断言位于 provider fetch 返回之后、batches 返回 maintenance 写入之前。
+
+按 fail-closed 边界没有修正后重试。新只读事务确认原 plan 仍完整保留 8 targets / 84 bars / 8 requests，
+目标 Catalog 分区 0、目标物理文件 0，因此 database/Canonical target writes 均为 0；maintenance lock 已释放。
+Provider 调用没有在断言前持久化捕获，精确调用次数保持 unknown，并保守视为本次 provider 意图已消费。
+Runtime mutations=0、notifications=0。`failure-readback.json` SHA-256 为
+`7a9488cabfe69809b46e1431d36d8280c8600fa3025b9d06cb6a513014f4bdbf`；`failure-execution.json`
+记录根因、零部分写入和禁止重试结论。任何 EC2607 重试均须基于重新冻结的执行器与 fresh plan 获得新的
+精确单次意图，不能复用本次授权。
+
 ## PF2611 与九个 RS 的隔离结论
 
 PF2611 的 `1w/2025-11/part.parquet` SHA-256 为
