@@ -855,11 +855,12 @@ def _read_json_file(path: Path, *, maximum: int = 16 * 1024 * 1024) -> Any:
         raise RecoveryError("INPUT_INVALID") from exc
 
 
-def _current_code_commit() -> str:
+def _current_code_commit(project_root: Path | None = None) -> str:
+    root = project_root or Path(__file__).resolve().parents[1]
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            cwd=Path(__file__).resolve().parents[1],
+            cwd=root,
             check=True,
             capture_output=True,
             text=True,
@@ -890,9 +891,19 @@ def _current_execution_code_sha256() -> str:
     return digest.hexdigest()
 
 
-def _require_clean_execution_checkout(expected_commit: str) -> None:
+def _require_clean_execution_checkout(
+    expected_commit: str,
+    *,
+    project_root: Path | None = None,
+) -> None:
     """Require every tracked/untracked repository input to match one exact commit."""
-    if _current_code_commit() != expected_commit:
+    root = project_root or Path(__file__).resolve().parents[1]
+    current_commit = (
+        _current_code_commit()
+        if project_root is None
+        else _current_code_commit(project_root)
+    )
+    if current_commit != expected_commit:
         raise RecoveryError("EXECUTION_IDENTITY_CHANGED")
     try:
         completed = subprocess.run(
@@ -904,7 +915,7 @@ def _require_clean_execution_checkout(expected_commit: str) -> None:
                 "--porcelain=v1",
                 "--untracked-files=all",
             ],
-            cwd=Path(__file__).resolve().parents[1],
+            cwd=root,
             check=True,
             capture_output=True,
             text=True,

@@ -48,7 +48,7 @@ EC2607 原生 8 个逻辑目标为 2026 年 2–5 月 D1/W1，共 84 根。失�
 
 一个 attempt 使用独立目录，复用现有 plan/result/readback 结构；仅增加必要的逐请求 journal 与受限来源 payload。它们是审计材料，不是自动重放、自动重试或独立行情读取入口。
 
-新的准备产物默认写在新任务 worktree 的 outputs 内，不覆盖主仓库旧 evidence；大型行情 payload 不进入 Git。正式目标根只来自经过绑定的生产配置，不由输出目录或输入文本推导。
+新的准备产物默认写在新任务 worktree 的 `outputs/newow-weekly-recovery-attempts/` 专用忽略目录内，不覆盖主仓库旧 evidence；该目录中的 prepared、attempt、journal 与大型行情 payload 均不进入 Git，也不会令逐单元 clean-checkout 门禁自我阻断。其他未跟踪文件仍会 fail-closed。正式目标根只来自经过绑定的生产配置，不由输出目录或输入文本推导。
 
 1. 输入验证、配置身份、计划漂移、文件可写性与 journal 初始化都在 provider/正式 mutation 前完成。只使用现有配置加载方式读取 `project.env`，不展示、复制或记录凭据，缺配置不回退 primary `.env` 或仓库默认数据湖。
 2. 调用前持久保存 started 记录并 flush/fsync；失败则零次调用。provider 返回后，先原子保存白名单来源字段与 hash，再记 response_saved，再进入本地验证/聚合。不得依赖整个 warmup 成功后才写统计。

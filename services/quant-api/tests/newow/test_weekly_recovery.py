@@ -781,6 +781,52 @@ def test_clean_execution_checkout_requires_exact_clean_commit(monkeypatch) -> No
     _require_clean_execution_checkout("b" * 40)
 
 
+def test_clean_checkout_allows_bound_recovery_artifacts_in_ignored_output(
+    tmp_path,
+) -> None:
+    import subprocess
+
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / ".gitignore").write_text(
+        "/outputs/newow-weekly-recovery-attempts/\n",
+        encoding="utf-8",
+    )
+    (checkout / "tracked.py").write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=checkout, check=True)
+    subprocess.run(["git", "add", ".gitignore", "tracked.py"], cwd=checkout, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        cwd=checkout,
+        check=True,
+    )
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=checkout,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    attempt = checkout / "outputs" / "newow-weekly-recovery-attempts" / "batch-001"
+    attempt.mkdir(parents=True)
+    (attempt / "invocation-receipt.json").write_text("{}\n", encoding="utf-8")
+
+    _require_clean_execution_checkout(commit, project_root=checkout)
+
+    (checkout / "unbound.py").write_text("VALUE = 2\n", encoding="utf-8")
+    with pytest.raises(RecoveryError, match="^EXECUTION_CHECKOUT_DIRTY$"):
+        _require_clean_execution_checkout(commit, project_root=checkout)
+
+
 def test_post_commit_readback_records_catalog_file_hash_and_mds(
     tmp_path,
     monkeypatch,

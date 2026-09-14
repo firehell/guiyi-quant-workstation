@@ -57,6 +57,9 @@ logs/
 # local rollback copies produced by controlled data-repair runs
 data/reports/source_interval_provenance_repair_apply_*/backups/
 
+# local bounded Newow recovery evidence (hash-bound, never a source tree input)
+/outputs/newow-weekly-recovery-attempts/
+
 # local scheduled research reports (dated observations, not release assets)
 data/reports/morning-note/
 data/reports/catalyst-calendar/

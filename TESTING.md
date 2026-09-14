@@ -393,6 +393,8 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
 输出 plan、执行代码、配置及 Canonical 根的非敏感身份；它不得初始化 provider。`apply` 同样要求 clean exact
 commit，并在首次 provider 前保存绑定 prepared hash 的 invocation receipt。`apply` 是真实 RQData/Canonical/生产写入 Gate，只有
 owner 对精确 prepared hash 和 attempt 明确给出一次执行意图后才可运行；任何失败或 unknown 都停止且不自动重试。
+prepared 与 attempt 默认只写入已忽略的 `outputs/newow-weekly-recovery-attempts/`；除该专用 evidence 根外，
+任何 tracked 或 untracked checkout 变化都会使 clean exact commit 门禁失败。
 
 ### 盘后每日增量、进度与每周只读审计
 
