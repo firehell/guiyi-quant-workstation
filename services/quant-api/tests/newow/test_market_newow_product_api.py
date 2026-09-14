@@ -67,17 +67,16 @@ def _initial_clear_service_result(product_cases):
     )
 
 
-def test_weekly_release_capabilities_are_public_without_database_access():
+def test_daily_release_capabilities_are_public_without_database_access():
     with TestClient(app) as client:
         response = client.get("/api/v1/market/newow/product-capabilities")
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v1",
-        "release_stage": "weekly",
-        "open_frequencies": ["1w"],
+        "schema_version": "newow_product_capabilities_v2",
+        "release_stage": "daily",
+        "open_frequencies": ["1w", "1d"],
         "deferred_frequencies": [
-            {"frequency": "1d", "reason_code": "NEWOW_DAILY_RELEASE_PENDING"},
             {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"},
         ],
         "open_sections": ["chart", "auxiliary", "reference", "comparator"],
@@ -90,8 +89,8 @@ def test_weekly_release_capabilities_are_public_without_database_access():
     }
 
 
-@pytest.mark.parametrize("frequency", ["1d", "60m"])
-def test_weekly_release_rejects_deferred_product_frequencies_before_service(
+@pytest.mark.parametrize("frequency", ["60m"])
+def test_daily_release_rejects_deferred_product_frequencies_before_service(
     monkeypatch, frequency
 ):
     monkeypatch.setattr(
@@ -119,8 +118,8 @@ def test_weekly_release_rejects_deferred_product_frequencies_before_service(
     assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
 
 
-@pytest.mark.parametrize("frequency", ["1d", "60m"])
-def test_weekly_release_rejects_deferred_historical_frequencies_before_resolver(
+@pytest.mark.parametrize("frequency", ["60m"])
+def test_daily_release_rejects_deferred_historical_frequencies_before_resolver(
     monkeypatch, frequency
 ):
     monkeypatch.setattr(
@@ -148,7 +147,42 @@ def test_weekly_release_rejects_deferred_historical_frequencies_before_resolver(
     assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
 
 
-def test_weekly_release_defers_cross_frequency_explanation_before_service(monkeypatch):
+def test_daily_release_admits_daily_product_frequency_to_service(monkeypatch):
+    seen: list[str] = []
+
+    class Fake:
+        def query(self, query):
+            seen.append(query.frequency.value)
+            raise NewowProductServiceError("NEWOW_DATA_UNAVAILABLE")
+
+    monkeypatch.setattr(
+        market_newow,
+        "_build_product_service",
+        lambda *_args, **_kwargs: Fake(),
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/market/newow/strategy-detail",
+                params={
+                    "product": "rb",
+                    "strategy": "trend",
+                    "frequency": "1d",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert seen == ["1d"]
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "NEWOW_DATA_UNAVAILABLE"}}
+
+
+@pytest.mark.parametrize("frequency", ["1w", "1d"])
+def test_daily_release_defers_cross_frequency_explanation_before_service(
+    monkeypatch, frequency
+):
     monkeypatch.setattr(
         market_newow,
         "_build_product_service",
@@ -164,7 +198,7 @@ def test_weekly_release_defers_cross_frequency_explanation_before_service(monkey
                 params={
                     "product": "rb",
                     "strategy": "trend",
-                    "frequency": "1w",
+                    "frequency": frequency,
                     "section": "explanation",
                 },
             )

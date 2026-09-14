@@ -179,13 +179,12 @@ test('shares one Newow strategy and frequency allowlist authority across route a
   assert.equal(NEWOW_PRODUCT_FREQUENCIES, NEWOW_FREQUENCIES)
 })
 
-test('loads the server-owned weekly release capability and rejects widened payloads', async () => {
+test('loads the server-owned daily release capability and rejects widened or legacy payloads', async () => {
   const payload = {
-    schema_version: 'newow_product_capabilities_v1',
-    release_stage: 'weekly',
-    open_frequencies: ['1w'],
+    schema_version: 'newow_product_capabilities_v2',
+    release_stage: 'daily',
+    open_frequencies: ['1w', '1d'],
     deferred_frequencies: [
-      { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
     open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
@@ -207,7 +206,24 @@ test('loads the server-owned weekly release capability and rejects widened paylo
 
   await assert.rejects(
     getNewowProductCapabilities({
-      request: async () => ({ ...payload, open_frequencies: ['1w', '1d'] }),
+      request: async () => ({ ...payload, open_frequencies: ['1w', '1d', '60m'] }),
+    }),
+    (error: unknown) =>
+      error instanceof NewowProductRequestError
+      && error.code === 'NEWOW_RESPONSE_INVALID',
+  )
+  await assert.rejects(
+    getNewowProductCapabilities({
+      request: async () => ({
+        ...payload,
+        schema_version: 'newow_product_capabilities_v1',
+        release_stage: 'weekly',
+        open_frequencies: ['1w'],
+        deferred_frequencies: [
+          { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
+          { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+        ],
+      }),
     }),
     (error: unknown) =>
       error instanceof NewowProductRequestError

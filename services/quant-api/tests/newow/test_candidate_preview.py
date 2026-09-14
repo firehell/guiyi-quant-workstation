@@ -96,8 +96,8 @@ def test_weekly_release_capabilities_are_available_without_database(preview):
     response = TestClient(app).get("/api/v1/market/newow/product-capabilities")
 
     assert response.status_code == 200
-    assert response.json()["release_stage"] == "weekly"
-    assert response.json()["open_frequencies"] == ["1w"]
+    assert response.json()["release_stage"] == "daily"
+    assert response.json()["open_frequencies"] == ["1w", "1d"]
     assert response.json()["open_sections"] == [
         "chart",
         "auxiliary",

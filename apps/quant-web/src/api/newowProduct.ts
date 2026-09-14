@@ -65,15 +65,14 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
     'release_stage', 'schema_version',
   ].join(',')) return false
   if (
-    value.schema_version !== 'newow_product_capabilities_v1'
-    || value.release_stage !== 'weekly'
-    || !sameLiteralArray(value.open_frequencies, ['1w'])
+    value.schema_version !== 'newow_product_capabilities_v2'
+    || value.release_stage !== 'daily'
+    || !sameLiteralArray(value.open_frequencies, ['1w', '1d'])
     || !sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])
   ) return false
-  if (!Array.isArray(value.deferred_frequencies) || value.deferred_frequencies.length !== 2) return false
+  if (!Array.isArray(value.deferred_frequencies) || value.deferred_frequencies.length !== 1) return false
   if (!Array.isArray(value.deferred_sections) || value.deferred_sections.length !== 1) return false
-  return isDeferred(value.deferred_frequencies[0], '1d', 'NEWOW_DAILY_RELEASE_PENDING')
-    && isDeferred(value.deferred_frequencies[1], '60m', 'NEWOW_HOURLY_RELEASE_PENDING')
+  return isDeferred(value.deferred_frequencies[0], '60m', 'NEWOW_HOURLY_RELEASE_PENDING')
     && isDeferred(value.deferred_sections[0], 'explanation', 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN')
 }
 

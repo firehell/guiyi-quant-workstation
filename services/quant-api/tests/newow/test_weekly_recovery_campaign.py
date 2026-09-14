@@ -38,6 +38,7 @@ from scripts.newow_weekly_recovery import (
     load_prepared_manifest,
     prepare_bounded_units,
     read_attempt_outcome,
+    source_isolation_policy,
     write_prepared_manifest,
 )
 from scripts.newow_weekly_recovery_campaign import (
@@ -172,7 +173,7 @@ def _report(units: list[dict[str, Any]]) -> dict[str, Any]:
         "readonly": True,
         "provider_requests": 0,
         "writes": 0,
-        "release_stage": "weekly",
+        "release_stage": "daily",
         "frequency_scope": ["1w"],
         "matrix": False,
         "as_of": as_of,
@@ -188,6 +189,32 @@ def _report(units: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _daily_unit(index: int = 0) -> dict[str, Any]:
+    unit = _ordinary_unit(index)
+    unit["frequency"] = "1d"
+    unit["consumers"] = [
+        {**consumer, "frequency": "1d"} for consumer in unit["consumers"]
+    ]
+    unit["target_windows"] = [
+        window
+        for window in unit["target_windows"]
+        if window["dataset"][3] == "1d"
+    ]
+    return unit
+
+
+def _daily_report(units: list[dict[str, Any]]) -> dict[str, Any]:
+    report = _report(units)
+    report["frequency_scope"] = ["1d"]
+    for row in report["enumerations"]:
+        row["frequency"] = "1d"
+    for row in report["dependencies"]:
+        row["frequency"] = "1d"
+        for consumer in row["consumers"]:
+            consumer["frequency"] = "1d"
+    return report
+
+
 def _native_child(
     root: Path,
     batch_id: str,
@@ -198,7 +225,39 @@ def _native_child(
     continuation_policy: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     child_units = []
+    unit_frequency = units[0]["frequency"] if units else "1w"
     for item in units:
+        daily_target = {
+            "dataset": [
+                "contract",
+                item["symbol"],
+                item["contract"],
+                "1d",
+            ],
+            "year": 2026,
+            "month": 9,
+            "expected_start": "2026-09-01T07:00:00+00:00",
+            "expected_end": "2026-09-02T07:00:00+00:00",
+            "expected_bar_count": 1,
+        }
+        weekly_target = {
+            "dataset": [
+                "contract",
+                item["symbol"],
+                item["contract"],
+                "1w",
+            ],
+            "year": 2026,
+            "month": 9,
+            "expected_start": "2026-09-04T07:00:00+00:00",
+            "expected_end": "2026-09-04T07:00:00+00:00",
+            "expected_bar_count": 1,
+        }
+        targets = (
+            [daily_target]
+            if item["frequency"] == "1d"
+            else [daily_target, weekly_target]
+        )
         child_units.append(
             {
                 "symbol": item["symbol"],
@@ -206,36 +265,11 @@ def _native_child(
                 "through": item["through"],
                 "frequency": item["frequency"],
                 "plan_sha256": item["expected_plan_sha256"],
-                "target_count": 2,
-                "expected_bar_count": 2,
-                "targets": [
-                    {
-                        "dataset": [
-                            "contract",
-                            item["symbol"],
-                            item["contract"],
-                            "1d",
-                        ],
-                        "year": 2026,
-                        "month": 9,
-                        "expected_start": "2026-09-01T07:00:00+00:00",
-                        "expected_end": "2026-09-02T07:00:00+00:00",
-                        "expected_bar_count": 1,
-                    },
-                    {
-                        "dataset": [
-                            "contract",
-                            item["symbol"],
-                            item["contract"],
-                            "1w",
-                        ],
-                        "year": 2026,
-                        "month": 9,
-                        "expected_start": "2026-09-04T07:00:00+00:00",
-                        "expected_end": "2026-09-04T07:00:00+00:00",
-                        "expected_bar_count": 1,
-                    },
-                ],
+                "target_count": len(targets),
+                "expected_bar_count": sum(
+                    target["expected_bar_count"] for target in targets
+                ),
+                "targets": targets,
                 "source_requests": (
                     [
                         {
@@ -252,7 +286,11 @@ def _native_child(
             }
         )
     manifest = {
-        "schema_version": "newow_weekly_recovery_prepare_v1",
+        "schema_version": (
+            "newow_daily_recovery_prepare_v1"
+            if unit_frequency == "1d"
+            else "newow_weekly_recovery_prepare_v1"
+        ),
         **identity,
         "unit_count": len(child_units),
         "units": child_units,
@@ -2850,3 +2888,264 @@ def test_cli_apply_rejects_current_code_or_config_drift_before_native_main(
     assert code == 1
     assert json.loads(output.getvalue())["error_code"] == "EXECUTION_IDENTITY_CHANGED"
     assert calls == []
+
+
+def test_prepare_rejects_mixed_unit_frequencies(tmp_path: Path) -> None:
+    manager = SimpleNamespace(
+        catalog=SimpleNamespace(canonical_root=tmp_path),
+        _contract_warmup_plan=lambda request: (_ for _ in ()).throw(
+            AssertionError("mixed frequency must fail before planning")
+        ),
+    )
+    with pytest.raises(RecoveryError, match="RECOVERY_SCOPE_INVALID"):
+        prepare_bounded_units(
+            manager=manager,
+            adapter=SimpleNamespace(
+                exchange_daily_source_requests=lambda requests: ()
+            ),
+            requests=(
+                ContractWarmupRequest("ag", "AG1000", date(2026, 9, 11), frequency="1w"),
+                ContractWarmupRequest("ag", "AG1001", date(2026, 9, 11), frequency="1d"),
+            ),
+            expected_data_root=tmp_path,
+            code_commit=IDENTITY["code_commit"],
+            execution_code_sha256=IDENTITY["execution_code_sha256"],
+            config_sha256=IDENTITY["config_sha256"],
+        )
+
+
+def test_daily_prepare_uses_daily_schema_and_rejects_weekly_targets(
+    tmp_path: Path,
+) -> None:
+    plan = SimpleNamespace(
+        symbol="ag",
+        contract="AG1000",
+        requested_through=date(2026, 9, 11),
+        plan_sha256="a" * 64,
+        listed_date=date(2024, 1, 1),
+        expired_date=date(2026, 12, 31),
+        effective_through=date(2026, 9, 11),
+        expected_bar_count=2,
+        provider_request_count=1,
+        target_windows=(
+            {
+                "dataset": ["contract", "ag", "AG1000", "1d"],
+                "year": 2026,
+                "month": 9,
+            },
+            {
+                "dataset": ["contract", "ag", "AG1000", "1w"],
+                "year": 2026,
+                "month": 9,
+            },
+        ),
+    )
+    target = SimpleNamespace(
+        key=DatasetKey("contract", "ag", "AG1000", "1w"),
+        missing=(),
+    )
+    manager = SimpleNamespace(
+        catalog=SimpleNamespace(canonical_root=tmp_path),
+        _contract_warmup_plan=lambda request: (plan, (target,)),
+    )
+    with pytest.raises(RecoveryError, match="RECOVERY_SCOPE_INVALID"):
+        prepare_bounded_units(
+            manager=manager,
+            adapter=SimpleNamespace(
+                exchange_daily_source_requests=lambda requests: ()
+            ),
+            requests=(
+                ContractWarmupRequest("ag", "AG1000", date(2026, 9, 11), frequency="1d"),
+            ),
+            expected_data_root=tmp_path,
+            code_commit=IDENTITY["code_commit"],
+            execution_code_sha256=IDENTITY["execution_code_sha256"],
+            config_sha256=IDENTITY["config_sha256"],
+        )
+
+    daily_target = SimpleNamespace(
+        key=DatasetKey("contract", "ag", "AG1000", "1d"),
+        missing=(),
+    )
+    daily_plan = SimpleNamespace(
+        **{
+            **plan.__dict__,
+            "target_windows": (
+                {
+                    "dataset": ["contract", "ag", "AG1000", "1d"],
+                    "year": 2026,
+                    "month": 9,
+                },
+            ),
+        }
+    )
+    manager._contract_warmup_plan = lambda request: (daily_plan, (daily_target,))
+    manifest = prepare_bounded_units(
+        manager=manager,
+        adapter=SimpleNamespace(exchange_daily_source_requests=lambda requests: ()),
+        requests=(
+            ContractWarmupRequest("ag", "AG1000", date(2026, 9, 11), frequency="1d"),
+        ),
+        expected_data_root=tmp_path,
+        code_commit=IDENTITY["code_commit"],
+        execution_code_sha256=IDENTITY["execution_code_sha256"],
+        config_sha256=IDENTITY["config_sha256"],
+    )
+    assert manifest["schema_version"] == "newow_daily_recovery_prepare_v1"
+    assert manifest["units"][0]["frequency"] == "1d"
+    assert {item["dataset"][3] for item in manifest["units"][0]["targets"]} == {"1d"}
+    weekly = source_isolation_policy()
+    daily = source_isolation_policy(unit_frequency="1d")
+    assert weekly["schema_version"] == "newow_weekly_recovery_continuation_policy_v1"
+    assert daily["schema_version"] == "newow_daily_recovery_continuation_policy_v1"
+    assert weekly["policy_sha256"] != daily["policy_sha256"]
+
+
+def test_daily_report_partition_and_campaign_bind_1d_identity(
+    tmp_path: Path,
+) -> None:
+    report = _daily_report([_daily_unit()])
+    batches = partition_ordinary_units(report)
+    manifest = prepare_campaign(
+        report,
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: _native_child(root, batch_id, units),
+        name="daily-campaign",
+    )
+
+    assert report["frequency_scope"] == ["1d"]
+    assert [[unit["frequency"] for unit in group] for group in batches] == [["1d"]]
+    assert manifest["schema_version"] == "newow_daily_recovery_campaign_v1"
+    assert manifest["audit"]["frequency_scope"] == ["1d"]
+    assert manifest["children"][0]["units"][0]["frequency"] == "1d"
+    assert manifest["children"][0]["target_count"] == 1
+    child = json.loads(
+        (tmp_path / manifest["children"][0]["path"]).read_text(encoding="utf-8")
+    )
+    assert child["schema_version"] == "newow_daily_recovery_prepare_v1"
+    assert {item["dataset"][3] for item in child["units"][0]["targets"]} == {"1d"}
+
+
+def test_daily_report_rejects_weekly_repair_unit() -> None:
+    report = _daily_report([_ordinary_unit()])
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
+
+
+def test_daily_campaign_rejects_weekly_child_targets(tmp_path: Path) -> None:
+    report = _daily_report([_daily_unit()])
+
+    def invoke(
+        units: tuple[dict[str, Any], ...], batch_id: str, root: Path
+    ) -> dict[str, Any]:
+        unit = units[0]
+        path = root / f"{batch_id}.prepare.json"
+        child = {
+            "schema_version": "newow_daily_recovery_prepare_v1",
+            **IDENTITY,
+            "unit_count": 1,
+            "units": [
+                {
+                    "symbol": unit["symbol"],
+                    "contract": unit["contract"],
+                    "through": unit["through"],
+                    "frequency": "1d",
+                    "plan_sha256": unit["expected_plan_sha256"],
+                    "target_count": 2,
+                    "expected_bar_count": 2,
+                    "targets": [
+                        {
+                            "dataset": ["contract", "ag", "AG1000", "1d"],
+                            "year": 2026,
+                            "month": 9,
+                            "expected_start": "2026-09-01T07:00:00+00:00",
+                            "expected_end": "2026-09-02T07:00:00+00:00",
+                            "expected_bar_count": 1,
+                        },
+                        {
+                            "dataset": ["contract", "ag", "AG1000", "1w"],
+                            "year": 2026,
+                            "month": 9,
+                            "expected_start": "2026-09-04T07:00:00+00:00",
+                            "expected_end": "2026-09-04T07:00:00+00:00",
+                            "expected_bar_count": 1,
+                        },
+                    ],
+                    "source_requests": [],
+                }
+            ],
+        }
+        digest = _write_json_exclusive(path, child)
+        return {
+            "status": "prepared",
+            "readonly": True,
+            "provider_requests": 0,
+            "writes": 0,
+            "prepared_file": str(path),
+            "prepared_sha256": digest,
+            "unit_count": 1,
+        }
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_CHILD_INVALID$"):
+        prepare_campaign(
+            report,
+            report_sha256="f" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=invoke,
+            name="daily-campaign",
+        )
+
+
+def test_weekly_plan_hash_cannot_satisfy_daily_expected_plan(
+    tmp_path: Path,
+) -> None:
+    weekly_plan = SimpleNamespace(
+        symbol="ag",
+        contract="AG1000",
+        requested_through=date(2026, 9, 11),
+        plan_sha256="b" * 64,
+        listed_date=date(2024, 1, 1),
+        expired_date=date(2026, 12, 31),
+        effective_through=date(2026, 9, 11),
+        expected_bar_count=2,
+        provider_request_count=1,
+        target_windows=(
+            {
+                "dataset": ["contract", "ag", "AG1000", "1d"],
+                "year": 2026,
+                "month": 9,
+            },
+        ),
+    )
+    daily_target = SimpleNamespace(
+        key=DatasetKey("contract", "ag", "AG1000", "1d"),
+        missing=(),
+    )
+    manager = SimpleNamespace(
+        catalog=SimpleNamespace(canonical_root=tmp_path),
+        _contract_warmup_plan=lambda request: (weekly_plan, (daily_target,)),
+    )
+    with pytest.raises(RecoveryError, match="CONTRACT_WARMUP_PLAN_CHANGED"):
+        prepare_bounded_units(
+            manager=manager,
+            adapter=SimpleNamespace(
+                exchange_daily_source_requests=lambda requests: ()
+            ),
+            requests=(
+                ContractWarmupRequest(
+                    "ag",
+                    "AG1000",
+                    date(2026, 9, 11),
+                    frequency="1d",
+                    expected_plan_sha256="a" * 64,
+                ),
+            ),
+            expected_data_root=tmp_path,
+            code_commit=IDENTITY["code_commit"],
+            execution_code_sha256=IDENTITY["execution_code_sha256"],
+            config_sha256=IDENTITY["config_sha256"],
+        )

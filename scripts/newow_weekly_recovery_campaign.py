@@ -20,14 +20,18 @@ from typing import Any, Callable, Literal, Mapping, cast
 from guiyi_quant.newow.product_contracts import ProductStrategy
 
 from app.market_data.newow import readiness as native_readiness
-from app.market_data.newow.product_release import deferred_section_reason
+from app.market_data.newow.product_release import RELEASE_STAGE, deferred_section_reason
 from app.market_data.operational_universe import load_operational_products
 from scripts import newow_weekly_recovery as native
 
 
 RecoveryError = native.RecoveryError
 
-_CAMPAIGN_SCHEMA = "newow_weekly_recovery_campaign_v1"
+_CAMPAIGN_SCHEMAS = {
+    "1w": "newow_weekly_recovery_campaign_v1",
+    "1d": "newow_daily_recovery_campaign_v1",
+}
+_CAMPAIGN_SCHEMA = _CAMPAIGN_SCHEMAS["1w"]
 _HASH = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 _SYMBOL = re.compile(r"[a-z]{1,8}")
@@ -48,8 +52,7 @@ _REPORT_REQUIRED = {
     "readonly": True,
     "provider_requests": 0,
     "writes": 0,
-    "release_stage": "weekly",
-    "frequency_scope": ["1w"],
+    "release_stage": RELEASE_STAGE,
     "matrix": False,
 }
 _REPORT_STRUCTURAL = {
@@ -68,9 +71,16 @@ _UNKNOWN_UNIT_ERROR_CODES = {
 }
 
 
+def _campaign_unit_frequency(report: Mapping[str, Any]) -> str:
+    scope = report.get("frequency_scope")
+    if scope not in (["1w"], ["1d"]):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    return str(scope[0])
+
+
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(
-        description="Prepare or execute one bounded Newow W1 recovery campaign."
+        description="Prepare or execute one bounded Newow W1/D1 recovery campaign."
     )
     commands = value.add_subparsers(dest="mode", required=True)
     prepare = commands.add_parser("prepare", allow_abbrev=False)
@@ -118,8 +128,9 @@ def main(
             )
             identity = _current_execution_identity(Path(args.project_env))
             root = _validated_evidence_root(Path(args.output_root))
+            unit_frequency = _campaign_unit_frequency(report)
             policy = (
-                native.source_isolation_policy()
+                native.source_isolation_policy(unit_frequency=unit_frequency)
                 if args.isolate_known_source_quality
                 else None
             )
@@ -547,7 +558,7 @@ def partition_ordinary_units(
             "symbol": item["symbol"],
             "contract": item["contract"],
             "through": item["through"],
-            "frequency": "1w",
+            "frequency": item["frequency"],
             "expected_plan_sha256": item["plan_sha256"],
         }
         for item in targets
@@ -844,7 +855,7 @@ def prepare_campaign(
             "symbol": item["symbol"],
             "contract": item["contract"],
             "through": item["through"],
-            "frequency": "1w",
+            "frequency": item["frequency"],
             "expected_plan_sha256": item["plan_sha256"],
         }
         for item, key in zip(proposed, fresh_keys, strict=True)
@@ -901,7 +912,7 @@ def prepare_campaign(
         )
 
     manifest: dict[str, Any] = {
-        "schema_version": _CAMPAIGN_SCHEMA,
+        "schema_version": _CAMPAIGN_SCHEMAS[_campaign_unit_frequency(report)],
         "status": "prepared" if proposed else "completed",
         "readonly": True,
         "provider_requests": 0,
@@ -968,11 +979,17 @@ def validate_campaign_manifest(
 ) -> dict[str, Any]:
     """Verify the complete ordered child set without opening any data source."""
     root = _validated_evidence_root(evidence_root)
+    schema = manifest.get("schema_version")
     if (
         not isinstance(manifest, dict)
-        or manifest.get("schema_version") != _CAMPAIGN_SCHEMA
+        or schema not in _CAMPAIGN_SCHEMAS.values()
     ):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+    unit_frequency = next(
+        frequency
+        for frequency, name in _CAMPAIGN_SCHEMAS.items()
+        if name == schema
+    )
     if (
         manifest.get("readonly") is not True
         or manifest.get("provider_requests") != 0
@@ -1010,7 +1027,7 @@ def validate_campaign_manifest(
         or not isinstance(prior_isolations, list)
         or (prior_isolations and policy is None)
         or _HASH.fullmatch(str(audit.get("sha256", ""))) is None
-        or audit.get("frequency_scope") != ["1w"]
+        or audit.get("frequency_scope") != [unit_frequency]
         or audit.get("matrix") is not False
         or not isinstance(scope.get("included_status_counts"), dict)
         or not isinstance(scope.get("excluded_status_counts"), dict)
@@ -1144,6 +1161,7 @@ def _validated_report_targets(
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     if any(report.get(key) != value for key, value in _REPORT_REQUIRED.items()):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    unit_frequency = _campaign_unit_frequency(report)
     if not _REPORT_STRUCTURAL.issubset(report):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     try:
@@ -1169,7 +1187,9 @@ def _validated_report_targets(
         if typed_identity in repair_identities:
             raise RecoveryError("CAMPAIGN_SCOPE_CONFLICT")
         repair_identities.add(typed_identity)
-    _validate_native_report_sections(report, as_of=as_of)
+    _validate_native_report_sections(
+        report, as_of=as_of, unit_frequency=unit_frequency
+    )
     parsed: list[dict[str, Any]] = []
     excluded: Counter[str] = Counter()
     seen: dict[tuple[str, str, str], tuple[str, str]] = {}
@@ -1193,7 +1213,7 @@ def _validated_report_targets(
             or not isinstance(contract, str)
             or _CONTRACT.fullmatch(contract) is None
             or not contract.startswith(symbol.upper())
-            or frequency != "1w"
+            or frequency != unit_frequency
             or not isinstance(through, str)
             or requested_through != through
             or not isinstance(status_value, str)
@@ -1233,6 +1253,7 @@ def _validate_native_report_sections(
     report: Mapping[str, Any],
     *,
     as_of: datetime,
+    unit_frequency: str,
 ) -> None:
     """Require the complete native matrix-false readiness payload."""
     try:
@@ -1264,7 +1285,7 @@ def _validate_native_report_sections(
     ):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     expected_enumerations = {
-        (symbol, "1w", section)
+        (symbol, unit_frequency, section)
         for symbol in operational
         for section in _REPORT_SECTIONS
     }
@@ -1335,7 +1356,7 @@ def _validate_native_report_sections(
             or not isinstance(contract, str)
             or _CONTRACT.fullmatch(contract) is None
             or not contract.startswith(symbol.upper())
-            or raw.get("frequency") != "1w"
+            or raw.get("frequency") != unit_frequency
             or status_value
             not in {
                 "DATA_READY",
@@ -1390,7 +1411,7 @@ def _validate_native_report_sections(
         for consumer in consumers:
             if (
                 not isinstance(consumer, Mapping)
-                or consumer.get("frequency") != "1w"
+                or consumer.get("frequency") != unit_frequency
                 or consumer.get("section") not in {"chart", "auxiliary", "reference"}
                 or not isinstance(consumer.get("strategy"), str)
             ):
@@ -1405,7 +1426,7 @@ def _validate_native_report_sections(
             consumer_identities.add(consumer_identity)
             consumer_sections.add(consumer["section"])
         expected_consumers = {
-            (strategy.value, "1w", section)
+            (strategy.value, unit_frequency, section)
             for section in consumer_sections
             for strategy in ProductStrategy
         }
@@ -1432,7 +1453,7 @@ def _validate_native_report_sections(
             coverage_key = (symbol, section)
             covered_owners.setdefault(coverage_key, set()).update(owner_identities)
             covered_owner_counts[coverage_key] += len(owner_identities)
-        dependency_key = (symbol, contract, "1w")
+        dependency_key = (symbol, contract, unit_frequency)
         if raw.get("reason") in native_readiness._DOWNLOAD:
             previous_through = repair_through.get(dependency_key)
             if previous_through is None or raw["through"] > previous_through:
@@ -1587,7 +1608,7 @@ def _validate_native_child(
     expected_identity: Mapping[str, str],
     summaries_are_campaign_units: bool = False,
 ) -> list[dict[str, Any]]:
-    if child.get("schema_version") != "newow_weekly_recovery_prepare_v1" or any(
+    if child.get("schema_version") not in native._PREPARE_SCHEMA.values() or any(
         child.get(key) != value for key, value in expected_identity.items()
     ):
         raise RecoveryError("CAMPAIGN_CHILD_INVALID")
@@ -1686,7 +1707,9 @@ def _validated_target_summaries(
             not isinstance(dataset, list)
             or len(dataset) != 4
             or dataset[:3] != ["contract", unit["symbol"], unit["contract"]]
-            or dataset[3] not in {"1d", "1w"}
+            or dataset[3] not in native._allowed_target_frequencies(
+                native._require_unit_frequency(unit.get("frequency"))
+            )
             or not isinstance(year, int)
             or isinstance(year, bool)
             or not isinstance(month, int)
@@ -1754,7 +1777,7 @@ def _validated_batch_invocation(
         not isinstance(return_code, int)
         or isinstance(return_code, bool)
         or not isinstance(result, Mapping)
-        or result.get("schema_version") != "newow_weekly_recovery_result_v1"
+        or result.get("schema_version") not in native._RESULT_SCHEMA.values()
         or result.get("readonly") is not False
         or result.get("status") not in {"passed", "partial", "failed"}
         or not isinstance(result.get("result"), Mapping)

@@ -409,14 +409,16 @@ def _case_release_gate_valid(
     if not isinstance(sections, dict):
         return False
     frequency = key[2]
-    deferred_reason = {
-        ProductFrequency.DAILY.value: "NEWOW_DAILY_RELEASE_PENDING",
-        ProductFrequency.HOURLY.value: "NEWOW_HOURLY_RELEASE_PENDING",
-    }.get(frequency)
-    if deferred_reason is not None:
-        expected = {"status": "UNOPENED", "reason": deferred_reason}
+    if frequency == ProductFrequency.HOURLY.value:
+        expected = {
+            "status": "UNOPENED",
+            "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+        }
         return all(state == expected for state in sections.values())
-    if frequency != ProductFrequency.WEEKLY.value:
+    if frequency not in {
+        ProductFrequency.WEEKLY.value,
+        ProductFrequency.DAILY.value,
+    }:
         return False
     return sections.get("explanation") == {
         "status": "UNOPENED",
@@ -434,7 +436,10 @@ def _enumeration_row_valid(
     if (
         not isinstance(row, dict)
         or row.get("symbol") not in products
-        or row.get("frequency") != ProductFrequency.WEEKLY.value
+        or row.get("frequency") not in {
+            ProductFrequency.WEEKLY.value,
+            ProductFrequency.DAILY.value,
+        }
         or row.get("section") not in _ENUMERATION_SECTIONS
         or row.get("as_of") != expected_as_of.isoformat()
     ):
@@ -723,11 +728,14 @@ def summarize_readiness(
         violations.append("REPORT_COMMAND_INVALID")
     if report.get("readonly") is not True:
         violations.append("REPORT_NOT_READONLY")
-    if report.get("release_stage") != "weekly":
+    if report.get("release_stage") != "daily":
         violations.append("RELEASE_STAGE_MISMATCH")
     if report.get("matrix") is not True:
         violations.append("MATRIX_REQUIRED")
-    if report.get("frequency_scope") != [ProductFrequency.WEEKLY.value]:
+    if report.get("frequency_scope") != [
+        ProductFrequency.WEEKLY.value,
+        ProductFrequency.DAILY.value,
+    ]:
         violations.append("FREQUENCY_SCOPE_MISMATCH")
     if report.get("as_of") != expected.isoformat():
         violations.append("AS_OF_MISMATCH")
@@ -841,8 +849,9 @@ def summarize_readiness(
         if _error_status_violation(row):
             violations.append("ERROR_STATUS_MISMATCH")
     expected_enumerations = {
-        (product, "1w", section)
+        (product, frequency, section)
         for product in products
+        for frequency in (ProductFrequency.WEEKLY.value, ProductFrequency.DAILY.value)
         for section in _ENUMERATION_SECTIONS
     }
     if (

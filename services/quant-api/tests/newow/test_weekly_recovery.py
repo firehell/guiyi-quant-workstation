@@ -1333,6 +1333,7 @@ def test_post_commit_readback_records_catalog_file_hash_and_mds(
     unit = {
         "symbol": "ec",
         "contract": "EC2607",
+        "frequency": "1w",
         "targets": [
             {
                 "dataset": ["contract", "ec", "EC2607", "1d"],

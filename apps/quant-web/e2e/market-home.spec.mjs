@@ -40,11 +40,10 @@ function degradedStaleOverview() {
   return value
 }
 function runtime(status = 'degraded') { return { status, generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
-function weeklyCapabilities() {
+function dailyCapabilities() {
   return {
-    schema_version: 'newow_product_capabilities_v1', release_stage: 'weekly', open_frequencies: ['1w'],
+    schema_version: 'newow_product_capabilities_v2', release_stage: 'daily', open_frequencies: ['1w', '1d'],
     deferred_frequencies: [
-      { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
     open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
@@ -102,7 +101,7 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
     if (route.request().method() !== 'GET') { requests.unexpected.push(route.request().method()); return route.abort('blockedbyclient') }
     if (url.pathname === '/api/v1/market/newow/product-capabilities') {
       requests.push(url.pathname)
-      return route.fulfill({ json: weeklyCapabilities() })
+      return route.fulfill({ json: dailyCapabilities() })
     }
     if (new URL(page.url()).pathname === '/market/chart') return route.fallback()
     const allowed = new Set(['/api/v1/market/dominants', '/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events', '/api/alerts/history'])

@@ -54,10 +54,51 @@ _T = TypeVar("_T")
 _SOURCE_ISOLATION_POLICY_SCHEMA = "newow_weekly_recovery_continuation_policy_v1"
 _SOURCE_ISOLATION_MODE = "isolate_known_source_quality"
 _SOURCE_ISOLATION_ERROR_CODES = ("RQDATA_ZERO_OHL_INVALID",)
+_UNIT_FREQUENCIES = frozenset({"1w", "1d"})
+_PREPARE_SCHEMA = {
+    "1w": "newow_weekly_recovery_prepare_v1",
+    "1d": "newow_daily_recovery_prepare_v1",
+}
+_RESULT_SCHEMA = {
+    "1w": "newow_weekly_recovery_result_v1",
+    "1d": "newow_daily_recovery_result_v1",
+}
+_SOURCE_ISOLATION_POLICY_SCHEMA_BY_FREQUENCY = {
+    "1w": "newow_weekly_recovery_continuation_policy_v1",
+    "1d": "newow_daily_recovery_continuation_policy_v1",
+}
 
 
 class RecoveryError(RuntimeError):
     """Sanitized recovery boundary error."""
+
+
+def _require_unit_frequency(value: object) -> str:
+    if value not in _UNIT_FREQUENCIES:
+        raise RecoveryError("RECOVERY_SCOPE_INVALID")
+    return str(value)
+
+
+def _allowed_target_frequencies(unit_frequency: str) -> frozenset[str]:
+    frequency = _require_unit_frequency(unit_frequency)
+    if frequency == "1w":
+        return frozenset({"1d", "1w"})
+    return frozenset({"1d"})
+
+
+def _prepare_schema(unit_frequency: str) -> str:
+    return _PREPARE_SCHEMA[_require_unit_frequency(unit_frequency)]
+
+
+def _frequency_for_prepare_schema(schema: object) -> str:
+    for frequency, name in _PREPARE_SCHEMA.items():
+        if name == schema:
+            return frequency
+    raise RecoveryError("PREPARED_MANIFEST_INVALID")
+
+
+def _result_schema(unit_frequency: str) -> str:
+    return _RESULT_SCHEMA[_require_unit_frequency(unit_frequency)]
 
 
 class _ExecutionEnvironment:
@@ -92,13 +133,16 @@ def parser() -> argparse.ArgumentParser:
     return value
 
 
-def source_isolation_policy() -> dict[str, object]:
+def source_isolation_policy(*, unit_frequency: str = "1w") -> dict[str, object]:
     """Return the one supported, hash-bound continuation policy."""
-    body = {
-        "schema_version": _SOURCE_ISOLATION_POLICY_SCHEMA,
+    frequency = _require_unit_frequency(unit_frequency)
+    body: dict[str, object] = {
+        "schema_version": _SOURCE_ISOLATION_POLICY_SCHEMA_BY_FREQUENCY[frequency],
         "mode": _SOURCE_ISOLATION_MODE,
         "allowed_error_codes": list(_SOURCE_ISOLATION_ERROR_CODES),
     }
+    if frequency == "1d":
+        body["unit_frequency"] = "1d"
     return {
         **body,
         "policy_sha256": hashlib.sha256(
@@ -110,8 +154,14 @@ def source_isolation_policy() -> dict[str, object]:
 def _validated_continuation_policy(value: object) -> dict[str, object] | None:
     if value is None:
         return None
-    expected = source_isolation_policy()
-    if not isinstance(value, Mapping) or dict(value) != expected:
+    if not isinstance(value, Mapping):
+        raise RecoveryError("CONTINUATION_POLICY_INVALID")
+    schema = value.get("schema_version")
+    unit_frequency = "1w"
+    if schema == _SOURCE_ISOLATION_POLICY_SCHEMA_BY_FREQUENCY["1d"]:
+        unit_frequency = "1d"
+    expected = source_isolation_policy(unit_frequency=unit_frequency)
+    if dict(value) != expected:
         raise RecoveryError("CONTINUATION_POLICY_INVALID")
     return expected
 
@@ -729,7 +779,7 @@ def _zero_commit_readback(
             symbol=unit["symbol"],
             contract=unit["contract"],
             through=date.fromisoformat(unit["through"]),
-            frequency="1w",
+            frequency=_require_unit_frequency(unit.get("frequency")),
         )
     )
     plan = getattr(replan, "plan", None)
@@ -807,19 +857,30 @@ def prepare_bounded_units(
     actual_root = Path(manager.catalog.canonical_root).resolve()
     if actual_root != Path(expected_data_root).resolve():
         raise RecoveryError("CANONICAL_ROOT_MISMATCH")
+    frequencies = {
+        str(getattr(request.frequency, "value", request.frequency))
+        for request in requests
+    }
+    if len(frequencies) != 1:
+        raise RecoveryError("RECOVERY_SCOPE_INVALID")
+    unit_frequency = _require_unit_frequency(next(iter(frequencies)))
+    allowed_targets = _allowed_target_frequencies(unit_frequency)
     for request in requests:
-        frequency = getattr(request.frequency, "value", request.frequency)
-        if request.apply or frequency != "1w":
+        if request.apply:
             raise RecoveryError("RECOVERY_SCOPE_INVALID")
 
     policy = _validated_continuation_policy(continuation_policy)
+    if policy is not None:
+        expected_policy = source_isolation_policy(unit_frequency=unit_frequency)
+        if policy != expected_policy:
+            raise RecoveryError("CONTINUATION_POLICY_INVALID")
     units: list[dict[str, object]] = []
     for request in requests:
         readonly_request = ContractWarmupRequest(
             request.symbol,
             request.contract,
             request.through,
-            frequency="1w",
+            frequency=unit_frequency,
         )
         plan, targets = manager._contract_warmup_plan(readonly_request)
         if (
@@ -827,10 +888,13 @@ def prepare_bounded_units(
             and request.expected_plan_sha256 != plan.plan_sha256
         ):
             raise RecoveryError("CONTRACT_WARMUP_PLAN_CHANGED")
+        target_frequencies = {target.key.frequency.value for target in targets}
+        if not target_frequencies <= allowed_targets:
+            raise RecoveryError("RECOVERY_SCOPE_INVALID")
         bar_requests = tuple(
             BarFetchRequest(target.key, target.missing)
             for target in targets
-            if target.key.frequency.value in {"1d", "1w"}
+            if target.key.frequency.value in allowed_targets
         )
         source_requests = (
             adapter.exchange_daily_source_requests(bar_requests) if bar_requests else ()
@@ -842,7 +906,7 @@ def prepare_bounded_units(
                 "symbol": plan.symbol,
                 "contract": plan.contract,
                 "through": plan.requested_through.isoformat(),
-                "frequency": "1w",
+                "frequency": unit_frequency,
                 "plan_sha256": plan.plan_sha256,
                 "listed_date": plan.listed_date.isoformat(),
                 "expired_date": plan.expired_date.isoformat(),
@@ -855,7 +919,7 @@ def prepare_bounded_units(
             }
         )
     manifest: dict[str, object] = {
-        "schema_version": "newow_weekly_recovery_prepare_v1",
+        "schema_version": _prepare_schema(unit_frequency),
         "code_commit": code_commit,
         "execution_code_sha256": execution_code_sha256,
         "config_sha256": config_sha256,
@@ -890,8 +954,7 @@ def execute_prepared_batch(
     ],
 ) -> dict[str, object]:
     """Execute one frozen batch serially; any failure leaves the tail untouched."""
-    if manifest.get("schema_version") != "newow_weekly_recovery_prepare_v1":
-        raise RecoveryError("PREPARED_MANIFEST_INVALID")
+    unit_frequency = _frequency_for_prepare_schema(manifest.get("schema_version"))
     if (
         manifest.get("code_commit") != current_code_commit
         or manifest.get("execution_code_sha256") != current_execution_code_sha256
@@ -925,7 +988,7 @@ def execute_prepared_batch(
     for index, raw_unit in enumerate(units):
         if not isinstance(raw_unit, dict):
             raise RecoveryError("PREPARED_MANIFEST_INVALID")
-        unit = _validated_unit(raw_unit)
+        unit = _validated_unit(raw_unit, unit_frequency=unit_frequency)
         unit_id = f"unit-{index + 1:03d}-{unit['symbol']}-{unit['contract']}"
         unit_dir = create_attempt_directory(attempt_dir, unit_id)
 
@@ -950,7 +1013,7 @@ def execute_prepared_batch(
             through=date.fromisoformat(unit["through"]),
             expected_plan_sha256=unit["plan_sha256"],
             apply=True,
-            frequency="1w",
+            frequency=unit_frequency,
         )
         try:
             try:
@@ -1247,7 +1310,7 @@ def _source_request_from_payload(
     return request
 
 
-def _validated_unit(value: Mapping[str, Any]) -> dict[str, Any]:
+def _validated_unit(value: Mapping[str, Any], *, unit_frequency: str) -> dict[str, Any]:
     try:
         unit = dict(value)
         symbol = str(unit["symbol"])
@@ -1257,10 +1320,11 @@ def _validated_unit(value: Mapping[str, Any]) -> dict[str, Any]:
         source_requests = unit["source_requests"]
     except (KeyError, TypeError, ValueError) as exc:
         raise RecoveryError("PREPARED_MANIFEST_INVALID") from exc
+    expected_frequency = _require_unit_frequency(unit_frequency)
     if (
         re.fullmatch(r"[a-z]{1,8}", symbol) is None
         or re.fullmatch(r"[A-Z]{1,8}[0-9]{3,4}", contract) is None
-        or unit.get("frequency") != "1w"
+        or unit.get("frequency") != expected_frequency
         or re.fullmatch(r"[0-9a-f]{64}", plan_sha256) is None
         or not isinstance(source_requests, list)
     ):
@@ -1455,7 +1519,9 @@ def _post_commit_readback(
             key.kind.value != "contract"
             or key.symbol != unit["symbol"]
             or key.series_or_contract != unit["contract"]
-            or key.frequency.value not in {"1d", "1w"}
+            or key.frequency.value not in _allowed_target_frequencies(
+                _require_unit_frequency(unit.get("frequency"))
+            )
             or expected_start.tzinfo is None
             or expected_end.tzinfo is None
             or expected_start > expected_end
@@ -1594,11 +1660,17 @@ def _unit_requests(value: Any) -> tuple[ContractWarmupRequest, ...]:
                     contract=str(item["contract"]),
                     through=date.fromisoformat(item["through"]),
                     expected_plan_sha256=item.get("expected_plan_sha256"),
-                    frequency=item.get("frequency"),
+                    frequency=_require_unit_frequency(item.get("frequency")),
                 )
             )
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError, RecoveryError) as exc:
         raise RecoveryError("INPUT_INVALID") from exc
+    frequencies = {
+        str(getattr(request.frequency, "value", request.frequency))
+        for request in result
+    }
+    if len(frequencies) != 1:
+        raise RecoveryError("RECOVERY_SCOPE_INVALID")
     return tuple(result)
 
 
@@ -1623,6 +1695,9 @@ def main(
             environment = _open_execution_environment(Path(args.project_env))
             try:
                 requests = _unit_requests(_read_json_file(Path(args.units)))
+                unit_frequency = _require_unit_frequency(
+                    getattr(requests[0].frequency, "value", requests[0].frequency)
+                )
                 lease = environment.manager.catalog.acquire_maintenance_lock()
                 maintenance_available = lease is not None
                 if lease is not None:
@@ -1641,7 +1716,7 @@ def main(
                     execution_code_sha256=_current_execution_code_sha256(),
                     config_sha256=environment.identity["config_sha256"],
                     continuation_policy=(
-                        source_isolation_policy()
+                        source_isolation_policy(unit_frequency=unit_frequency)
                         if args.isolate_known_source_quality
                         else None
                     ),
@@ -1653,7 +1728,7 @@ def main(
             finally:
                 environment.close()
             payload = {
-                "schema_version": "newow_weekly_recovery_result_v1",
+                "schema_version": _result_schema(unit_frequency),
                 "status": "prepared",
                 "readonly": True,
                 "prepared_file": str(path),
@@ -1671,6 +1746,9 @@ def main(
             expected_commit = prepared.get("code_commit")
             if not isinstance(expected_commit, str):
                 raise RecoveryError("PREPARED_MANIFEST_INVALID")
+            unit_frequency = _frequency_for_prepare_schema(
+                prepared.get("schema_version")
+            )
             _require_clean_execution_checkout(expected_commit)
             _settings, identity = load_private_execution_settings(
                 Path(args.project_env)
@@ -1711,7 +1789,7 @@ def main(
                 open_unit=open_unit,
             )
             payload = {
-                "schema_version": "newow_weekly_recovery_result_v1",
+                "schema_version": _result_schema(unit_frequency),
                 "status": result["status"],
                 "readonly": False,
                 "attempt_dir": str(attempt),

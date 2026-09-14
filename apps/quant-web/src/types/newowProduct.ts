@@ -18,13 +18,10 @@ export interface NewowDeferredSection {
 }
 
 export interface NewowProductCapabilities {
-  readonly schema_version: 'newow_product_capabilities_v1'
-  readonly release_stage: 'weekly'
-  readonly open_frequencies: readonly ['1w']
-  readonly deferred_frequencies: readonly [
-    NewowDeferredFrequency,
-    NewowDeferredFrequency,
-  ]
+  readonly schema_version: 'newow_product_capabilities_v2'
+  readonly release_stage: 'daily'
+  readonly open_frequencies: readonly ['1w', '1d']
+  readonly deferred_frequencies: readonly [NewowDeferredFrequency]
   readonly open_sections: readonly ['chart', 'auxiliary', 'reference', 'comparator']
   readonly deferred_sections: readonly [NewowDeferredSection]
 }
