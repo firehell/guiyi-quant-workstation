@@ -186,6 +186,18 @@ HTDY Rule SHALL 保持 forward-only `first_seen`；SuBing Rule SHALL 使用 `exa
 - **WHEN** 相同 identity 的 contract、trading_day 或 result_codes 不同
 - **THEN** 系统报告 consistency failure，不覆盖既有 Event
 
+### Requirement: Event reads preserve the requested frequency
+
+`GET /api/alerts/events` SHALL 接受可选 `frequency`；省略时保持原查询行为，传入时 MUST 校验该 Rule 的
+支持周期并在数据库查询中精确过滤。不支持的周期 MUST 返回明确 4xx，不能退回全周期结果。
+Web 持久 Event 查询 SHALL 携带当前页面周期，并继续对 Rule、symbol、frequency 不一致的响应失败关闭；
+切换页面身份后，旧异步响应不得覆盖新身份的数据。本接口不修改既有 Event、Scope 或公式。
+
+#### Scenario: One Rule has observations at two frequencies
+
+- **WHEN** 同一品种同一 Rule 有 5m 与 15m Event，页面查询 5m
+- **THEN** 只返回 5m Event；合法的 15m Event 不应令 5m 页面整体不可用
+
 ### Requirement: Event persistence precedes one-shot transport
 
 系统 MUST 先 commit AlertEvent，随后才可调用该 Rule 固定 formatter、固定 audience 与 shared PushPlus

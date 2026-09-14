@@ -646,6 +646,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_alert_notification.py \
   services/quant-api/tests/test_alert_notification_config.py \
   services/quant-api/tests/test_alert_pushplus.py \
+  services/quant-api/tests/test_runtime_logging.py \
   services/quant-api/tests/test_alert_runtime.py \
   services/quant-api/tests/test_runtime_health.py \
   services/quant-api/tests/test_alert_api.py \
@@ -655,7 +656,8 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 其中 MarketRead/Alert 组还固定验证 HTDY 5m/15m/60m 的 Calendar/Session/owner 完整性、窗口数量足够但中间
 缺 Bar 时 kernel/Event/sender 均不运行、SuBing failed cutoff 的 typed skip 不清健康、迟到旧合约不倒退，
-以及 guard enter/exit 与内部 DB/status/evaluator 失败的日志分类。Event persistence 失败后的同 Bar 不重试；
+以及 guard enter/exit 与内部 DB/status/evaluator 失败的日志分类。Event 查询的可选周期筛选、Rule 支持周期拒绝及省略参数兼容也在此组验证；通知诊断必须通过真实临时日志 formatter 验证固定码与身份落盘，禁止只断言 LogRecord extra。
+Event persistence 失败后的同 Bar 不重试；
 只有下一次真实成功评价才可清当前错误，并保留历史失败时间。
 
 RQData session 首分钟锚点、0045 与 shadow repair 的定向合同：
