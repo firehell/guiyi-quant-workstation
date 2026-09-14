@@ -192,6 +192,11 @@ HTDY Rule SHALL 保持 forward-only `first_seen`；SuBing Rule SHALL 使用 `exa
 transport；每个新 Event 最多一次 transport attempt，无 retry、queue、outbox、replay、backfill、fallback
 或逐收件人状态。formatter、taxonomy、transport 或 provider acceptance 失败 MUST 保留 Event。
 provider accepted MUST NOT 表述为微信实际送达。
+transport 失败 SHALL 在既有有界 Runtime 日志中仅记录固定白名单诊断码，并用 `rule_code`、`symbol`、
+`contract`、`frequency`、`bar_end` 关联已保存 Event；不得记录 provider message/body、URL、token、通知正文、
+原始异常或 cause。SDK 明确返回拒绝码时可分类为 provider rejected，`900` 分类为 rate limited；SDK 的
+`-1` 或无法证明请求结果的异常必须保守分类为 request outcome unknown，无法安全分类时回落 `UNKNOWN`。
+诊断分类不得改变 schema v6 聚合状态、通用 `notification_transport_failed` 兼容语义或发送次数。
 
 #### Scenario: Transport fails after Event commit
 

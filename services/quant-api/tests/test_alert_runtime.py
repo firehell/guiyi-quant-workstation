@@ -18,7 +18,9 @@ from app.alerts.models import AlertEvent, AlertRule
 from app.alerts.notification import (
     ALERT_AUDIENCE_OWNER,
     ALERT_NOTIFICATION_POLICIES,
+    AlertNotificationMessage,
     AlertNotificationPolicy,
+    NotificationTransportError,
     ProviderAcceptance,
 )
 from app.alerts.registry import HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE
@@ -199,6 +201,132 @@ def test_notification_acknowledgement_is_exact_and_one_shot() -> None:
             expected_failure_at=failure_at,
             acknowledged_at=datetime(2026, 8, 15, 1, 2, tzinfo=UTC),
         )
+
+
+def test_transport_diagnostics_preserve_acceptance_and_correlate_each_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Catches collapsed failures and clearing the last accepted fact."""
+    accepted_at = datetime(2026, 9, 14, 1, 0, tzinfo=UTC)
+    failed_at = accepted_at + timedelta(minutes=1)
+    sensitive_marker = "fixture-sensitive-marker-in-provider-body"
+
+    class Sender:
+        calls = 0
+
+        def send(self, _message):
+            self.calls += 1
+            if self.calls <= 5:
+                return ProviderAcceptance(f"accepted-{self.calls}")
+            raise NotificationTransportError(
+                "ALERT_NOTIFICATION_TRANSPORT_FAILED",
+                diagnostic_code="PUSHPLUS_REQUEST_OUTCOME_UNKNOWN",
+            )
+
+    sender = Sender()
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        evaluators={},
+        sender=sender,
+        operational_products=(),
+        taxonomy={},
+    )
+    accepted = [
+        AlertNotificationMessage(
+            rule_code=HTDY_ALERT_RULE_CODE,
+            symbol=f"ok{index}",
+            product_name="fixture",
+            contract=f"OK{index}2610",
+            frequency="15m",
+            bar_end=accepted_at + timedelta(minutes=index),
+            detected_at=accepted_at,
+            result_codes=("buy",),
+        )
+        for index in range(5)
+    ]
+    failed = [
+        AlertNotificationMessage(
+            rule_code=HTDY_ALERT_RULE_CODE,
+            symbol=f"fail{index}",
+            product_name=sensitive_marker,
+            contract=f"FAIL{index}2610",
+            frequency="15m",
+            bar_end=failed_at + timedelta(minutes=index),
+            detected_at=failed_at,
+            result_codes=("sell",),
+        )
+        for index in range(6)
+    ]
+
+    runtime._send_messages_once(accepted, processing_now=accepted_at)
+    runtime._send_messages_once(failed, processing_now=failed_at)
+
+    status = runtime._current_runtime_status()
+    assert sender.calls == 11
+    assert status["last_provider_accepted_at"] == accepted_at.isoformat()
+    assert status["last_notification_failure_at"] == failed_at.isoformat()
+    assert status["notification_error_type"] == "notification_transport_failed"
+    assert status["consecutive_notification_failures"] == 6
+    records = [
+        record
+        for record in caplog.records
+        if record.message == "ALERT_NOTIFICATION_TRANSPORT_FAILED"
+    ]
+    assert len(records) == 6
+    for index, record in enumerate(records):
+        assert record.diagnostic_code == "PUSHPLUS_REQUEST_OUTCOME_UNKNOWN"
+        assert record.rule_code == HTDY_ALERT_RULE_CODE
+        assert record.symbol == f"fail{index}"
+        assert record.contract == f"FAIL{index}2610"
+        assert record.frequency == "15m"
+        assert record.bar_end == (failed_at + timedelta(minutes=index)).isoformat()
+    rendered = "\n".join(record.getMessage() for record in caplog.records)
+    assert sensitive_marker not in rendered
+
+
+def test_invalid_sender_acceptance_is_logged_with_event_identity(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    at = datetime(2026, 9, 14, 1, 0, tzinfo=UTC)
+    message = AlertNotificationMessage(
+        rule_code=HTDY_ALERT_RULE_CODE,
+        symbol="rb",
+        product_name="螺纹钢",
+        contract="RB2610",
+        frequency="15m",
+        bar_end=at,
+        detected_at=at,
+        result_codes=("buy",),
+    )
+
+    class Sender:
+        @staticmethod
+        def send(_message):
+            return "fixture-invalid-acceptance"
+
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        evaluators={},
+        sender=Sender(),
+        operational_products=(),
+        taxonomy={},
+    )
+
+    runtime._send_messages_once([message], processing_now=at)
+
+    record = next(
+        record
+        for record in caplog.records
+        if record.message == "ALERT_NOTIFICATION_TRANSPORT_FAILED"
+    )
+    assert record.diagnostic_code == "PUSHPLUS_ACCEPTANCE_INVALID"
+    assert record.rule_code == HTDY_ALERT_RULE_CODE
+    assert record.symbol == "rb"
+    assert record.contract == "RB2610"
+    assert record.frequency == "15m"
+    assert record.bar_end == at.isoformat()
 
 
 def test_live_trigger_accepts_only_completed_intraday_bar_shape() -> None:

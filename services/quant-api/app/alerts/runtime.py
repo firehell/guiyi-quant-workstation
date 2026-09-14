@@ -24,6 +24,7 @@ from app.alerts.models import AlertRule
 from app.alerts.notification import (
     AlertNotificationMessage,
     AlertNotificationSender,
+    NotificationTransportError,
     ProviderAcceptance,
     notification_policy_rule_codes,
 )
@@ -566,22 +567,51 @@ class AlertRuntime:
             )
             try:
                 acceptance = self._sender.send(message)
+            except NotificationTransportError as exc:
+                self._record_notification_failure(
+                    at=processing_now,
+                    error_type=NOTIFICATION_TRANSPORT_FAILURE,
+                )
+                self._log_notification_failure(message, exc.diagnostic_code)
+                continue
             except Exception:
                 self._record_notification_failure(
                     at=processing_now,
                     error_type=NOTIFICATION_TRANSPORT_FAILURE,
                 )
+                self._log_notification_failure(message, "UNKNOWN")
                 continue
             if not isinstance(acceptance, ProviderAcceptance):
                 self._record_notification_failure(
                     at=processing_now,
                     error_type=NOTIFICATION_ACCEPTANCE_INVALID,
                 )
+                self._log_notification_failure(
+                    message,
+                    "PUSHPLUS_ACCEPTANCE_INVALID",
+                )
                 continue
             self._update_runtime_status(
                 last_provider_accepted_at=_iso_timestamp(processing_now),
                 consecutive_notification_failures=0,
             )
+
+    @staticmethod
+    def _log_notification_failure(
+        message: AlertNotificationMessage,
+        diagnostic_code: str,
+    ) -> None:
+        _LOGGER.warning(
+            "ALERT_NOTIFICATION_TRANSPORT_FAILED",
+            extra={
+                "diagnostic_code": diagnostic_code,
+                "rule_code": message.rule_code,
+                "symbol": message.symbol,
+                "contract": message.contract,
+                "frequency": message.frequency,
+                "bar_end": _iso_timestamp(message.bar_end),
+            },
+        )
 
     def _write_heartbeat(self, now: datetime) -> None:
         assert self.heartbeat_store is not None

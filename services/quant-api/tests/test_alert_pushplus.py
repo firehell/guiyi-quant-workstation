@@ -123,6 +123,53 @@ def test_sdk_error_is_mapped_without_leaking_provider_details() -> None:
 
 
 @pytest.mark.parametrize(
+    ("sdk_code", "expected_diagnostic_code"),
+    [
+        (500, "PUSHPLUS_PROVIDER_REJECTED"),
+        (900, "PUSHPLUS_RATE_LIMITED"),
+        (-1, "PUSHPLUS_REQUEST_OUTCOME_UNKNOWN"),
+        (123456, "UNKNOWN"),
+    ],
+)
+def test_sdk_error_exposes_only_a_fixed_safe_diagnostic_code(
+    sdk_code: int,
+    expected_diagnostic_code: str,
+) -> None:
+    sensitive_marker = "fixture-sensitive-marker-in-provider-body"
+    transport = _transport(
+        RecordingClient(PushPlusError(sensitive_marker, code=sdk_code))
+    )
+
+    with pytest.raises(NotificationTransportError) as captured:
+        transport.send(
+            NotificationDelivery(
+                title="title",
+                content=sensitive_marker,
+                audience=ALERT_AUDIENCE_OWNER,
+            )
+        )
+
+    assert captured.value.code == "ALERT_NOTIFICATION_TRANSPORT_FAILED"
+    assert captured.value.diagnostic_code == expected_diagnostic_code
+    assert sensitive_marker not in str(captured.value)
+    assert sensitive_marker not in repr(captured.value)
+
+
+def test_malformed_provider_reference_has_safe_adapter_diagnostic() -> None:
+    sensitive_marker = " fixture-sensitive-marker-in-provider-reference "
+
+    with pytest.raises(NotificationTransportError) as captured:
+        _transport(RecordingClient(sensitive_marker)).send(
+            NotificationDelivery(title="title", content="content", audience=ALERT_AUDIENCE_OWNER)
+        )
+
+    assert captured.value.code == "ALERT_NOTIFICATION_TRANSPORT_FAILED"
+    assert captured.value.diagnostic_code == "PUSHPLUS_ACCEPTANCE_INVALID"
+    assert sensitive_marker not in str(captured.value)
+    assert sensitive_marker not in repr(captured.value)
+
+
+@pytest.mark.parametrize(
     "config",
     [
         {},
