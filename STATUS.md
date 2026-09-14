@@ -194,8 +194,10 @@ JM 5m/15m、其余品种 60m、苏冰 15m 的策略和 Scope 均保持原合同�
 
 Session 247 目标/33,224 行、SI2308、EC2607、普通首批 20 单元及 RS2309/RS2311 专项均已有独立执行和
 读回证据；不重复下载。其余 9 个 RS 待审目标与已核实的非正价格来源事实继续隔离，不能混入普通补数。
-本轮总包编排设计已获批准，正在实现与验证；尚未执行剩余普通总包。代码冻结和全部精确子包准备后，
-还须匹配总包的一次真实下载/写入意图。完整 matrix、浏览器验收、Release 与 Runtime 均非本次数据准备的
+本轮总包编排已完成实现、隔离验证和专项独立 Review：组合测试 564 passed，Ruff/Mypy、OpenSpec 与
+secret scan 通过，两轮修复后的专项 Review 无阻断。当前为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；
+尚未执行剩余普通总包。代码冻结后的全域审计和精确子包以本地专用 evidence 根为记录位置，真实执行仍须
+匹配冻结总包的一次下载/写入意图；准备包本身不消费此意图。完整 matrix、浏览器验收、Release 与 Runtime 均非本次数据准备的
 完成结论。当前数字、完整审计 SHA-256 和旧批次证据见
 [恢复执行证据](docs/tasks/newow-weekly-data-recovery/remaining-123-execution-evidence.md)，
 [普通总包计划](docs/tasks/newow-weekly-data-recovery/ordinary-full-closeout-plan.md)。

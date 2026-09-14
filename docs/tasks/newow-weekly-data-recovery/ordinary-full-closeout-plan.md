@@ -2,7 +2,13 @@
 
 > 执行时使用 `superpowers:executing-plans`，由一个主执行任务连续推进，阶段末独立 Review。Owner 已于本轮确认工程计划；真实下载/写入仍待精确总包意图，不创建新用户任务或恢复旧任务。
 
-日期：2026-09-14。设计基线：`develop/origin/develop@7982c8c921245853d52c0740e20278ec144e7464`。计划状态：`PLAN_APPROVED / IMPLEMENTING`，独立 Review 0 P1 / 0 P2；owner 已确认总包编排设计，尚未形成生产总包意图。
+日期：2026-09-14。设计基线：`develop/origin/develop@7982c8c921245853d52c0740e20278ec144e7464`。状态：`CODE_COMPLETE_EXTERNAL_GATE_PENDING`；owner 已确认总包编排设计，尚未形成生产总包意图。
+
+工程检查点：实现提交 `84df05552`，专项 Review 的两轮修复为 `f3a30ec79`、`842844a19`，最终专项
+复审无阻断。主会话组合测试 564 passed，Ruff/Mypy、OpenSpec 9 项、secret scan 通过。
+Tasks 1–2 的实现、隔离测试和专项 Review 已完成；下列清单保留审批时的步骤定义，不由勾选代替实际
+证据。代码集成以 Git 记录，Tasks 3–4 的真实准备与执行以冻结代码对应的本地 evidence 为准，普通
+总包完成必须满足文末结算条件。
 
 ## 目标、事实与边界
 

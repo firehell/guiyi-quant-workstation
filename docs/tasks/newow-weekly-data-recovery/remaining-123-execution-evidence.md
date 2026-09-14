@@ -34,8 +34,16 @@ provider requests=0、生产 writes=0。审计通过 fresh read-only transaction
 `compact-report.json`、`summary.json` 与 `audit.py`。审计只证明该固定截点的当前数据余额，不证明页面
 矩阵通过。旧表中的 1,138 是 EC/首批/RS 修复前历史快照，下面保留原文，不再作为当前余额。
 
-owner 已确认[普通全量收口计划](ordinary-full-closeout-plan.md)，当前为工程实现与 readonly 准备阶段；
-真实总包执行意图仍待全部子包和代码身份冻结后单独取得。当前未执行这 1,117 个剩余普通单元。
+owner 已确认[普通全量收口计划](ordinary-full-closeout-plan.md)。总包工程已在 `84df05552` 实现，
+`f3a30ec79`、`842844a19` 两轮修复关闭完整报告/owner 覆盖、根数对账、可信终态、稳定 guard inode、
+多总包证据命名与 CLI 命令问题，专项复审无阻断。主会话组合测试 564 passed；Ruff/Mypy、OpenSpec
+9 项、secret scan 0 findings、diff check 均通过，三阶段 help smoke 通过。测试使用隔离数据库、临时
+Canonical 与 fake provider，不代表真实补数。完整工程总审与 develop 包含关系以本分支交付记录为准。
+
+当前状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。冻结代码后的 readonly audit、全部 child prepare
+及唯一 campaign manifest 统一使用本地 `outputs/newow-weekly-recovery-attempts/` 记录；每份 artifact 绑定其
+exact commit/hash/root，不把本段工程检查点当作后续 prepare 或 apply 成功回执。真实总包执行意图仍待
+全部子包和代码身份冻结后单独取得。当前未执行这 1,117 个剩余普通单元。
 
 ## 执行前冻结依赖队列
 
