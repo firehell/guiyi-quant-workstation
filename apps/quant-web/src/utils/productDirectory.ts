@@ -30,6 +30,8 @@ export function normalizeProductSector(value: string | null | undefined): Produc
 }
 
 export function productSectorLabel(value: string | null | undefined): string {
+  const suppliedLabel = value?.trim()
+  if (suppliedLabel && PRODUCT_SECTORS.some((sector) => sector.label === suppliedLabel)) return suppliedLabel
   return PRODUCT_SECTOR_LABELS.get(normalizeProductSector(value)) ?? '航运/其他'
 }
 

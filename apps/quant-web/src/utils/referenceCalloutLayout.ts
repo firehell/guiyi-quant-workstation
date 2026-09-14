@@ -1,20 +1,129 @@
 import type { KlineReferenceCallout } from '../types/referenceCallout.ts'
-export interface ProjectedCallout { callout: KlineReferenceCallout; x: number; y: number }
-export interface PositionedCallout extends ProjectedCallout { left: number; top: number; compact: boolean }
-/** Layout only: all prices and returns remain server facts. */
-export function layoutReferenceCallouts(points: ProjectedCallout[], width: number, height: number): PositionedCallout[] {
+
+export const REFERENCE_CALLOUT_BOX = Object.freeze({ width: 168, height: 52 })
+export const REFERENCE_CALLOUT_COMPACT = Object.freeze({ width: 28, height: 28 })
+
+export interface ProjectedCallout {
+  callout: KlineReferenceCallout
+  x: number
+  y: number
+  boxWidth?: number
+  boxHeight?: number
+  expanded?: boolean
+}
+export interface PositionedCallout extends ProjectedCallout {
+  left: number
+  top: number
+  width: number
+  height: number
+  compact: boolean
+  lineX: number
+  lineY: number
+}
+
+interface Rectangle { left: number; top: number; width: number; height: number }
+const MARGIN = 2
+const GAP = 2
+
+/** Pure display layout; prices, times, identities and action counts are never changed. */
+export function layoutReferenceCallouts(
+  points: readonly ProjectedCallout[],
+  width: number,
+  height: number,
+): PositionedCallout[] {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= MARGIN * 2 || height <= MARGIN * 2) return []
+  const visible = points.filter(point => point.x >= 0 && point.x <= width && point.y >= 0 && point.y <= height)
+  const ordered = [...visible].sort((left, right) => Number(right.expanded === true) - Number(left.expanded === true)
+    || left.x - right.x || left.y - right.y || left.callout.id.localeCompare(right.callout.id))
   const placed: PositionedCallout[] = []
-  for (const point of [...points].sort((a, b) => a.x - b.x)) {
-    if (point.x < 0 || point.x > width || point.y < 0 || point.y > height) continue
-    const left = Math.min(Math.max(2, point.x - 66), Math.max(2, width - 134))
-    let top = Math.max(48, Math.min(height - 48, point.y + (point.callout.above ? -78 : 32)))
-    let compact = width < 260
-    const overlaps = () => placed.some((other) => !other.compact && left < other.left + 134 && left + 134 > other.left && top < other.top + 46 && top + 46 > other.top)
-    for (let lane = 0; overlaps() && lane < 3; lane++) top += point.callout.above ? -48 : 48
-    if (top < 48 || top > height - 48 || overlaps()) compact = true
-    placed.push({ ...point, left: compact ? Math.min(width - 24, Math.max(0, point.x - 12)) : left, top: compact ? Math.max(48, Math.min(height - 26, point.y + (point.callout.above ? -28 : 8))) : top, compact })
+  const fullArea = REFERENCE_CALLOUT_BOX.width * REFERENCE_CALLOUT_BOX.height
+  const fullBudget = Math.max(1, Math.floor(width * height / (fullArea * 3)))
+  let fullCount = 0
+
+  for (const point of ordered) {
+    const requestedWidth = boundedDimension(point.boxWidth, REFERENCE_CALLOUT_BOX.width)
+    const requestedHeight = boundedDimension(point.boxHeight, REFERENCE_CALLOUT_BOX.height)
+    const canFitFull = requestedWidth <= width - MARGIN * 2 && requestedHeight <= height - MARGIN * 2
+    const shouldTryFull = canFitFull && (point.expanded === true || fullCount < fullBudget)
+    const full = shouldTryFull
+      ? findPlacement(point, requestedWidth, requestedHeight, width, height, placed)
+      : null
+    const rectangle = full ?? findPlacement(
+      point,
+      REFERENCE_CALLOUT_COMPACT.width,
+      REFERENCE_CALLOUT_COMPACT.height,
+      width,
+      height,
+      placed,
+    )
+    if (rectangle === null) continue
+    const compact = full === null
+    if (!compact) fullCount += 1
+    const line = lineEndpoint(point.x, point.y, rectangle)
+    placed.push({ ...point, ...rectangle, compact, lineX: line.x, lineY: line.y })
   }
-  return placed
+  return placed.sort((left, right) => left.x - right.x || left.y - right.y || left.callout.id.localeCompare(right.callout.id))
+}
+
+function findPlacement(
+  point: ProjectedCallout,
+  boxWidth: number,
+  boxHeight: number,
+  areaWidth: number,
+  areaHeight: number,
+  placed: readonly Rectangle[],
+): Rectangle | null {
+  const preferredTop = point.callout.above ? point.y - boxHeight - 22 : point.y + 18
+  const candidates: Rectangle[] = []
+  for (let top = MARGIN; top <= areaHeight - boxHeight - MARGIN; top += boxHeight + GAP) {
+    for (let left = MARGIN; left <= areaWidth - boxWidth - MARGIN; left += boxWidth + GAP) {
+      candidates.push({ left, top, width: boxWidth, height: boxHeight })
+    }
+  }
+  candidates.push({
+    left: clamp(point.x - boxWidth / 2, MARGIN, areaWidth - boxWidth - MARGIN),
+    top: clamp(preferredTop, MARGIN, areaHeight - boxHeight - MARGIN),
+    width: boxWidth,
+    height: boxHeight,
+  })
+  candidates.sort((left, right) => candidateDistance(left, point, preferredTop) - candidateDistance(right, point, preferredTop)
+    || left.top - right.top || left.left - right.left)
+  return candidates.find(candidate => placed.every(other => !overlaps(candidate, other))) ?? null
+}
+
+function candidateDistance(rectangle: Rectangle, point: ProjectedCallout, preferredTop: number): number {
+  const centerX = rectangle.left + rectangle.width / 2
+  return Math.abs(centerX - point.x) * 2 + Math.abs(rectangle.top - preferredTop)
+}
+
+function overlaps(left: Rectangle, right: Rectangle): boolean {
+  return left.left < right.left + right.width + GAP
+    && left.left + left.width + GAP > right.left
+    && left.top < right.top + right.height + GAP
+    && left.top + left.height + GAP > right.top
+}
+
+function lineEndpoint(x: number, y: number, rectangle: Rectangle): { x: number; y: number } {
+  const nearestX = clamp(x, rectangle.left, rectangle.left + rectangle.width)
+  const nearestY = clamp(y, rectangle.top, rectangle.top + rectangle.height)
+  if (x < rectangle.left || x > rectangle.left + rectangle.width || y < rectangle.top || y > rectangle.top + rectangle.height) {
+    return { x: nearestX, y: nearestY }
+  }
+  const edges = [
+    { x, y: rectangle.top, distance: y - rectangle.top },
+    { x, y: rectangle.top + rectangle.height, distance: rectangle.top + rectangle.height - y },
+    { x: rectangle.left, y, distance: x - rectangle.left },
+    { x: rectangle.left + rectangle.width, y, distance: rectangle.left + rectangle.width - x },
+  ]
+  return edges.sort((left, right) => left.distance - right.distance)[0]!
+}
+
+function boundedDimension(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) && value! > 0 ? Math.ceil(value!) : fallback
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value))
 }
 
 export function matchesReferenceBar(callout: Pick<KlineReferenceCallout, 'time' | 'physicalContract'>, bar: { time: string; physicalContract?: string }): boolean { return bar.physicalContract === callout.physicalContract && Date.parse(bar.time) === Date.parse(callout.time) }

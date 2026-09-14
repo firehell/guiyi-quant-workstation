@@ -27,6 +27,13 @@ PREVIEW_PATHS = frozenset(
         "/api/v1/market/newow/historical-snapshot",
     }
 )
+_SUBING_REFERENCE_PATH = re.compile(
+    r"^/api/v1/market/[a-z]{1,8}/subing/reference$"
+)
+
+
+def _preview_path_allowed(path: str) -> bool:
+    return path in PREVIEW_PATHS or _SUBING_REFERENCE_PATH.fullmatch(path) is not None
 
 
 def _instant(value: str | None) -> datetime:
@@ -71,7 +78,7 @@ def create_preview_app(
         raise ValueError("PREVIEW_CUTOFF_INVALID")
     code_sha = _code_sha()
 
-    from app.api import market, market_newow
+    from app.api import market, market_newow, market_subing_reference
     from app.db.session import SessionLocal, get_db
 
     factory = session_factory or SessionLocal
@@ -86,7 +93,7 @@ def create_preview_app(
     @app.middleware("http")
     async def enforce_preview(request: Request, call_next):
         raw_path = request.scope.get("raw_path", b"").decode("ascii", errors="replace")
-        if request.method != "GET" or raw_path not in PREVIEW_PATHS:
+        if request.method != "GET" or not _preview_path_allowed(raw_path):
             return JSONResponse(
                 status_code=403, content={"detail": {"code": "PREVIEW_ROUTE_FORBIDDEN"}}
             )
@@ -101,6 +108,8 @@ def create_preview_app(
                 "/api/v1/market/bars/page": "before",
                 "/api/v1/market/newow/strategy-detail": "as_of",
             }.get(raw_path)
+            if _SUBING_REFERENCE_PATH.fullmatch(raw_path):
+                field = "as_of"
             if field:
                 requested = _instant(values[field]) if field in values else cutoff
                 values[field] = min(requested, cutoff).isoformat()
@@ -140,6 +149,7 @@ def create_preview_app(
 
     app.include_router(market.router)
     app.include_router(market_newow.router)
+    app.include_router(market_subing_reference.router)
     return app
 
 

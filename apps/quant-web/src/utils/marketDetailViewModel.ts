@@ -10,6 +10,7 @@ import type {
   MarketDetailHeaderModel,
   MarketDetailIdentity,
 } from '../types/marketDetail.ts'
+import { productSectorLabel } from './productDirectory.ts'
 
 export interface MarketDetailHeaderInput {
   identity: MarketDetailIdentity
@@ -182,7 +183,6 @@ function marketDisclosure(
       tone,
       rows: [
         { label: '成交额', value: numberText(latest?.turnover), source: 'market' },
-        { label: '5日涨跌', value: '—', source: 'market' },
         { label: '量比20', value: numberText(research?.volume_ratio20), source: 'market' },
         { label: 'OI 1D', value: percentText(research?.oi_change_1d), source: 'market' },
         { label: '20日位置', value: percentText(research?.position20), source: 'market' },
@@ -204,7 +204,7 @@ function marketDisclosure(
         { label: '物理合约区间', value: displayContract ?? '不可证明', source: 'market' },
         { label: '交易日', value: state?.trading_day ?? '—', source: 'market' },
         { label: '交易所', value: product?.exchange || '—', source: 'market' },
-        { label: '板块', value: product?.sector || '—', source: 'market' },
+        { label: '板块', value: product?.sector ? productSectorLabel(product.sector) : '—', source: 'market' },
       ],
     },
     {

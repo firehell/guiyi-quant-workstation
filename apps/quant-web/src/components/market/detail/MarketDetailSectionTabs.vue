@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import type { MarketDetailHistoryItem } from '@/types/marketDetail'
+import { formatBeijingInstant } from '@/utils/marketDisplay'
 import MarketDetailDrawer from './MarketDetailDrawer.vue'
 
 const props = defineProps<{
@@ -42,6 +43,11 @@ function selectHistory(item: MarketDetailHistoryItem) {
   if (!props.historySelectable) return
   historyDrawerOpen.value = false
   emit('history-select', item)
+}
+
+function displayInstant(value: string | null | undefined): string {
+  if (!value) return '—'
+  return /^\d{4}-\d{2}-\d{2}T/.test(value) ? formatBeijingInstant(value) : value
 }
 
 defineExpose({ openHistory })
@@ -85,25 +91,25 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
           <span>
             {{ item.label }}
             <small v-if="item.barEnd">
-              · Bar {{ item.barEnd }} · 合约 {{ item.contract ?? '—' }}
+              · Bar {{ displayInstant(item.barEnd) }} · 合约 {{ item.contract ?? '—' }}
               <template v-if="item.markerType"> · 类型 {{ item.markerType }}</template>
               <template v-if="item.formulaVersion"> · 公式 {{ item.formulaVersion }}</template>
               {{ item.notificationAttemptedAt ? ' · 已尝试通知' : '' }}
             </small>
           </span>
-          <time :datetime="item.occurredAt">{{ item.timeLabel ?? item.occurredAt }}</time>
+          <time :datetime="item.occurredAt">{{ displayInstant(item.timeLabel ?? item.occurredAt) }}</time>
           </button>
           <template v-else>
           <span>
             {{ item.label }}
             <small v-if="item.barEnd">
-              · Bar {{ item.barEnd }} · 合约 {{ item.contract ?? '—' }}
+              · Bar {{ displayInstant(item.barEnd) }} · 合约 {{ item.contract ?? '—' }}
               <template v-if="item.markerType"> · 类型 {{ item.markerType }}</template>
               <template v-if="item.formulaVersion"> · 公式 {{ item.formulaVersion }}</template>
               {{ item.notificationAttemptedAt ? ' · 已尝试通知' : '' }}
             </small>
           </span>
-          <time :datetime="item.occurredAt">{{ item.timeLabel ?? item.occurredAt }}</time>
+          <time :datetime="item.occurredAt">{{ displayInstant(item.timeLabel ?? item.occurredAt) }}</time>
           </template>
         </li>
       </ol>
@@ -117,25 +123,25 @@ onBeforeUnmount(() => media?.removeEventListener('change', syncMedia))
           <span>
             {{ item.label }}
             <small v-if="item.barEnd">
-              · Bar {{ item.barEnd }} · 合约 {{ item.contract ?? '—' }}
+              · Bar {{ displayInstant(item.barEnd) }} · 合约 {{ item.contract ?? '—' }}
               <template v-if="item.markerType"> · 类型 {{ item.markerType }}</template>
               <template v-if="item.formulaVersion"> · 公式 {{ item.formulaVersion }}</template>
               {{ item.notificationAttemptedAt ? ' · 已尝试通知' : '' }}
             </small>
           </span>
-          <time :datetime="item.occurredAt">{{ item.timeLabel ?? item.occurredAt }}</time>
+          <time :datetime="item.occurredAt">{{ displayInstant(item.timeLabel ?? item.occurredAt) }}</time>
           </button>
           <template v-else>
           <span>
             {{ item.label }}
             <small v-if="item.barEnd">
-              · Bar {{ item.barEnd }} · 合约 {{ item.contract ?? '—' }}
+              · Bar {{ displayInstant(item.barEnd) }} · 合约 {{ item.contract ?? '—' }}
               <template v-if="item.markerType"> · 类型 {{ item.markerType }}</template>
               <template v-if="item.formulaVersion"> · 公式 {{ item.formulaVersion }}</template>
               {{ item.notificationAttemptedAt ? ' · 已尝试通知' : '' }}
             </small>
           </span>
-          <time :datetime="item.occurredAt">{{ item.timeLabel ?? item.occurredAt }}</time>
+          <time :datetime="item.occurredAt">{{ displayInstant(item.timeLabel ?? item.occurredAt) }}</time>
           </template>
         </li>
       </ol>

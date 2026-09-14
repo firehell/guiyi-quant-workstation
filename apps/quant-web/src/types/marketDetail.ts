@@ -132,7 +132,7 @@ export interface DetailViewModel {
     text: string
     tone: 'info' | 'warning'
   }
-  facts: readonly [MarketDetailFact, MarketDetailFact, MarketDetailFact]
+  facts: readonly MarketDetailFact[]
   disclosureSections: readonly MarketDetailDisclosureSection[]
   history: readonly MarketDetailHistoryItem[]
   dataStatus: 'ready' | 'stale' | 'unavailable'

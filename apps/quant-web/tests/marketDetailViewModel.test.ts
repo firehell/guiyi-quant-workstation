@@ -171,9 +171,30 @@ test('groups sourced facts into market extensions, identity, and data trust', as
     'market-extension', 'dominant-identity', 'data-trust',
   ])
   assert.equal(model.extendedSections[0]?.rows.find((row) => row.label === '成交额')?.value, '2,000')
+  assert.equal(model.extendedSections[0]?.rows.some((row) => row.label === '5日涨跌'), false)
   assert.equal(model.extendedSections[1]?.rows.find((row) => row.label === '物理合约区间')?.value, 'JM2601')
   assert.equal(model.extendedSections[2]?.rows.find((row) => row.label === '市场阶段')?.value, '交易中')
   assert.equal(model.extendedSections[2]?.rows.find((row) => row.label === '展示来源')?.value, '实时观察')
+})
+
+test('never manufactures the removed five-day change row for any series identity', async () => {
+  const { buildMarketDetailHeaderModel } = await import('../src/utils/marketDetailViewModel.ts')
+  const identities = [
+    identity,
+    { ...identity, seriesKind: 'continuous' as const },
+    { ...identity, seriesKind: 'contract' as const, contract: 'JM2601' },
+  ]
+  for (const nextIdentity of identities) {
+    const model = buildMarketDetailHeaderModel(input({
+      identity: nextIdentity,
+      dominant: nextIdentity.seriesKind === 'continuous' ? null : input().dominant,
+      bars: nextIdentity.seriesKind === 'continuous'
+        ? [bar('2026-09-02T02:30:00Z', 100, undefined), bar('2026-09-02T02:45:00Z', 110, undefined)]
+        : input().bars,
+      research: nextIdentity.seriesKind === 'contract' ? null : input().research,
+    }))
+    assert.equal(model.extendedSections.flatMap((section) => section.rows).some((row) => row.label === '5日涨跌'), false)
+  }
 })
 
 test('is deterministic and does not mutate source bars', async () => {

@@ -8,7 +8,7 @@ import MarketDetailFactStrip from './MarketDetailFactStrip.vue'
 const props = withDefaults(defineProps<{
   banner: string
   tone?: 'info' | 'warning'
-  facts: readonly [MarketDetailFact, MarketDetailFact, MarketDetailFact]
+  facts: readonly MarketDetailFact[]
   identityKey: string
   title?: string
 }>(), { tone: 'info', title: '当前状态依据' })

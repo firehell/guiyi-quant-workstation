@@ -21,19 +21,23 @@ from guiyi_quant.subing_reference import (
     project_reference,
 )
 from app.market_data.actual_dominant_research import ActualDominantResearchSegmentLoader
+from app.market_data.diagnostics import DATA_REASONS, data_reason, safe_context
 from app.market_data.domain import (
     BarFrequency,
     ContractTradingDayQuery,
     MarketSeriesResult,
 )
-from app.market_data.market_data_service import MarketDataService
+from app.market_data.market_data_service import MarketDataError, MarketDataService
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class SubingReferenceError(ValueError):
-    def __init__(self, code: str):
+    def __init__(
+        self, code: str, *, diagnostic: Mapping[str, object] | None = None
+    ):
         self.code = code
+        self.diagnostic = _diagnostic(diagnostic)
         super().__init__(code)
 
 
@@ -189,18 +193,23 @@ class SubingReferenceService:
                 as_of,
                 max(
                     window.end
-                    for window in self.market_data.session_windows(
-                        symbol=query.symbol, trading_day=query.through
-                    )
+                    for window in self._session_windows(query.symbol, query.through)
                 ),
             )
-        days = self.market_data.completed_trading_days(
-            symbol=query.symbol,
-            start=datetime.combine(start - timedelta(days=1), time.min, SHANGHAI),
-            as_of=calendar_as_of,
-            latest=query.through or latest,
-            calendar_since=start,
-        )
+        try:
+            days = self.market_data.completed_trading_days(
+                symbol=query.symbol,
+                start=datetime.combine(start - timedelta(days=1), time.min, SHANGHAI),
+                as_of=calendar_as_of,
+                latest=query.through or latest,
+                calendar_since=start,
+            )
+        except MarketDataError as exc:
+            reason = getattr(exc, "reason", None) or data_reason(exc.code)
+            stage = "session" if reason in {
+                "TRADING_SESSION_MISSING", "HISTORICAL_SESSION_FACT_MISSING"
+            } else "calendar"
+            self._raise_data_unavailable(exc, stage, query.symbol)
         days = tuple(day for day in days if day >= start)
         if not days or tuple(sorted(set(days))) != days:
             raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
@@ -211,9 +220,7 @@ class SubingReferenceService:
         since = query.since or days[max(0, len(days) - 20)]
         if since > through:
             raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
-        sessions = self.market_data.session_windows(
-            symbol=query.symbol, trading_day=through
-        )
+        sessions = self._session_windows(query.symbol, through)
         cutoff = max(window.end for window in sessions)
         if cutoff > as_of:
             raise SubingReferenceError("SUBING_REFERENCE_DATA_CONFLICT")
@@ -222,12 +229,15 @@ class SubingReferenceService:
     def _inputs(
         self, symbol: str, since: date, through: date, cutoff: datetime
     ) -> tuple[tuple[ReferenceSegment, ...], list[dict[str, Any]]]:
-        loaded = ActualDominantResearchSegmentLoader(self.market_data).load(
-            symbol=symbol,
-            frequencies=(BarFrequency.M15,),
-            since=since,
-            through=through,
-        )
+        try:
+            loaded = ActualDominantResearchSegmentLoader(self.market_data).load(
+                symbol=symbol,
+                frequencies=(BarFrequency.M15,),
+                since=since,
+                through=through,
+            )
+        except MarketDataError as exc:
+            self._raise_data_unavailable(exc, "actual_dominant_replay", symbol)
         actual = loaded.results[BarFrequency.M15]
         _identity(actual, symbol, "actual_dominant", None)
         _order(actual)
@@ -255,9 +265,7 @@ class SubingReferenceService:
                 raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
             end = max(
                 window.end
-                for window in self.market_data.session_windows(
-                    symbol=symbol, trading_day=own_last_day
-                )
+                for window in self._session_windows(symbol, own_last_day)
             )
             if end > cutoff or own_bars[-1].bar_end != end:
                 raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
@@ -272,15 +280,35 @@ class SubingReferenceService:
             if not expected or expected[-1] != (end, own_last_day):
                 raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
             self.check_cancelled()
-            physical = self.market_data.query_contract_trading_days(
-                ContractTradingDayQuery(
-                    symbol,
-                    owner.contract,
-                    BarFrequency.M15,
-                    expected[0][1],
-                    own_last_day,
+            try:
+                physical = self.market_data.query_contract_trading_days(
+                    ContractTradingDayQuery(
+                        symbol,
+                        owner.contract,
+                        BarFrequency.M15,
+                        expected[0][1],
+                        own_last_day,
+                    )
                 )
-            )
+            except MarketDataError as exc:
+                reason = getattr(exc, "reason", None) or data_reason(exc.code)
+                if reason not in DATA_REASONS:
+                    raise
+                context = {
+                    "symbol": symbol,
+                    "contract": owner.contract,
+                    "frequency": BarFrequency.M15.value,
+                    "expected_count": len(expected),
+                    **getattr(exc, "context", {}),
+                }
+                raise SubingReferenceError(
+                    "SUBING_REFERENCE_DATA_UNAVAILABLE",
+                    diagnostic={
+                        "stage": "physical_contract_replay",
+                        "reason": reason,
+                        "context": context,
+                    },
+                ) from exc
             _identity(physical, symbol, "contract", owner.contract)
             _order(physical)
             if (
@@ -301,8 +329,8 @@ class SubingReferenceService:
                 next_owner = owners[index + 1]
                 interruption = min(
                     window.start
-                    for window in self.market_data.session_windows(
-                        symbol=symbol, trading_day=next_owner.start_trading_day
+                    for window in self._session_windows(
+                        symbol, next_owner.start_trading_day
                     )
                 )
                 if not end <= interruption <= cutoff:
@@ -334,6 +362,34 @@ class SubingReferenceService:
         if actual.bars[-1].trading_day != through or actual.bars[-1].bar_end != cutoff:
             raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
         return tuple(result), inputs
+
+    def _session_windows(self, symbol: str, trading_day: date):
+        try:
+            return self.market_data.session_windows(
+                symbol=symbol, trading_day=trading_day
+            )
+        except MarketDataError as exc:
+            self._raise_data_unavailable(exc, "session", symbol)
+
+    @staticmethod
+    def _raise_data_unavailable(
+        exc: MarketDataError, stage: str, symbol: str
+    ) -> None:
+        reason = getattr(exc, "reason", None) or data_reason(exc.code)
+        if reason not in DATA_REASONS:
+            raise exc
+        raise SubingReferenceError(
+            "SUBING_REFERENCE_DATA_UNAVAILABLE",
+            diagnostic={
+                "stage": stage,
+                "reason": reason,
+                "context": {
+                    "symbol": symbol,
+                    "frequency": BarFrequency.M15.value,
+                    **getattr(exc, "context", {}),
+                },
+            },
+        ) from exc
 
 
 def _identity(
@@ -381,3 +437,23 @@ def _hash(value: Any) -> str:
             _wire(value), sort_keys=True, ensure_ascii=True, separators=(",", ":")
         ).encode()
     ).hexdigest()
+
+
+_DIAGNOSTIC_STAGES = frozenset(
+    {"calendar", "session", "actual_dominant_replay", "physical_contract_replay"}
+)
+
+
+def _diagnostic(value: Mapping[str, object] | None) -> dict[str, object] | None:
+    if value is None:
+        return None
+    stage = value.get("stage")
+    reason = value.get("reason")
+    if stage not in _DIAGNOSTIC_STAGES or reason not in DATA_REASONS:
+        return None
+    context = value.get("context")
+    return {
+        "stage": stage,
+        "reason": reason,
+        "context": safe_context(context if isinstance(context, Mapping) else None),
+    }

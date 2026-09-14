@@ -242,6 +242,101 @@ def test_strategy_detail_returns_only_requested_typed_section(
     )
 
 
+@pytest.mark.parametrize("product", ["AU", "JM"])
+@pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
+def test_strategy_detail_normalizes_ascii_product_before_service(
+    monkeypatch, product_cases, product, strategy
+):
+    result, _as_of = _service_result(product_cases)
+    seen = []
+
+    class FakeService:
+        def query(self, query):
+            seen.append(query)
+            return result
+
+    monkeypatch.setattr(
+        market_newow, "_build_product_service", lambda *_args: FakeService()
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/market/newow/strategy-detail",
+                params={
+                    "product": product,
+                    "strategy": strategy,
+                    "frequency": "1w",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert [query.product for query in seen] == [product.lower()]
+
+
+@pytest.mark.parametrize("product", [" au", "au ", "a1", "ＡＵ", "a-b", ""])
+def test_strategy_detail_rejects_non_ascii_or_ambiguous_product_before_service(
+    monkeypatch, product
+):
+    monkeypatch.setattr(
+        market_newow,
+        "_build_product_service",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("invalid product reached product service")
+        ),
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/v1/market/newow/strategy-detail",
+                params={
+                    "product": product,
+                    "strategy": "trend",
+                    "frequency": "1w",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "NEWOW_INVALID_PRODUCT"}}
+
+
+def test_historical_snapshot_normalizes_ascii_product_before_resolver(monkeypatch):
+    seen = []
+
+    class Resolver:
+        def resolve(self, product, strategy, frequency):
+            seen.append(product)
+            return HistoricalSnapshot(
+                product,
+                strategy,
+                frequency,
+                date(2026, 9, 7),
+                datetime(2026, 9, 7, 7, tzinfo=UTC),
+            )
+
+    monkeypatch.setattr(
+        market_newow, "_build_historical_resolver", lambda *_args: Resolver()
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/market/newow/historical-snapshot",
+                params={"product": "JM", "strategy": "trend", "frequency": "1w"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["product"] == "jm"
+    assert seen == ["jm"]
+
+
 def test_typed_api_serializes_verified_initial_clear_without_entry(product_cases):
     result = _initial_clear_service_result(product_cases)
     payload = market_newow._product_response(result).model_dump(mode="json")

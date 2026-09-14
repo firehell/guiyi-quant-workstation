@@ -941,7 +941,8 @@ pnpm -C apps/quant-web exec node --test \
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -p no:cacheprovider -q \
-  services/quant-api/tests/newow/test_candidate_preview.py
+  services/quant-api/tests/newow/test_candidate_preview.py \
+  services/quant-api/tests/test_subing_reference.py
 pnpm -C apps/quant-web exec node --test tests/candidatePreview.test.ts tests/marketSeries.test.ts tests/useNewowProduct.test.ts
 PLAYWRIGHT_CANDIDATE_PREVIEW=1 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/candidate-preview.spec.mjs
 ```
@@ -963,9 +964,20 @@ API 固定只绑定 `127.0.0.1:8010`，Web 固定 `127.0.0.1:5174`，端口占�
 启动后核对 `/api/preview/identity` 与横幅的 SHA/cutoff；改变代码后须停止候选进程并重新核对启动。
 K线 `before` 是排他上界，牛哇保留既有 `as_of` completed 语义；首页投影/主力元数据与正式
 Runtime health/当前事件不伪装成同一历史快照，各自保留响应时间戳。页面身份不匹配时不加载业务查询。
-代理只允许显式列出的只读业务 GET（包括 Newow capability）及两项正式状态 GET，其他请求返回
+代理只允许显式列出的只读业务 GET（包括 Newow capability 与 SuBing 历史 reference）及两项正式状态 GET，其他请求返回
 `PREVIEW_ROUTE_FORBIDDEN`，无 Live subscription。
 停止候选进程即关闭预览；没有数据写入需要回滚，正式 Runtime 与 release Gate 不因预览通过而改变。
+
+Market Web 发布前真实只读候选验收在 API 8010 与 Web 5174 身份核对通过后运行。它覆盖 60 品种首页、
+真实 AU/JM Newow 与 SuBing reference、周线最近完整区间动作、密集 callout 桌面/移动/全屏边界；不得把
+fixture 结果计作真实数据通过：
+
+```bash
+REAL_BACKEND=1 PLAYWRIGHT_SKIP_WEBSERVER=1 \
+  PLAYWRIGHT_BASE_URL=http://127.0.0.1:5174 \
+  pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs \
+  e2e/market-pre-release-readonly.spec.mjs
+```
 
 Newow P5 路由/偏好、typed section consumer、九组合图层、参考历史与解释面板定向回归：
 

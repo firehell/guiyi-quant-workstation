@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
-import { formatMarketDecimal } from '@/utils/marketDisplay'
+import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 
 import type {
   NewowProductSectionResponse,
@@ -89,6 +89,14 @@ function reload(): void {
   emit('reload', { performanceSince: performanceSince.value, performanceThrough: performanceThrough.value })
 }
 
+function useCompleteWindow(): void {
+  const target = model.value?.completeWindowAction
+  if (!target || props.loadingPage) return
+  performanceSince.value = target.since
+  performanceThrough.value = target.through
+  emit('reload', { performanceSince: target.since, performanceThrough: target.through })
+}
+
 function updateSince(event: Event): void { performanceSince.value = (event.target as HTMLInputElement).value }
 function updateThrough(event: Event): void { performanceThrough.value = (event.target as HTMLInputElement).value }
 function updateFilter(event: Event): void { filter.value = (event.target as HTMLSelectElement).value as typeof filter.value }
@@ -118,6 +126,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
     <button v-if="lifecycle === 'not_requested' || error || lifecycle === 'unavailable'" type="button" @click="emit('retry')">{{ lifecycle === 'not_requested' ? '读取参考交易' : '重试参考交易' }}</button>
     <template v-if="model">
       <section class="newow-reference__summary" data-testid="newow-reference-summary" aria-label="参考交易统计摘要">
+        <p class="newow-reference__availability" role="status">{{ model.statusExplanation }}</p>
         <dl>
           <div><dt>已完成</dt><dd>{{ model.summary.closedCount }}</dd></div>
           <div><dt>胜率</dt><dd>{{ model.summary.winRateText }}</dd></div>
@@ -128,7 +137,8 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
           <div><dt>期初已有</dt><dd>{{ model.counts.initial }}</dd></div>
         </dl>
         <p v-if="model.summary.closedCount === 0">暂无已完成参考交易；统计指标不是 0%。</p>
-        <details><summary>统计时间与来源</summary><p>Performance window {{ model.performanceWindow.since }} → {{ model.performanceWindow.through }}</p><p>实际可用至 {{ model.actualAvailableThrough }} · reference cutoff {{ model.performanceWindow.cutoff }}</p></details>
+        <button v-if="model.completeWindowAction" type="button" :disabled="loadingPage" @click="useCompleteWindow">使用最近完整统计区间</button>
+        <details><summary>统计时间与来源</summary><p>用户选择统计区间 {{ model.performanceWindow.since }} → {{ model.performanceWindow.through }}</p><p>实际完整可用截止 {{ model.actualAvailableThrough }} · 参考计算截止 {{ formatBeijingInstant(model.performanceWindow.cutoff) }}</p><p v-if="response?.status.reason_code">技术原因码 {{ response.status.reason_code }}</p></details>
       </section>
 
       <article v-if="waiting" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">

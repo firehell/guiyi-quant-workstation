@@ -31,13 +31,24 @@ export function newowErrorDisplay(error: string | null): string | null {
     NEWOW_DATA_UNAVAILABLE: '数据暂不可用，可重试本面板',
     NEWOW_API_UNAVAILABLE: '服务暂不可用，可重试本面板',
     NEWOW_INTERNAL_ERROR: '服务内部校验失败，可重试本面板',
+    NEWOW_RESOURCE_BUSY: '资源正在处理其他请求，请稍后重试',
+    NEWOW_REQUEST_CANCELLED: '本次请求已取消，可重新刷新本面板',
     NEWOW_HISTORICAL_SNAPSHOT_UNAVAILABLE: '限定范围内未找到可用历史快照，需检查数据后重试',
     NEWOW_HISTORICAL_RESOLUTION_TIMEOUT: '历史快照检查超时，可重试',
     NEWOW_COMPLETE_TRADING_DAY_MISSING: '尚无已完成交易日数据，可重试本面板',
     NEWOW_COMPLETE_PERIOD_MISSING: '尚无已完成周期数据，可重试本面板',
     NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS: '当前物理合约区段不足 20 根 Bar，暂不能进行窗口比较',
+    NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL: '本周尚未完成，参考计算仅截至最近已完成周线',
+    NEWOW_REFERENCE_WEEKLY_COMPLETION_PENDING: '本周尚未形成已完成周线',
+    NEWOW_REFERENCE_WINDOW_PARTIAL: '所选统计终点晚于权威可用截止',
+    NEWOW_CHART_WARMING: '策略输入仍在预热',
   }
-  return Object.hasOwn(labels, error) ? `${labels[error]}（${error}）` : error
+  if (Object.hasOwn(labels, error)) return `${labels[error]}（技术码 ${error}）`
+  // Structured diagnostics are assembled only from the allow-listed reasons and
+  // bounded context above. Preserve that useful recovery guidance without ever
+  // reflecting an arbitrary backend message.
+  if (Object.values(REASONS).some((label) => error.startsWith(label))) return error
+  return '原因未识别；原始原因码仅保留在技术详情'
 }
 
 export function parseNewowDataDiagnostic(value: unknown): NewowDataDiagnostic | null {

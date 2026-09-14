@@ -8,6 +8,7 @@ from decimal import Decimal
 from enum import Enum
 from fractions import Fraction
 from math import isfinite
+import re
 from typing import Literal
 from collections.abc import Callable, Mapping
 
@@ -123,6 +124,14 @@ _PRODUCT_QUERY_FIELDS = frozenset(
 _HISTORICAL_QUERY_FIELDS = frozenset({"product", "strategy", "frequency"})
 
 
+def _normalize_public_product(product: str) -> str:
+    if re.fullmatch(r"[A-Za-z]{1,8}", product) is None:
+        raise HTTPException(
+            status_code=422, detail={"code": "NEWOW_INVALID_PRODUCT"}
+        )
+    return product.lower()
+
+
 @router.get(
     "/product-capabilities", response_model=NewowProductCapabilitiesResponse
 )
@@ -154,6 +163,7 @@ def newow_trend_detail(
     session: Session = Depends(get_db),
 ) -> NewowTrendDetailResponse:
     del frequency, series_kind
+    product = _normalize_public_product(product)
     try:
         result = NewowTrendDetailService(
             build_market_data_service(session), taxonomy=load_product_taxonomy()
@@ -255,6 +265,7 @@ def newow_historical_snapshot(
     }
     if unknown or duplicates:
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
+    product = _normalize_public_product(product)
 
     def cancelled() -> bool:
         try:
@@ -327,6 +338,7 @@ def newow_strategy_detail(
         or (as_of is not None and as_of.astimezone(UTC) > datetime.now(UTC))
     ):
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
+    product = _normalize_public_product(product)
     try:
         require_open_frequency(ProductFrequency(frequency))
         require_open_section(section)
