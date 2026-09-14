@@ -1,7 +1,7 @@
 # 牛哇周线剩余 1–3 项当前证据
 
-日期：2026-09-14。状态：`REVIEW_COMPLETE / EXTERNAL_GATE_PENDING`。本文件只记录本任务的只读事实与
-待批准包，不代表 RQData 下载、Canonical 写入、发布或 Runtime 操作已获授权。
+日期：2026-09-14。状态：`EC2607 COMPLETED / ORDINARY_AND_RS_EXTERNAL_GATE_PENDING`。本文件记录本任务的
+工程、只读事实与 EC2607 已消费的一次执行证据；不代表普通批次、RS、发布或 Runtime 操作已获授权。
 
 ## 当前依赖队列
 
@@ -56,9 +56,18 @@
 旧 attempt 的真实 provider 调用数仍是 unknown；Catalog/物理写入为 0。新实现的 April W1 来源范围由原生
 Calendar 展开到 2026-03-30，不再使用旧执行器的 2026-04-01 硬断言。
 
-待代码 Review 与 commit 后生成新的 hash-locked prepared artifact。它必须绑定 exact code commit、执行代码
-hash、私有配置 hash、Canonical 根 hash、plan hash、来源日期、projection invalidation 与严格 replan/readback。
-生成 prepared artifact 不构成 apply 授权。
+owner 批准后，exact prepared artifact
+`4712d8b6d16ccd0dea71cb1f3e32f07026aabcdc4246e4f43eb626fb6bc1db93` 已以 attempt
+`ec2607-20260914-001` 严格执行一次。绑定代码为
+`3ea81f34e24fcf7767ad5be51f1d62c5c6129e18`，原 plan hash 未漂移；结果为 `passed`：8/8 targets、
+84 bars、8 次原生 target 请求，blocked/failed 均为 0。底层同源调用为 4 started/4 response_saved，
+`outcome_unknown=false`、`retries=0`；2026 年 4 月来源从 2026-03-30 开始。
+
+提交后 8 个分区的 Catalog row count、物理 Parquet row count 与 MDS bar count 逐项相等，物理文件均记录
+SHA-256；原生 replan 为 0 targets/0 bars/0 provider request，plan
+`fe28bda7044f566d67400c6fda40f717320febc345e31e71c6810aa6ab8f6c8d`。独立新进程再次得到同一零目标结果。
+本次执行意图已消费，不授权重试或扩大范围；完整 journal、来源 payload、receipt 和逐分区 readback 保存在
+`outputs/newow-weekly-recovery-attempts/ec2607-20260914-001/`。
 
 ## RS2309 / RS2311 本地专项
 
@@ -109,8 +118,8 @@ D1/W1。非正 bars 与缺口一起形成未来来源核验集合，但来源核
 - 工程：504 项扩展定向测试、Ruff、mypy、OpenSpec strict 9/9、secret scan 0 findings 与 diff check 均通过。
   最终独立 Review：Standards 为 P1/P2/P3/smell 全 0；Spec 为 P1/P2/P3 全 0、1 个非阻断的 readback
   seam smell。结论均为允许集成 develop。
-- EC2607：prepared hash 形成后，需 owner 对该 exact artifact 给出一次下载+Canonical 写入意图。
-- 普通首批：需独立 prepared hash 和 fresh 一次执行意图；EC 成功 readback 前不执行。
+- EC2607：一次执行已完成且严格读回通过；该意图已消费，不授权重试。
+- 普通首批：EC 成功 Gate 已满足，但仍需独立 prepared hash 和 fresh 一次执行意图；本任务未执行。
 - RS2309/RS2311：先对上述精确来源集合取得“仅来源下载”意图；禁止 Canonical 写入。分类后如有本地可修复
   冲突，再形成独立修复 plan、Review 和正式写入意图。
 - 第 4 项完整矩阵、main/tag/release、Runtime、Scope、通知和交易均不在本任务。

@@ -69,14 +69,14 @@ assert retries == 0
 - [ ] 刷新冻结历史 as-of 的 dependency-only audit；严格保留 60 品种分母与非就绪对象，不跑第 4 项完整 acceptance matrix。
 - [ ] 对比 1,139 PROPOSED 历史快照与现在，排除 SI2308 与已修复 targets；列当前普通、review、source、metadata、unknown 分类及变化原因。
 - [ ] 单列 EC2607：现取 plan，比较旧 hash/8 targets/84 bars；不把旧 hash 当作当前有效。展示原生完整周 source 范围及环境，不估算流量。
-- [ ] 准备精确单次下载+写入包、代码身份、projection 影响、回读和失败停止规则。此包只是准备产物；在开发新任务中取得 owner 新的精确执行意图后才尝试。
-- [ ] 获批则一次执行，成功须 Catalog/文件 hash/MDS/原生 replan 均回读；失败立即停止，保留来源结果及已知/unknown，不自动执行第二次。
+- [x] 准备精确单次下载+写入包、代码身份、projection 影响、回读和失败停止规则。此包只是准备产物；在开发新任务中取得 owner 新的精确执行意图后才尝试。
+- [x] 获批则一次执行，成功须 Catalog/文件 hash/MDS/原生 replan 均回读；失败立即停止，保留来源结果及已知/unknown，不自动执行第二次。
 - [ ] 即便 EC 外部 Gate 未获批，也继续 P4 的 readonly 队列和 P5 的本地调查、全部工程验证，不空等。
 
 ## P4：普通剩余项有限批次
 
-- [ ] 从当前 PROPOSED 清单按稳定 symbol/contract/through 排序，最多 20 个完整逻辑计划一批，D1/W1 同源作为同一 warmup 单元。
-- [ ] 每批冻结目标、hash、原生范围和失败影响，排除 source/review/metadata/unknown；不把所有历史 1,139 项视作一份无限执行授权。
+- [x] 从当前 PROPOSED 清单按稳定 symbol/contract/through 排序，最多 20 个完整逻辑计划一批，D1/W1 同源作为同一 warmup 单元。
+- [x] 每批冻结目标、hash、原生范围和失败影响，排除 source/review/metadata/unknown；不把所有历史 1,139 项视作一份无限执行授权。
 - [ ] 每个批次有 fresh 精确单次意图后串行处理；每单元重新验证锁内计划。漂移或任何异常停止整批并报告已完成、失败和未尝试尾项。
 - [ ] 写后严格读取与原生 replan；汇总真实余额，不使用成功请求数或二次人工清单作为 gap 权威。
 - [ ] 未获批、失败或 scope 改变：可继续准备安全独立项，但下载/正式写入需新意图；不把“用户不要求配额计算”误读为自动重试授权。
