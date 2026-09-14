@@ -1,0 +1,1256 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+import hashlib
+import io
+import json
+from pathlib import Path
+import threading
+from typing import Any, Mapping
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.db.base import Base
+from app.market_data.catalog import MarketCatalog
+from app.market_data.domain import CanonicalBar, DatasetKey
+from app.market_data.historical_data_manager import (
+    BarBatch,
+    BarFetchRequest,
+    ContractWarmupRequest,
+    HistoricalDataManager,
+)
+from app.market_data.rqdata_adapter import ExchangeDailySourceRequest
+from app.market_data.storage import CanonicalMonthlyStore
+from app.models import Contract, Exchange, Instrument
+from scripts.newow_weekly_recovery import (
+    RecoveryError,
+    _post_commit_readback,
+    _write_json_exclusive,
+    execute_prepared_batch,
+    load_prepared_manifest,
+    prepare_bounded_units,
+    write_prepared_manifest,
+)
+from scripts.newow_weekly_recovery_campaign import (
+    execute_campaign,
+    main,
+    parser,
+    partition_ordinary_units,
+    prepare_campaign,
+    validate_campaign_manifest,
+)
+from tests.data_foundation.test_historical_data_manager import FakeCoverage, FakeMetadata
+
+
+IDENTITY = {
+    "code_commit": "b" * 40,
+    "execution_code_sha256": "d" * 64,
+    "config_sha256": "c" * 64,
+    "canonical_root_sha256": "e" * 64,
+}
+
+
+def _ordinary_unit(index: int = 0) -> dict[str, Any]:
+    return {
+        "symbol": "ag",
+        "contract": f"AG{1000 + index}",
+        "through": "2026-09-11",
+        "requested_through": "2026-09-11",
+        "frequency": "1w",
+        "plan_sha256": f"{index:064x}",
+        "status": "PROPOSED",
+        "expected_bar_count": index + 1,
+        "target_windows": [
+            {
+                "dataset": ["contract", "ag", f"AG{1000 + index}", "1d"],
+                "year": 2026,
+                "month": 9,
+                "expected_bar_count": index + 1,
+            },
+            {
+                "dataset": ["contract", "ag", f"AG{1000 + index}", "1w"],
+                "year": 2026,
+                "month": 9,
+                "expected_bar_count": 1,
+            },
+        ],
+    }
+
+
+def _report(units: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "command": "data.newow-readiness",
+        "status": "audited",
+        "complete": True,
+        "budget_exhausted": False,
+        "readonly": True,
+        "provider_requests": 0,
+        "writes": 0,
+        "release_stage": "weekly",
+        "frequency_scope": ["1w"],
+        "matrix": False,
+        "as_of": "2026-09-13T06:36:13+00:00",
+        "metadata_proposals": [],
+        "repair_targets": units,
+    }
+
+
+def _native_child(
+    root: Path,
+    batch_id: str,
+    units: tuple[dict[str, Any], ...],
+    *,
+    identity: Mapping[str, str] = IDENTITY,
+) -> dict[str, Any]:
+    child_units = []
+    for item in units:
+        child_units.append(
+            {
+                "symbol": item["symbol"],
+                "contract": item["contract"],
+                "through": item["through"],
+                "frequency": item["frequency"],
+                "plan_sha256": item["expected_plan_sha256"],
+                "target_count": 2,
+                "expected_bar_count": int(item["contract"][2:]) - 999,
+                "targets": [
+                    {
+                        "dataset": [
+                            "contract",
+                            item["symbol"],
+                            item["contract"],
+                            "1d",
+                        ],
+                        "year": 2026,
+                        "month": 9,
+                        "expected_start": "2026-09-01T07:00:00+00:00",
+                        "expected_end": "2026-09-02T07:00:00+00:00",
+                        "expected_bar_count": 1,
+                    },
+                    {
+                        "dataset": [
+                            "contract",
+                            item["symbol"],
+                            item["contract"],
+                            "1w",
+                        ],
+                        "year": 2026,
+                        "month": 9,
+                        "expected_start": "2026-09-04T07:00:00+00:00",
+                        "expected_end": "2026-09-04T07:00:00+00:00",
+                        "expected_bar_count": 1,
+                    },
+                ],
+                "source_requests": [],
+            }
+        )
+    manifest = {
+        "schema_version": "newow_weekly_recovery_prepare_v1",
+        **identity,
+        "unit_count": len(child_units),
+        "units": child_units,
+    }
+    path = root / f"{batch_id}.prepare.json"
+    digest = _write_json_exclusive(path, manifest)
+    return {
+        "status": "prepared",
+        "readonly": True,
+        "provider_requests": 0,
+        "writes": 0,
+        "prepared_file": str(path),
+        "prepared_sha256": digest,
+        "unit_count": len(child_units),
+    }
+
+
+def _campaign(tmp_path: Path, count: int) -> dict[str, Any]:
+    return prepare_campaign(
+        _report([_ordinary_unit(index) for index in range(count)]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: _native_child(
+            root, batch_id, units
+        ),
+    )
+
+
+def _native_apply_result(
+    batch_id: str,
+    *,
+    status: str = "passed",
+    return_code: int | None = None,
+    completed: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    native_result = {
+        "status": status,
+        "completed": completed or [],
+        "failed": None if status == "passed" else {"status": status},
+        "unattempted": [],
+        "retries": 0,
+    }
+    return {
+        "return_code": (0 if status == "passed" else 1)
+        if return_code is None
+        else return_code,
+        "batch_result": {
+            "schema_version": "newow_weekly_recovery_result_v1",
+            "status": status,
+            "readonly": False,
+            "attempt_dir": f"/fixture/{batch_id}",
+            "result": native_result,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("complete", False),
+        ("budget_exhausted", True),
+        ("as_of", "2026-09-13"),
+        ("as_of", "not-a-date"),
+        ("frequency_scope", ["1d"]),
+        ("matrix", True),
+        ("readonly", False),
+        ("provider_requests", 1),
+        ("writes", 1),
+    ],
+)
+def test_partition_rejects_incomplete_exhausted_or_wrong_audit(
+    field: str,
+    value: object,
+) -> None:
+    report = _report([_ordinary_unit()])
+    report[field] = value
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
+
+
+def test_partition_rejects_missing_required_report_field() -> None:
+    report = _report([_ordinary_unit()])
+    del report["repair_targets"]
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
+
+
+@pytest.mark.parametrize("count", [0, 1, 20, 21, 1117])
+def test_partition_has_exact_twenty_unit_boundaries_without_loss(count: int) -> None:
+    units = [_ordinary_unit(index) for index in range(count)]
+
+    batches = partition_ordinary_units(_report(units))
+
+    expected_sizes = [20] * (count // 20)
+    if count % 20:
+        expected_sizes.append(count % 20)
+    assert [len(group) for group in batches] == expected_sizes
+    assert {
+        (unit["symbol"], unit["contract"], unit["frequency"])
+        for group in batches
+        for unit in group
+    } == {(unit["symbol"], unit["contract"], "1w") for unit in units}
+
+
+def test_partition_excludes_nonordinary_statuses_and_campaign_counts_them(
+    tmp_path: Path,
+) -> None:
+    review = {**_ordinary_unit(1), "status": "REVIEW_REQUIRED"}
+    source_error = {
+        **_ordinary_unit(2),
+        "status": "SOURCE_EXCEPTION",
+        "plan_sha256": None,
+    }
+    report = _report([_ordinary_unit(), review, source_error])
+
+    batches = partition_ordinary_units(report)
+    manifest = prepare_campaign(
+        report,
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: _native_child(
+            root, batch_id, units
+        ),
+    )
+
+    assert [[unit["contract"] for unit in group] for group in batches] == [["AG1000"]]
+    assert manifest["scope"]["included_status_counts"] == {"PROPOSED": 1}
+    assert manifest["scope"]["excluded_status_counts"] == {
+        "REVIEW_REQUIRED": 1,
+        "SOURCE_EXCEPTION": 1,
+    }
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {},
+        {"through": "2026-09-10", "requested_through": "2026-09-10"},
+        {"plan_sha256": "f" * 64},
+    ],
+)
+def test_partition_rejects_duplicate_or_conflicting_unit_identity(
+    change: dict[str, Any],
+) -> None:
+    first = _ordinary_unit()
+    duplicate = {**first, **change}
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_SCOPE_CONFLICT$"):
+        partition_ordinary_units(_report([first, duplicate]))
+
+
+def test_partition_rejects_target_through_after_audit_as_of() -> None:
+    unit = {**_ordinary_unit(), "through": "2026-09-14", "requested_through": "2026-09-14"}
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(_report([unit]))
+
+
+def test_prepare_builds_all_children_and_one_hash_locked_campaign(tmp_path: Path) -> None:
+    report = _report([_ordinary_unit(index) for index in range(21)])
+    calls: list[tuple[str, int]] = []
+
+    def invoke(
+        units: tuple[dict[str, Any], ...], batch_id: str, root: Path
+    ) -> dict[str, Any]:
+        calls.append((batch_id, len(units)))
+        return _native_child(root, batch_id, units)
+
+    manifest = prepare_campaign(
+        report,
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=invoke,
+    )
+
+    assert calls == [("batch-001", 20), ("batch-002", 1)]
+    assert [child["batch_id"] for child in manifest["children"]] == [
+        "batch-001",
+        "batch-002",
+    ]
+    assert manifest["totals"] == {
+        "batch_count": 2,
+        "unit_count": 21,
+        "target_count": 42,
+        "expected_bar_count": 231,
+    }
+    assert manifest["children"][0]["unit_count"] == 20
+    assert manifest["children"][-1]["unit_count"] == 1
+    assert len(manifest["children"][0]["sha256"]) == 64
+    assert manifest["children"][0]["path"] == "batch-001.prepare.json"
+    assert len(manifest["scope"]["unit_identity_sha256"]) == 64
+    assert len(manifest["scope"]["target_identity_sha256"]) == 64
+    assert (tmp_path / "campaign.prepare.json").is_file()
+    assert validate_campaign_manifest(manifest, evidence_root=tmp_path) == manifest
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_MANIFEST_EXISTS$"):
+        prepare_campaign(
+            report,
+            report_sha256="f" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=invoke,
+        )
+
+
+def test_prepare_zero_units_creates_only_readonly_completed_campaign(tmp_path: Path) -> None:
+    calls: list[object] = []
+
+    manifest = prepare_campaign(
+        _report([]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda *_args: calls.append(True),
+    )
+
+    assert calls == []
+    assert manifest["status"] == "completed"
+    assert manifest["readonly"] is True
+    assert manifest["children"] == []
+    assert manifest["totals"]["unit_count"] == 0
+    assert manifest["provider_requests"] == 0
+    assert manifest["writes"] == 0
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_child",
+        "extra_child",
+        "reordered",
+        "duplicate_unit",
+        "wrong_hash",
+        "wrong_identity",
+        "absolute_path",
+        "escaped_path",
+    ],
+)
+def test_validate_campaign_rejects_incomplete_or_drifted_children_before_execution(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    manifest = prepare_campaign(
+        _report([_ordinary_unit(index) for index in range(21)]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: _native_child(
+            root, batch_id, units
+        ),
+    )
+    changed = deepcopy(manifest)
+    if mutation == "missing_child":
+        changed["children"].pop()
+    elif mutation == "extra_child":
+        changed["children"].append(deepcopy(changed["children"][-1]))
+        changed["children"][-1]["batch_id"] = "batch-003"
+    elif mutation == "reordered":
+        changed["children"].reverse()
+    elif mutation == "duplicate_unit":
+        changed["children"][1]["units"] = [
+            deepcopy(changed["children"][0]["units"][0])
+        ]
+    elif mutation == "wrong_hash":
+        changed["children"][0]["sha256"] = "0" * 64
+    elif mutation == "wrong_identity":
+        changed["execution_identity"]["config_sha256"] = "0" * 64
+    elif mutation == "absolute_path":
+        changed["children"][0]["path"] = str(
+            (tmp_path / "batch-001.prepare.json").resolve()
+        )
+    elif mutation == "escaped_path":
+        changed["children"][0]["path"] = "../batch-001.prepare.json"
+
+    with pytest.raises(RecoveryError):
+        validate_campaign_manifest(changed, evidence_root=tmp_path)
+
+
+def test_validate_campaign_rejects_symlinked_child(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    manifest = prepare_campaign(
+        _report([_ordinary_unit()]),
+        report_sha256="f" * 64,
+        evidence_root=real,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: _native_child(
+            root, batch_id, units
+        ),
+    )
+    linked = tmp_path / "linked"
+    linked.symlink_to(real, target_is_directory=True)
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_OUTPUT_ROOT_UNSAFE$"):
+        validate_campaign_manifest(manifest, evidence_root=linked)
+
+
+def test_validate_campaign_rejects_target_identity_drift_even_with_new_child_hash(
+    tmp_path: Path,
+) -> None:
+    manifest = _campaign(tmp_path, 1)
+    child_path = tmp_path / "batch-001.prepare.json"
+    child = json.loads(child_path.read_text())
+    child["units"][0]["targets"][0]["dataset"][3] = "60m"
+    child_path.write_text(
+        json.dumps(child, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest["children"][0]["sha256"] = hashlib.sha256(
+        child_path.read_bytes()
+    ).hexdigest()
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_CHILD_INVALID$"):
+        validate_campaign_manifest(manifest, evidence_root=tmp_path)
+
+
+def test_prepare_rejects_wrong_callback_type_without_campaign(tmp_path: Path) -> None:
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_CHILD_INVALID$"):
+        prepare_campaign(
+            _report([_ordinary_unit()]),
+            report_sha256="f" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *_args: [],
+        )
+
+    assert not (tmp_path / "campaign.prepare.json").exists()
+
+
+def test_validate_campaign_rejects_oversized_child(tmp_path: Path) -> None:
+    path = tmp_path / "batch-001.prepare.json"
+    path.write_bytes(b"x" * (16 * 1024 * 1024 + 1))
+    manifest = {
+        "schema_version": "newow_weekly_recovery_campaign_v1",
+        "status": "prepared",
+        "readonly": True,
+        "provider_requests": 0,
+        "writes": 0,
+        "evidence_root_sha256": hashlib.sha256(
+            str(tmp_path.resolve()).encode()
+        ).hexdigest(),
+        "execution_identity": IDENTITY,
+        "audit": {
+            "sha256": "f" * 64,
+            "as_of": "2026-09-13T06:36:13+00:00",
+            "frequency_scope": ["1w"],
+            "matrix": False,
+        },
+        "scope": {
+            "included_status_counts": {"PROPOSED": 1},
+            "excluded_status_counts": {},
+            "metadata_proposal_count": 0,
+            "unit_identity_sha256": "1" * 64,
+            "target_identity_sha256": "2" * 64,
+        },
+        "children": [
+            {
+                "batch_id": "batch-001",
+                "path": path.name,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "unit_count": 1,
+                "target_count": 1,
+                "expected_bar_count": 1,
+                "units": [
+                    {
+                        "symbol": "ag",
+                        "contract": "AG1000",
+                        "frequency": "1w",
+                        "through": "2026-09-11",
+                        "plan_sha256": "0" * 64,
+                    }
+                ],
+            }
+        ],
+        "totals": {
+            "batch_count": 1,
+            "unit_count": 1,
+            "target_count": 1,
+            "expected_bar_count": 1,
+        },
+    }
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_CHILD_INVALID$"):
+        validate_campaign_manifest(manifest, evidence_root=tmp_path)
+
+
+def test_cli_prepare_uses_native_main_in_process_and_one_evidence_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import newow_weekly_recovery_campaign as module
+
+    report = _report([_ordinary_unit(index) for index in range(21)])
+    report_path = tmp_path / "full-report.json"
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+    report_sha256 = hashlib.sha256(report_path.read_bytes()).hexdigest()
+    project_env = tmp_path / "project.env"
+    project_env.write_text("fixture", encoding="utf-8")
+    native_calls: list[list[str]] = []
+
+    monkeypatch.setattr(module, "_current_execution_identity", lambda _path: IDENTITY)
+
+    def native_main(argv: list[str], *, stdout: io.StringIO) -> int:
+        native_calls.append(argv)
+        assert argv[0] == "prepare"
+        root = Path(argv[argv.index("--output-root") + 1])
+        batch_id = argv[argv.index("--name") + 1]
+        units_path = Path(argv[argv.index("--units") + 1])
+        assert root == tmp_path
+        assert units_path.parent == tmp_path
+        units = tuple(json.loads(units_path.read_text()))
+        payload = _native_child(root, batch_id, units)
+        stdout.write(json.dumps(payload))
+        return 0
+
+    monkeypatch.setattr(module.native, "main", native_main)
+    output = io.StringIO()
+
+    code = main(
+        [
+            "prepare",
+            "--project-env",
+            str(project_env),
+            "--report",
+            str(report_path),
+            "--expected-report-sha256",
+            report_sha256,
+            "--output-root",
+            str(tmp_path),
+            "--name",
+            "campaign",
+        ],
+        stdout=output,
+    )
+
+    payload = json.loads(output.getvalue())
+    assert code == 0
+    assert payload["status"] == "prepared"
+    assert payload["readonly"] is True
+    assert payload["provider_requests"] == 0
+    assert payload["writes"] == 0
+    assert payload["batch_count"] == 2
+    assert len(native_calls) == 2
+    assert Path(payload["campaign_file"]) == tmp_path / "campaign.prepare.json"
+    assert hashlib.sha256((tmp_path / "campaign.prepare.json").read_bytes()).hexdigest() == payload[
+        "campaign_sha256"
+    ]
+
+
+def test_cli_prepare_rejects_report_hash_mismatch_before_native_main(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import newow_weekly_recovery_campaign as module
+
+    report_path = tmp_path / "full-report.json"
+    report_path.write_text(json.dumps(_report([_ordinary_unit()])), encoding="utf-8")
+    project_env = tmp_path / "project.env"
+    project_env.write_text("fixture", encoding="utf-8")
+    native_calls: list[object] = []
+    monkeypatch.setattr(module.native, "main", lambda *_args, **_kwargs: native_calls.append(True))
+    output = io.StringIO()
+
+    code = main(
+        [
+            "prepare",
+            "--project-env",
+            str(project_env),
+            "--report",
+            str(report_path),
+            "--expected-report-sha256",
+            "0" * 64,
+            "--output-root",
+            str(tmp_path),
+            "--name",
+            "campaign",
+        ],
+        stdout=output,
+    )
+
+    assert code == 1
+    assert json.loads(output.getvalue())["error_code"] == "CAMPAIGN_REPORT_INVALID"
+    assert native_calls == []
+
+
+def test_campaign_cli_exposes_prepare_apply_and_inspect_modes() -> None:
+    assert "{prepare,apply,inspect}" in parser().format_help()
+
+
+def test_execute_stops_after_second_batch_failure_without_retry(tmp_path: Path) -> None:
+    manifest = _campaign(tmp_path, 41)
+    invoked: list[str] = []
+
+    def invoke(_child: Path, _digest: str, attempt: Path) -> Mapping[str, Any]:
+        batch_id = attempt.name
+        invoked.append(batch_id)
+        return _native_apply_result(
+            batch_id,
+            status="passed" if batch_id == "batch-001" else "failed",
+        )
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert invoked == ["batch-001", "batch-002"]
+    assert result["status"] == "partial"
+    assert result["completed_batch_ids"] == ["batch-001"]
+    assert result["failed_batch"]["batch_id"] == "batch-002"
+    assert result["unattempted_batch_ids"] == ["batch-003"]
+    assert result["retries"] == 0
+
+
+def test_execute_preserves_native_partial_success_exactly(tmp_path: Path) -> None:
+    manifest = _campaign(tmp_path, 21)
+    partial_units = [
+        {"contract": "AG1020", "status": "passed", "remaining_target_count": 0}
+    ]
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=lambda _child, _digest, attempt: _native_apply_result(
+            attempt.name,
+            status="partial" if attempt.name == "batch-002" else "passed",
+            completed=partial_units if attempt.name == "batch-002" else [],
+        ),
+    )
+
+    assert result["status"] == "partial"
+    assert result["failed_batch"]["native_result"]["result"]["completed"] == partial_units
+    assert result["retries"] == 0
+
+
+def test_campaign_started_persistence_failure_invokes_no_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import newow_weekly_recovery_campaign as module
+
+    manifest = _campaign(tmp_path, 1)
+    invoked: list[object] = []
+    real_write = module.native._write_json_exclusive
+
+    def fail_started(path: Path, payload: object) -> str:
+        if path.name == "campaign-started.json":
+            raise OSError
+        return real_write(path, payload)
+
+    monkeypatch.setattr(module.native, "_write_json_exclusive", fail_started)
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_STARTED_UNAVAILABLE$"):
+        execute_campaign(
+            manifest,
+            attempt_root=tmp_path / "attempt-001",
+            invoke_batch=lambda *_args: invoked.append(True),
+        )
+
+    assert invoked == []
+
+
+@pytest.mark.parametrize("outcome", ["raises", "unreadable"])
+def test_execute_exception_or_unreadable_terminal_is_unknown(
+    tmp_path: Path,
+    outcome: str,
+) -> None:
+    manifest = _campaign(tmp_path, 21)
+    invoked: list[str] = []
+
+    def invoke(_child: Path, _digest: str, attempt: Path) -> Mapping[str, Any]:
+        invoked.append(attempt.name)
+        if outcome == "raises":
+            raise RuntimeError("private provider detail")
+        return {"return_code": 1, "batch_result": None}
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert result["status"] == "unknown"
+    assert result["unknown_batch"]["batch_id"] == "batch-001"
+    assert "private provider detail" not in json.dumps(result)
+    assert result["unattempted_batch_ids"] == ["batch-002"]
+    assert invoked == ["batch-001"]
+    assert result["retries"] == 0
+
+
+def test_final_summary_save_failure_cannot_report_completed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import newow_weekly_recovery_campaign as module
+
+    manifest = _campaign(tmp_path, 1)
+    real_write = module.native._write_json_exclusive
+
+    def fail_result(path: Path, payload: object) -> str:
+        if path.name == "campaign-result.json":
+            raise OSError
+        return real_write(path, payload)
+
+    monkeypatch.setattr(module.native, "_write_json_exclusive", fail_result)
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=lambda _child, _digest, attempt: _native_apply_result(attempt.name),
+    )
+
+    assert result["status"] == "unknown"
+    assert result["error_code"] == "CAMPAIGN_RESULT_UNAVAILABLE"
+
+
+def test_execute_rejects_second_attempt_id_start(tmp_path: Path) -> None:
+    manifest = _campaign(tmp_path, 1)
+    first = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=lambda _child, _digest, attempt: _native_apply_result(attempt.name),
+    )
+    assert first["status"] == "passed"
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_ATTEMPT_EXISTS$"):
+        execute_campaign(
+            manifest,
+            attempt_root=tmp_path / "attempt-001",
+            invoke_batch=lambda *_args: pytest.fail("duplicate attempt invoked a child"),
+        )
+
+
+def test_execute_rejects_concurrent_campaign_under_same_fixed_root(tmp_path: Path) -> None:
+    manifest = _campaign(tmp_path, 1)
+    entered = threading.Event()
+    release = threading.Event()
+    thread_result: list[Mapping[str, Any]] = []
+
+    def blocking(_child: Path, _digest: str, attempt: Path) -> Mapping[str, Any]:
+        entered.set()
+        assert release.wait(timeout=5)
+        return _native_apply_result(attempt.name)
+
+    worker = threading.Thread(
+        target=lambda: thread_result.append(
+            execute_campaign(
+                manifest,
+                attempt_root=tmp_path / "attempt-001",
+                invoke_batch=blocking,
+            )
+        )
+    )
+    worker.start()
+    assert entered.wait(timeout=5)
+    try:
+        with pytest.raises(RecoveryError, match="^CAMPAIGN_ALREADY_RUNNING$"):
+            execute_campaign(
+                manifest,
+                attempt_root=tmp_path / "attempt-002",
+                invoke_batch=lambda *_args: pytest.fail("concurrent child invoked"),
+            )
+    finally:
+        release.set()
+        worker.join(timeout=5)
+
+    assert thread_result[0]["status"] == "passed"
+
+
+def test_execute_validates_all_children_before_first_invocation(tmp_path: Path) -> None:
+    manifest = _campaign(tmp_path, 21)
+    (tmp_path / "batch-002.prepare.json").write_text("{}", encoding="utf-8")
+    invoked: list[object] = []
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_CHILD_INVALID$"):
+        execute_campaign(
+            manifest,
+            attempt_root=tmp_path / "attempt-001",
+            invoke_batch=lambda *_args: invoked.append(True),
+        )
+
+    assert invoked == []
+    assert not (tmp_path / "attempt-001").exists()
+
+
+def test_execute_stops_on_child_hash_drift_between_batches(tmp_path: Path) -> None:
+    manifest = _campaign(tmp_path, 21)
+    invoked: list[str] = []
+
+    def invoke(_child: Path, _digest: str, attempt: Path) -> Mapping[str, Any]:
+        invoked.append(attempt.name)
+        if attempt.name == "batch-001":
+            (tmp_path / "batch-002.prepare.json").write_text("{}", encoding="utf-8")
+        return _native_apply_result(attempt.name)
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert invoked == ["batch-001"]
+    assert result["status"] == "partial"
+    assert result["failed_batch"] == {
+        "batch_id": "batch-002",
+        "error_code": "CAMPAIGN_CHILD_DRIFT",
+    }
+
+
+def test_execute_21_units_across_two_native_batches_preserves_all_readbacks(
+    tmp_path: Path,
+) -> None:
+    manifest = _campaign(tmp_path, 21)
+    observed: list[str] = []
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        prepared = json.loads(child.read_text())
+        assert hashlib.sha256(child.read_bytes()).hexdigest() == digest
+        completed = []
+        for unit in prepared["units"]:
+            assert {target["dataset"][3] for target in unit["targets"]} == {"1d", "1w"}
+            observed.append(unit["contract"])
+            completed.append(
+                {
+                    "contract": unit["contract"],
+                    "status": "passed",
+                    "remaining_target_count": 0,
+                    "readback": {
+                        "catalog_physical_mds": "passed",
+                        "mds_target_count": 2,
+                    },
+                }
+            )
+        return _native_apply_result(attempt.name, completed=completed)
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert result["status"] == "passed"
+    assert result["completed_batch_ids"] == ["batch-001", "batch-002"]
+    assert observed == [f"AG{1000 + index}" for index in range(21)]
+    assert all(
+        unit["readback"]["catalog_physical_mds"] == "passed"
+        for batch in result["completed_batches"]
+        for unit in batch["native_result"]["result"]["completed"]
+    )
+
+
+def test_execute_21_units_crosses_two_real_native_batches_with_isolated_readback(
+    tmp_path: Path,
+) -> None:
+    through = date(2025, 4, 4)
+    trading_days = tuple(date(2025, 3, 31) + timedelta(days=index) for index in range(5))
+    daily_ends = tuple(
+        datetime.combine(day, datetime.min.time(), tzinfo=UTC).replace(hour=7)
+        for day in trading_days
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+    session.add(Exchange(code="DCE", name="DCE"))
+    session.add(Instrument(symbol="ag", name="AG", exchange_code="DCE", is_active=True))
+    contracts = [f"AG{1000 + index}" for index in range(21)]
+    for contract in contracts:
+        session.add(
+            Contract(
+                contract_code=contract,
+                instrument_symbol="ag",
+                exchange_code="DCE",
+                listed_date=trading_days[0],
+                expired_date=date(2025, 5, 1),
+                provider="rqdata",
+            )
+        )
+    session.commit()
+    canonical_root = tmp_path / "canonical"
+    canonical_root.mkdir()
+    ends: dict[tuple[str, str, str, str], tuple[datetime, ...]] = {}
+    for contract in contracts:
+        ends[DatasetKey("contract", "ag", contract, "1d").as_tuple()] = daily_ends
+        ends[DatasetKey("contract", "ag", contract, "1w").as_tuple()] = (
+            daily_ends[-1],
+        )
+    coverage = FakeCoverage(ends)
+    coverage.latest_day = through
+
+    class Provider:
+        def __init__(self) -> None:
+            self.observer = None
+            self.calls: list[tuple[DatasetKey, ...]] = []
+
+        def exchange_daily_source_requests(
+            self, requests: tuple[BarFetchRequest, ...]
+        ) -> tuple[ExchangeDailySourceRequest, ...]:
+            daily = tuple(
+                request
+                for request in requests
+                if request.key.frequency.value == "1d"
+            )
+            dates = tuple(sorted({value.date() for item in daily for value in item.expected}))
+            return (
+                ExchangeDailySourceRequest(
+                    contract=requests[0].key.series_or_contract,
+                    start=dates[0],
+                    end=dates[-1],
+                    expected_dates=dates,
+                ),
+            )
+
+        def fetch_many(
+            self, requests: tuple[BarFetchRequest, ...]
+        ) -> tuple[BarBatch, ...]:
+            self.calls.append(tuple(request.key for request in requests))
+            daily_dates = tuple(
+                sorted(
+                    {
+                        value.date()
+                        for request in requests
+                        if request.key.frequency.value == "1d"
+                        for value in request.expected
+                    }
+                )
+            )
+            source = ExchangeDailySourceRequest(
+                contract=requests[0].key.series_or_contract,
+                start=daily_dates[0],
+                end=daily_dates[-1],
+                expected_dates=daily_dates,
+            )
+            assert self.observer is not None
+            self.observer.before_request(source)
+            self.observer.after_response(
+                source,
+                tuple(
+                    {
+                        "date": day,
+                        "open": Decimal("100"),
+                        "high": Decimal("101"),
+                        "low": Decimal("99"),
+                        "close": Decimal("100"),
+                        "volume": Decimal("1"),
+                        "total_turnover": Decimal("100"),
+                        "open_interest": Decimal("10"),
+                        "settlement": Decimal("100"),
+                        "prev_settlement": Decimal("100"),
+                    }
+                    for day in daily_dates
+                ),
+            )
+            batches = []
+            for request in requests:
+                bars = []
+                for bar_end in request.expected:
+                    volume = Decimal("5") if request.key.frequency.value == "1w" else Decimal("1")
+                    bars.append(
+                        CanonicalBar(
+                            bar_end,
+                            bar_end.date(),
+                            Decimal("100"),
+                            Decimal("101"),
+                            Decimal("99"),
+                            Decimal("100"),
+                            volume,
+                            volume * Decimal("100"),
+                            Decimal("10"),
+                        )
+                    )
+                batches.append(BarBatch(tuple(bars)))
+            return tuple(batches)
+
+    provider = Provider()
+    manager = HistoricalDataManager(
+        catalog=MarketCatalog(session, canonical_root),
+        store=CanonicalMonthlyStore(canonical_root),
+        coverage=coverage,
+        metadata=FakeMetadata(),
+        provider=provider,
+    )
+    report_units = []
+    for contract in contracts:
+        plan = manager.contract_warmup(
+            ContractWarmupRequest("ag", contract, through, frequency="1w")
+        ).plan
+        report_units.append(
+            {
+                "symbol": "ag",
+                "contract": contract,
+                "through": through.isoformat(),
+                "requested_through": through.isoformat(),
+                "frequency": "1w",
+                "plan_sha256": plan.plan_sha256,
+                "status": "PROPOSED",
+                "expected_bar_count": plan.expected_bar_count,
+                "target_windows": [dict(item) for item in plan.target_windows],
+            }
+        )
+    identity = {
+        **IDENTITY,
+        "canonical_root_sha256": hashlib.sha256(
+            str(canonical_root.resolve()).encode()
+        ).hexdigest(),
+    }
+
+    def prepare_native(
+        units: tuple[dict[str, Any], ...], batch_id: str, root: Path
+    ) -> Mapping[str, Any]:
+        child = prepare_bounded_units(
+            manager=manager,
+            adapter=provider,
+            requests=tuple(
+                ContractWarmupRequest(
+                    unit["symbol"],
+                    unit["contract"],
+                    date.fromisoformat(unit["through"]),
+                    expected_plan_sha256=unit["expected_plan_sha256"],
+                    frequency="1w",
+                )
+                for unit in units
+            ),
+            expected_data_root=canonical_root,
+            code_commit=identity["code_commit"],
+            execution_code_sha256=identity["execution_code_sha256"],
+            config_sha256=identity["config_sha256"],
+        )
+        path, digest = write_prepared_manifest(root, batch_id, child)
+        return {
+            "status": "prepared",
+            "readonly": True,
+            "provider_requests": 0,
+            "writes": 0,
+            "prepared_file": str(path),
+            "prepared_sha256": digest,
+            "unit_count": len(units),
+        }
+
+    campaign = prepare_campaign(
+        _report(report_units),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=identity,
+        invoke_batch=prepare_native,
+    )
+
+    def apply_native(child_path: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        child = load_prepared_manifest(child_path, digest)
+
+        def open_unit(observer, unit):
+            provider.observer = observer
+            return (
+                manager,
+                lambda: None,
+                lambda: _post_commit_readback(manager, unit),
+                lambda: setattr(provider, "observer", None),
+            )
+
+        batch_result = execute_prepared_batch(
+            manifest=child,
+            attempt_dir=attempt,
+            prepared_sha256=digest,
+            current_code_commit=identity["code_commit"],
+            current_execution_code_sha256=identity["execution_code_sha256"],
+            current_config_sha256=identity["config_sha256"],
+            current_canonical_root_sha256=identity["canonical_root_sha256"],
+            open_unit=open_unit,
+        )
+        return {
+            "return_code": 0 if batch_result["status"] == "passed" else 1,
+            "batch_result": {
+                "schema_version": "newow_weekly_recovery_result_v1",
+                "status": batch_result["status"],
+                "readonly": False,
+                "attempt_dir": str(attempt),
+                "result": batch_result,
+            },
+        }
+
+    result = execute_campaign(
+        campaign,
+        attempt_root=tmp_path / "attempt-native",
+        invoke_batch=apply_native,
+    )
+
+    assert result["status"] == "passed"
+    assert result["completed_batch_ids"] == ["batch-001", "batch-002"]
+    completed = [
+        unit
+        for batch in result["completed_batches"]
+        for unit in batch["native_result"]["result"]["completed"]
+    ]
+    assert len(completed) == 21
+    assert all(unit["remaining_target_count"] == 0 for unit in completed)
+    assert all(unit["readback"]["catalog_physical_mds"] == "passed" for unit in completed)
+    assert all(unit["readback"]["mds_target_count"] == 3 for unit in completed)
+    assert len(provider.calls) == 21
+    session.close()
+    engine.dispose()
+
+
+def test_cli_apply_calls_native_main_in_same_process_for_each_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import newow_weekly_recovery_campaign as module
+
+    _campaign(tmp_path, 21)
+    campaign_path = tmp_path / "campaign.prepare.json"
+    campaign_sha256 = hashlib.sha256(campaign_path.read_bytes()).hexdigest()
+    project_env = tmp_path / "project.env"
+    project_env.write_text("fixture", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(module, "_current_execution_identity", lambda _path: IDENTITY)
+
+    def native_main(argv: list[str], *, stdout: io.StringIO) -> int:
+        calls.append(argv)
+        batch_id = Path(argv[argv.index("--output-root") + 1]).name
+        payload = _native_apply_result(batch_id)["batch_result"]
+        stdout.write(json.dumps(payload))
+        return 0
+
+    monkeypatch.setattr(module.native, "main", native_main)
+    output = io.StringIO()
+
+    code = main(
+        [
+            "apply",
+            "--project-env",
+            str(project_env),
+            "--campaign",
+            str(campaign_path),
+            "--expected-campaign-sha256",
+            campaign_sha256,
+            "--output-root",
+            str(tmp_path),
+            "--attempt-id",
+            "attempt-001",
+            "--apply",
+        ],
+        stdout=output,
+    )
+
+    payload = json.loads(output.getvalue())
+    assert code == 0
+    assert payload["status"] == "passed"
+    assert [call[0] for call in calls] == ["apply", "apply"]
+    assert all("--apply" in call for call in calls)
+    assert all("--expected-prepared-sha256" in call for call in calls)
+
+
+def test_cli_apply_rejects_current_code_or_config_drift_before_native_main(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import newow_weekly_recovery_campaign as module
+
+    _campaign(tmp_path, 1)
+    campaign_path = tmp_path / "campaign.prepare.json"
+    campaign_sha256 = hashlib.sha256(campaign_path.read_bytes()).hexdigest()
+    project_env = tmp_path / "project.env"
+    project_env.write_text("fixture", encoding="utf-8")
+    calls: list[object] = []
+    monkeypatch.setattr(
+        module,
+        "_current_execution_identity",
+        lambda _path: {**IDENTITY, "config_sha256": "0" * 64},
+    )
+    monkeypatch.setattr(module.native, "main", lambda *_args, **_kwargs: calls.append(True))
+    output = io.StringIO()
+
+    code = main(
+        [
+            "apply",
+            "--project-env",
+            str(project_env),
+            "--campaign",
+            str(campaign_path),
+            "--expected-campaign-sha256",
+            campaign_sha256,
+            "--output-root",
+            str(tmp_path),
+            "--attempt-id",
+            "attempt-001",
+            "--apply",
+        ],
+        stdout=output,
+    )
+
+    assert code == 1
+    assert json.loads(output.getvalue())["error_code"] == "EXECUTION_IDENTITY_CHANGED"
+    assert calls == []

@@ -369,6 +369,7 @@ uv run --project services/quant-api python -m ruff check \
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
   services/quant-api/tests/newow/test_weekly_recovery.py \
+  services/quant-api/tests/newow/test_weekly_recovery_campaign.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/data_foundation/test_historical_data_manager.py \
   services/quant-api/tests/data_foundation/test_cli.py \
@@ -376,17 +377,20 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
   services/quant-api/tests/data_foundation/test_newow_readiness_cli.py
 uv run --project services/quant-api python -m ruff check \
   scripts/newow_weekly_recovery.py \
+  scripts/newow_weekly_recovery_campaign.py \
   services/quant-api/app/market_data/rqdata_adapter.py \
   services/quant-api/app/market_data/composition.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
-  services/quant-api/tests/newow/test_weekly_recovery.py
+  services/quant-api/tests/newow/test_weekly_recovery.py \
+  services/quant-api/tests/newow/test_weekly_recovery_campaign.py
 PYTHONPATH=.:services/quant-api:packages/quant-core \
   MYPYPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api mypy --explicit-package-bases \
   --ignore-missing-imports \
   services/quant-api/app/market_data/rqdata_adapter.py \
   services/quant-api/app/market_data/composition.py \
-  scripts/newow_weekly_recovery.py
+  scripts/newow_weekly_recovery.py \
+  scripts/newow_weekly_recovery_campaign.py
 ```
 
 `prepare` 只读读取锁定配置、Catalog、Calendar/Session 和 Canonical，要求 checkout clean 且 HEAD 精确，

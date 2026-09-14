@@ -39,6 +39,7 @@ _SOURCE_FIELDS = (
 )
 _EXECUTION_CODE_PATHS = (
     "scripts/newow_weekly_recovery.py",
+    "scripts/newow_weekly_recovery_campaign.py",
     "services/quant-api/app/market_data/composition.py",
     "services/quant-api/app/market_data/rqdata_adapter.py",
     "services/quant-api/app/market_data/historical_data_manager.py",
@@ -720,7 +721,7 @@ def _validate_response_identity(
         raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID")
 
 
-def _canonical_json(value: Mapping[str, Any]) -> str:
+def _canonical_json(value: object) -> str:
     return json.dumps(
         value,
         ensure_ascii=False,
@@ -823,7 +824,7 @@ def _finish_batch(
     return result
 
 
-def _write_json_exclusive(path: Path, payload: Mapping[str, Any]) -> str:
+def _write_json_exclusive(path: Path, payload: object) -> str:
     content = (_canonical_json(payload) + "\n").encode("utf-8")
     fd = os.open(
         path,
