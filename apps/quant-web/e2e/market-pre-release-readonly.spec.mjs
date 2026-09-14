@@ -71,7 +71,7 @@ test('real candidate keeps JM SuBing data gap explicit and Newow callouts inside
   expect(body.detail.code).toBe('SUBING_REFERENCE_DATA_UNAVAILABLE')
   expect(body.detail.diagnostic.stage).toBe('physical_contract_replay')
   expect(body.detail.diagnostic.reason).toBe('DATASET_OR_PARTITION_MISSING')
-  await expect(page.getByText(/历史参考不可用/)).toBeVisible()
+  await expect(page.getByText(/物理合约回放失败：行情数据集或分区缺失/)).toBeVisible()
 
   await page.goto('/market/chart?symbol=au&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1w')
   const stage = page.getByTestId('newow-product-chart-stage')
