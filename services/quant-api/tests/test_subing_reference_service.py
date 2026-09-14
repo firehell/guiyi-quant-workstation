@@ -15,6 +15,7 @@ from app.market_data.subing_reference import (
     SubingReferenceQuery,
     SubingReferenceService,
 )
+from app.market_data.market_data_service import MarketDataError
 
 
 class Market:
@@ -185,6 +186,60 @@ def test_missing_or_conflicting_input_fails_closed(case, fault):
         setattr(market, fault, True)
     with pytest.raises(SubingReferenceError):
         service.query(SubingReferenceQuery("rb"))
+
+
+def test_physical_replay_failure_retains_only_bounded_diagnostic(case):
+    service, market, _ = case
+
+    def fail(_request):
+        raise MarketDataError(
+            "DATASET_OR_PARTITION_MISSING",
+            context={"path": "/private/canonical", "token": "secret"},
+        )
+
+    market.query_contract_trading_days = fail
+    with pytest.raises(SubingReferenceError) as caught:
+        service.query(SubingReferenceQuery("rb"))
+
+    assert caught.value.code == "SUBING_REFERENCE_DATA_UNAVAILABLE"
+    assert caught.value.diagnostic == {
+        "stage": "physical_contract_replay",
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "context": {
+            "symbol": "rb",
+            "contract": "RB2610",
+            "frequency": "15m",
+            "expected_count": len(market.bars),
+        },
+    }
+    assert "private" not in str(caught.value.diagnostic)
+    assert "secret" not in str(caught.value.diagnostic)
+
+
+@pytest.mark.parametrize(
+    ("method", "code", "stage", "reason"),
+    [
+        ("completed_trading_days", "TRADING_CALENDAR_MISSING", "calendar", "TRADING_CALENDAR_MISSING"),
+        ("session_windows", "TRADING_SESSION_MISSING", "session", "TRADING_SESSION_MISSING"),
+        ("query_actual_dominant_trading_days", "DOMINANT_CONTEXT_MISSING", "actual_dominant_replay", "MAIN_CONTRACT_MAP_MISSING"),
+    ],
+)
+def test_authority_failures_keep_stage_specific_bounded_diagnostics(case, method, code, stage, reason):
+    service, market, _ = case
+
+    def fail(*_args, **_kwargs):
+        raise MarketDataError(code, context={"symbol": "rb", "path": "/private"})
+
+    setattr(market, method, fail)
+    with pytest.raises(SubingReferenceError) as caught:
+        service.query(SubingReferenceQuery("rb"))
+
+    assert caught.value.code == "SUBING_REFERENCE_DATA_UNAVAILABLE"
+    assert caught.value.diagnostic == {
+        "stage": stage,
+        "reason": reason,
+        "context": {"symbol": "rb", "frequency": "15m"},
+    }
 
 
 @pytest.mark.parametrize(
