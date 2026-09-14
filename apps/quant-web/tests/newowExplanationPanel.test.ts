@@ -54,16 +54,16 @@ test('explanation projects rule, source time, exposure, scores, ATR and first ac
 
   assert.deepEqual(model.contextRows.map((row) => [row.frequency, row.barEnd, row.state]), [
     ['1w', '—', 'evidence_required'],
-    ['1d', '2026-08-14T07:00:00Z', 'BUILD'],
-    ['60m', '2026-08-15T06:00:00Z', 'HOLD'],
+    ['1d', '2026-08-14 15:00 北京时间', 'BUILD'],
+    ['60m', '2026-08-15 14:00 北京时间', 'HOLD'],
   ])
   assert.deepEqual(model.sourceRows.map((row) => [row.role, row.frequency, row.barEnd, row.formulas]), [
-    ['daily-direction', '1d', '2026-08-14T07:00:00Z', 'daily-rule-v1'],
+    ['daily-direction', '1d', '2026-08-14 15:00 北京时间', 'daily-rule-v1'],
     ['weekly-context', '1w', '—', 'weekly-rule-v1'],
   ])
   assert.deepEqual(model.composite, {
     positionRange: '30%-50%', direction: 'LONG_BIAS', directionPoints: '2', certainty: '7',
-    volatility: '1.2500% · medium · 非 Wilder ATR', firstActionToken: 'WAIT_CONFIRM', firstActionDetail: '等待已完成周期确认', evidenceReason: '—',
+    volatility: '1.25% · medium · 非 Wilder ATR', firstActionToken: 'WAIT_CONFIRM', firstActionDetail: '等待已完成周期确认', evidenceReason: '—',
   })
   assert.deepEqual(model.evidenceGaps, [
     { area: 'composite', name: 'private-score', reason: 'NEWOW_PRIVATE_SCORE_UNPROVEN' },
@@ -93,7 +93,7 @@ test('comparator remains a separately labelled theoretical five-window result', 
   assert.equal(model.physicalContract, 'JM2601')
   assert.equal(model.segmentId, 'segment-1')
   assert.deepEqual(model.windows.map((item) => item.window), [10, 20, 24, 30, 52])
-  assert.deepEqual(model.windows.map((item) => item.returnText), ['1.0%', '2.0%', '2.4%', '3.0%', '5.2%'])
+  assert.deepEqual(model.windows.map((item) => item.returnText), ['1%', '2%', '2.4%', '3%', '5.2%'])
   assert.equal(model.windows.every((item) => item.syntheticTerminal), true)
   assert.equal(model.syntheticTerminalIsReferenceExit, false)
   assert.match(model.disclosure, /不改变 ReferenceTrade 的 OPEN\/CLEAR/)
@@ -110,7 +110,7 @@ test('comparator selects only the exact default segment and fails closed on ambi
 
   const model = buildComparator(response)
   assert.equal(model.physicalContract, 'JM2601')
-  assert.deepEqual(model.windows.map((item) => item.returnText), ['1.0%', '2.0%', '2.4%', '3.0%', '5.2%'])
+  assert.deepEqual(model.windows.map((item) => item.returnText), ['1%', '2%', '2.4%', '3%', '5.2%'])
 
   response.value!.result!.value!.default_segment_id = 'missing-segment'
   assert.throws(() => buildComparator(response), /NEWOW_COMPARATOR_DEFAULT_SEGMENT_CONFLICT/)
@@ -118,18 +118,18 @@ test('comparator selects only the exact default segment and fails closed on ambi
 
 test('first-load error clears values while retained same-identity failure exposes stale timestamp', () => {
   assert.deepEqual(resolvePanelState('unavailable', null, 'NEWOW_API_UNAVAILABLE'), {
-    showValue: false, message: '加载失败（服务暂不可用，可重试本面板（NEWOW_API_UNAVAILABLE）），没有可显示的已验证数值。', staleAt: null,
+    showValue: false, message: '加载失败（服务暂不可用，可重试本面板（技术码 NEWOW_API_UNAVAILABLE）），没有可显示的已验证数值。', staleAt: null,
   })
   assert.deepEqual(resolvePanelState('stale', explanationResponse(), 'NEWOW_API_UNAVAILABLE'), {
-    showValue: true, message: '刷新失败（服务暂不可用，可重试本面板（NEWOW_API_UNAVAILABLE））；以下为同一身份上次成功的 stale 数值。', staleAt: '2026-08-15T07:00:01Z',
+    showValue: true, message: '刷新失败（服务暂不可用，可重试本面板（技术码 NEWOW_API_UNAVAILABLE））；以下为同一身份上次成功的 stale 数值。', staleAt: '2026-08-15T07:00:01Z',
   })
   assert.deepEqual(resolvePanelState('input_conflict', null, 'NEWOW_SHARED_BAR_CONFLICT'), {
-    showValue: false, message: 'DATA_CONFLICT（NEWOW_SHARED_BAR_CONFLICT）：冲突事实已清空，不能继续展示旧数值。', staleAt: null,
+    showValue: false, message: '数据身份冲突（原因未识别；原始原因码仅保留在技术详情）：冲突事实已清空，不能继续展示旧数值。', staleAt: null,
   })
   assert.deepEqual(resolvePanelState('not_applicable', {
     meta: { read_at: '2026-08-15T07:00:01Z' },
   }, 'NEWOW_COMPARATOR_NOT_APPLICABLE'), {
-    showValue: false, message: '当前功能不适用（NEWOW_COMPARATOR_NOT_APPLICABLE）。', staleAt: null,
+    showValue: false, message: '当前功能不适用（原因未识别；原始原因码仅保留在技术详情）。', staleAt: null,
   })
 })
 
@@ -164,7 +164,7 @@ test('explanation component renders evidence gaps and comparator in a separate t
   assert.doesNotMatch(nodeText(readable), /LONG_BIAS|WAIT_CONFIRM|NEWOW_/)
   const sources = findNode(root, node => node.type === 'details' && node.props.class === 'newow-explanation__sources')!
   assert.match(nodeText(sources), /NEWOW_COMPOSITE_SOURCE_UNPROVEN/)
-  assert.match(nodeText(sources), /as_of/)
+  assert.match(nodeText(sources), /快照截至.*北京时间/)
 
   assert.match(nodeText(explanationPanel), /NEWOW_COMPOSITE_SOURCE_UNPROVEN/)
   assert.match(nodeText(explanationPanel), /NEWOW_WEEKLY_FACT_UNAVAILABLE/)
@@ -272,8 +272,8 @@ function explanationResponse(): Mutable<NewowProductSectionResponse<'explanation
 
 function comparatorResponse(): NewowProductSectionResponse<'comparator'> {
   const windows = [10, 20, 24, 30, 52].map((window) => ({
-    window, cumulative_return_pct: `${window / 10}.0`, max_drawdown_pct: '-1.0', trade_count: 1, win_count: 1, loss_count: 0, win_rate_pct: '100', force_closed_at_end: true, score: '1',
-    page_display: { cumulative_return_pct: `${window / 10}.0`, max_drawdown_pct: '-1.0', win_rate_pct: '100' },
+    window, cumulative_return_pct: (window / 10).toFixed(1), max_drawdown_pct: '-1.0', trade_count: 1, win_count: 1, loss_count: 0, win_rate_pct: '100', force_closed_at_end: true, score: '1',
+    page_display: { cumulative_return_pct: (window / 10).toFixed(1), max_drawdown_pct: '-1.0', win_rate_pct: '100' },
     trades: [{ entry_bar_end: '2026-01-01T07:00:00Z', entry_price: '100', exit_bar_end: '2026-08-15T07:00:00Z', exit_price: '101', return_pct: '1', won: true, synthetic_terminal: true }],
   }))
   return {

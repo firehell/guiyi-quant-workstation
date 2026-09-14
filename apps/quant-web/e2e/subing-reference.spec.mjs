@@ -29,7 +29,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await page.keyboard.press('Enter')
     await expect(page.getByRole('dialog', { name: '历史重算参考信号' })).toContainText('非实际预警 Event')
     await page.getByRole('button', { name: '查看 AlertEvent #9' }).click()
-    await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText(referenceBars[8].bar_end)
+    await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('2026-09-03 12:30 北京时间')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
 }
@@ -39,7 +39,7 @@ test('historical unavailable keeps immutable events and Rule facts visible', asy
   await expect(page.getByText('历史参考不可用，请核查数据覆盖或重新读取。实际预警记录独立展示。')).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await page.getByRole('tab', { name: '历史记录', exact: true }).click()
-  await expect(page.locator('.detail-section-tabs__history')).toContainText(`Bar ${referenceBars[8].bar_end}`)
+  await expect(page.locator('.detail-section-tabs__history')).toContainText('Bar 2026-09-03 12:30 北京时间')
 })
 
 test('date range and cursor keep a fixed summary and row selects its reference record', async ({ page }) => {

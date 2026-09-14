@@ -60,7 +60,7 @@ const comparator = computed(() => comparatorPresentation.value.showValue && prop
         <p v-if="presentation.message">{{ presentation.message }} · {{ presentation.staleAt ?? '—' }}</p>
         <template v-if="model">
 
-        <p>快照 as_of {{ model.contextAsOf }} · completed / strict-before</p>
+        <p>快照截至 {{ model.contextAsOf }} · completed / strict-before</p>
         <details><summary>多周期来源上下文</summary>
         <table>
           <caption>多周期来源上下文</caption>

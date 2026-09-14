@@ -87,7 +87,8 @@ test('facts and disclosures preserve the strict presentation contract', () => {
   const disclosure = parsedComponent('MarketDetailDisclosure')
   const deck = parsedComponent('MarketDetailInsightDeck')
 
-  assert.match(facts.source, /exactly three market detail facts/i)
+  assert.match(facts.source, /facts:\s*readonly MarketDetailFact\[\]/)
+  assert.match(facts.source, /repeat\(auto-fit/)
   assert.match(disclosure.template, /aria-expanded/)
   assert.match(disclosure.template, /aria-controls/)
   assert.match(disclosure.template, /MarketDetailIcon[^>]+chevron/)

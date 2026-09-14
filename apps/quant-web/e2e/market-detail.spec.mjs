@@ -488,9 +488,9 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   await expect(page.getByText(/正式 S↑ \/ S↓ 只来自 AlertEvent/)).toBeVisible()
   await expect(page.getByText(/S↑ 多头预警/).first()).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
-  await expect(page.locator('.detail-status-strip dl > div').filter({ hasText: '预警状态' })).toContainText('尚无已评估 Bar')
+  await expect(page.locator('.detail-status-strip dl > div').filter({ hasText: '全局最近评估' })).toContainText('全局尚无已评估 Bar')
   await page.getByRole('tab', { name: '历史记录', exact: true }).click()
-  await expect(page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history')).toContainText('Bar 2026-09-03T02:45:00.000Z')
+  await expect(page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history')).toContainText('Bar 2026-09-03 10:45 北京时间')
   expect(requests.alertRequests.every(({ method }) => method === 'GET')).toBe(true)
   expect(requests.newowRequests).toEqual([])
 })
@@ -502,7 +502,7 @@ test('SuBing projects Rule-specific runtime warm-up and failure states', async (
     subingRuntimeRuleStatus: () => ({ error_type: errorType }),
   })
   await page.goto('/market/chart?symbol=jm&view=subing')
-  const statusFact = page.locator('.detail-status-strip dl > div').filter({ hasText: '预警状态' })
+  const statusFact = page.locator('.detail-status-strip dl > div').filter({ hasText: 'Rule / Runtime' })
   await expect(statusFact).toContainText('正在 warm-up')
 
   errorType = 'evaluation_failed'
@@ -531,7 +531,7 @@ test('SuBing has stable desktop and narrow viewport visuals with selectable hist
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('tab', { name: '历史记录', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '历史记录' })).toContainText('Bar 2026-09-03T02:45:00.000Z')
+  await expect(page.getByRole('dialog', { name: '历史记录' })).toContainText('Bar 2026-09-03 10:45 北京时间')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await expect(page).toHaveScreenshot('market-detail-subing-390x844.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
@@ -549,7 +549,7 @@ test('SuBing marker click opens the matching immutable AlertEvent detail', async
   const bounds = await chart.boundingBox()
   if (!bounds) throw new Error('SuBing chart is not visible')
   await page.mouse.click(bounds.x + bounds.width * 0.714, bounds.y + bounds.height * 0.4)
-  await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('S↑ 多头预警 · 2026-09-03T02:45:00.000Z · JM2601')
+  await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('S↑ 多头预警 · 2026-09-03 10:45 北京时间 · JM2601')
 })
 
 test('SuBing consumes its exact AlertEvent focus once', async ({ page }) => {
@@ -650,7 +650,7 @@ test('HTDY keeps last successful immutable Event evidence when a later Event ref
   await expect(page.getByRole('tab', { name: '历史记录' })).toBeVisible()
   await expect(page.getByText(/最后成功快照（已旧）/)).toBeVisible({ timeout: 35_000 })
   await page.getByRole('tab', { name: '历史记录' }).click()
-  await expect(page.getByText(/Bar 2026-09-03T02:45:00.000Z/)).toBeVisible()
+  await expect(page.getByText(/Bar 2026-09-03 10:45 北京时间/)).toBeVisible()
 })
 
 test('HTDY focus resolves and keyboard product selection stays in the unified identity', async ({ page }) => {
@@ -799,6 +799,21 @@ test('unavailable bars still permit keyboard product recovery inside the unified
   await symbol.press('Enter')
   await expect.poll(() => new URL(page.url()).searchParams.get('symbol')).toBe('rb')
   expect(new URL(page.url()).searchParams.get('view')).toBe('free')
+})
+
+test('product selection closes once, keeps focus, and reopens only after a fresh user focus', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+  await page.getByRole('button', { name: '切换品种或合约' }).click()
+  const productSearch = page.getByRole('combobox', { name: '搜索60品种' })
+  await productSearch.fill('rb')
+  await page.getByRole('option', { name: /螺纹钢 RB/ }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('symbol')).toBe('rb')
+  await expect(productSearch).toBeFocused()
+  await expect(page.getByRole('listbox', { name: '搜索60品种' })).toHaveCount(0)
+  await productSearch.blur()
+  await productSearch.focus()
+  await expect(page.getByRole('listbox', { name: '搜索60品种' })).toBeVisible()
 })
 
 test('cancelled older migration cannot activate its identity after a newer route', async ({ page }) => {

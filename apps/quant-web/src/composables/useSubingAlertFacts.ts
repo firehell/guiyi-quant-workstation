@@ -6,12 +6,20 @@ import { ALERT_RULE_CODES, findAlertRuleByCode } from '../utils/alertRules.ts'
 import type { MarketFrequency } from '../types/market.ts'
 
 export interface SubingAlertFactsIdentity { symbol: string; frequency: MarketFrequency }
+export interface SubingRuleScopeFact {
+  ruleCode: typeof ALERT_RULE_CODES.SUBING_THS
+  displayName: string
+  symbol: string
+  frequency: '15m'
+  enabled: boolean
+  enabledFrequencies: readonly ['15m'] | readonly []
+}
 
 export function useSubingAlertFacts(dependencies: {
   fetchRuntime: () => Promise<RuntimeHealthResponse>
   fetchProductAlerts: (symbol: string) => Promise<ProductAlertStateResponse>
 }) {
-  const rule = ref<string | null>(null)
+  const rule = ref<SubingRuleScopeFact | null>(null)
   const ruleUnavailable = ref(false)
   const runtime = ref<RuntimeAlertProjection | null>(null)
   const runtimeUnavailable = ref(false)
@@ -47,13 +55,19 @@ export function useSubingAlertFacts(dependencies: {
   return { rule, ruleUnavailable, runtime, runtimeUnavailable, refresh, dispose }
 }
 
-function ruleScopeText(response: ProductAlertStateResponse, identity: SubingAlertFactsIdentity): string {
+function ruleScopeText(response: ProductAlertStateResponse, identity: SubingAlertFactsIdentity): SubingRuleScopeFact {
   if (response.symbol.toLowerCase() !== identity.symbol || identity.frequency !== '15m') throw new Error('product identity mismatch')
   const current = findAlertRuleByCode(response.rules, ALERT_RULE_CODES.SUBING_THS)
   if (!current || !isSubingRule(current)) throw new Error('subing rule mismatch')
   if (current.enabled_frequencies.some((frequency) => frequency !== '15m') || (current.enabled_for_product !== current.enabled_frequencies.includes('15m'))) throw new Error('subing scope mismatch')
-  const enabledFrequencies = current.enabled_frequencies.length ? current.enabled_frequencies.join(', ') : '无'
-  return `Rule ${current.display_name} (${ALERT_RULE_CODES.SUBING_THS}) · 状态不可判定 · 当前 Scope ${current.enabled_for_product ? '已启用' : '未启用'} · enabled_frequencies=${enabledFrequencies} · ${identity.symbol.toUpperCase()} 15m · 仅只读展示`
+  return {
+    ruleCode: ALERT_RULE_CODES.SUBING_THS,
+    displayName: current.display_name,
+    symbol: identity.symbol.toLowerCase(),
+    frequency: '15m',
+    enabled: current.enabled_for_product,
+    enabledFrequencies: current.enabled_frequencies.length === 0 ? [] : ['15m'],
+  }
 }
 
 function isSubingRule(rule: ProductAlertRuleState): boolean {

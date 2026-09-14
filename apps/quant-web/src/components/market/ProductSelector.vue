@@ -23,6 +23,7 @@ const open = ref(false)
 const activeIndex = ref(0)
 const listboxId = `product-selector-${Math.random().toString(36).slice(2)}`
 let previousFocus: HTMLElement | null = null
+let suppressProgrammaticFocusOpen = false
 
 const matches = computed(() => searchProductOptions(props.options, query.value))
 const selected = computed(() => props.options.find((item) => item.symbol === props.selectedSymbol?.toLowerCase()) ?? null)
@@ -40,10 +41,23 @@ function show() {
   activeIndex.value = Math.max(0, matches.value.findIndex((item) => item.symbol === props.selectedSymbol?.toLowerCase()))
 }
 
+function handleFocus() {
+  if (suppressProgrammaticFocusOpen) {
+    suppressProgrammaticFocusOpen = false
+    return
+  }
+  show()
+}
+
 function close(restoreFocus = true) {
   open.value = false
   activeIndex.value = 0
-  if (restoreFocus) void nextTick(() => inputRef.value?.focus() ?? previousFocus?.focus())
+  if (restoreFocus) void nextTick(() => {
+    if (inputRef.value && document.activeElement !== inputRef.value) {
+      suppressProgrammaticFocusOpen = true
+      inputRef.value.focus()
+    } else if (!inputRef.value) previousFocus?.focus()
+  })
 }
 
 function move(delta: number) {
@@ -83,7 +97,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
         :aria-expanded="open"
         :aria-controls="listboxId"
         :aria-activedescendant="activeId"
-        @focus="show"
+        @focus="handleFocus"
         @input="show"
         @keydown.down.prevent="move(1)"
         @keydown.up.prevent="move(-1)"
