@@ -454,6 +454,7 @@ def execute_prepared_batch(
     *,
     manifest: Mapping[str, Any],
     attempt_dir: Path,
+    prepared_sha256: str,
     current_code_commit: str,
     current_execution_code_sha256: str,
     current_config_sha256: str,
@@ -483,6 +484,20 @@ def execute_prepared_batch(
     units = manifest.get("units")
     if not isinstance(units, list) or not 1 <= len(units) <= 20:
         raise RecoveryError("BATCH_SCOPE_INVALID")
+    if re.fullmatch(r"[0-9a-f]{64}", prepared_sha256) is None:
+        raise RecoveryError("PREPARED_MANIFEST_INVALID")
+    _write_json_exclusive(
+        Path(attempt_dir) / "invocation-receipt.json",
+        {
+            "schema_version": "newow_weekly_recovery_invocation_v1",
+            "prepared_sha256": prepared_sha256,
+            "code_commit": current_code_commit,
+            "execution_code_sha256": current_execution_code_sha256,
+            "config_sha256": current_config_sha256,
+            "canonical_root_sha256": current_canonical_root_sha256,
+            "unit_count": len(units),
+        },
+    )
     completed: list[dict[str, object]] = []
     for index, raw_unit in enumerate(units):
         if not isinstance(raw_unit, dict):
@@ -875,6 +890,31 @@ def _current_execution_code_sha256() -> str:
     return digest.hexdigest()
 
 
+def _require_clean_execution_checkout(expected_commit: str) -> None:
+    """Require every tracked/untracked repository input to match one exact commit."""
+    if _current_code_commit() != expected_commit:
+        raise RecoveryError("EXECUTION_IDENTITY_CHANGED")
+    try:
+        completed = subprocess.run(
+            [
+                "git",
+                "-c",
+                "core.fsmonitor=false",
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RecoveryError("CODE_IDENTITY_UNAVAILABLE") from exc
+    if completed.stdout:
+        raise RecoveryError("EXECUTION_CHECKOUT_DIRTY")
+
+
 def _post_commit_readback(
     manager: Any,
     unit: Mapping[str, Any],
@@ -1069,6 +1109,8 @@ def main(
             }
             code = 0
         elif args.mode == "prepare":
+            code_commit = _current_code_commit()
+            _require_clean_execution_checkout(code_commit)
             environment = _open_execution_environment(Path(args.project_env))
             try:
                 requests = _unit_requests(_read_json_file(Path(args.units)))
@@ -1086,7 +1128,7 @@ def main(
                             environment.manager.catalog.canonical_root,
                         )
                     ),
-                    code_commit=_current_code_commit(),
+                    code_commit=code_commit,
                     execution_code_sha256=_current_execution_code_sha256(),
                     config_sha256=environment.identity["config_sha256"],
                 )
@@ -1112,12 +1154,17 @@ def main(
             prepared = load_prepared_manifest(
                 Path(args.prepared), args.expected_prepared_sha256
             )
+            expected_commit = prepared.get("code_commit")
+            if not isinstance(expected_commit, str):
+                raise RecoveryError("PREPARED_MANIFEST_INVALID")
+            _require_clean_execution_checkout(expected_commit)
             _settings, identity = load_private_execution_settings(
                 Path(args.project_env)
             )
             attempt = create_attempt_directory(Path(args.output_root), args.attempt_id)
 
             def open_unit(observer, _unit):
+                _require_clean_execution_checkout(expected_commit)
                 environment = _require_execution_identity(
                     _open_execution_environment(Path(args.project_env), observer),
                     identity,
@@ -1142,6 +1189,7 @@ def main(
             result = execute_prepared_batch(
                 manifest=prepared,
                 attempt_dir=attempt,
+                prepared_sha256=args.expected_prepared_sha256,
                 current_code_commit=_current_code_commit(),
                 current_execution_code_sha256=_current_execution_code_sha256(),
                 current_config_sha256=identity["config_sha256"],

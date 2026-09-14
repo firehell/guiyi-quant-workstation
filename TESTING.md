@@ -389,8 +389,9 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   scripts/newow_weekly_recovery.py
 ```
 
-`prepare` 只读读取锁定配置、Catalog、Calendar/Session 和 Canonical，输出 plan、执行代码、配置及
-Canonical 根的非敏感身份；它不得初始化 provider。`apply` 是真实 RQData/Canonical/生产写入 Gate，只有
+`prepare` 只读读取锁定配置、Catalog、Calendar/Session 和 Canonical，要求 checkout clean 且 HEAD 精确，
+输出 plan、执行代码、配置及 Canonical 根的非敏感身份；它不得初始化 provider。`apply` 同样要求 clean exact
+commit，并在首次 provider 前保存绑定 prepared hash 的 invocation receipt。`apply` 是真实 RQData/Canonical/生产写入 Gate，只有
 owner 对精确 prepared hash 和 attempt 明确给出一次执行意图后才可运行；任何失败或 unknown 都停止且不自动重试。
 
 ### 盘后每日增量、进度与每周只读审计

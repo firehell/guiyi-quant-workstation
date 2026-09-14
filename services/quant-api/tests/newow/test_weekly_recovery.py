@@ -32,6 +32,7 @@ from scripts.newow_weekly_recovery import (
     RecoveryError,
     _current_execution_code_sha256,
     _post_commit_readback,
+    _require_clean_execution_checkout,
     _require_execution_identity,
     create_attempt_directory,
     execute_prepared_batch,
@@ -550,6 +551,7 @@ def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> 
     result = execute_prepared_batch(
         manifest=manifest,
         attempt_dir=attempt,
+        prepared_sha256="9" * 64,
         current_code_commit="b" * 40,
         current_execution_code_sha256="d" * 64,
         current_config_sha256="c" * 64,
@@ -572,6 +574,15 @@ def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> 
     ]
     assert (attempt / "unit-001-ec-EC2607" / "source-response-0001.json").exists()
     assert read_attempt_outcome(attempt / "unit-002-si-SI2401")["state"] == "failed"
+    assert json.loads((attempt / "invocation-receipt.json").read_text()) == {
+        "canonical_root_sha256": "e" * 64,
+        "code_commit": "b" * 40,
+        "config_sha256": "c" * 64,
+        "execution_code_sha256": "d" * 64,
+        "prepared_sha256": "9" * 64,
+        "schema_version": "newow_weekly_recovery_invocation_v1",
+        "unit_count": 2,
+    }
 
 
 def test_execute_prepared_batch_rejects_execution_code_drift_before_opening_unit(
@@ -600,6 +611,7 @@ def test_execute_prepared_batch_rejects_execution_code_drift_before_opening_unit
         execute_prepared_batch(
             manifest=manifest,
             attempt_dir=tmp_path,
+            prepared_sha256="9" * 64,
             current_code_commit="b" * 40,
             current_execution_code_sha256="f" * 64,
             current_config_sha256="c" * 64,
@@ -678,6 +690,7 @@ def test_execute_prepared_batch_marks_known_failure_in_journal(tmp_path) -> None
     result = execute_prepared_batch(
         manifest=manifest,
         attempt_dir=attempt,
+        prepared_sha256="9" * 64,
         current_code_commit="b" * 40,
         current_execution_code_sha256="d" * 64,
         current_config_sha256="c" * 64,
@@ -725,6 +738,7 @@ def test_execute_prepared_batch_preserves_first_unit_partial_status(tmp_path) ->
     result = execute_prepared_batch(
         manifest=manifest,
         attempt_dir=attempt,
+        prepared_sha256="9" * 64,
         current_code_commit="b" * 40,
         current_execution_code_sha256="d" * 64,
         current_config_sha256="c" * 64,
@@ -742,6 +756,29 @@ def test_execution_code_identity_reads_real_repository_dependencies() -> None:
 
     assert len(first) == 64
     assert first == second
+
+
+def test_clean_execution_checkout_requires_exact_clean_commit(monkeypatch) -> None:
+    from scripts import newow_weekly_recovery as module
+
+    monkeypatch.setattr(module, "_current_code_commit", lambda: "b" * 40)
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=" M domain.py\n"),
+    )
+    with pytest.raises(RecoveryError, match="^EXECUTION_CHECKOUT_DIRTY$"):
+        _require_clean_execution_checkout("b" * 40)
+
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=""),
+    )
+    with pytest.raises(RecoveryError, match="^EXECUTION_IDENTITY_CHANGED$"):
+        _require_clean_execution_checkout("a" * 40)
+
+    _require_clean_execution_checkout("b" * 40)
 
 
 def test_post_commit_readback_records_catalog_file_hash_and_mds(
@@ -960,6 +997,7 @@ def test_prepare_cli_writes_hash_locked_manifest_without_provider(
         ),
     )
     monkeypatch.setattr(module, "_current_code_commit", lambda: "b" * 40)
+    monkeypatch.setattr(module, "_require_clean_execution_checkout", lambda _commit: None)
     output = io.StringIO()
 
     code = main(

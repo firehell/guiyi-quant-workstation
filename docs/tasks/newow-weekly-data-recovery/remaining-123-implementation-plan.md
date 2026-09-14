@@ -45,11 +45,12 @@ assert daily_and_weekly_use_same_snapshot
 
 ## P2：可审计的一次执行与失败注入
 
-- [ ] 实现脚本的 readonly prepare 与受控 apply 分离；配置必须显式正确，准备阶段 provider 未初始化。来源包仅保存允许的行情字段，不保存 SDK repr、traceback 或凭据。
-- [ ] 先 RED：provider 返回后本地聚合异常，旧行为没有响应证据；新增 started/response_saved journal 与原子来源 payload 后 GREEN。
-- [ ] 先 RED：started 保存失败仍发请求；修为调用前 fail-closed。再覆盖 response 保存失败、timeout、进程中断残留 started、重复 attempt、输出路径逃逸、符号链接/覆盖保护。
-- [ ] 验证来源 payload 序列化保留 Decimal/日期/非正数含义，并有 hash；它不是自动 replay 可写资产。验证 unknown 只能只读对账，不可自动 retry。
-- [ ] 使用真实 manager 的测试路径覆盖锁内 replan、正常 projection invalidation、一次批准批次的串行执行、前项成功后后项失败及未尝试尾项；不要求 projection 路径不存在。
+- [x] 实现脚本的 readonly prepare 与受控 apply 分离；配置必须显式正确，准备阶段 provider 未初始化。来源包仅保存允许的行情字段，不保存 SDK repr、traceback 或凭据。
+- [x] prepare/apply 要求 clean exact commit；apply 在首次 provider 调用前写入绑定 prepared hash、代码、配置、数据根和单元数的 invocation receipt，并在每单元前复核 checkout 与执行环境身份。
+- [x] 先 RED：provider 返回后本地聚合异常，旧行为没有响应证据；新增 started/response_saved journal 与原子来源 payload 后 GREEN。
+- [x] 先 RED：started 保存失败仍发请求；修为调用前 fail-closed。再覆盖 response 保存失败、timeout、进程中断残留 started、重复 attempt、输出路径逃逸、符号链接/覆盖保护。
+- [x] 验证来源 payload 序列化保留 Decimal/日期/非正数含义，并有 hash；它不是自动 replay 可写资产。验证 unknown 只能只读对账，不可自动 retry。
+- [x] 使用真实 manager 的测试路径覆盖锁内 replan、正常 projection invalidation、一次批准批次的串行执行、前项成功后后项失败及未尝试尾项；不要求 projection 路径不存在。
 - [ ] 记录 projection 失效及恢复影响；COMMIT_OUTCOME_UNKNOWN 中断后只读查 Catalog/文件/MDS，不主动删文件或重设 active 指针。
 - [ ] 更新 TESTING 命令、定向测试、静态检查、自审；独立 Review 修正全部 P1/P2 问题后方进入真实执行准备。
 

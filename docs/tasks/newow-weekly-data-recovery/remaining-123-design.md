@@ -54,7 +54,7 @@ EC2607 原生 8 个逻辑目标为 2026 年 2–5 月 D1/W1，共 84 根。失�
 2. 调用前持久保存 started 记录并 flush/fsync；失败则零次调用。provider 返回后，先原子保存白名单来源字段与 hash，再记 response_saved，再进入本地验证/聚合。不得依赖整个 warmup 成功后才写统计。
 3. journal 不保存原始 SDK 异常文本、配置或连接信息。异常使用受控 code。started 无对应 response 的请求统一为 outcome_unknown，禁止把它算作未请求并重试。
 4. 保存失败或来源身份校验失败立即停止，将已返回但未可靠保存的结果记为 unknown；不得绕过门禁继续写入。来源 payload 不经原生 hard validation 不能直接恢复为 Canonical。
-5. plan、当前执行代码身份、配置/数据根非敏感指纹与 fresh 单次意图要关联。文本字段写“owner approved”不构成批准；旧脚本 hash、旧会话或失败前批准均不可继承。
+5. plan、当前执行代码身份、配置/数据根非敏感指纹与 fresh 单次意图要关联。prepare/apply 均要求 checkout clean 且 HEAD 精确一致，从而由 commit 绑定全部 tracked 执行依赖；apply 在首次 provider 调用前原子保存包含 prepared hash 与上述身份的 invocation receipt。文本字段写“owner approved”不构成批准；旧脚本 hash、旧会话或失败前批准均不可继承。
 6. 每个成功单元原生提交后执行严格 MDS/Catalog/物理 hash 回读及 replan；COMMIT_OUTCOME_UNKNOWN 时冻结后续工作，只读对账，禁止自动删文件/回滚 active pointer/重试。
 
 ### 普通补数队列
