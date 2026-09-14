@@ -1,8 +1,7 @@
 # 牛哇周线剩余 1–3 项当前证据
 
-日期：2026-09-14。状态：`EC2607_AND_ORDINARY_BATCH_001_COMPLETED / RS_SOURCE_VERIFIED /
-RS_REPAIR_GATE_PENDING`。本文件记录本任务的工程、两个恢复批次与已消费的 RS 仅来源核验意图；不代表
-RS Canonical 修复、发布或 Runtime 操作已获授权。
+日期：2026-09-14。状态：`EC2607_ORDINARY_BATCH_001_AND_RS_REPAIR_COMPLETED`。本文件记录本任务的工程、
+三个恢复批次与已消费的 RS 来源核验/修复意图；不代表下一批、发布或 Runtime 操作已获授权。
 
 ## 执行前冻结依赖队列
 
@@ -145,12 +144,28 @@ prev_settlement。来源响应 SHA-256 为
 `5dab054b318158fcf0d1667bc626eecb9628e21c8344c52b2ca2ea2e25956a9c`：44/44 均为
 `SOURCE_NONPOSITIVE_MATCH`，结论为 `AUTHORITATIVE_SOURCE_NONPOSITIVE_MATCHES_CANONICAL`。
 
-因此这些非正 bars 是来源事实，不能修正成正价格或用替代数据覆盖。332 个来源日期全部返回也证明缺失
-目标具备来源，但正式补齐仍是另一个 Gate。原生双单元 repair prepared artifact 为
-`db0d394c4872c41f1f637a83663a30e9561094e685fab4281683a280b52d9360`：RS2309 20 targets/226 bars，
-RS2311 6 targets/66 bars；本轮没有执行它。完整只读来源及修正链保存在
+因此这些非正 bars 是来源事实，不能修正成正价格或用替代数据覆盖。完整只读来源及修正链保存在
 `outputs/newow-weekly-recovery-attempts/rs-source-verification-20260914-001/`，本次仅来源意图已消费，
-不授权重试或 repair apply。
+不授权重试。
+
+owner 随后独立批准 RS repair apply。当前提交重新 prepare 后，两份原生 plan hash、26 个 targets 和
+292 根 target 完整 expected bars 均未漂移；需补的实际 missing endpoints 为 270 根（RS2309 216、
+RS2311 54），不是 292。新 prepared artifact SHA-256 为
+`68c6c78c691737e912a1c345b0d01da1704fa1ad589d478b1b098ad2805a6f8a`，绑定代码
+`c4a1f4a7d4830226cb53fdb09299b0e58cdb8a43`。一次执行结果 `passed`：RS2309 20/20 targets、
+RS2311 6/6 targets，blocked/failed/unattempted 均为 0；15 个真实来源调用读取 224 个去重日行情，
+15 started/15 response_saved、所有 payload SHA-256 通过、`outcome_unknown=false`、`retries=0`。
+
+写后 26 个分区的 Catalog row count、物理 Parquet row count 和 MDS bar count 逐项相等。内置与独立新进程
+replan 都为 0 targets/0 bars/0 provider requests：RS2309 零计划 hash
+`30f2dac831b783e651af5332b655c035556d3803eedae0f388fb5735145720a0`，RS2311 为
+`2d9d79e42a2f60459f5d827e4de40d1a015595e59ae08af62814c0be2d981320`；独立只读 manifest SHA-256 为
+`b1ee1bf96cdad812fbee748e53eeb17a2c2c20c6381951fb6cf5d4e33b6292e2`。repair 后再以已落盘权威来源
+复核，原 44 根非正 bars 仍全部为 `SOURCE_NONPOSITIVE_MATCH`，未被改写或替代。执行 invocation/batch
+SHA-256 分别为 `91ba87ca6139195be945d0af2da666e7c3167a96d065d7a331a578205db0cc0c`、
+`0dedd24ccfbb75f81a331873b662351db28a3d28000f40aded08b44383ac77d3`；完整材料保存在
+`outputs/newow-weekly-recovery-attempts/rs-repair-20260914-approved-001/`。本次 repair 意图已消费，
+不授权重试、扩大范围或下一批。
 
 ## Gate
 
@@ -159,6 +174,6 @@ RS2311 6 targets/66 bars；本轮没有执行它。完整只读来源及修正�
   seam smell。结论均为允许集成 develop。
 - EC2607：一次执行已完成且严格读回通过；该意图已消费，不授权重试。
 - 普通首批：一次执行已完成且严格读回通过；该意图已消费，不授权重试或下一批。
-- RS2309/RS2311：仅来源核验已完成且意图已消费；44/44 非正 bars 与权威来源数值一致，必须保留其来源阻断。
-  26 targets/292 missing bars 的原生 repair plan 已冻结但未执行；需要独立 Review 与精确 Canonical 写入意图。
+- RS2309/RS2311：仅来源核验与 repair apply 均已完成且各自意图已消费。26/26 targets 通过严格读回并独立
+  replan 为零；44/44 来源非正 bars 保持不变。292 是 target 完整 expected bars，实际补齐 270 个 missing endpoints。
 - 第 4 项完整矩阵、main/tag/release、Runtime、Scope、通知和交易均不在本任务。
