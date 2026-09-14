@@ -20,6 +20,7 @@ export interface PersistentAlertMarkerOptions {
 
 interface AlertEventRequest {
   symbol: string
+  frequency: MarketFrequency
   ruleCode: AlertRuleCode
   start: string
   end: string
@@ -202,6 +203,7 @@ export function usePersistentAlertMarkers(dependencies: Dependencies, options: P
     try {
       const responses = await Promise.all(ruleCodes.map((ruleCode) => fetchEvents({
         symbol: identity.symbol,
+        frequency: identity.frequency,
         ruleCode,
         start,
         end: normalizedEnd,

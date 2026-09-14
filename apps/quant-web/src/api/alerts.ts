@@ -38,9 +38,9 @@ export function getAlertRuntimeStatus() {
   return getRuntimeHealth().then((response) => response.components.alert.status)
 }
 
-export function getAlertEvents(params: { symbol: string; start: string; end: string; ruleCode: AlertRuleCode }) {
+export function getAlertEvents(params: { symbol: string; frequency: MarketFrequency; start: string; end: string; ruleCode: AlertRuleCode }) {
   return request.get<never, unknown>('/api/alerts/events', {
-    params: { symbol: params.symbol, rule_code: params.ruleCode, start: params.start, end: params.end },
+    params: { symbol: params.symbol, rule_code: params.ruleCode, frequency: params.frequency, start: params.start, end: params.end },
   }).then(normalizeAlertEventListResponse)
 }
 
