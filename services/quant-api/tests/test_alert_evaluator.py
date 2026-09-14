@@ -451,7 +451,7 @@ def test_subing_missing_physical_history_is_an_evaluation_failure() -> None:
         SubingThs15mEvaluator().evaluate_candidates(Reader(), decision)
 
 
-def test_subing_repaired_rb2610_replay_advances_only_from_its_cursor() -> None:
+def test_subing_history_repair_resumes_at_next_bar_without_old_candidates() -> None:
     class Kernel:
         def initial_state(self):
             return 0
@@ -467,9 +467,12 @@ def test_subing_repaired_rb2610_replay_advances_only_from_its_cursor() -> None:
     class Reader:
         def __init__(self) -> None:
             self.afters: list[datetime | None] = []
+            self.history_available = False
 
         def current_contract_replay_window(self, window, *, after):
             self.afters.append(after)
+            if not self.history_available:
+                raise MarketReadWindowError("MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE")
             bars = tuple(
                 bar
                 for bar in replay_bars
@@ -487,23 +490,30 @@ def test_subing_repaired_rb2610_replay_advances_only_from_its_cursor() -> None:
             )
 
     current = replace(
-        _window(33, contracts=("RB2610",) * 33),
-        symbol="rb",
-        contract="RB2610",
+        _window(33, contracts=("RS2611",) * 33),
+        symbol="rs",
+        contract="RS2611",
     )
     next_current = replace(
-        _window(34, contracts=("RB2610",) * 34),
-        symbol="rb",
-        contract="RB2610",
+        _window(34, contracts=("RS2611",) * 34),
+        symbol="rs",
+        contract="RS2611",
     )
     reader = Reader()
     evaluator = SubingThs15mEvaluator(kernel=Kernel())
 
+    failed = replace(
+        _window(32, contracts=("RS2611",) * 32), symbol="rs", contract="RS2611"
+    )
+    with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_FAILED"):
+        evaluator.evaluate_candidates(reader, failed)
+    reader.history_available = True
+    # A repaired full prefix rebuilds state but emits only the new decision Bar.
     assert evaluator.evaluate_candidates(reader, current) == (
         evaluator_module.AlertObservationCandidate(
             bar_end=current.cutoff,
             trading_day=current.trading_day,
-            contract="RB2610",
+            contract="RS2611",
             observation_types=("buy",),
         ),
     )
@@ -513,11 +523,11 @@ def test_subing_repaired_rb2610_replay_advances_only_from_its_cursor() -> None:
         evaluator_module.AlertObservationCandidate(
             bar_end=next_current.cutoff,
             trading_day=next_current.trading_day,
-            contract="RB2610",
+            contract="RS2611",
             observation_types=("buy",),
         ),
     )
-    assert reader.afters == [None, current.cutoff]
+    assert reader.afters == [None, None, current.cutoff]
 
 
 def test_subing_contract_rollover_discards_the_old_physical_state() -> None:
