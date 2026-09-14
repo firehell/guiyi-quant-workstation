@@ -1,0 +1,18 @@
+{
+  "started_at": "2026-09-13T14:15:46.149Z",
+  "ended_at": "2026-09-13T14:32:16.503Z",
+  "exit_code": 1,
+  "signal": null,
+  "stopped": false,
+  "preflight_lock_free": true,
+  "module_origins_valid": true,
+  "stdout_bytes": 21468106,
+  "stderr_bytes": 141,
+  "report_sha256": "787393d159b0bde955b7258e1251ad24730d45cd18b5a6dfc073db6f33879ff8",
+  "code_commit": "5b31cf7c1ceb5350d4a5ea0a3d9328635d0ea62d",
+  "source_root": "/private/tmp/guiyi-weekly-readonly-5b31cf7c.NRQ7Fg",
+  "code_commit_unchanged": true,
+  "snapshot_sha256": "cb0eb0aacf38442a54c43496e251301586cd1c62daf65110201fd2461eb8e1fe",
+  "config_metadata_unchanged": true,
+  "scope_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d"
+}

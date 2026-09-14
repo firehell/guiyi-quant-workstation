@@ -1,0 +1,2129 @@
+[
+  {
+    "path": "/health",
+    "checked_at": "2026-09-14T19:13:05.226618+08:00",
+    "status": 200,
+    "body": {
+      "status": "ok",
+      "service": "guiyi-quant-api",
+      "version": "1.10.10",
+      "readonly": true
+    },
+    "elapsed_seconds": 0.008
+  },
+  {
+    "path": "/api/v1/market/research/home-overview",
+    "checked_at": "2026-09-14T19:13:05.235888+08:00",
+    "status": 200,
+    "body": {
+      "status": "ready",
+      "target_as_of": "2026-09-14",
+      "data_as_of": "2026-09-14",
+      "freshness": "fresh",
+      "active_count": 60,
+      "participant_count": 60,
+      "stale_count": 0,
+      "unavailable_count": 0,
+      "summary": {
+        "price_up_count": 21,
+        "price_down_count": 39,
+        "price_flat_count": 0,
+        "price_unavailable_count": 0,
+        "daily_up_count": 26,
+        "daily_down_count": 34,
+        "daily_neutral_count": 0,
+        "daily_unavailable_count": 0,
+        "aligned_up_count": 23,
+        "aligned_down_count": 20
+      },
+      "items": [
+        {
+          "symbol": "a",
+          "product_name": "豆一",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "A2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "5028.000000000000000000",
+          "price_change_1d": "-0.0035671819262782401902497027",
+          "price_change_5d": "0.001394144592710615415255925",
+          "volume_ratio20": "0.7161044116401540553268602164",
+          "oi_change_1d": "-0.0289692445095838963061350677",
+          "atr14_percentile252": "0.9404761904761904761904761905",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "ag",
+          "product_name": "白银",
+          "sector": "precious",
+          "exchange": "SHFE",
+          "actual_contract": "AG2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "15494.000000000000000000",
+          "price_change_1d": "-0.0059027332221224175542153214",
+          "price_change_5d": "-0.0310193871169480925578486554",
+          "volume_ratio20": "0.6898977501127077175533989402",
+          "oi_change_1d": "-0.0699829575463222602758372854",
+          "atr14_percentile252": "0.3293650793650793650793650794",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "al",
+          "product_name": "铝",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "AL2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "24035.000000000000000000",
+          "price_change_1d": "-0.0082525273364968021456571075",
+          "price_change_5d": "-0.0157657657657657657657657658",
+          "volume_ratio20": "0.9596222008137620317350354262",
+          "oi_change_1d": "-0.0885756185250011826481858177",
+          "atr14_percentile252": "0.3809523809523809523809523810",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "ao",
+          "product_name": "氧化铝",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "AO2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "2683.000000000000000000",
+          "price_change_1d": "-0.0051909529106414534668149796",
+          "price_change_5d": "-0.0190127970749542961608775137",
+          "volume_ratio20": "0.8575038490676702754221755175",
+          "oi_change_1d": "0.041796551943507856733888924",
+          "atr14_percentile252": "0.2222222222222222222222222222",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_increase",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "ap",
+          "product_name": "苹果",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "AP2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "7436.000000000000000000",
+          "price_change_1d": "-0.0038847957133288680509042197",
+          "price_change_5d": "0.000403605542849455132517153",
+          "volume_ratio20": "0.8125664330366469309371907922",
+          "oi_change_1d": "-0.0146607249850209706411024566",
+          "atr14_percentile252": "0.09920634920634920634920634921",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "au",
+          "product_name": "黄金",
+          "sector": "precious",
+          "exchange": "SHFE",
+          "actual_contract": "AU2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "934.920000000000000000",
+          "price_change_1d": "-0.0076002038043478260869565217",
+          "price_change_5d": "-0.0166810408296346157891415469",
+          "volume_ratio20": "0.9049783628612266291546988440",
+          "oi_change_1d": "-0.0193337495868072134278473574",
+          "atr14_percentile252": "0.4206349206349206349206349206",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "b",
+          "product_name": "豆二",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "B2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "4074.000000000000000000",
+          "price_change_1d": "-0.0118845500848896434634974533",
+          "price_change_5d": "-0.0234899328859060402684563758",
+          "volume_ratio20": "0.8714115155429043835981136438",
+          "oi_change_1d": "-0.0308156579593614080213876666",
+          "atr14_percentile252": "0.9603174603174603174603174603",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "bu",
+          "product_name": "沥青",
+          "sector": "energy",
+          "exchange": "SHFE",
+          "actual_contract": "BU2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "5558.000000000000000000",
+          "price_change_1d": "0.036167039522744220730797912",
+          "price_change_5d": "0.087245696400625978090766823",
+          "volume_ratio20": "1.590037518231625856933875812",
+          "oi_change_1d": "0.001075002566719611549634318",
+          "atr14_percentile252": "0.8928571428571428571428571429",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_increase",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "bz",
+          "product_name": "纯苯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "BZ2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "8985.000000000000000000",
+          "price_change_1d": "0.006497143497255516970986894",
+          "price_change_5d": "0.052477451095232517277732224",
+          "volume_ratio20": "2.017033158937342752553507457",
+          "oi_change_1d": "-0.0368874289772727272727272727",
+          "atr14_percentile252": "0.8571428571428571428571428571",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "c",
+          "product_name": "玉米",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "C2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "2221.000000000000000000",
+          "price_change_1d": "-0.0150776053215077605321507761",
+          "price_change_5d": "-0.0284339457567804024496937883",
+          "volume_ratio20": "1.223421522512649603088161947",
+          "oi_change_1d": "-0.0144038375809608066217893220",
+          "atr14_percentile252": "0.6825396825396825396825396825",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "cf",
+          "product_name": "棉花",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "CF2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "16230.000000000000000000",
+          "price_change_1d": "-0.0091575091575091575091575092",
+          "price_change_5d": "-0.0307554493878769782024484921",
+          "volume_ratio20": "1.166476305310475156856246891",
+          "oi_change_1d": "0.007029108318559188997102445",
+          "atr14_percentile252": "0.6706349206349206349206349206",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_increase",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "cj",
+          "product_name": "红枣",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "CJ2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "7450.000000000000000000",
+          "price_change_1d": "-0.0171503957783641160949868074",
+          "price_change_5d": "-0.0545685279187817258883248731",
+          "volume_ratio20": "1.159432790626080382945570088",
+          "oi_change_1d": "0.016847546137586813264889252",
+          "atr14_percentile252": "0.1785714285714285714285714286",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_increase",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "cu",
+          "product_name": "铜",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "CU2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "107840.000000000000000000",
+          "price_change_1d": "-0.0105514267363978346637306175",
+          "price_change_5d": "-0.0143496938122657892331596746",
+          "volume_ratio20": "1.150244126653179228540666235",
+          "oi_change_1d": "-0.0556516405393719393860169534",
+          "atr14_percentile252": "0.3452380952380952380952380952",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "eb",
+          "product_name": "苯乙烯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "EB2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "10094.000000000000000000",
+          "price_change_1d": "0.005779194898365882821841371",
+          "price_change_5d": "0.044062887877534133223003724",
+          "volume_ratio20": "1.241984413116294303176938698",
+          "oi_change_1d": "-0.0749247106063933243404335414",
+          "atr14_percentile252": "0.8174603174603174603174603175",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "ec",
+          "product_name": "集运欧线",
+          "sector": "other",
+          "exchange": "INE",
+          "actual_contract": "EC2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "2090.500000000000000000",
+          "price_change_1d": "0.028789370078740157480314961",
+          "price_change_5d": "0.109901778603663392620122113",
+          "volume_ratio20": "1.068114238296106769932923034",
+          "oi_change_1d": "0.020202799090102941743455296",
+          "atr14_percentile252": "0.4960317460317460317460317460",
+          "daily_trend": "up",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_increase",
+            "daily_up",
+            "weekly_down"
+          ]
+        },
+        {
+          "symbol": "eg",
+          "product_name": "乙二醇",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "EG2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "5842.000000000000000000",
+          "price_change_1d": "0.009678534393363290701693744",
+          "price_change_5d": "0.011952191235059760956175299",
+          "volume_ratio20": "1.253290498114605077099185240",
+          "oi_change_1d": "-0.0148618094691728815847197381",
+          "atr14_percentile252": "0.9007936507936507936507936508",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "fg",
+          "product_name": "玻璃",
+          "sector": "building",
+          "exchange": "CZCE",
+          "actual_contract": "FG2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "927.000000000000000000",
+          "price_change_1d": "-0.0472764645426515930113052415",
+          "price_change_5d": "-0.0502049180327868852459016393",
+          "volume_ratio20": "1.254052011698825583676233614",
+          "oi_change_1d": "0.054680235427348429358808526",
+          "atr14_percentile252": "0.3492063492063492063492063492",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_increase",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "fu",
+          "product_name": "燃料油",
+          "sector": "energy",
+          "exchange": "SHFE",
+          "actual_contract": "FU2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "4392.000000000000000000",
+          "price_change_1d": "0.024014921893215201678712987",
+          "price_change_5d": "0.131958762886597938144329897",
+          "volume_ratio20": "1.403571601886088658071306553",
+          "oi_change_1d": "-0.0067415526850757688946841793",
+          "atr14_percentile252": "0.8333333333333333333333333333",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "hc",
+          "product_name": "热轧卷板",
+          "sector": "steel",
+          "exchange": "SHFE",
+          "actual_contract": "HC2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "3310.000000000000000000",
+          "price_change_1d": "-0.0045112781954887218045112782",
+          "price_change_5d": "-0.0166369578134284016636957813",
+          "volume_ratio20": "1.161165343255898364645622806",
+          "oi_change_1d": "-0.0014855158369339444205298903",
+          "atr14_percentile252": "0.5198412698412698412698412698",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "i",
+          "product_name": "铁矿石",
+          "sector": "black",
+          "exchange": "DCE",
+          "actual_contract": "I2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "708.500000000000000000",
+          "price_change_1d": "-0.0132311977715877437325905292",
+          "price_change_5d": "-0.0353982300884955752212389381",
+          "volume_ratio20": "1.104043531288113331456984708",
+          "oi_change_1d": "-0.0202047086652682289024148835",
+          "atr14_percentile252": "0.3174603174603174603174603175",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "j",
+          "product_name": "焦炭",
+          "sector": "black",
+          "exchange": "DCE",
+          "actual_contract": "J2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "2055.500000000000000000",
+          "price_change_1d": "-0.0033939393939393939393939394",
+          "price_change_5d": "-0.0340695488721804511278195489",
+          "volume_ratio20": "0.6125211843617415832181602577",
+          "oi_change_1d": "-0.0349247253492472534924725349",
+          "atr14_percentile252": "0.9801587301587301587301587302",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "jd",
+          "product_name": "鸡蛋",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "JD2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "3854.000000000000000000",
+          "price_change_1d": "0.006529119874640898406894751",
+          "price_change_5d": "-0.0107802874743326488706365503",
+          "volume_ratio20": "0.7300775106007902215812012809",
+          "oi_change_1d": "0.063562343436756849583555773",
+          "atr14_percentile252": "0.6626984126984126984126984127",
+          "daily_trend": "up",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_up",
+            "oi_increase",
+            "daily_up",
+            "weekly_down"
+          ]
+        },
+        {
+          "symbol": "jm",
+          "product_name": "焦煤",
+          "sector": "black",
+          "exchange": "DCE",
+          "actual_contract": "JM2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "1588.000000000000000000",
+          "price_change_1d": "0.001892744479495268138801262",
+          "price_change_5d": "-0.0242703533026113671274961598",
+          "volume_ratio20": "0.6778799699701115418769146861",
+          "oi_change_1d": "0.006130935748450829237824422",
+          "atr14_percentile252": "0.9880952380952380952380952381",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "oi_increase",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "l",
+          "product_name": "聚乙烯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "L2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "8579.000000000000000000",
+          "price_change_1d": "-0.0022098162363340311700395441",
+          "price_change_5d": "0.033365454107443989400144543",
+          "volume_ratio20": "1.386183471179226666130456293",
+          "oi_change_1d": "0.036340165043759499732792904",
+          "atr14_percentile252": "0.8134920634920634920634920635",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_increase",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "lc",
+          "product_name": "碳酸锂",
+          "sector": "new_energy",
+          "exchange": "GFEX",
+          "actual_contract": "LC2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "132340.000000000000000000",
+          "price_change_1d": "-0.0183948968995697967660584483",
+          "price_change_5d": "-0.0693389592123769338959212377",
+          "volume_ratio20": "0.6207471300606160977940724005",
+          "oi_change_1d": "0.009776933796541639678894581",
+          "atr14_percentile252": "0.3650793650793650793650793651",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_increase",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "lh",
+          "product_name": "生猪",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "LH2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "11475.000000000000000000",
+          "price_change_1d": "0.005256241787122207621550591",
+          "price_change_5d": "-0.0271301398897838066977532853",
+          "volume_ratio20": "1.094462660279838266164681700",
+          "oi_change_1d": "-0.0514163955146763683567762377",
+          "atr14_percentile252": "0.4960317460317460317460317460",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "m",
+          "product_name": "豆粕",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "M2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "3361.000000000000000000",
+          "price_change_1d": "-0.0120517342739564961787184009",
+          "price_change_5d": "-0.0137910798122065727699530516",
+          "volume_ratio20": "1.162207318857399213743449352",
+          "oi_change_1d": "-0.0204267292322582981529908687",
+          "atr14_percentile252": "0.9166666666666666666666666667",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "ma",
+          "product_name": "甲醇",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "MA2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "3431.000000000000000000",
+          "price_change_1d": "0.015088757396449704142011834",
+          "price_change_5d": "0.068181818181818181818181818",
+          "volume_ratio20": "1.373784462021062417383251761",
+          "oi_change_1d": "-0.0650043856362698731030470255",
+          "atr14_percentile252": "0.8333333333333333333333333333",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "ni",
+          "product_name": "镍",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "NI2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "124420.000000000000000000",
+          "price_change_1d": "-0.0131662436548223350253807107",
+          "price_change_5d": "-0.0265999061179784071350336411",
+          "volume_ratio20": "0.8108727193999179444486309522",
+          "oi_change_1d": "0.043898594086799858443522183",
+          "atr14_percentile252": "0.3134920634920634920634920635",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_increase",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "oi",
+          "product_name": "菜籽油",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "OI2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "10191.000000000000000000",
+          "price_change_1d": "0.001769389560601592450604541",
+          "price_change_5d": "-0.0168821146054408643642677986",
+          "volume_ratio20": "0.7268000965704030197118366897",
+          "oi_change_1d": "0.007006162599445154276759306",
+          "atr14_percentile252": "0.8293650793650793650793650794",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "oi_increase",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "p",
+          "product_name": "棕榈油",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "P2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "10025.000000000000000000",
+          "price_change_1d": "-0.0009965122072745391131041355",
+          "price_change_5d": "-0.0317751593587019509368360054",
+          "volume_ratio20": "0.7583145517842517447341034574",
+          "oi_change_1d": "-0.0071716357775987107171635778",
+          "atr14_percentile252": "0.7817460317460317460317460317",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "pb",
+          "product_name": "铅",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "PB2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "15825.000000000000000000",
+          "price_change_1d": "-0.0192128912302448094205144097",
+          "price_change_5d": "-0.0237507711289327575570635410",
+          "volume_ratio20": "1.354196581966363449437266661",
+          "oi_change_1d": "0.016554134561919135753435539",
+          "atr14_percentile252": "0.5158730158730158730158730159",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_increase",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "pd",
+          "product_name": "钯金",
+          "sector": "precious",
+          "exchange": "GFEX",
+          "actual_contract": "PD2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "305.850000000000000000",
+          "price_change_1d": "-0.00439453125",
+          "price_change_5d": "-0.0519218846869187848729076255",
+          "volume_ratio20": "0.7274450235513810306864739820",
+          "oi_change_1d": "-0.1003616636528028933092224231",
+          "atr14_percentile252": "0.03867403314917127071823204420",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "pf",
+          "product_name": "短纤",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PF2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "8334.000000000000000000",
+          "price_change_1d": "0.012882839086047642197374818",
+          "price_change_5d": "0.054669703872437357630979499",
+          "volume_ratio20": "1.544031851083712451887677266",
+          "oi_change_1d": "-0.0101353542278509157950323794",
+          "atr14_percentile252": "0.7817460317460317460317460317",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "pg",
+          "product_name": "液化石油气",
+          "sector": "energy",
+          "exchange": "DCE",
+          "actual_contract": "PG2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "7058.000000000000000000",
+          "price_change_1d": "0.023937327723777745538952561",
+          "price_change_5d": "0.071504478518293608623045392",
+          "volume_ratio20": "1.397733589407013445935910129",
+          "oi_change_1d": "-0.0009173196582707971839391695",
+          "atr14_percentile252": "0.7936507936507936507936507937",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "pk",
+          "product_name": "花生",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "PK2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "7798.000000000000000000",
+          "price_change_1d": "-0.0033231083844580777096114519",
+          "price_change_5d": "-0.0274382639062110251933150412",
+          "volume_ratio20": "0.7798977352638528192991912319",
+          "oi_change_1d": "0.030180525545410190283683000",
+          "atr14_percentile252": "0.6825396825396825396825396825",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_increase",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "pl",
+          "product_name": "瓶片",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PL2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "9250.000000000000000000",
+          "price_change_1d": "0.010376843255051884216275259",
+          "price_change_5d": "0.074581784386617100371747212",
+          "volume_ratio20": "1.089450490509315207278674847",
+          "oi_change_1d": "0.019981333785847615815374173",
+          "atr14_percentile252": "0.8253968253968253968253968254",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_increase",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "pp",
+          "product_name": "聚丙烯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "PP2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "8876.000000000000000000",
+          "price_change_1d": "-0.0006755235307363206485025895",
+          "price_change_5d": "0.036915887850467289719626168",
+          "volume_ratio20": "1.211590574271522197042232196",
+          "oi_change_1d": "0.007255378101553500825005448",
+          "atr14_percentile252": "0.8253968253968253968253968254",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_increase",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "pr",
+          "product_name": "丙烯",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PR2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "8168.000000000000000000",
+          "price_change_1d": "0.011892963330029732408325074",
+          "price_change_5d": "0.054207537429013939081053175",
+          "volume_ratio20": "1.275656366598630237835865405",
+          "oi_change_1d": "0.026477619322397164289835957",
+          "atr14_percentile252": "0.7023809523809523809523809524",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_increase",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "ps",
+          "product_name": "多晶硅",
+          "sector": "new_energy",
+          "exchange": "GFEX",
+          "actual_contract": "PS2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "36760.000000000000000000",
+          "price_change_1d": "0.007675438596491228070175439",
+          "price_change_5d": "-0.0082287872656144610818831782",
+          "volume_ratio20": "0.9888423378583852018771125721",
+          "oi_change_1d": "-0.0536167295166266712375728488",
+          "atr14_percentile252": "0.1230158730158730158730158730",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_up",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "pt",
+          "product_name": "铂金",
+          "sector": "precious",
+          "exchange": "GFEX",
+          "actual_contract": "PT2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "437.550000000000000000",
+          "price_change_1d": "-0.0057941376959781867757327880",
+          "price_change_5d": "-0.0107393172055166176803074836",
+          "volume_ratio20": "0.5478926200259987262369024873",
+          "oi_change_1d": "-0.0691379817593409826419535157",
+          "atr14_percentile252": "0.07182320441988950276243093923",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "px",
+          "product_name": "对二甲苯",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PX2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "9366.000000000000000000",
+          "price_change_1d": "0.014514731369150779896013865",
+          "price_change_5d": "0.074575493345571363010555301",
+          "volume_ratio20": "1.328167192072443199658381583",
+          "oi_change_1d": "0.015072703259284296972314549",
+          "atr14_percentile252": "0.7261904761904761904761904762",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_increase",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "rb",
+          "product_name": "螺纹钢",
+          "sector": "steel",
+          "exchange": "SHFE",
+          "actual_contract": "RB2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "3095.000000000000000000",
+          "price_change_1d": "-0.0041827541827541827541827542",
+          "price_change_5d": "-0.0183951791944180145892800507",
+          "volume_ratio20": "0.8358652005429914366927906227",
+          "oi_change_1d": "0.003994405084151757407047620",
+          "atr14_percentile252": "0.5396825396825396825396825397",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "oi_increase",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "rm",
+          "product_name": "菜粕",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "RM2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "2283.000000000000000000",
+          "price_change_1d": "-0.0184866723989681857265692175",
+          "price_change_5d": "-0.0309847198641765704584040747",
+          "volume_ratio20": "0.9303451510127770482546438079",
+          "oi_change_1d": "-0.0079968400701282682059775340",
+          "atr14_percentile252": "0.7380952380952380952380952381",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "rs",
+          "product_name": "油菜籽",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "RS2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "5700.000000000000000000",
+          "price_change_1d": "0.14",
+          "price_change_5d": "0.096153846153846153846153846",
+          "volume_ratio20": "0.4519774011299435028248587571",
+          "oi_change_1d": "-0.2",
+          "atr14_percentile252": "0.8452380952380952380952380952",
+          "daily_trend": "up",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_up",
+            "oi_decrease",
+            "daily_up",
+            "weekly_down"
+          ]
+        },
+        {
+          "symbol": "ru",
+          "product_name": "天然橡胶",
+          "sector": "chemical",
+          "exchange": "SHFE",
+          "actual_contract": "RU2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "18970.000000000000000000",
+          "price_change_1d": "-0.0178617654672534299767020450",
+          "price_change_5d": "-0.0109489051094890510948905109",
+          "volume_ratio20": "1.304164792174625912399969559",
+          "oi_change_1d": "-0.0561040088887753668535523173",
+          "atr14_percentile252": "0.9087301587301587301587301587",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "sa",
+          "product_name": "纯碱",
+          "sector": "building",
+          "exchange": "CZCE",
+          "actual_contract": "SA2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "1019.000000000000000000",
+          "price_change_1d": "-0.0431924882629107981220657277",
+          "price_change_5d": "-0.0556070435588507877664504171",
+          "volume_ratio20": "1.155718336822526863924318174",
+          "oi_change_1d": "0.016874350782054139362433523",
+          "atr14_percentile252": "0.7777777777777777777777777778",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_increase",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "sc",
+          "product_name": "原油",
+          "sector": "energy",
+          "exchange": "INE",
+          "actual_contract": "SC2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "904.700000000000000000",
+          "price_change_1d": "0.112929019559601426989789642",
+          "price_change_5d": "0.293722293722293722293722294",
+          "volume_ratio20": "1.960584072761350357445245825",
+          "oi_change_1d": "-0.2142836762062373384312494650",
+          "atr14_percentile252": "0.8690476190476190476190476190",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "sf",
+          "product_name": "硅铁",
+          "sector": "black",
+          "exchange": "CZCE",
+          "actual_contract": "SF2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "6028.000000000000000000",
+          "price_change_1d": "-0.0072463768115942028985507246",
+          "price_change_5d": "-0.0431746031746031746031746032",
+          "volume_ratio20": "0.7772054266323384165549844863",
+          "oi_change_1d": "-0.0482638760070432382914724877",
+          "atr14_percentile252": "1",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "sh",
+          "product_name": "烧碱",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "SH2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "1890.000000000000000000",
+          "price_change_1d": "-0.0252707581227436823104693141",
+          "price_change_5d": "-0.0297741273100616016427104723",
+          "volume_ratio20": "1.044384483024742772233613188",
+          "oi_change_1d": "-0.0190986204720255841446125877",
+          "atr14_percentile252": "0.3690476190476190476190476190",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "si",
+          "product_name": "工业硅",
+          "sector": "new_energy",
+          "exchange": "GFEX",
+          "actual_contract": "SI2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "8530.000000000000000000",
+          "price_change_1d": "-0.0087158628704241719930273097",
+          "price_change_5d": "-0.0206659012629161882893226177",
+          "volume_ratio20": "0.9238522013227578099450352152",
+          "oi_change_1d": "0.031497271259490546148406122",
+          "atr14_percentile252": "0.2142857142857142857142857143",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "oi_increase",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "sm",
+          "product_name": "锰硅",
+          "sector": "black",
+          "exchange": "CZCE",
+          "actual_contract": "SM2611",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "5794.000000000000000000",
+          "price_change_1d": "-0.0099111414900888585099111415",
+          "price_change_5d": "-0.0146258503401360544217687075",
+          "volume_ratio20": "0.6768448804499991589797645061",
+          "oi_change_1d": "0.037289096838224868850134694",
+          "atr14_percentile252": "0.6785714285714285714285714286",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_increase",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "sn",
+          "product_name": "锡",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "SN2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "398050.000000000000000000",
+          "price_change_1d": "-0.0298325574593580150625167564",
+          "price_change_5d": "-0.0497051591185809439682956526",
+          "volume_ratio20": "1.006230447910510678894937585",
+          "oi_change_1d": "0.031441322881501401842421468",
+          "atr14_percentile252": "0.3611111111111111111111111111",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_increase",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "sr",
+          "product_name": "白糖",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "SR2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "5387.000000000000000000",
+          "price_change_1d": "-0.0099246462047417754089321816",
+          "price_change_5d": "-0.0126466275659824046920821114",
+          "volume_ratio20": "1.110529502095280652917191421",
+          "oi_change_1d": "-0.0317984056081423499158245196",
+          "atr14_percentile252": "0.8095238095238095238095238095",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_decrease",
+            "daily_down",
+            "weekly_up"
+          ]
+        },
+        {
+          "symbol": "ss",
+          "product_name": "不锈钢",
+          "sector": "steel",
+          "exchange": "SHFE",
+          "actual_contract": "SS2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "13510.000000000000000000",
+          "price_change_1d": "-0.0051546391752577319587628866",
+          "price_change_5d": "-0.0270075621173928700036010083",
+          "volume_ratio20": "0.8484200569064796810834753493",
+          "oi_change_1d": "-0.1537468673027072958234288111",
+          "atr14_percentile252": "0.3373015873015873015873015873",
+          "daily_trend": "down",
+          "weekly_trend": "down",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_down",
+            "periods_aligned_down"
+          ]
+        },
+        {
+          "symbol": "ta",
+          "product_name": "pta",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "TA2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "6352.000000000000000000",
+          "price_change_1d": "0.01632",
+          "price_change_5d": "0.072248480756245779878460500",
+          "volume_ratio20": "2.223429538316883884204010844",
+          "oi_change_1d": "0.034161777065817935591639507",
+          "atr14_percentile252": "0.7182539682539682539682539683",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_increase",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "ur",
+          "product_name": "尿素",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "UR2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "1799.000000000000000000",
+          "price_change_1d": "0.002228412256267409470752089",
+          "price_change_5d": "-0.0093612334801762114537444934",
+          "volume_ratio20": "1.141646824146406288960069268",
+          "oi_change_1d": "0.006266750276591750576149603",
+          "atr14_percentile252": "0.5674603174603174603174603175",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_up",
+            "volume_expansion",
+            "oi_increase",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "v",
+          "product_name": "pvc",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "V2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "4952.000000000000000000",
+          "price_change_1d": "-0.0151153540175019888623707239",
+          "price_change_5d": "-0.0196000791922391605622648980",
+          "volume_ratio20": "1.381411045552608857905626671",
+          "oi_change_1d": "0.017133087079276328028401417",
+          "atr14_percentile252": "0.7976190476190476190476190476",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "volume_expansion",
+            "oi_increase",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "y",
+          "product_name": "豆油",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "Y2701",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "9005.000000000000000000",
+          "price_change_1d": "-0.0023266120097496122313317084",
+          "price_change_5d": "-0.0182075883122546881814217183",
+          "volume_ratio20": "0.8755817416267254515070006729",
+          "oi_change_1d": "-0.0204045140268616387189064611",
+          "atr14_percentile252": "0.8888888888888888888888888889",
+          "daily_trend": "up",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_up",
+            "weekly_up",
+            "periods_aligned_up"
+          ]
+        },
+        {
+          "symbol": "zn",
+          "product_name": "锌",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "ZN2610",
+          "dominant_mapping_date": "2026-09-14",
+          "data_as_of": "2026-09-14",
+          "close": "26305.000000000000000000",
+          "price_change_1d": "-0.0186532363365043835105390785",
+          "price_change_5d": "-0.0291566709725041520575751984",
+          "volume_ratio20": "0.9162161437413942057136061615",
+          "oi_change_1d": "-0.1262344813941602229073582510",
+          "atr14_percentile252": "0.9365079365079365079365079365",
+          "daily_trend": "down",
+          "weekly_trend": "up",
+          "reason_codes": [
+            "price_down",
+            "oi_decrease",
+            "daily_down",
+            "weekly_up"
+          ]
+        }
+      ],
+      "sectors": [
+        {
+          "sector": "agriculture",
+          "active_count": 16,
+          "participant_count": 16,
+          "median_price_change_1d": "-0.0037259888198035541205769612"
+        },
+        {
+          "sector": "precious",
+          "active_count": 4,
+          "participant_count": 4,
+          "median_price_change_1d": "-0.0058484354590503021649740547"
+        },
+        {
+          "sector": "nonferrous",
+          "active_count": 7,
+          "participant_count": 7,
+          "median_price_change_1d": "-0.0131662436548223350253807107"
+        },
+        {
+          "sector": "energy",
+          "active_count": 4,
+          "participant_count": 4,
+          "median_price_change_1d": "0.0300909807079797112047554495"
+        },
+        {
+          "sector": "chemical",
+          "active_count": 15,
+          "participant_count": 15,
+          "median_price_change_1d": "0.006497143497255516970986894"
+        },
+        {
+          "sector": "other",
+          "active_count": 1,
+          "participant_count": 1,
+          "median_price_change_1d": "0.028789370078740157480314961"
+        },
+        {
+          "sector": "building",
+          "active_count": 2,
+          "participant_count": 2,
+          "median_price_change_1d": "-0.0452344764027811955666854846"
+        },
+        {
+          "sector": "steel",
+          "active_count": 3,
+          "participant_count": 3,
+          "median_price_change_1d": "-0.0045112781954887218045112782"
+        },
+        {
+          "sector": "black",
+          "active_count": 5,
+          "participant_count": 5,
+          "median_price_change_1d": "-0.0072463768115942028985507246"
+        },
+        {
+          "sector": "new_energy",
+          "active_count": 3,
+          "participant_count": 3,
+          "median_price_change_1d": "-0.0087158628704241719930273097"
+        }
+      ]
+    },
+    "elapsed_seconds": 49.857
+  },
+  {
+    "path": "/api/v1/market/dominants",
+    "checked_at": "2026-09-14T19:13:55.094722+08:00",
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "product": "a",
+          "product_name": "豆一",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "A2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ag",
+          "product_name": "白银",
+          "sector": "precious",
+          "exchange": "SHFE",
+          "actual_contract": "AG2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "al",
+          "product_name": "铝",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "AL2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ao",
+          "product_name": "氧化铝",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "AO2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ap",
+          "product_name": "苹果",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "AP2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "au",
+          "product_name": "黄金",
+          "sector": "precious",
+          "exchange": "SHFE",
+          "actual_contract": "AU2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "b",
+          "product_name": "豆二",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "B2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "bu",
+          "product_name": "沥青",
+          "sector": "energy",
+          "exchange": "SHFE",
+          "actual_contract": "BU2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "bz",
+          "product_name": "纯苯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "BZ2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "c",
+          "product_name": "玉米",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "C2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "cf",
+          "product_name": "棉花",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "CF2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "cj",
+          "product_name": "红枣",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "CJ2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "cu",
+          "product_name": "铜",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "CU2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "eb",
+          "product_name": "苯乙烯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "EB2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ec",
+          "product_name": "集运欧线",
+          "sector": "other",
+          "exchange": "INE",
+          "actual_contract": "EC2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "eg",
+          "product_name": "乙二醇",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "EG2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "fg",
+          "product_name": "玻璃",
+          "sector": "building",
+          "exchange": "CZCE",
+          "actual_contract": "FG2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "fu",
+          "product_name": "燃料油",
+          "sector": "energy",
+          "exchange": "SHFE",
+          "actual_contract": "FU2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "hc",
+          "product_name": "热轧卷板",
+          "sector": "steel",
+          "exchange": "SHFE",
+          "actual_contract": "HC2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "i",
+          "product_name": "铁矿石",
+          "sector": "black",
+          "exchange": "DCE",
+          "actual_contract": "I2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "j",
+          "product_name": "焦炭",
+          "sector": "black",
+          "exchange": "DCE",
+          "actual_contract": "J2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "jd",
+          "product_name": "鸡蛋",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "JD2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "jm",
+          "product_name": "焦煤",
+          "sector": "black",
+          "exchange": "DCE",
+          "actual_contract": "JM2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "l",
+          "product_name": "聚乙烯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "L2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "lc",
+          "product_name": "碳酸锂",
+          "sector": "new_energy",
+          "exchange": "GFEX",
+          "actual_contract": "LC2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "lh",
+          "product_name": "生猪",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "LH2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "m",
+          "product_name": "豆粕",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "M2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ma",
+          "product_name": "甲醇",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "MA2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ni",
+          "product_name": "镍",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "NI2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "oi",
+          "product_name": "菜籽油",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "OI2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "p",
+          "product_name": "棕榈油",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "P2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "pb",
+          "product_name": "铅",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "PB2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "pd",
+          "product_name": "钯金",
+          "sector": "precious",
+          "exchange": "GFEX",
+          "actual_contract": "PD2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "pf",
+          "product_name": "短纤",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PF2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "pg",
+          "product_name": "液化石油气",
+          "sector": "energy",
+          "exchange": "DCE",
+          "actual_contract": "PG2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "pk",
+          "product_name": "花生",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "PK2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "pl",
+          "product_name": "瓶片",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PL2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "pp",
+          "product_name": "聚丙烯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "PP2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "pr",
+          "product_name": "丙烯",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PR2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ps",
+          "product_name": "多晶硅",
+          "sector": "new_energy",
+          "exchange": "GFEX",
+          "actual_contract": "PS2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "pt",
+          "product_name": "铂金",
+          "sector": "precious",
+          "exchange": "GFEX",
+          "actual_contract": "PT2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "px",
+          "product_name": "对二甲苯",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PX2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "rb",
+          "product_name": "螺纹钢",
+          "sector": "steel",
+          "exchange": "SHFE",
+          "actual_contract": "RB2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "rm",
+          "product_name": "菜粕",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "RM2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "rs",
+          "product_name": "油菜籽",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "RS2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ru",
+          "product_name": "天然橡胶",
+          "sector": "chemical",
+          "exchange": "SHFE",
+          "actual_contract": "RU2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "sa",
+          "product_name": "纯碱",
+          "sector": "building",
+          "exchange": "CZCE",
+          "actual_contract": "SA2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "sc",
+          "product_name": "原油",
+          "sector": "energy",
+          "exchange": "INE",
+          "actual_contract": "SC2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "sf",
+          "product_name": "硅铁",
+          "sector": "black",
+          "exchange": "CZCE",
+          "actual_contract": "SF2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "sh",
+          "product_name": "烧碱",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "SH2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "si",
+          "product_name": "工业硅",
+          "sector": "new_energy",
+          "exchange": "GFEX",
+          "actual_contract": "SI2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "sm",
+          "product_name": "锰硅",
+          "sector": "black",
+          "exchange": "CZCE",
+          "actual_contract": "SM2611",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "sn",
+          "product_name": "锡",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "SN2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "sr",
+          "product_name": "白糖",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "SR2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ss",
+          "product_name": "不锈钢",
+          "sector": "steel",
+          "exchange": "SHFE",
+          "actual_contract": "SS2610",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ta",
+          "product_name": "pta",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "TA2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "ur",
+          "product_name": "尿素",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "UR2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "v",
+          "product_name": "pvc",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "V2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "y",
+          "product_name": "豆油",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "Y2701",
+          "dominant_mapping_date": "2026-09-14"
+        },
+        {
+          "product": "zn",
+          "product_name": "锌",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "ZN2610",
+          "dominant_mapping_date": "2026-09-14"
+        }
+      ]
+    },
+    "elapsed_seconds": 0.488
+  },
+  {
+    "path": "/api/v1/market/jm/subing/reference",
+    "checked_at": "2026-09-14T19:13:55.584513+08:00",
+    "status": 409,
+    "body": {
+      "detail": {
+        "code": "SUBING_REFERENCE_DATA_UNAVAILABLE"
+      }
+    },
+    "elapsed_seconds": 0.397
+  },
+  {
+    "path": "/api/v1/market/newow/strategy-detail?product=AU&strategy=trend&frequency=1w&section=chart",
+    "checked_at": "2026-09-14T19:13:55.982388+08:00",
+    "status": 500,
+    "body": {
+      "detail": {
+        "code": "NEWOW_INTERNAL_ERROR"
+      }
+    },
+    "elapsed_seconds": 0.003
+  },
+  {
+    "path": "/api/v1/market/newow/strategy-detail?product=AU&strategy=oscillation&frequency=1w&section=chart",
+    "checked_at": "2026-09-14T19:13:55.986418+08:00",
+    "status": 500,
+    "body": {
+      "detail": {
+        "code": "NEWOW_INTERNAL_ERROR"
+      }
+    },
+    "elapsed_seconds": 0.003
+  },
+  {
+    "path": "/api/v1/market/newow/strategy-detail?product=AU&strategy=main_rise&frequency=1w&section=chart",
+    "checked_at": "2026-09-14T19:13:55.990715+08:00",
+    "status": 500,
+    "body": {
+      "detail": {
+        "code": "NEWOW_INTERNAL_ERROR"
+      }
+    },
+    "elapsed_seconds": 0.002
+  },
+  {
+    "path": "/api/v1/market/newow/strategy-detail?product=JM&strategy=trend&frequency=1w&section=chart",
+    "checked_at": "2026-09-14T19:13:55.993566+08:00",
+    "status": 500,
+    "body": {
+      "detail": {
+        "code": "NEWOW_INTERNAL_ERROR"
+      }
+    },
+    "elapsed_seconds": 0.002
+  },
+  {
+    "path": "/api/v1/market/newow/strategy-detail?product=JM&strategy=oscillation&frequency=1w&section=chart",
+    "checked_at": "2026-09-14T19:13:55.995729+08:00",
+    "status": 500,
+    "body": {
+      "detail": {
+        "code": "NEWOW_INTERNAL_ERROR"
+      }
+    },
+    "elapsed_seconds": 0.003
+  },
+  {
+    "path": "/api/v1/market/newow/strategy-detail?product=JM&strategy=main_rise&frequency=1w&section=chart",
+    "checked_at": "2026-09-14T19:13:55.999573+08:00",
+    "status": 500,
+    "body": {
+      "detail": {
+        "code": "NEWOW_INTERNAL_ERROR"
+      }
+    },
+    "elapsed_seconds": 0.003
+  }
+]

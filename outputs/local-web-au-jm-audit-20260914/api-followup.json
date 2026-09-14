@@ -1,0 +1,86 @@
+[
+  {
+    "path": "/api/v1/market/newow/strategy-detail?product=au&strategy=trend&frequency=1w&section=chart",
+    "status": 409,
+    "seconds": 0.17,
+    "data": {
+      "detail": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "context": {
+            "symbol": "au",
+            "frequency": "1w"
+          },
+          "historical_candidate_recoverable": true
+        }
+      }
+    }
+  },
+  {
+    "path": "/api/v1/market/au/subing/reference?",
+    "status": 409,
+    "seconds": 0.037,
+    "data": {
+      "detail": {
+        "code": "SUBING_REFERENCE_DATA_UNAVAILABLE"
+      }
+    }
+  },
+  {
+    "path": "/api/v1/market/newow/historical-snapshot?product=au&strategy=trend&frequency=1w",
+    "status": 200,
+    "seconds": 3.705,
+    "data": {
+      "schema_version": "newow_historical_snapshot_v1",
+      "product": "au",
+      "strategy": "trend",
+      "frequency": "1w",
+      "series_kind": "actual_dominant",
+      "trading_day": "2026-09-11",
+      "as_of": "2026-09-11T07:00:00.000001Z",
+      "validated_sections": [
+        "chart",
+        "zhaoyao_mirror"
+      ]
+    }
+  },
+  {
+    "path": "/api/v1/market/newow/strategy-detail?product=jm&strategy=trend&frequency=1w&section=chart",
+    "status": 409,
+    "seconds": 0.218,
+    "data": {
+      "detail": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "MAIN_CONTRACT_MAP_MISSING",
+          "context": {
+            "symbol": "jm",
+            "frequency": "1w"
+          },
+          "historical_candidate_recoverable": true
+        }
+      }
+    }
+  },
+  {
+    "path": "/api/v1/market/jm/subing/reference?",
+    "status": 409,
+    "seconds": 0.041,
+    "data": {
+      "detail": {
+        "code": "SUBING_REFERENCE_DATA_UNAVAILABLE"
+      }
+    }
+  },
+  {
+    "path": "/api/v1/market/newow/historical-snapshot?product=jm&strategy=trend&frequency=1w",
+    "status": 409,
+    "seconds": 14.306,
+    "data": {
+      "detail": {
+        "code": "NEWOW_HISTORICAL_SNAPSHOT_UNAVAILABLE"
+      }
+    }
+  }
+]

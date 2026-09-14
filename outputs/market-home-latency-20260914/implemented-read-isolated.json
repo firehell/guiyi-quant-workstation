@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-09-14T20:05:19.274567+08:00",
+  "transaction": "repeatable read/read only",
+  "baseline": "4c891d8df24c4a5206cfcad50712012e3c564fcf",
+  "same_response": true,
+  "runs": [
+    {
+      "mode": "implemented",
+      "seconds": 12.235307333990932,
+      "sql_count": 11142,
+      "participants": 60,
+      "target": "2026-09-14",
+      "response_sha256": "3eaba246ac96f1e79831d67c0dd3b7cd31ed909f2bd0e887dba6e400ae0a2c73"
+    }
+  ]
+}

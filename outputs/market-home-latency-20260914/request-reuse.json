@@ -1,0 +1,29 @@
+{
+  "checked_at": "2026-09-14T19:27:34.539517+08:00",
+  "transaction": "repeatable read/read only",
+  "same_response": true,
+  "runs": [
+    {
+      "mode": "baseline",
+      "seconds": 21.250852000026498,
+      "sql_count": 56962,
+      "calendar_calls": 28000,
+      "unique_calendar_queries": 4970,
+      "duplicate_calendar_queries": 23030,
+      "max_repeats": 11,
+      "participants": 60,
+      "response_sha256": "3eaba246ac96f1e79831d67c0dd3b7cd31ed909f2bd0e887dba6e400ae0a2c73"
+    },
+    {
+      "mode": "exact_calendar_reuse",
+      "seconds": 7.39411975000985,
+      "sql_count": 10902,
+      "calendar_calls": 28000,
+      "unique_calendar_queries": 4970,
+      "duplicate_calendar_queries": 23030,
+      "max_repeats": 11,
+      "participants": 60,
+      "response_sha256": "3eaba246ac96f1e79831d67c0dd3b7cd31ed909f2bd0e887dba6e400ae0a2c73"
+    }
+  ]
+}

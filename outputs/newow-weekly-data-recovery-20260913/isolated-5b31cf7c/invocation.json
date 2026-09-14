@@ -1,0 +1,25 @@
+{
+  "code_commit": "5b31cf7c1ceb5350d4a5ea0a3d9328635d0ea62d",
+  "source_root": "/private/tmp/guiyi-weekly-readonly-5b31cf7c.NRQ7Fg",
+  "snapshot_sha256": "cb0eb0aacf38442a54c43496e251301586cd1c62daf65110201fd2461eb8e1fe",
+  "verified_source_files": 385,
+  "scope_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d",
+  "started_at": "2026-09-13T14:15:46.149Z",
+  "args": [
+    "data",
+    "newow-readiness",
+    "--universe",
+    "operational",
+    "--frequency",
+    "1w",
+    "--matrix",
+    "--as-of",
+    "2026-09-13T06:36:13+00:00",
+    "--max-work",
+    "100000",
+    "--timeout-seconds",
+    "1800"
+  ],
+  "provider_allowed": false,
+  "production_writes_allowed": false
+}
