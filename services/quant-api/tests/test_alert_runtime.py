@@ -276,11 +276,13 @@ def test_transport_diagnostics_preserve_acceptance_and_correlate_each_failure(
     assert len(records) == 6
     for index, record in enumerate(records):
         assert record.diagnostic_code == "PUSHPLUS_REQUEST_OUTCOME_UNKNOWN"
-        assert record.rule_code == HTDY_ALERT_RULE_CODE
-        assert record.symbol == f"fail{index}"
-        assert record.contract == f"FAIL{index}2610"
-        assert record.frequency == "15m"
-        assert record.bar_end == (failed_at + timedelta(minutes=index)).isoformat()
+        assert record.diagnostic_fields == {
+            "rule_code": HTDY_ALERT_RULE_CODE,
+            "symbol": f"fail{index}",
+            "contract": f"FAIL{index}2610",
+            "frequency": "15m",
+            "bar_end": (failed_at + timedelta(minutes=index)).isoformat(),
+        }
     rendered = "\n".join(record.getMessage() for record in caplog.records)
     assert sensitive_marker not in rendered
 
@@ -322,11 +324,13 @@ def test_invalid_sender_acceptance_is_logged_with_event_identity(
         if record.message == "ALERT_NOTIFICATION_TRANSPORT_FAILED"
     )
     assert record.diagnostic_code == "PUSHPLUS_ACCEPTANCE_INVALID"
-    assert record.rule_code == HTDY_ALERT_RULE_CODE
-    assert record.symbol == "rb"
-    assert record.contract == "RB2610"
-    assert record.frequency == "15m"
-    assert record.bar_end == at.isoformat()
+    assert record.diagnostic_fields == {
+        "rule_code": HTDY_ALERT_RULE_CODE,
+        "symbol": "rb",
+        "contract": "RB2610",
+        "frequency": "15m",
+        "bar_end": at.isoformat(),
+    }
 
 
 def test_live_trigger_accepts_only_completed_intraday_bar_shape() -> None:

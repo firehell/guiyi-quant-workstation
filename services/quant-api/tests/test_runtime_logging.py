@@ -5,6 +5,10 @@ import json
 
 import pytest
 
+from app.alerts.notification import AlertNotificationMessage, NotificationTransportError
+from app.alerts.registry import HTDY_ALERT_RULE_CODE
+from app.alerts.runtime import AlertRuntime
+
 
 def test_after_market_structured_progress_reopens_rotated_log_and_bounds_fields(tmp_path):
     from app.runtime_logging import runtime_diagnostic_handler
@@ -88,5 +92,96 @@ def test_log_reopen_failure_does_not_dump_original_record(tmp_path, capsys):
         assert "hidden-value" not in captured.err
         assert "RUNTIME_LOG_UNAVAILABLE" in captured.err
         assert target.read_text() == "keep"
+    finally:
+        handler.close()
+
+
+def test_alert_transport_failure_persists_only_safe_exact_event_identity(tmp_path):
+    from datetime import UTC, datetime
+
+    from app.runtime_logging import runtime_diagnostic_handler
+
+    path = tmp_path / "alert-runtime.log"
+    handler = runtime_diagnostic_handler(path)
+    logger = logging.getLogger("app.alerts.runtime")
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    logger.propagate = False
+    at = datetime(2026, 9, 14, 1, 15, tzinfo=UTC)
+    sensitive_marker = "provider-body-sensitive-marker"
+
+    class Sender:
+        @staticmethod
+        def send(_message):
+            raise NotificationTransportError(
+                diagnostic_code="PUSHPLUS_PROVIDER_REJECTED"
+            )
+
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        evaluators={},
+        sender=Sender(),
+        operational_products=(),
+        taxonomy={},
+    )
+    message = AlertNotificationMessage(
+        rule_code=HTDY_ALERT_RULE_CODE,
+        symbol="jm",
+        product_name=sensitive_marker,
+        contract="JM2609",
+        frequency="15m",
+        bar_end=at,
+        detected_at=at,
+        result_codes=("buy",),
+    )
+    try:
+        runtime._send_messages_once([message], processing_now=at)
+        payload = json.loads(path.read_text())
+        assert payload == {
+            "at": payload["at"],
+            "bar_end": "2026-09-14T01:15:00+00:00",
+            "code": "PUSHPLUS_PROVIDER_REJECTED",
+            "contract": "JM2609",
+            "frequency": "15m",
+            "rule_code": "htdy_original_15m",
+            "symbol": "jm",
+        }
+        assert sensitive_marker not in path.read_text()
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = True
+        handler.close()
+
+
+def test_runtime_log_omits_unknown_rule_and_nonformal_frequency(tmp_path):
+    from app.runtime_logging import runtime_diagnostic_handler
+
+    path = tmp_path / "alert-runtime.log"
+    handler = runtime_diagnostic_handler(path)
+    record = logging.LogRecord(
+        "app.alerts.runtime",
+        logging.WARNING,
+        "",
+        0,
+        "ALERT_NOTIFICATION_TRANSPORT_FAILED",
+        (),
+        None,
+    )
+    record.diagnostic_code = "PUSHPLUS_REQUEST_OUTCOME_UNKNOWN"
+    record.diagnostic_fields = {
+        "rule_code": "unknown_rule",
+        "symbol": "jm",
+        "contract": "JM2609",
+        "frequency": "2h",
+        "bar_end": "2026-09-14T01:15:00+00:00",
+    }
+    try:
+        handler.handle(record)
+        payload = json.loads(path.read_text())
+        assert "rule_code" not in payload
+        assert "frequency" not in payload
+        assert payload["symbol"] == "jm"
+        assert payload["contract"] == "JM2609"
     finally:
         handler.close()

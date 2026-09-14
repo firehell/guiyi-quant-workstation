@@ -605,11 +605,13 @@ class AlertRuntime:
             "ALERT_NOTIFICATION_TRANSPORT_FAILED",
             extra={
                 "diagnostic_code": diagnostic_code,
-                "rule_code": message.rule_code,
-                "symbol": message.symbol,
-                "contract": message.contract,
-                "frequency": message.frequency,
-                "bar_end": _iso_timestamp(message.bar_end),
+                "diagnostic_fields": {
+                    "rule_code": message.rule_code,
+                    "symbol": message.symbol,
+                    "contract": message.contract,
+                    "frequency": message.frequency,
+                    "bar_end": _iso_timestamp(message.bar_end),
+                },
             },
         )
 
