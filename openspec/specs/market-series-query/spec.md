@@ -84,6 +84,16 @@ D1 owner 推断 W1/60m，也不得把各周期 owner 子集的并集冒充全局
 completed筛选必须使用精确session end≤as-of以及coverage上限；周末、未完成日、缺失session/前交易日保持既有fail-closed。
 批量优化不得改变物理合约、owner边界、周线完成或跨频回退规则，也不建立常驻行情cache。
 
+显式 `calendar_since` SHALL 同时约束 Session 候选的交易日下界；上下界之外的交易日 MUST 在解析 Session
+之前排除。该下界不得裁切属于首个合法交易日、但发生在前一自然日的夜盘；夜盘前交易日锚点仍须真实存在。
+上市前交易日没有 Session 不应阻断合法区间；区间内缺失 Calendar/Session 仍 MUST fail closed。
+
+#### Scenario: Listed product does not require a prelisting session
+
+- **GIVEN** 品种及其 Session 从11月27日生效，日历中存在11月26日
+- **WHEN** completed查询为夜盘覆盖从前一自然日开始，但明确交易日下界为11月27日
+- **THEN** 不要求11月26日身份的Session，保留归属11月27日的合法夜盘，且只返回已完成交易日
+
 #### Scenario: A one-Bar chart has a long available history
 
 - **GIVEN** 960个权威交易日覆盖且只请求最新1根或500根图表

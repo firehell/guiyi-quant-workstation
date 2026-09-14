@@ -238,7 +238,10 @@ class MarketDataService:
         try:
             assert_not_retired(symbol)
             windows = (
-                self.catalog.session_windows_overlapping_window(symbol, start, as_of + timedelta(microseconds=1), latest=latest)
+                self.catalog.session_windows_overlapping_window(
+                    symbol, start, as_of + timedelta(microseconds=1),
+                    earliest=calendar_since, latest=latest,
+                )
                 if calendar_since is not None
                 else self.catalog.session_windows_overlapping_window(symbol, start, as_of + timedelta(microseconds=1))
             )

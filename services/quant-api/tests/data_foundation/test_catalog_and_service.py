@@ -1789,3 +1789,78 @@ def test_strict_completed_days_does_not_load_future_mapped_session(session, tmp_
     session.commit()
     mds=MarketDataService(MarketCatalog(session,tmp_path),CanonicalMonthlyStore(tmp_path))
     assert mds.completed_trading_days(symbol='jm',start=datetime(2025,1,3,tzinfo=UTC),as_of=datetime(2025,1,3,7,tzinfo=UTC),latest=day,calendar_since=day)==(day,)
+
+
+def _listing_market(session, tmp_path, symbol, *, night=False):
+    listing = date(2025, 11, 27)
+    session.add_all([
+        Exchange(code="GFEX", name="GFEX"),
+        Instrument(symbol=symbol, name=symbol.upper(), exchange_code="GFEX"),
+        *[TradingCalendar(exchange_code="GFEX", trade_date=date(2025, 11, day),
+                          is_trading_day=True) for day in (26, 27, 28)],
+        TradingSession(exchange_code="GFEX", instrument_symbol=symbol,
+                       session_name="day", start_time=time(9), end_time=time(15),
+                       effective_from=listing, is_active=True),
+    ])
+    if night:
+        session.add(TradingSession(
+            exchange_code="GFEX", instrument_symbol=symbol, session_name="night",
+            start_time=time(21), end_time=time(23), effective_from=listing, is_active=True,
+        ))
+    session.commit()
+    return MarketDataService(MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path))
+
+
+@pytest.mark.parametrize("symbol", ["pd", "pt"])
+def test_reference_listing_lower_bound_does_not_require_prelisting_session(session, tmp_path, symbol):
+    from types import SimpleNamespace
+    from app.market_data.subing_reference import SubingReferenceQuery, SubingReferenceService
+
+    market = _listing_market(session, tmp_path, symbol)
+    service = SubingReferenceService(
+        market, coverage=SimpleNamespace(product_start=lambda _: date(2025, 11, 27)),
+        active_products=(symbol,),
+    )
+    assert service._window(
+        SubingReferenceQuery(symbol), datetime(2025, 11, 28, 2, tzinfo=UTC)
+    ) == (date(2025, 11, 27), date(2025, 11, 27), datetime(2025, 11, 27, 7, tzinfo=UTC))
+
+
+def test_session_lower_bound_keeps_first_trading_days_prior_natural_night(session, tmp_path):
+    market = _listing_market(session, tmp_path, "pd", night=True)
+    listing = date(2025, 11, 27)
+    windows = market.catalog.session_windows_overlapping_window(
+        "pd", datetime(2025, 11, 26, 13, 30, tzinfo=UTC),
+        datetime(2025, 11, 26, 14, tzinfo=UTC), earliest=listing, latest=listing,
+    )
+    assert len(windows) == 1 and windows[0][0] == listing
+    assert windows[0][1][0].start == datetime(2025, 11, 26, 13, tzinfo=UTC)
+    assert market.completed_trading_days(
+        symbol="pd", start=datetime(2025, 11, 26, 13, 30, tzinfo=UTC),
+        as_of=datetime(2025, 11, 26, 14, tzinfo=UTC), latest=listing, calendar_since=listing,
+    ) == ()  # The first trading day has not closed yet.
+
+
+@pytest.mark.parametrize("fault,code", [
+    ("session", "TRADING_SESSION_MISSING"),
+    ("calendar", "TRADING_CALENDAR_MISSING"),
+    ("night_anchor", "PREVIOUS_TRADING_DAY_MISSING"),
+])
+def test_listing_lower_bound_still_rejects_required_missing_facts(session, tmp_path, fault, code):
+    from sqlalchemy import delete
+
+    market = _listing_market(session, tmp_path, "pt", night=fault == "night_anchor")
+    if fault == "session":
+        session.execute(update(TradingSession).where(
+            TradingSession.instrument_symbol == "pt").values(is_active=False))
+    else:
+        day = date(2025, 11, 26 if fault == "night_anchor" else 27)
+        session.execute(delete(TradingCalendar).where(
+            TradingCalendar.exchange_code == "GFEX", TradingCalendar.trade_date == day))
+    session.commit()
+    with pytest.raises(MarketDataError, match=code):
+        market.completed_trading_days(
+            symbol="pt", start=datetime(2025, 11, 26, 0, tzinfo=UTC),
+            as_of=datetime(2025, 11, 28, 2, tzinfo=UTC), latest=date(2025, 11, 28),
+            calendar_since=date(2025, 11, 27),
+        )

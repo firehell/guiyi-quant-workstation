@@ -712,6 +712,10 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/data_foundation/test_catalog_and_service.py
 ```
 
+此组覆盖 PD/PT 上市首日的交易日下界：不要求上市前一天的 Session，保留首个合法交易日的前一自然日晚盘，
+未收盘不返回；合法区间内 Calendar、Session 或夜盘前交易日锚点缺失仍失败关闭。
+
+
 该组测试只使用 Runtime/context doubles、fake provider、SQLite 与临时 Parquet；不会连接真实 RQData、生产
 PostgreSQL/Redis，或修改现场 Canonical、status、projection、Runtime 和调度。真实
 `daily-recovery --apply` 仍必须绑定当前 Runtime/status、dry-run exact plan hash 与一次明确生产写入意图。
