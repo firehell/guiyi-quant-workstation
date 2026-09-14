@@ -186,6 +186,13 @@ JM 5m/15m、其余品种 60m、苏冰 15m 的策略和 Scope 均保持原合同�
 
 ## 牛哇周线 60 品种准备（恢复进度与历史证据）
 
+来源异常隔离修订已完成实现、组合验证与独立复审（`208ce6550` 至 `eab1bc7ea`；609 passed），
+最终 Review 无剩余 finding，允许集成 develop。新总包显式冻结策略后，只允许来源/journal 完整、严格零提交、原计划未变的
+`RQDATA_ZERO_OHL_INVALID` 单元隔离，并继续同批独立单元；默认仍首次失败停批。已知停止失败与未知
+结果分开结算，隔离不算成功；旧 B2411 必须经历史证据和 fresh plan 精确匹配后才能排除新下载。
+新完整只读 audit、精确 prepare 及一次新的执行意图尚未完成；本里程碑不授权真实下载、写入或 public push。
+本地修订验证记录在 `outputs/newow-weekly-recovery-attempts/safe-skip-20260914/`。
+
 2026-09-14 普通总包一次真实执行为 `PARTIAL`，已在 batch-006/B2411 来源校验失败时停止，未重试。
 冻结的 1,117 单元结算为 102 成功、1 失败、1,014 未尝试、0 未知；累计发布 2,066 个分区，补齐
 22,899 个 missing endpoints。新进程对全部 102 成功单元 Catalog/Parquet/MDS 严格读回通过且 replan=0；

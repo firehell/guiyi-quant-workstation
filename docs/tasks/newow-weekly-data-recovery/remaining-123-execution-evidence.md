@@ -5,6 +5,11 @@
 
 ## 已确认的后续有界工程修订
 
+修订实现提交为 `208ce6550` 至 `eab1bc7ea`，主会话组合验证 609 passed，最终独立复审无剩余 finding，
+允许集成 develop。OpenSpec 9 passed、secret scan 0。代码冻结检查点尚未执行新完整只读 audit/prepare
+或新真实执行；不能用这些工程结果更新下文旧执行余额。后续只读准备以本地 exact evidence 为准，
+仍须新的精确执行意图。详细本地验证位于 `outputs/newow-weekly-recovery-attempts/safe-skip-20260914/`。
+
 owner 已确认先完成“安全来源异常隔离、继续独立单元、最终统一结算”的执行器修订及只读重新准备。
 旧 102 个成功单元须在新完整原生 audit 中自然消失并逐项核对；若仍为候选，不得按旧成功名单过滤，
 须停止并保留当前缺口。B2411 从旧总包/原生回执/journal/来源响应自动验证，只有与当前完整
