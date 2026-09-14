@@ -23,6 +23,8 @@ from app.market_data.historical_data_manager import (
     ContractWarmupRequest,
     HistoricalDataManager,
 )
+from app.market_data.newow.product_release import deferred_section_reason
+from app.market_data.operational_universe import load_operational_products
 from app.market_data.rqdata_adapter import ExchangeDailySourceRequest
 from app.market_data.storage import CanonicalMonthlyStore
 from app.models import Contract, Exchange, Instrument
@@ -82,6 +84,45 @@ def _ordinary_unit(index: int = 0) -> dict[str, Any]:
 
 
 def _report(units: list[dict[str, Any]]) -> dict[str, Any]:
+    as_of = "2026-09-13T06:36:13+00:00"
+    products = load_operational_products()
+    enumerations = []
+    for symbol in products:
+        for section in ("chart", "auxiliary", "reference", "explanation"):
+            row: dict[str, Any] = {
+                "symbol": symbol,
+                "frequency": "1w",
+                "section": section,
+                "status": "ENUMERATED",
+                "as_of": as_of,
+            }
+            reason = deferred_section_reason(section)
+            if reason is not None:
+                row.update(status="UNOPENED", reason=reason)
+            else:
+                row.update(
+                    since="2024-01-01",
+                    through="2026-09-11",
+                    owner_count=1,
+                )
+            enumerations.append(row)
+    dependencies = [
+        {
+            "symbol": item["symbol"],
+            "contract": item["contract"],
+            "frequency": "1w",
+            "through": item["through"],
+            "as_of": as_of,
+            "status": "DATA_UNAVAILABLE",
+            "reason": "REPLAY_PREFIX_MISSING",
+            "error": {"code": "NEWOW_DATA_UNAVAILABLE", "diagnostic": {}},
+            "consumers": [
+                {"strategy": "trend", "frequency": "1w", "section": "chart"}
+            ],
+            "owners": [{"since": "2024-01-01", "through": item["through"]}],
+        }
+        for item in units
+    ]
     return {
         "schema_version": 1,
         "command": "data.newow-readiness",
@@ -94,7 +135,14 @@ def _report(units: list[dict[str, Any]]) -> dict[str, Any]:
         "release_stage": "weekly",
         "frequency_scope": ["1w"],
         "matrix": False,
-        "as_of": "2026-09-13T06:36:13+00:00",
+        "as_of": as_of,
+        "product_count": len(products),
+        "main_case_count": 0,
+        "main_ready_count": 0,
+        "work_used": len(products) * 3 + len(dependencies) + len(units),
+        "enumerations": enumerations,
+        "dependencies": dependencies,
+        "cases": [],
         "metadata_proposals": [],
         "repair_targets": units,
     }
@@ -117,7 +165,7 @@ def _native_child(
                 "frequency": item["frequency"],
                 "plan_sha256": item["expected_plan_sha256"],
                 "target_count": 2,
-                "expected_bar_count": int(item["contract"][2:]) - 999,
+                "expected_bar_count": 2,
                 "targets": [
                     {
                         "dataset": [
@@ -181,19 +229,53 @@ def _campaign(tmp_path: Path, count: int) -> dict[str, Any]:
 
 
 def _native_apply_result(
-    batch_id: str,
+    child_path: Path,
+    digest: str,
+    batch_attempt: Path,
     *,
     status: str = "passed",
     return_code: int | None = None,
     completed: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    child = json.loads(child_path.read_text(encoding="utf-8"))
+    if completed is None and status == "passed":
+        completed = [
+            {
+                **unit,
+                "status": "passed",
+                "remaining_target_count": 0,
+                "readback": {
+                    "catalog_physical_mds": "passed",
+                    "mds_target_count": unit["target_count"],
+                },
+            }
+            for unit in child["units"]
+        ]
+    completed_value = completed if completed is not None else []
+    failure_index = len(completed_value)
     native_result = {
         "status": status,
-        "completed": completed or [],
-        "failed": None if status == "passed" else {"status": status},
-        "unattempted": [],
+        "completed": completed_value,
+        "failed": (
+            None
+            if status == "passed"
+            else {**child["units"][failure_index], "status": status}
+        ),
+        "unattempted": (
+            [] if status == "passed" else child["units"][failure_index + 1 :]
+        ),
         "retries": 0,
     }
+    native_attempt = batch_attempt / "native"
+    native_attempt.mkdir()
+    receipt = {
+        "schema_version": "newow_weekly_recovery_invocation_v1",
+        "prepared_sha256": digest,
+        **IDENTITY,
+        "unit_count": len(child["units"]),
+    }
+    _write_json_exclusive(native_attempt / "invocation-receipt.json", receipt)
+    _write_json_exclusive(native_attempt / "batch-result.json", native_result)
     return {
         "return_code": (0 if status == "passed" else 1)
         if return_code is None
@@ -202,7 +284,7 @@ def _native_apply_result(
             "schema_version": "newow_weekly_recovery_result_v1",
             "status": status,
             "readonly": False,
-            "attempt_dir": f"/fixture/{batch_id}",
+            "attempt_dir": str(native_attempt),
             "result": native_result,
         },
     }
@@ -236,6 +318,65 @@ def test_partition_rejects_incomplete_exhausted_or_wrong_audit(
 def test_partition_rejects_missing_required_report_field() -> None:
     report = _report([_ordinary_unit()])
     del report["repair_targets"]
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "product_count",
+        "main_case_count",
+        "main_ready_count",
+        "work_used",
+        "enumerations",
+        "dependencies",
+        "cases",
+    ],
+)
+def test_partition_rejects_cropped_native_report(field: str) -> None:
+    report = _report([_ordinary_unit()])
+    del report[field]
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "wrong_product_count",
+        "missing_enumeration",
+        "bad_deferred_enumeration",
+        "missing_owner_count",
+        "wrong_dependency_frequency",
+        "missing_dependency_consumers",
+        "missing_dependency_owners",
+        "wrong_main_counts",
+        "wrong_work_used",
+    ],
+)
+def test_partition_rejects_inconsistent_native_report_sections(mutation: str) -> None:
+    report = _report([_ordinary_unit()])
+    if mutation == "wrong_product_count":
+        report["product_count"] -= 1
+    elif mutation == "missing_enumeration":
+        report["enumerations"].pop()
+    elif mutation == "bad_deferred_enumeration":
+        report["enumerations"][-1]["reason"] = "WRONG"
+    elif mutation == "missing_owner_count":
+        del report["enumerations"][0]["owner_count"]
+    elif mutation == "wrong_dependency_frequency":
+        report["dependencies"][0]["frequency"] = "1d"
+    elif mutation == "missing_dependency_consumers":
+        del report["dependencies"][0]["consumers"]
+    elif mutation == "missing_dependency_owners":
+        del report["dependencies"][0]["owners"]
+    elif mutation == "wrong_main_counts":
+        report["main_case_count"] = 1
+    elif mutation == "wrong_work_used":
+        report["work_used"] += 1
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
         partition_ordinary_units(report)
@@ -331,21 +472,31 @@ def test_prepare_builds_all_children_and_one_hash_locked_campaign(tmp_path: Path
         invoke_batch=invoke,
     )
 
-    assert calls == [("batch-001", 20), ("batch-002", 1)]
     assert [child["batch_id"] for child in manifest["children"]] == [
         "batch-001",
         "batch-002",
+    ]
+    assert calls == [
+        (manifest["children"][0]["artifact_id"], 20),
+        (manifest["children"][1]["artifact_id"], 1),
     ]
     assert manifest["totals"] == {
         "batch_count": 2,
         "unit_count": 21,
         "target_count": 42,
-        "expected_bar_count": 231,
+        "expected_bar_count": 42,
     }
     assert manifest["children"][0]["unit_count"] == 20
     assert manifest["children"][-1]["unit_count"] == 1
     assert len(manifest["children"][0]["sha256"]) == 64
-    assert manifest["children"][0]["path"] == "batch-001.prepare.json"
+    assert manifest["children"][0]["path"] == (
+        manifest["children"][0]["artifact_id"] + ".prepare.json"
+    )
+    assert manifest["children"][0]["artifact_id"].startswith("campaign-")
+    assert manifest["writer_guard"]["path"] == (
+        ".campaign-writer-" + IDENTITY["canonical_root_sha256"] + ".lock"
+    )
+    assert (tmp_path / manifest["writer_guard"]["path"]).is_file()
     assert len(manifest["scope"]["unit_identity_sha256"]) == 64
     assert len(manifest["scope"]["target_identity_sha256"]) == 64
     assert (tmp_path / "campaign.prepare.json").is_file()
@@ -359,6 +510,40 @@ def test_prepare_builds_all_children_and_one_hash_locked_campaign(tmp_path: Path
             execution_identity=IDENTITY,
             invoke_batch=invoke,
         )
+
+
+def test_prepare_two_named_campaigns_share_root_without_overwriting_children(
+    tmp_path: Path,
+) -> None:
+    report = _report([_ordinary_unit()])
+
+    alpha = prepare_campaign(
+        report,
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, artifact_id, root: _native_child(
+            root, artifact_id, units
+        ),
+        name="alpha",
+    )
+    beta = prepare_campaign(
+        report,
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, artifact_id, root: _native_child(
+            root, artifact_id, units
+        ),
+        name="beta",
+    )
+
+    assert alpha["children"][0]["batch_id"] == "batch-001"
+    assert beta["children"][0]["batch_id"] == "batch-001"
+    assert alpha["children"][0]["path"] != beta["children"][0]["path"]
+    assert alpha["writer_guard"] == beta["writer_guard"]
+    assert (tmp_path / alpha["children"][0]["path"]).is_file()
+    assert (tmp_path / beta["children"][0]["path"]).is_file()
 
 
 def test_prepare_zero_units_creates_only_readonly_completed_campaign(tmp_path: Path) -> None:
@@ -457,7 +642,7 @@ def test_validate_campaign_rejects_target_identity_drift_even_with_new_child_has
     tmp_path: Path,
 ) -> None:
     manifest = _campaign(tmp_path, 1)
-    child_path = tmp_path / "batch-001.prepare.json"
+    child_path = tmp_path / manifest["children"][0]["path"]
     child = json.loads(child_path.read_text())
     child["units"][0]["targets"][0]["dataset"][3] = "60m"
     child_path.write_text(
@@ -468,6 +653,29 @@ def test_validate_campaign_rejects_target_identity_drift_even_with_new_child_has
     manifest["children"][0]["sha256"] = hashlib.sha256(
         child_path.read_bytes()
     ).hexdigest()
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_CHILD_INVALID$"):
+        validate_campaign_manifest(manifest, evidence_root=tmp_path)
+
+
+def test_validate_campaign_rejects_unit_expected_count_not_closed_by_targets(
+    tmp_path: Path,
+) -> None:
+    manifest = _campaign(tmp_path, 1)
+    child_path = tmp_path / manifest["children"][0]["path"]
+    child = json.loads(child_path.read_text())
+    child["units"][0]["expected_bar_count"] = 3
+    child_path.write_text(
+        json.dumps(child, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest["children"][0]["sha256"] = hashlib.sha256(
+        child_path.read_bytes()
+    ).hexdigest()
+    manifest["children"][0]["units"][0]["expected_bar_count"] = 3
+    manifest["children"][0]["expected_bar_count"] = 3
+    manifest["totals"]["expected_bar_count"] = 3
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_CHILD_INVALID$"):
         validate_campaign_manifest(manifest, evidence_root=tmp_path)
@@ -487,57 +695,10 @@ def test_prepare_rejects_wrong_callback_type_without_campaign(tmp_path: Path) ->
 
 
 def test_validate_campaign_rejects_oversized_child(tmp_path: Path) -> None:
-    path = tmp_path / "batch-001.prepare.json"
+    manifest = _campaign(tmp_path, 1)
+    path = tmp_path / manifest["children"][0]["path"]
     path.write_bytes(b"x" * (16 * 1024 * 1024 + 1))
-    manifest = {
-        "schema_version": "newow_weekly_recovery_campaign_v1",
-        "status": "prepared",
-        "readonly": True,
-        "provider_requests": 0,
-        "writes": 0,
-        "evidence_root_sha256": hashlib.sha256(
-            str(tmp_path.resolve()).encode()
-        ).hexdigest(),
-        "execution_identity": IDENTITY,
-        "audit": {
-            "sha256": "f" * 64,
-            "as_of": "2026-09-13T06:36:13+00:00",
-            "frequency_scope": ["1w"],
-            "matrix": False,
-        },
-        "scope": {
-            "included_status_counts": {"PROPOSED": 1},
-            "excluded_status_counts": {},
-            "metadata_proposal_count": 0,
-            "unit_identity_sha256": "1" * 64,
-            "target_identity_sha256": "2" * 64,
-        },
-        "children": [
-            {
-                "batch_id": "batch-001",
-                "path": path.name,
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                "unit_count": 1,
-                "target_count": 1,
-                "expected_bar_count": 1,
-                "units": [
-                    {
-                        "symbol": "ag",
-                        "contract": "AG1000",
-                        "frequency": "1w",
-                        "through": "2026-09-11",
-                        "plan_sha256": "0" * 64,
-                    }
-                ],
-            }
-        ],
-        "totals": {
-            "batch_count": 1,
-            "unit_count": 1,
-            "target_count": 1,
-            "expected_bar_count": 1,
-        },
-    }
+    manifest["children"][0]["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_CHILD_INVALID$"):
         validate_campaign_manifest(manifest, evidence_root=tmp_path)
@@ -654,11 +815,13 @@ def test_execute_stops_after_second_batch_failure_without_retry(tmp_path: Path) 
     manifest = _campaign(tmp_path, 41)
     invoked: list[str] = []
 
-    def invoke(_child: Path, _digest: str, attempt: Path) -> Mapping[str, Any]:
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
         batch_id = attempt.name
         invoked.append(batch_id)
         return _native_apply_result(
-            batch_id,
+            child,
+            digest,
+            attempt,
             status="passed" if batch_id == "batch-001" else "failed",
         )
 
@@ -677,24 +840,129 @@ def test_execute_stops_after_second_batch_failure_without_retry(tmp_path: Path) 
 
 
 def test_execute_preserves_native_partial_success_exactly(tmp_path: Path) -> None:
-    manifest = _campaign(tmp_path, 21)
-    partial_units = [
-        {"contract": "AG1020", "status": "passed", "remaining_target_count": 0}
-    ]
+    manifest = _campaign(tmp_path, 22)
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        prepared = json.loads(child.read_text())
+        unit = prepared["units"][0]
+        completed = [
+            {
+                **unit,
+                "status": "passed",
+                "remaining_target_count": 0,
+                "readback": {
+                    "catalog_physical_mds": "passed",
+                    "mds_target_count": unit["target_count"],
+                },
+            }
+        ]
+        return _native_apply_result(
+            child,
+            digest,
+            attempt,
+            status="partial" if attempt.name == "batch-002" else "passed",
+            completed=completed if attempt.name == "batch-002" else None,
+        )
 
     result = execute_campaign(
         manifest,
         attempt_root=tmp_path / "attempt-001",
-        invoke_batch=lambda _child, _digest, attempt: _native_apply_result(
-            attempt.name,
-            status="partial" if attempt.name == "batch-002" else "passed",
-            completed=partial_units if attempt.name == "batch-002" else [],
-        ),
+        invoke_batch=invoke,
     )
 
     assert result["status"] == "partial"
-    assert result["failed_batch"]["native_result"]["result"]["completed"] == partial_units
+    assert result["failed_batch"]["native_result"]["result"]["completed"][0][
+        "contract"
+    ] == "AG1020"
     assert result["retries"] == 0
+
+
+def test_execute_rejects_passed_terminal_without_all_frozen_units(
+    tmp_path: Path,
+) -> None:
+    manifest = _campaign(tmp_path, 1)
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=lambda child, digest, attempt: _native_apply_result(
+            child, digest, attempt, completed=[]
+        ),
+    )
+
+    assert result["status"] == "unknown"
+    assert result["unknown_batch"] == {
+        "batch_id": "batch-001",
+        "error_code": "CAMPAIGN_BATCH_OUTCOME_UNKNOWN",
+    }
+
+
+def test_execute_rejects_terminal_with_wrong_native_receipt(tmp_path: Path) -> None:
+    manifest = _campaign(tmp_path, 1)
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        value = _native_apply_result(child, digest, attempt)
+        receipt_path = attempt / "native" / "invocation-receipt.json"
+        receipt = json.loads(receipt_path.read_text())
+        receipt["prepared_sha256"] = "0" * 64
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        return value
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert result["status"] == "unknown"
+    assert result["completed_batch_ids"] == []
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "wrong_unit_identity",
+        "remaining_targets",
+        "failed_readback",
+        "wrong_readback_count",
+        "unexpected_failed",
+        "unexpected_unattempted",
+    ],
+)
+def test_execute_rejects_unclosed_passed_native_terminal(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    manifest = _campaign(tmp_path, 1)
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        value = _native_apply_result(child, digest, attempt)
+        result = value["batch_result"]["result"]
+        if mutation == "wrong_unit_identity":
+            result["completed"][0]["contract"] = "AG9999"
+        elif mutation == "remaining_targets":
+            result["completed"][0]["remaining_target_count"] = 1
+        elif mutation == "failed_readback":
+            result["completed"][0]["readback"]["catalog_physical_mds"] = "failed"
+        elif mutation == "wrong_readback_count":
+            result["completed"][0]["readback"]["mds_target_count"] = 1
+        elif mutation == "unexpected_failed":
+            result["failed"] = {"status": "failed"}
+        elif mutation == "unexpected_unattempted":
+            result["unattempted"] = [json.loads(child.read_text())["units"][0]]
+        (attempt / "native" / "batch-result.json").write_text(
+            json.dumps(result), encoding="utf-8"
+        )
+        return value
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert result["status"] == "unknown"
+    assert result["completed_batch_ids"] == []
 
 
 def test_campaign_started_persistence_failure_invokes_no_child(
@@ -771,7 +1039,9 @@ def test_final_summary_save_failure_cannot_report_completed(
     result = execute_campaign(
         manifest,
         attempt_root=tmp_path / "attempt-001",
-        invoke_batch=lambda _child, _digest, attempt: _native_apply_result(attempt.name),
+        invoke_batch=lambda child, digest, attempt: _native_apply_result(
+            child, digest, attempt
+        ),
     )
 
     assert result["status"] == "unknown"
@@ -783,7 +1053,9 @@ def test_execute_rejects_second_attempt_id_start(tmp_path: Path) -> None:
     first = execute_campaign(
         manifest,
         attempt_root=tmp_path / "attempt-001",
-        invoke_batch=lambda _child, _digest, attempt: _native_apply_result(attempt.name),
+        invoke_batch=lambda child, digest, attempt: _native_apply_result(
+            child, digest, attempt
+        ),
     )
     assert first["status"] == "passed"
 
@@ -801,10 +1073,10 @@ def test_execute_rejects_concurrent_campaign_under_same_fixed_root(tmp_path: Pat
     release = threading.Event()
     thread_result: list[Mapping[str, Any]] = []
 
-    def blocking(_child: Path, _digest: str, attempt: Path) -> Mapping[str, Any]:
+    def blocking(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
         entered.set()
         assert release.wait(timeout=5)
-        return _native_apply_result(attempt.name)
+        return _native_apply_result(child, digest, attempt)
 
     worker = threading.Thread(
         target=lambda: thread_result.append(
@@ -831,9 +1103,65 @@ def test_execute_rejects_concurrent_campaign_under_same_fixed_root(tmp_path: Pat
     assert thread_result[0]["status"] == "passed"
 
 
+def test_execute_stops_if_bound_guard_path_is_replaced_between_batches(
+    tmp_path: Path,
+) -> None:
+    manifest = _campaign(tmp_path, 21)
+    guard_path = tmp_path / (
+        ".campaign-writer-" + IDENTITY["canonical_root_sha256"] + ".lock"
+    )
+    if not guard_path.exists():
+        guard_path.touch(mode=0o600)
+    invoked: list[str] = []
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        invoked.append(attempt.name)
+        value = _native_apply_result(child, digest, attempt)
+        if attempt.name == "batch-001":
+            guard_path.unlink()
+            guard_path.touch(mode=0o600)
+        return value
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert invoked == ["batch-001"]
+    assert result["status"] == "partial"
+    assert result["failed_batch"] == {
+        "batch_id": "batch-002",
+        "error_code": "CAMPAIGN_GUARD_CHANGED",
+    }
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_GUARD_CHANGED$"):
+        execute_campaign(
+            manifest,
+            attempt_root=tmp_path / "attempt-002",
+            invoke_batch=lambda *_args: pytest.fail("replacement guard was accepted"),
+        )
+
+
+def test_execute_never_recreates_missing_bound_guard(tmp_path: Path) -> None:
+    manifest = _campaign(tmp_path, 1)
+    guard_path = tmp_path / manifest["writer_guard"]["path"]
+    guard_path.unlink()
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_GUARD_CHANGED$"):
+        execute_campaign(
+            manifest,
+            attempt_root=tmp_path / "attempt-001",
+            invoke_batch=lambda *_args: pytest.fail("missing guard was recreated"),
+        )
+
+    assert not guard_path.exists()
+    assert not (tmp_path / "attempt-001").exists()
+
+
 def test_execute_validates_all_children_before_first_invocation(tmp_path: Path) -> None:
     manifest = _campaign(tmp_path, 21)
-    (tmp_path / "batch-002.prepare.json").write_text("{}", encoding="utf-8")
+    (tmp_path / manifest["children"][1]["path"]).write_text("{}", encoding="utf-8")
     invoked: list[object] = []
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_CHILD_INVALID$"):
@@ -851,11 +1179,12 @@ def test_execute_stops_on_child_hash_drift_between_batches(tmp_path: Path) -> No
     manifest = _campaign(tmp_path, 21)
     invoked: list[str] = []
 
-    def invoke(_child: Path, _digest: str, attempt: Path) -> Mapping[str, Any]:
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
         invoked.append(attempt.name)
         if attempt.name == "batch-001":
-            (tmp_path / "batch-002.prepare.json").write_text("{}", encoding="utf-8")
-        return _native_apply_result(attempt.name)
+            second = tmp_path / manifest["children"][1]["path"]
+            second.write_text("{}", encoding="utf-8")
+        return _native_apply_result(child, digest, attempt)
 
     result = execute_campaign(
         manifest,
@@ -886,7 +1215,7 @@ def test_execute_21_units_across_two_native_batches_preserves_all_readbacks(
             observed.append(unit["contract"])
             completed.append(
                 {
-                    "contract": unit["contract"],
+                    **unit,
                     "status": "passed",
                     "remaining_target_count": 0,
                     "readback": {
@@ -895,7 +1224,7 @@ def test_execute_21_units_across_two_native_batches_preserves_all_readbacks(
                     },
                 }
             )
-        return _native_apply_result(attempt.name, completed=completed)
+        return _native_apply_result(child, digest, attempt, completed=completed)
 
     result = execute_campaign(
         manifest,
@@ -1179,8 +1508,10 @@ def test_cli_apply_calls_native_main_in_same_process_for_each_child(
 
     def native_main(argv: list[str], *, stdout: io.StringIO) -> int:
         calls.append(argv)
-        batch_id = Path(argv[argv.index("--output-root") + 1]).name
-        payload = _native_apply_result(batch_id)["batch_result"]
+        batch_attempt = Path(argv[argv.index("--output-root") + 1])
+        child = Path(argv[argv.index("--prepared") + 1])
+        digest = argv[argv.index("--expected-prepared-sha256") + 1]
+        payload = _native_apply_result(child, digest, batch_attempt)["batch_result"]
         stdout.write(json.dumps(payload))
         return 0
 

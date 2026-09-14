@@ -15,8 +15,10 @@ from pathlib import Path
 import re
 import stat
 import sys
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Literal, Mapping, cast
 
+from app.market_data.newow.product_release import deferred_section_reason
+from app.market_data.operational_universe import load_operational_products
 from scripts import newow_weekly_recovery as native
 
 
@@ -27,6 +29,13 @@ _HASH = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 _SYMBOL = re.compile(r"[a-z]{1,8}")
 _CONTRACT = re.compile(r"[A-Z]{1,8}[0-9]{3,4}")
+_SectionName = Literal["chart", "auxiliary", "reference", "explanation"]
+_REPORT_SECTIONS: tuple[_SectionName, ...] = (
+    "chart",
+    "auxiliary",
+    "reference",
+    "explanation",
+)
 _REPORT_REQUIRED = {
     "schema_version": 1,
     "command": "data.newow-readiness",
@@ -39,6 +48,17 @@ _REPORT_REQUIRED = {
     "release_stage": "weekly",
     "frequency_scope": ["1w"],
     "matrix": False,
+}
+_REPORT_STRUCTURAL = {
+    "product_count",
+    "main_case_count",
+    "main_ready_count",
+    "work_used",
+    "enumerations",
+    "dependencies",
+    "repair_targets",
+    "metadata_proposals",
+    "cases",
 }
 
 
@@ -231,7 +251,8 @@ def execute_campaign(
     validated = validate_campaign_manifest(manifest, evidence_root=root)
     identity = validated["execution_identity"]
     children = validated["children"]
-    with _campaign_writer_guard(root, identity["canonical_root_sha256"]):
+    guard_binding = validated["writer_guard"]
+    with _campaign_writer_guard(root, guard_binding):
         try:
             attempt.mkdir(mode=0o700)
             native._fsync_directory(root)
@@ -259,6 +280,19 @@ def execute_campaign(
         stopped_index = len(children)
         for index, child in enumerate(children):
             batch_id = child["batch_id"]
+            try:
+                _validate_writer_guard(
+                    root,
+                    guard_binding,
+                    identity["canonical_root_sha256"],
+                )
+            except RecoveryError:
+                failed = {
+                    "batch_id": batch_id,
+                    "error_code": "CAMPAIGN_GUARD_CHANGED",
+                }
+                stopped_index = index
+                break
             try:
                 _revalidate_child(child, identity=identity, root=root)
             except RecoveryError:
@@ -302,7 +336,14 @@ def execute_campaign(
                 }
                 stopped_index = index
                 break
-            terminal = _validated_batch_invocation(invocation)
+            terminal = _validated_batch_invocation(
+                invocation,
+                child=child,
+                child_path=root / child["path"],
+                digest=child["sha256"],
+                batch_attempt=batch_attempt,
+                identity=identity,
+            )
             if terminal is None:
                 unknown = {
                     "batch_id": batch_id,
@@ -412,9 +453,12 @@ def prepare_campaign(
     targets, excluded = _validated_report_targets(report)
     batches = partition_ordinary_units(report)
     children: list[dict[str, Any]] = []
+    artifact_prefix = _campaign_artifact_prefix(name, report_sha256)
+    writer_guard = _prepare_writer_guard(root, identity["canonical_root_sha256"])
     for index, units in enumerate(batches, start=1):
         batch_id = f"batch-{index:03d}"
-        response = invoke_batch(units, batch_id, root)
+        artifact_id = f"{artifact_prefix}-{batch_id}"
+        response = invoke_batch(units, artifact_id, root)
         if not isinstance(response, Mapping):
             raise RecoveryError("CAMPAIGN_CHILD_INVALID")
         if (
@@ -425,7 +469,9 @@ def prepare_campaign(
             or response.get("unit_count") != len(units)
         ):
             raise RecoveryError("CAMPAIGN_CHILD_INVALID")
-        child_path = _callback_child_path(response.get("prepared_file"), root, batch_id)
+        child_path = _callback_child_path(
+            response.get("prepared_file"), root, artifact_id
+        )
         digest = response.get("prepared_sha256")
         if not isinstance(digest, str) or _HASH.fullmatch(digest) is None:
             raise RecoveryError("CAMPAIGN_CHILD_INVALID")
@@ -438,6 +484,7 @@ def prepare_campaign(
         children.append(
             {
                 "batch_id": batch_id,
+                "artifact_id": artifact_id,
                 "path": child_path.relative_to(root).as_posix(),
                 "sha256": digest,
                 "unit_count": len(summaries),
@@ -456,6 +503,9 @@ def prepare_campaign(
         "provider_requests": 0,
         "writes": 0,
         "evidence_root_sha256": _path_sha256(root),
+        "campaign_name": name,
+        "artifact_prefix": artifact_prefix,
+        "writer_guard": writer_guard,
         "execution_identity": identity,
         "audit": {
             "sha256": report_sha256,
@@ -522,6 +572,21 @@ def validate_campaign_manifest(
     totals = manifest.get("totals")
     audit = manifest.get("audit")
     scope = manifest.get("scope")
+    campaign_name = manifest.get("campaign_name")
+    artifact_prefix = manifest.get("artifact_prefix")
+    if (
+        not isinstance(audit, dict)
+        or not isinstance(campaign_name, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", campaign_name) is None
+        or artifact_prefix
+        != _campaign_artifact_prefix(campaign_name, str(audit.get("sha256", "")))
+    ):
+        raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+    _validate_writer_guard(
+        root,
+        manifest.get("writer_guard"),
+        identity["canonical_root_sha256"],
+    )
     if (
         not isinstance(children, list)
         or not isinstance(totals, dict)
@@ -549,7 +614,13 @@ def validate_campaign_manifest(
         "expected_bar_count": 0,
     }
     for child_index in children:
+        batch_id = child_index.get("batch_id")
+        artifact_id = child_index.get("artifact_id")
+        if artifact_id != f"{artifact_prefix}-{batch_id}":
+            raise RecoveryError("CAMPAIGN_CHILD_INVALID")
         child_path = _manifest_child_path(child_index.get("path"), root)
+        if child_path.name != f"{artifact_id}.prepare.json":
+            raise RecoveryError("CAMPAIGN_CHILD_INVALID")
         digest = child_index.get("sha256")
         if not isinstance(digest, str) or _HASH.fullmatch(digest) is None:
             raise RecoveryError("CAMPAIGN_CHILD_INVALID")
@@ -608,6 +679,8 @@ def _validated_report_targets(
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     if any(report.get(key) != value for key, value in _REPORT_REQUIRED.items()):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    if not _REPORT_STRUCTURAL.issubset(report):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     try:
         as_of = datetime.fromisoformat(report["as_of"])
     except (KeyError, TypeError, ValueError) as exc:
@@ -620,6 +693,7 @@ def _validated_report_targets(
         or not isinstance(metadata, list)
     ):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    _validate_native_report_sections(report, as_of=as_of)
     parsed: list[dict[str, Any]] = []
     excluded: Counter[str] = Counter()
     seen: dict[tuple[str, str, str], tuple[str, str]] = {}
@@ -677,6 +751,191 @@ def _validated_report_targets(
             excluded[status_value] += 1
     parsed.sort(key=lambda item: (item["symbol"], item["contract"], item["frequency"]))
     return parsed, excluded
+
+
+def _validate_native_report_sections(
+    report: Mapping[str, Any],
+    *,
+    as_of: datetime,
+) -> None:
+    """Require the complete native matrix-false readiness payload."""
+    try:
+        operational = tuple(load_operational_products())
+    except (OSError, ValueError, TypeError) as exc:
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
+    enumerations = report.get("enumerations")
+    dependencies = report.get("dependencies")
+    repairs = report.get("repair_targets")
+    cases = report.get("cases")
+    product_count = report.get("product_count")
+    main_case_count = report.get("main_case_count")
+    main_ready_count = report.get("main_ready_count")
+    if (
+        not operational
+        or not isinstance(product_count, int)
+        or isinstance(product_count, bool)
+        or product_count != len(operational)
+        or not isinstance(main_case_count, int)
+        or isinstance(main_case_count, bool)
+        or main_case_count != 0
+        or not isinstance(main_ready_count, int)
+        or isinstance(main_ready_count, bool)
+        or main_ready_count != 0
+        or cases != []
+        or not isinstance(enumerations, list)
+        or not isinstance(dependencies, list)
+        or not isinstance(repairs, list)
+    ):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    expected_enumerations = {
+        (symbol, "1w", section)
+        for symbol in operational
+        for section in _REPORT_SECTIONS
+    }
+    actual_enumerations: set[tuple[str, str, str]] = set()
+    for raw in enumerations:
+        if not isinstance(raw, Mapping):
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        key = (raw.get("symbol"), raw.get("frequency"), raw.get("section"))
+        if key not in expected_enumerations or key in actual_enumerations:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        actual_enumerations.add(key)
+        if raw.get("as_of") != as_of.isoformat():
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        deferred_reason = deferred_section_reason(cast(_SectionName, key[2]))
+        if deferred_reason is not None:
+            if raw.get("status") != "UNOPENED" or raw.get("reason") != deferred_reason:
+                raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+            continue
+        try:
+            since = date.fromisoformat(raw["since"])
+            through = date.fromisoformat(raw["through"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
+        owner_count = raw.get("owner_count")
+        if (
+            raw.get("status") != "ENUMERATED"
+            or since > through
+            or through > as_of.date()
+            or not isinstance(owner_count, int)
+            or isinstance(owner_count, bool)
+            or owner_count < 0
+        ):
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    if actual_enumerations != expected_enumerations:
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+
+    dependency_keys: set[tuple[str, str, str]] = set()
+    operational_set = set(operational)
+    for raw in dependencies:
+        if not isinstance(raw, Mapping):
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        try:
+            symbol = raw["symbol"]
+            contract = raw["contract"]
+            through = date.fromisoformat(raw["through"])
+            dependency_as_of = datetime.fromisoformat(raw["as_of"])
+            consumers = raw["consumers"]
+            owners = raw["owners"]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
+        status_value = raw.get("status")
+        if (
+            symbol not in operational_set
+            or not isinstance(contract, str)
+            or _CONTRACT.fullmatch(contract) is None
+            or not contract.startswith(symbol.upper())
+            or raw.get("frequency") != "1w"
+            or status_value
+            not in {
+                "DATA_READY",
+                "DATA_UNAVAILABLE",
+                "NOT_APPLICABLE",
+                "SOURCE_EXCEPTION",
+            }
+            or through > as_of.date()
+            or dependency_as_of.tzinfo is None
+            or dependency_as_of > as_of
+            or not isinstance(consumers, list)
+            or not consumers
+            or not isinstance(owners, list)
+            or not owners
+        ):
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        if status_value == "DATA_READY":
+            try:
+                cutoff = datetime.fromisoformat(raw["cutoff"])
+                actual_count = raw["actual_bar_count"]
+                expected_count = raw["expected_bar_count"]
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
+            if (
+                cutoff.tzinfo is None
+                or not isinstance(actual_count, int)
+                or isinstance(actual_count, bool)
+                or actual_count < 0
+                or not isinstance(expected_count, int)
+                or isinstance(expected_count, bool)
+                or expected_count < 0
+            ):
+                raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        elif (
+            not isinstance(raw.get("reason"), str)
+            or not raw.get("reason")
+            or (
+                status_value in {"DATA_UNAVAILABLE", "SOURCE_EXCEPTION"}
+                and (
+                    not isinstance(raw.get("error"), Mapping)
+                    or not isinstance(raw["error"].get("code"), str)
+                    or not raw["error"].get("code")
+                )
+            )
+        ):
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        for consumer in consumers:
+            if (
+                not isinstance(consumer, Mapping)
+                or consumer.get("frequency") != "1w"
+                or consumer.get("section")
+                not in {"chart", "auxiliary", "reference"}
+                or not isinstance(consumer.get("strategy"), str)
+            ):
+                raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        for owner in owners:
+            if not isinstance(owner, Mapping):
+                raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+            try:
+                owner_since = date.fromisoformat(owner["since"])
+                owner_through = date.fromisoformat(owner["through"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
+            if owner_since > owner_through or owner_through > through:
+                raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        dependency_keys.add((symbol, contract, "1w"))
+
+    if any(
+        not isinstance(repair, Mapping)
+        or (repair.get("symbol"), repair.get("contract"), repair.get("frequency"))
+        not in dependency_keys
+        for repair in repairs
+    ):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    expected_work = (
+        sum(
+            deferred_section_reason(section) is None
+            for section in _REPORT_SECTIONS
+        )
+        * len(operational)
+        + len(dependencies)
+        + len(repairs)
+    )
+    work_used = report.get("work_used")
+    if (
+        not isinstance(work_used, int)
+        or isinstance(work_used, bool)
+        or work_used != expected_work
+    ):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
 
 
 def _validated_execution_identity(value: object) -> dict[str, str]:
@@ -815,6 +1074,8 @@ def _validate_native_child(
             or expected_bar_count < 0
             or not isinstance(targets, list)
             or len(targets) != target_count
+            or expected_bar_count
+            != sum(item["expected_bar_count"] for item in target_summaries)
             or any(
                 summary[key] != expected[key]
                 for key in ("symbol", "contract", "frequency", "through")
@@ -828,6 +1089,13 @@ def _validate_native_child(
 
 def _path_sha256(path: Path) -> str:
     return hashlib.sha256(str(path).encode("utf-8")).hexdigest()
+
+
+def _campaign_artifact_prefix(name: str, report_sha256: str) -> str:
+    digest_prefix = _identity_sha256(
+        {"campaign_name": name, "report_sha256": report_sha256}
+    )[:16]
+    return f"{name[:32]}-{digest_prefix}"
 
 
 def _identity_sha256(value: object) -> str:
@@ -909,7 +1177,15 @@ def _decoded_mapping(value: str) -> dict[str, Any]:
     return payload
 
 
-def _validated_batch_invocation(value: object) -> dict[str, Any] | None:
+def _validated_batch_invocation(
+    value: object,
+    *,
+    child: Mapping[str, Any],
+    child_path: Path,
+    digest: str,
+    batch_attempt: Path,
+    identity: Mapping[str, str],
+) -> dict[str, Any] | None:
     if not isinstance(value, Mapping):
         return None
     return_code = value.get("return_code")
@@ -928,7 +1204,103 @@ def _validated_batch_invocation(value: object) -> dict[str, Any] | None:
         return None
     if (return_code == 0) != (result.get("status") == "passed"):
         return None
+    attempt_value = result.get("attempt_dir")
+    if not isinstance(attempt_value, str):
+        return None
+    native_attempt = Path(attempt_value)
+    try:
+        native_attempt_info = native_attempt.lstat()
+        native_attempt = native_attempt.resolve(strict=True)
+        allowed_attempts = {batch_attempt.resolve(strict=True)}
+        nested_attempt = batch_attempt / "native"
+        if nested_attempt.exists():
+            allowed_attempts.add(nested_attempt.resolve(strict=True))
+    except OSError:
+        return None
+    if (
+        not stat.S_ISDIR(native_attempt_info.st_mode)
+        or stat.S_ISLNK(native_attempt_info.st_mode)
+        or native_attempt not in allowed_attempts
+    ):
+        return None
+    try:
+        receipt = native._read_json_file(native_attempt / "invocation-receipt.json")
+        persisted_result = native._read_json_file(native_attempt / "batch-result.json")
+        frozen = _load_native_child(child_path, digest)
+    except RecoveryError:
+        return None
+    expected_receipt = {
+        "schema_version": "newow_weekly_recovery_invocation_v1",
+        "prepared_sha256": digest,
+        **identity,
+        "unit_count": child.get("unit_count"),
+    }
+    native_result = result["result"]
+    frozen_units = frozen.get("units")
+    if (
+        receipt != expected_receipt
+        or persisted_result != native_result
+        or not isinstance(frozen_units, list)
+        or len(frozen_units) != child.get("unit_count")
+        or not _validated_native_terminal(native_result, frozen_units)
+    ):
+        return None
     return dict(result)
+
+
+def _validated_native_terminal(
+    result: Mapping[str, Any],
+    frozen_units: list[dict[str, Any]],
+) -> bool:
+    completed = result.get("completed")
+    failed = result.get("failed")
+    unattempted = result.get("unattempted")
+    status_value = result.get("status")
+    if (
+        not isinstance(completed, list)
+        or not isinstance(unattempted, list)
+        or len(completed) > len(frozen_units)
+    ):
+        return False
+    for completed_unit, frozen_unit in zip(completed, frozen_units, strict=False):
+        if not _completed_unit_matches(completed_unit, frozen_unit):
+            return False
+    if status_value == "passed":
+        return (
+            len(completed) == len(frozen_units)
+            and failed is None
+            and unattempted == []
+        )
+    if not isinstance(failed, Mapping) or len(completed) >= len(frozen_units):
+        return False
+    failed_unit = frozen_units[len(completed)]
+    if not _unit_payload_matches(failed, failed_unit):
+        return False
+    expected_unattempted = frozen_units[len(completed) + 1 :]
+    return len(unattempted) == len(expected_unattempted) and all(
+        _unit_payload_matches(actual, expected)
+        for actual, expected in zip(unattempted, expected_unattempted, strict=True)
+    )
+
+
+def _unit_payload_matches(value: object, frozen: Mapping[str, Any]) -> bool:
+    return isinstance(value, Mapping) and all(
+        value.get(key) == expected for key, expected in frozen.items()
+    )
+
+
+def _completed_unit_matches(value: object, frozen: Mapping[str, Any]) -> bool:
+    if not _unit_payload_matches(value, frozen):
+        return False
+    assert isinstance(value, Mapping)
+    readback = value.get("readback")
+    return (
+        value.get("status") in {"passed", "noop"}
+        and value.get("remaining_target_count") == 0
+        and isinstance(readback, Mapping)
+        and readback.get("catalog_physical_mds") == "passed"
+        and readback.get("mds_target_count") == frozen.get("target_count")
+    )
 
 
 def _revalidate_child(
@@ -955,13 +1327,29 @@ def _revalidate_child(
         raise RecoveryError("CAMPAIGN_CHILD_INVALID")
 
 
-@contextmanager
-def _campaign_writer_guard(root: Path, canonical_root_sha256: str):
+def _guard_path(root: Path, canonical_root_sha256: str) -> Path:
     if _HASH.fullmatch(canonical_root_sha256) is None:
         raise RecoveryError("CAMPAIGN_IDENTITY_INVALID")
-    path = root / f".campaign-writer-{canonical_root_sha256}.lock"
+    return root / f".campaign-writer-{canonical_root_sha256}.lock"
+
+
+def _guard_binding(path: Path, info: os.stat_result) -> dict[str, Any]:
+    return {
+        "path": path.name,
+        "device": info.st_dev,
+        "inode": info.st_ino,
+    }
+
+
+def _prepare_writer_guard(root: Path, canonical_root_sha256: str) -> dict[str, Any]:
+    path = _guard_path(root, canonical_root_sha256)
+    flags = os.O_RDWR | os.O_NOFOLLOW
     try:
-        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+            native._fsync_directory(root)
+        except FileExistsError:
+            fd = os.open(path, flags)
         info = os.fstat(fd)
         if (
             not stat.S_ISREG(info.st_mode)
@@ -969,6 +1357,70 @@ def _campaign_writer_guard(root: Path, canonical_root_sha256: str):
             or info.st_nlink != 1
         ):
             raise OSError
+        entry = path.lstat()
+        if entry.st_dev != info.st_dev or entry.st_ino != info.st_ino:
+            raise OSError
+        return _guard_binding(path, info)
+    except OSError as exc:
+        raise RecoveryError("CAMPAIGN_GUARD_UNAVAILABLE") from exc
+    finally:
+        if "fd" in locals():
+            os.close(fd)
+
+
+def _validate_writer_guard(
+    root: Path,
+    value: object,
+    canonical_root_sha256: str,
+) -> dict[str, Any]:
+    expected_path = _guard_path(root, canonical_root_sha256)
+    if not isinstance(value, Mapping) or set(value) != {"path", "device", "inode"}:
+        raise RecoveryError("CAMPAIGN_GUARD_CHANGED")
+    device = value.get("device")
+    inode = value.get("inode")
+    if (
+        value.get("path") != expected_path.name
+        or not isinstance(device, int)
+        or isinstance(device, bool)
+        or not isinstance(inode, int)
+        or isinstance(inode, bool)
+    ):
+        raise RecoveryError("CAMPAIGN_GUARD_CHANGED")
+    try:
+        info = expected_path.lstat()
+    except OSError as exc:
+        raise RecoveryError("CAMPAIGN_GUARD_CHANGED") from exc
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or stat.S_ISLNK(info.st_mode)
+        or info.st_uid != os.getuid()
+        or info.st_nlink != 1
+        or info.st_dev != device
+        or info.st_ino != inode
+    ):
+        raise RecoveryError("CAMPAIGN_GUARD_CHANGED")
+    return dict(value)
+
+
+@contextmanager
+def _campaign_writer_guard(root: Path, binding: Mapping[str, Any]):
+    path = root / str(binding.get("path"))
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+        info = os.fstat(fd)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.getuid()
+            or info.st_nlink != 1
+            or info.st_dev != binding.get("device")
+            or info.st_ino != binding.get("inode")
+        ):
+            raise RecoveryError("CAMPAIGN_GUARD_CHANGED")
+        _validate_writer_guard(
+            root,
+            binding,
+            path.name.removeprefix(".campaign-writer-").removesuffix(".lock"),
+        )
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
@@ -980,7 +1432,7 @@ def _campaign_writer_guard(root: Path, canonical_root_sha256: str):
     except OSError as exc:
         if "fd" in locals():
             os.close(fd)
-        raise RecoveryError("CAMPAIGN_GUARD_UNAVAILABLE") from exc
+        raise RecoveryError("CAMPAIGN_GUARD_CHANGED") from exc
     try:
         yield
     finally:

@@ -393,6 +393,42 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   scripts/newow_weekly_recovery_campaign.py
 ```
 
+总包 CLI 保持 `prepare / apply / inspect` 三阶段。下面命令依赖调用者先设置任务专用变量，仓库不记录
+production 路径、hash 或 attempt 身份：
+
+```bash
+: "${NEWOW_CAMPAIGN_PROJECT_ENV:?set project env path}"
+: "${NEWOW_CAMPAIGN_REPORT:?set full readiness report path}"
+: "${NEWOW_CAMPAIGN_REPORT_SHA256:?set exact report sha256}"
+: "${NEWOW_CAMPAIGN_OUTPUT_ROOT:?set one fixed evidence root}"
+: "${NEWOW_CAMPAIGN_NAME:?set campaign name}"
+
+python scripts/newow_weekly_recovery_campaign.py prepare \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --report "$NEWOW_CAMPAIGN_REPORT" \
+  --expected-report-sha256 "$NEWOW_CAMPAIGN_REPORT_SHA256" \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --name "$NEWOW_CAMPAIGN_NAME"
+```
+
+`apply` 是一次受控真实写入 Gate；只有 owner 对精确 campaign hash 和 attempt 明确授权后才运行：
+
+```bash
+: "${NEWOW_CAMPAIGN_SHA256:?set exact campaign sha256}"
+: "${NEWOW_CAMPAIGN_ATTEMPT_ID:?set one new attempt id}"
+
+python scripts/newow_weekly_recovery_campaign.py apply \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --campaign "$NEWOW_CAMPAIGN_OUTPUT_ROOT/$NEWOW_CAMPAIGN_NAME.prepare.json" \
+  --expected-campaign-sha256 "$NEWOW_CAMPAIGN_SHA256" \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --attempt-id "$NEWOW_CAMPAIGN_ATTEMPT_ID" \
+  --apply
+
+python scripts/newow_weekly_recovery_campaign.py inspect \
+  --attempt "$NEWOW_CAMPAIGN_OUTPUT_ROOT/$NEWOW_CAMPAIGN_ATTEMPT_ID"
+```
+
 `prepare` 只读读取锁定配置、Catalog、Calendar/Session 和 Canonical，要求 checkout clean 且 HEAD 精确，
 输出 plan、执行代码、配置及 Canonical 根的非敏感身份；它不得初始化 provider。`apply` 同样要求 clean exact
 commit，并在首次 provider 前保存绑定 prepared hash 的 invocation receipt。`apply` 是真实 RQData/Canonical/生产写入 Gate，只有
