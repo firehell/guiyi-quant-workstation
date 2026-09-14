@@ -81,17 +81,21 @@ test('real candidate covers AU/JM Newow weekly, AU seven-frequency Free and week
   console.log(JSON.stringify({ evidence: 'real-product-matrix', cutoff, matrix }))
 })
 
-test('real candidate keeps JM SuBing data gap explicit and Newow callouts inside the chart', async ({ page }, testInfo) => {
+test('real candidate reads repaired JM SuBing history and keeps Newow callouts inside the chart', async ({ page }, testInfo) => {
   const responsePromise = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith('/market/jm/subing/reference'))
   await page.goto('/market/chart?symbol=jm&view=subing')
   await expect(page.locator('[data-detail-workspace="subing"]')).toBeVisible()
   const response = await responsePromise
-  expect(response.status()).toBe(409)
+  expect(response.status()).toBe(200)
   const body = await response.json()
-  expect(body.detail.code).toBe('SUBING_REFERENCE_DATA_UNAVAILABLE')
-  expect(body.detail.diagnostic.stage).toBe('physical_contract_replay')
-  expect(body.detail.diagnostic.reason).toBe('DATASET_OR_PARTITION_MISSING')
-  await expect(page.getByText(/物理合约回放失败：行情数据集或分区缺失/)).toBeVisible()
+  expect(body.source).toBe('historical_replay')
+  expect(body.formula_version).toBe('subing_ths_15m_v3')
+  expect(body.performance_since).toBe('2026-08-18')
+  expect(body.performance_through).toBe('2026-09-14')
+  expect(body.items.length).toBeGreaterThan(0)
+  expect(body.signals.length).toBeGreaterThan(0)
+  await expect(page.locator('.subing-reference__summary')).toBeVisible()
+  await expect(page.locator('.subing-reference tbody tr')).not.toHaveCount(0)
 
   await page.goto('/market/chart?symbol=au&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1w')
   const stage = page.getByTestId('newow-product-chart-stage')
@@ -120,5 +124,5 @@ test('real candidate keeps JM SuBing data gap explicit and Newow callouts inside
   await stage.getByRole('button', { name: '退出图表全屏' }).click()
   await expect(stage.getByRole('button', { name: '图表全屏' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('real-au-newow-390.png'), fullPage: true })
-  console.log(JSON.stringify({ evidence: 'real-jm-gate-and-callouts', jmStatus: response.status(), diagnostic: body.detail.diagnostic, calloutCount: count }))
+  console.log(JSON.stringify({ evidence: 'real-jm-readback-and-callouts', jmStatus: response.status(), itemCount: body.items.length, signalCount: body.signals.length, calloutCount: count }))
 })
