@@ -1,8 +1,8 @@
 # 普通 W1 补数一次总包闭环：设计与实施计划
 
-> 执行时使用 `superpowers:executing-plans`，由一个主执行任务连续推进，阶段末独立 Review。Owner 已于本轮确认工程计划；真实下载/写入仍待精确总包意图，不创建新用户任务或恢复旧任务。
+> 执行时使用 `superpowers:executing-plans`，由一个主执行任务连续推进，阶段末独立 Review。Owner 已确认工程计划并随后批准精确总包一次执行；该次因B2411来源异常停止，意图已消费，不创建新用户任务或恢复旧任务。
 
-日期：2026-09-14。设计基线：`develop/origin/develop@7982c8c921245853d52c0740e20278ec144e7464`。状态：`CODE_COMPLETE_EXTERNAL_GATE_PENDING`；owner 已确认总包编排设计，尚未形成生产总包意图。
+日期：2026-09-14。设计基线：`develop/origin/develop@7982c8c921245853d52c0740e20278ec144e7464`。当前状态：`PARTIAL`；工程已集成develop@4c891d8df，一次总包执行102成功/1失败/1014未尝试，全部102成功单元独立读回及零缺口replan通过。详见[执行证据](remaining-123-execution-evidence.md)。以下计划步骤与旧计数保留为原设计，不授权失败后重试或续跑。
 
 工程检查点：实现提交 `84df05552`，专项 Review 的两轮修复为 `f3a30ec79`、`842844a19`，最终专项
 复审无阻断；总审补充的 repair 反向覆盖和来源 journal 核对由 `4c18a9a23` 修复并覆盖回归。

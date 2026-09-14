@@ -1,9 +1,53 @@
 # 牛哇周线剩余 1–3 项当前证据
 
-日期：2026-09-14。状态：`EC2607_ORDINARY_BATCH_001_AND_RS_REPAIR_COMPLETED`。本文件记录本任务的工程、
-三个恢复批次与已消费的 RS 来源核验/修复意图；不代表下一批、发布或 Runtime 操作已获授权。
+日期：2026-09-14。状态：`PARTIAL`。已有 EC、首批普通和 RS 专项成功证据保留；本轮全量普通总包
+因新发现的 B2411 来源异常停止。本次意图已消费，不授权重试、续跑、发布或 Runtime 操作。
 
-## 2026-09-14 全域普通余额重新审计
+## 2026-09-14 普通总包一次执行与独立结算
+
+冻结代码 `4c891d8df24c4a5206cfcad50712012e3c564fcf` 已通过独立 Review 并推送 develop。
+新完整只读审计仍为相同 operational 60/W1/as-of，complete=true、budget_exhausted=false，耗时808.96秒，
+报告 SHA `b593d79c8118098beeff3cbbe815070065e0f003ac6880ee96b9f942af37c191`。56 个精确子包均完成
+prepare 和独立本地联合校验；1,117 units、22,695 targets、264,551 expected bars、251,384 missing。
+相较下文旧摘要，AO2701、HC2701、JD2611、OI2701、RB2701 的2026-09 D1各保留一个已有9月14日bar，
+故 expected 增5；through与missing窗口未扩大。审计、准备均零provider、零生产写入。
+
+owner 对总包 SHA `cd54323832a1d8f325fb1ed3d4ae1bdad4d6fbbceed35ce9cef15985e891f8b5`
+回复“批准”后，仅运行一次 `ordinary-full-20260914-001-apply-001`。首次异常发生于第6批第3单元B2411，
+总进程exit=1、status=partial、retries=0；前5批完整通过，第6批2成功后停止，后50批未启动。
+
+| 冻结全集结算 | 单元数 |
+| --- | ---: |
+| passed | 102 |
+| failed | 1（B2411，applied=0） |
+| unattempted | 1,014（本批17 + 后50批997） |
+| unknown | 0 |
+
+102成功单元共提交2,066个分区，target完整expected bars为24,036，实际补齐22,899个missing endpoints。
+103个已尝试单元的journal为1,106 started/1,106 response_saved；这是实际应用层source调用，不是逻辑
+月目标计数或provider计费请求。B2411自身2次来源请求均已保存，原生逻辑provider_requests=4，二者不混用。
+
+B2411第二份保存的 `futures.get_exchange_daily` 响应范围2023-11-27至2023-12-29，含25行。
+其中2023-12-27为open/high/low=0、close=3929、volume=2、total_turnover=78700。纯adapter离线重放
+准确返回 `RQDATA_ZERO_OHL_INVALID`：非零成交不能用零成交规范化，也不得用close/settlement替代OHL。
+来源响应SHA `af04f658c0cca84ff2606e0d1eb24cdb4d079eb23bc51024d16d5a2703054a0f`。
+新来源异常不因执行前Catalog仅能看到缺口而变成可盲目补数对象；旧9个RS仍独立隔离。
+
+执行结束后，新进程在fresh read-only事务中对全部102成功单元重新做Catalog/Parquet/MDS严格读回和
+原生replan，全部0 targets；同时验证B2411原plan hash与22个待补targets未变。独立核对耗时127.97秒，
+provider_requests=0、writes=0，全部6份原生batch终态/receipt和103份journal亦重新校验。
+`campaign-result.json` SHA `29e818f4926db376cfc57e345409dace022c4c9bd1f813619ab54b17befe5d03`。
+
+完整证据位于本任务工作树 `outputs/newow-weekly-recovery-attempts/ordinary-campaigns/`：
+`ordinary-full-20260914-001-apply-001/campaign-result.json`、各批原生结果/journal/来源响应，以及
+`ordinary-full-20260914-001-reconciliation.json`、`reconcile-apply-001.py`和执行记录。
+冻结新审计在同级 `ordinary-audit-frozen-20260914-002/`。
+
+这里只证明冻结全集的本次结算；未执行完整全域后审计，不能把1,117−102当作重新审计后的普通余额。
+剩余来源异常处置、普通范围重审和新的精确执行意图均待完成；不自动跳过B2411继续、不重试、不回滚
+已成功分区。未做额度探测、Runtime/Scope/metadata/通知/发布或交易变更。
+
+## 2026-09-14 执行前全域普通余额审计（历史基线）
 
 在代码 `7982c8c921245853d52c0740e20278ec144e7464` 上完成新的原生完整 dependency-only 审计：
 operational 60 品种、`frequency=1w`、`as_of=2026-09-13T06:36:13+00:00`。结果为
@@ -41,10 +85,10 @@ owner 已确认[普通全量收口计划](ordinary-full-closeout-plan.md)。总�
 9 项、secret scan 0 findings、diff check 均通过，三阶段 help smoke 通过。测试使用隔离数据库、临时
 Canonical 与 fake provider，不代表真实补数。完整工程总审与 develop 包含关系以本分支交付记录为准。
 
-当前状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。冻结代码后的 readonly audit、全部 child prepare
+当时状态为 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`。冻结代码后的 readonly audit、全部 child prepare
 及唯一 campaign manifest 统一使用本地 `outputs/newow-weekly-recovery-attempts/` 记录；每份 artifact 绑定其
 exact commit/hash/root，不把本段工程检查点当作后续 prepare 或 apply 成功回执。真实总包执行意图仍待
-全部子包和代码身份冻结后单独取得。当前未执行这 1,117 个剩余普通单元。
+全部子包和代码身份冻结后单独取得。此段为执行前工程检查点，已由顶部真实执行结算取代。
 
 ## 执行前冻结依赖队列
 
