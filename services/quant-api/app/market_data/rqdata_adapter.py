@@ -73,6 +73,21 @@ class ExchangeDailySourceObserver(Protocol):
     ) -> None: ...
 
 
+def _bar_fetch_order_key(
+    request: BarFetchRequest,
+    original_index: int,
+) -> tuple[int, int]:
+    """Keep source preflight and execution on the same W1-first cache order."""
+    priority = (
+        0
+        if request.key.frequency is BarFrequency.W1
+        else 1
+        if request.key.frequency is BarFrequency.D1
+        else 2
+    )
+    return priority, original_index
+
+
 def runtime_provider_settings(
     settings: Mapping[str, str],
     *,
@@ -131,14 +146,7 @@ class RQDataMarketAdapter:
         covered: set[tuple[str, date]] = set()
         order = sorted(
             range(len(requests)),
-            key=lambda index: (
-                0
-                if requests[index].key.frequency is BarFrequency.W1
-                else 1
-                if requests[index].key.frequency is BarFrequency.D1
-                else 2,
-                index,
-            ),
+            key=lambda index: _bar_fetch_order_key(requests[index], index),
         )
         for index in order:
             item = requests[index]
@@ -196,14 +204,7 @@ class RQDataMarketAdapter:
         batches: dict[int, BarBatch] = {}
         order = sorted(
             range(len(requests)),
-            key=lambda index: (
-                0
-                if requests[index].key.frequency is BarFrequency.W1
-                else 1
-                if requests[index].key.frequency is BarFrequency.D1
-                else 2,
-                index,
-            ),
+            key=lambda index: _bar_fetch_order_key(requests[index], index),
         )
         for index in order:
             request = requests[index]

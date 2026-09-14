@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -29,6 +30,9 @@ from app.models import Contract, Exchange, Instrument, TradingCalendar
 from scripts.newow_weekly_recovery import (
     AttemptJournal,
     RecoveryError,
+    _current_execution_code_sha256,
+    _post_commit_readback,
+    _require_execution_identity,
     create_attempt_directory,
     execute_prepared_batch,
     load_prepared_manifest,
@@ -532,7 +536,15 @@ def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> 
 
     def open_unit(observer, unit):
         manager = Manager(observer, unit)
-        return manager, lambda: events.append(f"invalidate:{unit['contract']}")
+        return (
+            manager,
+            lambda: events.append(f"invalidate:{unit['contract']}"),
+            lambda: events.append(f"readback:{unit['contract']}") or {
+                "catalog_partitions": [],
+                "mds_target_count": 0,
+            },
+            lambda: None,
+        )
 
     attempt = create_attempt_directory(tmp_path, "batch-001")
     result = execute_prepared_batch(
@@ -554,6 +566,7 @@ def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> 
         "locked:EC2607",
         "invalidate:EC2607",
         "replan:EC2607",
+        "readback:EC2607",
         "locked:SI2401",
         "invalidate:SI2401",
     ]
@@ -597,6 +610,28 @@ def test_execute_prepared_batch_rejects_execution_code_drift_before_opening_unit
     assert opened == []
 
 
+def test_require_execution_identity_closes_reopened_environment_on_drift() -> None:
+    closed: list[bool] = []
+    environment = SimpleNamespace(
+        identity={
+            "config_sha256": "f" * 64,
+            "canonical_root_sha256": "e" * 64,
+        },
+        close=lambda: closed.append(True),
+    )
+
+    with pytest.raises(RecoveryError, match="^EXECUTION_IDENTITY_CHANGED$"):
+        _require_execution_identity(
+            environment,
+            {
+                "config_sha256": "c" * 64,
+                "canonical_root_sha256": "e" * 64,
+            },
+        )
+
+    assert closed == [True]
+
+
 def test_execute_prepared_batch_marks_known_failure_in_journal(tmp_path) -> None:
     source = _source_request()
     unit = {
@@ -635,7 +670,7 @@ def test_execute_prepared_batch_marks_known_failure_in_journal(tmp_path) -> None
     def open_unit(value, _unit):
         nonlocal observer
         observer = value
-        return Manager(), lambda: None
+        return Manager(), lambda: None, lambda: {}, lambda: None
 
     observer = None
     attempt = create_attempt_directory(tmp_path, "batch-001")
@@ -653,6 +688,129 @@ def test_execute_prepared_batch_marks_known_failure_in_journal(tmp_path) -> None
     assert result["status"] == "failed"
     unit_attempt = attempt / "unit-001-ec-EC2607"
     assert read_attempt_outcome(unit_attempt)["state"] == "failed"
+
+
+def test_execute_prepared_batch_preserves_first_unit_partial_status(tmp_path) -> None:
+    unit = {
+        "symbol": "ec",
+        "contract": "EC2607",
+        "through": "2026-06-30",
+        "frequency": "1w",
+        "plan_sha256": "a" * 64,
+        "source_requests": [],
+    }
+    manifest = {
+        "schema_version": "newow_weekly_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "units": [unit],
+    }
+
+    class Manager:
+        def contract_warmup(self, _request, *, before_apply=None):
+            assert before_apply is not None
+            before_apply()
+            return SimpleNamespace(
+                status="partial",
+                applied=1,
+                blocked=0,
+                failed=1,
+                provider_requests=1,
+                failures=({"reason_code": "PROVIDER_QUOTA_EXHAUSTED"},),
+            )
+
+    attempt = create_attempt_directory(tmp_path, "batch-001")
+    result = execute_prepared_batch(
+        manifest=manifest,
+        attempt_dir=attempt,
+        current_code_commit="b" * 40,
+        current_execution_code_sha256="d" * 64,
+        current_config_sha256="c" * 64,
+        current_canonical_root_sha256="e" * 64,
+        open_unit=lambda *_args: (Manager(), lambda: None, lambda: {}, lambda: None),
+    )
+
+    assert result["status"] == "partial"
+    assert result["failed"]["result"]["applied"] == 1
+
+
+def test_execution_code_identity_reads_real_repository_dependencies() -> None:
+    first = _current_execution_code_sha256()
+    second = _current_execution_code_sha256()
+
+    assert len(first) == 64
+    assert first == second
+
+
+def test_post_commit_readback_records_catalog_file_hash_and_mds(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from app.market_data import market_data_service as service_module
+
+    root = tmp_path / "canonical"
+    path = root / "kind=contract" / "part.parquet"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"immutable-canonical-partition")
+    first = datetime(2026, 3, 30, 1, 5, tzinfo=UTC)
+    last = datetime(2026, 3, 31, 1, 5, tzinfo=UTC)
+    bars = (SimpleNamespace(bar_end=first), SimpleNamespace(bar_end=last))
+    partition = SimpleNamespace(
+        year=2026,
+        month=3,
+        file_path=path,
+        row_count=2,
+    )
+
+    class Catalog:
+        canonical_root = root
+
+        def all_partitions(self, _key):
+            return (partition,)
+
+    class Store:
+        def read_catalog_partition(self, value):
+            assert value is partition
+            return bars
+
+    class Service:
+        def __init__(self, catalog, store):
+            assert isinstance(catalog, Catalog)
+            assert isinstance(store, Store)
+
+        def query(self, request):
+            assert request.start == first - timedelta(microseconds=1)
+            assert request.end == last
+            return SimpleNamespace(bars=bars)
+
+    monkeypatch.setattr(service_module, "MarketDataService", Service)
+    unit = {
+        "symbol": "ec",
+        "contract": "EC2607",
+        "targets": [
+            {
+                "dataset": ["contract", "ec", "EC2607", "1d"],
+                "year": 2026,
+                "month": 3,
+                "expected_start": first.isoformat(),
+                "expected_end": last.isoformat(),
+                "expected_bar_count": 2,
+            }
+        ],
+    }
+
+    result = _post_commit_readback(
+        SimpleNamespace(catalog=Catalog(), store=Store()),
+        unit,
+    )
+
+    assert result["catalog_physical_mds"] == "passed"
+    assert result["mds_target_count"] == 1
+    assert result["catalog_partitions"][0]["file_sha256"] == hashlib.sha256(
+        path.read_bytes()
+    ).hexdigest()
 
 
 def test_prepared_manifest_is_exclusive_hash_locked_and_no_overwrite(tmp_path) -> None:
@@ -802,7 +960,6 @@ def test_prepare_cli_writes_hash_locked_manifest_without_provider(
         ),
     )
     monkeypatch.setattr(module, "_current_code_commit", lambda: "b" * 40)
-    monkeypatch.setattr(module, "_current_execution_code_sha256", lambda: "d" * 64)
     output = io.StringIO()
 
     code = main(

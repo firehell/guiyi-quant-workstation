@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 import hashlib
 import json
@@ -42,7 +42,7 @@ _EXECUTION_CODE_PATHS = (
     "services/quant-api/app/market_data/composition.py",
     "services/quant-api/app/market_data/rqdata_adapter.py",
     "services/quant-api/app/market_data/historical_data_manager.py",
-    "services/quant-api/app/market_data/canonical_store.py",
+    "services/quant-api/app/market_data/storage.py",
     "services/quant-api/app/market_data/catalog.py",
     "services/quant-api/app/market_data/coverage_source.py",
     "services/quant-api/app/market_data/market_home_projection.py",
@@ -458,7 +458,15 @@ def execute_prepared_batch(
     current_execution_code_sha256: str,
     current_config_sha256: str,
     current_canonical_root_sha256: str,
-    open_unit: Callable[[AttemptJournal, Mapping[str, Any]], tuple[Any, Callable[[], None]]],
+    open_unit: Callable[
+        [AttemptJournal, Mapping[str, Any]],
+        tuple[
+            Any,
+            Callable[[], None],
+            Callable[[], Mapping[str, object]],
+            Callable[[], None],
+        ],
+    ],
 ) -> dict[str, object]:
     """Execute one frozen batch serially; any failure leaves the tail untouched."""
     if manifest.get("schema_version") != "newow_weekly_recovery_prepare_v1":
@@ -490,8 +498,7 @@ def execute_prepared_batch(
             ),
         )
         opened = open_unit(observer, unit)
-        manager, invalidate_projection = opened[:2]
-        cleanup = opened[2] if len(opened) == 3 else lambda: None
+        manager, invalidate_projection, post_commit_readback, cleanup = opened
         request = ContractWarmupRequest(
             symbol=unit["symbol"],
             contract=unit["contract"],
@@ -540,23 +547,28 @@ def execute_prepared_batch(
                     attempt_dir,
                     _batch_result(completed, failure, units[index + 1 :]),
                 )
-            replan = manager.contract_warmup(
-                ContractWarmupRequest(
-                    symbol=unit["symbol"],
-                    contract=unit["contract"],
-                    through=date.fromisoformat(unit["through"]),
-                    frequency="1w",
+            try:
+                replan = manager.contract_warmup(
+                    ContractWarmupRequest(
+                        symbol=unit["symbol"],
+                        contract=unit["contract"],
+                        through=date.fromisoformat(unit["through"]),
+                        frequency="1w",
+                    )
                 )
-            )
-            if replan.plan.target_windows:
-                observer.mark_failed("READBACK_REPLAN_REMAINS")
+                if replan.plan.target_windows:
+                    raise RecoveryError("READBACK_REPLAN_REMAINS")
+                readback = dict(post_commit_readback())
+            except Exception as exc:  # noqa: BLE001 - post-commit state is reported, never retried
+                code = _error_code(exc)
+                if code == "RECOVERY_EXECUTION_FAILED":
+                    code = "POST_COMMIT_READBACK_FAILED"
+                observer.mark_failed(code)
                 failure = {
                     **unit,
-                    "status": "failed",
-                    "error_code": "READBACK_REPLAN_REMAINS",
+                    "status": "partial" if result.applied else "failed",
+                    "error_code": code,
                     "result": result_payload,
-                    "replan_sha256": replan.plan.plan_sha256,
-                    "remaining_target_count": len(replan.plan.target_windows),
                     "attempt": read_attempt_outcome(unit_dir),
                 }
                 _write_json_exclusive(unit_dir / "unit-result.json", failure)
@@ -571,10 +583,7 @@ def execute_prepared_batch(
                 "replan_sha256": replan.plan.plan_sha256,
                 "remaining_target_count": 0,
                 "attempt": read_attempt_outcome(unit_dir),
-                "readback": {
-                    "catalog_physical_replan": "passed",
-                    "mds_strict_verify_during_publish": True,
-                },
+                "readback": readback,
             }
             _write_json_exclusive(unit_dir / "unit-result.json", success)
             completed.append(success)
@@ -774,8 +783,14 @@ def _batch_result(
     failure: dict[str, object],
     unattempted: list[dict[str, Any]],
 ) -> dict[str, object]:
+    nested = failure.get("result")
+    applied = nested.get("applied", 0) if isinstance(nested, Mapping) else 0
     result: dict[str, object] = {
-        "status": "partial" if completed else "failed",
+        "status": (
+            "partial"
+            if completed or failure.get("status") == "partial" or applied
+            else "failed"
+        ),
         "completed": completed,
         "failed": failure,
         "unattempted": unattempted,
@@ -860,6 +875,104 @@ def _current_execution_code_sha256() -> str:
     return digest.hexdigest()
 
 
+def _post_commit_readback(
+    manager: Any,
+    unit: Mapping[str, Any],
+) -> dict[str, object]:
+    """Verify committed targets through Catalog, physical files and MDS."""
+    from app.market_data.domain import DatasetKey, SeriesKind, SeriesQuery
+    from app.market_data.market_data_service import MarketDataService
+
+    targets = unit.get("targets")
+    if not isinstance(targets, list) or not targets:
+        raise RecoveryError("POST_COMMIT_READBACK_INVALID")
+    root = Path(manager.catalog.canonical_root).resolve()
+    service = MarketDataService(manager.catalog, manager.store)
+    partitions: list[dict[str, object]] = []
+    for raw in targets:
+        try:
+            if not isinstance(raw, Mapping):
+                raise ValueError
+            dataset = raw["dataset"]
+            if not isinstance(dataset, list) or len(dataset) != 4:
+                raise ValueError
+            key = DatasetKey(*dataset)
+            year = int(raw["year"])
+            month = int(raw["month"])
+            expected_start = datetime.fromisoformat(str(raw["expected_start"]))
+            expected_end = datetime.fromisoformat(str(raw["expected_end"]))
+            expected_count = int(raw["expected_bar_count"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RecoveryError("POST_COMMIT_READBACK_INVALID") from exc
+        if (
+            key.kind.value != "contract"
+            or key.symbol != unit["symbol"]
+            or key.series_or_contract != unit["contract"]
+            or key.frequency.value not in {"1d", "1w"}
+            or expected_start.tzinfo is None
+            or expected_end.tzinfo is None
+            or expected_start > expected_end
+            or expected_count <= 0
+        ):
+            raise RecoveryError("POST_COMMIT_READBACK_INVALID")
+        rows = tuple(
+            item
+            for item in manager.catalog.all_partitions(key)
+            if (item.year, item.month) == (year, month)
+        )
+        if len(rows) != 1:
+            raise RecoveryError("POST_COMMIT_CATALOG_INVALID")
+        partition = rows[0]
+        path = Path(partition.file_path)
+        try:
+            info = path.lstat()
+            resolved = path.resolve()
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or stat.S_ISLNK(info.st_mode)
+                or not resolved.is_relative_to(root)
+            ):
+                raise OSError
+            physical = manager.store.read_catalog_partition(partition)
+            content_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise RecoveryError("POST_COMMIT_PHYSICAL_INVALID") from exc
+        if len(physical) != partition.row_count:
+            raise RecoveryError("POST_COMMIT_PHYSICAL_INVALID")
+        result = service.query(
+            SeriesQuery(
+                series_kind=SeriesKind.CONTRACT,
+                symbol=key.symbol,
+                contract=key.series_or_contract,
+                frequency=key.frequency,
+                start=expected_start - timedelta(microseconds=1),
+                end=expected_end,
+            )
+        )
+        if (
+            len(result.bars) != expected_count
+            or result.bars[0].bar_end != expected_start
+            or result.bars[-1].bar_end != expected_end
+        ):
+            raise RecoveryError("POST_COMMIT_MDS_INVALID")
+        partitions.append(
+            {
+                "dataset": list(key.as_tuple()),
+                "year": year,
+                "month": month,
+                "file_sha256": content_sha256,
+                "catalog_row_count": partition.row_count,
+                "physical_row_count": len(physical),
+                "mds_bar_count": len(result.bars),
+            }
+        )
+    return {
+        "catalog_physical_mds": "passed",
+        "mds_target_count": len(targets),
+        "catalog_partitions": partitions,
+    }
+
+
 def _open_execution_environment(
     project_env: Path,
     observer: AttemptJournal | None = None,
@@ -900,6 +1013,16 @@ def _open_execution_environment(
         identity=identity,
         close=close,
     )
+
+
+def _require_execution_identity(
+    environment: _ExecutionEnvironment,
+    expected_identity: Mapping[str, str],
+) -> _ExecutionEnvironment:
+    if environment.identity != expected_identity:
+        environment.close()
+        raise RecoveryError("EXECUTION_IDENTITY_CHANGED")
+    return environment
 
 
 def _unit_requests(value: Any) -> tuple[ContractWarmupRequest, ...]:
@@ -995,8 +1118,9 @@ def main(
             attempt = create_attempt_directory(Path(args.output_root), args.attempt_id)
 
             def open_unit(observer, _unit):
-                environment = _open_execution_environment(
-                    Path(args.project_env), observer
+                environment = _require_execution_identity(
+                    _open_execution_environment(Path(args.project_env), observer),
+                    identity,
                 )
                 from app.market_data.market_home_projection import (
                     MarketHomeProjectionStore,
@@ -1008,7 +1132,12 @@ def main(
                         environment.manager.catalog.canonical_root
                     )
                 ).invalidate
-                return environment.manager, invalidate, environment.close
+                return (
+                    environment.manager,
+                    invalidate,
+                    lambda: _post_commit_readback(environment.manager, _unit),
+                    environment.close,
+                )
 
             result = execute_prepared_batch(
                 manifest=prepared,
