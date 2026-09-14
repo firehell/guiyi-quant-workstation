@@ -1,9 +1,9 @@
 # 牛哇周线剩余 1–3 项当前证据
 
-日期：2026-09-14。状态：`EC2607 COMPLETED / ORDINARY_AND_RS_EXTERNAL_GATE_PENDING`。本文件记录本任务的
-工程、只读事实与 EC2607 已消费的一次执行证据；不代表普通批次、RS、发布或 Runtime 操作已获授权。
+日期：2026-09-14。状态：`EC2607_AND_ORDINARY_BATCH_001_COMPLETED / RS_EXTERNAL_GATE_PENDING`。本文件记录
+本任务的工程、只读事实及两个已消费的一次执行证据；不代表 RS、发布或 Runtime 操作已获授权。
 
-## 当前依赖队列
+## 执行前冻结依赖队列
 
 冻结参数：`operational` 60 品种、`frequency=1w`、
 `as_of=2026-09-13T06:36:13+00:00`、dependency-only compact readiness。有效结果为
@@ -21,7 +21,8 @@
 
 当前不可用细分为 `DATASET_OR_PARTITION_MISSING=12`、`REPLAY_ENDPOINTS_MISSING=2`、
 `REPLAY_PREFIX_MISSING=2304`。`SI2308` 已从 repair targets 消失，符合其既有原生 replan targets=0；
-上述变化不能外推为第 4 项完整矩阵通过。
+上述变化不能外推为第 4 项完整矩阵通过；普通首批执行后的全量余额未在本任务重跑，因此本表不得冒充写后
+全局 readiness 现状。
 
 普通候选按 `symbol/contract/through` 稳定排序并排除 EC2607、RS2309、RS2311 后，首批最多 20 项如下。
 这些只是批次候选，不是执行授权；正式 prepare 还须冻结完整 targets、来源日期和执行身份。
@@ -68,6 +69,20 @@ SHA-256；原生 replan 为 0 targets/0 bars/0 provider request，plan
 `fe28bda7044f566d67400c6fda40f717320febc345e31e71c6810aa6ab8f6c8d`。独立新进程再次得到同一零目标结果。
 本次执行意图已消费，不授权重试或扩大范围；完整 journal、来源 payload、receipt 和逐分区 readback 保存在
 `outputs/newow-weekly-recovery-attempts/ec2607-20260914-001/`。
+
+## 普通首批 20 单元
+
+owner 随后批准 exact prepared artifact
+`443a8168c3d6693ef0333288c0ad65d5bd725b2f12ecf685a6af03ae7625812e`，attempt
+`ordinary-batch-001-20260914-001` 绑定代码
+`60c134d6dc4308b88cab8a97c4611e75086defb8` 并严格串行执行一次。A2407 至 AG2412 共 20/20 单元
+completed，378/378 targets、4,383 bars 均 `passed`，failed/unattempted 均为 0，`retries=0`。
+
+底层同源 journal 为 203 started/203 response_saved；203 个来源 payload 的 receipt SHA-256 全部匹配，
+`outcome_unknown=false`。提交后 378 个 Catalog/物理文件/MDS target 逐项严格读回通过，remaining targets=0；
+独立新进程对 20 单元重新规划合计 0 targets/0 bars/0 provider requests。本次意图已消费，不授权重试、
+下一批或扩大范围。完整执行材料保存在
+`outputs/newow-weekly-recovery-attempts/ordinary-batch-001-20260914-001/`。
 
 ## RS2309 / RS2311 本地专项
 
@@ -119,7 +134,7 @@ D1/W1。非正 bars 与缺口一起形成未来来源核验集合，但来源核
   最终独立 Review：Standards 为 P1/P2/P3/smell 全 0；Spec 为 P1/P2/P3 全 0、1 个非阻断的 readback
   seam smell。结论均为允许集成 develop。
 - EC2607：一次执行已完成且严格读回通过；该意图已消费，不授权重试。
-- 普通首批：EC 成功 Gate 已满足，但仍需独立 prepared hash 和 fresh 一次执行意图；本任务未执行。
+- 普通首批：一次执行已完成且严格读回通过；该意图已消费，不授权重试或下一批。
 - RS2309/RS2311：先对上述精确来源集合取得“仅来源下载”意图；禁止 Canonical 写入。分类后如有本地可修复
   冲突，再形成独立修复 plan、Review 和正式写入意图。
 - 第 4 项完整矩阵、main/tag/release、Runtime、Scope、通知和交易均不在本任务。
