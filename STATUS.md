@@ -1,7 +1,7 @@
 # 当前状态
 
 文档整理：2026-09-14；最新候选验证截至 `2026-09-14 00:19:07 CST`，现场记录截至
-`2026-09-14 00:31:27 CST`。
+`2026-09-14 08:13:27 CST`；promotion/安装边界追加验证为 107 passed。
 正式 Release 为 `v1.10.9@94414c26ef9ae784fddb3758acc45a5b4c6b5c51`；现役 Runtime 仍为
 `v1.10.8@82860ee3f5f63c49397ab11b0d0ab60c601376b9`。v1.10.9 已完成 main、annotated tag 与
 GitHub Release，Runtime promotion 在任何安装/切换前被 fresh preflight 阻断，两个 Gate 分别取证。
@@ -16,7 +16,7 @@ GitHub Release，Runtime promotion 在任何安装/切换前被 fresh preflight 
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.9@94414c26e`，PR #365 合入 main；annotated tag object `6f8369417` 与 GitHub Release 已读回，API/Web 版本均为 1.10.9 |
 | 现役 Runtime | v1.10.8 `RUNTIME_PROMOTED / IMMEDIATE_ACCEPTANCE_PASSED`，未声明 `RUNTIME_READY` | 六服务均绑定 `v1.10.8@82860ee3f`；API/Web 200、单 API worker、Live/Alert fresh heartbeat；after-market 等待自然运行，既有 degraded/failed health 事实保留 |
-| v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / EXTERNAL_GATE_PENDING` | main/tag/GitHub Release 已完成；新 exact-tag root 已构建，但 Runtime promotion preflight 因 60/60 `phase=UNKNOWN` 阻断，未执行安装或切换 |
+| v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / EXTERNAL_GATE_PENDING` | main/tag/GitHub Release 已完成；新 exact-tag root 已构建；午夜 UNKNOWN、08:12 当日 Live snapshot 缺失分别阻断 preflight，未执行安装或切换 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
 | Weekly audit | `ENABLED / CURRENT_WEEK_READBACK_PASSED / NATURAL_RUN_PENDING` | exact v1.10.8 root 已 loaded、周六 09:00、当前 idle、runs 0 / not_run；840/840 endpoint 与 120/120 周线归属核对通过；首次自然及全历史周检待验 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
@@ -57,6 +57,25 @@ Live heartbeat fresh、DB/Redis ok，但 60/60 operational 品种 `phase=UNKNOWN
 missed/2026-09-13 non-trading-day skipped，overall degraded。按 fail-closed 合同未重试、未安装、未切服务、
 未修改 Runtime 状态或生产数据；现役六服务仍全部绑定 v1.10.8。自然 completed Live Bar、真实收件、自然
 18:05 盘后、后续增量/MDS 与首次自然周检继续保持 pending，不由 Release 或候选 build 代替。
+
+### 9 月 14 日开市前追加诊断
+
+08:13 的生产只读事务确认：当日 Calendar 与 Session 覆盖 60/60；9 月 15 日 Calendar 存在，但
+Session 为 0/60。使用同一现场事实分别输入 00:10、08:10、09:10、18:10、21:10，既有 resolver
+返回 UNKNOWN 60、CLOSED 60、TRADING 60、UNKNOWN 60、UNKNOWN 60；这是固定时点的只读推演，
+不是未来自然运行证据。午夜 UNKNOWN 的原因是缺少下一交易日 Session 触发夜盘保守判断；当天 18:05
+既有每日更新负责准备下一交易日 Session，实际成功仍待自然验收。
+
+08:12 的 exact v1.10.9 preflight 改为 `MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED`：
+当日 subscription snapshot 为 0/60。45 品种当日首段已在 9 月 11 日 21:00 开始，另 15 品种首段为
+9 月 14 日 09:00，故 08:10 不能通过全品种 `before_first_session`。既有 Live 只在 TRADING 阶段获取
+主力并冻结快照；须等自然快照完整且 fresh preflight 通过后，才可能执行一次获授权的安装。未造快照、
+未放宽 predicate、未进行 provider 请求、生产写入或服务切换。
+
+现役 v1.10.8 与候选 v1.10.9 root 均为干净 detached exact tag，六服务 installed identity 仍为 v1.10.8。
+现役盘后状态为 schema v3、无 current_run；两版 reader 接受同一字节并产生相同规范化 hash。
+v1.10.9 上 promotion、Market/Alert launchd 隔离回归 107 passed。API/Web 200，Live/Alert heartbeat
+fresh；既有盘后 missed、历史通知失败和 rule failure 仍保留。切换及新版本自然业务验收尚未完成。
 
 ## 共享锁释放异常修复（开发验收）
 
