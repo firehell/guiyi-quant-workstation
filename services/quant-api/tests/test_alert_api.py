@@ -190,6 +190,26 @@ def test_event_range_rejects_frequency_not_supported_by_rule() -> None:
     assert response.json() == {"detail": {"code": "ALERT_FREQUENCY_UNSUPPORTED"}}
 
 
+def test_event_range_rejects_global_frequency_not_supported_by_specific_rule() -> None:
+    factory = session_factory()
+    seed_subing_event(factory)
+
+    with client(factory) as value:
+        response = value.get(
+            "/api/alerts/events",
+            params={
+                "symbol": "jm",
+                "rule_code": "subing_ths_alert_15m_v1",
+                "frequency": "5m",
+                "start": (BAR_END - timedelta(minutes=1)).isoformat(),
+                "end": (BAR_END + timedelta(minutes=1)).isoformat(),
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "ALERT_FREQUENCY_UNSUPPORTED"}}
+
+
 def test_event_range_returns_actual_subing_rule_fact() -> None:
     factory = session_factory()
     event_id = seed_subing_event(factory)
