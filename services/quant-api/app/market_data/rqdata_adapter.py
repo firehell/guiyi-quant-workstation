@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 import os
 import re
-from typing import Any
+from typing import Any, Protocol
 
 import pandas as pd  # type: ignore[import-untyped]
 from sqlalchemy import func, select
@@ -52,6 +53,26 @@ RQDATA_PROVIDER_SETTINGS = frozenset(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class ExchangeDailySourceRequest:
+    contract: str
+    start: date
+    end: date
+    expected_dates: tuple[date, ...]
+
+
+class ExchangeDailySourceObserver(Protocol):
+    """Optional audit seam around one physical exchange-daily provider call."""
+
+    def before_request(self, request: ExchangeDailySourceRequest) -> None: ...
+
+    def after_response(
+        self,
+        request: ExchangeDailySourceRequest,
+        response: tuple[dict[str, Any], ...],
+    ) -> None: ...
+
+
 def runtime_provider_settings(
     settings: Mapping[str, str],
     *,
@@ -87,15 +108,63 @@ class RQDataMarketAdapter:
         session: Session,
         client: Any | None = None,
         provider_settings: Mapping[str, str] | None = None,
+        source_observer: ExchangeDailySourceObserver | None = None,
     ) -> None:
         self.session = session
         self.catalog = MarketCatalog(session, PROJECT_ROOT)
         self._client = client
+        self._source_observer = source_observer
         self._provider_settings = (
             runtime_provider_settings(provider_settings, required=True)
             if provider_settings is not None
             else None
         )
+
+    def exchange_daily_source_requests(
+        self,
+        requests: tuple[BarFetchRequest, ...],
+    ) -> tuple[ExchangeDailySourceRequest, ...]:
+        """Describe native exchange-daily bounds without constructing a client."""
+        if not requests:
+            raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
+        result: list[ExchangeDailySourceRequest] = []
+        covered: set[tuple[str, date]] = set()
+        order = sorted(
+            range(len(requests)),
+            key=lambda index: (
+                0
+                if requests[index].key.frequency is BarFrequency.W1
+                else 1
+                if requests[index].key.frequency is BarFrequency.D1
+                else 2,
+                index,
+            ),
+        )
+        for index in order:
+            item = requests[index]
+            if not item.expected:
+                raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
+            if item.key.frequency is BarFrequency.W1:
+                days = self._weekly_source_trading_days(item.key, item.expected)
+            elif item.key.frequency is BarFrequency.D1:
+                days = tuple(
+                    value.astimezone(SHANGHAI).date() for value in item.expected
+                )
+            else:
+                continue
+            requested: dict[str, list[date]] = {}
+            for trading_day, contract in self._contracts_by_day(item.key, days).items():
+                if (contract, trading_day) not in covered:
+                    requested.setdefault(contract, []).append(trading_day)
+            for contract, contract_days in requested.items():
+                result.append(ExchangeDailySourceRequest(
+                    contract=contract,
+                    start=min(contract_days),
+                    end=max(contract_days),
+                    expected_dates=tuple(sorted(contract_days)),
+                ))
+                covered.update((contract, trading_day) for trading_day in contract_days)
+        return tuple(result)
 
     def matches_provider_settings(self, settings: Mapping[str, str]) -> bool:
         """Compare the private pinned configuration without exposing its values."""
@@ -209,12 +278,7 @@ class RQDataMarketAdapter:
         expected_by_week = {
             _iso_week(value.astimezone(SHANGHAI).date()): value for value in expected
         }
-        mondays = tuple(
-            _iso_monday(value.astimezone(SHANGHAI).date()) for value in expected
-        )
-        source_days = self._source_trading_days(
-            key, min(mondays), max(mondays) + timedelta(days=6)
-        )
+        source_days = self._weekly_source_trading_days(key, expected)
         rows = self._exchange_daily_rows(key, source_days, cache=cache)
         required_by_week: dict[tuple[int, int], set[date]] = {}
         for trading_day in source_days:
@@ -230,6 +294,23 @@ class RQDataMarketAdapter:
             _aggregate_daily_rows(tuple(sorted(rows)), bar_end=expected_by_week[iso])
             for iso, rows in sorted(grouped.items())
             if {trading_day for trading_day, _ in rows} == required_by_week[iso]
+        )
+
+    def _weekly_source_trading_days(
+        self,
+        key: DatasetKey,
+        expected: tuple[datetime, ...],
+    ) -> tuple[date, ...]:
+        """Resolve complete ISO-week source days through the shared Calendar path."""
+        if not expected:
+            raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
+        mondays = tuple(
+            _iso_monday(value.astimezone(SHANGHAI).date()) for value in expected
+        )
+        return self._source_trading_days(
+            key,
+            min(mondays),
+            max(mondays) + timedelta(days=6),
         )
 
     def _exchange_daily_rows(
@@ -253,16 +334,26 @@ class RQDataMarketAdapter:
                 if (contract, trading_day) not in active_cache
             )
             if missing_days:
+                source_request = ExchangeDailySourceRequest(
+                    contract=contract,
+                    start=min(missing_days),
+                    end=max(missing_days),
+                    expected_dates=tuple(sorted(missing_days)),
+                )
+                if self._source_observer is not None:
+                    self._source_observer.before_request(source_request)
                 try:
                     rows = _records(
                         self.client.exchange_daily(
-                            contract, min(missing_days), max(missing_days)
+                            contract, source_request.start, source_request.end
                         )
                     )
                 except Exception as exc:  # noqa: BLE001 - normalize provider boundary
                     if _is_rqdata_quota_error(exc):
                         raise InfrastructureError("PROVIDER_QUOTA_EXHAUSTED") from exc
                     raise
+                if self._source_observer is not None:
+                    self._source_observer.after_response(source_request, rows)
                 allowed = set(missing_days)
                 seen: set[date] = set()
                 for row in rows:

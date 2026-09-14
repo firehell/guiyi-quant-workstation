@@ -361,6 +361,38 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
+### 牛哇周线有界恢复入口
+
+以下验证全部使用 fake provider、SQLite 和临时目录；不得把 production 下载当作测试。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/newow/test_weekly_recovery.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
+  services/quant-api/tests/data_foundation/test_historical_data_manager.py \
+  services/quant-api/tests/data_foundation/test_cli.py \
+  services/quant-api/tests/newow/test_readiness.py \
+  services/quant-api/tests/data_foundation/test_newow_readiness_cli.py
+uv run --project services/quant-api python -m ruff check \
+  scripts/newow_weekly_recovery.py \
+  services/quant-api/app/market_data/rqdata_adapter.py \
+  services/quant-api/app/market_data/composition.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py \
+  services/quant-api/tests/newow/test_weekly_recovery.py
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  MYPYPATH=services/quant-api:packages/quant-core \
+  uv run --project services/quant-api mypy --explicit-package-bases \
+  --ignore-missing-imports \
+  services/quant-api/app/market_data/rqdata_adapter.py \
+  services/quant-api/app/market_data/composition.py \
+  scripts/newow_weekly_recovery.py
+```
+
+`prepare` 只读读取锁定配置、Catalog、Calendar/Session 和 Canonical，输出 plan、执行代码、配置及
+Canonical 根的非敏感身份；它不得初始化 provider。`apply` 是真实 RQData/Canonical/生产写入 Gate，只有
+owner 对精确 prepared hash 和 attempt 明确给出一次执行意图后才可运行；任何失败或 unknown 都停止且不自动重试。
+
 ### 盘后每日增量、进度与每周只读审计
 
 中断收尾的隔离验证（不连接生产，不修改现役状态）：
