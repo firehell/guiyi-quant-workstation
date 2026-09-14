@@ -29,12 +29,14 @@ from app.market_data.rqdata_adapter import ExchangeDailySourceRequest
 from app.market_data.storage import CanonicalMonthlyStore
 from app.models import Contract, Exchange, Instrument
 from scripts.newow_weekly_recovery import (
+    AttemptJournal,
     RecoveryError,
     _post_commit_readback,
     _write_json_exclusive,
     execute_prepared_batch,
     load_prepared_manifest,
     prepare_bounded_units,
+    read_attempt_outcome,
     write_prepared_manifest,
 )
 from scripts.newow_weekly_recovery_campaign import (
@@ -66,6 +68,11 @@ def _ordinary_unit(index: int = 0) -> dict[str, Any]:
         "plan_sha256": f"{index:064x}",
         "status": "PROPOSED",
         "expected_bar_count": index + 1,
+        "consumers": [
+            {"strategy": strategy, "frequency": "1w", "section": section}
+            for section in ("chart", "auxiliary", "reference")
+            for strategy in ("trend", "oscillation", "main_rise")
+        ],
         "target_windows": [
             {
                 "dataset": ["contract", "ag", f"AG{1000 + index}", "1d"],
@@ -186,6 +193,7 @@ def _native_child(
     units: tuple[dict[str, Any], ...],
     *,
     identity: Mapping[str, str] = IDENTITY,
+    with_source_requests: bool = False,
 ) -> dict[str, Any]:
     child_units = []
     for item in units:
@@ -226,7 +234,19 @@ def _native_child(
                         "expected_bar_count": 1,
                     },
                 ],
-                "source_requests": [],
+                "source_requests": (
+                    [
+                        {
+                            "method": "futures.get_exchange_daily",
+                            "contract": item["contract"],
+                            "start": "2026-09-01",
+                            "end": "2026-09-01",
+                            "expected_dates": ["2026-09-01"],
+                        }
+                    ]
+                    if with_source_requests
+                    else []
+                ),
             }
         )
     manifest = {
@@ -248,14 +268,22 @@ def _native_child(
     }
 
 
-def _campaign(tmp_path: Path, count: int) -> dict[str, Any]:
+def _campaign(
+    tmp_path: Path,
+    count: int,
+    *,
+    with_source_requests: bool = False,
+) -> dict[str, Any]:
     return prepare_campaign(
         _report([_ordinary_unit(index) for index in range(count)]),
         report_sha256="f" * 64,
         evidence_root=tmp_path,
         execution_identity=IDENTITY,
         invoke_batch=lambda units, batch_id, root: _native_child(
-            root, batch_id, units
+            root,
+            batch_id,
+            units,
+            with_source_requests=with_source_requests,
         ),
     )
 
@@ -270,6 +298,8 @@ def _native_apply_result(
     completed: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     child = json.loads(child_path.read_text(encoding="utf-8"))
+    native_attempt = batch_attempt / "native"
+    native_attempt.mkdir()
     if completed is None and status == "passed":
         completed = [
             {
@@ -284,6 +314,46 @@ def _native_apply_result(
             for unit in child["units"]
         ]
     completed_value = completed if completed is not None else []
+    for index, completed_unit in enumerate(completed_value):
+        frozen_unit = child["units"][index]
+        completed_unit.setdefault(
+            "result",
+            {
+                "status": completed_unit["status"],
+                "applied": 0,
+                "blocked": 0,
+                "failed": 0,
+                "provider_requests": (
+                    frozen_unit["target_count"]
+                    if frozen_unit["source_requests"]
+                    else 0
+                ),
+                "failures": [],
+            },
+        )
+        unit_dir = native_attempt / (
+            f"unit-{index + 1:03d}-{frozen_unit['symbol']}-{frozen_unit['contract']}"
+        )
+        unit_dir.mkdir()
+        source_requests = tuple(
+            ExchangeDailySourceRequest(
+                contract=item["contract"],
+                start=date.fromisoformat(item["start"]),
+                end=date.fromisoformat(item["end"]),
+                expected_dates=tuple(
+                    date.fromisoformat(value) for value in item["expected_dates"]
+                ),
+            )
+            for item in frozen_unit["source_requests"]
+        )
+        journal = AttemptJournal(unit_dir, source_requests)
+        for request in source_requests:
+            journal.before_request(request)
+            journal.after_response(
+                request,
+                tuple({"date": value} for value in request.expected_dates),
+            )
+        completed_unit.setdefault("attempt", read_attempt_outcome(unit_dir))
     failure_index = len(completed_value)
     native_result = {
         "status": status,
@@ -298,8 +368,6 @@ def _native_apply_result(
         ),
         "retries": 0,
     }
-    native_attempt = batch_attempt / "native"
-    native_attempt.mkdir()
     receipt = {
         "schema_version": "newow_weekly_recovery_invocation_v1",
         "prepared_sha256": digest,
@@ -447,6 +515,44 @@ def test_partition_rejects_owner_removed_from_one_section_coverage() -> None:
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
         partition_ordinary_units(report)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing", "extra", "wrong_through", "missing_consumer"],
+)
+def test_partition_rejects_repair_group_not_exactly_derived_from_dependencies(
+    mutation: str,
+) -> None:
+    report = _report([_ordinary_unit()])
+    if mutation == "missing":
+        report["repair_targets"].pop()
+        report["work_used"] -= 1
+    elif mutation == "extra":
+        extra = deepcopy(report["repair_targets"][0])
+        extra["contract"] = "AG9999"
+        extra["plan_sha256"] = "9" * 64
+        report["repair_targets"].append(extra)
+        report["work_used"] += 1
+    elif mutation == "wrong_through":
+        report["repair_targets"][0]["through"] = "2026-09-10"
+        report["repair_targets"][0]["requested_through"] = "2026-09-10"
+    elif mutation == "missing_consumer":
+        report["repair_targets"][0]["consumers"].pop()
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
+
+
+def test_partition_accepts_review_required_with_exact_dependency_provenance() -> None:
+    review = {
+        **_ordinary_unit(),
+        "status": "REVIEW_REQUIRED",
+        "plan_sha256": None,
+        "reason": "REPAIR_SCOPE_SOURCE_OR_INTEGRITY",
+    }
+
+    assert partition_ordinary_units(_report([review])) == ()
 
 
 @pytest.mark.parametrize("count", [0, 1, 20, 21, 1117])
@@ -1032,6 +1138,82 @@ def test_execute_rejects_unclosed_passed_native_terminal(
     assert result["completed_batch_ids"] == []
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_attempt",
+        "mismatched_counts",
+        "inline_unknown",
+        "journal_unknown",
+        "cleared_journal",
+        "missing_journal",
+    ],
+)
+def test_execute_rejects_completed_unit_without_closed_native_journal(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    manifest = _campaign(tmp_path, 1, with_source_requests=True)
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        value = _native_apply_result(child, digest, attempt)
+        native_result = value["batch_result"]["result"]
+        completed = native_result["completed"][0]
+        unit_dir = attempt / "native" / "unit-001-ag-AG1000"
+        if mutation == "missing_attempt":
+            del completed["attempt"]
+        elif mutation == "mismatched_counts":
+            completed["attempt"].update(
+                requests_started=2,
+                responses_saved=1,
+            )
+        elif mutation == "inline_unknown":
+            completed["attempt"].update(
+                state="outcome_unknown",
+                outcome_unknown=True,
+            )
+        elif mutation == "journal_unknown":
+            (unit_dir / "journal.jsonl").write_text(
+                json.dumps({"schema_version": 1, "sequence": 1, "state": "started"})
+                + "\n",
+                encoding="utf-8",
+            )
+            completed["attempt"] = read_attempt_outcome(unit_dir)
+        elif mutation == "cleared_journal":
+            (unit_dir / "journal.jsonl").write_text("", encoding="utf-8")
+            completed["attempt"] = read_attempt_outcome(unit_dir)
+        elif mutation == "missing_journal":
+            (unit_dir / "journal.jsonl").unlink()
+        (attempt / "native" / "batch-result.json").write_text(
+            json.dumps(native_result), encoding="utf-8"
+        )
+        return value
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert result["status"] == "unknown"
+    assert result["completed_batch_ids"] == []
+
+
+def test_execute_accepts_completed_unit_with_closed_native_journal(
+    tmp_path: Path,
+) -> None:
+    manifest = _campaign(tmp_path, 1, with_source_requests=True)
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=_native_apply_result,
+    )
+
+    assert result["status"] == "passed"
+    assert result["completed_batch_ids"] == ["batch-001"]
+
+
 @pytest.mark.parametrize("contradiction", ["completed", "failure_partial", "applied"])
 def test_execute_rejects_failed_status_that_native_would_classify_partial(
     tmp_path: Path,
@@ -1534,6 +1716,15 @@ def test_execute_21_units_crosses_two_real_native_batches_with_isolated_readback
                 "plan_sha256": plan.plan_sha256,
                 "status": "PROPOSED",
                 "expected_bar_count": plan.expected_bar_count,
+                "consumers": [
+                    {
+                        "strategy": strategy,
+                        "frequency": "1w",
+                        "section": section,
+                    }
+                    for section in ("chart", "auxiliary", "reference")
+                    for strategy in ("trend", "oscillation", "main_rise")
+                ],
                 "target_windows": [dict(item) for item in plan.target_windows],
             }
         )

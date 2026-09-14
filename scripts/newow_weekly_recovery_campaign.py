@@ -19,6 +19,7 @@ from typing import Any, Callable, Literal, Mapping, cast
 
 from guiyi_quant.newow.product_contracts import ProductStrategy
 
+from app.market_data.newow import readiness as native_readiness
 from app.market_data.newow.product_release import deferred_section_reason
 from app.market_data.operational_universe import load_operational_products
 from scripts import newow_weekly_recovery as native
@@ -695,6 +696,17 @@ def _validated_report_targets(
         or not isinstance(metadata, list)
     ):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    repair_identities: set[tuple[str, str, str]] = set()
+    for raw in repair_targets:
+        if not isinstance(raw, Mapping):
+            continue
+        identity = (raw.get("symbol"), raw.get("contract"), raw.get("frequency"))
+        if not all(isinstance(item, str) for item in identity):
+            continue
+        typed_identity = cast(tuple[str, str, str], identity)
+        if typed_identity in repair_identities:
+            raise RecoveryError("CAMPAIGN_SCOPE_CONFLICT")
+        repair_identities.add(typed_identity)
     _validate_native_report_sections(report, as_of=as_of)
     parsed: list[dict[str, Any]] = []
     excluded: Counter[str] = Counter()
@@ -829,10 +841,13 @@ def _validate_native_report_sections(
     if actual_enumerations != expected_enumerations:
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
 
-    dependency_keys: set[tuple[str, str, str]] = set()
     dependency_identities: set[tuple[str, str, str, str, str]] = set()
     covered_owners: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
     covered_owner_counts: Counter[tuple[str, str]] = Counter()
+    repair_through: dict[tuple[str, str, str], str] = {}
+    repair_consumers: dict[
+        tuple[str, str, str], set[tuple[str, str, str]]
+    ] = {}
     operational_set = set(operational)
     for raw in dependencies:
         if not isinstance(raw, Mapping):
@@ -958,7 +973,14 @@ def _validate_native_report_sections(
             coverage_key = (symbol, section)
             covered_owners.setdefault(coverage_key, set()).update(owner_identities)
             covered_owner_counts[coverage_key] += len(owner_identities)
-        dependency_keys.add((symbol, contract, "1w"))
+        dependency_key = (symbol, contract, "1w")
+        if raw.get("reason") in native_readiness._DOWNLOAD:
+            previous_through = repair_through.get(dependency_key)
+            if previous_through is None or raw["through"] > previous_through:
+                repair_through[dependency_key] = raw["through"]
+            repair_consumers.setdefault(dependency_key, set()).update(
+                consumer_identities
+            )
 
     if any(
         len(covered_owners.get(key, set())) != owner_count
@@ -967,12 +989,38 @@ def _validate_native_report_sections(
     ):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
 
-    if any(
-        not isinstance(repair, Mapping)
-        or (repair.get("symbol"), repair.get("contract"), repair.get("frequency"))
-        not in dependency_keys
-        for repair in repairs
-    ):
+    actual_repair_keys: set[tuple[str, str, str]] = set()
+    for repair in repairs:
+        if not isinstance(repair, Mapping):
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        repair_key = (
+            repair.get("symbol"),
+            repair.get("contract"),
+            repair.get("frequency"),
+        )
+        consumers = repair.get("consumers")
+        if (
+            not all(isinstance(item, str) for item in repair_key)
+                or repair_key not in repair_through
+            or repair.get("through") != repair_through[repair_key]
+            or not isinstance(consumers, list)
+        ):
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        try:
+            actual_consumers = {
+                (item["strategy"], item["frequency"], item["section"])
+                for item in consumers
+                if isinstance(item, Mapping)
+            }
+        except (KeyError, TypeError) as exc:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
+        if (
+            len(actual_consumers) != len(consumers)
+            or actual_consumers != repair_consumers[repair_key]
+        ):
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        actual_repair_keys.add(cast(tuple[str, str, str], repair_key))
+    if actual_repair_keys != set(repair_through):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     expected_work = (
         sum(
@@ -1296,7 +1344,11 @@ def _validated_batch_invocation(
         or persisted_result != native_result
         or not isinstance(frozen_units, list)
         or len(frozen_units) != child.get("unit_count")
-        or not _validated_native_terminal(native_result, frozen_units)
+        or not _validated_native_terminal(
+            native_result,
+            frozen_units,
+            native_attempt=native_attempt,
+        )
     ):
         return None
     return dict(result)
@@ -1305,6 +1357,8 @@ def _validated_batch_invocation(
 def _validated_native_terminal(
     result: Mapping[str, Any],
     frozen_units: list[dict[str, Any]],
+    *,
+    native_attempt: Path,
 ) -> bool:
     completed = result.get("completed")
     failed = result.get("failed")
@@ -1316,8 +1370,14 @@ def _validated_native_terminal(
         or len(completed) > len(frozen_units)
     ):
         return False
-    for completed_unit, frozen_unit in zip(completed, frozen_units, strict=False):
-        if not _completed_unit_matches(completed_unit, frozen_unit):
+    for index, (completed_unit, frozen_unit) in enumerate(
+        zip(completed, frozen_units, strict=False),
+        start=1,
+    ):
+        unit_dir = native_attempt / (
+            f"unit-{index:03d}-{frozen_unit['symbol']}-{frozen_unit['contract']}"
+        )
+        if not _completed_unit_matches(completed_unit, frozen_unit, unit_dir):
             return False
     if status_value == "passed":
         return (
@@ -1363,17 +1423,100 @@ def _unit_payload_matches(value: object, frozen: Mapping[str, Any]) -> bool:
     )
 
 
-def _completed_unit_matches(value: object, frozen: Mapping[str, Any]) -> bool:
+def _completed_unit_matches(
+    value: object,
+    frozen: Mapping[str, Any],
+    unit_dir: Path,
+) -> bool:
     if not _unit_payload_matches(value, frozen):
         return False
     assert isinstance(value, Mapping)
     readback = value.get("readback")
+    completion_status = value.get("status")
+    result = value.get("result")
+    source_requests = frozen.get("source_requests")
+    if (
+        completion_status not in {"passed", "noop"}
+        or not isinstance(result, Mapping)
+        or result.get("status") != completion_status
+        or not isinstance(source_requests, list)
+    ):
+        return False
+    source_request_count = len(source_requests)
+    target_count = frozen.get("target_count")
+    if not isinstance(target_count, int) or isinstance(target_count, bool):
+        return False
+    if completion_status == "noop":
+        expected_provider_requests = 0
+        expected_source_requests = 0
+        if source_requests:
+            return False
+    else:
+        expected_provider_requests = target_count if source_requests else 0
+        expected_source_requests = source_request_count
+    provider_requests = result.get("provider_requests")
     return (
-        value.get("status") in {"passed", "noop"}
+        isinstance(provider_requests, int)
+        and not isinstance(provider_requests, bool)
+        and provider_requests == expected_provider_requests
+        and _validated_completed_attempt(
+            value.get("attempt"),
+            unit_dir=unit_dir,
+            expected_requests=expected_source_requests,
+        )
         and value.get("remaining_target_count") == 0
         and isinstance(readback, Mapping)
         and readback.get("catalog_physical_mds") == "passed"
         and readback.get("mds_target_count") == frozen.get("target_count")
+    )
+
+
+def _validated_completed_attempt(
+    value: object,
+    *,
+    unit_dir: Path,
+    expected_requests: int,
+) -> bool:
+    if not isinstance(value, Mapping) or set(value) != {
+        "state",
+        "outcome_unknown",
+        "retry_allowed",
+        "requests_started",
+        "responses_saved",
+    }:
+        return False
+    started = value.get("requests_started")
+    saved = value.get("responses_saved")
+    expected_state = "not_started" if expected_requests == 0 else "response_saved"
+    if (
+        value.get("state") != expected_state
+        or value.get("outcome_unknown") is not False
+        or value.get("retry_allowed") is not False
+        or not isinstance(started, int)
+        or isinstance(started, bool)
+        or started < 0
+        or not isinstance(saved, int)
+        or isinstance(saved, bool)
+        or saved < 0
+        or started != saved
+        or started != expected_requests
+    ):
+        return False
+    journal_path = unit_dir / "journal.jsonl"
+    try:
+        unit_info = unit_dir.lstat()
+        journal_info = journal_path.lstat()
+        resolved_unit = unit_dir.resolve(strict=True)
+        actual = native.read_attempt_outcome(unit_dir)
+    except (OSError, RecoveryError):
+        return False
+    return (
+        stat.S_ISDIR(unit_info.st_mode)
+        and not stat.S_ISLNK(unit_info.st_mode)
+        and resolved_unit == unit_dir
+        and stat.S_ISREG(journal_info.st_mode)
+        and not stat.S_ISLNK(journal_info.st_mode)
+        and actual == value
     )
 
 
