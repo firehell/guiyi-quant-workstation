@@ -8,6 +8,7 @@ import io
 import json
 from pathlib import Path
 import threading
+from types import SimpleNamespace
 from typing import Any, Mapping
 
 import pytest
@@ -47,7 +48,10 @@ from scripts.newow_weekly_recovery_campaign import (
     prepare_campaign,
     validate_campaign_manifest,
 )
-from tests.data_foundation.test_historical_data_manager import FakeCoverage, FakeMetadata
+from tests.data_foundation.test_historical_data_manager import (
+    FakeCoverage,
+    FakeMetadata,
+)
 
 
 IDENTITY = {
@@ -97,10 +101,7 @@ def _report(units: list[dict[str, Any]]) -> dict[str, Any]:
     for item in units:
         requested.setdefault(item["symbol"], {})[item["contract"]] = item["through"]
     owners_by_symbol = {
-        symbol: (
-            requested.get(symbol)
-            or {f"{symbol.upper()}1000": "2026-09-11"}
-        )
+        symbol: (requested.get(symbol) or {f"{symbol.upper()}1000": "2026-09-11"})
         for symbol in products
     }
     enumerations = []
@@ -194,6 +195,7 @@ def _native_child(
     *,
     identity: Mapping[str, str] = IDENTITY,
     with_source_requests: bool = False,
+    continuation_policy: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     child_units = []
     for item in units:
@@ -255,6 +257,8 @@ def _native_child(
         "unit_count": len(child_units),
         "units": child_units,
     }
+    if continuation_policy is not None:
+        manifest["continuation_policy"] = dict(continuation_policy)
     path = root / f"{batch_id}.prepare.json"
     digest = _write_json_exclusive(path, manifest)
     return {
@@ -273,6 +277,8 @@ def _campaign(
     count: int,
     *,
     with_source_requests: bool = False,
+    continuation_policy: Mapping[str, Any] | None = None,
+    name: str = "campaign",
 ) -> dict[str, Any]:
     return prepare_campaign(
         _report([_ordinary_unit(index) for index in range(count)]),
@@ -284,7 +290,10 @@ def _campaign(
             batch_id,
             units,
             with_source_requests=with_source_requests,
+            continuation_policy=continuation_policy,
         ),
+        continuation_policy=continuation_policy,
+        name=name,
     )
 
 
@@ -324,9 +333,7 @@ def _native_apply_result(
                 "blocked": 0,
                 "failed": 0,
                 "provider_requests": (
-                    frozen_unit["target_count"]
-                    if frozen_unit["source_requests"]
-                    else 0
+                    frozen_unit["target_count"] if frozen_unit["source_requests"] else 0
                 ),
                 "failures": [],
             },
@@ -589,9 +596,7 @@ def test_partition_excludes_nonordinary_statuses_and_campaign_counts_them(
         report_sha256="f" * 64,
         evidence_root=tmp_path,
         execution_identity=IDENTITY,
-        invoke_batch=lambda units, batch_id, root: _native_child(
-            root, batch_id, units
-        ),
+        invoke_batch=lambda units, batch_id, root: _native_child(root, batch_id, units),
     )
 
     assert [[unit["contract"] for unit in group] for group in batches] == [["AG1000"]]
@@ -621,13 +626,19 @@ def test_partition_rejects_duplicate_or_conflicting_unit_identity(
 
 
 def test_partition_rejects_target_through_after_audit_as_of() -> None:
-    unit = {**_ordinary_unit(), "through": "2026-09-14", "requested_through": "2026-09-14"}
+    unit = {
+        **_ordinary_unit(),
+        "through": "2026-09-14",
+        "requested_through": "2026-09-14",
+    }
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
         partition_ordinary_units(_report([unit]))
 
 
-def test_prepare_builds_all_children_and_one_hash_locked_campaign(tmp_path: Path) -> None:
+def test_prepare_builds_all_children_and_one_hash_locked_campaign(
+    tmp_path: Path,
+) -> None:
     report = _report([_ordinary_unit(index) for index in range(21)])
     calls: list[tuple[str, int]] = []
 
@@ -719,7 +730,9 @@ def test_prepare_two_named_campaigns_share_root_without_overwriting_children(
     assert (tmp_path / beta["children"][0]["path"]).is_file()
 
 
-def test_prepare_zero_units_creates_only_readonly_completed_campaign(tmp_path: Path) -> None:
+def test_prepare_zero_units_creates_only_readonly_completed_campaign(
+    tmp_path: Path,
+) -> None:
     calls: list[object] = []
 
     manifest = prepare_campaign(
@@ -761,9 +774,7 @@ def test_validate_campaign_rejects_incomplete_or_drifted_children_before_executi
         report_sha256="f" * 64,
         evidence_root=tmp_path,
         execution_identity=IDENTITY,
-        invoke_batch=lambda units, batch_id, root: _native_child(
-            root, batch_id, units
-        ),
+        invoke_batch=lambda units, batch_id, root: _native_child(root, batch_id, units),
     )
     changed = deepcopy(manifest)
     if mutation == "missing_child":
@@ -774,9 +785,7 @@ def test_validate_campaign_rejects_incomplete_or_drifted_children_before_executi
     elif mutation == "reordered":
         changed["children"].reverse()
     elif mutation == "duplicate_unit":
-        changed["children"][1]["units"] = [
-            deepcopy(changed["children"][0]["units"][0])
-        ]
+        changed["children"][1]["units"] = [deepcopy(changed["children"][0]["units"][0])]
     elif mutation == "wrong_hash":
         changed["children"][0]["sha256"] = "0" * 64
     elif mutation == "wrong_identity":
@@ -800,9 +809,7 @@ def test_validate_campaign_rejects_symlinked_child(tmp_path: Path) -> None:
         report_sha256="f" * 64,
         evidence_root=real,
         execution_identity=IDENTITY,
-        invoke_batch=lambda units, batch_id, root: _native_child(
-            root, batch_id, units
-        ),
+        invoke_batch=lambda units, batch_id, root: _native_child(root, batch_id, units),
     )
     linked = tmp_path / "linked"
     linked.symlink_to(real, target_is_directory=True)
@@ -900,13 +907,19 @@ def test_cli_prepare_uses_native_main_in_process_and_one_evidence_root(
     def native_main(argv: list[str], *, stdout: io.StringIO) -> int:
         native_calls.append(argv)
         assert argv[0] == "prepare"
+        assert "--isolate-known-source-quality" in argv
         root = Path(argv[argv.index("--output-root") + 1])
         batch_id = argv[argv.index("--name") + 1]
         units_path = Path(argv[argv.index("--units") + 1])
         assert root == tmp_path
         assert units_path.parent == tmp_path
         units = tuple(json.loads(units_path.read_text()))
-        payload = _native_child(root, batch_id, units)
+        payload = _native_child(
+            root,
+            batch_id,
+            units,
+            continuation_policy=_campaign_isolation_policy(),
+        )
         stdout.write(json.dumps(payload))
         return 0
 
@@ -926,6 +939,7 @@ def test_cli_prepare_uses_native_main_in_process_and_one_evidence_root(
             str(tmp_path),
             "--name",
             "campaign",
+            "--isolate-known-source-quality",
         ],
         stdout=output,
     )
@@ -939,9 +953,10 @@ def test_cli_prepare_uses_native_main_in_process_and_one_evidence_root(
     assert payload["batch_count"] == 2
     assert len(native_calls) == 2
     assert Path(payload["campaign_file"]) == tmp_path / "campaign.prepare.json"
-    assert hashlib.sha256((tmp_path / "campaign.prepare.json").read_bytes()).hexdigest() == payload[
-        "campaign_sha256"
-    ]
+    assert (
+        hashlib.sha256((tmp_path / "campaign.prepare.json").read_bytes()).hexdigest()
+        == payload["campaign_sha256"]
+    )
 
 
 def test_cli_prepare_rejects_report_hash_mismatch_before_native_main(
@@ -955,7 +970,9 @@ def test_cli_prepare_rejects_report_hash_mismatch_before_native_main(
     project_env = tmp_path / "project.env"
     project_env.write_text("fixture", encoding="utf-8")
     native_calls: list[object] = []
-    monkeypatch.setattr(module.native, "main", lambda *_args, **_kwargs: native_calls.append(True))
+    monkeypatch.setattr(
+        module.native, "main", lambda *_args, **_kwargs: native_calls.append(True)
+    )
     output = io.StringIO()
 
     code = main(
@@ -984,6 +1001,36 @@ def test_campaign_cli_exposes_prepare_apply_and_inspect_modes() -> None:
     assert "{prepare,apply,inspect}" in parser().format_help()
 
 
+def test_campaign_cli_exposes_hash_bound_prior_isolation_inputs() -> None:
+    args = parser().parse_args(
+        [
+            "prepare",
+            "--project-env",
+            "/tmp/project.env",
+            "--report",
+            "/tmp/report.json",
+            "--expected-report-sha256",
+            "a" * 64,
+            "--output-root",
+            "/tmp/evidence",
+            "--name",
+            "fresh",
+            "--isolate-known-source-quality",
+            "--prior-campaign",
+            "/tmp/evidence/prior.prepare.json",
+            "--expected-prior-campaign-sha256",
+            "b" * 64,
+            "--prior-attempt",
+            "/tmp/evidence/prior-attempt",
+        ]
+    )
+
+    assert args.isolate_known_source_quality is True
+    assert args.prior_campaign.endswith("prior.prepare.json")
+    assert args.expected_prior_campaign_sha256 == "b" * 64
+    assert args.prior_attempt.endswith("prior-attempt")
+
+
 def test_execute_stops_after_second_batch_failure_without_retry(tmp_path: Path) -> None:
     manifest = _campaign(tmp_path, 41)
     invoked: list[str] = []
@@ -1009,6 +1056,14 @@ def test_execute_stops_after_second_batch_failure_without_retry(tmp_path: Path) 
     assert result["completed_batch_ids"] == ["batch-001"]
     assert result["failed_batch"]["batch_id"] == "batch-002"
     assert result["unattempted_batch_ids"] == ["batch-003"]
+    assert result["summary"] == {
+        "denominator_unit_count": 41,
+        "success_unit_count": 20,
+        "isolated_unit_count": 0,
+        "stopping_failure_unit_count": 1,
+        "unattempted_unit_count": 20,
+        "unknown_unit_count": 0,
+    }
     assert result["retries"] == 0
 
 
@@ -1044,9 +1099,10 @@ def test_execute_preserves_native_partial_success_exactly(tmp_path: Path) -> Non
     )
 
     assert result["status"] == "partial"
-    assert result["failed_batch"]["native_result"]["result"]["completed"][0][
-        "contract"
-    ] == "AG1020"
+    assert (
+        result["failed_batch"]["native_result"]["result"]["completed"][0]["contract"]
+        == "AG1020"
+    )
     assert result["retries"] == 0
 
 
@@ -1214,6 +1270,434 @@ def test_execute_accepts_completed_unit_with_closed_native_journal(
     assert result["completed_batch_ids"] == ["batch-001"]
 
 
+def _campaign_isolation_policy() -> dict[str, object]:
+    body: dict[str, object] = {
+        "schema_version": "newow_weekly_recovery_continuation_policy_v1",
+        "mode": "isolate_known_source_quality",
+        "allowed_error_codes": ["RQDATA_ZERO_OHL_INVALID"],
+    }
+    return {
+        **body,
+        "policy_sha256": hashlib.sha256(
+            json.dumps(
+                body,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _native_isolation_invoker(
+    isolated_contracts: set[str],
+    calls: list[str],
+    *,
+    stopping_contracts: set[str] | None = None,
+):
+    stopping = stopping_contracts or set()
+
+    def invoke(child_path: Path, digest: str, batch_attempt: Path):
+        child = load_prepared_manifest(child_path, digest)
+
+        class Manager:
+            def __init__(self, observer, unit):
+                self.observer = observer
+                self.unit = unit
+
+            def contract_warmup(self, request, *, before_apply=None):
+                if request.apply:
+                    calls.append(self.unit["contract"])
+                    assert before_apply is not None
+                    before_apply()
+                    raw = self.unit["source_requests"][0]
+                    source = ExchangeDailySourceRequest(
+                        contract=raw["contract"],
+                        start=date.fromisoformat(raw["start"]),
+                        end=date.fromisoformat(raw["end"]),
+                        expected_dates=tuple(
+                            date.fromisoformat(value) for value in raw["expected_dates"]
+                        ),
+                    )
+                    self.observer.before_request(source)
+                    invalid = self.unit["contract"] in isolated_contracts
+                    stopping_failure = self.unit["contract"] in stopping
+                    self.observer.after_response(
+                        source,
+                        tuple(
+                            {
+                                "date": value,
+                                "open": Decimal("0") if invalid else Decimal("100"),
+                                "high": Decimal("0") if invalid else Decimal("101"),
+                                "low": Decimal("0") if invalid else Decimal("99"),
+                                "close": Decimal("100"),
+                                "volume": Decimal("1"),
+                                "total_turnover": Decimal("100"),
+                                "open_interest": Decimal("10"),
+                            }
+                            for value in source.expected_dates
+                        ),
+                    )
+                    if invalid or stopping_failure:
+                        target = self.unit["targets"][0]
+                        return SimpleNamespace(
+                            status="failed",
+                            applied=0,
+                            blocked=0,
+                            failed=1,
+                            provider_requests=self.unit["target_count"],
+                            failures=(
+                                {
+                                    "dataset": target["dataset"],
+                                    "year": target["year"],
+                                    "month": target["month"],
+                                    "reason_code": (
+                                        "RQDATA_ZERO_OHL_INVALID"
+                                        if invalid
+                                        else "PROVIDER_UNAVAILABLE"
+                                    ),
+                                },
+                            ),
+                        )
+                    return SimpleNamespace(
+                        status="passed",
+                        applied=self.unit["target_count"],
+                        blocked=0,
+                        failed=0,
+                        provider_requests=self.unit["target_count"],
+                        failures=(),
+                    )
+                return SimpleNamespace(
+                    plan=SimpleNamespace(
+                        plan_sha256=self.unit["plan_sha256"],
+                        target_windows=(
+                            tuple(self.unit["targets"])
+                            if self.unit["contract"] in isolated_contracts
+                            else ()
+                        ),
+                    )
+                )
+
+        def open_unit(observer, unit):
+            manager = Manager(observer, unit)
+            return (
+                manager,
+                lambda: None,
+                lambda: {
+                    "catalog_physical_mds": "passed",
+                    "mds_target_count": unit["target_count"],
+                    "catalog_partitions": [],
+                },
+                lambda: None,
+            )
+
+        native_attempt = batch_attempt / "native"
+        native_attempt.mkdir()
+        native_result = execute_prepared_batch(
+            manifest=child,
+            attempt_dir=native_attempt,
+            prepared_sha256=digest,
+            current_code_commit=IDENTITY["code_commit"],
+            current_execution_code_sha256=IDENTITY["execution_code_sha256"],
+            current_config_sha256=IDENTITY["config_sha256"],
+            current_canonical_root_sha256=IDENTITY["canonical_root_sha256"],
+            open_unit=open_unit,
+        )
+        return {
+            "return_code": 0 if native_result["status"] == "passed" else 1,
+            "batch_result": {
+                "schema_version": "newow_weekly_recovery_result_v1",
+                "status": native_result["status"],
+                "readonly": False,
+                "attempt_dir": str(native_attempt),
+                "result": native_result,
+            },
+        }
+
+    return invoke
+
+
+def test_campaign_accounts_for_known_stopping_failure_as_distinct_partition(
+    tmp_path: Path,
+) -> None:
+    policy = _campaign_isolation_policy()
+    manifest = _campaign(
+        tmp_path,
+        3,
+        with_source_requests=True,
+        continuation_policy=policy,
+    )
+    calls: list[str] = []
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=_native_isolation_invoker(
+            {"AG1000"},
+            calls,
+            stopping_contracts={"AG1001"},
+        ),
+    )
+
+    assert calls == ["AG1000", "AG1001"]
+    assert result["status"] == "partial"
+    assert result["summary"] == {
+        "denominator_unit_count": 3,
+        "success_unit_count": 0,
+        "isolated_unit_count": 1,
+        "stopping_failure_unit_count": 1,
+        "unattempted_unit_count": 1,
+        "unknown_unit_count": 0,
+    }
+
+
+def test_campaign_continues_across_batch_after_proven_source_isolation(
+    tmp_path: Path,
+) -> None:
+    policy = _campaign_isolation_policy()
+    manifest = _campaign(
+        tmp_path,
+        21,
+        with_source_requests=True,
+        continuation_policy=policy,
+    )
+    calls: list[str] = []
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=_native_isolation_invoker({"AG1019"}, calls),
+    )
+
+    assert calls == [f"AG{1000 + index}" for index in range(21)]
+    assert result["status"] == "partial"
+    assert result["completed_batch_ids"] == ["batch-001", "batch-002"]
+    assert [item["contract"] for item in result["isolated_units"]] == ["AG1019"]
+    assert result["summary"] == {
+        "denominator_unit_count": 21,
+        "success_unit_count": 20,
+        "isolated_unit_count": 1,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 0,
+        "unknown_unit_count": 0,
+    }
+    assert result["anomaly_repair_requirements"] == {
+        "RQDATA_ZERO_OHL_INVALID": [
+            {
+                "symbol": "ag",
+                "contract": "AG1019",
+                "frequency": "1w",
+                "through": "2026-09-11",
+                "plan_sha256": f"{19:064x}",
+            }
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("isolated", "success_count"),
+    [({"AG1000", "AG1002"}, 1), ({"AG1000", "AG1001", "AG1002"}, 0)],
+)
+def test_campaign_accounts_for_multiple_and_all_isolated_units(
+    tmp_path: Path,
+    isolated: set[str],
+    success_count: int,
+) -> None:
+    policy = _campaign_isolation_policy()
+    manifest = _campaign(
+        tmp_path,
+        3,
+        with_source_requests=True,
+        continuation_policy=policy,
+    )
+    calls: list[str] = []
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=_native_isolation_invoker(isolated, calls),
+    )
+
+    assert calls == ["AG1000", "AG1001", "AG1002"]
+    assert result["status"] == "partial"
+    assert result["summary"] == {
+        "denominator_unit_count": 3,
+        "success_unit_count": success_count,
+        "isolated_unit_count": len(isolated),
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 0,
+        "unknown_unit_count": 0,
+    }
+
+
+@pytest.mark.parametrize("field", ["mode", "policy_sha256"])
+def test_campaign_rejects_tampered_continuation_policy(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    policy = _campaign_isolation_policy()
+    manifest = _campaign(
+        tmp_path,
+        1,
+        with_source_requests=True,
+        continuation_policy=policy,
+    )
+    manifest["continuation_policy"][field] = "tampered"
+
+    with pytest.raises(RecoveryError, match="^CONTINUATION_POLICY_INVALID$"):
+        validate_campaign_manifest(manifest, evidence_root=tmp_path)
+
+
+def test_prior_known_source_isolation_excludes_only_proven_fresh_identity(
+    tmp_path: Path,
+) -> None:
+    prior = _campaign(tmp_path, 2, with_source_requests=True, name="prior")
+    prior_calls: list[str] = []
+    prior_attempt = tmp_path / "prior-attempt"
+    prior_result = execute_campaign(
+        prior,
+        attempt_root=prior_attempt,
+        invoke_batch=_native_isolation_invoker({"AG1000"}, prior_calls),
+    )
+    assert prior_result["status"] == "failed"
+    prior_path = tmp_path / "prior.prepare.json"
+    prior_sha256 = hashlib.sha256(prior_path.read_bytes()).hexdigest()
+    prepared_contracts: list[str] = []
+    policy = _campaign_isolation_policy()
+
+    def prepare_child(units, batch_id, root):
+        prepared_contracts.extend(unit["contract"] for unit in units)
+        return _native_child(
+            root,
+            batch_id,
+            units,
+            with_source_requests=True,
+            continuation_policy=policy,
+        )
+
+    fresh = prepare_campaign(
+        _report([_ordinary_unit(0), _ordinary_unit(1)]),
+        report_sha256="e" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=prepare_child,
+        name="fresh",
+        continuation_policy=policy,
+        prior_campaign_path=prior_path,
+        expected_prior_campaign_sha256=prior_sha256,
+        prior_attempt_path=prior_attempt,
+    )
+
+    assert prepared_contracts == ["AG1001"]
+    assert fresh["scope"]["denominator_unit_count"] == 2
+    assert fresh["scope"]["execution_unit_count"] == 1
+    assert fresh["scope"]["prior_known_isolation_count"] == 1
+    binding = fresh["prior_known_isolations"][0]
+    assert binding["schema_version"] == "newow_weekly_recovery_prior_isolation_v1"
+    assert binding["unit"] == {
+        "symbol": "ag",
+        "contract": "AG1000",
+        "frequency": "1w",
+        "through": "2026-09-11",
+        "plan_sha256": f"{0:064x}",
+    }
+    assert binding["prior_campaign"]["sha256"] == prior_sha256
+    assert len(binding["prior_campaign_result_sha256"]) == 64
+
+    fresh_calls: list[str] = []
+    result = execute_campaign(
+        fresh,
+        attempt_root=tmp_path / "fresh-attempt",
+        invoke_batch=_native_isolation_invoker(set(), fresh_calls),
+    )
+
+    assert fresh_calls == ["AG1001"]
+    assert result["status"] == "partial"
+    assert result["summary"] == {
+        "denominator_unit_count": 2,
+        "success_unit_count": 1,
+        "isolated_unit_count": 1,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 0,
+        "unknown_unit_count": 0,
+    }
+    assert result["isolated_units"][0]["provenance"] == "prior_known"
+
+    prior_source = (
+        prior_attempt
+        / "batch-001"
+        / "native"
+        / "unit-001-ag-AG1000"
+        / "source-response-0001.json"
+    )
+    prior_source.unlink()
+    with pytest.raises(RecoveryError, match="^PRIOR_ISOLATION_INVALID$"):
+        execute_campaign(
+            fresh,
+            attempt_root=tmp_path / "fresh-attempt-after-drift",
+            invoke_batch=lambda *_args: pytest.fail(
+                "prior drift reached native execution"
+            ),
+        )
+    assert not (tmp_path / "fresh-attempt-after-drift").exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing_source", "corrupt_source", "mismatched_request", "fresh_plan"],
+)
+def test_prior_known_source_isolation_rejects_unproven_or_drifted_evidence(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    prior = _campaign(tmp_path, 1, with_source_requests=True, name="prior")
+    prior_attempt = tmp_path / "prior-attempt"
+    execute_campaign(
+        prior,
+        attempt_root=prior_attempt,
+        invoke_batch=_native_isolation_invoker({"AG1000"}, []),
+    )
+    prior_path = tmp_path / "prior.prepare.json"
+    prior_sha256 = hashlib.sha256(prior_path.read_bytes()).hexdigest()
+    unit_dir = prior_attempt / "batch-001" / "native" / "unit-001-ag-AG1000"
+    if mutation == "missing_source":
+        (unit_dir / "source-response-0001.json").unlink()
+    elif mutation == "corrupt_source":
+        (unit_dir / "source-response-0001.json").write_text("not-json")
+    elif mutation == "mismatched_request":
+        records = [
+            json.loads(line)
+            for line in (unit_dir / "journal.jsonl").read_text().splitlines()
+        ]
+        records[0]["request"]["contract"] = "AG9999"
+        (unit_dir / "journal.jsonl").write_text(
+            "".join(json.dumps(record) + "\n" for record in records)
+        )
+    fresh_unit = _ordinary_unit(0)
+    if mutation == "fresh_plan":
+        fresh_unit["plan_sha256"] = "9" * 64
+
+    with pytest.raises(RecoveryError, match="^PRIOR_ISOLATION_INVALID$"):
+        prepare_campaign(
+            _report([fresh_unit]),
+            report_sha256="e" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda units, batch_id, root: _native_child(
+                root,
+                batch_id,
+                units,
+                with_source_requests=True,
+                continuation_policy=_campaign_isolation_policy(),
+            ),
+            name="fresh",
+            continuation_policy=_campaign_isolation_policy(),
+            prior_campaign_path=prior_path,
+            expected_prior_campaign_sha256=prior_sha256,
+            prior_attempt_path=prior_attempt,
+        )
+
+
 @pytest.mark.parametrize("contradiction", ["completed", "failure_partial", "applied"])
 def test_execute_rejects_failed_status_that_native_would_classify_partial(
     tmp_path: Path,
@@ -1346,6 +1830,14 @@ def test_execute_exception_or_unreadable_terminal_is_unknown(
     assert "private provider detail" not in json.dumps(result)
     assert result["unattempted_batch_ids"] == ["batch-002"]
     assert invoked == ["batch-001"]
+    assert result["summary"] == {
+        "denominator_unit_count": 21,
+        "success_unit_count": 0,
+        "isolated_unit_count": 0,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 1,
+        "unknown_unit_count": 20,
+    }
     assert result["retries"] == 0
 
 
@@ -1392,11 +1884,15 @@ def test_execute_rejects_second_attempt_id_start(tmp_path: Path) -> None:
         execute_campaign(
             manifest,
             attempt_root=tmp_path / "attempt-001",
-            invoke_batch=lambda *_args: pytest.fail("duplicate attempt invoked a child"),
+            invoke_batch=lambda *_args: pytest.fail(
+                "duplicate attempt invoked a child"
+            ),
         )
 
 
-def test_execute_rejects_concurrent_campaign_under_same_fixed_root(tmp_path: Path) -> None:
+def test_execute_rejects_concurrent_campaign_under_same_fixed_root(
+    tmp_path: Path,
+) -> None:
     manifest = _campaign(tmp_path, 1)
     entered = threading.Event()
     release = threading.Event()
@@ -1463,6 +1959,14 @@ def test_execute_stops_if_bound_guard_path_is_replaced_between_batches(
         "batch_id": "batch-002",
         "error_code": "CAMPAIGN_GUARD_CHANGED",
     }
+    assert result["summary"] == {
+        "denominator_unit_count": 21,
+        "success_unit_count": 20,
+        "isolated_unit_count": 0,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 1,
+        "unknown_unit_count": 0,
+    }
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_GUARD_CHANGED$"):
         execute_campaign(
@@ -1527,6 +2031,14 @@ def test_execute_stops_on_child_hash_drift_between_batches(tmp_path: Path) -> No
         "batch_id": "batch-002",
         "error_code": "CAMPAIGN_CHILD_DRIFT",
     }
+    assert result["summary"] == {
+        "denominator_unit_count": 21,
+        "success_unit_count": 20,
+        "isolated_unit_count": 0,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 1,
+        "unknown_unit_count": 0,
+    }
 
 
 def test_execute_21_units_across_two_native_batches_preserves_all_readbacks(
@@ -1575,7 +2087,9 @@ def test_execute_21_units_crosses_two_real_native_batches_with_isolated_readback
     tmp_path: Path,
 ) -> None:
     through = date(2025, 4, 4)
-    trading_days = tuple(date(2025, 3, 31) + timedelta(days=index) for index in range(5))
+    trading_days = tuple(
+        date(2025, 3, 31) + timedelta(days=index) for index in range(5)
+    )
     daily_ends = tuple(
         datetime.combine(day, datetime.min.time(), tzinfo=UTC).replace(hour=7)
         for day in trading_days
@@ -1618,11 +2132,11 @@ def test_execute_21_units_crosses_two_real_native_batches_with_isolated_readback
             self, requests: tuple[BarFetchRequest, ...]
         ) -> tuple[ExchangeDailySourceRequest, ...]:
             daily = tuple(
-                request
-                for request in requests
-                if request.key.frequency.value == "1d"
+                request for request in requests if request.key.frequency.value == "1d"
             )
-            dates = tuple(sorted({value.date() for item in daily for value in item.expected}))
+            dates = tuple(
+                sorted({value.date() for item in daily for value in item.expected})
+            )
             return (
                 ExchangeDailySourceRequest(
                     contract=requests[0].key.series_or_contract,
@@ -1676,7 +2190,11 @@ def test_execute_21_units_crosses_two_real_native_batches_with_isolated_readback
             for request in requests:
                 bars = []
                 for bar_end in request.expected:
-                    volume = Decimal("5") if request.key.frequency.value == "1w" else Decimal("1")
+                    volume = (
+                        Decimal("5")
+                        if request.key.frequency.value == "1w"
+                        else Decimal("1")
+                    )
                     bars.append(
                         CanonicalBar(
                             bar_end,
@@ -1823,7 +2341,9 @@ def test_execute_21_units_crosses_two_real_native_batches_with_isolated_readback
     ]
     assert len(completed) == 21
     assert all(unit["remaining_target_count"] == 0 for unit in completed)
-    assert all(unit["readback"]["catalog_physical_mds"] == "passed" for unit in completed)
+    assert all(
+        unit["readback"]["catalog_physical_mds"] == "passed" for unit in completed
+    )
     assert all(unit["readback"]["mds_target_count"] == 3 for unit in completed)
     assert len(provider.calls) == 21
     session.close()
@@ -1899,7 +2419,9 @@ def test_cli_apply_rejects_current_code_or_config_drift_before_native_main(
         "_current_execution_identity",
         lambda _path: {**IDENTITY, "config_sha256": "0" * 64},
     )
-    monkeypatch.setattr(module.native, "main", lambda *_args, **_kwargs: calls.append(True))
+    monkeypatch.setattr(
+        module.native, "main", lambda *_args, **_kwargs: calls.append(True)
+    )
     output = io.StringIO()
 
     code = main(

@@ -141,7 +141,10 @@ def test_attempt_persists_started_and_raw_response_before_native_validation(
             )
         )
 
-    records = [json.loads(line) for line in (attempt / "journal.jsonl").read_text().splitlines()]
+    records = [
+        json.loads(line)
+        for line in (attempt / "journal.jsonl").read_text().splitlines()
+    ]
     assert [record["state"] for record in records] == ["started", "response_saved"]
     receipt = records[1]
     payload_path = attempt / receipt["payload_file"]
@@ -161,7 +164,9 @@ def test_attempt_persists_started_and_raw_response_before_native_validation(
     session.close()
 
 
-def test_started_persistence_failure_prevents_provider_call(tmp_path, monkeypatch) -> None:
+def test_started_persistence_failure_prevents_provider_call(
+    tmp_path, monkeypatch
+) -> None:
     session = _session()
     client = ExchangeDailyClient(_rows())
     attempt = create_attempt_directory(tmp_path, "ec2607-001")
@@ -172,7 +177,9 @@ def test_started_persistence_failure_prevents_provider_call(tmp_path, monkeypatc
         expected_dates=(date(2026, 3, 30),),
     )
     journal = AttemptJournal(attempt, (daily_request,))
-    monkeypatch.setattr(journal, "_append", lambda _record: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(
+        journal, "_append", lambda _record: (_ for _ in ()).throw(OSError())
+    )
     adapter = RQDataMarketAdapter(
         session=session,
         client=client,
@@ -194,7 +201,9 @@ def test_started_persistence_failure_prevents_provider_call(tmp_path, monkeypatc
     session.close()
 
 
-def test_response_save_failure_is_unknown_and_cannot_retry(tmp_path, monkeypatch) -> None:
+def test_response_save_failure_is_unknown_and_cannot_retry(
+    tmp_path, monkeypatch
+) -> None:
     attempt = create_attempt_directory(tmp_path, "ec2607-001")
     journal = AttemptJournal(attempt, (_source_request(),))
     journal.before_request(_source_request())
@@ -277,7 +286,10 @@ def test_response_identity_failure_is_saved_then_stops(tmp_path) -> None:
     with pytest.raises(RecoveryError, match="^SOURCE_RESPONSE_IDENTITY_INVALID$"):
         journal.after_response(_source_request(), tuple(rows))
 
-    records = [json.loads(line) for line in (attempt / "journal.jsonl").read_text().splitlines()]
+    records = [
+        json.loads(line)
+        for line in (attempt / "journal.jsonl").read_text().splitlines()
+    ]
     assert [record["state"] for record in records] == [
         "started",
         "response_saved",
@@ -400,7 +412,9 @@ def test_prepare_uses_native_targets_without_initializing_provider(tmp_path) -> 
     manifest = prepare_bounded_units(
         manager=manager,
         adapter=adapter,
-        requests=(ContractWarmupRequest("ec", "EC2607", date(2026, 6, 30), frequency="1w"),),
+        requests=(
+            ContractWarmupRequest("ec", "EC2607", date(2026, 6, 30), frequency="1w"),
+        ),
         expected_data_root=manager.catalog.canonical_root,
         code_commit="b" * 40,
         execution_code_sha256="d" * 64,
@@ -458,7 +472,11 @@ def test_prepare_rejects_root_hash_and_nonweekly_scope_before_provider(
             manager=manager,
             adapter=adapter,
             requests=(request,),
-            expected_data_root=(tmp_path / "other" if change == "root" else manager.catalog.canonical_root),
+            expected_data_root=(
+                tmp_path / "other"
+                if change == "root"
+                else manager.catalog.canonical_root
+            ),
             code_commit="b" * 40,
             execution_code_sha256="e" * 64,
             config_sha256="c" * 64,
@@ -484,7 +502,9 @@ def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> 
                     "contract": source.contract,
                     "start": source.start.isoformat(),
                     "end": source.end.isoformat(),
-                    "expected_dates": [day.isoformat() for day in source.expected_dates],
+                    "expected_dates": [
+                        day.isoformat() for day in source.expected_dates
+                    ],
                 }
             ],
         },
@@ -522,16 +542,28 @@ def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> 
                     self.observer.before_request(source)
                     self.observer.after_response(source, tuple(_rows()))
                     return SimpleNamespace(
-                        status="passed", applied=2, blocked=0, failed=0, provider_requests=2, failures=()
+                        status="passed",
+                        applied=2,
+                        blocked=0,
+                        failed=0,
+                        provider_requests=2,
+                        failures=(),
                     )
                 return SimpleNamespace(
-                    status="failed", applied=0, blocked=0, failed=1, provider_requests=1, failures=()
+                    status="failed",
+                    applied=0,
+                    blocked=0,
+                    failed=1,
+                    provider_requests=1,
+                    failures=(),
                 )
             events.append(f"replan:{self.unit['contract']}")
             return SimpleNamespace(
                 plan=SimpleNamespace(
                     plan_sha256="f" * 64,
-                    target_windows=() if self.unit["contract"] == "EC2607" else ({"missing": 1},),
+                    target_windows=()
+                    if self.unit["contract"] == "EC2607"
+                    else ({"missing": 1},),
                 )
             )
 
@@ -540,10 +572,13 @@ def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> 
         return (
             manager,
             lambda: events.append(f"invalidate:{unit['contract']}"),
-            lambda: events.append(f"readback:{unit['contract']}") or {
-                "catalog_partitions": [],
-                "mds_target_count": 0,
-            },
+            lambda: (
+                events.append(f"readback:{unit['contract']}")
+                or {
+                    "catalog_partitions": [],
+                    "mds_target_count": 0,
+                }
+            ),
             lambda: None,
         )
 
@@ -701,6 +736,351 @@ def test_execute_prepared_batch_marks_known_failure_in_journal(tmp_path) -> None
     assert result["status"] == "failed"
     unit_attempt = attempt / "unit-001-ec-EC2607"
     assert read_attempt_outcome(unit_attempt)["state"] == "failed"
+
+
+def _source_isolation_policy() -> dict[str, object]:
+    body: dict[str, object] = {
+        "schema_version": "newow_weekly_recovery_continuation_policy_v1",
+        "mode": "isolate_known_source_quality",
+        "allowed_error_codes": ["RQDATA_ZERO_OHL_INVALID"],
+    }
+    return {
+        **body,
+        "policy_sha256": hashlib.sha256(
+            json.dumps(
+                body,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _isolation_unit(contract: str) -> dict[str, object]:
+    source = _source_request()
+    source = ExchangeDailySourceRequest(
+        contract=contract,
+        start=source.start,
+        end=source.end,
+        expected_dates=source.expected_dates,
+    )
+    return {
+        "symbol": contract[:2].lower(),
+        "contract": contract,
+        "through": "2026-06-30",
+        "frequency": "1w",
+        "plan_sha256": hashlib.sha256(contract.encode()).hexdigest(),
+        "target_count": 1,
+        "expected_bar_count": 5,
+        "targets": [
+            {
+                "dataset": ["contract", contract[:2].lower(), contract, "1w"],
+                "year": 2026,
+                "month": 4,
+                "expected_start": "2026-04-03T01:05:00+00:00",
+                "expected_end": "2026-04-03T01:05:00+00:00",
+                "expected_bar_count": 5,
+            }
+        ],
+        "source_requests": [
+            {
+                "method": "futures.get_exchange_daily",
+                "contract": contract,
+                "start": source.start.isoformat(),
+                "end": source.end.isoformat(),
+                "expected_dates": [day.isoformat() for day in source.expected_dates],
+            }
+        ],
+    }
+
+
+def test_source_quality_policy_isolates_one_unit_and_runs_its_next_sibling(
+    tmp_path,
+) -> None:
+    units = [_isolation_unit("EC2607"), _isolation_unit("SI2401")]
+    manifest = {
+        "schema_version": "newow_weekly_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "continuation_policy": _source_isolation_policy(),
+        "units": units,
+    }
+    events: list[str] = []
+
+    class Manager:
+        def __init__(self, observer, unit):
+            self.observer = observer
+            self.unit = unit
+
+        def contract_warmup(self, request, *, before_apply=None):
+            if request.apply:
+                events.append(f"apply:{self.unit['contract']}")
+                assert before_apply is not None
+                before_apply()
+                source = ExchangeDailySourceRequest(
+                    contract=self.unit["contract"],
+                    start=date(2026, 3, 30),
+                    end=date(2026, 4, 3),
+                    expected_dates=tuple(
+                        date(2026, 3, 30) + timedelta(days=offset)
+                        for offset in range(5)
+                    ),
+                )
+                self.observer.before_request(source)
+                rows = _rows(invalid=self.unit["contract"] == "EC2607")
+                if self.unit["contract"] == "EC2607":
+                    rows = [
+                        {
+                            **row,
+                            "date": datetime.combine(row["date"], datetime.min.time()),
+                        }
+                        for row in rows
+                    ]
+                self.observer.after_response(source, tuple(rows))
+                if self.unit["contract"] == "EC2607":
+                    return SimpleNamespace(
+                        status="failed",
+                        applied=0,
+                        blocked=0,
+                        failed=1,
+                        provider_requests=1,
+                        failures=(
+                            {
+                                "dataset": ["contract", "ec", "EC2607", "1w"],
+                                "year": 2026,
+                                "month": 4,
+                                "reason_code": "RQDATA_ZERO_OHL_INVALID",
+                            },
+                        ),
+                    )
+                return SimpleNamespace(
+                    status="passed",
+                    applied=1,
+                    blocked=0,
+                    failed=0,
+                    provider_requests=1,
+                    failures=(),
+                )
+            events.append(f"readback:{self.unit['contract']}")
+            return SimpleNamespace(
+                plan=SimpleNamespace(
+                    plan_sha256=self.unit["plan_sha256"],
+                    target_windows=(
+                        tuple(self.unit["targets"])
+                        if self.unit["contract"] == "EC2607"
+                        else ()
+                    ),
+                )
+            )
+
+    def open_unit(observer, unit):
+        manager = Manager(observer, unit)
+        return (
+            manager,
+            lambda: events.append(f"invalidate:{unit['contract']}"),
+            lambda: {
+                "catalog_physical_mds": "passed",
+                "mds_target_count": unit["target_count"],
+                "catalog_partitions": [],
+            },
+            lambda: events.append(f"cleanup:{unit['contract']}"),
+        )
+
+    attempt = create_attempt_directory(tmp_path, "batch-001")
+    result = execute_prepared_batch(
+        manifest=manifest,
+        attempt_dir=attempt,
+        prepared_sha256="9" * 64,
+        current_code_commit="b" * 40,
+        current_execution_code_sha256="d" * 64,
+        current_config_sha256="c" * 64,
+        current_canonical_root_sha256="e" * 64,
+        open_unit=open_unit,
+    )
+
+    assert result["status"] == "partial"
+    assert [item["contract"] for item in result["isolated"]] == ["EC2607"]
+    assert [item["contract"] for item in result["completed"]] == ["SI2401"]
+    assert result["failed"] is None
+    assert result["unattempted"] == []
+    assert events == [
+        "apply:EC2607",
+        "invalidate:EC2607",
+        "readback:EC2607",
+        "cleanup:EC2607",
+        "apply:SI2401",
+        "invalidate:SI2401",
+        "readback:SI2401",
+        "cleanup:SI2401",
+    ]
+    isolated = result["isolated"][0]
+    assert isolated["classification"] == "RQDATA_ZERO_OHL_INVALID"
+    assert isolated["result"]["applied"] == 0
+    assert isolated["readback"]["remaining_target_count"] == 1
+    assert isolated["source_evidence"]["requests_started"] == 1
+    assert isolated["source_evidence"]["responses_saved"] == 1
+
+
+def test_source_quality_failure_still_stops_without_explicit_policy(tmp_path) -> None:
+    unit = _isolation_unit("EC2607")
+    manifest = {
+        "schema_version": "newow_weekly_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "units": [unit],
+    }
+
+    class Manager:
+        def contract_warmup(self, request, *, before_apply=None):
+            assert request.apply is True
+            assert before_apply is not None
+            before_apply()
+            return SimpleNamespace(
+                status="failed",
+                applied=0,
+                blocked=0,
+                failed=1,
+                provider_requests=0,
+                failures=(
+                    {
+                        "dataset": ["contract", "ec", "EC2607", "1w"],
+                        "year": 2026,
+                        "month": 4,
+                        "reason_code": "RQDATA_ZERO_OHL_INVALID",
+                    },
+                ),
+            )
+
+    attempt = create_attempt_directory(tmp_path, "batch-001")
+    result = execute_prepared_batch(
+        manifest=manifest,
+        attempt_dir=attempt,
+        prepared_sha256="9" * 64,
+        current_code_commit="b" * 40,
+        current_execution_code_sha256="d" * 64,
+        current_config_sha256="c" * 64,
+        current_canonical_root_sha256="e" * 64,
+        open_unit=lambda *_args: (
+            Manager(),
+            lambda: None,
+            lambda: pytest.fail("strict failure cannot read back as isolated"),
+            lambda: None,
+        ),
+    )
+
+    assert result["status"] == "failed"
+    assert "isolated" not in result
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "applied_nonzero",
+        "applied_bool",
+        "unknown_response",
+        "wrong_error_code",
+        "readback_drift",
+    ],
+)
+def test_source_quality_policy_refuses_unproven_isolation(
+    tmp_path,
+    mutation,
+) -> None:
+    unit = _isolation_unit("EC2607")
+    manifest = {
+        "schema_version": "newow_weekly_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "continuation_policy": _source_isolation_policy(),
+        "units": [unit],
+    }
+
+    class Manager:
+        def contract_warmup(self, request, *, before_apply=None):
+            if request.apply:
+                assert before_apply is not None
+                before_apply()
+                if mutation != "unknown_response":
+                    source = ExchangeDailySourceRequest(
+                        contract="EC2607",
+                        start=date(2026, 3, 30),
+                        end=date(2026, 4, 3),
+                        expected_dates=tuple(
+                            date(2026, 3, 30) + timedelta(days=offset)
+                            for offset in range(5)
+                        ),
+                    )
+                    observer.before_request(source)
+                    observer.after_response(source, tuple(_rows(invalid=True)))
+                else:
+                    observer.before_request(_source_request())
+                return SimpleNamespace(
+                    status="failed",
+                    applied=(
+                        1
+                        if mutation == "applied_nonzero"
+                        else False
+                        if mutation == "applied_bool"
+                        else 0
+                    ),
+                    blocked=0,
+                    failed=1,
+                    provider_requests=1,
+                    failures=(
+                        {
+                            "dataset": ["contract", "ec", "EC2607", "1w"],
+                            "year": 2026,
+                            "month": 4,
+                            "reason_code": (
+                                "PROVIDER_QUOTA_EXHAUSTED"
+                                if mutation == "wrong_error_code"
+                                else "RQDATA_ZERO_OHL_INVALID"
+                            ),
+                        },
+                    ),
+                )
+            return SimpleNamespace(
+                plan=SimpleNamespace(
+                    plan_sha256=(
+                        "f" * 64
+                        if mutation == "readback_drift"
+                        else unit["plan_sha256"]
+                    ),
+                    target_windows=tuple(unit["targets"]),
+                )
+            )
+
+    def open_unit(value, _unit):
+        nonlocal observer
+        observer = value
+        return Manager(), lambda: None, lambda: {}, lambda: None
+
+    observer = None
+    attempt = create_attempt_directory(tmp_path, "batch-001")
+    result = execute_prepared_batch(
+        manifest=manifest,
+        attempt_dir=attempt,
+        prepared_sha256="9" * 64,
+        current_code_commit="b" * 40,
+        current_execution_code_sha256="d" * 64,
+        current_config_sha256="c" * 64,
+        current_canonical_root_sha256="e" * 64,
+        open_unit=open_unit,
+    )
+
+    assert result["status"] == (
+        "partial" if mutation == "applied_nonzero" else "failed"
+    )
+    assert result["failed"]["contract"] == "EC2607"
+    assert result["unattempted"] == []
+    assert "isolated" not in result
 
 
 def test_execute_prepared_batch_preserves_first_unit_partial_status(tmp_path) -> None:
@@ -891,9 +1271,10 @@ def test_post_commit_readback_records_catalog_file_hash_and_mds(
 
     assert result["catalog_physical_mds"] == "passed"
     assert result["mds_target_count"] == 1
-    assert result["catalog_partitions"][0]["file_sha256"] == hashlib.sha256(
-        path.read_bytes()
-    ).hexdigest()
+    assert (
+        result["catalog_partitions"][0]["file_sha256"]
+        == hashlib.sha256(path.read_bytes()).hexdigest()
+    )
 
 
 def test_prepared_manifest_is_exclusive_hash_locked_and_no_overwrite(tmp_path) -> None:
@@ -931,35 +1312,45 @@ def test_cli_exposes_separate_prepare_apply_and_inspect_modes() -> None:
     help_text = parser().format_help()
 
     assert "{prepare,apply,inspect}" in help_text
-    assert "--apply" not in parser().parse_args(
-        [
-            "prepare",
-            "--project-env",
-            "/private/config",
-            "--units",
-            "/private/units.json",
-            "--output-root",
-            "/private/output",
-            "--name",
-            "batch",
-        ]
-    ).__dict__
-    assert parser().parse_args(
-        [
-            "apply",
-            "--project-env",
-            "/private/config",
-            "--prepared",
-            "/private/prepared.json",
-            "--expected-prepared-sha256",
-            "a" * 64,
-            "--output-root",
-            "/private/output",
-            "--attempt-id",
-            "batch-001",
-            "--apply",
-        ]
-    ).apply is True
+    assert (
+        "--apply"
+        not in parser()
+        .parse_args(
+            [
+                "prepare",
+                "--project-env",
+                "/private/config",
+                "--units",
+                "/private/units.json",
+                "--output-root",
+                "/private/output",
+                "--name",
+                "batch",
+            ]
+        )
+        .__dict__
+    )
+    assert (
+        parser()
+        .parse_args(
+            [
+                "apply",
+                "--project-env",
+                "/private/config",
+                "--prepared",
+                "/private/prepared.json",
+                "--expected-prepared-sha256",
+                "a" * 64,
+                "--output-root",
+                "/private/output",
+                "--attempt-id",
+                "batch-001",
+                "--apply",
+            ]
+        )
+        .apply
+        is True
+    )
 
 
 def test_private_settings_identity_never_contains_credentials(tmp_path) -> None:
@@ -1063,7 +1454,9 @@ def test_prepare_cli_writes_hash_locked_manifest_without_provider(
         ),
     )
     monkeypatch.setattr(module, "_current_code_commit", lambda: "b" * 40)
-    monkeypatch.setattr(module, "_require_clean_execution_checkout", lambda _commit: None)
+    monkeypatch.setattr(
+        module, "_require_clean_execution_checkout", lambda _commit: None
+    )
     output = io.StringIO()
 
     code = main(

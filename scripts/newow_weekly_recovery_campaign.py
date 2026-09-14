@@ -76,6 +76,10 @@ def parser() -> argparse.ArgumentParser:
     prepare.add_argument("--expected-report-sha256", required=True)
     prepare.add_argument("--output-root", required=True)
     prepare.add_argument("--name", required=True)
+    prepare.add_argument("--isolate-known-source-quality", action="store_true")
+    prepare.add_argument("--prior-campaign")
+    prepare.add_argument("--expected-prior-campaign-sha256")
+    prepare.add_argument("--prior-attempt")
     apply = commands.add_parser("apply", allow_abbrev=False)
     apply.add_argument("--project-env", required=True)
     apply.add_argument("--campaign", required=True)
@@ -111,6 +115,11 @@ def main(
             )
             identity = _current_execution_identity(Path(args.project_env))
             root = _validated_evidence_root(Path(args.output_root))
+            policy = (
+                native.source_isolation_policy()
+                if args.isolate_known_source_quality
+                else None
+            )
 
             def invoke_prepare(
                 units: tuple[dict[str, Any], ...],
@@ -123,18 +132,21 @@ def main(
                 except OSError as exc:
                     raise RecoveryError("CAMPAIGN_CHILD_INPUT_UNAVAILABLE") from exc
                 output = io.StringIO()
+                native_argv = [
+                    "prepare",
+                    "--project-env",
+                    str(args.project_env),
+                    "--units",
+                    str(units_path),
+                    "--output-root",
+                    str(evidence_root),
+                    "--name",
+                    batch_id,
+                ]
+                if policy is not None:
+                    native_argv.append("--isolate-known-source-quality")
                 return_code = native.main(
-                    [
-                        "prepare",
-                        "--project-env",
-                        str(args.project_env),
-                        "--units",
-                        str(units_path),
-                        "--output-root",
-                        str(evidence_root),
-                        "--name",
-                        batch_id,
-                    ],
+                    native_argv,
                     stdout=output,
                 )
                 child_payload = _decoded_mapping(output.getvalue())
@@ -149,6 +161,14 @@ def main(
                 execution_identity=identity,
                 invoke_batch=invoke_prepare,
                 name=args.name,
+                continuation_policy=policy,
+                prior_campaign_path=(
+                    Path(args.prior_campaign) if args.prior_campaign else None
+                ),
+                expected_prior_campaign_sha256=(args.expected_prior_campaign_sha256),
+                prior_attempt_path=(
+                    Path(args.prior_attempt) if args.prior_attempt else None
+                ),
             )
             campaign_path = root / f"{args.name}.prepare.json"
             payload = {
@@ -278,8 +298,16 @@ def execute_campaign(
             raise RecoveryError("CAMPAIGN_STARTED_UNAVAILABLE") from exc
 
         completed: list[dict[str, Any]] = []
+        successful_units: list[dict[str, Any]] = []
+        isolated_units = [
+            _prior_isolated_unit(binding)
+            for binding in validated.get("prior_known_isolations", [])
+        ]
         failed: dict[str, Any] | None = None
         unknown: dict[str, Any] | None = None
+        stopping_failure_unit_count = 0
+        unattempted_unit_count = 0
+        unknown_unit_count = 0
         stopped_index = len(children)
         for index, child in enumerate(children):
             batch_id = child["batch_id"]
@@ -371,15 +399,24 @@ def execute_campaign(
                 }
                 stopped_index = index
                 break
-            if terminal["status"] != "passed":
+            native_result = terminal["result"]
+            successful_units.extend(native_result["completed"])
+            isolated_units.extend(native_result.get("isolated", []))
+            safely_exhausted = (
+                terminal["status"] == "partial"
+                and native_result.get("failed") is None
+                and native_result.get("unattempted") == []
+                and bool(native_result.get("isolated"))
+            )
+            if terminal["status"] != "passed" and not safely_exhausted:
                 failed = {"batch_id": batch_id, "native_result": terminal}
+                stopping_failure_unit_count = 1
+                unattempted_unit_count = len(native_result["unattempted"])
                 stopped_index = index
                 break
             completed.append({"batch_id": batch_id, "native_result": terminal})
 
-        unattempted = [
-            child["batch_id"] for child in children[stopped_index + 1 :]
-        ]
+        unattempted = [child["batch_id"] for child in children[stopped_index + 1 :]]
         if unknown is not None:
             status = "unknown"
         elif failed is not None:
@@ -388,10 +425,72 @@ def execute_campaign(
                 if isinstance(failed.get("native_result"), Mapping)
                 else None
             )
-            status = "partial" if completed or native_status == "partial" else "failed"
+            status = (
+                "partial"
+                if completed or isolated_units or native_status == "partial"
+                else "failed"
+            )
         else:
-            status = "passed"
+            status = "partial" if isolated_units else "passed"
             unattempted = []
+        later_unattempted_unit_count = sum(
+            child["unit_count"]
+            for child in children
+            if child["batch_id"] in unattempted
+        )
+        unattempted_unit_count += later_unattempted_unit_count
+        if unknown is not None:
+            unknown_unit_count = next(
+                (
+                    child["unit_count"]
+                    for child in children
+                    if child["batch_id"] == unknown.get("batch_id")
+                ),
+                0,
+            )
+        elif failed is not None and "native_result" not in failed:
+            unattempted_unit_count += next(
+                (
+                    child["unit_count"]
+                    for child in children
+                    if child["batch_id"] == failed.get("batch_id")
+                ),
+                0,
+            )
+        anomaly_repair_requirements: dict[str, list[dict[str, Any]]] = {}
+        for unit in isolated_units:
+            code = unit["classification"]
+            anomaly_repair_requirements.setdefault(code, []).append(
+                {
+                    key: unit[key]
+                    for key in (
+                        "symbol",
+                        "contract",
+                        "frequency",
+                        "through",
+                        "plan_sha256",
+                    )
+                }
+            )
+        denominator = validated["scope"].get(
+            "denominator_unit_count", validated["totals"]["unit_count"]
+        )
+        classified = (
+            len(successful_units)
+            + len(isolated_units)
+            + stopping_failure_unit_count
+            + unattempted_unit_count
+            + unknown_unit_count
+        )
+        if classified != denominator:
+            if classified > denominator:
+                raise RecoveryError("CAMPAIGN_SETTLEMENT_INVALID")
+            unknown_unit_count += denominator - classified
+            unknown = unknown or {
+                "batch_id": None,
+                "error_code": "CAMPAIGN_SETTLEMENT_UNKNOWN",
+            }
+            status = "unknown"
         result: dict[str, Any] = {
             "status": status,
             "completed_batch_ids": [item["batch_id"] for item in completed],
@@ -399,6 +498,16 @@ def execute_campaign(
             "failed_batch": failed,
             "unknown_batch": unknown,
             "unattempted_batch_ids": unattempted,
+            "isolated_units": isolated_units,
+            "summary": {
+                "denominator_unit_count": denominator,
+                "success_unit_count": len(successful_units),
+                "isolated_unit_count": len(isolated_units),
+                "stopping_failure_unit_count": stopping_failure_unit_count,
+                "unattempted_unit_count": unattempted_unit_count,
+                "unknown_unit_count": unknown_unit_count,
+            },
+            "anomaly_repair_requirements": anomaly_repair_requirements,
             "retries": 0,
         }
         try:
@@ -431,22 +540,251 @@ def partition_ordinary_units(
     return tuple(tuple(units[index : index + 20]) for index in range(0, len(units), 20))
 
 
+def _prior_isolated_unit(binding: Mapping[str, Any]) -> dict[str, Any]:
+    unit = cast(Mapping[str, Any], binding["unit"])
+    return {
+        **unit,
+        "status": "isolated",
+        "classification": binding["classification"],
+        "source_evidence": binding["source_evidence"],
+        "provenance": "prior_known",
+        "prior_evidence": {
+            key: binding[key]
+            for key in (
+                "prior_campaign",
+                "prior_campaign_result_sha256",
+                "prior_attempt_path",
+                "batch_id",
+                "child_sha256",
+                "unit_index",
+                "evidence_artifacts",
+                "binding_sha256",
+            )
+        },
+    }
+
+
+def _derive_prior_isolations(
+    root: Path,
+    *,
+    policy: Mapping[str, object] | None,
+    prior_campaign_path: Path | None,
+    expected_prior_campaign_sha256: str | None,
+    prior_attempt_path: Path | None,
+) -> list[dict[str, Any]]:
+    values = (
+        prior_campaign_path,
+        expected_prior_campaign_sha256,
+        prior_attempt_path,
+    )
+    if all(value is None for value in values):
+        return []
+    if policy is None or any(value is None for value in values):
+        raise RecoveryError("PRIOR_ISOLATION_INVALID")
+    assert prior_campaign_path is not None
+    assert expected_prior_campaign_sha256 is not None
+    assert prior_attempt_path is not None
+    try:
+        campaign_path = _direct_root_file(prior_campaign_path, root)
+        attempt_path = _direct_root_directory(prior_attempt_path, root)
+        prior_manifest = _load_hash_locked_mapping(
+            campaign_path,
+            expected_prior_campaign_sha256,
+            "PRIOR_ISOLATION_INVALID",
+        )
+        if prior_manifest.get("prior_known_isolations"):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        validated = validate_campaign_manifest(prior_manifest, evidence_root=root)
+        if campaign_path.name != f"{validated['campaign_name']}.prepare.json":
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        started = native._read_json_file(attempt_path / "campaign-started.json")
+        campaign_result_path = attempt_path / "campaign-result.json"
+        campaign_result = native._read_json_file(campaign_result_path)
+        expected_started_hash = hashlib.sha256(
+            native._canonical_json(validated).encode("utf-8")
+        ).hexdigest()
+        if (
+            not isinstance(started, Mapping)
+            or started.get("campaign_manifest_sha256") != expected_started_hash
+            or not isinstance(campaign_result, Mapping)
+            or campaign_result.get("unknown_batch") is not None
+            or not isinstance(campaign_result.get("failed_batch"), Mapping)
+        ):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        failed_batch = campaign_result["failed_batch"]
+        batch_id = failed_batch.get("batch_id")
+        terminal = failed_batch.get("native_result")
+        child = next(
+            (
+                item
+                for item in validated["children"]
+                if item.get("batch_id") == batch_id
+            ),
+            None,
+        )
+        if not isinstance(child, Mapping) or not isinstance(terminal, Mapping):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        child_path = _manifest_child_path(child.get("path"), root)
+        validated_terminal = _validated_batch_invocation(
+            {
+                "return_code": 0 if terminal.get("status") == "passed" else 1,
+                "batch_result": terminal,
+            },
+            child=child,
+            child_path=child_path,
+            digest=child["sha256"],
+            batch_attempt=attempt_path / str(batch_id),
+            identity=validated["execution_identity"],
+        )
+        if validated_terminal is None:
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        native_result = validated_terminal["result"]
+        completed = native_result.get("completed")
+        failed = native_result.get("failed")
+        if (
+            not isinstance(completed, list)
+            or not isinstance(failed, Mapping)
+            or native_result.get("isolated")
+        ):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        frozen = _load_native_child(child_path, child["sha256"])
+        units = frozen.get("units")
+        unit_index = len(completed)
+        if not isinstance(units, list) or unit_index >= len(units):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        unit = units[unit_index]
+        if not isinstance(unit, Mapping) or not _unit_payload_matches(failed, unit):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        native_attempt = Path(validated_terminal["attempt_dir"])
+        unit_dir = native_attempt / (
+            f"unit-{unit_index + 1:03d}-{unit['symbol']}-{unit['contract']}"
+        )
+        result = failed.get("result")
+        if not isinstance(result, Mapping):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        persisted_unit = native._read_json_file(unit_dir / "unit-result.json")
+        if persisted_unit != failed:
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        source_evidence = native._source_isolation_evidence(
+            unit_dir,
+            unit,
+            result,
+            policy,
+        )
+        source_count = cast(int, source_evidence["responses_saved"])
+        evidence_artifacts = {
+            "unit_result_sha256": _regular_file_sha256(unit_dir / "unit-result.json"),
+            "journal_sha256": _regular_file_sha256(unit_dir / "journal.jsonl"),
+            "source_response_sha256s": {
+                f"source-response-{sequence:04d}.json": _regular_file_sha256(
+                    unit_dir / f"source-response-{sequence:04d}.json"
+                )
+                for sequence in range(1, source_count + 1)
+            },
+        }
+        unit_identity = {
+            key: unit[key]
+            for key in ("symbol", "contract", "frequency", "through", "plan_sha256")
+        }
+        binding: dict[str, Any] = {
+            "schema_version": "newow_weekly_recovery_prior_isolation_v1",
+            "unit": unit_identity,
+            "classification": source_evidence["classification"],
+            "source_evidence": source_evidence,
+            "evidence_artifacts": evidence_artifacts,
+            "prior_campaign": {
+                "path": campaign_path.name,
+                "sha256": expected_prior_campaign_sha256,
+            },
+            "prior_campaign_result_sha256": _regular_file_sha256(campaign_result_path),
+            "prior_attempt_path": attempt_path.name,
+            "batch_id": batch_id,
+            "child_sha256": child["sha256"],
+            "unit_index": unit_index + 1,
+        }
+        binding["binding_sha256"] = _identity_sha256(binding)
+        return [binding]
+    except (OSError, KeyError, StopIteration, TypeError, RecoveryError) as exc:
+        raise RecoveryError("PRIOR_ISOLATION_INVALID") from exc
+
+
+def _direct_root_file(value: Path, root: Path) -> Path:
+    path = Path(value)
+    try:
+        info = path.lstat()
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise RecoveryError("PRIOR_ISOLATION_INVALID") from exc
+    if (
+        not path.is_absolute()
+        or resolved.parent != root
+        or not stat.S_ISREG(info.st_mode)
+        or stat.S_ISLNK(info.st_mode)
+    ):
+        raise RecoveryError("PRIOR_ISOLATION_INVALID")
+    return resolved
+
+
+def _direct_root_directory(value: Path, root: Path) -> Path:
+    path = Path(value)
+    try:
+        info = path.lstat()
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise RecoveryError("PRIOR_ISOLATION_INVALID") from exc
+    if (
+        not path.is_absolute()
+        or resolved.parent != root
+        or not stat.S_ISDIR(info.st_mode)
+        or stat.S_ISLNK(info.st_mode)
+    ):
+        raise RecoveryError("PRIOR_ISOLATION_INVALID")
+    return resolved
+
+
+def _regular_file_sha256(path: Path) -> str:
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 16 * 1024 * 1024:
+                raise OSError
+            content = os.read(fd, 16 * 1024 * 1024 + 1)
+            if len(content) != info.st_size:
+                raise OSError
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise RecoveryError("PRIOR_ISOLATION_INVALID") from exc
+    return hashlib.sha256(content).hexdigest()
+
+
 def prepare_campaign(
     report: Mapping[str, Any],
     *,
     report_sha256: str,
     evidence_root: Path,
     execution_identity: Mapping[str, str],
-    invoke_batch: Callable[
-        [tuple[dict[str, Any], ...], str, Path], Mapping[str, Any]
-    ],
+    invoke_batch: Callable[[tuple[dict[str, Any], ...], str, Path], Mapping[str, Any]],
     name: str = "campaign",
+    continuation_policy: Mapping[str, Any] | None = None,
+    prior_campaign_path: Path | None = None,
+    expected_prior_campaign_sha256: str | None = None,
+    prior_attempt_path: Path | None = None,
 ) -> dict[str, Any]:
     """Prepare every native child and exclusively freeze their campaign index."""
     root = _validated_evidence_root(evidence_root)
     if _HASH.fullmatch(report_sha256) is None:
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     identity = _validated_execution_identity(execution_identity)
+    policy = native._validated_continuation_policy(continuation_policy)
+    prior_isolations = _derive_prior_isolations(
+        root,
+        policy=policy,
+        prior_campaign_path=prior_campaign_path,
+        expected_prior_campaign_sha256=expected_prior_campaign_sha256,
+        prior_attempt_path=prior_attempt_path,
+    )
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", name) is None:
         raise RecoveryError("CAMPAIGN_PATH_INVALID")
     campaign_path = root / f"{name}.prepare.json"
@@ -454,7 +792,44 @@ def prepare_campaign(
         raise RecoveryError("CAMPAIGN_MANIFEST_EXISTS")
 
     targets, excluded = _validated_report_targets(report)
-    batches = partition_ordinary_units(report)
+    prior_keys = {
+        (
+            item["unit"]["symbol"],
+            item["unit"]["contract"],
+            item["unit"]["frequency"],
+            item["unit"]["through"],
+            item["unit"]["plan_sha256"],
+        )
+        for item in prior_isolations
+    }
+    proposed = [item for item in targets if item["status"] == "PROPOSED"]
+    fresh_keys = [
+        (
+            item["symbol"],
+            item["contract"],
+            item["frequency"],
+            item["through"],
+            item["plan_sha256"],
+        )
+        for item in proposed
+    ]
+    if not prior_keys.issubset(fresh_keys) or len(prior_keys) != len(prior_isolations):
+        raise RecoveryError("PRIOR_ISOLATION_INVALID")
+    executable_units = tuple(
+        {
+            "symbol": item["symbol"],
+            "contract": item["contract"],
+            "through": item["through"],
+            "frequency": "1w",
+            "expected_plan_sha256": item["plan_sha256"],
+        }
+        for item, key in zip(proposed, fresh_keys, strict=True)
+        if key not in prior_keys
+    )
+    batches = tuple(
+        tuple(executable_units[index : index + 20])
+        for index in range(0, len(executable_units), 20)
+    )
     children: list[dict[str, Any]] = []
     artifact_prefix = _campaign_artifact_prefix(name, report_sha256)
     writer_guard = _prepare_writer_guard(root, identity["canonical_root_sha256"])
@@ -479,6 +854,8 @@ def prepare_campaign(
         if not isinstance(digest, str) or _HASH.fullmatch(digest) is None:
             raise RecoveryError("CAMPAIGN_CHILD_INVALID")
         child = _load_native_child(child_path, digest)
+        if child.get("continuation_policy") != policy:
+            raise RecoveryError("CONTINUATION_POLICY_INVALID")
         summaries = _validate_native_child(
             child,
             expected_units=units,
@@ -523,6 +900,9 @@ def prepare_campaign(
             },
             "excluded_status_counts": dict(sorted(excluded.items())),
             "metadata_proposal_count": len(report["metadata_proposals"]),
+            "denominator_unit_count": len(proposed),
+            "execution_unit_count": len(executable_units),
+            "prior_known_isolation_count": len(prior_isolations),
             "unit_identity_sha256": _identity_sha256(
                 [unit for child in children for unit in child["units"]]
             ),
@@ -535,6 +915,7 @@ def prepare_campaign(
             ),
         },
         "children": children,
+        "prior_known_isolations": prior_isolations,
         "totals": {
             "batch_count": len(children),
             "unit_count": sum(child["unit_count"] for child in children),
@@ -544,6 +925,8 @@ def prepare_campaign(
             ),
         },
     }
+    if policy is not None:
+        manifest["continuation_policy"] = policy
     validate_campaign_manifest(manifest, evidence_root=root)
     try:
         native._write_json_exclusive(campaign_path, manifest)
@@ -561,7 +944,10 @@ def validate_campaign_manifest(
 ) -> dict[str, Any]:
     """Verify the complete ordered child set without opening any data source."""
     root = _validated_evidence_root(evidence_root)
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != _CAMPAIGN_SCHEMA:
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != _CAMPAIGN_SCHEMA
+    ):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     if (
         manifest.get("readonly") is not True
@@ -571,6 +957,8 @@ def validate_campaign_manifest(
     ):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     identity = _validated_execution_identity(manifest.get("execution_identity"))
+    policy = native._validated_continuation_policy(manifest.get("continuation_policy"))
+    prior_isolations = manifest.get("prior_known_isolations", [])
     children = manifest.get("children")
     totals = manifest.get("totals")
     audit = manifest.get("audit")
@@ -595,6 +983,8 @@ def validate_campaign_manifest(
         or not isinstance(totals, dict)
         or not isinstance(audit, dict)
         or not isinstance(scope, dict)
+        or not isinstance(prior_isolations, list)
+        or (prior_isolations and policy is None)
         or _HASH.fullmatch(str(audit.get("sha256", ""))) is None
         or audit.get("frequency_scope") != ["1w"]
         or audit.get("matrix") is not False
@@ -606,7 +996,9 @@ def validate_campaign_manifest(
     ):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     expected_ids = [f"batch-{index:03d}" for index in range(1, len(children) + 1)]
-    if [child.get("batch_id") if isinstance(child, dict) else None for child in children] != expected_ids:
+    if [
+        child.get("batch_id") if isinstance(child, dict) else None for child in children
+    ] != expected_ids:
         raise RecoveryError("CAMPAIGN_CHILD_INVALID")
 
     seen: set[tuple[str, str, str]] = set()
@@ -628,6 +1020,8 @@ def validate_campaign_manifest(
         if not isinstance(digest, str) or _HASH.fullmatch(digest) is None:
             raise RecoveryError("CAMPAIGN_CHILD_INVALID")
         native_child = _load_native_child(child_path, digest)
+        if native_child.get("continuation_policy") != policy:
+            raise RecoveryError("CONTINUATION_POLICY_INVALID")
         expected_units = child_index.get("units")
         if not isinstance(expected_units, list):
             raise RecoveryError("CAMPAIGN_CHILD_INVALID")
@@ -647,9 +1041,7 @@ def validate_campaign_manifest(
         derived = {
             "unit_count": len(summaries),
             "target_count": sum(item["target_count"] for item in summaries),
-            "expected_bar_count": sum(
-                item["expected_bar_count"] for item in summaries
-            ),
+            "expected_bar_count": sum(item["expected_bar_count"] for item in summaries),
         }
         if any(child_index.get(key) != value for key, value in derived.items()):
             raise RecoveryError("CAMPAIGN_CHILD_INVALID")
@@ -660,17 +1052,63 @@ def validate_campaign_manifest(
     expected_status = "prepared" if children else "completed"
     if manifest.get("status") != expected_status:
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+    validated_prior: list[dict[str, Any]] = []
+    prior_unit_keys: set[tuple[str, str, str, str, str]] = set()
+    executable_unit_keys = {
+        (
+            unit["symbol"],
+            unit["contract"],
+            unit["frequency"],
+            unit["through"],
+            unit["plan_sha256"],
+        )
+        for child in children
+        for unit in child["units"]
+    }
+    for binding in prior_isolations:
+        if not isinstance(binding, Mapping):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        prior_campaign = binding.get("prior_campaign")
+        if not isinstance(prior_campaign, Mapping):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        derived_prior = _derive_prior_isolations(
+            root,
+            policy=policy,
+            prior_campaign_path=root / str(prior_campaign.get("path")),
+            expected_prior_campaign_sha256=cast(str, prior_campaign.get("sha256")),
+            prior_attempt_path=root / str(binding.get("prior_attempt_path")),
+        )
+        if derived_prior != [binding]:
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        prior_unit = binding.get("unit")
+        if not isinstance(prior_unit, Mapping):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        prior_key_values = tuple(
+            prior_unit.get(key)
+            for key in ("symbol", "contract", "frequency", "through", "plan_sha256")
+        )
+        if (
+            not all(isinstance(value, str) for value in prior_key_values)
+            or prior_key_values in prior_unit_keys
+            or prior_key_values in executable_unit_keys
+        ):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        prior_unit_keys.add(cast(tuple[str, str, str, str, str], prior_key_values))
+        validated_prior.extend(derived_prior)
     included = scope["included_status_counts"]
-    if included != {"PROPOSED": len(seen)}:
+    denominator = len(seen) + len(validated_prior)
+    if included != {"PROPOSED": denominator}:
+        raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+    if policy is not None and (
+        scope.get("denominator_unit_count") != denominator
+        or scope.get("execution_unit_count") != len(seen)
+        or scope.get("prior_known_isolation_count") != len(validated_prior)
+    ):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     flattened = [unit for child in children for unit in child["units"]]
-    if (
-        scope["unit_identity_sha256"] != _identity_sha256(flattened)
-        or scope["target_identity_sha256"]
-        != _identity_sha256(
-            [unit["target_identity_sha256"] for unit in flattened]
-        )
-    ):
+    if scope["unit_identity_sha256"] != _identity_sha256(flattened) or scope[
+        "target_identity_sha256"
+    ] != _identity_sha256([unit["target_identity_sha256"] for unit in flattened]):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     return dict(manifest)
 
@@ -845,9 +1283,7 @@ def _validate_native_report_sections(
     covered_owners: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
     covered_owner_counts: Counter[tuple[str, str]] = Counter()
     repair_through: dict[tuple[str, str, str], str] = {}
-    repair_consumers: dict[
-        tuple[str, str, str], set[tuple[str, str, str]]
-    ] = {}
+    repair_consumers: dict[tuple[str, str, str], set[tuple[str, str, str]]] = {}
     operational_set = set(operational)
     for raw in dependencies:
         if not isinstance(raw, Mapping):
@@ -931,8 +1367,7 @@ def _validate_native_report_sections(
             if (
                 not isinstance(consumer, Mapping)
                 or consumer.get("frequency") != "1w"
-                or consumer.get("section")
-                not in {"chart", "auxiliary", "reference"}
+                or consumer.get("section") not in {"chart", "auxiliary", "reference"}
                 or not isinstance(consumer.get("strategy"), str)
             ):
                 raise RecoveryError("CAMPAIGN_REPORT_INVALID")
@@ -1001,7 +1436,7 @@ def _validate_native_report_sections(
         consumers = repair.get("consumers")
         if (
             not all(isinstance(item, str) for item in repair_key)
-                or repair_key not in repair_through
+            or repair_key not in repair_through
             or repair.get("through") != repair_through[repair_key]
             or not isinstance(consumers, list)
         ):
@@ -1023,10 +1458,7 @@ def _validate_native_report_sections(
     if actual_repair_keys != set(repair_through):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     expected_work = (
-        sum(
-            deferred_section_reason(section) is None
-            for section in _REPORT_SECTIONS
-        )
+        sum(deferred_section_reason(section) is None for section in _REPORT_SECTIONS)
         * len(operational)
         + len(dependencies)
         + len(repairs)
@@ -1262,7 +1694,9 @@ def _validated_target_summaries(
     return summaries
 
 
-def _load_hash_locked_mapping(path: Path, digest: str, error_code: str) -> dict[str, Any]:
+def _load_hash_locked_mapping(
+    path: Path, digest: str, error_code: str
+) -> dict[str, Any]:
     try:
         return native.load_prepared_manifest(path, digest)
     except RecoveryError as exc:
@@ -1337,6 +1771,9 @@ def _validated_batch_invocation(
         **identity,
         "unit_count": child.get("unit_count"),
     }
+    policy = native._validated_continuation_policy(frozen.get("continuation_policy"))
+    if policy is not None:
+        expected_receipt["continuation_policy_sha256"] = policy["policy_sha256"]
     native_result = result["result"]
     frozen_units = frozen.get("units")
     if (
@@ -1348,6 +1785,7 @@ def _validated_batch_invocation(
             native_result,
             frozen_units,
             native_attempt=native_attempt,
+            continuation_policy=policy,
         )
     ):
         return None
@@ -1359,35 +1797,74 @@ def _validated_native_terminal(
     frozen_units: list[dict[str, Any]],
     *,
     native_attempt: Path,
+    continuation_policy: Mapping[str, object] | None = None,
 ) -> bool:
     completed = result.get("completed")
+    isolated = result.get("isolated", [])
     failed = result.get("failed")
     unattempted = result.get("unattempted")
     status_value = result.get("status")
     if (
         not isinstance(completed, list)
+        or not isinstance(isolated, list)
         or not isinstance(unattempted, list)
-        or len(completed) > len(frozen_units)
+        or len(completed) + len(isolated) > len(frozen_units)
+        or (continuation_policy is None and isolated)
     ):
         return False
-    for index, (completed_unit, frozen_unit) in enumerate(
-        zip(completed, frozen_units, strict=False),
-        start=1,
-    ):
+    frozen_indexes = {_unit_key(unit): index for index, unit in enumerate(frozen_units)}
+    if len(frozen_indexes) != len(frozen_units):
+        return False
+    settled_indexes: set[int] = set()
+    for completed_unit in completed:
+        index = frozen_indexes.get(_unit_key(completed_unit))
+        if index is None or index in settled_indexes:
+            return False
+        frozen_unit = frozen_units[index]
         unit_dir = native_attempt / (
-            f"unit-{index:03d}-{frozen_unit['symbol']}-{frozen_unit['contract']}"
+            f"unit-{index + 1:03d}-{frozen_unit['symbol']}-{frozen_unit['contract']}"
         )
         if not _completed_unit_matches(completed_unit, frozen_unit, unit_dir):
             return False
+        settled_indexes.add(index)
+    for isolated_unit in isolated:
+        index = frozen_indexes.get(_unit_key(isolated_unit))
+        if index is None or index in settled_indexes:
+            return False
+        frozen_unit = frozen_units[index]
+        unit_dir = native_attempt / (
+            f"unit-{index + 1:03d}-{frozen_unit['symbol']}-{frozen_unit['contract']}"
+        )
+        if not _isolated_unit_matches(
+            isolated_unit,
+            frozen_unit,
+            unit_dir,
+            continuation_policy,
+        ):
+            return False
+        settled_indexes.add(index)
     if status_value == "passed":
         return (
-            len(completed) == len(frozen_units)
+            settled_indexes == set(range(len(frozen_units)))
+            and not isolated
             and failed is None
             and unattempted == []
         )
-    if not isinstance(failed, Mapping) or len(completed) >= len(frozen_units):
+    if failed is None:
+        return (
+            status_value == "partial"
+            and bool(isolated)
+            and settled_indexes == set(range(len(frozen_units)))
+            and unattempted == []
+        )
+    failure_index = len(settled_indexes)
+    if (
+        not isinstance(failed, Mapping)
+        or failure_index >= len(frozen_units)
+        or settled_indexes != set(range(failure_index))
+    ):
         return False
-    failed_unit = frozen_units[len(completed)]
+    failed_unit = frozen_units[failure_index]
     if not _unit_payload_matches(failed, failed_unit):
         return False
     failure_status = failed.get("status")
@@ -1396,24 +1873,74 @@ def _validated_native_terminal(
         return False
     if "result" in failed and not isinstance(nested_result, Mapping):
         return False
-    applied = nested_result.get("applied", 0) if isinstance(nested_result, Mapping) else 0
-    if (
-        not isinstance(applied, int)
-        or isinstance(applied, bool)
-        or applied < 0
-    ):
+    applied = (
+        nested_result.get("applied", 0) if isinstance(nested_result, Mapping) else 0
+    )
+    if not isinstance(applied, int) or isinstance(applied, bool) or applied < 0:
         return False
     derived = native._batch_result(
         [{} for _item in completed],
         dict(failed),
         [],
+        isolated=[{} for _item in isolated],
     )
     if status_value != derived["status"]:
         return False
-    expected_unattempted = frozen_units[len(completed) + 1 :]
+    expected_unattempted = frozen_units[failure_index + 1 :]
     return len(unattempted) == len(expected_unattempted) and all(
         _unit_payload_matches(actual, expected)
         for actual, expected in zip(unattempted, expected_unattempted, strict=True)
+    )
+
+
+def _unit_key(value: object) -> tuple[object, object, object]:
+    if not isinstance(value, Mapping):
+        return (None, None, None)
+    result = (value.get("symbol"), value.get("contract"), value.get("frequency"))
+    if not all(isinstance(item, str) for item in result):
+        return (None, None, None)
+    return result
+
+
+def _isolated_unit_matches(
+    value: object,
+    frozen: Mapping[str, Any],
+    unit_dir: Path,
+    policy: Mapping[str, object] | None,
+) -> bool:
+    if (
+        policy is None
+        or not _unit_payload_matches(value, frozen)
+        or not isinstance(value, Mapping)
+        or value.get("status") != "isolated"
+        or not isinstance(value.get("result"), Mapping)
+        or not isinstance(value.get("source_evidence"), Mapping)
+        or not isinstance(value.get("readback"), Mapping)
+    ):
+        return False
+    try:
+        source_evidence = native._source_isolation_evidence(
+            unit_dir,
+            frozen,
+            value["result"],
+            policy,
+        )
+        persisted = native._read_json_file(unit_dir / "unit-result.json")
+    except RecoveryError:
+        return False
+    targets = frozen.get("targets")
+    readback = value["readback"]
+    expected_readback = {
+        "status": "passed",
+        "plan_sha256": frozen.get("plan_sha256"),
+        "remaining_target_count": frozen.get("target_count"),
+        "target_identity_sha256": _identity_sha256(targets),
+    }
+    return (
+        source_evidence == value["source_evidence"]
+        and value.get("classification") == source_evidence["classification"]
+        and readback == expected_readback
+        and persisted == value
     )
 
 
