@@ -76,23 +76,29 @@ test('real candidate keeps JM SuBing data gap explicit and Newow callouts inside
   await page.goto('/market/chart?symbol=au&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1w')
   const stage = page.getByTestId('newow-product-chart-stage')
   await expect(stage).toBeVisible()
-  await expect.poll(async () => stage.getAttribute('data-action-ids'), { timeout: 60_000 }).not.toBeNull()
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready', { timeout: 60_000 })
+  await expect.poll(async () => stage.getAttribute('data-action-ids'), { timeout: 60_000 }).toMatch(/\S/)
   const callouts = stage.locator('.newow-product-chart-stage__action-label')
   const count = await callouts.count()
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
     await stage.scrollIntoViewIfNeeded()
     const chartBox = await stage.locator('.newow-product-chart-stage__chart').boundingBox()
+    expect(chartBox).not.toBeNull()
     for (const box of await callouts.evaluateAll((nodes) => nodes.map((node) => {
       const rect = node.getBoundingClientRect()
       return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
     }))) {
-      expect(box.left).toBeGreaterThanOrEqual(chartBox.left - 1)
-      expect(box.right).toBeLessThanOrEqual(chartBox.right + 1)
-      expect(box.top).toBeGreaterThanOrEqual(chartBox.top - 1)
-      expect(box.bottom).toBeLessThanOrEqual(chartBox.bottom + 1)
+      expect(box.left).toBeGreaterThanOrEqual(chartBox.x - 1)
+      expect(box.right).toBeLessThanOrEqual(chartBox.x + chartBox.width + 1)
+      expect(box.top).toBeGreaterThanOrEqual(chartBox.y - 1)
+      expect(box.bottom).toBeLessThanOrEqual(chartBox.y + chartBox.height + 1)
     }
   }
+  await stage.getByRole('button', { name: '图表全屏' }).click()
+  await expect(stage.getByRole('button', { name: '退出图表全屏' })).toBeVisible()
+  await stage.getByRole('button', { name: '退出图表全屏' }).click()
+  await expect(stage.getByRole('button', { name: '图表全屏' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('real-au-newow-390.png'), fullPage: true })
   console.log(JSON.stringify({ evidence: 'real-jm-gate-and-callouts', jmStatus: response.status(), diagnostic: body.detail.diagnostic, calloutCount: count }))
 })
