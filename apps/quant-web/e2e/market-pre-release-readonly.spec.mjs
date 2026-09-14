@@ -25,13 +25,29 @@ test('real candidate home keeps 60 products across cold, hard reload and SPA tab
   await expect(page.getByRole('tab', { name: '消息' })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('tab', { name: '市场' }).click()
   await expect(page.locator('.table-wrap tbody tr')).toHaveCount(60)
+  const search = page.getByRole('combobox', { name: '搜索60品种' })
+  await search.fill('JM')
+  await expect(page.getByRole('option', { name: /焦煤.*JM/ })).toBeVisible()
+  await search.press('Enter')
+  await expect(page).toHaveURL(/\/market\/chart\?.*symbol=jm/)
+  await expect(page.locator('[data-detail-workspace]')).toBeVisible()
+  await expect(page.getByRole('combobox', { name: '搜索品种' })).toBeFocused()
+  await expect(page.getByRole('listbox', { name: '搜索品种' })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('real-home-60.png'), fullPage: true })
-  console.log(JSON.stringify({ evidence: 'real-home', coldMs, reloadMs, rows: 60, errors }))
+  console.log(JSON.stringify({ evidence: 'real-home', coldMs, reloadMs, rows: 60, selector: 'jm-enter-stable', errors }))
   expect(errors).toEqual([])
 })
 
 test('real candidate covers AU/JM Newow weekly, AU seven-frequency Free and weekly complete-window action', async ({ page }, testInfo) => {
   const matrix = []
+  for (const product of ['AU', 'AG', 'JM']) {
+    const params = `strategy=trend&frequency=1w&section=chart&as_of=${encodeURIComponent(cutoff)}`
+    const upper = await page.request.get(`/api/v1/market/newow/strategy-detail?product=${product}&${params}`)
+    const lower = await page.request.get(`/api/v1/market/newow/strategy-detail?product=${product.toLowerCase()}&${params}`)
+    expect(upper.status()).toBe(lower.status())
+    expect(await upper.json()).toEqual(await lower.json())
+    matrix.push({ product, caseParity: true, status: upper.status() })
+  }
   for (const product of ['au', 'jm']) {
     for (const strategy of strategies) {
       await page.goto(`/market/chart?symbol=${product}&view=newow&strategy=${strategy}&series_kind=actual_dominant&frequency=1w`)

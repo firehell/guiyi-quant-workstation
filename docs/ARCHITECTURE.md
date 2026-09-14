@@ -76,7 +76,7 @@ flowchart LR
 
 - Canonical publication 先完成校验、不可变 hash 文件和 durability，再在既有 Catalog 事务 register/flush、真实 `MarketDataService` strict-read 后 commit 单月 active pointer；不引入全局 snapshot 或新表。reader 对精确 Catalog URI 的同一份 bytes 校验 hash 并解析，保留旧文件供已有 reader 使用。
 - `MarketDataService` 是唯一 Historical Bar reader；`actual_dominant` 只通过 `MainContractMap rank=1` 解析，identity、coverage 或物理可读性异常 fail-closed。
-- 默认关闭的 `app.preview` 只组合 Market/Newow routers 与共享 read-only transaction，固定 code SHA / cutoff；不导入正常 app 或创建 Live/Alert/EOD/provider。候选 Web 精确白名单代理到 8010，只有既有 health/current-events 两项 GET 到受监督的 8000，并显示独立来源与时间口径；启动入口与 fixture 验证见 `TESTING.md`。
+- 默认关闭的 `app.preview` 只组合 Market/Newow routers、SuBing 历史 reference GET 与共享 read-only transaction，固定 code SHA / cutoff；不导入正常 app 或创建 Live/Alert/EOD/provider。候选 Web 精确白名单代理到 8010，只有既有 health/current-events 两项 GET 到受监督的 8000，并显示独立来源与时间口径；启动入口与 fixture 验证见 `TESTING.md`。
 - Web 只消费 typed Market/Alert API，不计算策略、建仓或清仓。
 - Market WebSocket 先订阅再读快照；快照、state 更新和单连接定时恢复读取在同一有界后台入口执行，每次在 worker 内新建、使用并关闭 Session 与同步 Redis。每进程最多四项读取，满额立即失败，无无界队列；调用取消后仍待实际 worker 结束才释放额度。内部 Bar Pub/Sub 携带物理合约，详情连接只转发与当前交易日/owner 一致的 Bar，并在 owner 变化后先 reset；定时恢复保留 `realtime/post_close` 来源，盘后延迟完成 Bar 不冒充 tick 实时。Pub/Sub 与发送继续在事件循环执行。
 - `chart.vue` 只挂载 `MarketDetailPage`。无 `view` 旧链接按 overlay 明确迁移到 HTDY 或 Free，保留合法品种、序列、合约、周期与定位；参数缺省使用 actual_dominant/15m，非法组合拒绝并提供恢复入口。首页普通进入仍为 Newow 趋势日线，Event 经统一身份构造器精确定位。固定 D1 `view=trend` 兼容产品继续存在，旧页面及返回入口不再保留；工程与用户视觉验收状态见 `STATUS.md`。
