@@ -38,7 +38,8 @@ SuBing 四类事实拆分、Decimal 精确显示、北京时间/术语统一、�
 状态事实更新及密集标记避让。候选预览保持只读，不创建 Live/Alert/EOD/provider，也未修改正式 Scope、Rule、
 通知、Release 或 Runtime。
 
-真实只读候选读取 60/60 首页；浏览器冷加载 8526ms、显式重载 7863ms，低于 10 秒目标。AU 三策略 W1、
+真实只读候选读取 60/60 首页；排除 Vite 首编译后，新浏览器加载 9041ms、显式重载 9378ms，低于 10 秒目标；
+首编译样本 10194ms/10364ms 另行保留，不冒充 production bundle 性能。AU 三策略 W1、
 七周期 Free 图表、最近完整周区间动作与 32 个真实 callout 的桌面、390px 移动和全屏边界均通过。JM 三策略
 W1 仍为 unavailable；SuBing JM 15m 精确诊断为 `physical_contract_replay /
 DATASET_OR_PARTITION_MISSING`，物理合约 `JM2609` 的 2025-09-15 至 2026-08-18 窗口应有 5081 个端点，
