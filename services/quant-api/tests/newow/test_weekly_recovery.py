@@ -980,6 +980,26 @@ def test_private_settings_identity_never_contains_credentials(tmp_path) -> None:
     assert identity.keys() == {"config_sha256", "canonical_root_sha256"}
 
 
+def test_private_settings_uses_runtime_dependency_subset(tmp_path) -> None:
+    config = tmp_path / "project.env"
+    config.write_text(
+        "POSTGRES_USER=user\n"
+        "POSTGRES_PASSWORD=secret\n"
+        "POSTGRES_DB=db\n"
+        "DATABASE_URL=postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5432/${POSTGRES_DB}\n"
+        "GUIYI_CANONICAL_DATA_ROOT=/private/canonical\n"
+        "RQDATA_LICENSE_KEY=provider-secret\n"
+        'CORS_ORIGINS=["http://127.0.0.1:5173"]\n',
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+
+    settings, _identity = load_private_execution_settings(config)
+
+    assert settings["DATABASE_URL"].endswith("/db")
+    assert "CORS_ORIGINS" not in settings
+
+
 def test_private_settings_rejects_group_writable_or_symlink(tmp_path) -> None:
     config = tmp_path / "project.env"
     config.write_text(

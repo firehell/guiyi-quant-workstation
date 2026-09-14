@@ -106,7 +106,7 @@ D1/W1。非正 bars 与缺口一起形成未来来源核验集合，但来源核
 
 ## Gate
 
-- 工程：396 项定向测试、Ruff、mypy、OpenSpec strict 9/9、secret scan 0 findings 与 diff check 均通过。
+- 工程：504 项扩展定向测试、Ruff、mypy、OpenSpec strict 9/9、secret scan 0 findings 与 diff check 均通过。
   最终独立 Review：Standards 为 P1/P2/P3/smell 全 0；Spec 为 P1/P2/P3 全 0、1 个非阻断的 readback
   seam smell。结论均为允许集成 develop。
 - EC2607：prepared hash 形成后，需 owner 对该 exact artifact 给出一次下载+Canonical 写入意图。

@@ -44,6 +44,7 @@ _EXECUTION_CODE_PATHS = (
     "services/quant-api/app/market_data/historical_data_manager.py",
     "services/quant-api/app/market_data/storage.py",
     "services/quant-api/app/market_data/catalog.py",
+    "services/quant-api/app/market_data/closeout_binding.py",
     "services/quant-api/app/market_data/coverage_source.py",
     "services/quant-api/app/market_data/market_home_projection.py",
 )
@@ -106,10 +107,10 @@ def load_private_execution_settings(
                 raise OSError
         finally:
             os.close(fd)
-        from app.market_data.closeout_binding import literal_settings
+        from app.market_data.closeout_binding import runtime_dependency_settings
         from app.market_data.rqdata_adapter import runtime_provider_settings
 
-        settings = literal_settings(content)
+        settings = runtime_dependency_settings(content)
         runtime_provider_settings(settings, required=True)
         canonical = Path(settings["GUIYI_CANONICAL_DATA_ROOT"])
         if (
