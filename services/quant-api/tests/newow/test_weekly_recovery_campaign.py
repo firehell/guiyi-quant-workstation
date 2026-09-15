@@ -42,6 +42,10 @@ from scripts.newow_weekly_recovery import (
     write_prepared_manifest,
 )
 from scripts import newow_weekly_recovery_campaign as campaign
+from scripts.newow_recovery_partial_exception import (
+    CLASSIFICATION as PARTIAL_EXCEPTION_CLASSIFICATION,
+    ERROR_CODE as PARTIAL_EXCEPTION_INVALID,
+)
 from scripts.newow_weekly_recovery_campaign import (
     execute_campaign,
     main,
@@ -344,6 +348,7 @@ def _native_apply_result(
     status: str = "passed",
     return_code: int | None = None,
     completed: list[dict[str, Any]] | None = None,
+    failed_fields: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     child = json.loads(child_path.read_text(encoding="utf-8"))
     native_attempt = batch_attempt / "native"
@@ -428,6 +433,8 @@ def _native_apply_result(
             "error_code": "PROVIDER_UNAVAILABLE",
             "attempt": read_attempt_outcome(failed_unit_dir),
         }
+        if failed_fields is not None:
+            failed_value.update(dict(failed_fields))
         _write_json_exclusive(failed_unit_dir / "unit-result.json", failed_value)
     native_result = {
         "status": status,
@@ -1161,6 +1168,7 @@ def test_execute_stops_after_second_batch_failure_without_retry(tmp_path: Path) 
         "denominator_unit_count": 41,
         "success_unit_count": 20,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 1,
         "unattempted_unit_count": 20,
         "unknown_unit_count": 0,
@@ -1647,6 +1655,7 @@ def test_campaign_preserves_prefix_but_counts_unproven_failed_unit_unknown(
         "denominator_unit_count": 3,
         "success_unit_count": 1,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 1,
@@ -1673,6 +1682,7 @@ def test_campaign_counts_proven_post_commit_readback_failure_as_stopping(
         "denominator_unit_count": 3,
         "success_unit_count": 1,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 1,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 0,
@@ -1744,6 +1754,7 @@ def test_campaign_treats_same_count_failed_journal_tampering_as_unknown(
         "denominator_unit_count": 3,
         "success_unit_count": 1,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 1,
@@ -1778,6 +1789,7 @@ def test_campaign_accounts_for_known_stopping_failure_as_distinct_partition(
         "denominator_unit_count": 3,
         "success_unit_count": 0,
         "isolated_unit_count": 1,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 1,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 0,
@@ -1863,6 +1875,7 @@ def test_campaign_continues_across_batch_after_proven_source_isolation(
         "denominator_unit_count": 21,
         "success_unit_count": 20,
         "isolated_unit_count": 1,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 0,
         "unknown_unit_count": 0,
@@ -1910,6 +1923,7 @@ def test_campaign_accounts_for_multiple_and_all_isolated_units(
         "denominator_unit_count": 3,
         "success_unit_count": success_count,
         "isolated_unit_count": len(isolated),
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 0,
         "unknown_unit_count": 0,
@@ -1946,6 +1960,7 @@ def test_campaign_rejects_symlinked_current_isolation_evidence(tmp_path: Path) -
             "denominator_unit_count": 1,
             "success_unit_count": 0,
             "isolated_unit_count": 0,
+            "partial_source_exception_unit_count": 0,
             "stopping_failure_unit_count": 0,
             "unattempted_unit_count": 0,
             "unknown_unit_count": 1,
@@ -2134,6 +2149,7 @@ def test_source_only_isolation_excludes_only_replayed_fresh_identity(
         "denominator_unit_count": 2,
         "success_unit_count": 1,
         "isolated_unit_count": 1,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 0,
         "unknown_unit_count": 0,
@@ -2308,6 +2324,7 @@ def test_prior_known_source_isolation_excludes_only_proven_fresh_identity(
         "denominator_unit_count": 2,
         "success_unit_count": 1,
         "isolated_unit_count": 1,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 0,
         "unknown_unit_count": 0,
@@ -2377,6 +2394,7 @@ def test_prepare_with_only_prior_isolated_units_is_anomaly_bearing_not_completed
         "denominator_unit_count": 1,
         "success_unit_count": 0,
         "isolated_unit_count": 1,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 0,
         "unknown_unit_count": 0,
@@ -2640,6 +2658,7 @@ def test_execute_exception_or_unreadable_terminal_is_unknown(
         "denominator_unit_count": 21,
         "success_unit_count": 0,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 20,
@@ -2769,6 +2788,7 @@ def test_execute_stops_if_bound_guard_path_is_replaced_between_batches(
         "denominator_unit_count": 21,
         "success_unit_count": 20,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 0,
@@ -2841,6 +2861,7 @@ def test_execute_stops_on_child_hash_drift_between_batches(tmp_path: Path) -> No
         "denominator_unit_count": 21,
         "success_unit_count": 20,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 0,
@@ -3364,6 +3385,55 @@ def test_daily_prepare_uses_daily_schema_and_rejects_weekly_targets(
     assert weekly["policy_sha256"] != daily["policy_sha256"]
 
 
+def test_daily_campaign_stops_on_partial_commit_source_exception(
+    tmp_path: Path,
+) -> None:
+    report = _daily_report([_daily_unit(0), _daily_unit(1)])
+    manifest = prepare_campaign(
+        report,
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: _native_child(
+            root,
+            batch_id,
+            units,
+            with_source_requests=True,
+        ),
+        name="daily-partial",
+    )
+    calls: list[str] = []
+
+    def invoke(child: Path, digest: str, attempt: Path) -> Mapping[str, Any]:
+        prepared = json.loads(child.read_text(encoding="utf-8"))
+        calls.extend(unit["contract"] for unit in prepared["units"])
+        return _native_apply_result(
+            child,
+            digest,
+            attempt,
+            status="partial",
+            completed=[],
+        )
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "attempt-001",
+        invoke_batch=invoke,
+    )
+
+    assert calls == ["AG1000", "AG1001"]
+    assert result["status"] == "partial"
+    assert result["retries"] == 0
+    assert result["isolated_units"] == []
+    assert result["summary"]["isolated_unit_count"] == 0
+    assert result["summary"]["stopping_failure_unit_count"] == 1
+    assert result["summary"]["unattempted_unit_count"] == 1
+    assert result["summary"]["unknown_unit_count"] == 0
+    assert result["failed_batch"]["native_result"]["result"]["failed"]["contract"] == (
+        "AG1000"
+    )
+
+
 def test_daily_report_partition_and_campaign_bind_1d_identity(
     tmp_path: Path,
 ) -> None:
@@ -3512,3 +3582,281 @@ def test_weekly_plan_hash_cannot_satisfy_daily_expected_plan(
             execution_code_sha256=IDENTITY["execution_code_sha256"],
             config_sha256=IDENTITY["config_sha256"],
         )
+
+def _daily_partial_targets() -> tuple[dict[str, Any], dict[str, Any]]:
+    committed = {
+        "dataset": ["contract", "ag", "AG1000", "1d"],
+        "year": 2023,
+        "month": 11,
+        "expected_start": "2023-11-01T07:00:00+00:00",
+        "expected_end": "2023-11-30T07:00:00+00:00",
+        "expected_bar_count": 2,
+        "missing_bar_count": 2,
+        "missing_start": "2023-11-01T07:00:00+00:00",
+        "missing_end": "2023-11-30T07:00:00+00:00",
+    }
+    failed = {
+        "dataset": ["contract", "ag", "AG1000", "1d"],
+        "year": 2023,
+        "month": 12,
+        "expected_start": "2023-12-01T07:00:00+00:00",
+        "expected_end": "2023-12-29T07:00:00+00:00",
+        "expected_bar_count": 2,
+        "missing_bar_count": 2,
+        "missing_start": "2023-12-01T07:00:00+00:00",
+        "missing_end": "2023-12-29T07:00:00+00:00",
+    }
+    return committed, failed
+
+
+def _write_daily_partial_attempt(root: Path) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+    committed, failed = _daily_partial_targets()
+    attempt = root / "apply-001"
+    native_dir = attempt / "batch-001" / "native"
+    unit_dir = native_dir / "unit-001-ag-AG1000"
+    unit_dir.mkdir(parents=True)
+    nov = ExchangeDailySourceRequest(
+        contract="AG1000",
+        start=date(2023, 11, 1),
+        end=date(2023, 11, 30),
+        expected_dates=(date(2023, 11, 1), date(2023, 11, 30)),
+    )
+    dec = ExchangeDailySourceRequest(
+        contract="AG1000",
+        start=date(2023, 12, 1),
+        end=date(2023, 12, 29),
+        expected_dates=(date(2023, 12, 1), date(2023, 12, 29)),
+    )
+    journal = AttemptJournal(unit_dir, (nov, dec))
+    journal.before_request(nov)
+    journal.after_response(
+        nov,
+        tuple(
+            {
+                "date": day,
+                "open": Decimal("100.10"),
+                "high": Decimal("101.20"),
+                "low": Decimal("99.30"),
+                "close": Decimal("100.40"),
+                "volume": Decimal("10"),
+                "total_turnover": Decimal("1004.00"),
+                "open_interest": Decimal("20"),
+                "settlement": Decimal("100.50"),
+                "prev_settlement": Decimal("100.00"),
+            }
+            for day in nov.expected_dates
+        ),
+    )
+    journal.before_request(dec)
+    journal.after_response(
+        dec,
+        tuple(
+            {
+                "date": day,
+                "open": Decimal("0"),
+                "high": Decimal("0"),
+                "low": Decimal("0"),
+                "close": Decimal("100.40"),
+                "volume": Decimal("10"),
+                "total_turnover": Decimal("1004.00"),
+                "open_interest": Decimal("20"),
+                "settlement": Decimal("100.50"),
+                "prev_settlement": Decimal("100.00"),
+            }
+            for day in dec.expected_dates
+        ),
+    )
+    journal.mark_failed("RECOVERY_RESULT_NOT_PASSED")
+    failed_unit = {
+        "symbol": "ag",
+        "contract": "AG1000",
+        "through": "2026-09-11",
+        "frequency": "1d",
+        "plan_sha256": "1" * 64,
+        "target_count": 2,
+        "expected_bar_count": 4,
+        "targets": [committed, failed],
+        "source_requests": [
+            {
+                "method": "futures.get_exchange_daily",
+                "contract": "AG1000",
+                "start": nov.start.isoformat(),
+                "end": nov.end.isoformat(),
+                "expected_dates": [day.isoformat() for day in nov.expected_dates],
+            },
+            {
+                "method": "futures.get_exchange_daily",
+                "contract": "AG1000",
+                "start": dec.start.isoformat(),
+                "end": dec.end.isoformat(),
+                "expected_dates": [day.isoformat() for day in dec.expected_dates],
+            },
+        ],
+        "status": "partial",
+        "result": {
+            "status": "partial",
+            "applied": 1,
+            "blocked": 0,
+            "failed": 1,
+            "provider_requests": 2,
+            "failures": [
+                {
+                    "dataset": ["contract", "ag", "AG1000", "1d"],
+                    "year": 2023,
+                    "month": 12,
+                    "reason_code": "RQDATA_ZERO_OHL_INVALID",
+                }
+            ],
+        },
+        "attempt": {
+            "state": "failed",
+            "outcome_unknown": False,
+            "retry_allowed": False,
+            "requests_started": 2,
+            "responses_saved": 2,
+        },
+        "retries": 0,
+    }
+    _write_json_exclusive(unit_dir / "unit-result.json", failed_unit)
+    _write_json_exclusive(
+        attempt / "campaign-started.json",
+        {
+            "schema_version": "newow_weekly_recovery_campaign_started_v1",
+            "retries": 0,
+            "execution_identity": IDENTITY,
+            "campaign_manifest_sha256": "3" * 64,
+        },
+    )
+    _write_json_exclusive(
+        attempt / "campaign-result.json",
+        {
+            "status": "partial",
+            "retries": 0,
+            "unknown_batch": None,
+            "failed_batch": {
+                "batch_id": "batch-001",
+                "native_result": {
+                    "status": "partial",
+                    "result": {
+                        "completed": [],
+                        "failed": failed_unit,
+                        "unattempted": [],
+                    },
+                },
+            },
+        },
+    )
+    return attempt, committed, failed
+
+
+def _partial_readbacks(committed: dict[str, Any]) -> dict[str, Any]:
+    item = {
+        "dataset": list(committed["dataset"]),
+        "year": committed["year"],
+        "month": committed["month"],
+        "row_count": committed["expected_bar_count"],
+        "bar_count": committed["expected_bar_count"],
+        "file_sha256": "a" * 64,
+    }
+    return {
+        "catalog_readback": {"status": "passed", "partitions": [item]},
+        "parquet_readback": {"status": "passed", "files": [item]},
+        "mds_readback": {"status": "passed", "windows": [item]},
+    }
+
+
+def test_prepare_excludes_verified_partial_source_exception_from_executable(
+    tmp_path: Path,
+) -> None:
+    attempt, committed, failed = _write_daily_partial_attempt(tmp_path)
+    fresh = _daily_unit(0)
+    fresh["plan_sha256"] = "2" * 64
+    fresh["target_windows"] = [failed]
+    sibling = _daily_unit(1)
+    prepared_contracts: list[str] = []
+
+    manifest = prepare_campaign(
+        _daily_report([fresh, sibling]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: prepared_contracts.extend(
+            item["contract"] for item in units
+        )
+        or _native_child(root, batch_id, units, with_source_requests=True),
+        name="daily-partial-ex",
+        partial_source_exception_attempt_path=attempt,
+        observe_partial_committed=lambda _unit, _committed: _partial_readbacks(
+            committed
+        ),
+    )
+
+    assert prepared_contracts == ["AG1001"]
+    assert manifest["scope"]["denominator_unit_count"] == 2
+    assert manifest["scope"]["execution_unit_count"] == 1
+    assert manifest["scope"]["prior_partial_source_exception_count"] == 1
+    binding = manifest["prior_partial_source_exceptions"][0]
+    assert binding["contract"] == "AG1000"
+    assert binding["classification"] == PARTIAL_EXCEPTION_CLASSIFICATION
+    assert binding["failed_plan_sha256"] == "1" * 64
+    assert binding["fresh_replan_sha256"] == "2" * 64
+
+    calls: list[str] = []
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "fresh-attempt",
+        invoke_batch=_native_isolation_invoker(set(), calls),
+    )
+    assert calls == ["AG1001"]
+    assert result["summary"] == {
+        "denominator_unit_count": 2,
+        "success_unit_count": 1,
+        "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 1,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 0,
+        "unknown_unit_count": 0,
+    }
+    assert result["partial_source_exception_units"][0]["status"] == (
+        "partial_source_exception"
+    )
+    assert result["isolated_units"] == []
+
+
+def test_apply_preflight_stops_before_invoke_when_partial_readback_drifts(
+    tmp_path: Path,
+) -> None:
+    attempt, committed, failed = _write_daily_partial_attempt(tmp_path)
+    fresh = _daily_unit(0)
+    fresh["plan_sha256"] = "2" * 64
+    fresh["target_windows"] = [failed]
+    manifest = prepare_campaign(
+        _daily_report([fresh]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: pytest.fail(
+            "partial exception must not prepare an executable child"
+        ),
+        name="daily-partial-preflight",
+        partial_source_exception_attempt_path=attempt,
+        observe_partial_committed=lambda _unit, _committed: _partial_readbacks(
+            committed
+        ),
+    )
+
+    def drifting_observe(_unit, _committed):
+        value = _partial_readbacks(committed)
+        value["catalog_readback"]["partitions"] = []
+        return value
+
+    with pytest.raises(RecoveryError, match=f"^{PARTIAL_EXCEPTION_INVALID}$"):
+        execute_campaign(
+            manifest,
+            attempt_root=tmp_path / "fresh-attempt",
+            invoke_batch=lambda *_args: pytest.fail(
+                "partial exception drift reached native execution"
+            ),
+            observe_partial_committed=drifting_observe,
+        )
+    assert not (tmp_path / "fresh-attempt").exists()

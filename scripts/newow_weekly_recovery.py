@@ -42,6 +42,7 @@ _EXECUTION_CODE_PATHS = (
     "scripts/newow_weekly_recovery.py",
     "scripts/newow_weekly_recovery_campaign.py",
     "scripts/newow_weekly_source_verify.py",
+    "scripts/newow_recovery_partial_exception.py",
     "services/quant-api/app/market_data/composition.py",
     "services/quant-api/app/market_data/rqdata_adapter.py",
     "services/quant-api/app/market_data/historical_data_manager.py",
@@ -1059,12 +1060,16 @@ def execute_prepared_batch(
             if result.status not in {"passed", "noop"}:
                 observer.mark_failed("RECOVERY_RESULT_NOT_PASSED")
                 safe_unit_dir = validated_unit_dir()
-                failure = {
-                    **unit,
-                    "status": result.status,
-                    "result": result_payload,
-                    "attempt": read_attempt_outcome(safe_unit_dir),
-                }
+                failure = _annotate_target_split(
+                    {
+                        **unit,
+                        "status": result.status,
+                        "result": result_payload,
+                        "attempt": read_attempt_outcome(safe_unit_dir),
+                    },
+                    unit,
+                    result_payload,
+                )
                 if policy is not None:
                     isolation_failure_reason = "SOURCE_ISOLATION_EVIDENCE_FAILED"
                     try:
@@ -1126,13 +1131,17 @@ def execute_prepared_batch(
                     code = "POST_COMMIT_READBACK_FAILED"
                 safe_unit_dir = validated_unit_dir()
                 observer.mark_failed(code)
-                failure = {
-                    **unit,
-                    "status": "partial" if result.applied else "failed",
-                    "error_code": code,
-                    "result": result_payload,
-                    "attempt": read_attempt_outcome(safe_unit_dir),
-                }
+                failure = _annotate_target_split(
+                    {
+                        **unit,
+                        "status": "partial" if result.applied else "failed",
+                        "error_code": code,
+                        "result": result_payload,
+                        "attempt": read_attempt_outcome(safe_unit_dir),
+                    },
+                    unit,
+                    result_payload,
+                )
                 _write_json_exclusive(safe_unit_dir / "unit-result.json", failure)
                 return _finish_batch(
                     attempt_dir,
@@ -1345,6 +1354,62 @@ def _validated_unit(value: Mapping[str, Any], *, unit_frequency: str) -> dict[st
     except ValueError as exc:
         raise RecoveryError("PREPARED_MANIFEST_INVALID") from exc
     return unit
+
+
+def _target_identity(value: object) -> tuple[object, object, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    dataset = value.get("dataset")
+    if not isinstance(dataset, list):
+        return None
+    return (tuple(dataset), value.get("year"), value.get("month"))
+
+
+def _committed_and_failed_targets(
+    unit: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    targets = unit.get("targets")
+    if not isinstance(targets, list):
+        return [], []
+    failures = result.get("failures")
+    failed_ids: set[tuple[object, object, object]] = set()
+    if isinstance(failures, list):
+        for item in failures:
+            identity = _target_identity(item)
+            if identity is not None:
+                failed_ids.add(identity)
+    failed_targets = [
+        dict(target)
+        for target in targets
+        if isinstance(target, Mapping) and _target_identity(target) in failed_ids
+    ]
+    applied = result.get("applied")
+    committed: list[dict[str, Any]] = []
+    if isinstance(applied, int) and not isinstance(applied, bool) and applied > 0:
+        for target in targets:
+            if not isinstance(target, Mapping):
+                continue
+            if _target_identity(target) in failed_ids:
+                break
+            committed.append(dict(target))
+            if len(committed) == applied:
+                break
+    return committed, failed_targets
+
+
+def _annotate_target_split(
+    failure: dict[str, Any],
+    unit: Mapping[str, Any],
+    result: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = result if isinstance(result, Mapping) else failure.get("result")
+    if not isinstance(payload, Mapping):
+        return failure
+    committed, failed_targets = _committed_and_failed_targets(unit, payload)
+    failure["committed_targets"] = committed
+    failure["failed_targets"] = failed_targets
+    return failure
 
 
 def _error_code(exc: Exception) -> str:
