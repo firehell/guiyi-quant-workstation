@@ -453,6 +453,9 @@ function renderDerivedSeries(): void {
   })
   const theme = resolveChartTheme()
 
+  emaLines.ema_10?.applyOptions({ color: theme.ema10 })
+  emaLines.ema_21?.applyOptions({ color: theme.ema21 })
+  emaLines.ema_60?.applyOptions({ color: theme.ema60 })
   EMA_INDICATORS.forEach((indicator) => {
     const visible = props.visibleMainIndicators.includes(indicator)
     emaLines[indicator]?.setData(chartValues(visible ? derivedData.ema[indicator] : undefined))

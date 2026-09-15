@@ -31,4 +31,10 @@ describe('KlineChart opening-time presentation', () => {
       /renderedBars\.findIndex\(\(bar\) => Date\.parse\(bar\.time\) === parsed\)/,
     )
   })
+
+  it('reapplies the current EMA palette whenever derived series render', () => {
+    assert.match(chartSource, /emaLines\.ema_10\?\.applyOptions\(\{ color: theme\.ema10 \}\)/)
+    assert.match(chartSource, /emaLines\.ema_21\?\.applyOptions\(\{ color: theme\.ema21 \}\)/)
+    assert.match(chartSource, /emaLines\.ema_60\?\.applyOptions\(\{ color: theme\.ema60 \}\)/)
+  })
 })
