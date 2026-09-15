@@ -109,9 +109,11 @@
 .market-dashboard-page .change-badge.up { background: var(--gy-home-up-soft); }
 .market-dashboard-page .change-badge.down { background: var(--gy-home-down-soft); }
 .market-dashboard-page .target-unavailable { color: var(--gy-home-muted); }
-.market-dashboard-page .alignment { display: inline-flex; align-items: center; gap: 10px; vertical-align: middle; }
+.market-dashboard-page .alignment { position: relative; display: inline-block; width: 40px; height: 32px; vertical-align: middle; }
+.market-dashboard-page .alignment > .market-state-icon--aligned { position: absolute; top: 0; left: 0; }
+.market-dashboard-page .alignment > .market-state-icon--micro { position: absolute; right: 0; bottom: 0; width: 20px; height: 20px; flex-basis: 20px; }
 .market-dashboard-page td > .market-state-icon { vertical-align: middle; }
-.market-dashboard-page .alignment-cell { text-align: left; vertical-align: bottom; }
+.market-dashboard-page .alignment-cell { text-align: center; vertical-align: middle; }
 .market-dashboard-page .detail-arrow { width: 30px; font-size: 24px; font-weight: 300; }
 .market-dashboard-page .table-wrap--compact td, .market-dashboard-page .table-wrap--compact tbody th { height: 40px; padding-top: 4px; padding-bottom: 4px; }
 .market-dashboard-page .rail { padding: 12px; margin: 0 12px 12px; border: 1px solid var(--gy-home-border); border-radius: 8px; }
