@@ -231,6 +231,47 @@ Event 或通知。月分区仍依次经过 staging 与完整发布校验。任�
 - **WHEN** `1d`、`1w`、`15m` 或 `60m` apply 的 provider、源发布或派生失败
 - **THEN** 后续 target 不再执行；保留已成功分区，零成功返回 `failed`、部分成功返回 `partial`；quota 返回 `partial`，不自动 retry
 
+### Requirement: Explicit ordinary recovery campaign source isolation
+
+Ordinary W1 recovery orchestration MAY continue independent physical-contract units under an explicitly
+versioned, hash-bound source-isolation policy. Existing prepared attempts MUST retain their original stop-on-failure
+semantics. This policy MUST NOT change the physical-contract manager, target plan, source validation or publication
+path. A failed contract MUST still stop its own remaining targets.
+
+Only a narrowly classified source-quality failure with a strict integer zero applied count, known request outcome,
+complete saved responses for every actually started request, matching frozen source identities and verified source
+hashes MAY be isolated. Unstarted source requests MUST NOT be issued merely to complete a journal. The next independent
+unit in the same bounded batch MUST remain eligible; isolation MUST NOT discard the batch tail. Network/quota errors,
+lock conflict, code/config/plan/root drift, commit uncertainty, readback or cleanup failure, and incomplete or corrupt
+evidence MUST stop the campaign without retry. Isolation is not success and MUST remain in the final denominator.
+
+Preparation MUST still consume a complete native dependency audit. A previously captured source anomaly MAY be
+excluded from a new download queue only through explicit immutable prior-attempt evidence bound into the new manifest,
+matching the current native unit identity and plan. This exclusion MUST NOT crop or relabel native audit facts, create
+a second gap authority, replay the old attempt, or silently repair source values. Execution MUST revalidate that evidence.
+The final settlement MUST distinguish successful, isolated source failure, known stopping failure, unattempted and
+unknown units and retain exact set closure. A known non-isolatable failure MUST retain its unit and stopping reason;
+it MUST NOT be counted as unattempted or unknown solely because the campaign stopped.
+Grouped anomaly repair proposals require independent evidence and a new execution intent for any real operation.
+
+#### Scenario: Safe source failure occurs inside a batch
+- **WHEN** the explicit policy and saved evidence prove a source-quality failure before any partition commit
+- **THEN** that contract is isolated and the next independent unit may execute, including the remainder of the same batch
+- **AND** the campaign cannot report all-passed while any isolated unit remains
+
+#### Scenario: Failure does not prove safe isolation
+- **WHEN** a request outcome, zero-commit claim, source artifact, readback, cleanup or frozen identity cannot be verified
+- **THEN** no later unit starts and the result preserves the stopping failure or unknown outcome without retry
+
+#### Scenario: A known failure is not eligible for source isolation
+- **WHEN** an explicit network or quota failure has a known outcome but is not a source-quality isolation
+- **THEN** settlement retains the attempted unit as a stopping failure, not as unattempted or unknown, and no later unit starts
+
+#### Scenario: Prior anomaly is excluded from fresh preparation
+- **WHEN** explicit prior source evidence matches a current native proposed unit and its exact plan
+- **THEN** preparation retains that unit in the anomaly denominator but excludes it from new provider execution
+- **AND** altered evidence or plan drift rejects the exclusion instead of silently downloading or removing the target
+
 ### Requirement: Bounded missing metadata repair separates plan fetch and apply
 系统 SHALL 提供默认只读的 `metadata-repair`，以显式 physical contract/owner-through 列表和现有
 Catalog identity/lifecycle 规划精确缺失 Calendar 与整个缺失 Session 日期。plan MUST 绑定相关既有

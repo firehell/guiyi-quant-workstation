@@ -1,6 +1,7 @@
 import type { SubingReferenceResponse, SubingReferenceSignal } from '../types/subingReference.ts'
 
 import type { KlineReferenceCallout } from '../types/referenceCallout.ts'
+import { formatDecimalText, formatMarketDecimal } from './marketDisplay.ts'
 
 const decimal = /^-?\d+(?:\.\d+)?$/
 const day = /^\d{4}-\d{2}-\d{2}$/
@@ -43,14 +44,8 @@ export function normalizeSubingReference(value: unknown, symbol: string): Subing
 }
 export const subingActionLabel = (action: SubingReferenceSignal['action']) => ({ OPEN_LONG: '开多', OPEN_SHORT: '开空', REVERSE_TO_LONG: '平空·开多', REVERSE_TO_SHORT: '平多·开空', SAME_DIRECTION: '同向信号·不加仓' })[action]
 export function referenceTone(value: string | null): 'gain' | 'loss' | 'neutral' { return value === null || /^-?0(?:\.0+)?$/.test(value) ? 'neutral' : value.startsWith('-') ? 'loss' : 'gain' }
-export function subingCallouts(signals: SubingReferenceSignal[]): KlineReferenceCallout[] { return signals.map((signal) => ({ id: signal.signal_id, time: signal.bar_end, physicalContract: signal.physical_contract, price: signal.reference_price, title: subingActionLabel(signal.action), detail: `${signal.reference_price}${signal.closed_return_pct === null ? '' : ` · 平仓 ${referenceDecimalDisplay(signal.closed_return_pct)}%`}`, tone: referenceTone(signal.closed_return_pct), above: signal.direction === 'sell' })) }
+export function subingCallouts(signals: SubingReferenceSignal[]): KlineReferenceCallout[] { return signals.map((signal) => ({ id: signal.signal_id, time: signal.bar_end, physicalContract: signal.physical_contract, price: signal.reference_price, title: subingActionLabel(signal.action), detail: `${formatMarketDecimal(signal.reference_price)}${signal.closed_return_pct === null ? '' : ` · 平仓 ${referenceDecimalDisplay(signal.closed_return_pct)}%`}`, tone: referenceTone(signal.closed_return_pct), above: signal.direction === 'sell' })) }
 /** Display rounding of a server Decimal only; never recomputes performance. */
 export function referenceDecimalDisplay(value: string | null, signed = true): string {
-  if (value === null || !decimal.test(value)) return '—'
-  const negative = value.startsWith('-')
-  const [whole = '0', fraction = ''] = value.replace(/^-/, '').split('.')
-  let cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0').slice(0, 2))
-  if ((fraction[2] ?? '0') >= '5') cents += 1n
-  const text = cents.toString().padStart(3, '0')
-  return `${cents === 0n ? '' : negative ? '-' : signed ? '+' : ''}${text.slice(0, -2)}.${text.slice(-2)}`
+  return formatDecimalText(value, { maximumFractionDigits: 2, minimumFractionDigits: 2, signed })
 }

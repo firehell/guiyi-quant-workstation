@@ -218,7 +218,7 @@ onBeforeUnmount(() => loader.dispose())
         <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</span>
       </div>
     </section>
-    <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading'" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" recovery-label="重试主图" :can-recover="true" :can-return-market="false" @recover="loader.loadChart()" />
+    <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading'" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="重试主图" :can-recover="true" :can-return-market="false" @recover="loader.loadChart()" />
     <div v-else ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :loading="loader.sections.chart.state.value === 'loading'" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @explain-main="openDialog('explanation')" @explain-auxiliary="openDialog('indicator')">
     <template #auxiliary-controls>
     <section class="newow-product-workspace__auxiliary" aria-label="Newow 辅助图层">
@@ -250,7 +250,7 @@ onBeforeUnmount(() => loader.dispose())
     <NewowDetailDialog :open="dialogKind !== null" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">
       <p>{{ identity.symbol.toUpperCase() }} · {{ newowDisplayLabel(identity.strategy ?? 'UNAVAILABLE') }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : dialogKind === 'hint' ? selectedHint?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
       <template v-if="dialogKind === 'hint'">
-        <p v-if="selectedHint">{{ selectedHint.kind }} · {{ formatMarketDecimal(selectedHint.anchorPrice) }} · {{ shortNewowTime(selectedHint.barEnd) }}</p>
+        <p v-if="selectedHint">{{ newowDisplayLabel(selectedHint.kind) }} · {{ formatMarketDecimal(selectedHint.anchorPrice) }} · {{ shortNewowTime(selectedHint.barEnd) }}</p>
         <p>仅为所选历史过程提示，不代表主动作或账户成交。</p>
         <details v-if="selectedHint"><summary>来源与原始事实</summary><p>{{ selectedHint.id }} · {{ selectedHint.barEnd }}</p><p>known_at {{ selectedHint.confirmedAt }} · sequence {{ selectedHint.sequence ?? '—' }}</p><p>owner {{ selectedHint.physicalContract }} · {{ selectedHint.segmentId }}</p><p>来源 {{ selectedHint.sourceIdentity ?? '—' }} · 响应公式 {{ selectedHint.formulaVersions.join(' / ') }}</p><p>anchor_price {{ selectedHint.anchorPrice ?? '—' }}</p></details>
       </template>

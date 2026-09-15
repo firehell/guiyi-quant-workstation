@@ -84,6 +84,9 @@ test('short state and enum labels remain deterministic and unknown values are un
   assert.equal(describeNewowState('HOLD'), '策略当前为持有状态，仅作页面参考，不代表账户持仓。')
   assert.equal(newowDisplayLabel('BUILD'), '参考建仓')
   assert.equal(newowDisplayLabel('LONG_BIAS'), '偏多')
+  assert.equal(newowDisplayLabel('NEWOW_ESCAPE_D2'), 'D2 逃顶提示')
+  assert.equal(newowDisplayLabel('D2'), 'D2 逃顶提示')
+  assert.equal(newowDisplayLabel('D6'), 'D6 低位修复提示')
   assert.equal(newowDisplayLabel('UNKNOWN_NEW_TOKEN'), '未确认')
   assert.equal(shortNewowTime('2026-09-03T07:00:00Z'), '09-03 15:00')
 })
@@ -96,13 +99,15 @@ test('historical chart state description never claims to describe current snapsh
 
 test('reference percentage display preserves server decimals and never treats missing as zero', async () => {
   const { referencePercentDisplay, referenceInterruptionLabel } = await import('../src/utils/newowDetailPresentation.ts')
-  assert.deepEqual(referencePercentDisplay('5.1020'), { text: '+5.1020%', direction: 'up' })
-  assert.deepEqual(referencePercentDisplay('-1.2500'), { text: '-1.2500%', direction: 'down' })
-  assert.deepEqual(referencePercentDisplay('-0.0000'), { text: '-0.0000%', direction: 'neutral' })
+  assert.deepEqual(referencePercentDisplay('5.1020'), { text: '+5.1%', direction: 'up' })
+  assert.deepEqual(referencePercentDisplay('-1.2500'), { text: '-1.25%', direction: 'down' })
+  assert.deepEqual(referencePercentDisplay('-0.0000'), { text: '0%', direction: 'neutral' })
+  assert.deepEqual(referencePercentDisplay('0.004'), { text: '<0.01%', direction: 'up' })
   assert.deepEqual(referencePercentDisplay(null), { text: '—', direction: 'neutral' })
   assert.deepEqual(referencePercentDisplay('unknown'), { text: '—', direction: 'neutral' })
   assert.equal(referenceInterruptionLabel('OWNER_BOUNDARY'), '物理合约区段结束')
-  assert.equal(referenceInterruptionLabel('UNVERIFIED'), '中断原因待确认（见详情）')
+  assert.equal(referenceInterruptionLabel('OWNER_BOUNDARY_MARK_UNAVAILABLE'), '物理合约区段结束时缺少可验证估值')
+  assert.equal(referenceInterruptionLabel('UNVERIFIED'), '原因未识别（原始码见技术详情）')
 })
 
 test('reference dates preserve night-session clock, daily density and cross-year identity', async () => {

@@ -115,6 +115,18 @@ def literal_settings(
     return values
 
 
+def runtime_dependency_settings(content: bytes) -> dict[str, str]:
+    """Extract only the existing Runtime dependency settings from project.env."""
+    parsed = literal_settings(
+        content,
+        dependency_sources=_DEPENDENCY_SOURCE_SETTINGS,
+        discarded_settings=_CLOSEOUT_IGNORED_SETTINGS | _RETIRED_INERT_SETTINGS,
+    )
+    if parsed.keys() - _DEPENDENCY_SOURCE_SETTINGS:
+        raise ValueError
+    return {key: value for key, value in parsed.items() if key in _DEPENDENCY_SETTINGS}
+
+
 def _redis_url(settings: dict[str, str]) -> str:
     value = settings["REDIS_URL"]
     if not value or value == "redis://127.0.0.1:6379/0":
@@ -295,14 +307,7 @@ class RuntimeDataBinding:
         self._sources = self._read_sources()
         self._processes = self._read_processes()
         self._validate_age()
-        parsed_settings = literal_settings(
-            self._sources[self.config_path][0], dependency_sources=_DEPENDENCY_SOURCE_SETTINGS,
-            discarded_settings=_CLOSEOUT_IGNORED_SETTINGS | _RETIRED_INERT_SETTINGS,
-        )
-        if (parsed_settings.keys() - _DEPENDENCY_SOURCE_SETTINGS - _CLOSEOUT_IGNORED_SETTINGS
-                - _RETIRED_INERT_SETTINGS):
-            raise ValueError
-        self.settings = {key: value for key, value in parsed_settings.items() if key in _DEPENDENCY_SETTINGS}
+        self.settings = runtime_dependency_settings(self._sources[self.config_path][0])
         required = {"DATABASE_URL", "REDIS_URL", "POSTGRES_PASSWORD", "GUIYI_CANONICAL_DATA_ROOT",
                     "GUIYI_LIVE_RECOVERY_ENABLED"}
         if (not required <= self.settings.keys() or not self.settings["POSTGRES_PASSWORD"]

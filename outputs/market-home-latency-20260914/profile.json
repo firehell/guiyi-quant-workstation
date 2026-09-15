@@ -1,0 +1,2391 @@
+{
+  "meta": {
+    "checked_at": "2026-09-14T19:25:27.496069+08:00",
+    "canonical_root": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical",
+    "projection_exists": false,
+    "projection_hit": false,
+    "natural_projection_enabled": false,
+    "target": "2026-09-14",
+    "read_only": "on"
+  },
+  "phases": {
+    "compose": 0.0013677499955520034,
+    "identity": 0.16001279099145904,
+    "projection_load": 4.495796747505665e-05,
+    "projection_read": 29.3332637079875,
+    "serialize": 0.00016058300388976932
+  },
+  "sql": {
+    "count": 57265,
+    "seconds": 13.123869246221147
+  },
+  "queries": [
+    {
+      "symbol": "a",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.18886916700284928,
+      "sql_count": 7,
+      "sql_seconds": 0.005899460054934025
+    },
+    {
+      "symbol": "a",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.6539281249861233,
+      "sql_count": 1399,
+      "sql_seconds": 0.31893830705666915
+    },
+    {
+      "symbol": "ag",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.09307000000262633,
+      "sql_count": 7,
+      "sql_seconds": 0.005814583972096443
+    },
+    {
+      "symbol": "ag",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.43654408399015665,
+      "sql_count": 1005,
+      "sql_seconds": 0.21374765801010653
+    },
+    {
+      "symbol": "al",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.09131937497295439,
+      "sql_count": 7,
+      "sql_seconds": 0.003524874977301806
+    },
+    {
+      "symbol": "al",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.43949941697064787,
+      "sql_count": 1013,
+      "sql_seconds": 0.21420019050128758
+    },
+    {
+      "symbol": "ao",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.08051779097877443,
+      "sql_count": 7,
+      "sql_seconds": 0.003184499917551875
+    },
+    {
+      "symbol": "ao",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.4404400830389932,
+      "sql_count": 1011,
+      "sql_seconds": 0.22661628475179896
+    },
+    {
+      "symbol": "ap",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.07604416698450223,
+      "sql_count": 7,
+      "sql_seconds": 0.0033002509153448045
+    },
+    {
+      "symbol": "ap",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.4115037079900503,
+      "sql_count": 989,
+      "sql_seconds": 0.20552601508097723
+    },
+    {
+      "symbol": "au",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.18156366696348414,
+      "sql_count": 7,
+      "sql_seconds": 0.0048057500389404595
+    },
+    {
+      "symbol": "au",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.7191155420150608,
+      "sql_count": 1505,
+      "sql_seconds": 0.34170603612437844
+    },
+    {
+      "symbol": "b",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.061081624997314066,
+      "sql_count": 7,
+      "sql_seconds": 0.0032791239791549742
+    },
+    {
+      "symbol": "b",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.38495558296563104,
+      "sql_count": 927,
+      "sql_seconds": 0.1939147514058277
+    },
+    {
+      "symbol": "bu",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06484554201597348,
+      "sql_count": 7,
+      "sql_seconds": 0.003385291958693415
+    },
+    {
+      "symbol": "bu",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3840419999905862,
+      "sql_count": 927,
+      "sql_seconds": 0.19192076934268698
+    },
+    {
+      "symbol": "bz",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 291,
+      "seconds": 0.06250112497946247,
+      "sql_count": 7,
+      "sql_seconds": 0.003431249933782965
+    },
+    {
+      "symbol": "bz",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 60,
+      "seconds": 0.3244862909778021,
+      "sql_count": 727,
+      "sql_seconds": 0.170336167444475
+    },
+    {
+      "symbol": "c",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06743637501494959,
+      "sql_count": 7,
+      "sql_seconds": 0.003846042905934155
+    },
+    {
+      "symbol": "c",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.45962591597344726,
+      "sql_count": 927,
+      "sql_seconds": 0.24938280147034675
+    },
+    {
+      "symbol": "cf",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06362170801730826,
+      "sql_count": 7,
+      "sql_seconds": 0.003821043064817786
+    },
+    {
+      "symbol": "cf",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.4346521249972284,
+      "sql_count": 927,
+      "sql_seconds": 0.21281188953435048
+    },
+    {
+      "symbol": "cj",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.0604184580151923,
+      "sql_count": 7,
+      "sql_seconds": 0.003529458015691489
+    },
+    {
+      "symbol": "cj",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.425206458021421,
+      "sql_count": 927,
+      "sql_seconds": 0.22875328292138875
+    },
+    {
+      "symbol": "cu",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.07446950004668906,
+      "sql_count": 7,
+      "sql_seconds": 0.0038445419631898403
+    },
+    {
+      "symbol": "cu",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.39891425002133474,
+      "sql_count": 927,
+      "sql_seconds": 0.1961623317329213
+    },
+    {
+      "symbol": "eb",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06708220799919218,
+      "sql_count": 7,
+      "sql_seconds": 0.0029478350188583136
+    },
+    {
+      "symbol": "eb",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.4049937499803491,
+      "sql_count": 927,
+      "sql_seconds": 0.20486763562075794
+    },
+    {
+      "symbol": "ec",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.0675893749576062,
+      "sql_count": 7,
+      "sql_seconds": 0.0033775430056266487
+    },
+    {
+      "symbol": "ec",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.4273783750250004,
+      "sql_count": 957,
+      "sql_seconds": 0.2287232699454762
+    },
+    {
+      "symbol": "eg",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.058754790981765836,
+      "sql_count": 7,
+      "sql_seconds": 0.0030649160617031157
+    },
+    {
+      "symbol": "eg",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.385976167046465,
+      "sql_count": 927,
+      "sql_seconds": 0.19507279770914465
+    },
+    {
+      "symbol": "fg",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.0604006249923259,
+      "sql_count": 7,
+      "sql_seconds": 0.003454250982031226
+    },
+    {
+      "symbol": "fg",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3822726249927655,
+      "sql_count": 927,
+      "sql_seconds": 0.194429679075256
+    },
+    {
+      "symbol": "fu",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06056554097449407,
+      "sql_count": 7,
+      "sql_seconds": 0.0029295849381014705
+    },
+    {
+      "symbol": "fu",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3863732079626061,
+      "sql_count": 927,
+      "sql_seconds": 0.19687620393233374
+    },
+    {
+      "symbol": "hc",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.057643875014036894,
+      "sql_count": 7,
+      "sql_seconds": 0.0031137511250562966
+    },
+    {
+      "symbol": "hc",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3835647089872509,
+      "sql_count": 927,
+      "sql_seconds": 0.19590647565200925
+    },
+    {
+      "symbol": "i",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.05738041701260954,
+      "sql_count": 7,
+      "sql_seconds": 0.002986165985930711
+    },
+    {
+      "symbol": "i",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3798992919619195,
+      "sql_count": 927,
+      "sql_seconds": 0.19384587201057002
+    },
+    {
+      "symbol": "j",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.0567278329981491,
+      "sql_count": 7,
+      "sql_seconds": 0.0027876669773831964
+    },
+    {
+      "symbol": "j",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.38346774998353794,
+      "sql_count": 927,
+      "sql_seconds": 0.1970065213390626
+    },
+    {
+      "symbol": "jd",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.09207562502706423,
+      "sql_count": 7,
+      "sql_seconds": 0.002989749948028475
+    },
+    {
+      "symbol": "jd",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3947451660060324,
+      "sql_count": 927,
+      "sql_seconds": 0.19462221156572923
+    },
+    {
+      "symbol": "jm",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.05656225001439452,
+      "sql_count": 7,
+      "sql_seconds": 0.002909458940848708
+    },
+    {
+      "symbol": "jm",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3809604170382954,
+      "sql_count": 927,
+      "sql_seconds": 0.19497741613304242
+    },
+    {
+      "symbol": "l",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.05719991697696969,
+      "sql_count": 7,
+      "sql_seconds": 0.0027639600448310375
+    },
+    {
+      "symbol": "l",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3876655420172028,
+      "sql_count": 927,
+      "sql_seconds": 0.1999099794193171
+    },
+    {
+      "symbol": "lc",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.05842337501235306,
+      "sql_count": 7,
+      "sql_seconds": 0.0028005409985780716
+    },
+    {
+      "symbol": "lc",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3876867920043878,
+      "sql_count": 927,
+      "sql_seconds": 0.19797443819697946
+    },
+    {
+      "symbol": "lh",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.060329874977469444,
+      "sql_count": 7,
+      "sql_seconds": 0.0030282919760793447
+    },
+    {
+      "symbol": "lh",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.37921891699079424,
+      "sql_count": 927,
+      "sql_seconds": 0.1904078470543027
+    },
+    {
+      "symbol": "m",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06006316700950265,
+      "sql_count": 7,
+      "sql_seconds": 0.005431789031717926
+    },
+    {
+      "symbol": "m",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.37596454203594476,
+      "sql_count": 927,
+      "sql_seconds": 0.1904064281261526
+    },
+    {
+      "symbol": "ma",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.059475500020198524,
+      "sql_count": 7,
+      "sql_seconds": 0.0038451679283753037
+    },
+    {
+      "symbol": "ma",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.39328333298908547,
+      "sql_count": 927,
+      "sql_seconds": 0.20151161722606048
+    },
+    {
+      "symbol": "ni",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06596662499941885,
+      "sql_count": 7,
+      "sql_seconds": 0.00310270901536569
+    },
+    {
+      "symbol": "ni",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.38846804201602936,
+      "sql_count": 927,
+      "sql_seconds": 0.19284264440648258
+    },
+    {
+      "symbol": "oi",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.0568999579991214,
+      "sql_count": 7,
+      "sql_seconds": 0.002865499001927674
+    },
+    {
+      "symbol": "oi",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.38476395898032933,
+      "sql_count": 927,
+      "sql_seconds": 0.19568229833384976
+    },
+    {
+      "symbol": "p",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.059091375034768134,
+      "sql_count": 7,
+      "sql_seconds": 0.0029959180392324924
+    },
+    {
+      "symbol": "p",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3867977089830674,
+      "sql_count": 927,
+      "sql_seconds": 0.19894791999831796
+    },
+    {
+      "symbol": "pb",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.0668619170319289,
+      "sql_count": 7,
+      "sql_seconds": 0.0031179579673334956
+    },
+    {
+      "symbol": "pb",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3900525420322083,
+      "sql_count": 927,
+      "sql_seconds": 0.19286601844942197
+    },
+    {
+      "symbol": "pd",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 195,
+      "seconds": 0.06353237497387454,
+      "sql_count": 7,
+      "sql_seconds": 0.002112999965902418
+    },
+    {
+      "symbol": "pd",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 40,
+      "seconds": 0.26696512498892844,
+      "sql_count": 581,
+      "sql_seconds": 0.11733043525600806
+    },
+    {
+      "symbol": "pf",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.0862800829927437,
+      "sql_count": 7,
+      "sql_seconds": 0.003131542936898768
+    },
+    {
+      "symbol": "pf",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.46800195903051645,
+      "sql_count": 1007,
+      "sql_seconds": 0.24273881898261607
+    },
+    {
+      "symbol": "pg",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06724062497960404,
+      "sql_count": 7,
+      "sql_seconds": 0.0033304589451290667
+    },
+    {
+      "symbol": "pg",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.43741533398861066,
+      "sql_count": 927,
+      "sql_seconds": 0.22901649097912014
+    },
+    {
+      "symbol": "pk",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.05902674997923896,
+      "sql_count": 7,
+      "sql_seconds": 0.0029885839321650565
+    },
+    {
+      "symbol": "pk",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.433005457976833,
+      "sql_count": 927,
+      "sql_seconds": 0.23938193771755323
+    },
+    {
+      "symbol": "pl",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 281,
+      "seconds": 0.05308883299585432,
+      "sql_count": 7,
+      "sql_seconds": 0.004268459044396877
+    },
+    {
+      "symbol": "pl",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 58,
+      "seconds": 0.33697212499100715,
+      "sql_count": 669,
+      "sql_seconds": 0.1978055535000749
+    },
+    {
+      "symbol": "pp",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06375108403153718,
+      "sql_count": 7,
+      "sql_seconds": 0.007995542022399604
+    },
+    {
+      "symbol": "pp",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.4207242499687709,
+      "sql_count": 927,
+      "sql_seconds": 0.2301627693232149
+    },
+    {
+      "symbol": "pr",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06340991699835286,
+      "sql_count": 7,
+      "sql_seconds": 0.0027531249797903
+    },
+    {
+      "symbol": "pr",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.38592979102395475,
+      "sql_count": 927,
+      "sql_seconds": 0.20112898614024743
+    },
+    {
+      "symbol": "ps",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.05385920900152996,
+      "sql_count": 7,
+      "sql_seconds": 0.0025661670370027423
+    },
+    {
+      "symbol": "ps",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.39973737503169104,
+      "sql_count": 927,
+      "sql_seconds": 0.21349722531158477
+    },
+    {
+      "symbol": "pt",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 195,
+      "seconds": 0.0655867499881424,
+      "sql_count": 7,
+      "sql_seconds": 0.0024182089837267995
+    },
+    {
+      "symbol": "pt",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 40,
+      "seconds": 0.24214595899684355,
+      "sql_count": 581,
+      "sql_seconds": 0.1170502514578402
+    },
+    {
+      "symbol": "px",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.05810129200108349,
+      "sql_count": 7,
+      "sql_seconds": 0.00291162496432662
+    },
+    {
+      "symbol": "px",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.38440950005315244,
+      "sql_count": 927,
+      "sql_seconds": 0.20320802892092615
+    },
+    {
+      "symbol": "rb",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.054349000041838735,
+      "sql_count": 7,
+      "sql_seconds": 0.002799458976369351
+    },
+    {
+      "symbol": "rb",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.39246645802631974,
+      "sql_count": 927,
+      "sql_seconds": 0.20816017902689055
+    },
+    {
+      "symbol": "rm",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.0559795830049552,
+      "sql_count": 7,
+      "sql_seconds": 0.003337874892167747
+    },
+    {
+      "symbol": "rm",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3923466670094058,
+      "sql_count": 927,
+      "sql_seconds": 0.20402221829863265
+    },
+    {
+      "symbol": "rs",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06169100000988692,
+      "sql_count": 7,
+      "sql_seconds": 0.0029679160797968507
+    },
+    {
+      "symbol": "rs",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.39803512499202043,
+      "sql_count": 927,
+      "sql_seconds": 0.21068201609887183
+    },
+    {
+      "symbol": "ru",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.07728233397938311,
+      "sql_count": 7,
+      "sql_seconds": 0.003216666984371841
+    },
+    {
+      "symbol": "ru",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.4091330420342274,
+      "sql_count": 927,
+      "sql_seconds": 0.22516642190748826
+    },
+    {
+      "symbol": "sa",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.055309042043518275,
+      "sql_count": 7,
+      "sql_seconds": 0.003157417057082057
+    },
+    {
+      "symbol": "sa",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3917721670004539,
+      "sql_count": 927,
+      "sql_seconds": 0.20621091371867806
+    },
+    {
+      "symbol": "sc",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06786012498196214,
+      "sql_count": 7,
+      "sql_seconds": 0.0032342910999432206
+    },
+    {
+      "symbol": "sc",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.39485083398176357,
+      "sql_count": 927,
+      "sql_seconds": 0.1970449008513242
+    },
+    {
+      "symbol": "sf",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06251470796996728,
+      "sql_count": 7,
+      "sql_seconds": 0.0029871248989365995
+    },
+    {
+      "symbol": "sf",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.39347337500657886,
+      "sql_count": 927,
+      "sql_seconds": 0.2048721656901762
+    },
+    {
+      "symbol": "sh",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.058216749981511384,
+      "sql_count": 7,
+      "sql_seconds": 0.002985041937790811
+    },
+    {
+      "symbol": "sh",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3832870420301333,
+      "sql_count": 927,
+      "sql_seconds": 0.19421614392194897
+    },
+    {
+      "symbol": "si",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06201429100474343,
+      "sql_count": 7,
+      "sql_seconds": 0.003195707977283746
+    },
+    {
+      "symbol": "si",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3925105420057662,
+      "sql_count": 927,
+      "sql_seconds": 0.2006883880821988
+    },
+    {
+      "symbol": "sm",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.05922687496058643,
+      "sql_count": 7,
+      "sql_seconds": 0.002934334974270314
+    },
+    {
+      "symbol": "sm",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.39754475001245737,
+      "sql_count": 927,
+      "sql_seconds": 0.20796610129764304
+    },
+    {
+      "symbol": "sn",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06831200001761317,
+      "sql_count": 7,
+      "sql_seconds": 0.0032345829531550407
+    },
+    {
+      "symbol": "sn",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.422736625012476,
+      "sql_count": 927,
+      "sql_seconds": 0.2221442797454074
+    },
+    {
+      "symbol": "sr",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.0601396249840036,
+      "sql_count": 7,
+      "sql_seconds": 0.00356849905801937
+    },
+    {
+      "symbol": "sr",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.42704829201102257,
+      "sql_count": 927,
+      "sql_seconds": 0.23198405920993537
+    },
+    {
+      "symbol": "ss",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06970554101280868,
+      "sql_count": 7,
+      "sql_seconds": 0.0033941679866984487
+    },
+    {
+      "symbol": "ss",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.4406604170217179,
+      "sql_count": 927,
+      "sql_seconds": 0.23260008997749537
+    },
+    {
+      "symbol": "ta",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06129258300643414,
+      "sql_count": 7,
+      "sql_seconds": 0.0037926649674773216
+    },
+    {
+      "symbol": "ta",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.43723974999738857,
+      "sql_count": 927,
+      "sql_seconds": 0.23749301821226254
+    },
+    {
+      "symbol": "ur",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.08063129201764241,
+      "sql_count": 7,
+      "sql_seconds": 0.0029446668922901154
+    },
+    {
+      "symbol": "ur",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.381288125005085,
+      "sql_count": 927,
+      "sql_seconds": 0.19667228759499267
+    },
+    {
+      "symbol": "v",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.05863541696453467,
+      "sql_count": 7,
+      "sql_seconds": 0.005479083978570998
+    },
+    {
+      "symbol": "v",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.39568720798706636,
+      "sql_count": 927,
+      "sql_seconds": 0.20883442775812
+    },
+    {
+      "symbol": "y",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.05902020802022889,
+      "sql_count": 7,
+      "sql_seconds": 0.0035380010376684368
+    },
+    {
+      "symbol": "y",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.39590837503783405,
+      "sql_count": 927,
+      "sql_seconds": 0.20698287565028295
+    },
+    {
+      "symbol": "zn",
+      "frequency": "1d",
+      "limit": 300,
+      "bars": 300,
+      "seconds": 0.06696437497157604,
+      "sql_count": 7,
+      "sql_seconds": 0.0029797919560223818
+    },
+    {
+      "symbol": "zn",
+      "frequency": "1w",
+      "limit": 80,
+      "bars": 80,
+      "seconds": 0.3965639580274001,
+      "sql_count": 927,
+      "sql_seconds": 0.19573767960537225
+    }
+  ],
+  "response": {
+    "status": "ready",
+    "participants": 60,
+    "bytes": 37126
+  },
+  "profile": [
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_home_projection.py",
+      "line": 233,
+      "function": "read",
+      "calls": 1,
+      "self_seconds": 8.9917e-05,
+      "cumulative_seconds": 29.333238917000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_home_overview.py",
+      "line": 148,
+      "function": "snapshot",
+      "calls": 1,
+      "self_seconds": 0.004816213000000001,
+      "cumulative_seconds": 29.138781083
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_home_overview.py",
+      "line": 276,
+      "function": "_query_through_target",
+      "calls": 120,
+      "self_seconds": 0.000452963,
+      "cumulative_seconds": 28.43654154
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-workstation/outputs/market-home-latency-20260914/profile_readonly.py",
+      "line": 17,
+      "function": "query",
+      "calls": 120,
+      "self_seconds": 0.000378033,
+      "cumulative_seconds": 28.432463124
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_data_service.py",
+      "line": 563,
+      "function": "query_page",
+      "calls": 120,
+      "self_seconds": 0.007389119,
+      "cumulative_seconds": 28.431857460000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_data_service.py",
+      "line": 686,
+      "function": "_actual_dominant_page",
+      "calls": 120,
+      "self_seconds": 0.037830364000000005,
+      "cumulative_seconds": 28.413215131
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 416,
+      "function": "trading_days",
+      "calls": 28000,
+      "self_seconds": 0.24681976700000002,
+      "cumulative_seconds": 21.65042175
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_data_service.py",
+      "line": 841,
+      "function": "_page_weekly_owner",
+      "calls": 27760,
+      "self_seconds": 0.055861695,
+      "cumulative_seconds": 21.445375198
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py",
+      "line": 2141,
+      "function": "_execute_internal",
+      "calls": 56962,
+      "self_seconds": 0.16184457400000002,
+      "cumulative_seconds": 18.142141253000002
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_data_service.py",
+      "line": 760,
+      "function": "_actual_page_result",
+      "calls": 120,
+      "self_seconds": 0.003065434,
+      "cumulative_seconds": 17.827954999000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_data_service.py",
+      "line": 789,
+      "function": "_validate_actual_page_boundary",
+      "calls": 120,
+      "self_seconds": 0.024209327000000003,
+      "cumulative_seconds": 17.26585188
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/context.py",
+      "line": 296,
+      "function": "orm_execute_statement",
+      "calls": 56962,
+      "self_seconds": 0.040375672,
+      "cumulative_seconds": 17.233732371000002
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py",
+      "line": 1377,
+      "function": "execute",
+      "calls": 56962,
+      "self_seconds": 0.026268914,
+      "cumulative_seconds": 16.507754674
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py",
+      "line": 517,
+      "function": "_execute_on_connection",
+      "calls": 56962,
+      "self_seconds": 0.023074399000000002,
+      "cumulative_seconds": 16.48148576
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py",
+      "line": 1593,
+      "function": "_execute_clauseelement",
+      "calls": 56962,
+      "self_seconds": 0.137807847,
+      "cumulative_seconds": 16.458411361
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py",
+      "line": 1793,
+      "function": "_execute_context",
+      "calls": 56962,
+      "self_seconds": 0.07917847700000001,
+      "cumulative_seconds": 14.422457094
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py",
+      "line": 1852,
+      "function": "_exec_single_context",
+      "calls": 56962,
+      "self_seconds": 0.192202539,
+      "cumulative_seconds": 13.738842505000001
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py",
+      "line": 951,
+      "function": "do_execute",
+      "calls": 56962,
+      "self_seconds": 0.015861708000000002,
+      "cumulative_seconds": 12.768790244000002
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/cursor.py",
+      "line": 100,
+      "function": "execute",
+      "calls": 56962,
+      "self_seconds": 0.042827117000000005,
+      "cumulative_seconds": 12.752928536
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/connection.py",
+      "line": 476,
+      "function": "wait",
+      "calls": 56962,
+      "self_seconds": 11.073054028000001,
+      "cumulative_seconds": 12.703245338
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 404,
+      "function": "exchange_for_symbol",
+      "calls": 28000,
+      "self_seconds": 0.09872491100000001,
+      "cumulative_seconds": 9.779023350000001
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py",
+      "line": 2452,
+      "function": "scalars",
+      "calls": 28362,
+      "self_seconds": 0.025561938000000003,
+      "cumulative_seconds": 9.537183576
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py",
+      "line": 2404,
+      "function": "scalar",
+      "calls": 28480,
+      "self_seconds": 0.067906899,
+      "cumulative_seconds": 8.728818654000001
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_data_service.py",
+      "line": 865,
+      "function": "_partition_bars",
+      "calls": 3385,
+      "self_seconds": 0.004003401,
+      "cumulative_seconds": 4.5570524930000005
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/storage.py",
+      "line": 225,
+      "function": "read_catalog_partition",
+      "calls": 3385,
+      "self_seconds": 0.040887714000000006,
+      "cumulative_seconds": 4.548014256
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/storage.py",
+      "line": 204,
+      "function": "_read_path",
+      "calls": 3385,
+      "self_seconds": 0.38515177,
+      "cumulative_seconds": 4.150774913
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/attributes.py",
+      "line": 450,
+      "function": "operate",
+      "calls": 171361,
+      "self_seconds": 0.051470640000000005,
+      "cumulative_seconds": 2.4056582900000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/properties.py",
+      "line": 476,
+      "function": "operate",
+      "calls": 171361,
+      "self_seconds": 0.07115278400000001,
+      "cumulative_seconds": 2.270017593
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py",
+      "line": 1528,
+      "function": "operate",
+      "calls": 171481,
+      "self_seconds": 0.044858805,
+      "cumulative_seconds": 2.083465442
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/type_api.py",
+      "line": 202,
+      "function": "operate",
+      "calls": 171481,
+      "self_seconds": 0.110065387,
+      "cumulative_seconds": 1.9551049550000001
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/default_comparator.py",
+      "line": 50,
+      "function": "_boolean_compare",
+      "calls": 171120,
+      "self_seconds": 0.156585525,
+      "cumulative_seconds": 1.842570051
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/coercions.py",
+      "line": 314,
+      "function": "expect",
+      "calls": 485883,
+      "self_seconds": 0.607418821,
+      "cumulative_seconds": 1.7172334900000001
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py",
+      "line": 679,
+      "function": "_compile_w_cache",
+      "calls": 56962,
+      "self_seconds": 0.055338764000000006,
+      "cumulative_seconds": 1.690290515
+    },
+    {
+      "file": "<frozen importlib._bootstrap>",
+      "line": 1349,
+      "function": "_find_and_load",
+      "calls": 27818,
+      "self_seconds": 0.046368731,
+      "cumulative_seconds": 1.6753811630000002
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_cursor_base.py",
+      "line": 195,
+      "function": "_execute_gen",
+      "calls": 116389,
+      "self_seconds": 0.086588174,
+      "cumulative_seconds": 1.63019131
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py",
+      "line": 1246,
+      "function": "oneshot",
+      "calls": 56966,
+      "self_seconds": 0.046161563,
+      "cumulative_seconds": 1.4739391990000001
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/cache_key.py",
+      "line": 411,
+      "function": "_generate_cache_key",
+      "calls": 56962,
+      "self_seconds": 0.026350537,
+      "cumulative_seconds": 1.4277310520000002
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/cache_key.py",
+      "line": 347,
+      "function": "_generate_cache_key",
+      "calls": 56962,
+      "self_seconds": 0.052712367,
+      "cumulative_seconds": 1.401380515
+    },
+    {
+      "file": "<frozen importlib._bootstrap>",
+      "line": 1304,
+      "function": "_find_and_load_unlocked",
+      "calls": 27818,
+      "self_seconds": 0.022819992,
+      "cumulative_seconds": 1.3898116520000001
+    },
+    {
+      "file": "<frozen importlib._bootstrap>",
+      "line": 1240,
+      "function": "_find_spec",
+      "calls": 27818,
+      "self_seconds": 0.08168610300000001,
+      "cumulative_seconds": 1.364311381
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/result.py",
+      "line": 565,
+      "function": "iterrows",
+      "calls": 439360,
+      "self_seconds": 0.136717146,
+      "cumulative_seconds": 1.319248065
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/cache_key.py",
+      "line": 221,
+      "function": "_gen_cache_key",
+      "calls": 542205,
+      "self_seconds": 0.8876456030000001,
+      "cumulative_seconds": 1.310858386
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/loading.py",
+      "line": 208,
+      "function": "chunks",
+      "calls": 85444,
+      "self_seconds": 0.097911629,
+      "cumulative_seconds": 1.2034896110000002
+    },
+    {
+      "file": "<frozen importlib._bootstrap_external>",
+      "line": 1552,
+      "function": "find_spec",
+      "calls": 27818,
+      "self_seconds": 0.008876776000000001,
+      "cumulative_seconds": 1.197347913
+    },
+    {
+      "file": "<frozen importlib._bootstrap_external>",
+      "line": 1523,
+      "function": "_get_spec",
+      "calls": 27818,
+      "self_seconds": 0.07940404400000001,
+      "cumulative_seconds": 1.188471137
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/operators.py",
+      "line": 577,
+      "function": "__eq__",
+      "calls": 230720,
+      "self_seconds": 0.07605571900000001,
+      "cumulative_seconds": 1.1223839770000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _operator.eq>",
+      "calls": 173040,
+      "self_seconds": 0.040436591,
+      "cumulative_seconds": 1.085661457
+    },
+    {
+      "file": "<frozen importlib._bootstrap_external>",
+      "line": 1625,
+      "function": "find_spec",
+      "calls": 166908,
+      "self_seconds": 0.340729047,
+      "cumulative_seconds": 1.073330557
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_cursor_base.py",
+      "line": 275,
+      "function": "_maybe_prepare_gen",
+      "calls": 116389,
+      "self_seconds": 0.507033664,
+      "cumulative_seconds": 1.05727268
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/annotation.py",
+      "line": 369,
+      "function": "__eq__",
+      "calls": 57685,
+      "self_seconds": 0.021041231,
+      "cumulative_seconds": 1.007350153
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/coercions.py",
+      "line": 793,
+      "function": "_literal_coercion",
+      "calls": 114280,
+      "self_seconds": 0.045170054,
+      "cumulative_seconds": 0.802602283
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py",
+      "line": 4661,
+      "function": "_bind_param",
+      "calls": 114280,
+      "self_seconds": 0.062090331000000006,
+      "cumulative_seconds": 0.7574322290000001
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/loading.py",
+      "line": 1068,
+      "function": "_instance",
+      "calls": 205529,
+      "self_seconds": 0.24913058100000002,
+      "cumulative_seconds": 0.6984183540000001
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 308,
+      "function": "contract_partitions_before",
+      "calls": 120,
+      "self_seconds": 0.00243749,
+      "cumulative_seconds": 0.6966541620000001
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py",
+      "line": 1974,
+      "function": "__init__",
+      "calls": 114280,
+      "self_seconds": 0.12744075300000002,
+      "cumulative_seconds": 0.695341898
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/context.py",
+      "line": 581,
+      "function": "orm_setup_cursor_result",
+      "calls": 56962,
+      "self_seconds": 0.07687845,
+      "cumulative_seconds": 0.685602025
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 385,
+      "function": "main_map_before",
+      "calls": 120,
+      "self_seconds": 0.0061538700000000005,
+      "cumulative_seconds": 0.679603701
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/storage.py",
+      "line": 196,
+      "function": "_read_bytes",
+      "calls": 3385,
+      "self_seconds": 0.009350470000000001,
+      "cumulative_seconds": 0.6243824950000001
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py",
+      "line": 1313,
+      "function": "_init_compiled",
+      "calls": 56962,
+      "self_seconds": 0.137635946,
+      "cumulative_seconds": 0.595689386
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 329,
+      "function": "<genexpr>",
+      "calls": 8347,
+      "self_seconds": 0.007903821,
+      "cumulative_seconds": 0.583604187
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/storage.py",
+      "line": 152,
+      "function": "_directory_fd",
+      "calls": 3385,
+      "self_seconds": 0.016992033,
+      "cumulative_seconds": 0.564059442
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 525,
+      "function": "missing_main_map_days",
+      "calls": 120,
+      "self_seconds": 0.003610129,
+      "cumulative_seconds": 0.55059404
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/operators.py",
+      "line": 1039,
+      "function": "is_",
+      "calls": 226880,
+      "self_seconds": 0.054153188000000005,
+      "cumulative_seconds": 0.53333838
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 400,
+      "function": "<genexpr>",
+      "calls": 99266,
+      "self_seconds": 0.041033458,
+      "cumulative_seconds": 0.530488135
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py",
+      "line": 2870,
+      "function": "_construct_for_op",
+      "calls": 171120,
+      "self_seconds": 0.10160450400000001,
+      "cumulative_seconds": 0.517657471
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/loading.py",
+      "line": 79,
+      "function": "instances",
+      "calls": 56962,
+      "self_seconds": 0.23360876100000003,
+      "cumulative_seconds": 0.5163291010000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'read' of '_io.BufferedReader' objects>",
+      "calls": 3401,
+      "self_seconds": 0.507545204,
+      "cumulative_seconds": 0.507545204
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/operators.py",
+      "line": 2043,
+      "function": "is_",
+      "calls": 170160,
+      "self_seconds": 0.038902582000000005,
+      "cumulative_seconds": 0.501936641
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/base.py",
+      "line": 277,
+      "function": "_generative",
+      "calls": 85561,
+      "self_seconds": 0.049985016,
+      "cumulative_seconds": 0.495445369
+    },
+    {
+      "file": "<frozen _collections_abc>",
+      "line": 1037,
+      "function": "__contains__",
+      "calls": 14997,
+      "self_seconds": 0.031512459,
+      "cumulative_seconds": 0.495442871
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py",
+      "line": 1850,
+      "function": "_setup_result_proxy",
+      "calls": 56962,
+      "self_seconds": 0.111309483,
+      "cumulative_seconds": 0.49287233
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 533,
+      "function": "_partition",
+      "calls": 8227,
+      "self_seconds": 0.012780227000000002,
+      "cumulative_seconds": 0.46588833900000004
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method posix.open>",
+      "calls": 47391,
+      "self_seconds": 0.464548925,
+      "cumulative_seconds": 0.46454992500000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py",
+      "line": 5538,
+      "function": "safe_construct",
+      "calls": 114284,
+      "self_seconds": 0.11861138,
+      "cumulative_seconds": 0.43218737500000004
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 555,
+      "function": "_resolve_uri",
+      "calls": 8227,
+      "self_seconds": 0.013586616000000001,
+      "cumulative_seconds": 0.42743999200000005
+    },
+    {
+      "file": "<frozen importlib._bootstrap_external>",
+      "line": 131,
+      "function": "_path_join",
+      "calls": 834540,
+      "self_seconds": 0.24520696600000003,
+      "cumulative_seconds": 0.41575776400000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/operators.py",
+      "line": 633,
+      "function": "__ge__",
+      "calls": 112960,
+      "self_seconds": 0.027399224000000003,
+      "cumulative_seconds": 0.41209972300000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 369,
+      "function": "main_map",
+      "calls": 120,
+      "self_seconds": 0.0033163090000000004,
+      "cumulative_seconds": 0.409023289
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/result.py",
+      "line": 576,
+      "function": "_raw_all_rows",
+      "calls": 56962,
+      "self_seconds": 0.09149386600000001,
+      "cumulative_seconds": 0.40715962800000005
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py",
+      "line": 3933,
+      "function": "__init__",
+      "calls": 171120,
+      "self_seconds": 0.224258319,
+      "cumulative_seconds": 0.397997276
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _operator.ge>",
+      "calls": 84720,
+      "self_seconds": 0.016576206,
+      "cumulative_seconds": 0.39738029700000005
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_cursor_base.py",
+      "line": 461,
+      "function": "_convert_query",
+      "calls": 56962,
+      "self_seconds": 0.033751214,
+      "cumulative_seconds": 0.382239113
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_home_overview.py",
+      "line": 220,
+      "function": "_target_as_of",
+      "calls": 2,
+      "self_seconds": 3.334e-06,
+      "cumulative_seconds": 0.379736459
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/coverage_source.py",
+      "line": 83,
+      "function": "latest_complete_day",
+      "calls": 2,
+      "self_seconds": 0.0008949950000000001,
+      "cumulative_seconds": 0.379733125
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/operators.py",
+      "line": 559,
+      "function": "__le__",
+      "calls": 113440,
+      "self_seconds": 0.025663079000000002,
+      "cumulative_seconds": 0.379605574
+    },
+    {
+      "file": "<frozen _collections_abc>",
+      "line": 1027,
+      "function": "__iter__",
+      "calls": 113206,
+      "self_seconds": 0.022882615000000002,
+      "cumulative_seconds": 0.369703102
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_data_service.py",
+      "line": 952,
+      "function": "list_latest_dominants",
+      "calls": 1,
+      "self_seconds": 0.023975923000000003,
+      "cumulative_seconds": 0.367494125
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _operator.le>",
+      "calls": 85080,
+      "self_seconds": 0.017778833,
+      "cumulative_seconds": 0.365863871
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/pyarrow/parquet/core.py",
+      "line": 596,
+      "function": "read",
+      "calls": 3385,
+      "self_seconds": 0.36199487900000005,
+      "cumulative_seconds": 0.362364797
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/storage.py",
+      "line": 217,
+      "function": "<genexpr>",
+      "calls": 31203,
+      "self_seconds": 0.023177680000000003,
+      "cumulative_seconds": 0.357096334
+    },
+    {
+      "file": "/opt/anaconda3/lib/python3.13/pathlib/_local.py",
+      "line": 44,
+      "function": "__getitem__",
+      "calls": 98209,
+      "self_seconds": 0.051115253000000006,
+      "cumulative_seconds": 0.346820487
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/result.py",
+      "line": 1584,
+      "function": "scalar",
+      "calls": 28480,
+      "self_seconds": 0.012616945000000001,
+      "cumulative_seconds": 0.34221272
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_queries.py",
+      "line": 59,
+      "function": "convert",
+      "calls": 56962,
+      "self_seconds": 0.06831593300000001,
+      "cumulative_seconds": 0.34093697
+    },
+    {
+      "file": "<string>",
+      "line": 1,
+      "function": "where",
+      "calls": 56960,
+      "self_seconds": 0.019408634,
+      "cumulative_seconds": 0.33417102400000004
+    },
+    {
+      "file": "<string>",
+      "line": 2,
+      "function": "__init__",
+      "calls": 27818,
+      "self_seconds": 0.025091086000000002,
+      "cumulative_seconds": 0.33391865400000004
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/result.py",
+      "line": 788,
+      "function": "_only_one_row",
+      "calls": 28480,
+      "self_seconds": 0.034098098,
+      "cumulative_seconds": 0.32959577500000004
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py",
+      "line": 1761,
+      "function": "create_cursor",
+      "calls": 56962,
+      "self_seconds": 0.029386268,
+      "cumulative_seconds": 0.31743474200000005
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/cursor.py",
+      "line": 2260,
+      "function": "_fetchall_impl",
+      "calls": 56962,
+      "self_seconds": 0.013357556000000001,
+      "cumulative_seconds": 0.315665762
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/domain.py",
+      "line": 493,
+      "function": "__post_init__",
+      "calls": 27818,
+      "self_seconds": 0.094242302,
+      "cumulative_seconds": 0.308827568
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/catalog.py",
+      "line": 381,
+      "function": "<genexpr>",
+      "calls": 39924,
+      "self_seconds": 0.0445979,
+      "cumulative_seconds": 0.30808682600000004
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.isinstance>",
+      "calls": 3406092,
+      "self_seconds": 0.305173324,
+      "cumulative_seconds": 0.305474328
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/_selectable_constructors.py",
+      "line": 497,
+      "function": "select",
+      "calls": 56962,
+      "self_seconds": 0.023722136,
+      "cumulative_seconds": 0.30536882600000004
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/cursor.py",
+      "line": 1195,
+      "function": "fetchall",
+      "calls": 56962,
+      "self_seconds": 0.022884264,
+      "cumulative_seconds": 0.302308206
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py",
+      "line": 1782,
+      "function": "create_default_cursor",
+      "calls": 56962,
+      "self_seconds": 0.014254491000000001,
+      "cumulative_seconds": 0.28408879600000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/selectable.py",
+      "line": 5379,
+      "function": "__init__",
+      "calls": 56962,
+      "self_seconds": 0.043102876000000005,
+      "cumulative_seconds": 0.28164669000000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/coverage_source.py",
+      "line": 607,
+      "function": "_sessions_for_day",
+      "calls": 120,
+      "self_seconds": 8.2291e-05,
+      "cumulative_seconds": 0.279108833
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.any>",
+      "calls": 67658,
+      "self_seconds": 0.152664981,
+      "cumulative_seconds": 0.277210218
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/storage.py",
+      "line": 252,
+      "function": "_month_directory",
+      "calls": 3385,
+      "self_seconds": 0.012400753,
+      "cumulative_seconds": 0.273718055
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/pool/base.py",
+      "line": 1492,
+      "function": "cursor",
+      "calls": 56962,
+      "self_seconds": 0.025463148,
+      "cumulative_seconds": 0.269834305
+    },
+    {
+      "file": "/opt/anaconda3/lib/python3.13/pathlib/_local.py",
+      "line": 245,
+      "function": "_from_parsed_parts",
+      "calls": 108365,
+      "self_seconds": 0.032384750000000004,
+      "cumulative_seconds": 0.26034929900000003
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'get' of 'dict' objects>",
+      "calls": 1242574,
+      "self_seconds": 0.237528115,
+      "cumulative_seconds": 0.252137308
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/connection.py",
+      "line": 228,
+      "function": "cursor",
+      "calls": 56962,
+      "self_seconds": 0.038808003,
+      "cumulative_seconds": 0.244371157
+    },
+    {
+      "file": "<frozen importlib._bootstrap_external>",
+      "line": 145,
+      "function": "_path_stat",
+      "calls": 166908,
+      "self_seconds": 0.022544520000000002,
+      "cumulative_seconds": 0.237665855
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/instrumentation.py",
+      "line": 501,
+      "function": "new_instance",
+      "calls": 199706,
+      "self_seconds": 0.095580356,
+      "cumulative_seconds": 0.23520388800000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_cursor_base.py",
+      "line": 583,
+      "function": "_send_query_prepared",
+      "calls": 56940,
+      "self_seconds": 0.23108443,
+      "cumulative_seconds": 0.23108443
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/session_clock.py",
+      "line": 102,
+      "function": "session_windows_for_trading_day",
+      "calls": 120,
+      "self_seconds": 0.000393344,
+      "cumulative_seconds": 0.230758289
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/session_clock.py",
+      "line": 38,
+      "function": "resolved_session_windows_for_trading_day",
+      "calls": 120,
+      "self_seconds": 0.0023083770000000003,
+      "cumulative_seconds": 0.229905245
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/selectable.py",
+      "line": 6226,
+      "function": "where",
+      "calls": 56960,
+      "self_seconds": 0.064530349,
+      "cumulative_seconds": 0.228183759
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/event/attr.py",
+      "line": 510,
+      "function": "__call__",
+      "calls": 113924,
+      "self_seconds": 0.093790124,
+      "cumulative_seconds": 0.21758048900000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method posix.stat>",
+      "calls": 166911,
+      "self_seconds": 0.21527341800000002,
+      "cumulative_seconds": 0.215274293
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_cursor_base.py",
+      "line": 114,
+      "function": "description",
+      "calls": 56962,
+      "self_seconds": 0.049964662,
+      "cumulative_seconds": 0.21289706400000002
+    },
+    {
+      "file": "/opt/anaconda3/lib/python3.13/pathlib/_abc.py",
+      "line": 130,
+      "function": "with_segments",
+      "calls": 119977,
+      "self_seconds": 0.042005451,
+      "cumulative_seconds": 0.205511891
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/result.py",
+      "line": 275,
+      "function": "__init__",
+      "calls": 84962,
+      "self_seconds": 0.125830932,
+      "cumulative_seconds": 0.205328755
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/market_home_overview.py",
+      "line": 128,
+      "function": "authority_identity",
+      "calls": 1,
+      "self_seconds": 1.6208e-05,
+      "cumulative_seconds": 0.19404637500000002
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/cursor.py",
+      "line": 44,
+      "function": "__init__",
+      "calls": 56962,
+      "self_seconds": 0.026941776,
+      "cumulative_seconds": 0.191540288
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/cursor.py",
+      "line": 274,
+      "function": "fetchall",
+      "calls": 56962,
+      "self_seconds": 0.157210481,
+      "cumulative_seconds": 0.19063560100000002
+    },
+    {
+      "file": "<string>",
+      "line": 1,
+      "function": "order_by",
+      "calls": 28481,
+      "self_seconds": 0.008620226,
+      "cumulative_seconds": 0.18779145200000003
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_queries.py",
+      "line": 94,
+      "function": "dump",
+      "calls": 56962,
+      "self_seconds": 0.103012875,
+      "cumulative_seconds": 0.18752131800000002
+    },
+    {
+      "file": "/opt/anaconda3/lib/python3.13/pathlib/_local.py",
+      "line": 252,
+      "function": "_from_parsed_string",
+      "calls": 108365,
+      "self_seconds": 0.018504857,
+      "cumulative_seconds": 0.186849746
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_cursor_base.py",
+      "line": 531,
+      "function": "_set_results",
+      "calls": 56962,
+      "self_seconds": 0.024523295,
+      "cumulative_seconds": 0.175983983
+    },
+    {
+      "file": "<frozen importlib._bootstrap>",
+      "line": 416,
+      "function": "__enter__",
+      "calls": 27818,
+      "self_seconds": 0.010021894,
+      "cumulative_seconds": 0.169342439
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/context.py",
+      "line": 491,
+      "function": "orm_pre_session_exec",
+      "calls": 56962,
+      "self_seconds": 0.09072192600000001,
+      "cumulative_seconds": 0.16893998500000001
+    },
+    {
+      "file": "/opt/anaconda3/lib/python3.13/pathlib/_local.py",
+      "line": 289,
+      "function": "drive",
+      "calls": 53691,
+      "self_seconds": 0.023940329,
+      "cumulative_seconds": 0.165629737
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/pyarrow/parquet/core.py",
+      "line": 311,
+      "function": "__init__",
+      "calls": 3385,
+      "self_seconds": 0.13129504,
+      "cumulative_seconds": 0.164999006
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_cursor_base.py",
+      "line": 61,
+      "function": "__init__",
+      "calls": 56962,
+      "self_seconds": 0.06256072700000001,
+      "cumulative_seconds": 0.164598512
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/domain.py",
+      "line": 459,
+      "function": "_decimal",
+      "calls": 194726,
+      "self_seconds": 0.118948697,
+      "cumulative_seconds": 0.16390337000000002
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_column.py",
+      "line": 20,
+      "function": "__init__",
+      "calls": 61658,
+      "self_seconds": 0.074745895,
+      "cumulative_seconds": 0.162932402
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/result.py",
+      "line": 2320,
+      "function": "_fetchone_impl",
+      "calls": 28480,
+      "self_seconds": 0.008604471,
+      "cumulative_seconds": 0.159611959
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/util/_collections.py",
+      "line": 523,
+      "function": "get",
+      "calls": 56962,
+      "self_seconds": 0.025116112000000003,
+      "cumulative_seconds": 0.15805501200000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.next>",
+      "calls": 85504,
+      "self_seconds": 0.014017072,
+      "cumulative_seconds": 0.15777623300000002
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/orm/loading.py",
+      "line": 1329,
+      "function": "_populate_full",
+      "calls": 205529,
+      "self_seconds": 0.155815372,
+      "cumulative_seconds": 0.15695007
+    },
+    {
+      "file": "/opt/anaconda3/lib/python3.13/re/__init__.py",
+      "line": 183,
+      "function": "sub",
+      "calls": 114284,
+      "self_seconds": 0.045493208,
+      "cumulative_seconds": 0.153722577
+    },
+    {
+      "file": "/opt/anaconda3/lib/python3.13/pathlib/_local.py",
+      "line": 193,
+      "function": "__eq__",
+      "calls": 108364,
+      "self_seconds": 0.033478356,
+      "cumulative_seconds": 0.153533962
+    },
+    {
+      "file": "/opt/anaconda3/lib/python3.13/pathlib/_local.py",
+      "line": 498,
+      "function": "__init__",
+      "calls": 136431,
+      "self_seconds": 0.038149813000000005,
+      "cumulative_seconds": 0.153047165
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/psycopg/_cursor_base.py",
+      "line": 504,
+      "function": "_select_current_result",
+      "calls": 56962,
+      "self_seconds": 0.10290339100000001,
+      "cumulative_seconds": 0.151460688
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/cursor.py",
+      "line": 1533,
+      "function": "__init__",
+      "calls": 56962,
+      "self_seconds": 0.058747659,
+      "cumulative_seconds": 0.148896186
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/app/market_data/research_metrics.py",
+      "line": 39,
+      "function": "calculate_research_metrics",
+      "calls": 60,
+      "self_seconds": 0.0011896950000000002,
+      "cumulative_seconds": 0.143444661
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/selectable.py",
+      "line": 4385,
+      "function": "order_by",
+      "calls": 28481,
+      "self_seconds": 0.025850476,
+      "cumulative_seconds": 0.14308099600000002
+    },
+    {
+      "file": "<string>",
+      "line": 1,
+      "function": "_generated_cache_key_traversal",
+      "calls": 56962,
+      "self_seconds": 0.08597595000000001,
+      "cumulative_seconds": 0.13556492
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py",
+      "line": 2160,
+      "function": "_gen_cache_key",
+      "calls": 114280,
+      "self_seconds": 0.106599228,
+      "cumulative_seconds": 0.13309057300000002
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py",
+      "line": 5462,
+      "function": "__new__",
+      "calls": 114317,
+      "self_seconds": 0.055625309000000005,
+      "cumulative_seconds": 0.13298437700000001
+    },
+    {
+      "file": "/opt/anaconda3/lib/python3.13/pathlib/_local.py",
+      "line": 365,
+      "function": "relative_to",
+      "calls": 3385,
+      "self_seconds": 0.008494325,
+      "cumulative_seconds": 0.131890839
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py",
+      "line": 1551,
+      "function": "_invoke_before_exec_event",
+      "calls": 56962,
+      "self_seconds": 0.05507121500000001,
+      "cumulative_seconds": 0.12827765000000002
+    },
+    {
+      "file": "/opt/anaconda3/lib/python3.13/pathlib/_local.py",
+      "line": 117,
+      "function": "__init__",
+      "calls": 139816,
+      "self_seconds": 0.078369486,
+      "cumulative_seconds": 0.12718669300000002
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/compiler.py",
+      "line": 1853,
+      "function": "construct_params",
+      "calls": 56962,
+      "self_seconds": 0.10981533800000001,
+      "cumulative_seconds": 0.126852385
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/engine/result.py",
+      "line": 1191,
+      "function": "scalars",
+      "calls": 28362,
+      "self_seconds": 0.00973175,
+      "cumulative_seconds": 0.1221306
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/selectable.py",
+      "line": 4429,
+      "function": "<genexpr>",
+      "calls": 57083,
+      "self_seconds": 0.011972818000000001,
+      "cumulative_seconds": 0.11723052
+    },
+    {
+      "file": "<frozen importlib._bootstrap>",
+      "line": 304,
+      "function": "acquire",
+      "calls": 27818,
+      "self_seconds": 0.03807846,
+      "cumulative_seconds": 0.11721528
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/sql/type_api.py",
+      "line": 1044,
+      "function": "coerce_compared_value",
+      "calls": 114280,
+      "self_seconds": 0.034370078000000005,
+      "cumulative_seconds": 0.116563409
+    },
+    {
+      "file": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1/services/quant-api/.venv/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py",
+      "line": 1231,
+      "function": "__get__",
+      "calls": 85794,
+      "self_seconds": 0.053852607000000004,
+      "cumulative_seconds": 0.115592806
+    }
+  ]
+}

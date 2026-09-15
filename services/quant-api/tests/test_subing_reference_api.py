@@ -6,7 +6,7 @@ import pytest
 from app.api import market_subing_reference
 from app.db.session import get_db
 from app.main import app
-from app.market_data.subing_reference import SubingReferenceService
+from app.market_data.subing_reference import SubingReferenceError, SubingReferenceService
 from app.market_data.market_data_service import MarketDataError
 from test_subing_reference_service import Market, Coverage
 
@@ -74,6 +74,48 @@ def test_errors_do_not_leak_internal_details(client, monkeypatch):
     response = client.get("/api/v1/market/rb/subing/reference")
     assert response.status_code == 500
     assert response.json() == {"detail": {"code": "SUBING_REFERENCE_INTERNAL_ERROR"}}
+
+
+def test_bounded_data_diagnostic_is_exposed_without_changing_top_level_code(
+    client, monkeypatch
+):
+    class FailingService:
+        def query(self, _query):
+            raise SubingReferenceError(
+                "SUBING_REFERENCE_DATA_UNAVAILABLE",
+                diagnostic={
+                    "stage": "physical_contract_replay",
+                    "reason": "DATASET_OR_PARTITION_MISSING",
+                    "context": {
+                        "symbol": "rb",
+                        "contract": "RB2610",
+                        "frequency": "15m",
+                        "expected_count": 500,
+                    },
+                },
+            )
+
+    monkeypatch.setattr(
+        market_subing_reference, "_build_service", lambda *_: FailingService()
+    )
+    response = client.get("/api/v1/market/rb/subing/reference")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {
+            "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+            "diagnostic": {
+                "stage": "physical_contract_replay",
+                "reason": "DATASET_OR_PARTITION_MISSING",
+                "context": {
+                    "symbol": "rb",
+                    "contract": "RB2610",
+                    "frequency": "15m",
+                    "expected_count": 500,
+                },
+            },
+        }
+    }
 
 
 def test_budget_and_concurrent_request_are_bounded(client, monkeypatch):

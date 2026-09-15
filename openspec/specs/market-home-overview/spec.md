@@ -179,15 +179,23 @@ registry-owned active Alert Rules 的 exact trading day `AlertEvent`。`limit` M
 ### Requirement: Market Home Web preserves independent read authorities
 
 `/market` SHALL 独立读取 Market Home overview、Runtime health、消息和本规范定义的批量行情资源。
-消息按需加载且不阻塞市场列表。页面 MUST 保留各资源最后一次成功快照，并把失败单独标识为
+品种目录 SHALL 独立读取既有 `/market/dominants` 批量接口，只用于搜索、导航和消息品种筛选，
+不得从 overview 的参与行情行推导目录，也不得用目录补造缺失行情。消息按需加载且不阻塞市场列表。页面 MUST 保留各资源最后一次成功快照，并把失败单独标识为
 stale/unavailable；它不得由 Runtime heartbeat 推导 overview/Alert 状态，也不得由 Event 空列表推导
-Runtime 正常静默。浏览器不得调用 product dominants、发起 per-product 请求或任何写请求；行情增量
+Runtime 正常静默。浏览器仅允许上述单一批量目录读取，不得发起 per-product 请求或任何写请求；行情增量
 只允许一个 server 固定 operational Scope 的批量 WebSocket，不复用60个单品种详情连接。
 
 返回首页 SHALL 立即恢复已成功的列表、筛选、排序和滚动位置；有效缓存不得因重新挂载或浏览器重新
 可见而被清空并强制全量刷新。缓存 MUST 有有界失效条件；必要刷新在保留旧结果的同时执行，旧结果
 仍保持自己的时间与 freshness。并发请求 MUST 去重，过期身份响应不得覆盖新资源；timer/listener/socket
-由单一生命周期 owner 管理。
+由单一生命周期 owner 管理。可见页面 SHALL 在既有 60 秒周期检查 overview 和目录的五分钟缓存
+及失败状态；未过期的成功快照不重读，失败资源至多每周期发起一次合并后的恢复读取，隐藏页停止定时器。
+
+#### Scenario: Overview is slow or has no participating quote rows
+
+- **WHEN** overview 首载未完成、请求失败或有效响应的参与行情行为零
+- **THEN** 独立目录成功时，黄金和焦煤仍可搜索、导航与消息筛选；目录仅发起一个合并后的批量读取，
+  目录失败/加载状态独立呈现，不影响其他资源
 
 #### Scenario: A resource becomes unavailable after a successful snapshot
 

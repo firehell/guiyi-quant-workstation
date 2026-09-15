@@ -90,14 +90,14 @@ async function loadPage() {
     import { defineComponent, h } from '${vueUrl}'
     export const NButton = defineComponent({ setup(_props, { slots }) { return () => h('button', slots.default?.()) } })
   `)
-  const apiModule = moduleUrl('export async function getMarketHomeOverview() {}\nexport async function getCurrentAlertEvents() {}\nexport async function getRuntimeHealth() {}')
+  const apiModule = moduleUrl('export async function getMarketDominants() {}\nexport async function getMarketHomeOverview() {}\nexport async function getCurrentAlertEvents() {}\nexport async function getRuntimeHealth() {}')
   const homeModule = moduleUrl(`
     import { ref } from '${vueUrl}'
     function resource(data = null) {
       return { data: ref(data), stale: ref(false), loading: ref(false), unavailable: ref(false), error: ref(null), refresh: async () => {} }
     }
     export function useMarketHome() {
-      return { overview: resource(), runtime: resource(), events: resource(), refreshAll: async () => {}, start() {}, dispose() {} }
+      return { overview: resource(), directory: resource(), runtime: resource(), events: resource(), refreshAll: async () => {}, start() {}, dispose() {} }
     }
   `)
   const liveModule = moduleUrl(`
@@ -130,6 +130,7 @@ async function loadPage() {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText
     .replace(/import ['"]@\/styles\/marketHome.css['"];?/g, '')
+    .replace(/from ['"]@\/utils\/productSearch['"]/g, `from '${new URL('../src/utils/productSearch.ts', import.meta.url).href}'`)
     .replace(/from ['"]@\/utils\/productDirectory['"]/g, `from '${new URL('../src/utils/productDirectory.ts', import.meta.url).href}'`)
     .replace(/from ['"]vue['"]/g, `from '${vueUrl}'`)
     .replace(/from ['"]vue-router['"]/g, `from '${routerModule}'`)

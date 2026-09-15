@@ -53,6 +53,8 @@ actual_dominant MUST 按 rank1 Map 拼接真实 contract，不得存储重复 Pa
 
 ### Requirement: 周线 owner
 actual_dominant 的 1w SHALL 只返回完整 ISO 周，并以该周最后交易日 rank1 contract 作为整周 owner。
+分页读取 SHALL 在本次请求内复用同品种同 ISO 周日历，候选过滤与分页边界验证共用该事实；不得跨请求
+缓存，后续读取必须能观察到日历更新。复用不改变缺失映射、缺失日历、物理完整性与游标语义。
 
 #### Scenario: 周中换月
 - **WHEN** rank1 在完整 ISO 周内变更

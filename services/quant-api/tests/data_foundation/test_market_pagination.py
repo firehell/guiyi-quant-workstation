@@ -741,3 +741,37 @@ def test_query_actual_dominant_recent_bars_keeps_corrupt_page_invalid(
 
     assert raised.value.code == "ACTUAL_DOMINANT_RECENT_BARS_INVALID"
     assert type(raised.value) is MarketDataError
+
+
+@pytest.mark.parametrize('limit', [1, 2])
+def test_weekly_page_reuses_calendar_within_read_only(session, tmp_path, monkeypatch, limit):
+    """Catch per-bar SQL repetition without allowing a cache to hide later calendar changes."""
+    from collections import Counter
+    from sqlalchemy import update
+
+    catalog, service, store = _service(session, tmp_path)
+    _publish(catalog, store, DatasetKey('contract', 'jm', 'JM2505', '1w'),
+             (_bar(10, 105), _bar(17, 110)))
+    _calendar_and_map(session, catalog, tuple((day, 'JM2505') for day in (6, 7, 8, 9, 10, 13, 14, 15, 16, 17)))
+    session.commit()
+    calls = Counter()
+    original = catalog.trading_days
+
+    def counted(symbol, start, end):
+        calls[(symbol, start, end)] += 1
+        return original(symbol, start, end)
+
+    monkeypatch.setattr(catalog, 'trading_days', counted)
+    query = SeriesPageQuery('actual_dominant', 'jm', '1w', limit=limit)
+    result = service.query_page(query)
+    assert [bar.close for bar in result.bars] == ([Decimal('110')] if limit == 1 else [Decimal('105'), Decimal('110')])
+    assert result.has_more_before is (limit == 1)
+    assert calls[('jm', date(2025, 1, 13), date(2025, 1, 19))] == 1
+
+    # Same service, new read: Friday is now a non-trading day, so its bar cannot survive.
+    session.execute(update(TradingCalendar).where(TradingCalendar.trade_date == date(2025, 1, 17)).values(is_trading_day=False))
+    session.commit()
+    calls.clear()
+    with pytest.raises(MarketDataError, match='MAPPED_CONTRACT_DATASET_MISSING'):
+        service.query_page(query)
+    assert calls[('jm', date(2025, 1, 13), date(2025, 1, 19))] == 1

@@ -407,9 +407,12 @@ test('same-identity busy and cancelled refreshes retain the last success as stal
     assert.notEqual(retained, null)
     assert.equal(state.sections.chart.state.value, 'stale')
     assert.equal(state.sections.chart.error.value, code)
-    assert.deepEqual(resolveNewowPanelRenderState(state.sections.chart.state.value, retained, state.sections.chart.error.value), {
+    const rendered = resolveNewowPanelRenderState(state.sections.chart.state.value, retained, state.sections.chart.error.value)
+    assert.equal(rendered.showValue, true)
+    assert.match(rendered.message, classification === 'busy' ? /资源正在处理其他请求/ : /本次请求已取消/)
+    assert.deepEqual({ ...rendered, message: '<localized>' }, {
       showValue: true,
-      message: `刷新失败（${code}）；以下为同一身份上次成功的 stale 数值。`,
+      message: '<localized>',
       staleAt: '2026-08-15T07:00:01Z',
     })
   }

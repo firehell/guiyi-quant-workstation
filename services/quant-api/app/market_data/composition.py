@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Callable, ContextManager, Mapping, cast
+from typing import TYPE_CHECKING, Callable, ContextManager, Mapping, cast
 
 from sqlalchemy.orm import Session
 
@@ -51,6 +51,9 @@ from app.market_data.session_anchor_repair import (
     run_session_anchor_migration,
 )
 from app.redis_connections import get_redis_connection
+
+if TYPE_CHECKING:
+    from app.market_data.rqdata_adapter import ExchangeDailySourceObserver
 
 
 _PRODUCT_STARTS = PROJECT_ROOT / "data/universe/product_window_starts.csv"
@@ -139,6 +142,7 @@ def build_historical_data_manager(
     data_root: Path | None = None,
     config_root: Path | None = None,
     provider_settings: Mapping[str, str] | None = None,
+    source_observer: ExchangeDailySourceObserver | None = None,
 ) -> HistoricalDataManager:
     """Compose the Historical maintenance boundary without starting a run."""
 
@@ -150,6 +154,7 @@ def build_historical_data_manager(
     adapter = RQDataMarketAdapter(
         session=session,
         provider_settings=provider_settings,
+        source_observer=source_observer,
     )
     coverage = DatabaseCoverageSource(
         session,

@@ -1,7 +1,8 @@
 import { shallowRef } from 'vue'
 
-interface MarketHomeOptions<O, R> {
+interface MarketHomeOptions<O, R, D> {
   fetchOverview: () => Promise<O>
+  fetchDirectory: () => Promise<D>
   fetchRuntime: () => Promise<R>
   overviewCacheKey?: string
   overviewMaxAgeMs?: number
@@ -32,11 +33,12 @@ interface ResourceState<T> {
   inFlight: Promise<void> | null
 }
 
-let cachedOverview: { key: string; state: ResourceState<unknown> } | null = null
+let cachedHome: { key: string; overview: ResourceState<unknown>; directory: ResourceState<unknown> } | null = null
 
-export function useMarketHome<O, R>(options: MarketHomeOptions<O, R>) {
+export function useMarketHome<O, R, D>(options: MarketHomeOptions<O, R, D>) {
   const now = options.now ?? Date.now
-  const overview = createResource(options.fetchOverview, undefined, overviewState<O>(options.overviewCacheKey), now)
+  const overview = createResource(options.fetchOverview, undefined, cachedState<O>('overview', options.overviewCacheKey), now)
+  const directory = createResource(options.fetchDirectory, undefined, cachedState<D>('directory', options.overviewCacheKey), now)
   const runtime = createResource(options.fetchRuntime, undefined, undefined, now)
   const overviewMaxAgeMs = options.overviewMaxAgeMs ?? 5 * 60_000
   let timer: ReturnType<typeof setInterval> | null = null
@@ -44,18 +46,22 @@ export function useMarketHome<O, R>(options: MarketHomeOptions<O, R>) {
 
   async function refreshOverview() { await overview.refresh() }
   async function refreshOverviewIfExpired() {
-    const acceptedAt = overview.updatedAt.value
-    if (overview.data.value != null && acceptedAt != null && now() - acceptedAt <= overviewMaxAgeMs) return
-    await overview.refresh()
+    await refreshIfExpired(overview)
   }
+  async function refreshIfExpired<T>(resource: Resource<T>) {
+    const acceptedAt = resource.updatedAt.value
+    if (!resource.unavailable.value && resource.data.value != null && acceptedAt != null && now() - acceptedAt <= overviewMaxAgeMs) return
+    await resource.refresh()
+  }
+  async function refreshDirectoryIfExpired() { await refreshIfExpired(directory) }
   function invalidateOverview() { overview.invalidate() }
   async function refreshRuntime() { await runtime.refresh() }
-  async function refreshAll() { await Promise.all([overview.refresh(), runtime.refresh()]) }
+  async function refreshAll() { await Promise.all([overview.refresh(), runtime.refresh(), directory.refresh()]) }
 
   function onVisibilityChange() {
     if (document.visibilityState === 'visible') {
       startTimer()
-      void Promise.all([refreshOverviewIfExpired(), refreshRuntime()])
+      void Promise.all([refreshOverviewIfExpired(), refreshRuntime(), refreshDirectoryIfExpired()])
     } else stopTimer()
   }
 
@@ -65,13 +71,13 @@ export function useMarketHome<O, R>(options: MarketHomeOptions<O, R>) {
     document.addEventListener('visibilitychange', onVisibilityChange)
     if (document.visibilityState === 'visible') {
       startTimer()
-      void Promise.all([refreshOverviewIfExpired(), refreshRuntime()])
+      void Promise.all([refreshOverviewIfExpired(), refreshRuntime(), refreshDirectoryIfExpired()])
     }
   }
 
   function startTimer() {
     if (timer !== null) return
-    timer = setInterval(() => { void refreshRuntime() }, 60_000)
+    timer = setInterval(() => { void Promise.all([refreshOverviewIfExpired(), refreshRuntime(), refreshDirectoryIfExpired()]) }, 60_000)
   }
 
   function stopTimer() {
@@ -86,7 +92,7 @@ export function useMarketHome<O, R>(options: MarketHomeOptions<O, R>) {
     started = false
   }
 
-  return { overview, runtime, refreshOverview, refreshOverviewIfExpired, invalidateOverview, refreshRuntime, refreshAll, start, dispose }
+  return { overview, runtime, directory, refreshDirectoryIfExpired, refreshOverview, refreshOverviewIfExpired, invalidateOverview, refreshRuntime, refreshAll, start, dispose }
 }
 
 function createResource<T>(
@@ -149,8 +155,10 @@ function createResourceState<T>(): ResourceState<T> {
   }
 }
 
-function overviewState<T>(key?: string): ResourceState<T> | undefined {
+function cachedState<T>(resource: 'overview' | 'directory', key?: string): ResourceState<T> | undefined {
   if (!key) return undefined
-  if (!cachedOverview || cachedOverview.key !== key) cachedOverview = { key, state: createResourceState<unknown>() }
-  return cachedOverview.state as ResourceState<T>
+  if (!cachedHome || cachedHome.key !== key) cachedHome = {
+    key, overview: createResourceState<unknown>(), directory: createResourceState<unknown>(),
+  }
+  return cachedHome[resource] as ResourceState<T>
 }

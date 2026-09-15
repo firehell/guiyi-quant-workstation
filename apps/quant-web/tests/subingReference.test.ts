@@ -30,6 +30,23 @@ test('page identity mismatch clears historical facts and preserves explicit unav
   assert.match(loader.error.value ?? '', /快照/)
 })
 
+test('known bounded backend diagnostics get a Chinese explanation and unknown text is not reflected', async () => {
+  const loader = useSubingReference(async () => { throw {
+    response: { status: 409, data: { detail: {
+      code: 'SUBING_REFERENCE_DATA_UNAVAILABLE',
+      diagnostic: { stage: 'physical_contract_replay', reason: 'DATASET_OR_PARTITION_MISSING', context: { symbol: 'jm', contract: 'JM2609', frequency: '15m', expected_count: 5081, secret: 'do-not-show' } },
+    } } },
+  } })
+  await loader.refresh('jm')
+  assert.match(loader.error.value ?? '', /物理合约回放.*行情数据集或分区缺失.*JM2609.*5081/)
+  assert.doesNotMatch(loader.error.value ?? '', /secret|do-not-show/)
+  const unknown = useSubingReference(async () => { throw {
+    response: { status: 409, data: { detail: { code: 'SUBING_REFERENCE_DATA_UNAVAILABLE', diagnostic: { stage: 'evil', reason: 'raw internal stack', context: { path: '/secret' } } } } },
+  } })
+  await unknown.refresh('jm')
+  assert.equal(unknown.error.value, '历史参考不可用，请核查数据覆盖或重新读取。实际预警记录独立展示。')
+})
+
 test('callout density collapses to accessible compact markers without overlapping cards', async () => {
   const { layoutReferenceCallouts } = await import('../src/utils/referenceCalloutLayout.ts')
   const result = layoutReferenceCallouts(Array.from({ length: 20 }, (_, i) => ({ x: 130 + i, y: 190, callout: { id: String(i), time: '', physicalContract: 'JM2601', price: '100', title: '开多', detail: '100', tone: 'neutral' as const, above: false } })), 360, 400)

@@ -11,7 +11,9 @@ const candidatePaths = new Set([
 export function previewTarget(method: string, rawURL: string, upgrade = false): string | null {
   if (method !== 'GET' || upgrade) return null
   const [path] = rawURL.split('?')
-  if (path && candidatePaths.has(path)) return 'http://127.0.0.1:8010'
+  if (path && (candidatePaths.has(path) || /^\/api\/v1\/market\/[a-z]{1,8}\/subing\/reference$/.test(path))) {
+    return 'http://127.0.0.1:8010'
+  }
   if (rawURL === '/api/runtime/health' || rawURL === '/api/alerts/current-events?limit=30') {
     return 'http://127.0.0.1:8000'
   }

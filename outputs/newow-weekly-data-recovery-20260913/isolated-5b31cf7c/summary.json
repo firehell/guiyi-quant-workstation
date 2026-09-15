@@ -1,0 +1,122 @@
+{
+  "as_of": "2026-09-13T06:36:13+00:00",
+  "audit_complete": false,
+  "counts": {
+    "joint_ready": 6,
+    "main_ready": 6,
+    "reference_ready": 9,
+    "total": 180
+  },
+  "joint_ready_cases": [
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "pd"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "pd"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "pd"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "trend",
+      "symbol": "pt"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "oscillation",
+      "symbol": "pt"
+    },
+    {
+      "frequency": "1w",
+      "strategy": "main_rise",
+      "symbol": "pt"
+    }
+  ],
+  "matrix_covered": true,
+  "metadata_proposal_count": 494,
+  "metadata_proposal_outcome_counts": {
+    "UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 494
+  },
+  "non_joint_ready_outcome_counts": {
+    "DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING|DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 6,
+    "DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING|DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 9,
+    "UNKNOWN:HISTORICAL_SESSION_FACT_MISSING|UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 24,
+    "UNKNOWN:MAIN_CONTRACT_MAP_MISSING|DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 3,
+    "UNKNOWN:MAIN_CONTRACT_MAP_MISSING|DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 18,
+    "UNKNOWN:MAIN_CONTRACT_MAP_MISSING|READY:-": 3,
+    "UNKNOWN:MAIN_CONTRACT_MAP_MISSING|SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "UNKNOWN:MAIN_CONTRACT_MAP_MISSING|UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 108
+  },
+  "normalized_scope_sha256": "f71bd64943beecb0e01dd420add827e3f7f9402f020c45c6988192b7e56da2c6",
+  "pending_count": 2233,
+  "pending_outcome_counts": {
+    "case_section:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 300,
+    "case_section:UNKNOWN:MAIN_CONTRACT_MAP_MISSING": 945,
+    "dependency:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 494,
+    "metadata:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 494
+  },
+  "provider_requests": 0,
+  "repair_target_count": 905,
+  "repair_target_outcome_counts": {
+    "PROPOSED:-": 896,
+    "REVIEW_REQUIRED:REPAIR_SCOPE_SOURCE_OR_INTEGRITY": 9
+  },
+  "report_sha256": "787393d159b0bde955b7258e1251ad24730d45cd18b5a6dfc073db6f33879ff8",
+  "schema_version": "newow_weekly_readiness_summary_v1",
+  "scope_covered": true,
+  "scope_file_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d",
+  "section_outcome_counts": {
+    "auxiliary:cup_handle:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 6,
+    "auxiliary:cup_handle:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 9,
+    "auxiliary:cup_handle:NOT_APPLICABLE:NEWOW_CUP_HANDLE_NOT_APPLICABLE": 6,
+    "auxiliary:cup_handle:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 24,
+    "auxiliary:cup_handle:UNKNOWN:MAIN_CONTRACT_MAP_MISSING": 135,
+    "auxiliary:macd:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 6,
+    "auxiliary:macd:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 9,
+    "auxiliary:macd:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 24,
+    "auxiliary:macd:UNKNOWN:MAIN_CONTRACT_MAP_MISSING": 135,
+    "auxiliary:macd:WARMING:NEWOW_MACD_WARMING": 6,
+    "auxiliary:main_force_control:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 6,
+    "auxiliary:main_force_control:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 9,
+    "auxiliary:main_force_control:READY:-": 6,
+    "auxiliary:main_force_control:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 24,
+    "auxiliary:main_force_control:UNKNOWN:MAIN_CONTRACT_MAP_MISSING": 135,
+    "auxiliary:up_down_energy:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 6,
+    "auxiliary:up_down_energy:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 9,
+    "auxiliary:up_down_energy:READY:-": 6,
+    "auxiliary:up_down_energy:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 24,
+    "auxiliary:up_down_energy:UNKNOWN:MAIN_CONTRACT_MAP_MISSING": 135,
+    "auxiliary:zhaoyao_mirror:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 6,
+    "auxiliary:zhaoyao_mirror:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 9,
+    "auxiliary:zhaoyao_mirror:READY:-": 6,
+    "auxiliary:zhaoyao_mirror:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 24,
+    "auxiliary:zhaoyao_mirror:UNKNOWN:MAIN_CONTRACT_MAP_MISSING": 135,
+    "chart:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 6,
+    "chart:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 9,
+    "chart:READY:-": 6,
+    "chart:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 24,
+    "chart:UNKNOWN:MAIN_CONTRACT_MAP_MISSING": 135,
+    "comparator:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 6,
+    "comparator:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 9,
+    "comparator:NOT_APPLICABLE:NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE": 4,
+    "comparator:UNAVAILABLE:NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS": 2,
+    "comparator:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 24,
+    "comparator:UNKNOWN:MAIN_CONTRACT_MAP_MISSING": 135,
+    "explanation:UNOPENED:NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN": 180,
+    "reference:DATA_UNAVAILABLE:DATASET_OR_PARTITION_MISSING": 9,
+    "reference:DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 27,
+    "reference:READY:-": 9,
+    "reference:SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE": 3,
+    "reference:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 132
+  },
+  "valid": true,
+  "violations": [],
+  "writes": 0
+}

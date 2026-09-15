@@ -7,8 +7,7 @@ import type { SubingReferenceTrade } from '@/types/subingReference'
 import { getSubingReference } from '@/api/subingReference'
 import { useSubingReference } from '@/composables/useSubingReference'
 import { referenceDecimalDisplay, subingCallouts, subingActionLabel } from '@/utils/subingReference'
-import { formatMarketDecimal } from '@/utils/marketDisplay'
-import { formatChartTimeInShanghai } from '@/utils/barTime'
+import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 import SubingReferencePanel from './SubingReferencePanel.vue'
 import MarketDetailDrawer from '@/components/market/detail/MarketDetailDrawer.vue'
 import MarketDetailInsightDeck from '@/components/market/detail/MarketDetailInsightDeck.vue'
@@ -102,16 +101,16 @@ onBeforeUnmount(() => { loader.dispose(); alertFacts.dispose(); reference.dispos
     <p class="subing-workspace__reference-source">历史重算·乐观参考｜零费用/零滑点 <span>白底标注 · 实际预警为 S↑ / S↓</span></p>
     <SubingReferencePanel :data="reference.data.value" :loading="reference.loading.value" :error="reference.error.value" @refresh="reference.refresh(identity.symbol, $event)" @load-more="reference.loadMore" @focus="focusTrade" @details="selectedTrade = $event" />
     <p v-if="referenceFocusNotice" role="status">{{ referenceFocusNotice }}</p>
-    <MarketDetailDrawer :open="selectedTrade !== null" title="历史参考记录详情" @close="selectedTrade = null"><template v-if="selectedTrade"><p>{{ selectedTrade.side === 'LONG' ? '多头参考' : '空头参考' }} · {{ selectedTrade.status }} · {{ selectedTrade.physical_contract }}</p><p>开仓参考 {{ formatMarketDecimal(selectedTrade.entry_reference_price) }} · {{ formatChartTimeInShanghai(selectedTrade.entry_bar_end) }}（北京时间）</p><p>平仓参考 {{ formatMarketDecimal(selectedTrade.exit_reference_price) }} · {{ selectedTrade.exit_bar_end ? `${formatChartTimeInShanghai(selectedTrade.exit_bar_end)}（北京时间）` : '尚无配对平仓' }}</p><p>持有 {{ selectedTrade.holding_bars }} 根 Bar · {{ selectedTrade.initial ? '窗口初始记录' : '窗口内新开参考' }}</p><p>历史重算·乐观参考｜零费用/零滑点</p><p>{{ selectedTrade.reference_trade_id }}</p></template></MarketDetailDrawer>
+    <MarketDetailDrawer :open="selectedTrade !== null" title="历史参考记录详情" @close="selectedTrade = null"><template v-if="selectedTrade"><p>{{ selectedTrade.side === 'LONG' ? '多头参考' : '空头参考' }} · {{ selectedTrade.status === 'CLOSED' ? '已平参考' : selectedTrade.status === 'OPEN' ? '未平参考' : '换月中断' }} · {{ selectedTrade.physical_contract }}</p><p>开仓参考 {{ formatMarketDecimal(selectedTrade.entry_reference_price) }} · {{ formatBeijingInstant(selectedTrade.entry_bar_end) }}</p><p>平仓参考 {{ formatMarketDecimal(selectedTrade.exit_reference_price) }} · {{ selectedTrade.exit_bar_end ? formatBeijingInstant(selectedTrade.exit_bar_end) : '尚无配对平仓' }}</p><p>持有 {{ selectedTrade.holding_bars }} 根 Bar · {{ selectedTrade.initial ? '窗口初始记录' : '窗口内新开参考' }}</p><p>历史重算·乐观参考｜零费用/零滑点</p><p>{{ selectedTrade.reference_trade_id }}</p></template></MarketDetailDrawer>
     <p class="subing-workspace__hint">实际预警记录 · 以下仅为已持久化 AlertEvent，与历史重算信号独立；同一 Bar 可以同时存在。</p>
     <MarketDetailDrawer :open="selectedSignal !== null" title="历史重算参考信号" @close="selectedSignalId = null">
-      <template v-if="selectedSignal"><p>{{ subingActionLabel(selectedSignal.action) }} · 参考价 {{ formatMarketDecimal(selectedSignal.reference_price) }}</p><p>{{ formatChartTimeInShanghai(selectedSignal.bar_end) }}（北京时间） · {{ selectedSignal.physical_contract }}</p><p v-if="selectedSignal.closed_return_pct !== null">本笔平仓参考收益 {{ referenceDecimalDisplay(selectedSignal.closed_return_pct) }}%</p><p>历史重算·乐观参考｜零费用/零滑点 · 非实际预警 Event</p><p>信号 {{ selectedSignal.signal_id }}</p><p v-if="colocatedEvents.length">同 Bar 实际预警：<button v-for="event in colocatedEvents" :key="event.id" type="button" @click="selectedEvent = event.id; selectedSignalId = null">查看 AlertEvent #{{ event.id }}</button></p><p v-else>当前已读取窗口未发现同 Bar 实际预警记录。</p></template>
+      <template v-if="selectedSignal"><p>{{ subingActionLabel(selectedSignal.action) }} · 参考价 {{ formatMarketDecimal(selectedSignal.reference_price) }}</p><p>{{ formatBeijingInstant(selectedSignal.bar_end) }} · {{ selectedSignal.physical_contract }}</p><p v-if="selectedSignal.closed_return_pct !== null">本笔平仓参考收益 {{ referenceDecimalDisplay(selectedSignal.closed_return_pct) }}%</p><p>历史重算·乐观参考｜零费用/零滑点 · 非实际预警 Event</p><p>信号 {{ selectedSignal.signal_id }}</p><p v-if="colocatedEvents.length">同 Bar 实际预警：<button v-for="event in colocatedEvents" :key="event.id" type="button" @click="selectedEvent = event.id; selectedSignalId = null">查看 AlertEvent #{{ event.id }}</button></p><p v-else>当前已读取窗口未发现同 Bar 实际预警记录。</p></template>
     </MarketDetailDrawer>
     <MarketDetailSectionTabs ref="tabs" :tabs="[]" :active-id="activeTab" :history="model.history" history-selectable @select="activeTab = $event" @history-select="selectedEvent = Number($event.id.replace('subing-event:', ''))">
       <template #default><MarketDetailInsightDeck :identity-key="identityKey" :sections="model.disclosureSections" :default-open="true" /></template>
     </MarketDetailSectionTabs>
     <MarketDetailDrawer :open="selectedHistory !== null" title="苏冰预警详情" @close="selectedEvent = null">
-      <p v-if="selectedHistory">{{ selectedHistory.label }} · {{ selectedHistory.barEnd }} · {{ selectedHistory.contract }}</p>
+      <p v-if="selectedHistory">{{ selectedHistory.label }} · {{ formatBeijingInstant(selectedHistory.barEnd) }} · {{ selectedHistory.contract }}</p>
     </MarketDetailDrawer>
   </section>
 </template>

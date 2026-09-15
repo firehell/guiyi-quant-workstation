@@ -1,0 +1,15 @@
+{
+  "started_at": "2026-09-13T14:04:07.050Z",
+  "ended_at": "2026-09-13T14:07:48.839Z",
+  "exit_code": null,
+  "signal": "SIGTERM",
+  "stopped": false,
+  "preflight_lock_free": true,
+  "stdout_bytes": 0,
+  "stderr_bytes": 63,
+  "report_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "code_commit": "ef2e087d1bec3af3b376e5051821e4674955f657",
+  "scope_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d",
+  "ending_commit": "5b31cf7c1ceb5350d4a5ea0a3d9328635d0ea62d",
+  "code_commit_unchanged": false
+}

@@ -76,7 +76,10 @@ def subing_reference(
             if exc.code == "SUBING_REFERENCE_BUDGET_EXCEEDED"
             else 409
         )
-        raise HTTPException(status, detail={"code": exc.code}) from None
+        detail: dict[str, object] = {"code": exc.code}
+        if exc.diagnostic is not None:
+            detail["diagnostic"] = exc.diagnostic
+        raise HTTPException(status, detail=detail) from None
     except ActualDominantResearchSegmentIdentityError:
         raise HTTPException(
             409, detail={"code": "SUBING_REFERENCE_DATA_CONFLICT"}

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { MarketDetailDisclosureSection } from '@/types/marketDetail'
 import MarketDetailIcon from './MarketDetailIcon.vue'
+import { formatBeijingInstant } from '@/utils/marketDisplay'
 
 defineProps<{
   section: MarketDetailDisclosureSection
@@ -31,7 +32,7 @@ const emit = defineEmits<{
           <dd>{{ row.value }}</dd>
         </div>
       </dl>
-      <p v-if="section.updatedAt" class="detail-disclosure__updated">更新于 {{ section.updatedAt }}</p>
+      <p v-if="section.updatedAt" class="detail-disclosure__updated" :title="section.updatedAt">更新于 {{ formatBeijingInstant(section.updatedAt) }}</p>
       <slot />
     </div>
   </section>

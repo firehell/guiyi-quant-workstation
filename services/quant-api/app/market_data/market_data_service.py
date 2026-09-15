@@ -701,6 +701,8 @@ class MarketDataService:
             if request.frequency is BarFrequency.W1:
                 raise MarketDataError("ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT")
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
+        # Scope calendar reuse to this page read; later reads must see new facts.
+        weekly_calendar: dict[date, tuple[date, ...]] = {}
         selected: list[CanonicalBar] = []
         available_contract_days: set[tuple[str, date]] = set()
         for _, month_partitions in _partition_month_groups(partitions):
@@ -717,6 +719,7 @@ class MarketDataService:
                             request.symbol,
                             bar.trading_day,
                             mapping_by_day,
+                            weekly_calendar,
                             strict_mapping=False,
                         )
                         if request.frequency is BarFrequency.W1
@@ -737,6 +740,7 @@ class MarketDataService:
                         selected,
                         mapping_by_day,
                         available_contract_days,
+                        weekly_calendar,
                     )
         if not selected:
             available_days = {day for _, day in available_contract_days}
@@ -748,6 +752,7 @@ class MarketDataService:
                         request.symbol,
                         day,
                         mapping_by_day,
+                        weekly_calendar,
                     )
             raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
         return self._actual_page_result(
@@ -755,6 +760,7 @@ class MarketDataService:
             selected,
             mapping_by_day,
             available_contract_days,
+            weekly_calendar,
         )
 
     def _actual_page_result(
@@ -763,6 +769,7 @@ class MarketDataService:
         selected: list[CanonicalBar],
         mapping_by_day: dict[date, MainMapFact],
         available_contract_days: set[tuple[str, date]],
+        weekly_calendar: dict[date, tuple[date, ...]],
     ) -> MarketSeriesPageResult:
         page = selected[: request.limit]
         self._validate_actual_page_boundary(
@@ -770,6 +777,7 @@ class MarketDataService:
             page,
             mapping_by_day,
             available_contract_days,
+            weekly_calendar,
         )
         try:
             missing_days = self.catalog.missing_main_map_days(
@@ -792,6 +800,7 @@ class MarketDataService:
         page: list[CanonicalBar],
         mapping_by_day: dict[date, MainMapFact],
         available_contract_days: set[tuple[str, date]],
+        weekly_calendar: dict[date, tuple[date, ...]],
     ) -> None:
         """在决定分页边界前验证映射日没有被静默跳过。"""
         page_start = min(bar.trading_day for bar in page)
@@ -827,6 +836,7 @@ class MarketDataService:
                     request.symbol,
                     day,
                     mapping_by_day,
+                    weekly_calendar,
                 )
                 if weekly_owner is None:
                     continue
@@ -843,15 +853,18 @@ class MarketDataService:
         symbol: str,
         trading_day: date,
         mapping_by_day: dict[date, MainMapFact],
+        weekly_calendar: dict[date, tuple[date, ...]],
         *,
         strict_mapping: bool = True,
     ) -> MainMapFact | None:
         """仅将完整 ISO 交易周最后交易日的正式 owner 用于周线拼接。"""
         monday = trading_day - timedelta(days=trading_day.isoweekday() - 1)
         try:
-            week_days = self.catalog.trading_days(
-                symbol, monday, monday + timedelta(days=6)
-            )
+            if monday not in weekly_calendar:
+                weekly_calendar[monday] = self.catalog.trading_days(
+                    symbol, monday, monday + timedelta(days=6)
+                )
+            week_days = weekly_calendar[monday]
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
         if not week_days or week_days[-1] != trading_day:

@@ -51,6 +51,7 @@ async function mockRangeWorkspace(page, { total = 540 } = {}) {
 }
 
 async function enableRangeDetector(page) {
+  await page.getByText('指标设置', { exact: true }).click()
   await page.getByRole('checkbox', { name: '箱体识别（Range）', exact: true }).check()
 }
 
@@ -59,6 +60,8 @@ test.describe('Range Detector chart overlay', () => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
+    await expect(page.getByText('指标设置', { exact: true })).toBeVisible()
+    await page.getByText('指标设置', { exact: true }).click()
     await expect(page.getByRole('checkbox', { name: '箱体识别（Range）', exact: true })).toHaveCount(1)
     await expect(page.locator('.free-workspace')).toHaveAttribute('data-range-detector-warmup', 'disabled')
   })

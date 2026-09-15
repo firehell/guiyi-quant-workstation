@@ -15,7 +15,11 @@ from app.market_data import rqdata_adapter
 from app.market_data.coverage_source import DatabaseCoverageSource
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import BarFetchRequest
-from app.market_data.rqdata_adapter import RQDataClient, RQDataMarketAdapter
+from app.market_data.rqdata_adapter import (
+    ExchangeDailySourceRequest,
+    RQDataClient,
+    RQDataMarketAdapter,
+)
 from app.market_data.session_clock import SHANGHAI
 from app.models import (
     Contract,
@@ -1222,6 +1226,153 @@ def test_rqdata_daily_and_weekly_batch_reuses_one_exchange_daily_snapshot(
     session.close()
 
 
+def test_rqdata_weekly_april_source_range_starts_at_iso_monday_and_is_observed(
+    tmp_path,
+) -> None:
+    """A month boundary must not truncate the complete week ending April 3."""
+    session, _starts = _session(tmp_path)
+    contract = session.scalar(select(Contract).where(Contract.contract_code == "JM2509"))
+    assert contract is not None
+    contract.listed_date = date(2026, 3, 1)
+    contract.expired_date = date(2026, 5, 1)
+    _add_provider_calendar_facts(session, date(2026, 3, 30), date(2026, 4, 3))
+    session.commit()
+    expected = datetime(2026, 4, 3, 1, 5, tzinfo=UTC)
+    rows = [
+        {
+            "date": date(2026, 3, 30) + timedelta(days=offset),
+            "open": 100 + offset,
+            "high": 110 + offset,
+            "low": 90 + offset,
+            "close": 105 + offset,
+            "volume": 1,
+            "total_turnover": 100,
+            "open_interest": 20,
+        }
+        for offset in range(5)
+    ]
+    client = ExchangeDailyClient({"JM2509": pd.DataFrame(rows)})
+
+    class Observer:
+        def __init__(self) -> None:
+            self.started: list[ExchangeDailySourceRequest] = []
+            self.responses: list[tuple[ExchangeDailySourceRequest, tuple[dict, ...]]] = []
+
+        def before_request(self, request: ExchangeDailySourceRequest) -> None:
+            self.started.append(request)
+
+        def after_response(
+            self,
+            request: ExchangeDailySourceRequest,
+            response: tuple[dict, ...],
+        ) -> None:
+            self.responses.append((request, response))
+
+    observer = Observer()
+    adapter = RQDataMarketAdapter(
+        session=session,
+        client=client,
+        source_observer=observer,
+    )
+    key = DatasetKey("contract", "jm", "JM2509", "1w")
+
+    source_requests = adapter.exchange_daily_source_requests(
+        (BarFetchRequest(key, (expected,)),)
+    )
+    batch = _fetch(adapter, key, (expected,))
+
+    source_request = ExchangeDailySourceRequest(
+        contract="JM2509",
+        start=date(2026, 3, 30),
+        end=date(2026, 4, 3),
+        expected_dates=tuple(
+            date(2026, 3, 30) + timedelta(days=offset) for offset in range(5)
+        ),
+    )
+    assert source_requests == (source_request,)
+    assert observer.started == [source_request]
+    assert observer.responses[0][0] == source_request
+    assert tuple(row["date"] for row in observer.responses[0][1]) == tuple(
+        date(2026, 3, 30) + timedelta(days=offset) for offset in range(5)
+    )
+    assert client.calls == [("JM2509", date(2026, 3, 30), date(2026, 4, 3))]
+    assert batch.bars[0].trading_day == date(2026, 4, 3)
+    session.close()
+
+
+def test_rqdata_source_observer_started_failure_prevents_provider_call(tmp_path) -> None:
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 6, 1, 5, tzinfo=UTC)
+    client = ExchangeDailyClient({"JM2509": pd.DataFrame()})
+
+    class Observer:
+        def before_request(self, _request: ExchangeDailySourceRequest) -> None:
+            raise InfrastructureError("SOURCE_JOURNAL_UNAVAILABLE")
+
+        def after_response(self, _request, _response) -> None:
+            raise AssertionError("provider response cannot exist")
+
+    adapter = RQDataMarketAdapter(
+        session=session,
+        client=client,
+        source_observer=Observer(),
+    )
+
+    with pytest.raises(InfrastructureError, match="^SOURCE_JOURNAL_UNAVAILABLE$"):
+        _fetch(adapter, DatasetKey("contract", "jm", "JM2509", "1d"), (expected,))
+
+    assert client.calls == []
+    session.close()
+
+
+def test_rqdata_source_observer_response_failure_stops_before_normalization(
+    tmp_path,
+) -> None:
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 6, 1, 5, tzinfo=UTC)
+    client = ExchangeDailyClient(
+        {
+            "JM2509": pd.DataFrame(
+                [
+                    {
+                        "date": date(2025, 1, 6),
+                        "open": 0,
+                        "high": 100,
+                        "low": 0,
+                        "close": 100,
+                        "volume": 1,
+                        "total_turnover": 100,
+                        "open_interest": 20,
+                    }
+                ]
+            )
+        }
+    )
+    events: list[str] = []
+
+    class Observer:
+        def before_request(self, _request: ExchangeDailySourceRequest) -> None:
+            events.append("started")
+
+        def after_response(self, _request, response: tuple[dict, ...]) -> None:
+            assert response[0]["open"] == 0
+            events.append("response_saved")
+            raise InfrastructureError("SOURCE_RESPONSE_PERSIST_FAILED")
+
+    adapter = RQDataMarketAdapter(
+        session=session,
+        client=client,
+        source_observer=Observer(),
+    )
+
+    with pytest.raises(InfrastructureError, match="^SOURCE_RESPONSE_PERSIST_FAILED$"):
+        _fetch(adapter, DatasetKey("contract", "jm", "JM2509", "1d"), (expected,))
+
+    assert events == ["started", "response_saved"]
+    assert client.calls == [("JM2509", date(2025, 1, 6), date(2025, 1, 6))]
+    session.close()
+
+
 def test_rqdata_final_owner_batch_fetches_complete_week_once_for_partial_daily_window(
     tmp_path,
 ) -> None:
@@ -1247,15 +1398,23 @@ def test_rqdata_final_owner_batch_fetches_complete_week_once_for_partial_daily_w
     ]
     client = ExchangeDailyClient({"JM2509": pd.DataFrame(rows)})
     adapter = RQDataMarketAdapter(session=session, client=client)
-
-    batches = adapter.fetch_many(
-        (
-            BarFetchRequest(daily_key, daily_ends),
-            BarFetchRequest(weekly_key, (weekly_end,)),
-        )
+    requests = (
+        BarFetchRequest(daily_key, daily_ends),
+        BarFetchRequest(weekly_key, (weekly_end,)),
     )
 
+    source_requests = adapter.exchange_daily_source_requests(requests)
+    batches = adapter.fetch_many(requests)
+
     assert client.calls == [("JM2509", date(2025, 1, 6), date(2025, 1, 10))]
+    assert source_requests == (
+        ExchangeDailySourceRequest(
+            contract="JM2509",
+            start=date(2025, 1, 6),
+            end=date(2025, 1, 10),
+            expected_dates=tuple(date(2025, 1, day) for day in range(6, 11)),
+        ),
+    )
     assert tuple(bar.trading_day for bar in batches[0].bars) == (
         date(2025, 1, 9),
         date(2025, 1, 10),

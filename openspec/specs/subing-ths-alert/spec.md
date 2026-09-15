@@ -275,10 +275,22 @@ Market Home 与 `/market/chart` 的正式 SuBing 预警 facts SHALL 只从 typed
 Event-backed `S↑/S↓` marker 并按正式 `bar_end` 定位；Overlay 仍只允许 `none | htdy`，不得增加 SuBing
 通用 overlay、复制 BUY/SELL 公式、发起 O(N) per-product 请求或产生写入。专用页面的历史参考 SHALL 使用下面的独立只读接口和来源标记，不冒充 Event。
 
+页面 MUST 将以下四类事实分开呈现：当前品种的 Scope、全局 Rule/Runtime 状态、全局最近评价，以及当前品种
+精确匹配的已存 Alert Event。全局最近评价不得冒充当前品种评价；当前品种没有 Event 不等于中性信号，也不
+证明公式已评价。若现有接口没有提供当前品种的即时策略状态，页面 MUST 明示“当前接口未提供”，不得从
+Scope、Rule、全局评价或历史 reference 推导。所有 Event 与评价时间按北京时间展示并保留原始 instant。
+
 #### Scenario: A SuBing Event is opened from Market Home
 
 - **WHEN** 用户点击一条 SuBing Event
 - **THEN** Web 打开对应 symbol、actual_dominant、15m 与 bar_end 供人工复核，不推导交易动作
+
+#### Scenario: The current product has no stored Event
+
+- **GIVEN** SuBing Rule 已启用且全局最近评价成功，但当前品种没有精确匹配的 stored Event
+- **WHEN** 用户查看该品种详情
+- **THEN** 页面分别显示 Scope、Rule/Runtime 与全局评价，并明确当前品种无已存 Event
+- **AND** 页面不得显示中性策略状态或把全局评价时间标成当前品种评价时间
 
 ### Requirement: 0044 seeds a disabled empty Rule and generic writes stay guarded
 

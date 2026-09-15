@@ -28,8 +28,10 @@ require the echoed cutoff to match that instant without discarding sub-milliseco
 reject Bars at or after this exclusive bound. Normal mode SHALL retain its unbounded request and
 null-echo contract. Decimal, physical-owner, coverage and rollover validation SHALL remain unchanged.
 
-Only exact existing GET paths for preview identity, bars, dominants, home overview, strategy detail
-and historical snapshot SHALL reach the candidate API. Legacy queries without a safe cutoff seam
+Only exact existing GET paths for preview identity, bars, dominants, home overview, strategy detail,
+historical snapshot and lowercase-product SuBing historical reference SHALL reach the candidate API.
+SuBing reference SHALL clamp its `as_of` to the candidate cutoff, while retaining the existing safe
+`since`, `through`, `before` and `limit` query validation. Legacy queries without a safe cutoff seam
 SHALL return `PREVIEW_ROUTE_FORBIDDEN`. Web proxy SHALL permit only exact GET `/api/runtime/health`
 and `/api/alerts/current-events?limit=30` on the supervised formal API `127.0.0.1:8000`; all other
 management methods/routes and business WebSocket forwarding SHALL be rejected. Existing frontend
@@ -625,6 +627,11 @@ Reference 的实际估值/状态截止 MUST 由所选 `performance_through`、�
 及其 availability；数据不完整、节假日、非交易日、夜盘跨自然日和未完成 W1 不得用自然日午夜、服务端
 当前时间或任意一根 Bar 静默替代。
 
+Web MUST 分开显示用户选择的 `performance_through` 与服务端返回的
+`actual_available_through`。只有服务端以 typed availability 明确指出当前选择包含未完成 W1，且同时返回
+精确的最近完整统计边界时，页面才 MAY 提供“使用最近完整统计区间”动作；客户端不得按星期、节假日表或
+本地时钟猜测该边界。该动作 MUST 以服务端边界显式重发 reference 请求，不得静默改变统计窗口或复用旧摘要。
+
 投影 MUST 以 `reference_cutoff` 重放，且 `ReferenceProjection.as_of == PerformanceWindow.cutoff`。
 所有时间比较按同一 UTC instant 进行，`fact_time <= reference_cutoff <= request_as_of` 的事实可见，严格晚于
 cutoff 的事实不可见；`as_of == server_now` 合法，只有 `as_of > server_now` 为 422。若 `as_of` 早于所选
@@ -646,6 +653,13 @@ ReferenceTrade。显式延长统计截止后可以形成新的 CLOSED，但 refe
 - **GIVEN** 夜盘 Bar 的自然日与 trading_day 不同
 - **WHEN** 解析统计 membership 与 cutoff
 - **THEN** 使用权威 trading_day 和 Session，不使用 `bar_end.date()`
+
+#### Scenario: An unfinished weekly interval offers an explicit completed-window action
+
+- **GIVEN** 用户选择的 `performance_through` 落在服务端判定的未完成 W1，且响应返回最近完整统计边界
+- **WHEN** 页面呈现 reference availability
+- **THEN** 同时显示选择截止、实际可用截止与未完成原因，并提供一次显式的最近完整区间重载动作
+- **AND** 节假日、跨年周或缺少服务端边界时客户端不猜测可用日期
 
 ### Requirement: Explanation inputs are server constructed and source bound
 

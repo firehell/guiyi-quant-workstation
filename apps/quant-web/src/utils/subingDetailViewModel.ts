@@ -1,39 +1,53 @@
 import type { SubingThsAlertEvent } from '../types/market.ts'
 import type { DetailViewModel, MarketDetailHeaderModel, MarketDetailIdentity } from '../types/marketDetail.ts'
 import type { RuntimeAlertProjection } from './runtimeHealthTypes.ts'
+import type { SubingRuleScopeFact } from '../composables/useSubingAlertFacts.ts'
+import { formatBeijingInstant } from './marketDisplay.ts'
+import { isSubingThsAlertEvent } from './alertRules.ts'
 
 export function buildSubingDetailViewModel(input: {
   identity: MarketDetailIdentity
   header: Pick<MarketDetailHeaderModel, 'displayContract' | 'asOf'>
   events: readonly SubingThsAlertEvent[]
   alertUnavailable: boolean
-  rule: string | null
+  rule: SubingRuleScopeFact | null
   ruleUnavailable: boolean
   runtime: RuntimeAlertProjection | null
   runtimeUnavailable: boolean
 }): DetailViewModel {
-  const latest = [...input.events].sort((left, right) => Date.parse(right.detected_at) - Date.parse(left.detected_at) || Date.parse(right.bar_end) - Date.parse(left.bar_end) || right.id - left.id)[0] ?? null
+  const exactEvents = input.events.filter((event) => isSubingThsAlertEvent(event)
+    && event.symbol.toLowerCase() === input.identity.symbol.toLowerCase()
+    && event.frequency === input.identity.frequency)
+  const latest = [...exactEvents].sort((left, right) => Date.parse(right.detected_at) - Date.parse(left.detected_at) || Date.parse(right.bar_end) - Date.parse(left.bar_end) || right.id - left.id)[0] ?? null
   const stale = input.alertUnavailable && !!latest
   const unavailable = input.alertUnavailable && !latest
   const signal = latest?.result_codes[0] === 'buy' ? 'S↑ 多头预警' : latest?.result_codes[0] === 'sell' ? 'S↓ 空头预警' : null
   const status = runtimeText(input.runtime, input.runtimeUnavailable)
-  const history = [...input.events].sort((left, right) => Date.parse(right.detected_at) - Date.parse(left.detected_at)).map((event) => ({
+  const ruleRuntime = input.ruleUnavailable || !input.rule
+    ? 'Rule / Runtime 不可用'
+    : `${input.rule.displayName} · ${status}`
+  const scope = input.ruleUnavailable || !input.rule
+    ? 'Scope 不可用'
+    : `${input.rule.symbol.toUpperCase()} ${input.rule.frequency} ${input.rule.enabled ? '已启用' : '未启用'} · 只读展示`
+  const evaluationAt = input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null
+  const history = [...exactEvents].sort((left, right) => Date.parse(right.detected_at) - Date.parse(left.detected_at)).map((event) => ({
     id: `subing-event:${event.id}`, label: event.result_codes[0] === 'buy' ? 'S↑ 多头预警' : 'S↓ 空头预警', occurredAt: event.detected_at,
-    timeLabel: event.detected_at, source: 'alert_event' as const, barEnd: event.bar_end, contract: event.contract,
+    timeLabel: formatBeijingInstant(event.detected_at), source: 'alert_event' as const, barEnd: event.bar_end, contract: event.contract,
     markerType: event.result_codes[0] === 'buy' ? 'S↑' : 'S↓', formulaVersion: 'subing_ths_15m_v3', notificationAttemptedAt: event.notification_attempted_at,
   }))
   return {
     view: 'subing', identity: input.identity, asOf: latest?.detected_at ?? input.header.asOf,
-    semanticBanner: { text: '正式 S↑ / S↓ 只来自 AlertEvent；白底标注为历史重算·乐观参考｜零费用/零滑点。EMA21 与 MACD 仅用于人工复核。', tone: 'info' },
+    semanticBanner: { text: '正式 S↑ / S↓ 只来自 AlertEvent；当前接口未提供当前策略状态。白底标注为历史重算·乐观参考｜零费用/零滑点。EMA21 与 MACD 仅用于人工复核。', tone: 'info' },
     facts: [
-      { id: 'latest-alert', label: '最新已保存预警', value: signal ? `${signal}${stale ? '（数据刷新失败，展示上一份成功快照）' : ''}` : unavailable ? '预警数据不可用' : '当前窗口暂无已保存苏冰预警', tone: signal ? (latest!.result_codes[0] === 'buy' ? 'up' : 'down') : unavailable ? 'unavailable' : 'default', source: 'alert_event' },
-      { id: 'signal-kline', label: '信号 K 线', value: latest ? `${latest.bar_end} · ${latest.contract}` : unavailable ? '不可用' : '暂无', tone: latest ? 'default' : unavailable ? 'unavailable' : 'default', source: 'alert_event' },
-      { id: 'alert-status', label: '预警状态', value: [input.ruleUnavailable ? 'Rule / Scope 不可用' : input.rule, status].filter(Boolean).join(' · '), tone: input.ruleUnavailable || input.runtimeUnavailable ? 'unavailable' : 'default', source: 'runtime' },
+      { id: 'current-scope', label: '当前品种 Scope', value: scope, tone: input.ruleUnavailable ? 'unavailable' : input.rule?.enabled ? 'default' : 'warning', source: 'runtime' },
+      { id: 'rule-runtime', label: 'Rule / Runtime', value: ruleRuntime, tone: input.ruleUnavailable || input.runtimeUnavailable ? 'unavailable' : status.includes('失败') ? 'warning' : 'default', source: 'runtime' },
+      { id: 'global-evaluation', label: '全局最近评估', value: evaluationAt ? `${formatBeijingInstant(evaluationAt)} · 不代表 ${input.identity.symbol.toUpperCase()} 已评估` : input.runtimeUnavailable ? '全局评估状态不可用' : '全局尚无已评估 Bar', tone: input.runtimeUnavailable ? 'unavailable' : 'default', source: 'runtime' },
+      { id: 'exact-event', label: '当前品种已保存 Event', value: signal ? `${signal} · ${formatBeijingInstant(latest!.bar_end)} · ${latest!.contract}${stale ? '（展示上一份成功快照）' : ''}` : unavailable ? '当前品种 Event 数据不可用' : '当前已读取窗口无已保存 Event；不代表中性信号', tone: signal ? (latest!.result_codes[0] === 'buy' ? 'up' : 'down') : unavailable ? 'unavailable' : 'default', source: 'alert_event' },
     ],
     disclosureSections: [
-      { id: 'subing-latest', title: '最新已保存预警', summary: signal ?? (unavailable ? '预警数据不可用' : '当前窗口暂无已保存苏冰预警'), updatedAt: latest?.detected_at ?? null, tone: unavailable ? 'unavailable' : stale ? 'warning' : 'default', rows: latest ? [{ label: 'AlertEvent', value: `${signal} · ${latest.bar_end} · ${latest.contract}`, source: 'alert_event' }] : [] },
+      { id: 'subing-latest', title: '最新已保存预警', summary: signal ?? (unavailable ? '预警数据不可用' : '当前窗口暂无已保存苏冰预警'), updatedAt: latest?.detected_at ?? null, tone: unavailable ? 'unavailable' : stale ? 'warning' : 'default', rows: latest ? [{ label: 'AlertEvent', value: `${signal} · ${formatBeijingInstant(latest.bar_end)} · ${latest.contract}`, source: 'alert_event' }] : [] },
       { id: 'subing-formula', title: '触发口径', summary: 'subing_ths_15m_v3', updatedAt: null, tone: 'default', rows: [{ label: '固定展示身份', value: 'actual_dominant / 15m / completed_only · MACD(12,26,9) CROSS + EMA(CLOSE,21) · 仅供人工复核', source: 'generic_indicator' }] },
-      { id: 'subing-runtime', title: '运行与通知', summary: status, updatedAt: input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null, tone: input.runtimeUnavailable ? 'unavailable' : 'default', rows: runtimeRows(input.runtime) },
+      { id: 'subing-runtime', title: '运行与通知', summary: status, updatedAt: input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null, tone: runtimeTone(input.runtime, input.runtimeUnavailable), rows: runtimeRows(input.runtime) },
     ], history, dataStatus: unavailable ? 'unavailable' : stale ? 'stale' : 'ready',
   }
 }
@@ -41,10 +55,20 @@ export function buildSubingDetailViewModel(input: {
 function runtimeText(runtime: RuntimeAlertProjection | null, unavailable: boolean): string {
   if (unavailable || !runtime) return 'Runtime 不可用'
   const rule = runtime.rule_status.subing_ths_alert_15m_v1
-  if (rule.error_type === 'evaluation_warming_up') return '正在 warm-up'
-  if (rule.error_type === 'evaluation_input_invalid') return '输入身份不可用'
-  if (rule.error_type === 'evaluation_failed') return '评估失败'
-  return rule.last_evaluated_bar_at ? '最近已评估' : '尚无已评估 Bar'
+  const ruleText = rule.error_type === 'evaluation_warming_up' ? '正在 warm-up'
+    : rule.error_type === 'evaluation_input_invalid' ? '输入身份不可用'
+      : rule.error_type === 'evaluation_failed' ? '评估失败'
+        : rule.last_evaluated_bar_at ? '最近已评估' : '尚无已评估 Bar'
+  if (runtime.status === 'disabled') return `Runtime 未启用 · Rule ${ruleText}`
+  if (runtime.status === 'degraded') return `Runtime 状态异常 · Rule ${ruleText}`
+  if (runtime.status === 'failed') return `Runtime 运行失败 · Rule ${ruleText}`
+  if (runtime.status !== 'ok' && runtime.status !== 'healthy') return `Runtime 状态未知 · Rule ${ruleText}`
+  return `全局正常 · ${ruleText}`
+}
+
+function runtimeTone(runtime: RuntimeAlertProjection | null, unavailable: boolean): 'default' | 'warning' | 'unavailable' {
+  if (unavailable || !runtime || runtime.status === 'disabled' || runtime.status === 'failed') return 'unavailable'
+  return runtime.status === 'ok' || runtime.status === 'healthy' ? 'default' : 'warning'
 }
 
 function runtimeRows(runtime: RuntimeAlertProjection | null) {
@@ -52,9 +76,9 @@ function runtimeRows(runtime: RuntimeAlertProjection | null) {
   const rule = runtime.rule_status.subing_ths_alert_15m_v1
   return [
     { label: '全局状态', value: runtime.status, source: 'runtime' as const },
-    { label: 'Rule 已评估 Bar', value: rule.last_evaluated_bar_at ?? '—', source: 'runtime' as const },
-    { label: 'Rule 最近 Event', value: rule.last_event_at ?? '—', source: 'runtime' as const },
-    { label: 'Rule 最近失败', value: rule.last_failure_at ?? '—', source: 'runtime' as const },
+    { label: 'Rule 已评估 Bar', value: formatBeijingInstant(rule.last_evaluated_bar_at), source: 'runtime' as const },
+    { label: 'Rule 最近 Event', value: formatBeijingInstant(rule.last_event_at), source: 'runtime' as const },
+    { label: 'Rule 最近失败', value: formatBeijingInstant(rule.last_failure_at), source: 'runtime' as const },
     { label: 'Rule 错误类型', value: rule.error_type ?? '—', source: 'runtime' as const },
     { label: '通知说明', value: '仅展示已保存 Event 与尝试时间；不表示外部送达。', source: 'runtime' as const },
   ]

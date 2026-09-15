@@ -43,6 +43,8 @@ interface ReferenceModel {
     readonly sumUnit: string
   }
   readonly performanceWindow: { readonly since: string; readonly through: string; readonly cutoff: string }
+  readonly statusExplanation: string
+  readonly completeWindowAction: { readonly since: string; readonly through: string } | null
   readonly rows: readonly Array<{
     readonly id: string
     readonly category: string
@@ -53,6 +55,26 @@ interface ReferenceModel {
     readonly hints: readonly Array<{ readonly id: string; readonly availability: string; readonly text: string }>
   }>
 }
+
+test('weekly partial uses only the server-provided completed boundary across calendar shapes', () => {
+  for (const [requested, available] of [
+    ['2026-09-14', '2026-09-11'],
+    ['2026-10-12', '2026-10-09'],
+    ['2027-01-04', '2026-12-31'],
+  ]) {
+    const response = weeklyPartialResponse(requested, available)
+    const model = buildReference(response, null, false)
+    assert.deepEqual(model.completeWindowAction, { since: '2026-01-01', through: available })
+    assert.match(model.statusExplanation, /本周尚未完成/)
+  }
+})
+
+test('non-weekly or unavailable completed boundaries never expose a guessed action', () => {
+  const response = referenceResponse()
+  assert.equal(buildReference(response, null, false).completeWindowAction, null)
+  const partial = weeklyPartialResponse('2026-09-14', '2025-12-31')
+  assert.equal(buildReference(partial, null, false).completeWindowAction, null)
+})
 
 test('zero CLOSED stays unavailable while negative interruption and initial-position records remain separate', () => {
   const response = referenceResponse()
@@ -69,16 +91,16 @@ test('zero CLOSED stays unavailable while negative interruption and initial-posi
     since: '2026-01-01', through: '2026-08-15', cutoff: '2026-08-15T07:00:00Z',
   })
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.category, 'interrupted')
-  assert.equal(model.rows.find((row) => row.id === 'interrupted')?.returnText, '-12.5000%（中断浮动）')
+  assert.equal(model.rows.find((row) => row.id === 'interrupted')?.returnText, '-12.5%（中断浮动）')
   assert.equal(model.rows.find((row) => row.id === 'interrupted')?.valuationText, '2026-04-30T07:00:00Z · 87.5')
   assert.equal(model.rows.find((row) => row.id === 'initial')?.category, 'closed')
   assert.equal(model.rows.find((row) => row.id === 'initial')?.initial, true)
   assert.equal(model.rows.find((row) => row.id === 'initial')?.lifecycle, 'CLOSED')
-  assert.equal(model.rows.find((row) => row.id === 'initial')?.returnText, '3.1250%（期初已有，不计入窗口统计）')
+  assert.equal(model.rows.find((row) => row.id === 'initial')?.returnText, '3.13%（期初已有，不计入窗口统计）')
   assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.category, 'interrupted')
   assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.initial, true)
   assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.lifecycle, 'ROLLOVER_INTERRUPTED')
-  assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.returnText, '-20.0000%（中断浮动；期初已有，不计入窗口统计）')
+  assert.equal(model.rows.find((row) => row.id === 'initial-interrupted')?.returnText, '-20%（中断浮动；期初已有，不计入窗口统计）')
 })
 
 test('table filtering keeps the exact server summary and performance window', () => {
@@ -147,7 +169,7 @@ test('simple sum keeps percentage points separate and never appends a percent un
   response.value!.summary.sum_return_percentage_points = '12.5000'
   const model = buildReference(response, chartResponse(), true)
 
-  assert.equal(model.summary.sumText, '12.5000')
+  assert.equal(model.summary.sumText, '12.5')
   assert.equal(model.summary.sumUnit, '百分点（简单相加）')
   assert.equal(model.summary.sumText.includes('%'), false)
 })
@@ -222,6 +244,27 @@ test('reference date application blocks an invalid range with visible feedback',
   assert.equal(submit.props.disabled, true)
   app.unmount()
   assert.equal(reloads, 0)
+})
+
+test('recent complete window action submits the exact server boundary', async () => {
+  const Panel = await loadComponent()
+  const reloads: Array<{ performanceSince: string; performanceThrough: string }> = []
+  const Host = defineComponent({ setup: () => () => h(Panel, {
+    response: weeklyPartialResponse('2026-09-14', '2026-09-11'), chartResponse: null,
+    crossSectionCompatible: false, lifecycle: 'warming', error: null,
+    selectedSignalId: null, locateMessage: null, loadingPage: false,
+    onReload: (window: { performanceSince: string; performanceThrough: string }) => reloads.push(window),
+  }) })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  await nextTick()
+  const button = findNode(root, node => node.type === 'button' && nodeText(node) === '使用最近完整统计区间')!
+  assert.ok(button)
+  ;(button.props.onClick as () => void)()
+  await nextTick()
+  assert.deepEqual(reloads, [{ performanceSince: '2026-01-01', performanceThrough: '2026-09-11' }])
+  app.unmount()
 })
 
 test('reference date drafts clear when a new identity has no retained response', async () => {
@@ -355,6 +398,15 @@ function referenceResponse(): Mutable<NewowProductSectionResponse<'reference'>> 
       allowed_uses: ['page_parity_reference', 'research_display'],
     },
   }
+}
+
+function weeklyPartialResponse(requested: string, available: string): Mutable<NewowProductSectionResponse<'reference'>> {
+  const response = referenceResponse()
+  response.meta.identity.frequency = '1w'
+  response.value!.performance_through = requested
+  response.value!.actual_available_through = available
+  response.status = { status: 'warming', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: 'NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL' }
+  return response
 }
 
 function chartResponse(): Mutable<NewowProductSectionResponse<'chart'>> {

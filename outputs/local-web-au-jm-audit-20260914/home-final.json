@@ -1,0 +1,85 @@
+{
+  "status": "degraded",
+  "target_as_of": "2026-09-14",
+  "data_as_of": "2026-09-14",
+  "freshness": "stale",
+  "active_count": 60,
+  "participant_count": 0,
+  "stale_count": 60,
+  "unavailable_count": 0,
+  "summary": {
+    "price_up_count": 0,
+    "price_down_count": 0,
+    "price_flat_count": 0,
+    "price_unavailable_count": 0,
+    "daily_up_count": 0,
+    "daily_down_count": 0,
+    "daily_neutral_count": 0,
+    "daily_unavailable_count": 0,
+    "aligned_up_count": 0,
+    "aligned_down_count": 0
+  },
+  "items": [],
+  "sectors": [
+    {
+      "sector": "agriculture",
+      "active_count": 16,
+      "participant_count": 0,
+      "median_price_change_1d": null
+    },
+    {
+      "sector": "precious",
+      "active_count": 4,
+      "participant_count": 0,
+      "median_price_change_1d": null
+    },
+    {
+      "sector": "nonferrous",
+      "active_count": 7,
+      "participant_count": 0,
+      "median_price_change_1d": null
+    },
+    {
+      "sector": "energy",
+      "active_count": 4,
+      "participant_count": 0,
+      "median_price_change_1d": null
+    },
+    {
+      "sector": "chemical",
+      "active_count": 15,
+      "participant_count": 0,
+      "median_price_change_1d": null
+    },
+    {
+      "sector": "other",
+      "active_count": 1,
+      "participant_count": 0,
+      "median_price_change_1d": null
+    },
+    {
+      "sector": "building",
+      "active_count": 2,
+      "participant_count": 0,
+      "median_price_change_1d": null
+    },
+    {
+      "sector": "steel",
+      "active_count": 3,
+      "participant_count": 0,
+      "median_price_change_1d": null
+    },
+    {
+      "sector": "black",
+      "active_count": 5,
+      "participant_count": 0,
+      "median_price_change_1d": null
+    },
+    {
+      "sector": "new_energy",
+      "active_count": 3,
+      "participant_count": 0,
+      "median_price_change_1d": null
+    }
+  ]
+}

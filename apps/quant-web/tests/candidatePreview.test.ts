@@ -10,13 +10,15 @@ test('proxy allows exact GET resources only, never encoded paths or WS', async (
   const { previewTarget } = await import('../previewProxy.ts')
   assert.equal(previewTarget('GET', '/api/v1/market/bars/page?symbol=rb'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/v1/market/newow/product-capabilities'), 'http://127.0.0.1:8010')
+  assert.equal(previewTarget('GET', '/api/v1/market/jm/subing/reference?since=2026-08-01'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/preview/identity'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/runtime/health'), 'http://127.0.0.1:8000')
   assert.equal(previewTarget('GET', '/api/alerts/current-events?limit=30'), 'http://127.0.0.1:8000')
   for (const path of ['/api/runtime/health/', '/api/runtime/%68ealth', '/api/runtime/health?x=1',
     '/api/alerts/current-events?limit=31', '/api/alerts/current-events?limit=30&limit=30',
     '/api/alerts/rules', '/api/v1/market/state', '/api/v1/market/research/product',
-    '/api/v1/market/dominants/', '/api/v1/market/dominants%3F', '/ws/market']) {
+    '/api/v1/market/JM/subing/reference', '/api/v1/market/jm-1/subing/reference',
+    '/api/v1/market/jm/subing/reference/', '/api/v1/market/dominants/', '/api/v1/market/dominants%3F', '/ws/market']) {
     assert.equal(previewTarget('GET', path), null, path)
   }
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD']) {

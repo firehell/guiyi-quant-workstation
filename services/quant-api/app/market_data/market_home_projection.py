@@ -6,10 +6,12 @@ import json
 import os
 import re
 import stat
+from concurrent.futures import Future
 from collections.abc import Mapping
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
+from threading import Lock
 from typing import Literal, Self
 from uuid import uuid4
 
@@ -32,6 +34,10 @@ _MAX_PROJECTION_BYTES = 2 * 1024 * 1024
 _AUTHORITY_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", None)
 _NONBLOCK = getattr(os, "O_NONBLOCK", None)
+_READ_FLIGHTS_LOCK = Lock()
+_READ_FLIGHTS: dict[
+    tuple[Path, MarketHomeAuthorityIdentity], Future[MarketHomeOverviewResponse]
+] = {}
 
 
 class MarketHomeProjectionError(RuntimeError):
@@ -235,7 +241,10 @@ class MarketHomeProjection:
         cached = self.store.load(identity)
         if cached is not None:
             return cached
-        return market_home_response(self.service.snapshot())
+        return _coalesced_read(
+            (self.store.path.absolute(), identity),
+            lambda: market_home_response(self.service.snapshot()),
+        )
 
     def refresh(self) -> MarketHomeOverviewResponse:
         identity = self.service.authority_identity()
@@ -312,6 +321,32 @@ def market_home_response(
             for sector in snapshot.sectors
         ],
     )
+
+
+def _coalesced_read(
+    key: tuple[Path, MarketHomeAuthorityIdentity],
+    compute: Callable[[], MarketHomeOverviewResponse],
+) -> MarketHomeOverviewResponse:
+    with _READ_FLIGHTS_LOCK:
+        future = _READ_FLIGHTS.get(key)
+        owner = future is None
+        if future is None:
+            future = Future()
+            _READ_FLIGHTS[key] = future
+    if not owner:
+        return future.result()
+    try:
+        response = compute()
+    except BaseException as exc:
+        future.set_exception(exc)
+        raise
+    else:
+        future.set_result(response)
+        return response
+    finally:
+        with _READ_FLIGHTS_LOCK:
+            if _READ_FLIGHTS.get(key) is future:
+                del _READ_FLIGHTS[key]
 
 
 def _required_nofollow() -> int:

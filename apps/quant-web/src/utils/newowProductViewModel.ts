@@ -7,7 +7,7 @@ import type {
   NewowResourceLifecycle,
 } from '../types/newowProduct.ts'
 import { newowErrorDisplay } from './newowDataDiagnostics.ts'
-import { formatMarketDecimal } from './marketDisplay.ts'
+import { formatBeijingInstant, formatDecimalText, formatMarketDecimal } from './marketDisplay.ts'
 
 export interface NewowProductSectionViewModel {
   readonly section: NewowProductSection
@@ -76,6 +76,11 @@ export interface NewowReferencePanelViewModel {
     readonly cutoff: string
   }
   readonly actualAvailableThrough: string
+  readonly statusExplanation: string
+  readonly completeWindowAction: {
+    readonly since: string
+    readonly through: string
+  } | null
   readonly rows: readonly NewowReferenceRowViewModel[]
   readonly nextBefore: string | null
 }
@@ -88,6 +93,13 @@ export function buildNewowReferencePanelViewModel(
 ): NewowReferencePanelViewModel {
   if (response.value === null) throw new Error('Newow reference value is unavailable')
   const value = response.value
+  const weeklyPartial = response.meta.identity.frequency === '1w'
+    && response.status.reason_code === 'NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL'
+  const completeWindowAction = weeklyPartial
+    && value.actual_available_through >= value.performance_since
+    && value.actual_available_through < value.performance_through
+    ? { since: value.performance_since, through: value.actual_available_through }
+    : null
   const loadedHints = new Map((crossSectionCompatible ? chart?.value?.hints ?? [] : []).map((hint) => [hint.hint_id, hint]))
   return {
     summary: {
@@ -108,9 +120,23 @@ export function buildNewowReferencePanelViewModel(
       cutoff: value.reference_cutoff,
     },
     actualAvailableThrough: value.actual_available_through,
+    statusExplanation: referenceStatusExplanation(response.status.reason_code),
+    completeWindowAction,
     rows: value.items.map((trade) => referenceRow(trade, loadedHints, crossSectionCompatible)),
     nextBefore: value.next_before,
   }
+}
+
+function referenceStatusExplanation(reason: string | null): string {
+  const labels: Readonly<Record<string, string>> = {
+    NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL: '本周尚未完成；历史记录仍按已验证截止展示，当前未完成周不计入。',
+    NEWOW_REFERENCE_WEEKLY_COMPLETION_PENDING: '本周尚未形成已完成周线，当前参考仍在等待。',
+    NEWOW_REFERENCE_WINDOW_PARTIAL: '所选统计终点晚于当前权威可用截止；已验证历史记录继续展示。',
+    NEWOW_COMPLETE_PERIOD_MISSING: '所选范围没有可验证的已完成周期。',
+    NEWOW_CHART_WARMING: '策略输入仍在预热，当前状态不可据此推定。',
+  }
+  if (reason === null) return '所选统计区间已按权威截止完成计算。'
+  return labels[reason] ?? '当前参考原因未识别；原始原因码保留在技术详情。'
 }
 
 export function filterNewowReferenceRows(
@@ -220,17 +246,17 @@ export function buildNewowExplanationPanelViewModel(
     }
   }
   return {
-    contextAsOf: value.context.as_of,
+    contextAsOf: formatBeijingInstant(value.context.as_of),
     contextRows: [value.context.weekly, value.context.daily, value.context.hourly].map((slot) => ({
       frequency: slot.frequency,
-      barEnd: slot.bar_end ?? '—',
+      barEnd: formatBeijingInstant(slot.bar_end),
       state: slot.main_state ?? slot.availability.status,
       reason: slot.availability.reason_code ?? slot.confirmation_status.reason_code ?? '—',
     })),
     sourceRows: value.sources.map((source) => ({
       role: source.role,
       frequency: source.frequency ?? '—',
-      barEnd: source.bar_end ?? '—',
+      barEnd: formatBeijingInstant(source.bar_end),
       formulas: source.formula_versions.length === 0 ? '—' : source.formula_versions.join(' / '),
       evidence: source.status,
       reason: source.reason_code ?? '—',
@@ -336,7 +362,7 @@ export function resolveNewowPanelRenderState(
     case 'evidence_required':
       return {
         showValue: response !== null,
-        message: lifecycle === 'ready' ? '' : `当前资源状态：${lifecycle}${reason === null ? '' : `（${reason}）`}。`,
+        message: lifecycle === 'ready' ? '' : `当前资源状态：${lifecycle === 'warming' ? '正在准备' : '证据不足'}${reason === null ? '' : `（${reason}）`}。`,
         staleAt: null,
       }
     case 'not_requested':
@@ -344,7 +370,7 @@ export function resolveNewowPanelRenderState(
     case 'input_conflict':
       return {
         showValue: false,
-        message: `DATA_CONFLICT${reason === null ? '' : `（${reason}）`}：冲突事实已清空，不能继续展示旧数值。`,
+        message: `数据身份冲突${reason === null ? '' : `（${reason}）`}：冲突事实已清空，不能继续展示旧数值。`,
         staleAt: null,
       }
     case 'not_applicable':
@@ -424,31 +450,9 @@ function percentageText(value: string | null, suffix = ''): string {
 
 /** Format the server Decimal lexeme without converting it to a binary number. */
 export function formatDecimalString(value: string | null, fractionDigits?: number): string {
-  if (value === null) return '—'
-  const expanded = expandExponent(value)
-  const sign = expanded.startsWith('-') ? '-' : expanded.startsWith('+') ? '+' : ''
-  const unsigned = sign ? expanded.slice(1) : expanded
-  let [whole, fraction = ''] = unsigned.split('.')
-  whole = whole || '0'
-  if (fractionDigits !== undefined) {
-    if (!Number.isInteger(fractionDigits) || fractionDigits < 0 || fractionDigits > 100) throw new Error('fractionDigits is invalid')
-    fraction = fraction.slice(0, fractionDigits).padEnd(fractionDigits, '0')
-  }
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-  return `${sign}${grouped}${fraction.length ? `.${fraction}` : ''}`
-}
-
-function expandExponent(value: string): string {
-  const match = /^([+-]?)(\d*\.?\d*)[eE]([+-]?\d+)$/.exec(value)
-  if (match === null) return value
-  const sign = match[1]!
-  const mantissa = match[2]!
-  const exponent = Number(match[3])
-  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 10000) throw new Error('Decimal exponent is invalid')
-  const [whole = '', fraction = ''] = mantissa.split('.')
-  const digits = `${whole}${fraction}` || '0'
-  const point = whole.length + exponent
-  if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`
-  if (point >= digits.length) return `${sign}${digits}${'0'.repeat(point - digits.length)}`
-  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`
+  return formatDecimalText(value, {
+    maximumFractionDigits: fractionDigits ?? 2,
+    minimumFractionDigits: fractionDigits ?? 0,
+    grouping: true,
+  })
 }

@@ -29,17 +29,55 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await page.keyboard.press('Enter')
     await expect(page.getByRole('dialog', { name: '历史重算参考信号' })).toContainText('非实际预警 Event')
     await page.getByRole('button', { name: '查看 AlertEvent #9' }).click()
-    await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText(referenceBars[8].bar_end)
+    await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('2026-09-03 12:30 北京时间')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
 }
+
+test('dense SuBing reference nodes keep their real micro size and expand on focus', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mockSubingReference(page, { response() {
+    const data = subingReferenceFixture()
+    const owner = referenceBars[64]
+    return {
+      ...data,
+      signals: Array.from({ length: 300 }, (_, index) => ({
+        signal_id: `dense-subing-${index}`,
+        bar_end: owner.bar_end,
+        trading_day: owner.trading_day,
+        physical_contract: 'JM2601',
+        segment_id: 'fixture-segment',
+        direction: index % 2 ? 'buy' : 'sell',
+        reference_price: String(owner.close),
+        action: 'SAME_DIRECTION',
+        entry_trade_id: null,
+        closed_trade_id: null,
+        closed_return_pct: null,
+      })),
+    }
+  } })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const labels = page.locator('.reference-callout')
+  await expect(labels).toHaveCount(300)
+  const microIndex = await labels.evaluateAll(nodes => nodes.findIndex(node => node.getBoundingClientRect().width <= 8.5))
+  expect(microIndex).toBeGreaterThanOrEqual(0)
+  const target = labels.nth(microIndex)
+  const before = await target.boundingBox()
+  expect(before?.width).toBeLessThanOrEqual(8.5)
+  expect(before?.height).toBeLessThanOrEqual(8.5)
+  await target.focus()
+  await expect(target).toContainText('同向信号')
+  await expect.poll(async () => (await target.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(168)
+  await expect.poll(async () => (await target.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(52)
+})
+
 test('historical unavailable keeps immutable events and Rule facts visible', async ({ page }) => {
   await mockSubingReference(page, { unavailable: true })
   await page.goto('/market/chart?symbol=jm&view=subing')
   await expect(page.getByText('历史参考不可用，请核查数据覆盖或重新读取。实际预警记录独立展示。')).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await page.getByRole('tab', { name: '历史记录', exact: true }).click()
-  await expect(page.locator('.detail-section-tabs__history')).toContainText(`Bar ${referenceBars[8].bar_end}`)
+  await expect(page.locator('.detail-section-tabs__history')).toContainText('Bar 2026-09-03 12:30 北京时间')
 })
 
 test('date range and cursor keep a fixed summary and row selects its reference record', async ({ page }) => {

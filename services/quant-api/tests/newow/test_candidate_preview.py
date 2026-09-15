@@ -107,6 +107,26 @@ def test_weekly_release_capabilities_are_available_without_database(preview):
     assert sessions == []
 
 
+def test_subing_reference_path_is_narrowly_admitted(preview):
+    from app.preview import _preview_path_allowed
+
+    assert _preview_path_allowed("/api/v1/market/jm/subing/reference") is True
+    for path in (
+        "/api/v1/market/JM/subing/reference",
+        "/api/v1/market/jm-1/subing/reference",
+        "/api/v1/market/jm/subing/reference/",
+        "/api/v1/market/jm/subing/other",
+    ):
+        assert _preview_path_allowed(path) is False
+
+
+def test_preview_identity_declares_subing_reference_with_the_cutoff_scope(preview):
+    app, _sessions, _factory = preview
+    response = TestClient(app).get("/api/preview/identity")
+    assert response.status_code == 200
+    assert "subing_reference" in response.json()["cutoff_scope"]
+
+
 @pytest.mark.parametrize(
     "path",
     [

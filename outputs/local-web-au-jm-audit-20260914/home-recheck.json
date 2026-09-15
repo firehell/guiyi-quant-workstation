@@ -1,0 +1,499 @@
+[
+  {
+    "path": "/api/v1/market/research/home-overview",
+    "status": 0,
+    "seconds": 40.01,
+    "data": {
+      "error": "TimeoutError"
+    }
+  },
+  {
+    "path": "/api/v1/market/dominants",
+    "status": 200,
+    "seconds": 0.39,
+    "data": {
+      "items": [
+        {
+          "product": "a",
+          "product_name": "豆一",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "A2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ag",
+          "product_name": "白银",
+          "sector": "precious",
+          "exchange": "SHFE",
+          "actual_contract": "AG2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "al",
+          "product_name": "铝",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "AL2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ao",
+          "product_name": "氧化铝",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "AO2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ap",
+          "product_name": "苹果",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "AP2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "au",
+          "product_name": "黄金",
+          "sector": "precious",
+          "exchange": "SHFE",
+          "actual_contract": "AU2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "b",
+          "product_name": "豆二",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "B2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "bu",
+          "product_name": "沥青",
+          "sector": "energy",
+          "exchange": "SHFE",
+          "actual_contract": "BU2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "bz",
+          "product_name": "纯苯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "BZ2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "c",
+          "product_name": "玉米",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "C2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "cf",
+          "product_name": "棉花",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "CF2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "cj",
+          "product_name": "红枣",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "CJ2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "cu",
+          "product_name": "铜",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "CU2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "eb",
+          "product_name": "苯乙烯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "EB2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ec",
+          "product_name": "集运欧线",
+          "sector": "other",
+          "exchange": "INE",
+          "actual_contract": "EC2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "eg",
+          "product_name": "乙二醇",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "EG2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "fg",
+          "product_name": "玻璃",
+          "sector": "building",
+          "exchange": "CZCE",
+          "actual_contract": "FG2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "fu",
+          "product_name": "燃料油",
+          "sector": "energy",
+          "exchange": "SHFE",
+          "actual_contract": "FU2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "hc",
+          "product_name": "热轧卷板",
+          "sector": "steel",
+          "exchange": "SHFE",
+          "actual_contract": "HC2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "i",
+          "product_name": "铁矿石",
+          "sector": "black",
+          "exchange": "DCE",
+          "actual_contract": "I2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "j",
+          "product_name": "焦炭",
+          "sector": "black",
+          "exchange": "DCE",
+          "actual_contract": "J2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "jd",
+          "product_name": "鸡蛋",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "JD2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "jm",
+          "product_name": "焦煤",
+          "sector": "black",
+          "exchange": "DCE",
+          "actual_contract": "JM2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "l",
+          "product_name": "聚乙烯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "L2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "lc",
+          "product_name": "碳酸锂",
+          "sector": "new_energy",
+          "exchange": "GFEX",
+          "actual_contract": "LC2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "lh",
+          "product_name": "生猪",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "LH2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "m",
+          "product_name": "豆粕",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "M2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ma",
+          "product_name": "甲醇",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "MA2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ni",
+          "product_name": "镍",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "NI2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "oi",
+          "product_name": "菜籽油",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "OI2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "p",
+          "product_name": "棕榈油",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "P2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "pb",
+          "product_name": "铅",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "PB2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "pd",
+          "product_name": "钯金",
+          "sector": "precious",
+          "exchange": "GFEX",
+          "actual_contract": "PD2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "pf",
+          "product_name": "短纤",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PF2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "pg",
+          "product_name": "液化石油气",
+          "sector": "energy",
+          "exchange": "DCE",
+          "actual_contract": "PG2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "pk",
+          "product_name": "花生",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "PK2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "pl",
+          "product_name": "瓶片",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PL2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "pp",
+          "product_name": "聚丙烯",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "PP2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "pr",
+          "product_name": "丙烯",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PR2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ps",
+          "product_name": "多晶硅",
+          "sector": "new_energy",
+          "exchange": "GFEX",
+          "actual_contract": "PS2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "pt",
+          "product_name": "铂金",
+          "sector": "precious",
+          "exchange": "GFEX",
+          "actual_contract": "PT2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "px",
+          "product_name": "对二甲苯",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "PX2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "rb",
+          "product_name": "螺纹钢",
+          "sector": "steel",
+          "exchange": "SHFE",
+          "actual_contract": "RB2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "rm",
+          "product_name": "菜粕",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "RM2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "rs",
+          "product_name": "油菜籽",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "RS2609",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ru",
+          "product_name": "天然橡胶",
+          "sector": "chemical",
+          "exchange": "SHFE",
+          "actual_contract": "RU2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "sa",
+          "product_name": "纯碱",
+          "sector": "building",
+          "exchange": "CZCE",
+          "actual_contract": "SA2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "sc",
+          "product_name": "原油",
+          "sector": "energy",
+          "exchange": "INE",
+          "actual_contract": "SC2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "sf",
+          "product_name": "硅铁",
+          "sector": "black",
+          "exchange": "CZCE",
+          "actual_contract": "SF2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "sh",
+          "product_name": "烧碱",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "SH2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "si",
+          "product_name": "工业硅",
+          "sector": "new_energy",
+          "exchange": "GFEX",
+          "actual_contract": "SI2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "sm",
+          "product_name": "锰硅",
+          "sector": "black",
+          "exchange": "CZCE",
+          "actual_contract": "SM2611",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "sn",
+          "product_name": "锡",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "SN2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "sr",
+          "product_name": "白糖",
+          "sector": "agriculture",
+          "exchange": "CZCE",
+          "actual_contract": "SR2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ss",
+          "product_name": "不锈钢",
+          "sector": "steel",
+          "exchange": "SHFE",
+          "actual_contract": "SS2610",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ta",
+          "product_name": "pta",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "TA2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "ur",
+          "product_name": "尿素",
+          "sector": "chemical",
+          "exchange": "CZCE",
+          "actual_contract": "UR2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "v",
+          "product_name": "pvc",
+          "sector": "chemical",
+          "exchange": "DCE",
+          "actual_contract": "V2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "y",
+          "product_name": "豆油",
+          "sector": "agriculture",
+          "exchange": "DCE",
+          "actual_contract": "Y2701",
+          "dominant_mapping_date": "2026-09-11"
+        },
+        {
+          "product": "zn",
+          "product_name": "锌",
+          "sector": "nonferrous",
+          "exchange": "SHFE",
+          "actual_contract": "ZN2610",
+          "dominant_mapping_date": "2026-09-11"
+        }
+      ]
+    }
+  }
+]

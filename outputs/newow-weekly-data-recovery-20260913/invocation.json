@@ -1,0 +1,22 @@
+{
+  "code_commit": "ef2e087d1bec3af3b376e5051821e4674955f657",
+  "scope_sha256": "d2f7e8387fa9dd92b8720ed703de3a7bbc1ef79d0d75340b246783bab079fd1d",
+  "started_at": "2026-09-13T14:04:07.050Z",
+  "args": [
+    "data",
+    "newow-readiness",
+    "--universe",
+    "operational",
+    "--frequency",
+    "1w",
+    "--matrix",
+    "--as-of",
+    "2026-09-13T06:36:13+00:00",
+    "--max-work",
+    "100000",
+    "--timeout-seconds",
+    "1800"
+  ],
+  "provider_allowed": false,
+  "production_writes_allowed": false
+}

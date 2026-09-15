@@ -24,7 +24,7 @@ import { resolveChartTheme } from '@/styles/chartTheme'
 import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { initialChartLogicalRange } from '@/utils/chartViewport'
-import { layoutReferenceCallouts, type PositionedCallout } from '@/utils/referenceCalloutLayout'
+import { layoutReferenceCallouts, REFERENCE_CALLOUT_BOX, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import {
   buildNewowProductChartModel,
   buildNewowActionCallouts,
@@ -66,6 +66,8 @@ const volumeTop = ref(0)
 const auxiliaryTop = ref(0)
 const actionOverlayTop = ref(0)
 const actionOverlayHeight = ref(0)
+const actionOverlayLeft = ref(0)
+const actionOverlayWidth = ref(0)
 const positionedActions = ref<PositionedCallout[]>([])
 const activeActionLabel = ref<string | null>(null)
 const container = ref<HTMLElement | null>(null)
@@ -167,7 +169,9 @@ watch(() => props.selectedSignalId, () => {
   resolvedSignalKey = null
   renderMarkers(model.value)
   resolveSelectedSignal()
+  scheduleActionProjection()
 }, { flush: 'post' })
+watch(activeActionLabel, scheduleActionProjection)
 
 function identityKey(value: NewowProductChartModel): string {
   return `${value.identity.product}:${value.identity.strategy}:${value.identity.frequency}`
@@ -297,13 +301,20 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   const height = panesFn?.call(chart)[0]?.getHeight?.() ?? container.value.clientHeight
   actionOverlayTop.value = container.value.offsetTop
   actionOverlayHeight.value = height
+  actionOverlayLeft.value = container.value.offsetLeft
+  actionOverlayWidth.value = width
   const actionById = new Map(value.actions.map(action => [action.id, action]))
   positionedActions.value = layoutReferenceCallouts(buildNewowActionCallouts(value).flatMap(callout => {
     const action = actionById.get(callout.id)
     if (action === undefined) return []
     const x = timeToCoordinate.call(scale, chartMarkerTime(action.barEnd, value.identity.frequency, action.tradingDay))
     const y = priceToCoordinate.call(candles, action.value)
-    return x === null || y === null ? [] : [{ callout, x, y }]
+    return x === null || y === null ? [] : [{
+      callout, x, y,
+      boxWidth: REFERENCE_CALLOUT_BOX.width,
+      boxHeight: REFERENCE_CALLOUT_BOX.height,
+      expanded: activeActionLabel.value === callout.id || props.selectedSignalId === callout.id,
+    }]
   }), width, height)
 }
 
@@ -482,19 +493,21 @@ defineExpose({ revealSignal, scrollToLatest })
     <div
       v-if="model?.actions.length"
       class="newow-product-chart-stage__action-callouts"
-      :style="{ top: `${actionOverlayTop}px`, height: `${actionOverlayHeight}px` }"
+      :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }"
       aria-label="策略参考动作"
     >
-      <svg aria-hidden="true"><line v-for="item in positionedActions.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.left + 66" :y2="item.top + (item.callout.above ? 44 : 0)" /></svg>
+      <svg aria-hidden="true"><line v-for="item in positionedActions.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.lineX" :y2="item.lineY" /></svg>
       <button
         v-for="item in positionedActions"
         :key="item.callout.id"
         type="button"
         class="newow-product-chart-stage__action-label"
-        :class="[{ 'is-compact': item.compact && activeActionLabel !== item.callout.id && selectedSignalId !== item.callout.id, 'is-active': activeActionLabel === item.callout.id, 'is-selected': selectedSignalId === item.callout.id }, `is-${item.callout.tone}`]"
-        :style="{ left: `${item.left}px`, top: `${item.top}px` }"
+        :class="[{ 'is-density-node': item.compact, 'is-compact': item.compact && activeActionLabel !== item.callout.id && selectedSignalId !== item.callout.id, 'is-active': activeActionLabel === item.callout.id, 'is-selected': selectedSignalId === item.callout.id }, `is-${item.callout.tone}`]"
+        :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }"
         :data-action-id="item.callout.id"
         :data-reference-price="item.callout.price"
+        :data-reference-time="item.callout.time"
+        :data-reference-contract="item.callout.physicalContract"
         :data-anchor-y="item.y"
         :aria-label="`${item.callout.title}，${item.callout.detail}，策略参考动作`"
         :title="`${item.callout.title} · ${item.callout.detail}`"
@@ -518,14 +531,16 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage { --gy-chart-bg:#FFFFFF; --gy-chart-text:#667085; --gy-chart-grid:#F2F4F7; --gy-chart-axis:#EBEDF0; --gy-up:#FF403A; --gy-down:#22B95D; position:relative; min-width:0; height:clamp(580px, 70vh, 920px); display:flex; flex-direction:column; border:1px solid #ebedf0; background:#fff; }
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
 .newow-product-chart-stage__chart { width:100%; flex:1; min-height:500px; }
-.newow-product-chart-stage__action-callouts { position:absolute; inset-inline:0; pointer-events:none; z-index:4; overflow:hidden; }
+.newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
-.newow-product-chart-stage__action-label { position:absolute; pointer-events:auto; display:grid; align-content:center; gap:3px; width:132px; min-height:44px; padding:4px; border:1px solid #AA927B; border-radius:2px; background:#FFFEFA; color:#665343; font-size:11px; cursor:pointer; box-shadow:0 1px 3px #8C73551A; }
+.newow-product-chart-stage__action-label { position:absolute; pointer-events:auto; display:grid; align-content:center; gap:3px; box-sizing:border-box; padding:4px; overflow:hidden; border:1px solid #AA927B; border-radius:2px; background:#FFFEFA; color:#665343; font-size:11px; cursor:pointer; box-shadow:0 1px 3px #8C73551A; }
 .newow-product-chart-stage__action-label strong { font-size:12px; font-weight:500; }
+.newow-product-chart-stage__action-label strong,.newow-product-chart-stage__action-label span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .newow-product-chart-stage__action-label.is-gain span { color:#CB3737; }
 .newow-product-chart-stage__action-label.is-loss span { color:#188052; }
-.newow-product-chart-stage__action-label.is-compact { width:24px; min-height:26px; }
-.newow-product-chart-stage__action-label.is-active { z-index:5; width:132px; min-height:44px; outline:2px solid #AA927B; }
+.newow-product-chart-stage__action-label.is-density-node { min-width:0; min-height:0; }
+.newow-product-chart-stage__action-label.is-compact { padding:0; place-items:center; }
+.newow-product-chart-stage__action-label.is-active { z-index:5; outline:2px solid #AA927B; }
 .newow-product-chart-stage__action-label.is-selected { outline:2px solid #8B653D; background:#FFF3D9; }
 .newow-product-chart-stage__toolbar { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; min-height:48px; border-bottom:1px solid #ebedf0; padding:0 8px; }
 .newow-product-chart-stage__controls,.newow-product-chart-stage__legend { display:flex; align-items:center; gap:8px; }
