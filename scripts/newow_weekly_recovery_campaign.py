@@ -917,8 +917,6 @@ def _derive_prior_isolations(
             expected_prior_campaign_sha256,
             "PRIOR_ISOLATION_INVALID",
         )
-        if prior_manifest.get("prior_known_isolations"):
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
         validated = validate_campaign_manifest(prior_manifest, evidence_root=root)
         if campaign_path.name != f"{validated['campaign_name']}.prepare.json":
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
@@ -933,110 +931,156 @@ def _derive_prior_isolations(
             or started.get("campaign_manifest_sha256") != expected_started_hash
             or not isinstance(campaign_result, Mapping)
             or campaign_result.get("unknown_batch") is not None
-            or not isinstance(campaign_result.get("failed_batch"), Mapping)
         ):
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        failed_batch = campaign_result["failed_batch"]
-        batch_id = failed_batch.get("batch_id")
-        terminal = failed_batch.get("native_result")
-        child = next(
-            (
-                item
-                for item in validated["children"]
-                if item.get("batch_id") == batch_id
-            ),
-            None,
-        )
-        if not isinstance(child, Mapping) or not isinstance(terminal, Mapping):
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        child_path = _manifest_child_path(child.get("path"), root)
-        validated_terminal = _validated_batch_invocation(
-            {
-                "return_code": 0 if terminal.get("status") == "passed" else 1,
-                "batch_result": terminal,
-            },
-            child=child,
-            child_path=child_path,
-            digest=child["sha256"],
-            batch_attempt=attempt_path / str(batch_id),
-            identity=validated["execution_identity"],
-        )
-        if validated_terminal is None:
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        native_result = validated_terminal["result"]
-        completed = native_result.get("completed")
-        failed = native_result.get("failed")
-        if (
-            not isinstance(completed, list)
-            or not isinstance(failed, Mapping)
-            or native_result.get("isolated")
+        completed_batches = campaign_result.get("completed_batches")
+        failed_batch = campaign_result.get("failed_batch")
+        if not isinstance(completed_batches, list) or (
+            failed_batch is not None and not isinstance(failed_batch, Mapping)
         ):
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        frozen = _load_native_child(child_path, child["sha256"])
-        units = frozen.get("units")
-        unit_index = len(completed)
-        if not isinstance(units, list) or unit_index >= len(units):
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        unit = units[unit_index]
-        if not isinstance(unit, Mapping) or not _unit_payload_matches(failed, unit):
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        native_attempt = Path(validated_terminal["attempt_dir"])
-        unit_dir = native_attempt / (
-            f"unit-{unit_index + 1:03d}-{unit['symbol']}-{unit['contract']}"
-        )
-        result = failed.get("result")
-        if not isinstance(result, Mapping):
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        safe_unit_dir = native._validated_direct_child_directory(
-            unit_dir,
-            native_attempt,
-            "PRIOR_ISOLATION_INVALID",
-        )
-        persisted_unit = native._read_json_file(safe_unit_dir / "unit-result.json")
-        if persisted_unit != failed:
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        source_evidence = native._source_isolation_evidence(
-            safe_unit_dir,
-            unit,
-            result,
-            policy,
-            expected_parent=native_attempt,
-        )
-        source_count = cast(int, source_evidence["responses_saved"])
-        evidence_artifacts = {
-            "unit_result_sha256": _regular_file_sha256(
-                safe_unit_dir / "unit-result.json"
-            ),
-            "journal_sha256": _regular_file_sha256(safe_unit_dir / "journal.jsonl"),
-            "source_response_sha256s": {
-                f"source-response-{sequence:04d}.json": _regular_file_sha256(
-                    safe_unit_dir / f"source-response-{sequence:04d}.json"
+        terminal_batches = list(completed_batches)
+        if isinstance(failed_batch, Mapping):
+            terminal_batches.append(failed_batch)
+        bindings = [dict(item) for item in validated.get("prior_known_isolations", [])]
+        campaign_result_sha256 = _regular_file_sha256(campaign_result_path)
+        for batch in terminal_batches:
+            if not isinstance(batch, Mapping):
+                raise RecoveryError("PRIOR_ISOLATION_INVALID")
+            batch_id = batch.get("batch_id")
+            terminal = batch.get("native_result")
+            child = next(
+                (
+                    item
+                    for item in validated["children"]
+                    if item.get("batch_id") == batch_id
+                ),
+                None,
+            )
+            if not isinstance(child, Mapping) or not isinstance(terminal, Mapping):
+                raise RecoveryError("PRIOR_ISOLATION_INVALID")
+            child_path = _manifest_child_path(child.get("path"), root)
+            validated_terminal = _validated_batch_invocation(
+                {
+                    "return_code": 0 if terminal.get("status") == "passed" else 1,
+                    "batch_result": terminal,
+                },
+                child=child,
+                child_path=child_path,
+                digest=child["sha256"],
+                batch_attempt=attempt_path / str(batch_id),
+                identity=validated["execution_identity"],
+            )
+            if validated_terminal is None:
+                raise RecoveryError("PRIOR_ISOLATION_INVALID")
+            native_result = validated_terminal["result"]
+            isolated = native_result.get("isolated", [])
+            if not isinstance(isolated, list):
+                raise RecoveryError("PRIOR_ISOLATION_INVALID")
+            candidates: list[tuple[Mapping[str, Any], bool]] = []
+            for item in isolated:
+                if not isinstance(item, Mapping):
+                    raise RecoveryError("PRIOR_ISOLATION_INVALID")
+                candidates.append((item, True))
+            stopping = native_result.get("failed")
+            if isinstance(stopping, Mapping):
+                candidates.append((stopping, False))
+            frozen = _load_native_child(child_path, child["sha256"])
+            units = frozen.get("units")
+            if not isinstance(units, list):
+                raise RecoveryError("PRIOR_ISOLATION_INVALID")
+            native_attempt = Path(validated_terminal["attempt_dir"])
+            for failed, declared_isolated in candidates:
+                unit_indexes = [
+                    index
+                    for index, unit in enumerate(units)
+                    if isinstance(unit, Mapping)
+                    and _unit_payload_matches(failed, unit)
+                ]
+                if len(unit_indexes) != 1:
+                    raise RecoveryError("PRIOR_ISOLATION_INVALID")
+                unit_index = unit_indexes[0]
+                unit = units[unit_index]
+                assert isinstance(unit, Mapping)
+                result = failed.get("result")
+                if not isinstance(result, Mapping):
+                    raise RecoveryError("PRIOR_ISOLATION_INVALID")
+                unit_dir = native_attempt / (
+                    f"unit-{unit_index + 1:03d}-{unit['symbol']}-{unit['contract']}"
                 )
-                for sequence in range(1, source_count + 1)
-            },
-        }
-        unit_identity = {
-            key: unit[key]
-            for key in ("symbol", "contract", "frequency", "through", "plan_sha256")
-        }
-        binding: dict[str, Any] = {
-            "schema_version": "newow_weekly_recovery_prior_isolation_v1",
-            "unit": unit_identity,
-            "classification": source_evidence["classification"],
-            "source_evidence": source_evidence,
-            "evidence_artifacts": evidence_artifacts,
-            "prior_campaign": {
-                "path": campaign_path.name,
-                "sha256": expected_prior_campaign_sha256,
-            },
-            "prior_campaign_result_sha256": _regular_file_sha256(campaign_result_path),
-            "prior_attempt_path": attempt_path.name,
-            "batch_id": batch_id,
-            "child_sha256": child["sha256"],
-            "unit_index": unit_index + 1,
-        }
-        binding["binding_sha256"] = _identity_sha256(binding)
-        return [binding]
+                safe_unit_dir = native._validated_direct_child_directory(
+                    unit_dir,
+                    native_attempt,
+                    "PRIOR_ISOLATION_INVALID",
+                )
+                persisted_unit = native._read_json_file(
+                    safe_unit_dir / "unit-result.json"
+                )
+                if persisted_unit != failed:
+                    raise RecoveryError("PRIOR_ISOLATION_INVALID")
+                try:
+                    source_evidence = native._source_isolation_evidence(
+                        safe_unit_dir,
+                        unit,
+                        result,
+                        policy,
+                        expected_parent=native_attempt,
+                    )
+                except RecoveryError:
+                    if declared_isolated:
+                        raise
+                    continue
+                source_count = cast(int, source_evidence["responses_saved"])
+                evidence_artifacts = {
+                    "unit_result_sha256": _regular_file_sha256(
+                        safe_unit_dir / "unit-result.json"
+                    ),
+                    "journal_sha256": _regular_file_sha256(
+                        safe_unit_dir / "journal.jsonl"
+                    ),
+                    "source_response_sha256s": {
+                        f"source-response-{sequence:04d}.json": (
+                            _regular_file_sha256(
+                                safe_unit_dir / f"source-response-{sequence:04d}.json"
+                            )
+                        )
+                        for sequence in range(1, source_count + 1)
+                    },
+                }
+                unit_identity = {
+                    key: unit[key]
+                    for key in (
+                        "symbol",
+                        "contract",
+                        "frequency",
+                        "through",
+                        "plan_sha256",
+                    )
+                }
+                binding: dict[str, Any] = {
+                    "schema_version": "newow_weekly_recovery_prior_isolation_v1",
+                    "unit": unit_identity,
+                    "classification": source_evidence["classification"],
+                    "source_evidence": source_evidence,
+                    "evidence_artifacts": evidence_artifacts,
+                    "prior_campaign": {
+                        "path": campaign_path.name,
+                        "sha256": expected_prior_campaign_sha256,
+                    },
+                    "prior_campaign_result_sha256": campaign_result_sha256,
+                    "prior_attempt_path": attempt_path.name,
+                    "batch_id": batch_id,
+                    "child_sha256": child["sha256"],
+                    "unit_index": unit_index + 1,
+                }
+                binding["binding_sha256"] = _identity_sha256(binding)
+                bindings.append(binding)
+        if not bindings:
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        binding_hashes = [item.get("binding_sha256") for item in bindings]
+        if len(set(binding_hashes)) != len(binding_hashes):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        return bindings
     except (OSError, KeyError, StopIteration, TypeError, RecoveryError) as exc:
         raise RecoveryError("PRIOR_ISOLATION_INVALID") from exc
 
@@ -1675,6 +1719,7 @@ def validate_campaign_manifest(
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     validated_prior: list[dict[str, Any]] = []
     validated_source_only: list[dict[str, Any]] = []
+    derived_prior_hashes: set[str] = set()
     isolated_unit_keys: set[tuple[str, str, str, str, str]] = set()
     executable_unit_keys = {
         (
@@ -1700,8 +1745,11 @@ def validate_campaign_manifest(
             expected_prior_campaign_sha256=cast(str, prior_campaign.get("sha256")),
             prior_attempt_path=root / str(binding.get("prior_attempt_path")),
         )
-        if derived_prior != [binding]:
+        if binding not in derived_prior:
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        derived_prior_hashes.update(
+            str(item.get("binding_sha256")) for item in derived_prior
+        )
         prior_unit = binding.get("unit")
         if not isinstance(prior_unit, Mapping):
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
@@ -1718,7 +1766,13 @@ def validate_campaign_manifest(
         isolated_unit_keys.add(
             cast(tuple[str, str, str, str, str], prior_key_values)
         )
-        validated_prior.extend(derived_prior)
+        validated_prior.append(dict(binding))
+    if derived_prior_hashes != {
+        str(item.get("binding_sha256"))
+        for item in prior_isolations
+        if isinstance(item, Mapping)
+    }:
+        raise RecoveryError("PRIOR_ISOLATION_INVALID")
     for binding in source_only_isolations:
         if not isinstance(binding, Mapping):
             raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")

@@ -2313,6 +2313,69 @@ def test_prior_known_source_isolation_excludes_only_proven_fresh_identity(
     assert not (tmp_path / "fresh-attempt-after-drift").exists()
 
 
+def test_prior_isolation_is_recovered_from_completed_batch_before_later_stop(
+    tmp_path: Path,
+) -> None:
+    units = [_ordinary_unit(index) for index in range(21)]
+    policy = _campaign_isolation_policy()
+    prior = prepare_campaign(
+        _report(units),
+        report_sha256="d" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda batch, batch_id, root: _native_child(
+            root,
+            batch_id,
+            batch,
+            with_source_requests=True,
+            continuation_policy=policy,
+        ),
+        name="prior-with-later-stop",
+        continuation_policy=policy,
+    )
+    prior_attempt = tmp_path / "prior-with-later-stop-apply"
+    result = execute_campaign(
+        prior,
+        attempt_root=prior_attempt,
+        invoke_batch=_native_isolation_invoker(
+            {"AG1000"}, [], stopping_contracts={"AG1020"}
+        ),
+    )
+    assert result["completed_batch_ids"] == ["batch-001"]
+    assert result["failed_batch"]["batch_id"] == "batch-002"
+    assert [item["contract"] for item in result["isolated_units"]] == ["AG1000"]
+    prior_path = tmp_path / "prior-with-later-stop.prepare.json"
+    prepared_contracts: list[str] = []
+
+    fresh = prepare_campaign(
+        _report(units),
+        report_sha256="e" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda batch, batch_id, root: prepared_contracts.extend(
+            item["contract"] for item in batch
+        )
+        or _native_child(
+            root,
+            batch_id,
+            batch,
+            with_source_requests=True,
+            continuation_policy=policy,
+        ),
+        name="fresh-after-later-stop",
+        continuation_policy=policy,
+        prior_campaign_path=prior_path,
+        expected_prior_campaign_sha256=hashlib.sha256(
+            prior_path.read_bytes()
+        ).hexdigest(),
+        prior_attempt_path=prior_attempt,
+    )
+
+    assert prepared_contracts == [item["contract"] for item in units[1:]]
+    assert fresh["scope"]["prior_known_isolation_count"] == 1
+    assert fresh["prior_known_isolations"][0]["unit"]["contract"] == "AG1000"
+
+
 def test_prepare_with_only_prior_isolated_units_is_anomaly_bearing_not_completed(
     tmp_path: Path,
 ) -> None:
