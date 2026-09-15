@@ -7,6 +7,8 @@ export interface ChartTheme {
   textMuted: string
   up: string
   down: string
+  candleUp: string
+  candleDown: string
   volumeUp: string
   volumeDown: string
   ema10: string
@@ -34,6 +36,8 @@ const FALLBACK: ChartTheme = {
   textMuted: '#5B718F',
   up: '#DC2626',
   down: '#16A34A',
+  candleUp: '#FF403A',
+  candleDown: '#22B95D',
   volumeUp: '#FF8383',
   volumeDown: '#80DCA1',
   ema10: '#D97706',
@@ -68,6 +72,8 @@ export function resolveChartTheme(root: Element = document.documentElement): Cha
     textMuted: cssValue(style, '--gy-text-muted', FALLBACK.textMuted),
     up: cssValue(style, '--gy-up', FALLBACK.up),
     down: cssValue(style, '--gy-down', FALLBACK.down),
+    candleUp: cssValue(style, '--gy-chart-candle-up', FALLBACK.candleUp),
+    candleDown: cssValue(style, '--gy-chart-candle-down', FALLBACK.candleDown),
     volumeUp: cssValue(style, '--gy-chart-volume-up', FALLBACK.volumeUp),
     volumeDown: cssValue(style, '--gy-chart-volume-down', FALLBACK.volumeDown),
     ema10: cssValue(style, '--gy-chart-ema-10', FALLBACK.ema10),

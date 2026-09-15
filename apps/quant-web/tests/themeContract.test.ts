@@ -121,6 +121,8 @@ describe('light theme token contract', () => {
     assert.equal(fallback.htdyZk1, '#0F766E')
     assert.equal(fallback.htdyZd1, '#0891B2')
     assert.equal(fallback.htdyZd2, '#D97706')
+    assert.equal(fallback.candleUp, '#FF403A')
+    assert.equal(fallback.candleDown, '#22B95D')
     assert.equal(fallback.volumeUp, '#FF8383')
     assert.equal(fallback.volumeDown, '#80DCA1')
     assert.equal(fallback.macdDif, '#FF6B2C')

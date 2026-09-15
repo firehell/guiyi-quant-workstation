@@ -193,12 +193,12 @@ onMounted(async () => {
   chart.addPane().setStretchFactor(2)
   chart.addPane().setStretchFactor(2)
   candles = chart.addSeries(CandlestickSeries, {
-    upColor: theme.up,
-    downColor: theme.down,
-    borderUpColor: theme.up,
-    borderDownColor: theme.down,
-    wickUpColor: theme.up,
-    wickDownColor: theme.down,
+    upColor: theme.candleUp,
+    downColor: theme.candleDown,
+    borderUpColor: theme.candleUp,
+    borderDownColor: theme.candleDown,
+    wickUpColor: theme.candleUp,
+    wickDownColor: theme.candleDown,
   }, 0)
   emaLines.ema_10 = chart.addSeries(LineSeries, { color: theme.ema10, lineWidth: 1, lastValueVisible: false }, 0)
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)

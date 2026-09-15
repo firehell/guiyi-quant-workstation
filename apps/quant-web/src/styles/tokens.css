@@ -110,6 +110,8 @@
   --gy-chart-ema-60: #7c3aed;
   --gy-chart-macd-dif: #ff6b2c;
   --gy-chart-macd-dea: #365af5;
+  --gy-chart-candle-up: #ff403a;
+  --gy-chart-candle-down: #22b95d;
   --gy-chart-volume-up: #ff8383;
   --gy-chart-volume-down: #80dca1;
   --gy-chart-htdy-zk1: #0f766e;

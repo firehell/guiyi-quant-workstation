@@ -122,9 +122,9 @@ onMounted(async () => {
     timeScale: { borderColor: theme.axis, timeVisible: true, tickMarkFormatter: formatChartAxisTimeInShanghai },
   })
   candles = chart.addSeries(CandlestickSeries, {
-    upColor: theme.up, downColor: theme.down,
-    borderUpColor: theme.up, borderDownColor: theme.down,
-    wickUpColor: theme.up, wickDownColor: theme.down,
+    upColor: theme.candleUp, downColor: theme.candleDown,
+    borderUpColor: theme.candleUp, borderDownColor: theme.candleDown,
+    wickUpColor: theme.candleUp, wickDownColor: theme.candleDown,
   })
   chart.panes()[0]!.setStretchFactor(5)
   chart.addPane().setStretchFactor(1.2)
