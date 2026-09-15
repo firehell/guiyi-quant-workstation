@@ -115,7 +115,7 @@ describe('light theme token contract', () => {
 
   it('resolves indicator series colors from the chart theme contract', () => {
     const fallback = resolveChartTheme({} as Element) as unknown as Record<string, string>
-    assert.equal(fallback.ema10, '#D97706')
+    assert.equal(fallback.ema10, '#2563EB')
     assert.equal(fallback.ema21, '#F59E0B')
     assert.equal(fallback.ema60, '#7C3AED')
     assert.equal(fallback.htdyZk1, '#0F766E')

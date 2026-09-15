@@ -40,7 +40,7 @@ const FALLBACK: ChartTheme = {
   candleDown: '#22B95D',
   volumeUp: '#FF8383',
   volumeDown: '#80DCA1',
-  ema10: '#D97706',
+  ema10: '#2563EB',
   ema21: '#F59E0B',
   ema60: '#7C3AED',
   macdDif: '#FF6B2C',
