@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { layoutReferenceCallouts } from '../src/utils/referenceCalloutLayout.ts'
+import { layoutReferenceCallouts, REFERENCE_CALLOUT_BOX } from '../src/utils/referenceCalloutLayout.ts'
 
 const callout = (id: string, above = false) => ({
   id, time: `2026-09-14T0${Number(id) % 9}:00:00Z`, physicalContract: 'AU2610',
   price: '449.320000000000000000', title: '参考建仓', detail: '449.32 · +66.67%',
   tone: 'gain' as const, above,
+})
+
+test('uses the compact reference-label footprint approved for dense chart overlays', () => {
+  assert.deepEqual(REFERENCE_CALLOUT_BOX, { width: 96, height: 38 })
 })
 
 test('dense corner layout keeps every identity inside the main pane without box collisions', () => {

@@ -108,10 +108,10 @@
   --gy-chart-ema-10: #d97706;
   --gy-chart-ema: #f59e0b;
   --gy-chart-ema-60: #7c3aed;
-  --gy-chart-macd-dif: #0284c7;
-  --gy-chart-macd-dea: #f59e0b;
-  --gy-chart-volume-up: rgba(220, 38, 38, 0.5);
-  --gy-chart-volume-down: rgba(22, 163, 74, 0.5);
+  --gy-chart-macd-dif: #ff6b2c;
+  --gy-chart-macd-dea: #365af5;
+  --gy-chart-volume-up: rgba(255, 133, 129, 0.82);
+  --gy-chart-volume-down: rgba(133, 221, 160, 0.82);
   --gy-chart-htdy-zk1: #0f766e;
   --gy-chart-htdy-zd1: #0891b2;
   --gy-chart-htdy-zd2: #d97706;

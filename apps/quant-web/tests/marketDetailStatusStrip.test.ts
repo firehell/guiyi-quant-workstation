@@ -12,15 +12,13 @@ test('shared status strip keeps the summary compact and opens one evidence drawe
   assert.match(source, /role="status"/)
 })
 
-test('Free and HTDY put compact status before the chart and long controls after it', () => {
-  for (const path of [
-    '../src/components/market/detail/free/FreeChartWorkspace.vue',
-    '../src/components/market/detail/htdy/HtdyDetailWorkspace.vue',
-  ]) {
+test('only Free puts compact status before the chart', () => {
+  for (const path of ['../src/components/market/detail/free/FreeChartWorkspace.vue']) {
     const source = read(path)
     assert.match(source, /<MarketDetailStatusStrip/)
     const chartIndex = source.indexOf('ChartStage')
     const indicatorIndex = source.indexOf('workspace__indicators', chartIndex)
     if (indicatorIndex >= 0) assert.ok(indicatorIndex > chartIndex, `${path} controls must follow its chart`)
   }
+  assert.doesNotMatch(read('../src/components/market/detail/htdy/HtdyDetailWorkspace.vue'), /<MarketDetailStatusStrip/)
 })

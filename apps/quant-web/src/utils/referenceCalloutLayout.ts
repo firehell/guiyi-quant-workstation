@@ -1,6 +1,6 @@
 import type { KlineReferenceCallout } from '../types/referenceCallout.ts'
 
-export const REFERENCE_CALLOUT_BOX = Object.freeze({ width: 112, height: 44 })
+export const REFERENCE_CALLOUT_BOX = Object.freeze({ width: 96, height: 38 })
 export const REFERENCE_CALLOUT_COMPACT = Object.freeze({ width: 28, height: 28 })
 const REFERENCE_CALLOUT_MICRO = Object.freeze({ width: 8, height: 8 })
 

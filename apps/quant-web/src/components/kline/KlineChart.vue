@@ -640,14 +640,14 @@ defineExpose({
 <style scoped>
 .kline-shell { position: relative; min-height: 680px; height: clamp(680px, 74vh, 1040px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
 .reference-candle-selection { position: absolute; top: 0; width: 12px; background: #aa927b2b; border-inline: 1px solid #8b653d; pointer-events: none; z-index: 2; }
-.reference-callout--selected { outline: 2px solid #8b653d; background: #fff3d9; }
+.reference-callout--selected { outline: 2px solid #8b653d; background: rgb(255 243 217 / .78); }
 .reference-callouts { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
-.reference-callouts__lines { width: 100%; height: 100%; position: absolute; inset: 0; stroke: #9b8169; stroke-width: 1; }
-.reference-callout { position: absolute; pointer-events: none; display: grid; place-content: center; gap: 2px; box-sizing: border-box; padding: 4px; overflow: hidden; border: 1px solid #aa927b; border-radius: 4px; background: #fffefa; color: #665343; font-size: 10px; line-height: 1.15; text-align: center; box-shadow: 0 1px 3px #8c73551a; }
-.reference-callout strong { font-weight: 600; font-size: 11px; }
+.reference-callouts__lines { width: 100%; height: 100%; position: absolute; inset: 0; stroke: rgb(155 129 105 / .76); stroke-width: 1; }
+.reference-callout { position: absolute; pointer-events: none; display: grid; place-content: center; gap: 1px; box-sizing: border-box; padding: 3px; overflow: hidden; border: 1px solid rgb(170 146 123 / .82); border-radius: 3px; background: rgb(255 254 250 / .78); color: #665343; font-size: 9px; line-height: 1.1; text-align: center; box-shadow: 0 1px 3px rgb(140 115 85 / .1); }
+.reference-callout strong { font-weight: 600; font-size: 10px; }
 .reference-callout strong, .reference-callout span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reference-callout--gain span { color: #cb3737; }
-.reference-callout--loss span { color: #188052; }
+.reference-callout--gain span { color: #ff403a; }
+.reference-callout--loss span { color: #22b95d; }
 .reference-callout--density-node { min-width: 0; min-height: 0; }
 .reference-callout--compact { padding: 0; place-items: center; }
 .reference-callout__node { width: 6px; height: 6px; border-radius: 50%; background: #8b653d; }
