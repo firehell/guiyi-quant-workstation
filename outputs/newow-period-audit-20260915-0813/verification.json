@@ -1,0 +1,39 @@
+{
+  "status": "passed",
+  "product_frequency_checks": 180,
+  "dependencies": 5862,
+  "metadata": 0,
+  "enumerations": 720,
+  "ready": {
+    "1w": [
+      "a",
+      "ag",
+      "al",
+      "ao",
+      "ap",
+      "au",
+      "pd",
+      "pt"
+    ],
+    "1d": [
+      "a",
+      "ag",
+      "al",
+      "ao",
+      "ap",
+      "au",
+      "pd",
+      "pt"
+    ],
+    "60m": [
+      "au",
+      "pd"
+    ]
+  },
+  "provider_requests": 0,
+  "production_writes": 0,
+  "scope": "native input dependencies; no repair plan or strategy matrix",
+  "baseline_commit": "0963cef3427d195fc4ec34ec818bc97dd570f23d",
+  "completion_commit": "210e17582800e1994970b2ee922420b8381e2b96",
+  "concurrent_commit_scope": "documentation only; audit implementation unchanged"
+}
