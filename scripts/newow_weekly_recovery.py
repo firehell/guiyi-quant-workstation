@@ -960,6 +960,10 @@ def execute_prepared_batch(
             Callable[[], None],
         ],
     ],
+    observe_partial_committed: Callable[
+        [Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]
+    ]
+    | None = None,
 ) -> dict[str, object]:
     """Execute one frozen batch serially; any failure leaves the tail untouched."""
     unit_frequency = _frequency_for_prepare_schema(manifest.get("schema_version"))
@@ -993,6 +997,13 @@ def execute_prepared_batch(
     )
     completed: list[dict[str, object]] = []
     isolated: list[dict[str, object]] = []
+    partial_source_exceptions: list[dict[str, object]] = []
+    current_identity = {
+        "code_commit": current_code_commit,
+        "execution_code_sha256": current_execution_code_sha256,
+        "config_sha256": current_config_sha256,
+        "canonical_root_sha256": current_canonical_root_sha256,
+    }
     for index, raw_unit in enumerate(units):
         if not isinstance(raw_unit, dict):
             raise RecoveryError("PREPARED_MANIFEST_INVALID")
@@ -1046,6 +1057,7 @@ def execute_prepared_batch(
                         failure,
                         units[index + 1 :],
                         isolated=isolated,
+                        partial_source_exceptions=partial_source_exceptions,
                     ),
                 )
             validated_unit_dir()
@@ -1104,6 +1116,28 @@ def execute_prepared_batch(
                         continue
                 safe_unit_dir = validated_unit_dir()
                 _write_json_exclusive(safe_unit_dir / "unit-result.json", failure)
+                classified = _classify_partial_source_exception(
+                    unit_dir=safe_unit_dir,
+                    attempt_dir=Path(attempt_dir),
+                    unit=unit,
+                    manager=manager,
+                    current_identity=current_identity,
+                    observe_partial_committed=observe_partial_committed,
+                    unit_frequency=unit_frequency,
+                )
+                if classified is not None:
+                    _write_json_exclusive(
+                        safe_unit_dir / "partial-source-exception.json",
+                        classified,
+                    )
+                    partial_source_exceptions.append(
+                        {
+                            **failure,
+                            "classification": classified["classification"],
+                            "partial_source_exception": classified,
+                        }
+                    )
+                    continue
                 return _finish_batch(
                     attempt_dir,
                     _batch_result(
@@ -1111,6 +1145,7 @@ def execute_prepared_batch(
                         failure,
                         units[index + 1 :],
                         isolated=isolated,
+                        partial_source_exceptions=partial_source_exceptions,
                     ),
                 )
             try:
@@ -1150,6 +1185,7 @@ def execute_prepared_batch(
                         failure,
                         units[index + 1 :],
                         isolated=isolated,
+                        partial_source_exceptions=partial_source_exceptions,
                     ),
                 )
             safe_unit_dir = validated_unit_dir()
@@ -1167,7 +1203,7 @@ def execute_prepared_batch(
         finally:
             cleanup()
     batch_result: dict[str, object] = {
-        "status": "partial" if isolated else "passed",
+        "status": "partial" if isolated or partial_source_exceptions else "passed",
         "completed": completed,
         "failed": None,
         "unattempted": [],
@@ -1175,6 +1211,8 @@ def execute_prepared_batch(
     }
     if isolated:
         batch_result["isolated"] = isolated
+    if partial_source_exceptions:
+        batch_result["partial_source_exceptions"] = partial_source_exceptions
     return _finish_batch(attempt_dir, batch_result)
 
 
@@ -1412,6 +1450,185 @@ def _annotate_target_split(
     return failure
 
 
+def _targets_from_replan(plan: Any) -> list[dict[str, Any]]:
+    windows = getattr(plan, "target_windows", ()) or ()
+    targets: list[dict[str, Any]] = []
+    for item in windows:
+        if isinstance(item, Mapping):
+            targets.append(dict(item))
+            continue
+        from app.market_data.historical_data_manager import (
+            _contract_warmup_target_payload,
+        )
+
+        targets.append(dict(_contract_warmup_target_payload(item)))
+    return targets
+
+
+def _observe_partial_committed_from_manager(
+    manager: Any,
+    unit: Mapping[str, Any],
+    committed: list[dict[str, Any]],
+) -> Mapping[str, Any]:
+    from app.market_data.domain import DatasetKey
+    from scripts.newow_recovery_partial_exception import ERROR_CODE
+
+    if not committed:
+        raise RecoveryError(ERROR_CODE)
+    readback = _post_commit_readback(
+        manager,
+        {
+            "symbol": unit["symbol"],
+            "contract": unit["contract"],
+            "frequency": "1d",
+            "targets": committed,
+        },
+    )
+    committed_ids = {(item["year"], item["month"]) for item in committed}
+    remaining = [
+        item
+        for item in unit.get("targets", [])
+        if isinstance(item, Mapping)
+        and (item.get("year"), item.get("month")) not in committed_ids
+    ]
+    for target in remaining:
+        year = target.get("year")
+        month = target.get("month")
+        expected_count = target.get("expected_bar_count")
+        dataset = target.get("dataset")
+        if not isinstance(dataset, list) or len(dataset) != 4:
+            raise RecoveryError(ERROR_CODE)
+        rows = tuple(
+            item
+            for item in manager.catalog.all_partitions(DatasetKey(*dataset))
+            if (item.year, item.month) == (year, month)
+        )
+        if (
+            len(rows) == 1
+            and isinstance(expected_count, int)
+            and not isinstance(expected_count, bool)
+            and rows[0].row_count == expected_count
+        ):
+            raise RecoveryError(ERROR_CODE)
+    catalog_partitions = readback.get("catalog_partitions")
+    if not isinstance(catalog_partitions, list):
+        raise RecoveryError(ERROR_CODE)
+    partitions: list[dict[str, object]] = []
+    files: list[dict[str, object]] = []
+    windows: list[dict[str, object]] = []
+    for item in catalog_partitions:
+        if not isinstance(item, Mapping):
+            raise RecoveryError(ERROR_CODE)
+        partitions.append(
+            {
+                "dataset": item["dataset"],
+                "year": item["year"],
+                "month": item["month"],
+                "row_count": item["catalog_row_count"],
+            }
+        )
+        files.append(
+            {
+                "dataset": item["dataset"],
+                "year": item["year"],
+                "month": item["month"],
+                "row_count": item["physical_row_count"],
+                "file_sha256": item["file_sha256"],
+            }
+        )
+        windows.append(
+            {
+                "dataset": item["dataset"],
+                "year": item["year"],
+                "month": item["month"],
+                "bar_count": item["mds_bar_count"],
+            }
+        )
+    return {
+        "catalog_readback": {"status": "passed", "partitions": partitions},
+        "parquet_readback": {"status": "passed", "files": files},
+        "mds_readback": {"status": "passed", "windows": windows},
+    }
+
+
+def _classify_partial_source_exception(
+    *,
+    unit_dir: Path,
+    attempt_dir: Path,
+    unit: Mapping[str, Any],
+    manager: Any,
+    current_identity: Mapping[str, str],
+    observe_partial_committed: Callable[
+        [Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]
+    ]
+    | None,
+    unit_frequency: str,
+) -> dict[str, Any] | None:
+    from scripts.newow_recovery_partial_exception import (
+        validate_partial_source_exception,
+    )
+
+    if unit_frequency != "1d":
+        return None
+    try:
+        replan = manager.contract_warmup(
+            ContractWarmupRequest(
+                symbol=str(unit["symbol"]),
+                contract=str(unit["contract"]),
+                through=date.fromisoformat(str(unit["through"])),
+                frequency=unit_frequency,
+            )
+        )
+        remaining_targets = _targets_from_replan(replan.plan)
+        if not remaining_targets:
+            return None
+        fresh_unit = {
+            "symbol": unit["symbol"],
+            "contract": unit["contract"],
+            "frequency": unit["frequency"],
+            "through": unit["through"],
+            "plan_sha256": replan.plan.plan_sha256,
+            "targets": remaining_targets,
+        }
+        result = unit_dir.joinpath("unit-result.json")
+        failed_unit = _read_json_file(result)
+        committed, _failed_targets = _committed_and_failed_targets(
+            failed_unit,
+            failed_unit.get("result") or {},
+        )
+        if observe_partial_committed is None:
+            observed = _observe_partial_committed_from_manager(
+                manager,
+                unit,
+                committed,
+            )
+        else:
+            observed = observe_partial_committed(unit, committed)
+        if not isinstance(observed, Mapping):
+            return None
+        return validate_partial_source_exception(
+            unit_dir=unit_dir,
+            expected_parent=attempt_dir,
+            fresh_unit=fresh_unit,
+            failed_attempt_id=attempt_dir.name,
+            failed_execution_commit=str(current_identity["code_commit"]),
+            failed_execution_code_sha256=str(
+                current_identity["execution_code_sha256"]
+            ),
+            catalog_readback=observed["catalog_readback"],
+            parquet_readback=observed["parquet_readback"],
+            mds_readback=observed["mds_readback"],
+            current_identity=current_identity,
+            expected_identity=current_identity,
+        )
+    except RecoveryError as exc:
+        if str(exc) == "SOURCE_EVIDENCE_PATH_INVALID":
+            raise
+        return None
+    except Exception:
+        return None
+
+
 def _error_code(exc: Exception) -> str:
     code = getattr(exc, "code", None)
     if isinstance(code, str) and re.fullmatch(r"[A-Z0-9_]{1,64}", code):
@@ -1427,8 +1644,10 @@ def _batch_result(
     unattempted: list[dict[str, Any]],
     *,
     isolated: list[dict[str, object]] | None = None,
+    partial_source_exceptions: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     isolated_units = isolated or []
+    exception_units = partial_source_exceptions or []
     nested = failure.get("result")
     applied = nested.get("applied", 0) if isinstance(nested, Mapping) else 0
     result: dict[str, object] = {
@@ -1436,6 +1655,7 @@ def _batch_result(
             "partial"
             if completed
             or isolated_units
+            or exception_units
             or failure.get("status") == "partial"
             or applied
             else "failed"
@@ -1447,6 +1667,8 @@ def _batch_result(
     }
     if isolated_units:
         result["isolated"] = isolated_units
+    if exception_units:
+        result["partial_source_exceptions"] = exception_units
     return result
 
 

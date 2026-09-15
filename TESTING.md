@@ -547,10 +547,13 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
 
 若上次 D1 apply 在部分提交后命中权威来源 `RQDATA_ZERO_OHL_INVALID`，不得把该单元记为
 zero-commit isolation 或 success。prepare 从显式失败 attempt 自动派生
-`prior_partial_source_exceptions`；该单元仍计入未完成分母，不进入 executable ordinary
+`prior_partial_source_exceptions`；若同时提供 `--prior-campaign` 与其 exact SHA，还会并入该
+campaign 已冻结的同类例外，按 `(symbol, contract, frequency, through)` 去重。该单元仍计入未完成分母，不进入 executable ordinary
 units，也不伪装 `DATA_READY`。prepare 会重放已保存来源响应、核验已提交月份的 Catalog /
 Parquet / MDS 读回，并要求当前 fresh replan 是扣除已提交目标后的严格子集。不得手写合约排除名单，
-也不得初始化 provider：
+也不得初始化 provider。apply 在同一批内若能按同一 validator 证明该例外，则记录
+`PARTIAL_COMMIT_AUTHORITATIVE_SOURCE_EXCEPTION` 后继续后续独立单元；未证明、unknown、quota、锁、
+身份漂移或其他质量失败仍全局停止，且不得重试失败单元：
 
 ```bash
 : "${NEWOW_PARTIAL_EXCEPTION_ATTEMPT:?set the failed D1 apply attempt directory}"
@@ -563,6 +566,8 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
   --name "$NEWOW_CAMPAIGN_NAME" \
   --isolate-known-source-quality \
+  --prior-campaign "$NEWOW_PRIOR_CAMPAIGN" \
+  --expected-prior-campaign-sha256 "$NEWOW_PRIOR_CAMPAIGN_SHA256" \
   --partial-source-exception-attempt "$NEWOW_PARTIAL_EXCEPTION_ATTEMPT"
 ```
 

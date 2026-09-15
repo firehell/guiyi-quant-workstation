@@ -867,6 +867,184 @@ def test_daily_partial_zero_ohl_does_not_use_zero_commit_isolation(tmp_path) -> 
     assert failure["isolation_failure_reason"] == "SOURCE_ISOLATION_EVIDENCE_FAILED"
 
 
+def test_daily_partial_source_exception_continues_to_sibling(tmp_path) -> None:
+    committed = _daily_month_target(11)
+    failed = _daily_month_target(12)
+    unit = {
+        "symbol": "ec",
+        "contract": "EC2607",
+        "through": "2024-10-23",
+        "frequency": "1d",
+        "plan_sha256": "a" * 64,
+        "target_count": 2,
+        "expected_bar_count": 4,
+        "targets": [committed, failed],
+        "source_requests": [_daily_month_source(11), _daily_month_source(12)],
+    }
+    sibling = {
+        "symbol": "si",
+        "contract": "SI2401",
+        "through": "2023-12-01",
+        "frequency": "1d",
+        "plan_sha256": "d" * 64,
+        "target_count": 1,
+        "expected_bar_count": 1,
+        "targets": [
+            {
+                **_daily_month_target(11),
+                "dataset": ["contract", "si", "SI2401", "1d"],
+            }
+        ],
+        "source_requests": [],
+    }
+    manifest = {
+        "schema_version": "newow_daily_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "continuation_policy": source_isolation_policy(unit_frequency="1d"),
+        "units": [unit, sibling],
+    }
+
+    class Manager:
+        def contract_warmup(self, request, *, before_apply=None):
+            if request.apply:
+                if request.contract == "SI2401":
+                    assert before_apply is not None
+                    before_apply()
+                    return SimpleNamespace(
+                        status="passed",
+                        applied=1,
+                        blocked=0,
+                        failed=0,
+                        provider_requests=0,
+                        failures=(),
+                    )
+                assert before_apply is not None
+                before_apply()
+                nov = ExchangeDailySourceRequest(
+                    contract="EC2607",
+                    start=date(2023, 11, 1),
+                    end=date(2023, 11, 30),
+                    expected_dates=(date(2023, 11, 1), date(2023, 11, 30)),
+                )
+                dec = ExchangeDailySourceRequest(
+                    contract="EC2607",
+                    start=date(2023, 12, 1),
+                    end=date(2023, 12, 29),
+                    expected_dates=(date(2023, 12, 1), date(2023, 12, 29)),
+                )
+                observer.before_request(nov)
+                observer.after_response(
+                    nov,
+                    tuple(
+                        {
+                            **_rows()[0],
+                            "date": day,
+                            "open": Decimal("100.10"),
+                        }
+                        for day in nov.expected_dates
+                    ),
+                )
+                observer.before_request(dec)
+                observer.after_response(
+                    dec,
+                    tuple(
+                        {
+                            **_rows(invalid=True)[0],
+                            "date": day,
+                            "open": (
+                                Decimal("0") if index == 0 else Decimal("100.10")
+                            ),
+                            "high": Decimal("0") if index == 0 else Decimal("101.20"),
+                            "low": Decimal("0") if index == 0 else Decimal("99.30"),
+                        }
+                        for index, day in enumerate(dec.expected_dates)
+                    ),
+                )
+                return SimpleNamespace(
+                    status="partial",
+                    applied=1,
+                    blocked=0,
+                    failed=1,
+                    provider_requests=2,
+                    failures=(
+                        {
+                            "dataset": ["contract", "ec", "EC2607", "1d"],
+                            "year": 2023,
+                            "month": 12,
+                            "reason_code": "RQDATA_ZERO_OHL_INVALID",
+                        },
+                    ),
+                )
+            if request.contract == "SI2401":
+                return SimpleNamespace(
+                    plan=SimpleNamespace(plan_sha256="d" * 64, target_windows=())
+                )
+            return SimpleNamespace(
+                plan=SimpleNamespace(plan_sha256="f" * 64, target_windows=(failed,))
+            )
+
+    observer = None
+
+    def open_unit(value, _unit):
+        nonlocal observer
+        observer = value
+        return (
+            Manager(),
+            lambda: None,
+            lambda: {
+                "catalog_physical_mds": "passed",
+                "mds_target_count": 1,
+                "catalog_partitions": [],
+            },
+            lambda: None,
+        )
+
+    def observe_partial_committed(_unit, committed_targets):
+        item = {
+            "dataset": list(committed_targets[0]["dataset"]),
+            "year": committed_targets[0]["year"],
+            "month": committed_targets[0]["month"],
+            "row_count": committed_targets[0]["expected_bar_count"],
+            "bar_count": committed_targets[0]["expected_bar_count"],
+            "file_sha256": "a" * 64,
+        }
+        return {
+            "catalog_readback": {"status": "passed", "partitions": [item]},
+            "parquet_readback": {"status": "passed", "files": [item]},
+            "mds_readback": {"status": "passed", "windows": [item]},
+        }
+
+    attempt = create_attempt_directory(tmp_path, "batch-d1-partial-continue-001")
+    result = execute_prepared_batch(
+        manifest=manifest,
+        attempt_dir=attempt,
+        prepared_sha256="9" * 64,
+        current_code_commit="b" * 40,
+        current_execution_code_sha256="d" * 64,
+        current_config_sha256="c" * 64,
+        current_canonical_root_sha256="e" * 64,
+        open_unit=open_unit,
+        observe_partial_committed=observe_partial_committed,
+    )
+
+    assert result["failed"] is None
+    assert result["unattempted"] == []
+    assert result["status"] == "partial"
+    assert result["retries"] == 0
+    exception = result["partial_source_exceptions"][0]
+    assert exception["contract"] == "EC2607"
+    assert exception["status"] == "partial"
+    assert exception["classification"] == (
+        "PARTIAL_COMMIT_AUTHORITATIVE_SOURCE_EXCEPTION"
+    )
+    assert exception["result"]["applied"] == 1
+    assert [item["contract"] for item in result["completed"]] == ["SI2401"]
+    assert "isolated" not in result
+
+
 def test_prepare_still_rejects_hourly_recovery_scope(tmp_path) -> None:
     manager = SimpleNamespace(
         catalog=SimpleNamespace(canonical_root=tmp_path),

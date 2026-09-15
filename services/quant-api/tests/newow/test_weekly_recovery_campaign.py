@@ -3583,9 +3583,11 @@ def test_weekly_plan_hash_cannot_satisfy_daily_expected_plan(
             config_sha256=IDENTITY["config_sha256"],
         )
 
-def _daily_partial_targets() -> tuple[dict[str, Any], dict[str, Any]]:
+def _daily_partial_targets(
+    contract: str = "AG1000",
+) -> tuple[dict[str, Any], dict[str, Any]]:
     committed = {
-        "dataset": ["contract", "ag", "AG1000", "1d"],
+        "dataset": ["contract", "ag", contract, "1d"],
         "year": 2023,
         "month": 11,
         "expected_start": "2023-11-01T07:00:00+00:00",
@@ -3596,7 +3598,7 @@ def _daily_partial_targets() -> tuple[dict[str, Any], dict[str, Any]]:
         "missing_end": "2023-11-30T07:00:00+00:00",
     }
     failed = {
-        "dataset": ["contract", "ag", "AG1000", "1d"],
+        "dataset": ["contract", "ag", contract, "1d"],
         "year": 2023,
         "month": 12,
         "expected_start": "2023-12-01T07:00:00+00:00",
@@ -3609,20 +3611,25 @@ def _daily_partial_targets() -> tuple[dict[str, Any], dict[str, Any]]:
     return committed, failed
 
 
-def _write_daily_partial_attempt(root: Path) -> tuple[Path, dict[str, Any], dict[str, Any]]:
-    committed, failed = _daily_partial_targets()
-    attempt = root / "apply-001"
+def _write_daily_partial_attempt(
+    root: Path,
+    *,
+    attempt_name: str = "apply-001",
+    contract: str = "AG1000",
+) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+    committed, failed = _daily_partial_targets(contract)
+    attempt = root / attempt_name
     native_dir = attempt / "batch-001" / "native"
-    unit_dir = native_dir / "unit-001-ag-AG1000"
+    unit_dir = native_dir / f"unit-001-ag-{contract}"
     unit_dir.mkdir(parents=True)
     nov = ExchangeDailySourceRequest(
-        contract="AG1000",
+        contract=contract,
         start=date(2023, 11, 1),
         end=date(2023, 11, 30),
         expected_dates=(date(2023, 11, 1), date(2023, 11, 30)),
     )
     dec = ExchangeDailySourceRequest(
-        contract="AG1000",
+        contract=contract,
         start=date(2023, 12, 1),
         end=date(2023, 12, 29),
         expected_dates=(date(2023, 12, 1), date(2023, 12, 29)),
@@ -3669,7 +3676,7 @@ def _write_daily_partial_attempt(root: Path) -> tuple[Path, dict[str, Any], dict
     journal.mark_failed("RECOVERY_RESULT_NOT_PASSED")
     failed_unit = {
         "symbol": "ag",
-        "contract": "AG1000",
+        "contract": contract,
         "through": "2026-09-11",
         "frequency": "1d",
         "plan_sha256": "1" * 64,
@@ -3679,14 +3686,14 @@ def _write_daily_partial_attempt(root: Path) -> tuple[Path, dict[str, Any], dict
         "source_requests": [
             {
                 "method": "futures.get_exchange_daily",
-                "contract": "AG1000",
+                "contract": contract,
                 "start": nov.start.isoformat(),
                 "end": nov.end.isoformat(),
                 "expected_dates": [day.isoformat() for day in nov.expected_dates],
             },
             {
                 "method": "futures.get_exchange_daily",
-                "contract": "AG1000",
+                "contract": contract,
                 "start": dec.start.isoformat(),
                 "end": dec.end.isoformat(),
                 "expected_dates": [day.isoformat() for day in dec.expected_dates],
@@ -3701,7 +3708,7 @@ def _write_daily_partial_attempt(root: Path) -> tuple[Path, dict[str, Any], dict
             "provider_requests": 2,
             "failures": [
                 {
-                    "dataset": ["contract", "ag", "AG1000", "1d"],
+                    "dataset": ["contract", "ag", contract, "1d"],
                     "year": 2023,
                     "month": 12,
                     "reason_code": "RQDATA_ZERO_OHL_INVALID",
@@ -3821,6 +3828,71 @@ def test_prepare_excludes_verified_partial_source_exception_from_executable(
         "partial_source_exception"
     )
     assert result["isolated_units"] == []
+
+
+def test_prepare_merges_prior_campaign_and_new_partial_exceptions(
+    tmp_path: Path,
+) -> None:
+    first_attempt, first_committed, first_failed = _write_daily_partial_attempt(
+        tmp_path
+    )
+    first_fresh = _daily_unit(0)
+    first_fresh["plan_sha256"] = "2" * 64
+    first_fresh["target_windows"] = [first_failed]
+    first_sibling = _daily_unit(1)
+    first_manifest = prepare_campaign(
+        _daily_report([first_fresh, first_sibling]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: _native_child(
+            root, batch_id, units, with_source_requests=True
+        ),
+        name="daily-partial-a",
+        partial_source_exception_attempt_path=first_attempt,
+        observe_partial_committed=lambda _unit, committed: _partial_readbacks(
+            committed[0]
+        ),
+    )
+    first_path = tmp_path / "daily-partial-a.prepare.json"
+    first_sha = hashlib.sha256(first_path.read_bytes()).hexdigest()
+
+    second_attempt, second_committed, second_failed = _write_daily_partial_attempt(
+        tmp_path,
+        attempt_name="apply-002",
+        contract="AG1002",
+    )
+    second_fresh = _daily_unit(2)
+    second_fresh["plan_sha256"] = "3" * 64
+    second_fresh["target_windows"] = [second_failed]
+    later = _daily_unit(3)
+    prepared_contracts: list[str] = []
+    manifest = prepare_campaign(
+        _daily_report([first_fresh, first_sibling, second_fresh, later]),
+        report_sha256="e" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: prepared_contracts.extend(
+            item["contract"] for item in units
+        )
+        or _native_child(root, batch_id, units, with_source_requests=True),
+        name="daily-partial-b",
+        prior_campaign_path=first_path,
+        expected_prior_campaign_sha256=first_sha,
+        partial_source_exception_attempt_path=second_attempt,
+        observe_partial_committed=lambda _unit, committed: _partial_readbacks(
+            committed[0]
+        ),
+    )
+
+    assert prepared_contracts == ["AG1001", "AG1003"]
+    assert manifest["scope"]["denominator_unit_count"] == 4
+    assert manifest["scope"]["execution_unit_count"] == 2
+    assert manifest["scope"]["prior_partial_source_exception_count"] == 2
+    assert {
+        item["contract"] for item in manifest["prior_partial_source_exceptions"]
+    } == {"AG1000", "AG1002"}
+    assert first_manifest["scope"]["prior_partial_source_exception_count"] == 1
 
 
 def test_apply_preflight_stops_before_invoke_when_partial_readback_drifts(

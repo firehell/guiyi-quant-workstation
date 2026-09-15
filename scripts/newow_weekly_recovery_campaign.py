@@ -474,32 +474,66 @@ def execute_campaign(
             native_result = terminal["result"]
             successful_units.extend(native_result["completed"])
             isolated_units.extend(native_result.get("isolated", []))
-            safely_exhausted = (
-                terminal["status"] == "partial"
-                and native_result.get("failed") is None
-                and native_result.get("unattempted") == []
-                and bool(native_result.get("isolated"))
-            )
-            if terminal["status"] != "passed" and not safely_exhausted:
-                failure_outcome = _native_failed_unit_outcome(
-                    terminal,
-                    child_path=root / child["path"],
-                    digest=child["sha256"],
-                )
-                if failure_outcome == "known":
-                    failed = {"batch_id": batch_id, "native_result": terminal}
-                    stopping_failure_unit_count = 1
-                else:
+            for discovered in native_result.get("partial_source_exceptions", []):
+                payload = discovered.get("partial_source_exception")
+                if not isinstance(payload, Mapping):
                     unknown = {
                         "batch_id": batch_id,
                         "error_code": "CAMPAIGN_UNIT_OUTCOME_UNKNOWN",
                         "native_result": terminal,
                     }
                     unknown_unit_count = 1
-                unattempted_unit_count = len(native_result["unattempted"])
-                stopped_index = index
-                break
-            completed.append({"batch_id": batch_id, "native_result": terminal})
+                    unattempted_unit_count = len(native_result.get("unattempted") or [])
+                    stopped_index = index
+                    break
+                partial_source_exception_units.append(
+                    {
+                        "symbol": discovered["symbol"],
+                        "contract": discovered["contract"],
+                        "frequency": discovered["frequency"],
+                        "through": discovered["through"],
+                        "plan_sha256": payload["fresh_replan_sha256"],
+                        "failed_plan_sha256": payload["failed_plan_sha256"],
+                        "status": "partial_source_exception",
+                        "classification": payload["classification"],
+                        "evidence_sha256": payload["evidence_sha256"],
+                        "provenance": "discovered_partial_source_exception",
+                        "committed_targets": payload["committed_targets"],
+                        "remaining_targets": payload["remaining_targets"],
+                    }
+                )
+            else:
+                safely_exhausted = (
+                    terminal["status"] == "partial"
+                    and native_result.get("failed") is None
+                    and native_result.get("unattempted") == []
+                    and (
+                        bool(native_result.get("isolated"))
+                        or bool(native_result.get("partial_source_exceptions"))
+                    )
+                )
+                if terminal["status"] != "passed" and not safely_exhausted:
+                    failure_outcome = _native_failed_unit_outcome(
+                        terminal,
+                        child_path=root / child["path"],
+                        digest=child["sha256"],
+                    )
+                    if failure_outcome == "known":
+                        failed = {"batch_id": batch_id, "native_result": terminal}
+                        stopping_failure_unit_count = 1
+                    else:
+                        unknown = {
+                            "batch_id": batch_id,
+                            "error_code": "CAMPAIGN_UNIT_OUTCOME_UNKNOWN",
+                            "native_result": terminal,
+                        }
+                        unknown_unit_count = 1
+                    unattempted_unit_count = len(native_result["unattempted"])
+                    stopped_index = index
+                    break
+                completed.append({"batch_id": batch_id, "native_result": terminal})
+                continue
+            break
 
         unattempted = [child["batch_id"] for child in children[stopped_index + 1 :]]
         if unknown is not None:
@@ -714,26 +748,157 @@ def _revalidate_partial_source_exceptions(
     bindings = manifest.get("prior_partial_source_exceptions", [])
     if not bindings:
         return
-    derived = _derive_partial_source_exceptions(
+    derived = _revalidate_partial_bindings(
         evidence_root,
+        bindings,
         current_identity=current_identity,
-        attempt_path=evidence_root / str(bindings[0]["failed_attempt_path"]),
-        fresh_units=[
-            {
-                "symbol": item["symbol"],
-                "contract": item["contract"],
-                "frequency": item["frequency"],
-                "through": item["through"],
-                "plan_sha256": item["fresh_replan_sha256"],
-                "targets": item["remaining_targets"],
-            }
-            for item in bindings
-        ],
         observe_committed=observe_committed,
-        stored_bindings=bindings,
     )
     if derived != list(bindings):
         raise RecoveryError(partial_exception.ERROR_CODE)
+
+
+def _inherit_prior_partial_source_exceptions(
+    root: Path,
+    *,
+    current_identity: Mapping[str, str],
+    prior_campaign_path: Path | None,
+    expected_prior_campaign_sha256: str | None,
+    observe_committed: Callable[
+        [Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]
+    ]
+    | None,
+) -> list[dict[str, Any]]:
+    if prior_campaign_path is None and expected_prior_campaign_sha256 is None:
+        return []
+    if prior_campaign_path is None or expected_prior_campaign_sha256 is None:
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    campaign_path = _direct_root_file(prior_campaign_path, root)
+    prior_manifest = _load_hash_locked_mapping(
+        campaign_path,
+        expected_prior_campaign_sha256,
+        partial_exception.ERROR_CODE,
+    )
+    bindings = prior_manifest.get("prior_partial_source_exceptions", [])
+    if not bindings:
+        return []
+    if any(not isinstance(item, Mapping) for item in bindings):
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    return _revalidate_partial_bindings(
+        root,
+        bindings,
+        current_identity=current_identity,
+        observe_committed=observe_committed,
+    )
+
+
+def _merged_partial_source_exceptions(
+    inherited: Sequence[Mapping[str, Any]],
+    derived: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[object, object, object, object]] = set()
+    for item in (*inherited, *derived):
+        key = (
+            item.get("symbol"),
+            item.get("contract"),
+            item.get("frequency"),
+            item.get("through"),
+        )
+        if key in seen:
+            raise RecoveryError(partial_exception.ERROR_CODE)
+        seen.add(key)
+        merged.append(dict(item))
+    return merged
+
+
+def _revalidate_partial_bindings(
+    root: Path,
+    bindings: Sequence[Mapping[str, Any]],
+    *,
+    current_identity: Mapping[str, str],
+    observe_committed: Callable[
+        [Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]
+    ]
+    | None,
+) -> list[dict[str, Any]]:
+    derived: list[dict[str, Any]] = []
+    for binding in bindings:
+        if not isinstance(binding, Mapping):
+            raise RecoveryError(partial_exception.ERROR_CODE)
+        attempt_name = binding.get("failed_attempt_path")
+        unit_rel = binding.get("unit_dir")
+        if not isinstance(attempt_name, str) or not isinstance(unit_rel, str):
+            raise RecoveryError(partial_exception.ERROR_CODE)
+        attempt = _direct_root_directory(root / attempt_name, root)
+        unit_dir = attempt / unit_rel
+        native_dir = unit_dir.parent
+        committed = binding.get("committed_targets")
+        if not isinstance(committed, list):
+            raise RecoveryError(partial_exception.ERROR_CODE)
+        if observe_committed is None:
+            observed = {
+                "catalog_readback": binding["catalog_readback"],
+                "parquet_readback": binding["parquet_readback"],
+                "mds_readback": binding["mds_readback"],
+            }
+        else:
+            observed = observe_committed(binding, committed)
+        payload = partial_exception.validate_partial_source_exception(
+            unit_dir=unit_dir,
+            expected_parent=native_dir,
+            fresh_unit={
+                "symbol": binding.get("symbol"),
+                "contract": binding.get("contract"),
+                "frequency": binding.get("frequency"),
+                "through": binding.get("through"),
+                "plan_sha256": binding.get("fresh_replan_sha256"),
+                "targets": binding.get("remaining_targets"),
+            },
+            failed_attempt_id=str(binding.get("failed_attempt_id") or attempt_name),
+            failed_execution_commit=str(binding.get("failed_execution_commit", "")),
+            failed_execution_code_sha256=str(
+                binding.get("failed_execution_code_sha256", "")
+            ),
+            catalog_readback=_require_mapping_from_observed(
+                observed, "catalog_readback"
+            ),
+            parquet_readback=_require_mapping_from_observed(
+                observed, "parquet_readback"
+            ),
+            mds_readback=_require_mapping_from_observed(observed, "mds_readback"),
+            current_identity=current_identity,
+            expected_identity=current_identity,
+        )
+        rebuilt = {
+            **payload,
+            "failed_attempt_path": attempt_name,
+            "batch_id": binding.get("batch_id"),
+            "unit_dir": unit_rel,
+        }
+        rebuilt["binding_sha256"] = hashlib.sha256(
+            native._canonical_json(
+                {
+                    key: value
+                    for key, value in rebuilt.items()
+                    if key != "binding_sha256"
+                }
+            ).encode("utf-8")
+        ).hexdigest()
+        if rebuilt != dict(binding):
+            raise RecoveryError(partial_exception.ERROR_CODE)
+        derived.append(rebuilt)
+    return derived
+
+
+def _require_mapping_from_observed(
+    observed: Mapping[str, Any],
+    key: str,
+) -> Mapping[str, Any]:
+    value = observed.get(key)
+    if not isinstance(value, Mapping):
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    return value
 
 
 def _derive_partial_source_exceptions(
@@ -909,7 +1074,11 @@ def _derive_prior_isolations(
     )
     if all(value is None for value in values):
         return []
-    if policy is None or any(value is None for value in values):
+    if prior_campaign_path is None or expected_prior_campaign_sha256 is None:
+        raise RecoveryError("PRIOR_ISOLATION_INVALID")
+    if prior_attempt_path is None:
+        return []
+    if policy is None:
         raise RecoveryError("PRIOR_ISOLATION_INVALID")
     assert prior_campaign_path is not None
     assert expected_prior_campaign_sha256 is not None
@@ -1412,12 +1581,23 @@ def prepare_campaign(
     ):
         raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
     isolation_keys = prior_keys | source_only_keys
-    partial_exceptions = _derive_partial_source_exceptions(
+    inherited_partial = _inherit_prior_partial_source_exceptions(
+        root,
+        current_identity=identity,
+        prior_campaign_path=prior_campaign_path,
+        expected_prior_campaign_sha256=expected_prior_campaign_sha256,
+        observe_committed=observe_partial_committed,
+    )
+    derived_partial = _derive_partial_source_exceptions(
         root,
         current_identity=identity,
         attempt_path=partial_source_exception_attempt_path,
         fresh_units=proposed,
         observe_committed=observe_partial_committed,
+    )
+    partial_exceptions = _merged_partial_source_exceptions(
+        inherited_partial,
+        derived_partial,
     )
     partial_keys = {
         (
@@ -1771,23 +1951,11 @@ def validate_campaign_manifest(
     if partial_exceptions:
         if any(not isinstance(item, Mapping) for item in partial_exceptions):
             raise RecoveryError(partial_exception.ERROR_CODE)
-        derived_partial = _derive_partial_source_exceptions(
+        derived_partial = _revalidate_partial_bindings(
             root,
+            partial_exceptions,
             current_identity=identity,
-            attempt_path=root / str(partial_exceptions[0].get("failed_attempt_path")),
-            fresh_units=[
-                {
-                    "symbol": item.get("symbol"),
-                    "contract": item.get("contract"),
-                    "frequency": item.get("frequency"),
-                    "through": item.get("through"),
-                    "plan_sha256": item.get("fresh_replan_sha256"),
-                    "targets": item.get("remaining_targets"),
-                }
-                for item in partial_exceptions
-            ],
             observe_committed=None,
-            stored_bindings=partial_exceptions,
         )
         if derived_partial != list(partial_exceptions):
             raise RecoveryError(partial_exception.ERROR_CODE)
@@ -2547,14 +2715,16 @@ def _validated_native_terminal(
 ) -> bool:
     completed = result.get("completed")
     isolated = result.get("isolated", [])
+    exceptions = result.get("partial_source_exceptions", [])
     failed = result.get("failed")
     unattempted = result.get("unattempted")
     status_value = result.get("status")
     if (
         not isinstance(completed, list)
         or not isinstance(isolated, list)
+        or not isinstance(exceptions, list)
         or not isinstance(unattempted, list)
-        or len(completed) + len(isolated) > len(frozen_units)
+        or len(completed) + len(isolated) + len(exceptions) > len(frozen_units)
         or (continuation_policy is None and isolated)
     ):
         return False
@@ -2589,17 +2759,33 @@ def _validated_native_terminal(
         ):
             return False
         settled_indexes.add(index)
+    for exception_unit in exceptions:
+        index = frozen_indexes.get(_unit_key(exception_unit))
+        if index is None or index in settled_indexes:
+            return False
+        frozen_unit = frozen_units[index]
+        unit_dir = native_attempt / (
+            f"unit-{index + 1:03d}-{frozen_unit['symbol']}-{frozen_unit['contract']}"
+        )
+        if not _partial_exception_unit_matches(
+            exception_unit,
+            frozen_unit,
+            unit_dir,
+        ):
+            return False
+        settled_indexes.add(index)
     if status_value == "passed":
         return (
             settled_indexes == set(range(len(frozen_units)))
             and not isolated
+            and not exceptions
             and failed is None
             and unattempted == []
         )
     if failed is None:
         return (
             status_value == "partial"
-            and bool(isolated)
+            and (bool(isolated) or bool(exceptions))
             and settled_indexes == set(range(len(frozen_units)))
             and unattempted == []
         )
@@ -2792,6 +2978,51 @@ def _isolated_unit_matches(
         and readback == expected_readback
         and persisted == value
     )
+
+
+def _partial_exception_unit_matches(
+    value: object,
+    frozen: Mapping[str, Any],
+    unit_dir: Path,
+) -> bool:
+    if (
+        not _unit_payload_matches(value, frozen)
+        or not isinstance(value, Mapping)
+        or value.get("status") != "partial"
+        or value.get("classification") != partial_exception.CLASSIFICATION
+        or not isinstance(value.get("result"), Mapping)
+        or not isinstance(value.get("partial_source_exception"), Mapping)
+        or value.get("status") == "isolated"
+    ):
+        return False
+    payload = value["partial_source_exception"]
+    nested = value["result"]
+    applied = nested.get("applied")
+    if (
+        nested.get("status") != "partial"
+        or not isinstance(applied, int)
+        or isinstance(applied, bool)
+        or applied <= 0
+        or payload.get("classification") != partial_exception.CLASSIFICATION
+        or payload.get("schema_version") != partial_exception.SCHEMA_VERSION
+    ):
+        return False
+    try:
+        safe_unit = native._validated_direct_child_directory(
+            unit_dir,
+            unit_dir.parent,
+            "CAMPAIGN_EVIDENCE_PATH_INVALID",
+        )
+        persisted = native._read_json_file(safe_unit / "unit-result.json")
+        sidecar = native._read_json_file(safe_unit / "partial-source-exception.json")
+    except RecoveryError:
+        return False
+    failure_view = {
+        key: value[key]
+        for key in value
+        if key not in {"classification", "partial_source_exception"}
+    }
+    return persisted == failure_view and sidecar == payload
 
 
 def _unit_payload_matches(value: object, frozen: Mapping[str, Any]) -> bool:
