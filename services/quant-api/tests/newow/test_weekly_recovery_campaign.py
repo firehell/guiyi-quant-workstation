@@ -42,6 +42,10 @@ from scripts.newow_weekly_recovery import (
     write_prepared_manifest,
 )
 from scripts import newow_weekly_recovery_campaign as campaign
+from scripts.newow_recovery_partial_exception import (
+    CLASSIFICATION as PARTIAL_EXCEPTION_CLASSIFICATION,
+    ERROR_CODE as PARTIAL_EXCEPTION_INVALID,
+)
 from scripts.newow_weekly_recovery_campaign import (
     execute_campaign,
     main,
@@ -3235,3 +3239,136 @@ def test_prepare_campaign_accepts_hash_bound_partial_source_exception_input() ->
     assert "partial_source_exception_attempt_path" in inspect.signature(
         prepare_campaign
     ).parameters
+
+
+def _weekly_partial_binding(unit: Mapping[str, Any]) -> dict[str, Any]:
+    committed = {
+        **unit["target_windows"][0],
+        "year": 2026,
+        "month": 8,
+    }
+    return {
+        "schema_version": "newow_partial_source_exception_v1",
+        "symbol": unit["symbol"],
+        "contract": unit["contract"],
+        "frequency": "1w",
+        "through": unit["through"],
+        "failed_plan_sha256": "a" * 64,
+        "fresh_replan_sha256": unit["plan_sha256"],
+        "failed_attempt_id": "prior-apply-001",
+        "failed_attempt_path": "prior-apply-001",
+        "failed_execution_commit": "b" * 40,
+        "failed_execution_code_sha256": "c" * 64,
+        "committed_targets": [committed],
+        "remaining_targets": unit["target_windows"],
+        "source_request_identity": {"start": "2026-08-01"},
+        "source_response_sha256": "d" * 64,
+        "journal_sha256": "e" * 64,
+        "error_code": "RQDATA_ZERO_OHL_INVALID",
+        "requests_started": 1,
+        "responses_saved": 1,
+        "retries": 0,
+        "outcome_unknown": False,
+        "catalog_readback": {"status": "passed", "partitions": []},
+        "parquet_readback": {"status": "passed", "files": []},
+        "mds_readback": {"status": "passed", "windows": []},
+        "classification": PARTIAL_EXCEPTION_CLASSIFICATION,
+        "evidence_sha256": "f" * 64,
+        "binding_sha256": "1" * 64,
+        "batch_id": "batch-001",
+        "unit_dir": "batch-001/native/unit-001-ag-AG1000",
+    }
+
+
+def test_weekly_campaign_excludes_verified_partial_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failed = _ordinary_unit(0)
+    sibling = _ordinary_unit(1)
+    binding = _weekly_partial_binding(failed)
+    monkeypatch.setattr(
+        campaign,
+        "_derive_partial_source_exceptions",
+        lambda *_args, **_kwargs: [binding],
+    )
+    prepared_contracts: list[str] = []
+
+    manifest = prepare_campaign(
+        _report([failed, sibling]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: prepared_contracts.extend(
+            item["contract"] for item in units
+        )
+        or _native_child(root, batch_id, units),
+        name="weekly-partial-exception",
+        partial_source_exception_attempt_path=tmp_path / "prior-apply-001",
+        observe_partial_committed=lambda *_args: {},
+    )
+
+    assert prepared_contracts == [sibling["contract"]]
+    assert manifest["scope"]["denominator_unit_count"] == 2
+    assert manifest["scope"]["execution_unit_count"] == 1
+    assert manifest["scope"]["prior_partial_source_exception_count"] == 1
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "fresh-apply-001",
+        invoke_batch=lambda child, digest, attempt: _native_apply_result(
+            child, digest, attempt
+        ),
+        observe_partial_committed=lambda *_args: {},
+    )
+
+    assert result["summary"] == {
+        "denominator_unit_count": 2,
+        "success_unit_count": 1,
+        "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 1,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 0,
+        "unknown_unit_count": 0,
+    }
+    assert result["partial_source_exception_units"][0]["contract"] == (
+        failed["contract"]
+    )
+
+
+def test_weekly_campaign_stops_before_attempt_on_partial_exception_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failed = _ordinary_unit(0)
+    binding = _weekly_partial_binding(failed)
+    live_drift = False
+
+    def derive(*_args, **kwargs):
+        if live_drift and kwargs.get("observe_committed") is not None:
+            raise RecoveryError(PARTIAL_EXCEPTION_INVALID)
+        return [binding]
+
+    monkeypatch.setattr(campaign, "_derive_partial_source_exceptions", derive)
+    manifest = prepare_campaign(
+        _report([failed]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda *_args: pytest.fail(
+            "partial exception must not prepare an executable child"
+        ),
+        name="weekly-partial-drift",
+        partial_source_exception_attempt_path=tmp_path / "prior-apply-001",
+        observe_partial_committed=lambda *_args: {},
+    )
+    live_drift = True
+    attempt = tmp_path / "fresh-apply-001"
+
+    with pytest.raises(RecoveryError, match=f"^{PARTIAL_EXCEPTION_INVALID}$"):
+        execute_campaign(
+            manifest,
+            attempt_root=attempt,
+            invoke_batch=lambda *_args: pytest.fail("drift reached native apply"),
+            observe_partial_committed=lambda *_args: {},
+        )
+
+    assert not attempt.exists()

@@ -530,7 +530,7 @@ Parquet / MDS 读回，并要求当前 fresh replan 是扣除已提交目标后�
 也不得初始化 provider：
 
 ```bash
-: "${NEWOW_PARTIAL_EXCEPTION_ATTEMPT:?set the failed D1 apply attempt directory}"
+: "${NEWOW_PARTIAL_EXCEPTION_ATTEMPT:?set the failed D1 or W1 apply attempt directory}"
 
 PYTHONPATH=.:services/quant-api:packages/quant-core \
   uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign prepare \
