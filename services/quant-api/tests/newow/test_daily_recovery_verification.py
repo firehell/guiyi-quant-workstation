@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -311,6 +313,47 @@ def test_complete_audit_without_runtime_comparator_proof_is_incomplete() -> None
     assert result["inventory_complete"] is True
     assert result["verification_status"] == "incomplete"
     assert result["comparator_evidence"]["status"] == "not_verified"
+
+
+def test_runtime_comparator_proof_observes_same_default_fact_window() -> None:
+    from scripts.newow_daily_recovery_verification import (
+        _runtime_default_comparator_evidence,
+    )
+
+    as_of = datetime(2026, 9, 13, 6, 36, 13, tzinfo=UTC)
+    observations = []
+
+    class Service:
+        def query(self, request):
+            low_query = SimpleNamespace(
+                frequency=request.frequency,
+                since=date(2026, 1, 1),
+                through=date(2026, 9, 11),
+                performance_since=None,
+                performance_through=None,
+            )
+            read = SimpleNamespace(owners=("AG2601",), replay_bars=("prefix",))
+            observations.append((low_query, request.as_of, read))
+            return SimpleNamespace(
+                meta=SimpleNamespace(
+                    snapshot_token="bound-token",
+                    as_of=request.as_of,
+                    input_content_sha256="a" * 64,
+                )
+            )
+
+    evidence = _runtime_default_comparator_evidence(
+        service=Service(),
+        observations=observations,
+        products=("ag",),
+        as_of=as_of,
+        dependency_proof=lambda _read: {"prefix": "b" * 64},
+    )
+
+    assert evidence["status"] == "verified"
+    assert evidence["verified_product_count"] == 1
+    assert evidence["same_query_window"] is True
+    assert evidence["same_owner_prefix"] is True
 
 
 def test_execution_summary_must_match_reconstructed_terminal_sets() -> None:

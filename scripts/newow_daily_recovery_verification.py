@@ -98,17 +98,20 @@ def _validated_execution(
     frozen_units = _frozen_daily_units(campaign)
     frozen_by_identity = {_unit_identity(unit): unit for unit in frozen_units}
     batch_units: dict[str, set[tuple[str, str, str, str, str]]] = {}
+    batch_unit_order: dict[str, list[tuple[str, str, str, str, str]]] = {}
     for child in children:
         if not isinstance(child, Mapping) or not isinstance(child.get("units"), list):
             raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
         batch_id = child.get("batch_id")
         if not isinstance(batch_id, str) or batch_id in batch_units:
             raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
-        batch_units[batch_id] = {
+        ordered_keys = [
             _unit_identity(unit)
             for unit in child["units"]
             if isinstance(unit, Mapping)
-        }
+        ]
+        batch_unit_order[batch_id] = ordered_keys
+        batch_units[batch_id] = set(ordered_keys)
         if len(batch_units[batch_id]) != len(child["units"]):
             raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
     anomaly_by_identity: dict[
@@ -172,7 +175,7 @@ def _validated_execution(
         nested = terminal.get("result") if isinstance(terminal, Mapping) else None
         if not isinstance(nested, Mapping):
             category = "unknown" if stopping == "unknown" else "unattempted"
-            for key in batch_units[batch_id]:
+            for key in batch_unit_order[batch_id]:
                 if any(key in values for values in classified.values()):
                     raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
                 classified[category].add(key)
@@ -218,7 +221,7 @@ def _validated_execution(
         ):
             raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
         seen_batches.add(batch_id)
-        for key in batch_units[batch_id]:
+        for key in batch_unit_order[batch_id]:
             if any(key in values for values in classified.values()):
                 raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
             classified["unattempted"].add(key)
@@ -450,6 +453,93 @@ def _metrics(
         ),
         "missing_endpoint_count": missing,
         "provider_request_count": _provider_request_count(execution),
+    }
+
+
+def _runtime_default_comparator_evidence(
+    *,
+    service: Any,
+    observations: list[tuple[Any, datetime, Any]],
+    products: tuple[str, ...],
+    as_of: datetime,
+    dependency_proof: Callable[[Any], Mapping[str, str]],
+) -> dict[str, Any]:
+    from app.market_data.newow.product_service import (
+        ProductSection,
+        ProductServiceQuery,
+    )
+
+    rows: list[dict[str, Any]] = []
+    for product in products:
+        start = len(observations)
+        chart = service.query(
+            ProductServiceQuery(
+                product,
+                ProductStrategy.OSCILLATION,
+                ProductFrequency.DAILY,
+                section=ProductSection.CHART,
+                as_of=as_of,
+            )
+        )
+        if chart.meta.snapshot_token is None:
+            raise native.RecoveryError("COMPARATOR_PROOF_INVALID")
+        comparator = service.query(
+            ProductServiceQuery(
+                product,
+                ProductStrategy.OSCILLATION,
+                ProductFrequency.DAILY,
+                section=ProductSection.COMPARATOR,
+                as_of=as_of,
+                snapshot_token=chart.meta.snapshot_token,
+            )
+        )
+        pair = observations[start:]
+        if len(pair) != 2:
+            raise native.RecoveryError("COMPARATOR_PROOF_INVALID")
+        chart_query, chart_as_of, chart_read = pair[0]
+        comparator_query, comparator_as_of, comparator_read = pair[1]
+        same_window = (
+            chart_query.frequency == comparator_query.frequency
+            and chart_query.since == comparator_query.since
+            and chart_query.through == comparator_query.through
+            and chart_query.performance_since == comparator_query.performance_since
+            and chart_query.performance_through == comparator_query.performance_through
+        )
+        same_as_of = (
+            chart_as_of == comparator_as_of == as_of
+            and chart.meta.as_of == comparator.meta.as_of == as_of
+        )
+        same_owner_prefix = (
+            chart_read.owners == comparator_read.owners
+            and chart_read.replay_bars == comparator_read.replay_bars
+            and dependency_proof(chart_read) == dependency_proof(comparator_read)
+            and chart.meta.input_content_sha256
+            == comparator.meta.input_content_sha256
+        )
+        token_bound = comparator.meta.snapshot_token == chart.meta.snapshot_token
+        if not all((same_window, same_as_of, same_owner_prefix, token_bound)):
+            raise native.RecoveryError("COMPARATOR_PROOF_INVALID")
+        rows.append(
+            {
+                "product": product,
+                "since": chart_query.since.isoformat(),
+                "through": chart_query.through.isoformat(),
+                "input_content_sha256": chart.meta.input_content_sha256,
+            }
+        )
+    return {
+        "status": "verified",
+        "frequency": "1d",
+        "strategy": "oscillation",
+        "as_of": as_of.isoformat(),
+        "product_count": len(products),
+        "verified_product_count": len(rows),
+        "product_universe_sha256": campaign_module._identity_sha256(list(products)),
+        "same_query_window": True,
+        "same_as_of": True,
+        "same_owner_prefix": True,
+        "snapshot_token_bound": True,
+        "product_evidence": rows,
     }
 
 
@@ -787,8 +877,6 @@ def _run_readonly_verification(
     from app.market_data.newow.product_reader import NewowProductReader
     from app.market_data.newow.product_service import (
         NewowProductService,
-        ProductSection,
-        ProductServiceQuery,
         _dependency_proof,
     )
     from app.market_data.newow.readiness import AuditBudget, NewowReadinessAudit
@@ -893,88 +981,14 @@ def _run_readonly_verification(
                     now=lambda: request.as_of,
                     cancelled=budget.expired,
                 )
-                rows: list[dict[str, Any]] = []
                 try:
-                    for product in products:
-                        start = len(observations)
-                        chart = comparator_service.query(
-                            ProductServiceQuery(
-                                product,
-                                ProductStrategy.OSCILLATION,
-                                ProductFrequency.DAILY,
-                                section=ProductSection.CHART,
-                                as_of=request.as_of,
-                            )
-                        )
-                        if chart.meta.snapshot_token is None:
-                            raise native.RecoveryError("COMPARATOR_PROOF_INVALID")
-                        comparator = comparator_service.query(
-                            ProductServiceQuery(
-                                product,
-                                ProductStrategy.OSCILLATION,
-                                ProductFrequency.DAILY,
-                                section=ProductSection.COMPARATOR,
-                                as_of=request.as_of,
-                                snapshot_token=chart.meta.snapshot_token,
-                            )
-                        )
-                        pair = observations[start:]
-                        if len(pair) != 2:
-                            raise native.RecoveryError("COMPARATOR_PROOF_INVALID")
-                        chart_query, chart_as_of, chart_read = pair[0]
-                        comparator_query, comparator_as_of, comparator_read = pair[1]
-                        same_window = (
-                            chart_query.frequency == comparator_query.frequency
-                            and chart_query.since == comparator_query.since
-                            and chart_query.through == comparator_query.through
-                            and chart_query.performance_since
-                            == comparator_query.performance_since
-                            and chart_query.performance_through
-                            == comparator_query.performance_through
-                        )
-                        same_as_of = (
-                            chart_as_of == comparator_as_of == request.as_of
-                            and chart.meta.as_of == comparator.meta.as_of == request.as_of
-                        )
-                        same_owner_prefix = (
-                            chart_read.owners == comparator_read.owners
-                            and chart_read.replay_bars == comparator_read.replay_bars
-                            and _dependency_proof(chart_read)
-                            == _dependency_proof(comparator_read)
-                            and chart.meta.input_content_sha256
-                            == comparator.meta.input_content_sha256
-                        )
-                        token_bound = (
-                            comparator.meta.snapshot_token == chart.meta.snapshot_token
-                        )
-                        if not all(
-                            (same_window, same_as_of, same_owner_prefix, token_bound)
-                        ):
-                            raise native.RecoveryError("COMPARATOR_PROOF_INVALID")
-                        rows.append(
-                            {
-                                "product": product,
-                                "since": chart_query.since.isoformat(),
-                                "through": chart_query.through.isoformat(),
-                                "input_content_sha256": chart.meta.input_content_sha256,
-                            }
-                        )
-                    comparator_evidence: dict[str, Any] = {
-                        "status": "verified",
-                        "frequency": "1d",
-                        "strategy": "oscillation",
-                        "as_of": request.as_of.isoformat(),
-                        "product_count": len(products),
-                        "verified_product_count": len(rows),
-                        "product_universe_sha256": campaign_module._identity_sha256(
-                            list(products)
-                        ),
-                        "same_query_window": True,
-                        "same_as_of": True,
-                        "same_owner_prefix": True,
-                        "snapshot_token_bound": True,
-                        "product_evidence": rows,
-                    }
+                    comparator_evidence = _runtime_default_comparator_evidence(
+                        service=comparator_service,
+                        observations=observations,
+                        products=products,
+                        as_of=request.as_of,
+                        dependency_proof=_dependency_proof,
+                    )
                 except Exception:  # noqa: BLE001 - evidence stays sanitized
                     comparator_evidence = {
                         "status": "not_verified",
