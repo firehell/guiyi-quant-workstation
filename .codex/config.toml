@@ -11,9 +11,6 @@ approval_policy = "on-request"
 # 不表示所有操作都经过 Review，也不改变 sandbox 或仓库业务授权。
 approvals_reviewer = "auto_review"
 
-# 默认推理强度；具体 Terra / Sol 仍按每个任务选择。
-model_reasoning_effort = "high"
-
 # web搜索
 web_search = "live"
 
