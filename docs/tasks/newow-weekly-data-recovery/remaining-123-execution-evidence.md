@@ -1,7 +1,8 @@
 # 牛哇周线剩余 1–3 项当前证据
 
-日期：2026-09-14。状态：`PARTIAL`。已有 EC、首批普通和 RS 专项成功证据保留；本轮全量普通总包
-因新发现的 B2411 来源异常停止。本次意图已消费，不授权重试、续跑、发布或 Runtime 操作。
+日期：2026-09-15。状态：`PARTIAL`。已有 EC、首批普通和 RS 专项成功证据保留；本轮全量普通总包
+因新发现的 B2411 来源异常停止。B2411 的新 source-only 意图已消费，不授权重试、续跑、普通 apply、
+发布或 Runtime 操作。
 
 ## 证据丢失后的当前只读重建
 
@@ -48,8 +49,27 @@ runner 未受 execution digest 约束，因此它与旧 prepared SHA
 `03b3b465c328f849a8bac9351be86928a0544ea7dc82502c41aecdddc7d9186a` 一并废止；仓库内最小修订将
 source-only runner 纳入 clean exact commit/digest，必须在新提交上重新生成 prepared。preflight 同时绑定共同
 输出根、未使用 attempt、maintenance lock 与完整当前 plan。
-即使真实响应保存成功，也只返回 `REVIEW_REQUIRED`，必须离线逐行确认 2023-12-27 的精确 OHLCV 后才可
-形成排除证明。本节尚未执行该真实来源请求，也不授权 Canonical/数据库写入。
+owner 随后精确批准本次 B2411 source-only 查询。代码提交
+`b346039105baf9b7a5408c8368649a40a4d956d9` 上的 prepared SHA 为
+`84a24df02a241590f026ac6337505b55894cdb328771a5373a089e2a034a0e04`，attempt
+`b2411-source-only-20260915-001` 仅执行一次请求且未重试。结果为
+`SOURCE_RESPONSE_SAVED_REVIEW_REQUIRED / RQDATA_ZERO_OHL_INVALID`，1 request started、1 response saved、
+0 retry、0 Canonical write、0 database write、manager apply=false；result SHA
+`8391c8bbf80d4360cb564f94777447c0aa9a7a7ed3313b22660253333e488a0e`，journal SHA
+`15a12fcc9a58153e745e930629137dcb3622cb1471cd9074a4b68f175e233552`。
+
+保存响应 SHA
+`af04f658c0cca84ff2606e0d1eb24cdb4d079eb23bc51024d16d5a2703054a0f`，精确包含请求中的 25 个日期；
+其中仅 2023-12-27 为正成交量且非正 OHL：open/high/low=0、close=3929、volume=2、
+total_turnover=78700、open_interest=147、settlement=3929、prev_settlement=3929。离线 assessment SHA
+`185e248795699a331e843b5cba8e8ec50c42ec0407c4d398f2bd35c8d0412e2b` 逐项绑定上述 artifact，并将其
+分类为 `AUTHORITATIVE_SOURCE_NONPOSITIVE_B2411_2023_12_27`。这不允许用 close/settlement 造 OHL，
+也不表示数据恢复成功；它只使 B2411 有资格在新普通 campaign 中作为未完成来源异常保留在分母并排除下载。
+
+仓库中的最小 source-only evidence importer 会在每次 prepare/apply 校验前重新验证 prepared/request、
+invocation、journal、保存响应、零写入约束及当前 adapter 对异常行的精确重放，并要求它与新完整 audit 的
+同一 unit/plan 相符。该修订仍须独立 Review、提交和新只读 campaign prepare；在这些步骤完成前，普通范围
+仍为 `NOT_FROZEN`。本次查询不授权 Canonical/数据库写入。
 
 ## 已确认的后续有界工程修订
 

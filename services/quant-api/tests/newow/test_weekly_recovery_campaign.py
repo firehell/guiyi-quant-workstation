@@ -40,6 +40,7 @@ from scripts.newow_weekly_recovery import (
     read_attempt_outcome,
     write_prepared_manifest,
 )
+from scripts import newow_weekly_recovery_campaign as campaign
 from scripts.newow_weekly_recovery_campaign import (
     execute_campaign,
     main,
@@ -1055,6 +1056,44 @@ def test_campaign_cli_exposes_hash_bound_prior_isolation_inputs() -> None:
     assert args.prior_attempt.endswith("prior-attempt")
 
 
+def test_campaign_cli_exposes_hash_bound_source_only_isolation_inputs() -> None:
+    args = parser().parse_args(
+        [
+            "prepare",
+            "--project-env",
+            "/tmp/project.env",
+            "--report",
+            "/tmp/report.json",
+            "--expected-report-sha256",
+            "a" * 64,
+            "--output-root",
+            "/tmp/evidence",
+            "--name",
+            "fresh",
+            "--isolate-known-source-quality",
+            "--source-only-prepared",
+            "/tmp/evidence/source.prepare.json",
+            "--expected-source-only-prepared-sha256",
+            "b" * 64,
+            "--source-only-attempt",
+            "/tmp/evidence/source-attempt",
+            "--source-only-unit-index",
+            "0",
+            "--source-only-request-index",
+            "0",
+            "--expected-source-only-request-sha256",
+            "c" * 64,
+        ]
+    )
+
+    assert args.source_only_prepared.endswith("source.prepare.json")
+    assert args.expected_source_only_prepared_sha256 == "b" * 64
+    assert args.source_only_attempt.endswith("source-attempt")
+    assert args.source_only_unit_index == 0
+    assert args.source_only_request_index == 0
+    assert args.expected_source_only_request_sha256 == "c" * 64
+
+
 def test_execute_stops_after_second_batch_failure_without_retry(tmp_path: Path) -> None:
     manifest = _campaign(tmp_path, 41)
     invoked: list[str] = []
@@ -1836,6 +1875,238 @@ def test_campaign_rejects_tampered_continuation_policy(
 
     with pytest.raises(RecoveryError, match="^CONTINUATION_POLICY_INVALID$"):
         validate_campaign_manifest(manifest, evidence_root=tmp_path)
+
+
+def _source_only_isolation_evidence(
+    root: Path, unit: dict[str, Any]
+) -> tuple[Path, str, Path, str]:
+    policy = _campaign_isolation_policy()
+    prepared_result = _native_child(
+        root,
+        "source-only",
+        (
+            {
+                "symbol": unit["symbol"],
+                "contract": unit["contract"],
+                "through": unit["through"],
+                "frequency": unit["frequency"],
+                "expected_plan_sha256": unit["plan_sha256"],
+            },
+        ),
+        with_source_requests=True,
+        continuation_policy=policy,
+    )
+    prepared_path = Path(prepared_result["prepared_file"])
+    prepared_sha256 = prepared_result["prepared_sha256"]
+    prepared = load_prepared_manifest(prepared_path, prepared_sha256)
+    frozen_unit = prepared["units"][0]
+    raw_request = frozen_unit["source_requests"][0]
+    request = ExchangeDailySourceRequest(
+        contract=raw_request["contract"],
+        start=date.fromisoformat(raw_request["start"]),
+        end=date.fromisoformat(raw_request["end"]),
+        expected_dates=tuple(
+            date.fromisoformat(value) for value in raw_request["expected_dates"]
+        ),
+    )
+    request_sha256 = hashlib.sha256(
+        json.dumps(
+            raw_request,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    attempt = root / "source-only-attempt"
+    attempt.mkdir()
+    journal = AttemptJournal(attempt, (request,))
+    journal.before_request(request)
+    journal.after_response(
+        request,
+        (
+            {
+                "date": request.expected_dates[0],
+                "open": Decimal("0"),
+                "high": Decimal("0"),
+                "low": Decimal("0"),
+                "close": Decimal("100"),
+                "volume": Decimal("1"),
+                "total_turnover": Decimal("100"),
+                "open_interest": Decimal("10"),
+            },
+        ),
+    )
+    journal.mark_failed("RQDATA_ZERO_OHL_INVALID")
+    _write_json_exclusive(
+        attempt / "invocation-receipt.json",
+        {
+            "schema_version": "newow_weekly_source_only_invocation_v1",
+            "prepared_path": prepared_path.name,
+            "prepared_sha256": prepared_sha256,
+            "request_sha256": request_sha256,
+            "attempt_id": attempt.name,
+            **IDENTITY,
+            "runner_sha256": "a" * 64,
+            "provider_request_limit": 1,
+            "retries_allowed": 0,
+            "canonical_writes_allowed": False,
+            "database_writes_allowed": False,
+            "manager_apply_allowed": False,
+        },
+    )
+    _write_json_exclusive(
+        attempt / "source-only-result.json",
+        {
+            "schema_version": "newow_weekly_source_only_result_v1",
+            "status": "completed",
+            "classification": "SOURCE_RESPONSE_SAVED_REVIEW_REQUIRED",
+            "source_error_code": "RQDATA_ZERO_OHL_INVALID",
+            "prepared_sha256": prepared_sha256,
+            "request_sha256": request_sha256,
+            "unit_identity": {
+                key: frozen_unit[key]
+                for key in ("symbol", "contract", "frequency", "through", "plan_sha256")
+            },
+            "attempt": read_attempt_outcome(attempt),
+            "provider_request_limit": 1,
+            "retries": 0,
+            "canonical_writes": 0,
+            "database_writes": 0,
+            "manager_apply": False,
+        },
+    )
+    return prepared_path, prepared_sha256, attempt, request_sha256
+
+
+def test_source_only_isolation_excludes_only_replayed_fresh_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(campaign, "_source_runner_sha256_at_commit", lambda _: "a" * 64)
+    policy = _campaign_isolation_policy()
+    units = [_ordinary_unit(0), _ordinary_unit(1)]
+    prepared_path, prepared_sha256, attempt, request_sha256 = (
+        _source_only_isolation_evidence(tmp_path, units[0])
+    )
+    prepared_contracts: list[str] = []
+
+    def prepare_child(batch, batch_id, root):
+        prepared_contracts.extend(item["contract"] for item in batch)
+        return _native_child(
+            root,
+            batch_id,
+            batch,
+            with_source_requests=True,
+            continuation_policy=policy,
+        )
+
+    manifest = prepare_campaign(
+        _report(units),
+        report_sha256="e" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=prepare_child,
+        name="fresh",
+        continuation_policy=policy,
+        source_only_prepared_path=prepared_path,
+        expected_source_only_prepared_sha256=prepared_sha256,
+        source_only_attempt_path=attempt,
+        source_only_unit_index=0,
+        source_only_request_index=0,
+        expected_source_only_request_sha256=request_sha256,
+    )
+
+    assert prepared_contracts == ["AG1001"]
+    assert manifest["scope"]["denominator_unit_count"] == 2
+    assert manifest["scope"]["execution_unit_count"] == 1
+    assert manifest["scope"]["source_only_known_isolation_count"] == 1
+    binding = manifest["source_only_known_isolations"][0]
+    assert binding["unit"]["contract"] == "AG1000"
+    assert binding["classification"] == "RQDATA_ZERO_OHL_INVALID"
+    assert binding["source_attempt_path"] == attempt.name
+
+    calls: list[str] = []
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "fresh-attempt",
+        invoke_batch=_native_isolation_invoker(set(), calls),
+    )
+
+    assert calls == ["AG1001"]
+    assert result["status"] == "partial"
+    assert result["summary"] == {
+        "denominator_unit_count": 2,
+        "success_unit_count": 1,
+        "isolated_unit_count": 1,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 0,
+        "unknown_unit_count": 0,
+    }
+    assert result["isolated_units"][0]["provenance"] == "source_only_known"
+
+    (attempt / "source-response-0001.json").unlink()
+    with pytest.raises(RecoveryError, match="^SOURCE_ONLY_ISOLATION_INVALID$"):
+        execute_campaign(
+            manifest,
+            attempt_root=tmp_path / "fresh-after-evidence-drift",
+            invoke_batch=lambda *_args: pytest.fail(
+                "source-only evidence drift reached native execution"
+            ),
+        )
+    assert not (tmp_path / "fresh-after-evidence-drift").exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "response",
+        "fresh_plan",
+        "without_policy",
+        "runner",
+        "invocation_not_object",
+        "result_not_object",
+    ],
+)
+def test_source_only_isolation_rejects_unproven_or_drifted_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    expected_runner_sha256 = "b" * 64 if mutation == "runner" else "a" * 64
+    monkeypatch.setattr(
+        campaign,
+        "_source_runner_sha256_at_commit",
+        lambda _: expected_runner_sha256,
+    )
+    unit = _ordinary_unit(0)
+    prepared_path, prepared_sha256, attempt, request_sha256 = (
+        _source_only_isolation_evidence(tmp_path, unit)
+    )
+    if mutation == "response":
+        (attempt / "source-response-0001.json").write_text("not-json")
+    elif mutation == "fresh_plan":
+        unit["plan_sha256"] = "9" * 64
+    elif mutation == "invocation_not_object":
+        (attempt / "invocation-receipt.json").write_text("[]")
+    elif mutation == "result_not_object":
+        (attempt / "source-only-result.json").write_text("[]")
+    policy = None if mutation == "without_policy" else _campaign_isolation_policy()
+
+    with pytest.raises(RecoveryError, match="^SOURCE_ONLY_ISOLATION_INVALID$"):
+        prepare_campaign(
+            _report([unit]),
+            report_sha256="e" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *_args: pytest.fail(
+                "invalid source-only isolation prepared a child"
+            ),
+            name="fresh",
+            continuation_policy=policy,
+            source_only_prepared_path=prepared_path,
+            expected_source_only_prepared_sha256=prepared_sha256,
+            source_only_attempt_path=attempt,
+            source_only_unit_index=0,
+            source_only_request_index=0,
+            expected_source_only_request_sha256=request_sha256,
+        )
 
 
 def test_prior_known_source_isolation_excludes_only_proven_fresh_identity(

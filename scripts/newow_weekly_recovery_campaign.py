@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 from typing import Any, Callable, Literal, Mapping, cast
 
@@ -83,6 +84,12 @@ def parser() -> argparse.ArgumentParser:
     prepare.add_argument("--prior-campaign")
     prepare.add_argument("--expected-prior-campaign-sha256")
     prepare.add_argument("--prior-attempt")
+    prepare.add_argument("--source-only-prepared")
+    prepare.add_argument("--expected-source-only-prepared-sha256")
+    prepare.add_argument("--source-only-attempt")
+    prepare.add_argument("--source-only-unit-index", type=int)
+    prepare.add_argument("--source-only-request-index", type=int)
+    prepare.add_argument("--expected-source-only-request-sha256")
     apply = commands.add_parser("apply", allow_abbrev=False)
     apply.add_argument("--project-env", required=True)
     apply.add_argument("--campaign", required=True)
@@ -171,6 +178,24 @@ def main(
                 expected_prior_campaign_sha256=(args.expected_prior_campaign_sha256),
                 prior_attempt_path=(
                     Path(args.prior_attempt) if args.prior_attempt else None
+                ),
+                source_only_prepared_path=(
+                    Path(args.source_only_prepared)
+                    if args.source_only_prepared
+                    else None
+                ),
+                expected_source_only_prepared_sha256=(
+                    args.expected_source_only_prepared_sha256
+                ),
+                source_only_attempt_path=(
+                    Path(args.source_only_attempt)
+                    if args.source_only_attempt
+                    else None
+                ),
+                source_only_unit_index=args.source_only_unit_index,
+                source_only_request_index=args.source_only_request_index,
+                expected_source_only_request_sha256=(
+                    args.expected_source_only_request_sha256
                 ),
             )
             campaign_path = root / f"{args.name}.prepare.json"
@@ -306,6 +331,10 @@ def execute_campaign(
             _prior_isolated_unit(binding)
             for binding in validated.get("prior_known_isolations", [])
         ]
+        isolated_units.extend(
+            _source_only_isolated_unit(binding)
+            for binding in validated.get("source_only_known_isolations", [])
+        )
         failed: dict[str, Any] | None = None
         unknown: dict[str, Any] | None = None
         stopping_failure_unit_count = 0
@@ -580,6 +609,29 @@ def _prior_isolated_unit(binding: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _source_only_isolated_unit(binding: Mapping[str, Any]) -> dict[str, Any]:
+    unit = cast(Mapping[str, Any], binding["unit"])
+    return {
+        **unit,
+        "status": "isolated",
+        "classification": binding["classification"],
+        "source_evidence": binding["source_evidence"],
+        "provenance": "source_only_known",
+        "source_only_evidence": {
+            key: binding[key]
+            for key in (
+                "source_prepared",
+                "source_attempt_path",
+                "unit_index",
+                "request_index",
+                "request_sha256",
+                "evidence_artifacts",
+                "binding_sha256",
+            )
+        },
+    }
+
+
 def _derive_prior_isolations(
     root: Path,
     *,
@@ -732,6 +784,222 @@ def _derive_prior_isolations(
         raise RecoveryError("PRIOR_ISOLATION_INVALID") from exc
 
 
+def _derive_source_only_isolations(
+    root: Path,
+    *,
+    policy: Mapping[str, object] | None,
+    source_prepared_path: Path | None,
+    expected_source_prepared_sha256: str | None,
+    source_attempt_path: Path | None,
+    unit_index: int | None,
+    request_index: int | None,
+    expected_request_sha256: str | None,
+) -> list[dict[str, Any]]:
+    values = (
+        source_prepared_path,
+        expected_source_prepared_sha256,
+        source_attempt_path,
+        unit_index,
+        request_index,
+        expected_request_sha256,
+    )
+    if all(value is None for value in values):
+        return []
+    if policy is None or any(value is None for value in values):
+        raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+    assert source_prepared_path is not None
+    assert expected_source_prepared_sha256 is not None
+    assert source_attempt_path is not None
+    assert unit_index is not None
+    assert request_index is not None
+    assert expected_request_sha256 is not None
+    try:
+        if (
+            isinstance(unit_index, bool)
+            or unit_index < 0
+            or isinstance(request_index, bool)
+            or request_index < 0
+            or _HASH.fullmatch(expected_request_sha256) is None
+            or policy.get("allowed_error_codes") != ["RQDATA_ZERO_OHL_INVALID"]
+        ):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        prepared_path = _direct_root_file(source_prepared_path, root)
+        attempt_path = _direct_root_directory(source_attempt_path, root)
+        prepared = native.load_prepared_manifest(
+            prepared_path, expected_source_prepared_sha256
+        )
+        units = prepared.get("units")
+        if not isinstance(units, list) or unit_index >= len(units):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        unit = units[unit_index]
+        if not isinstance(unit, Mapping):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        source_payloads = unit.get("source_requests")
+        if not isinstance(source_payloads, list) or request_index >= len(source_payloads):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        selected_request = native._source_request_from_payload(
+            source_payloads[request_index]
+        )
+        request_payload = native._request_payload(selected_request)
+        request_sha256 = hashlib.sha256(
+            native._canonical_json(request_payload).encode("utf-8")
+        ).hexdigest()
+        if request_sha256 != expected_request_sha256:
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+
+        invocation_path = attempt_path / "invocation-receipt.json"
+        result_path = attempt_path / "source-only-result.json"
+        journal_path = attempt_path / "journal.jsonl"
+        response_path = attempt_path / "source-response-0001.json"
+        invocation = native._read_json_file(invocation_path)
+        result = native._read_json_file(result_path)
+        if not isinstance(invocation, Mapping) or not isinstance(result, Mapping):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        expected_identity = {
+            key: prepared[key]
+            for key in (
+                "code_commit",
+                "execution_code_sha256",
+                "config_sha256",
+                "canonical_root_sha256",
+            )
+        }
+        expected_runner_sha256 = _source_runner_sha256_at_commit(
+            cast(str, expected_identity["code_commit"])
+        )
+        if (
+            invocation
+            != {
+                "schema_version": "newow_weekly_source_only_invocation_v1",
+                "prepared_path": prepared_path.name,
+                "prepared_sha256": expected_source_prepared_sha256,
+                "request_sha256": expected_request_sha256,
+                "attempt_id": attempt_path.name,
+                **expected_identity,
+                "runner_sha256": expected_runner_sha256,
+                "provider_request_limit": 1,
+                "retries_allowed": 0,
+                "canonical_writes_allowed": False,
+                "database_writes_allowed": False,
+                "manager_apply_allowed": False,
+            }
+        ):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        outcome = native._validated_source_attempt_outcome(
+            attempt_path, (selected_request,)
+        )
+        expected_unit = {
+            key: unit[key]
+            for key in ("symbol", "contract", "frequency", "through", "plan_sha256")
+        }
+        if (
+            result.get("schema_version") != "newow_weekly_source_only_result_v1"
+            or result.get("status") != "completed"
+            or result.get("classification")
+            != "SOURCE_RESPONSE_SAVED_REVIEW_REQUIRED"
+            or result.get("source_error_code") != "RQDATA_ZERO_OHL_INVALID"
+            or result.get("prepared_sha256") != expected_source_prepared_sha256
+            or result.get("request_sha256") != expected_request_sha256
+            or result.get("unit_identity") != expected_unit
+            or result.get("attempt") != outcome
+            or result.get("provider_request_limit") != 1
+            or result.get("retries") != 0
+            or result.get("canonical_writes") != 0
+            or result.get("database_writes") != 0
+            or result.get("manager_apply") is not False
+            or outcome
+            != {
+                "state": "failed",
+                "outcome_unknown": False,
+                "retry_allowed": False,
+                "requests_started": 1,
+                "responses_saved": 1,
+            }
+        ):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        response = native._read_source_payload(
+            response_path, _regular_file_sha256(response_path)
+        )
+        rows = response.get("rows")
+        if (
+            set(response) != {"schema_version", "request", "rows"}
+            or response.get("schema_version") != 1
+            or response.get("request") != request_payload
+            or not isinstance(rows, list)
+            or any(not isinstance(row, dict) for row in rows)
+        ):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        typed_rows = tuple(cast(dict[str, Any], row) for row in rows)
+        native._validate_response_identity(selected_request, typed_rows)
+        anomaly_rows: list[dict[str, Any]] = []
+        replayed_codes: set[str] = set()
+        for row in typed_rows:
+            try:
+                native._normalize_exchange_daily_zero_volume_row(row)
+            except Exception as exc:  # noqa: BLE001 - exact allowlist replay only
+                code = native._error_code(exc)
+                if code != "RQDATA_ZERO_OHL_INVALID":
+                    raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID") from exc
+                replayed_codes.add(code)
+                anomaly_rows.append(dict(row))
+        if replayed_codes != {"RQDATA_ZERO_OHL_INVALID"} or not anomaly_rows:
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        source_evidence: dict[str, Any] = {
+            "classification": "RQDATA_ZERO_OHL_INVALID",
+            "requests_started": 1,
+            "responses_saved": 1,
+            "request_sha256": expected_request_sha256,
+            "response_sha256": _regular_file_sha256(response_path),
+            "anomaly_rows": anomaly_rows,
+        }
+        source_evidence["evidence_sha256"] = _identity_sha256(source_evidence)
+        binding: dict[str, Any] = {
+            "schema_version": "newow_weekly_source_only_isolation_v1",
+            "unit": expected_unit,
+            "classification": "RQDATA_ZERO_OHL_INVALID",
+            "source_evidence": source_evidence,
+            "source_prepared": {
+                "path": prepared_path.name,
+                "sha256": expected_source_prepared_sha256,
+            },
+            "source_attempt_path": attempt_path.name,
+            "unit_index": unit_index,
+            "request_index": request_index,
+            "request_sha256": expected_request_sha256,
+            "evidence_artifacts": {
+                "invocation_receipt_sha256": _regular_file_sha256(invocation_path),
+                "journal_sha256": _regular_file_sha256(journal_path),
+                "source_result_sha256": _regular_file_sha256(result_path),
+                "source_response_sha256": _regular_file_sha256(response_path),
+            },
+        }
+        binding["binding_sha256"] = _identity_sha256(binding)
+        return [binding]
+    except (OSError, KeyError, TypeError, RecoveryError) as exc:
+        raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID") from exc
+
+
+def _source_runner_sha256_at_commit(code_commit: str) -> str:
+    if _COMMIT.fullmatch(code_commit) is None:
+        raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+    project_root = Path(__file__).resolve().parents[1]
+    try:
+        completed = subprocess.run(
+            [
+                "git",
+                "show",
+                f"{code_commit}:scripts/newow_weekly_source_verify.py",
+            ],
+            cwd=project_root,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID") from exc
+    return hashlib.sha256(completed.stdout).hexdigest()
+
+
 def _direct_root_file(value: Path, root: Path) -> Path:
     path = Path(value)
     try:
@@ -795,6 +1063,12 @@ def prepare_campaign(
     prior_campaign_path: Path | None = None,
     expected_prior_campaign_sha256: str | None = None,
     prior_attempt_path: Path | None = None,
+    source_only_prepared_path: Path | None = None,
+    expected_source_only_prepared_sha256: str | None = None,
+    source_only_attempt_path: Path | None = None,
+    source_only_unit_index: int | None = None,
+    source_only_request_index: int | None = None,
+    expected_source_only_request_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Prepare every native child and exclusively freeze their campaign index."""
     root = _validated_evidence_root(evidence_root)
@@ -808,6 +1082,16 @@ def prepare_campaign(
         prior_campaign_path=prior_campaign_path,
         expected_prior_campaign_sha256=expected_prior_campaign_sha256,
         prior_attempt_path=prior_attempt_path,
+    )
+    source_only_isolations = _derive_source_only_isolations(
+        root,
+        policy=policy,
+        source_prepared_path=source_only_prepared_path,
+        expected_source_prepared_sha256=expected_source_only_prepared_sha256,
+        source_attempt_path=source_only_attempt_path,
+        unit_index=source_only_unit_index,
+        request_index=source_only_request_index,
+        expected_request_sha256=expected_source_only_request_sha256,
     )
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", name) is None:
         raise RecoveryError("CAMPAIGN_PATH_INVALID")
@@ -826,6 +1110,16 @@ def prepare_campaign(
         )
         for item in prior_isolations
     }
+    source_only_keys = {
+        (
+            item["unit"]["symbol"],
+            item["unit"]["contract"],
+            item["unit"]["frequency"],
+            item["unit"]["through"],
+            item["unit"]["plan_sha256"],
+        )
+        for item in source_only_isolations
+    }
     proposed = [item for item in targets if item["status"] == "PROPOSED"]
     fresh_keys = [
         (
@@ -839,6 +1133,13 @@ def prepare_campaign(
     ]
     if not prior_keys.issubset(fresh_keys) or len(prior_keys) != len(prior_isolations):
         raise RecoveryError("PRIOR_ISOLATION_INVALID")
+    if (
+        not source_only_keys.issubset(fresh_keys)
+        or len(source_only_keys) != len(source_only_isolations)
+        or prior_keys & source_only_keys
+    ):
+        raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+    isolation_keys = prior_keys | source_only_keys
     executable_units = tuple(
         {
             "symbol": item["symbol"],
@@ -848,7 +1149,7 @@ def prepare_campaign(
             "expected_plan_sha256": item["plan_sha256"],
         }
         for item, key in zip(proposed, fresh_keys, strict=True)
-        if key not in prior_keys
+        if key not in isolation_keys
     )
     batches = tuple(
         tuple(executable_units[index : index + 20])
@@ -927,6 +1228,7 @@ def prepare_campaign(
             "denominator_unit_count": len(proposed),
             "execution_unit_count": len(executable_units),
             "prior_known_isolation_count": len(prior_isolations),
+            "source_only_known_isolation_count": len(source_only_isolations),
             "unit_identity_sha256": _identity_sha256(
                 [unit for child in children for unit in child["units"]]
             ),
@@ -940,6 +1242,7 @@ def prepare_campaign(
         },
         "children": children,
         "prior_known_isolations": prior_isolations,
+        "source_only_known_isolations": source_only_isolations,
         "totals": {
             "batch_count": len(children),
             "unit_count": sum(child["unit_count"] for child in children),
@@ -983,6 +1286,7 @@ def validate_campaign_manifest(
     identity = _validated_execution_identity(manifest.get("execution_identity"))
     policy = native._validated_continuation_policy(manifest.get("continuation_policy"))
     prior_isolations = manifest.get("prior_known_isolations", [])
+    source_only_isolations = manifest.get("source_only_known_isolations", [])
     children = manifest.get("children")
     totals = manifest.get("totals")
     audit = manifest.get("audit")
@@ -1008,7 +1312,8 @@ def validate_campaign_manifest(
         or not isinstance(audit, dict)
         or not isinstance(scope, dict)
         or not isinstance(prior_isolations, list)
-        or (prior_isolations and policy is None)
+        or not isinstance(source_only_isolations, list)
+        or ((prior_isolations or source_only_isolations) and policy is None)
         or _HASH.fullmatch(str(audit.get("sha256", ""))) is None
         or audit.get("frequency_scope") != ["1w"]
         or audit.get("matrix") is not False
@@ -1074,7 +1379,8 @@ def validate_campaign_manifest(
     if totals != actual_totals:
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     validated_prior: list[dict[str, Any]] = []
-    prior_unit_keys: set[tuple[str, str, str, str, str]] = set()
+    validated_source_only: list[dict[str, Any]] = []
+    isolated_unit_keys: set[tuple[str, str, str, str, str]] = set()
     executable_unit_keys = {
         (
             unit["symbol"],
@@ -1110,14 +1416,53 @@ def validate_campaign_manifest(
         )
         if (
             not all(isinstance(value, str) for value in prior_key_values)
-            or prior_key_values in prior_unit_keys
+            or prior_key_values in isolated_unit_keys
             or prior_key_values in executable_unit_keys
         ):
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        prior_unit_keys.add(cast(tuple[str, str, str, str, str], prior_key_values))
+        isolated_unit_keys.add(
+            cast(tuple[str, str, str, str, str], prior_key_values)
+        )
         validated_prior.extend(derived_prior)
+    for binding in source_only_isolations:
+        if not isinstance(binding, Mapping):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        source_prepared = binding.get("source_prepared")
+        if not isinstance(source_prepared, Mapping):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        derived_source = _derive_source_only_isolations(
+            root,
+            policy=policy,
+            source_prepared_path=root / str(source_prepared.get("path")),
+            expected_source_prepared_sha256=cast(
+                str, source_prepared.get("sha256")
+            ),
+            source_attempt_path=root / str(binding.get("source_attempt_path")),
+            unit_index=cast(int, binding.get("unit_index")),
+            request_index=cast(int, binding.get("request_index")),
+            expected_request_sha256=cast(str, binding.get("request_sha256")),
+        )
+        if derived_source != [binding]:
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        source_unit = binding.get("unit")
+        if not isinstance(source_unit, Mapping):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        source_key_values = tuple(
+            source_unit.get(key)
+            for key in ("symbol", "contract", "frequency", "through", "plan_sha256")
+        )
+        if (
+            not all(isinstance(value, str) for value in source_key_values)
+            or source_key_values in isolated_unit_keys
+            or source_key_values in executable_unit_keys
+        ):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        isolated_unit_keys.add(
+            cast(tuple[str, str, str, str, str], source_key_values)
+        )
+        validated_source_only.extend(derived_source)
     included = scope["included_status_counts"]
-    denominator = len(seen) + len(validated_prior)
+    denominator = len(seen) + len(validated_prior) + len(validated_source_only)
     if included != {"PROPOSED": denominator}:
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     expected_status = "prepared" if denominator else "completed"
@@ -1127,6 +1472,8 @@ def validate_campaign_manifest(
         scope.get("denominator_unit_count") != denominator
         or scope.get("execution_unit_count") != len(seen)
         or scope.get("prior_known_isolation_count") != len(validated_prior)
+        or scope.get("source_only_known_isolation_count", 0)
+        != len(validated_source_only)
     ):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     flattened = [unit for child in children for unit in child["units"]]
