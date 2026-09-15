@@ -1,4 +1,4 @@
-"""One bounded campaign over native Newow W1 recovery batches."""
+"""One bounded campaign over native Newow W1 or 60m recovery batches."""
 
 from __future__ import annotations
 
@@ -29,7 +29,17 @@ from scripts import newow_weekly_recovery as native
 
 RecoveryError = native.RecoveryError
 
-_CAMPAIGN_SCHEMA = "newow_weekly_recovery_campaign_v1"
+_CAMPAIGN_SCHEMAS = {
+    "1w": "newow_weekly_recovery_campaign_v1",
+    "60m": "newow_hourly_recovery_campaign_v1",
+}
+_CAMPAIGN_RESULT_SCHEMAS = {
+    "1w": "newow_weekly_recovery_campaign_result_v1",
+    "60m": "newow_hourly_recovery_campaign_result_v1",
+}
+_CAMPAIGN_SCHEMA = _CAMPAIGN_SCHEMAS["1w"]
+_HOURLY_PRODUCTS = ("a", "ag", "al", "ao", "ap", "pt")
+_HOURLY_DOWNLOAD_BATCH = 5
 _HASH = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 _SYMBOL = re.compile(r"[a-z]{1,8}")
@@ -51,7 +61,6 @@ _REPORT_REQUIRED = {
     "provider_requests": 0,
     "writes": 0,
     "release_stage": "weekly",
-    "frequency_scope": ["1w"],
     "matrix": False,
 }
 _REPORT_STRUCTURAL = {
@@ -70,6 +79,96 @@ _UNKNOWN_UNIT_ERROR_CODES = {
 }
 
 
+def _campaign_unit_frequency(report: Mapping[str, Any]) -> str:
+    scope = report.get("frequency_scope")
+    if scope not in (["1w"], ["60m"]):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    return str(scope[0])
+
+
+def _frequency_for_campaign_schema(schema: object) -> str:
+    for frequency, name in _CAMPAIGN_SCHEMAS.items():
+        if name == schema:
+            return frequency
+    raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+
+
+def _report_products(frequency: str) -> tuple[str, ...]:
+    if frequency == "1w":
+        try:
+            return tuple(load_operational_products())
+        except (OSError, ValueError, TypeError) as exc:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
+    if frequency == "60m":
+        return _HOURLY_PRODUCTS
+    raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+
+
+def combine_hourly_readiness_reports(
+    reports: Sequence[tuple[Mapping[str, Any], str]],
+) -> dict[str, Any]:
+    """Union six native 60m symbol reports without inventing a second schema."""
+    if len(reports) != len(_HOURLY_PRODUCTS):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    seen: dict[str, Mapping[str, Any]] = {}
+    as_of = None
+    enumerations: list[Any] = []
+    dependencies: list[Any] = []
+    repair_targets: list[Any] = []
+    metadata: list[Any] = []
+    work_used = 0
+    for report, digest in reports:
+        if _HASH.fullmatch(digest) is None:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        if any(report.get(key) != value for key, value in _REPORT_REQUIRED.items()):
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        if report.get("frequency_scope") != ["60m"] or report.get("product_count") != 1:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        symbols = {
+            item.get("symbol")
+            for item in report.get("enumerations") or ()
+            if isinstance(item, Mapping)
+        }
+        if len(symbols) != 1:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        symbol = next(iter(symbols))
+        if symbol not in _HOURLY_PRODUCTS or symbol in seen:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        report_as_of = report.get("as_of")
+        if as_of is None:
+            as_of = report_as_of
+        elif report_as_of != as_of:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        seen[symbol] = report
+        enumerations.extend(report.get("enumerations") or [])
+        dependencies.extend(report.get("dependencies") or [])
+        repair_targets.extend(report.get("repair_targets") or [])
+        metadata.extend(report.get("metadata_proposals") or [])
+        used = report.get("work_used")
+        if not isinstance(used, int) or isinstance(used, bool) or used < 0:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        work_used += used
+    if tuple(sorted(seen)) != tuple(sorted(_HOURLY_PRODUCTS)):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    first = next(iter(seen.values()))
+    combined = dict(first)
+    combined.update(
+        {
+            "product_count": len(_HOURLY_PRODUCTS),
+            "enumerations": enumerations,
+            "dependencies": dependencies,
+            "repair_targets": repair_targets,
+            "metadata_proposals": metadata,
+            "cases": [],
+            "main_case_count": 0,
+            "main_ready_count": 0,
+            "work_used": work_used,
+            "as_of": as_of,
+        }
+    )
+    return combined
+
+
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(
         description="Prepare or execute one bounded Newow W1 recovery campaign."
@@ -77,8 +176,8 @@ def parser() -> argparse.ArgumentParser:
     commands = value.add_subparsers(dest="mode", required=True)
     prepare = commands.add_parser("prepare", allow_abbrev=False)
     prepare.add_argument("--project-env", required=True)
-    prepare.add_argument("--report", required=True)
-    prepare.add_argument("--expected-report-sha256", required=True)
+    prepare.add_argument("--report", action="append", required=True)
+    prepare.add_argument("--expected-report-sha256", action="append", required=True)
     prepare.add_argument("--output-root", required=True)
     prepare.add_argument("--name", required=True)
     prepare.add_argument("--isolate-known-source-quality", action="store_true")
@@ -120,15 +219,48 @@ def main(
             }
             code = 0
         elif args.mode == "prepare":
-            report = _load_hash_locked_mapping(
-                Path(args.report),
-                args.expected_report_sha256,
-                "CAMPAIGN_REPORT_INVALID",
-            )
+            if len(args.report) != len(args.expected_report_sha256):
+                raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+            loaded = [
+                _load_hash_locked_mapping(
+                    Path(path),
+                    digest,
+                    "CAMPAIGN_REPORT_INVALID",
+                )
+                for path, digest in zip(
+                    args.report, args.expected_report_sha256, strict=True
+                )
+            ]
+            if len(loaded) == 1:
+                report = loaded[0]
+                report_sha256 = args.expected_report_sha256[0]
+            else:
+                report = combine_hourly_readiness_reports(
+                    tuple(zip(loaded, args.expected_report_sha256, strict=True))
+                )
+                report_sha256 = hashlib.sha256(
+                    native._canonical_json(report).encode("utf-8")
+                ).hexdigest()
+            unit_frequency = _campaign_unit_frequency(report)
+            if unit_frequency != "1w" and (
+                args.isolate_known_source_quality
+                or args.prior_campaign
+                or args.source_only_prepared
+                or args.partial_source_exception_attempt
+            ):
+                raise RecoveryError("RECOVERY_SCOPE_INVALID")
             identity = _current_execution_identity(Path(args.project_env))
             root = _validated_evidence_root(Path(args.output_root))
+            if len(loaded) > 1:
+                combined_path = root / f"{args.name}.combined-report.json"
+                try:
+                    native._write_json_exclusive(combined_path, report)
+                except FileExistsError as exc:
+                    raise RecoveryError("CAMPAIGN_MANIFEST_EXISTS") from exc
+                except OSError as exc:
+                    raise RecoveryError("CAMPAIGN_MANIFEST_UNAVAILABLE") from exc
             policy = (
-                native.source_isolation_policy()
+                native.source_isolation_policy(unit_frequency=unit_frequency)
                 if args.isolate_known_source_quality
                 else None
             )
@@ -168,7 +300,7 @@ def main(
 
             manifest = prepare_campaign(
                 report,
-                report_sha256=args.expected_report_sha256,
+                report_sha256=report_sha256,
                 evidence_root=root,
                 execution_identity=identity,
                 invoke_batch=invoke_prepare,
@@ -212,7 +344,7 @@ def main(
             )
             campaign_path = root / f"{args.name}.prepare.json"
             payload = {
-                "schema_version": "newow_weekly_recovery_campaign_result_v1",
+                "schema_version": _CAMPAIGN_RESULT_SCHEMAS[unit_frequency],
                 "status": manifest["status"],
                 "readonly": True,
                 "campaign_file": str(campaign_path),
@@ -265,6 +397,9 @@ def main(
                     "batch_result": _decoded_mapping(output.getvalue()),
                 }
 
+            unit_frequency = _frequency_for_campaign_schema(
+                manifest.get("schema_version")
+            )
             result = execute_campaign(
                 manifest,
                 attempt_root=root / args.attempt_id,
@@ -274,7 +409,7 @@ def main(
                 ),
             )
             payload = {
-                "schema_version": "newow_weekly_recovery_campaign_result_v1",
+                "schema_version": _CAMPAIGN_RESULT_SCHEMAS[unit_frequency],
                 **result,
                 "readonly": False,
                 "attempt_dir": str(root / args.attempt_id),
@@ -607,23 +742,69 @@ def execute_campaign(
         return result
 
 
+def _partition_execution_units(
+    unit_frequency: str,
+    units: tuple[dict[str, Any], ...],
+    targets: Sequence[Mapping[str, Any]],
+) -> tuple[tuple[dict[str, Any], ...], ...]:
+    if unit_frequency != "60m":
+        return tuple(
+            tuple(units[index : index + 20]) for index in range(0, len(units), 20)
+        )
+    lookup = {
+        (item["symbol"], item["contract"], item["frequency"], item["through"]): item
+        for item in targets
+        if item.get("status") == "PROPOSED"
+    }
+    derive: list[dict[str, Any]] = []
+    download: list[tuple[int, dict[str, Any]]] = []
+    for unit in units:
+        item = lookup.get(
+            (
+                unit["symbol"],
+                unit["contract"],
+                unit["frequency"],
+                unit["through"],
+            )
+        )
+        count = item.get("provider_request_count") if item is not None else None
+        if count == 0:
+            derive.append(unit)
+            continue
+        rank = (
+            count
+            if isinstance(count, int) and not isinstance(count, bool)
+            else 10**9
+        )
+        download.append((rank, unit))
+    download.sort(key=lambda pair: (pair[0], pair[1]["symbol"], pair[1]["contract"]))
+    batches: list[tuple[dict[str, Any], ...]] = []
+    for index in range(0, len(derive), 20):
+        batches.append(tuple(derive[index : index + 20]))
+    download_units = [item for _rank, item in download]
+    for index in range(0, len(download_units), _HOURLY_DOWNLOAD_BATCH):
+        batches.append(tuple(download_units[index : index + _HOURLY_DOWNLOAD_BATCH]))
+    return tuple(batches)
+
+
 def partition_ordinary_units(
     report: Mapping[str, Any],
 ) -> tuple[tuple[dict[str, Any], ...], ...]:
-    """Validate one native audit and split its ordinary W1 units by twenty."""
+    """Validate one native audit and split ordinary units into bounded batches."""
+    unit_frequency = _campaign_unit_frequency(report)
     targets, _excluded = _validated_report_targets(report)
     units = tuple(
         {
             "symbol": item["symbol"],
             "contract": item["contract"],
             "through": item["through"],
-            "frequency": "1w",
+            "frequency": unit_frequency,
             "expected_plan_sha256": item["plan_sha256"],
         }
         for item in targets
         if item["status"] == "PROPOSED"
     )
-    return tuple(tuple(units[index : index + 20]) for index in range(0, len(units), 20))
+    return _partition_execution_units(unit_frequency, units, targets)
 
 
 def _prior_isolated_unit(binding: Mapping[str, Any]) -> dict[str, Any]:
@@ -1435,6 +1616,14 @@ def prepare_campaign(
     if _HASH.fullmatch(report_sha256) is None:
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     identity = _validated_execution_identity(execution_identity)
+    unit_frequency = _campaign_unit_frequency(report)
+    if unit_frequency != "1w" and (
+        continuation_policy is not None
+        or prior_campaign_path is not None
+        or source_only_prepared_path is not None
+        or partial_source_exception_attempt_path is not None
+    ):
+        raise RecoveryError("RECOVERY_SCOPE_INVALID")
     policy = native._validated_continuation_policy(continuation_policy)
     prior_isolations = _derive_prior_isolations(
         root,
@@ -1537,7 +1726,7 @@ def prepare_campaign(
             "symbol": item["symbol"],
             "contract": item["contract"],
             "through": item["through"],
-            "frequency": "1w",
+            "frequency": unit_frequency,
             "expected_plan_sha256": item["plan_sha256"],
         }
         for item, key in zip(proposed, fresh_keys, strict=True)
@@ -1545,9 +1734,8 @@ def prepare_campaign(
         and (item["symbol"], item["contract"], item["frequency"], item["through"])
         not in partial_keys
     )
-    batches = tuple(
-        tuple(executable_units[index : index + 20])
-        for index in range(0, len(executable_units), 20)
+    batches = _partition_execution_units(
+        unit_frequency, executable_units, proposed
     )
     children: list[dict[str, Any]] = []
     artifact_prefix = _campaign_artifact_prefix(name, report_sha256)
@@ -1596,7 +1784,7 @@ def prepare_campaign(
         )
 
     manifest: dict[str, Any] = {
-        "schema_version": _CAMPAIGN_SCHEMA,
+        "schema_version": _CAMPAIGN_SCHEMAS[unit_frequency],
         "status": "prepared" if proposed else "completed",
         "readonly": True,
         "provider_requests": 0,
@@ -1667,11 +1855,13 @@ def validate_campaign_manifest(
 ) -> dict[str, Any]:
     """Verify the complete ordered child set without opening any data source."""
     root = _validated_evidence_root(evidence_root)
+    schema = manifest.get("schema_version")
     if (
         not isinstance(manifest, dict)
-        or manifest.get("schema_version") != _CAMPAIGN_SCHEMA
+        or schema not in _CAMPAIGN_SCHEMAS.values()
     ):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+    unit_frequency = _frequency_for_campaign_schema(schema)
     if (
         manifest.get("readonly") is not True
         or manifest.get("provider_requests") != 0
@@ -1713,7 +1903,7 @@ def validate_campaign_manifest(
         or not isinstance(partial_exceptions, list)
         or ((prior_isolations or source_only_isolations) and policy is None)
         or _HASH.fullmatch(str(audit.get("sha256", ""))) is None
-        or audit.get("frequency_scope") != ["1w"]
+        or audit.get("frequency_scope") != [unit_frequency]
         or audit.get("matrix") is not False
         or not isinstance(scope.get("included_status_counts"), dict)
         or not isinstance(scope.get("excluded_status_counts"), dict)
@@ -1964,6 +2154,7 @@ def _validated_report_targets(
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     if not _REPORT_STRUCTURAL.issubset(report):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    unit_frequency = _campaign_unit_frequency(report)
     try:
         as_of = datetime.fromisoformat(report["as_of"])
     except (KeyError, TypeError, ValueError) as exc:
@@ -1987,7 +2178,7 @@ def _validated_report_targets(
         if typed_identity in repair_identities:
             raise RecoveryError("CAMPAIGN_SCOPE_CONFLICT")
         repair_identities.add(typed_identity)
-    _validate_native_report_sections(report, as_of=as_of)
+    _validate_native_report_sections(report, as_of=as_of, frequency=unit_frequency)
     parsed: list[dict[str, Any]] = []
     excluded: Counter[str] = Counter()
     seen: dict[tuple[str, str, str], tuple[str, str]] = {}
@@ -2011,7 +2202,7 @@ def _validated_report_targets(
             or not isinstance(contract, str)
             or _CONTRACT.fullmatch(contract) is None
             or not contract.startswith(symbol.upper())
-            or frequency != "1w"
+            or frequency != unit_frequency
             or not isinstance(through, str)
             or requested_through != through
             or not isinstance(status_value, str)
@@ -2051,12 +2242,10 @@ def _validate_native_report_sections(
     report: Mapping[str, Any],
     *,
     as_of: datetime,
+    frequency: str,
 ) -> None:
     """Require the complete native matrix-false readiness payload."""
-    try:
-        operational = tuple(load_operational_products())
-    except (OSError, ValueError, TypeError) as exc:
-        raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
+    products = _report_products(frequency)
     enumerations = report.get("enumerations")
     dependencies = report.get("dependencies")
     repairs = report.get("repair_targets")
@@ -2065,10 +2254,10 @@ def _validate_native_report_sections(
     main_case_count = report.get("main_case_count")
     main_ready_count = report.get("main_ready_count")
     if (
-        not operational
+        not products
         or not isinstance(product_count, int)
         or isinstance(product_count, bool)
-        or product_count != len(operational)
+        or product_count != len(products)
         or not isinstance(main_case_count, int)
         or isinstance(main_case_count, bool)
         or main_case_count != 0
@@ -2082,8 +2271,8 @@ def _validate_native_report_sections(
     ):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     expected_enumerations = {
-        (symbol, "1w", section)
-        for symbol in operational
+        (symbol, frequency, section)
+        for symbol in products
         for section in _REPORT_SECTIONS
     }
     actual_enumerations: set[tuple[str, str, str]] = set()
@@ -2126,7 +2315,7 @@ def _validate_native_report_sections(
     covered_owner_counts: Counter[tuple[str, str]] = Counter()
     repair_through: dict[tuple[str, str, str], str] = {}
     repair_consumers: dict[tuple[str, str, str], set[tuple[str, str, str]]] = {}
-    operational_set = set(operational)
+    operational_set = set(products)
     for raw in dependencies:
         if not isinstance(raw, Mapping):
             raise RecoveryError("CAMPAIGN_REPORT_INVALID")
@@ -2153,7 +2342,7 @@ def _validate_native_report_sections(
             or not isinstance(contract, str)
             or _CONTRACT.fullmatch(contract) is None
             or not contract.startswith(symbol.upper())
-            or raw.get("frequency") != "1w"
+            or raw.get("frequency") != frequency
             or status_value
             not in {
                 "DATA_READY",
@@ -2208,7 +2397,7 @@ def _validate_native_report_sections(
         for consumer in consumers:
             if (
                 not isinstance(consumer, Mapping)
-                or consumer.get("frequency") != "1w"
+                or consumer.get("frequency") != frequency
                 or consumer.get("section") not in {"chart", "auxiliary", "reference"}
                 or not isinstance(consumer.get("strategy"), str)
             ):
@@ -2223,7 +2412,7 @@ def _validate_native_report_sections(
             consumer_identities.add(consumer_identity)
             consumer_sections.add(consumer["section"])
         expected_consumers = {
-            (strategy.value, "1w", section)
+            (strategy.value, frequency, section)
             for section in consumer_sections
             for strategy in ProductStrategy
         }
@@ -2250,7 +2439,7 @@ def _validate_native_report_sections(
             coverage_key = (symbol, section)
             covered_owners.setdefault(coverage_key, set()).update(owner_identities)
             covered_owner_counts[coverage_key] += len(owner_identities)
-        dependency_key = (symbol, contract, "1w")
+        dependency_key = (symbol, contract, frequency)
         if raw.get("reason") in native_readiness._DOWNLOAD:
             previous_through = repair_through.get(dependency_key)
             if previous_through is None or raw["through"] > previous_through:
@@ -2301,7 +2490,7 @@ def _validate_native_report_sections(
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     expected_work = (
         sum(deferred_section_reason(section) is None for section in _REPORT_SECTIONS)
-        * len(operational)
+        * len(products)
         + len(dependencies)
         + len(repairs)
     )
@@ -2405,7 +2594,8 @@ def _validate_native_child(
     expected_identity: Mapping[str, str],
     summaries_are_campaign_units: bool = False,
 ) -> list[dict[str, Any]]:
-    if child.get("schema_version") != "newow_weekly_recovery_prepare_v1" or any(
+    unit_frequency = native._frequency_for_prepare_schema(child.get("schema_version"))
+    if any(
         child.get(key) != value for key, value in expected_identity.items()
     ):
         raise RecoveryError("CAMPAIGN_CHILD_INVALID")
@@ -2428,7 +2618,9 @@ def _validate_native_child(
             target_count = raw["target_count"]
             expected_bar_count = raw["expected_bar_count"]
             targets = raw["targets"]
-            target_summaries = _validated_target_summaries(targets, raw)
+            target_summaries = _validated_target_summaries(
+                targets, raw, unit_frequency=unit_frequency
+            )
             summary = {
                 "symbol": raw["symbol"],
                 "contract": raw["contract"],
@@ -2481,9 +2673,12 @@ def _identity_sha256(value: object) -> str:
 def _validated_target_summaries(
     targets: object,
     unit: Mapping[str, Any],
+    *,
+    unit_frequency: str,
 ) -> list[dict[str, Any]]:
     if not isinstance(targets, list):
         raise RecoveryError("CAMPAIGN_CHILD_INVALID")
+    allowed = native._allowed_target_frequencies(unit_frequency)
     summaries: list[dict[str, Any]] = []
     seen: set[str] = set()
     for target in targets:
@@ -2504,7 +2699,7 @@ def _validated_target_summaries(
             not isinstance(dataset, list)
             or len(dataset) != 4
             or dataset[:3] != ["contract", unit["symbol"], unit["contract"]]
-            or dataset[3] not in {"1d", "1w"}
+            or dataset[3] not in allowed
             or not isinstance(year, int)
             or isinstance(year, bool)
             or not isinstance(month, int)

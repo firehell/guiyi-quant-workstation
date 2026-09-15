@@ -44,6 +44,7 @@ from scripts.newow_weekly_recovery import (
     prepare_bounded_units,
     read_attempt_outcome,
     run_bounded_units,
+    source_isolation_policy,
     write_prepared_manifest,
 )
 
@@ -465,7 +466,7 @@ def test_prepare_rejects_root_hash_and_nonweekly_scope_before_provider(
         "EC2607",
         date(2026, 6, 30),
         expected_plan_sha256="d" * 64 if change == "hash" else None,
-        frequency="60m" if change == "frequency" else "1w",
+        frequency="1d" if change == "frequency" else "1w",
     )
 
     with pytest.raises(RecoveryError, match=f"^{code}$"):
@@ -1631,3 +1632,160 @@ def test_prepare_cli_writes_hash_locked_manifest_without_provider(
     assert adapter.client_initialized is False
     assert released == [True]
     assert cleaned == [True]
+
+
+def _hourly_prepare_fixture(tmp_path):
+    minute = DatasetKey("contract", "pt", "PT2610", "1m")
+    hourly = DatasetKey("contract", "pt", "PT2610", "60m")
+    ends = (datetime(2026, 9, 14, 7, 0, tzinfo=UTC),)
+    targets = (
+        _Target(minute, 2026, 9, ends, ends, ()),
+        _Target(hourly, 2026, 9, ends, ends, ()),
+    )
+    windows = tuple(_contract_warmup_target_payload(item) for item in targets)
+    plan = ContractWarmupPlan(
+        symbol="pt",
+        contract="PT2610",
+        provider="rqdata",
+        listed_date=date(2026, 2, 1),
+        expired_date=date(2026, 10, 1),
+        requested_through=date(2026, 9, 15),
+        effective_through=date(2026, 9, 15),
+        target_windows=windows,
+        direct_target_count=1,
+        derived_target_count=1,
+        expected_bar_count=2,
+        provider_request_count=0,
+        plan_sha256="a" * 64,
+        frequency="60m",
+        dependency_frequencies=("1m",),
+        frequencies=("1m", "60m"),
+    )
+
+    class Manager:
+        catalog = SimpleNamespace(canonical_root=tmp_path / "canonical")
+        provider_calls = 0
+        writes = 0
+
+        def _contract_warmup_plan(self, request):
+            assert request.frequency == "60m"
+            return plan, targets
+
+    class Adapter:
+        client_initialized = False
+
+        def exchange_daily_source_requests(self, requests):
+            raise AssertionError("60m prepare must not use exchange daily")
+
+    Manager.catalog.canonical_root.mkdir()
+    return Manager(), Adapter(), plan
+
+
+def test_prepare_hourly_uses_native_60m_plan_without_exchange_daily(tmp_path) -> None:
+    manager, adapter, plan = _hourly_prepare_fixture(tmp_path)
+
+    manifest = prepare_bounded_units(
+        manager=manager,
+        adapter=adapter,
+        requests=(
+            ContractWarmupRequest("pt", "PT2610", date(2026, 9, 15), frequency="60m"),
+        ),
+        expected_data_root=manager.catalog.canonical_root,
+        code_commit="b" * 40,
+        execution_code_sha256="d" * 64,
+        config_sha256="c" * 64,
+    )
+
+    assert manifest["schema_version"] == "newow_hourly_recovery_prepare_v1"
+    assert manifest["units"][0]["frequency"] == "60m"
+    assert manifest["units"][0]["source_requests"] == []
+    assert manifest["units"][0]["provider_request_count"] == 0
+    assert {item["dataset"][3] for item in manifest["units"][0]["targets"]} == {
+        "1m",
+        "60m",
+    }
+    assert plan.plan_sha256 == manifest["units"][0]["plan_sha256"]
+
+
+def test_prepare_hourly_rejects_source_isolation_policy(tmp_path) -> None:
+    manager, adapter, _plan = _hourly_prepare_fixture(tmp_path)
+
+    with pytest.raises(RecoveryError, match="^RECOVERY_SCOPE_INVALID$"):
+        prepare_bounded_units(
+            manager=manager,
+            adapter=adapter,
+            requests=(
+                ContractWarmupRequest(
+                    "pt", "PT2610", date(2026, 9, 15), frequency="60m"
+                ),
+            ),
+            expected_data_root=manager.catalog.canonical_root,
+            code_commit="b" * 40,
+            execution_code_sha256="d" * 64,
+            config_sha256="c" * 64,
+            continuation_policy=source_isolation_policy(),
+        )
+
+
+def test_execute_hourly_fail_closes_without_isolation(tmp_path) -> None:
+    unit = {
+        "symbol": "pt",
+        "contract": "PT2610",
+        "through": "2026-09-15",
+        "frequency": "60m",
+        "plan_sha256": "a" * 64,
+        "source_requests": [],
+        "targets": [
+            {
+                "dataset": ["contract", "pt", "PT2610", "60m"],
+                "year": 2026,
+                "month": 9,
+                "expected_start": "2026-09-14T07:00:00+00:00",
+                "expected_end": "2026-09-14T07:00:00+00:00",
+                "expected_bar_count": 1,
+            }
+        ],
+    }
+    manifest = {
+        "schema_version": "newow_hourly_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "units": [unit, {**unit, "contract": "PT2608", "plan_sha256": "f" * 64}],
+    }
+
+    class Manager:
+        def contract_warmup(self, request, *, before_apply=None):
+            if request.apply:
+                if before_apply is not None:
+                    before_apply()
+                return SimpleNamespace(
+                    status="failed",
+                    applied=0,
+                    blocked=0,
+                    failed=1,
+                    provider_requests=0,
+                    failures=({"reason_code": "RQDATA_ZERO_OHL_INVALID"},),
+                )
+            return SimpleNamespace(plan=SimpleNamespace(target_windows=()))
+
+    def open_unit(_observer, _unit):
+        return (Manager(), lambda: None, lambda: {}, lambda: None)
+
+    attempt = create_attempt_directory(tmp_path, "hourly-001")
+    result = execute_prepared_batch(
+        manifest=manifest,
+        attempt_dir=attempt,
+        prepared_sha256="9" * 64,
+        current_code_commit="b" * 40,
+        current_execution_code_sha256="d" * 64,
+        current_config_sha256="c" * 64,
+        current_canonical_root_sha256="e" * 64,
+        open_unit=open_unit,
+    )
+
+    assert result["status"] == "failed"
+    assert result["failed"]["contract"] == "PT2610"
+    assert result["unattempted"][0]["contract"] == "PT2608"
+    assert "isolated" not in result

@@ -39,6 +39,7 @@ from scripts.newow_weekly_recovery import (
     load_prepared_manifest,
     prepare_bounded_units,
     read_attempt_outcome,
+    source_isolation_policy,
     write_prepared_manifest,
 )
 from scripts import newow_weekly_recovery_campaign as campaign
@@ -47,6 +48,8 @@ from scripts.newow_recovery_partial_exception import (
     ERROR_CODE as PARTIAL_EXCEPTION_INVALID,
 )
 from scripts.newow_weekly_recovery_campaign import (
+    _HOURLY_PRODUCTS,
+    combine_hourly_readiness_reports,
     execute_campaign,
     main,
     parser,
@@ -3460,3 +3463,325 @@ def test_campaign_revalidates_each_partial_exception_from_its_own_attempt(
     )
 
     assert attempts == ["prior-apply-001", "prior-apply-002"]
+
+
+def _hourly_unit(index: int = 0, *, requests: int = 1) -> dict[str, Any]:
+    contract = f"PT{2610 - index}" if index < 2 else f"AL{2600 + index}"
+    symbol = "pt" if index < 2 else "al"
+    return {
+        "symbol": symbol,
+        "contract": contract,
+        "through": "2026-09-15",
+        "requested_through": "2026-09-15",
+        "frequency": "60m",
+        "plan_sha256": f"{index + 1:064x}",
+        "status": "PROPOSED",
+        "expected_bar_count": 10 + index,
+        "provider_request_count": requests,
+        "consumers": [
+            {"strategy": strategy, "frequency": "60m", "section": section}
+            for section in ("chart", "auxiliary", "reference")
+            for strategy in ("trend", "oscillation", "main_rise")
+        ],
+        "target_windows": [
+            {
+                "dataset": ["contract", symbol, contract, "1m"],
+                "year": 2026,
+                "month": 9,
+                "expected_bar_count": 8,
+            },
+            {
+                "dataset": ["contract", symbol, contract, "60m"],
+                "year": 2026,
+                "month": 9,
+                "expected_bar_count": 2,
+            },
+        ],
+    }
+
+
+def _hourly_report(units: list[dict[str, Any]]) -> dict[str, Any]:
+    as_of = "2026-09-15T15:30:00+00:00"
+    products = _HOURLY_PRODUCTS
+    requested: dict[str, dict[str, str]] = {}
+    for item in units:
+        requested.setdefault(item["symbol"], {})[item["contract"]] = item["through"]
+    owners_by_symbol = {
+        symbol: (requested.get(symbol) or {f"{symbol.upper()}1000": "2026-09-15"})
+        for symbol in products
+    }
+    enumerations = []
+    for symbol in products:
+        for section in ("chart", "auxiliary", "reference", "explanation"):
+            row: dict[str, Any] = {
+                "symbol": symbol,
+                "frequency": "60m",
+                "section": section,
+                "status": "ENUMERATED",
+                "as_of": as_of,
+            }
+            reason = deferred_section_reason(section)
+            if reason is not None:
+                row.update(status="UNOPENED", reason=reason)
+            else:
+                row.update(
+                    since="2024-01-01",
+                    through="2026-09-15",
+                    owner_count=len(owners_by_symbol[symbol]),
+                )
+            enumerations.append(row)
+    dependencies = []
+    repair_keys = {(item["symbol"], item["contract"]) for item in units}
+    for symbol, contracts in owners_by_symbol.items():
+        for contract, through in contracts.items():
+            for cutoff, sections in (
+                (as_of, ("chart", "auxiliary")),
+                ("2026-09-15T07:00:00+00:00", ("reference",)),
+            ):
+                dependency: dict[str, Any] = {
+                    "symbol": symbol,
+                    "contract": contract,
+                    "frequency": "60m",
+                    "through": through,
+                    "as_of": cutoff,
+                    "consumers": [
+                        {
+                            "strategy": strategy,
+                            "frequency": "60m",
+                            "section": section,
+                        }
+                        for section in sections
+                        for strategy in ("trend", "oscillation", "main_rise")
+                    ],
+                    "owners": [{"since": "2024-01-01", "through": through}],
+                }
+                if (symbol, contract) in repair_keys:
+                    dependency.update(
+                        status="DATA_UNAVAILABLE",
+                        reason="REPLAY_PREFIX_MISSING",
+                        error={"code": "NEWOW_DATA_UNAVAILABLE", "diagnostic": {}},
+                    )
+                else:
+                    dependency.update(
+                        status="DATA_READY",
+                        cutoff=f"{through}T07:00:00+00:00",
+                        actual_bar_count=1,
+                        expected_bar_count=1,
+                    )
+                dependencies.append(dependency)
+    return {
+        "schema_version": 1,
+        "command": "data.newow-readiness",
+        "status": "audited",
+        "complete": True,
+        "budget_exhausted": False,
+        "readonly": True,
+        "provider_requests": 0,
+        "writes": 0,
+        "release_stage": "weekly",
+        "frequency_scope": ["60m"],
+        "matrix": False,
+        "as_of": as_of,
+        "product_count": len(products),
+        "main_case_count": 0,
+        "main_ready_count": 0,
+        "work_used": len(products) * 3 + len(dependencies) + len(units),
+        "enumerations": enumerations,
+        "dependencies": dependencies,
+        "cases": [],
+        "metadata_proposals": [],
+        "repair_targets": units,
+    }
+
+
+def _hourly_native_child(
+    root: Path,
+    batch_id: str,
+    units: tuple[dict[str, Any], ...],
+    *,
+    identity: Mapping[str, str] = IDENTITY,
+) -> dict[str, Any]:
+    child_units = []
+    for item in units:
+        child_units.append(
+            {
+                "symbol": item["symbol"],
+                "contract": item["contract"],
+                "through": item["through"],
+                "frequency": "60m",
+                "plan_sha256": item["expected_plan_sha256"],
+                "target_count": 2,
+                "expected_bar_count": 2,
+                "targets": [
+                    {
+                        "dataset": [
+                            "contract",
+                            item["symbol"],
+                            item["contract"],
+                            "1m",
+                        ],
+                        "year": 2026,
+                        "month": 9,
+                        "expected_start": "2026-09-01T01:01:00+00:00",
+                        "expected_end": "2026-09-01T02:00:00+00:00",
+                        "expected_bar_count": 1,
+                    },
+                    {
+                        "dataset": [
+                            "contract",
+                            item["symbol"],
+                            item["contract"],
+                            "60m",
+                        ],
+                        "year": 2026,
+                        "month": 9,
+                        "expected_start": "2026-09-01T02:00:00+00:00",
+                        "expected_end": "2026-09-01T02:00:00+00:00",
+                        "expected_bar_count": 1,
+                    },
+                ],
+                "source_requests": [],
+            }
+        )
+    manifest = {
+        "schema_version": "newow_hourly_recovery_prepare_v1",
+        **identity,
+        "unit_count": len(child_units),
+        "units": child_units,
+    }
+    path = root / f"{batch_id}.prepare.json"
+    digest = _write_json_exclusive(path, manifest)
+    return {
+        "status": "prepared",
+        "readonly": True,
+        "provider_requests": 0,
+        "writes": 0,
+        "prepared_file": str(path),
+        "prepared_sha256": digest,
+        "unit_count": len(child_units),
+    }
+
+
+def test_hourly_campaign_rejects_source_isolation(tmp_path: Path) -> None:
+    with pytest.raises(RecoveryError, match="^RECOVERY_SCOPE_INVALID$"):
+        prepare_campaign(
+            _hourly_report([_hourly_unit(0, requests=0)]),
+            report_sha256="f" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *_args: pytest.fail("isolation reached prepare"),
+            continuation_policy=source_isolation_policy(),
+            name="hourly-isolation",
+        )
+
+
+def test_hourly_campaign_rejects_partial_source_exception(tmp_path: Path) -> None:
+    with pytest.raises(RecoveryError, match="^RECOVERY_SCOPE_INVALID$"):
+        prepare_campaign(
+            _hourly_report([_hourly_unit(0, requests=0)]),
+            report_sha256="f" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *_args: pytest.fail("partial exception reached prepare"),
+            partial_source_exception_attempt_path=tmp_path / "attempt",
+            name="hourly-partial",
+        )
+
+
+def test_hourly_campaign_batches_derive_before_download(tmp_path: Path) -> None:
+    units = [
+        _hourly_unit(0, requests=0),
+        _hourly_unit(1, requests=3),
+        _hourly_unit(2, requests=9),
+        _hourly_unit(3, requests=4),
+        _hourly_unit(4, requests=2),
+        _hourly_unit(5, requests=8),
+        _hourly_unit(6, requests=1),
+    ]
+    batches = partition_ordinary_units(_hourly_report(units))
+    assert len(batches) == 3
+    assert [item["contract"] for item in batches[0]] == [units[0]["contract"]]
+    download_contracts = [item["contract"] for batch in batches[1:] for item in batch]
+    assert download_contracts == [
+        units[6]["contract"],
+        units[4]["contract"],
+        units[1]["contract"],
+        units[3]["contract"],
+        units[5]["contract"],
+        units[2]["contract"],
+    ]
+    assert all(len(batch) <= 5 for batch in batches[1:])
+
+    manifest = prepare_campaign(
+        _hourly_report(units),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda child_units, batch_id, root: _hourly_native_child(
+            root, batch_id, child_units
+        ),
+        name="hourly-six",
+    )
+    assert manifest["schema_version"] == "newow_hourly_recovery_campaign_v1"
+    assert manifest["audit"]["frequency_scope"] == ["60m"]
+    assert manifest["totals"]["batch_count"] == 3
+    assert manifest["totals"]["unit_count"] == 7
+    validate_campaign_manifest(manifest, evidence_root=tmp_path)
+
+
+def test_combine_hourly_readiness_reports_unions_six_symbols() -> None:
+    reports = []
+    for symbol in _HOURLY_PRODUCTS:
+        full = _hourly_report([])
+        enumerations = [
+            item for item in full["enumerations"] if item["symbol"] == symbol
+        ]
+        dependencies = [
+            item for item in full["dependencies"] if item["symbol"] == symbol
+        ]
+        report = {
+            **full,
+            "product_count": 1,
+            "enumerations": enumerations,
+            "dependencies": dependencies,
+            "repair_targets": [],
+            "work_used": 3 + len(dependencies),
+        }
+        reports.append((report, hashlib.sha256(symbol.encode("utf-8")).hexdigest()))
+    combined = combine_hourly_readiness_reports(tuple(reports))
+    assert combined["product_count"] == 6
+    assert combined["frequency_scope"] == ["60m"]
+    assert {item["symbol"] for item in combined["enumerations"]} == set(_HOURLY_PRODUCTS)
+
+
+def test_hourly_inventory_summary_marks_complete(tmp_path: Path) -> None:
+    from scripts.newow_hourly_recovery_verification import summarize_inventory
+
+    as_of = "2026-09-15T15:30:00+00:00"
+    for symbol in _HOURLY_PRODUCTS:
+        report = {
+            "as_of": as_of,
+            "frequency_scope": ["60m"],
+            "command": "data.newow-readiness",
+            "provider_requests": 0,
+            "writes": 0,
+            "complete": True,
+            "status": "audited",
+            "budget_exhausted": False,
+            "repair_targets": [
+                {
+                    "status": "PROPOSED",
+                    "provider_request_count": 0 if symbol == "pt" else 2,
+                    "expected_bar_count": 10,
+                }
+            ],
+            "dependencies": [{"frequency": "60m", "status": "DATA_UNAVAILABLE"}],
+        }
+        (tmp_path / f"{symbol}-60m.json").write_text(
+            json.dumps(report), encoding="utf-8"
+        )
+    summary = summarize_inventory(report_dir=tmp_path, expected_as_of=as_of)
+    assert summary["inventory_complete"] is True
+    assert summary["totals"]["proposed"] == 6
+    assert summary["totals"]["derive_only"] == 1
+    assert summary["totals"]["need_1m"] == 5

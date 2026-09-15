@@ -381,6 +381,7 @@ uv run --project services/quant-api python -m ruff check \
   scripts/newow_weekly_recovery.py \
   scripts/newow_weekly_source_verify.py \
   scripts/newow_weekly_recovery_campaign.py \
+  scripts/newow_hourly_recovery_verification.py \
   scripts/newow_recovery_partial_exception.py \
   services/quant-api/app/market_data/rqdata_adapter.py \
   services/quant-api/app/market_data/composition.py \
@@ -398,8 +399,46 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   scripts/newow_weekly_recovery.py \
   scripts/newow_weekly_source_verify.py \
   scripts/newow_weekly_recovery_campaign.py \
+  scripts/newow_hourly_recovery_verification.py \
   scripts/newow_recovery_partial_exception.py
 ```
+
+### 牛哇六品种 60m 有界恢复入口
+
+60m 使用封闭 schema，apply 只走显式 `contract-warmup --frequency 60m`。不得把 `--isolate-known-source-quality` 绑到 60m。真实 RQData/Canonical 写入仍需冻结执行包的精确单次批准。
+
+```bash
+: "${NEWOW_HOURLY_AS_OF:?set frozen tz-aware as_of}"
+: "${NEWOW_HOURLY_EVIDENCE:=/Volumes/扩展盘/guiyi-quant-workstation/outputs/newow-hourly-recovery}"
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/guiyi data newow-readiness \
+  --symbol pt --frequency 60m --as-of "$NEWOW_HOURLY_AS_OF" \
+  --max-work 50000 --timeout-seconds 900
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m scripts.newow_hourly_recovery_verification inventory \
+  --report-dir "$NEWOW_HOURLY_EVIDENCE/inventory" \
+  --expected-as-of "$NEWOW_HOURLY_AS_OF" \
+  --output "$NEWOW_HOURLY_EVIDENCE/inventory/summary.json"
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign prepare \
+  --project-env "$NEWOW_SOURCE_PROJECT_ENV" \
+  --report "$NEWOW_HOURLY_EVIDENCE/inventory/a-60m.json" \
+  --expected-report-sha256 "$NEWOW_HOURLY_A_SHA256" \
+  --report "$NEWOW_HOURLY_EVIDENCE/inventory/ag-60m.json" \
+  --expected-report-sha256 "$NEWOW_HOURLY_AG_SHA256" \
+  --report "$NEWOW_HOURLY_EVIDENCE/inventory/al-60m.json" \
+  --expected-report-sha256 "$NEWOW_HOURLY_AL_SHA256" \
+  --report "$NEWOW_HOURLY_EVIDENCE/inventory/ao-60m.json" \
+  --expected-report-sha256 "$NEWOW_HOURLY_AO_SHA256" \
+  --report "$NEWOW_HOURLY_EVIDENCE/inventory/ap-60m.json" \
+  --expected-report-sha256 "$NEWOW_HOURLY_AP_SHA256" \
+  --report "$NEWOW_HOURLY_EVIDENCE/inventory/pt-60m.json" \
+  --expected-report-sha256 "$NEWOW_HOURLY_PT_SHA256" \
+  --output-root "$NEWOW_HOURLY_EVIDENCE" \
+  --name hourly-six-20260915
+```
+
+`apply` 与周线相同：`--campaign`、`--expected-campaign-sha256`、`--attempt-id` 和 `--apply`。60m 异常默认停批，不自动 retry。
 
 单请求来源取证先对已冻结 prepared manifest 做零 provider 预检。`execute` 会再次校验 clean exact commit、
 execution digest、配置/Canonical 身份、完整当前 plan 和 maintenance lock，最多发起一个冻结请求；收到响应后
