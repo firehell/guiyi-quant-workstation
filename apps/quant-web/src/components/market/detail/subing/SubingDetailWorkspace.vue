@@ -6,7 +6,7 @@ import type { KlineReferenceSelection } from '@/types/referenceCallout'
 import type { SubingReferenceTrade } from '@/types/subingReference'
 import { getSubingReference } from '@/api/subingReference'
 import { useSubingReference } from '@/composables/useSubingReference'
-import { referenceDecimalDisplay, subingCallouts, subingActionLabel } from '@/utils/subingReference'
+import { subingCallouts } from '@/utils/subingReference'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 import SubingReferencePanel from './SubingReferencePanel.vue'
 import MarketDetailDrawer from '@/components/market/detail/MarketDetailDrawer.vue'
@@ -18,9 +18,9 @@ import { getRuntimeHealth } from '@/api/runtime'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
 import { useSubingAlertFacts } from '@/composables/useSubingAlertFacts'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
-import type { BarData, KlineMarker } from '@/types/market'
+import type { BarData } from '@/types/market'
 import type { MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/marketDetail'
-import { ALERT_RULE_CODES, alertEventIdentityKey, isSubingThsAlertEvent } from '@/utils/alertRules'
+import { ALERT_RULE_CODES, isSubingThsAlertEvent } from '@/utils/alertRules'
 import { buildSubingDetailViewModel } from '@/utils/subingDetailViewModel'
 import SubingChartStage from './SubingChartStage.vue'
 
@@ -38,7 +38,6 @@ let focusIntent = 0
 const referenceFocusNotice = ref<string | null>(null)
 const selectedTrade = ref<SubingReferenceTrade | null>(null)
 const chartRegion = ref<HTMLElement | null>(null)
-const colocatedEvents = computed(() => selectedSignal.value ? loader.events.value.filter(event => isSubingThsAlertEvent(event) && Date.parse(event.bar_end) === Date.parse(selectedSignal.value!.bar_end) && event.contract === selectedSignal.value!.physical_contract) : [])
 async function focusTrade(trade: SubingReferenceTrade) {
   const intent = ++focusIntent
   referenceSelection.value = []
@@ -63,8 +62,6 @@ async function focusTrade(trade: SubingReferenceTrade) {
   }
   if (current() && !props.bars.some(matches)) referenceFocusNotice.value = '此参考 Bar 不在当前可读图表范围内；记录详情仍可查看。'
 }
-const selectedSignalId = ref<string | null>(null)
-const selectedSignal = computed(() => reference.data.value?.signals.find(item => item.signal_id === selectedSignalId.value) ?? null)
 const missingCalloutCount = computed(() => callouts.value.filter(callout => !props.bars.some(bar => matchesReferenceBar(callout, bar))).length)
 const callouts = computed(() => subingCallouts(reference.data.value?.signals ?? []))
 const selectedEvent = ref<number | null>(null)
@@ -83,12 +80,11 @@ async function refresh() {
   await Promise.all([loader.sync(identity, props.bars, props.mutation.kind), alertFacts.refresh({ symbol: identity.symbol, frequency: '15m' })])
 }
 function openHistory() { tabs.value?.openHistory() }
-function selectMarker(marker: KlineMarker) { selectedEvent.value = loader.events.value.find((event) => isSubingThsAlertEvent(event) && marker.id === `alert:${alertEventIdentityKey(event)}`)?.id ?? null }
 defineExpose({ openHistory })
 watch([() => props.identity, () => props.bars, () => props.mutation], () => { void refresh() }, { immediate: true, deep: true })
 watch(() => model.value.history.length, (value) => emit('history-availability', value > 0), { immediate: true })
-watch(() => reference.data.value?.input_snapshot_hash, () => { focusIntent += 1; referenceSelection.value = []; selectedTrade.value = null; selectedSignalId.value = null; referenceFocus.value = null; referenceFocusNotice.value = null }, { flush: 'sync' })
-watch(identityKey, () => { focusIntent += 1; referenceSelection.value = []; selectedTrade.value = null; referenceFocusNotice.value = null; referenceFocus.value = null; selectedSignalId.value = null; void reference.refresh(props.identity.symbol) }, { immediate: true })
+watch(() => reference.data.value?.input_snapshot_hash, () => { focusIntent += 1; referenceSelection.value = []; selectedTrade.value = null; referenceFocus.value = null; referenceFocusNotice.value = null }, { flush: 'sync' })
+watch(identityKey, () => { focusIntent += 1; referenceSelection.value = []; selectedTrade.value = null; referenceFocusNotice.value = null; referenceFocus.value = null; void reference.refresh(props.identity.symbol) }, { immediate: true })
 onBeforeUnmount(() => { loader.dispose(); alertFacts.dispose(); reference.dispose() })
 </script>
 
@@ -96,16 +92,13 @@ onBeforeUnmount(() => { loader.dispose(); alertFacts.dispose(); reference.dispos
   <section class="subing-workspace" data-detail-workspace="subing">
     <MarketDetailStatusStrip :banner="model.semanticBanner.text" :tone="model.semanticBanner.tone" :facts="model.facts" :identity-key="identityKey" title="苏冰预警依据" />
     <p v-if="identityWarning" class="subing-workspace__hint" role="status">{{ identityWarning }}</p>
-    <div ref="chartRegion" class="subing-workspace__chart"><SubingChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" period="15m" :series-kind="identity.seriesKind" :identity-key="identityKey" :focus-bar-end="referenceFocus ?? focusBarEnd ?? identity.focusBarEnd" :reference-callouts="callouts" :focus-request-id="referenceFocusRequestId" :reference-selection="referenceSelection" @reference-select="selectedSignalId = $event" :markers="loader.markers.value" :visible-main-indicators="['ema_21']" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" @marker-select="selectMarker" /></div>
+    <div ref="chartRegion" class="subing-workspace__chart"><SubingChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" period="15m" :series-kind="identity.seriesKind" :identity-key="identityKey" :focus-bar-end="referenceFocus ?? focusBarEnd ?? identity.focusBarEnd" :reference-callouts="callouts" :focus-request-id="referenceFocusRequestId" :reference-selection="referenceSelection" :markers="loader.markers.value" :visible-main-indicators="['ema_21']" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" /></div>
     <p v-if="missingCalloutCount" class="subing-workspace__hint" role="status">{{ missingCalloutCount }} 个历史参考信号尚未匹配当前已载 Bar 与物理合约；可在参考记录中点击定位，数据不足时不绘制。</p>
     <p class="subing-workspace__reference-source">历史重算·乐观参考｜零费用/零滑点 <span>白底标注 · 实际预警为 S↑ / S↓</span></p>
     <SubingReferencePanel :data="reference.data.value" :loading="reference.loading.value" :error="reference.error.value" @refresh="reference.refresh(identity.symbol, $event)" @load-more="reference.loadMore" @focus="focusTrade" @details="selectedTrade = $event" />
     <p v-if="referenceFocusNotice" role="status">{{ referenceFocusNotice }}</p>
     <MarketDetailDrawer :open="selectedTrade !== null" title="历史参考记录详情" @close="selectedTrade = null"><template v-if="selectedTrade"><p>{{ selectedTrade.side === 'LONG' ? '多头参考' : '空头参考' }} · {{ selectedTrade.status === 'CLOSED' ? '已平参考' : selectedTrade.status === 'OPEN' ? '未平参考' : '换月中断' }} · {{ selectedTrade.physical_contract }}</p><p>开仓参考 {{ formatMarketDecimal(selectedTrade.entry_reference_price) }} · {{ formatBeijingInstant(selectedTrade.entry_bar_end) }}</p><p>平仓参考 {{ formatMarketDecimal(selectedTrade.exit_reference_price) }} · {{ selectedTrade.exit_bar_end ? formatBeijingInstant(selectedTrade.exit_bar_end) : '尚无配对平仓' }}</p><p>持有 {{ selectedTrade.holding_bars }} 根 Bar · {{ selectedTrade.initial ? '窗口初始记录' : '窗口内新开参考' }}</p><p>历史重算·乐观参考｜零费用/零滑点</p><p>{{ selectedTrade.reference_trade_id }}</p></template></MarketDetailDrawer>
     <p class="subing-workspace__hint">实际预警记录 · 以下仅为已持久化 AlertEvent，与历史重算信号独立；同一 Bar 可以同时存在。</p>
-    <MarketDetailDrawer :open="selectedSignal !== null" title="历史重算参考信号" @close="selectedSignalId = null">
-      <template v-if="selectedSignal"><p>{{ subingActionLabel(selectedSignal.action) }} · 参考价 {{ formatMarketDecimal(selectedSignal.reference_price) }}</p><p>{{ formatBeijingInstant(selectedSignal.bar_end) }} · {{ selectedSignal.physical_contract }}</p><p v-if="selectedSignal.closed_return_pct !== null">本笔平仓参考收益 {{ referenceDecimalDisplay(selectedSignal.closed_return_pct) }}%</p><p>历史重算·乐观参考｜零费用/零滑点 · 非实际预警 Event</p><p>信号 {{ selectedSignal.signal_id }}</p><p v-if="colocatedEvents.length">同 Bar 实际预警：<button v-for="event in colocatedEvents" :key="event.id" type="button" @click="selectedEvent = event.id; selectedSignalId = null">查看 AlertEvent #{{ event.id }}</button></p><p v-else>当前已读取窗口未发现同 Bar 实际预警记录。</p></template>
-    </MarketDetailDrawer>
     <MarketDetailSectionTabs ref="tabs" :tabs="[]" :active-id="activeTab" :history="model.history" history-selectable @select="activeTab = $event" @history-select="selectedEvent = Number($event.id.replace('subing-event:', ''))">
       <template #default><MarketDetailInsightDeck :identity-key="identityKey" :sections="model.disclosureSections" :default-open="true" /></template>
     </MarketDetailSectionTabs>
