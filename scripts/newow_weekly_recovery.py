@@ -1103,7 +1103,7 @@ def execute_prepared_batch(
                         symbol=unit["symbol"],
                         contract=unit["contract"],
                         through=date.fromisoformat(unit["through"]),
-                        frequency="1w",
+                        frequency=unit_frequency,
                     )
                 )
                 if replan.plan.target_windows:

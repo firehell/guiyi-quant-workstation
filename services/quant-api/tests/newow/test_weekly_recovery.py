@@ -620,6 +620,85 @@ def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> 
     }
 
 
+def test_execute_prepared_batch_applies_and_replans_daily_units_at_daily_frequency(
+    tmp_path,
+) -> None:
+    source = _source_request()
+    unit = {
+        "symbol": "ec",
+        "contract": "EC2607",
+        "through": "2026-06-30",
+        "frequency": "1d",
+        "plan_sha256": "a" * 64,
+        "source_requests": [
+            {
+                "method": "futures.get_exchange_daily",
+                "contract": source.contract,
+                "start": source.start.isoformat(),
+                "end": source.end.isoformat(),
+                "expected_dates": [day.isoformat() for day in source.expected_dates],
+            }
+        ],
+    }
+    manifest = {
+        "schema_version": "newow_daily_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "units": [unit],
+    }
+    seen: list[tuple[str, str]] = []
+
+    class Manager:
+        def contract_warmup(self, request, *, before_apply=None):
+            frequency = str(getattr(request.frequency, "value", request.frequency))
+            seen.append(("apply" if request.apply else "replan", frequency))
+            if request.apply:
+                assert request.expected_plan_sha256 == unit["plan_sha256"]
+                assert before_apply is not None
+                before_apply()
+                return SimpleNamespace(
+                    status="passed",
+                    applied=2,
+                    blocked=0,
+                    failed=0,
+                    provider_requests=2,
+                    failures=(),
+                )
+            windows = () if frequency == "1d" else ({"frequency": "1w"},)
+            return SimpleNamespace(
+                plan=SimpleNamespace(plan_sha256="f" * 64, target_windows=windows)
+            )
+
+    def open_unit(observer, _unit):
+        manager = Manager()
+        return (
+            manager,
+            lambda: None,
+            lambda: {"catalog_partitions": [], "mds_target_count": 0},
+            lambda: None,
+        )
+
+    attempt = create_attempt_directory(tmp_path, "batch-d1-001")
+    result = execute_prepared_batch(
+        manifest=manifest,
+        attempt_dir=attempt,
+        prepared_sha256="9" * 64,
+        current_code_commit="b" * 40,
+        current_execution_code_sha256="d" * 64,
+        current_config_sha256="c" * 64,
+        current_canonical_root_sha256="e" * 64,
+        open_unit=open_unit,
+    )
+
+    assert seen == [("apply", "1d"), ("replan", "1d")]
+    assert result["status"] == "passed"
+    assert result["failed"] is None
+    assert result["completed"][0]["remaining_target_count"] == 0
+    assert result["completed"][0]["replan_sha256"] == "f" * 64
+
+
 def test_execute_prepared_batch_rejects_execution_code_drift_before_opening_unit(
     tmp_path,
 ) -> None:
