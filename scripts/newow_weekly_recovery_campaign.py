@@ -1873,24 +1873,28 @@ def validate_campaign_manifest(
     if partial_exceptions:
         if any(not isinstance(item, Mapping) for item in partial_exceptions):
             raise RecoveryError(partial_exception.ERROR_CODE)
-        derived_partial = _derive_partial_source_exceptions(
-            root,
-            current_identity=identity,
-            attempt_path=root / str(partial_exceptions[0].get("failed_attempt_path")),
-            fresh_units=[
-                {
-                    "symbol": item.get("symbol"),
-                    "contract": item.get("contract"),
-                    "frequency": item.get("frequency"),
-                    "through": item.get("through"),
-                    "plan_sha256": item.get("fresh_replan_sha256"),
-                    "targets": item.get("remaining_targets"),
-                }
-                for item in partial_exceptions
-            ],
-            observe_committed=None,
-            stored_bindings=partial_exceptions,
-        )
+        derived_partial: list[dict[str, Any]] = []
+        for item in partial_exceptions:
+            derived_partial.extend(
+                _derive_partial_source_exceptions(
+                    root,
+                    current_identity=identity,
+                    attempt_path=root
+                    / str(item.get("failed_attempt_path")),
+                    fresh_units=[
+                        {
+                            "symbol": item.get("symbol"),
+                            "contract": item.get("contract"),
+                            "frequency": item.get("frequency"),
+                            "through": item.get("through"),
+                            "plan_sha256": item.get("fresh_replan_sha256"),
+                            "targets": item.get("remaining_targets"),
+                        }
+                    ],
+                    observe_committed=None,
+                    stored_bindings=[item],
+                )
+            )
         if derived_partial != list(partial_exceptions):
             raise RecoveryError(partial_exception.ERROR_CODE)
         executable_identities = {
