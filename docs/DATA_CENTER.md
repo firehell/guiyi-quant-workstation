@@ -229,7 +229,9 @@ warm-up 只读结果的 `scope_diagnostics` 保留整个 frequency scope 的逐�
 与当前原生单元/计划精确匹配后排除新下载。不能裁剪原始报告、冒充原生 REVIEW_REQUIRED、造价或重放旧批准。
 W1 的 partial-source-exception 只用于周线既有合同；D1 发生任何部分提交后仍立即停批，不能导入或间接携带
 W1 partial receipt，也不能把部分提交改写成零提交隔离。D1 apply 终态落盘后由独立只读进程在相同冻结
-`as_of` 重做全部执行单元 replan 和完整 operational D1 dependency audit；最终审计失败、超时或保存失败
+`as_of` 重做全部已处理单元的分类保持 replan（明确 unattempted 除外）和完整 operational D1 dependency
+audit，并以同一冻结时间、默认窗口及 snapshot token 核对 60 品种 Chart/Comparator 的 owner 与 replay
+prefix；最终审计、比较器证据失败、超时或保存失败
 不得抹去已知执行事实，但必须阻止输入可用结论和成功退出。最终结果分别表达盘点完整、普通恢复完成及
 品种×consumer 输入可用性；public D1 matrix 仍保持 `UNOPENED`，不因数据验证自动开放产品能力。
 按根因汇总的修复建议不等于异常已修好，任何后续真实操作仍需新的精确执行意图。

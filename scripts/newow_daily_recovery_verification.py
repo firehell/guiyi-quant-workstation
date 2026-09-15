@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from datetime import UTC, datetime
 import hashlib
 import json
 import os
@@ -12,7 +12,7 @@ import re
 import sys
 from typing import Any, Callable, Mapping, cast
 
-from guiyi_quant.newow.product_contracts import ProductFrequency
+from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 
 from app.market_data.newow.readiness import ReadinessRequest
 from app.market_data.operational_universe import load_operational_products
@@ -63,7 +63,7 @@ def _frozen_daily_units(campaign: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 def _validated_execution(
     campaign: Mapping[str, Any], execution: Mapping[str, Any]
-) -> tuple[dict[str, int], bool, list[dict[str, Any]]]:
+) -> tuple[dict[str, int], bool, list[tuple[str, dict[str, Any]]]]:
     if not isinstance(execution, Mapping):
         raise native.RecoveryError("VERIFICATION_INPUT_INVALID")
     expected_digest = campaign.get("campaign_sha256") or _campaign_digest(campaign)
@@ -92,51 +92,165 @@ def _validated_execution(
         counts[name] = value
     if sum(counts.values()) != denominator:
         raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    children = campaign.get("children")
+    if not isinstance(children, list):
+        raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
     frozen_units = _frozen_daily_units(campaign)
     frozen_by_identity = {_unit_identity(unit): unit for unit in frozen_units}
-    if len(frozen_by_identity) != len(frozen_units):
+    batch_units: dict[str, set[tuple[str, str, str, str, str]]] = {}
+    for child in children:
+        if not isinstance(child, Mapping) or not isinstance(child.get("units"), list):
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        batch_id = child.get("batch_id")
+        if not isinstance(batch_id, str) or batch_id in batch_units:
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        batch_units[batch_id] = {
+            _unit_identity(unit)
+            for unit in child["units"]
+            if isinstance(unit, Mapping)
+        }
+        if len(batch_units[batch_id]) != len(child["units"]):
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    anomaly_by_identity: dict[
+        tuple[str, str, str, str, str], dict[str, Any]
+    ] = {}
+    for field in ("prior_known_isolations", "source_only_known_isolations"):
+        bindings = campaign.get(field, [])
+        if not isinstance(bindings, list):
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        for binding in bindings:
+            unit = binding.get("unit") if isinstance(binding, Mapping) else None
+            if not isinstance(unit, Mapping):
+                raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+            key = _unit_identity(unit)
+            if key in frozen_by_identity or key in anomaly_by_identity:
+                raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+            anomaly_by_identity[key] = dict(unit)
+    universe = set(frozen_by_identity) | set(anomaly_by_identity)
+    if len(frozen_by_identity) != len(frozen_units) or len(universe) != denominator:
         raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
     completed_batches = execution.get("completed_batches")
-    if not isinstance(completed_batches, list):
+    completed_batch_ids = execution.get("completed_batch_ids")
+    unattempted_batch_ids = execution.get("unattempted_batch_ids")
+    if (
+        not isinstance(completed_batches, list)
+        or not isinstance(completed_batch_ids, list)
+        or not isinstance(unattempted_batch_ids, list)
+        or execution.get("partial_source_exception_units") != []
+    ):
         raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
-    terminal_entries = list(completed_batches)
-    for field in ("failed_batch", "unknown_batch"):
-        entry = execution.get(field)
-        if isinstance(entry, Mapping) and isinstance(
-            entry.get("native_result"), Mapping
-        ):
-            terminal_entries.append(entry)
-    successful: list[dict[str, Any]] = []
-    seen_success: set[tuple[str, str, str, str, str]] = set()
-    for entry in terminal_entries:
+    classified: dict[str, set[tuple[str, str, str, str, str]]] = {
+        name: set() for name in _COUNT_FIELDS
+    }
+    processed: list[tuple[str, dict[str, Any]]] = []
+    seen_batches: set[str] = set()
+
+    def add_unit(category: str, raw: object) -> None:
+        if not isinstance(raw, Mapping):
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        key = _unit_identity(raw)
+        if key not in universe or any(key in values for values in classified.values()):
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        classified[category].add(key)
+        if category in {"success", "isolated", "failed", "unknown"}:
+            processed.append(
+                (category, (frozen_by_identity | anomaly_by_identity)[key])
+            )
+
+    def classify_terminal(entry: object, *, stopping: str | None) -> None:
         if not isinstance(entry, Mapping):
             raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        batch_id = entry.get("batch_id")
+        if (
+            not isinstance(batch_id, str)
+            or batch_id not in batch_units
+            or batch_id in seen_batches
+        ):
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        seen_batches.add(batch_id)
         terminal = entry.get("native_result")
         nested = terminal.get("result") if isinstance(terminal, Mapping) else None
-        completed = nested.get("completed") if isinstance(nested, Mapping) else None
-        if not isinstance(completed, list):
+        if not isinstance(nested, Mapping):
+            category = "unknown" if stopping == "unknown" else "unattempted"
+            for key in batch_units[batch_id]:
+                if any(key in values for values in classified.values()):
+                    raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+                classified[category].add(key)
+                if category == "unknown":
+                    processed.append((category, frozen_by_identity[key]))
+            return
+        completed = nested.get("completed")
+        isolated = nested.get("isolated", [])
+        unattempted = nested.get("unattempted")
+        if (
+            not isinstance(completed, list)
+            or not isinstance(isolated, list)
+            or not isinstance(unattempted, list)
+        ):
             raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
         for raw in completed:
-            if not isinstance(raw, Mapping):
+            add_unit("success", raw)
+        for raw in isolated:
+            add_unit("isolated", raw)
+        failed = nested.get("failed")
+        if failed is not None:
+            if stopping not in {"failed", "unknown"}:
                 raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
-            key = _unit_identity(raw)
-            if key in seen_success or key not in frozen_by_identity:
-                raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
-            seen_success.add(key)
-            successful.append(frozen_by_identity[key])
-    isolated = execution.get("isolated_units")
-    if not isinstance(isolated, list) or len(isolated) != counts["isolated"]:
+            add_unit(stopping, failed)
+        for raw in unattempted:
+            add_unit("unattempted", raw)
+
+    for entry in completed_batches:
+        classify_terminal(entry, stopping=None)
+    if completed_batch_ids != [entry.get("batch_id") for entry in completed_batches]:
         raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
-    if len(successful) != counts["success"]:
+    failed_batch = execution.get("failed_batch")
+    if failed_batch is not None:
+        classify_terminal(failed_batch, stopping="failed")
+    unknown_batch = execution.get("unknown_batch")
+    if unknown_batch is not None:
+        classify_terminal(unknown_batch, stopping="unknown")
+    for batch_id in unattempted_batch_ids:
+        if (
+            not isinstance(batch_id, str)
+            or batch_id not in batch_units
+            or batch_id in seen_batches
+        ):
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        seen_batches.add(batch_id)
+        for key in batch_units[batch_id]:
+            if any(key in values for values in classified.values()):
+                raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+            classified["unattempted"].add(key)
+    top_isolated = execution.get("isolated_units")
+    if not isinstance(top_isolated, list):
+        raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    top_isolated_keys = {
+        _unit_identity(item)
+        for item in top_isolated
+        if isinstance(item, Mapping)
+    }
+    if (
+        len(top_isolated_keys) != len(top_isolated)
+        or top_isolated_keys != classified["isolated"] | set(anomaly_by_identity)
+    ):
+        raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    for key, unit in anomaly_by_identity.items():
+        if any(key in values for values in classified.values()):
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        classified["isolated"].add(key)
+        processed.append(("isolated", unit))
+    if (
+        any(len(classified[name]) != counts[name] for name in _COUNT_FIELDS)
+        or set().union(*classified.values()) != universe
+    ):
         raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
     complete = (
         execution.get("status") == "passed"
         and counts["success"] == denominator
         and not any(counts[name] for name in counts if name != "success")
     )
-    if complete and set(frozen_by_identity) != seen_success:
-        raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
-    return counts, complete, successful
+    return counts, complete, processed
 
 
 def _unit_identity(value: Mapping[str, Any]) -> tuple[str, str, str, str, str]:
@@ -150,21 +264,47 @@ def _unit_identity(value: Mapping[str, Any]) -> tuple[str, str, str, str, str]:
 
 
 def _validate_replan(
-    unit: Mapping[str, Any], value: Mapping[str, Any]
+    category: str,
+    unit: Mapping[str, Any],
+    value: Mapping[str, Any],
 ) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise native.RecoveryError("FINAL_REPLAN_INVALID")
+    targets = value.get("targets")
+    remaining = value.get("remaining_target_count")
+    status = value.get("status")
     if (
-        not isinstance(value, Mapping)
-        or value.get("status") != "passed"
-        or value.get("symbol") != unit["symbol"]
+        value.get("symbol") != unit["symbol"]
         or value.get("contract") != unit["contract"]
         or value.get("frequency") != "1d"
         or value.get("requested_through") != unit["through"]
         or _HASH.fullmatch(str(value.get("plan_sha256", ""))) is None
-        or value.get("targets") != []
-        or value.get("remaining_target_count") != 0
+        or not isinstance(targets, list)
+        or type(remaining) is not int
+        or remaining != len(targets)
+        or status not in {"passed", "remaining"}
     ):
         raise native.RecoveryError("FINAL_REPLAN_INVALID")
-    return dict(value)
+    if category == "success":
+        valid_outcome = status == "passed" and targets == [] and remaining == 0
+    elif category == "isolated":
+        frozen_targets = unit.get("targets")
+        valid_outcome = (
+            status == "remaining"
+            and remaining > 0
+            and value.get("plan_sha256") == unit.get("plan_sha256")
+            and (
+                not isinstance(frozen_targets, list)
+                or targets == frozen_targets
+            )
+        )
+    elif category in {"failed", "unknown"}:
+        valid_outcome = (status == "passed") == (remaining == 0)
+    else:
+        valid_outcome = False
+    if not valid_outcome:
+        raise native.RecoveryError("FINAL_REPLAN_INVALID")
+    return {**dict(value), "execution_category": category}
 
 
 def _availability_status(status: object, reason: object) -> str:
@@ -313,6 +453,39 @@ def _metrics(
     }
 
 
+def _validated_comparator_evidence(
+    audit: Mapping[str, Any],
+    *,
+    products: tuple[str, ...],
+    as_of: datetime,
+) -> dict[str, Any]:
+    evidence = audit.get("_comparator_evidence")
+    expected_universe_sha = campaign_module._identity_sha256(list(products))
+    if (
+        not isinstance(evidence, Mapping)
+        or evidence.get("status") != "verified"
+        or evidence.get("frequency") != "1d"
+        or evidence.get("strategy") != "oscillation"
+        or evidence.get("as_of") != as_of.isoformat()
+        or evidence.get("product_count") != len(products)
+        or evidence.get("verified_product_count") != len(products)
+        or evidence.get("product_universe_sha256") != expected_universe_sha
+        or evidence.get("same_query_window") is not True
+        or evidence.get("same_as_of") is not True
+        or evidence.get("same_owner_prefix") is not True
+        or evidence.get("snapshot_token_bound") is not True
+    ):
+        return {
+            "status": "not_verified",
+            "frequency": "1d",
+            "strategy": "oscillation",
+            "as_of": as_of.isoformat(),
+            "product_count": len(products),
+            "product_universe_sha256": expected_universe_sha,
+        }
+    return dict(evidence)
+
+
 def verify_daily_campaign(
     *,
     campaign: Mapping[str, Any],
@@ -334,15 +507,16 @@ def verify_daily_campaign(
     if as_of.tzinfo is None or audit_identity.get("frequency_scope") != ["1d"]:
         raise native.RecoveryError("VERIFICATION_INPUT_INVALID")
     units = _frozen_daily_units(campaign)
-    counts, ordinary_complete, successful_units = _validated_execution(
+    counts, ordinary_complete, processed_units = _validated_execution(
         campaign, execution
     )
     replans: list[dict[str, Any]] = []
     replan_error: str | None = None
-    if successful_units:
+    if processed_units:
         try:
             replans = [
-                _validate_replan(unit, replan_unit(unit)) for unit in successful_units
+                _validate_replan(category, unit, replan_unit(unit))
+                for category, unit in processed_units
             ]
         except Exception:  # noqa: BLE001 - keep private infrastructure text out
             replan_error = "FINAL_REPLAN_FAILED"
@@ -381,12 +555,18 @@ def verify_daily_campaign(
         )
         if inventory_complete:
             campaign_module._validated_report_targets(audit, recovery_frequency="1d")
+        comparator_evidence = _validated_comparator_evidence(
+            audit,
+            products=products,
+            as_of=as_of,
+        )
         if inventory_complete and ordinary_complete and replan_error is None:
             availability = _input_availability(audit)
             verification_status = (
                 "verified"
                 if availability
                 and all(row["status"] == "available" for row in availability)
+                and comparator_evidence["status"] == "verified"
                 else "incomplete"
             )
         else:
@@ -397,6 +577,9 @@ def verify_daily_campaign(
     except Exception:  # noqa: BLE001 - output must not contain raw infrastructure text
         inventory_complete = False
         availability = []
+        comparator_evidence = _validated_comparator_evidence(
+            {}, products=products, as_of=as_of
+        )
         verification_status = "failed"
         verification_error = "FINAL_AUDIT_FAILED"
 
@@ -418,11 +601,7 @@ def verify_daily_campaign(
             units=units,
         ),
         "replans": replans,
-        "comparator_evidence": {
-            "status": "implementation_shared_path_verified",
-            "runtime_default_window": "not_independently_verified",
-            "custom_or_paginated_windows": "not_verified",
-        },
+        "comparator_evidence": comparator_evidence,
         "provenance": {
             "prepare_audit_sha256": audit_identity.get("sha256"),
             "final_audit_sha256": (
@@ -459,7 +638,11 @@ def render_daily_summary(result: Mapping[str, Any]) -> str:
             f"unknown={counts.get('unknown', 0)}"
         ),
         "",
-        "比较器仅有共享 reader.load 的实现测试；本次运行未独立验证默认、自定义或历史翻页窗口。",
+        (
+            "默认比较器运行核验："
+            f"{result.get('comparator_evidence', {}).get('status', 'not_verified')}；"
+            "自定义或历史翻页窗口不在本次 D1 恢复范围。"
+        ),
     ]
     return "\n".join(lines) + "\n"
 
@@ -581,6 +764,8 @@ def _run_readonly_verification(
     campaign: Mapping[str, Any],
     execution: Mapping[str, Any],
     project_env: Path,
+    execution_sha256: str,
+    attempt_identity: str,
 ) -> dict[str, Any]:
     """Compose only Catalog, Parquet, coverage, planner and strict readers."""
     from dataclasses import asdict
@@ -600,7 +785,12 @@ def _run_readonly_verification(
     )
     from app.market_data.market_data_service import MarketDataService
     from app.market_data.newow.product_reader import NewowProductReader
-    from app.market_data.newow.product_service import NewowProductService
+    from app.market_data.newow.product_service import (
+        NewowProductService,
+        ProductSection,
+        ProductServiceQuery,
+        _dependency_proof,
+    )
     from app.market_data.newow.readiness import AuditBudget, NewowReadinessAudit
     from app.market_data.storage import CanonicalMonthlyStore
 
@@ -671,7 +861,7 @@ def _run_readonly_verification(
                     coverage=coverage,
                     check_budget=budget.checkpoint,
                 )
-                return NewowReadinessAudit(
+                report = NewowReadinessAudit(
                     reader=reader_factory((), None),
                     plan=lambda intent: asdict(planner.plan(intent)),
                     budget=budget,
@@ -681,6 +871,116 @@ def _run_readonly_verification(
                         cancelled=budget.expired,
                     ),
                 ).run(request)
+                observations: list[tuple[Any, datetime, Any]] = []
+
+                class RecordingReader:
+                    def __init__(self, delegate: NewowProductReader) -> None:
+                        self._delegate = delegate
+
+                    def __getattr__(self, name: str) -> Any:
+                        return getattr(self._delegate, name)
+
+                    def load(self, query: Any, as_of: datetime) -> Any:
+                        value = self._delegate.load(query, as_of)
+                        observations.append((query, as_of, value))
+                        return value
+
+                def recording_factory(context, cancelled):
+                    return RecordingReader(reader_factory(context, cancelled))
+
+                comparator_service = NewowProductService(
+                    recording_factory,
+                    now=lambda: request.as_of,
+                    cancelled=budget.expired,
+                )
+                rows: list[dict[str, Any]] = []
+                try:
+                    for product in products:
+                        start = len(observations)
+                        chart = comparator_service.query(
+                            ProductServiceQuery(
+                                product,
+                                ProductStrategy.OSCILLATION,
+                                ProductFrequency.DAILY,
+                                section=ProductSection.CHART,
+                                as_of=request.as_of,
+                            )
+                        )
+                        if chart.meta.snapshot_token is None:
+                            raise native.RecoveryError("COMPARATOR_PROOF_INVALID")
+                        comparator = comparator_service.query(
+                            ProductServiceQuery(
+                                product,
+                                ProductStrategy.OSCILLATION,
+                                ProductFrequency.DAILY,
+                                section=ProductSection.COMPARATOR,
+                                as_of=request.as_of,
+                                snapshot_token=chart.meta.snapshot_token,
+                            )
+                        )
+                        pair = observations[start:]
+                        if len(pair) != 2:
+                            raise native.RecoveryError("COMPARATOR_PROOF_INVALID")
+                        chart_query, chart_as_of, chart_read = pair[0]
+                        comparator_query, comparator_as_of, comparator_read = pair[1]
+                        same_window = (
+                            chart_query.frequency == comparator_query.frequency
+                            and chart_query.since == comparator_query.since
+                            and chart_query.through == comparator_query.through
+                            and chart_query.performance_since
+                            == comparator_query.performance_since
+                            and chart_query.performance_through
+                            == comparator_query.performance_through
+                        )
+                        same_as_of = (
+                            chart_as_of == comparator_as_of == request.as_of
+                            and chart.meta.as_of == comparator.meta.as_of == request.as_of
+                        )
+                        same_owner_prefix = (
+                            chart_read.owners == comparator_read.owners
+                            and chart_read.replay_bars == comparator_read.replay_bars
+                            and _dependency_proof(chart_read)
+                            == _dependency_proof(comparator_read)
+                            and chart.meta.input_content_sha256
+                            == comparator.meta.input_content_sha256
+                        )
+                        token_bound = (
+                            comparator.meta.snapshot_token == chart.meta.snapshot_token
+                        )
+                        if not all(
+                            (same_window, same_as_of, same_owner_prefix, token_bound)
+                        ):
+                            raise native.RecoveryError("COMPARATOR_PROOF_INVALID")
+                        rows.append(
+                            {
+                                "product": product,
+                                "since": chart_query.since.isoformat(),
+                                "through": chart_query.through.isoformat(),
+                                "input_content_sha256": chart.meta.input_content_sha256,
+                            }
+                        )
+                    comparator_evidence: dict[str, Any] = {
+                        "status": "verified",
+                        "frequency": "1d",
+                        "strategy": "oscillation",
+                        "as_of": request.as_of.isoformat(),
+                        "product_count": len(products),
+                        "verified_product_count": len(rows),
+                        "product_universe_sha256": campaign_module._identity_sha256(
+                            list(products)
+                        ),
+                        "same_query_window": True,
+                        "same_as_of": True,
+                        "same_owner_prefix": True,
+                        "snapshot_token_bound": True,
+                        "product_evidence": rows,
+                    }
+                except Exception:  # noqa: BLE001 - evidence stays sanitized
+                    comparator_evidence = {
+                        "status": "not_verified",
+                        "error_code": "COMPARATOR_PROOF_FAILED",
+                    }
+                return {**dict(report), "_comparator_evidence": comparator_evidence}
 
             planner = ContractWarmupPlanner(
                 catalog=catalog,
@@ -711,12 +1011,23 @@ def _run_readonly_verification(
                     "remaining_target_count": len(targets),
                 }
 
-            return verify_daily_campaign(
+            result = verify_daily_campaign(
                 campaign=campaign,
                 execution=execution,
                 run_audit=run_audit,
                 replan_unit=replan_unit,
             )
+            observed_at = datetime.now(UTC).isoformat()
+            result["execution"].update(
+                execution_sha256=execution_sha256,
+                attempt_identity=attempt_identity,
+            )
+            result["provenance"].update(
+                execution_sha256=execution_sha256,
+                attempt_identity=attempt_identity,
+                observed_at=observed_at,
+            )
+            return result
     finally:
         if lease is not None:
             lease.release()
@@ -757,6 +1068,8 @@ def main(argv: list[str] | None = None) -> int:
             campaign=bound_campaign,
             execution=execution,
             project_env=Path(args.project_env),
+            execution_sha256=args.expected_execution_sha256,
+            attempt_identity=execution_path.parent.name,
         )
         native._write_json_exclusive(observation / "verification.json", result)
         summary = render_daily_summary(result).encode("utf-8")

@@ -64,6 +64,7 @@ _D1_EXECUTION_CODE_PATHS = tuple(
             "services/quant-api/app/market_data/newow/product_reader.py",
             "services/quant-api/app/market_data/newow/product_service.py",
             "services/quant-api/app/market_data/newow/product_release.py",
+            "services/quant-api/app/market_data/market_data_service.py",
             "services/quant-api/app/market_data/operational_universe.py",
             "packages/quant-core/guiyi_quant/newow/product_contracts.py",
         )

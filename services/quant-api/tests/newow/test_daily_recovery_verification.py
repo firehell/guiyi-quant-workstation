@@ -22,6 +22,7 @@ def _campaign() -> dict[str, Any]:
         "through": "2026-09-11",
         "plan_sha256": "a" * 64,
         "target_count": 1,
+        "targets": [{"month": "2026-09"}],
     }
     campaign = {
         "schema_version": "newow_daily_recovery_campaign_v1",
@@ -85,6 +86,7 @@ def _execution(campaign: dict[str, Any], *, status: str = "passed") -> dict[str,
         "status": status,
         "campaign_manifest_sha256": campaign["campaign_sha256"],
         "summary": counts,
+        "completed_batch_ids": ["batch-001"] if status == "passed" else [],
         "completed_batches": completed_batches,
         "failed_batch": None,
         "unknown_batch": (
@@ -92,13 +94,18 @@ def _execution(campaign: dict[str, Any], *, status: str = "passed") -> dict[str,
             if status == "unknown"
             else None
         ),
+        "unattempted_batch_ids": [],
         "isolated_units": [],
+        "partial_source_exception_units": [],
     }
 
 
 def _audit(*, complete: bool = True, dependency_status: str = "DATA_READY"):
+    from app.market_data.operational_universe import load_operational_products
+    from scripts import newow_weekly_recovery_campaign as campaign_module
     from tests.newow.test_weekly_recovery_campaign import _daily_report
 
+    products = tuple(load_operational_products())
     report = _daily_report([])
     report["status"] = "audited" if complete else "incomplete"
     report["complete"] = complete
@@ -117,6 +124,19 @@ def _audit(*, complete: bool = True, dependency_status: str = "DATA_READY"):
                 "code": "NEWOW_DATA_UNAVAILABLE",
                 "diagnostic": {},
             }
+    report["_comparator_evidence"] = {
+        "status": "verified",
+        "frequency": "1d",
+        "strategy": "oscillation",
+        "as_of": "2026-09-13T06:36:13+00:00",
+        "product_count": len(products),
+        "verified_product_count": len(products),
+        "product_universe_sha256": campaign_module._identity_sha256(list(products)),
+        "same_query_window": True,
+        "same_as_of": True,
+        "same_owner_prefix": True,
+        "snapshot_token_bound": True,
+    }
     return report
 
 
@@ -183,10 +203,13 @@ def test_zero_ordinary_targets_still_require_complete_input_audit() -> None:
             "unattempted_unit_count": 0,
             "unknown_unit_count": 0,
         },
-        "completed_batches": [],
+            "completed_batches": [],
+            "completed_batch_ids": [],
         "failed_batch": None,
         "unknown_batch": None,
+        "unattempted_batch_ids": [],
         "isolated_units": [],
+        "partial_source_exception_units": [],
     }
 
     result = verify_daily_campaign(
@@ -257,15 +280,141 @@ def test_successful_final_audit_cannot_erase_unknown_execution() -> None:
         campaign=campaign,
         execution=_execution(campaign, status="unknown"),
         run_audit=lambda _request: _audit(),
-        replan_unit=lambda _unit: pytest.fail(
-            "unknown unit must not be replanned as passed"
-        ),
+        replan_unit=lambda unit: {
+            **_replan(unit),
+            "status": "remaining",
+            "targets": [{"month": "2026-09"}],
+            "remaining_target_count": 1,
+        },
     )
 
     assert result["inventory_complete"] is True
     assert result["ordinary_recovery_complete"] is False
     assert result["execution"]["counts"]["unknown"] == 1
     assert result["verification_status"] == "incomplete"
+    assert result["replans"][0]["execution_category"] == "unknown"
+
+
+def test_complete_audit_without_runtime_comparator_proof_is_incomplete() -> None:
+    from scripts.newow_daily_recovery_verification import verify_daily_campaign
+
+    audit = _audit()
+    audit.pop("_comparator_evidence")
+    campaign = _campaign()
+    result = verify_daily_campaign(
+        campaign=campaign,
+        execution=_execution(campaign),
+        run_audit=lambda _request: audit,
+        replan_unit=_replan,
+    )
+
+    assert result["inventory_complete"] is True
+    assert result["verification_status"] == "incomplete"
+    assert result["comparator_evidence"]["status"] == "not_verified"
+
+
+def test_execution_summary_must_match_reconstructed_terminal_sets() -> None:
+    from scripts.newow_daily_recovery_verification import verify_daily_campaign
+
+    campaign = _campaign()
+    execution = _execution(campaign)
+    execution["summary"].update(success_unit_count=0, unknown_unit_count=1)
+
+    with pytest.raises(native.RecoveryError, match="^VERIFICATION_SETTLEMENT_INVALID$"):
+        verify_daily_campaign(
+            campaign=campaign,
+            execution=execution,
+            run_audit=lambda _request: _audit(),
+            replan_unit=_replan,
+        )
+
+
+def test_known_failed_unit_is_replanned_without_erasing_failure() -> None:
+    from scripts.newow_daily_recovery_verification import verify_daily_campaign
+
+    campaign = _campaign()
+    unit = campaign["children"][0]["units"][0]
+    execution = _execution(campaign, status="unknown")
+    execution.update(
+        status="failed",
+        failed_batch={
+            "batch_id": "batch-001",
+            "native_result": {
+                "schema_version": "newow_daily_recovery_result_v1",
+                "status": "failed",
+                "result": {
+                    "completed": [],
+                    "isolated": [],
+                    "failed": unit,
+                    "unattempted": [],
+                },
+            },
+        },
+        unknown_batch=None,
+    )
+    execution["summary"].update(
+        stopping_failure_unit_count=1,
+        unknown_unit_count=0,
+    )
+    result = verify_daily_campaign(
+        campaign=campaign,
+        execution=execution,
+        run_audit=lambda _request: _audit(),
+        replan_unit=_replan,
+    )
+
+    assert result["execution"]["counts"]["failed"] == 1
+    assert result["ordinary_recovery_complete"] is False
+    assert result["replans"][0]["execution_category"] == "failed"
+
+
+def test_zero_commit_isolation_requires_unchanged_nonempty_replan() -> None:
+    from scripts.newow_daily_recovery_verification import verify_daily_campaign
+
+    campaign = _campaign()
+    unit = campaign["children"][0]["units"][0]
+    isolated = {**unit, "classification": "RQDATA_ZERO_OHL_INVALID"}
+    execution = _execution(campaign)
+    execution.update(
+        status="partial",
+        completed_batches=[
+            {
+                "batch_id": "batch-001",
+                "native_result": {
+                    "schema_version": "newow_daily_recovery_result_v1",
+                    "status": "partial",
+                    "result": {
+                        "completed": [],
+                        "isolated": [isolated],
+                        "failed": None,
+                        "unattempted": [],
+                    },
+                },
+            }
+        ],
+        isolated_units=[isolated],
+    )
+    execution["summary"].update(success_unit_count=0, isolated_unit_count=1)
+
+    def replan(value):
+        return {
+            **_replan(value),
+            "status": "remaining",
+            "plan_sha256": value["plan_sha256"],
+            "targets": value["targets"],
+            "remaining_target_count": len(value["targets"]),
+        }
+
+    result = verify_daily_campaign(
+        campaign=campaign,
+        execution=execution,
+        run_audit=lambda _request: _audit(),
+        replan_unit=replan,
+    )
+
+    assert result["execution"]["counts"]["isolated"] == 1
+    assert result["ordinary_recovery_complete"] is False
+    assert result["replans"][0]["execution_category"] == "isolated"
 
 
 def test_audit_exception_is_sanitized_without_changing_execution() -> None:
@@ -428,7 +577,7 @@ def test_partial_execution_replans_each_proven_successful_unit() -> None:
         "contract": "AG2602",
         "plan_sha256": "2" * 64,
     }
-    campaign["children"][0]["units"].append(second)
+    campaign["children"].append({"batch_id": "batch-002", "units": [second]})
     campaign["scope"]["denominator_unit_count"] = 2
     campaign["campaign_sha256"] = hashlib.sha256(
         native._canonical_json(
@@ -442,6 +591,7 @@ def test_partial_execution_replans_each_proven_successful_unit() -> None:
         success_unit_count=1,
         unattempted_unit_count=1,
     )
+    execution["unattempted_batch_ids"] = ["batch-002"]
     seen: list[str] = []
 
     def replan(unit):
@@ -484,10 +634,16 @@ def test_verification_cli_writes_one_hash_bound_observation(
         "validate_campaign_manifest",
         lambda value, evidence_root: value,
     )
+    observed_kwargs = {}
+
+    def run_verification(**kwargs):
+        observed_kwargs.update(kwargs)
+        return expected
+
     monkeypatch.setattr(
         module,
         "_run_readonly_verification",
-        lambda **_kwargs: expected,
+        run_verification,
     )
     monkeypatch.setattr(
         module,
@@ -518,6 +674,8 @@ def test_verification_cli_writes_one_hash_bound_observation(
     assert code == 0
     assert json.loads((observation / "verification.json").read_text()) == expected
     assert (observation / "summary.md").read_text().startswith("# 牛哇日线恢复独立结算")
+    assert observed_kwargs["execution_sha256"] == execution_sha
+    assert observed_kwargs["attempt_identity"] == tmp_path.name
 
 
 def test_verification_cli_reports_identity_change_without_raw_details(

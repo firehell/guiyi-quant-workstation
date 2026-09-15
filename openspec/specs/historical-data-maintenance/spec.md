@@ -258,8 +258,11 @@ Grouped anomaly repair proposals require independent evidence and a new executio
 The existing partial-source-exception receipt is W1-only. D1 MUST reject direct or prior-campaign-carried W1 partial
 receipts before provider construction or child preparation; any D1 failure after a partition commit MUST stop the
 campaign and remain a failed or unknown unit. After a D1 execution terminal is persisted, an independent read-only
-process MUST replan every frozen successful unit and run a complete operational D1 dependency audit at the frozen
-`as_of`. Final audit timeout, failure or result-save failure MUST preserve execution settlement while preventing a
+process MUST replan every processed successful, isolated, known-failed or unknown unit while preserving its execution
+classification; only definitely unattempted units are skipped. It MUST run a complete operational D1 dependency audit
+at the frozen `as_of` and prove that each operational product's default D1 Chart and Comparator use the same query
+window, `as_of`, physical-owner replay prefix and bound snapshot token. Final audit or comparator-proof timeout,
+failure or result-save failure MUST preserve execution settlement while preventing a
 verified input-ready result and successful verification exit. Inventory completeness, ordinary recovery completion,
 and per-product/per-consumer input availability MUST be reported separately; none of them opens the public D1 matrix.
 

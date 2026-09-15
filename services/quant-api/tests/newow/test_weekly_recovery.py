@@ -1813,6 +1813,10 @@ def test_daily_execution_digest_binds_verifier_and_consumer_inputs(
 ) -> None:
     from scripts import newow_weekly_recovery as module
 
+    assert (
+        "services/quant-api/app/market_data/market_data_service.py"
+        in module._D1_EXECUTION_CODE_PATHS
+    )
     root = tmp_path / "checkout"
     root.mkdir()
     for relative in module._D1_EXECUTION_CODE_PATHS:
