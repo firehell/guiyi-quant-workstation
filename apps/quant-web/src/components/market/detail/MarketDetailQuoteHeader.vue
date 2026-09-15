@@ -49,16 +49,19 @@ function integer(value: number | null): string {
         {{ statusLabel }}
       </span>
     </div>
-    <p class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · {{ newow ? '非实时 · ' : '' }}截至 {{ asOfText }}</p>
-
-    <p class="quote-header__facts-label">OHLCV · {{ quoteBasis }}</p>
-    <dl class="quote-header__facts">
-      <div><dt>开</dt><dd>{{ number(header.open) }}</dd></div>
-      <div><dt>高</dt><dd>{{ number(header.high) }}</dd></div>
-      <div><dt>低</dt><dd>{{ number(header.low) }}</dd></div>
-      <div><dt>成交量</dt><dd>{{ integer(header.volume) }}</dd></div>
-      <div><dt>持仓量</dt><dd>{{ integer(header.openInterest) }}</dd></div>
-    </dl>
+    <div class="quote-header__meta">
+      <p class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · {{ newow ? '非实时 · ' : '' }}截至 {{ asOfText }}</p>
+      <div class="quote-header__facts-row">
+        <p class="quote-header__facts-label">OHLCV · {{ quoteBasis }}</p>
+        <dl class="quote-header__facts">
+          <div><dt>开</dt><dd>{{ number(header.open) }}</dd></div>
+          <div><dt>高</dt><dd>{{ number(header.high) }}</dd></div>
+          <div><dt>低</dt><dd>{{ number(header.low) }}</dd></div>
+          <div><dt>成交量</dt><dd>{{ integer(header.volume) }}</dd></div>
+          <div><dt>持仓量</dt><dd>{{ integer(header.openInterest) }}</dd></div>
+        </dl>
+      </div>
+    </div>
 
     <MarketFactsDisclosure
       v-if="!newow"
@@ -85,6 +88,7 @@ function integer(value: number | null): string {
 .quote-header__price--neutral span { color: var(--gy-text-muted); }
 .quote-header__asof { margin: var(--gy-space-1) 0 var(--gy-space-2); color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }
 .quote-header__facts-label { margin: 0 0 var(--gy-space-1); color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }
+.quote-header__meta { display: grid; gap: var(--gy-space-2); }
 .quote-header__facts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--gy-space-2); margin: 0; }
 .quote-header__facts div { min-width: 0; padding: var(--gy-space-2) var(--gy-space-3); border-radius: var(--gy-radius-md); background: var(--gy-detail-section-bg); }
 .quote-header__facts dt { color: var(--gy-text-muted); font-size: var(--gy-font-size-xs); }

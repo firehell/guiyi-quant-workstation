@@ -12,11 +12,10 @@ test('shared status strip keeps the summary compact and opens one evidence drawe
   assert.match(source, /role="status"/)
 })
 
-test('Free HTDY and SuBing put compact status before the chart and long controls after it', () => {
+test('Free and HTDY put compact status before the chart and long controls after it', () => {
   for (const path of [
     '../src/components/market/detail/free/FreeChartWorkspace.vue',
     '../src/components/market/detail/htdy/HtdyDetailWorkspace.vue',
-    '../src/components/market/detail/subing/SubingDetailWorkspace.vue',
   ]) {
     const source = read(path)
     assert.match(source, /<MarketDetailStatusStrip/)

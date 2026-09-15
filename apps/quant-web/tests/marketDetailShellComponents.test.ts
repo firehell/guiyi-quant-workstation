@@ -24,6 +24,10 @@ function componentSource(name: (typeof componentNames)[number]): string {
   return readFileSync(new URL(`../src/components/market/detail/${name}.vue`, import.meta.url), 'utf8')
 }
 
+function detailComponentSource(path: string): string {
+  return readFileSync(new URL(`../src/components/market/detail/${path}.vue`, import.meta.url), 'utf8')
+}
+
 function parsedComponent(name: (typeof componentNames)[number]) {
   const source = componentSource(name)
   const parsed = parse(source, { filename: `${name}.vue` })
@@ -59,12 +63,22 @@ test('quote header names the comparison basis and limits status to quote availab
   assert.match(source, /formatMarketTime/)
   assert.match(template, /quoteBasis/)
   assert.match(template, /changeBasis/)
+  assert.match(template, /quote-header__meta/)
+  assert.match(template, /quote-header__facts-row/)
   assert.match(template, /OHLCV/)
   assert.match(source, /unified\?: boolean/)
   assert.match(template, /'quote-header--unified': unified/)
   assert.match(source, /props\.newow \? '1d'/)
   assert.doesNotMatch(source, /props\.unified \? '1d'/)
   assert.doesNotMatch(template, />\s*数据正常\s*</)
+})
+
+test('SuBing keeps the chart surface free of runtime summary and reference-version disclosure', () => {
+  const workspace = detailComponentSource('subing/SubingDetailWorkspace')
+  const reference = detailComponentSource('subing/SubingReferencePanel')
+  assert.doesNotMatch(workspace, /MarketDetailStatusStrip/)
+  assert.doesNotMatch(reference, /<details>/)
+  assert.doesNotMatch(reference, /参考来源与版本/)
 })
 
 test('view navigation exposes six flat analysis choices and emits exact identities', () => {

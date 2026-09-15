@@ -12,7 +12,6 @@ import SubingReferencePanel from './SubingReferencePanel.vue'
 import MarketDetailDrawer from '@/components/market/detail/MarketDetailDrawer.vue'
 import MarketDetailInsightDeck from '@/components/market/detail/MarketDetailInsightDeck.vue'
 import MarketDetailSectionTabs from '@/components/market/detail/MarketDetailSectionTabs.vue'
-import MarketDetailStatusStrip from '@/components/market/detail/MarketDetailStatusStrip.vue'
 import { getAlertEvents, getProductAlerts } from '@/api/alerts'
 import { getRuntimeHealth } from '@/api/runtime'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
@@ -90,7 +89,6 @@ onBeforeUnmount(() => { loader.dispose(); alertFacts.dispose(); reference.dispos
 
 <template>
   <section class="subing-workspace" data-detail-workspace="subing">
-    <MarketDetailStatusStrip :banner="model.semanticBanner.text" :tone="model.semanticBanner.tone" :facts="model.facts" :identity-key="identityKey" title="苏冰预警依据" />
     <p v-if="identityWarning" class="subing-workspace__hint" role="status">{{ identityWarning }}</p>
     <div ref="chartRegion" class="subing-workspace__chart"><SubingChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" period="15m" :series-kind="identity.seriesKind" :identity-key="identityKey" :focus-bar-end="referenceFocus ?? focusBarEnd ?? identity.focusBarEnd" :reference-callouts="callouts" :focus-request-id="referenceFocusRequestId" :reference-selection="referenceSelection" :markers="loader.markers.value" :visible-main-indicators="['ema_21']" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" /></div>
     <p v-if="missingCalloutCount" class="subing-workspace__hint" role="status">{{ missingCalloutCount }} 个历史参考信号尚未匹配当前已载 Bar 与物理合约；可在参考记录中点击定位，数据不足时不绘制。</p>
