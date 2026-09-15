@@ -9,8 +9,14 @@ async function chartBars(page) {
 async function expectBarCount(page, count) {
   await expect.poll(async () => (await chartBars(page)).length).toBe(count)
 }
-const displayState = (page) => page.getByLabel('行情状态').locator('span').last()
-const marketPhase = (page) => page.getByLabel('行情状态').locator('span').nth(2)
+async function openMarketFacts(page) {
+  const trigger = page.getByRole('button', { name: /更多行情数据/ })
+  await expect(trigger).toBeVisible()
+  if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click()
+}
+const marketFact = (page, label) => page.locator('.facts-disclosure__content dl div').filter({ has: page.getByText(label, { exact: true }) }).locator('dd')
+const displayState = (page) => marketFact(page, '展示来源')
+const marketPhase = (page) => marketFact(page, '市场阶段')
 const displayedContract = (page) => page.locator('.detail-topbar__contract')
 
 function bars(start, count, seed = 100) {
@@ -190,8 +196,9 @@ test('renders the latest canonical page first, paginates left, and overlays actu
   expect(first.searchParams.has('before')).toBe(false)
   expect(first.searchParams.get('limit')).toBe('300')
   await expectBarCount(page, 300)
-  // Canonical remains Historical until a real Live snapshot supplies its overlay.
-  await expect(displayState(page)).toHaveText('Historical')
+  // Canonical remains the displayed source until a real Live snapshot supplies its overlay.
+  await openMarketFacts(page)
+  await expect(displayState(page)).toHaveText('Canonical')
   await expect.poll(() => page.evaluate(() => window.__marketSockets.filter((socket) => socket.url.includes('/api/v1/market/ws') && !socket.closed).length)).toBe(1)
 
   await page.evaluate(() => {
@@ -201,7 +208,7 @@ test('renders the latest canonical page first, paginates left, and overlays actu
     ] })
   })
   await expectBarCount(page, 302)
-  await expect(displayState(page)).toHaveText('Live')
+  await expect(displayState(page)).toHaveText('实时观察')
 
   const chart = page.locator('.chart')
   await chart.scrollIntoViewIfNeeded()
@@ -240,12 +247,14 @@ test('keeps continuous, BREAK, and weekend-closed history readable without Live 
   await mockMarketApi(page, requests)
 
   await page.goto('/market/chart?view=free&symbol=ag&series_kind=continuous&frequency=15m')
-  await expect(displayState(page)).toHaveText('Historical')
+  await openMarketFacts(page)
+  await expect(displayState(page)).toHaveText('Canonical')
   await expect(marketPhase(page)).toHaveText('盘中休市')
   await expect.poll(() => page.evaluate(() => window.__marketSockets.filter((socket) => socket.url.includes('/api/v1/market/ws') && !socket.closed).length)).toBe(0)
 
   await page.goto('/market/chart?view=free&symbol=jm&series_kind=actual_dominant&frequency=15m')
-  await expect(displayState(page)).toHaveText('Historical')
+  await openMarketFacts(page)
+  await expect(displayState(page)).toHaveText('Canonical')
   await expect(marketPhase(page)).toHaveText('已收盘')
   await expect(page.locator('.overlay.error')).toHaveCount(0)
 })
@@ -258,7 +267,8 @@ test('shows a post-close snapshot until the canonical edge takes it over', async
 
   await page.goto('/market/chart?view=free&symbol=jm&series_kind=actual_dominant&frequency=15m')
   await expect(displayedContract(page)).toHaveText('JM2601')
-  await expect(displayState(page)).toHaveText('Historical')
+  await openMarketFacts(page)
+  await expect(displayState(page)).toHaveText('Canonical')
   await expect.poll(() => page.evaluate(() => window.__marketSockets.some((socket) => !socket.closed && socket.url.includes('symbol=jm')))).toBe(true)
 
   await page.evaluate(() => {
@@ -273,7 +283,7 @@ test('shows a post-close snapshot until the canonical edge takes it over', async
     }
     for (const socket of window.__marketSockets.filter((candidate) => !candidate.closed && candidate.url.includes('symbol=jm'))) socket.serverSend(payload)
   })
-  await expect(displayState(page)).toHaveText('收盘快照')
+  await expect(displayState(page)).toHaveText('盘后观察')
   await expectBarCount(page, 301)
 
   controls.jmCanonicalReady = true
@@ -286,7 +296,7 @@ test('shows a post-close snapshot until the canonical edge takes it over', async
     for (const socket of window.__marketSockets.filter((candidate) => !candidate.closed && candidate.url.includes('symbol=jm'))) socket.serverSend(payload)
   })
   await expect.poll(() => requests.filter((url) => url.pathname.endsWith('/bars/page') && url.searchParams.get('symbol') === 'jm').length).toBe(2)
-  await expect(displayState(page)).toHaveText('Historical')
+  await expect(displayState(page)).toHaveText('Canonical')
   await expectBarCount(page, 301)
 })
 
@@ -297,8 +307,9 @@ test('does not leak a stale symbol websocket message after switching the display
   await page.goto('/market/chart?view=free&symbol=ag&series_kind=actual_dominant&frequency=15m')
   await expect.poll(() => page.evaluate(() => window.__marketSockets.filter((socket) => socket.url.includes('/api/v1/market/ws') && !socket.closed).length)).toBe(1)
 
-  await page.getByLabel('品种代码').fill('jm')
-  await page.getByLabel('品种代码').press('Tab')
+  const productSearch = page.getByRole('combobox', { name: '搜索60品种' })
+  await productSearch.fill('jm')
+  await page.getByRole('option', { name: /焦煤.*JM/ }).click()
   await expect(displayedContract(page)).toHaveText('JM2601')
   await expect.poll(() => page.evaluate(() => window.__marketSockets.filter((socket) => socket.url.includes('symbol=ag') && !socket.closed).length)).toBe(0)
   // CLOSED actual-dominant keeps its own socket for post-close snapshots.

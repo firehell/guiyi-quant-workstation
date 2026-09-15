@@ -4,9 +4,11 @@ import json
 import os
 import signal
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from threading import Event, Lock
 
 import pytest
 
@@ -443,6 +445,39 @@ def test_projection_read_miss_uses_existing_compute_without_writing(tmp_path: Pa
     assert response == market_home_response(_snapshot())
     assert service.snapshot_calls == 1
     assert not path.exists()
+
+
+def test_projection_read_miss_coalesces_same_identity_inflight_compute(tmp_path: Path) -> None:
+    started = Event()
+    release = Event()
+    calls_lock = Lock()
+    snapshot_calls = 0
+
+    class _BlockingService(_Service):
+        def snapshot(self) -> MarketHomeOverviewSnapshot:
+            nonlocal snapshot_calls
+            with calls_lock:
+                snapshot_calls += 1
+            started.set()
+            assert release.wait(timeout=2)
+            return self.snapshot_value
+
+    projections = [
+        MarketHomeProjection(
+            service=_BlockingService(),
+            store=MarketHomeProjectionStore(tmp_path / "missing.json"),
+        )
+        for _index in range(2)
+    ]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(projections[0].read)
+        assert started.wait(timeout=1)
+        second = executor.submit(projections[1].read)
+        time.sleep(0.05)
+        release.set()
+        assert first.result(timeout=1) == second.result(timeout=1)
+
+    assert snapshot_calls == 1
 
 
 def test_projection_refresh_rejects_identity_race_without_publishing(tmp_path: Path) -> None:

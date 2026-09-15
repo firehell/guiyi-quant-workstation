@@ -66,6 +66,8 @@ const volumeTop = ref(0)
 const auxiliaryTop = ref(0)
 const actionOverlayTop = ref(0)
 const actionOverlayHeight = ref(0)
+const actionOverlayLeft = ref(0)
+const actionOverlayWidth = ref(0)
 const positionedActions = ref<PositionedCallout[]>([])
 const activeActionLabel = ref<string | null>(null)
 const container = ref<HTMLElement | null>(null)
@@ -299,6 +301,8 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   const height = panesFn?.call(chart)[0]?.getHeight?.() ?? container.value.clientHeight
   actionOverlayTop.value = container.value.offsetTop
   actionOverlayHeight.value = height
+  actionOverlayLeft.value = container.value.offsetLeft
+  actionOverlayWidth.value = width
   const actionById = new Map(value.actions.map(action => [action.id, action]))
   positionedActions.value = layoutReferenceCallouts(buildNewowActionCallouts(value).flatMap(callout => {
     const action = actionById.get(callout.id)
@@ -489,7 +493,7 @@ defineExpose({ revealSignal, scrollToLatest })
     <div
       v-if="model?.actions.length"
       class="newow-product-chart-stage__action-callouts"
-      :style="{ top: `${actionOverlayTop}px`, height: `${actionOverlayHeight}px` }"
+      :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }"
       aria-label="策略参考动作"
     >
       <svg aria-hidden="true"><line v-for="item in positionedActions.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.lineX" :y2="item.lineY" /></svg>
@@ -498,7 +502,7 @@ defineExpose({ revealSignal, scrollToLatest })
         :key="item.callout.id"
         type="button"
         class="newow-product-chart-stage__action-label"
-        :class="[{ 'is-compact': item.compact && activeActionLabel !== item.callout.id && selectedSignalId !== item.callout.id, 'is-active': activeActionLabel === item.callout.id, 'is-selected': selectedSignalId === item.callout.id }, `is-${item.callout.tone}`]"
+        :class="[{ 'is-density-node': item.compact, 'is-compact': item.compact && activeActionLabel !== item.callout.id && selectedSignalId !== item.callout.id, 'is-active': activeActionLabel === item.callout.id, 'is-selected': selectedSignalId === item.callout.id }, `is-${item.callout.tone}`]"
         :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }"
         :data-action-id="item.callout.id"
         :data-reference-price="item.callout.price"
@@ -527,13 +531,14 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage { --gy-chart-bg:#FFFFFF; --gy-chart-text:#667085; --gy-chart-grid:#F2F4F7; --gy-chart-axis:#EBEDF0; --gy-up:#FF403A; --gy-down:#22B95D; position:relative; min-width:0; height:clamp(580px, 70vh, 920px); display:flex; flex-direction:column; border:1px solid #ebedf0; background:#fff; }
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
 .newow-product-chart-stage__chart { width:100%; flex:1; min-height:500px; }
-.newow-product-chart-stage__action-callouts { position:absolute; inset-inline:0; pointer-events:none; z-index:4; overflow:hidden; }
+.newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
 .newow-product-chart-stage__action-label { position:absolute; pointer-events:auto; display:grid; align-content:center; gap:3px; box-sizing:border-box; padding:4px; overflow:hidden; border:1px solid #AA927B; border-radius:2px; background:#FFFEFA; color:#665343; font-size:11px; cursor:pointer; box-shadow:0 1px 3px #8C73551A; }
 .newow-product-chart-stage__action-label strong { font-size:12px; font-weight:500; }
 .newow-product-chart-stage__action-label strong,.newow-product-chart-stage__action-label span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .newow-product-chart-stage__action-label.is-gain span { color:#CB3737; }
 .newow-product-chart-stage__action-label.is-loss span { color:#188052; }
+.newow-product-chart-stage__action-label.is-density-node { min-width:0; min-height:0; }
 .newow-product-chart-stage__action-label.is-compact { padding:0; place-items:center; }
 .newow-product-chart-stage__action-label.is-active { z-index:5; outline:2px solid #AA927B; }
 .newow-product-chart-stage__action-label.is-selected { outline:2px solid #8B653D; background:#FFF3D9; }

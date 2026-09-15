@@ -4,6 +4,7 @@ import MarketDetailIcon from './MarketDetailIcon.vue'
 withDefaults(defineProps<{
   title?: string
   message: string
+  technicalDetail?: string | null
   recoveryLabel?: string
   canRecover?: boolean
   canReturnMarket?: boolean
@@ -26,6 +27,7 @@ const emit = defineEmits<{
     <div>
       <h2>{{ title }}</h2>
       <p>{{ message }}</p>
+      <details v-if="technicalDetail"><summary>技术详情</summary><code>{{ technicalDetail }}</code></details>
       <div class="detail-unavailable__actions">
         <button v-if="canRecover" type="button" @click="emit('recover')">{{ recoveryLabel }}</button>
         <button v-if="canReturnMarket" type="button" @click="emit('return-market')">返回市场</button>
@@ -38,6 +40,9 @@ const emit = defineEmits<{
 .detail-unavailable { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--gy-space-3); padding: var(--gy-space-5); border: 1px solid var(--gy-detail-warning-border); border-radius: var(--gy-radius-lg); color: var(--gy-text-primary); background: var(--gy-surface-warning); }
 .detail-unavailable h2 { margin: 0; font-size: var(--gy-font-size-lg); }
 .detail-unavailable p { margin: var(--gy-space-2) 0 var(--gy-space-3); color: var(--gy-text-secondary); line-height: 1.6; }
+.detail-unavailable details { margin: 0 0 var(--gy-space-3); color: var(--gy-text-secondary); }
+.detail-unavailable summary { cursor: pointer; }
+.detail-unavailable code { display: block; margin-top: var(--gy-space-2); overflow-wrap: anywhere; }
 .detail-unavailable__actions { display: flex; flex-wrap: wrap; gap: var(--gy-space-2); }
 .detail-unavailable button { min-height: 44px; padding: 0 var(--gy-space-3); border: 1px solid var(--gy-border-strong); border-radius: var(--gy-radius-md); color: var(--gy-text-primary); background: var(--gy-bg-panel); font: inherit; cursor: pointer; }
 .detail-unavailable button:hover { background: var(--gy-bg-hover); }

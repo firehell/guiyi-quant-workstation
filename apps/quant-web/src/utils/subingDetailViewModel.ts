@@ -47,7 +47,7 @@ export function buildSubingDetailViewModel(input: {
     disclosureSections: [
       { id: 'subing-latest', title: '最新已保存预警', summary: signal ?? (unavailable ? '预警数据不可用' : '当前窗口暂无已保存苏冰预警'), updatedAt: latest?.detected_at ?? null, tone: unavailable ? 'unavailable' : stale ? 'warning' : 'default', rows: latest ? [{ label: 'AlertEvent', value: `${signal} · ${formatBeijingInstant(latest.bar_end)} · ${latest.contract}`, source: 'alert_event' }] : [] },
       { id: 'subing-formula', title: '触发口径', summary: 'subing_ths_15m_v3', updatedAt: null, tone: 'default', rows: [{ label: '固定展示身份', value: 'actual_dominant / 15m / completed_only · MACD(12,26,9) CROSS + EMA(CLOSE,21) · 仅供人工复核', source: 'generic_indicator' }] },
-      { id: 'subing-runtime', title: '运行与通知', summary: status, updatedAt: input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null, tone: input.runtimeUnavailable ? 'unavailable' : 'default', rows: runtimeRows(input.runtime) },
+      { id: 'subing-runtime', title: '运行与通知', summary: status, updatedAt: input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null, tone: runtimeTone(input.runtime, input.runtimeUnavailable), rows: runtimeRows(input.runtime) },
     ], history, dataStatus: unavailable ? 'unavailable' : stale ? 'stale' : 'ready',
   }
 }
@@ -55,10 +55,20 @@ export function buildSubingDetailViewModel(input: {
 function runtimeText(runtime: RuntimeAlertProjection | null, unavailable: boolean): string {
   if (unavailable || !runtime) return 'Runtime 不可用'
   const rule = runtime.rule_status.subing_ths_alert_15m_v1
-  if (rule.error_type === 'evaluation_warming_up') return '正在 warm-up'
-  if (rule.error_type === 'evaluation_input_invalid') return '输入身份不可用'
-  if (rule.error_type === 'evaluation_failed') return '评估失败'
-  return rule.last_evaluated_bar_at ? '全局正常 · 最近已评估' : '全局正常 · 尚无已评估 Bar'
+  const ruleText = rule.error_type === 'evaluation_warming_up' ? '正在 warm-up'
+    : rule.error_type === 'evaluation_input_invalid' ? '输入身份不可用'
+      : rule.error_type === 'evaluation_failed' ? '评估失败'
+        : rule.last_evaluated_bar_at ? '最近已评估' : '尚无已评估 Bar'
+  if (runtime.status === 'disabled') return `Runtime 未启用 · Rule ${ruleText}`
+  if (runtime.status === 'degraded') return `Runtime 状态异常 · Rule ${ruleText}`
+  if (runtime.status === 'failed') return `Runtime 运行失败 · Rule ${ruleText}`
+  if (runtime.status !== 'ok' && runtime.status !== 'healthy') return `Runtime 状态未知 · Rule ${ruleText}`
+  return `全局正常 · ${ruleText}`
+}
+
+function runtimeTone(runtime: RuntimeAlertProjection | null, unavailable: boolean): 'default' | 'warning' | 'unavailable' {
+  if (unavailable || !runtime || runtime.status === 'disabled' || runtime.status === 'failed') return 'unavailable'
+  return runtime.status === 'ok' || runtime.status === 'healthy' ? 'default' : 'warning'
 }
 
 function runtimeRows(runtime: RuntimeAlertProjection | null) {

@@ -28,8 +28,10 @@ require the echoed cutoff to match that instant without discarding sub-milliseco
 reject Bars at or after this exclusive bound. Normal mode SHALL retain its unbounded request and
 null-echo contract. Decimal, physical-owner, coverage and rollover validation SHALL remain unchanged.
 
-Only exact existing GET paths for preview identity, bars, dominants, home overview, strategy detail
-and historical snapshot SHALL reach the candidate API. Legacy queries without a safe cutoff seam
+Only exact existing GET paths for preview identity, bars, dominants, home overview, strategy detail,
+historical snapshot and lowercase-product SuBing historical reference SHALL reach the candidate API.
+SuBing reference SHALL clamp its `as_of` to the candidate cutoff, while retaining the existing safe
+`since`, `through`, `before` and `limit` query validation. Legacy queries without a safe cutoff seam
 SHALL return `PREVIEW_ROUTE_FORBIDDEN`. Web proxy SHALL permit only exact GET `/api/runtime/health`
 and `/api/alerts/current-events?limit=30` on the supervised formal API `127.0.0.1:8000`; all other
 management methods/routes and business WebSocket forwarding SHALL be rejected. Existing frontend

@@ -392,6 +392,7 @@ uv run --project services/quant-api python -m ruff check \
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
   services/quant-api/tests/newow/test_weekly_recovery.py \
+  services/quant-api/tests/newow/test_weekly_source_verify.py \
   services/quant-api/tests/newow/test_weekly_recovery_campaign.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/data_foundation/test_historical_data_manager.py \
@@ -400,11 +401,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
   services/quant-api/tests/data_foundation/test_newow_readiness_cli.py
 uv run --project services/quant-api python -m ruff check \
   scripts/newow_weekly_recovery.py \
+  scripts/newow_weekly_source_verify.py \
   scripts/newow_weekly_recovery_campaign.py \
   services/quant-api/app/market_data/rqdata_adapter.py \
   services/quant-api/app/market_data/composition.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/newow/test_weekly_recovery.py \
+  services/quant-api/tests/newow/test_weekly_source_verify.py \
   services/quant-api/tests/newow/test_weekly_recovery_campaign.py
 PYTHONPATH=.:services/quant-api:packages/quant-core \
   MYPYPATH=services/quant-api:packages/quant-core \
@@ -413,7 +416,49 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   services/quant-api/app/market_data/rqdata_adapter.py \
   services/quant-api/app/market_data/composition.py \
   scripts/newow_weekly_recovery.py \
+  scripts/newow_weekly_source_verify.py \
   scripts/newow_weekly_recovery_campaign.py
+```
+
+单请求来源取证先对已冻结 prepared manifest 做零 provider 预检。`execute` 会再次校验 clean exact commit、
+execution digest、配置/Canonical 身份、完整当前 plan 和 maintenance lock，最多发起一个冻结请求；收到响应后
+先保存其原始响应。它不调用 manager apply，响应语义必须后续按 timestamp 离线审查：
+
+```bash
+: "${NEWOW_SOURCE_PROJECT_ENV:?set project env path}"
+: "${NEWOW_SOURCE_PREPARED:?set prepared manifest path}"
+: "${NEWOW_SOURCE_PREPARED_SHA256:?set prepared manifest sha256}"
+: "${NEWOW_SOURCE_REQUEST_SHA256:?set exact request sha256}"
+: "${NEWOW_SOURCE_OUTPUT_ROOT:?set fixed evidence root}"
+: "${NEWOW_SOURCE_ATTEMPT_ID:?set one new attempt id}"
+
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_source_verify preflight \
+  --project-env "$NEWOW_SOURCE_PROJECT_ENV" \
+  --prepared "$NEWOW_SOURCE_PREPARED" \
+  --expected-prepared-sha256 "$NEWOW_SOURCE_PREPARED_SHA256" \
+  --unit-index 0 \
+  --request-index 1 \
+  --expected-request-sha256 "$NEWOW_SOURCE_REQUEST_SHA256" \
+  --output-root "$NEWOW_SOURCE_OUTPUT_ROOT" \
+  --attempt-id "$NEWOW_SOURCE_ATTEMPT_ID"
+```
+
+`execute` 是一次真实来源查询 Gate。只有 owner 对上述 prepared/request hash、固定 attempt 和 exact command
+明确授权后才运行；未知结果不重试：
+
+```bash
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_source_verify execute \
+  --project-env "$NEWOW_SOURCE_PROJECT_ENV" \
+  --prepared "$NEWOW_SOURCE_PREPARED" \
+  --expected-prepared-sha256 "$NEWOW_SOURCE_PREPARED_SHA256" \
+  --unit-index 0 \
+  --request-index 1 \
+  --expected-request-sha256 "$NEWOW_SOURCE_REQUEST_SHA256" \
+  --output-root "$NEWOW_SOURCE_OUTPUT_ROOT" \
+  --attempt-id "$NEWOW_SOURCE_ATTEMPT_ID" \
+  --execute-source-query
 ```
 
 总包 CLI 保持 `prepare / apply / inspect` 三阶段。下面命令依赖调用者先设置任务专用变量，仓库不记录
@@ -459,6 +504,41 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --prior-campaign "$NEWOW_PRIOR_CAMPAIGN" \
   --expected-prior-campaign-sha256 "$NEWOW_PRIOR_CAMPAIGN_SHA256" \
   --prior-attempt "$NEWOW_PRIOR_ATTEMPT"
+```
+
+若异常只由一次独立 source-only 查询证明、并无可复用的旧 campaign/attempt，则必须改为传入完整的
+source-only prepared、attempt、单元索引、请求索引和请求 hash。prepare 会重新验证 invocation、journal、
+保存响应、失败分类、零写入约束，并用当前原生 adapter 逐行重放 allowlist 异常；任一 artifact 漂移都会
+在创建子包前失败。该证据只隔离一个与当前完整 audit 精确同 identity/plan 的单元：
+
+source-only 导入时，`attempt` 必须与落盘 outcome 的 canonical JSON 完全一致；请求上限、重试数和
+Canonical/数据库写入数必须是 JSON integer，布尔值或浮点数即使数值相等也拒绝。原生零提交重规划的
+`target_windows` 同样按 canonical JSON 比较，以兼容进程内 tuple 与落盘 JSON list 的容器差异，同时继续
+逐字段约束 dataset、窗口、计数和值；隔离证据失败时只持久化固定的
+`SOURCE_ISOLATION_EVIDENCE_FAILED` 或 `SOURCE_ISOLATION_READBACK_FAILED`，不写入异常原文。
+
+```bash
+: "${NEWOW_SOURCE_PREPARED:?set exact source-only prepared path}"
+: "${NEWOW_SOURCE_PREPARED_SHA256:?set exact source-only prepared sha256}"
+: "${NEWOW_SOURCE_ATTEMPT:?set completed source-only attempt path}"
+: "${NEWOW_SOURCE_UNIT_INDEX:?set zero-based unit index}"
+: "${NEWOW_SOURCE_REQUEST_INDEX:?set zero-based request index}"
+: "${NEWOW_SOURCE_REQUEST_SHA256:?set exact source request sha256}"
+
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign prepare \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --report "$NEWOW_CAMPAIGN_REPORT" \
+  --expected-report-sha256 "$NEWOW_CAMPAIGN_REPORT_SHA256" \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --name "$NEWOW_CAMPAIGN_NAME" \
+  --isolate-known-source-quality \
+  --source-only-prepared "$NEWOW_SOURCE_PREPARED" \
+  --expected-source-only-prepared-sha256 "$NEWOW_SOURCE_PREPARED_SHA256" \
+  --source-only-attempt "$NEWOW_SOURCE_ATTEMPT" \
+  --source-only-unit-index "$NEWOW_SOURCE_UNIT_INDEX" \
+  --source-only-request-index "$NEWOW_SOURCE_REQUEST_INDEX" \
+  --expected-source-only-request-sha256 "$NEWOW_SOURCE_REQUEST_SHA256"
 ```
 
 新策略和旧来源排除证据均进入新 manifest hash，apply 不接受临时覆盖策略。隔离对象继续计入未完成分母；

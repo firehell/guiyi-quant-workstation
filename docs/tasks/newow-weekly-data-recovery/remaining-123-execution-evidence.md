@@ -1,7 +1,77 @@
 # 牛哇周线剩余 1–3 项当前证据
 
-日期：2026-09-14。状态：`PARTIAL`。已有 EC、首批普通和 RS 专项成功证据保留；本轮全量普通总包
-因新发现的 B2411 来源异常停止。本次意图已消费，不授权重试、续跑、发布或 Runtime 操作。
+日期：2026-09-15。状态：`PARTIAL`。已有 EC、首批普通和 RS 专项成功证据保留；本轮全量普通总包
+因新发现的 B2411 来源异常停止。B2411 的新 source-only 意图已消费，不授权重试、续跑、普通 apply、
+发布或 Runtime 操作。
+
+## 证据丢失后的当前只读重建
+
+当前执行入口为同目录 implementation plan 顶部的 2026-09-14 修订。代码工作树已纳入当前本地
+`develop@01a68f175`；共同持久证据根固定为
+`/Volumes/扩展盘/guiyi-quant-workstation/outputs/newow-weekly-recovery-attempts/`。旧 102 成功对象身份、
+B2411 原响应/journal、旧 1,014 后审计和旧 26 个 prepared 批次经有界检查仍为 `EVIDENCE_MISSING`，
+不能从历史数量或排序重造。`evidence-rebuild-20260914-001/` 只恢复了补数前四份审计文件，完整报告
+SHA `3f4a5693194bf6844c8e4134e614297755535c2a83a97c4468cc51bdf9991ec1`，不证明当前余额。
+
+脱敏诊断确认上一轮 `OperationalError` 来自当前沙箱连接限制；同一只读探针在宿主环境通过，未修改凭据、
+服务或 Runtime。随后在 `fresh-audit-20260914-002/` 仅运行一次固定
+`as_of=2026-09-13T06:36:13+00:00` 的 operational-60/W1 dependency-only 原生审计。完整报告 SHA
+`d5ee0c61906cded4ee5e1e20b0ed187f4deb38ac3dfc37921e1670f0aecb211b`，结果
+`complete=true`、`budget_exhausted=false`、provider requests=0、writes=0。
+
+| 当前原生分类 | 数量 | 说明 |
+| --- | ---: | --- |
+| PROPOSED | 1,015 | 包含 B2411；20 单元上限下为 51 批 |
+| REVIEW_REQUIRED | 9 | RS2407/2409/2411/2507/2509/2511/2607/2608/2609 |
+| metadata proposal | 0 | 无元数据提案 |
+
+1,015 个 PROPOSED 覆盖 20,629 targets、240,515 expected bars、228,485 missing endpoints。
+若后续通过新来源证据合法排除 B2411，条件性普通范围才是 1,014 units、20,607 targets、
+240,255 expected bars、228,231 missing endpoints，仍为 `NOT_FROZEN`；当前不得申请普通 apply。
+
+九个 RS 的既有 hash-bound 来源取证原文件与原始响应已重新核验：旧包总计 41 个请求，其中 40 个属于九个
+RS、1 个属于 PF2611；
+41/41 响应、146/146 行、0 retry、0 DB/Canonical write，plan/responses/result 文件 SHA 分别为
+`6c35272a8bf5f16f5532f30c6bf7106052b9070895635e023a895744407a85a5`、
+`c9171f3529fde145876319e659bce0cf8277f9d88993155406965adcda686fc4`、
+`741238014cc1edc92243488688a688f31ef457c19bf4a605803a2d583c6898da`。旧原始结果分类为
+`AUTHORITATIVE_SOURCE_NONPOSITIVE_MATCHES_CANONICAL`，当前 assessment 将 40 个 RS 异常点归纳为
+`SOURCE_NONPOSITIVE_MATCH`；九个 repair 对象继续保留 `REVIEW_REQUIRED`，相关 source dependency 保留
+`SOURCE_EXCEPTION:SOURCE_NONPOSITIVE_PRICE`，无需重复来源查询。这些响应不是 prior campaign/zero-commit
+isolation receipt，当前调查 plan hash 也不得进入普通冻结或 apply Gate。
+
+B2411 当前原生 plan 为
+`a76be7007a77bb8554b4d9d9dd9bea7a73e56599dd764cdd9ab8fa88105da74b`，22 targets、260 expected
+bars、254 missing endpoints。旧异常响应不存在，分类保持 `EVIDENCE_INSUFFICIENT`。已冻结唯一待取证请求：
+`B2411 / futures.get_exchange_daily / 2023-11-27..2023-12-29 / 25 dates`，request SHA
+`eb3078eeaed2db56f0e1f692110d8693c7a9a11e429788eae031391ff33d0fe6`。独立 Review 发现首版证据根
+runner 未受 execution digest 约束，因此它与旧 prepared SHA
+`03b3b465c328f849a8bac9351be86928a0544ea7dc82502c41aecdddc7d9186a` 一并废止；仓库内最小修订将
+source-only runner 纳入 clean exact commit/digest，必须在新提交上重新生成 prepared。preflight 同时绑定共同
+输出根、未使用 attempt、maintenance lock 与完整当前 plan。
+owner 随后精确批准本次 B2411 source-only 查询。代码提交
+`b346039105baf9b7a5408c8368649a40a4d956d9` 上的 prepared SHA 为
+`84a24df02a241590f026ac6337505b55894cdb328771a5373a089e2a034a0e04`，attempt
+`b2411-source-only-20260915-001` 仅执行一次请求且未重试。结果为
+`SOURCE_RESPONSE_SAVED_REVIEW_REQUIRED / RQDATA_ZERO_OHL_INVALID`，1 request started、1 response saved、
+0 retry、0 Canonical write、0 database write、manager apply=false；result SHA
+`8391c8bbf80d4360cb564f94777447c0aa9a7a7ed3313b22660253333e488a0e`，journal SHA
+`15a12fcc9a58153e745e930629137dcb3622cb1471cd9074a4b68f175e233552`。
+
+保存响应 SHA
+`af04f658c0cca84ff2606e0d1eb24cdb4d079eb23bc51024d16d5a2703054a0f`，精确包含请求中的 25 个日期；
+其中仅 2023-12-27 为正成交量且非正 OHL：open/high/low=0、close=3929、volume=2、
+total_turnover=78700、open_interest=147、settlement=3929、prev_settlement=3929。离线 assessment SHA
+`185e248795699a331e843b5cba8e8ec50c42ec0407c4d398f2bd35c8d0412e2b` 逐项绑定上述 artifact，并将其
+分类为 `AUTHORITATIVE_SOURCE_NONPOSITIVE_B2411_2023_12_27`。这不允许用 close/settlement 造 OHL，
+也不表示数据恢复成功；它只使 B2411 有资格在新普通 campaign 中作为未完成来源异常保留在分母并排除下载。
+
+仓库中的最小 source-only evidence importer 会在每次 prepare/apply 校验前重新验证 prepared/request、
+invocation、journal、保存响应、零写入约束及当前 adapter 对异常行的精确重放，并要求它与新完整 audit 的
+同一 unit/plan 相符。该修订已通过独立 Review，P1/P2/P3 均为 0；本文所在代码提交本身不宣称普通 campaign
+已经冻结，随后 clean exact commit 上的只读 prepare 文件、SHA、范围和下一 Gate 只记录在共同证据根
+`fresh-audit-20260914-002/README.md`，避免修改本文反向使冻结 commit 漂移。本次查询不授权
+Canonical/数据库写入。
 
 ## 已确认的后续有界工程修订
 
@@ -252,6 +322,19 @@ prev_settlement。来源响应 SHA-256 为
 因此这些非正 bars 是来源事实，不能修正成正价格或用替代数据覆盖。完整只读来源及修正链保存在
 `outputs/newow-weekly-recovery-attempts/rs-source-verification-20260914-001/`，本次仅来源意图已消费，
 不授权重试。
+
+## 2026-09-15 BZ2605 隔离读回工程修订
+
+一次已结束的普通 campaign 在 BZ2605 来源异常后未能形成隔离结果。离线复算证明来源 evidence 本身满足
+2 started、2 response_saved、`RQDATA_ZERO_OHL_INVALID`、零写入且 outcome 已知；失败来自进程内原生
+target payload 的 dataset 为 tuple，而 prepared/apply JSON 读回后为 list，旧读回逻辑直接比较 Python
+容器导致相同内容被误判为 `SOURCE_ISOLATION_READBACK_FAILED`。两根权威来源非正 OHL 行保持原样，未作
+归一化、替代或删除。
+
+本工程修订只将完整 target payload 改为 canonical JSON 等价比较，并把隔离 evidence/readback 的固定脱敏
+失败阶段持久化到 unit、batch 与 campaign 结果；source-only importer 同时拒绝以 bool/float 冒充计数字段
+或 attempt outcome。修订期间未调用 provider，未重新 prepare/apply，未写 Canonical 或数据库，也不构成
+该 campaign 的重试授权。
 
 owner 随后独立批准 RS repair apply。当前提交重新 prepare 后，两份原生 plan hash、26 个 targets 和
 292 根 target 完整 expected bars 均未漂移；需补的实际 missing endpoints 为 270 根（RS2309 216、

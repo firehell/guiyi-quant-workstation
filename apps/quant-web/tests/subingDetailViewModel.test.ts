@@ -39,3 +39,11 @@ test('does not treat no exact Event as neutral and ignores another product Event
   assert.equal(model.facts[3].value, '当前已读取窗口无已保存 Event；不代表中性信号')
   assert.equal(model.history.length, 0)
 })
+
+test('does not call a disabled or degraded Runtime globally normal when the Rule has no error', () => {
+  for (const status of ['disabled', 'degraded']) {
+    const model = buildSubingDetailViewModel({ identity, header, events: [], alertUnavailable: false, rule: { ruleCode: 'subing_ths_alert_15m_v1', displayName: '苏冰预警', symbol: 'jm', frequency: '15m', enabled: true, enabledFrequencies: ['15m'] }, ruleUnavailable: false, runtime: { status, enabled_rule_count: 1, rule_status: { htdy_original_15m: { last_evaluated_bar_at: null, last_event_at: null, last_failure_at: null, error_type: null }, subing_ths_alert_15m_v1: { last_evaluated_bar_at: event.bar_end, last_event_at: null, last_failure_at: null, error_type: null } } }, runtimeUnavailable: false })
+    assert.doesNotMatch(model.facts[1]!.value, /全局正常/)
+    assert.match(model.facts[1]!.value, status === 'disabled' ? /未启用/ : /状态异常/)
+  }
+})

@@ -85,6 +85,8 @@ test('short state and enum labels remain deterministic and unknown values are un
   assert.equal(newowDisplayLabel('BUILD'), '参考建仓')
   assert.equal(newowDisplayLabel('LONG_BIAS'), '偏多')
   assert.equal(newowDisplayLabel('NEWOW_ESCAPE_D2'), 'D2 逃顶提示')
+  assert.equal(newowDisplayLabel('D2'), 'D2 逃顶提示')
+  assert.equal(newowDisplayLabel('D6'), 'D6 低位修复提示')
   assert.equal(newowDisplayLabel('UNKNOWN_NEW_TOKEN'), '未确认')
   assert.equal(shortNewowTime('2026-09-03T07:00:00Z'), '09-03 15:00')
 })

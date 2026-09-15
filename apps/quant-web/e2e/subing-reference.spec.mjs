@@ -33,6 +33,44 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
 }
+
+test('dense SuBing reference nodes keep their real micro size and expand on focus', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mockSubingReference(page, { response() {
+    const data = subingReferenceFixture()
+    const owner = referenceBars[64]
+    return {
+      ...data,
+      signals: Array.from({ length: 300 }, (_, index) => ({
+        signal_id: `dense-subing-${index}`,
+        bar_end: owner.bar_end,
+        trading_day: owner.trading_day,
+        physical_contract: 'JM2601',
+        segment_id: 'fixture-segment',
+        direction: index % 2 ? 'buy' : 'sell',
+        reference_price: String(owner.close),
+        action: 'SAME_DIRECTION',
+        entry_trade_id: null,
+        closed_trade_id: null,
+        closed_return_pct: null,
+      })),
+    }
+  } })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const labels = page.locator('.reference-callout')
+  await expect(labels).toHaveCount(300)
+  const microIndex = await labels.evaluateAll(nodes => nodes.findIndex(node => node.getBoundingClientRect().width <= 8.5))
+  expect(microIndex).toBeGreaterThanOrEqual(0)
+  const target = labels.nth(microIndex)
+  const before = await target.boundingBox()
+  expect(before?.width).toBeLessThanOrEqual(8.5)
+  expect(before?.height).toBeLessThanOrEqual(8.5)
+  await target.focus()
+  await expect(target).toContainText('同向信号')
+  await expect.poll(async () => (await target.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(168)
+  await expect.poll(async () => (await target.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(52)
+})
+
 test('historical unavailable keeps immutable events and Rule facts visible', async ({ page }) => {
   await mockSubingReference(page, { unavailable: true })
   await page.goto('/market/chart?symbol=jm&view=subing')
