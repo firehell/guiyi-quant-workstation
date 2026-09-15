@@ -33,6 +33,9 @@ from app.models import Contract, Exchange, Instrument
 from scripts.newow_weekly_recovery import (
     AttemptJournal,
     RecoveryError,
+    _INVOCATION_SCHEMA,
+    _RESULT_SCHEMA,
+    _frequency_for_prepare_schema,
     _post_commit_readback,
     _write_json_exclusive,
     execute_prepared_batch,
@@ -411,8 +414,9 @@ def _native_apply_result(
         ),
         "retries": 0,
     }
+    unit_frequency = _frequency_for_prepare_schema(child.get("schema_version"))
     receipt = {
-        "schema_version": "newow_weekly_recovery_invocation_v1",
+        "schema_version": _INVOCATION_SCHEMA[unit_frequency],
         "prepared_sha256": digest,
         **IDENTITY,
         "unit_count": len(child["units"]),
@@ -424,7 +428,7 @@ def _native_apply_result(
         if return_code is None
         else return_code,
         "batch_result": {
-            "schema_version": "newow_weekly_recovery_result_v1",
+            "schema_version": _RESULT_SCHEMA[unit_frequency],
             "status": status,
             "readonly": False,
             "attempt_dir": str(native_attempt),
@@ -3727,6 +3731,30 @@ def test_hourly_campaign_batches_derive_before_download(tmp_path: Path) -> None:
     assert manifest["totals"]["batch_count"] == 3
     assert manifest["totals"]["unit_count"] == 7
     validate_campaign_manifest(manifest, evidence_root=tmp_path)
+
+
+def test_hourly_campaign_apply_accepts_hourly_result_schema(tmp_path: Path) -> None:
+    manifest = prepare_campaign(
+        _hourly_report([_hourly_unit(0, requests=0)]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda child_units, batch_id, root: _hourly_native_child(
+            root, batch_id, child_units
+        ),
+        name="hourly-apply",
+    )
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "hourly-apply-001",
+        invoke_batch=_native_apply_result,
+    )
+
+    assert result["status"] == "passed"
+    assert result["summary"]["success_unit_count"] == 1
+    assert result["summary"]["unknown_unit_count"] == 0
+    assert result["completed_batch_ids"] == ["batch-001"]
 
 
 def test_combine_hourly_readiness_reports_unions_six_symbols() -> None:

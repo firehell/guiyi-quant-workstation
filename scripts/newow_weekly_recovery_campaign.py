@@ -2767,7 +2767,7 @@ def _validated_batch_invocation(
         not isinstance(return_code, int)
         or isinstance(return_code, bool)
         or not isinstance(result, Mapping)
-        or result.get("schema_version") != "newow_weekly_recovery_result_v1"
+        or result.get("schema_version") not in native._RESULT_SCHEMA.values()
         or result.get("readonly") is not False
         or result.get("status") not in {"passed", "partial", "failed"}
         or not isinstance(result.get("result"), Mapping)
@@ -2804,10 +2804,15 @@ def _validated_batch_invocation(
         receipt = native._read_json_file(native_attempt / "invocation-receipt.json")
         persisted_result = native._read_json_file(native_attempt / "batch-result.json")
         frozen = _load_native_child(child_path, digest)
+        unit_frequency = native._frequency_for_prepare_schema(
+            frozen.get("schema_version")
+        )
     except RecoveryError:
         return None
+    if result.get("schema_version") != native._RESULT_SCHEMA[unit_frequency]:
+        return None
     expected_receipt = {
-        "schema_version": "newow_weekly_recovery_invocation_v1",
+        "schema_version": native._INVOCATION_SCHEMA[unit_frequency],
         "prepared_sha256": digest,
         **identity,
         "unit_count": child.get("unit_count"),
