@@ -68,8 +68,10 @@ total_turnover=78700、open_interest=147、settlement=3929、prev_settlement=392
 
 仓库中的最小 source-only evidence importer 会在每次 prepare/apply 校验前重新验证 prepared/request、
 invocation、journal、保存响应、零写入约束及当前 adapter 对异常行的精确重放，并要求它与新完整 audit 的
-同一 unit/plan 相符。该修订仍须独立 Review、提交和新只读 campaign prepare；在这些步骤完成前，普通范围
-仍为 `NOT_FROZEN`。本次查询不授权 Canonical/数据库写入。
+同一 unit/plan 相符。该修订已通过独立 Review，P1/P2/P3 均为 0；本文所在代码提交本身不宣称普通 campaign
+已经冻结，随后 clean exact commit 上的只读 prepare 文件、SHA、范围和下一 Gate 只记录在共同证据根
+`fresh-audit-20260914-002/README.md`，避免修改本文反向使冻结 commit 漂移。本次查询不授权
+Canonical/数据库写入。
 
 ## 已确认的后续有界工程修订
 
