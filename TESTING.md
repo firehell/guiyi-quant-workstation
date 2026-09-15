@@ -371,6 +371,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
   services/quant-api/tests/newow/test_weekly_recovery.py \
   services/quant-api/tests/newow/test_weekly_source_verify.py \
   services/quant-api/tests/newow/test_weekly_recovery_campaign.py \
+  services/quant-api/tests/newow/test_recovery_partial_exception.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/data_foundation/test_historical_data_manager.py \
   services/quant-api/tests/data_foundation/test_cli.py \
@@ -380,12 +381,14 @@ uv run --project services/quant-api python -m ruff check \
   scripts/newow_weekly_recovery.py \
   scripts/newow_weekly_source_verify.py \
   scripts/newow_weekly_recovery_campaign.py \
+  scripts/newow_recovery_partial_exception.py \
   services/quant-api/app/market_data/rqdata_adapter.py \
   services/quant-api/app/market_data/composition.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/newow/test_weekly_recovery.py \
   services/quant-api/tests/newow/test_weekly_source_verify.py \
-  services/quant-api/tests/newow/test_weekly_recovery_campaign.py
+  services/quant-api/tests/newow/test_weekly_recovery_campaign.py \
+  services/quant-api/tests/newow/test_recovery_partial_exception.py
 PYTHONPATH=.:services/quant-api:packages/quant-core \
   MYPYPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api mypy --explicit-package-bases \
@@ -394,7 +397,8 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   services/quant-api/app/market_data/composition.py \
   scripts/newow_weekly_recovery.py \
   scripts/newow_weekly_source_verify.py \
-  scripts/newow_weekly_recovery_campaign.py
+  scripts/newow_weekly_recovery_campaign.py \
+  scripts/newow_recovery_partial_exception.py
 ```
 
 单请求来源取证先对已冻结 prepared manifest 做零 provider 预检。`execute` 会再次校验 clean exact commit、
@@ -516,6 +520,27 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --source-only-unit-index "$NEWOW_SOURCE_UNIT_INDEX" \
   --source-only-request-index "$NEWOW_SOURCE_REQUEST_INDEX" \
   --expected-source-only-request-sha256 "$NEWOW_SOURCE_REQUEST_SHA256"
+```
+
+若上次 D1 或 W1 apply 在部分提交后命中权威来源 `RQDATA_ZERO_OHL_INVALID`，不得把该单元记为
+zero-commit isolation 或 success。prepare 从显式失败 attempt 自动派生
+`prior_partial_source_exceptions`；该单元仍计入未完成分母，不进入 executable ordinary
+units，也不伪装 `DATA_READY`。prepare 会重放已保存来源响应、核验已提交月份的 Catalog /
+Parquet / MDS 读回，并要求当前 fresh replan 是扣除已提交目标后的严格子集。不得手写合约排除名单，
+也不得初始化 provider：
+
+```bash
+: "${NEWOW_PARTIAL_EXCEPTION_ATTEMPT:?set the failed D1 apply attempt directory}"
+
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign prepare \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --report "$NEWOW_CAMPAIGN_REPORT" \
+  --expected-report-sha256 "$NEWOW_CAMPAIGN_REPORT_SHA256" \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --name "$NEWOW_CAMPAIGN_NAME" \
+  --isolate-known-source-quality \
+  --partial-source-exception-attempt "$NEWOW_PARTIAL_EXCEPTION_ATTEMPT"
 ```
 
 新策略和旧来源排除证据均进入新 manifest hash，apply 不接受临时覆盖策略。隔离对象继续计入未完成分母；

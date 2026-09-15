@@ -42,6 +42,7 @@ _EXECUTION_CODE_PATHS = (
     "scripts/newow_weekly_recovery.py",
     "scripts/newow_weekly_recovery_campaign.py",
     "scripts/newow_weekly_source_verify.py",
+    "scripts/newow_recovery_partial_exception.py",
     "services/quant-api/app/market_data/composition.py",
     "services/quant-api/app/market_data/rqdata_adapter.py",
     "services/quant-api/app/market_data/historical_data_manager.py",
