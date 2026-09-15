@@ -29,6 +29,8 @@ from scripts import newow_weekly_recovery as native
 
 RecoveryError = native.RecoveryError
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_DAILY_VERIFICATION_AUDIT_TIMEOUT_SECONDS = 300
+_DAILY_VERIFICATION_PROCESS_TIMEOUT_SECONDS = 330
 
 _CAMPAIGN_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_campaign_v1",
@@ -190,28 +192,75 @@ def _run_daily_verification_process(
             check=False,
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=_DAILY_VERIFICATION_PROCESS_TIMEOUT_SECONDS,
         )
-        if completed.returncode not in {0, 1}:
-            raise OSError
+        return_code = completed.returncode
+        if return_code not in {0, 1}:
+            return {
+                "status": "incomplete",
+                "error_code": "DAILY_VERIFICATION_PROCESS_FAILED",
+                "process_return_code": return_code,
+            }
         observation = Path(output_root) / observation_id
         verification_path = observation / "verification.json"
-        payload = native._read_json_file(verification_path)
+        if not verification_path.is_file():
+            return {
+                "status": "incomplete",
+                "error_code": "DAILY_VERIFICATION_OUTPUT_MISSING",
+                "process_return_code": return_code,
+            }
+        try:
+            if verification_path.stat().st_size == 0:
+                return {
+                    "status": "incomplete",
+                    "error_code": "DAILY_VERIFICATION_OUTPUT_EMPTY",
+                    "process_return_code": return_code,
+                }
+            payload = native._read_json_file(verification_path)
+        except (OSError, RecoveryError, ValueError):
+            return {
+                "status": "incomplete",
+                "error_code": "DAILY_VERIFICATION_OUTPUT_INVALID",
+                "process_return_code": return_code,
+            }
         if (
             not isinstance(payload, Mapping)
             or payload.get("schema_version") != "newow_daily_recovery_verification_v1"
             or payload.get("verification_status")
             not in {"verified", "incomplete", "failed", "identity_changed"}
         ):
-            raise OSError
+            return {
+                "status": "incomplete",
+                "error_code": "DAILY_VERIFICATION_OUTPUT_INVALID",
+                "process_return_code": return_code,
+            }
+        reported_verified = payload["verification_status"] == "verified"
+        required_complete = (
+            payload.get("inventory_complete") is True
+            and payload.get("ordinary_recovery_complete") is True
+        )
+        if (reported_verified and not required_complete) or return_code != (
+            0 if reported_verified else 1
+        ):
+            return {
+                "status": "incomplete",
+                "error_code": "DAILY_VERIFICATION_RESULT_MISMATCH",
+                "process_return_code": return_code,
+            }
         return {
             "status": payload["verification_status"],
             "inventory_complete": payload.get("inventory_complete") is True,
             "ordinary_recovery_complete": payload.get("ordinary_recovery_complete")
             is True,
             "observation_dir": str(observation),
+            "process_return_code": return_code,
         }
-    except (OSError, subprocess.SubprocessError, RecoveryError):
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "incomplete",
+            "error_code": "DAILY_VERIFICATION_TIMEOUT",
+        }
+    except (OSError, subprocess.SubprocessError):
         return {
             "status": "incomplete",
             "error_code": "DAILY_VERIFICATION_UNAVAILABLE",
@@ -381,6 +430,15 @@ def main(
                 manifest.get("schema_version")
             )
             error_schema = _CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
+            scope = manifest.get("scope")
+            if (
+                recovery_frequency == "1d"
+                and manifest.get("status") == "completed"
+                and manifest.get("children") == []
+                and isinstance(scope, Mapping)
+                and scope.get("denominator_unit_count") == 0
+            ):
+                raise RecoveryError("D1_EXECUTION_NOT_REQUIRED")
             current_identity = (
                 _current_execution_identity(Path(args.project_env))
                 if recovery_frequency == "1w"

@@ -265,6 +265,12 @@ window, `as_of`, physical-owner replay prefix and bound snapshot token. Final au
 failure or result-save failure MUST preserve execution settlement while preventing a
 verified input-ready result and successful verification exit. Inventory completeness, ordinary recovery completion,
 and per-product/per-consumer input availability MUST be reported separately; none of them opens the public D1 matrix.
+The verifier process timeout MUST exceed its fixed native audit deadline by a bounded result-save allowance. A timeout,
+non-success process code, missing result, empty result and invalid JSON result MUST remain distinguishable sanitized
+terminal facts; none may be interpreted as audit success or trigger a retry. When a valid completed D1 prepare has a
+zero ordinary denominator and no child batches, independent verification MAY use an explicit `not_required` execution
+classification without creating an empty execution receipt. This exception MUST reject any nonzero campaign and MUST
+still run the complete operational D1 audit and comparator proof.
 
 #### Scenario: Safe source failure occurs inside a batch
 - **WHEN** the explicit policy and saved evidence prove a source-quality failure before any partition commit
@@ -291,6 +297,10 @@ and per-product/per-consumer input availability MUST be reported separately; non
 #### Scenario: Independent D1 verification fails after known execution
 - **WHEN** execution settlement is persisted but final read-only replan, full D1 audit, subprocess completion or verification-result save fails
 - **THEN** the known execution counts remain unchanged, verification is non-successful, and no provider request, retry or apply is triggered
+
+#### Scenario: D1 prepare has no ordinary execution units
+- **WHEN** a validated completed D1 campaign has a zero denominator and no child batches
+- **THEN** campaign apply rejects before creating an attempt, the verifier may separately classify execution as `not_required`, creates no campaign execution receipt, and still requires a complete independent operational D1 audit before success
 
 ### Requirement: Bounded missing metadata repair separates plan fetch and apply
 系统 SHALL 提供默认只读的 `metadata-repair`，以显式 physical contract/owner-through 列表和现有

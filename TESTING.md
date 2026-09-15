@@ -610,6 +610,34 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --observation-id "$NEWOW_D1_VERIFICATION_ID"
 ```
 
+若已校验的 D1 prepare 本身为 `status=completed`、普通分母为 0 且没有 child batch，不创建空
+`campaign-execution.json`。使用同一完整 campaign hash 走显式 `not_required` 路径，仍执行完整 operational
+D1 audit 与 Comparator 证明；对此 campaign 调用 `apply` 会在创建 attempt 前以
+`D1_EXECUTION_NOT_REQUIRED` 拒绝：
+
+```bash
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_daily_recovery_verification \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --campaign "$NEWOW_D1_CAMPAIGN" \
+  --expected-campaign-sha256 "$NEWOW_D1_CAMPAIGN_SHA256" \
+  --execution-not-required \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --observation-id "$NEWOW_D1_VERIFICATION_ID"
+```
+
+验证器内部审计 deadline 固定 300 秒，父进程等待上限固定 330 秒，为结果关闭、校验与落盘保留有界余量。
+父进程分别记录 timeout、非 0/1 进程码、缺失结果、空结果和损坏 JSON；这些状态都不改写已保存的执行终态，
+不自动 retry。`verification.json` 与 `summary.md` 都先完整写入并 fsync 临时文件，再以原子 no-replace
+发布到最终路径；并发同名目标会拒绝而不会覆盖。
+正式 JSON 发布后立即结构化回读。测试入口：
+
+```bash
+PYTHONPATH=services/quant-api:. services/quant-api/.venv/bin/pytest -q \
+  services/quant-api/tests/newow/test_daily_recovery_verification.py \
+  services/quant-api/tests/newow/test_weekly_recovery_campaign.py
+```
+
 以上 D1 `apply` 示例以及任何真实重验前的本地生产事实读取仍受各自精确 Gate 约束；本节测试命令
 只使用 fake provider、SQLite 和临时目录，不证明现场数据已完成或 public D1 已开放。
 

@@ -31,6 +31,37 @@ _COUNT_FIELDS = {
 }
 
 
+def _write_atomic_exclusive(path: Path, content: bytes) -> None:
+    """Fully sync bytes before atomically publishing one new result path."""
+    temporary = path.with_name(f".{path.name}.tmp")
+    try:
+        fd = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o600,
+        )
+        try:
+            view = memoryview(content)
+            offset = 0
+            while offset < len(view):
+                written = os.write(fd, view[offset:])
+                if written <= 0:
+                    raise OSError
+                offset += written
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.link(temporary, path, follow_symlinks=False)
+        temporary.unlink()
+        native._fsync_directory(path.parent)
+    except Exception:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+
 def _campaign_digest(campaign: Mapping[str, Any]) -> str:
     body = dict(campaign)
     body.pop("campaign_sha256", None)
@@ -248,12 +279,46 @@ def _validated_execution(
         or set().union(*classified.values()) != universe
     ):
         raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    status = execution.get("status")
     complete = (
-        execution.get("status") == "passed"
+        status == "passed"
         and counts["success"] == denominator
         and not any(counts[name] for name in counts if name != "success")
-    )
+    ) or (status == "not_required" and denominator == 0)
     return counts, complete, processed
+
+
+def _not_required_execution(
+    campaign: Mapping[str, Any], campaign_sha256: str
+) -> dict[str, Any]:
+    scope = campaign.get("scope")
+    if (
+        campaign.get("status") != "completed"
+        or campaign.get("children") != []
+        or not isinstance(scope, Mapping)
+        or scope.get("denominator_unit_count") != 0
+    ):
+        raise native.RecoveryError("VERIFICATION_EXECUTION_REQUIRED")
+    return {
+        "status": "not_required",
+        "campaign_manifest_sha256": campaign_sha256,
+        "summary": {
+            "denominator_unit_count": 0,
+            "success_unit_count": 0,
+            "isolated_unit_count": 0,
+            "partial_source_exception_unit_count": 0,
+            "stopping_failure_unit_count": 0,
+            "unattempted_unit_count": 0,
+            "unknown_unit_count": 0,
+        },
+        "completed_batches": [],
+        "completed_batch_ids": [],
+        "failed_batch": None,
+        "unknown_batch": None,
+        "unattempted_batch_ids": [],
+        "isolated_units": [],
+        "partial_source_exception_units": [],
+    }
 
 
 def _unit_identity(value: Mapping[str, Any]) -> tuple[str, str, str, str, str]:
@@ -624,6 +689,8 @@ def verify_daily_campaign(
         products=products,
         as_of=as_of,
         matrix=False,
+        max_work=10000,
+        timeout_seconds=campaign_module._DAILY_VERIFICATION_AUDIT_TIMEOUT_SECONDS,
         frequencies=(ProductFrequency.DAILY,),
     )
     verification_status = "incomplete"
@@ -744,8 +811,9 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--project-env", required=True)
     value.add_argument("--campaign", required=True)
     value.add_argument("--expected-campaign-sha256", required=True)
-    value.add_argument("--execution", required=True)
-    value.add_argument("--expected-execution-sha256", required=True)
+    value.add_argument("--execution")
+    value.add_argument("--expected-execution-sha256")
+    value.add_argument("--execution-not-required", action="store_true")
     value.add_argument("--output-root", required=True)
     value.add_argument("--observation-id", required=True)
     return value
@@ -854,7 +922,7 @@ def _run_readonly_verification(
     campaign: Mapping[str, Any],
     execution: Mapping[str, Any],
     project_env: Path,
-    execution_sha256: str,
+    execution_sha256: str | None,
     attempt_identity: str,
 ) -> dict[str, Any]:
     """Compose only Catalog, Parquet, coverage, planner and strict readers."""
@@ -918,7 +986,10 @@ def _run_readonly_verification(
         lease = lock_catalog.acquire_maintenance_lock()
         if lease is None:
             raise native.RecoveryError("FINAL_AUDIT_BUSY")
-        with readonly_transaction(session, timeout_seconds=300):
+        with readonly_transaction(
+            session,
+            timeout_seconds=campaign_module._DAILY_VERIFICATION_AUDIT_TIMEOUT_SECONDS,
+        ):
             catalog = lock_catalog
             market = MarketDataService(catalog, CanonicalMonthlyStore(root))
             products = tuple(load_operational_products())
@@ -1054,12 +1125,8 @@ def main(argv: list[str] | None = None) -> int:
         args = parser().parse_args(argv)
         root = campaign_module._validated_evidence_root(Path(args.output_root))
         campaign_path = Path(args.campaign)
-        execution_path = Path(args.execution)
         campaign = native.load_prepared_manifest(
             campaign_path, args.expected_campaign_sha256
-        )
-        execution = native.load_prepared_manifest(
-            execution_path, args.expected_execution_sha256
         )
         campaign = campaign_module.validate_campaign_manifest(
             campaign, evidence_root=root
@@ -1068,36 +1135,55 @@ def main(argv: list[str] | None = None) -> int:
             **campaign,
             "campaign_sha256": args.expected_campaign_sha256,
         }
-        if execution.get("campaign_manifest_sha256") != args.expected_campaign_sha256:
-            raise native.RecoveryError("VERIFICATION_IDENTITY_CHANGED")
-        _validate_persisted_execution_evidence(
-            campaign=campaign,
-            execution=execution,
-            campaign_path=campaign_path,
-            execution_path=execution_path,
-            evidence_root=root,
-        )
+        if args.execution_not_required:
+            if args.execution is not None or args.expected_execution_sha256 is not None:
+                raise native.RecoveryError("VERIFICATION_INPUT_INVALID")
+            execution = _not_required_execution(
+                bound_campaign, args.expected_campaign_sha256
+            )
+            execution_sha256 = None
+            attempt_identity = "not_required"
+        else:
+            if args.execution is None or args.expected_execution_sha256 is None:
+                raise native.RecoveryError("VERIFICATION_INPUT_INVALID")
+            execution_path = Path(args.execution)
+            execution = native.load_prepared_manifest(
+                execution_path, args.expected_execution_sha256
+            )
+            if (
+                execution.get("campaign_manifest_sha256")
+                != args.expected_campaign_sha256
+            ):
+                raise native.RecoveryError("VERIFICATION_IDENTITY_CHANGED")
+            _validate_persisted_execution_evidence(
+                campaign=campaign,
+                execution=execution,
+                campaign_path=campaign_path,
+                execution_path=execution_path,
+                evidence_root=root,
+            )
+            execution_sha256 = args.expected_execution_sha256
+            attempt_identity = execution_path.parent.name
         observation = native.create_attempt_directory(root, args.observation_id)
         result = _run_readonly_verification(
             campaign=bound_campaign,
             execution=execution,
             project_env=Path(args.project_env),
-            execution_sha256=args.expected_execution_sha256,
-            attempt_identity=execution_path.parent.name,
-        )
-        native._write_json_exclusive(observation / "verification.json", result)
-        summary = render_daily_summary(result).encode("utf-8")
-        fd = os.open(
-            observation / "summary.md",
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-            0o600,
+            execution_sha256=execution_sha256,
+            attempt_identity=attempt_identity,
         )
         try:
-            os.write(fd, summary)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        native._fsync_directory(observation)
+            verification_path = observation / "verification.json"
+            verification_content = (
+                native._canonical_json(result) + "\n"
+            ).encode("utf-8")
+            _write_atomic_exclusive(verification_path, verification_content)
+            if native._read_json_file(verification_path) != result:
+                raise OSError
+            summary = render_daily_summary(result).encode("utf-8")
+            _write_atomic_exclusive(observation / "summary.md", summary)
+        except (OSError, native.RecoveryError) as exc:
+            raise native.RecoveryError("VERIFICATION_RESULT_SAVE_FAILED") from exc
         payload = {
             "schema_version": _SCHEMA,
             "status": result["verification_status"],

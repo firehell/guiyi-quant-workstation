@@ -411,10 +411,21 @@ def test_daily_campaign_rejects_weekly_source_only_evidence_before_child_prepare
     assert calls == []
 
 
-@pytest.mark.parametrize("mode", ["timeout", "failed", "missing"])
+@pytest.mark.parametrize(
+    ("mode", "error_code", "return_code"),
+    [
+        ("timeout", "DAILY_VERIFICATION_TIMEOUT", None),
+        ("failed", "DAILY_VERIFICATION_PROCESS_FAILED", 2),
+        ("missing", "DAILY_VERIFICATION_OUTPUT_MISSING", 0),
+        ("empty", "DAILY_VERIFICATION_OUTPUT_EMPTY", 0),
+        ("truncated", "DAILY_VERIFICATION_OUTPUT_INVALID", 0),
+    ],
+)
 def test_daily_verification_process_failure_preserves_execution_terminal(
     tmp_path: Path,
     mode: str,
+    error_code: str,
+    return_code: int | None,
 ) -> None:
     campaign_path = tmp_path / "daily.prepare.json"
     execution_path = tmp_path / "campaign-execution.json"
@@ -425,7 +436,14 @@ def test_daily_verification_process_failure_preserves_execution_terminal(
     def run_process(*_args, **_kwargs):
         if mode == "timeout":
             raise subprocess.TimeoutExpired("verify", 300)
-        return SimpleNamespace(returncode=1 if mode == "failed" else 0)
+        observation = tmp_path / f"verify-{mode}"
+        if mode in {"empty", "truncated"}:
+            observation.mkdir()
+            (observation / "verification.json").write_text(
+                "" if mode == "empty" else '{"schema_version":',
+                encoding="utf-8",
+            )
+        return SimpleNamespace(returncode=2 if mode == "failed" else 0)
 
     result = campaign._run_daily_verification_process(
         project_env=tmp_path / "project.env",
@@ -438,11 +456,180 @@ def test_daily_verification_process_failure_preserves_execution_terminal(
         run_process=run_process,
     )
 
+    expected = {
+        "status": "incomplete",
+        "error_code": error_code,
+    }
+    if return_code is not None:
+        expected["process_return_code"] = return_code
+    assert result == expected
+    assert execution_path.read_bytes() == before
+
+
+def test_daily_verification_process_records_success_and_cleanup_budget(
+    tmp_path: Path,
+) -> None:
+    campaign_path = tmp_path / "daily.prepare.json"
+    execution_path = tmp_path / "campaign-execution.json"
+    campaign_path.write_text("{}", encoding="utf-8")
+    execution_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    observed: dict[str, Any] = {}
+
+    def run_process(command, **kwargs):
+        observed.update(command=command, **kwargs)
+        observation = tmp_path / "verify-success"
+        observation.mkdir()
+        (observation / "verification.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "newow_daily_recovery_verification_v1",
+                    "verification_status": "verified",
+                    "inventory_complete": True,
+                    "ordinary_recovery_complete": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0)
+
+    result = campaign._run_daily_verification_process(
+        project_env=tmp_path / "project.env",
+        campaign_path=campaign_path,
+        campaign_sha256="a" * 64,
+        execution_path=execution_path,
+        execution_sha256="b" * 64,
+        output_root=tmp_path,
+        observation_id="verify-success",
+        run_process=run_process,
+    )
+
+    assert result == {
+        "status": "verified",
+        "inventory_complete": True,
+        "ordinary_recovery_complete": True,
+        "observation_dir": str(tmp_path / "verify-success"),
+        "process_return_code": 0,
+    }
+    assert observed["command"][:3] == [
+        campaign.sys.executable,
+        "-m",
+        "scripts.newow_daily_recovery_verification",
+    ]
+    assert observed["cwd"] == campaign.PROJECT_ROOT
+    assert observed["timeout"] > campaign._DAILY_VERIFICATION_AUDIT_TIMEOUT_SECONDS
+
+
+def test_daily_verification_process_preserves_operator_cancellation(
+    tmp_path: Path,
+) -> None:
+    execution_path = tmp_path / "campaign-execution.json"
+    execution_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    before = execution_path.read_bytes()
+
+    def cancel(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        campaign._run_daily_verification_process(
+            project_env=tmp_path / "project.env",
+            campaign_path=tmp_path / "daily.prepare.json",
+            campaign_sha256="a" * 64,
+            execution_path=execution_path,
+            execution_sha256="b" * 64,
+            output_root=tmp_path,
+            observation_id="verify-cancelled",
+            run_process=cancel,
+        )
+
+    assert execution_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("inventory_complete", [True, False])
+def test_daily_verification_process_rejects_return_code_status_mismatch(
+    tmp_path: Path,
+    inventory_complete: bool,
+) -> None:
+    execution_path = tmp_path / "campaign-execution.json"
+    execution_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+
+    def run_process(*_args, **_kwargs):
+        observation = tmp_path / "verify-mismatch"
+        observation.mkdir()
+        (observation / "verification.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "newow_daily_recovery_verification_v1",
+                    "verification_status": "verified",
+                    "inventory_complete": inventory_complete,
+                    "ordinary_recovery_complete": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=1)
+
+    result = campaign._run_daily_verification_process(
+        project_env=tmp_path / "project.env",
+        campaign_path=tmp_path / "campaign.prepare.json",
+        campaign_sha256="a" * 64,
+        execution_path=execution_path,
+        execution_sha256="b" * 64,
+        output_root=tmp_path,
+        observation_id="verify-mismatch",
+        run_process=run_process,
+    )
+
     assert result == {
         "status": "incomplete",
-        "error_code": "DAILY_VERIFICATION_UNAVAILABLE",
+        "error_code": "DAILY_VERIFICATION_RESULT_MISMATCH",
+        "process_return_code": 1,
     }
-    assert execution_path.read_bytes() == before
+
+
+def test_cli_apply_rejects_zero_target_daily_campaign_without_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import newow_weekly_recovery_campaign as module
+
+    prepare_campaign(
+        _daily_report([]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda *_args: pytest.fail("zero target cannot create child"),
+        name="daily-zero",
+        recovery_frequency="1d",
+    )
+    campaign_path = tmp_path / "daily-zero.prepare.json"
+    campaign_sha256 = hashlib.sha256(campaign_path.read_bytes()).hexdigest()
+    calls: list[object] = []
+    monkeypatch.setattr(module.native, "main", lambda *_args, **_kwargs: calls.append(1))
+    output = io.StringIO()
+
+    code = main(
+        [
+            "apply",
+            "--project-env",
+            str(tmp_path / "project.env"),
+            "--campaign",
+            str(campaign_path),
+            "--expected-campaign-sha256",
+            campaign_sha256,
+            "--output-root",
+            str(tmp_path),
+            "--attempt-id",
+            "zero-apply",
+            "--apply",
+        ],
+        stdout=output,
+    )
+
+    assert code == 1
+    assert json.loads(output.getvalue())["error_code"] == "D1_EXECUTION_NOT_REQUIRED"
+    assert calls == []
+    assert not (tmp_path / "zero-apply").exists()
+    assert not list(tmp_path.glob("**/campaign-execution.json"))
 
 
 def _native_apply_result(

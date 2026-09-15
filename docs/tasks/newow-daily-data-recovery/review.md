@@ -133,3 +133,38 @@ PR #367 仍为 Draft，head 为 `6a769ec5fbe934f9d0d04b2213fc242f689f893b`。
 **允许集成 develop：仅限 owner 本轮明确要求的三份文档 commit/push。**
 该结论不表示两项既有工程失败已修复，不批准本计划代码实施、完整工程候选、数据恢复、Release 或 Runtime。
 文档交付完成后的唯一下一步：owner 审阅并批准计划中的 Task 1–4 代码实施范围。
+
+## 2026-09-16 G1 审计链路工程收口
+
+### 旧现场结论
+
+- 冻结时刻为 `2026-09-15T15:52:29+00:00` 的两次旧命令由宿主记录为 `exit=-1`，当时目标报告为
+  0 字节；原任务工作树和对应报告当前均未找到。`exit=-1` 不是业务退出码，0 字节也不是完整审计结果。
+- 失败时 exact commit `05abbcf30` 与当前模块都包含 `__main__`/`entrypoint`；此前“模块入口缺失”的
+  归因不成立。隔离参数错误测试已证明正式 `python -m` 入口实际执行。
+- G1 只读进程核对未发现仍在运行的旧 Newow audit/recovery；旧锁终态无法从现有证据证明，保持未知。
+  未启动新现场审计、未杀进程、未接管 attempt，也未连接生产 DB 追查锁。
+
+### Confirmed Issue：已关闭
+
+1. 父验证进程与内部审计原先同为 300 秒，结果保存没有余量。现固定内部 audit 300 秒、父进程 330 秒。
+2. timeout、异常进程码、结果缺失、空文件和损坏 JSON 原先统一为 `DAILY_VERIFICATION_UNAVAILABLE`。
+   现保留脱敏且互异的 terminal code 和已知真实 return code；任一失败均不改写执行终态、不重试。
+3. 零普通目标只能通过伪造空 `passed` execution 才能进入 verifier。现仅对已验证 completed、零分母、
+   零 child 的 D1 campaign 接受 `--execution-not-required`，内部分类为 `not_required`，不创建空执行回执，
+   仍要求完整 operational D1 audit 和 Comparator proof；旧 `apply` 路径会在创建 attempt 前拒绝。
+4. 两项既有工程失败已按当前合同关闭：项目配置由用户级模型路由管理，仓库测试不再要求固定 high；
+   已完成且无 active 引用的 `docs/superpowers` 计划从当前树删除，历史仍可由 Git 追溯。
+
+### Review 范围
+
+独立 Review 应重点核对：正式模块入口、300/330 秒预算、所有 terminal 分类、零目标限定、失败不重试、
+执行事实不被验证结果覆盖，以及代码/测试/文档与 active canonical 一致。现场数据完整性、D1 public 开放、
+Release 和 Runtime 不属于本 Review 的完成结论。
+
+首次独立 Review 确认三个阻断：旧零目标 apply 仍会造空回执、return code 与报告状态没有交叉约束、最终结果
+直接写目标路径可能留下截断文件。修订后分别增加 apply 前拒绝、return code/status/完成布尔值一致性验证，
+并将 JSON/Markdown 改为完整临时写入、fsync 后原子发布；空文件与损坏 JSON 使用不同 terminal code。
+第一次复核进一步发现 `exists` 后 `replace` 仍存在覆盖竞态；最终改为同目录原子 no-replace 发布，
+并增加并发目标出现时原字节不变的回归。同一 reviewer 的最终复核结论记录在本次最终交付中，
+不以首次 finding 冒充已通过。
