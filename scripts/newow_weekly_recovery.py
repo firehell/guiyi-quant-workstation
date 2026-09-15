@@ -41,6 +41,7 @@ _SOURCE_FIELDS = (
 _EXECUTION_CODE_PATHS = (
     "scripts/newow_weekly_recovery.py",
     "scripts/newow_weekly_recovery_campaign.py",
+    "scripts/newow_weekly_source_verify.py",
     "services/quant-api/app/market_data/composition.py",
     "services/quant-api/app/market_data/rqdata_adapter.py",
     "services/quant-api/app/market_data/historical_data_manager.py",
@@ -736,12 +737,18 @@ def _zero_commit_readback(
     plan_sha256 = getattr(plan, "plan_sha256", None)
     target_windows = getattr(plan, "target_windows", None)
     frozen_targets = unit.get("targets")
-    if (
-        not isinstance(plan_sha256, str)
-        or plan_sha256 != unit.get("plan_sha256")
-        or not isinstance(frozen_targets, list)
-        or not isinstance(target_windows, (list, tuple))
-        or list(target_windows) != frozen_targets
+    if not isinstance(target_windows, (list, tuple)) or not isinstance(
+        frozen_targets, list
+    ):
+        raise RecoveryError("SOURCE_ISOLATION_READBACK_FAILED")
+    try:
+        targets_match = _canonical_json(target_windows) == _canonical_json(
+            frozen_targets
+        )
+    except (TypeError, ValueError):
+        targets_match = False
+    if not isinstance(plan_sha256, str) or (
+        plan_sha256 != unit.get("plan_sha256") or not targets_match
     ):
         raise RecoveryError("SOURCE_ISOLATION_READBACK_FAILED")
     return {
@@ -996,6 +1003,7 @@ def execute_prepared_batch(
                     "attempt": read_attempt_outcome(safe_unit_dir),
                 }
                 if policy is not None:
+                    isolation_failure_reason = "SOURCE_ISOLATION_EVIDENCE_FAILED"
                     try:
                         source_evidence = _source_isolation_evidence(
                             safe_unit_dir,
@@ -1004,11 +1012,14 @@ def execute_prepared_batch(
                             policy,
                             expected_parent=Path(attempt_dir),
                         )
+                        isolation_failure_reason = "SOURCE_ISOLATION_READBACK_FAILED"
                         readback = _zero_commit_readback(manager, unit)
                     except RecoveryError as exc:
                         if str(exc) == "SOURCE_EVIDENCE_PATH_INVALID":
                             raise
-                        pass
+                        failure["isolation_failure_reason"] = (
+                            isolation_failure_reason
+                        )
                     else:
                         isolation = {
                             **failure,
