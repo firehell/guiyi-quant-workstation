@@ -3433,5 +3433,30 @@ def test_weekly_campaign_stops_before_attempt_on_partial_exception_drift(
             invoke_batch=lambda *_args: pytest.fail("drift reached native apply"),
             observe_partial_committed=lambda *_args: {},
         )
-
     assert not attempt.exists()
+
+
+def test_campaign_revalidates_each_partial_exception_from_its_own_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _weekly_partial_binding(_ordinary_unit(0))
+    second = deepcopy(_weekly_partial_binding(_ordinary_unit(1)))
+    second["failed_attempt_id"] = "prior-apply-002"
+    second["failed_attempt_path"] = "prior-apply-002"
+    attempts: list[str] = []
+
+    def derive(*_args, **kwargs):
+        attempt = Path(kwargs["attempt_path"]).name
+        attempts.append(attempt)
+        return [first if attempt == "prior-apply-001" else second]
+
+    monkeypatch.setattr(campaign, "_derive_partial_source_exceptions", derive)
+
+    campaign._revalidate_partial_source_exceptions(
+        {"prior_partial_source_exceptions": [first, second]},
+        evidence_root=tmp_path,
+        current_identity=IDENTITY,
+        observe_committed=lambda *_args: {},
+    )
+
+    assert attempts == ["prior-apply-001", "prior-apply-002"]

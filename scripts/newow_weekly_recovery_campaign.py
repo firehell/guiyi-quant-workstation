@@ -703,26 +703,75 @@ def _revalidate_partial_source_exceptions(
     bindings = manifest.get("prior_partial_source_exceptions", [])
     if not bindings:
         return
-    derived = _derive_partial_source_exceptions(
-        evidence_root,
-        current_identity=current_identity,
-        attempt_path=evidence_root / str(bindings[0]["failed_attempt_path"]),
-        fresh_units=[
-            {
-                "symbol": item["symbol"],
-                "contract": item["contract"],
-                "frequency": item["frequency"],
-                "through": item["through"],
-                "plan_sha256": item["fresh_replan_sha256"],
-                "targets": item["remaining_targets"],
-            }
-            for item in bindings
-        ],
-        observe_committed=observe_committed,
-        stored_bindings=bindings,
-    )
+    derived: list[dict[str, Any]] = []
+    for binding in bindings:
+        derived.extend(
+            _derive_partial_source_exceptions(
+                evidence_root,
+                current_identity=current_identity,
+                attempt_path=evidence_root
+                / str(binding["failed_attempt_path"]),
+                fresh_units=[
+                    {
+                        "symbol": binding["symbol"],
+                        "contract": binding["contract"],
+                        "frequency": binding["frequency"],
+                        "through": binding["through"],
+                        "plan_sha256": binding["fresh_replan_sha256"],
+                        "targets": binding["remaining_targets"],
+                    }
+                ],
+                observe_committed=observe_committed,
+                stored_bindings=[binding],
+            )
+        )
     if derived != list(bindings):
         raise RecoveryError(partial_exception.ERROR_CODE)
+
+
+def _carried_partial_source_exceptions(
+    root: Path,
+    *,
+    prior_campaign_path: Path | None,
+    expected_prior_campaign_sha256: str | None,
+    current_identity: Mapping[str, str],
+    fresh_units: Sequence[Mapping[str, Any]],
+    observe_committed: Callable[
+        [Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]
+    ]
+    | None,
+) -> list[dict[str, Any]]:
+    if prior_campaign_path is None:
+        return []
+    if expected_prior_campaign_sha256 is None:
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    campaign_path = _direct_root_file(prior_campaign_path, root)
+    prior_manifest = _load_hash_locked_mapping(
+        campaign_path,
+        expected_prior_campaign_sha256,
+        partial_exception.ERROR_CODE,
+    )
+    validated = validate_campaign_manifest(prior_manifest, evidence_root=root)
+    bindings = validated.get("prior_partial_source_exceptions", [])
+    if not isinstance(bindings, list):
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    carried: list[dict[str, Any]] = []
+    for binding in bindings:
+        if not isinstance(binding, Mapping):
+            raise RecoveryError(partial_exception.ERROR_CODE)
+        carried.extend(
+            _derive_partial_source_exceptions(
+                root,
+                current_identity=current_identity,
+                attempt_path=root / str(binding.get("failed_attempt_path", "")),
+                fresh_units=fresh_units,
+                observe_committed=observe_committed,
+                stored_bindings=[binding],
+            )
+        )
+    if carried != bindings:
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    return carried
 
 
 def _derive_partial_source_exceptions(
@@ -1451,7 +1500,15 @@ def prepare_campaign(
     ):
         raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
     isolation_keys = prior_keys | source_only_keys
-    partial_exceptions = _derive_partial_source_exceptions(
+    carried_partial_exceptions = _carried_partial_source_exceptions(
+        root,
+        prior_campaign_path=prior_campaign_path,
+        expected_prior_campaign_sha256=expected_prior_campaign_sha256,
+        current_identity=identity,
+        fresh_units=proposed,
+        observe_committed=observe_partial_committed,
+    )
+    partial_exceptions = carried_partial_exceptions + _derive_partial_source_exceptions(
         root,
         current_identity=identity,
         attempt_path=partial_source_exception_attempt_path,
@@ -1467,6 +1524,8 @@ def prepare_campaign(
         )
         for item in partial_exceptions
     }
+    if len(partial_keys) != len(partial_exceptions):
+        raise RecoveryError(partial_exception.ERROR_CODE)
     isolation_identities = {
         (symbol, contract, frequency, through)
         for symbol, contract, frequency, through, _plan in isolation_keys
