@@ -111,6 +111,7 @@
 .market-dashboard-page .target-unavailable { color: var(--gy-home-muted); }
 .market-dashboard-page .alignment { display: inline-flex; align-items: center; gap: 10px; vertical-align: middle; }
 .market-dashboard-page td > .market-state-icon { vertical-align: middle; }
+.market-dashboard-page .alignment-cell { text-align: left; vertical-align: bottom; }
 .market-dashboard-page .detail-arrow { width: 30px; font-size: 24px; font-weight: 300; }
 .market-dashboard-page .table-wrap--compact td, .market-dashboard-page .table-wrap--compact tbody th { height: 40px; padding-top: 4px; padding-bottom: 4px; }
 .market-dashboard-page .rail { padding: 12px; margin: 0 12px 12px; border: 1px solid var(--gy-home-border); border-radius: 8px; }

@@ -46,7 +46,7 @@ function quoteLabel(row: DisplayRow) {
         <td class="oi-change">{{ marketHomePercent(row.oi_change_1d) }}</td>
         <td><MarketStateIcon :state="row.dailyState" /></td>
         <td><MarketStateIcon :state="row.weeklyState" /></td>
-        <td><span v-if="row.alignment === 'aligned-up' || row.alignment === 'aligned-down'" class="alignment"><MarketStateIcon state="aligned" /><MarketStateIcon :state="row.alignment === 'aligned-up' ? 'up' : 'down'" size="micro" /></span><MarketStateIcon v-else-if="row.alignment === 'unavailable'" state="unavailable" /><MarketStateIcon v-else state="mixed" /></td>
+        <td class="alignment-cell"><span v-if="row.alignment === 'aligned-up' || row.alignment === 'aligned-down'" class="alignment"><MarketStateIcon state="aligned" /><MarketStateIcon :state="row.alignment === 'aligned-up' ? 'up' : 'down'" size="micro" /></span><MarketStateIcon v-else-if="row.alignment === 'unavailable'" state="unavailable" /><MarketStateIcon v-else state="mixed" /></td>
         <td class="detail-arrow" aria-hidden="true">›</td>
       </tr></tbody>
     </table>
