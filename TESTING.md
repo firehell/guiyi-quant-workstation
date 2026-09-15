@@ -361,7 +361,7 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
-### 牛哇周线有界恢复入口
+### 牛哇周线与日线有界恢复入口
 
 以下验证全部使用 fake provider、SQLite 和临时目录；不得把 production 下载当作测试。
 
@@ -372,6 +372,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
   services/quant-api/tests/newow/test_weekly_source_verify.py \
   services/quant-api/tests/newow/test_weekly_recovery_campaign.py \
   services/quant-api/tests/newow/test_recovery_partial_exception.py \
+  services/quant-api/tests/newow/test_daily_recovery_verification.py \
+  services/quant-api/tests/newow/test_product_service.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/data_foundation/test_historical_data_manager.py \
   services/quant-api/tests/data_foundation/test_cli.py \
@@ -381,6 +383,7 @@ uv run --project services/quant-api python -m ruff check \
   scripts/newow_weekly_recovery.py \
   scripts/newow_weekly_source_verify.py \
   scripts/newow_weekly_recovery_campaign.py \
+  scripts/newow_daily_recovery_verification.py \
   scripts/newow_recovery_partial_exception.py \
   services/quant-api/app/market_data/rqdata_adapter.py \
   services/quant-api/app/market_data/composition.py \
@@ -388,7 +391,10 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/tests/newow/test_weekly_recovery.py \
   services/quant-api/tests/newow/test_weekly_source_verify.py \
   services/quant-api/tests/newow/test_weekly_recovery_campaign.py \
-  services/quant-api/tests/newow/test_recovery_partial_exception.py
+  services/quant-api/tests/newow/test_recovery_partial_exception.py \
+  services/quant-api/tests/newow/test_daily_recovery_verification.py \
+  services/quant-api/tests/newow/test_product_service.py \
+  services/quant-api/tests/newow/test_readiness.py
 PYTHONPATH=.:services/quant-api:packages/quant-core \
   MYPYPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api mypy --explicit-package-bases \
@@ -398,6 +404,7 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   scripts/newow_weekly_recovery.py \
   scripts/newow_weekly_source_verify.py \
   scripts/newow_weekly_recovery_campaign.py \
+  scripts/newow_daily_recovery_verification.py \
   scripts/newow_recovery_partial_exception.py
 ```
 
@@ -442,7 +449,8 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --execute-source-query
 ```
 
-总包 CLI 保持 `prepare / apply / inspect` 三阶段。下面命令依赖调用者先设置任务专用变量，仓库不记录
+总包 CLI 保持 `prepare / apply / inspect` 三阶段。`prepare` 缺省为既有 W1；显式 `--frequency 1d`
+生成独立 D1 schema，并且每个子包只含 physical contract `1d` target。下面命令依赖调用者先设置任务专用变量，仓库不记录
 production 路径、hash 或 attempt 身份：
 
 ```bash
@@ -460,6 +468,10 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
   --name "$NEWOW_CAMPAIGN_NAME"
 ```
+
+冻结 D1 总包时只在上述 `prepare` 命令末尾增加 `--frequency 1d`。该动作仍是只读 prepare，不初始化
+provider；其输入必须是完整、未耗尽预算、`frequency_scope=[1d]` 且 `matrix=false` 的原生 readiness
+报告。W1 与 D1 的 policy、manifest、result、invocation 和 prior-isolation hash 均不可互换。
 
 `apply` 是一次受控真实写入 Gate；只有 owner 对精确 campaign hash 和 attempt 明确授权后才运行：
 
@@ -522,7 +534,10 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --expected-source-only-request-sha256 "$NEWOW_SOURCE_REQUEST_SHA256"
 ```
 
-若上次 D1 或 W1 apply 在部分提交后命中权威来源 `RQDATA_ZERO_OHL_INVALID`，不得把该单元记为
+上述 source-only 导入仍为 W1 专用；D1 prepare 对其任一参数 fail-closed，只允许复核同 profile D1
+campaign 中已完整证明的零提交隔离，不自动跨 W1 导入来源证据。
+
+若上次 W1 apply 在部分提交后命中权威来源 `RQDATA_ZERO_OHL_INVALID`，不得把该单元记为
 zero-commit isolation 或 success。prepare 从显式失败 attempt 自动派生
 `prior_partial_source_exceptions`；该单元仍计入未完成分母，不进入 executable ordinary
 units，也不伪装 `DATA_READY`。prepare 会重放已保存来源响应、核验已提交月份的 Catalog /
@@ -530,7 +545,7 @@ Parquet / MDS 读回，并要求当前 fresh replan 是扣除已提交目标后�
 也不得初始化 provider：
 
 ```bash
-: "${NEWOW_PARTIAL_EXCEPTION_ATTEMPT:?set the failed D1 or W1 apply attempt directory}"
+: "${NEWOW_PARTIAL_EXCEPTION_ATTEMPT:?set the failed W1 apply attempt directory}"
 
 PYTHONPATH=.:services/quant-api:packages/quant-core \
   uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign prepare \
@@ -542,6 +557,9 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --isolate-known-source-quality \
   --partial-source-exception-attempt "$NEWOW_PARTIAL_EXCEPTION_ATTEMPT"
 ```
+
+D1 不接受 `--partial-source-exception-attempt`，也拒绝从 prior campaign 间接携带 W1 partial receipt；
+日线任一部分提交、commit unknown 或读回不明都停批，并在新的完整只读审计后另行冻结剩余范围。
 
 新策略和旧来源排除证据均进入新 manifest hash，apply 不接受临时覆盖策略。隔离对象继续计入未完成分母；
 额度、网络、锁冲突、身份漂移、提交未知、读回/清理或证据失败仍全局停止。真实 apply 命令如下：
@@ -563,6 +581,37 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign inspect \
   --attempt "$NEWOW_CAMPAIGN_OUTPUT_ROOT/$NEWOW_CAMPAIGN_ATTEMPT_ID"
 ```
+
+D1 apply 会先保留 `campaign-execution.json`，再启动独立只读验证进程；验证先将该摘要重新绑定
+`campaign-started`、`campaign-result`、逐批 terminal、native invocation/result 与 child hash，随后固定相同
+`as_of`，对所有已处理的 passed、zero-commit isolation、known failed 和 unknown 单元重做分类保持的 D1
+replan（只跳过明确 unattempted），并对完整 operational 品种运行 `matrix=false` 的 D1 readiness。验证还会
+逐一以同一 `as_of` 和 snapshot token 比较 60 个品种默认 Chart/Comparator 的 D1 窗口、owner 与 replay
+prefix；该运行证据缺失或不一致时不能输出 verified。验证失败、超时
+或结果保存失败不改写执行结算，也不会重试、恢复或再次 apply；退出 0 仅表示执行结算明确、普通单元
+全部完成且冻结 consumer 输入完整可用。后续只读重验可使用同一精确 campaign/execution hash 和新的
+observation id，不覆盖旧观察：
+
+```bash
+: "${NEWOW_D1_CAMPAIGN:?set exact D1 campaign path}"
+: "${NEWOW_D1_CAMPAIGN_SHA256:?set exact D1 campaign sha256}"
+: "${NEWOW_D1_EXECUTION:?set exact campaign execution path}"
+: "${NEWOW_D1_EXECUTION_SHA256:?set exact campaign execution sha256}"
+: "${NEWOW_D1_VERIFICATION_ID:?set one new observation id}"
+
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_daily_recovery_verification \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --campaign "$NEWOW_D1_CAMPAIGN" \
+  --expected-campaign-sha256 "$NEWOW_D1_CAMPAIGN_SHA256" \
+  --execution "$NEWOW_D1_EXECUTION" \
+  --expected-execution-sha256 "$NEWOW_D1_EXECUTION_SHA256" \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --observation-id "$NEWOW_D1_VERIFICATION_ID"
+```
+
+以上 D1 `apply` 示例以及任何真实重验前的本地生产事实读取仍受各自精确 Gate 约束；本节测试命令
+只使用 fake provider、SQLite 和临时目录，不证明现场数据已完成或 public D1 已开放。
 
 `prepare` 只读读取锁定配置、Catalog、Calendar/Session 和 Canonical，要求 checkout clean 且 HEAD 精确，
 输出 plan、执行代码、配置及 Canonical 根的非敏感身份；它不得初始化 provider。`apply` 同样要求 clean exact
