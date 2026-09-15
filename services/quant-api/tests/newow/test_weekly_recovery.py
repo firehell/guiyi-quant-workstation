@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import hashlib
 import io
 import json
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 import pandas as pd
@@ -901,9 +903,7 @@ def test_source_quality_policy_isolates_one_unit_and_runs_its_next_sibling(
                 plan=SimpleNamespace(
                     plan_sha256=self.unit["plan_sha256"],
                     target_windows=(
-                        native_targets
-                        if self.unit["contract"] == "EC2607"
-                        else ()
+                        native_targets if self.unit["contract"] == "EC2607" else ()
                     ),
                 )
             )
@@ -1400,6 +1400,7 @@ def test_post_commit_readback_records_catalog_file_hash_and_mds(
     unit = {
         "symbol": "ec",
         "contract": "EC2607",
+        "frequency": "1w",
         "targets": [
             {
                 "dataset": ["contract", "ec", "EC2607", "1d"],
@@ -1631,3 +1632,188 @@ def test_prepare_cli_writes_hash_locked_manifest_without_provider(
     assert adapter.client_initialized is False
     assert released == [True]
     assert cleaned == [True]
+
+
+@pytest.mark.parametrize("value", [None, "60m", "1m", "daily", 1, ["1d"]])
+def test_recovery_frequency_rejects_other_scopes(value) -> None:
+    from scripts import newow_weekly_recovery as module
+
+    with pytest.raises(RecoveryError, match="^RECOVERY_SCOPE_INVALID$"):
+        module._recovery_frequency(value)
+
+
+def test_daily_prepare_freezes_only_native_daily_targets(tmp_path: Path) -> None:
+    manager, _adapter, plan = _prepare_fixture(tmp_path)
+    daily_target = _Target(
+        DatasetKey("contract", "ec", "EC2607", "1d"),
+        2026,
+        3,
+        tuple(
+            datetime(2026, 3, 30, 1, 5, tzinfo=UTC) + timedelta(days=offset)
+            for offset in range(5)
+        ),
+        tuple(
+            datetime(2026, 3, 30, 1, 5, tzinfo=UTC) + timedelta(days=offset)
+            for offset in range(5)
+        ),
+        (),
+    )
+    daily_plan_value = replace(
+        plan,
+        target_windows=(_contract_warmup_target_payload(daily_target),),
+        direct_target_count=1,
+        expected_bar_count=5,
+        provider_request_count=1,
+        frequency="1d",
+        dependency_frequencies=(),
+        frequencies=("1d",),
+    )
+
+    def daily_plan(request):
+        assert str(getattr(request.frequency, "value", request.frequency)) == "1d"
+        return daily_plan_value, (daily_target,)
+
+    manager._contract_warmup_plan = daily_plan
+    adapter = SimpleNamespace(
+        client_initialized=False,
+        exchange_daily_source_requests=lambda requests: (_source_request(),),
+    )
+    manifest = prepare_bounded_units(
+        manager=manager,
+        adapter=adapter,
+        requests=(
+            ContractWarmupRequest("ec", "EC2607", date(2026, 6, 30), frequency="1d"),
+        ),
+        expected_data_root=manager.catalog.canonical_root,
+        code_commit="b" * 40,
+        execution_code_sha256="d" * 64,
+        config_sha256="c" * 64,
+        recovery_frequency="1d",
+    )
+
+    assert manifest["schema_version"] == "newow_daily_recovery_prepare_v1"
+    assert manifest["units"][0]["frequency"] == "1d"
+    assert {target["dataset"][3] for target in manifest["units"][0]["targets"]} == {
+        "1d"
+    }
+    assert adapter.client_initialized is False
+
+
+def test_execute_prepared_batch_applies_and_replans_daily_at_daily_frequency(
+    tmp_path: Path,
+) -> None:
+    source = _source_request()
+    unit = {
+        "symbol": "ec",
+        "contract": "EC2607",
+        "through": "2026-06-30",
+        "frequency": "1d",
+        "plan_sha256": "a" * 64,
+        "source_requests": [
+            {
+                "method": "futures.get_exchange_daily",
+                "contract": source.contract,
+                "start": source.start.isoformat(),
+                "end": source.end.isoformat(),
+                "expected_dates": [day.isoformat() for day in source.expected_dates],
+            }
+        ],
+    }
+    manifest = {
+        "schema_version": "newow_daily_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "units": [unit],
+    }
+    seen: list[tuple[str, str]] = []
+
+    class Manager:
+        def contract_warmup(self, request, *, before_apply=None):
+            frequency = str(getattr(request.frequency, "value", request.frequency))
+            seen.append(("apply" if request.apply else "replan", frequency))
+            if request.apply:
+                assert before_apply is not None
+                before_apply()
+                return SimpleNamespace(
+                    status="passed",
+                    applied=1,
+                    blocked=0,
+                    failed=0,
+                    provider_requests=1,
+                    failures=(),
+                )
+            return SimpleNamespace(
+                plan=SimpleNamespace(plan_sha256="f" * 64, target_windows=())
+            )
+
+    def open_unit(_journal, _unit):
+        return (
+            Manager(),
+            lambda: None,
+            lambda: {"catalog_partitions": [], "mds_target_count": 0},
+            lambda: None,
+        )
+
+    attempt = create_attempt_directory(tmp_path, "daily-batch-001")
+    result = execute_prepared_batch(
+        manifest=manifest,
+        attempt_dir=attempt,
+        prepared_sha256="9" * 64,
+        current_code_commit="b" * 40,
+        current_execution_code_sha256="d" * 64,
+        current_config_sha256="c" * 64,
+        current_canonical_root_sha256="e" * 64,
+        open_unit=open_unit,
+    )
+
+    assert seen == [("apply", "1d"), ("replan", "1d")]
+    assert result["status"] == "passed"
+    assert result["completed"][0]["remaining_target_count"] == 0
+
+
+def test_daily_execution_digest_binds_verifier_and_consumer_inputs(
+    tmp_path: Path,
+) -> None:
+    from scripts import newow_weekly_recovery as module
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    for relative in module._D1_EXECUTION_CODE_PATHS:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative, encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        cwd=root,
+        check=True,
+    )
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    first = _current_execution_code_sha256(recovery_frequency="1d", project_root=root)
+    _require_clean_execution_checkout(commit, project_root=root)
+    verifier = root / "scripts/newow_daily_recovery_verification.py"
+    verifier.write_text("changed", encoding="utf-8")
+    second = _current_execution_code_sha256(recovery_frequency="1d", project_root=root)
+
+    assert first != second
+    with pytest.raises(RecoveryError, match="^EXECUTION_CHECKOUT_DIRTY$"):
+        _require_clean_execution_checkout(commit, project_root=root)

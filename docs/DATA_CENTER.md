@@ -218,7 +218,8 @@ Calendar/Session 必须具备逐日权威事实，缺失即失败；`continuous`
 warm-up 只读结果的 `scope_diagnostics` 保留整个 frequency scope 的逐分区有界原因及是否为计划目标，
 包括不缺 endpoint 但含原始非正价格的 source companion。该诊断不改变维护目标、apply 规则或既有 plan hash。
 
-普通 W1 总包可显式冻结新的“来源质量异常单元隔离”策略；旧 prepare/attempt 保持原停批语义。
+普通 W1 或显式 D1 总包可冻结版本化的“来源质量异常单元隔离”策略；旧 prepare/attempt 保持原停批语义，
+且 W1/D1 的 policy、manifest、result、invocation 和 prior-isolation schema 不得跨 profile 复用。
 仅精确分类的来源质量失败、严格整数零提交、所有实际已开始请求的响应及身份/hash 完整且结果明确时，
 才允许隔离该合约并继续同批下一独立单元；不为补齐 journal 发起剩余来源请求，不跳掉整个批尾。
 网络/额度、锁冲突、身份或计划漂移、提交未知、读回/清理失败、来源证据不完整仍停止整个总包且不重试。
@@ -226,6 +227,11 @@ warm-up 只读结果的 `scope_diagnostics` 保留整个 frequency scope 的逐�
 已知但不可隔离的失败保留具体单元和停止原因，不能误归为未尝试或 unknown。
 新的准备仍以完整原生 audit 为缺口权威；历史已捕获异常只能凭显式绑定且重新验证的旧执行证据，
 与当前原生单元/计划精确匹配后排除新下载。不能裁剪原始报告、冒充原生 REVIEW_REQUIRED、造价或重放旧批准。
+W1 的 partial-source-exception 只用于周线既有合同；D1 发生任何部分提交后仍立即停批，不能导入或间接携带
+W1 partial receipt，也不能把部分提交改写成零提交隔离。D1 apply 终态落盘后由独立只读进程在相同冻结
+`as_of` 重做全部执行单元 replan 和完整 operational D1 dependency audit；最终审计失败、超时或保存失败
+不得抹去已知执行事实，但必须阻止输入可用结论和成功退出。最终结果分别表达盘点完整、普通恢复完成及
+品种×consumer 输入可用性；public D1 matrix 仍保持 `UNOPENED`，不因数据验证自动开放产品能力。
 按根因汇总的修复建议不等于异常已修好，任何后续真实操作仍需新的精确执行意图。
 
 ### 当日 Live 缺口恢复

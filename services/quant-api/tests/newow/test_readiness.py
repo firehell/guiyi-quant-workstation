@@ -163,6 +163,49 @@ def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_depende
     assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 12
 
 
+def test_daily_readonly_scope_is_native_without_opening_public_daily_matrix():
+    module = _audit_module()
+    from guiyi_quant.newow.product_contracts import ProductFrequency
+
+    audit = module.NewowReadinessAudit(
+        reader=AuditReader(),
+        plan=lambda _request: {
+            "plan_sha256": "a" * 64,
+            "expected_bar_count": 3,
+            "provider_request_count": 1,
+            "targets": [],
+            "scope_diagnostics": (),
+        },
+    )
+    report = audit.run(
+        module.ReadinessRequest(
+            ("rb", "au"),
+            datetime(2026, 9, 4, 8, tzinfo=UTC),
+            matrix=False,
+            frequencies=(ProductFrequency.DAILY,),
+            max_work=1000,
+        )
+    )
+
+    assert report["complete"] is True
+    assert report["frequency_scope"] == ["1d"]
+    assert report["matrix"] is False
+    assert report["cases"] == []
+    assert {row["frequency"] for row in report["enumerations"]} == {"1d"}
+    assert all(row["frequency"] == "1d" for row in report["dependencies"])
+
+    public = module.NewowReadinessAudit(reader=AuditReader()).run(
+        module.ReadinessRequest(
+            ("rb",), datetime(2026, 9, 4, 8, tzinfo=UTC), matrix=True
+        )
+    )
+    assert all(
+        case["main"]["status"] == "UNOPENED"
+        for case in public["cases"]
+        if case["frequency"] == "1d"
+    )
+
+
 @pytest.mark.parametrize(
     "reason,expected",
     [

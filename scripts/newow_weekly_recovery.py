@@ -14,7 +14,7 @@ import re
 import stat
 import subprocess
 import sys
-from typing import Any, Callable, Mapping, TypeVar
+from typing import Any, Callable, Literal, Mapping, TypeVar, cast
 
 from app.market_data.historical_data_manager import (
     BarFetchRequest,
@@ -52,14 +52,75 @@ _EXECUTION_CODE_PATHS = (
     "services/quant-api/app/market_data/coverage_source.py",
     "services/quant-api/app/market_data/market_home_projection.py",
 )
+_D1_EXECUTION_CODE_PATHS = tuple(
+    dict.fromkeys(
+        (
+            *_EXECUTION_CODE_PATHS,
+            "scripts/newow_daily_recovery_verification.py",
+            "services/quant-api/app/db/readonly.py",
+            "services/quant-api/app/db/url.py",
+            "services/quant-api/app/market_data/newow/readiness.py",
+            "services/quant-api/app/market_data/newow/readiness_composition.py",
+            "services/quant-api/app/market_data/newow/product_reader.py",
+            "services/quant-api/app/market_data/newow/product_service.py",
+            "services/quant-api/app/market_data/newow/product_release.py",
+            "services/quant-api/app/market_data/operational_universe.py",
+            "packages/quant-core/guiyi_quant/newow/product_contracts.py",
+        )
+    )
+)
 _T = TypeVar("_T")
 _SOURCE_ISOLATION_POLICY_SCHEMA = "newow_weekly_recovery_continuation_policy_v1"
 _SOURCE_ISOLATION_MODE = "isolate_known_source_quality"
 _SOURCE_ISOLATION_ERROR_CODES = ("RQDATA_ZERO_OHL_INVALID",)
+RecoveryFrequency = Literal["1w", "1d"]
+_PREPARE_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_prepare_v1",
+    "1d": "newow_daily_recovery_prepare_v1",
+}
+_RESULT_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_result_v1",
+    "1d": "newow_daily_recovery_result_v1",
+}
+_INVOCATION_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_invocation_v1",
+    "1d": "newow_daily_recovery_invocation_v1",
+}
+_SOURCE_ISOLATION_POLICY_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
+    "1w": _SOURCE_ISOLATION_POLICY_SCHEMA,
+    "1d": "newow_daily_recovery_continuation_policy_v1",
+}
 
 
 class RecoveryError(RuntimeError):
     """Sanitized recovery boundary error."""
+
+
+def _recovery_frequency(value: object) -> RecoveryFrequency:
+    if type(value) is not str or value not in ("1w", "1d"):
+        raise RecoveryError("RECOVERY_SCOPE_INVALID")
+    return cast(RecoveryFrequency, value)
+
+
+def _allowed_target_frequencies(
+    recovery_frequency: RecoveryFrequency,
+) -> frozenset[str]:
+    return frozenset({"1d", "1w"} if recovery_frequency == "1w" else {"1d"})
+
+
+def _prepare_schema(recovery_frequency: RecoveryFrequency) -> str:
+    return _PREPARE_SCHEMA_BY_FREQUENCY[recovery_frequency]
+
+
+def _frequency_for_prepare_schema(value: object) -> RecoveryFrequency:
+    for frequency, schema in _PREPARE_SCHEMA_BY_FREQUENCY.items():
+        if value == schema:
+            return frequency
+    raise RecoveryError("PREPARED_MANIFEST_INVALID")
+
+
+def _result_schema(recovery_frequency: RecoveryFrequency) -> str:
+    return _RESULT_SCHEMA_BY_FREQUENCY[recovery_frequency]
 
 
 class _ExecutionEnvironment:
@@ -81,6 +142,7 @@ def parser() -> argparse.ArgumentParser:
     prepare.add_argument("--units", required=True)
     prepare.add_argument("--output-root", required=True)
     prepare.add_argument("--name", required=True)
+    prepare.add_argument("--frequency", choices=("1w", "1d"), default="1w")
     prepare.add_argument("--isolate-known-source-quality", action="store_true")
     apply = commands.add_parser("apply", allow_abbrev=False)
     apply.add_argument("--project-env", required=True)
@@ -94,13 +156,18 @@ def parser() -> argparse.ArgumentParser:
     return value
 
 
-def source_isolation_policy() -> dict[str, object]:
+def source_isolation_policy(
+    *, recovery_frequency: RecoveryFrequency = "1w"
+) -> dict[str, object]:
     """Return the one supported, hash-bound continuation policy."""
-    body = {
-        "schema_version": _SOURCE_ISOLATION_POLICY_SCHEMA,
+    frequency = _recovery_frequency(recovery_frequency)
+    body: dict[str, object] = {
+        "schema_version": _SOURCE_ISOLATION_POLICY_SCHEMA_BY_FREQUENCY[frequency],
         "mode": _SOURCE_ISOLATION_MODE,
         "allowed_error_codes": list(_SOURCE_ISOLATION_ERROR_CODES),
     }
+    if frequency == "1d":
+        body["recovery_frequency"] = "1d"
     return {
         **body,
         "policy_sha256": hashlib.sha256(
@@ -109,10 +176,14 @@ def source_isolation_policy() -> dict[str, object]:
     }
 
 
-def _validated_continuation_policy(value: object) -> dict[str, object] | None:
+def _validated_continuation_policy(
+    value: object,
+    *,
+    recovery_frequency: RecoveryFrequency = "1w",
+) -> dict[str, object] | None:
     if value is None:
         return None
-    expected = source_isolation_policy()
+    expected = source_isolation_policy(recovery_frequency=recovery_frequency)
     if not isinstance(value, Mapping) or dict(value) != expected:
         raise RecoveryError("CONTINUATION_POLICY_INVALID")
     return expected
@@ -731,7 +802,7 @@ def _zero_commit_readback(
             symbol=unit["symbol"],
             contract=unit["contract"],
             through=date.fromisoformat(unit["through"]),
-            frequency="1w",
+            frequency=_recovery_frequency(unit.get("frequency")),
         )
     )
     plan = getattr(replan, "plan", None)
@@ -802,6 +873,7 @@ def prepare_bounded_units(
     execution_code_sha256: str,
     config_sha256: str,
     continuation_policy: Mapping[str, Any] | None = None,
+    recovery_frequency: RecoveryFrequency = "1w",
 ) -> dict[str, object]:
     """Freeze native W1 plans and adapter-derived source bounds without a client."""
     if not requests or len(requests) > 20:
@@ -815,19 +887,23 @@ def prepare_bounded_units(
     actual_root = Path(manager.catalog.canonical_root).resolve()
     if actual_root != Path(expected_data_root).resolve():
         raise RecoveryError("CANONICAL_ROOT_MISMATCH")
+    frequency = _recovery_frequency(recovery_frequency)
+    allowed_targets = _allowed_target_frequencies(frequency)
     for request in requests:
-        frequency = getattr(request.frequency, "value", request.frequency)
-        if request.apply or frequency != "1w":
+        request_frequency = getattr(request.frequency, "value", request.frequency)
+        if request.apply or request_frequency != frequency:
             raise RecoveryError("RECOVERY_SCOPE_INVALID")
 
-    policy = _validated_continuation_policy(continuation_policy)
+    policy = _validated_continuation_policy(
+        continuation_policy, recovery_frequency=frequency
+    )
     units: list[dict[str, object]] = []
     for request in requests:
         readonly_request = ContractWarmupRequest(
             request.symbol,
             request.contract,
             request.through,
-            frequency="1w",
+            frequency=frequency,
         )
         plan, targets = manager._contract_warmup_plan(readonly_request)
         if (
@@ -835,10 +911,13 @@ def prepare_bounded_units(
             and request.expected_plan_sha256 != plan.plan_sha256
         ):
             raise RecoveryError("CONTRACT_WARMUP_PLAN_CHANGED")
+        target_frequencies = {target.key.frequency.value for target in targets}
+        if not target_frequencies <= allowed_targets:
+            raise RecoveryError("RECOVERY_SCOPE_INVALID")
         bar_requests = tuple(
             BarFetchRequest(target.key, target.missing)
             for target in targets
-            if target.key.frequency.value in {"1d", "1w"}
+            if target.key.frequency.value in allowed_targets
         )
         source_requests = (
             adapter.exchange_daily_source_requests(bar_requests) if bar_requests else ()
@@ -850,7 +929,7 @@ def prepare_bounded_units(
                 "symbol": plan.symbol,
                 "contract": plan.contract,
                 "through": plan.requested_through.isoformat(),
-                "frequency": "1w",
+                "frequency": frequency,
                 "plan_sha256": plan.plan_sha256,
                 "listed_date": plan.listed_date.isoformat(),
                 "expired_date": plan.expired_date.isoformat(),
@@ -863,7 +942,7 @@ def prepare_bounded_units(
             }
         )
     manifest: dict[str, object] = {
-        "schema_version": "newow_weekly_recovery_prepare_v1",
+        "schema_version": _prepare_schema(frequency),
         "code_commit": code_commit,
         "execution_code_sha256": execution_code_sha256,
         "config_sha256": config_sha256,
@@ -898,8 +977,7 @@ def execute_prepared_batch(
     ],
 ) -> dict[str, object]:
     """Execute one frozen batch serially; any failure leaves the tail untouched."""
-    if manifest.get("schema_version") != "newow_weekly_recovery_prepare_v1":
-        raise RecoveryError("PREPARED_MANIFEST_INVALID")
+    recovery_frequency = _frequency_for_prepare_schema(manifest.get("schema_version"))
     if (
         manifest.get("code_commit") != current_code_commit
         or manifest.get("execution_code_sha256") != current_execution_code_sha256
@@ -912,9 +990,12 @@ def execute_prepared_batch(
         raise RecoveryError("BATCH_SCOPE_INVALID")
     if re.fullmatch(r"[0-9a-f]{64}", prepared_sha256) is None:
         raise RecoveryError("PREPARED_MANIFEST_INVALID")
-    policy = _validated_continuation_policy(manifest.get("continuation_policy"))
+    policy = _validated_continuation_policy(
+        manifest.get("continuation_policy"),
+        recovery_frequency=recovery_frequency,
+    )
     receipt = {
-        "schema_version": "newow_weekly_recovery_invocation_v1",
+        "schema_version": _INVOCATION_SCHEMA_BY_FREQUENCY[recovery_frequency],
         "prepared_sha256": prepared_sha256,
         "code_commit": current_code_commit,
         "execution_code_sha256": current_execution_code_sha256,
@@ -933,7 +1014,7 @@ def execute_prepared_batch(
     for index, raw_unit in enumerate(units):
         if not isinstance(raw_unit, dict):
             raise RecoveryError("PREPARED_MANIFEST_INVALID")
-        unit = _validated_unit(raw_unit)
+        unit = _validated_unit(raw_unit, recovery_frequency=recovery_frequency)
         unit_id = f"unit-{index + 1:03d}-{unit['symbol']}-{unit['contract']}"
         unit_dir = create_attempt_directory(attempt_dir, unit_id)
 
@@ -958,7 +1039,7 @@ def execute_prepared_batch(
             through=date.fromisoformat(unit["through"]),
             expected_plan_sha256=unit["plan_sha256"],
             apply=True,
-            frequency="1w",
+            frequency=recovery_frequency,
         )
         try:
             try:
@@ -1018,9 +1099,7 @@ def execute_prepared_batch(
                     except RecoveryError as exc:
                         if str(exc) == "SOURCE_EVIDENCE_PATH_INVALID":
                             raise
-                        failure["isolation_failure_reason"] = (
-                            isolation_failure_reason
-                        )
+                        failure["isolation_failure_reason"] = isolation_failure_reason
                     else:
                         isolation = {
                             **failure,
@@ -1052,7 +1131,7 @@ def execute_prepared_batch(
                         symbol=unit["symbol"],
                         contract=unit["contract"],
                         through=date.fromisoformat(unit["through"]),
-                        frequency="1w",
+                        frequency=recovery_frequency,
                     )
                 )
                 if replan.plan.target_windows:
@@ -1259,7 +1338,11 @@ def _source_request_from_payload(
     return request
 
 
-def _validated_unit(value: Mapping[str, Any]) -> dict[str, Any]:
+def _validated_unit(
+    value: Mapping[str, Any],
+    *,
+    recovery_frequency: RecoveryFrequency,
+) -> dict[str, Any]:
     try:
         unit = dict(value)
         symbol = str(unit["symbol"])
@@ -1272,7 +1355,7 @@ def _validated_unit(value: Mapping[str, Any]) -> dict[str, Any]:
     if (
         re.fullmatch(r"[a-z]{1,8}", symbol) is None
         or re.fullmatch(r"[A-Z]{1,8}[0-9]{3,4}", contract) is None
-        or unit.get("frequency") != "1w"
+        or unit.get("frequency") != recovery_frequency
         or re.fullmatch(r"[0-9a-f]{64}", plan_sha256) is None
         or not isinstance(source_requests, list)
     ):
@@ -1381,12 +1464,18 @@ def _current_code_commit(project_root: Path | None = None) -> str:
     return commit
 
 
-def _current_execution_code_sha256() -> str:
-    project_root = Path(__file__).resolve().parents[1]
+def _current_execution_code_sha256(
+    *,
+    recovery_frequency: RecoveryFrequency = "1w",
+    project_root: Path | None = None,
+) -> str:
+    root = project_root or Path(__file__).resolve().parents[1]
+    frequency = _recovery_frequency(recovery_frequency)
+    paths = _D1_EXECUTION_CODE_PATHS if frequency == "1d" else _EXECUTION_CODE_PATHS
     digest = hashlib.sha256()
     try:
-        for relative in _EXECUTION_CODE_PATHS:
-            path = project_root / relative
+        for relative in paths:
+            path = root / relative
             info = path.lstat()
             if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
                 raise OSError
@@ -1467,7 +1556,10 @@ def _post_commit_readback(
             key.kind.value != "contract"
             or key.symbol != unit["symbol"]
             or key.series_or_contract != unit["contract"]
-            or key.frequency.value not in {"1d", "1w"}
+            or key.frequency.value
+            not in _allowed_target_frequencies(
+                _recovery_frequency(unit.get("frequency"))
+            )
             or expected_start.tzinfo is None
             or expected_end.tzinfo is None
             or expected_start > expected_end
@@ -1606,11 +1698,17 @@ def _unit_requests(value: Any) -> tuple[ContractWarmupRequest, ...]:
                     contract=str(item["contract"]),
                     through=date.fromisoformat(item["through"]),
                     expected_plan_sha256=item.get("expected_plan_sha256"),
-                    frequency=item.get("frequency"),
+                    frequency=_recovery_frequency(item.get("frequency")),
                 )
             )
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError, RecoveryError) as exc:
         raise RecoveryError("INPUT_INVALID") from exc
+    frequencies = {
+        _recovery_frequency(getattr(request.frequency, "value", request.frequency))
+        for request in result
+    }
+    if len(frequencies) != 1:
+        raise RecoveryError("RECOVERY_SCOPE_INVALID")
     return tuple(result)
 
 
@@ -1630,6 +1728,7 @@ def main(
             }
             code = 0
         elif args.mode == "prepare":
+            recovery_frequency = _recovery_frequency(args.frequency)
             code_commit = _current_code_commit()
             _require_clean_execution_checkout(code_commit)
             environment = _open_execution_environment(Path(args.project_env))
@@ -1650,13 +1749,16 @@ def main(
                         )
                     ),
                     code_commit=code_commit,
-                    execution_code_sha256=_current_execution_code_sha256(),
+                    execution_code_sha256=_current_execution_code_sha256(
+                        recovery_frequency=recovery_frequency
+                    ),
                     config_sha256=environment.identity["config_sha256"],
                     continuation_policy=(
-                        source_isolation_policy()
+                        source_isolation_policy(recovery_frequency=recovery_frequency)
                         if args.isolate_known_source_quality
                         else None
                     ),
+                    recovery_frequency=recovery_frequency,
                 )
                 manifest["maintenance_lock_available"] = maintenance_available
                 path, digest = write_prepared_manifest(
@@ -1665,7 +1767,7 @@ def main(
             finally:
                 environment.close()
             payload = {
-                "schema_version": "newow_weekly_recovery_result_v1",
+                "schema_version": _result_schema(recovery_frequency),
                 "status": "prepared",
                 "readonly": True,
                 "prepared_file": str(path),
@@ -1683,6 +1785,9 @@ def main(
             expected_commit = prepared.get("code_commit")
             if not isinstance(expected_commit, str):
                 raise RecoveryError("PREPARED_MANIFEST_INVALID")
+            recovery_frequency = _frequency_for_prepare_schema(
+                prepared.get("schema_version")
+            )
             _require_clean_execution_checkout(expected_commit)
             _settings, identity = load_private_execution_settings(
                 Path(args.project_env)
@@ -1717,13 +1822,15 @@ def main(
                 attempt_dir=attempt,
                 prepared_sha256=args.expected_prepared_sha256,
                 current_code_commit=_current_code_commit(),
-                current_execution_code_sha256=_current_execution_code_sha256(),
+                current_execution_code_sha256=_current_execution_code_sha256(
+                    recovery_frequency=recovery_frequency
+                ),
                 current_config_sha256=identity["config_sha256"],
                 current_canonical_root_sha256=identity["canonical_root_sha256"],
                 open_unit=open_unit,
             )
             payload = {
-                "schema_version": "newow_weekly_recovery_result_v1",
+                "schema_version": _result_schema(recovery_frequency),
                 "status": result["status"],
                 "readonly": False,
                 "attempt_dir": str(attempt),
