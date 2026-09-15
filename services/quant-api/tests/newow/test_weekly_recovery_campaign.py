@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -3213,3 +3214,7 @@ def test_cli_apply_rejects_current_code_or_config_drift_before_native_main(
     assert code == 1
     assert json.loads(output.getvalue())["error_code"] == "EXECUTION_IDENTITY_CHANGED"
     assert calls == []
+def test_prepare_campaign_accepts_hash_bound_partial_source_exception_input() -> None:
+    assert "partial_source_exception_attempt_path" in inspect.signature(
+        prepare_campaign
+    ).parameters
