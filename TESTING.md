@@ -488,6 +488,12 @@ source-only prepared、attempt、单元索引、请求索引和请求 hash。pre
 保存响应、失败分类、零写入约束，并用当前原生 adapter 逐行重放 allowlist 异常；任一 artifact 漂移都会
 在创建子包前失败。该证据只隔离一个与当前完整 audit 精确同 identity/plan 的单元：
 
+source-only 导入时，`attempt` 必须与落盘 outcome 的 canonical JSON 完全一致；请求上限、重试数和
+Canonical/数据库写入数必须是 JSON integer，布尔值或浮点数即使数值相等也拒绝。原生零提交重规划的
+`target_windows` 同样按 canonical JSON 比较，以兼容进程内 tuple 与落盘 JSON list 的容器差异，同时继续
+逐字段约束 dataset、窗口、计数和值；隔离证据失败时只持久化固定的
+`SOURCE_ISOLATION_EVIDENCE_FAILED` 或 `SOURCE_ISOLATION_READBACK_FAILED`，不写入异常原文。
+
 ```bash
 : "${NEWOW_SOURCE_PREPARED:?set exact source-only prepared path}"
 : "${NEWOW_SOURCE_PREPARED_SHA256:?set exact source-only prepared sha256}"

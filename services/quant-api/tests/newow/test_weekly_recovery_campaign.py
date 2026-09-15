@@ -1357,8 +1357,10 @@ def _native_isolation_invoker(
     calls: list[str],
     *,
     stopping_contracts: set[str] | None = None,
+    readback_drift_contracts: set[str] | None = None,
 ):
     stopping = stopping_contracts or set()
+    readback_drift = readback_drift_contracts or set()
 
     def invoke(child_path: Path, digest: str, batch_attempt: Path):
         child = load_prepared_manifest(child_path, digest)
@@ -1432,7 +1434,11 @@ def _native_isolation_invoker(
                     )
                 return SimpleNamespace(
                     plan=SimpleNamespace(
-                        plan_sha256=self.unit["plan_sha256"],
+                        plan_sha256=(
+                            "f" * 64
+                            if self.unit["contract"] in readback_drift
+                            else self.unit["plan_sha256"]
+                        ),
                         target_windows=(
                             tuple(self.unit["targets"])
                             if self.unit["contract"] in isolated_contracts
@@ -1738,6 +1744,59 @@ def test_campaign_accounts_for_known_stopping_failure_as_distinct_partition(
         "unattempted_unit_count": 1,
         "unknown_unit_count": 0,
     }
+
+
+def test_campaign_preserves_sanitized_isolation_failure_reason(
+    tmp_path: Path,
+) -> None:
+    manifest = _campaign(
+        tmp_path,
+        2,
+        with_source_requests=True,
+        continuation_policy=_campaign_isolation_policy(),
+    )
+    calls: list[str] = []
+    attempt = tmp_path / "attempt-001"
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=attempt,
+        invoke_batch=_native_isolation_invoker(
+            {"AG1000"},
+            calls,
+            readback_drift_contracts={"AG1000"},
+        ),
+    )
+
+    assert calls == ["AG1000"]
+    assert result["status"] == "failed"
+    native_failure = result["failed_batch"]["native_result"]["result"]["failed"]
+    assert (
+        native_failure["isolation_failure_reason"]
+        == "SOURCE_ISOLATION_READBACK_FAILED"
+    )
+    unit_result = json.loads(
+        (
+            attempt
+            / "batch-001"
+            / "native"
+            / "unit-001-ag-AG1000"
+            / "unit-result.json"
+        ).read_text()
+    )
+    batch_result = json.loads(
+        (attempt / "batch-001" / "native" / "batch-result.json").read_text()
+    )
+    campaign_result = json.loads((attempt / "campaign-result.json").read_text())
+    assert unit_result["isolation_failure_reason"] == (
+        "SOURCE_ISOLATION_READBACK_FAILED"
+    )
+    assert batch_result["failed"]["isolation_failure_reason"] == (
+        "SOURCE_ISOLATION_READBACK_FAILED"
+    )
+    assert campaign_result["failed_batch"]["native_result"]["result"]["failed"][
+        "isolation_failure_reason"
+    ] == "SOURCE_ISOLATION_READBACK_FAILED"
 
 
 def test_campaign_continues_across_batch_after_proven_source_isolation(
@@ -2064,6 +2123,13 @@ def test_source_only_isolation_excludes_only_replayed_fresh_identity(
         "runner",
         "invocation_not_object",
         "result_not_object",
+        "provider_limit_bool",
+        "retries_float",
+        "canonical_writes_bool",
+        "database_writes_float",
+        "attempt_started_bool",
+        "attempt_saved_float",
+        "attempt_outcome_unknown_int",
     ],
 )
 def test_source_only_isolation_rejects_unproven_or_drifted_evidence(
@@ -2087,6 +2153,32 @@ def test_source_only_isolation_rejects_unproven_or_drifted_evidence(
         (attempt / "invocation-receipt.json").write_text("[]")
     elif mutation == "result_not_object":
         (attempt / "source-only-result.json").write_text("[]")
+    elif mutation in {
+        "provider_limit_bool",
+        "retries_float",
+        "canonical_writes_bool",
+        "database_writes_float",
+        "attempt_started_bool",
+        "attempt_saved_float",
+        "attempt_outcome_unknown_int",
+    }:
+        result_path = attempt / "source-only-result.json"
+        result = json.loads(result_path.read_text())
+        if mutation == "provider_limit_bool":
+            result["provider_request_limit"] = True
+        elif mutation == "retries_float":
+            result["retries"] = 0.0
+        elif mutation == "canonical_writes_bool":
+            result["canonical_writes"] = False
+        elif mutation == "database_writes_float":
+            result["database_writes"] = 0.0
+        elif mutation == "attempt_started_bool":
+            result["attempt"]["requests_started"] = True
+        elif mutation == "attempt_saved_float":
+            result["attempt"]["responses_saved"] = 1.0
+        else:
+            result["attempt"]["outcome_unknown"] = 0
+        result_path.write_text(json.dumps(result))
     policy = None if mutation == "without_policy" else _campaign_isolation_policy()
 
     with pytest.raises(RecoveryError, match="^SOURCE_ONLY_ISOLATION_INVALID$"):

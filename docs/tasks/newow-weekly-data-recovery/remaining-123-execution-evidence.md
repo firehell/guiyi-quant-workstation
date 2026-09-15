@@ -323,6 +323,19 @@ prev_settlement。来源响应 SHA-256 为
 `outputs/newow-weekly-recovery-attempts/rs-source-verification-20260914-001/`，本次仅来源意图已消费，
 不授权重试。
 
+## 2026-09-15 BZ2605 隔离读回工程修订
+
+一次已结束的普通 campaign 在 BZ2605 来源异常后未能形成隔离结果。离线复算证明来源 evidence 本身满足
+2 started、2 response_saved、`RQDATA_ZERO_OHL_INVALID`、零写入且 outcome 已知；失败来自进程内原生
+target payload 的 dataset 为 tuple，而 prepared/apply JSON 读回后为 list，旧读回逻辑直接比较 Python
+容器导致相同内容被误判为 `SOURCE_ISOLATION_READBACK_FAILED`。两根权威来源非正 OHL 行保持原样，未作
+归一化、替代或删除。
+
+本工程修订只将完整 target payload 改为 canonical JSON 等价比较，并把隔离 evidence/readback 的固定脱敏
+失败阶段持久化到 unit、batch 与 campaign 结果；source-only importer 同时拒绝以 bool/float 冒充计数字段
+或 attempt outcome。修订期间未调用 provider，未重新 prepare/apply，未写 Canonical 或数据库，也不构成
+该 campaign 的重试授权。
+
 owner 随后独立批准 RS repair apply。当前提交重新 prepare 后，两份原生 plan hash、26 个 targets 和
 292 根 target 完整 expected bars 均未漂移；需补的实际 missing endpoints 为 270 根（RS2309 216、
 RS2311 54），不是 292。新 prepared artifact SHA-256 为

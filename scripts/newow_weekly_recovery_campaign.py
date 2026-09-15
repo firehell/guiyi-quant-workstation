@@ -901,10 +901,15 @@ def _derive_source_only_isolations(
             or result.get("prepared_sha256") != expected_source_prepared_sha256
             or result.get("request_sha256") != expected_request_sha256
             or result.get("unit_identity") != expected_unit
-            or result.get("attempt") != outcome
+            or native._canonical_json(result.get("attempt"))
+            != native._canonical_json(outcome)
+            or type(result.get("provider_request_limit")) is not int
             or result.get("provider_request_limit") != 1
+            or type(result.get("retries")) is not int
             or result.get("retries") != 0
+            or type(result.get("canonical_writes")) is not int
             or result.get("canonical_writes") != 0
+            or type(result.get("database_writes")) is not int
             or result.get("database_writes") != 0
             or result.get("manager_apply") is not False
             or outcome

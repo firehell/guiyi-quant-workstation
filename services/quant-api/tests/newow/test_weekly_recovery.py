@@ -21,6 +21,7 @@ from app.market_data.historical_data_manager import (
     ContractWarmupPlan,
     ContractWarmupRequest,
     _Target,
+    _contract_warmup_target_payload,
 )
 from app.market_data.rqdata_adapter import (
     ExchangeDailySourceRequest,
@@ -795,19 +796,50 @@ def _isolation_unit(contract: str) -> dict[str, object]:
     }
 
 
+def _native_isolation_unit(
+    contract: str,
+) -> tuple[dict[str, object], tuple[dict[str, object], ...]]:
+    unit = _isolation_unit(contract)
+    symbol = contract[:2].lower()
+    expected = tuple(
+        datetime(2026, 3, 30, 1, 5, tzinfo=UTC) + timedelta(days=offset)
+        for offset in range(5)
+    )
+    native_targets = (
+        dict(
+            _contract_warmup_target_payload(
+                _Target(
+                    DatasetKey("contract", symbol, contract, "1w"),
+                    2026,
+                    4,
+                    expected,
+                    expected,
+                    (),
+                )
+            )
+        ),
+    )
+    unit["targets"] = list(native_targets)
+    return unit, native_targets
+
+
 def test_source_quality_policy_isolates_one_unit_and_runs_its_next_sibling(
     tmp_path,
 ) -> None:
-    units = [_isolation_unit("EC2607"), _isolation_unit("SI2401")]
-    manifest = {
-        "schema_version": "newow_weekly_recovery_prepare_v1",
-        "code_commit": "b" * 40,
-        "execution_code_sha256": "d" * 64,
-        "config_sha256": "c" * 64,
-        "canonical_root_sha256": "e" * 64,
-        "continuation_policy": _source_isolation_policy(),
-        "units": units,
-    }
+    native_unit, native_targets = _native_isolation_unit("EC2607")
+    manifest = json.loads(
+        json.dumps(
+            {
+                "schema_version": "newow_weekly_recovery_prepare_v1",
+                "code_commit": "b" * 40,
+                "execution_code_sha256": "d" * 64,
+                "config_sha256": "c" * 64,
+                "canonical_root_sha256": "e" * 64,
+                "continuation_policy": _source_isolation_policy(),
+                "units": [native_unit, _isolation_unit("SI2401")],
+            }
+        )
+    )
     events: list[str] = []
 
     class Manager:
@@ -869,7 +901,7 @@ def test_source_quality_policy_isolates_one_unit_and_runs_its_next_sibling(
                 plan=SimpleNamespace(
                     plan_sha256=self.unit["plan_sha256"],
                     target_windows=(
-                        tuple(self.unit["targets"])
+                        native_targets
                         if self.unit["contract"] == "EC2607"
                         else ()
                     ),
@@ -1065,23 +1097,32 @@ def test_source_quality_failure_still_stops_without_explicit_policy(tmp_path) ->
         "applied_bool",
         "unknown_response",
         "wrong_error_code",
-        "readback_drift",
+        "readback_plan_sha",
+        "readback_dataset",
+        "readback_window",
+        "readback_count",
+        "readback_bool_count",
     ],
 )
 def test_source_quality_policy_refuses_unproven_isolation(
     tmp_path,
     mutation,
 ) -> None:
-    unit = _isolation_unit("EC2607")
-    manifest = {
-        "schema_version": "newow_weekly_recovery_prepare_v1",
-        "code_commit": "b" * 40,
-        "execution_code_sha256": "d" * 64,
-        "config_sha256": "c" * 64,
-        "canonical_root_sha256": "e" * 64,
-        "continuation_policy": _source_isolation_policy(),
-        "units": [unit],
-    }
+    native_unit, native_targets = _native_isolation_unit("EC2607")
+    manifest = json.loads(
+        json.dumps(
+            {
+                "schema_version": "newow_weekly_recovery_prepare_v1",
+                "code_commit": "b" * 40,
+                "execution_code_sha256": "d" * 64,
+                "config_sha256": "c" * 64,
+                "canonical_root_sha256": "e" * 64,
+                "continuation_policy": _source_isolation_policy(),
+                "units": [native_unit],
+            }
+        )
+    )
+    unit = manifest["units"][0]
 
     class Manager:
         def contract_warmup(self, request, *, before_apply=None):
@@ -1127,14 +1168,28 @@ def test_source_quality_policy_refuses_unproven_isolation(
                         },
                     ),
                 )
+            target_windows = [dict(item) for item in native_targets]
+            if mutation == "readback_dataset":
+                target_windows[0]["dataset"] = (
+                    "contract",
+                    "ec",
+                    "EC2608",
+                    "1w",
+                )
+            elif mutation == "readback_window":
+                target_windows[0]["missing_end"] = "2026-04-02T01:05:00+00:00"
+            elif mutation == "readback_count":
+                target_windows[0]["missing_bar_count"] = 4
+            elif mutation == "readback_bool_count":
+                target_windows[0]["missing_bar_count"] = True
             return SimpleNamespace(
                 plan=SimpleNamespace(
                     plan_sha256=(
                         "f" * 64
-                        if mutation == "readback_drift"
+                        if mutation == "readback_plan_sha"
                         else unit["plan_sha256"]
                     ),
-                    target_windows=tuple(unit["targets"]),
+                    target_windows=tuple(target_windows),
                 )
             )
 
@@ -1162,6 +1217,18 @@ def test_source_quality_policy_refuses_unproven_isolation(
     assert result["failed"]["contract"] == "EC2607"
     assert result["unattempted"] == []
     assert "isolated" not in result
+    expected_reason = (
+        "SOURCE_ISOLATION_READBACK_FAILED"
+        if mutation.startswith("readback_")
+        else "SOURCE_ISOLATION_EVIDENCE_FAILED"
+    )
+    assert result["failed"]["isolation_failure_reason"] == expected_reason
+    persisted = json.loads(
+        (attempt / "unit-001-ec-EC2607" / "unit-result.json").read_text()
+    )
+    assert persisted["isolation_failure_reason"] == expected_reason
+    batch_result = json.loads((attempt / "batch-result.json").read_text())
+    assert batch_result["failed"]["isolation_failure_reason"] == expected_reason
 
 
 def test_execute_prepared_batch_preserves_first_unit_partial_status(tmp_path) -> None:
