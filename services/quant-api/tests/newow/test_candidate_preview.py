@@ -120,6 +120,13 @@ def test_subing_reference_path_is_narrowly_admitted(preview):
         assert _preview_path_allowed(path) is False
 
 
+def test_preview_identity_declares_subing_reference_with_the_cutoff_scope(preview):
+    app, _sessions, _factory = preview
+    response = TestClient(app).get("/api/preview/identity")
+    assert response.status_code == 200
+    assert "subing_reference" in response.json()["cutoff_scope"]
+
+
 @pytest.mark.parametrize(
     "path",
     [

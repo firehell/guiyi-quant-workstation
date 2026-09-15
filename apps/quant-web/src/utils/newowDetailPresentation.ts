@@ -43,7 +43,7 @@ export function projectNewowDetail(
 
 /** Display-only vocabulary; unknown server tokens are disclosed, never diagnosed. */
 export function newowDisplayLabel(value: string): string {
-  const labels: Record<string, string> = { trend: '趋势', oscillation: '震荡', main_rise: '主升浪', BUILD: '参考建仓', HOLD: '策略持有', CLEAR: '参考清仓', FLAT: '策略空仓', UNAVAILABLE: '状态不可用', LONG_BIAS: '偏多', SHORT_BIAS: '偏空', NEUTRAL: '中性', WAIT_CONFIRM: '等待确认', NEWOW_ESCAPE_D1: 'D1 逃顶提示', NEWOW_ESCAPE_D2: 'D2 逃顶提示', NEWOW_ESCAPE_D3: 'D3 逃顶提示', low: '低', medium: '中等', high: '高' }
+  const labels: Record<string, string> = { trend: '趋势', oscillation: '震荡', main_rise: '主升浪', BUILD: '参考建仓', HOLD: '策略持有', CLEAR: '参考清仓', FLAT: '策略空仓', UNAVAILABLE: '状态不可用', LONG_BIAS: '偏多', SHORT_BIAS: '偏空', NEUTRAL: '中性', WAIT_CONFIRM: '等待确认', D1: 'D1 逃顶提示', D2: 'D2 逃顶提示', D3: 'D3 逃顶提示', D4: 'D4 低位修复提示', D5: 'D5 低位修复提示', D6: 'D6 低位修复提示', NEWOW_ESCAPE_D1: 'D1 逃顶提示', NEWOW_ESCAPE_D2: 'D2 逃顶提示', NEWOW_ESCAPE_D3: 'D3 逃顶提示', low: '低', medium: '中等', high: '高' }
   return labels[value] ?? (value === '—' ? '—' : '未确认')
 }
 export function describeNewowState(value: string, historical = false): string {

@@ -134,6 +134,12 @@ test('top navigation exposes market, messages, and one keyboard product search',
   await expect(page.getByRole('option', { name: /焦煤.*JM/ })).toBeVisible()
   await search.press('Enter')
   await expect(page).toHaveURL(/view=newow.*symbol=jm.*strategy=trend.*frequency=1w/)
+  await expect(page.getByLabel('返回市场', { exact: true })).toBeVisible()
+  await expect(page.getByRole('listbox', { name: '搜索60品种' })).toHaveCount(0)
+  await search.click()
+  await expect(page.getByRole('option', { name: /焦煤.*JM/ })).toBeVisible()
+  await search.press('Escape')
+  await expect(page.getByRole('listbox', { name: '搜索60品种' })).toHaveCount(0)
 })
 
 test('messages use bounded server history filters and immutable event navigation', async ({ page }) => {

@@ -2,6 +2,7 @@ import type { KlineReferenceCallout } from '../types/referenceCallout.ts'
 
 export const REFERENCE_CALLOUT_BOX = Object.freeze({ width: 168, height: 52 })
 export const REFERENCE_CALLOUT_COMPACT = Object.freeze({ width: 28, height: 28 })
+const REFERENCE_CALLOUT_MICRO = Object.freeze({ width: 8, height: 8 })
 
 export interface ProjectedCallout {
   callout: KlineReferenceCallout
@@ -38,6 +39,7 @@ export function layoutReferenceCallouts(
   const placed: PositionedCallout[] = []
   const fullArea = REFERENCE_CALLOUT_BOX.width * REFERENCE_CALLOUT_BOX.height
   const fullBudget = Math.max(1, Math.floor(width * height / (fullArea * 3)))
+  const forceMicro = visible.length > placementCapacity(width, height, REFERENCE_CALLOUT_COMPACT)
   let fullCount = 0
 
   for (const point of ordered) {
@@ -48,21 +50,39 @@ export function layoutReferenceCallouts(
     const full = shouldTryFull
       ? findPlacement(point, requestedWidth, requestedHeight, width, height, placed)
       : null
-    const rectangle = full ?? findPlacement(
-      point,
-      REFERENCE_CALLOUT_COMPACT.width,
-      REFERENCE_CALLOUT_COMPACT.height,
-      width,
-      height,
-      placed,
-    )
-    if (rectangle === null) continue
     const compact = full === null
+    const rectangle = full ?? compactPlacement(point, width, height, placed, forceMicro)
+    // Every visible reference action remains a focusable button. Micro nodes are
+    // the final density fallback; their accessible name and click identity stay
+    // on the existing button, while the selected node can expand on focus.
+    if (rectangle === null) continue
     if (!compact) fullCount += 1
     const line = lineEndpoint(point.x, point.y, rectangle)
     placed.push({ ...point, ...rectangle, compact, lineX: line.x, lineY: line.y })
   }
   return placed.sort((left, right) => left.x - right.x || left.y - right.y || left.callout.id.localeCompare(right.callout.id))
+}
+
+function compactPlacement(
+  point: ProjectedCallout,
+  width: number,
+  height: number,
+  placed: readonly Rectangle[],
+  forceMicro: boolean,
+): Rectangle | null {
+  const sizes = forceMicro ? [REFERENCE_CALLOUT_MICRO] : [REFERENCE_CALLOUT_COMPACT, REFERENCE_CALLOUT_MICRO]
+  for (const size of sizes) {
+    if (size.width > width - MARGIN * 2 || size.height > height - MARGIN * 2) continue
+    const rectangle = findPlacement(point, size.width, size.height, width, height, placed)
+    if (rectangle !== null) return rectangle
+  }
+  return null
+}
+
+function placementCapacity(width: number, height: number, size: Readonly<{ width: number; height: number }>): number {
+  const columns = Math.max(0, Math.floor((width - MARGIN * 2 + GAP) / (size.width + GAP)))
+  const rows = Math.max(0, Math.floor((height - MARGIN * 2 + GAP) / (size.height + GAP)))
+  return columns * rows
 }
 
 function findPlacement(

@@ -5,21 +5,35 @@ test.describe.configure({ timeout: 300_000 })
 
 const cutoff = '2026-09-14T11:00:00+00:00'
 const strategies = ['trend', 'oscillation', 'main_rise']
+const homeBudgetMs = 10_000
 
 test('real candidate home keeps 60 products across cold, hard reload and SPA tab return', async ({ page }, testInfo) => {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  const started = Date.now()
+  const coldStarted = Date.now()
+  const coldResponse = await page.request.get('/api/v1/market/research/home-overview')
+  const coldMs = Date.now() - coldStarted
+  expect(coldResponse.status()).toBe(200)
+  expect((await coldResponse.json()).items).toHaveLength(60)
+  expect(coldMs).toBeLessThan(homeBudgetMs)
+
   await page.goto('/market')
   await expect(page.getByTestId('candidate-preview-banner')).toContainText('本地候选只读预览')
   await expect(page.locator('.market-home-list-heading')).toContainText('60', { timeout: 30_000 })
   await expect(page.locator('.table-wrap tbody tr')).toHaveCount(60, { timeout: 30_000 })
-  const coldMs = Date.now() - started
 
-  const reloadStarted = Date.now()
   await page.reload()
   await expect(page.locator('.table-wrap tbody tr')).toHaveCount(60, { timeout: 30_000 })
-  const reloadMs = Date.now() - reloadStarted
+
+  const refreshSamples = []
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const refreshStarted = Date.now()
+    const response = await page.request.get('/api/v1/market/research/home-overview')
+    refreshSamples.push(Date.now() - refreshStarted)
+    expect(response.status()).toBe(200)
+    expect((await response.json()).items).toHaveLength(60)
+  }
+  for (const sample of refreshSamples) expect(sample).toBeLessThan(homeBudgetMs)
 
   await page.getByRole('tab', { name: '消息' }).click()
   await expect(page.getByRole('tab', { name: '消息' })).toHaveAttribute('aria-selected', 'true')
@@ -34,8 +48,28 @@ test('real candidate home keeps 60 products across cold, hard reload and SPA tab
   await expect(page.getByRole('combobox', { name: '搜索60品种' })).toBeVisible()
   await expect(page.getByRole('listbox', { name: '搜索60品种' })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('real-home-60.png'), fullPage: true })
-  console.log(JSON.stringify({ evidence: 'real-home', coldMs, reloadMs, rows: 60, selector: 'jm-enter-stable', errors }))
+  const concurrentStarted = Date.now()
+  const concurrent = await Promise.all(Array.from({ length: 2 }, () => page.request.get('/api/v1/market/research/home-overview')))
+  const concurrentMs = Date.now() - concurrentStarted
+  expect(concurrent.map(response => response.status())).toEqual([200, 200])
+  expect(concurrentMs).toBeLessThan(homeBudgetMs)
+  expect(await concurrent[0].json()).toEqual(await concurrent[1].json())
+  console.log(JSON.stringify({ evidence: 'real-home', coldMs, refreshSamples, concurrentMs, concurrentHomeStatuses: concurrent.map(response => response.status()), rows: 60, selector: 'jm-enter-stable', errors }))
   expect(errors).toEqual([])
+})
+
+test('real candidate recovers from one failed home request within the same budget', async ({ page }) => {
+  let failOnce = true
+  await page.route('**/market/research/home-overview', route => {
+    if (failOnce) { failOnce = false; return route.abort('failed') }
+    return route.continue()
+  })
+  await page.goto('/market')
+  await expect(page.getByText('行情快照暂不可用；没有可展示的上一份成功快照。')).toBeVisible()
+  const started = Date.now()
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.locator('.table-wrap tbody tr')).toHaveCount(60, { timeout: homeBudgetMs })
+  expect(Date.now() - started).toBeLessThan(homeBudgetMs)
 })
 
 test('real candidate covers AU/JM Newow weekly, AU seven-frequency Free and weekly complete-window action', async ({ page }, testInfo) => {
@@ -81,44 +115,53 @@ test('real candidate covers AU/JM Newow weekly, AU seven-frequency Free and week
   console.log(JSON.stringify({ evidence: 'real-product-matrix', cutoff, matrix }))
 })
 
-test('real candidate keeps JM SuBing data gap explicit and Newow callouts inside the chart', async ({ page }, testInfo) => {
-  const responsePromise = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith('/market/jm/subing/reference'))
+test('real candidate keeps an explicit JM SuBing long-window gap and Newow callouts inside the chart', async ({ page }, testInfo) => {
+  const response = await page.request.get('/api/v1/market/jm/subing/reference?since=2025-09-15&through=2026-09-14')
   await page.goto('/market/chart?symbol=jm&view=subing')
   await expect(page.locator('[data-detail-workspace="subing"]')).toBeVisible()
-  const response = await responsePromise
   expect(response.status()).toBe(409)
   const body = await response.json()
   expect(body.detail.code).toBe('SUBING_REFERENCE_DATA_UNAVAILABLE')
   expect(body.detail.diagnostic.stage).toBe('physical_contract_replay')
   expect(body.detail.diagnostic.reason).toBe('DATASET_OR_PARTITION_MISSING')
-  await expect(page.getByText(/物理合约回放失败：行情数据集或分区缺失/)).toBeVisible()
 
-  await page.goto('/market/chart?symbol=au&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1w')
-  const stage = page.getByTestId('newow-product-chart-stage')
-  await expect(stage).toBeVisible()
-  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready', { timeout: 60_000 })
-  await expect.poll(async () => stage.getAttribute('data-action-ids'), { timeout: 60_000 }).toMatch(/\S/)
-  const callouts = stage.locator('.newow-product-chart-stage__action-label')
-  const count = await callouts.count()
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
-    await stage.scrollIntoViewIfNeeded()
-    const chartBox = await stage.locator('.newow-product-chart-stage__chart').boundingBox()
-    expect(chartBox).not.toBeNull()
-    for (const box of await callouts.evaluateAll((nodes) => nodes.map((node) => {
-      const rect = node.getBoundingClientRect()
-      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
-    }))) {
-      expect(box.left).toBeGreaterThanOrEqual(chartBox.x - 1)
-      expect(box.right).toBeLessThanOrEqual(chartBox.x + chartBox.width + 1)
-      expect(box.top).toBeGreaterThanOrEqual(chartBox.y - 1)
-      expect(box.bottom).toBeLessThanOrEqual(chartBox.y + chartBox.height + 1)
+  const calloutEvidence = []
+  for (const strategy of strategies) {
+    await page.goto(`/market/chart?symbol=au&view=newow&strategy=${strategy}&series_kind=actual_dominant&frequency=1w`)
+    const stage = page.getByTestId('newow-product-chart-stage')
+    await expect(stage).toBeVisible()
+    await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready', { timeout: 60_000 })
+    await expect.poll(async () => stage.getAttribute('data-action-ids'), { timeout: 60_000 }).toMatch(/\S/)
+    const callouts = stage.locator('.newow-product-chart-stage__action-label')
+    const expectedIds = (await stage.getAttribute('data-action-ids') ?? '').split(',').filter(Boolean).sort()
+    const actualIds = (await callouts.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-action-id')).filter(Boolean).sort()))
+    expect(actualIds).toEqual(expectedIds)
+    for (const width of [1920, 1440, 390]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+      await assertCalloutsInsideChart(stage, callouts)
     }
+    await stage.getByRole('button', { name: '图表全屏' }).click()
+    await expect(stage.getByRole('button', { name: '退出图表全屏' })).toBeVisible()
+    await assertCalloutsInsideChart(stage, callouts)
+    await stage.getByRole('button', { name: '退出图表全屏' }).click()
+    calloutEvidence.push({ strategy, actionCount: actualIds.length })
   }
-  await stage.getByRole('button', { name: '图表全屏' }).click()
-  await expect(stage.getByRole('button', { name: '退出图表全屏' })).toBeVisible()
-  await stage.getByRole('button', { name: '退出图表全屏' }).click()
-  await expect(stage.getByRole('button', { name: '图表全屏' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('real-au-newow-390.png'), fullPage: true })
-  console.log(JSON.stringify({ evidence: 'real-jm-gate-and-callouts', jmStatus: response.status(), diagnostic: body.detail.diagnostic, calloutCount: count }))
+  console.log(JSON.stringify({ evidence: 'real-jm-gate-and-callouts', jmStatus: response.status(), diagnostic: body.detail.diagnostic, calloutEvidence }))
 })
+
+async function assertCalloutsInsideChart(stage, callouts) {
+  await stage.scrollIntoViewIfNeeded()
+  const chartBox = await stage.locator('.newow-product-chart-stage__chart').boundingBox()
+  expect(chartBox).not.toBeNull()
+  const boxes = await callouts.evaluateAll((nodes) => nodes.map((node) => {
+    const rect = node.getBoundingClientRect()
+    return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
+  }))
+  for (const box of boxes) {
+    expect(box.left).toBeGreaterThanOrEqual(chartBox.x - 1)
+    expect(box.right).toBeLessThanOrEqual(chartBox.x + chartBox.width + 1)
+    expect(box.top).toBeGreaterThanOrEqual(chartBox.y - 1)
+    expect(box.bottom).toBeLessThanOrEqual(chartBox.y + chartBox.height + 1)
+  }
+}

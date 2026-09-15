@@ -54,6 +54,19 @@ test('layout is stable across repeated calls and narrow panes use focusable comp
   assertNoOverlap(first)
 })
 
+test('dense layouts retain every visible action and never project outside a tiny pane', () => {
+  const points = Array.from({ length: 500 }, (_, index) => ({ x: 100, y: 100, callout: callout(String(index)) }))
+  const dense = layoutReferenceCallouts(points, 390, 220)
+  assert.equal(dense.length, points.length)
+  assertNoOverlap(dense)
+
+  const tiny = layoutReferenceCallouts([{ x: 10, y: 10, callout: callout('tiny') }], 25, 25)
+  assert.equal(tiny.length, 1)
+  assert.ok(tiny[0]!.left >= 2 && tiny[0]!.top >= 2)
+  assert.ok(tiny[0]!.left + tiny[0]!.width <= 23)
+  assert.ok(tiny[0]!.top + tiny[0]!.height <= 23)
+})
+
 function assertNoOverlap(items: ReturnType<typeof layoutReferenceCallouts>): void {
   for (let left = 0; left < items.length; left += 1) {
     for (let right = left + 1; right < items.length; right += 1) {

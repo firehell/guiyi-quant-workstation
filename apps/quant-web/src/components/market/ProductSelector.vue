@@ -68,9 +68,9 @@ function move(delta: number) {
 
 function choose(option: ProductOption | null) {
   if (!option) return
-  emit('select', option)
   query.value = ''
   close()
+  emit('select', option)
 }
 
 function handleDocumentPointer(event: PointerEvent) {
@@ -98,6 +98,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
         :aria-controls="listboxId"
         :aria-activedescendant="activeId"
         @focus="handleFocus"
+        @click="show"
         @input="show"
         @keydown.down.prevent="move(1)"
         @keydown.up.prevent="move(-1)"

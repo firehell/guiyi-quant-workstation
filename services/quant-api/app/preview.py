@@ -144,7 +144,7 @@ def create_preview_app(
             "realtime": False,
             "candidate_origin": "http://127.0.0.1:8010",
             "status_origin": "http://127.0.0.1:8000",
-            "cutoff_scope": "bars_and_newow; home_projection_and_dominants_have_own_timestamps",
+            "cutoff_scope": "bars_newow_and_subing_reference; home_projection_and_dominants_have_own_timestamps",
         }
 
     app.include_router(market.router)

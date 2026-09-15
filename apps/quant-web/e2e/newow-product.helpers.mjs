@@ -301,6 +301,7 @@ function validateFixtureEnvelope(payload, section, strategy, frequency, url, opt
     let expected = options.initialClear === true && strategy === 'main_rise' && frequency === '1w'
       ? payload.chart.value.actions
       : facts.standardActions
+    if (Number.isInteger(options.denseActions) && options.denseActions > 0) expected = payload.chart.value.actions
     if (url?.searchParams.has('chart_before')) expected = []
     else if (locateFrom !== null) expected = [facts.interrupted.entry, facts.initial.entry, facts.initial.exit].filter((item) => item.trading_day === locateFrom)
     if (payload.chart.value.diagnostics.includes('NO_MAIN_ACTION_IS_VALID')) expected = []
@@ -502,6 +503,20 @@ function chartValue(url, strategy, frequency, options) {
   let actions = before ? [] : facts.standardActions
   if (locateFrom !== null) actions = [facts.interrupted.entry, facts.initial.entry, facts.initial.exit].filter((item) => item.trading_day === locateFrom)
   if (options.noAction) actions = []
+  if (Number.isInteger(options.denseActions) && options.denseActions > 0 && !before && locateFrom === null) {
+    const owner = bars.at(-1)
+    actions = Array.from({ length: options.denseActions }, (_, index) => {
+      const buildId = `dense-build-${Math.floor(index / 2)}`
+      return action(
+        index % 2 === 0 ? buildId : `dense-clear-${Math.floor(index / 2)}`,
+        index % 2 === 0 ? 'BUILD' : 'CLEAR',
+        owner,
+        '100',
+        index,
+        index % 2 === 0 ? null : buildId,
+      )
+    })
+  }
   if (options.initialClear === true && strategy === 'main_rise' && frequency === '1w' && !before && locateFrom === null) {
     const owner = bars.at(-1)
     actions = [{

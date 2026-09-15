@@ -58,7 +58,7 @@ test('after-market failure stays visible without hiding valid Canonical or claim
   await mockWorkspace(page, { json: research() }, { afterMarket: { last_failure: { code: 'UPDATE_FAILED' } } })
   await page.goto(freeAg)
   await expect(page.getByTestId('kline-shell')).toBeVisible()
-  await expect(page.locator('.quote-header__status')).toHaveText('最近盘后更新失败')
+  await expect(page.locator('.quote-header__status')).toHaveText('报价过时 · 盘后更新异常')
   await expect(page.locator('.quote-header__price strong')).not.toHaveText('—')
   await expect(page.getByText('数据正常', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: /更多行情数据/ }).click()
