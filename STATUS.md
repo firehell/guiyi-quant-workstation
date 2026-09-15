@@ -1,11 +1,13 @@
 # 当前状态
 
-文档整理：2026-09-14；最新只读现场复核截至 `2026-09-14 22:15:31 CST`。
+文档整理：2026-09-15；最新 Market Web 只读候选复核截至 `2026-09-15 08:11 CST`，正式 Runtime
+现场身份仍沿用 `2026-09-14 22:15:31 CST` 的最后读回。
 正式 Release 与现役 Runtime 均为 `v1.10.10@b49e2499de654092b48e60e181102c02e16ce89f`；annotated tag、
 main/origin-main、GitHub Release target、detached Runtime root 与服务 identity 已分别读回一致。API/Web 200、
 Live/Alert fresh；当日 18:05 盘后自然运行已完成 60 品种，当前 Event transport 为 provider accepted，
 但 provider accepted 不证明用户实际收到。首次自然 weekly audit 仍为 not_run，因此不声明 `RUNTIME_READY`。
-本轮 Market Web 发布前十一项只在 develop 候选分支完成代码、测试与真实只读候选验收；它没有进入
+本轮 Market Web 发布前十一项已提交为 `develop@0963cef3427d195fc4ec34ec818bc97dd570f23d`，并完成代码、
+测试与该 exact commit 的真实只读候选验收；它没有进入
 v1.10.10 Release/Runtime。JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
@@ -17,7 +19,7 @@ v1.10.10 Release/Runtime。JM 物理合约历史缺口保持外部数据 Gate，
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.10@b49e2499d`，annotated tag、GitHub Release target、main/origin-main 与 API/Web 版本已读回一致 |
 | 现役 Runtime | v1.10.10 `RUNTIME_PROMOTED / SERVICE_READBACK_PASSED`，未声明 `RUNTIME_READY` | 六服务 installed/loaded 均绑定 `b49e2499d`；API/Web 200、Live/Alert fresh；实际收件与首次自然 weekly audit Gate 保留 |
-| Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | `codex/market-web-pre-release` 已完成同会话双遍 Review 与真实只读候选验收；JM2609 15m 历史缺口仍阻塞该数据项，不授权写入、Release 或 Runtime |
+| Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASE_CANDIDATE / EXTERNAL_GATE_PENDING` | `develop@0963cef34` 已完成完整 Web E2E、exact-commit 真实只读候选 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍阻塞该数据项，不授权写入、Release 或 Runtime |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
@@ -30,21 +32,21 @@ v1.10.10 Release/Runtime。JM 物理合约历史缺口保持外部数据 Gate，
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
 
-## 2026-09-14 Market Web 发布前十一项收口（develop 候选）
+## 2026-09-15 Market Web 发布前十一项收口（develop 候选）
 
-候选分支 `codex/market-web-pre-release` 在不修改策略公式、ReferenceTrade、Marker、收益口径或 Decimal
+候选提交 `develop@0963cef3427d195fc4ec34ec818bc97dd570f23d` 在不修改策略公式、ReferenceTrade、Marker、收益口径或 Decimal
 事实源的前提下，完成了 SuBing 有界错误诊断、公开品种大小写归一、首页性能验收、品种选择器交互、
 SuBing 四类事实拆分、Decimal 精确显示、北京时间/术语统一、无依据 5 日涨跌移除、W1 最近完整区间动作、
 状态事实更新及密集标记避让。候选预览保持只读，不创建 Live/Alert/EOD/provider，也未修改正式 Scope、Rule、
 通知、Release 或 Runtime。
 
-真实只读候选读取 60/60 首页；排除 Vite 首编译后，新浏览器加载 9041ms、显式重载 9378ms，低于 10 秒目标；
-首编译样本 10194ms/10364ms 另行保留，不冒充 production bundle 性能。AU 三策略 W1、
-七周期 Free 图表、最近完整周区间动作与 32 个真实 callout 的桌面、390px 移动和全屏边界均通过。JM 三策略
-W1 仍为 unavailable；SuBing JM 15m 精确诊断为 `physical_contract_replay /
-DATASET_OR_PARTITION_MISSING`，物理合约 `JM2609` 的 2025-09-15 至 2026-08-18 窗口应有 5081 个端点，
-只读盘点为 223 个交易日中 139 日失败、缺 3165 个端点。该结果是数据 Gate，不以切换合约、缩窗、补零或
-客户端猜测处理。完整逐项证据与真实/fixture 分栏见 `outputs/market-web-pre-release-20260914/验收报告.md`。
+真实只读候选读取 60/60 首页；冷请求 8885ms、三次连续读取 8731/9409/9488ms、双并发 8916ms，
+一次失败后恢复用例 9.3s，均低于 10 秒目标。AU 三策略 W1、七周期 Free 图表、最近完整周区间动作与真实
+callout 的桌面、390px 移动和全屏边界均通过，数量分别为趋势 32、震荡 5、主升浪 1。JM 三策略 W1
+仍为 unavailable；SuBing JM 15m 精确诊断为 `physical_contract_replay /
+DATASET_OR_PARTITION_MISSING`，本次物理合约为 `JM2601`、expected_count=4882。该结果是数据 Gate，
+不以切换合约、缩窗、补零或客户端猜测处理。完整逐项证据与真实/fixture 分栏见
+`outputs/market-web-pre-release-20260914/验收报告.md`。
 
 ## v1.10.9 Release 与 Runtime 切换（历史记录；自然验收未完成）
 
