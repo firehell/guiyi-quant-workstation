@@ -7,6 +7,7 @@ import { parse } from '@vue/compiler-sfc'
 const componentNames = [
   'MarketDetailTopBar',
   'MarketDetailQuoteHeader',
+  'MarketFactsDialog',
   'MarketFactsDisclosure',
   'MarketDetailViewNav',
   'MarketDetailFactStrip',
@@ -100,7 +101,19 @@ test('market facts disclose status before expansion and close on identity change
   assert.match(source, /watch\(\(\) => props\.identityKey/)
   assert.match(template, /freshnessLabel/)
   assert.match(template, /aria-expanded/)
-  assert.match(template, /aria-controls/)
+  assert.match(template, /MarketFactsDialog/)
+  assert.match(template, /aria-haspopup="dialog"/)
+})
+
+test('market facts dialog supports accessible close paths and identity-bounded focus restoration', () => {
+  const { source, template } = parsedComponent('MarketFactsDialog')
+  assert.match(source, /identityKey: string/)
+  assert.match(source, /dialog\.value\.showModal\(\)/)
+  assert.match(source, /@cancel\.prevent="close"/)
+  assert.match(source, /@click="backdrop"/)
+  assert.match(source, /event\.key !== 'Tab'/)
+  assert.match(template, /aria-labelledby="market-facts-dialog-title"/)
+  assert.match(template, /aria-label="关闭行情数据详情"/)
 })
 
 test('history uses one source and mobile drawer restores focus', () => {

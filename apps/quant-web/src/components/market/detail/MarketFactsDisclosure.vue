@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import type { MarketDetailDisclosureSection, MarketDetailHeaderModel } from '@/types/marketDetail'
 import MarketDetailIcon from './MarketDetailIcon.vue'
+import MarketFactsDialog from './MarketFactsDialog.vue'
 
 const props = defineProps<{
   identityKey: string
@@ -12,7 +13,6 @@ const props = defineProps<{
 }>()
 
 const open = ref(false)
-const contentId = `market-facts-${useId()}`
 const freshnessLabel = computed(() => props.afterMarketFailed ? '最近盘后更新失败' : props.freshness === 'fresh' ? '正常' : props.freshness === 'stale' ? '旧快照' : '不可用')
 
 watch(() => props.identityKey, () => { open.value = false })
@@ -23,14 +23,18 @@ watch(() => props.identityKey, () => { open.value = false })
     <button
       type="button"
       :aria-expanded="open"
-      :aria-controls="contentId"
-      @click="open = !open"
+      aria-haspopup="dialog"
+      @click="open = true"
     >
       <span>更多行情数据</span>
       <span class="facts-disclosure__state">{{ freshnessLabel }}</span>
-      <MarketDetailIcon :name="open ? 'chevron-down' : 'chevron-right'" :size="18" />
+      <MarketDetailIcon name="chevron-right" :size="18" />
     </button>
-    <div v-if="open" :id="contentId" class="facts-disclosure__content">
+    <MarketFactsDialog :open="open" title="行情数据详情" :identity-key="identityKey" @close="open = false">
+      <template #status>
+        <span class="facts-disclosure__dialog-state">{{ freshnessLabel }}</span>
+      </template>
+      <div class="facts-disclosure__content">
       <section v-for="section in sections" :key="section.id">
         <div class="facts-disclosure__heading">
           <h3>{{ section.title }}</h3>
@@ -44,7 +48,8 @@ watch(() => props.identityKey, () => { open.value = false })
         </dl>
       </section>
       <p v-if="sections.length === 0" class="facts-disclosure__empty">暂无更多行情数据</p>
-    </div>
+      </div>
+    </MarketFactsDialog>
   </div>
 </template>
 
@@ -58,6 +63,9 @@ watch(() => props.identityKey, () => { open.value = false })
 .facts-disclosure__state { color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); font-weight: 500; }
 .facts-disclosure--stale .facts-disclosure__state { color: var(--gy-status-warning); }
 .facts-disclosure--unavailable .facts-disclosure__state { color: var(--gy-status-error); }
+.facts-disclosure__dialog-state { padding: 3px 8px; border-radius: 999px; color: var(--gy-text-muted); background: var(--gy-bg-hover); font-size: var(--gy-font-size-sm); font-weight: 500; white-space: nowrap; }
+.facts-disclosure--stale .facts-disclosure__dialog-state { color: var(--gy-status-warning); background: color-mix(in srgb, var(--gy-status-warning) 12%, transparent); }
+.facts-disclosure--unavailable .facts-disclosure__dialog-state { color: var(--gy-status-error); background: color-mix(in srgb, var(--gy-status-error) 10%, transparent); }
 .facts-disclosure__content { display: grid; gap: var(--gy-space-3); padding: 0 var(--gy-space-3) var(--gy-space-3); }
 .facts-disclosure__heading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gy-space-3); }
 .facts-disclosure h3 { margin: 0; color: var(--gy-text-primary); font-size: var(--gy-font-size-md); }

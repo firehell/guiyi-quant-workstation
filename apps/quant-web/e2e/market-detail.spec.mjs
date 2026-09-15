@@ -701,7 +701,7 @@ test('leaving the Free shell closes its live series resource', async ({ page }) 
   ))).toBe(true)
 })
 
-test('390px shell keeps keyboard disclosure and does not invent history', async ({ page }) => {
+test('390px shell opens market facts in a keyboard-dismissible dialog and does not invent history', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await mockMarketDetail(page)
   await page.goto(freeJm)
@@ -709,14 +709,54 @@ test('390px shell keeps keyboard disclosure and does not invent history', async 
   const disclosure = page.getByRole('button', { name: /更多行情数据/ })
   await disclosure.focus()
   await page.keyboard.press('Enter')
-  await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
-  await page.keyboard.press('Space')
-  await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+  const dialog = page.getByRole('dialog', { name: '行情数据详情' })
+  await expect(dialog).toBeVisible()
+  expect(await dialog.evaluate((element) => {
+    const bounds = element.getBoundingClientRect()
+    return bounds.left >= 0 && bounds.right <= window.innerWidth && bounds.top >= 0 && bounds.bottom <= window.innerHeight
+  })).toBe(true)
+  await page.mouse.click(8, 8)
+  await expect(dialog).not.toBeVisible()
+  await expect(disclosure).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await expect(disclosure).toBeFocused()
   await expect(page.getByRole('button', { name: '历史记录' })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await expect(page.locator('[data-detail-workspace="free"]')).toHaveScreenshot('market-detail-free-390.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 400,
   })
+})
+
+test('market facts dialog closes when its identity changes', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+
+  await page.evaluate(async () => {
+    const { createApp, h, ref } = await import('/node_modules/.vite/deps/vue.js')
+    const { default: MarketFactsDialog } = await import('/src/components/market/detail/MarketFactsDialog.vue')
+    const host = document.createElement('div')
+    host.id = 'market-facts-dialog-browser-contract'
+    document.body.append(host)
+    const open = ref(true)
+    const identity = ref('free:jm:actual_dominant:15m')
+    createApp({
+      setup: () => () => h(MarketFactsDialog, {
+        open: open.value,
+        title: '行情数据详情测试',
+        identityKey: identity.value,
+        onClose: () => { open.value = false },
+      }),
+    }).mount(host)
+    window.__changeMarketFactsIdentity = () => { identity.value = 'free:rb:actual_dominant:15m' }
+  })
+
+  const dialog = page.getByRole('dialog', { name: '行情数据详情测试' })
+  await expect(dialog).toBeVisible()
+  await page.evaluate(() => window.__changeMarketFactsIdentity())
+  await expect(dialog).not.toBeVisible()
 })
 
 test('mobile history drawer traps focus, closes with Escape, and restores its trigger', async ({ page }) => {
