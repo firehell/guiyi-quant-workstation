@@ -77,11 +77,6 @@
 .market-dashboard-page .market-home-live-status--connected::before { background: #12b76a; }
 .market-dashboard-page .market-home-live-status--stale::before, .market-dashboard-page .market-home-live-status--unavailable::before { background: #f79009; }
 .market-dashboard-page .market-home-live-status button { padding: 3px 7px; border: 1px solid var(--gy-home-border); border-radius: 5px; background: #fff; color: var(--gy-home-text); font-size: 12px; }
-.market-dashboard-page .trust { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; padding: 0 12px 10px; font-size: 12px; color: var(--gy-home-muted); }
-.market-dashboard-page .trust em { font-style: normal; }
-.market-dashboard-page .trust-warning { color: #9a6700; }
-.market-dashboard-page .trust details { position: relative; margin-left: auto; }
-.market-dashboard-page .trust details > div { position: absolute; right: 0; top: calc(100% + 6px); z-index: 12; width: 350px; max-width: calc(100vw - 48px); padding: 12px; background: var(--gy-home-bg); border: 1px solid var(--gy-home-border); border-radius: 8px; box-shadow: 0 5px 15px #20242b14; line-height: 1.7; }
 .market-dashboard-page .table-wrap { width: 100%; }
 .market-dashboard-page table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: auto; font-size: 15px; }
 .market-dashboard-page th, .market-dashboard-page td { height: 46px; padding: 7px 12px; border-bottom: 1px solid var(--gy-home-border); text-align: center; white-space: nowrap; }
@@ -172,7 +167,6 @@
   .market-dashboard-page .market-home-list-heading > div { gap: 8px; }
   .market-dashboard-page .market-home-list-heading p, .market-dashboard-page .market-home-live-status button { display: none; }
   .market-dashboard-page .market-home-live-status { margin-left: auto; font-size: 11px; }
-  .market-dashboard-page .trust { padding: 0 2px 12px; gap: 5px 12px; }
   .market-dashboard-page .table-wrap { display: none; }
   .market-dashboard-page .mobile-list button { color: var(--gy-home-text); width: 100%; min-width: 0; }
   .market-dashboard-page .mobile-list i { flex-wrap: wrap; }
