@@ -189,6 +189,33 @@ def test_incomplete_final_audit_preserves_proven_execution_facts() -> None:
     assert result["verification_status"] == "incomplete"
 
 
+def test_complete_integrity_finding_remains_visible_and_not_input_ready() -> None:
+    from scripts.newow_daily_recovery_verification import verify_daily_campaign
+
+    campaign = _campaign()
+    audit = _audit()
+    dependency = audit["dependencies"][0]
+    dependency.update(
+        status="INTEGRITY_ERROR",
+        reason="REPLAY_ENDPOINTS_EXTRA",
+        error={"code": "NEWOW_DATA_UNAVAILABLE", "diagnostic": {}},
+    )
+    dependency.pop("cutoff")
+    dependency.pop("actual_bar_count")
+    dependency.pop("expected_bar_count")
+    result = verify_daily_campaign(
+        campaign=campaign,
+        execution=_execution(campaign),
+        run_audit=lambda _request: audit,
+        replan_unit=_replan,
+    )
+
+    assert result["inventory_complete"] is True
+    assert result["ordinary_recovery_complete"] is True
+    assert result["verification_status"] == "incomplete"
+    assert "integrity_error" in {row["status"] for row in result["input_availability"]}
+
+
 def test_successful_final_audit_cannot_erase_unknown_execution() -> None:
     from scripts.newow_daily_recovery_verification import verify_daily_campaign
 

@@ -2365,6 +2365,7 @@ def _validate_native_report_sections(
                 "DATA_UNAVAILABLE",
                 "NOT_APPLICABLE",
                 "SOURCE_EXCEPTION",
+                "INTEGRITY_ERROR",
             }
             or through > as_of.date()
             or dependency_as_of.tzinfo is None
@@ -2399,7 +2400,8 @@ def _validate_native_report_sections(
             not isinstance(raw.get("reason"), str)
             or not raw.get("reason")
             or (
-                status_value in {"DATA_UNAVAILABLE", "SOURCE_EXCEPTION"}
+                status_value
+                in {"DATA_UNAVAILABLE", "SOURCE_EXCEPTION", "INTEGRITY_ERROR"}
                 and (
                     not isinstance(raw.get("error"), Mapping)
                     or not isinstance(raw["error"].get("code"), str)
