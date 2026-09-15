@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
+import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -156,13 +158,19 @@ def _replan(unit):
 
 
 def test_successful_execution_and_complete_audit_are_independently_verified() -> None:
-    from scripts.newow_daily_recovery_verification import verify_daily_campaign
+    from scripts import newow_daily_recovery_verification as module
 
     campaign = _campaign()
-    result = verify_daily_campaign(
+    requests = []
+
+    def run_audit(request):
+        requests.append(request)
+        return _audit()
+
+    result = module.verify_daily_campaign(
         campaign=campaign,
         execution=_execution(campaign),
-        run_audit=lambda _request: _audit(),
+        run_audit=run_audit,
         replan_unit=_replan,
     )
 
@@ -179,6 +187,11 @@ def test_successful_execution_and_complete_audit_are_independently_verified() ->
     }
     assert len(result["input_availability"]) == 60 * 3 * 3
     assert {item["status"] for item in result["input_availability"]} == {"available"}
+    assert requests[0].max_work == 10000
+    assert (
+        requests[0].timeout_seconds
+        == module.campaign_module._DAILY_VERIFICATION_AUDIT_TIMEOUT_SECONDS
+    )
 
 
 def test_zero_ordinary_targets_still_require_complete_input_audit() -> None:
@@ -194,7 +207,7 @@ def test_zero_ordinary_targets_still_require_complete_input_audit() -> None:
         ).encode("utf-8")
     ).hexdigest()
     execution = {
-        "status": "passed",
+        "status": "not_required",
         "campaign_manifest_sha256": campaign["campaign_sha256"],
         "summary": {
             "denominator_unit_count": 0,
@@ -205,8 +218,8 @@ def test_zero_ordinary_targets_still_require_complete_input_audit() -> None:
             "unattempted_unit_count": 0,
             "unknown_unit_count": 0,
         },
-            "completed_batches": [],
-            "completed_batch_ids": [],
+        "completed_batches": [],
+        "completed_batch_ids": [],
         "failed_batch": None,
         "unknown_batch": None,
         "unattempted_batch_ids": [],
@@ -228,6 +241,221 @@ def test_zero_ordinary_targets_still_require_complete_input_audit() -> None:
         "available",
         "missing",
     }
+
+
+def test_zero_target_campaign_has_explicit_no_execution_verification_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from scripts import newow_daily_recovery_verification as module
+    from scripts.newow_weekly_recovery_campaign import prepare_campaign
+    from tests.newow.test_weekly_recovery_campaign import IDENTITY, _daily_report
+
+    prepare_campaign(
+        _daily_report([]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda *_args: pytest.fail("zero target cannot create child"),
+        name="daily-zero",
+        recovery_frequency="1d",
+    )
+    campaign_path = tmp_path / "daily-zero.prepare.json"
+    campaign_sha = hashlib.sha256(campaign_path.read_bytes()).hexdigest()
+    observed: dict[str, Any] = {}
+
+    def run_verification(**kwargs):
+        observed.update(kwargs)
+        return {
+            "schema_version": "newow_daily_recovery_verification_v1",
+            "inventory_complete": True,
+            "ordinary_recovery_complete": True,
+            "verification_status": "verified",
+            "execution": {"counts": {"success": 0}},
+        }
+
+    monkeypatch.setattr(module, "_run_readonly_verification", run_verification)
+    code = module.main(
+        [
+            "--project-env",
+            str(tmp_path / "project.env"),
+            "--campaign",
+            str(campaign_path),
+            "--expected-campaign-sha256",
+            campaign_sha,
+            "--execution-not-required",
+            "--output-root",
+            str(tmp_path),
+            "--observation-id",
+            "verify-zero",
+        ]
+    )
+
+    assert code == 0
+    assert observed["execution"]["status"] == "not_required"
+    assert observed["execution_sha256"] is None
+    assert observed["attempt_identity"] == "not_required"
+    assert not list(tmp_path.glob("**/campaign-execution.json"))
+
+
+def test_nonzero_campaign_rejects_no_execution_verification_path(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from scripts import newow_daily_recovery_verification as module
+
+    campaign = _campaign()
+    campaign_path = tmp_path / "campaign.prepare.json"
+    campaign_sha = native._write_json_exclusive(campaign_path, campaign)
+    monkeypatch.setattr(
+        module.campaign_module,
+        "validate_campaign_manifest",
+        lambda value, evidence_root: value,
+    )
+
+    code = module.main(
+        [
+            "--project-env",
+            str(tmp_path / "project.env"),
+            "--campaign",
+            str(campaign_path),
+            "--expected-campaign-sha256",
+            campaign_sha,
+            "--execution-not-required",
+            "--output-root",
+            str(tmp_path),
+            "--observation-id",
+            "verify-nonzero",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 2
+    assert payload["error_code"] == "VERIFICATION_EXECUTION_REQUIRED"
+    assert not (tmp_path / "verify-nonzero").exists()
+
+
+def test_formal_verification_module_entry_rejects_missing_parameters() -> None:
+    from scripts import newow_daily_recovery_verification as module
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "scripts.newow_daily_recovery_verification"],
+        cwd=module.campaign_module.PROJECT_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 2
+    assert "--project-env" in completed.stderr
+
+
+def test_verification_result_save_failure_cannot_report_success(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from scripts import newow_daily_recovery_verification as module
+
+    campaign = _campaign()
+    execution = _execution(campaign)
+    campaign_path = tmp_path / "campaign.json"
+    execution_path = tmp_path / "execution.json"
+    campaign_sha = native._write_json_exclusive(campaign_path, campaign)
+    execution["campaign_manifest_sha256"] = campaign_sha
+    execution_sha = native._write_json_exclusive(execution_path, execution)
+    monkeypatch.setattr(
+        module.campaign_module,
+        "validate_campaign_manifest",
+        lambda value, evidence_root: value,
+    )
+    monkeypatch.setattr(
+        module, "_validate_persisted_execution_evidence", lambda **_kwargs: None
+    )
+    monkeypatch.setattr(
+        module,
+        "_run_readonly_verification",
+        lambda **_kwargs: {
+            "schema_version": "newow_daily_recovery_verification_v1",
+            "inventory_complete": True,
+            "ordinary_recovery_complete": True,
+            "verification_status": "verified",
+            "execution": {"counts": {"success": 1}},
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "_write_atomic_exclusive",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    code = module.main(
+        [
+            "--project-env",
+            str(tmp_path / "project.env"),
+            "--campaign",
+            str(campaign_path),
+            "--expected-campaign-sha256",
+            campaign_sha,
+            "--execution",
+            str(execution_path),
+            "--expected-execution-sha256",
+            execution_sha,
+            "--output-root",
+            str(tmp_path),
+            "--observation-id",
+            "verify-save-failure",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 2
+    assert payload == {
+        "schema_version": "newow_daily_recovery_verification_v1",
+        "status": "failed",
+        "error_code": "VERIFICATION_RESULT_SAVE_FAILED",
+    }
+    assert not (tmp_path / "verify-save-failure" / "verification.json").exists()
+
+
+def test_atomic_result_writer_completes_short_writes_before_publish(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from scripts import newow_daily_recovery_verification as module
+
+    real_write = module.os.write
+    calls = 0
+
+    def short_write(fd: int, content: bytes) -> int:
+        nonlocal calls
+        calls += 1
+        return real_write(fd, content[: max(1, len(content) // 2)])
+
+    monkeypatch.setattr(module.os, "write", short_write)
+    target = tmp_path / "verification.json"
+    module._write_atomic_exclusive(target, b'{"status":"verified"}\n')
+
+    assert calls > 1
+    assert target.read_bytes() == b'{"status":"verified"}\n'
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_atomic_result_writer_never_replaces_concurrent_target(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from scripts import newow_daily_recovery_verification as module
+
+    real_link = module.os.link
+    target = tmp_path / "verification.json"
+
+    def concurrent_target(source, destination, **kwargs):
+        target.write_bytes(b"existing evidence\n")
+        return real_link(source, destination, **kwargs)
+
+    monkeypatch.setattr(module.os, "link", concurrent_target)
+
+    with pytest.raises(FileExistsError):
+        module._write_atomic_exclusive(target, b'{"status":"verified"}\n')
+
+    assert target.read_bytes() == b"existing evidence\n"
+    assert not list(tmp_path.glob(".*.tmp"))
 
 
 def test_incomplete_final_audit_preserves_proven_execution_facts() -> None:

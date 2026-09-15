@@ -613,7 +613,8 @@ def test_project_codex_permission_mode_is_preserved() -> None:
     assert config["sandbox_mode"] == "danger-full-access"
     assert config["approval_policy"] == "on-request"
     assert config["approvals_reviewer"] == "auto_review"
-    assert config["model_reasoning_effort"] == "high"
+    assert "model" not in config
+    assert "model_reasoning_effort" not in config
     assert config["sandbox_workspace_write"] == {
         "network_access": True,
         "exclude_slash_tmp": True,
