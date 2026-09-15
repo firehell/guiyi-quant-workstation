@@ -582,8 +582,10 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --attempt "$NEWOW_CAMPAIGN_OUTPUT_ROOT/$NEWOW_CAMPAIGN_ATTEMPT_ID"
 ```
 
-D1 apply 会先保留 `campaign-execution.json`，再启动独立只读验证进程；验证固定相同 `as_of`，逐单元
-重做零剩余 D1 replan，并对完整 operational 品种运行 `matrix=false` 的 D1 readiness。验证失败、超时
+D1 apply 会先保留 `campaign-execution.json`，再启动独立只读验证进程；验证先将该摘要重新绑定
+`campaign-started`、`campaign-result`、逐批 terminal、native invocation/result 与 child hash，随后固定相同
+`as_of`，对所有已有 passed 证明的单元重做零剩余 D1 replan，并对完整 operational 品种运行
+`matrix=false` 的 D1 readiness。验证失败、超时
 或结果保存失败不改写执行结算，也不会重试、恢复或再次 apply；退出 0 仅表示执行结算明确、普通单元
 全部完成且冻结 consumer 输入完整可用。后续只读重验可使用同一精确 campaign/execution hash 和新的
 observation id，不覆盖旧观察：

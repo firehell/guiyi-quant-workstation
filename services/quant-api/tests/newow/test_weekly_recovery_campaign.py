@@ -1214,6 +1214,38 @@ def test_cli_prepare_rejects_report_hash_mismatch_before_native_main(
     assert native_calls == []
 
 
+def test_daily_cli_error_reports_daily_schema_before_identity_open(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "full-report.json"
+    report_path.write_text("{}", encoding="utf-8")
+    output = io.StringIO()
+
+    code = main(
+        [
+            "prepare",
+            "--project-env",
+            str(tmp_path / "project.env"),
+            "--report",
+            str(report_path),
+            "--expected-report-sha256",
+            "0" * 64,
+            "--output-root",
+            str(tmp_path),
+            "--name",
+            "campaign",
+            "--frequency",
+            "1d",
+        ],
+        stdout=output,
+    )
+
+    assert code == 1
+    assert json.loads(output.getvalue())["schema_version"] == (
+        "newow_daily_recovery_campaign_error_v1"
+    )
+
+
 def test_campaign_cli_exposes_prepare_apply_and_inspect_modes() -> None:
     assert "{prepare,apply,inspect}" in parser().format_help()
 
