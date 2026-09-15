@@ -60,10 +60,39 @@ def _execution(campaign: dict[str, Any], *, status: str = "passed") -> dict[str,
         "unattempted_unit_count": 0,
         "unknown_unit_count": 1 if status == "unknown" else 0,
     }
+    completed_batches = []
+    if status == "passed":
+        unit = campaign["children"][0]["units"][0]
+        completed_batches = [
+            {
+                "batch_id": "batch-001",
+                "native_result": {
+                    "schema_version": "newow_daily_recovery_result_v1",
+                    "status": "passed",
+                    "readonly": False,
+                    "attempt_dir": "/fixture/native",
+                    "result": {
+                        "status": "passed",
+                        "completed": [{**unit, "status": "passed"}],
+                        "isolated": [],
+                        "failed": None,
+                        "unattempted": [],
+                    },
+                },
+            }
+        ]
     return {
         "status": status,
         "campaign_manifest_sha256": campaign["campaign_sha256"],
         "summary": counts,
+        "completed_batches": completed_batches,
+        "failed_batch": None,
+        "unknown_batch": (
+            {"batch_id": "batch-001", "error_code": "CAMPAIGN_SETTLEMENT_UNKNOWN"}
+            if status == "unknown"
+            else None
+        ),
+        "isolated_units": [],
     }
 
 
@@ -154,6 +183,10 @@ def test_zero_ordinary_targets_still_require_complete_input_audit() -> None:
             "unattempted_unit_count": 0,
             "unknown_unit_count": 0,
         },
+        "completed_batches": [],
+        "failed_batch": None,
+        "unknown_batch": None,
+        "isolated_units": [],
     }
 
     result = verify_daily_campaign(
@@ -314,6 +347,119 @@ def test_campaign_execution_binding_mismatch_fails_closed() -> None:
         )
 
 
+def test_self_signed_summary_without_terminal_evidence_fails_closed() -> None:
+    from scripts.newow_daily_recovery_verification import verify_daily_campaign
+
+    campaign = _campaign()
+    execution = _execution(campaign)
+    execution["completed_batches"] = []
+
+    with pytest.raises(native.RecoveryError, match="^VERIFICATION_SETTLEMENT_INVALID$"):
+        verify_daily_campaign(
+            campaign=campaign,
+            execution=execution,
+            run_audit=lambda _request: _audit(),
+            replan_unit=_replan,
+        )
+
+
+def test_persisted_execution_validator_replays_native_terminal_evidence(
+    tmp_path: Path,
+) -> None:
+    from scripts import newow_daily_recovery_verification as module
+    from scripts.newow_weekly_recovery_campaign import (
+        execute_campaign,
+        prepare_campaign,
+    )
+    from tests.newow.test_weekly_recovery_campaign import (
+        IDENTITY,
+        _daily_report,
+        _daily_unit,
+        _native_apply_result,
+        _native_child,
+    )
+
+    campaign = prepare_campaign(
+        _daily_report([_daily_unit()]),
+        report_sha256="b" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: _native_child(root, batch_id, units),
+        name="daily-evidence",
+        recovery_frequency="1d",
+    )
+    attempt = tmp_path / "daily-attempt"
+    result = execute_campaign(
+        campaign,
+        attempt_root=attempt,
+        invoke_batch=_native_apply_result,
+    )
+    campaign_path = tmp_path / "daily-evidence.prepare.json"
+    campaign_sha = hashlib.sha256(campaign_path.read_bytes()).hexdigest()
+    execution = {**result, "campaign_manifest_sha256": campaign_sha}
+    execution_path = attempt / "campaign-execution.json"
+    native._write_json_exclusive(execution_path, execution)
+
+    module._validate_persisted_execution_evidence(
+        campaign=campaign,
+        execution=execution,
+        campaign_path=campaign_path,
+        execution_path=execution_path,
+        evidence_root=tmp_path,
+    )
+
+    forged = {**execution, "summary": {**execution["summary"], "success_unit_count": 0}}
+    with pytest.raises(native.RecoveryError, match="^VERIFICATION_EVIDENCE_INVALID$"):
+        module._validate_persisted_execution_evidence(
+            campaign=campaign,
+            execution=forged,
+            campaign_path=campaign_path,
+            execution_path=execution_path,
+            evidence_root=tmp_path,
+        )
+
+
+def test_partial_execution_replans_each_proven_successful_unit() -> None:
+    from scripts.newow_daily_recovery_verification import verify_daily_campaign
+
+    campaign = _campaign()
+    second = {
+        **campaign["children"][0]["units"][0],
+        "contract": "AG2602",
+        "plan_sha256": "2" * 64,
+    }
+    campaign["children"][0]["units"].append(second)
+    campaign["scope"]["denominator_unit_count"] = 2
+    campaign["campaign_sha256"] = hashlib.sha256(
+        native._canonical_json(
+            {key: value for key, value in campaign.items() if key != "campaign_sha256"}
+        ).encode("utf-8")
+    ).hexdigest()
+    execution = _execution(campaign)
+    execution["status"] = "partial"
+    execution["summary"].update(
+        denominator_unit_count=2,
+        success_unit_count=1,
+        unattempted_unit_count=1,
+    )
+    seen: list[str] = []
+
+    def replan(unit):
+        seen.append(unit["contract"])
+        return _replan(unit)
+
+    result = verify_daily_campaign(
+        campaign=campaign,
+        execution=execution,
+        run_audit=lambda _request: _audit(),
+        replan_unit=replan,
+    )
+
+    assert seen == ["AG2601"]
+    assert result["ordinary_recovery_complete"] is False
+    assert result["verification_status"] == "incomplete"
+
+
 def test_verification_cli_writes_one_hash_bound_observation(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -342,6 +488,11 @@ def test_verification_cli_writes_one_hash_bound_observation(
         module,
         "_run_readonly_verification",
         lambda **_kwargs: expected,
+    )
+    monkeypatch.setattr(
+        module,
+        "_validate_persisted_execution_evidence",
+        lambda **_kwargs: None,
     )
 
     code = module.main(
@@ -391,6 +542,11 @@ def test_verification_cli_reports_identity_change_without_raw_details(
         raise native.RecoveryError("VERIFICATION_IDENTITY_CHANGED")
 
     monkeypatch.setattr(module, "_run_readonly_verification", changed)
+    monkeypatch.setattr(
+        module,
+        "_validate_persisted_execution_evidence",
+        lambda **_kwargs: None,
+    )
     code = module.main(
         [
             "--project-env",

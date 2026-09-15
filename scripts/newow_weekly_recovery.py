@@ -86,6 +86,10 @@ _INVOCATION_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_invocation_v1",
     "1d": "newow_daily_recovery_invocation_v1",
 }
+_ERROR_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_error_v1",
+    "1d": "newow_daily_recovery_error_v1",
+}
 _SOURCE_ISOLATION_POLICY_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
     "1w": _SOURCE_ISOLATION_POLICY_SCHEMA,
     "1d": "newow_daily_recovery_continuation_policy_v1",
@@ -121,6 +125,20 @@ def _frequency_for_prepare_schema(value: object) -> RecoveryFrequency:
 
 def _result_schema(recovery_frequency: RecoveryFrequency) -> str:
     return _RESULT_SCHEMA_BY_FREQUENCY[recovery_frequency]
+
+
+def _frequency_for_invocation_schema(value: object) -> RecoveryFrequency:
+    for frequency, schema in _INVOCATION_SCHEMA_BY_FREQUENCY.items():
+        if value == schema:
+            return frequency
+    raise RecoveryError("PREPARED_MANIFEST_INVALID")
+
+
+def _attempt_frequency(attempt: Path) -> RecoveryFrequency:
+    receipt = _read_json_file(Path(attempt) / "invocation-receipt.json")
+    if not isinstance(receipt, Mapping):
+        raise RecoveryError("PREPARED_MANIFEST_INVALID")
+    return _frequency_for_invocation_schema(receipt.get("schema_version"))
 
 
 class _ExecutionEnvironment:
@@ -189,10 +207,7 @@ def _validated_continuation_policy(
     return expected
 
 
-def load_private_execution_settings(
-    path: Path,
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Load the existing literal project.env without exposing private values."""
+def _read_private_settings_content(path: Path) -> bytes:
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         try:
@@ -210,11 +225,19 @@ def load_private_execution_settings(
                 raise OSError
         finally:
             os.close(fd)
+        return content
+    except (OSError, UnicodeError) as exc:
+        raise RecoveryError("PROJECT_ENV_UNSAFE") from exc
+
+
+def _private_dependency_settings(
+    path: Path,
+) -> tuple[dict[str, str], dict[str, str]]:
+    content = _read_private_settings_content(path)
+    try:
         from app.market_data.closeout_binding import runtime_dependency_settings
-        from app.market_data.rqdata_adapter import runtime_provider_settings
 
         settings = runtime_dependency_settings(content)
-        runtime_provider_settings(settings, required=True)
         canonical = Path(settings["GUIYI_CANONICAL_DATA_ROOT"])
         if (
             "DATABASE_URL" not in settings
@@ -231,6 +254,27 @@ def load_private_execution_settings(
             str(canonical).encode("utf-8")
         ).hexdigest(),
     }
+    return settings, identity
+
+
+def load_private_readonly_settings(
+    path: Path,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Load only DB/Canonical dependencies; never require provider credentials."""
+    return _private_dependency_settings(path)
+
+
+def load_private_execution_settings(
+    path: Path,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Load writer dependencies and require the existing provider configuration."""
+    settings, identity = _private_dependency_settings(path)
+    try:
+        from app.market_data.rqdata_adapter import runtime_provider_settings
+
+        runtime_provider_settings(settings, required=True)
+    except (KeyError, ValueError) as exc:
+        raise RecoveryError("PROJECT_ENV_UNSAFE") from exc
     return settings, identity
 
 
@@ -1718,17 +1762,21 @@ def main(
     stdout=sys.stdout,
 ) -> int:
     payload: dict[str, object]
+    error_schema = _ERROR_SCHEMA_BY_FREQUENCY["1w"]
     try:
         args = parser().parse_args(argv)
         if args.mode == "inspect":
+            recovery_frequency = _attempt_frequency(Path(args.attempt))
+            error_schema = _ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
             payload = {
-                "schema_version": "newow_weekly_recovery_result_v1",
+                "schema_version": _result_schema(recovery_frequency),
                 "status": "inspected",
                 "attempt": read_attempt_outcome(Path(args.attempt)),
             }
             code = 0
         elif args.mode == "prepare":
             recovery_frequency = _recovery_frequency(args.frequency)
+            error_schema = _ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
             code_commit = _current_code_commit()
             _require_clean_execution_checkout(code_commit)
             environment = _open_execution_environment(Path(args.project_env))
@@ -1788,6 +1836,7 @@ def main(
             recovery_frequency = _frequency_for_prepare_schema(
                 prepared.get("schema_version")
             )
+            error_schema = _ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
             _require_clean_execution_checkout(expected_commit)
             _settings, identity = load_private_execution_settings(
                 Path(args.project_env)
@@ -1839,14 +1888,14 @@ def main(
             code = 0 if result["status"] == "passed" else 1
     except (RecoveryError, ValueError) as exc:
         payload = {
-            "schema_version": "newow_weekly_recovery_error_v1",
+            "schema_version": error_schema,
             "status": "failed",
             "error_code": _error_code(exc),
         }
         code = 1
     except Exception:
         payload = {
-            "schema_version": "newow_weekly_recovery_error_v1",
+            "schema_version": error_schema,
             "status": "failed",
             "error_code": "RECOVERY_EXECUTION_FAILED",
         }

@@ -1218,6 +1218,24 @@ def test_campaign_cli_exposes_prepare_apply_and_inspect_modes() -> None:
     assert "{prepare,apply,inspect}" in parser().format_help()
 
 
+def test_daily_campaign_inspect_reports_daily_schema(tmp_path: Path) -> None:
+    attempt = tmp_path / "daily-attempt"
+    attempt.mkdir()
+    _write_json_exclusive(
+        attempt / "campaign-started.json",
+        {"schema_version": "newow_daily_recovery_campaign_started_v1"},
+    )
+    _write_json_exclusive(attempt / "campaign-result.json", {"status": "passed"})
+    output = io.StringIO()
+
+    code = main(["inspect", "--attempt", str(attempt)], stdout=output)
+
+    assert code == 0
+    assert json.loads(output.getvalue())["schema_version"] == (
+        "newow_daily_recovery_campaign_result_v1"
+    )
+
+
 def test_campaign_cli_exposes_hash_bound_prior_isolation_inputs() -> None:
     args = parser().parse_args(
         [

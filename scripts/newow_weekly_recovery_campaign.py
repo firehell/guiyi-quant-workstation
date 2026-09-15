@@ -38,6 +38,18 @@ _CAMPAIGN_RESULT_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_campaign_result_v1",
     "1d": "newow_daily_recovery_campaign_result_v1",
 }
+_CAMPAIGN_STARTED_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_campaign_started_v1",
+    "1d": "newow_daily_recovery_campaign_started_v1",
+}
+_CAMPAIGN_BATCH_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_campaign_batch_v1",
+    "1d": "newow_daily_recovery_campaign_batch_v1",
+}
+_CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_campaign_error_v1",
+    "1d": "newow_daily_recovery_campaign_error_v1",
+}
 _CAMPAIGN_SCHEMA = _CAMPAIGN_SCHEMA_BY_FREQUENCY["1w"]
 _HASH = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
@@ -130,6 +142,16 @@ def _frequency_for_campaign_schema(value: object) -> native.RecoveryFrequency:
     raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
 
 
+def _campaign_attempt_frequency(attempt: Path) -> native.RecoveryFrequency:
+    started = native._read_json_file(Path(attempt) / "campaign-started.json")
+    if not isinstance(started, Mapping):
+        raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+    for frequency, schema in _CAMPAIGN_STARTED_SCHEMA_BY_FREQUENCY.items():
+        if started.get("schema_version") == schema:
+            return frequency
+    raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+
+
 def _run_daily_verification_process(
     *,
     project_env: Path,
@@ -202,17 +224,23 @@ def main(
     stdout=sys.stdout,
 ) -> int:
     payload: dict[str, Any]
+    error_schema = _CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY["1w"]
     try:
         args = parser().parse_args(argv)
         if args.mode == "inspect":
+            recovery_frequency = _campaign_attempt_frequency(Path(args.attempt))
+            error_schema = _CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
             payload = {
-                "schema_version": "newow_weekly_recovery_campaign_result_v1",
+                "schema_version": _CAMPAIGN_RESULT_SCHEMA_BY_FREQUENCY[
+                    recovery_frequency
+                ],
                 "status": "inspected",
                 "attempt": _inspect_attempt(Path(args.attempt)),
             }
             code = 0
         elif args.mode == "prepare":
             recovery_frequency = native._recovery_frequency(args.frequency)
+            error_schema = _CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
             if recovery_frequency == "1d" and args.partial_source_exception_attempt:
                 raise RecoveryError("D1_PARTIAL_SOURCE_EXCEPTION_UNSUPPORTED")
             if recovery_frequency == "1d" and any(
@@ -352,6 +380,7 @@ def main(
             recovery_frequency = _frequency_for_campaign_schema(
                 manifest.get("schema_version")
             )
+            error_schema = _CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
             current_identity = (
                 _current_execution_identity(Path(args.project_env))
                 if recovery_frequency == "1w"
@@ -442,14 +471,14 @@ def main(
             )
     except (RecoveryError, ValueError) as exc:
         payload = {
-            "schema_version": "newow_weekly_recovery_campaign_error_v1",
+            "schema_version": error_schema,
             "status": "failed",
             "error_code": native._error_code(exc),
         }
         code = 1
     except Exception:
         payload = {
-            "schema_version": "newow_weekly_recovery_campaign_error_v1",
+            "schema_version": error_schema,
             "status": "failed",
             "error_code": "CAMPAIGN_EXECUTION_FAILED",
         }
@@ -479,6 +508,7 @@ def execute_campaign(
     ):
         raise RecoveryError("CAMPAIGN_ATTEMPT_PATH_INVALID")
     validated = validate_campaign_manifest(manifest, evidence_root=root)
+    recovery_frequency = _frequency_for_campaign_schema(validated.get("schema_version"))
     identity = validated["execution_identity"]
     children = validated["children"]
     guard_binding = validated["writer_guard"]
@@ -497,7 +527,7 @@ def execute_campaign(
         except OSError as exc:
             raise RecoveryError("CAMPAIGN_ATTEMPT_UNAVAILABLE") from exc
         started = {
-            "schema_version": "newow_weekly_recovery_campaign_started_v1",
+            "schema_version": _CAMPAIGN_STARTED_SCHEMA_BY_FREQUENCY[recovery_frequency],
             "campaign_manifest_sha256": hashlib.sha256(
                 native._canonical_json(validated).encode("utf-8")
             ).hexdigest(),
@@ -561,7 +591,9 @@ def execute_campaign(
                 native._write_json_exclusive(
                     batch_attempt / "batch-started.json",
                     {
-                        "schema_version": "newow_weekly_recovery_campaign_batch_v1",
+                        "schema_version": _CAMPAIGN_BATCH_SCHEMA_BY_FREQUENCY[
+                            recovery_frequency
+                        ],
                         "state": "started",
                         "batch_id": batch_id,
                         "child_path": child["path"],
@@ -607,7 +639,9 @@ def execute_campaign(
                 native._write_json_exclusive(
                     batch_attempt / "batch-terminal.json",
                     {
-                        "schema_version": "newow_weekly_recovery_campaign_batch_v1",
+                        "schema_version": _CAMPAIGN_BATCH_SCHEMA_BY_FREQUENCY[
+                            recovery_frequency
+                        ],
                         "state": "terminal",
                         "batch_id": batch_id,
                         "native_result": terminal,

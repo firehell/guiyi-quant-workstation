@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import re
 import sys
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, cast
 
 from guiyi_quant.newow.product_contracts import ProductFrequency
 
@@ -63,7 +63,7 @@ def _frozen_daily_units(campaign: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 def _validated_execution(
     campaign: Mapping[str, Any], execution: Mapping[str, Any]
-) -> tuple[dict[str, int], bool]:
+) -> tuple[dict[str, int], bool, list[dict[str, Any]]]:
     if not isinstance(execution, Mapping):
         raise native.RecoveryError("VERIFICATION_INPUT_INVALID")
     expected_digest = campaign.get("campaign_sha256") or _campaign_digest(campaign)
@@ -92,12 +92,61 @@ def _validated_execution(
         counts[name] = value
     if sum(counts.values()) != denominator:
         raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    frozen_units = _frozen_daily_units(campaign)
+    frozen_by_identity = {_unit_identity(unit): unit for unit in frozen_units}
+    if len(frozen_by_identity) != len(frozen_units):
+        raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    completed_batches = execution.get("completed_batches")
+    if not isinstance(completed_batches, list):
+        raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    terminal_entries = list(completed_batches)
+    for field in ("failed_batch", "unknown_batch"):
+        entry = execution.get(field)
+        if isinstance(entry, Mapping) and isinstance(
+            entry.get("native_result"), Mapping
+        ):
+            terminal_entries.append(entry)
+    successful: list[dict[str, Any]] = []
+    seen_success: set[tuple[str, str, str, str, str]] = set()
+    for entry in terminal_entries:
+        if not isinstance(entry, Mapping):
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        terminal = entry.get("native_result")
+        nested = terminal.get("result") if isinstance(terminal, Mapping) else None
+        completed = nested.get("completed") if isinstance(nested, Mapping) else None
+        if not isinstance(completed, list):
+            raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+        for raw in completed:
+            if not isinstance(raw, Mapping):
+                raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+            key = _unit_identity(raw)
+            if key in seen_success or key not in frozen_by_identity:
+                raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+            seen_success.add(key)
+            successful.append(frozen_by_identity[key])
+    isolated = execution.get("isolated_units")
+    if not isinstance(isolated, list) or len(isolated) != counts["isolated"]:
+        raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    if len(successful) != counts["success"]:
+        raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
     complete = (
         execution.get("status") == "passed"
         and counts["success"] == denominator
         and not any(counts[name] for name in counts if name != "success")
     )
-    return counts, complete
+    if complete and set(frozen_by_identity) != seen_success:
+        raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    return counts, complete, successful
+
+
+def _unit_identity(value: Mapping[str, Any]) -> tuple[str, str, str, str, str]:
+    fields = tuple(
+        value.get(key)
+        for key in ("symbol", "contract", "frequency", "through", "plan_sha256")
+    )
+    if not all(isinstance(field, str) for field in fields):
+        raise native.RecoveryError("VERIFICATION_SETTLEMENT_INVALID")
+    return cast(tuple[str, str, str, str, str], fields)
 
 
 def _validate_replan(
@@ -285,12 +334,16 @@ def verify_daily_campaign(
     if as_of.tzinfo is None or audit_identity.get("frequency_scope") != ["1d"]:
         raise native.RecoveryError("VERIFICATION_INPUT_INVALID")
     units = _frozen_daily_units(campaign)
-    counts, ordinary_complete = _validated_execution(campaign, execution)
+    counts, ordinary_complete, successful_units = _validated_execution(
+        campaign, execution
+    )
     replans: list[dict[str, Any]] = []
     replan_error: str | None = None
-    if ordinary_complete:
+    if successful_units:
         try:
-            replans = [_validate_replan(unit, replan_unit(unit)) for unit in units]
+            replans = [
+                _validate_replan(unit, replan_unit(unit)) for unit in successful_units
+            ]
         except Exception:  # noqa: BLE001 - keep private infrastructure text out
             replan_error = "FINAL_REPLAN_FAILED"
 
@@ -366,7 +419,8 @@ def verify_daily_campaign(
         ),
         "replans": replans,
         "comparator_evidence": {
-            "status": "bounded_to_default_chart_input",
+            "status": "implementation_shared_path_verified",
+            "runtime_default_window": "not_independently_verified",
             "custom_or_paginated_windows": "not_verified",
         },
         "provenance": {
@@ -405,7 +459,7 @@ def render_daily_summary(result: Mapping[str, Any]) -> str:
             f"unknown={counts.get('unknown', 0)}"
         ),
         "",
-        "比较器仅验证默认主图共享输入；自定义和历史翻页窗口未外推。",
+        "比较器仅有共享 reader.load 的实现测试；本次运行未独立验证默认、自定义或历史翻页窗口。",
     ]
     return "\n".join(lines) + "\n"
 
@@ -422,6 +476,104 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--output-root", required=True)
     value.add_argument("--observation-id", required=True)
     return value
+
+
+def _validate_persisted_execution_evidence(
+    *,
+    campaign: Mapping[str, Any],
+    execution: Mapping[str, Any],
+    campaign_path: Path,
+    execution_path: Path,
+    evidence_root: Path,
+) -> None:
+    """Bind the execution summary to immutable campaign and native terminals."""
+    root = campaign_module._validated_evidence_root(evidence_root)
+    campaign_module._direct_root_file(campaign_path, root)
+    attempt = native._validated_direct_child_directory(
+        execution_path.parent,
+        root,
+        "VERIFICATION_EVIDENCE_INVALID",
+    )
+    if execution_path.name != "campaign-execution.json":
+        raise native.RecoveryError("VERIFICATION_EVIDENCE_INVALID")
+    persisted_result = native._read_json_file(attempt / "campaign-result.json")
+    expected_result = dict(execution)
+    expected_result.pop("campaign_manifest_sha256", None)
+    if persisted_result != expected_result:
+        raise native.RecoveryError("VERIFICATION_EVIDENCE_INVALID")
+    started = native._read_json_file(attempt / "campaign-started.json")
+    expected_started_sha = hashlib.sha256(
+        native._canonical_json(campaign).encode("utf-8")
+    ).hexdigest()
+    if (
+        not isinstance(started, Mapping)
+        or started.get("schema_version") != "newow_daily_recovery_campaign_started_v1"
+        or started.get("campaign_manifest_sha256") != expected_started_sha
+        or started.get("execution_identity") != campaign.get("execution_identity")
+    ):
+        raise native.RecoveryError("VERIFICATION_EVIDENCE_INVALID")
+    children = campaign.get("children")
+    identity = campaign.get("execution_identity")
+    if not isinstance(children, list) or not isinstance(identity, Mapping):
+        raise native.RecoveryError("VERIFICATION_EVIDENCE_INVALID")
+    child_by_id = {
+        child.get("batch_id"): child for child in children if isinstance(child, Mapping)
+    }
+    terminal_entries = execution.get("completed_batches")
+    if not isinstance(terminal_entries, list):
+        raise native.RecoveryError("VERIFICATION_EVIDENCE_INVALID")
+    entries = list(terminal_entries)
+    for field in ("failed_batch", "unknown_batch"):
+        entry = execution.get(field)
+        if isinstance(entry, Mapping) and isinstance(
+            entry.get("native_result"), Mapping
+        ):
+            entries.append(entry)
+    seen: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            raise native.RecoveryError("VERIFICATION_EVIDENCE_INVALID")
+        batch_id = entry.get("batch_id")
+        child = child_by_id.get(batch_id)
+        terminal = entry.get("native_result")
+        if (
+            not isinstance(batch_id, str)
+            or batch_id in seen
+            or not isinstance(child, Mapping)
+            or not isinstance(terminal, Mapping)
+        ):
+            raise native.RecoveryError("VERIFICATION_EVIDENCE_INVALID")
+        seen.add(batch_id)
+        batch_attempt = native._validated_direct_child_directory(
+            attempt / batch_id,
+            attempt,
+            "VERIFICATION_EVIDENCE_INVALID",
+        )
+        persisted_terminal = native._read_json_file(
+            batch_attempt / "batch-terminal.json"
+        )
+        if (
+            not isinstance(persisted_terminal, Mapping)
+            or persisted_terminal.get("schema_version")
+            != "newow_daily_recovery_campaign_batch_v1"
+            or persisted_terminal.get("batch_id") != batch_id
+            or persisted_terminal.get("native_result") != terminal
+        ):
+            raise native.RecoveryError("VERIFICATION_EVIDENCE_INVALID")
+        child_path = campaign_module._manifest_child_path(child.get("path"), root)
+        validated_terminal = campaign_module._validated_batch_invocation(
+            {
+                "return_code": 0 if terminal.get("status") == "passed" else 1,
+                "batch_result": terminal,
+            },
+            child=child,
+            child_path=child_path,
+            digest=str(child.get("sha256")),
+            batch_attempt=batch_attempt,
+            identity=identity,
+        )
+        if validated_terminal != terminal:
+            raise native.RecoveryError("VERIFICATION_EVIDENCE_INVALID")
 
 
 def _run_readonly_verification(
@@ -462,7 +614,7 @@ def _run_readonly_verification(
     if not isinstance(expected_commit, str):
         raise native.RecoveryError("VERIFICATION_INPUT_INVALID")
     native._require_clean_execution_checkout(expected_commit)
-    settings, current_identity = native.load_private_execution_settings(project_env)
+    settings, current_identity = native.load_private_readonly_settings(project_env)
     if (
         current_identity.get("config_sha256") != frozen_identity.get("config_sha256")
         or current_identity.get("canonical_root_sha256")
@@ -584,8 +736,8 @@ def main(argv: list[str] | None = None) -> int:
         execution = native.load_prepared_manifest(
             execution_path, args.expected_execution_sha256
         )
-        campaign_module.validate_campaign_manifest(
-            campaign, evidence_root=campaign_path.parent
+        campaign = campaign_module.validate_campaign_manifest(
+            campaign, evidence_root=root
         )
         bound_campaign = {
             **campaign,
@@ -593,6 +745,13 @@ def main(argv: list[str] | None = None) -> int:
         }
         if execution.get("campaign_manifest_sha256") != args.expected_campaign_sha256:
             raise native.RecoveryError("VERIFICATION_IDENTITY_CHANGED")
+        _validate_persisted_execution_evidence(
+            campaign=campaign,
+            execution=execution,
+            campaign_path=campaign_path,
+            execution_path=execution_path,
+            evidence_root=root,
+        )
         observation = native.create_attempt_directory(root, args.observation_id)
         result = _run_readonly_verification(
             campaign=bound_campaign,

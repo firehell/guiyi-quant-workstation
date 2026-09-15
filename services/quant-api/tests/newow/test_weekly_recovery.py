@@ -37,10 +37,12 @@ from scripts.newow_weekly_recovery import (
     _post_commit_readback,
     _require_clean_execution_checkout,
     _require_execution_identity,
+    _write_json_exclusive,
     create_attempt_directory,
     execute_prepared_batch,
     load_prepared_manifest,
     load_private_execution_settings,
+    load_private_readonly_settings,
     main,
     parser,
     prepare_bounded_units,
@@ -1461,6 +1463,24 @@ def test_cli_exposes_separate_prepare_apply_and_inspect_modes() -> None:
     help_text = parser().format_help()
 
     assert "{prepare,apply,inspect}" in help_text
+
+
+def test_daily_inspect_reports_daily_schema(tmp_path) -> None:
+    attempt = tmp_path / "daily-attempt"
+    attempt.mkdir()
+    _write_json_exclusive(
+        attempt / "invocation-receipt.json",
+        {"schema_version": "newow_daily_recovery_invocation_v1"},
+    )
+    (attempt / "journal.jsonl").write_text("", encoding="utf-8")
+    output = io.StringIO()
+
+    code = main(["inspect", "--attempt", str(attempt)], stdout=output)
+
+    assert code == 0
+    assert json.loads(output.getvalue())["schema_version"] == (
+        "newow_daily_recovery_result_v1"
+    )
     assert (
         "--apply"
         not in parser()
@@ -1517,6 +1537,21 @@ def test_private_settings_identity_never_contains_credentials(tmp_path) -> None:
     assert settings["RQDATA_LICENSE_KEY"] == "provider-secret"
     serialized = json.dumps(identity)
     assert "secret" not in serialized
+    assert identity.keys() == {"config_sha256", "canonical_root_sha256"}
+
+
+def test_readonly_settings_do_not_require_provider_credentials(tmp_path) -> None:
+    config = tmp_path / "project.env"
+    config.write_text(
+        "DATABASE_URL=postgresql+psycopg://user@127.0.0.1:5432/db\n"
+        "GUIYI_CANONICAL_DATA_ROOT=/private/canonical\n",
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+
+    settings, identity = load_private_readonly_settings(config)
+
+    assert set(settings) == {"DATABASE_URL", "GUIYI_CANONICAL_DATA_ROOT"}
     assert identity.keys() == {"config_sha256", "canonical_root_sha256"}
 
 
