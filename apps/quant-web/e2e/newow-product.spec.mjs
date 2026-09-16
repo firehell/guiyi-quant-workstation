@@ -788,10 +788,16 @@ test('dense action nodes keep their real micro size and expand to a readable car
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   const labels = stage.locator('.newow-product-chart-stage__action-label')
   await expect(labels).toHaveCount(100)
-  const microIndex = await labels.evaluateAll(nodes => nodes.findIndex(node => node.getBoundingClientRect().width <= 8.5))
-  expect(microIndex).toBeGreaterThanOrEqual(0)
-  const target = labels.nth(microIndex)
-  const before = await target.boundingBox()
+  // Capture identity and geometry together: async pane layout can reorder the nodes.
+  const micro = await labels.evaluateAll(nodes => {
+    const node = nodes.find(node => node.getBoundingClientRect().width <= 8.5)
+    if (!node) return null
+    const { width, height } = node.getBoundingClientRect()
+    return { id: node.getAttribute('data-action-id'), width, height }
+  })
+  expect(micro).not.toBeNull()
+  const target = stage.locator(`.newow-product-chart-stage__action-label[data-action-id="${micro.id}"]`)
+  const before = micro
   expect(before?.width).toBeLessThanOrEqual(8.5)
   expect(before?.height).toBeLessThanOrEqual(8.5)
   await target.focus()
