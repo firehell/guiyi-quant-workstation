@@ -3121,6 +3121,7 @@ def _completed_unit_matches(
         return False
     source_request_count = len(source_requests)
     target_count = frozen.get("target_count")
+    provider_plan = frozen.get("provider_request_count")
     if not isinstance(target_count, int) or isinstance(target_count, bool):
         return False
     if completion_status == "noop":
@@ -3128,6 +3129,17 @@ def _completed_unit_matches(
         expected_source_requests = 0
         if source_requests:
             return False
+    elif frozen.get("frequency") == "60m":
+        if source_requests:
+            return False
+        if (
+            not isinstance(provider_plan, int)
+            or isinstance(provider_plan, bool)
+            or provider_plan < 0
+        ):
+            return False
+        expected_provider_requests = provider_plan
+        expected_source_requests = 0
     else:
         expected_provider_requests = target_count if source_requests else 0
         expected_source_requests = source_request_count

@@ -346,7 +346,13 @@ def _native_apply_result(
                 "blocked": 0,
                 "failed": 0,
                 "provider_requests": (
-                    frozen_unit["target_count"] if frozen_unit["source_requests"] else 0
+                    frozen_unit.get("provider_request_count") or 0
+                    if frozen_unit.get("frequency") == "60m"
+                    else (
+                        frozen_unit["target_count"]
+                        if frozen_unit["source_requests"]
+                        else 0
+                    )
                 ),
                 "failures": [],
             },
@@ -3604,6 +3610,7 @@ def _hourly_native_child(
     units: tuple[dict[str, Any], ...],
     *,
     identity: Mapping[str, str] = IDENTITY,
+    provider_request_count: int = 0,
 ) -> dict[str, Any]:
     child_units = []
     for item in units:
@@ -3616,6 +3623,9 @@ def _hourly_native_child(
                 "plan_sha256": item["expected_plan_sha256"],
                 "target_count": 2,
                 "expected_bar_count": 2,
+                "provider_request_count": item.get(
+                    "provider_request_count", provider_request_count
+                ),
                 "targets": [
                     {
                         "dataset": [
@@ -3755,6 +3765,37 @@ def test_hourly_campaign_apply_accepts_hourly_result_schema(tmp_path: Path) -> N
     assert result["summary"]["success_unit_count"] == 1
     assert result["summary"]["unknown_unit_count"] == 0
     assert result["completed_batch_ids"] == ["batch-001"]
+
+
+def test_hourly_campaign_apply_accepts_provider_requests_without_source_journal(
+    tmp_path: Path,
+) -> None:
+    manifest = prepare_campaign(
+        _hourly_report([_hourly_unit(0, requests=5)]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda child_units, batch_id, root: _hourly_native_child(
+            root, batch_id, child_units, provider_request_count=5
+        ),
+        name="hourly-download",
+    )
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "hourly-download-001",
+        invoke_batch=_native_apply_result,
+    )
+
+    assert result["status"] == "passed"
+    assert result["summary"]["success_unit_count"] == 1
+    assert result["summary"]["unknown_unit_count"] == 0
+    assert (
+        result["completed_batches"][0]["native_result"]["result"]["completed"][0][
+            "result"
+        ]["provider_requests"]
+        == 5
+    )
 
 
 def test_combine_hourly_readiness_reports_unions_six_symbols() -> None:
