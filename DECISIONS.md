@@ -1,6 +1,6 @@
 # 架构决策记录
 
-更新时间：2026-09-11
+更新时间：2026-09-16
 
 本文件只记录长期决策；当前版本、部署、Scope、evidence 与 Gate 只看 `STATUS.md`，历史过程从 Git history 追溯。
 
@@ -29,7 +29,7 @@
 | Newow 时间、解释与证据 | 多周期解释使用各周期 completed Bar 和显式 `as_of`；解释、比较器与回看图层不得反向改变主动作 | 未来完成周线不回填历史 60m；五窗口比较器期末理论平仓隔离于 ReferenceTrade；照妖镜保持 `repainting=true / formal_signal_eligible=false`；缺精确合同标记 `EVIDENCE_REQUIRED`，不得以“无信号”或 0 分代替 |
 | 既有策略整体退役 | 删除其代码、配置、API、CLI、Web、Runtime、Scope、Event 和派生 cache 能力 | 旧身份只保留 Git/Alembic lineage 与删除迁移断言；未来策略必须使用新身份、新合同和新版本 |
 | Validation | causality、strict-before、future-leak、prefix invariance、golden parity、fail-closed 是长期合同 | Retrospective 不回填 prospective OOS，不自动晋升候选 |
-| 开发协作 | 重要需求、设计与取舍前置；目标、范围和验收明确后，在该范围内连续完成普通开发与验证 | 讨论/Plan-only 不提前实施；普通开发授权不推导生产 mutation、main/tag/release 或 Runtime promotion，细则见 `AGENTS.md` |
-| 外部操作 | 真实数据/DB、Runtime/live、Scope、通知、release/tag 需要范围明确的一次性执行意图 | 测试、dry-run、历史授权、配置存在或 health 不构成 mutation 授权 |
-| 交付收敛 | 精确候选冻结后只接纳该次交付阻断；代码缺陷、数据缺口、证据不足、现场 Gate 与新版需求分开处理 | 已修复先验证不重写；已披露限制不得掩盖共享完整性缺陷；release 与 Runtime promotion 独立批准，运行证据绑定对应版本，不由 develop 集成自动推导 |
+| 开发协作 | AI 自主完成开发维护闭环；owner 决定产品方向、重要架构/业务语义和生产边界 | 讨论/Plan-only 不提前实施；普通开发授权不推导生产 mutation、main/tag/release 或 Runtime promotion，细则见 `AGENTS.md` |
+| 外部操作 | 真实数据/DB、Runtime/live、Scope、通知、release/tag 按目标、环境、范围明确的任务或批次授权 | 授权不因会话切换失效；已完成的历史授权、测试、dry-run、配置或 health 不授权重跑；重试和恢复须在批准边界内 |
+| 交付收敛 | 精确候选冻结后只接纳该次交付阻断；代码缺陷、数据缺口、证据不足、现场 Gate 与新版需求分开处理 | 已修复先验证不重写；已披露限制不得掩盖共享完整性缺陷；release 与 Runtime promotion 是独立授权项，可在一次批准中明确覆盖，运行证据绑定对应版本，不由 develop 集成自动推导 |
 | 文档职责 | `PROJECT_SOURCE.md` 定义稳定产品面；`docs/ARCHITECTURE.md` 定义 active 依赖；deep canonical 定义业务语义 | `STATUS.md` 不承载历史过程，Git history 不构成未来授权 |

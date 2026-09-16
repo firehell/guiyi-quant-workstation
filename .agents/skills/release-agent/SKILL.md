@@ -20,20 +20,22 @@ worktree/dirty state、现役 root/commit、已有 tag/Release 和 Runtime Gate�
 
 1. 在候选上定位版本事实源，只记录当前 evidence 支持的 release 事实，不预写 Runtime 或自然 evidence；
    运行与变动匹配的测试及适用工程检查。
-2. 只有用户本轮明确授权精确版本的 `main` merge、annotated tag 与 GitHub Release 时才执行；否则停在
+   授权按 `AGENTS.md` 绑定任务；会话切换不自动失效，恢复前核对身份与已完成项。
+2. 只有用户有效任务授权明确包含精确版本的 `main` merge、annotated tag 与 GitHub Release 时才执行；否则停在
    已验证的 release candidate。记录 tag、peeled commit、Release target 和版本身份的一致性。
-3. Runtime switch 是独立 Gate，只在本轮明确指定工作站、exact tag/commit 和服务范围后处理。按
+3. Runtime switch 是独立 Gate，只在有效任务授权明确指定工作站、exact tag/commit 和服务范围后处理。按
    `deploy/README.md` 验证现役消费者、候选兼容性和实际 required service，再 render-only/preflight。
-   只批准发布时不切换 Runtime。
+   只批准发布时不切换 Runtime；同一次批准可以明确列出发布与 Runtime 两项范围。
 4. 失败处置先证明兼容性：canonical 要求安全 rollback 时，预先解析并校验精确 rollback root；无法证明安全
-   rollback 或现行合同未允许替代处置时，报告缺口并停止，不构造虚假回退或新增无回退部署授权。只有本轮
-   明确包含该 rollback 时才可尝试一次；失败或结果不明后不重试、不补发、不改 Scope。
+   rollback 或现行合同未允许替代处置时，报告缺口并停止，不构造虚假回退或新增无回退部署授权。只有
+   有效任务授权明确包含该 rollback 时才可执行；未明确重试次数时只尝试一次。失败或结果不明先停止并只读核对，
+   查明后仅按授权中的安全重试/恢复边界继续，不补发、不改 Scope。
 5. 发布后只可报告 `RELEASED`。首根自然 completed Live Bar、必要 heartbeat、连续状态读回及受影响的自然
    业务 evidence 未完成前，`RUNTIME_READY` 保持未证实；历史 evidence 不冒充新版本 evidence。
 
 ## 按影响验收
 
-纯文档运行引用、工程测试、OpenSpec、secret scan 和 diff 检查，不机械重跑自然行情；数据、身份、兼容性、
+纯文档运行引用与 diff 检查，按影响选择工程测试、OpenSpec 或 secret scan，不机械重跑自然行情；数据、身份、兼容性、
 状态、通知或拓扑变化保留对应定向、readback 与自然 Gate。API/DOM/fixture、render-only、preflight、health
 和历史 evidence 各自只证明声明范围，不能互相替代。
 
@@ -47,4 +49,4 @@ worktree/dirty state、现役 root/commit、已有 tag/Release 和 Runtime Gate�
 
 ## 交付
 
-按顺序报告：`COMPLETED`、`PARTIAL`、`BLOCKED` 或 `CODE_COMPLETE_EXTERNAL_GATE_PENDING`；版本/commit 身份；实际修改和验证；发布、部署、Runtime 与清理的完成状态；未完成 Gate、未删除的根因与唯一最小下一步。
+简述版本/commit 身份、实际验证和发布/Runtime/清理结果，披露未完成 Gate 与风险；不强制固定段落或结论口号。

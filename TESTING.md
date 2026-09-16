@@ -1,6 +1,8 @@
 # 测试与验证命令
 
-以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
+以下命令区分隔离测试、现场只读和受控操作用法；示例本身不授予生产操作权限。
+授权统一按 `AGENTS.md`：任务内只读诊断和隔离开发预览自主执行；真实 provider、生产写入、发布与 Runtime
+须在明确任务/批次范围内。有效授权可跨会话恢复；批次内不逐命令审批，exact hash、锁和质量校验保持不变。
 
 ## 开盘恢复队列与预警合约身份
 
@@ -128,7 +130,7 @@ PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin
   --expected-as-of 2026-09-13T06:36:13+00:00
 ```
 
-以下是获准生产只读连接后的单次现场命令，不构成写入、重试或 Runtime 授权。完整报告 stdout 必须保存到
+以下是任务范围内可自主执行的生产只读现场命令，不构成写入、重试或 Runtime 授权。完整报告 stdout 必须保存到
 本任务新的显式 evidence 文件；summary 只读取该同一文件，不得用 `--compact` 再查询一次。维护锁忙、现场失败、
 预算耗尽或代码修复后均停止，不循环复跑。
 
@@ -195,8 +197,7 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 
 覆盖周五夜盘首边界、未完成尾周、逐日交易所夜盘证据、来源全集身份和生命周期、局部无夜盘不得覆盖共享 Calendar，以及元数据提交结果不明时停止并独立回读。隔离工作树可显式使用既有 Python 环境；这些离线检查不代表实际历史补齐、未来 Calendar 自动扩展或浏览器验收。
 `newow-readiness --universe operational --frequency 1w` 只审计周版及其 D1 companion；`--compact`
-只生成 Gate 索引，默认完整结果仍用于逐 dependency 与原生 plan 核对。真实 Catalog/Canonical 只读审计须另获
-当前现场权限，且即使结果为 `audited` 也不授权任何 `--apply`。
+只生成 Gate 索引，默认完整结果仍用于逐 dependency 与原生 plan 核对。真实 Catalog/Canonical 只读审计在任务范围内自主执行，且即使结果为 `audited` 也不授权任何 `--apply`。
 
 ## Newow 新版参考卡片定向验证
 
@@ -329,7 +330,7 @@ pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-
 ```
 
 上述浏览器截图使用 route-intercept fixture，只证明视觉与交互，不代表生产历史收益或自然预警。
-真实历史读取、发布和 Runtime 验收单独报告；测试不授权生产数据库连接或外部写入。
+真实历史读取、发布和 Runtime 验收单独报告；生产只读诊断按任务范围自主执行，测试不授权外部写入。
 
 ## Market WebSocket 与统一详情页
 
@@ -728,7 +729,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 以下为用法，非外部执行授权。`targets.json` 是明确的
 `[{"symbol":"au","contract":"AU2304","through":"2023-03-13"}]`；输出为普通 JSON，由 operator 保存。
-fetch 和 apply 各自需要新的单次执行意图，不能在一个获准 fetch 后自动 apply。
+fetch 和 apply 均须明确包含在任务/批次授权中，可一次批准；仅批准 fetch 不等于批准 apply。
 
 ```bash
 uv run --project services/quant-api guiyi data metadata-repair --targets /absolute/targets.json
@@ -746,7 +747,7 @@ uv run --project services/quant-api guiyi data metadata-repair --phase apply \
 ```
 
 `--classification` 与 `--evidence-sources` 均为可选 plan 输入；供证列表仅含显式
-`symbol/contract/date`，不扩写入范围。新 plan 如有新增 Session 请求，需要对其 hash 另行批准 fetch。
+`symbol/contract/date`，不扩写入范围。新 plan 如有新增 Session 请求，须核对仍在授权范围与预算内并使用新 hash；超出范围才申请批准。
 完整交易所负证据另需两份 plan 输入文件：`--exchange-universes` 内容为
 `[{"exchange":"GFEX","date":"2026-09-14","products":["lc","pd","ps","pt","si"],"sources":[...]}]`，
 每个 source 为 `symbol/contract/date`；`--exchange-inventory-evidence` 内容严格为
@@ -768,10 +769,10 @@ GUIYI_ISOLATED_CALENDAR_DATABASE_URL='postgresql+psycopg://postgres@127.0.0.1:15
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q -m isolated_postgresql \
   services/quant-api/tests/data_foundation/test_au_calendar_correction_postgresql.py
-# 真实只读连接也须在本轮授权内。输入是已保存的诊断 JSON（source_response），不是新查询。
+# 任务范围内真实只读连接自主执行。输入是已保存的诊断 JSON（source_response），不是新查询。
 uv run --project services/quant-api guiyi data au-calendar-correction \
   --evidence /absolute/source-response.json --expected-evidence-sha256 EXACT_FILE_SHA256
-# 下面仅是用法；未取得新的单次生产写入意图时禁止执行。
+# 下面仅是用法；未取得覆盖该操作的有效生产写入授权时禁止执行。
 uv run --project services/quant-api guiyi data au-calendar-correction \
   --evidence /absolute/source-response.json --expected-evidence-sha256 EXACT_FILE_SHA256 \
   --expected-plan-sha256 EXACT_DRY_RUN_SHA256 --apply
@@ -792,7 +793,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/data_foundation/test_cli.py
 ```
 
-已获真实只读连接授权时，可在 exact 代码副本执行以下用法；`--as-of` 必须为本次选定的固定截止时间。
+任务范围内可自主在 exact 代码副本执行以下只读用法；`--as-of` 必须为本次选定的固定截止时间。
 
 ```bash
 uv run --project services/quant-api guiyi data newow-readiness \
@@ -909,7 +910,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_market_home_projection_api.py
 ```
 
-这组测试只使用临时目录/fake service，验证 projection identity、strict/atomic file、API projection-hit/miss、`data update/refresh/contract-warmup --apply` 在 maintenance lease 内的失效、after-market 顺序、default-off projection activation marker 与 maintenance lease；不得以测试为理由执行真实 `guiyi data ... --apply` 或创建 marker。真实 projection-hit 性能 `<200ms` 属于后续明确授权的本地 Runtime read-only manual acceptance，不在普通 pytest 中用 timing sleep 伪造。
+这组测试只使用临时目录/fake service，验证 projection identity、strict/atomic file、API projection-hit/miss、`data update/refresh/contract-warmup --apply` 在 maintenance lease 内的失效、after-market 顺序、default-off projection activation marker 与 maintenance lease；不得以测试为理由执行真实 `guiyi data ... --apply` 或创建 marker。真实 projection-hit 性能 `<200ms` 属于单独取证的本地 Runtime read-only manual acceptance，不在普通 pytest 中用 timing sleep 伪造。
 
 EMA21 10K slope 与整体退役合同：
 
@@ -961,8 +962,8 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 ```
 
 这些测试只使用 fake provider、临时 Parquet/SQLite 与可选 isolated PostgreSQL；不会调用真实 RQData、切换
-Canonical、写 production DB/Redis 或停止 Runtime。`prepare/publish --apply` 不是测试命令，分别需要新的单次
-真实数据/维护授权。
+Canonical、写 production DB/Redis 或停止 Runtime。`prepare/publish --apply` 不是测试命令，均须纳入明确的
+真实数据/维护任务或批次授权。
 
 Physical-contract warm-up（含 `--frequency 1d` 的 D1-only、`--frequency 1w` 的同源 D1 + W1、
 `--frequency 15m` / `--frequency 60m` 的 1m dependency、空计划 scope hash 隔离、跨月日周整组发布与 fail-stop）、
@@ -980,7 +981,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 该组测试仅使用 fake provider、临时 Catalog/Parquet 与临时路径。它不授权也不执行真实
 `guiyi data contract-warmup --apply`；即使 dry-run 得到 plan hash，真实 RQData/Canonical apply 仍需
-引用该 exact hash 的单次明确授权。
+在有效任务/批次授权内核对并使用该 exact hash。
 
 Runtime-bound daily recovery 的显式 P60/fixed-through 请求、稳定 target-window hash、maintenance lease 内
 identity/CAS 重检、相同端点/数量下的内部 expected/missing 时间戳漂移、hash 与执行共用同一冻结计划、目标
@@ -1131,7 +1132,7 @@ PLAYWRIGHT_CANDIDATE_PREVIEW=1 pnpm -C apps/quant-web exec playwright test -c pl
 
 浏览器 fixture 固定 5182，拦截业务请求并故意设置错误的旧 API/WS override，以验证隔离。
 普通 dev/build 不启用预览；候选模式只供 dev server，禁止构建成 production bundle。
-实际预览仅在本次明确启动/只读连接授权后，由 controller 确认干净 exact commit、共享 Catalog/Canonical
+任务需要的隔离只读预览可自主启动，由 controller 确认干净 exact commit、共享 Catalog/Canonical
 配置与无端口占用，再在同一候选代码根、沿用既有配置加载运行下面两个入口。时间值仅是用法示例，
 须替换为本次选定值且两进程完全一致；不得创建第二份 Canonical 或修改 `.env`、launchd、正式服务。
 
@@ -1326,7 +1327,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
 逐品种诊断命令为 `guiyi runtime subing-readiness --trading-day YYYY-MM-DD --as-of OFFSET_DATETIME`；
 `as-of` 必须带时区且不晚于执行时刻。命令只读 PostgreSQL/Redis/Canonical，逐品种报告当前输入与 Scope，
 非全部 ready 时退出 1；参数错误退出 2。该结果不证明 provider acceptance 或实际收件，真实连接仍须
-位于用户明确授权的只读诊断范围。生产只读执行还必须使用与现役服务启动器相同的 authenticated
+位于当前任务的只读诊断范围。生产只读执行还必须使用与现役服务启动器相同的 authenticated
 `REDIS_URL` 解析结果；只加载未提供该连接结果的 `project.env` 会在订阅快照读取处产生 Redis
 authentication failure，此时外层的 `INPUT_DIAGNOSIS_UNAVAILABLE` 不是行情缺口或逐品种 readiness 结论。
 
