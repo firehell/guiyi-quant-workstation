@@ -242,7 +242,7 @@ class MarketPartition(Base):
         CheckConstraint("month BETWEEN 1 AND 12", name="ck_market_partitions_month"),
         CheckConstraint("(coverage_start IS NULL AND coverage_end IS NULL) OR coverage_start < coverage_end", name="ck_market_partitions_window"),
         CheckConstraint("(coverage_start IS NULL) = (coverage_end IS NULL)", name="ck_market_partitions_price_coverage_pair"),
-        CheckConstraint("(source_coverage_start IS NULL AND source_coverage_end IS NULL) OR source_coverage_start < source_coverage_end", name="ck_market_partitions_source_window"),
+        CheckConstraint("(source_coverage_start IS NULL AND source_coverage_end IS NULL) OR (source_coverage_start IS NOT NULL AND source_coverage_end IS NOT NULL AND source_coverage_start < source_coverage_end)", name="ck_market_partitions_source_window"),
         CheckConstraint("(source_quality IS NULL) = (source_quality_sha256 IS NULL)", name="ck_market_partitions_quality_pair"),
         CheckConstraint("row_count >= 0", name="ck_market_partitions_row_count"),
     )

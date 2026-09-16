@@ -10,7 +10,9 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect as sa_inspect
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 
 from app.db.migration_test_guard import (
     MigrationTestDatabaseSafetyError,
@@ -113,6 +115,7 @@ def test_canonical_foundation_upgrades_empty_and_0035_databases(
     config, engine = isolated_migration_context
     if start_revision is not None:
         command.upgrade(config, start_revision)
+    _prepare_session_anchor_preflight(config, engine)
     command.upgrade(config, "head")
 
     inspector = sa_inspect(engine)
@@ -140,11 +143,60 @@ def test_price_unavailable_catalog_migration_supports_null_price_coverage(
     isolated_migration_context: tuple[Config, Engine],
 ) -> None:
     config, engine = isolated_migration_context
+    _prepare_session_anchor_preflight(config, engine)
     command.upgrade(config, "head")
     columns = {column["name"]: column for column in sa_inspect(engine).get_columns("market_partitions")}
     assert {"source_coverage_start", "source_coverage_end", "source_quality", "source_quality_sha256"} <= set(columns)
     assert columns["coverage_start"]["nullable"] is True
     assert columns["coverage_end"]["nullable"] is True
+    with engine.begin() as connection:
+        dataset_id = connection.scalar(text(
+            "INSERT INTO market_datasets "
+            "(kind, symbol, series_or_contract, frequency, created_at) "
+            "VALUES ('contract', 'jm', 'JM2509', '1d', now()) RETURNING id"
+        ))
+        connection.execute(text(
+            "INSERT INTO market_partitions "
+            "(dataset_id, year, month, coverage_start, coverage_end, "
+            "source_coverage_start, source_coverage_end, source_quality, "
+            "source_quality_sha256, file_uri, row_count, created_at) "
+            "VALUES (:dataset_id, 2025, 1, NULL, NULL, "
+            "TIMESTAMPTZ '2025-01-06 00:00:00+00', "
+            "TIMESTAMPTZ '2025-01-07 00:00:00+00', '[]'::jsonb, :digest, "
+            "'part.empty.parquet', 0, now())"
+        ), {"dataset_id": dataset_id, "digest": "a" * 64})
+    with pytest.raises(IntegrityError):
+        with engine.begin() as connection:
+            connection.execute(text(
+                "INSERT INTO market_partitions "
+                "(dataset_id, year, month, coverage_start, coverage_end, "
+                "source_coverage_start, source_coverage_end, source_quality, "
+                "source_quality_sha256, file_uri, row_count, created_at) "
+                "VALUES (:dataset_id, 2025, 2, NULL, NULL, NULL, "
+                "TIMESTAMPTZ '2025-02-07 00:00:00+00', '[]'::jsonb, :digest, "
+                "'part.bad.parquet', 0, now())"
+            ), {"dataset_id": dataset_id, "digest": "b" * 64})
+
+
+def _prepare_session_anchor_preflight(config: Config, engine: Engine) -> None:
+    """Supply the exact RQData session fact required by the existing 0045 gate."""
+    command.upgrade(config, "20260902_0044")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO exchanges (code, name, country, timezone, is_active, created_at, updated_at) "
+            "VALUES ('DCE', 'Dalian Commodity Exchange', 'CN', 'Asia/Shanghai', true, now(), now())"
+        ))
+        connection.execute(text(
+            "INSERT INTO instruments (symbol, name, exchange_code, is_active, created_at, updated_at) "
+            "VALUES ('jm', 'Coking Coal', 'DCE', true, now(), now())"
+        ))
+        connection.execute(text(
+            "INSERT INTO trading_sessions "
+            "(exchange_code, instrument_symbol, session_name, start_time, end_time, "
+            "effective_from, effective_to, crosses_midnight, is_active, provider, created_at) "
+            "VALUES ('DCE', 'jm', 'day', TIME '09:01', TIME '10:15', "
+            "DATE '2026-09-01', DATE '2026-09-01', false, true, 'rqdata', now())"
+        ))
 
 
 def _reset_public_schema(engine: Engine) -> None:

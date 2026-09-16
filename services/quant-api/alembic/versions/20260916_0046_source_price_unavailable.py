@@ -52,7 +52,8 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_market_partitions_source_window", "market_partitions",
         "(source_coverage_start IS NULL AND source_coverage_end IS NULL) "
-        "OR source_coverage_start < source_coverage_end",
+        "OR (source_coverage_start IS NOT NULL AND source_coverage_end IS NOT NULL "
+        "AND source_coverage_start < source_coverage_end)",
     )
     op.create_check_constraint(
         "ck_market_partitions_quality_pair", "market_partitions",
