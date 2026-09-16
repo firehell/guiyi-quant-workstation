@@ -64,7 +64,8 @@ release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不�
 
 ## 受控外部操作
 
-下列 mutation 必须在首次执行前取得目标、环境和范围明确的单次执行意图：
+下列 mutation 必须在首次执行前取得目标、环境和范围明确的执行授权；数据批次按下述批量授权规则执行，
+其余操作仍需单次执行意图：
 
 - 真实 RQData 下载或写入，Canonical/primary 数据覆盖、迁移或删除；
 - production PostgreSQL、Redis、Scope 或仓库外数据写入/删除；
@@ -73,11 +74,21 @@ release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不�
 - main merge、tag、GitHub Release、历史重写、force update 或 GitHub rules 修改；
 - Broker 接入、订单草稿发送及任何真实下单、撤单或改单。
 
-用户已精确批准某个动作时，在同一权限边界内完成 input validation 和 preflight 后执行，不机械追加第二次确认。
-该意图只授权紧随其后的一次匹配尝试；blocked、结果不明、失败后继续、范围变化、重试或跨会话继续均停止并取得
-新的明确意图。测试、dry-run、read-only health、配置存在、历史授权、commit hash 或 approval packet 都不能
-替代执行意图。普通 develop commit/push 与仓库内普通删除不属于受控外部操作；集成 develop 不授权生产写入、
-发布或 Runtime promotion。
+用户已明确批准的范围内，完成 input validation 和 preflight 后连续执行，不机械追加第二次确认。
+
+- 数据任务中的只读 PostgreSQL 连接、Catalog 查询、审计、dry-run、计划生成和结果回读自动完成，不逐项申请批准。
+- 用户可以一次批准一个明确的数据批次，覆盖多个品种、物理合约、周期和时间窗口，以及明确包含的 RQData 下载、
+  Canonical 发布和 Catalog 写入。批次须明确目标环境、范围、资源预算和异常处理边界；仅批准下载不等于批准正式入库。
+- 同一批次内的分包、逐项执行、校验和收尾不重复确认。授权未撤销、未到期且任务未完成时，不因会话切换或可恢复中断
+  自动失效；恢复前核对原授权、已完成项和当前状态，只继续未完成部分。
+- 失败或结果不明时先停止受影响的写入并只读核对；仅在结果已查明、重试安全且属于已批准的重试和预算边界时继续。
+  不盲目重试，不绕过质量异常；超出范围、预算或异常处理边界时才重新申请批准。
+- 批量授权替代数据任务逐命令、逐品种、逐 phase 的重复人工确认。领域文档或 skill 中旧的逐次确认要求按本节执行；
+  exact plan hash、维护锁、质量校验、幂等提交和失败恢复等技术约束继续生效，计划变化必须核对仍在授权范围内。
+
+其他受控外部操作仍只授权一次匹配尝试；失败、结果不明、重试或跨会话继续须取得新的明确意图。
+测试、dry-run、read-only health、配置存在、commit hash 或 approval packet 本身不能替代用户授权。
+普通 develop commit/push 与仓库内普通删除不属于受控外部操作；集成 develop 不授权生产写入、发布或 Runtime promotion。
 
 不得读取、显示、提交或记录凭据；不修改 `.env`。外部输入须在敏感操作前校验类型、范围、身份和关联字段；
 系统命令使用固定 executable 与离散参数，SQL 使用参数绑定或既有 ORM；输入派生路径规范化后必须仍在允许根内。
