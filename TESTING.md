@@ -138,9 +138,32 @@ PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin
 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
   scripts/newow_weekly_acceptance.py pt
 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/guiyi \
-  data newow-readiness --universe operational --frequency 1w --matrix \
+  data newow-readiness --universe operational --frequency 1w --frequency 1d --matrix \
   --as-of 2026-09-13T06:36:13+00:00 --max-work 100000 --timeout-seconds 1800
 ```
+
+## Newow 日线候选工程（1w+1d 开放，60m 仍 UNOPENED）
+
+以下组验证日版 capability v2、恢复器严格单频 1d、跨频 plan/hash 隔离、close 与 settlement 分离。
+不授权 RQData 下载、Canonical 写入或 Runtime。真实 D1 总包 prepare/apply 仍走独立 Gate。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/newow/test_market_newow_product_api.py \
+  services/quant-api/tests/newow/test_candidate_preview.py \
+  services/quant-api/tests/newow/test_readiness.py \
+  services/quant-api/tests/newow/test_weekly_acceptance.py \
+  services/quant-api/tests/data_foundation/test_newow_readiness_cli.py \
+  services/quant-api/tests/newow/test_weekly_recovery_campaign.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py::test_rqdata_daily_keeps_close_independent_from_settlement \
+  services/quant-api/tests/data_foundation/test_infrastructure.py::test_rqdata_daily_rejects_partial_or_traded_zero_ohl \
+  services/quant-api/tests/data_foundation/test_infrastructure.py::test_rqdata_daily_adapter_uses_exchange_daily_zero_trade_ohlc
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
+  tests/newowProductTypes.test.ts tests/newowCapabilities.test.ts tests/newowProductRoutes.test.ts
+```
+
+D1 只读差量必须绑定 private Canonical 根；完整原生 report 才是 campaign prepare 依据，compact 不得裁剪缺 authority 的清单。
 
 UI 依赖整合后的完整 Web 验收：
 

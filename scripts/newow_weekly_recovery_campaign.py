@@ -73,7 +73,6 @@ _REPORT_REQUIRED = {
     "readonly": True,
     "provider_requests": 0,
     "writes": 0,
-    "release_stage": "weekly",
     "matrix": False,
 }
 _REPORT_STRUCTURAL = {
@@ -2256,6 +2255,9 @@ def _validated_report_targets(
     if any(report.get(key) != value for key, value in _REPORT_REQUIRED.items()):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     frequency_scope = _campaign_frequency(report, recovery_frequency)
+    allowed_stages = {"weekly", "daily"} if frequency_scope == "1w" else {"daily"}
+    if report.get("release_stage") not in allowed_stages:
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     if not _REPORT_STRUCTURAL.issubset(report):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     try:

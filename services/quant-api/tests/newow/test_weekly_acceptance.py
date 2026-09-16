@@ -137,7 +137,6 @@ def _report() -> dict:
         for strategy in STRATEGIES:
             for frequency in ("1w", "1d", "60m"):
                 deferred_reason = {
-                    "1d": "NEWOW_DAILY_RELEASE_PENDING",
                     "60m": "NEWOW_HOURLY_RELEASE_PENDING",
                 }.get(frequency)
                 if deferred_reason is not None:
@@ -202,7 +201,7 @@ def _report() -> dict:
     enumerations = [
         {
             "symbol": product,
-            "frequency": "1w",
+            "frequency": frequency,
             "section": section,
             "status": "UNOPENED" if section == "explanation" else "ENUMERATED",
             "reason": (
@@ -222,6 +221,7 @@ def _report() -> dict:
             ),
         }
         for product in PRODUCTS
+        for frequency in ("1w", "1d")
         for section in ("chart", "auxiliary", "reference", "explanation")
     ]
     return {
@@ -231,12 +231,12 @@ def _report() -> dict:
         "status": "audited",
         "complete": True,
         "as_of": AS_OF.isoformat(),
-        "release_stage": "weekly",
+        "release_stage": "daily",
         "matrix": True,
-        "frequency_scope": ["1w"],
+        "frequency_scope": ["1w", "1d"],
         "product_count": 60,
         "main_case_count": 540,
-        "main_ready_count": 3,
+        "main_ready_count": 6,
         "budget_exhausted": False,
         "work_used": 1000,
         "enumerations": enumerations,
@@ -570,17 +570,17 @@ def test_summary_recomputes_three_of_540_ready_but_keeps_audit_complete():
     assert result["scope_covered"] is True
     assert result["counts"] == {
         "total": 540,
-        "main_ready": 3,
-        "reference_ready": 3,
-        "joint_ready": 3,
+        "main_ready": 6,
+        "reference_ready": 6,
+        "joint_ready": 6,
     }
     assert result["joint_ready_cases"] == [
-        {"symbol": PRODUCTS[0], "strategy": strategy, "frequency": "1w"}
+        {"symbol": PRODUCTS[0], "strategy": strategy, "frequency": frequency}
         for strategy in STRATEGIES
+        for frequency in ("1w", "1d")
     ]
     assert result["non_joint_ready_outcome_counts"] == {
-        "DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING|DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 177,
-        "UNOPENED:NEWOW_DAILY_RELEASE_PENDING|UNOPENED:NEWOW_DAILY_RELEASE_PENDING": 180,
+        "DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING|DATA_UNAVAILABLE:REPLAY_PREFIX_MISSING": 354,
         "UNOPENED:NEWOW_HOURLY_RELEASE_PENDING|UNOPENED:NEWOW_HOURLY_RELEASE_PENDING": 180,
     }
 
@@ -589,7 +589,7 @@ def test_summary_rejects_deferred_frequency_claimed_ready():
     from scripts.newow_weekly_acceptance import summarize_readiness
 
     report = _report()
-    case = next(item for item in report["cases"] if item["frequency"] == "1d")
+    case = next(item for item in report["cases"] if item["frequency"] == "60m")
     ready = {
         "status": "READY",
         "evidence_status": "ACTIVE_CODE_VERIFIED",
@@ -648,7 +648,7 @@ def test_summary_accepts_honest_incomplete_audit_and_preserves_pending_reason():
 
     assert result["valid"] is True
     assert result["audit_complete"] is False
-    assert result["counts"]["joint_ready"] == 3
+    assert result["counts"]["joint_ready"] == 6
     assert result["pending_count"] == 1
     assert result["pending_outcome_counts"] == {
         "dependency:UNKNOWN:HISTORICAL_SESSION_FACT_MISSING": 1

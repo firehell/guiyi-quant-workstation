@@ -123,7 +123,7 @@ export async function installNewowProductFixtures(page, options = {}) {
     if (request.method() !== 'GET') return unexpected(route, state, `non-GET ${request.method()} ${url.pathname}`)
 
     if (url.pathname === '/api/v1/market/newow/product-capabilities') {
-      return route.fulfill({ json: weeklyCapabilities() })
+      return route.fulfill({ json: dailyCapabilities() })
     }
 
     if (url.pathname === '/api/v1/market/newow/strategy-detail') {
@@ -204,11 +204,10 @@ export async function installNewowProductFixtures(page, options = {}) {
   return state
 }
 
-function weeklyCapabilities() {
+function dailyCapabilities() {
   return {
-    schema_version: 'newow_product_capabilities_v1', release_stage: 'weekly', open_frequencies: ['1w'],
+    schema_version: 'newow_product_capabilities_v2', release_stage: 'daily', open_frequencies: ['1w', '1d'],
     deferred_frequencies: [
-      { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
     open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],

@@ -209,6 +209,7 @@ def _daily_unit(index: int = 0) -> dict[str, Any]:
 
 def _daily_report(units: list[dict[str, Any]]) -> dict[str, Any]:
     report = _report(units)
+    report["release_stage"] = "daily"
     report["frequency_scope"] = ["1d"]
     for row in report["enumerations"]:
         row["frequency"] = "1d"
@@ -832,6 +833,23 @@ def test_partition_rejects_missing_required_report_field() -> None:
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
         partition_ordinary_units(report)
+
+
+def test_partition_accepts_daily_stage_weekly_report() -> None:
+    report = _report([_ordinary_unit()])
+    report["release_stage"] = "daily"
+
+    units = partition_ordinary_units(report)
+
+    assert len(units) == 1
+
+
+def test_daily_partition_rejects_legacy_weekly_release_stage() -> None:
+    report = _daily_report([_daily_unit()])
+    report["release_stage"] = "weekly"
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report, recovery_frequency="1d")
 
 
 @pytest.mark.parametrize(

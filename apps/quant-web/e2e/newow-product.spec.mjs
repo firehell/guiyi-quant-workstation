@@ -287,7 +287,7 @@ test('fixture validator rejects Bar ownership outside its physical segment windo
   expect(() => validateNewowFixtureEnvelopeForTest(chart, 'chart', 'trend', '1w')).toThrow(/segment window/)
 })
 
-test('strategy controls clear prior selection while deferred frequencies stay absent', async ({ page }) => {
+test('strategy controls clear prior selection while hourly stays deferred', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute())
   await showReference(page)
@@ -299,7 +299,7 @@ test('strategy controls clear prior selection while deferred frequencies stay ab
   await expect(chart).toHaveAttribute('data-strategy', 'oscillation')
   await expect(chart).toHaveAttribute('data-channel-point-count', '24')
   await expect(chart).toHaveAttribute('data-selected-signal-id', '')
-  await expect(page.getByRole('button', { name: '1d', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '1d', exact: true })).toHaveCount(1)
   await expect(page.getByRole('button', { name: '60m', exact: true })).toHaveCount(0)
   await expect.poll(() => productRequests(fixture, 'chart').at(-1)?.url.searchParams.get('strategy')).toBe('oscillation')
   expectExactQuery(productRequests(fixture, 'chart').at(-1), { product: 'rb', strategy: 'oscillation', frequency: '1w', series_kind: 'actual_dominant', section: 'chart', as_of: NEWOW_AS_OF })
@@ -528,19 +528,19 @@ test('shared-bar conflict and repeated 409 stay fail-closed and bounded', async 
   await repeatedContext.close()
 })
 
-test('daily and hourly deep links stay closed and recover only through the open weekly capability', async ({ page }) => {
+test('daily deep link opens while hourly remains closed', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
-  for (const frequency of ['1d', '60m']) {
-    const requestsBefore = productRequests(fixture, 'chart').length
-    await page.goto(newowRoute('trend', frequency))
-    await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toBeVisible()
-    await expect(page.getByText(new RegExp(`${frequency} 尚未开放`))).toBeVisible()
-    expect(productRequests(fixture, 'chart')).toHaveLength(requestsBefore)
-    await page.getByRole('button', { name: '切换到已开放周线', exact: true }).click()
-    await expect(page).toHaveURL(/frequency=1w/)
-    await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
-  }
-  expect(productRequests(fixture, 'chart').every(item => item.frequency === '1w')).toBe(true)
+  await page.goto(newowRoute('trend', '1d'))
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  expect(productRequests(fixture, 'chart').some(item => item.frequency === '1d')).toBe(true)
+  const requestsBefore = productRequests(fixture, 'chart').length
+  await page.goto(newowRoute('trend', '60m'))
+  await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toBeVisible()
+  await expect(page.getByText(/60m 尚未开放/)).toBeVisible()
+  expect(productRequests(fixture, 'chart')).toHaveLength(requestsBefore)
+  await page.getByRole('button', { name: '切换到已开放周线', exact: true }).click()
+  await expect(page).toHaveURL(/frequency=1w/)
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   assertNoUnexpectedRequests(fixture)
 })
 

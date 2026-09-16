@@ -31,6 +31,7 @@ from app.market_data.newow.historical_snapshot import (
 )
 from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
+    CAPABILITY_SCHEMA_VERSION,
     DEFERRED_FREQUENCIES,
     DEFERRED_SECTIONS,
     OPEN_FREQUENCIES,
@@ -138,7 +139,7 @@ def _normalize_public_product(product: str) -> str:
 def newow_product_capabilities() -> NewowProductCapabilitiesResponse:
     """Return the single public scope used by clients for this staged release."""
     return NewowProductCapabilitiesResponse(
-        schema_version="newow_product_capabilities_v1",
+        schema_version=CAPABILITY_SCHEMA_VERSION,
         release_stage=RELEASE_STAGE,
         open_frequencies=[item.value for item in OPEN_FREQUENCIES],
         deferred_frequencies=[

@@ -125,8 +125,8 @@ def test_budget_preserves_weekly_cases_and_marks_deferred_frequencies_unopened()
     assert len(report["cases"]) == 540
     assert report["complete"] is False
     assert report["budget_exhausted"] is True
-    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 180
-    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 360
+    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 360
+    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 180
 
 
 def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_dependencies():
@@ -148,7 +148,7 @@ def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_depende
     assert len(report["enumerations"]) == 8
     assert {row["frequency"] for row in report["enumerations"]} == {"1w"}
     assert report["frequency_scope"] == ["1w"]
-    assert report["release_stage"] == "weekly"
+    assert report["release_stage"] == "daily"
     assert all(
         row["status"] == "UNOPENED"
         for row in report["enumerations"]
@@ -159,11 +159,11 @@ def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_depende
         for dependency in report["dependencies"]
         for consumer in dependency["consumers"]
     )
-    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 6
-    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 12
+    assert sum(item["main"]["status"] == "UNSTARTED" for item in report["cases"]) == 12
+    assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 6
 
 
-def test_daily_readonly_scope_is_native_without_opening_public_daily_matrix():
+def test_daily_readonly_scope_and_public_daily_matrix_are_distinct():
     module = _audit_module()
     from guiyi_quant.newow.product_contracts import ProductFrequency
 
@@ -200,9 +200,41 @@ def test_daily_readonly_scope_is_native_without_opening_public_daily_matrix():
         )
     )
     assert all(
-        case["main"]["status"] == "UNOPENED"
+        case["main"]["status"] != "UNOPENED"
         for case in public["cases"]
         if case["frequency"] == "1d"
+    )
+
+
+@pytest.mark.parametrize("frequency", ["1w", "1d"])
+def test_single_frequency_matrix_never_queries_other_open_frequency(frequency):
+    module = _audit_module()
+    from guiyi_quant.newow.product_contracts import ProductFrequency
+
+    seen = []
+
+    class Service:
+        def query(self, request):
+            seen.append(request.frequency.value)
+            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason="REPLAY_PREFIX_MISSING")
+
+    report = module.NewowReadinessAudit(reader=AuditReader(), service=Service()).run(
+        module.ReadinessRequest(
+            ("rb",),
+            datetime(2026, 9, 4, 8, tzinfo=UTC),
+            matrix=True,
+            frequencies=(ProductFrequency(frequency),),
+            max_work=1000,
+        )
+    )
+
+    assert report["frequency_scope"] == [frequency]
+    assert seen and set(seen) == {frequency}
+    other = "1d" if frequency == "1w" else "1w"
+    assert all(
+        case["main"]["status"] == "UNSTARTED"
+        for case in report["cases"]
+        if case["frequency"] == other
     )
 
 
@@ -265,7 +297,7 @@ def test_matrix_preserves_section_evidence_states_and_fixed_asof():
         module.ReadinessRequest(("rb",), as_of, matrix=True)
     )
     assert len(report["cases"]) == 9
-    assert report["main_ready_count"] == 3
+    assert report["main_ready_count"] == 6
     assert all(
         case["sections"]["explanation"]["status"] == "UNOPENED"
         for case in report["cases"]
@@ -273,18 +305,22 @@ def test_matrix_preserves_section_evidence_states_and_fixed_asof():
     assert all(
         case["sections"]["comparator"]["status"] == "NOT_APPLICABLE"
         for case in report["cases"]
-        if case["frequency"] == "1w"
+        if case["frequency"] != "60m"
     )
     assert all(
         case["main"]["status"] == "UNOPENED"
         for case in report["cases"]
-        if case["frequency"] != "1w"
+        if case["frequency"] == "60m"
     )
     assert {(frequency, section) for frequency, section, _ in seen} == {
         ("1w", "chart"),
         ("1w", "auxiliary"),
         ("1w", "reference"),
         ("1w", "comparator"),
+        ("1d", "chart"),
+        ("1d", "auxiliary"),
+        ("1d", "reference"),
+        ("1d", "comparator"),
     }
     assert {observed for _, _, observed in seen} == {as_of}
 

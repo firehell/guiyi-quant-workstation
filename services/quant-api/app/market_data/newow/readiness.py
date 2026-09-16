@@ -433,6 +433,8 @@ class NewowReadinessAudit:
                 if deferred_reason is not None:
                     state.update(status="UNOPENED", reason=deferred_reason)
                     continue
+                if ProductFrequency(case["frequency"]) not in request.frequencies:
+                    continue
                 try:
                     budget.take()
                     if self.service is None:

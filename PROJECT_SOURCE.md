@@ -51,7 +51,7 @@ Newow 提供显式历史快照入口：当前数据缺失时可主动选择已�
 新版综合评分、公式、参考价格和推送不随日周恢复或 60m 开放自动变更。
 
 实际分阶段开放由 `GET /api/v1/market/newow/product-capabilities` 作为 Web 与 typed API 的共同 authority；
-当前周版候选只开放 `1w` 的主图、副图、参考交易和独立比较器，完整跨周期 explanation、`1d` 与 `60m`
+当前 develop 日版候选开放 `1w/1d` 的主图、副图、参考交易和独立比较器，完整跨周期 explanation 与 `60m`
 保持显式未开放。该候选不改变长期九组合范围，也不改变旧 `/trend-detail` 固定 D1 兼容合同；具体是否已完成
 数据、Release 或 Runtime 验收仍只看 `STATUS.md` 和真实 evidence。
 

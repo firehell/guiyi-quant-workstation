@@ -129,7 +129,7 @@ def test_compact_readiness_keeps_gate_identities_and_counts_without_full_rows():
             "status": "incomplete",
             "complete": False,
             "as_of": request.as_of.isoformat(),
-            "release_stage": "weekly",
+            "release_stage": "daily",
             "matrix": True,
             "frequency_scope": ["1w"],
             "product_count": 1,
