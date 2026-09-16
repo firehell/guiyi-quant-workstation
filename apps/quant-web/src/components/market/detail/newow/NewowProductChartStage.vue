@@ -312,8 +312,9 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     const y = priceToCoordinate.call(candles, action.value)
     return x === null || y === null ? [] : [{
       callout, x, y,
-      boxWidth: REFERENCE_CALLOUT_BOX.width,
-      boxHeight: REFERENCE_CALLOUT_BOX.height,
+      // Passive labels stay compact; interaction must reveal both lines without clipping.
+      boxWidth: activeActionLabel.value === callout.id ? 168 : REFERENCE_CALLOUT_BOX.width,
+      boxHeight: activeActionLabel.value === callout.id ? 52 : REFERENCE_CALLOUT_BOX.height,
       expanded: activeActionLabel.value === callout.id || props.selectedSignalId === callout.id,
     }]
   }), width, height)
