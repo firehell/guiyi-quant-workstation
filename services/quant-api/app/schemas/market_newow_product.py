@@ -21,7 +21,9 @@ EvidenceStatusValue = Literal[
 ]
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
 ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v2"]
-FuturesAdaptationVersionValue = Literal["newow_futures_segment_interrupt_v1"]
+FuturesAdaptationVersionValue = Literal[
+    "newow_futures_segment_interrupt_no_trade_v2"
+]
 
 
 class _Out(BaseModel):

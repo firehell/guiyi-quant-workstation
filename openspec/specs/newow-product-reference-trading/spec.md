@@ -328,7 +328,8 @@ closed/open/interrupted/initial-before-window 计数均不因此增加。之后�
 typed product schema 与 ReferenceTrade model SHALL 分别使用 `newow_product_detail_v2` 和
 `newow_marker_reference_zero_cost_v2`。合同组须参与 cache、dependency proof、chart/reference page identity 与
 ReferenceTrade ID；v2 Web MUST 拒绝 v1 envelope，旧 token/cursor 不得跨版本复用。公式、profile、
-`newow_futures_segment_interrupt_v1`、Action/Hint ID、capability/historical 与旧 `/trend-detail` 合同不变。
+Action/Hint ID、capability/historical 与旧 `/trend-detail` 合同不变；期货输入适配按本合同后续要求升级为
+`newow_futures_segment_interrupt_no_trade_v2`。
 
 #### Scenario: The first observed main-rise exit has no entry
 
@@ -470,8 +471,8 @@ identity 与确认时间语义；`pivot_at` 不得冒充首次可知时间，其
 `CONTRACT_REPLAY_COVERAGE_UNAVAILABLE` 旧 code 本身 MUST NOT 授权历史回退；只有结构化
 `REPLAY_PREFIX_MISSING` / `REPLAY_ENDPOINTS_MISSING` 或明确缺失的 Calendar、Session、合约元数据
 等 reason 允许继续既有限定候选搜索。额外 Bar、重复/乱序、截止不一致以及无已知 reason 的基础设施失败
-必须立即停止。原始非正价格使用 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不得跳行、填充或改变 warm-up；
-该来源限制不授权更早候选回退或重复下载。
+必须立即停止。除本合同定义的严格期货无交易事实外，原始非正价格使用
+`NEWOW_SOURCE_NONPOSITIVE_PRICE`，不得跳行、填充或改变 warm-up；该来源限制不授权更早候选回退或重复下载。
 候选日期 SHALL 分批读取，不能另加自然日截止而缩短最近 20 个完成交易日的范围；
 解析器 SHALL 使用 30 秒单调时钟预算并在读取边界检查取消，超时后不得返回成功。
 
@@ -491,6 +492,34 @@ identity 与确认时间语义；`pivot_at` 不得冒充首次可知时间，其
 - **GIVEN** 最近 20 个完成交易日均存在输入缺口
 - **WHEN** 用户请求历史快照
 - **THEN** 返回明确不可用，不继续扫描或以部分输入生成成功响应
+
+### Requirement: Futures no-trade facts pause effective observations
+
+Newow 期货输入适配 SHALL 将权威 Canonical 中同时满足 `open=high=low=close=0`、`volume=0`、
+`turnover=0` 的完成 Bar 识别为严格 `NO_TRADE` 事实。原始 Bar、日期、coverage 与 lineage MUST 保留在
+Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数改写它。
+
+严格 `NO_TRADE` 不得构造 `NewowDailyBar`，不得进入指标窗口，不得推进 warming、周期计数或策略状态，
+不得生成 Action、Hint、ReferenceTrade 或再次确认 HOLD。下一根有效 Bar SHALL 直接承接上一根有效 Bar；
+依赖前收的指标按这两根有效观察计算，因此无交易间隔后的价格跳空仍由恢复交易 Bar 自身表达。
+该规则对 owner 前同物理合约 warm-up 和 owner 内有效观察一致适用。
+
+部分零价、正 `volume`、正 `turnover`、`turnover` 缺失或其他不能严格证明无交易的非正价格事实 MUST
+继续 fail-closed。reader/readiness SHALL 公开 raw、effective 与 `NO_TRADE` 数量，并把
+`newow_futures_effective_observation_v1` 纳入输入证明；产品与 ReferenceTrade 使用
+`newow_futures_segment_interrupt_no_trade_v2`，不得笼统声明证券页面原样 parity。
+
+#### Scenario: A zero-activity futures day appears in warm-up
+
+- **GIVEN** 权威物理合约前缀包含严格 `NO_TRADE`，其后恢复为有效正价 Bar
+- **WHEN** 三种 Newow 策略重放同一 owner 生命周期
+- **THEN** 输出等同于有效观察序列中不存在该 Bar，所有指标、状态、Action 与 ReferenceTrade 均不多走一步
+
+#### Scenario: A zero price still carries activity
+
+- **GIVEN** 非正价格 Bar 的 `volume`、`turnover` 或其他严格条件不满足
+- **WHEN** reader 构造策略输入
+- **THEN** 返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
 
 ### Requirement: Sectioned product delivery is computation-bounded
 

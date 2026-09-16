@@ -235,7 +235,7 @@ function chartResponse(
       identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64),
       data_revision_identity: null, snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v2',
-      futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+      futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
     },
     section: 'chart',
     status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null },

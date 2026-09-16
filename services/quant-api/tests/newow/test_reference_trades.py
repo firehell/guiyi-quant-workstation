@@ -52,7 +52,10 @@ def test_closed_trade_covers_the_reference_contract_and_uses_action_prices(
     assert trade.segment_id == case.entry.segment_id
     assert trade.formula_versions == ("newow_trend_band_page_v2",)
     assert trade.reference_model_version == "newow_marker_reference_zero_cost_v2"
-    assert trade.futures_adaptation_version == "newow_futures_segment_interrupt_v1"
+    assert (
+        trade.futures_adaptation_version
+        == "newow_futures_segment_interrupt_no_trade_v2"
+    )
     assert trade.entry_signal_id == case.entry.signal_id
     assert trade.entry_bar_end == case.entry.bar_end
     assert trade.entry_reference_price == Decimal("100")
@@ -95,6 +98,32 @@ def test_reference_trade_id_changes_when_reference_model_moves_from_v1_to_v2(
     ).trades[0].reference_trade_id
 
     assert v1_id != v2_id
+
+
+def test_reference_trade_id_changes_with_futures_no_trade_policy_version(
+    product_cases, monkeypatch
+):
+    import guiyi_quant.newow.product_identity as product_identity
+
+    case = product_cases.closed(entry="100", exit="110")
+    monkeypatch.setattr(
+        product_identity,
+        "FUTURES_ADAPTATION_VERSION",
+        "newow_futures_segment_interrupt_v1",
+    )
+    prior_id = ReferenceTradeProjector().project(
+        case.replay, case.boundaries, case.as_of
+    ).trades[0].reference_trade_id
+    monkeypatch.setattr(
+        product_identity,
+        "FUTURES_ADAPTATION_VERSION",
+        "newow_futures_segment_interrupt_no_trade_v2",
+    )
+    current_id = ReferenceTradeProjector().project(
+        case.replay, case.boundaries, case.as_of
+    ).trades[0].reference_trade_id
+
+    assert prior_id != current_id
 
 
 def test_open_trade_has_no_manufactured_exit_or_realized_return(product_cases):

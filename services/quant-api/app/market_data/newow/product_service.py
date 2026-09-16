@@ -35,6 +35,7 @@ from guiyi_quant.newow.product_contracts import (
 )
 from guiyi_quant.newow.product_identity import (
     FUTURES_ADAPTATION_VERSION,
+    FUTURES_INPUT_POLICY_VERSION,
     REFERENCE_MODEL_VERSION,
     utc_timestamp,
 )
@@ -310,6 +311,20 @@ def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
         )
         for item in read.boundaries
     )
+    sources = tuple(
+        (
+            frequency.value,
+            source.source_identity,
+            None if source.bar_end is None else source.bar_end.isoformat(),
+            source.input_policy_version,
+            source.raw_bar_count,
+            source.effective_bar_count,
+            source.no_trade_bar_count,
+        )
+        for frequency, source in sorted(
+            read.sources.items(), key=lambda item: str(item[0])
+        )
+    )
     payload = json.dumps(
         {
             "identity": (
@@ -323,6 +338,7 @@ def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
             "bars": bars,
             "owners": owners,
             "boundaries": boundaries,
+            "sources": sources,
         },
         separators=(",", ":"),
         sort_keys=True,
@@ -458,6 +474,10 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
             (
                 source.source_identity,
                 "" if source.bar_end is None else source.bar_end.isoformat(),
+                source.input_policy_version,
+                str(source.raw_bar_count),
+                str(source.effective_bar_count),
+                str(source.no_trade_bar_count),
             )
         )
         proof[key] = sha256(value.encode()).hexdigest()
@@ -466,6 +486,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
             (
                 SCHEMA_VERSION,
                 FUTURES_ADAPTATION_VERSION,
+                FUTURES_INPUT_POLICY_VERSION,
                 REFERENCE_MODEL_VERSION,
                 SOURCE_FACT_ADAPTER_VERSION,
                 "main_contract_map:rank1:calendar_session_v1",

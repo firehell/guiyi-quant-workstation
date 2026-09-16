@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
 from guiyi_quant.newow.product_contracts import ProductFrequency
 
 from app.market_data.actual_dominant_research import (
@@ -89,6 +90,172 @@ def test_reads_requested_canonical_frequency_without_fallback(product_cases, fre
     assert {r.series_kind for r in fake.physical_page_requests} == {SeriesKind.CONTRACT}
     assert result.sources[frequency].bar_end == result.replay_bars[-1].bar.bar_end
     assert result.sources[frequency].as_of == product_cases.as_of
+
+
+def test_strict_futures_no_trade_fact_is_not_an_effective_strategy_observation(
+    product_cases,
+):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=5, frequency="1d")
+    key = ("RB2605", BarFrequency.D1)
+    original = fake.physical[key]
+    no_trade = replace(
+        original[2],
+        open=Decimal(0),
+        high=Decimal(0),
+        low=Decimal(0),
+        close=Decimal(0),
+        volume=Decimal(0),
+        turnover=Decimal(0),
+    )
+    fake.physical[key] = (*original[:2], no_trade, *original[3:])
+    fake.actual[BarFrequency.D1] = fake.physical[key]
+    fake.expected_physical = dict(fake.physical)
+
+    result = reader.load(query, fake.as_of)
+
+    assert [item.bar.bar_end for item in result.replay_bars] == [
+        original[0].bar_end,
+        original[1].bar_end,
+        original[3].bar_end,
+        original[4].bar_end,
+    ]
+    source = result.sources[ProductFrequency.DAILY]
+    assert source.input_policy_version == "newow_futures_effective_observation_v1"
+    assert source.raw_bar_count == 5
+    assert source.effective_bar_count == 4
+    assert source.no_trade_bar_count == 1
+    assert result.lifecycle_evidence[0].bar_count == 4
+
+    readiness = reader.check_dependency(
+        "rb",
+        ProductFrequency.DAILY,
+        fake.segments[0],
+        fake.as_of,
+    )
+    assert readiness == {
+        "status": "DATA_READY",
+        "expected_bar_count": 5,
+        "actual_bar_count": 5,
+        "effective_bar_count": 4,
+        "no_trade_bar_count": 1,
+        "input_policy_version": "newow_futures_effective_observation_v1",
+        "cutoff": original[-1].bar_end.isoformat(),
+    }
+
+
+def test_pre_owner_no_trade_fact_does_not_advance_warmup(product_cases):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=12, frequency="1d")
+    key = ("RB2605", BarFrequency.D1)
+    original = fake.physical[key]
+    no_trade = replace(
+        original[0],
+        open=Decimal(0),
+        high=Decimal(0),
+        low=Decimal(0),
+        close=Decimal(0),
+        volume=Decimal(0),
+        turnover=Decimal(0),
+    )
+    fake.physical[key] = (no_trade, *original[1:])
+    fake.expected_physical = dict(fake.physical)
+
+    result = reader.load(query, fake.as_of)
+
+    assert len(result.replay_bars) == 11
+    assert result.replay_bars[0].bar.bar_end == original[1].bar_end
+    assert result.replay_bars[0].bar.observation_eligible is False
+    assert sum(not item.bar.observation_eligible for item in result.replay_bars) == 1
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"volume": Decimal(1), "turnover": Decimal(0)},
+        {"volume": Decimal(0), "turnover": Decimal(1)},
+        {"volume": Decimal(0), "turnover": None},
+        {
+            "open": Decimal(100),
+            "high": Decimal(100),
+            "low": Decimal(0),
+            "close": Decimal(0),
+            "volume": Decimal(0),
+            "turnover": Decimal(0),
+        },
+    ],
+)
+def test_non_strict_zero_price_fact_still_fails_closed(product_cases, changes):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=3, frequency="1d")
+    key = ("RB2605", BarFrequency.D1)
+    original = fake.physical[key]
+    zero_prices = {
+        "open": Decimal(0),
+        "high": Decimal(0),
+        "low": Decimal(0),
+        "close": Decimal(0),
+    }
+    damaged = replace(original[0], **{**zero_prices, **changes})
+    fake.physical[key] = (damaged, *original[1:])
+    fake.actual[BarFrequency.D1] = fake.physical[key]
+    fake.expected_physical = dict(fake.physical)
+
+    with pytest.raises(
+        NewowProductReadError, match="NEWOW_SOURCE_NONPOSITIVE_PRICE"
+    ):
+        reader.load(query, fake.as_of)
+
+
+@pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
+def test_no_trade_day_pauses_each_strategy_exactly_like_an_absent_observation(
+    product_cases, strategy
+):
+    no_trade_reader, no_trade_query, no_trade_market = product_cases.paged_reader(
+        prefix_bars=60, frequency="1d"
+    )
+    absent_reader, absent_query, absent_market = product_cases.paged_reader(
+        prefix_bars=60, frequency="1d"
+    )
+    key = ("RB2605", BarFrequency.D1)
+    raw = no_trade_market.physical[key]
+    no_trade = replace(
+        raw[20],
+        open=Decimal(0),
+        high=Decimal(0),
+        low=Decimal(0),
+        close=Decimal(0),
+        volume=Decimal(0),
+        turnover=Decimal(0),
+    )
+    no_trade_market.physical[key] = (*raw[:20], no_trade, *raw[21:])
+    no_trade_market.actual[BarFrequency.D1] = tuple(
+        bar
+        for bar in no_trade_market.physical[key]
+        if bar.trading_day >= no_trade_market.segments[0].start_trading_day
+    )
+    no_trade_market.expected_physical = dict(no_trade_market.physical)
+
+    absent = absent_market.physical[key]
+    absent_market.physical[key] = (*absent[:20], *absent[21:])
+    absent_market.actual[BarFrequency.D1] = tuple(
+        bar
+        for bar in absent_market.physical[key]
+        if bar.trading_day >= absent_market.segments[0].start_trading_day
+    )
+    absent_market.expected_physical = dict(absent_market.physical)
+
+    observed = no_trade_reader.load(no_trade_query, no_trade_market.as_of)
+    baseline = absent_reader.load(absent_query, absent_market.as_of)
+    identity = build_product_identity("rb", strategy, ProductFrequency.DAILY)
+
+    assert observed.replay_bars == baseline.replay_bars
+    assert replay_strategy(
+        identity,
+        observed.replay_bars,
+        lifecycle_evidence=observed.lifecycle_evidence,
+    ) == replay_strategy(
+        identity,
+        baseline.replay_bars,
+        lifecycle_evidence=baseline.lifecycle_evidence,
+    )
 
 
 def _weekly_reader(product_cases):

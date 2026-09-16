@@ -78,7 +78,7 @@ export interface NewowProductMeta {
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v2'
-  readonly futures_adaptation_version: 'newow_futures_segment_interrupt_v1'
+  readonly futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2'
 }
 
 export interface NewowProductBar {
@@ -190,7 +190,7 @@ export interface NewowReferenceTrade {
   readonly segment_id: string
   readonly formula_versions: readonly string[]
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v2'
-  readonly futures_adaptation_version: 'newow_futures_segment_interrupt_v1'
+  readonly futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2'
   readonly entry_signal_id: string
   readonly entry_sequence: number
   readonly entry_bar_end: string
