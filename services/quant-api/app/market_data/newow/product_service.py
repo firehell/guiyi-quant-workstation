@@ -463,18 +463,21 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
         )
         proof[key] = sha256(value.encode()).hexdigest()
     for frequency, source in read.sources.items():
+        proof["|".join(("source-version", frequency.value))] = sha256(
+            "|".join((source.source_identity, source.input_policy_version)).encode()
+        ).hexdigest()
         key = "|".join(
             (
-                "source",
+                "source-window",
                 frequency.value,
-                "" if source.bar_end is None else source.bar_end.isoformat(),
+                read.display_window.since.isoformat(),
+                read.display_window.through.isoformat(),
+                read.as_of.isoformat(),
             )
         )
         value = "|".join(
             (
-                source.source_identity,
                 "" if source.bar_end is None else source.bar_end.isoformat(),
-                source.input_policy_version,
                 str(source.raw_bar_count),
                 str(source.effective_bar_count),
                 str(source.no_trade_bar_count),
@@ -490,7 +493,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                 REFERENCE_MODEL_VERSION,
                 SOURCE_FACT_ADAPTER_VERSION,
                 "main_contract_map:rank1:calendar_session_v1",
-                "newow_product_dependency_proof_v3",
+                "newow_product_dependency_proof_v4",
             )
         ).encode()
     ).hexdigest()
