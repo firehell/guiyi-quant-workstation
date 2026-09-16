@@ -287,7 +287,7 @@ test('fixture validator rejects Bar ownership outside its physical segment windo
   expect(() => validateNewowFixtureEnvelopeForTest(chart, 'chart', 'trend', '1w')).toThrow(/segment window/)
 })
 
-test('strategy controls clear prior selection while deferred frequencies stay absent', async ({ page }) => {
+test('strategy controls clear prior selection while hourly stays deferred', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute())
   await showReference(page)
@@ -299,7 +299,7 @@ test('strategy controls clear prior selection while deferred frequencies stay ab
   await expect(chart).toHaveAttribute('data-strategy', 'oscillation')
   await expect(chart).toHaveAttribute('data-channel-point-count', '24')
   await expect(chart).toHaveAttribute('data-selected-signal-id', '')
-  await expect(page.getByRole('button', { name: '1d', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '1d', exact: true })).toHaveCount(1)
   await expect(page.getByRole('button', { name: '60m', exact: true })).toHaveCount(0)
   await expect.poll(() => productRequests(fixture, 'chart').at(-1)?.url.searchParams.get('strategy')).toBe('oscillation')
   expectExactQuery(productRequests(fixture, 'chart').at(-1), { product: 'rb', strategy: 'oscillation', frequency: '1w', series_kind: 'actual_dominant', section: 'chart', as_of: NEWOW_AS_OF })
@@ -390,6 +390,8 @@ test('reference pagination exposes OPEN, CLOSED, interrupted, negative and initi
   await expect(stage.getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
   expect(await page.getByTestId('newow-reference-summary').innerText()).toBe(summaryBeforeViewport)
   await page.evaluate(scrollY => window.scrollTo(0, scrollY), referenceScrollY)
+  await page.getByTestId('newow-reference-summary').scrollIntoViewIfNeeded()
+  await page.mouse.move(0, 0)
   await expect(page).toHaveScreenshot('newow-desktop-reference.png', { animations: 'disabled', caret: 'hide', maxDiffPixels: 500 })
   expect(productRequests(fixture, 'reference').at(-1).url.searchParams.get('history_before')).toBe('reference-page-2')
   assertNoUnexpectedRequests(fixture)
@@ -528,19 +530,19 @@ test('shared-bar conflict and repeated 409 stay fail-closed and bounded', async 
   await repeatedContext.close()
 })
 
-test('daily and hourly deep links stay closed and recover only through the open weekly capability', async ({ page }) => {
+test('daily deep link opens while hourly remains closed', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
-  for (const frequency of ['1d', '60m']) {
-    const requestsBefore = productRequests(fixture, 'chart').length
-    await page.goto(newowRoute('trend', frequency))
-    await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toBeVisible()
-    await expect(page.getByText(new RegExp(`${frequency} 尚未开放`))).toBeVisible()
-    expect(productRequests(fixture, 'chart')).toHaveLength(requestsBefore)
-    await page.getByRole('button', { name: '切换到已开放周线', exact: true }).click()
-    await expect(page).toHaveURL(/frequency=1w/)
-    await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
-  }
-  expect(productRequests(fixture, 'chart').every(item => item.frequency === '1w')).toBe(true)
+  await page.goto(newowRoute('trend', '1d'))
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  expect(productRequests(fixture, 'chart').some(item => item.frequency === '1d')).toBe(true)
+  const requestsBefore = productRequests(fixture, 'chart').length
+  await page.goto(newowRoute('trend', '60m'))
+  await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toBeVisible()
+  await expect(page.getByText(/60m 尚未开放/)).toBeVisible()
+  expect(productRequests(fixture, 'chart')).toHaveLength(requestsBefore)
+  await page.getByRole('button', { name: '切换到已开放周线', exact: true }).click()
+  await expect(page).toHaveURL(/frequency=1w/)
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   assertNoUnexpectedRequests(fixture)
 })
 
@@ -786,16 +788,34 @@ test('dense action nodes keep their real micro size and expand to a readable car
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   const labels = stage.locator('.newow-product-chart-stage__action-label')
   await expect(labels).toHaveCount(100)
-  const microIndex = await labels.evaluateAll(nodes => nodes.findIndex(node => node.getBoundingClientRect().width <= 8.5))
-  expect(microIndex).toBeGreaterThanOrEqual(0)
-  const target = labels.nth(microIndex)
-  const before = await target.boundingBox()
+  // Capture identity and geometry together: async pane layout can reorder the nodes.
+  const micro = await labels.evaluateAll(nodes => {
+    const node = nodes.find(node => node.getBoundingClientRect().width <= 8.5)
+    if (!node) return null
+    const { width, height } = node.getBoundingClientRect()
+    return { id: node.getAttribute('data-action-id'), width, height }
+  })
+  expect(micro).not.toBeNull()
+  const target = stage.locator(`.newow-product-chart-stage__action-label[data-action-id="${micro.id}"]`)
+  const before = micro
   expect(before?.width).toBeLessThanOrEqual(8.5)
   expect(before?.height).toBeLessThanOrEqual(8.5)
   await target.focus()
   await expect(target).toContainText(/建仓|清仓/)
+  // Interaction expands the compact passive label into a readable two-line card.
   await expect.poll(async () => (await target.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(168)
   await expect.poll(async () => (await target.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(52)
+  await expect(target).toBeFocused()
+  const actionId = await target.getAttribute('data-action-id')
+  const accessibleName = await target.getAttribute('aria-label')
+  expect(await target.locator('strong, span').evaluateAll(nodes => nodes.every(node =>
+    node.scrollWidth <= node.clientWidth && node.scrollHeight <= node.clientHeight))).toBe(true)
+  await target.press('Enter')
+  await expect(stage).toHaveAttribute('data-selected-signal-id', actionId)
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(target).toBeFocused()
+  await expect(target).toHaveAttribute('aria-label', accessibleName)
   expect(await labels.count()).toBe(100)
   assertNoUnexpectedRequests(fixture)
 })

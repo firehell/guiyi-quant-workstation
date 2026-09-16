@@ -11,8 +11,11 @@ ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-RELEASE_STAGE: Literal["weekly"] = "weekly"
-OPEN_FREQUENCIES = (ProductFrequency.WEEKLY,)
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v2"] = (
+    "newow_product_capabilities_v2"
+)
+RELEASE_STAGE: Literal["daily"] = "daily"
+OPEN_FREQUENCIES = (ProductFrequency.WEEKLY, ProductFrequency.DAILY)
 OPEN_SECTIONS: tuple[ProductSectionName, ...] = (
     "chart",
     "auxiliary",
@@ -20,7 +23,6 @@ OPEN_SECTIONS: tuple[ProductSectionName, ...] = (
     "comparator",
 )
 DEFERRED_FREQUENCIES = (
-    (ProductFrequency.DAILY, "NEWOW_DAILY_RELEASE_PENDING"),
     (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
 )
 DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = (

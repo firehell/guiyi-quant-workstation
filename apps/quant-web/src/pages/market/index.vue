@@ -11,7 +11,6 @@ import MarketHomeMobileList from '@/components/market/MarketHomeMobileList.vue'
 import MarketHomeSectorTicker from '@/components/market/MarketHomeSectorTicker.vue'
 import MarketHomeSkeleton from '@/components/market/MarketHomeSkeleton.vue'
 import MarketHomeTable from '@/components/market/MarketHomeTable.vue'
-import MarketHomeTrustStrip from '@/components/market/MarketHomeTrustStrip.vue'
 import { getMarketDominants, getMarketHomeOverview } from '@/api/market'
 import { getRuntimeHealth } from '@/api/runtime'
 import { useMarketHome } from '@/composables/useMarketHome'
@@ -178,7 +177,6 @@ onBeforeUnmount(() => {
         <div><h1>{{ sector ? productSectorLabel(sector) : '全部品种' }}</h1><span>{{ rows.length }}</span><p>{{ rows.some((row) => row.liveQuote) ? '最新已完成行情；日周指标仍为收盘口径' : '最近完整交易日收盘快照' }}</p></div>
         <div class="market-home-live-status" :class="`market-home-live-status--${live.connection.value}`" aria-live="polite"><span>{{ liveStatus }}</span><button v-if="live.connection.value === 'stale' || live.connection.value === 'unavailable'" type="button" @click="live.restart">重连行情</button></div>
       </header>
-      <MarketHomeTrustStrip :target-as-of="home.overview.data.value?.target_as_of ?? null" :as-of="home.overview.data.value?.data_as_of ?? null" :participants="home.overview.data.value?.participant_count ?? null" :active="home.overview.data.value?.active_count ?? null" :stale-count="home.overview.data.value?.stale_count ?? null" :unavailable-count="home.overview.data.value?.unavailable_count ?? null" :price-unavailable-count="home.overview.data.value?.summary.price_unavailable_count ?? null" :overview="model.overview.availability" :runtime="model.runtime.status" :after-market="home.runtime.data.value?.components?.after_market ?? null" :weekly-audit="home.runtime.data.value?.components?.weekly_audit ?? null" :overview-stale="model.overview.cachedStale" :runtime-stale="model.runtime.cachedStale" :overview-error="home.overview.error.value ?? null" />
       <p v-if="home.overview.unavailable.value && !home.overview.data.value" class="market-dashboard-page__error" role="alert">行情快照暂不可用；没有可展示的上一份成功快照。</p>
       <p v-else-if="home.overview.stale.value" class="market-dashboard-page__error" role="alert">行情刷新失败；正在展示上一份成功快照。</p>
       <MarketHomeSkeleton v-if="loading && !home.overview.data.value" />

@@ -85,8 +85,9 @@ async function unifiedShellVisual(page) {
 }
 
 async function enableRangeDetector(page) {
-  await page.getByText('指标设置', { exact: true }).click()
-  await page.getByLabel('箱体识别（Range）').check()
+  const control = page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /箱体识别/ })
+  await control.click()
+  await expect(control).toHaveAttribute('aria-pressed', 'true')
 }
 
 test('missing view migrates to the unified Free identity', async ({ page }) => {
@@ -184,6 +185,7 @@ test('Free Range warm-up has a 1280 by 800 baseline and does not create a strate
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-rendered-marker-count', '0')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-chart-viewport-ready', 'true')
+  await page.mouse.move(0, 0)
   await expect(page.locator('[data-detail-workspace="free"]')).toHaveScreenshot('market-detail-free-range-1280x800.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 400,
   })
@@ -395,10 +397,11 @@ test('Free restores enabled EMA preferences after reload', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)
 
-  await page.getByText('指标设置', { exact: true }).click()
-  await page.getByLabel('EMA10').check()
+  const ema10 = page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /EMA10/ })
+  await ema10.click()
+  await expect(ema10).toHaveAttribute('aria-pressed', 'true')
   await page.reload()
-  await expect(page.getByLabel('EMA10')).toBeChecked()
+  await expect(page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /EMA10/ })).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('Free clears a contract when the product changes and keeps HTDY preferences untouched', async ({ page }) => {
@@ -461,7 +464,7 @@ test('legacy Trend route migrates once into the unified Newow trend identity', a
     symbol: 'jm', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant',
     frequency: '1d', focus_bar_end: '2026-09-03T07:00:00Z',
   })
-  await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toBeVisible()
+  await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toHaveCount(0)
   await expect(page.getByTestId('market-detail-migration-notice')).toContainText('旧趋势详情已迁移到牛哇趋势策略')
   await expect(page.locator('[data-detail-workspace="trend"]')).toHaveCount(0)
   await expect(page.getByTestId('newow-trend-chart-stage')).toHaveCount(0)
@@ -479,16 +482,16 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
   await expect(page.locator('[data-detail-workspace="htdy"]')).toBeVisible()
-  await expect(page.getByText(/含未来函数的回画观察/)).toBeVisible()
-  await expect(page.getByText('首次识别 Event', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText(/当前回画观察与持久首次识别 Event 分别展示/)).toBeVisible()
+  await page.getByRole('tab', { name: '预警与运行' }).click()
+  await expect(page.getByText(/仅真实主力序列的 HTDY AlertEvent/)).toBeVisible()
 
   await page.goto('/market/chart?symbol=jm&view=subing')
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
   await expect(page.locator('[data-detail-workspace="subing"]')).toBeVisible()
-  await expect(page.getByText(/正式 S↑ \/ S↓ 只来自 AlertEvent/)).toBeVisible()
+  await expect(page.getByText(/实际预警记录 · 以下仅为已持久化 AlertEvent/)).toBeVisible()
   await expect(page.getByText(/S↑ 多头预警/).first()).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
-  await expect(page.locator('.detail-status-strip dl > div').filter({ hasText: '全局最近评估' })).toContainText('全局尚无已评估 Bar')
   await page.getByRole('tab', { name: '历史记录', exact: true }).click()
   await expect(page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history')).toContainText('Bar 2026-09-03 10:45 北京时间')
   expect(requests.alertRequests.every(({ method }) => method === 'GET')).toBe(true)
@@ -502,13 +505,13 @@ test('SuBing projects Rule-specific runtime warm-up and failure states', async (
     subingRuntimeRuleStatus: () => ({ error_type: errorType }),
   })
   await page.goto('/market/chart?symbol=jm&view=subing')
-  const statusFact = page.locator('.detail-status-strip dl > div').filter({ hasText: 'Rule / Runtime' })
-  await expect(statusFact).toContainText('正在 warm-up')
+  const runtimeSection = page.locator('.detail-insight-deck').getByText(/正在 warm-up/)
+  await expect(runtimeSection).toBeVisible()
 
   errorType = 'evaluation_failed'
   await page.reload()
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
-  await expect(statusFact).toContainText('评估失败')
+  await expect(page.locator('.detail-insight-deck').getByText(/评估失败/)).toBeVisible()
 })
 
 test('SuBing has stable desktop and narrow viewport visuals with selectable history', async ({ page }) => {
@@ -538,17 +541,15 @@ test('SuBing has stable desktop and narrow viewport visuals with selectable hist
   })
 })
 
-test('SuBing marker click opens the matching immutable AlertEvent detail', async ({ page }) => {
+test('SuBing history opens the matching immutable AlertEvent detail while chart markers remain passive', async ({ page }) => {
   await mockReadyTrend(page, {
     alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
     alertRules: [subingRule()],
   })
   await page.goto('/market/chart?symbol=jm&view=subing')
-  const chart = page.getByTestId('kline-shell')
-  await chart.scrollIntoViewIfNeeded()
-  const bounds = await chart.boundingBox()
-  if (!bounds) throw new Error('SuBing chart is not visible')
-  await page.mouse.click(bounds.x + bounds.width * 0.714, bounds.y + bounds.height * 0.4)
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  await page.getByRole('tab', { name: '历史记录', exact: true }).click()
+  await page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history button').first().click()
   await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('S↑ 多头预警 · 2026-09-03 10:45 北京时间 · JM2601')
 })
 
@@ -615,8 +616,8 @@ test('HTDY resolves immutable Event focus across every official frequency', asyn
     currentCase = [frequency, focus, tradingDay, detectedAt]
     await page.goto(`/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=${frequency}&focus_bar_end=${encodeURIComponent(focus)}`)
     await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
-    const eventFact = page.locator('.detail-status-strip dl > div').filter({ hasText: '首次识别 Event' })
-    await expect(eventFact).toContainText('买入观察')
+    await page.getByRole('tab', { name: '历史记录' }).click()
+    await expect(page.locator('.detail-section-tabs__history')).toContainText('买入观察')
     await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
     await expect.poll(() => new URL(page.url()).searchParams.has('focus_bar_end')).toBe(false)
   }
@@ -641,15 +642,11 @@ test('HTDY keeps last successful immutable Event evidence when a later Event ref
     alertEvents: () => (++eventCalls === 1 ? [htdyEvent('jm', '15m')] : 'error'),
   })
   await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
-  const facts = page.locator('.detail-status-strip dl')
-  const rawFact = facts.locator('div').filter({ has: page.getByText('当前重绘观察', { exact: true }) })
-  const eventFact = facts.locator('div').filter({ has: page.getByText('首次识别 Event', { exact: true }) })
-  await expect(rawFact).toContainText('暂无')
-  await expect(eventFact).toContainText('买入观察')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await expect(page.getByRole('tab', { name: '历史记录' })).toBeVisible()
-  await expect(page.getByText(/最后成功快照（已旧）/)).toBeVisible({ timeout: 35_000 })
+  await expect.poll(() => eventCalls, { timeout: 35_000 }).toBeGreaterThan(1)
   await page.getByRole('tab', { name: '历史记录' }).click()
+  await expect(page.locator('.detail-section-tabs__history')).toContainText('买入观察')
   await expect(page.getByText(/Bar 2026-09-03 10:45 北京时间/)).toBeVisible()
 })
 
@@ -701,7 +698,7 @@ test('leaving the Free shell closes its live series resource', async ({ page }) 
   ))).toBe(true)
 })
 
-test('390px shell keeps keyboard disclosure and does not invent history', async ({ page }) => {
+test('390px shell opens market facts in a keyboard-dismissible dialog and does not invent history', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await mockMarketDetail(page)
   await page.goto(freeJm)
@@ -709,14 +706,55 @@ test('390px shell keeps keyboard disclosure and does not invent history', async 
   const disclosure = page.getByRole('button', { name: /更多行情数据/ })
   await disclosure.focus()
   await page.keyboard.press('Enter')
-  await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
-  await page.keyboard.press('Space')
+  const dialog = page.getByRole('dialog', { name: '行情数据详情' })
+  await expect(dialog).toBeVisible()
+  expect(await dialog.evaluate((element) => {
+    const bounds = element.getBoundingClientRect()
+    return bounds.left >= 0 && bounds.right <= window.innerWidth && bounds.top >= 0 && bounds.bottom <= window.innerHeight
+  })).toBe(true)
+  await page.mouse.click(8, 8)
+  await expect(dialog).not.toBeVisible()
   await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+  await expect(disclosure).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await expect(disclosure).toBeFocused()
   await expect(page.getByRole('button', { name: '历史记录' })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await expect(page.locator('[data-detail-workspace="free"]')).toHaveScreenshot('market-detail-free-390.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 400,
   })
+})
+
+test('market facts dialog closes when its identity changes', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+
+  await page.evaluate(async () => {
+    const { createApp, h, ref } = await import('/node_modules/.vite/deps/vue.js')
+    const { default: MarketFactsDialog } = await import('/src/components/market/detail/MarketFactsDialog.vue')
+    const host = document.createElement('div')
+    host.id = 'market-facts-dialog-browser-contract'
+    document.body.append(host)
+    const open = ref(true)
+    const identity = ref('free:jm:actual_dominant:15m')
+    createApp({
+      setup: () => () => h(MarketFactsDialog, {
+        open: open.value,
+        title: '行情数据详情测试',
+        identityKey: identity.value,
+        onClose: () => { open.value = false },
+      }),
+    }).mount(host)
+    window.__changeMarketFactsIdentity = () => { identity.value = 'free:rb:actual_dominant:15m' }
+  })
+
+  const dialog = page.getByRole('dialog', { name: '行情数据详情测试' })
+  await expect(dialog).toBeVisible()
+  await page.evaluate(() => window.__changeMarketFactsIdentity())
+  await expect(dialog).not.toBeVisible()
 })
 
 test('mobile history drawer traps focus, closes with Escape, and restores its trigger', async ({ page }) => {

@@ -21,7 +21,9 @@ EvidenceStatusValue = Literal[
 ]
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
 ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v2"]
-FuturesAdaptationVersionValue = Literal["newow_futures_segment_interrupt_v1"]
+FuturesAdaptationVersionValue = Literal[
+    "newow_futures_segment_interrupt_no_trade_v2"
+]
 
 
 class _Out(BaseModel):
@@ -730,8 +732,8 @@ class DeferredSectionOut(_Out):
 
 
 class NewowProductCapabilitiesResponse(_Out):
-    schema_version: Literal["newow_product_capabilities_v1"]
-    release_stage: Literal["weekly"]
+    schema_version: Literal["newow_product_capabilities_v2"]
+    release_stage: Literal["daily"]
     open_frequencies: list[ProductFrequencyValue]
     deferred_frequencies: list[DeferredFrequencyOut]
     open_sections: list[

@@ -40,11 +40,10 @@ function degradedStaleOverview() {
   return value
 }
 function runtime(status = 'degraded') { return { status, generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
-function weeklyCapabilities() {
+function dailyCapabilities() {
   return {
-    schema_version: 'newow_product_capabilities_v1', release_stage: 'weekly', open_frequencies: ['1w'],
+    schema_version: 'newow_product_capabilities_v2', release_stage: 'daily', open_frequencies: ['1w', '1d'],
     deferred_frequencies: [
-      { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
     open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
@@ -102,7 +101,7 @@ async function mockMarketHomeApi(page, requests, currentEvents = events(), curre
     if (route.request().method() !== 'GET') { requests.unexpected.push(route.request().method()); return route.abort('blockedbyclient') }
     if (url.pathname === '/api/v1/market/newow/product-capabilities') {
       requests.push(url.pathname)
-      return route.fulfill({ json: weeklyCapabilities() })
+      return route.fulfill({ json: dailyCapabilities() })
     }
     if (new URL(page.url()).pathname === '/market/chart') return route.fallback()
     const allowed = new Set(['/api/v1/market/dominants', '/api/v1/market/research/home-overview', '/api/runtime/health', '/api/alerts/current-events', '/api/alerts/history'])
@@ -248,7 +247,7 @@ function expectHomeReads(requests, overviewCount = 1, runtimeCount = overviewCou
 }
 
 for (const width of [1440, 390]) {
-  test(`maintenance v3 and weekly history summary are visible at ${width}px`, async ({ page }, testInfo) => {
+  test(`maintenance and weekly history summaries stay out of home at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 })
     const requests = []
     const health = runtime('degraded')
@@ -263,12 +262,13 @@ for (const width of [1440, 390]) {
     }
     await mockMarketHomeApi(page, requests, events(), overview(), health)
     await page.goto('/market')
-    await expect(page.getByText(/盘后维护.*读取校验.*7 次操作/)).toBeVisible()
-    await expect(page.getByText(/盘后维护.*contract\/JM2609.*1m.*2026-09.*累计 64.2 秒/)).toBeVisible()
-    await expect(page.getByText(/盘后维护.*已提交发布 2 次操作/)).toBeVisible()
-    await expect(page.getByText(/盘后维护.*运行结果待确认/)).toBeVisible()
-    await expect(page.getByText('Runtime 降级', { exact: true })).toBeVisible()
-    await expect(page.getByText(width === 390 ? /每周历史审计.*发现历史问题.*2026-08-28/ : /每周历史审计.*审计通过.*2026-08-28/)).toBeVisible()
+    await expect(page.locator('tbody tr')).toHaveCount(2)
+    await expect(page.getByText(/盘后维护.*读取校验.*7 次操作/)).toHaveCount(0)
+    await expect(page.getByText(/盘后维护.*contract\/JM2609.*1m.*2026-09.*累计 64.2 秒/)).toHaveCount(0)
+    await expect(page.getByText(/盘后维护.*已提交发布 2 次操作/)).toHaveCount(0)
+    await expect(page.getByText(/盘后维护.*运行结果待确认/)).toHaveCount(0)
+    await expect(page.getByText('Runtime 降级', { exact: true })).toHaveCount(0)
+    await expect(page.getByText(width === 390 ? /每周历史审计.*发现历史问题.*2026-08-28/ : /每周历史审计.*审计通过.*2026-08-28/)).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     expectHomeReads(requests)
     await page.screenshot({ path: testInfo.outputPath(`maintenance-${width}.png`), fullPage: true })
@@ -283,7 +283,7 @@ test('white full-width market uses only overview and Runtime reads without a res
   await expect(page.locator('.market-dashboard-page')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
   await expect(page.locator('.n-layout-sider, .n-layout-header, .toolbar')).toHaveCount(0)
   await expect(page.getByRole('combobox', { name: '搜索60品种' })).toBeVisible()
-  await expect(page.getByText(/非实时行情/).first()).toBeVisible()
+  await expect(page.getByText(/非实时行情/)).toHaveCount(0)
   await expect(page.getByRole('button', { name: /研究观察/ })).toHaveCount(0)
   await expect(page.getByText('AG · 火天大有 · 买观察 · 15m')).toHaveCount(0)
   expectHomeReads(requests)
@@ -332,6 +332,15 @@ test('renders the five states and soft percentage badges without inventing targe
   const badge = page.locator('tbody tr').first().locator('.change-badge')
   await expect(badge).toHaveCSS('border-radius', '7px')
   await expect(badge).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  const alignmentCell = page.locator('tbody tr').first().locator('td').nth(7)
+  await expect(alignmentCell).toHaveCSS('text-align', 'center')
+  await expect(alignmentCell).toHaveCSS('vertical-align', 'middle')
+  const alignmentGroup = alignmentCell.locator('.alignment')
+  await expect(alignmentGroup).toHaveCSS('position', 'relative')
+  await expect(alignmentGroup).toHaveCSS('width', '40px')
+  const alignmentBadge = alignmentGroup.getByTestId('market-state-icon-up-micro')
+  await expect(alignmentBadge).toHaveCSS('position', 'absolute')
+  await expect(alignmentBadge).toHaveCSS('width', '20px')
   expectHomeReads(requests)
   await expect(page.locator('.table-wrap')).toHaveScreenshot('market-home-five-table-states.png', { animations: 'disabled', maxDiffPixels: 400 })
 })
@@ -372,7 +381,6 @@ test('keeps 60 target-day D1 participants visible when RS2609 price change is un
   await page.goto('/market')
 
   await expect(page.locator('tbody tr')).toHaveCount(60)
-  await expect(page.getByText('涨跌不可用 1', { exact: true })).toBeVisible()
   await expect(page.locator('tbody tr[data-symbol="rs"] .change-badge')).toHaveText('—')
   const search = page.getByRole('combobox', { name: '搜索60品种' })
   await search.fill('rs')
@@ -508,7 +516,6 @@ test('cached and server stale overview facts stay gray and expose their own fail
   await page.goto('/market')
   await expect(page.locator('tbody tr')).toHaveCount(1)
   await expect(page.locator('tbody .market-state-icon--up')).toHaveCount(0)
-  await expect(page.getByText(/过期|stale/).first()).toBeVisible()
   await page.getByRole('button', { name: '刷新', exact: true }).click()
   await expect(page.getByText(/刷新失败.*上一份成功快照/)).toBeVisible()
   await expect(page.locator('tbody tr')).toHaveCount(1)
@@ -521,7 +528,7 @@ test('initial unavailable snapshot invents no counts and no target or product ro
   await page.goto('/market')
   await expect(page.getByText(/没有可展示的上一份成功快照/)).toBeVisible()
   await expect(page.locator('tbody tr')).toHaveCount(0)
-  await expect(page.getByText(/可用\s*—\s*\/\s*—/)).toBeVisible()
+  await expect(page.getByText(/可用\s*—\s*\/\s*—/)).toHaveCount(0)
   await page.getByRole('combobox', { name: '搜索60品种' }).focus()
   await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
   await expect(page.getByText('目录加载失败，无法安全切换品种。', { exact: true })).toHaveCount(0)

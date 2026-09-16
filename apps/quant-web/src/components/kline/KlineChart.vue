@@ -53,6 +53,7 @@ const props = withDefaults(defineProps<{
   rangeDetectorAnchorTime?: string | null
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
+  markerSelectionEnabled?: boolean
   referenceCallouts?: KlineReferenceCallout[]
   referenceSelection?: KlineReferenceSelection[]
 }>(), {
@@ -64,6 +65,7 @@ const props = withDefaults(defineProps<{
   rangeDetectorAnchorTime: null,
   alertMarkers: () => [],
   researchMarkers: () => [],
+  markerSelectionEnabled: true,
   referenceCallouts: () => [],
   referenceSelection: () => [],
 })
@@ -73,14 +75,12 @@ const emit = defineEmits<{
   'follow-latest-change': [followLatest: boolean]
   'crosshair-change': [context: HoverKlineContext | null]
   'marker-select': [marker: KlineMarker]
-  'reference-select': [id: string]
 }>()
 
 const container = ref<HTMLElement>()
 const positionedCallouts = ref<PositionedCallout[]>([])
 const positionedSelection = ref<Array<{ time: string; x: number; height: number }>>([])
 const isReferenceSelected = (callout: KlineReferenceCallout) => props.referenceSelection.some(selection => matchesReferenceBar(selection, callout))
-const activeCallout = ref<string | null>(null)
 let calloutFrame: number | null = null
 function scheduleReferenceCallouts() {
   if (calloutFrame !== null || (!props.referenceCallouts.length && !props.referenceSelection.length)) return
@@ -100,7 +100,7 @@ function projectReferenceCallouts() {
         callout, x, y,
         boxWidth: REFERENCE_CALLOUT_BOX.width,
         boxHeight: REFERENCE_CALLOUT_BOX.height,
-        expanded: activeCallout.value === callout.id || isReferenceSelected(callout),
+        expanded: isReferenceSelected(callout),
       }]
     })
     positionedCallouts.value = layoutReferenceCallouts(points, width, height)
@@ -116,12 +116,10 @@ function projectReferenceCallouts() {
 watch(() => [props.referenceCallouts, props.referenceSelection], () => {
   if (calloutFrame !== null) cancelAnimationFrame(calloutFrame)
   calloutFrame = null
-  activeCallout.value = null
   positionedCallouts.value = []
   positionedSelection.value = []
   scheduleReferenceCallouts()
 }, { deep: true })
-watch(activeCallout, scheduleReferenceCallouts)
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
@@ -195,12 +193,12 @@ onMounted(async () => {
   chart.addPane().setStretchFactor(2)
   chart.addPane().setStretchFactor(2)
   candles = chart.addSeries(CandlestickSeries, {
-    upColor: theme.up,
-    downColor: theme.down,
-    borderUpColor: theme.up,
-    borderDownColor: theme.down,
-    wickUpColor: theme.up,
-    wickDownColor: theme.down,
+    upColor: theme.candleUp,
+    downColor: theme.candleDown,
+    borderUpColor: theme.candleUp,
+    borderDownColor: theme.candleDown,
+    wickUpColor: theme.candleUp,
+    wickDownColor: theme.candleDown,
   }, 0)
   emaLines.ema_10 = chart.addSeries(LineSeries, { color: theme.ema10, lineWidth: 1, lastValueVisible: false }, 0)
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
@@ -428,6 +426,7 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
 }
 
 function onClick(param: MouseEventParams<Time>) {
+  if (!props.markerSelectionEnabled) return
   const hovered = param.hoveredInfo
   if (hovered?.objectKind !== 'series-marker' || typeof hovered.objectId !== 'string') return
   const marker = renderedMarkerById.get(hovered.objectId)
@@ -454,6 +453,9 @@ function renderDerivedSeries(): void {
   })
   const theme = resolveChartTheme()
 
+  emaLines.ema_10?.applyOptions({ color: theme.ema10 })
+  emaLines.ema_21?.applyOptions({ color: theme.ema21 })
+  emaLines.ema_60?.applyOptions({ color: theme.ema60 })
   EMA_INDICATORS.forEach((indicator) => {
     const visible = props.visibleMainIndicators.includes(indicator)
     emaLines[indicator]?.setData(chartValues(visible ? derivedData.ema[indicator] : undefined))
@@ -606,9 +608,9 @@ defineExpose({
     <div v-for="selection in positionedSelection" :key="selection.time" class="reference-candle-selection" aria-hidden="true" :style="{ left: `${selection.x - 6}px`, height: `${selection.height}px` }" />
     <div v-if="referenceCallouts.length" class="reference-callouts" aria-label="历史重算参考信号">
       <svg class="reference-callouts__lines" aria-hidden="true"><line v-for="item in positionedCallouts.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.lineX" :y2="item.lineY" /></svg>
-      <button v-for="item in positionedCallouts" :key="item.callout.id" type="button" class="reference-callout" :class="[{ 'reference-callout--density-node': item.compact, 'reference-callout--compact': item.compact && activeCallout !== item.callout.id && !isReferenceSelected(item.callout), 'reference-callout--active': activeCallout === item.callout.id, 'reference-callout--selected': isReferenceSelected(item.callout) }, `reference-callout--${item.callout.tone}`]" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-reference-id="item.callout.id" :data-reference-time="item.callout.time" :data-reference-contract="item.callout.physicalContract" :data-reference-price="item.callout.price" :aria-label="`${item.callout.title}，参考价 ${item.callout.detail}，历史重算`" :title="`${item.callout.title} · ${item.callout.detail}`" @mouseenter="activeCallout = item.callout.id" @mouseleave="activeCallout = null" @focus="activeCallout = item.callout.id" @blur="activeCallout = null" @click="emit('reference-select', item.callout.id)">
-        <template v-if="!item.compact || activeCallout === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template>
-      </button>
+      <div v-for="item in positionedCallouts" :key="item.callout.id" role="img" class="reference-callout" :class="[{ 'reference-callout--density-node': item.compact, 'reference-callout--compact': item.compact, 'reference-callout--selected': isReferenceSelected(item.callout) }, `reference-callout--${item.callout.tone}`]" :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }" :data-reference-id="item.callout.id" :data-reference-time="item.callout.time" :data-reference-contract="item.callout.physicalContract" :data-reference-price="item.callout.price" :aria-label="`${item.callout.title}，参考价 ${item.callout.detail}，历史重算`">
+        <template v-if="!item.compact"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><i v-else class="reference-callout__node" aria-hidden="true" />
+      </div>
     </div>
     <KlineHoverLegend
       :context="hoverContext"
@@ -641,17 +643,17 @@ defineExpose({
 <style scoped>
 .kline-shell { position: relative; min-height: 680px; height: clamp(680px, 74vh, 1040px); border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
 .reference-candle-selection { position: absolute; top: 0; width: 12px; background: #aa927b2b; border-inline: 1px solid #8b653d; pointer-events: none; z-index: 2; }
-.reference-callout--selected { outline: 2px solid #8b653d; background: #fff3d9; }
+.reference-callout--selected { outline: 2px solid #8b653d; background: rgb(255 243 217 / .78); }
 .reference-callouts { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
-.reference-callouts__lines { width: 100%; height: 100%; position: absolute; inset: 0; stroke: #9b8169; stroke-width: 1; }
-.reference-callout { position: absolute; pointer-events: auto; display: grid; align-content: center; gap: 3px; box-sizing: border-box; padding: 4px; overflow: hidden; border: 1px solid #aa927b; border-radius: 2px; background: #fffefa; color: #665343; font-size: 11px; cursor: pointer; box-shadow: 0 1px 3px #8c73551a; }
-.reference-callout strong { font-weight: 500; font-size: 12px; }
+.reference-callouts__lines { width: 100%; height: 100%; position: absolute; inset: 0; stroke: rgb(155 129 105 / .76); stroke-width: 1; }
+.reference-callout { position: absolute; pointer-events: none; display: grid; place-content: center; gap: 1px; box-sizing: border-box; padding: 3px; overflow: hidden; border: 1px solid rgb(170 146 123 / .82); border-radius: 3px; background: rgb(255 254 250 / .78); color: #665343; font-size: 9px; line-height: 1.1; text-align: center; box-shadow: 0 1px 3px rgb(140 115 85 / .1); }
+.reference-callout strong { font-weight: 600; font-size: 10px; }
 .reference-callout strong, .reference-callout span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.reference-callout--gain span { color: #cb3737; }
-.reference-callout--loss span { color: #188052; }
+.reference-callout--gain span { color: #ff403a; }
+.reference-callout--loss span { color: #22b95d; }
 .reference-callout--density-node { min-width: 0; min-height: 0; }
 .reference-callout--compact { padding: 0; place-items: center; }
-.reference-callout--active { z-index: 5; outline: 2px solid #aa927b; }
+.reference-callout__node { width: 6px; height: 6px; border-radius: 50%; background: #8b653d; }
 .chart { width: 100%; height: 100%; }
 .secondary-panel-label { position: absolute; z-index: 3; left: 10px; min-height: 26px; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-primary); font-size: var(--gy-font-size-xs); font-weight: 600; pointer-events: none; }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }

@@ -1,0 +1,91 @@
+{
+  "as_of": "2026-09-14T16:23:48.898303+00:00",
+  "identity": {
+    "config_sha256": "c9df3ef2a1a9f4b856b0fdc7a0839eaf9040fcad0eb56b6adc573b819c4ab746",
+    "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab"
+  },
+  "provider_requests": 0,
+  "writes": 0,
+  "products": [
+    {
+      "symbol": "a",
+      "complete": true,
+      "dependency_count": 67,
+      "failed_dependencies": 0,
+      "repair_targets": 0,
+      "bad_enumerations": 0,
+      "metadata_proposals": 0,
+      "elapsed_seconds": 6.76
+    },
+    {
+      "symbol": "ag",
+      "complete": true,
+      "dependency_count": 72,
+      "failed_dependencies": 0,
+      "repair_targets": 0,
+      "bad_enumerations": 0,
+      "metadata_proposals": 0,
+      "elapsed_seconds": 14.14
+    },
+    {
+      "symbol": "al",
+      "complete": true,
+      "dependency_count": 160,
+      "failed_dependencies": 0,
+      "repair_targets": 0,
+      "bad_enumerations": 0,
+      "metadata_proposals": 0,
+      "elapsed_seconds": 26.39
+    },
+    {
+      "symbol": "ao",
+      "complete": true,
+      "dependency_count": 77,
+      "failed_dependencies": 0,
+      "repair_targets": 0,
+      "bad_enumerations": 0,
+      "metadata_proposals": 0,
+      "elapsed_seconds": 33.13
+    },
+    {
+      "symbol": "ap",
+      "complete": true,
+      "dependency_count": 44,
+      "failed_dependencies": 0,
+      "repair_targets": 0,
+      "bad_enumerations": 0,
+      "metadata_proposals": 0,
+      "elapsed_seconds": 38.75
+    },
+    {
+      "symbol": "au",
+      "complete": true,
+      "dependency_count": 79,
+      "failed_dependencies": 0,
+      "repair_targets": 0,
+      "bad_enumerations": 0,
+      "metadata_proposals": 0,
+      "elapsed_seconds": 46.02
+    },
+    {
+      "symbol": "pd",
+      "complete": true,
+      "dependency_count": 12,
+      "failed_dependencies": 0,
+      "repair_targets": 0,
+      "bad_enumerations": 0,
+      "metadata_proposals": 0,
+      "elapsed_seconds": 46.81
+    },
+    {
+      "symbol": "pt",
+      "complete": true,
+      "dependency_count": 12,
+      "failed_dependencies": 0,
+      "repair_targets": 0,
+      "bad_enumerations": 0,
+      "metadata_proposals": 0,
+      "elapsed_seconds": 47.59
+    }
+  ]
+}

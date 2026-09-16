@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
+from typing import Iterable
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -707,29 +708,38 @@ class MarketDataService:
         available_contract_days: set[tuple[str, date]] = set()
         for _, month_partitions in _partition_month_groups(partitions):
             candidates: list[CanonicalBar] = []
-            for partition in month_partitions:
-                for bar in self._partition_bars(partition):
-                    if request.before is not None and bar.bar_end >= request.before:
-                        continue
-                    available_contract_days.add(
-                        (partition.dataset.series_or_contract, bar.trading_day)
+            month_bars = [
+                (partition, bar)
+                for partition in month_partitions
+                for bar in self._partition_bars(partition)
+                if request.before is None or bar.bar_end < request.before
+            ]
+            if request.frequency is BarFrequency.W1:
+                self._prime_weekly_calendar(
+                    request.symbol,
+                    (bar.trading_day for _, bar in month_bars),
+                    weekly_calendar,
+                )
+            for partition, bar in month_bars:
+                available_contract_days.add(
+                    (partition.dataset.series_or_contract, bar.trading_day)
+                )
+                owner = (
+                    self._page_weekly_owner(
+                        request.symbol,
+                        bar.trading_day,
+                        mapping_by_day,
+                        weekly_calendar,
+                        strict_mapping=False,
                     )
-                    owner = (
-                        self._page_weekly_owner(
-                            request.symbol,
-                            bar.trading_day,
-                            mapping_by_day,
-                            weekly_calendar,
-                            strict_mapping=False,
-                        )
-                        if request.frequency is BarFrequency.W1
-                        else mapping_by_day.get(bar.trading_day)
-                    )
-                    if (
-                        owner is not None
-                        and owner.contract == partition.dataset.series_or_contract
-                    ):
-                        candidates.append(bar)
+                    if request.frequency is BarFrequency.W1
+                    else mapping_by_day.get(bar.trading_day)
+                )
+                if (
+                    owner is not None
+                    and owner.contract == partition.dataset.series_or_contract
+                ):
+                    candidates.append(bar)
             for bar in sorted(candidates, key=lambda item: item.bar_end, reverse=True):
                 if any(item.bar_end == bar.bar_end for item in selected):
                     raise MarketDataError("BAR_IDENTITY_CONFLICT")
@@ -825,6 +835,10 @@ class MarketDataService:
             raise MarketDataError(exc.code) from exc
         if not expected_days:
             raise MarketDataError("TRADING_CALENDAR_MISSING")
+        if request.frequency is BarFrequency.W1:
+            self._prime_weekly_calendar(
+                request.symbol, expected_days, weekly_calendar
+            )
         for day in expected_days:
             if cursor_day is not None and day == cursor_day:
                 continue
@@ -847,6 +861,36 @@ class MarketDataService:
                 day,
             ) not in available_contract_days:
                 raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
+
+    def _prime_weekly_calendar(
+        self,
+        symbol: str,
+        days: Iterable[date],
+        weekly_calendar: dict[date, tuple[date, ...]],
+    ) -> None:
+        """Read missing ISO weeks together, scoped to one page request."""
+        mondays = {
+            day - timedelta(days=day.isoweekday() - 1) for day in days
+        } - weekly_calendar.keys()
+        if not mondays:
+            return
+        try:
+            trading_days = self.catalog.trading_days(
+                symbol,
+                min(mondays),
+                max(mondays) + timedelta(days=6),
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        grouped: dict[date, list[date]] = {monday: [] for monday in mondays}
+        for day in trading_days:
+            monday = day - timedelta(days=day.isoweekday() - 1)
+            if monday in grouped:
+                grouped[monday].append(day)
+        weekly_calendar.update(
+            (monday, tuple(week_days))
+            for monday, week_days in grouped.items()
+        )
 
     def _page_weekly_owner(
         self,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -8,6 +9,7 @@ import io
 import json
 from pathlib import Path
 import threading
+import subprocess
 from types import SimpleNamespace
 from typing import Any, Mapping
 
@@ -39,6 +41,11 @@ from scripts.newow_weekly_recovery import (
     prepare_bounded_units,
     read_attempt_outcome,
     write_prepared_manifest,
+)
+from scripts import newow_weekly_recovery_campaign as campaign
+from scripts.newow_recovery_partial_exception import (
+    CLASSIFICATION as PARTIAL_EXCEPTION_CLASSIFICATION,
+    ERROR_CODE as PARTIAL_EXCEPTION_INVALID,
 )
 from scripts.newow_weekly_recovery_campaign import (
     execute_campaign,
@@ -188,6 +195,32 @@ def _report(units: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _daily_unit(index: int = 0) -> dict[str, Any]:
+    unit = _ordinary_unit(index)
+    unit["frequency"] = "1d"
+    unit["consumers"] = [
+        {**consumer, "frequency": "1d"} for consumer in unit["consumers"]
+    ]
+    unit["target_windows"] = [
+        target for target in unit["target_windows"] if target["dataset"][3] == "1d"
+    ]
+    return unit
+
+
+def _daily_report(units: list[dict[str, Any]]) -> dict[str, Any]:
+    report = _report(units)
+    report["release_stage"] = "daily"
+    report["frequency_scope"] = ["1d"]
+    for row in report["enumerations"]:
+        row["frequency"] = "1d"
+    for row in report["dependencies"]:
+        row["frequency"] = "1d"
+        row["consumers"] = [
+            {**consumer, "frequency": "1d"} for consumer in row["consumers"]
+        ]
+    return report
+
+
 def _native_child(
     root: Path,
     batch_id: str,
@@ -198,7 +231,34 @@ def _native_child(
     continuation_policy: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     child_units = []
+    recovery_frequency = units[0]["frequency"] if units else "1w"
     for item in units:
+        targets = [
+            {
+                "dataset": ["contract", item["symbol"], item["contract"], "1d"],
+                "year": 2026,
+                "month": 9,
+                "expected_start": "2026-09-01T07:00:00+00:00",
+                "expected_end": "2026-09-02T07:00:00+00:00",
+                "expected_bar_count": 1,
+            }
+        ]
+        if recovery_frequency == "1w":
+            targets.append(
+                {
+                    "dataset": [
+                        "contract",
+                        item["symbol"],
+                        item["contract"],
+                        "1w",
+                    ],
+                    "year": 2026,
+                    "month": 9,
+                    "expected_start": "2026-09-04T07:00:00+00:00",
+                    "expected_end": "2026-09-04T07:00:00+00:00",
+                    "expected_bar_count": 1,
+                }
+            )
         child_units.append(
             {
                 "symbol": item["symbol"],
@@ -206,36 +266,9 @@ def _native_child(
                 "through": item["through"],
                 "frequency": item["frequency"],
                 "plan_sha256": item["expected_plan_sha256"],
-                "target_count": 2,
-                "expected_bar_count": 2,
-                "targets": [
-                    {
-                        "dataset": [
-                            "contract",
-                            item["symbol"],
-                            item["contract"],
-                            "1d",
-                        ],
-                        "year": 2026,
-                        "month": 9,
-                        "expected_start": "2026-09-01T07:00:00+00:00",
-                        "expected_end": "2026-09-02T07:00:00+00:00",
-                        "expected_bar_count": 1,
-                    },
-                    {
-                        "dataset": [
-                            "contract",
-                            item["symbol"],
-                            item["contract"],
-                            "1w",
-                        ],
-                        "year": 2026,
-                        "month": 9,
-                        "expected_start": "2026-09-04T07:00:00+00:00",
-                        "expected_end": "2026-09-04T07:00:00+00:00",
-                        "expected_bar_count": 1,
-                    },
-                ],
+                "target_count": len(targets),
+                "expected_bar_count": len(targets),
+                "targets": targets,
                 "source_requests": (
                     [
                         {
@@ -252,7 +285,11 @@ def _native_child(
             }
         )
     manifest = {
-        "schema_version": "newow_weekly_recovery_prepare_v1",
+        "schema_version": (
+            "newow_daily_recovery_prepare_v1"
+            if recovery_frequency == "1d"
+            else "newow_weekly_recovery_prepare_v1"
+        ),
         **identity,
         "unit_count": len(child_units),
         "units": child_units,
@@ -297,6 +334,305 @@ def _campaign(
     )
 
 
+@pytest.mark.parametrize(
+    "count,expected_sizes", [(0, []), (1, [1]), (20, [20]), (21, [20, 1])]
+)
+def test_daily_campaign_partitions_all_native_units_without_empty_children(
+    tmp_path: Path,
+    count: int,
+    expected_sizes: list[int],
+) -> None:
+    calls: list[int] = []
+
+    def invoke(units, batch_id, root):
+        calls.append(len(units))
+        return _native_child(root, batch_id, units)
+
+    manifest = prepare_campaign(
+        _daily_report([_daily_unit(index) for index in range(count)]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=invoke,
+        name=f"daily-{count}",
+        recovery_frequency="1d",
+    )
+
+    assert calls == expected_sizes
+    assert manifest["schema_version"] == "newow_daily_recovery_campaign_v1"
+    assert manifest["audit"]["frequency_scope"] == ["1d"]
+    assert manifest["scope"]["product_count"] == 60
+    assert len(manifest["scope"]["product_universe_sha256"]) == 64
+    assert manifest["totals"]["unit_count"] == count
+    assert [child["unit_count"] for child in manifest["children"]] == expected_sizes
+
+
+def test_daily_campaign_rejects_weekly_partial_exception_before_child_prepare(
+    tmp_path: Path,
+) -> None:
+    calls: list[object] = []
+    prior = tmp_path / "weekly-attempt"
+    prior.mkdir()
+
+    with pytest.raises(
+        RecoveryError, match="^D1_PARTIAL_SOURCE_EXCEPTION_UNSUPPORTED$"
+    ):
+        prepare_campaign(
+            _daily_report([_daily_unit()]),
+            report_sha256="f" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *args: calls.append(args),
+            name="daily-reject-partial",
+            recovery_frequency="1d",
+            partial_source_exception_attempt_path=prior,
+            observe_partial_committed=lambda _unit, _targets: {},
+        )
+
+    assert calls == []
+
+
+def test_daily_campaign_rejects_weekly_source_only_evidence_before_child_prepare(
+    tmp_path: Path,
+) -> None:
+    calls: list[object] = []
+
+    with pytest.raises(RecoveryError, match="^D1_SOURCE_ONLY_ISOLATION_UNSUPPORTED$"):
+        prepare_campaign(
+            _daily_report([_daily_unit()]),
+            report_sha256="f" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *args: calls.append(args),
+            name="daily-reject-source-only",
+            recovery_frequency="1d",
+            source_only_prepared_path=tmp_path / "weekly-source.prepare.json",
+        )
+
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "error_code", "return_code"),
+    [
+        ("timeout", "DAILY_VERIFICATION_TIMEOUT", None),
+        ("failed", "DAILY_VERIFICATION_PROCESS_FAILED", 2),
+        ("missing", "DAILY_VERIFICATION_OUTPUT_MISSING", 0),
+        ("empty", "DAILY_VERIFICATION_OUTPUT_EMPTY", 0),
+        ("truncated", "DAILY_VERIFICATION_OUTPUT_INVALID", 0),
+    ],
+)
+def test_daily_verification_process_failure_preserves_execution_terminal(
+    tmp_path: Path,
+    mode: str,
+    error_code: str,
+    return_code: int | None,
+) -> None:
+    campaign_path = tmp_path / "daily.prepare.json"
+    execution_path = tmp_path / "campaign-execution.json"
+    campaign_path.write_text("{}", encoding="utf-8")
+    execution_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    before = execution_path.read_bytes()
+
+    def run_process(*_args, **_kwargs):
+        if mode == "timeout":
+            raise subprocess.TimeoutExpired("verify", 300)
+        observation = tmp_path / f"verify-{mode}"
+        if mode in {"empty", "truncated"}:
+            observation.mkdir()
+            (observation / "verification.json").write_text(
+                "" if mode == "empty" else '{"schema_version":',
+                encoding="utf-8",
+            )
+        return SimpleNamespace(returncode=2 if mode == "failed" else 0)
+
+    result = campaign._run_daily_verification_process(
+        project_env=tmp_path / "project.env",
+        campaign_path=campaign_path,
+        campaign_sha256="a" * 64,
+        execution_path=execution_path,
+        execution_sha256="b" * 64,
+        output_root=tmp_path,
+        observation_id=f"verify-{mode}",
+        run_process=run_process,
+    )
+
+    expected = {
+        "status": "incomplete",
+        "error_code": error_code,
+    }
+    if return_code is not None:
+        expected["process_return_code"] = return_code
+    assert result == expected
+    assert execution_path.read_bytes() == before
+
+
+def test_daily_verification_process_records_success_and_cleanup_budget(
+    tmp_path: Path,
+) -> None:
+    campaign_path = tmp_path / "daily.prepare.json"
+    execution_path = tmp_path / "campaign-execution.json"
+    campaign_path.write_text("{}", encoding="utf-8")
+    execution_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    observed: dict[str, Any] = {}
+
+    def run_process(command, **kwargs):
+        observed.update(command=command, **kwargs)
+        observation = tmp_path / "verify-success"
+        observation.mkdir()
+        (observation / "verification.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "newow_daily_recovery_verification_v1",
+                    "verification_status": "verified",
+                    "inventory_complete": True,
+                    "ordinary_recovery_complete": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0)
+
+    result = campaign._run_daily_verification_process(
+        project_env=tmp_path / "project.env",
+        campaign_path=campaign_path,
+        campaign_sha256="a" * 64,
+        execution_path=execution_path,
+        execution_sha256="b" * 64,
+        output_root=tmp_path,
+        observation_id="verify-success",
+        run_process=run_process,
+    )
+
+    assert result == {
+        "status": "verified",
+        "inventory_complete": True,
+        "ordinary_recovery_complete": True,
+        "observation_dir": str(tmp_path / "verify-success"),
+        "process_return_code": 0,
+    }
+    assert observed["command"][:3] == [
+        campaign.sys.executable,
+        "-m",
+        "scripts.newow_daily_recovery_verification",
+    ]
+    assert observed["cwd"] == campaign.PROJECT_ROOT
+    assert observed["timeout"] > campaign._DAILY_VERIFICATION_AUDIT_TIMEOUT_SECONDS
+
+
+def test_daily_verification_process_preserves_operator_cancellation(
+    tmp_path: Path,
+) -> None:
+    execution_path = tmp_path / "campaign-execution.json"
+    execution_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+    before = execution_path.read_bytes()
+
+    def cancel(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        campaign._run_daily_verification_process(
+            project_env=tmp_path / "project.env",
+            campaign_path=tmp_path / "daily.prepare.json",
+            campaign_sha256="a" * 64,
+            execution_path=execution_path,
+            execution_sha256="b" * 64,
+            output_root=tmp_path,
+            observation_id="verify-cancelled",
+            run_process=cancel,
+        )
+
+    assert execution_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("inventory_complete", [True, False])
+def test_daily_verification_process_rejects_return_code_status_mismatch(
+    tmp_path: Path,
+    inventory_complete: bool,
+) -> None:
+    execution_path = tmp_path / "campaign-execution.json"
+    execution_path.write_text('{"status":"passed"}\n', encoding="utf-8")
+
+    def run_process(*_args, **_kwargs):
+        observation = tmp_path / "verify-mismatch"
+        observation.mkdir()
+        (observation / "verification.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "newow_daily_recovery_verification_v1",
+                    "verification_status": "verified",
+                    "inventory_complete": inventory_complete,
+                    "ordinary_recovery_complete": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=1)
+
+    result = campaign._run_daily_verification_process(
+        project_env=tmp_path / "project.env",
+        campaign_path=tmp_path / "campaign.prepare.json",
+        campaign_sha256="a" * 64,
+        execution_path=execution_path,
+        execution_sha256="b" * 64,
+        output_root=tmp_path,
+        observation_id="verify-mismatch",
+        run_process=run_process,
+    )
+
+    assert result == {
+        "status": "incomplete",
+        "error_code": "DAILY_VERIFICATION_RESULT_MISMATCH",
+        "process_return_code": 1,
+    }
+
+
+def test_cli_apply_rejects_zero_target_daily_campaign_without_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import newow_weekly_recovery_campaign as module
+
+    prepare_campaign(
+        _daily_report([]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda *_args: pytest.fail("zero target cannot create child"),
+        name="daily-zero",
+        recovery_frequency="1d",
+    )
+    campaign_path = tmp_path / "daily-zero.prepare.json"
+    campaign_sha256 = hashlib.sha256(campaign_path.read_bytes()).hexdigest()
+    calls: list[object] = []
+    monkeypatch.setattr(module.native, "main", lambda *_args, **_kwargs: calls.append(1))
+    output = io.StringIO()
+
+    code = main(
+        [
+            "apply",
+            "--project-env",
+            str(tmp_path / "project.env"),
+            "--campaign",
+            str(campaign_path),
+            "--expected-campaign-sha256",
+            campaign_sha256,
+            "--output-root",
+            str(tmp_path),
+            "--attempt-id",
+            "zero-apply",
+            "--apply",
+        ],
+        stdout=output,
+    )
+
+    assert code == 1
+    assert json.loads(output.getvalue())["error_code"] == "D1_EXECUTION_NOT_REQUIRED"
+    assert calls == []
+    assert not (tmp_path / "zero-apply").exists()
+    assert not list(tmp_path.glob("**/campaign-execution.json"))
+
+
 def _native_apply_result(
     child_path: Path,
     digest: str,
@@ -305,8 +641,10 @@ def _native_apply_result(
     status: str = "passed",
     return_code: int | None = None,
     completed: list[dict[str, Any]] | None = None,
+    failed_fields: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     child = json.loads(child_path.read_text(encoding="utf-8"))
+    recovery_frequency = child["units"][0]["frequency"]
     native_attempt = batch_attempt / "native"
     native_attempt.mkdir()
     if completed is None and status == "passed":
@@ -389,6 +727,8 @@ def _native_apply_result(
             "error_code": "PROVIDER_UNAVAILABLE",
             "attempt": read_attempt_outcome(failed_unit_dir),
         }
+        if failed_fields is not None:
+            failed_value.update(dict(failed_fields))
         _write_json_exclusive(failed_unit_dir / "unit-result.json", failed_value)
     native_result = {
         "status": status,
@@ -400,7 +740,11 @@ def _native_apply_result(
         "retries": 0,
     }
     receipt = {
-        "schema_version": "newow_weekly_recovery_invocation_v1",
+        "schema_version": (
+            "newow_daily_recovery_invocation_v1"
+            if recovery_frequency == "1d"
+            else "newow_weekly_recovery_invocation_v1"
+        ),
         "prepared_sha256": digest,
         **IDENTITY,
         "unit_count": len(child["units"]),
@@ -412,12 +756,49 @@ def _native_apply_result(
         if return_code is None
         else return_code,
         "batch_result": {
-            "schema_version": "newow_weekly_recovery_result_v1",
+            "schema_version": (
+                "newow_daily_recovery_result_v1"
+                if recovery_frequency == "1d"
+                else "newow_weekly_recovery_result_v1"
+            ),
             "status": status,
             "readonly": False,
             "attempt_dir": str(native_attempt),
             "result": native_result,
         },
+    }
+
+
+def test_daily_campaign_executes_all_batches_and_closes_five_way_denominator(
+    tmp_path: Path,
+) -> None:
+    manifest = prepare_campaign(
+        _daily_report([_daily_unit(index) for index in range(21)]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: _native_child(root, batch_id, units),
+        name="daily-execute",
+        recovery_frequency="1d",
+    )
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "daily-attempt",
+        invoke_batch=lambda child, digest, attempt: _native_apply_result(
+            child, digest, attempt
+        ),
+    )
+
+    assert result["status"] == "passed"
+    assert result["summary"] == {
+        "denominator_unit_count": 21,
+        "success_unit_count": 21,
+        "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 0,
+        "unknown_unit_count": 0,
     }
 
 
@@ -452,6 +833,23 @@ def test_partition_rejects_missing_required_report_field() -> None:
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
         partition_ordinary_units(report)
+
+
+def test_partition_accepts_daily_stage_weekly_report() -> None:
+    report = _report([_ordinary_unit()])
+    report["release_stage"] = "daily"
+
+    units = partition_ordinary_units(report)
+
+    assert len(units) == 1
+
+
+def test_daily_partition_rejects_legacy_weekly_release_stage() -> None:
+    report = _daily_report([_daily_unit()])
+    report["release_stage"] = "weekly"
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report, recovery_frequency="1d")
 
 
 @pytest.mark.parametrize(
@@ -1021,8 +1419,58 @@ def test_cli_prepare_rejects_report_hash_mismatch_before_native_main(
     assert native_calls == []
 
 
+def test_daily_cli_error_reports_daily_schema_before_identity_open(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "full-report.json"
+    report_path.write_text("{}", encoding="utf-8")
+    output = io.StringIO()
+
+    code = main(
+        [
+            "prepare",
+            "--project-env",
+            str(tmp_path / "project.env"),
+            "--report",
+            str(report_path),
+            "--expected-report-sha256",
+            "0" * 64,
+            "--output-root",
+            str(tmp_path),
+            "--name",
+            "campaign",
+            "--frequency",
+            "1d",
+        ],
+        stdout=output,
+    )
+
+    assert code == 1
+    assert json.loads(output.getvalue())["schema_version"] == (
+        "newow_daily_recovery_campaign_error_v1"
+    )
+
+
 def test_campaign_cli_exposes_prepare_apply_and_inspect_modes() -> None:
     assert "{prepare,apply,inspect}" in parser().format_help()
+
+
+def test_daily_campaign_inspect_reports_daily_schema(tmp_path: Path) -> None:
+    attempt = tmp_path / "daily-attempt"
+    attempt.mkdir()
+    _write_json_exclusive(
+        attempt / "campaign-started.json",
+        {"schema_version": "newow_daily_recovery_campaign_started_v1"},
+    )
+    _write_json_exclusive(attempt / "campaign-result.json", {"status": "passed"})
+    output = io.StringIO()
+
+    code = main(["inspect", "--attempt", str(attempt)], stdout=output)
+
+    assert code == 0
+    assert json.loads(output.getvalue())["schema_version"] == (
+        "newow_daily_recovery_campaign_result_v1"
+    )
 
 
 def test_campaign_cli_exposes_hash_bound_prior_isolation_inputs() -> None:
@@ -1055,6 +1503,44 @@ def test_campaign_cli_exposes_hash_bound_prior_isolation_inputs() -> None:
     assert args.prior_attempt.endswith("prior-attempt")
 
 
+def test_campaign_cli_exposes_hash_bound_source_only_isolation_inputs() -> None:
+    args = parser().parse_args(
+        [
+            "prepare",
+            "--project-env",
+            "/tmp/project.env",
+            "--report",
+            "/tmp/report.json",
+            "--expected-report-sha256",
+            "a" * 64,
+            "--output-root",
+            "/tmp/evidence",
+            "--name",
+            "fresh",
+            "--isolate-known-source-quality",
+            "--source-only-prepared",
+            "/tmp/evidence/source.prepare.json",
+            "--expected-source-only-prepared-sha256",
+            "b" * 64,
+            "--source-only-attempt",
+            "/tmp/evidence/source-attempt",
+            "--source-only-unit-index",
+            "0",
+            "--source-only-request-index",
+            "0",
+            "--expected-source-only-request-sha256",
+            "c" * 64,
+        ]
+    )
+
+    assert args.source_only_prepared.endswith("source.prepare.json")
+    assert args.expected_source_only_prepared_sha256 == "b" * 64
+    assert args.source_only_attempt.endswith("source-attempt")
+    assert args.source_only_unit_index == 0
+    assert args.source_only_request_index == 0
+    assert args.expected_source_only_request_sha256 == "c" * 64
+
+
 def test_execute_stops_after_second_batch_failure_without_retry(tmp_path: Path) -> None:
     manifest = _campaign(tmp_path, 41)
     invoked: list[str] = []
@@ -1084,6 +1570,7 @@ def test_execute_stops_after_second_batch_failure_without_retry(tmp_path: Path) 
         "denominator_unit_count": 41,
         "success_unit_count": 20,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 1,
         "unattempted_unit_count": 20,
         "unknown_unit_count": 0,
@@ -1313,13 +1800,19 @@ def _campaign_isolation_policy() -> dict[str, object]:
     }
 
 
+def _daily_campaign_isolation_policy() -> dict[str, object]:
+    return campaign.native.source_isolation_policy(recovery_frequency="1d")
+
+
 def _native_isolation_invoker(
     isolated_contracts: set[str],
     calls: list[str],
     *,
     stopping_contracts: set[str] | None = None,
+    readback_drift_contracts: set[str] | None = None,
 ):
     stopping = stopping_contracts or set()
+    readback_drift = readback_drift_contracts or set()
 
     def invoke(child_path: Path, digest: str, batch_attempt: Path):
         child = load_prepared_manifest(child_path, digest)
@@ -1393,7 +1886,11 @@ def _native_isolation_invoker(
                     )
                 return SimpleNamespace(
                     plan=SimpleNamespace(
-                        plan_sha256=self.unit["plan_sha256"],
+                        plan_sha256=(
+                            "f" * 64
+                            if self.unit["contract"] in readback_drift
+                            else self.unit["plan_sha256"]
+                        ),
                         target_windows=(
                             tuple(self.unit["targets"])
                             if self.unit["contract"] in isolated_contracts
@@ -1430,7 +1927,11 @@ def _native_isolation_invoker(
         return {
             "return_code": 0 if native_result["status"] == "passed" else 1,
             "batch_result": {
-                "schema_version": "newow_weekly_recovery_result_v1",
+                "schema_version": (
+                    "newow_daily_recovery_result_v1"
+                    if child["units"][0]["frequency"] == "1d"
+                    else "newow_weekly_recovery_result_v1"
+                ),
                 "status": native_result["status"],
                 "readonly": False,
                 "attempt_dir": str(native_attempt),
@@ -1564,6 +2065,7 @@ def test_campaign_preserves_prefix_but_counts_unproven_failed_unit_unknown(
         "denominator_unit_count": 3,
         "success_unit_count": 1,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 1,
@@ -1590,6 +2092,7 @@ def test_campaign_counts_proven_post_commit_readback_failure_as_stopping(
         "denominator_unit_count": 3,
         "success_unit_count": 1,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 1,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 0,
@@ -1661,6 +2164,7 @@ def test_campaign_treats_same_count_failed_journal_tampering_as_unknown(
         "denominator_unit_count": 3,
         "success_unit_count": 1,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 1,
@@ -1695,10 +2199,62 @@ def test_campaign_accounts_for_known_stopping_failure_as_distinct_partition(
         "denominator_unit_count": 3,
         "success_unit_count": 0,
         "isolated_unit_count": 1,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 1,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 0,
     }
+
+
+def test_campaign_preserves_sanitized_isolation_failure_reason(
+    tmp_path: Path,
+) -> None:
+    manifest = _campaign(
+        tmp_path,
+        2,
+        with_source_requests=True,
+        continuation_policy=_campaign_isolation_policy(),
+    )
+    calls: list[str] = []
+    attempt = tmp_path / "attempt-001"
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=attempt,
+        invoke_batch=_native_isolation_invoker(
+            {"AG1000"},
+            calls,
+            readback_drift_contracts={"AG1000"},
+        ),
+    )
+
+    assert calls == ["AG1000"]
+    assert result["status"] == "failed"
+    native_failure = result["failed_batch"]["native_result"]["result"]["failed"]
+    assert (
+        native_failure["isolation_failure_reason"] == "SOURCE_ISOLATION_READBACK_FAILED"
+    )
+    unit_result = json.loads(
+        (
+            attempt / "batch-001" / "native" / "unit-001-ag-AG1000" / "unit-result.json"
+        ).read_text()
+    )
+    batch_result = json.loads(
+        (attempt / "batch-001" / "native" / "batch-result.json").read_text()
+    )
+    campaign_result = json.loads((attempt / "campaign-result.json").read_text())
+    assert unit_result["isolation_failure_reason"] == (
+        "SOURCE_ISOLATION_READBACK_FAILED"
+    )
+    assert batch_result["failed"]["isolation_failure_reason"] == (
+        "SOURCE_ISOLATION_READBACK_FAILED"
+    )
+    assert (
+        campaign_result["failed_batch"]["native_result"]["result"]["failed"][
+            "isolation_failure_reason"
+        ]
+        == "SOURCE_ISOLATION_READBACK_FAILED"
+    )
 
 
 def test_campaign_continues_across_batch_after_proven_source_isolation(
@@ -1727,6 +2283,7 @@ def test_campaign_continues_across_batch_after_proven_source_isolation(
         "denominator_unit_count": 21,
         "success_unit_count": 20,
         "isolated_unit_count": 1,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 0,
         "unknown_unit_count": 0,
@@ -1774,6 +2331,7 @@ def test_campaign_accounts_for_multiple_and_all_isolated_units(
         "denominator_unit_count": 3,
         "success_unit_count": success_count,
         "isolated_unit_count": len(isolated),
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 0,
         "unknown_unit_count": 0,
@@ -1810,6 +2368,7 @@ def test_campaign_rejects_symlinked_current_isolation_evidence(tmp_path: Path) -
             "denominator_unit_count": 1,
             "success_unit_count": 0,
             "isolated_unit_count": 0,
+            "partial_source_exception_unit_count": 0,
             "stopping_failure_unit_count": 0,
             "unattempted_unit_count": 0,
             "unknown_unit_count": 1,
@@ -1836,6 +2395,272 @@ def test_campaign_rejects_tampered_continuation_policy(
 
     with pytest.raises(RecoveryError, match="^CONTINUATION_POLICY_INVALID$"):
         validate_campaign_manifest(manifest, evidence_root=tmp_path)
+
+
+def _source_only_isolation_evidence(
+    root: Path, unit: dict[str, Any]
+) -> tuple[Path, str, Path, str]:
+    policy = _campaign_isolation_policy()
+    prepared_result = _native_child(
+        root,
+        "source-only",
+        (
+            {
+                "symbol": unit["symbol"],
+                "contract": unit["contract"],
+                "through": unit["through"],
+                "frequency": unit["frequency"],
+                "expected_plan_sha256": unit["plan_sha256"],
+            },
+        ),
+        with_source_requests=True,
+        continuation_policy=policy,
+    )
+    prepared_path = Path(prepared_result["prepared_file"])
+    prepared_sha256 = prepared_result["prepared_sha256"]
+    prepared = load_prepared_manifest(prepared_path, prepared_sha256)
+    frozen_unit = prepared["units"][0]
+    raw_request = frozen_unit["source_requests"][0]
+    request = ExchangeDailySourceRequest(
+        contract=raw_request["contract"],
+        start=date.fromisoformat(raw_request["start"]),
+        end=date.fromisoformat(raw_request["end"]),
+        expected_dates=tuple(
+            date.fromisoformat(value) for value in raw_request["expected_dates"]
+        ),
+    )
+    request_sha256 = hashlib.sha256(
+        json.dumps(
+            raw_request,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    attempt = root / "source-only-attempt"
+    attempt.mkdir()
+    journal = AttemptJournal(attempt, (request,))
+    journal.before_request(request)
+    journal.after_response(
+        request,
+        (
+            {
+                "date": request.expected_dates[0],
+                "open": Decimal("0"),
+                "high": Decimal("0"),
+                "low": Decimal("0"),
+                "close": Decimal("100"),
+                "volume": Decimal("1"),
+                "total_turnover": Decimal("100"),
+                "open_interest": Decimal("10"),
+            },
+        ),
+    )
+    journal.mark_failed("RQDATA_ZERO_OHL_INVALID")
+    _write_json_exclusive(
+        attempt / "invocation-receipt.json",
+        {
+            "schema_version": "newow_weekly_source_only_invocation_v1",
+            "prepared_path": prepared_path.name,
+            "prepared_sha256": prepared_sha256,
+            "request_sha256": request_sha256,
+            "attempt_id": attempt.name,
+            **IDENTITY,
+            "runner_sha256": "a" * 64,
+            "provider_request_limit": 1,
+            "retries_allowed": 0,
+            "canonical_writes_allowed": False,
+            "database_writes_allowed": False,
+            "manager_apply_allowed": False,
+        },
+    )
+    _write_json_exclusive(
+        attempt / "source-only-result.json",
+        {
+            "schema_version": "newow_weekly_source_only_result_v1",
+            "status": "completed",
+            "classification": "SOURCE_RESPONSE_SAVED_REVIEW_REQUIRED",
+            "source_error_code": "RQDATA_ZERO_OHL_INVALID",
+            "prepared_sha256": prepared_sha256,
+            "request_sha256": request_sha256,
+            "unit_identity": {
+                key: frozen_unit[key]
+                for key in ("symbol", "contract", "frequency", "through", "plan_sha256")
+            },
+            "attempt": read_attempt_outcome(attempt),
+            "provider_request_limit": 1,
+            "retries": 0,
+            "canonical_writes": 0,
+            "database_writes": 0,
+            "manager_apply": False,
+        },
+    )
+    return prepared_path, prepared_sha256, attempt, request_sha256
+
+
+def test_source_only_isolation_excludes_only_replayed_fresh_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(campaign, "_source_runner_sha256_at_commit", lambda _: "a" * 64)
+    policy = _campaign_isolation_policy()
+    units = [_ordinary_unit(0), _ordinary_unit(1)]
+    prepared_path, prepared_sha256, attempt, request_sha256 = (
+        _source_only_isolation_evidence(tmp_path, units[0])
+    )
+    prepared_contracts: list[str] = []
+
+    def prepare_child(batch, batch_id, root):
+        prepared_contracts.extend(item["contract"] for item in batch)
+        return _native_child(
+            root,
+            batch_id,
+            batch,
+            with_source_requests=True,
+            continuation_policy=policy,
+        )
+
+    manifest = prepare_campaign(
+        _report(units),
+        report_sha256="e" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=prepare_child,
+        name="fresh",
+        continuation_policy=policy,
+        source_only_prepared_path=prepared_path,
+        expected_source_only_prepared_sha256=prepared_sha256,
+        source_only_attempt_path=attempt,
+        source_only_unit_index=0,
+        source_only_request_index=0,
+        expected_source_only_request_sha256=request_sha256,
+    )
+
+    assert prepared_contracts == ["AG1001"]
+    assert manifest["scope"]["denominator_unit_count"] == 2
+    assert manifest["scope"]["execution_unit_count"] == 1
+    assert manifest["scope"]["source_only_known_isolation_count"] == 1
+    binding = manifest["source_only_known_isolations"][0]
+    assert binding["unit"]["contract"] == "AG1000"
+    assert binding["classification"] == "RQDATA_ZERO_OHL_INVALID"
+    assert binding["source_attempt_path"] == attempt.name
+
+    calls: list[str] = []
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "fresh-attempt",
+        invoke_batch=_native_isolation_invoker(set(), calls),
+    )
+
+    assert calls == ["AG1001"]
+    assert result["status"] == "partial"
+    assert result["summary"] == {
+        "denominator_unit_count": 2,
+        "success_unit_count": 1,
+        "isolated_unit_count": 1,
+        "partial_source_exception_unit_count": 0,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 0,
+        "unknown_unit_count": 0,
+    }
+    assert result["isolated_units"][0]["provenance"] == "source_only_known"
+
+    (attempt / "source-response-0001.json").unlink()
+    with pytest.raises(RecoveryError, match="^SOURCE_ONLY_ISOLATION_INVALID$"):
+        execute_campaign(
+            manifest,
+            attempt_root=tmp_path / "fresh-after-evidence-drift",
+            invoke_batch=lambda *_args: pytest.fail(
+                "source-only evidence drift reached native execution"
+            ),
+        )
+    assert not (tmp_path / "fresh-after-evidence-drift").exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "response",
+        "fresh_plan",
+        "without_policy",
+        "runner",
+        "invocation_not_object",
+        "result_not_object",
+        "provider_limit_bool",
+        "retries_float",
+        "canonical_writes_bool",
+        "database_writes_float",
+        "attempt_started_bool",
+        "attempt_saved_float",
+        "attempt_outcome_unknown_int",
+    ],
+)
+def test_source_only_isolation_rejects_unproven_or_drifted_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    expected_runner_sha256 = "b" * 64 if mutation == "runner" else "a" * 64
+    monkeypatch.setattr(
+        campaign,
+        "_source_runner_sha256_at_commit",
+        lambda _: expected_runner_sha256,
+    )
+    unit = _ordinary_unit(0)
+    prepared_path, prepared_sha256, attempt, request_sha256 = (
+        _source_only_isolation_evidence(tmp_path, unit)
+    )
+    if mutation == "response":
+        (attempt / "source-response-0001.json").write_text("not-json")
+    elif mutation == "fresh_plan":
+        unit["plan_sha256"] = "9" * 64
+    elif mutation == "invocation_not_object":
+        (attempt / "invocation-receipt.json").write_text("[]")
+    elif mutation == "result_not_object":
+        (attempt / "source-only-result.json").write_text("[]")
+    elif mutation in {
+        "provider_limit_bool",
+        "retries_float",
+        "canonical_writes_bool",
+        "database_writes_float",
+        "attempt_started_bool",
+        "attempt_saved_float",
+        "attempt_outcome_unknown_int",
+    }:
+        result_path = attempt / "source-only-result.json"
+        result = json.loads(result_path.read_text())
+        if mutation == "provider_limit_bool":
+            result["provider_request_limit"] = True
+        elif mutation == "retries_float":
+            result["retries"] = 0.0
+        elif mutation == "canonical_writes_bool":
+            result["canonical_writes"] = False
+        elif mutation == "database_writes_float":
+            result["database_writes"] = 0.0
+        elif mutation == "attempt_started_bool":
+            result["attempt"]["requests_started"] = True
+        elif mutation == "attempt_saved_float":
+            result["attempt"]["responses_saved"] = 1.0
+        else:
+            result["attempt"]["outcome_unknown"] = 0
+        result_path.write_text(json.dumps(result))
+    policy = None if mutation == "without_policy" else _campaign_isolation_policy()
+
+    with pytest.raises(RecoveryError, match="^SOURCE_ONLY_ISOLATION_INVALID$"):
+        prepare_campaign(
+            _report([unit]),
+            report_sha256="e" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *_args: pytest.fail(
+                "invalid source-only isolation prepared a child"
+            ),
+            name="fresh",
+            continuation_policy=policy,
+            source_only_prepared_path=prepared_path,
+            expected_source_only_prepared_sha256=prepared_sha256,
+            source_only_attempt_path=attempt,
+            source_only_unit_index=0,
+            source_only_request_index=0,
+            expected_source_only_request_sha256=request_sha256,
+        )
 
 
 def test_prior_known_source_isolation_excludes_only_proven_fresh_identity(
@@ -1907,6 +2732,7 @@ def test_prior_known_source_isolation_excludes_only_proven_fresh_identity(
         "denominator_unit_count": 2,
         "success_unit_count": 1,
         "isolated_unit_count": 1,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 0,
         "unknown_unit_count": 0,
@@ -1930,6 +2756,168 @@ def test_prior_known_source_isolation_excludes_only_proven_fresh_identity(
             ),
         )
     assert not (tmp_path / "fresh-attempt-after-drift").exists()
+
+
+def test_daily_prior_isolation_reuses_only_same_profile_zero_commit_evidence(
+    tmp_path: Path,
+) -> None:
+    policy = _daily_campaign_isolation_policy()
+    prior = prepare_campaign(
+        _daily_report([_daily_unit(0), _daily_unit(1)]),
+        report_sha256="d" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: _native_child(
+            root,
+            batch_id,
+            units,
+            with_source_requests=True,
+            continuation_policy=policy,
+        ),
+        name="daily-prior",
+        recovery_frequency="1d",
+        continuation_policy=policy,
+    )
+    prior_attempt = tmp_path / "daily-prior-attempt"
+    execute_campaign(
+        prior,
+        attempt_root=prior_attempt,
+        invoke_batch=_native_isolation_invoker({"AG1000"}, []),
+    )
+    prior_path = tmp_path / "daily-prior.prepare.json"
+    prepared_contracts: list[str] = []
+
+    fresh = prepare_campaign(
+        _daily_report([_daily_unit(0), _daily_unit(1)]),
+        report_sha256="e" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: (
+            prepared_contracts.extend(unit["contract"] for unit in units)
+            or _native_child(
+                root,
+                batch_id,
+                units,
+                with_source_requests=True,
+                continuation_policy=policy,
+            )
+        ),
+        name="daily-fresh",
+        recovery_frequency="1d",
+        continuation_policy=policy,
+        prior_campaign_path=prior_path,
+        expected_prior_campaign_sha256=hashlib.sha256(
+            prior_path.read_bytes()
+        ).hexdigest(),
+        prior_attempt_path=prior_attempt,
+    )
+
+    assert prepared_contracts == ["AG1001"]
+    assert fresh["prior_known_isolations"][0]["schema_version"] == (
+        "newow_daily_recovery_prior_isolation_v1"
+    )
+    assert fresh["prior_known_isolations"][0]["unit"]["frequency"] == "1d"
+
+
+def test_daily_prior_isolation_rejects_weekly_campaign_evidence(
+    tmp_path: Path,
+) -> None:
+    weekly = _campaign(
+        tmp_path,
+        1,
+        with_source_requests=True,
+        continuation_policy=_campaign_isolation_policy(),
+        name="weekly-prior",
+    )
+    weekly_attempt = tmp_path / "weekly-prior-attempt"
+    execute_campaign(
+        weekly,
+        attempt_root=weekly_attempt,
+        invoke_batch=_native_isolation_invoker({"AG1000"}, []),
+    )
+    weekly_path = tmp_path / "weekly-prior.prepare.json"
+
+    with pytest.raises(RecoveryError, match="^PRIOR_ISOLATION_INVALID$"):
+        prepare_campaign(
+            _daily_report([_daily_unit()]),
+            report_sha256="e" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *_args: pytest.fail(
+                "cross-profile evidence prepared a child"
+            ),
+            name="daily-cross-profile",
+            recovery_frequency="1d",
+            continuation_policy=_daily_campaign_isolation_policy(),
+            prior_campaign_path=weekly_path,
+            expected_prior_campaign_sha256=hashlib.sha256(
+                weekly_path.read_bytes()
+            ).hexdigest(),
+            prior_attempt_path=weekly_attempt,
+        )
+
+
+def test_prior_isolation_is_recovered_from_completed_batch_before_later_stop(
+    tmp_path: Path,
+) -> None:
+    units = [_ordinary_unit(index) for index in range(21)]
+    policy = _campaign_isolation_policy()
+    prior = prepare_campaign(
+        _report(units),
+        report_sha256="d" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda batch, batch_id, root: _native_child(
+            root,
+            batch_id,
+            batch,
+            with_source_requests=True,
+            continuation_policy=policy,
+        ),
+        name="prior-with-later-stop",
+        continuation_policy=policy,
+    )
+    prior_attempt = tmp_path / "prior-with-later-stop-apply"
+    result = execute_campaign(
+        prior,
+        attempt_root=prior_attempt,
+        invoke_batch=_native_isolation_invoker(
+            {"AG1000"}, [], stopping_contracts={"AG1020"}
+        ),
+    )
+    assert result["completed_batch_ids"] == ["batch-001"]
+    assert result["failed_batch"]["batch_id"] == "batch-002"
+    assert [item["contract"] for item in result["isolated_units"]] == ["AG1000"]
+    prior_path = tmp_path / "prior-with-later-stop.prepare.json"
+    prepared_contracts: list[str] = []
+
+    fresh = prepare_campaign(
+        _report(units),
+        report_sha256="e" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda batch, batch_id, root: (
+            prepared_contracts.extend(item["contract"] for item in batch)
+            or _native_child(
+                root,
+                batch_id,
+                batch,
+                with_source_requests=True,
+                continuation_policy=policy,
+            )
+        ),
+        name="fresh-after-later-stop",
+        continuation_policy=policy,
+        prior_campaign_path=prior_path,
+        expected_prior_campaign_sha256=hashlib.sha256(
+            prior_path.read_bytes()
+        ).hexdigest(),
+        prior_attempt_path=prior_attempt,
+    )
+
+    assert prepared_contracts == [item["contract"] for item in units[1:]]
+    assert fresh["scope"]["prior_known_isolation_count"] == 1
+    assert fresh["prior_known_isolations"][0]["unit"]["contract"] == "AG1000"
 
 
 def test_prepare_with_only_prior_isolated_units_is_anomaly_bearing_not_completed(
@@ -1976,6 +2964,7 @@ def test_prepare_with_only_prior_isolated_units_is_anomaly_bearing_not_completed
         "denominator_unit_count": 1,
         "success_unit_count": 0,
         "isolated_unit_count": 1,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 0,
         "unknown_unit_count": 0,
@@ -2239,6 +3228,7 @@ def test_execute_exception_or_unreadable_terminal_is_unknown(
         "denominator_unit_count": 21,
         "success_unit_count": 0,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 20,
@@ -2368,6 +3358,7 @@ def test_execute_stops_if_bound_guard_path_is_replaced_between_batches(
         "denominator_unit_count": 21,
         "success_unit_count": 20,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 0,
@@ -2440,6 +3431,7 @@ def test_execute_stops_on_child_hash_drift_between_batches(tmp_path: Path) -> No
         "denominator_unit_count": 21,
         "success_unit_count": 20,
         "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 0,
         "stopping_failure_unit_count": 0,
         "unattempted_unit_count": 1,
         "unknown_unit_count": 0,
@@ -2850,3 +3842,168 @@ def test_cli_apply_rejects_current_code_or_config_drift_before_native_main(
     assert code == 1
     assert json.loads(output.getvalue())["error_code"] == "EXECUTION_IDENTITY_CHANGED"
     assert calls == []
+
+
+def test_prepare_campaign_accepts_hash_bound_partial_source_exception_input() -> None:
+    assert (
+        "partial_source_exception_attempt_path"
+        in inspect.signature(prepare_campaign).parameters
+    )
+
+
+def _weekly_partial_binding(unit: Mapping[str, Any]) -> dict[str, Any]:
+    committed = {
+        **unit["target_windows"][0],
+        "year": 2026,
+        "month": 8,
+    }
+    return {
+        "schema_version": "newow_partial_source_exception_v1",
+        "symbol": unit["symbol"],
+        "contract": unit["contract"],
+        "frequency": "1w",
+        "through": unit["through"],
+        "failed_plan_sha256": "a" * 64,
+        "fresh_replan_sha256": unit["plan_sha256"],
+        "failed_attempt_id": "prior-apply-001",
+        "failed_attempt_path": "prior-apply-001",
+        "failed_execution_commit": "b" * 40,
+        "failed_execution_code_sha256": "c" * 64,
+        "committed_targets": [committed],
+        "remaining_targets": unit["target_windows"],
+        "source_request_identity": {"start": "2026-08-01"},
+        "source_response_sha256": "d" * 64,
+        "journal_sha256": "e" * 64,
+        "error_code": "RQDATA_ZERO_OHL_INVALID",
+        "requests_started": 1,
+        "responses_saved": 1,
+        "retries": 0,
+        "outcome_unknown": False,
+        "catalog_readback": {"status": "passed", "partitions": []},
+        "parquet_readback": {"status": "passed", "files": []},
+        "mds_readback": {"status": "passed", "windows": []},
+        "classification": PARTIAL_EXCEPTION_CLASSIFICATION,
+        "evidence_sha256": "f" * 64,
+        "binding_sha256": "1" * 64,
+        "batch_id": "batch-001",
+        "unit_dir": "batch-001/native/unit-001-ag-AG1000",
+    }
+
+
+def test_weekly_campaign_excludes_verified_partial_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failed = _ordinary_unit(0)
+    sibling = _ordinary_unit(1)
+    binding = _weekly_partial_binding(failed)
+    monkeypatch.setattr(
+        campaign,
+        "_derive_partial_source_exceptions",
+        lambda *_args, **_kwargs: [binding],
+    )
+    prepared_contracts: list[str] = []
+
+    manifest = prepare_campaign(
+        _report([failed, sibling]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda units, batch_id, root: (
+            prepared_contracts.extend(item["contract"] for item in units)
+            or _native_child(root, batch_id, units)
+        ),
+        name="weekly-partial-exception",
+        partial_source_exception_attempt_path=tmp_path / "prior-apply-001",
+        observe_partial_committed=lambda *_args: {},
+    )
+
+    assert prepared_contracts == [sibling["contract"]]
+    assert manifest["scope"]["denominator_unit_count"] == 2
+    assert manifest["scope"]["execution_unit_count"] == 1
+    assert manifest["scope"]["prior_partial_source_exception_count"] == 1
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "fresh-apply-001",
+        invoke_batch=lambda child, digest, attempt: _native_apply_result(
+            child, digest, attempt
+        ),
+        observe_partial_committed=lambda *_args: {},
+    )
+
+    assert result["summary"] == {
+        "denominator_unit_count": 2,
+        "success_unit_count": 1,
+        "isolated_unit_count": 0,
+        "partial_source_exception_unit_count": 1,
+        "stopping_failure_unit_count": 0,
+        "unattempted_unit_count": 0,
+        "unknown_unit_count": 0,
+    }
+    assert (
+        result["partial_source_exception_units"][0]["contract"] == (failed["contract"])
+    )
+
+
+def test_weekly_campaign_stops_before_attempt_on_partial_exception_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failed = _ordinary_unit(0)
+    binding = _weekly_partial_binding(failed)
+    live_drift = False
+
+    def derive(*_args, **kwargs):
+        if live_drift and kwargs.get("observe_committed") is not None:
+            raise RecoveryError(PARTIAL_EXCEPTION_INVALID)
+        return [binding]
+
+    monkeypatch.setattr(campaign, "_derive_partial_source_exceptions", derive)
+    manifest = prepare_campaign(
+        _report([failed]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda *_args: pytest.fail(
+            "partial exception must not prepare an executable child"
+        ),
+        name="weekly-partial-drift",
+        partial_source_exception_attempt_path=tmp_path / "prior-apply-001",
+        observe_partial_committed=lambda *_args: {},
+    )
+    live_drift = True
+    attempt = tmp_path / "fresh-apply-001"
+
+    with pytest.raises(RecoveryError, match=f"^{PARTIAL_EXCEPTION_INVALID}$"):
+        execute_campaign(
+            manifest,
+            attempt_root=attempt,
+            invoke_batch=lambda *_args: pytest.fail("drift reached native apply"),
+            observe_partial_committed=lambda *_args: {},
+        )
+    assert not attempt.exists()
+
+
+def test_campaign_revalidates_each_partial_exception_from_its_own_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _weekly_partial_binding(_ordinary_unit(0))
+    second = deepcopy(_weekly_partial_binding(_ordinary_unit(1)))
+    second["failed_attempt_id"] = "prior-apply-002"
+    second["failed_attempt_path"] = "prior-apply-002"
+    attempts: list[str] = []
+
+    def derive(*_args, **kwargs):
+        attempt = Path(kwargs["attempt_path"]).name
+        attempts.append(attempt)
+        return [first if attempt == "prior-apply-001" else second]
+
+    monkeypatch.setattr(campaign, "_derive_partial_source_exceptions", derive)
+
+    campaign._revalidate_partial_source_exceptions(
+        {"prior_partial_source_exceptions": [first, second]},
+        evidence_root=tmp_path,
+        current_identity=IDENTITY,
+        observe_committed=lambda *_args: {},
+    )
+
+    assert attempts == ["prior-apply-001", "prior-apply-002"]

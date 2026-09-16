@@ -1,6 +1,7 @@
 # 归一量化执行规则
 
-本文件只定义全局工程授权、安全边界和跨模块不变量。领域 canonical 的约束效力与本文件相同；当前
+本文件是项目全局工作流与授权的唯一入口，取代旧版长篇执行指引；领域 canonical 定义业务合同，
+不重复设置人工审批流程。旧文档或技能的流程要求与本文件冲突时按本文件执行，机器校验不因此取消。当前
 release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不得用聊天记忆替代仓库事实。
 
 ## 项目定位与事实源
@@ -13,19 +14,25 @@ release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不�
 - 开始任务先核对 branch、HEAD、worktree、dirty state、相关实现、测试和当前 develop 依赖。保留并避开
   用户或其他任务修改，不覆盖、回滚、批量清理或全量暂存无关内容。
 - `PROJECT_SOURCE.md` 只定义稳定产品面，`docs/ARCHITECTURE.md` 只定义 active 依赖，业务语义由对应
-  OpenSpec/deep canonical 定义，命令只写入 `TESTING.md`。
+  OpenSpec/deep canonical 定义；`TESTING.md` 保存稳定验证入口，任务说明可记录实际执行命令。
 
-## 讨论前置，范围内开发自主
+## AI 开发与 owner 决策
 
-- 用户要求讨论、比较方案、只读审计或 Plan-only 时，只分析并形成可审结果，不提前实施。讨论偏好、历史同意
-  或可行性结论不构成执行授权。
-- 用户明确要求实现，且目标、范围和验收清楚时，连续完成实现、修复本任务引入的问题、相关验证、Review、
-  commit/push，以及任务已授权且条件满足的 develop 集成；不在编码、测试或提交阶段重复申请同一批准。
-- 小任务可以 Direct；中等任务先给简短 Plan 后执行。命名、局部组织和按影响选择测试属于实现判断。
-  branch、worktree、PR 和多 agent 按隔离、协作与风险需要使用，不是每个任务的固定仪式。
-- Lane 3 的策略公式、撮合、成本、风险、仓位、Ledger、migration、Canonical、Runtime、通知、Broker、
-  main/tag/release 等重要设计先完成 Plan 和必要 Review；设计获批后，范围内编码仍可连续执行。
-- 必要验证失败必须继续定位或准确报告，不能因开发默认允许而跳过检查、降低断言或宣布完成。
+- AI 负责日常开发维护闭环；owner 负责产品方向、重要架构与业务语义取舍、生产操作边界和阶段晋升。
+- 用户要求讨论、比较方案、只读审计或 Plan-only 时，只产出分析；明确要求实现且目标、范围、验收清楚时，
+  连续完成实现、必要局部重构、测试、修复、自审、commit/push 和条件满足的 develop 集成，不重复申请批准。
+- 小任务直接执行；复杂任务先说明简短计划再推进。仅重要设计取舍或业务合同变化需要 owner 决策，
+  不因涉及策略、数据或 Runtime 代码就强制新会话、Plan-only 或再次审批。修复实现以符合已批准合同可自主完成。
+- 内部模块、文件、函数和算法实现可按目标调整；改变领域职责、外部合同、公式、收益或风险语义、
+  引入基础设施或扩大产品范围时先说明取舍。调查先取证定位，不以无关重构代替根因修复。
+- branch、worktree、PR、并行协作与独立 Review 按冲突、共享状态、资源及风险选择，不是固定仪式。
+  普通改动自审；数据时序、公式、并发、迁移、执行安全等高风险改动做独立 Review。
+- 小任务使用聊天说明和 Git diff；复杂任务才落必要设计文档，不重复制造 Spec、Plan、report 和 receipt。
+  设计遵循本地单用户、简单可维护原则，不为假设需求建通用框架。
+- 模型及推理强度由用户级配置管理；项目只要求按风险保证质量，确定性检查优先使用代码和工具。
+- 技能是执行工具。已明确授权且目标、范围、验收清楚时，不因技能要求重复批准设计或计划；
+  TDD、计划文件、分支收尾等步骤按风险采用，必要回归、独立 Review 和完成验证仍需落实。
+  本规则不修改全局技能、用户级配置或宿主安全控制。
 
 ## 需要停止相关动作的条件
 
@@ -39,24 +46,39 @@ release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不�
 
 ## 受控外部操作
 
-下列 mutation 必须在首次执行前取得目标、环境和范围明确的单次执行意图：
+下列操作必须在首次执行前取得目标、环境和范围明确的授权，可按一个明确任务或批次一次批准：
 
 - 真实 RQData 下载或写入，Canonical/primary 数据覆盖、迁移或删除；
-- production PostgreSQL、Redis、Scope 或仓库外数据写入/删除；
+- production PostgreSQL、Redis、Scope 或仓库外真实业务数据写入/删除；
 - Runtime/live enable、switch、promotion 或 production acknowledgment；
 - 真实通知或收件范围变更；
 - main merge、tag、GitHub Release、历史重写、force update 或 GitHub rules 修改；
 - Broker 接入、订单草稿发送及任何真实下单、撤单或改单。
 
-用户已精确批准某个动作时，在同一权限边界内完成 input validation 和 preflight 后执行，不机械追加第二次确认。
-该意图只授权紧随其后的一次匹配尝试；blocked、结果不明、失败后继续、范围变化、重试或跨会话继续均停止并取得
-新的明确意图。测试、dry-run、read-only health、配置存在、历史授权、commit hash 或 approval packet 都不能
-替代执行意图。普通 develop commit/push 与仓库内普通删除不属于受控外部操作；集成 develop 不授权生产写入、
-发布或 Runtime promotion。
+- 只读 PostgreSQL/Catalog/MDS 查询、审计、dry-run、计划生成、结果回读和隔离开发预览可在任务范围内自主执行，
+  不逐项审批；真实 provider 下载不归入默认只读权限。
+- 数据批次明确品种、物理合约、周期、窗口、环境、资源预算及异常处理边界，可同时包含下载、Canonical 发布和
+  Catalog 写入。仅批准下载不等于批准入库；范围内分包、逐项校验和收尾不重复确认。
+- 发布批次可一次批准精确版本的 main merge、annotated tag 和 GitHub Release。Runtime promotion 是独立
+  授权项，可在同次批准中明确列出工作站、exact tag/commit、服务及恢复范围，不能由发布授权隐含推导。
+- 授权绑定任务、目标和范围，不绑定会话。未撤销、未到期且尚未完成时，恢复前核对原授权、已完成项和现场状态，
+  仅继续未完成部分；已完成的历史授权不授权重新执行。
+- 生产失败或结果不明先停止受影响 mutation 并只读核对。仅在结果查明、重试安全且属于已批准的幂等、次数、
+  预算及恢复边界时继续；未包含重试或恢复时请求新授权，不盲目重试。Alert one-shot 等业务禁重试合同仍有效。
+  测试、构建和普通开发失败由 AI 自主修复重测。
+- 批量授权替代逐命令、逐品种、逐 phase 的重复确认；input validation、preflight、exact plan hash、维护锁、
+  质量校验、幂等提交、原子性和失败恢复约束保持不变。计划变化须核对仍在授权范围内，不能借此绕过机器校验。
 
-不得读取、显示、提交或记录凭据；不修改 `.env`。外部输入须在敏感操作前校验类型、范围、身份和关联字段；
-系统命令使用固定 executable 与离散参数，SQL 使用参数绑定或既有 ORM；输入派生路径规范化后必须仍在允许根内。
+测试、dry-run、health、配置存在、commit hash 或 approval packet 本身不授予生产权限。
+普通 develop commit/push、开发测试配置和任务内普通文件操作可自主完成；
+集成 develop 不授权生产写入、发布或 Runtime promotion。生产凭据、权限、成本或外部行为的配置变化须明确授权。
+
+不得将凭据读取到模型上下文、显示、提交或记录；允许既有程序通过安全配置加载使用。
+生产 `.env` 仅在明确配置变更授权下通过不暴露秘密的方式修改。
+外部输入须在敏感操作前校验类型、范围、身份和关联字段；系统命令使用固定 executable 与离散参数，
+SQL 使用参数绑定或既有 ORM；输入派生路径规范化后必须仍在允许根内。
 错误输出不得暴露凭据、内部地址、SQL 或 stack trace。失败、质量异常或安全开关缺失时 fail-closed。
+生产数据删除、覆盖、迁移前明确精确目标、影响、dry-run、可验证恢复办法与幂等边界；不触碰无关修改。
 仓库指引不能覆盖宿主或工具的安全控制。
 
 ## 持续 Runtime 授权边界
@@ -91,11 +113,13 @@ release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不�
 
 - 按风险先跑定向测试，再扩展模块测试、lint、typecheck、build 或 smoke；不机械运行与改动无关的全量检查。
   数据、策略、migration、Runtime、通知和发布保留各自必要 Gate。
-- 文档/指引改动运行引用与格式检查、适用工程测试、OpenSpec、secret scan 和 `git diff --check`；不得以重复
-  固定措辞代替业务行为验证。
+- 文档/指引改动先做引用与格式检查及 `git diff --check`；按内容选择工程测试、OpenSpec 或 secret scan，
+  纯文字改动不触发无关测试，不以固定措辞断言代替业务行为验证。
 - 必须区分 `CODE_COMPLETE`、`TEST_COMPLETE`、`REVIEW_COMPLETE`、`EXTERNAL_GATE_PENDING`、
   `RELEASED` 与 `RUNTIME_READY`；历史 evidence 不证明新版本，只有实际命令和运行证据支持完成声明。
-- 交付说明状态、改动范围、真实验证、Review、未完成 Gate、风险和唯一最小下一步。
+- Review 仅按 `Confirmed Issue`、`Risk / Needs Verification`、`Optional Improvement` 分类，不以 finding 数量为目标。
+  重要项说明证据、触发条件、实际影响、严重程度、建议验证方式及是否值得本版修复；不为充数建议无意义重构。
+- 交付简述结果、关键改动、实际验证及剩余风险/Gate；普通讨论直接回答，不强制固定段落、状态枚举或结论口号。
 
 ## 领域导航
 

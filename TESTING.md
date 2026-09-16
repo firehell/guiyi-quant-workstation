@@ -1,6 +1,8 @@
 # 测试与验证命令
 
-以下命令只验证代码和本地只读行为；不授权 RQData、Canonical、生产 DB、Runtime、Scope、通知或 release 操作。
+以下命令区分隔离测试、现场只读和受控操作用法；示例本身不授予生产操作权限。
+授权统一按 `AGENTS.md`：任务内只读诊断和隔离开发预览自主执行；真实 provider、生产写入、发布与 Runtime
+须在明确任务/批次范围内。有效授权可跨会话恢复；批次内不逐命令审批，exact hash、锁和质量校验保持不变。
 
 ## 开盘恢复队列与预警合约身份
 
@@ -128,7 +130,7 @@ PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin
   --expected-as-of 2026-09-13T06:36:13+00:00
 ```
 
-以下是获准生产只读连接后的单次现场命令，不构成写入、重试或 Runtime 授权。完整报告 stdout 必须保存到
+以下是任务范围内可自主执行的生产只读现场命令，不构成写入、重试或 Runtime 授权。完整报告 stdout 必须保存到
 本任务新的显式 evidence 文件；summary 只读取该同一文件，不得用 `--compact` 再查询一次。维护锁忙、现场失败、
 预算耗尽或代码修复后均停止，不循环复跑。
 
@@ -136,9 +138,32 @@ PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin
 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
   scripts/newow_weekly_acceptance.py pt
 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/guiyi \
-  data newow-readiness --universe operational --frequency 1w --matrix \
+  data newow-readiness --universe operational --frequency 1w --frequency 1d --matrix \
   --as-of 2026-09-13T06:36:13+00:00 --max-work 100000 --timeout-seconds 1800
 ```
+
+## Newow 日线候选工程（1w+1d 开放，60m 仍 UNOPENED）
+
+以下组验证日版 capability v2、恢复器严格单频 1d、跨频 plan/hash 隔离、close 与 settlement 分离。
+不授权 RQData 下载、Canonical 写入或 Runtime。真实 D1 总包 prepare/apply 仍走独立 Gate。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/newow/test_market_newow_product_api.py \
+  services/quant-api/tests/newow/test_candidate_preview.py \
+  services/quant-api/tests/newow/test_readiness.py \
+  services/quant-api/tests/newow/test_weekly_acceptance.py \
+  services/quant-api/tests/data_foundation/test_newow_readiness_cli.py \
+  services/quant-api/tests/newow/test_weekly_recovery_campaign.py \
+  services/quant-api/tests/data_foundation/test_infrastructure.py::test_rqdata_daily_keeps_close_independent_from_settlement \
+  services/quant-api/tests/data_foundation/test_infrastructure.py::test_rqdata_daily_rejects_partial_or_traded_zero_ohl \
+  services/quant-api/tests/data_foundation/test_infrastructure.py::test_rqdata_daily_adapter_uses_exchange_daily_zero_trade_ohlc
+pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test \
+  tests/newowProductTypes.test.ts tests/newowCapabilities.test.ts tests/newowProductRoutes.test.ts
+```
+
+D1 只读差量必须绑定 private Canonical 根；完整原生 report 才是 campaign prepare 依据，compact 不得裁剪缺 authority 的清单。
 
 UI 依赖整合后的完整 Web 验收：
 
@@ -195,8 +220,7 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 
 覆盖周五夜盘首边界、未完成尾周、逐日交易所夜盘证据、来源全集身份和生命周期、局部无夜盘不得覆盖共享 Calendar，以及元数据提交结果不明时停止并独立回读。隔离工作树可显式使用既有 Python 环境；这些离线检查不代表实际历史补齐、未来 Calendar 自动扩展或浏览器验收。
 `newow-readiness --universe operational --frequency 1w` 只审计周版及其 D1 companion；`--compact`
-只生成 Gate 索引，默认完整结果仍用于逐 dependency 与原生 plan 核对。真实 Catalog/Canonical 只读审计须另获
-当前现场权限，且即使结果为 `audited` 也不授权任何 `--apply`。
+只生成 Gate 索引，默认完整结果仍用于逐 dependency 与原生 plan 核对。真实 Catalog/Canonical 只读审计在任务范围内自主执行，且即使结果为 `audited` 也不授权任何 `--apply`。
 
 ## Newow 新版参考卡片定向验证
 
@@ -329,7 +353,7 @@ pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-
 ```
 
 上述浏览器截图使用 route-intercept fixture，只证明视觉与交互，不代表生产历史收益或自然预警。
-真实历史读取、发布和 Runtime 验收单独报告；测试不授权生产数据库连接或外部写入。
+真实历史读取、发布和 Runtime 验收单独报告；生产只读诊断按任务范围自主执行，测试不授权外部写入。
 
 ## Market WebSocket 与统一详情页
 
@@ -361,7 +385,7 @@ uv run --project services/quant-api python -m ruff check \
   services/quant-api/app services/quant-api/tests packages/quant-core/guiyi_quant tests/engineering
 ```
 
-### 牛哇周线有界恢复入口
+### 牛哇周线与日线有界恢复入口
 
 以下验证全部使用 fake provider、SQLite 和临时目录；不得把 production 下载当作测试。
 
@@ -369,7 +393,11 @@ uv run --project services/quant-api python -m ruff check \
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q -p no:cacheprovider --tb=short \
   services/quant-api/tests/newow/test_weekly_recovery.py \
+  services/quant-api/tests/newow/test_weekly_source_verify.py \
   services/quant-api/tests/newow/test_weekly_recovery_campaign.py \
+  services/quant-api/tests/newow/test_recovery_partial_exception.py \
+  services/quant-api/tests/newow/test_daily_recovery_verification.py \
+  services/quant-api/tests/newow/test_product_service.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/data_foundation/test_historical_data_manager.py \
   services/quant-api/tests/data_foundation/test_cli.py \
@@ -377,12 +405,20 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
   services/quant-api/tests/data_foundation/test_newow_readiness_cli.py
 uv run --project services/quant-api python -m ruff check \
   scripts/newow_weekly_recovery.py \
+  scripts/newow_weekly_source_verify.py \
   scripts/newow_weekly_recovery_campaign.py \
+  scripts/newow_daily_recovery_verification.py \
+  scripts/newow_recovery_partial_exception.py \
   services/quant-api/app/market_data/rqdata_adapter.py \
   services/quant-api/app/market_data/composition.py \
   services/quant-api/tests/data_foundation/test_infrastructure.py \
   services/quant-api/tests/newow/test_weekly_recovery.py \
-  services/quant-api/tests/newow/test_weekly_recovery_campaign.py
+  services/quant-api/tests/newow/test_weekly_source_verify.py \
+  services/quant-api/tests/newow/test_weekly_recovery_campaign.py \
+  services/quant-api/tests/newow/test_recovery_partial_exception.py \
+  services/quant-api/tests/newow/test_daily_recovery_verification.py \
+  services/quant-api/tests/newow/test_product_service.py \
+  services/quant-api/tests/newow/test_readiness.py
 PYTHONPATH=.:services/quant-api:packages/quant-core \
   MYPYPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api mypy --explicit-package-bases \
@@ -390,10 +426,55 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   services/quant-api/app/market_data/rqdata_adapter.py \
   services/quant-api/app/market_data/composition.py \
   scripts/newow_weekly_recovery.py \
-  scripts/newow_weekly_recovery_campaign.py
+  scripts/newow_weekly_source_verify.py \
+  scripts/newow_weekly_recovery_campaign.py \
+  scripts/newow_daily_recovery_verification.py \
+  scripts/newow_recovery_partial_exception.py
 ```
 
-总包 CLI 保持 `prepare / apply / inspect` 三阶段。下面命令依赖调用者先设置任务专用变量，仓库不记录
+单请求来源取证先对已冻结 prepared manifest 做零 provider 预检。`execute` 会再次校验 clean exact commit、
+execution digest、配置/Canonical 身份、完整当前 plan 和 maintenance lock，最多发起一个冻结请求；收到响应后
+先保存其原始响应。它不调用 manager apply，响应语义必须后续按 timestamp 离线审查：
+
+```bash
+: "${NEWOW_SOURCE_PROJECT_ENV:?set project env path}"
+: "${NEWOW_SOURCE_PREPARED:?set prepared manifest path}"
+: "${NEWOW_SOURCE_PREPARED_SHA256:?set prepared manifest sha256}"
+: "${NEWOW_SOURCE_REQUEST_SHA256:?set exact request sha256}"
+: "${NEWOW_SOURCE_OUTPUT_ROOT:?set fixed evidence root}"
+: "${NEWOW_SOURCE_ATTEMPT_ID:?set one new attempt id}"
+
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_source_verify preflight \
+  --project-env "$NEWOW_SOURCE_PROJECT_ENV" \
+  --prepared "$NEWOW_SOURCE_PREPARED" \
+  --expected-prepared-sha256 "$NEWOW_SOURCE_PREPARED_SHA256" \
+  --unit-index 0 \
+  --request-index 1 \
+  --expected-request-sha256 "$NEWOW_SOURCE_REQUEST_SHA256" \
+  --output-root "$NEWOW_SOURCE_OUTPUT_ROOT" \
+  --attempt-id "$NEWOW_SOURCE_ATTEMPT_ID"
+```
+
+`execute` 是一次真实来源查询 Gate。只有 owner 对上述 prepared/request hash、固定 attempt 和 exact command
+明确授权后才运行；未知结果不重试：
+
+```bash
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_source_verify execute \
+  --project-env "$NEWOW_SOURCE_PROJECT_ENV" \
+  --prepared "$NEWOW_SOURCE_PREPARED" \
+  --expected-prepared-sha256 "$NEWOW_SOURCE_PREPARED_SHA256" \
+  --unit-index 0 \
+  --request-index 1 \
+  --expected-request-sha256 "$NEWOW_SOURCE_REQUEST_SHA256" \
+  --output-root "$NEWOW_SOURCE_OUTPUT_ROOT" \
+  --attempt-id "$NEWOW_SOURCE_ATTEMPT_ID" \
+  --execute-source-query
+```
+
+总包 CLI 保持 `prepare / apply / inspect` 三阶段。`prepare` 缺省为既有 W1；显式 `--frequency 1d`
+生成独立 D1 schema，并且每个子包只含 physical contract `1d` target。下面命令依赖调用者先设置任务专用变量，仓库不记录
 production 路径、hash 或 attempt 身份：
 
 ```bash
@@ -411,6 +492,10 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
   --name "$NEWOW_CAMPAIGN_NAME"
 ```
+
+冻结 D1 总包时只在上述 `prepare` 命令末尾增加 `--frequency 1d`。该动作仍是只读 prepare，不初始化
+provider；其输入必须是完整、未耗尽预算、`frequency_scope=[1d]` 且 `matrix=false` 的原生 readiness
+报告。W1 与 D1 的 policy、manifest、result、invocation 和 prior-isolation hash 均不可互换。
 
 `apply` 是一次受控真实写入 Gate；只有 owner 对精确 campaign hash 和 attempt 明确授权后才运行：
 
@@ -438,6 +523,68 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   --prior-attempt "$NEWOW_PRIOR_ATTEMPT"
 ```
 
+若异常只由一次独立 source-only 查询证明、并无可复用的旧 campaign/attempt，则必须改为传入完整的
+source-only prepared、attempt、单元索引、请求索引和请求 hash。prepare 会重新验证 invocation、journal、
+保存响应、失败分类、零写入约束，并用当前原生 adapter 逐行重放 allowlist 异常；任一 artifact 漂移都会
+在创建子包前失败。该证据只隔离一个与当前完整 audit 精确同 identity/plan 的单元：
+
+source-only 导入时，`attempt` 必须与落盘 outcome 的 canonical JSON 完全一致；请求上限、重试数和
+Canonical/数据库写入数必须是 JSON integer，布尔值或浮点数即使数值相等也拒绝。原生零提交重规划的
+`target_windows` 同样按 canonical JSON 比较，以兼容进程内 tuple 与落盘 JSON list 的容器差异，同时继续
+逐字段约束 dataset、窗口、计数和值；隔离证据失败时只持久化固定的
+`SOURCE_ISOLATION_EVIDENCE_FAILED` 或 `SOURCE_ISOLATION_READBACK_FAILED`，不写入异常原文。
+
+```bash
+: "${NEWOW_SOURCE_PREPARED:?set exact source-only prepared path}"
+: "${NEWOW_SOURCE_PREPARED_SHA256:?set exact source-only prepared sha256}"
+: "${NEWOW_SOURCE_ATTEMPT:?set completed source-only attempt path}"
+: "${NEWOW_SOURCE_UNIT_INDEX:?set zero-based unit index}"
+: "${NEWOW_SOURCE_REQUEST_INDEX:?set zero-based request index}"
+: "${NEWOW_SOURCE_REQUEST_SHA256:?set exact source request sha256}"
+
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign prepare \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --report "$NEWOW_CAMPAIGN_REPORT" \
+  --expected-report-sha256 "$NEWOW_CAMPAIGN_REPORT_SHA256" \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --name "$NEWOW_CAMPAIGN_NAME" \
+  --isolate-known-source-quality \
+  --source-only-prepared "$NEWOW_SOURCE_PREPARED" \
+  --expected-source-only-prepared-sha256 "$NEWOW_SOURCE_PREPARED_SHA256" \
+  --source-only-attempt "$NEWOW_SOURCE_ATTEMPT" \
+  --source-only-unit-index "$NEWOW_SOURCE_UNIT_INDEX" \
+  --source-only-request-index "$NEWOW_SOURCE_REQUEST_INDEX" \
+  --expected-source-only-request-sha256 "$NEWOW_SOURCE_REQUEST_SHA256"
+```
+
+上述 source-only 导入仍为 W1 专用；D1 prepare 对其任一参数 fail-closed，只允许复核同 profile D1
+campaign 中已完整证明的零提交隔离，不自动跨 W1 导入来源证据。
+
+若上次 W1 apply 在部分提交后命中权威来源 `RQDATA_ZERO_OHL_INVALID`，不得把该单元记为
+zero-commit isolation 或 success。prepare 从显式失败 attempt 自动派生
+`prior_partial_source_exceptions`；该单元仍计入未完成分母，不进入 executable ordinary
+units，也不伪装 `DATA_READY`。prepare 会重放已保存来源响应、核验已提交月份的 Catalog /
+Parquet / MDS 读回，并要求当前 fresh replan 是扣除已提交目标后的严格子集。不得手写合约排除名单，
+也不得初始化 provider：
+
+```bash
+: "${NEWOW_PARTIAL_EXCEPTION_ATTEMPT:?set the failed W1 apply attempt directory}"
+
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign prepare \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --report "$NEWOW_CAMPAIGN_REPORT" \
+  --expected-report-sha256 "$NEWOW_CAMPAIGN_REPORT_SHA256" \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --name "$NEWOW_CAMPAIGN_NAME" \
+  --isolate-known-source-quality \
+  --partial-source-exception-attempt "$NEWOW_PARTIAL_EXCEPTION_ATTEMPT"
+```
+
+D1 不接受 `--partial-source-exception-attempt`，也拒绝从 prior campaign 间接携带 W1 partial receipt；
+日线任一部分提交、commit unknown 或读回不明都停批，并在新的完整只读审计后另行冻结剩余范围。
+
 新策略和旧来源排除证据均进入新 manifest hash，apply 不接受临时覆盖策略。隔离对象继续计入未完成分母；
 额度、网络、锁冲突、身份漂移、提交未知、读回/清理或证据失败仍全局停止。真实 apply 命令如下：
 
@@ -458,6 +605,65 @@ PYTHONPATH=.:services/quant-api:packages/quant-core \
   uv run --project services/quant-api python -m scripts.newow_weekly_recovery_campaign inspect \
   --attempt "$NEWOW_CAMPAIGN_OUTPUT_ROOT/$NEWOW_CAMPAIGN_ATTEMPT_ID"
 ```
+
+D1 apply 会先保留 `campaign-execution.json`，再启动独立只读验证进程；验证先将该摘要重新绑定
+`campaign-started`、`campaign-result`、逐批 terminal、native invocation/result 与 child hash，随后固定相同
+`as_of`，对所有已处理的 passed、zero-commit isolation、known failed 和 unknown 单元重做分类保持的 D1
+replan（只跳过明确 unattempted），并对完整 operational 品种运行 `matrix=false` 的 D1 readiness。验证还会
+逐一以同一 `as_of` 和 snapshot token 比较 60 个品种默认 Chart/Comparator 的 D1 窗口、owner 与 replay
+prefix；该运行证据缺失或不一致时不能输出 verified。验证失败、超时
+或结果保存失败不改写执行结算，也不会重试、恢复或再次 apply；退出 0 仅表示执行结算明确、普通单元
+全部完成且冻结 consumer 输入完整可用。后续只读重验可使用同一精确 campaign/execution hash 和新的
+observation id，不覆盖旧观察：
+
+```bash
+: "${NEWOW_D1_CAMPAIGN:?set exact D1 campaign path}"
+: "${NEWOW_D1_CAMPAIGN_SHA256:?set exact D1 campaign sha256}"
+: "${NEWOW_D1_EXECUTION:?set exact campaign execution path}"
+: "${NEWOW_D1_EXECUTION_SHA256:?set exact campaign execution sha256}"
+: "${NEWOW_D1_VERIFICATION_ID:?set one new observation id}"
+
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_daily_recovery_verification \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --campaign "$NEWOW_D1_CAMPAIGN" \
+  --expected-campaign-sha256 "$NEWOW_D1_CAMPAIGN_SHA256" \
+  --execution "$NEWOW_D1_EXECUTION" \
+  --expected-execution-sha256 "$NEWOW_D1_EXECUTION_SHA256" \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --observation-id "$NEWOW_D1_VERIFICATION_ID"
+```
+
+若已校验的 D1 prepare 本身为 `status=completed`、普通分母为 0 且没有 child batch，不创建空
+`campaign-execution.json`。使用同一完整 campaign hash 走显式 `not_required` 路径，仍执行完整 operational
+D1 audit 与 Comparator 证明；对此 campaign 调用 `apply` 会在创建 attempt 前以
+`D1_EXECUTION_NOT_REQUIRED` 拒绝：
+
+```bash
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  uv run --project services/quant-api python -m scripts.newow_daily_recovery_verification \
+  --project-env "$NEWOW_CAMPAIGN_PROJECT_ENV" \
+  --campaign "$NEWOW_D1_CAMPAIGN" \
+  --expected-campaign-sha256 "$NEWOW_D1_CAMPAIGN_SHA256" \
+  --execution-not-required \
+  --output-root "$NEWOW_CAMPAIGN_OUTPUT_ROOT" \
+  --observation-id "$NEWOW_D1_VERIFICATION_ID"
+```
+
+验证器内部审计 deadline 固定 300 秒，父进程等待上限固定 330 秒，为结果关闭、校验与落盘保留有界余量。
+父进程分别记录 timeout、非 0/1 进程码、缺失结果、空结果和损坏 JSON；这些状态都不改写已保存的执行终态，
+不自动 retry。`verification.json` 与 `summary.md` 都先完整写入并 fsync 临时文件，再以原子 no-replace
+发布到最终路径；并发同名目标会拒绝而不会覆盖。
+正式 JSON 发布后立即结构化回读。测试入口：
+
+```bash
+PYTHONPATH=services/quant-api:. services/quant-api/.venv/bin/pytest -q \
+  services/quant-api/tests/newow/test_daily_recovery_verification.py \
+  services/quant-api/tests/newow/test_weekly_recovery_campaign.py
+```
+
+以上 D1 `apply` 示例以及任何真实重验前的本地生产事实读取仍受各自精确 Gate 约束；本节测试命令
+只使用 fake provider、SQLite 和临时目录，不证明现场数据已完成或 public D1 已开放。
 
 `prepare` 只读读取锁定配置、Catalog、Calendar/Session 和 Canonical，要求 checkout clean 且 HEAD 精确，
 输出 plan、执行代码、配置及 Canonical 根的非敏感身份；它不得初始化 provider。`apply` 同样要求 clean exact
@@ -546,7 +752,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 以下为用法，非外部执行授权。`targets.json` 是明确的
 `[{"symbol":"au","contract":"AU2304","through":"2023-03-13"}]`；输出为普通 JSON，由 operator 保存。
-fetch 和 apply 各自需要新的单次执行意图，不能在一个获准 fetch 后自动 apply。
+fetch 和 apply 均须明确包含在任务/批次授权中，可一次批准；仅批准 fetch 不等于批准 apply。
 
 ```bash
 uv run --project services/quant-api guiyi data metadata-repair --targets /absolute/targets.json
@@ -564,7 +770,7 @@ uv run --project services/quant-api guiyi data metadata-repair --phase apply \
 ```
 
 `--classification` 与 `--evidence-sources` 均为可选 plan 输入；供证列表仅含显式
-`symbol/contract/date`，不扩写入范围。新 plan 如有新增 Session 请求，需要对其 hash 另行批准 fetch。
+`symbol/contract/date`，不扩写入范围。新 plan 如有新增 Session 请求，须核对仍在授权范围与预算内并使用新 hash；超出范围才申请批准。
 完整交易所负证据另需两份 plan 输入文件：`--exchange-universes` 内容为
 `[{"exchange":"GFEX","date":"2026-09-14","products":["lc","pd","ps","pt","si"],"sources":[...]}]`，
 每个 source 为 `symbol/contract/date`；`--exchange-inventory-evidence` 内容严格为
@@ -586,10 +792,10 @@ GUIYI_ISOLATED_CALENDAR_DATABASE_URL='postgresql+psycopg://postgres@127.0.0.1:15
 PYTHONPATH=services/quant-api:packages/quant-core \
   uv run --project services/quant-api pytest -q -m isolated_postgresql \
   services/quant-api/tests/data_foundation/test_au_calendar_correction_postgresql.py
-# 真实只读连接也须在本轮授权内。输入是已保存的诊断 JSON（source_response），不是新查询。
+# 任务范围内真实只读连接自主执行。输入是已保存的诊断 JSON（source_response），不是新查询。
 uv run --project services/quant-api guiyi data au-calendar-correction \
   --evidence /absolute/source-response.json --expected-evidence-sha256 EXACT_FILE_SHA256
-# 下面仅是用法；未取得新的单次生产写入意图时禁止执行。
+# 下面仅是用法；未取得覆盖该操作的有效生产写入授权时禁止执行。
 uv run --project services/quant-api guiyi data au-calendar-correction \
   --evidence /absolute/source-response.json --expected-evidence-sha256 EXACT_FILE_SHA256 \
   --expected-plan-sha256 EXACT_DRY_RUN_SHA256 --apply
@@ -610,7 +816,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/data_foundation/test_cli.py
 ```
 
-已获真实只读连接授权时，可在 exact 代码副本执行以下用法；`--as-of` 必须为本次选定的固定截止时间。
+任务范围内可自主在 exact 代码副本执行以下只读用法；`--as-of` 必须为本次选定的固定截止时间。
 
 ```bash
 uv run --project services/quant-api guiyi data newow-readiness \
@@ -727,7 +933,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
   services/quant-api/tests/test_market_home_projection_api.py
 ```
 
-这组测试只使用临时目录/fake service，验证 projection identity、strict/atomic file、API projection-hit/miss、`data update/refresh/contract-warmup --apply` 在 maintenance lease 内的失效、after-market 顺序、default-off projection activation marker 与 maintenance lease；不得以测试为理由执行真实 `guiyi data ... --apply` 或创建 marker。真实 projection-hit 性能 `<200ms` 属于后续明确授权的本地 Runtime read-only manual acceptance，不在普通 pytest 中用 timing sleep 伪造。
+这组测试只使用临时目录/fake service，验证 projection identity、strict/atomic file、API projection-hit/miss、`data update/refresh/contract-warmup --apply` 在 maintenance lease 内的失效、after-market 顺序、default-off projection activation marker 与 maintenance lease；不得以测试为理由执行真实 `guiyi data ... --apply` 或创建 marker。真实 projection-hit 性能 `<200ms` 属于单独取证的本地 Runtime read-only manual acceptance，不在普通 pytest 中用 timing sleep 伪造。
 
 EMA21 10K slope 与整体退役合同：
 
@@ -779,8 +985,8 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 ```
 
 这些测试只使用 fake provider、临时 Parquet/SQLite 与可选 isolated PostgreSQL；不会调用真实 RQData、切换
-Canonical、写 production DB/Redis 或停止 Runtime。`prepare/publish --apply` 不是测试命令，分别需要新的单次
-真实数据/维护授权。
+Canonical、写 production DB/Redis 或停止 Runtime。`prepare/publish --apply` 不是测试命令，均须纳入明确的
+真实数据/维护任务或批次授权。
 
 Physical-contract warm-up（含 `--frequency 1d` 的 D1-only、`--frequency 1w` 的同源 D1 + W1、
 `--frequency 15m` / `--frequency 60m` 的 1m dependency、空计划 scope hash 隔离、跨月日周整组发布与 fail-stop）、
@@ -798,7 +1004,7 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 该组测试仅使用 fake provider、临时 Catalog/Parquet 与临时路径。它不授权也不执行真实
 `guiyi data contract-warmup --apply`；即使 dry-run 得到 plan hash，真实 RQData/Canonical apply 仍需
-引用该 exact hash 的单次明确授权。
+在有效任务/批次授权内核对并使用该 exact hash。
 
 Runtime-bound daily recovery 的显式 P60/fixed-through 请求、稳定 target-window hash、maintenance lease 内
 identity/CAS 重检、相同端点/数量下的内部 expected/missing 时间戳漂移、hash 与执行共用同一冻结计划、目标
@@ -949,7 +1155,7 @@ PLAYWRIGHT_CANDIDATE_PREVIEW=1 pnpm -C apps/quant-web exec playwright test -c pl
 
 浏览器 fixture 固定 5182，拦截业务请求并故意设置错误的旧 API/WS override，以验证隔离。
 普通 dev/build 不启用预览；候选模式只供 dev server，禁止构建成 production bundle。
-实际预览仅在本次明确启动/只读连接授权后，由 controller 确认干净 exact commit、共享 Catalog/Canonical
+任务需要的隔离只读预览可自主启动，由 controller 确认干净 exact commit、共享 Catalog/Canonical
 配置与无端口占用，再在同一候选代码根、沿用既有配置加载运行下面两个入口。时间值仅是用法示例，
 须替换为本次选定值且两进程完全一致；不得创建第二份 Canonical 或修改 `.env`、launchd、正式服务。
 
@@ -1144,7 +1350,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
 逐品种诊断命令为 `guiyi runtime subing-readiness --trading-day YYYY-MM-DD --as-of OFFSET_DATETIME`；
 `as-of` 必须带时区且不晚于执行时刻。命令只读 PostgreSQL/Redis/Canonical，逐品种报告当前输入与 Scope，
 非全部 ready 时退出 1；参数错误退出 2。该结果不证明 provider acceptance 或实际收件，真实连接仍须
-位于用户明确授权的只读诊断范围。生产只读执行还必须使用与现役服务启动器相同的 authenticated
+位于当前任务的只读诊断范围。生产只读执行还必须使用与现役服务启动器相同的 authenticated
 `REDIS_URL` 解析结果；只加载未提供该连接结果的 `project.env` 会在订阅快照读取处产生 Redis
 authentication failure，此时外层的 `INPUT_DIAGNOSIS_UNAVAILABLE` 不是行情缺口或逐品种 readiness 结论。
 

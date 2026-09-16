@@ -122,9 +122,9 @@ onMounted(async () => {
     timeScale: { borderColor: theme.axis, timeVisible: true, tickMarkFormatter: formatChartAxisTimeInShanghai },
   })
   candles = chart.addSeries(CandlestickSeries, {
-    upColor: theme.up, downColor: theme.down,
-    borderUpColor: theme.up, borderDownColor: theme.down,
-    wickUpColor: theme.up, wickDownColor: theme.down,
+    upColor: theme.candleUp, downColor: theme.candleDown,
+    borderUpColor: theme.candleUp, borderDownColor: theme.candleDown,
+    wickUpColor: theme.candleUp, wickDownColor: theme.candleDown,
   })
   chart.panes()[0]!.setStretchFactor(5)
   chart.addPane().setStretchFactor(1.2)
@@ -220,7 +220,8 @@ function renderModel(value: NewowProductChartModel | null): void {
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
   })))
-  volume?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: bar.close >= bar.open ? '#FF403A' : '#22B95D' })))
+  const theme = resolveChartTheme(container.value ?? document.documentElement)
+  volume?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: bar.close >= bar.open ? theme.volumeUp : theme.volumeDown })))
   auxiliaryAnchor?.setData(value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })))
   band.setData(value.bandAreas)
   trendChannel.setData(value.channelPoints.map((point) => ({
@@ -311,8 +312,9 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     const y = priceToCoordinate.call(candles, action.value)
     return x === null || y === null ? [] : [{
       callout, x, y,
-      boxWidth: REFERENCE_CALLOUT_BOX.width,
-      boxHeight: REFERENCE_CALLOUT_BOX.height,
+      // Passive labels stay compact; interaction must reveal both lines without clipping.
+      boxWidth: activeActionLabel.value === callout.id ? 168 : REFERENCE_CALLOUT_BOX.width,
+      boxHeight: activeActionLabel.value === callout.id ? 52 : REFERENCE_CALLOUT_BOX.height,
       expanded: activeActionLabel.value === callout.id || props.selectedSignalId === callout.id,
     }]
   }), width, height)
@@ -417,6 +419,7 @@ function renderAuxiliary(): void {
   if (!chart) return
   const active = new Set<string>()
   const value = auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null
+  const theme = resolveChartTheme(container.value ?? document.documentElement)
   const colors: Record<string, string> = { dif: '#FF6B2C', dea: '#365AF5', kongpan: '#FF6B2C', var4: '#FF6B2C', ma10: '#365AF5', var3: '#9333EA', ma120: '#667085', entry: '#FF403A', wash: '#F5B726', distribution: '#22B95D', markup: '#FF6B2C', exit: '#365AF5', inducement: '#9333EA', peaks: '#B45309', caution: '#667085', band_entry: '#FF403A', rebound_entry: '#F5B726', oversold_entry: '#22B95D' }
   const mirror = value?.component === 'zhaoyao_mirror'
   auxiliaryZeroLine?.applyOptions({ color: mirror ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
@@ -436,7 +439,7 @@ function renderAuxiliary(): void {
       series = item.key === 'histogram' ? chart.addSeries(HistogramSeries, options, 2) : chart.addSeries(LineSeries, options, 2)
       auxiliaryLines.set(id, series)
     }
-    series.setData(item.points.map(point => ({ time: point.time, value: point.value, ...(item.key === 'histogram' ? { color: point.value >= 0 ? '#FF403A' : '#22B95D' } : {}) })))
+    series.setData(item.points.map(point => ({ time: point.time, value: point.value, ...(item.key === 'histogram' ? { color: point.value >= 0 ? theme.volumeUp : theme.volumeDown } : {}) })))
   }
   for (const [id, series] of auxiliaryLines) {
     if (active.has(id)) continue

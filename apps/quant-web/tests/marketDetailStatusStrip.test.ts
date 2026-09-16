@@ -12,16 +12,14 @@ test('shared status strip keeps the summary compact and opens one evidence drawe
   assert.match(source, /role="status"/)
 })
 
-test('Free HTDY and SuBing put compact status before the chart and long controls after it', () => {
-  for (const path of [
-    '../src/components/market/detail/free/FreeChartWorkspace.vue',
-    '../src/components/market/detail/htdy/HtdyDetailWorkspace.vue',
-    '../src/components/market/detail/subing/SubingDetailWorkspace.vue',
-  ]) {
-    const source = read(path)
-    assert.match(source, /<MarketDetailStatusStrip/)
-    const chartIndex = source.indexOf('ChartStage')
-    const indicatorIndex = source.indexOf('workspace__indicators', chartIndex)
-    if (indicatorIndex >= 0) assert.ok(indicatorIndex > chartIndex, `${path} controls must follow its chart`)
-  }
+test('Free puts direct indicator controls before the chart instead of a status strip', () => {
+  const source = read('../src/components/market/detail/free/FreeChartWorkspace.vue')
+  assert.doesNotMatch(source, /<MarketDetailStatusStrip/)
+  assert.match(source, /aria-label="主图指标"/)
+  assert.match(source, /indicator-chip--active/)
+  const template = source.slice(source.indexOf('<template>'))
+  const chartIndex = template.indexOf('FreeChartStage')
+  const indicatorIndex = template.indexOf('free-workspace__indicators')
+  assert.ok(indicatorIndex >= 0 && indicatorIndex < chartIndex, 'indicator controls must precede the chart')
+  assert.doesNotMatch(read('../src/components/market/detail/htdy/HtdyDetailWorkspace.vue'), /<MarketDetailStatusStrip/)
 })
