@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect as sa_inspect
 from sqlalchemy.engine import Engine
 
@@ -44,6 +45,12 @@ RETIRED_TABLES = {
     "futures_contract_universe",
     "futures_continuous_contract_map",
 }
+
+
+def test_price_unavailable_revision_is_the_schema_head() -> None:
+    config = Config()
+    config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
+    assert ScriptDirectory.from_config(config).get_current_head() == "20260916_0046"
 
 
 def test_canonical_foundation_migration_is_new_irreversible_head() -> None:
@@ -127,6 +134,17 @@ def test_canonical_foundation_upgrades_empty_and_0035_databases(
         "effective_from",
         "effective_to",
     } <= {column["name"] for column in inspector.get_columns("trading_sessions")}
+
+
+def test_price_unavailable_catalog_migration_supports_null_price_coverage(
+    isolated_migration_context: tuple[Config, Engine],
+) -> None:
+    config, engine = isolated_migration_context
+    command.upgrade(config, "head")
+    columns = {column["name"]: column for column in sa_inspect(engine).get_columns("market_partitions")}
+    assert {"source_coverage_start", "source_coverage_end", "source_quality", "source_quality_sha256"} <= set(columns)
+    assert columns["coverage_start"]["nullable"] is True
+    assert columns["coverage_end"]["nullable"] is True
 
 
 def _reset_public_schema(engine: Engine) -> None:

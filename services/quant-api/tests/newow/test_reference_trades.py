@@ -51,10 +51,10 @@ def test_closed_trade_covers_the_reference_contract_and_uses_action_prices(
     assert trade.physical_contract == "RB2605"
     assert trade.segment_id == case.entry.segment_id
     assert trade.formula_versions == ("newow_trend_band_page_v2",)
-    assert trade.reference_model_version == "newow_marker_reference_zero_cost_v2"
+    assert trade.reference_model_version == "newow_marker_reference_zero_cost_v3"
     assert (
         trade.futures_adaptation_version
-        == "newow_futures_segment_interrupt_no_trade_v2"
+        == "newow_futures_quality_segment_v3"
     )
     assert trade.entry_signal_id == case.entry.signal_id
     assert trade.entry_bar_end == case.entry.bar_end
@@ -91,7 +91,7 @@ def test_reference_trade_id_changes_when_reference_model_moves_from_v1_to_v2(
     monkeypatch.setattr(
         product_identity,
         "REFERENCE_MODEL_VERSION",
-        "newow_marker_reference_zero_cost_v2",
+        "newow_marker_reference_zero_cost_v3",
     )
     v2_id = ReferenceTradeProjector().project(
         case.replay, case.boundaries, case.as_of
@@ -117,7 +117,7 @@ def test_reference_trade_id_changes_with_futures_no_trade_policy_version(
     monkeypatch.setattr(
         product_identity,
         "FUTURES_ADAPTATION_VERSION",
-        "newow_futures_segment_interrupt_no_trade_v2",
+        "newow_futures_quality_segment_v3",
     )
     current_id = ReferenceTradeProjector().project(
         case.replay, case.boundaries, case.as_of

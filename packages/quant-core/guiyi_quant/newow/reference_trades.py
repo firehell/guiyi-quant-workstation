@@ -9,6 +9,7 @@ from enum import StrEnum
 
 from .product_contracts import (
     ActionKind,
+    DataInterruption,
     FeatureRuntimeStatus,
     MainState,
     OwnerBoundary,
@@ -33,6 +34,7 @@ class ReferenceTradeStatus(StrEnum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"
     ROLLOVER_INTERRUPTED = "ROLLOVER_INTERRUPTED"
+    DATA_INTERRUPTED = "DATA_INTERRUPTED"
 
 
 def _text(value: object) -> None:
@@ -84,6 +86,7 @@ class ReferenceTrade:
     interruption_reason: str | None = None
     statistics_membership: str | None = None
     hint_ids: tuple[str, ...] = ()
+    calculation_segment_id: str | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -96,6 +99,10 @@ class ReferenceTrade:
             self.entry_signal_id,
         ):
             _text(value)
+        if self.calculation_segment_id is None:
+            object.__setattr__(self, "calculation_segment_id", self.segment_id)
+        else:
+            _text(self.calculation_segment_id)
         object.__setattr__(self, "strategy_code", ProductStrategy(self.strategy_code))
         object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
         object.__setattr__(self, "status", ReferenceTradeStatus(self.status))
@@ -149,7 +156,7 @@ class ReferenceTrade:
             _price(self.mark_reference_price)
             _metric(self.mark_change_pct)
 
-        if self.status is ReferenceTradeStatus.ROLLOVER_INTERRUPTED:
+        if self.status in (ReferenceTradeStatus.ROLLOVER_INTERRUPTED, ReferenceTradeStatus.DATA_INTERRUPTED):
             if self.interrupted_at is None or self.interruption_reason is None:
                 raise ValueError("NEWOW_REFERENCE_INCONSISTENT_INTERRUPTION")
             interrupted_at = utc_timestamp(self.interrupted_at)
@@ -352,6 +359,7 @@ def _open_trade(entry: StrategyAction, holding_bars: int = 0) -> ReferenceTrade:
         frequency=identity.frequency,
         physical_contract=entry.physical_contract,
         segment_id=entry.segment_id,
+        calculation_segment_id=entry.calculation_segment_id,
         formula_versions=identity.formula_versions,
         reference_model_version=REFERENCE_MODEL_VERSION,
         futures_adaptation_version=FUTURES_ADAPTATION_VERSION,
@@ -517,6 +525,8 @@ class ReferenceTradeProjector:
         replay: StrategyReplay,
         boundaries: tuple[OwnerBoundary, ...],
         as_of: datetime,
+        *,
+        data_interruptions: tuple[DataInterruption, ...] = (),
     ) -> ReferenceProjection:
         if not isinstance(replay, StrategyReplay):
             raise ValueError("NEWOW_REFERENCE_INVALID_REPLAY")
@@ -531,6 +541,18 @@ class ReferenceTradeProjector:
             if boundary.product != replay.identity.product:
                 raise ValueError("NEWOW_REFERENCE_INVALID_BOUNDARIES")
         effective_boundaries = _effective_boundaries(boundaries, as_of)
+        try:
+            data_interruptions = tuple(data_interruptions)
+        except TypeError as error:
+            raise ValueError("NEWOW_REFERENCE_INVALID_DATA_INTERRUPTION") from error
+        if any(
+            not isinstance(gap, DataInterruption)
+            or gap.product != replay.identity.product
+            or gap.frequency is not replay.identity.frequency
+            for gap in data_interruptions
+        ) or len({(gap.physical_contract, gap.segment_id, gap.effective_at)
+                  for gap in data_interruptions}) != len(data_interruptions):
+            raise ValueError("NEWOW_REFERENCE_INVALID_DATA_INTERRUPTION")
 
         actions = _dedupe_actions(tuple(replay.actions))
         _validate_segment_local_order(actions)
@@ -579,12 +601,40 @@ class ReferenceTradeProjector:
         open_by_owner: dict[tuple[str, str], tuple[int, StrategyAction, int]] = {}
         warmup_witnesses: dict[str, StrategyAction] = {}
         owners_with_prior_actions: set[tuple[str, str]] = set()
+        ordered_gaps = tuple(sorted(
+            (gap for gap in data_interruptions if gap.effective_at <= as_of),
+            key=lambda gap: gap.effective_at,
+        ))
+        gap_index = 0
+
+        def consume_price_gaps(through: datetime) -> None:
+            nonlocal gap_index
+            while gap_index < len(ordered_gaps) and ordered_gaps[gap_index].effective_at <= through:
+                gap = ordered_gaps[gap_index]
+                owner = (gap.physical_contract, gap.segment_id)
+                current = open_by_owner.pop(owner, None)
+                if current is not None:
+                    trade_position, _entry, _entry_index = current
+                    trades[trade_position] = replace(
+                        trades[trade_position],
+                        status=ReferenceTradeStatus.DATA_INTERRUPTED,
+                        interrupted_at=gap.effective_at,
+                        interruption_reason="SOURCE_PRICE_UNAVAILABLE",
+                    )
+                for witness_id, witness in tuple(warmup_witnesses.items()):
+                    if (witness.physical_contract, witness.segment_id) == owner:
+                        del warmup_witnesses[witness_id]
+                gap_index += 1
 
         for action in actions:
             if action.bar_end > as_of:
                 _validate_action(replay, action, positions, require_position=False)
                 continue
+            consume_price_gaps(action.bar_end)
             owner = (action.physical_contract, action.segment_id)
+            if any(gap.effective_at == action.bar_end and
+                   (gap.physical_contract, gap.segment_id) == owner for gap in ordered_gaps):
+                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
             action_boundary = effective_boundaries.get(owner)
             if action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY:
                 if (
@@ -639,6 +689,7 @@ class ReferenceTradeProjector:
                     or witness.identity != action.identity
                     or witness.physical_contract != action.physical_contract
                     or witness.segment_id != action.segment_id
+                    or witness.calculation_segment_id != action.calculation_segment_id
                 ):
                     raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
                 if "NO_ELIGIBLE_ENTRY" not in diagnostics:
@@ -670,6 +721,7 @@ class ReferenceTradeProjector:
                 action.kind is not ActionKind.CLEAR
                 or current is None
                 or action.related_build_id != current[1].signal_id
+                or action.calculation_segment_id != current[1].calculation_segment_id
             ):
                 raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
             trade_position, entry, entry_index = current
@@ -688,6 +740,7 @@ class ReferenceTradeProjector:
             del open_by_owner[owner]
             owners_with_prior_actions.add(owner)
 
+        consume_price_gaps(as_of)
         for owner, (trade_position, _entry, entry_index) in open_by_owner.items():
             owner_boundary = effective_boundaries.get(owner)
             if owner_boundary is None:

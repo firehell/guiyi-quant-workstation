@@ -13,6 +13,7 @@ from guiyi_quant.newow.reference_statistics import (
     summarize_reference,
 )
 from guiyi_quant.newow.reference_trades import (
+    ReferenceTradeStatus,
     ReferenceProjection,
     ReferenceTradeProjector,
 )
@@ -83,6 +84,29 @@ def test_closed_returns_are_summed_as_points_not_compounded(product_cases):
         trade.statistics_membership == "entry_in_window_v1"
         for trade in summary.closed_trades
     )
+
+
+def test_data_interrupted_reference_has_no_closed_return_or_zero_substitute(product_cases):
+    case = product_cases.interrupted()
+    open_trade = _project(case).trades[0]
+    interrupted = replace(
+        open_trade,
+        status=ReferenceTradeStatus.DATA_INTERRUPTED,
+        mark_bar_end=None,
+        mark_reference_price=None,
+        mark_change_pct=None,
+        interrupted_at=datetime(2026, 1, 9, 7, tzinfo=UTC),
+        interruption_reason="SOURCE_PRICE_UNAVAILABLE",
+    )
+    projection = ReferenceProjection(
+        trades=(interrupted,), bar_level_hints=(), unassigned_hints=(),
+        diagnostics=(), as_of=datetime(2026, 1, 9, 16, tzinfo=UTC),
+    )
+    summary = summarize_reference(projection, _window())
+    assert summary.closed_count == 0
+    assert summary.interrupted_count == 1
+    assert summary.sum_return_percentage_points is None
+    assert summary.win_rate_pct is None
 
 
 def test_initial_clear_without_entry_keeps_all_trade_statistics_empty(product_cases):

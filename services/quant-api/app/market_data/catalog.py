@@ -18,7 +18,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
@@ -30,6 +30,7 @@ from app.market_data.session_clock import (
     SessionWindowBatch,
 )
 from app.market_data.storage import PublishedPartition
+from app.market_data.source_quality import PriceUnavailableFact
 from app.models import (
     Contract,
     Instrument,
@@ -92,10 +93,14 @@ class CatalogPartition:
     dataset: DatasetKey
     year: int
     month: int
-    coverage_start: datetime
-    coverage_end: datetime
+    coverage_start: datetime | None
+    coverage_end: datetime | None
     file_path: Path
     row_count: int
+    source_coverage_start: datetime | None = None
+    source_coverage_end: datetime | None = None
+    source_quality: tuple[PriceUnavailableFact, ...] = ()
+    source_quality_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,6 +225,10 @@ class MarketCatalog:
             "coverage_end": partition.coverage_end,
             "file_uri": self._relative_uri(partition.parquet_path),
             "row_count": partition.row_count,
+            "source_coverage_start": partition.source_coverage_start,
+            "source_coverage_end": partition.source_coverage_end,
+            "source_quality": [item.to_record() for item in partition.source_quality] if partition.source_quality else None,
+            "source_quality_sha256": partition.source_quality_sha256,
         }
         if row is None:
             self.session.add(
@@ -253,8 +262,8 @@ class MarketCatalog:
             select(MarketPartition)
             .where(
                 MarketPartition.dataset_id == dataset.id,
-                MarketPartition.coverage_end > start,
-                MarketPartition.coverage_start <= end,
+                func.coalesce(MarketPartition.source_coverage_end, MarketPartition.coverage_end) > start,
+                func.coalesce(MarketPartition.source_coverage_start, MarketPartition.coverage_start) <= end,
             )
             .order_by(MarketPartition.year, MarketPartition.month)
         )
@@ -299,7 +308,7 @@ class MarketCatalog:
             return ()
         statement = select(MarketPartition).where(MarketPartition.dataset_id == dataset.id)
         if before is not None:
-            statement = statement.where(MarketPartition.coverage_start < before)
+            statement = statement.where(func.coalesce(MarketPartition.source_coverage_start, MarketPartition.coverage_start) < before)
         rows = self.session.scalars(
             statement.order_by(MarketPartition.year.desc(), MarketPartition.month.desc())
         )
@@ -322,7 +331,7 @@ class MarketCatalog:
             )
         )
         if before is not None:
-            statement = statement.where(MarketPartition.coverage_start < before)
+            statement = statement.where(func.coalesce(MarketPartition.source_coverage_start, MarketPartition.coverage_start) < before)
         rows = self.session.execute(
             statement.order_by(MarketPartition.year.desc(), MarketPartition.month.desc())
         )
@@ -536,10 +545,14 @@ class MarketCatalog:
             dataset=key,
             year=row.year,
             month=row.month,
-            coverage_start=_aware(row.coverage_start),
-            coverage_end=_aware(row.coverage_end),
+            coverage_start=_aware(row.coverage_start) if row.coverage_start is not None else None,
+            coverage_end=_aware(row.coverage_end) if row.coverage_end is not None else None,
             file_path=self._resolve_uri(row.file_uri),
             row_count=row.row_count,
+            source_coverage_start=_aware(row.source_coverage_start) if row.source_coverage_start is not None else None,
+            source_coverage_end=_aware(row.source_coverage_end) if row.source_coverage_end is not None else None,
+            source_quality=tuple(PriceUnavailableFact.from_record(item) for item in row.source_quality or ()),
+            source_quality_sha256=row.source_quality_sha256,
         )
 
     def _relative_uri(self, path: Path) -> str:

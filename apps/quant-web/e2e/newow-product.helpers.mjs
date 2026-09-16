@@ -436,13 +436,13 @@ function envelope(url, section, strategy, frequency, options) {
 function meta(url, strategy, frequency, section, options) {
   const revision = typeof options.revision === 'function' ? options.revision({ url, section, strategy, frequency }) : options.revision || 'fixture-revision-1'
   return {
-    schema_version: 'newow_product_detail_v2',
+    schema_version: 'newow_product_detail_v3',
     identity: { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas(strategy) },
     as_of: url.searchParams.get('as_of') || NEWOW_AS_OF,
     read_at: '2026-09-03T08:00:01.000Z', input_content_sha256: section === 'chart' && url.searchParams.has('snapshot_token') && url.searchParams.has('from') && !url.searchParams.has('chart_before') ? 'f'.repeat(64) : HASH[section] || HASH.chart,
     data_revision_identity: revision, snapshot_token: options.tokenlessSections?.includes(section) ? null : `snapshot:${strategy}:${frequency}:${revision}`,
-    reference_model_version: 'newow_marker_reference_zero_cost_v2',
-    futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
+    reference_model_version: 'newow_marker_reference_zero_cost_v3',
+    futures_adaptation_version: 'newow_futures_quality_segment_v3',
   }
 }
 
@@ -595,7 +595,7 @@ function referenceValue(url, strategy, frequency, options) {
 function trade(tradeId, strategy, frequency, entry, exit, status, result, mark, entrySignalId, entrySequence, entryPrice, exitSignalId, exitPrice, markOwner, markPrice, membership = 'entry_in_window_v1') {
   return {
     reference_trade_id: tradeId, product: 'rb', strategy_code: strategy, frequency, physical_contract: entry.physical_contract, segment_id: entry.segment_id,
-    formula_versions: formulas(strategy), reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
+    formula_versions: formulas(strategy), reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     entry_signal_id: entrySignalId, entry_sequence: entrySequence, entry_bar_end: entry.bar_end, entry_trading_day: entry.trading_day, entry_reference_price: entryPrice,
     exit_signal_id: exit ? exitSignalId : null, exit_bar_end: exit?.bar_end || null, exit_trading_day: exit?.trading_day || null, exit_reference_price: exit ? exitPrice : null,
     status, holding_bars: 1, reference_return_pct: result, mark_bar_end: exit ? null : markOwner.bar_end, mark_reference_price: exit ? null : markPrice, mark_change_pct: mark,

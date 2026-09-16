@@ -504,10 +504,11 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 依赖前收的指标按这两根有效观察计算，因此无交易间隔后的价格跳空仍由恢复交易 Bar 自身表达。
 该规则对 owner 前同物理合约 warm-up 和 owner 内有效观察一致适用。
 
-部分零价、正 `volume`、正 `turnover`、`turnover` 缺失或其他不能严格证明无交易的非正价格事实 MUST
-继续 fail-closed。reader/readiness SHALL 公开 raw、effective 与 `NO_TRADE` 数量，并把
-`newow_futures_effective_observation_v1` 纳入输入证明；产品与 ReferenceTrade 使用
-`newow_futures_segment_interrupt_no_trade_v2`，不得笼统声明证券页面原样 parity。
+部分零价、`turnover` 缺失或其他不能严格证明无交易的非正价格事实 MUST 继续 fail-closed；
+唯一例外是 Canonical 市场存储合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`。
+它是来源质量中断，不是 `NO_TRADE` 或行情 Bar。reader/readiness SHALL 公开 raw、effective、
+`NO_TRADE` 与价格不可用数量，并把 `newow_futures_quality_observation_v2` 纳入输入证明；
+产品与 ReferenceTrade 使用 `newow_futures_quality_segment_v3`，不得笼统声明证券页面原样 parity。
 
 #### Scenario: A zero-activity futures day appears in warm-up
 
@@ -519,7 +520,32 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 
 - **GIVEN** 非正价格 Bar 的 `volume`、`turnover` 或其他严格条件不满足
 - **WHEN** reader 构造策略输入
-- **THEN** 返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
+- **THEN** 除上述已证明的窄 D1 类型外，返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
+
+### Requirement: D1 price-unavailable days split calculation and reference history
+
+同一物理合约的 D1 `PRICE_UNAVAILABLE` 日 MUST 在该合约有效前缀切断计算，即使当时尚未成为
+rank1。物理合约及 owner segment 身份保持原样，计算区段 MUST 有独立版本化身份；后续有效
+completed Bar 从新段重新预热所有依赖指标和策略状态，不得跨断点继承递推状态或配对见证。
+其他 owner 的异常不得传染当前完好 owner。只有满足各自真实预热条件的当前状态可标 READY；
+最新已完成日恰为缺价或仍在预热时，不得以断点前旧 Frame 冒充当前 READY。
+
+断点前真实 CLOSED 参考交易可保留；断点时 OPEN MUST 转为 `DATA_INTERRUPTED`，保留 entry 和
+中断时间，但无 exit、无已完成收益。断点后 CLEAR 不得配对断点前 BUILD；无可验证 BUILD 的
+初始 HOLD 不得制造 OPEN。`DATA_INTERRUPTED` 与换月中断分别标示，均不计入 CLOSED 统计。
+统计仅可汇总有效计算区段内的真实 CLOSED 样本；历史窗口若有缺价或重新预热，MUST 明示
+`PARTIAL`、排除区段及原因，不得展示为连续完整历史收益。页面参考仍为零成本乐观展示，
+不是模拟或真实成交；不得从数据缺陷推断交易所停市或供应方错误。
+
+#### Scenario: One price gap during an open reference trade
+
+- **WHEN** 完整来源证明显示 owner 内一日价格不可用
+- **THEN** 该日无 Bar/Marker/成交，OPEN 变为 DATA_INTERRUPTED 且已完成收益为空；后续计算重新预热
+
+#### Scenario: Clean suffix after a gap
+
+- **WHEN** 新计算段已有足量有效 completed Bar
+- **THEN** 当前策略可 READY，但历史窗口仍显式 PARTIAL 且只展示有效区段样本统计
 
 ### Requirement: Sectioned product delivery is computation-bounded
 

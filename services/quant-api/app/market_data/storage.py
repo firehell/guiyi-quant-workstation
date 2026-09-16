@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import hashlib
+import json
 import os
 import re
 import stat
@@ -21,6 +22,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from app.market_data.domain import BarFrequency, CanonicalBar, ContractError, DatasetKey
+from app.market_data.source_quality import PriceUnavailableFact
 
 
 CANONICAL_COLUMNS = ("bar_end", "trading_day", "open", "high", "low", "close", "volume", "turnover", "open_interest")
@@ -47,6 +49,7 @@ class PublishRequest:
     month: int
     bars: tuple[CanonicalBar, ...]
     expected_bar_ends: tuple[datetime, ...]
+    price_unavailable: tuple[PriceUnavailableFact, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,9 +60,13 @@ class PublishedPartition:
     year: int
     month: int
     parquet_path: Path
-    coverage_start: datetime
-    coverage_end: datetime
+    coverage_start: datetime | None
+    coverage_end: datetime | None
     row_count: int
+    source_coverage_start: datetime | None = None
+    source_coverage_end: datetime | None = None
+    source_quality: tuple[PriceUnavailableFact, ...] = ()
+    source_quality_sha256: str | None = None
 
 
 PartitionBoundaryValidator = Callable[[DatasetKey, tuple[CanonicalBar, ...]], bool]
@@ -78,16 +85,28 @@ class CatalogPartitionLike(Protocol):
     def month(self) -> int: ...
 
     @property
-    def coverage_start(self) -> datetime: ...
+    def coverage_start(self) -> datetime | None: ...
 
     @property
-    def coverage_end(self) -> datetime: ...
+    def coverage_end(self) -> datetime | None: ...
 
     @property
     def file_path(self) -> Path: ...
 
     @property
     def row_count(self) -> int: ...
+
+    @property
+    def source_quality(self) -> tuple[PriceUnavailableFact, ...]: ...
+
+    @property
+    def source_quality_sha256(self) -> str | None: ...
+
+    @property
+    def source_coverage_start(self) -> datetime | None: ...
+
+    @property
+    def source_coverage_end(self) -> datetime | None: ...
 
 
 class CanonicalMonthlyStore:
@@ -136,7 +155,17 @@ class CanonicalMonthlyStore:
             if self._read_bytes(directory_fd, name) != payload:
                 raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
             os.fsync(directory_fd)
-            return PublishedPartition(request.dataset, request.year, request.month, directory / name, request.bars[0].bar_end - _frequency_delta(request.dataset.frequency), request.bars[-1].bar_end, len(request.bars))
+            exceptions = tuple(request.price_unavailable)
+            return PublishedPartition(
+                request.dataset, request.year, request.month, directory / name,
+                (request.bars[0].bar_end - _frequency_delta(request.dataset.frequency)) if request.bars else None,
+                request.bars[-1].bar_end if request.bars else None,
+                len(request.bars),
+                _utc(request.expected_bar_ends[0]) - _frequency_delta(request.dataset.frequency),
+                _utc(request.expected_bar_ends[-1]),
+                exceptions,
+                _quality_sha256(exceptions) if exceptions else None,
+            )
         except StorageError:
             raise
         except Exception as exc:
@@ -236,23 +265,48 @@ class CanonicalMonthlyStore:
         partition: CatalogPartitionLike,
     ) -> tuple[CanonicalBar, ...]:
         """Read one Catalog partition only when URI, rows and coverage match disk."""
+        bars, exceptions = self.read_catalog_partition_quality(partition)
+        if exceptions:
+            raise StorageError("PARTITION_PRICE_UNAVAILABLE")
+        return bars
+
+    def read_catalog_partition_quality(
+        self, partition: CatalogPartitionLike,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...]]:
+        """Read a Catalog-pinned month with exact, source-backed date exceptions."""
         directory = self._month_directory(partition.dataset, partition.year, partition.month)
         path = partition.file_path
         if path.parent != directory or not re.fullmatch(r"part(?:\.[0-9a-f]{64})?\.parquet", path.name):
             raise StorageError("PARTITION_CATALOG_MISMATCH")
         values = self._read_path(path)
-        if not values:
+        exceptions = tuple(partition.source_quality)
+        if not values and not exceptions:
             raise StorageError("PARTITION_EMPTY")
-        self._validate(PublishRequest(partition.dataset, partition.year, partition.month, values, tuple(bar.bar_end for bar in values)))
+        if exceptions and (
+            partition.source_quality_sha256 != _quality_sha256(exceptions)
+        ):
+            raise StorageError("SOURCE_QUALITY_EVIDENCE_INVALID")
+        if not exceptions and partition.source_quality_sha256 is not None:
+            raise StorageError("SOURCE_QUALITY_EVIDENCE_INVALID")
+        expected_ends = tuple(sorted((bar.bar_end for bar in values), key=lambda end: end))
+        expected_ends = tuple(sorted((*expected_ends, *(item.bar_end for item in exceptions))))
+        if exceptions and (
+            partition.source_coverage_start != expected_ends[0] - _frequency_delta(partition.dataset.frequency)
+            or partition.source_coverage_end != expected_ends[-1]
+        ):
+            raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
+        self._validate(PublishRequest(
+            partition.dataset, partition.year, partition.month, values,
+            expected_ends, exceptions,
+        ))
         if partition.row_count != len(values):
             raise StorageError("PARTITION_ROW_COUNT_MISMATCH")
-        if (
-            partition.coverage_start
-            != values[0].bar_end - _frequency_delta(partition.dataset.frequency)
-            or partition.coverage_end != values[-1].bar_end
-        ):
+        if (partition.coverage_start != (
+            values[0].bar_end - _frequency_delta(partition.dataset.frequency)
+            if values else None
+        ) or partition.coverage_end != (values[-1].bar_end if values else None)):
             raise StorageError("PARTITION_COVERAGE_MISMATCH")
-        return values
+        return values, exceptions
 
     def month_path(self, dataset: DatasetKey, year: int, month: int) -> Path:
         """Return only the legacy fixed path; active readers must use the Catalog URI."""
@@ -267,17 +321,28 @@ class CanonicalMonthlyStore:
 
     def _validate(self, request: PublishRequest) -> None:
         """发布前完整性校验：非空、bar_end 严格递增、与 expected 完全一致、归属正确月份。"""
-        if not request.bars or not request.expected_bar_ends or not 1 <= request.month <= 12:
+        if (not request.bars and not request.price_unavailable) or not request.expected_bar_ends or not 1 <= request.month <= 12:
             raise StorageError("EMPTY_PARTITION")
         ends = tuple(bar.bar_end for bar in request.bars)
         if any(left >= right for left, right in zip(ends, ends[1:])):
             raise StorageError("BAR_END_NOT_STRICTLY_INCREASING")
         expected_ends = tuple(_utc(item) for item in request.expected_bar_ends)
         # 与维护层计算的期望 bar_end 序列必须逐根相等，禁止缺 bar 或多余 bar
-        if ends != expected_ends:
+        exceptions = tuple(request.price_unavailable)
+        if exceptions and request.dataset.frequency is not BarFrequency.D1:
+            raise StorageError("SOURCE_QUALITY_FREQUENCY_INVALID")
+        if any(not isinstance(item, PriceUnavailableFact) for item in exceptions):
+            raise StorageError("SOURCE_QUALITY_EVIDENCE_INVALID")
+        combined = tuple(sorted((*ends, *(item.bar_end for item in exceptions))))
+        if combined != expected_ends or any(left >= right for left, right in zip(expected_ends, expected_ends[1:])):
+            if exceptions:
+                raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
             raise StorageError("TARGET_WINDOW_INCOMPLETE")
         for bar in request.bars:
             if bar.trading_day.year != request.year or bar.trading_day.month != request.month:
+                raise StorageError("PARTITION_MONTH_MISMATCH")
+        for item in exceptions:
+            if item.trading_day.year != request.year or item.trading_day.month != request.month:
                 raise StorageError("PARTITION_MONTH_MISMATCH")
         if self.boundary_validator is not None and not self.boundary_validator(request.dataset, request.bars):
             raise StorageError("SESSION_BOUNDARY_INVALID")
@@ -286,6 +351,11 @@ class CanonicalMonthlyStore:
 def _frequency_delta(frequency: BarFrequency) -> timedelta:
     """单根 bar 的时间宽度，用于由首根 ``bar_end`` 反推 ``coverage_start``。"""
     return {BarFrequency.M1: timedelta(minutes=1), BarFrequency.M5: timedelta(minutes=5), BarFrequency.M15: timedelta(minutes=15), BarFrequency.M30: timedelta(minutes=30), BarFrequency.H1: timedelta(hours=1), BarFrequency.D1: timedelta(days=1), BarFrequency.W1: timedelta(days=7)}[frequency]
+
+
+def _quality_sha256(exceptions: tuple[PriceUnavailableFact, ...]) -> str:
+    payload = [item.to_record() for item in exceptions]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def _utc(value: object) -> datetime:

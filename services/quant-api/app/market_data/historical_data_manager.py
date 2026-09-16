@@ -63,6 +63,7 @@ from app.market_data.storage import (
     PublishRequest,
     StorageError,
 )
+from app.market_data.source_quality import PriceUnavailableFact
 
 
 class CoverageSource(Protocol):
@@ -142,6 +143,7 @@ class BarBatch:
     """单次 provider 拉取归一化后的 bar 批次。"""
 
     bars: tuple[CanonicalBar, ...]
+    price_unavailable: tuple[PriceUnavailableFact, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -696,6 +698,15 @@ class ContractWarmupPlanner:
     ) -> _ContractPartitionClassification:
         """应用 mapped ⊆ persisted ⊆ lifecycle-valid 的唯一 contract 判定。"""
         fact = self.catalog.contract_fact(key.symbol, key.series_or_contract)
+        quality_facts = tuple(
+            item
+            for row in self.catalog.all_partitions(key)
+            if (row.year, row.month) == (year, month)
+            for item in row.source_quality
+        )
+        quality_ends = {item.bar_end.astimezone(UTC) for item in quality_facts}
+        observed_days = [bar.trading_day for bar in existing]
+        observed_days.extend(item.trading_day for item in quality_facts)
         lifecycle_valid = (
             {
                 item.astimezone(UTC)
@@ -704,14 +715,14 @@ class ContractWarmupPlanner:
                     fact,
                     year,
                     month,
-                    max(bar.trading_day for bar in existing),
+                    max(observed_days),
                 )
             }
-            if existing
+            if observed_days
             else set()
         )
         required = {item.astimezone(UTC) for item in required_mapped}
-        persisted = tuple(bar.bar_end.astimezone(UTC) for bar in existing)
+        persisted = tuple(bar.bar_end.astimezone(UTC) for bar in existing) + tuple(quality_ends)
         persisted_set = set(persisted)
         valid_persisted = persisted_set.intersection(lifecycle_valid)
         refresh_persisted = {
@@ -720,6 +731,12 @@ class ContractWarmupPlanner:
             if bar.trading_day <= through
             and bar.bar_end.astimezone(UTC) in lifecycle_valid
         }
+        refresh_persisted.update(
+            item.bar_end.astimezone(UTC)
+            for item in quality_facts
+            if item.trading_day <= through
+            and item.bar_end.astimezone(UTC) in lifecycle_valid
+        )
         return _ContractPartitionClassification(
             expected=tuple(sorted(required.union(valid_persisted))),
             refresh_expected=tuple(sorted(required.union(refresh_persisted))),
@@ -840,7 +857,10 @@ class ContractWarmupPlanner:
         if len(rows) != 1:
             return (), "PARTITION_CATALOG_MISMATCH"
         try:
-            values = self.store.read_catalog_partition(row)
+            if row.source_quality:
+                values, _ = self.store.read_catalog_partition_quality(row)
+            else:
+                values = self.store.read_catalog_partition(row)
         except StorageError as exc:
             return (), getattr(exc, "code", "PARTITION_UNREADABLE")
         return values, None
@@ -2335,6 +2355,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
 
     def _publish_fetched_partition(self, target, batches):
         bars = self._merged_fetched_bars(target, batches)
+        exceptions = self._merged_price_unavailable(target, batches)
         # publish 内部：schema/顺序/月界/会话边界校验 → 临时文件回读 → 不可变候选安装。
         partition = self.store.publish(
             PublishRequest(
@@ -2343,6 +2364,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 target.month,
                 bars,
                 target.expected,
+                exceptions,
             )
         )
         self._commit_partition(partition, target)
@@ -2358,9 +2380,35 @@ class HistoricalDataManager(ContractWarmupPlanner):
             for bar in batch.bars:
                 merged[bar.bar_end] = bar
         bars = tuple(merged[item] for item in target.expected if item in merged)
-        if tuple(bar.bar_end for bar in bars) != target.expected:
+        exceptions = self._merged_price_unavailable(target, batches)
+        if tuple(sorted((*tuple(bar.bar_end for bar in bars),
+                         *(item.bar_end for item in exceptions)))) != target.expected:
             raise StorageError("TARGET_WINDOW_INCOMPLETE")
         return bars
+
+    def _merged_price_unavailable(
+        self, target: _Target, batches: tuple[BarBatch, ...]
+    ) -> tuple[PriceUnavailableFact, ...]:
+        if any(batch.price_unavailable for batch in batches) and target.key.frequency is not BarFrequency.D1:
+            raise StorageError("SOURCE_QUALITY_FREQUENCY_INVALID")
+        existing = tuple(
+            row for row in self.catalog.all_partitions(target.key)
+            if (row.year, row.month) == (target.year, target.month)
+        )
+        previous = {item.bar_end: item for row in existing for item in row.source_quality}
+        bars = {bar.bar_end for bar in target.existing}
+        for batch in batches:
+            fresh_bars = {bar.bar_end for bar in batch.bars}
+            fresh_exceptions = {item.bar_end for item in batch.price_unavailable}
+            if len(fresh_exceptions) != len(batch.price_unavailable) or fresh_bars & fresh_exceptions:
+                raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
+            for end in fresh_bars:
+                previous.pop(end, None)
+            for item in batch.price_unavailable:
+                if item.bar_end in bars:
+                    raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
+                previous[item.bar_end] = item
+        return tuple(previous[end] for end in target.expected if end in previous)
 
     def _publish_derived(self, target: _Target) -> None:
         """从当月 1m 源分区聚合 derived 频度；会话窗口须覆盖 target.expected。"""
@@ -2453,6 +2501,22 @@ class HistoricalDataManager(ContractWarmupPlanner):
             series_kind = SeriesKind.CONTRACT
             contract = target.key.series_or_contract
         try:
+            if target.key.frequency is BarFrequency.D1:
+                partition = next((row for row in self.catalog.all_partitions(target.key)
+                                  if (row.year, row.month) == (target.year, target.month)), None)
+                if partition is not None and partition.source_quality:
+                    values, exceptions = MarketDataService(self.catalog, self.store).read_physical_daily_quality(
+                        SeriesQuery(
+                            series_kind=series_kind, symbol=target.key.symbol,
+                            contract=contract, frequency=target.key.frequency,
+                            start=target.expected[0] - timedelta(microseconds=1),
+                            end=target.expected[-1],
+                        )
+                    )
+                    if tuple(sorted((*tuple(bar.bar_end for bar in values),
+                                     *(item.bar_end for item in exceptions)))) != target.expected:
+                        raise StorageError("STRICT_READ_VERIFICATION_FAILED")
+                    return
             result = MarketDataService(self.catalog, self.store).query(
                 SeriesQuery(
                     series_kind=series_kind,

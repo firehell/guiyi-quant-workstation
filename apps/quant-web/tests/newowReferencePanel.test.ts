@@ -364,11 +364,11 @@ function referenceResponse(): Mutable<NewowProductSectionResponse<'reference'>> 
   return {
     meta: meta(), section: 'reference', status: ready(), value: {
       performance_since: '2026-01-01', performance_through: '2026-08-15', actual_available_through: '2026-08-15',
-      reference_cutoff: '2026-08-15T07:00:00Z', reference_input_sha256: 'c'.repeat(64),
+      reference_cutoff: '2026-08-15T07:00:00Z', reference_input_sha256: 'c'.repeat(64), history_coverage: 'FULL', unavailable_days: [], coverage_intervals: [],
       summary: {
         membership_policy: 'entry_in_window_v1', closed_count: 0, win_count: 0, loss_count: 0, flat_count: 0,
         win_rate_pct: null, mean_return_pct: null, sum_return_percentage_points: null,
-        open_count: 1, interrupted_count: 1, initial_count: 2,
+        open_count: 1, interrupted_count: 1, rollover_interrupted_count: 1, data_interrupted_count: 0, initial_count: 2,
       },
       items: [
         trade('open', {
@@ -412,7 +412,7 @@ function weeklyPartialResponse(requested: string, available: string): Mutable<Ne
 function chartResponse(): Mutable<NewowProductSectionResponse<'chart'>> {
   return {
     meta: meta(), section: 'chart', status: ready(), value: {
-      chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64),
+      chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), price_unavailable_days: [],
       bars: [bar('2026-08-14T07:00:00Z', '2026-08-14'), bar('2026-08-15T07:00:00Z', '2026-08-15')],
       frames: [],
       actions: [{
@@ -431,8 +431,8 @@ function chartResponse(): Mutable<NewowProductSectionResponse<'chart'>> {
 
 function trade(id: string, overrides: Partial<Mutable<NewowReferenceTrade>>): Mutable<NewowReferenceTrade> {
   return {
-    reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'segment-1',
-    formula_versions: ['newow_trend_band_page_v2'], reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
+    reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'segment-1', calculation_segment_id: 'segment-1',
+    formula_versions: ['newow_trend_band_page_v2'], reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     entry_signal_id: `entry-${id}`, entry_sequence: 0, entry_bar_end: '2026-08-01T07:00:00Z', entry_trading_day: '2026-08-01', entry_reference_price: '100.000',
     exit_signal_id: null, exit_bar_end: null, exit_trading_day: null, exit_reference_price: null,
     status: 'OPEN', holding_bars: 1, reference_return_pct: null,
@@ -442,15 +442,15 @@ function trade(id: string, overrides: Partial<Mutable<NewowReferenceTrade>>): Mu
 }
 
 function bar(barEnd: string, tradingDay: string) {
-  return { bar_end: barEnd, trading_day: tradingDay, open: '100', high: '101', low: '99', close: '100', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'segment-1', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true as const }
+  return { bar_end: barEnd, trading_day: tradingDay, open: '100', high: '101', low: '99', close: '100', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'segment-1', calculation_segment_id: 'segment-1', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true as const }
 }
 
 function meta() {
   return {
-    schema_version: 'newow_product_detail_v2' as const,
+    schema_version: 'newow_product_detail_v3' as const,
     identity: { product: 'jm', strategy: 'trend' as const, frequency: '1d' as const, series_kind: 'actual_dominant' as const, profile_id: 'profile-1', formula_versions: ['newow_trend_band_page_v2'] },
     as_of: '2026-08-15T07:00:00Z', read_at: '2026-08-15T07:00:01Z', input_content_sha256: 'a'.repeat(64), data_revision_identity: null, snapshot_token: 'snapshot-1',
-    reference_model_version: 'newow_marker_reference_zero_cost_v2' as const, futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2' as const,
+    reference_model_version: 'newow_marker_reference_zero_cost_v3' as const, futures_adaptation_version: 'newow_futures_quality_segment_v3' as const,
   }
 }
 

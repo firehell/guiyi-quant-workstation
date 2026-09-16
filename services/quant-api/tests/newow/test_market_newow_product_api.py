@@ -248,10 +248,10 @@ def test_strategy_detail_returns_only_requested_typed_section(
         body["chart"]["value"]["chart_from"] <= body["chart"]["value"]["chart_through"]
     )
     assert len(body["chart"]["value"]["page_identity"]) == 64
-    assert body["meta"]["schema_version"] == "newow_product_detail_v2"
+    assert body["meta"]["schema_version"] == "newow_product_detail_v3"
     assert (
         body["meta"]["reference_model_version"]
-        == "newow_marker_reference_zero_cost_v2"
+        == "newow_marker_reference_zero_cost_v3"
     )
     assert body["chart"]["value"]["next_older_window"] is None
     assert body["chart"]["value"]["formal_signal_eligible"] is True
@@ -375,10 +375,10 @@ def test_typed_api_serializes_verified_initial_clear_without_entry(product_cases
     result = _initial_clear_service_result(product_cases)
     payload = market_newow._product_response(result).model_dump(mode="json")
 
-    assert payload["meta"]["schema_version"] == "newow_product_detail_v2"
+    assert payload["meta"]["schema_version"] == "newow_product_detail_v3"
     assert (
         payload["meta"]["reference_model_version"]
-        == "newow_marker_reference_zero_cost_v2"
+        == "newow_marker_reference_zero_cost_v3"
     )
     assert payload["chart"]["value"]["actions"] == [
         {
@@ -404,6 +404,7 @@ def test_typed_action_rejects_invalid_initial_clear_cross_fields(field, value):
         "reference_price": "100.100",
         "physical_contract": "PT2610",
         "segment_id": "pt:PT2610:2025-01-01T00:00:00+00:00",
+        "calculation_segment_id": "pt:PT2610:2025-01-01T00:00:00+00:00",
         "related_build_id": None,
         "trade_eligibility": "INITIAL_CLEAR_NO_ENTRY",
         "sequence": 0,

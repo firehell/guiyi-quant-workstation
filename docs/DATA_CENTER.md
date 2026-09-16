@@ -23,7 +23,10 @@ Dataset。
 `futures.get_exchange_daily`：真实合约直接读取，`continuous/MAIN` 按每个交易日 rank1
 `MainContractMap` 拼接对应真实合约。`1w` 仅由同一交易所日行情在完整 ISO 周内聚合，缺任一应有
 交易日事实即失败。RQData 对零成交日返回 `volume=0`、有效正 `close` 且 O/H/L 同时为空或同时为零时，adapter
-只允许用同一行 `close` 规范成平价 OHLC；交易所原始的全零 O/H/L/close 零成交行保留其事实，非零成交、部分价格缺失、部分零价或无效 `close` 仍须失败。
+只允许用同一行 `close` 规范成平价 OHLC；交易所原始的全零 O/H/L/close 零成交行保留其事实。
+对物理合约 D1 严格匹配 O/H/L=0、`close>0`、`volume>0` 且其余来源、身份和端点校验通过的行，
+仅按已批准的 `PRICE_UNAVAILABLE` 质量事实记录并中断 Newow 计算，不生成 CanonicalBar；
+其他非零成交、部分价格缺失、部分零价或无效 `close` 仍须失败。W1 不得借此缺价日聚合成功。
 不得用 `get_price` 的期货日/周 `close` 或 `settlement` 互相替代。
 
 ## 2. Canonical 物理合同

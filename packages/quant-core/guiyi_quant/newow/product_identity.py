@@ -11,9 +11,9 @@ if TYPE_CHECKING:
     from .product_contracts import ProductIdentity, StrategyAction
 
 
-REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v2"
-FUTURES_ADAPTATION_VERSION = "newow_futures_segment_interrupt_no_trade_v2"
-FUTURES_INPUT_POLICY_VERSION = "newow_futures_effective_observation_v1"
+REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v3"
+FUTURES_ADAPTATION_VERSION = "newow_futures_quality_segment_v3"
+FUTURES_INPUT_POLICY_VERSION = "newow_futures_quality_observation_v2"
 
 
 def utc_timestamp(value: datetime) -> datetime:
@@ -44,6 +44,11 @@ def build_segment_id(product: str, contract: str, owner_start: datetime) -> str:
     if _text(product) != product.lower() or _text(contract) != contract.upper():
         raise ValueError("NEWOW_PRODUCT_INVALID_PHYSICAL_IDENTITY")
     return f"{product}:{contract}:{utc_timestamp(owner_start).isoformat()}"
+
+
+def build_calculation_segment_id(owner_segment_id: str, last_gap_at: datetime) -> str:
+    """A price gap resets calculation without changing the physical owner."""
+    return f"{_text(owner_segment_id)}|price-gap:{utc_timestamp(last_gap_at).isoformat()}"
 
 
 def _event_fields(
@@ -78,12 +83,14 @@ def build_signal_id(
     bar_end: datetime,
     action: str,
     sequence: int,
+    calculation_segment_id: str | None = None,
 ) -> str:
     if action not in ("BUILD", "CLEAR") or sequence is None:
         raise ValueError("NEWOW_PRODUCT_INVALID_ACTION")
-    return _digest(
-        _event_fields(identity, contract, segment_id, bar_end, action, sequence)
-    )
+    fields = _event_fields(identity, contract, segment_id, bar_end, action, sequence)
+    if calculation_segment_id is not None and calculation_segment_id != segment_id:
+        fields["calculation_segment_id"] = _text(calculation_segment_id)
+    return _digest(fields)
 
 
 def build_hint_id(
@@ -93,13 +100,15 @@ def build_hint_id(
     bar_end: datetime,
     kind: str,
     sequence: int | None,
+    calculation_segment_id: str | None = None,
 ) -> str:
     # A namespace in action prevents a hint from ever colliding with a main action.
-    return _digest(
-        _event_fields(
-            identity, contract, segment_id, bar_end, f"HINT:{_text(kind)}", sequence
-        )
+    fields = _event_fields(
+        identity, contract, segment_id, bar_end, f"HINT:{_text(kind)}", sequence
     )
+    if calculation_segment_id is not None and calculation_segment_id != segment_id:
+        fields["calculation_segment_id"] = _text(calculation_segment_id)
+    return _digest(fields)
 
 
 def build_reference_trade_id(entry: StrategyAction) -> str:

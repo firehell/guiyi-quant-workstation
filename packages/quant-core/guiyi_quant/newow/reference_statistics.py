@@ -72,6 +72,8 @@ class ReferenceSummary:
     sum_return_percentage_points: Decimal | None
     open_count: int
     interrupted_count: int
+    rollover_interrupted_count: int
+    data_interrupted_count: int
     initial_count: int
     closed_trades: tuple[ReferenceTrade, ...]
     open_trades: tuple[ReferenceTrade, ...]
@@ -196,7 +198,7 @@ def summarize_reference(
             closed.append(member)
         elif trade.status is ReferenceTradeStatus.OPEN:
             open_.append(member)
-        elif trade.status is ReferenceTradeStatus.ROLLOVER_INTERRUPTED:
+        elif trade.status in (ReferenceTradeStatus.ROLLOVER_INTERRUPTED, ReferenceTradeStatus.DATA_INTERRUPTED):
             interrupted.append(member)
         else:  # pragma: no cover - enum construction rejects unknown statuses
             raise ValueError("NEWOW_STATISTICS_INVALID_PROJECTION")
@@ -222,6 +224,14 @@ def summarize_reference(
         sum_return_percentage_points=sum_return,
         open_count=len(open_),
         interrupted_count=len(interrupted),
+        rollover_interrupted_count=sum(
+            trade.status is ReferenceTradeStatus.ROLLOVER_INTERRUPTED
+            for trade in interrupted
+        ),
+        data_interrupted_count=sum(
+            trade.status is ReferenceTradeStatus.DATA_INTERRUPTED
+            for trade in interrupted
+        ),
         initial_count=len(initial),
         closed_trades=closed_trades,
         open_trades=tuple(open_),

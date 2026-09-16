@@ -1,13 +1,14 @@
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, timedelta
 from threading import Event, Thread
 from time import sleep
 
 import pytest
 
-from guiyi_quant.newow.product_adapters import replay_strategy
+from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
 from guiyi_quant.newow.product_contracts import (
     ActionKind,
+    DataInterruption,
     ProductFrequency,
     TradeEligibility,
 )
@@ -16,7 +17,7 @@ from guiyi_quant.newow.oscillation_channel import CHANNEL_FORMULA_VERSION
 
 from app.market_data.domain import ResolvedContractSegment
 
-from app.market_data.newow.product_query import ProductReadWindow
+from app.market_data.newow.product_query import NewowProductQuery, ProductReadWindow
 from app.market_data.newow.product_reader import (
     ProductReadSet,
     ProductReadSource,
@@ -130,6 +131,77 @@ def test_reference_cutoff_keeps_later_clear_open_until_user_extends_window(
     assert extended.reference.value.summary.open_count == 0
     assert extended.reference.value.summary.closed_count == 1
     assert extended.reference.value.reference_cutoff == clear.bar_end
+
+
+def test_reference_service_propagates_price_gap_as_data_interruption(product_cases):
+    case = product_cases.primitive_input("trend", "1d")
+    replay = replay_strategy(case.identity, case.bars)
+    entry = next(action for action in replay.actions if action.kind is ActionKind.BUILD)
+    bars = tuple(bar for bar in case.bars if bar.bar.bar_end <= entry.bar_end)
+    gap_at = entry.bar_end + timedelta(days=1)
+    gap = DataInterruption(
+        product="rb", frequency=ProductFrequency.DAILY,
+        physical_contract=entry.physical_contract, segment_id=entry.segment_id,
+        trading_day=gap_at.date(), effective_at=gap_at,
+        source_identity="market_data_service:price_unavailable:v1",
+    )
+    reader = _Reader(bars, gap_at, gap_at)
+    original_load = reader.load
+
+    def load(query, as_of):
+        return replace(original_load(query, as_of),
+                       data_interruptions_by_frequency={query.frequency: (gap,)})
+
+    reader.load = load
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: gap_at + timedelta(days=1),
+    )
+    result = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", section="reference",
+        performance_since=entry.trading_day,
+        performance_through=gap_at.date(), as_of=gap_at,
+    ))
+    assert result.reference.value.summary.interrupted_count == 1
+    assert result.reference.value.summary.data_interrupted_count == 1
+    assert result.reference.value.summary.rollover_interrupted_count == 0
+    assert result.reference.value.summary.closed_count == 0
+    assert result.reference.value.summary.interrupted_trades[0].status == "DATA_INTERRUPTED"
+    assert result.reference.value.history_coverage == "PARTIAL"
+    assert result.reference.value.unavailable_days == (gap_at.date(),)
+    assert result.reference.value.coverage_intervals[-1].status == "PRICE_UNAVAILABLE"
+    assert result.reference.status.status == "warming"
+    chart = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", section="chart", as_of=gap_at,
+    ))
+    assert chart.chart.status.status == "warming"
+    reader.load = original_load
+    clean = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: gap_at + timedelta(days=1),
+    ).query(ProductServiceQuery(
+        "rb", "trend", "1d", section="chart", as_of=gap_at,
+    ))
+    assert chart.meta.input_content_sha256 != clean.meta.input_content_sha256
+
+
+def test_snapshot_fingerprint_binds_source_bar_digest(product_cases):
+    from app.market_data.newow.product_service import _fingerprint
+
+    _service_instance, reader, _build, clear = _service(product_cases)
+    read = reader.load(
+        NewowProductQuery("rb", "trend", "1d", clear.trading_day, clear.trading_day,
+                          clear.trading_day, clear.trading_day, clear.bar_end),
+        clear.bar_end,
+    )
+    identity = build_product_identity("rb", "trend", "1d")
+    original = _fingerprint(read, identity)
+    changed_bars = tuple(
+        replace(bar, source_bar_sha256="a" * 64) if index == 0 else bar
+        for index, bar in enumerate(read.replay_bars)
+    )
+    changed = replace(read, bars_by_frequency={ProductFrequency.DAILY: changed_bars})
+    assert original != _fingerprint(changed, identity)
 
 
 def test_chart_does_not_call_reference_or_auxiliary(monkeypatch, product_cases):
@@ -524,7 +596,7 @@ def test_reference_cursor_from_v1_contract_is_rejected_after_v2_upgrade(
     monkeypatch.setattr(
         product_service_module,
         "REFERENCE_MODEL_VERSION",
-        "newow_marker_reference_zero_cost_v2",
+        "newow_marker_reference_zero_cost_v3",
     )
     with pytest.raises(
         NewowProductServiceError, match="NEWOW_CURSOR_GENERATION_CONFLICT"

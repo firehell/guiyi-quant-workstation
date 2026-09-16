@@ -58,6 +58,7 @@ from app.market_data.session_clock import (
     session_windows_for_trading_day,
 )
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
+from app.market_data.source_quality import PriceUnavailableFact
 from app.models import Instrument, MainContractMap
 
 
@@ -131,6 +132,39 @@ class MarketDataService:
             bars,
             (),
         )
+
+    def read_physical_daily_quality(
+        self, request: SeriesQuery, *, require_window_coverage: bool = True,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...]]:
+        """Read exactly the Catalog-selected physical D1 facts and date exceptions."""
+        if request.frequency is not BarFrequency.D1 or request.series_kind is SeriesKind.ACTUAL_DOMINANT:
+            raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
+        key = request.physical_key
+        if key is None:
+            raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
+        partitions = self.catalog.partitions(key, request.start, request.end)
+        if not partitions or {(p.year, p.month) for p in partitions} != _months_between(
+            (partitions[0].year, partitions[0].month),
+            (partitions[-1].year, partitions[-1].month),
+        ):
+            raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+        if require_window_coverage and (
+            min((p.source_coverage_start or p.coverage_start) for p in partitions) > request.start
+            or max((p.source_coverage_end or p.coverage_end) for p in partitions) < request.end
+        ):
+            raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+        bars: list[CanonicalBar] = []
+        exceptions: list[PriceUnavailableFact] = []
+        try:
+            for partition in partitions:
+                valid, unavailable = self.store.read_catalog_partition_quality(partition)
+                bars.extend(bar for bar in valid if request.start < bar.bar_end <= request.end)
+                exceptions.extend(item for item in unavailable if request.start < item.bar_end <= request.end)
+        except StorageError as exc:
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+        if not bars and not exceptions:
+            raise MarketDataError("QUERY_WINDOW_EMPTY")
+        return tuple(bars), tuple(exceptions)
 
     def contract_daily_bars_as_of(
         self,
@@ -279,6 +313,69 @@ class MarketDataService:
             requested_trading_day_window=(request.since, request.through),
         )
 
+    def query_actual_dominant_trading_days_quality(
+        self, request: ActualDominantTradingDayQuery,
+    ) -> tuple[MarketSeriesResult, tuple[tuple[str, PriceUnavailableFact], ...]]:
+        """D1 rank-1 read: every mapped day has a Bar or proven unavailable price."""
+        if request.frequency is not BarFrequency.D1:
+            raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
+        start, end = self._trading_day_window(
+            symbol=request.symbol, since=request.since, through=request.through,
+        )
+        try:
+            windows = self.catalog.session_windows_overlapping_window(
+                request.symbol, start, end,
+            )
+            mappings = self.catalog.main_map(
+                request.symbol, request.since, request.through,
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        days = tuple(day for day, _ in windows if request.since <= day <= request.through)
+        by_day = {mapping.trade_date: mapping.contract for mapping in mappings}
+        if not days or set(days) != set(by_day):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        query = SeriesQuery(
+            SeriesKind.ACTUAL_DOMINANT, request.symbol, request.frequency,
+            start, end,
+        )
+        bars: list[CanonicalBar] = []
+        exceptions: list[tuple[str, PriceUnavailableFact]] = []
+        for contract in dict.fromkeys(by_day.values()):
+            physical = SeriesQuery(
+                SeriesKind.CONTRACT, request.symbol, request.frequency,
+                start, end, contract=contract,
+            )
+            contract_bars, unavailable = self.read_physical_daily_quality(
+                physical, require_window_coverage=False,
+            )
+            bars.extend(
+                bar for bar in contract_bars
+                if by_day.get(bar.trading_day) == contract
+            )
+            exceptions.extend(
+                (contract, item) for item in unavailable
+                if by_day.get(item.trading_day) == contract
+            )
+        bars.sort(key=lambda item: item.bar_end)
+        exceptions.sort(key=lambda item: item[1].bar_end)
+        price_days = {bar.trading_day for bar in bars}
+        unavailable_days = {item.trading_day for _, item in exceptions}
+        if (
+            price_days & unavailable_days
+            or price_days | unavailable_days != set(days)
+            or len(bars) + len(exceptions) != len(days)
+        ):
+            raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
+        valid_mappings = tuple(mapping for mapping in mappings if mapping.trade_date in price_days)
+        return (
+            replace(
+                self._result(query, tuple(bars), _segments(valid_mappings)),
+                requested_trading_day_window=(request.since, request.through),
+            ),
+            tuple(exceptions),
+        )
+
     def query_actual_dominant_recent_bars(
         self,
         request: ActualDominantRecentBarsQuery,
@@ -351,6 +448,37 @@ class MarketDataService:
             ),
             requested_trading_day_window=(since, through),
         )
+
+    def query_contract_replay_quality(
+        self, *, symbol: str, contract: str, through: date, cutoff: datetime,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...]]:
+        """Validate the whole D1 physical lifecycle as Bars plus exact source gaps."""
+        try:
+            fact = self.catalog.contract_fact(symbol, contract)
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        if not fact.listed_date <= through < fact.expired_date:
+            raise MarketDataError("CONTRACT_ACTIVE_WINDOW_MISSING")
+        start, end = self._trading_day_window(
+            symbol=symbol, since=fact.listed_date, through=through,
+        )
+        if cutoff > end or cutoff.tzinfo is None or cutoff.utcoffset() is None:
+            raise MarketDataError("CONTRACT_REPLAY_CUTOFF_INVALID")
+        bars, exceptions = self.read_physical_daily_quality(SeriesQuery(
+            SeriesKind.CONTRACT, symbol, BarFrequency.D1,
+            start, end, contract=contract,
+        ))
+        bars = tuple(bar for bar in bars if bar.bar_end <= cutoff)
+        exceptions = tuple(item for item in exceptions if item.bar_end <= cutoff)
+        expected = self.expected_contract_replay_endpoints(
+            symbol=symbol, contract=contract, frequency=BarFrequency.D1,
+            trading_day=through, cutoff=cutoff,
+        )
+        actual = tuple(sorted((bar.bar_end, bar.trading_day) for bar in bars))
+        combined = tuple(sorted((*actual, *((item.bar_end, item.trading_day) for item in exceptions))))
+        if combined != expected:
+            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
+        return bars, exceptions
 
     def validate_contract_replay_coverage(
         self,
@@ -611,6 +739,8 @@ class MarketDataService:
         partitions = self.catalog.partitions_before(key, request.before)
         if not partitions:
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+        if any(partition.source_quality for partition in partitions):
+            raise MarketDataError("PRICE_UNAVAILABLE")
         selected: list[CanonicalBar] = []
         previous_end: datetime | None = None
         newer_partition: CatalogPartition | None = None
@@ -921,6 +1051,8 @@ class MarketDataService:
 
     def _partition_bars(self, partition: CatalogPartition) -> tuple[CanonicalBar, ...]:
         """读取并验证单一 Catalog 分区，复用正常查询的完整性边界。"""
+        if partition.source_quality:
+            raise MarketDataError("PRICE_UNAVAILABLE")
         try:
             values = self.store.read_catalog_partition(partition)
         except StorageError as exc:
@@ -1385,6 +1517,8 @@ class MarketDataService:
         partitions = self.catalog.partitions(key, request.start, request.end)
         if not partitions:
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+        if any(partition.source_quality for partition in partitions):
+            raise MarketDataError("PRICE_UNAVAILABLE")
         partition_months = {
             (partition.year, partition.month) for partition in partitions
         }
@@ -1396,9 +1530,9 @@ class MarketDataService:
             ):
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
             if (
-                min(partition.coverage_start for partition in partitions)
+                min((partition.source_coverage_start or partition.coverage_start) for partition in partitions)
                 > request.start
-                or max(partition.coverage_end for partition in partitions) < request.end
+                or max((partition.source_coverage_end or partition.coverage_end) for partition in partitions) < request.end
             ):
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
         bars: list[CanonicalBar] = []

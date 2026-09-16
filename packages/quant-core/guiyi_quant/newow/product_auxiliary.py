@@ -162,15 +162,16 @@ def _validated_segments(
         ):
             raise ValueError("NEWOW_AUXILIARY_INPUT_IDENTITY_INVALID")
         bar = product_bar.bar
-        if bar.segment_id != current_segment:
-            if bar.segment_id in seen_segments:
+        calculation_segment_id = product_bar.calculation_segment_id
+        if calculation_segment_id != current_segment:
+            if calculation_segment_id in seen_segments:
                 raise ValueError("NEWOW_AUXILIARY_INPUT_ORDER")
             if current_segment is not None:
                 seen_segments.add(current_segment)
-            current_segment = bar.segment_id
+            current_segment = calculation_segment_id
             current_contract = bar.physical_contract
             previous = None
-            grouped.append((bar.physical_contract, bar.segment_id, []))
+            grouped.append((bar.physical_contract, calculation_segment_id, []))
         elif bar.physical_contract != current_contract:
             raise ValueError("NEWOW_AUXILIARY_INPUT_IDENTITY_INVALID")
         if previous is not None and (
