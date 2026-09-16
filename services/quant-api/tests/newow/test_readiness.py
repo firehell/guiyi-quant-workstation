@@ -218,7 +218,17 @@ def test_single_frequency_matrix_never_queries_other_open_frequency(frequency):
             seen.append(request.frequency.value)
             raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason="REPLAY_PREFIX_MISSING")
 
-    report = module.NewowReadinessAudit(reader=AuditReader(), service=Service()).run(
+    report = module.NewowReadinessAudit(
+        reader=AuditReader(),
+        service=Service(),
+        plan=lambda _request: {
+            "plan_sha256": "a" * 64,
+            "expected_bar_count": 3,
+            "provider_request_count": 1,
+            "targets": [],
+            "scope_diagnostics": (),
+        },
+    ).run(
         module.ReadinessRequest(
             ("rb",),
             datetime(2026, 9, 4, 8, tzinfo=UTC),
@@ -229,6 +239,7 @@ def test_single_frequency_matrix_never_queries_other_open_frequency(frequency):
     )
 
     assert report["frequency_scope"] == [frequency]
+    assert report["complete"] is True
     assert seen and set(seen) == {frequency}
     other = "1d" if frequency == "1w" else "1w"
     assert all(

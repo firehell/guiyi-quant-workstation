@@ -478,7 +478,12 @@ class NewowReadinessAudit:
                 *enumerations,
                 *public_dependencies,
                 *repairs,
-                *(state for case in cases for state in case["sections"].values()),
+                *(
+                    state
+                    for case in cases
+                    if ProductFrequency(case["frequency"]) in request.frequencies
+                    for state in case["sections"].values()
+                ),
             ]
         )
         return {
