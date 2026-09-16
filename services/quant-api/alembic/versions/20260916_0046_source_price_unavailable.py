@@ -24,6 +24,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.execute("SET LOCAL lock_timeout = '5s'")
+    op.execute("SET LOCAL statement_timeout = '30s'")
     op.add_column("market_partitions", sa.Column(
         "source_coverage_start", sa.DateTime(timezone=True), nullable=True,
     ))

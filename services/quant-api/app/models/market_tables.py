@@ -27,6 +27,7 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -255,7 +256,10 @@ class MarketPartition(Base):
     coverage_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source_coverage_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source_coverage_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    source_quality: Mapped[list[dict] | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    source_quality: Mapped[list[dict] | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        nullable=True,
+    )
     source_quality_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     file_uri: Mapped[str] = mapped_column(Text, nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)

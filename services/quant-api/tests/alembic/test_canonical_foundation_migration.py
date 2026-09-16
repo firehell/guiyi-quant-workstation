@@ -13,6 +13,10 @@ from sqlalchemy import create_engine, inspect as sa_inspect
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import JSONB
+
+from app.models import MarketPartition
 
 from app.db.migration_test_guard import (
     MigrationTestDatabaseSafetyError,
@@ -53,6 +57,11 @@ def test_price_unavailable_revision_is_the_schema_head() -> None:
     config = Config()
     config.set_main_option("script_location", str(QUANT_API_ROOT / "alembic"))
     assert ScriptDirectory.from_config(config).get_current_head() == "20260916_0046"
+
+
+def test_price_unavailable_model_uses_postgresql_jsonb() -> None:
+    column_type = MarketPartition.__table__.c.source_quality.type
+    assert isinstance(column_type.dialect_impl(postgresql.dialect()), JSONB)
 
 
 def test_canonical_foundation_migration_is_new_irreversible_head() -> None:
