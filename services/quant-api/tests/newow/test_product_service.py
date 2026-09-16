@@ -19,6 +19,7 @@ from app.market_data.domain import ResolvedContractSegment
 from app.market_data.newow.product_query import ProductReadWindow
 from app.market_data.newow.product_reader import (
     ProductReadSet,
+    ProductReadSource,
     ResolvedPerformanceWindow,
 )
 from app.market_data.newow.resource_gate import HeavyResourceGate, NewowResourceBusy
@@ -660,6 +661,149 @@ def test_snapshot_token_allows_reference_with_compatible_common_facts(product_ca
 
     assert reference.meta.snapshot_token == chart.meta.snapshot_token
     assert reference.meta.input_content_sha256 != chart.meta.input_content_sha256
+
+
+def test_snapshot_token_allows_different_source_window_counts_with_shared_bars(product_cases):
+    service, reader, build, clear = _service(product_cases)
+    original_load = reader.load
+
+    def load_with_source_counts(query, as_of):
+        loaded = original_load(query, as_of)
+        bars = tuple(item for item in loaded.replay_bars if item.bar.bar_end <= as_of)
+        if len(reader.loads) == 1:
+            bars = bars[-10:]
+        source = ProductReadSource(
+            loaded.frequency,
+            "same-canonical-source",
+            bars[-1].bar.bar_end,
+            as_of,
+            "futures-input-policy-v1",
+            len(bars),
+            len(bars),
+            0,
+        )
+        return replace(
+            loaded,
+            bars_by_frequency={loaded.frequency: bars},
+            sources={loaded.frequency: source},
+        )
+
+    reader.load = load_with_source_counts
+    chart = service.query(ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end))
+    reference = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", section="reference",
+        performance_since=build.trading_day,
+        performance_through=clear.trading_day,
+        as_of=clear.bar_end,
+        snapshot_token=chart.meta.snapshot_token,
+    ))
+
+    assert reference.meta.snapshot_token == chart.meta.snapshot_token
+    assert reference.reference.value is not None
+
+
+def test_snapshot_token_allows_raw_only_extension_before_shared_bars(product_cases):
+    service, reader, build, clear = _service(product_cases)
+    original_load = reader.load
+
+    def load_with_raw_only_extension(query, as_of):
+        loaded = original_load(query, as_of)
+        bars = tuple(item for item in loaded.replay_bars if item.bar.bar_end <= as_of)
+        source = ProductReadSource(
+            loaded.frequency,
+            "same-canonical-source",
+            bars[-1].bar.bar_end,
+            as_of,
+            "futures-input-policy-v1",
+            len(bars) + (0 if len(reader.loads) == 1 else 1),
+            len(bars),
+            0 if len(reader.loads) == 1 else 1,
+        )
+        return replace(loaded, bars_by_frequency={loaded.frequency: bars},
+                       sources={loaded.frequency: source})
+
+    reader.load = load_with_raw_only_extension
+    chart = service.query(ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end))
+    reference = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", section="reference",
+        performance_since=build.trading_day,
+        performance_through=clear.trading_day,
+        as_of=clear.bar_end,
+        snapshot_token=chart.meta.snapshot_token,
+    ))
+
+    assert reference.meta.snapshot_token == chart.meta.snapshot_token
+
+
+@pytest.mark.parametrize("changed_field", ["source_identity", "input_policy_version"])
+def test_snapshot_token_rejects_cross_window_source_version_change(
+    product_cases, changed_field
+):
+    service, reader, build, clear = _service(product_cases)
+    original_load = reader.load
+
+    def load_with_revised_source(query, as_of):
+        loaded = original_load(query, as_of)
+        bars = tuple(item for item in loaded.replay_bars if item.bar.bar_end <= as_of)
+        if len(reader.loads) == 1:
+            bars = bars[-10:]
+        source = ProductReadSource(
+            loaded.frequency,
+            "canonical-source",
+            bars[-1].bar.bar_end,
+            as_of,
+            "futures-input-policy-v1",
+            len(bars),
+            len(bars),
+            0,
+        )
+        if len(reader.loads) > 1:
+            source = replace(source, **{changed_field: "revised-version"})
+        return replace(loaded, bars_by_frequency={loaded.frequency: bars},
+                       sources={loaded.frequency: source})
+
+    reader.load = load_with_revised_source
+    chart = service.query(ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end))
+
+    with pytest.raises(
+        NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"
+    ):
+        service.query(ProductServiceQuery(
+            "rb", "trend", "1d", section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+            snapshot_token=chart.meta.snapshot_token,
+        ))
+
+
+def test_snapshot_token_rejects_changed_source_counts_for_same_window(product_cases):
+    service, reader, _build, clear = _service(product_cases)
+    original_load = reader.load
+
+    def load_with_revised_source(query, as_of):
+        loaded = original_load(query, as_of)
+        bars = tuple(item for item in loaded.replay_bars if item.bar.bar_end <= as_of)
+        source = ProductReadSource(
+            loaded.frequency,
+            "same-canonical-source",
+            bars[-1].bar.bar_end,
+            as_of,
+            "futures-input-policy-v1",
+            len(bars) + (len(reader.loads) - 1),
+            len(bars),
+            0,
+        )
+        return replace(loaded, sources={loaded.frequency: source})
+
+    reader.load = load_with_revised_source
+    request = ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end)
+    chart = service.query(request)
+
+    with pytest.raises(
+        NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"
+    ):
+        service.query(replace(request, snapshot_token=chart.meta.snapshot_token))
 
 
 @pytest.mark.parametrize("shorter_reference", [False, True])
