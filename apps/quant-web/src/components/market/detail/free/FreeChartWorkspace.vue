@@ -165,6 +165,7 @@ function loadEarlier() { void props.loadEarlier() }
       </button>
     </div>
     <p v-if="identityWarning" class="free-workspace__hint" role="status">{{ identityWarning }}</p>
+    <p v-if="showRangeDetector" class="free-workspace__hint" role="status">{{ model.semanticBanner.text }}</p>
     <FreeChartStage
       :bars="bars"
       :mutation="mutation"

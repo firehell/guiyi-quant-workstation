@@ -209,6 +209,8 @@ test('renders the latest canonical page first, paginates left, and overlays actu
   })
   await expectBarCount(page, 302)
   await expect(displayState(page)).toHaveText('实时观察')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: '行情数据详情' })).not.toBeVisible()
 
   const chart = page.locator('.chart')
   await chart.scrollIntoViewIfNeeded()
