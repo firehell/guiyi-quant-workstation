@@ -214,7 +214,16 @@ class CanonicalMonthlyStore:
             table = pq.ParquetFile(pa.BufferReader(payload)).read()
             if not table.schema.equals(CANONICAL_SCHEMA, check_metadata=False):
                 raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
-            return tuple(CanonicalBar(**record) for record in table.to_pylist())
+            # Arrow's timezone-aware scalar conversion repeatedly resolves the
+            # same timezone module for every row.  The schema above already
+            # proves UTC; decode the identical microsecond values as naive and
+            # attach UTC once per Python value instead.
+            bar_ends = table.column("bar_end").cast(pa.timestamp("us")).to_pylist()
+            records = table.drop(["bar_end"]).to_pylist()
+            return tuple(
+                CanonicalBar(bar_end=bar_end.replace(tzinfo=UTC), **record)
+                for bar_end, record in zip(bar_ends, records, strict=True)
+            )
         except (OSError, pa.ArrowException, ContractError, TypeError, ValueError) as exc:
             raise StorageError("PARTITION_UNREADABLE") from exc
 

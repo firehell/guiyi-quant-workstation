@@ -766,7 +766,8 @@ def test_weekly_page_reuses_calendar_within_read_only(session, tmp_path, monkeyp
     result = service.query_page(query)
     assert [bar.close for bar in result.bars] == ([Decimal('110')] if limit == 1 else [Decimal('105'), Decimal('110')])
     assert result.has_more_before is (limit == 1)
-    assert calls[('jm', date(2025, 1, 13), date(2025, 1, 19))] == 1
+    assert calls[('jm', date(2025, 1, 6), date(2025, 1, 19))] == 1
+    assert len(calls) <= 2  # one candidate batch and one boundary check
 
     # Same service, new read: Friday is now a non-trading day, so its bar cannot survive.
     session.execute(update(TradingCalendar).where(TradingCalendar.trade_date == date(2025, 1, 17)).values(is_trading_day=False))
@@ -774,4 +775,26 @@ def test_weekly_page_reuses_calendar_within_read_only(session, tmp_path, monkeyp
     calls.clear()
     with pytest.raises(MarketDataError, match='MAPPED_CONTRACT_DATASET_MISSING'):
         service.query_page(query)
-    assert calls[('jm', date(2025, 1, 13), date(2025, 1, 19))] == 1
+    assert calls[('jm', date(2025, 1, 6), date(2025, 1, 19))] == 1
+
+
+def test_weekly_page_batches_calendar_across_month_boundary(session, tmp_path, monkeypatch):
+    catalog, service, store = _service(session, tmp_path)
+    _publish(catalog, store, DatasetKey('contract', 'jm', 'JM2505', '1w'), (_bar(31, 105),))
+    _publish(catalog, store, DatasetKey('contract', 'jm', 'JM2505', '1w'), (_bar(7, 110, month=2),))
+    _calendar_and_map(session, catalog, tuple((day, 'JM2505') for day in range(27, 32)))
+    _calendar_and_map(session, catalog, tuple((day, 'JM2505') for day in range(3, 8)), month=2)
+    session.commit()
+    calls = []
+    original = catalog.trading_days
+
+    def counted(symbol, start, end):
+        calls.append((start, end))
+        return original(symbol, start, end)
+
+    monkeypatch.setattr(catalog, 'trading_days', counted)
+    result = service.query_page(SeriesPageQuery('actual_dominant', 'jm', '1w', limit=2))
+    assert [bar.close for bar in result.bars] == [Decimal('105'), Decimal('110')]
+    assert (date(2025, 1, 27), date(2025, 2, 2)) in calls
+    assert (date(2025, 2, 3), date(2025, 2, 9)) in calls
+    assert result.resolved_contract_segments[0].contract == 'JM2505'
