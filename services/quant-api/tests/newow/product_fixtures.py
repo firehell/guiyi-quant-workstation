@@ -887,3 +887,12 @@ class _PagedMarketData:
             (bar.bar_end, bar.trading_day) for bar in expected
         ):
             raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
+
+    def expected_contract_replay_endpoints(
+        self, *, symbol, contract, frequency, trading_day, cutoff, **_kwargs
+    ):
+        return tuple(
+            (bar.bar_end, bar.trading_day)
+            for bar in self.expected_physical[(contract, frequency)]
+            if bar.trading_day <= trading_day and bar.bar_end <= cutoff
+        )

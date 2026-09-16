@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from types import MappingProxyType
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -18,7 +19,11 @@ from guiyi_quant.newow.product_contracts import (
     ProductFrequency,
     lifecycle_input_sha256,
 )
-from guiyi_quant.newow.product_identity import build_segment_id, utc_timestamp
+from guiyi_quant.newow.product_identity import (
+    FUTURES_INPUT_POLICY_VERSION,
+    build_segment_id,
+    utc_timestamp,
+)
 
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
@@ -75,6 +80,10 @@ class ProductReadSource:
     source_identity: str
     bar_end: datetime | None
     as_of: datetime
+    input_policy_version: str
+    raw_bar_count: int
+    effective_bar_count: int
+    no_trade_bar_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -551,6 +560,8 @@ class NewowProductReader:
             }
             output: list[ProductBar] = []
             segment_outputs: list[tuple[ProductBar, ...]] = []
+            raw_bar_count = 0
+            no_trade_bar_count = 0
             for owner, segment_id, rank_bars in zip(
                 owners, segment_ids, ranked, strict=True
             ):
@@ -571,17 +582,16 @@ class NewowProductReader:
                 # Equality includes time, OHLCV, turnover and OI.
                 if owned != rank_bars:
                     raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
-                converted = tuple(
-                    _product_bar(
-                        query.product,
-                        frequency,
-                        owner.contract,
-                        segment_id,
-                        bar,
-                        bar.trading_day >= owner.start_trading_day,
-                    )
-                    for bar in prefix
+                converted, skipped = _effective_product_bars(
+                    query.product,
+                    frequency,
+                    owner.contract,
+                    segment_id,
+                    prefix,
+                    owner.start_trading_day,
                 )
+                raw_bar_count += len(prefix)
+                no_trade_bar_count += skipped
                 output.extend(converted)
                 segment_outputs.append(converted)
             for contract, prefix in prefixes.items():
@@ -601,12 +611,17 @@ class NewowProductReader:
                     verified_cutoff=segment[-1].bar.bar_end,
                 )
                 for segment in segment_outputs
+                if segment
             )
             sources[frequency] = ProductReadSource(
                 frequency,
                 _CANONICAL_SOURCE,
                 actual[-1].bar_end if actual else None,
                 cutoff,
+                FUTURES_INPUT_POLICY_VERSION,
+                raw_bar_count,
+                len(output),
+                no_trade_bar_count,
             )
         self._check_cancelled()
         return ProductReadSet(
@@ -665,14 +680,25 @@ class NewowProductReader:
             from app.market_data.market_data_service import MarketDataError
             raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
                                   reason="REPLAY_ENDPOINTS_MISSING")
-        # Reuse the product numeric/identity boundary; do not skip original zero rows.
+        # Canonical coverage remains over every raw row. Only strict futures
+        # no-trade facts are absent from the effective strategy observation set.
         segment = build_segment_id(product, owner.contract, owned[0][0])
+        effective_bar_count = 0
+        no_trade_bar_count = 0
         for bar in prefix:
             self._check_cancelled()
+            if _is_strict_no_trade_fact(bar):
+                no_trade_bar_count += 1
+                continue
             _product_bar(product, frequency, owner.contract, segment, bar,
                          bar.trading_day >= owner.start_trading_day)
+            effective_bar_count += 1
         return {"status": "DATA_READY", "expected_bar_count": len(expected),
-                "actual_bar_count": len(prefix), "cutoff": owned[-1][0].isoformat()}
+                "actual_bar_count": len(prefix),
+                "effective_bar_count": effective_bar_count,
+                "no_trade_bar_count": no_trade_bar_count,
+                "input_policy_version": FUTURES_INPUT_POLICY_VERSION,
+                "cutoff": owned[-1][0].isoformat()}
 
     def _validate_prefix(
         self, product: str, contract: str, frequency: ProductFrequency, cutoff: datetime,
@@ -758,6 +784,46 @@ def _validate_order(bars: tuple[CanonicalBar, ...]) -> None:
         raise NewowProductReadError("NEWOW_DATA_OUT_OF_ORDER")
 
 
+def _is_strict_no_trade_fact(bar: CanonicalBar) -> bool:
+    """Classify an authoritative futures no-trade fact without synthesizing price."""
+    zero = Decimal(0)
+    return (
+        bar.open == zero
+        and bar.high == zero
+        and bar.low == zero
+        and bar.close == zero
+        and bar.volume == zero
+        and bar.turnover == zero
+    )
+
+
+def _effective_product_bars(
+    product: str,
+    frequency: ProductFrequency,
+    contract: str,
+    segment_id: str,
+    bars: tuple[CanonicalBar, ...],
+    owner_start: date,
+) -> tuple[tuple[ProductBar, ...], int]:
+    output: list[ProductBar] = []
+    skipped = 0
+    for bar in bars:
+        if _is_strict_no_trade_fact(bar):
+            skipped += 1
+            continue
+        output.append(
+            _product_bar(
+                product,
+                frequency,
+                contract,
+                segment_id,
+                bar,
+                bar.trading_day >= owner_start,
+            )
+        )
+    return tuple(output), skipped
+
+
 def _product_bar(
     product: str,
     frequency: ProductFrequency,
@@ -785,7 +851,10 @@ def _product_bar(
                 bar.close,
                 int(bar.volume),
                 None if bar.open_interest is None else int(bar.open_interest),
-                f"{_CANONICAL_SOURCE}:{product}:{frequency}:{contract}",
+                (
+                    f"{_CANONICAL_SOURCE}:{FUTURES_INPUT_POLICY_VERSION}:"
+                    f"{product}:{frequency}:{contract}"
+                ),
                 eligible,
                 True,
             ),
