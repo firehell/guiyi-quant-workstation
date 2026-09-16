@@ -7,6 +7,8 @@ export interface ChartTheme {
   textMuted: string
   up: string
   down: string
+  candleUp: string
+  candleDown: string
   volumeUp: string
   volumeDown: string
   ema10: string
@@ -34,13 +36,15 @@ const FALLBACK: ChartTheme = {
   textMuted: '#5B718F',
   up: '#DC2626',
   down: '#16A34A',
-  volumeUp: 'rgba(220, 38, 38, 0.5)',
-  volumeDown: 'rgba(22, 163, 74, 0.5)',
-  ema10: '#D97706',
+  candleUp: '#FF403A',
+  candleDown: '#22B95D',
+  volumeUp: '#FF8383',
+  volumeDown: '#80DCA1',
+  ema10: '#2563EB',
   ema21: '#F59E0B',
   ema60: '#7C3AED',
-  macdDif: '#0284C7',
-  macdDea: '#F59E0B',
+  macdDif: '#FF6B2C',
+  macdDea: '#365AF5',
   htdy: '#F79009',
   htdyZk1: '#0F766E',
   htdyZd1: '#0891B2',
@@ -68,6 +72,8 @@ export function resolveChartTheme(root: Element = document.documentElement): Cha
     textMuted: cssValue(style, '--gy-text-muted', FALLBACK.textMuted),
     up: cssValue(style, '--gy-up', FALLBACK.up),
     down: cssValue(style, '--gy-down', FALLBACK.down),
+    candleUp: cssValue(style, '--gy-chart-candle-up', FALLBACK.candleUp),
+    candleDown: cssValue(style, '--gy-chart-candle-down', FALLBACK.candleDown),
     volumeUp: cssValue(style, '--gy-chart-volume-up', FALLBACK.volumeUp),
     volumeDown: cssValue(style, '--gy-chart-volume-down', FALLBACK.volumeDown),
     ema10: cssValue(style, '--gy-chart-ema-10', FALLBACK.ema10),

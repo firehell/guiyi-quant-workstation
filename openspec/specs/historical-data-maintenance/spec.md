@@ -233,10 +233,12 @@ Event 或通知。月分区仍依次经过 staging 与完整发布校验。任�
 
 ### Requirement: Explicit ordinary recovery campaign source isolation
 
-Ordinary W1 recovery orchestration MAY continue independent physical-contract units under an explicitly
-versioned, hash-bound source-isolation policy. Existing prepared attempts MUST retain their original stop-on-failure
-semantics. This policy MUST NOT change the physical-contract manager, target plan, source validation or publication
-path. A failed contract MUST still stop its own remaining targets.
+Ordinary W1 recovery orchestration and an explicitly profiled D1 recovery orchestration MAY continue independent
+physical-contract units under an explicitly versioned, hash-bound source-isolation policy. Existing prepared attempts
+MUST retain their original stop-on-failure semantics. W1 and D1 policy, campaign, native result, invocation and
+prior-isolation schemas MUST remain distinct and MUST NOT be interpreted across profiles. This policy MUST NOT change
+the physical-contract manager, target plan, source validation or publication path. A failed contract MUST still stop
+its own remaining targets.
 
 Only a narrowly classified source-quality failure with a strict integer zero applied count, known request outcome,
 complete saved responses for every actually started request, matching frozen source identities and verified source
@@ -253,6 +255,22 @@ The final settlement MUST distinguish successful, isolated source failure, known
 unknown units and retain exact set closure. A known non-isolatable failure MUST retain its unit and stopping reason;
 it MUST NOT be counted as unattempted or unknown solely because the campaign stopped.
 Grouped anomaly repair proposals require independent evidence and a new execution intent for any real operation.
+The existing partial-source-exception receipt is W1-only. D1 MUST reject direct or prior-campaign-carried W1 partial
+receipts before provider construction or child preparation; any D1 failure after a partition commit MUST stop the
+campaign and remain a failed or unknown unit. After a D1 execution terminal is persisted, an independent read-only
+process MUST replan every processed successful, isolated, known-failed or unknown unit while preserving its execution
+classification; only definitely unattempted units are skipped. It MUST run a complete operational D1 dependency audit
+at the frozen `as_of` and prove that each operational product's default D1 Chart and Comparator use the same query
+window, `as_of`, physical-owner replay prefix and bound snapshot token. Final audit or comparator-proof timeout,
+failure or result-save failure MUST preserve execution settlement while preventing a
+verified input-ready result and successful verification exit. Inventory completeness, ordinary recovery completion,
+and per-product/per-consumer input availability MUST be reported separately; none of them opens the public D1 matrix.
+The verifier process timeout MUST exceed its fixed native audit deadline by a bounded result-save allowance. A timeout,
+non-success process code, missing result, empty result and invalid JSON result MUST remain distinguishable sanitized
+terminal facts; none may be interpreted as audit success or trigger a retry. When a valid completed D1 prepare has a
+zero ordinary denominator and no child batches, independent verification MAY use an explicit `not_required` execution
+classification without creating an empty execution receipt. This exception MUST reject any nonzero campaign and MUST
+still run the complete operational D1 audit and comparator proof.
 
 #### Scenario: Safe source failure occurs inside a batch
 - **WHEN** the explicit policy and saved evidence prove a source-quality failure before any partition commit
@@ -271,6 +289,18 @@ Grouped anomaly repair proposals require independent evidence and a new executio
 - **WHEN** explicit prior source evidence matches a current native proposed unit and its exact plan
 - **THEN** preparation retains that unit in the anomaly denominator but excludes it from new provider execution
 - **AND** altered evidence or plan drift rejects the exclusion instead of silently downloading or removing the target
+
+#### Scenario: D1 cannot inherit a W1 partial exception
+- **WHEN** a D1 prepare receives a W1 partial-source-exception input directly or through a prior campaign
+- **THEN** preparation rejects it before provider construction and child generation; it does not relabel the partial commit as zero-commit evidence
+
+#### Scenario: Independent D1 verification fails after known execution
+- **WHEN** execution settlement is persisted but final read-only replan, full D1 audit, subprocess completion or verification-result save fails
+- **THEN** the known execution counts remain unchanged, verification is non-successful, and no provider request, retry or apply is triggered
+
+#### Scenario: D1 prepare has no ordinary execution units
+- **WHEN** a validated completed D1 campaign has a zero denominator and no child batches
+- **THEN** campaign apply rejects before creating an attempt, the verifier may separately classify execution as `not_required`, creates no campaign execution receipt, and still requires a complete independent operational D1 audit before success
 
 ### Requirement: Bounded missing metadata repair separates plan fetch and apply
 系统 SHALL 提供默认只读的 `metadata-repair`，以显式 physical contract/owner-through 列表和现有

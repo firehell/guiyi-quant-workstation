@@ -60,7 +60,7 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1w']) {
   })
 }
 
-test('weekly cup disclosure stays local and never requests the deferred daily component', async ({ page }) => {
+test('weekly cup disclosure stays local and never requests the daily component', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.goto(newowRoute())
   const stage = page.getByTestId('newow-product-chart-stage')
@@ -75,7 +75,7 @@ test('weekly cup disclosure stays local and never requests the deferred daily co
   expect(productRequests(fixture, 'chart')).toHaveLength(1)
   expect(productRequests(fixture, 'auxiliary').map(item => item.url.searchParams.get('component'))).toEqual(['macd'])
   await expect(page.getByRole('button', { name: '60m', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '1d', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '1d', exact: true })).toHaveCount(1)
   await expect(stage).toHaveAttribute('data-frequency', '1w')
   await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
   assertNoUnexpectedRequests(fixture)

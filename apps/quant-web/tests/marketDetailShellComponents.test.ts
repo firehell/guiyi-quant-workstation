@@ -7,6 +7,7 @@ import { parse } from '@vue/compiler-sfc'
 const componentNames = [
   'MarketDetailTopBar',
   'MarketDetailQuoteHeader',
+  'MarketFactsDialog',
   'MarketFactsDisclosure',
   'MarketDetailViewNav',
   'MarketDetailFactStrip',
@@ -21,6 +22,10 @@ const componentNames = [
 
 function componentSource(name: (typeof componentNames)[number]): string {
   return readFileSync(new URL(`../src/components/market/detail/${name}.vue`, import.meta.url), 'utf8')
+}
+
+function detailComponentSource(path: string): string {
+  return readFileSync(new URL(`../src/components/market/detail/${path}.vue`, import.meta.url), 'utf8')
 }
 
 function parsedComponent(name: (typeof componentNames)[number]) {
@@ -58,12 +63,22 @@ test('quote header names the comparison basis and limits status to quote availab
   assert.match(source, /formatMarketTime/)
   assert.match(template, /quoteBasis/)
   assert.match(template, /changeBasis/)
+  assert.match(template, /quote-header__meta/)
+  assert.match(template, /quote-header__facts-row/)
   assert.match(template, /OHLCV/)
   assert.match(source, /unified\?: boolean/)
   assert.match(template, /'quote-header--unified': unified/)
   assert.match(source, /props\.newow \? '1d'/)
   assert.doesNotMatch(source, /props\.unified \? '1d'/)
   assert.doesNotMatch(template, />\s*数据正常\s*</)
+})
+
+test('SuBing keeps the chart surface free of runtime summary and reference-version disclosure', () => {
+  const workspace = detailComponentSource('subing/SubingDetailWorkspace')
+  const reference = detailComponentSource('subing/SubingReferencePanel')
+  assert.doesNotMatch(workspace, /MarketDetailStatusStrip/)
+  assert.doesNotMatch(reference, /<details>/)
+  assert.doesNotMatch(reference, /参考来源与版本/)
 })
 
 test('view navigation exposes six flat analysis choices and emits exact identities', () => {
@@ -100,7 +115,19 @@ test('market facts disclose status before expansion and close on identity change
   assert.match(source, /watch\(\(\) => props\.identityKey/)
   assert.match(template, /freshnessLabel/)
   assert.match(template, /aria-expanded/)
-  assert.match(template, /aria-controls/)
+  assert.match(template, /MarketFactsDialog/)
+  assert.match(template, /aria-haspopup="dialog"/)
+})
+
+test('market facts dialog supports accessible close paths and identity-bounded focus restoration', () => {
+  const { source, template } = parsedComponent('MarketFactsDialog')
+  assert.match(source, /identityKey: string/)
+  assert.match(source, /dialog\.value\.showModal\(\)/)
+  assert.match(source, /@cancel\.prevent="close"/)
+  assert.match(source, /@click="backdrop"/)
+  assert.match(source, /event\.key !== 'Tab'/)
+  assert.match(template, /aria-labelledby="market-facts-dialog-title"/)
+  assert.match(template, /aria-label="关闭行情数据详情"/)
 })
 
 test('history uses one source and mobile drawer restores focus', () => {

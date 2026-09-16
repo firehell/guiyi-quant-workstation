@@ -373,8 +373,8 @@ test('creates three native panes with volume zero/color and releases resources',
   assert.equal(paneCount, 3)
   const volume = records.find(record => record.pane === 1 && record.definition.type === 'Histogram')!
   assert.equal(volume.data[0]!.value, 0)
-  assert.equal(volume.data[0]!.color, '#FF403A')
-  assert.deepEqual(volume.data.map(point => [point.value, point.color]), [[0, '#FF403A'], [9, '#22B95D']])
+  assert.equal(volume.data[0]!.color, '#FF8383')
+  assert.deepEqual(volume.data.map(point => [point.value, point.color]), [[0, '#FF8383'], [9, '#80DCA1']])
   assert.equal(records.filter(record => record.pane === 2).length > 0, true, 'keep empty auxiliary pane without manufacturing an indicator zero')
   assert.equal(resizeCalls.at(-1)?.[2], true, 'pane labels require completed native layout before reading pane heights')
   app.unmount()
@@ -468,7 +468,7 @@ test('signed MACD bars share pane 2 and switch/invalidated snapshots remove ever
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   app.mount(element('root')); await nextTick()
   const histogram = records.find(record => record.pane === 2 && record.definition.type === 'Histogram')!
-  assert.deepEqual(histogram.data.map(point => [point.value, point.color]), [[-2, '#22B95D'], [3, '#FF403A']])
+  assert.deepEqual(histogram.data.map(point => [point.value, point.color]), [[-2, '#80DCA1'], [3, '#FF8383']])
   const candleTimes = records.find(record => record.definition.type === 'Candlestick')!.data.map(point => point.time)
   assert.deepEqual(histogram.data.map(point => point.time), candleTimes)
   auxiliary.value = { ...auxiliary.value, meta: { ...auxiliary.value.meta, snapshot_token: 'invalidated' } }
@@ -538,7 +538,7 @@ function chartResponse(): MutableChartResponse {
       schema_version: 'newow_product_detail_v2',
       identity: { product: 'jm', strategy: 'oscillation', frequency: '60m', series_kind: 'actual_dominant', profile_id: 'newow_product_oscillation_60m_v1', formula_versions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1'] },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64), data_revision_identity: null,
-      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
     },
     section: 'chart', status: ready(), value: {
       chart_from: '2026-08-15', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), bars,

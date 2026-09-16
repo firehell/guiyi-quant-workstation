@@ -66,6 +66,7 @@ callout 的桌面、390px 移动和全屏边界均通过，数量分别为趋势
 DATASET_OR_PARTITION_MISSING`，本次物理合约为 `JM2601`、expected_count=4882。该结果是数据 Gate，
 不以切换合约、缩窗、补零或客户端猜测处理。完整逐项证据与真实/fixture 分栏见
 `outputs/market-web-pre-release-20260914/验收报告.md`。
+历史上 `JM2609 / 15m` 的独立精确修复已记录回执；它不覆盖本次 `JM2601` 长窗口诊断。
 
 ## v1.10.9 Release 与 Runtime 切换（历史记录；自然验收未完成）
 

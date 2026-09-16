@@ -14,20 +14,45 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
-from typing import Any, Callable, Literal, Mapping, cast
+from typing import Any, Callable, Literal, Mapping, Sequence, cast
 
 from guiyi_quant.newow.product_contracts import ProductStrategy
 
 from app.market_data.newow import readiness as native_readiness
 from app.market_data.newow.product_release import deferred_section_reason
 from app.market_data.operational_universe import load_operational_products
+from scripts import newow_recovery_partial_exception as partial_exception
 from scripts import newow_weekly_recovery as native
 
 
 RecoveryError = native.RecoveryError
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_DAILY_VERIFICATION_AUDIT_TIMEOUT_SECONDS = 300
+_DAILY_VERIFICATION_PROCESS_TIMEOUT_SECONDS = 330
 
-_CAMPAIGN_SCHEMA = "newow_weekly_recovery_campaign_v1"
+_CAMPAIGN_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_campaign_v1",
+    "1d": "newow_daily_recovery_campaign_v1",
+}
+_CAMPAIGN_RESULT_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_campaign_result_v1",
+    "1d": "newow_daily_recovery_campaign_result_v1",
+}
+_CAMPAIGN_STARTED_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_campaign_started_v1",
+    "1d": "newow_daily_recovery_campaign_started_v1",
+}
+_CAMPAIGN_BATCH_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_campaign_batch_v1",
+    "1d": "newow_daily_recovery_campaign_batch_v1",
+}
+_CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
+    "1w": "newow_weekly_recovery_campaign_error_v1",
+    "1d": "newow_daily_recovery_campaign_error_v1",
+}
+_CAMPAIGN_SCHEMA = _CAMPAIGN_SCHEMA_BY_FREQUENCY["1w"]
 _HASH = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 _SYMBOL = re.compile(r"[a-z]{1,8}")
@@ -48,8 +73,6 @@ _REPORT_REQUIRED = {
     "readonly": True,
     "provider_requests": 0,
     "writes": 0,
-    "release_stage": "weekly",
-    "frequency_scope": ["1w"],
     "matrix": False,
 }
 _REPORT_STRUCTURAL = {
@@ -79,10 +102,18 @@ def parser() -> argparse.ArgumentParser:
     prepare.add_argument("--expected-report-sha256", required=True)
     prepare.add_argument("--output-root", required=True)
     prepare.add_argument("--name", required=True)
+    prepare.add_argument("--frequency", choices=("1w", "1d"), default="1w")
     prepare.add_argument("--isolate-known-source-quality", action="store_true")
     prepare.add_argument("--prior-campaign")
     prepare.add_argument("--expected-prior-campaign-sha256")
     prepare.add_argument("--prior-attempt")
+    prepare.add_argument("--source-only-prepared")
+    prepare.add_argument("--expected-source-only-prepared-sha256")
+    prepare.add_argument("--source-only-attempt")
+    prepare.add_argument("--source-only-unit-index", type=int)
+    prepare.add_argument("--source-only-request-index", type=int)
+    prepare.add_argument("--expected-source-only-request-sha256")
+    prepare.add_argument("--partial-source-exception-attempt")
     apply = commands.add_parser("apply", allow_abbrev=False)
     apply.add_argument("--project-env", required=True)
     apply.add_argument("--campaign", required=True)
@@ -95,31 +126,198 @@ def parser() -> argparse.ArgumentParser:
     return value
 
 
+def _campaign_frequency(
+    report: Mapping[str, Any],
+    recovery_frequency: native.RecoveryFrequency,
+) -> native.RecoveryFrequency:
+    frequency = native._recovery_frequency(recovery_frequency)
+    if report.get("frequency_scope") != [frequency]:
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    return frequency
+
+
+def _frequency_for_campaign_schema(value: object) -> native.RecoveryFrequency:
+    for frequency, schema in _CAMPAIGN_SCHEMA_BY_FREQUENCY.items():
+        if value == schema:
+            return frequency
+    raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+
+
+def _campaign_attempt_frequency(attempt: Path) -> native.RecoveryFrequency:
+    started = native._read_json_file(Path(attempt) / "campaign-started.json")
+    if not isinstance(started, Mapping):
+        raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+    for frequency, schema in _CAMPAIGN_STARTED_SCHEMA_BY_FREQUENCY.items():
+        if started.get("schema_version") == schema:
+            return frequency
+    raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+
+
+def _run_daily_verification_process(
+    *,
+    project_env: Path,
+    campaign_path: Path,
+    campaign_sha256: str,
+    execution_path: Path,
+    execution_sha256: str,
+    output_root: Path,
+    observation_id: str,
+    run_process: Callable[..., Any] = subprocess.run,
+) -> dict[str, Any]:
+    """Run one bounded read-only verifier without altering execution evidence."""
+    command = [
+        sys.executable,
+        "-m",
+        "scripts.newow_daily_recovery_verification",
+        "--project-env",
+        str(project_env),
+        "--campaign",
+        str(campaign_path),
+        "--expected-campaign-sha256",
+        campaign_sha256,
+        "--execution",
+        str(execution_path),
+        "--expected-execution-sha256",
+        execution_sha256,
+        "--output-root",
+        str(output_root),
+        "--observation-id",
+        observation_id,
+    ]
+    try:
+        completed = run_process(
+            command,
+            cwd=PROJECT_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=_DAILY_VERIFICATION_PROCESS_TIMEOUT_SECONDS,
+        )
+        return_code = completed.returncode
+        if return_code not in {0, 1}:
+            return {
+                "status": "incomplete",
+                "error_code": "DAILY_VERIFICATION_PROCESS_FAILED",
+                "process_return_code": return_code,
+            }
+        observation = Path(output_root) / observation_id
+        verification_path = observation / "verification.json"
+        if not verification_path.is_file():
+            return {
+                "status": "incomplete",
+                "error_code": "DAILY_VERIFICATION_OUTPUT_MISSING",
+                "process_return_code": return_code,
+            }
+        try:
+            if verification_path.stat().st_size == 0:
+                return {
+                    "status": "incomplete",
+                    "error_code": "DAILY_VERIFICATION_OUTPUT_EMPTY",
+                    "process_return_code": return_code,
+                }
+            payload = native._read_json_file(verification_path)
+        except (OSError, RecoveryError, ValueError):
+            return {
+                "status": "incomplete",
+                "error_code": "DAILY_VERIFICATION_OUTPUT_INVALID",
+                "process_return_code": return_code,
+            }
+        if (
+            not isinstance(payload, Mapping)
+            or payload.get("schema_version") != "newow_daily_recovery_verification_v1"
+            or payload.get("verification_status")
+            not in {"verified", "incomplete", "failed", "identity_changed"}
+        ):
+            return {
+                "status": "incomplete",
+                "error_code": "DAILY_VERIFICATION_OUTPUT_INVALID",
+                "process_return_code": return_code,
+            }
+        reported_verified = payload["verification_status"] == "verified"
+        required_complete = (
+            payload.get("inventory_complete") is True
+            and payload.get("ordinary_recovery_complete") is True
+        )
+        if (reported_verified and not required_complete) or return_code != (
+            0 if reported_verified else 1
+        ):
+            return {
+                "status": "incomplete",
+                "error_code": "DAILY_VERIFICATION_RESULT_MISMATCH",
+                "process_return_code": return_code,
+            }
+        return {
+            "status": payload["verification_status"],
+            "inventory_complete": payload.get("inventory_complete") is True,
+            "ordinary_recovery_complete": payload.get("ordinary_recovery_complete")
+            is True,
+            "observation_dir": str(observation),
+            "process_return_code": return_code,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "incomplete",
+            "error_code": "DAILY_VERIFICATION_TIMEOUT",
+        }
+    except (OSError, subprocess.SubprocessError):
+        return {
+            "status": "incomplete",
+            "error_code": "DAILY_VERIFICATION_UNAVAILABLE",
+        }
+
+
 def main(
     argv: list[str] | None = None,
     *,
     stdout=sys.stdout,
 ) -> int:
     payload: dict[str, Any]
+    error_schema = _CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY["1w"]
     try:
         args = parser().parse_args(argv)
         if args.mode == "inspect":
+            recovery_frequency = _campaign_attempt_frequency(Path(args.attempt))
+            error_schema = _CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
             payload = {
-                "schema_version": "newow_weekly_recovery_campaign_result_v1",
+                "schema_version": _CAMPAIGN_RESULT_SCHEMA_BY_FREQUENCY[
+                    recovery_frequency
+                ],
                 "status": "inspected",
                 "attempt": _inspect_attempt(Path(args.attempt)),
             }
             code = 0
         elif args.mode == "prepare":
+            recovery_frequency = native._recovery_frequency(args.frequency)
+            error_schema = _CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
+            if recovery_frequency == "1d" and args.partial_source_exception_attempt:
+                raise RecoveryError("D1_PARTIAL_SOURCE_EXCEPTION_UNSUPPORTED")
+            if recovery_frequency == "1d" and any(
+                value is not None
+                for value in (
+                    args.source_only_prepared,
+                    args.expected_source_only_prepared_sha256,
+                    args.source_only_attempt,
+                    args.source_only_unit_index,
+                    args.source_only_request_index,
+                    args.expected_source_only_request_sha256,
+                )
+            ):
+                raise RecoveryError("D1_SOURCE_ONLY_ISOLATION_UNSUPPORTED")
             report = _load_hash_locked_mapping(
                 Path(args.report),
                 args.expected_report_sha256,
                 "CAMPAIGN_REPORT_INVALID",
             )
-            identity = _current_execution_identity(Path(args.project_env))
+            identity = (
+                _current_execution_identity(Path(args.project_env))
+                if recovery_frequency == "1w"
+                else _current_execution_identity(
+                    Path(args.project_env), recovery_frequency=recovery_frequency
+                )
+            )
             root = _validated_evidence_root(Path(args.output_root))
             policy = (
-                native.source_isolation_policy()
+                native.source_isolation_policy(recovery_frequency=recovery_frequency)
                 if args.isolate_known_source_quality
                 else None
             )
@@ -145,6 +343,8 @@ def main(
                     str(evidence_root),
                     "--name",
                     batch_id,
+                    "--frequency",
+                    recovery_frequency,
                 ]
                 if policy is not None:
                     native_argv.append("--isolate-known-source-quality")
@@ -165,6 +365,7 @@ def main(
                 invoke_batch=invoke_prepare,
                 name=args.name,
                 continuation_policy=policy,
+                recovery_frequency=recovery_frequency,
                 prior_campaign_path=(
                     Path(args.prior_campaign) if args.prior_campaign else None
                 ),
@@ -172,10 +373,38 @@ def main(
                 prior_attempt_path=(
                     Path(args.prior_attempt) if args.prior_attempt else None
                 ),
+                source_only_prepared_path=(
+                    Path(args.source_only_prepared)
+                    if args.source_only_prepared
+                    else None
+                ),
+                expected_source_only_prepared_sha256=(
+                    args.expected_source_only_prepared_sha256
+                ),
+                source_only_attempt_path=(
+                    Path(args.source_only_attempt) if args.source_only_attempt else None
+                ),
+                source_only_unit_index=args.source_only_unit_index,
+                source_only_request_index=args.source_only_request_index,
+                expected_source_only_request_sha256=(
+                    args.expected_source_only_request_sha256
+                ),
+                partial_source_exception_attempt_path=(
+                    Path(args.partial_source_exception_attempt)
+                    if args.partial_source_exception_attempt
+                    else None
+                ),
+                observe_partial_committed=(
+                    _live_partial_committed_observer(Path(args.project_env))
+                    if args.partial_source_exception_attempt
+                    else None
+                ),
             )
             campaign_path = root / f"{args.name}.prepare.json"
             payload = {
-                "schema_version": "newow_weekly_recovery_campaign_result_v1",
+                "schema_version": _CAMPAIGN_RESULT_SCHEMA_BY_FREQUENCY[
+                    recovery_frequency
+                ],
                 "status": manifest["status"],
                 "readonly": True,
                 "campaign_file": str(campaign_path),
@@ -196,7 +425,26 @@ def main(
                 "CAMPAIGN_MANIFEST_INVALID",
             )
             validate_campaign_manifest(manifest, evidence_root=root)
-            current_identity = _current_execution_identity(Path(args.project_env))
+            recovery_frequency = _frequency_for_campaign_schema(
+                manifest.get("schema_version")
+            )
+            error_schema = _CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
+            scope = manifest.get("scope")
+            if (
+                recovery_frequency == "1d"
+                and manifest.get("status") == "completed"
+                and manifest.get("children") == []
+                and isinstance(scope, Mapping)
+                and scope.get("denominator_unit_count") == 0
+            ):
+                raise RecoveryError("D1_EXECUTION_NOT_REQUIRED")
+            current_identity = (
+                _current_execution_identity(Path(args.project_env))
+                if recovery_frequency == "1w"
+                else _current_execution_identity(
+                    Path(args.project_env), recovery_frequency=recovery_frequency
+                )
+            )
             if manifest.get("execution_identity") != current_identity:
                 raise RecoveryError("EXECUTION_IDENTITY_CHANGED")
 
@@ -232,24 +480,62 @@ def main(
                 manifest,
                 attempt_root=root / args.attempt_id,
                 invoke_batch=invoke_apply,
+                observe_partial_committed=_live_partial_committed_observer(
+                    Path(args.project_env)
+                ),
             )
+            verification: dict[str, Any] | None = None
+            if recovery_frequency == "1d":
+                execution_record = {
+                    **result,
+                    "campaign_manifest_sha256": args.expected_campaign_sha256,
+                }
+                execution_path = root / args.attempt_id / "campaign-execution.json"
+                try:
+                    execution_sha256 = native._write_json_exclusive(
+                        execution_path, execution_record
+                    )
+                except OSError:
+                    verification = {
+                        "status": "incomplete",
+                        "error_code": "DAILY_EXECUTION_TERMINAL_UNAVAILABLE",
+                    }
+                else:
+                    verification = _run_daily_verification_process(
+                        project_env=Path(args.project_env),
+                        campaign_path=Path(args.campaign),
+                        campaign_sha256=args.expected_campaign_sha256,
+                        execution_path=execution_path,
+                        execution_sha256=execution_sha256,
+                        output_root=root,
+                        observation_id=f"{args.attempt_id}-verification",
+                    )
             payload = {
-                "schema_version": "newow_weekly_recovery_campaign_result_v1",
+                "schema_version": _CAMPAIGN_RESULT_SCHEMA_BY_FREQUENCY[
+                    recovery_frequency
+                ],
                 **result,
                 "readonly": False,
                 "attempt_dir": str(root / args.attempt_id),
             }
-            code = 0 if result["status"] == "passed" else 1
+            if verification is not None:
+                payload["verification"] = verification
+            code = (
+                0
+                if result["status"] == "passed"
+                and (verification is None or verification.get("status") == "verified")
+                else 1
+            )
     except (RecoveryError, ValueError) as exc:
         payload = {
-            "schema_version": "newow_weekly_recovery_campaign_error_v1",
+            "schema_version": error_schema,
             "status": "failed",
             "error_code": native._error_code(exc),
         }
         code = 1
     except Exception:
         payload = {
-            "schema_version": "newow_weekly_recovery_campaign_error_v1",
+            "schema_version": error_schema,
             "status": "failed",
             "error_code": "CAMPAIGN_EXECUTION_FAILED",
         }
@@ -264,6 +550,10 @@ def execute_campaign(
     *,
     attempt_root: Path,
     invoke_batch: Callable[[Path, str, Path], Mapping[str, Any]],
+    observe_partial_committed: Callable[
+        [Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]
+    ]
+    | None = None,
 ) -> dict[str, Any]:
     """Execute each frozen native child once, stopping globally on first doubt."""
     attempt = Path(attempt_root)
@@ -275,10 +565,17 @@ def execute_campaign(
     ):
         raise RecoveryError("CAMPAIGN_ATTEMPT_PATH_INVALID")
     validated = validate_campaign_manifest(manifest, evidence_root=root)
+    recovery_frequency = _frequency_for_campaign_schema(validated.get("schema_version"))
     identity = validated["execution_identity"]
     children = validated["children"]
     guard_binding = validated["writer_guard"]
     with _campaign_writer_guard(root, guard_binding):
+        _revalidate_partial_source_exceptions(
+            validated,
+            evidence_root=root,
+            current_identity=identity,
+            observe_committed=observe_partial_committed,
+        )
         try:
             attempt.mkdir(mode=0o700)
             native._fsync_directory(root)
@@ -287,7 +584,7 @@ def execute_campaign(
         except OSError as exc:
             raise RecoveryError("CAMPAIGN_ATTEMPT_UNAVAILABLE") from exc
         started = {
-            "schema_version": "newow_weekly_recovery_campaign_started_v1",
+            "schema_version": _CAMPAIGN_STARTED_SCHEMA_BY_FREQUENCY[recovery_frequency],
             "campaign_manifest_sha256": hashlib.sha256(
                 native._canonical_json(validated).encode("utf-8")
             ).hexdigest(),
@@ -305,6 +602,14 @@ def execute_campaign(
         isolated_units = [
             _prior_isolated_unit(binding)
             for binding in validated.get("prior_known_isolations", [])
+        ]
+        isolated_units.extend(
+            _source_only_isolated_unit(binding)
+            for binding in validated.get("source_only_known_isolations", [])
+        )
+        partial_source_exception_units = [
+            _partial_source_exception_unit(binding)
+            for binding in validated.get("prior_partial_source_exceptions", [])
         ]
         failed: dict[str, Any] | None = None
         unknown: dict[str, Any] | None = None
@@ -343,7 +648,9 @@ def execute_campaign(
                 native._write_json_exclusive(
                     batch_attempt / "batch-started.json",
                     {
-                        "schema_version": "newow_weekly_recovery_campaign_batch_v1",
+                        "schema_version": _CAMPAIGN_BATCH_SCHEMA_BY_FREQUENCY[
+                            recovery_frequency
+                        ],
                         "state": "started",
                         "batch_id": batch_id,
                         "child_path": child["path"],
@@ -389,7 +696,9 @@ def execute_campaign(
                 native._write_json_exclusive(
                     batch_attempt / "batch-terminal.json",
                     {
-                        "schema_version": "newow_weekly_recovery_campaign_batch_v1",
+                        "schema_version": _CAMPAIGN_BATCH_SCHEMA_BY_FREQUENCY[
+                            recovery_frequency
+                        ],
                         "state": "terminal",
                         "batch_id": batch_id,
                         "native_result": terminal,
@@ -443,11 +752,18 @@ def execute_campaign(
             )
             status = (
                 "partial"
-                if completed or isolated_units or native_status == "partial"
+                if completed
+                or isolated_units
+                or partial_source_exception_units
+                or native_status == "partial"
                 else "failed"
             )
         else:
-            status = "partial" if isolated_units else "passed"
+            status = (
+                "partial"
+                if isolated_units or partial_source_exception_units
+                else "passed"
+            )
             unattempted = []
         later_unattempted_unit_count = sum(
             child["unit_count"]
@@ -494,6 +810,7 @@ def execute_campaign(
         classified = (
             len(successful_units)
             + len(isolated_units)
+            + len(partial_source_exception_units)
             + stopping_failure_unit_count
             + unattempted_unit_count
             + unknown_unit_count
@@ -515,10 +832,14 @@ def execute_campaign(
             "unknown_batch": unknown,
             "unattempted_batch_ids": unattempted,
             "isolated_units": isolated_units,
+            "partial_source_exception_units": partial_source_exception_units,
             "summary": {
                 "denominator_unit_count": denominator,
                 "success_unit_count": len(successful_units),
                 "isolated_unit_count": len(isolated_units),
+                "partial_source_exception_unit_count": len(
+                    partial_source_exception_units
+                ),
                 "stopping_failure_unit_count": stopping_failure_unit_count,
                 "unattempted_unit_count": unattempted_unit_count,
                 "unknown_unit_count": unknown_unit_count,
@@ -539,15 +860,18 @@ def execute_campaign(
 
 def partition_ordinary_units(
     report: Mapping[str, Any],
+    *,
+    recovery_frequency: native.RecoveryFrequency = "1w",
 ) -> tuple[tuple[dict[str, Any], ...], ...]:
-    """Validate one native audit and split its ordinary W1 units by twenty."""
-    targets, _excluded = _validated_report_targets(report)
+    """Validate one native audit and split ordinary units by twenty."""
+    frequency = _campaign_frequency(report, recovery_frequency)
+    targets, _excluded = _validated_report_targets(report, recovery_frequency=frequency)
     units = tuple(
         {
             "symbol": item["symbol"],
             "contract": item["contract"],
             "through": item["through"],
-            "frequency": "1w",
+            "frequency": frequency,
             "expected_plan_sha256": item["plan_sha256"],
         }
         for item in targets
@@ -580,6 +904,295 @@ def _prior_isolated_unit(binding: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _source_only_isolated_unit(binding: Mapping[str, Any]) -> dict[str, Any]:
+    unit = cast(Mapping[str, Any], binding["unit"])
+    return {
+        **unit,
+        "status": "isolated",
+        "classification": binding["classification"],
+        "source_evidence": binding["source_evidence"],
+        "provenance": "source_only_known",
+        "source_only_evidence": {
+            key: binding[key]
+            for key in (
+                "source_prepared",
+                "source_attempt_path",
+                "unit_index",
+                "request_index",
+                "request_sha256",
+                "evidence_artifacts",
+                "binding_sha256",
+            )
+        },
+    }
+
+
+def _partial_source_exception_unit(binding: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "symbol": binding["symbol"],
+        "contract": binding["contract"],
+        "frequency": binding["frequency"],
+        "through": binding["through"],
+        "plan_sha256": binding["fresh_replan_sha256"],
+        "failed_plan_sha256": binding["failed_plan_sha256"],
+        "status": "partial_source_exception",
+        "classification": binding["classification"],
+        "evidence_sha256": binding["evidence_sha256"],
+        "provenance": "prior_partial_source_exception",
+        "committed_targets": binding["committed_targets"],
+        "remaining_targets": binding["remaining_targets"],
+    }
+
+
+def _revalidate_partial_source_exceptions(
+    manifest: Mapping[str, Any],
+    *,
+    evidence_root: Path,
+    current_identity: Mapping[str, str],
+    observe_committed: Callable[
+        [Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]
+    ]
+    | None,
+) -> None:
+    bindings = manifest.get("prior_partial_source_exceptions", [])
+    if not bindings:
+        return
+    derived: list[dict[str, Any]] = []
+    for binding in bindings:
+        derived.extend(
+            _derive_partial_source_exceptions(
+                evidence_root,
+                current_identity=current_identity,
+                attempt_path=evidence_root / str(binding["failed_attempt_path"]),
+                fresh_units=[
+                    {
+                        "symbol": binding["symbol"],
+                        "contract": binding["contract"],
+                        "frequency": binding["frequency"],
+                        "through": binding["through"],
+                        "plan_sha256": binding["fresh_replan_sha256"],
+                        "targets": binding["remaining_targets"],
+                    }
+                ],
+                observe_committed=observe_committed,
+                stored_bindings=[binding],
+            )
+        )
+    if derived != list(bindings):
+        raise RecoveryError(partial_exception.ERROR_CODE)
+
+
+def _carried_partial_source_exceptions(
+    root: Path,
+    *,
+    prior_campaign_path: Path | None,
+    expected_prior_campaign_sha256: str | None,
+    current_identity: Mapping[str, str],
+    fresh_units: Sequence[Mapping[str, Any]],
+    observe_committed: Callable[
+        [Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]
+    ]
+    | None,
+) -> list[dict[str, Any]]:
+    if prior_campaign_path is None:
+        return []
+    if expected_prior_campaign_sha256 is None:
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    campaign_path = _direct_root_file(prior_campaign_path, root)
+    prior_manifest = _load_hash_locked_mapping(
+        campaign_path,
+        expected_prior_campaign_sha256,
+        partial_exception.ERROR_CODE,
+    )
+    validated = validate_campaign_manifest(prior_manifest, evidence_root=root)
+    bindings = validated.get("prior_partial_source_exceptions", [])
+    if not isinstance(bindings, list):
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    carried: list[dict[str, Any]] = []
+    for binding in bindings:
+        if not isinstance(binding, Mapping):
+            raise RecoveryError(partial_exception.ERROR_CODE)
+        carried.extend(
+            _derive_partial_source_exceptions(
+                root,
+                current_identity=current_identity,
+                attempt_path=root / str(binding.get("failed_attempt_path", "")),
+                fresh_units=fresh_units,
+                observe_committed=observe_committed,
+                stored_bindings=[binding],
+            )
+        )
+    if carried != bindings:
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    return carried
+
+
+def _derive_partial_source_exceptions(
+    evidence_root: Path,
+    *,
+    current_identity: Mapping[str, str],
+    attempt_path: Path | None,
+    fresh_units: Sequence[Mapping[str, Any]],
+    observe_committed: Callable[
+        [Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]
+    ]
+    | None,
+    stored_bindings: Sequence[Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    if attempt_path is None:
+        return []
+    if observe_committed is None and stored_bindings:
+
+        def observe_committed(
+            unit: Mapping[str, Any],
+            committed: list[dict[str, Any]],
+            *,
+            bound: Mapping[str, Any] = stored_bindings[0],
+        ) -> Mapping[str, Any]:
+            return {
+                "catalog_readback": bound["catalog_readback"],
+                "parquet_readback": bound["parquet_readback"],
+                "mds_readback": bound["mds_readback"],
+            }
+
+    if observe_committed is None:
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    attempt = _direct_root_directory(attempt_path, evidence_root)
+    return partial_exception.derive_partial_source_exceptions(
+        evidence_root=evidence_root,
+        attempt_path=attempt,
+        fresh_units=fresh_units,
+        current_identity=current_identity,
+        observe_committed=observe_committed,
+    )
+
+
+def _live_partial_committed_observer(
+    project_env: Path,
+) -> Callable[[Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]]:
+    """Read Catalog/Parquet/MDS for committed targets without initializing RQData."""
+
+    def observe(
+        unit: Mapping[str, Any],
+        committed: list[dict[str, Any]],
+    ) -> Mapping[str, Any]:
+        from types import SimpleNamespace
+
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+
+        from app.db.url import normalize_database_url
+        from app.market_data.catalog import MarketCatalog
+        from app.market_data.domain import DatasetKey
+        from app.market_data.storage import CanonicalMonthlyStore
+
+        settings, _identity = native.load_private_execution_settings(project_env)
+        engine = create_engine(
+            normalize_database_url(settings["DATABASE_URL"]),
+            pool_pre_ping=True,
+        )
+        session = Session(engine, autoflush=False)
+        try:
+            root = Path(settings["GUIYI_CANONICAL_DATA_ROOT"])
+            manager = SimpleNamespace(
+                catalog=MarketCatalog(session, root),
+                store=CanonicalMonthlyStore(root),
+            )
+            readback = native._post_commit_readback(
+                manager,
+                {
+                    "symbol": unit["symbol"],
+                    "contract": unit["contract"],
+                    "frequency": unit["frequency"],
+                    "targets": committed,
+                },
+            )
+            if not committed:
+                raise RecoveryError(partial_exception.ERROR_CODE)
+            committed_ids = {
+                (tuple(item["dataset"]), item["year"], item["month"])
+                for item in committed
+            }
+            remaining_targets = [
+                item
+                for item in unit.get("targets", [])
+                if isinstance(item, Mapping)
+                and (
+                    tuple(item.get("dataset", [])),
+                    item.get("year"),
+                    item.get("month"),
+                )
+                not in committed_ids
+            ]
+            for target in remaining_targets:
+                dataset = target.get("dataset")
+                year = target.get("year")
+                month = target.get("month")
+                expected_count = target.get("expected_bar_count")
+                if not isinstance(dataset, list) or len(dataset) != 4:
+                    raise RecoveryError(partial_exception.ERROR_CODE)
+                rows = tuple(
+                    item
+                    for item in manager.catalog.all_partitions(DatasetKey(*dataset))
+                    if (item.year, item.month) == (year, month)
+                )
+                if (
+                    len(rows) == 1
+                    and isinstance(expected_count, int)
+                    and not isinstance(expected_count, bool)
+                    and rows[0].row_count == expected_count
+                ):
+                    raise RecoveryError(partial_exception.ERROR_CODE)
+        except RecoveryError as exc:
+            raise RecoveryError(partial_exception.ERROR_CODE) from exc
+        except Exception as exc:
+            raise RecoveryError(partial_exception.ERROR_CODE) from exc
+        finally:
+            session.close()
+            engine.dispose()
+        partitions: list[dict[str, object]] = []
+        files: list[dict[str, object]] = []
+        windows: list[dict[str, object]] = []
+        catalog_partitions = readback.get("catalog_partitions")
+        if not isinstance(catalog_partitions, list):
+            raise RecoveryError(partial_exception.ERROR_CODE)
+        for item in catalog_partitions:
+            if not isinstance(item, Mapping):
+                raise RecoveryError(partial_exception.ERROR_CODE)
+            partitions.append(
+                {
+                    "dataset": item["dataset"],
+                    "year": item["year"],
+                    "month": item["month"],
+                    "row_count": item["catalog_row_count"],
+                }
+            )
+            files.append(
+                {
+                    "dataset": item["dataset"],
+                    "year": item["year"],
+                    "month": item["month"],
+                    "row_count": item["physical_row_count"],
+                    "file_sha256": item["file_sha256"],
+                }
+            )
+            windows.append(
+                {
+                    "dataset": item["dataset"],
+                    "year": item["year"],
+                    "month": item["month"],
+                    "bar_count": item["mds_bar_count"],
+                }
+            )
+        return {
+            "catalog_readback": {"status": "passed", "partitions": partitions},
+            "parquet_readback": {"status": "passed", "files": files},
+            "mds_readback": {"status": "passed", "windows": windows},
+        }
+
+    return observe
+
+
 def _derive_prior_isolations(
     root: Path,
     *,
@@ -608,9 +1221,14 @@ def _derive_prior_isolations(
             expected_prior_campaign_sha256,
             "PRIOR_ISOLATION_INVALID",
         )
-        if prior_manifest.get("prior_known_isolations"):
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
         validated = validate_campaign_manifest(prior_manifest, evidence_root=root)
+        recovery_frequency = _frequency_for_campaign_schema(
+            validated.get("schema_version")
+        )
+        if policy != native.source_isolation_policy(
+            recovery_frequency=recovery_frequency
+        ):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
         if campaign_path.name != f"{validated['campaign_name']}.prepare.json":
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
         started = native._read_json_file(attempt_path / "campaign-started.json")
@@ -624,112 +1242,380 @@ def _derive_prior_isolations(
             or started.get("campaign_manifest_sha256") != expected_started_hash
             or not isinstance(campaign_result, Mapping)
             or campaign_result.get("unknown_batch") is not None
-            or not isinstance(campaign_result.get("failed_batch"), Mapping)
         ):
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        failed_batch = campaign_result["failed_batch"]
-        batch_id = failed_batch.get("batch_id")
-        terminal = failed_batch.get("native_result")
-        child = next(
-            (
-                item
-                for item in validated["children"]
-                if item.get("batch_id") == batch_id
-            ),
-            None,
-        )
-        if not isinstance(child, Mapping) or not isinstance(terminal, Mapping):
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        child_path = _manifest_child_path(child.get("path"), root)
-        validated_terminal = _validated_batch_invocation(
-            {
-                "return_code": 0 if terminal.get("status") == "passed" else 1,
-                "batch_result": terminal,
-            },
-            child=child,
-            child_path=child_path,
-            digest=child["sha256"],
-            batch_attempt=attempt_path / str(batch_id),
-            identity=validated["execution_identity"],
-        )
-        if validated_terminal is None:
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        native_result = validated_terminal["result"]
-        completed = native_result.get("completed")
-        failed = native_result.get("failed")
-        if (
-            not isinstance(completed, list)
-            or not isinstance(failed, Mapping)
-            or native_result.get("isolated")
+        completed_batches = campaign_result.get("completed_batches")
+        failed_batch = campaign_result.get("failed_batch")
+        if not isinstance(completed_batches, list) or (
+            failed_batch is not None and not isinstance(failed_batch, Mapping)
         ):
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        frozen = _load_native_child(child_path, child["sha256"])
-        units = frozen.get("units")
-        unit_index = len(completed)
-        if not isinstance(units, list) or unit_index >= len(units):
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        unit = units[unit_index]
-        if not isinstance(unit, Mapping) or not _unit_payload_matches(failed, unit):
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        native_attempt = Path(validated_terminal["attempt_dir"])
-        unit_dir = native_attempt / (
-            f"unit-{unit_index + 1:03d}-{unit['symbol']}-{unit['contract']}"
-        )
-        result = failed.get("result")
-        if not isinstance(result, Mapping):
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        safe_unit_dir = native._validated_direct_child_directory(
-            unit_dir,
-            native_attempt,
-            "PRIOR_ISOLATION_INVALID",
-        )
-        persisted_unit = native._read_json_file(safe_unit_dir / "unit-result.json")
-        if persisted_unit != failed:
-            raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        source_evidence = native._source_isolation_evidence(
-            safe_unit_dir,
-            unit,
-            result,
-            policy,
-            expected_parent=native_attempt,
-        )
-        source_count = cast(int, source_evidence["responses_saved"])
-        evidence_artifacts = {
-            "unit_result_sha256": _regular_file_sha256(
-                safe_unit_dir / "unit-result.json"
-            ),
-            "journal_sha256": _regular_file_sha256(safe_unit_dir / "journal.jsonl"),
-            "source_response_sha256s": {
-                f"source-response-{sequence:04d}.json": _regular_file_sha256(
-                    safe_unit_dir / f"source-response-{sequence:04d}.json"
+        terminal_batches = list(completed_batches)
+        if isinstance(failed_batch, Mapping):
+            terminal_batches.append(failed_batch)
+        bindings = [dict(item) for item in validated.get("prior_known_isolations", [])]
+        campaign_result_sha256 = _regular_file_sha256(campaign_result_path)
+        for batch in terminal_batches:
+            if not isinstance(batch, Mapping):
+                raise RecoveryError("PRIOR_ISOLATION_INVALID")
+            batch_id = batch.get("batch_id")
+            terminal = batch.get("native_result")
+            child = next(
+                (
+                    item
+                    for item in validated["children"]
+                    if item.get("batch_id") == batch_id
+                ),
+                None,
+            )
+            if not isinstance(child, Mapping) or not isinstance(terminal, Mapping):
+                raise RecoveryError("PRIOR_ISOLATION_INVALID")
+            child_path = _manifest_child_path(child.get("path"), root)
+            validated_terminal = _validated_batch_invocation(
+                {
+                    "return_code": 0 if terminal.get("status") == "passed" else 1,
+                    "batch_result": terminal,
+                },
+                child=child,
+                child_path=child_path,
+                digest=child["sha256"],
+                batch_attempt=attempt_path / str(batch_id),
+                identity=validated["execution_identity"],
+            )
+            if validated_terminal is None:
+                raise RecoveryError("PRIOR_ISOLATION_INVALID")
+            native_result = validated_terminal["result"]
+            isolated = native_result.get("isolated", [])
+            if not isinstance(isolated, list):
+                raise RecoveryError("PRIOR_ISOLATION_INVALID")
+            candidates: list[tuple[Mapping[str, Any], bool]] = []
+            for item in isolated:
+                if not isinstance(item, Mapping):
+                    raise RecoveryError("PRIOR_ISOLATION_INVALID")
+                candidates.append((item, True))
+            stopping = native_result.get("failed")
+            if isinstance(stopping, Mapping):
+                candidates.append((stopping, False))
+            frozen = _load_native_child(child_path, child["sha256"])
+            units = frozen.get("units")
+            if not isinstance(units, list):
+                raise RecoveryError("PRIOR_ISOLATION_INVALID")
+            native_attempt = Path(validated_terminal["attempt_dir"])
+            for failed, declared_isolated in candidates:
+                unit_indexes = [
+                    index
+                    for index, unit in enumerate(units)
+                    if isinstance(unit, Mapping) and _unit_payload_matches(failed, unit)
+                ]
+                if len(unit_indexes) != 1:
+                    raise RecoveryError("PRIOR_ISOLATION_INVALID")
+                unit_index = unit_indexes[0]
+                unit = units[unit_index]
+                assert isinstance(unit, Mapping)
+                result = failed.get("result")
+                if not isinstance(result, Mapping):
+                    raise RecoveryError("PRIOR_ISOLATION_INVALID")
+                unit_dir = native_attempt / (
+                    f"unit-{unit_index + 1:03d}-{unit['symbol']}-{unit['contract']}"
                 )
-                for sequence in range(1, source_count + 1)
-            },
+                safe_unit_dir = native._validated_direct_child_directory(
+                    unit_dir,
+                    native_attempt,
+                    "PRIOR_ISOLATION_INVALID",
+                )
+                persisted_unit = native._read_json_file(
+                    safe_unit_dir / "unit-result.json"
+                )
+                if persisted_unit != failed:
+                    raise RecoveryError("PRIOR_ISOLATION_INVALID")
+                try:
+                    source_evidence = native._source_isolation_evidence(
+                        safe_unit_dir,
+                        unit,
+                        result,
+                        policy,
+                        expected_parent=native_attempt,
+                    )
+                except RecoveryError:
+                    if declared_isolated:
+                        raise
+                    continue
+                source_count = cast(int, source_evidence["responses_saved"])
+                evidence_artifacts = {
+                    "unit_result_sha256": _regular_file_sha256(
+                        safe_unit_dir / "unit-result.json"
+                    ),
+                    "journal_sha256": _regular_file_sha256(
+                        safe_unit_dir / "journal.jsonl"
+                    ),
+                    "source_response_sha256s": {
+                        f"source-response-{sequence:04d}.json": (
+                            _regular_file_sha256(
+                                safe_unit_dir / f"source-response-{sequence:04d}.json"
+                            )
+                        )
+                        for sequence in range(1, source_count + 1)
+                    },
+                }
+                unit_identity = {
+                    key: unit[key]
+                    for key in (
+                        "symbol",
+                        "contract",
+                        "frequency",
+                        "through",
+                        "plan_sha256",
+                    )
+                }
+                binding: dict[str, Any] = {
+                    "schema_version": (
+                        "newow_daily_recovery_prior_isolation_v1"
+                        if recovery_frequency == "1d"
+                        else "newow_weekly_recovery_prior_isolation_v1"
+                    ),
+                    "unit": unit_identity,
+                    "classification": source_evidence["classification"],
+                    "source_evidence": source_evidence,
+                    "evidence_artifacts": evidence_artifacts,
+                    "prior_campaign": {
+                        "path": campaign_path.name,
+                        "sha256": expected_prior_campaign_sha256,
+                    },
+                    "prior_campaign_result_sha256": campaign_result_sha256,
+                    "prior_attempt_path": attempt_path.name,
+                    "batch_id": batch_id,
+                    "child_sha256": child["sha256"],
+                    "unit_index": unit_index + 1,
+                }
+                binding["binding_sha256"] = _identity_sha256(binding)
+                bindings.append(binding)
+        if not bindings:
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        binding_hashes = [item.get("binding_sha256") for item in bindings]
+        if len(set(binding_hashes)) != len(binding_hashes):
+            raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        return bindings
+    except (OSError, KeyError, StopIteration, TypeError, RecoveryError) as exc:
+        raise RecoveryError("PRIOR_ISOLATION_INVALID") from exc
+
+
+def _derive_source_only_isolations(
+    root: Path,
+    *,
+    policy: Mapping[str, object] | None,
+    source_prepared_path: Path | None,
+    expected_source_prepared_sha256: str | None,
+    source_attempt_path: Path | None,
+    unit_index: int | None,
+    request_index: int | None,
+    expected_request_sha256: str | None,
+) -> list[dict[str, Any]]:
+    values = (
+        source_prepared_path,
+        expected_source_prepared_sha256,
+        source_attempt_path,
+        unit_index,
+        request_index,
+        expected_request_sha256,
+    )
+    if all(value is None for value in values):
+        return []
+    if policy is None or any(value is None for value in values):
+        raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+    assert source_prepared_path is not None
+    assert expected_source_prepared_sha256 is not None
+    assert source_attempt_path is not None
+    assert unit_index is not None
+    assert request_index is not None
+    assert expected_request_sha256 is not None
+    try:
+        if (
+            isinstance(unit_index, bool)
+            or unit_index < 0
+            or isinstance(request_index, bool)
+            or request_index < 0
+            or _HASH.fullmatch(expected_request_sha256) is None
+            or policy.get("allowed_error_codes") != ["RQDATA_ZERO_OHL_INVALID"]
+        ):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        prepared_path = _direct_root_file(source_prepared_path, root)
+        attempt_path = _direct_root_directory(source_attempt_path, root)
+        prepared = native.load_prepared_manifest(
+            prepared_path, expected_source_prepared_sha256
+        )
+        units = prepared.get("units")
+        if not isinstance(units, list) or unit_index >= len(units):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        unit = units[unit_index]
+        if not isinstance(unit, Mapping):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        source_payloads = unit.get("source_requests")
+        if not isinstance(source_payloads, list) or request_index >= len(
+            source_payloads
+        ):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        selected_request = native._source_request_from_payload(
+            source_payloads[request_index]
+        )
+        request_payload = native._request_payload(selected_request)
+        request_sha256 = hashlib.sha256(
+            native._canonical_json(request_payload).encode("utf-8")
+        ).hexdigest()
+        if request_sha256 != expected_request_sha256:
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+
+        invocation_path = attempt_path / "invocation-receipt.json"
+        result_path = attempt_path / "source-only-result.json"
+        journal_path = attempt_path / "journal.jsonl"
+        response_path = attempt_path / "source-response-0001.json"
+        invocation = native._read_json_file(invocation_path)
+        result = native._read_json_file(result_path)
+        if not isinstance(invocation, Mapping) or not isinstance(result, Mapping):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        expected_identity = {
+            key: prepared[key]
+            for key in (
+                "code_commit",
+                "execution_code_sha256",
+                "config_sha256",
+                "canonical_root_sha256",
+            )
         }
-        unit_identity = {
+        expected_runner_sha256 = _source_runner_sha256_at_commit(
+            cast(str, expected_identity["code_commit"])
+        )
+        if invocation != {
+            "schema_version": "newow_weekly_source_only_invocation_v1",
+            "prepared_path": prepared_path.name,
+            "prepared_sha256": expected_source_prepared_sha256,
+            "request_sha256": expected_request_sha256,
+            "attempt_id": attempt_path.name,
+            **expected_identity,
+            "runner_sha256": expected_runner_sha256,
+            "provider_request_limit": 1,
+            "retries_allowed": 0,
+            "canonical_writes_allowed": False,
+            "database_writes_allowed": False,
+            "manager_apply_allowed": False,
+        }:
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        outcome = native._validated_source_attempt_outcome(
+            attempt_path, (selected_request,)
+        )
+        expected_unit = {
             key: unit[key]
             for key in ("symbol", "contract", "frequency", "through", "plan_sha256")
         }
+        if (
+            result.get("schema_version") != "newow_weekly_source_only_result_v1"
+            or result.get("status") != "completed"
+            or result.get("classification") != "SOURCE_RESPONSE_SAVED_REVIEW_REQUIRED"
+            or result.get("source_error_code") != "RQDATA_ZERO_OHL_INVALID"
+            or result.get("prepared_sha256") != expected_source_prepared_sha256
+            or result.get("request_sha256") != expected_request_sha256
+            or result.get("unit_identity") != expected_unit
+            or native._canonical_json(result.get("attempt"))
+            != native._canonical_json(outcome)
+            or type(result.get("provider_request_limit")) is not int
+            or result.get("provider_request_limit") != 1
+            or type(result.get("retries")) is not int
+            or result.get("retries") != 0
+            or type(result.get("canonical_writes")) is not int
+            or result.get("canonical_writes") != 0
+            or type(result.get("database_writes")) is not int
+            or result.get("database_writes") != 0
+            or result.get("manager_apply") is not False
+            or outcome
+            != {
+                "state": "failed",
+                "outcome_unknown": False,
+                "retry_allowed": False,
+                "requests_started": 1,
+                "responses_saved": 1,
+            }
+        ):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        response = native._read_source_payload(
+            response_path, _regular_file_sha256(response_path)
+        )
+        rows = response.get("rows")
+        if (
+            set(response) != {"schema_version", "request", "rows"}
+            or response.get("schema_version") != 1
+            or response.get("request") != request_payload
+            or not isinstance(rows, list)
+            or any(not isinstance(row, dict) for row in rows)
+        ):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        typed_rows = tuple(cast(dict[str, Any], row) for row in rows)
+        native._validate_response_identity(selected_request, typed_rows)
+        anomaly_rows: list[dict[str, Any]] = []
+        replayed_codes: set[str] = set()
+        for row in typed_rows:
+            try:
+                native._normalize_exchange_daily_zero_volume_row(row)
+            except Exception as exc:  # noqa: BLE001 - exact allowlist replay only
+                code = native._error_code(exc)
+                if code != "RQDATA_ZERO_OHL_INVALID":
+                    raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID") from exc
+                replayed_codes.add(code)
+                anomaly_rows.append(dict(row))
+        if replayed_codes != {"RQDATA_ZERO_OHL_INVALID"} or not anomaly_rows:
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        source_evidence: dict[str, Any] = {
+            "classification": "RQDATA_ZERO_OHL_INVALID",
+            "requests_started": 1,
+            "responses_saved": 1,
+            "request_sha256": expected_request_sha256,
+            "response_sha256": _regular_file_sha256(response_path),
+            "anomaly_rows": anomaly_rows,
+        }
+        source_evidence["evidence_sha256"] = _identity_sha256(source_evidence)
         binding: dict[str, Any] = {
-            "schema_version": "newow_weekly_recovery_prior_isolation_v1",
-            "unit": unit_identity,
-            "classification": source_evidence["classification"],
+            "schema_version": "newow_weekly_source_only_isolation_v1",
+            "unit": expected_unit,
+            "classification": "RQDATA_ZERO_OHL_INVALID",
             "source_evidence": source_evidence,
-            "evidence_artifacts": evidence_artifacts,
-            "prior_campaign": {
-                "path": campaign_path.name,
-                "sha256": expected_prior_campaign_sha256,
+            "source_prepared": {
+                "path": prepared_path.name,
+                "sha256": expected_source_prepared_sha256,
             },
-            "prior_campaign_result_sha256": _regular_file_sha256(campaign_result_path),
-            "prior_attempt_path": attempt_path.name,
-            "batch_id": batch_id,
-            "child_sha256": child["sha256"],
-            "unit_index": unit_index + 1,
+            "source_attempt_path": attempt_path.name,
+            "unit_index": unit_index,
+            "request_index": request_index,
+            "request_sha256": expected_request_sha256,
+            "evidence_artifacts": {
+                "invocation_receipt_sha256": _regular_file_sha256(invocation_path),
+                "journal_sha256": _regular_file_sha256(journal_path),
+                "source_result_sha256": _regular_file_sha256(result_path),
+                "source_response_sha256": _regular_file_sha256(response_path),
+            },
         }
         binding["binding_sha256"] = _identity_sha256(binding)
         return [binding]
-    except (OSError, KeyError, StopIteration, TypeError, RecoveryError) as exc:
-        raise RecoveryError("PRIOR_ISOLATION_INVALID") from exc
+    except (OSError, KeyError, TypeError, RecoveryError) as exc:
+        raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID") from exc
+
+
+def _source_runner_sha256_at_commit(code_commit: str) -> str:
+    if _COMMIT.fullmatch(code_commit) is None:
+        raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+    project_root = Path(__file__).resolve().parents[1]
+    try:
+        completed = subprocess.run(
+            [
+                "git",
+                "show",
+                f"{code_commit}:scripts/newow_weekly_source_verify.py",
+            ],
+            cwd=project_root,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID") from exc
+    return hashlib.sha256(completed.stdout).hexdigest()
 
 
 def _direct_root_file(value: Path, root: Path) -> Path:
@@ -795,13 +1681,42 @@ def prepare_campaign(
     prior_campaign_path: Path | None = None,
     expected_prior_campaign_sha256: str | None = None,
     prior_attempt_path: Path | None = None,
+    source_only_prepared_path: Path | None = None,
+    expected_source_only_prepared_sha256: str | None = None,
+    source_only_attempt_path: Path | None = None,
+    source_only_unit_index: int | None = None,
+    source_only_request_index: int | None = None,
+    expected_source_only_request_sha256: str | None = None,
+    partial_source_exception_attempt_path: Path | None = None,
+    observe_partial_committed: Callable[
+        [Mapping[str, Any], list[dict[str, Any]]], Mapping[str, Any]
+    ]
+    | None = None,
+    recovery_frequency: native.RecoveryFrequency = "1w",
 ) -> dict[str, Any]:
     """Prepare every native child and exclusively freeze their campaign index."""
     root = _validated_evidence_root(evidence_root)
     if _HASH.fullmatch(report_sha256) is None:
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    frequency = _campaign_frequency(report, recovery_frequency)
     identity = _validated_execution_identity(execution_identity)
-    policy = native._validated_continuation_policy(continuation_policy)
+    policy = native._validated_continuation_policy(
+        continuation_policy, recovery_frequency=frequency
+    )
+    if frequency == "1d" and partial_source_exception_attempt_path is not None:
+        raise RecoveryError("D1_PARTIAL_SOURCE_EXCEPTION_UNSUPPORTED")
+    if frequency == "1d" and any(
+        value is not None
+        for value in (
+            source_only_prepared_path,
+            expected_source_only_prepared_sha256,
+            source_only_attempt_path,
+            source_only_unit_index,
+            source_only_request_index,
+            expected_source_only_request_sha256,
+        )
+    ):
+        raise RecoveryError("D1_SOURCE_ONLY_ISOLATION_UNSUPPORTED")
     prior_isolations = _derive_prior_isolations(
         root,
         policy=policy,
@@ -809,13 +1724,24 @@ def prepare_campaign(
         expected_prior_campaign_sha256=expected_prior_campaign_sha256,
         prior_attempt_path=prior_attempt_path,
     )
+    source_only_isolations = _derive_source_only_isolations(
+        root,
+        policy=policy,
+        source_prepared_path=source_only_prepared_path,
+        expected_source_prepared_sha256=expected_source_only_prepared_sha256,
+        source_attempt_path=source_only_attempt_path,
+        unit_index=source_only_unit_index,
+        request_index=source_only_request_index,
+        expected_request_sha256=expected_source_only_request_sha256,
+    )
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", name) is None:
         raise RecoveryError("CAMPAIGN_PATH_INVALID")
     campaign_path = root / f"{name}.prepare.json"
     if campaign_path.exists() or campaign_path.is_symlink():
         raise RecoveryError("CAMPAIGN_MANIFEST_EXISTS")
 
-    targets, excluded = _validated_report_targets(report)
+    targets, excluded = _validated_report_targets(report, recovery_frequency=frequency)
+    products = tuple(load_operational_products())
     prior_keys = {
         (
             item["unit"]["symbol"],
@@ -825,6 +1751,16 @@ def prepare_campaign(
             item["unit"]["plan_sha256"],
         )
         for item in prior_isolations
+    }
+    source_only_keys = {
+        (
+            item["unit"]["symbol"],
+            item["unit"]["contract"],
+            item["unit"]["frequency"],
+            item["unit"]["through"],
+            item["unit"]["plan_sha256"],
+        )
+        for item in source_only_isolations
     }
     proposed = [item for item in targets if item["status"] == "PROPOSED"]
     fresh_keys = [
@@ -839,16 +1775,59 @@ def prepare_campaign(
     ]
     if not prior_keys.issubset(fresh_keys) or len(prior_keys) != len(prior_isolations):
         raise RecoveryError("PRIOR_ISOLATION_INVALID")
+    if (
+        not source_only_keys.issubset(fresh_keys)
+        or len(source_only_keys) != len(source_only_isolations)
+        or prior_keys & source_only_keys
+    ):
+        raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+    isolation_keys = prior_keys | source_only_keys
+    carried_partial_exceptions = _carried_partial_source_exceptions(
+        root,
+        prior_campaign_path=prior_campaign_path,
+        expected_prior_campaign_sha256=expected_prior_campaign_sha256,
+        current_identity=identity,
+        fresh_units=proposed,
+        observe_committed=observe_partial_committed,
+    )
+    partial_exceptions = carried_partial_exceptions + _derive_partial_source_exceptions(
+        root,
+        current_identity=identity,
+        attempt_path=partial_source_exception_attempt_path,
+        fresh_units=proposed,
+        observe_committed=observe_partial_committed,
+    )
+    if frequency == "1d" and partial_exceptions:
+        raise RecoveryError("D1_PARTIAL_SOURCE_EXCEPTION_UNSUPPORTED")
+    partial_keys = {
+        (
+            item["symbol"],
+            item["contract"],
+            item["frequency"],
+            item["through"],
+        )
+        for item in partial_exceptions
+    }
+    if len(partial_keys) != len(partial_exceptions):
+        raise RecoveryError(partial_exception.ERROR_CODE)
+    isolation_identities = {
+        (symbol, contract, frequency, through)
+        for symbol, contract, frequency, through, _plan in isolation_keys
+    }
+    if partial_keys & isolation_identities:
+        raise RecoveryError(partial_exception.ERROR_CODE)
     executable_units = tuple(
         {
             "symbol": item["symbol"],
             "contract": item["contract"],
             "through": item["through"],
-            "frequency": "1w",
+            "frequency": frequency,
             "expected_plan_sha256": item["plan_sha256"],
         }
         for item, key in zip(proposed, fresh_keys, strict=True)
-        if key not in prior_keys
+        if key not in isolation_keys
+        and (item["symbol"], item["contract"], item["frequency"], item["through"])
+        not in partial_keys
     )
     batches = tuple(
         tuple(executable_units[index : index + 20])
@@ -901,7 +1880,7 @@ def prepare_campaign(
         )
 
     manifest: dict[str, Any] = {
-        "schema_version": _CAMPAIGN_SCHEMA,
+        "schema_version": _CAMPAIGN_SCHEMA_BY_FREQUENCY[frequency],
         "status": "prepared" if proposed else "completed",
         "readonly": True,
         "provider_requests": 0,
@@ -919,6 +1898,14 @@ def prepare_campaign(
             "matrix": report["matrix"],
         },
         "scope": {
+            "product_count": len(products),
+            "product_universe_sha256": _identity_sha256(list(products)),
+            "consumer_window_identity_sha256": _identity_sha256(
+                {
+                    "enumerations": report["enumerations"],
+                    "dependencies": report["dependencies"],
+                }
+            ),
             "included_status_counts": {
                 "PROPOSED": sum(item["status"] == "PROPOSED" for item in targets)
             },
@@ -927,6 +1914,8 @@ def prepare_campaign(
             "denominator_unit_count": len(proposed),
             "execution_unit_count": len(executable_units),
             "prior_known_isolation_count": len(prior_isolations),
+            "source_only_known_isolation_count": len(source_only_isolations),
+            "prior_partial_source_exception_count": len(partial_exceptions),
             "unit_identity_sha256": _identity_sha256(
                 [unit for child in children for unit in child["units"]]
             ),
@@ -940,6 +1929,8 @@ def prepare_campaign(
         },
         "children": children,
         "prior_known_isolations": prior_isolations,
+        "source_only_known_isolations": source_only_isolations,
+        "prior_partial_source_exceptions": partial_exceptions,
         "totals": {
             "batch_count": len(children),
             "unit_count": sum(child["unit_count"] for child in children),
@@ -968,11 +1959,9 @@ def validate_campaign_manifest(
 ) -> dict[str, Any]:
     """Verify the complete ordered child set without opening any data source."""
     root = _validated_evidence_root(evidence_root)
-    if (
-        not isinstance(manifest, dict)
-        or manifest.get("schema_version") != _CAMPAIGN_SCHEMA
-    ):
+    if not isinstance(manifest, dict):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
+    recovery_frequency = _frequency_for_campaign_schema(manifest.get("schema_version"))
     if (
         manifest.get("readonly") is not True
         or manifest.get("provider_requests") != 0
@@ -981,8 +1970,13 @@ def validate_campaign_manifest(
     ):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     identity = _validated_execution_identity(manifest.get("execution_identity"))
-    policy = native._validated_continuation_policy(manifest.get("continuation_policy"))
+    policy = native._validated_continuation_policy(
+        manifest.get("continuation_policy"),
+        recovery_frequency=recovery_frequency,
+    )
     prior_isolations = manifest.get("prior_known_isolations", [])
+    source_only_isolations = manifest.get("source_only_known_isolations", [])
+    partial_exceptions = manifest.get("prior_partial_source_exceptions", [])
     children = manifest.get("children")
     totals = manifest.get("totals")
     audit = manifest.get("audit")
@@ -1008,13 +2002,20 @@ def validate_campaign_manifest(
         or not isinstance(audit, dict)
         or not isinstance(scope, dict)
         or not isinstance(prior_isolations, list)
-        or (prior_isolations and policy is None)
+        or not isinstance(source_only_isolations, list)
+        or not isinstance(partial_exceptions, list)
+        or ((prior_isolations or source_only_isolations) and policy is None)
         or _HASH.fullmatch(str(audit.get("sha256", ""))) is None
-        or audit.get("frequency_scope") != ["1w"]
+        or audit.get("frequency_scope") != [recovery_frequency]
         or audit.get("matrix") is not False
         or not isinstance(scope.get("included_status_counts"), dict)
         or not isinstance(scope.get("excluded_status_counts"), dict)
         or not isinstance(scope.get("metadata_proposal_count"), int)
+        or scope.get("product_count") != len(load_operational_products())
+        or scope.get("product_universe_sha256")
+        != _identity_sha256(list(load_operational_products()))
+        or _HASH.fullmatch(str(scope.get("consumer_window_identity_sha256", "")))
+        is None
         or _HASH.fullmatch(str(scope.get("unit_identity_sha256", ""))) is None
         or _HASH.fullmatch(str(scope.get("target_identity_sha256", ""))) is None
     ):
@@ -1074,7 +2075,9 @@ def validate_campaign_manifest(
     if totals != actual_totals:
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     validated_prior: list[dict[str, Any]] = []
-    prior_unit_keys: set[tuple[str, str, str, str, str]] = set()
+    validated_source_only: list[dict[str, Any]] = []
+    derived_prior_hashes: set[str] = set()
+    isolated_unit_keys: set[tuple[str, str, str, str, str]] = set()
     executable_unit_keys = {
         (
             unit["symbol"],
@@ -1099,8 +2102,11 @@ def validate_campaign_manifest(
             expected_prior_campaign_sha256=cast(str, prior_campaign.get("sha256")),
             prior_attempt_path=root / str(binding.get("prior_attempt_path")),
         )
-        if derived_prior != [binding]:
+        if binding not in derived_prior:
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
+        derived_prior_hashes.update(
+            str(item.get("binding_sha256")) for item in derived_prior
+        )
         prior_unit = binding.get("unit")
         if not isinstance(prior_unit, Mapping):
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
@@ -1110,23 +2116,125 @@ def validate_campaign_manifest(
         )
         if (
             not all(isinstance(value, str) for value in prior_key_values)
-            or prior_key_values in prior_unit_keys
+            or prior_key_values in isolated_unit_keys
             or prior_key_values in executable_unit_keys
         ):
             raise RecoveryError("PRIOR_ISOLATION_INVALID")
-        prior_unit_keys.add(cast(tuple[str, str, str, str, str], prior_key_values))
-        validated_prior.extend(derived_prior)
+        isolated_unit_keys.add(cast(tuple[str, str, str, str, str], prior_key_values))
+        validated_prior.append(dict(binding))
+    if derived_prior_hashes != {
+        str(item.get("binding_sha256"))
+        for item in prior_isolations
+        if isinstance(item, Mapping)
+    }:
+        raise RecoveryError("PRIOR_ISOLATION_INVALID")
+    for binding in source_only_isolations:
+        if not isinstance(binding, Mapping):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        source_prepared = binding.get("source_prepared")
+        if not isinstance(source_prepared, Mapping):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        derived_source = _derive_source_only_isolations(
+            root,
+            policy=policy,
+            source_prepared_path=root / str(source_prepared.get("path")),
+            expected_source_prepared_sha256=cast(str, source_prepared.get("sha256")),
+            source_attempt_path=root / str(binding.get("source_attempt_path")),
+            unit_index=cast(int, binding.get("unit_index")),
+            request_index=cast(int, binding.get("request_index")),
+            expected_request_sha256=cast(str, binding.get("request_sha256")),
+        )
+        if derived_source != [binding]:
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        source_unit = binding.get("unit")
+        if not isinstance(source_unit, Mapping):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        source_key_values = tuple(
+            source_unit.get(key)
+            for key in ("symbol", "contract", "frequency", "through", "plan_sha256")
+        )
+        if (
+            not all(isinstance(value, str) for value in source_key_values)
+            or source_key_values in isolated_unit_keys
+            or source_key_values in executable_unit_keys
+        ):
+            raise RecoveryError("SOURCE_ONLY_ISOLATION_INVALID")
+        isolated_unit_keys.add(cast(tuple[str, str, str, str, str], source_key_values))
+        validated_source_only.extend(derived_source)
+    validated_partial: list[dict[str, Any]] = []
+    if partial_exceptions:
+        if any(not isinstance(item, Mapping) for item in partial_exceptions):
+            raise RecoveryError(partial_exception.ERROR_CODE)
+        derived_partial: list[dict[str, Any]] = []
+        for item in partial_exceptions:
+            derived_partial.extend(
+                _derive_partial_source_exceptions(
+                    root,
+                    current_identity=identity,
+                    attempt_path=root / str(item.get("failed_attempt_path")),
+                    fresh_units=[
+                        {
+                            "symbol": item.get("symbol"),
+                            "contract": item.get("contract"),
+                            "frequency": item.get("frequency"),
+                            "through": item.get("through"),
+                            "plan_sha256": item.get("fresh_replan_sha256"),
+                            "targets": item.get("remaining_targets"),
+                        }
+                    ],
+                    observe_committed=None,
+                    stored_bindings=[item],
+                )
+            )
+        if derived_partial != list(partial_exceptions):
+            raise RecoveryError(partial_exception.ERROR_CODE)
+        executable_identities = {
+            (
+                unit["symbol"],
+                unit["contract"],
+                unit["frequency"],
+                unit["through"],
+            )
+            for child in children
+            for unit in child["units"]
+        }
+        seen_partial: set[tuple[object, object, object, object]] = set()
+        for binding in derived_partial:
+            identity_key = (
+                binding["symbol"],
+                binding["contract"],
+                binding["frequency"],
+                binding["through"],
+            )
+            if (
+                identity_key in seen_partial
+                or identity_key in executable_identities
+                or binding.get("classification") != partial_exception.CLASSIFICATION
+                or binding.get("frequency") != "1w"
+            ):
+                raise RecoveryError(partial_exception.ERROR_CODE)
+            seen_partial.add(identity_key)
+        validated_partial = derived_partial
     included = scope["included_status_counts"]
-    denominator = len(seen) + len(validated_prior)
+    denominator = (
+        len(seen)
+        + len(validated_prior)
+        + len(validated_source_only)
+        + len(validated_partial)
+    )
     if included != {"PROPOSED": denominator}:
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     expected_status = "prepared" if denominator else "completed"
     if manifest.get("status") != expected_status:
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
-    if policy is not None and (
+    if (
         scope.get("denominator_unit_count") != denominator
         or scope.get("execution_unit_count") != len(seen)
-        or scope.get("prior_known_isolation_count") != len(validated_prior)
+        or scope.get("prior_known_isolation_count", 0) != len(validated_prior)
+        or scope.get("source_only_known_isolation_count", 0)
+        != len(validated_source_only)
+        or scope.get("prior_partial_source_exception_count", 0)
+        != len(validated_partial)
     ):
         raise RecoveryError("CAMPAIGN_MANIFEST_INVALID")
     flattened = [unit for child in children for unit in child["units"]]
@@ -1139,10 +2247,16 @@ def validate_campaign_manifest(
 
 def _validated_report_targets(
     report: Mapping[str, Any],
+    *,
+    recovery_frequency: native.RecoveryFrequency = "1w",
 ) -> tuple[list[dict[str, Any]], Counter[str]]:
     if not isinstance(report, Mapping):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     if any(report.get(key) != value for key, value in _REPORT_REQUIRED.items()):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    frequency_scope = _campaign_frequency(report, recovery_frequency)
+    allowed_stages = {"weekly", "daily"} if frequency_scope == "1w" else {"daily"}
+    if report.get("release_stage") not in allowed_stages:
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     if not _REPORT_STRUCTURAL.issubset(report):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
@@ -1169,7 +2283,9 @@ def _validated_report_targets(
         if typed_identity in repair_identities:
             raise RecoveryError("CAMPAIGN_SCOPE_CONFLICT")
         repair_identities.add(typed_identity)
-    _validate_native_report_sections(report, as_of=as_of)
+    _validate_native_report_sections(
+        report, as_of=as_of, recovery_frequency=frequency_scope
+    )
     parsed: list[dict[str, Any]] = []
     excluded: Counter[str] = Counter()
     seen: dict[tuple[str, str, str], tuple[str, str]] = {}
@@ -1193,7 +2309,7 @@ def _validated_report_targets(
             or not isinstance(contract, str)
             or _CONTRACT.fullmatch(contract) is None
             or not contract.startswith(symbol.upper())
-            or frequency != "1w"
+            or frequency != frequency_scope
             or not isinstance(through, str)
             or requested_through != through
             or not isinstance(status_value, str)
@@ -1233,6 +2349,7 @@ def _validate_native_report_sections(
     report: Mapping[str, Any],
     *,
     as_of: datetime,
+    recovery_frequency: native.RecoveryFrequency = "1w",
 ) -> None:
     """Require the complete native matrix-false readiness payload."""
     try:
@@ -1264,7 +2381,7 @@ def _validate_native_report_sections(
     ):
         raise RecoveryError("CAMPAIGN_REPORT_INVALID")
     expected_enumerations = {
-        (symbol, "1w", section)
+        (symbol, recovery_frequency, section)
         for symbol in operational
         for section in _REPORT_SECTIONS
     }
@@ -1335,13 +2452,14 @@ def _validate_native_report_sections(
             or not isinstance(contract, str)
             or _CONTRACT.fullmatch(contract) is None
             or not contract.startswith(symbol.upper())
-            or raw.get("frequency") != "1w"
+            or raw.get("frequency") != recovery_frequency
             or status_value
             not in {
                 "DATA_READY",
                 "DATA_UNAVAILABLE",
                 "NOT_APPLICABLE",
                 "SOURCE_EXCEPTION",
+                "INTEGRITY_ERROR",
             }
             or through > as_of.date()
             or dependency_as_of.tzinfo is None
@@ -1376,7 +2494,8 @@ def _validate_native_report_sections(
             not isinstance(raw.get("reason"), str)
             or not raw.get("reason")
             or (
-                status_value in {"DATA_UNAVAILABLE", "SOURCE_EXCEPTION"}
+                status_value
+                in {"DATA_UNAVAILABLE", "SOURCE_EXCEPTION", "INTEGRITY_ERROR"}
                 and (
                     not isinstance(raw.get("error"), Mapping)
                     or not isinstance(raw["error"].get("code"), str)
@@ -1390,7 +2509,7 @@ def _validate_native_report_sections(
         for consumer in consumers:
             if (
                 not isinstance(consumer, Mapping)
-                or consumer.get("frequency") != "1w"
+                or consumer.get("frequency") != recovery_frequency
                 or consumer.get("section") not in {"chart", "auxiliary", "reference"}
                 or not isinstance(consumer.get("strategy"), str)
             ):
@@ -1405,7 +2524,7 @@ def _validate_native_report_sections(
             consumer_identities.add(consumer_identity)
             consumer_sections.add(consumer["section"])
         expected_consumers = {
-            (strategy.value, "1w", section)
+            (strategy.value, recovery_frequency, section)
             for section in consumer_sections
             for strategy in ProductStrategy
         }
@@ -1432,7 +2551,7 @@ def _validate_native_report_sections(
             coverage_key = (symbol, section)
             covered_owners.setdefault(coverage_key, set()).update(owner_identities)
             covered_owner_counts[coverage_key] += len(owner_identities)
-        dependency_key = (symbol, contract, "1w")
+        dependency_key = (symbol, contract, recovery_frequency)
         if raw.get("reason") in native_readiness._DOWNLOAD:
             previous_through = repair_through.get(dependency_key)
             if previous_through is None or raw["through"] > previous_through:
@@ -1587,7 +2706,10 @@ def _validate_native_child(
     expected_identity: Mapping[str, str],
     summaries_are_campaign_units: bool = False,
 ) -> list[dict[str, Any]]:
-    if child.get("schema_version") != "newow_weekly_recovery_prepare_v1" or any(
+    if not expected_units:
+        raise RecoveryError("CAMPAIGN_CHILD_INVALID")
+    frequency = native._recovery_frequency(expected_units[0].get("frequency"))
+    if child.get("schema_version") != native._prepare_schema(frequency) or any(
         child.get(key) != value for key, value in expected_identity.items()
     ):
         raise RecoveryError("CAMPAIGN_CHILD_INVALID")
@@ -1686,7 +2808,10 @@ def _validated_target_summaries(
             not isinstance(dataset, list)
             or len(dataset) != 4
             or dataset[:3] != ["contract", unit["symbol"], unit["contract"]]
-            or dataset[3] not in {"1d", "1w"}
+            or dataset[3]
+            not in native._allowed_target_frequencies(
+                native._recovery_frequency(unit.get("frequency"))
+            )
             or not isinstance(year, int)
             or isinstance(year, bool)
             or not isinstance(month, int)
@@ -1750,11 +2875,15 @@ def _validated_batch_invocation(
         return None
     return_code = value.get("return_code")
     result = value.get("batch_result")
+    child_units = child.get("units")
+    if not isinstance(child_units, list) or not child_units:
+        return None
+    recovery_frequency = native._recovery_frequency(child_units[0].get("frequency"))
     if (
         not isinstance(return_code, int)
         or isinstance(return_code, bool)
         or not isinstance(result, Mapping)
-        or result.get("schema_version") != "newow_weekly_recovery_result_v1"
+        or result.get("schema_version") != native._result_schema(recovery_frequency)
         or result.get("readonly") is not False
         or result.get("status") not in {"passed", "partial", "failed"}
         or not isinstance(result.get("result"), Mapping)
@@ -1794,12 +2923,15 @@ def _validated_batch_invocation(
     except RecoveryError:
         return None
     expected_receipt = {
-        "schema_version": "newow_weekly_recovery_invocation_v1",
+        "schema_version": native._INVOCATION_SCHEMA_BY_FREQUENCY[recovery_frequency],
         "prepared_sha256": digest,
         **identity,
         "unit_count": child.get("unit_count"),
     }
-    policy = native._validated_continuation_policy(frozen.get("continuation_policy"))
+    policy = native._validated_continuation_policy(
+        frozen.get("continuation_policy"),
+        recovery_frequency=recovery_frequency,
+    )
     if policy is not None:
         expected_receipt["continuation_policy_sha256"] = policy["policy_sha256"]
     native_result = result["result"]
@@ -2341,13 +3473,19 @@ def _inspect_attempt(path: Path) -> dict[str, Any]:
     }
 
 
-def _current_execution_identity(project_env: Path) -> dict[str, str]:
+def _current_execution_identity(
+    project_env: Path,
+    *,
+    recovery_frequency: native.RecoveryFrequency = "1w",
+) -> dict[str, str]:
     commit = native._current_code_commit()
     native._require_clean_execution_checkout(commit)
     _settings, private_identity = native.load_private_execution_settings(project_env)
     return {
         "code_commit": commit,
-        "execution_code_sha256": native._current_execution_code_sha256(),
+        "execution_code_sha256": native._current_execution_code_sha256(
+            recovery_frequency=recovery_frequency
+        ),
         **private_identity,
     }
 

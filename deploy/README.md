@@ -45,7 +45,9 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 `GUIYI_PROJECT_ROOT`、该 commit 与当前 supervised checkout，避免把移动后的工作树 HEAD 当成已运行版本。
 
 `--render-only` 可用于本地无副作用验证。任何 launchd 加载/重载、Runtime switch、腾讯云配置应用或
-Nginx reload 都是独立受控外部操作，必须在执行前取得与目标相符的一次性明确意图。
+Nginx reload 都是受控外部操作，必须明确包含在目标、环境、服务范围匹配的授权中。
+同一任务可一次批准发布、切换及指定恢复步骤，分别核验对应 Gate；跨会话恢复与有界重试按 `AGENTS.md`，
+不增加逐命令审批，不放宽 exact identity、preflight、兼容性或安装器失败恢复合同。
 
 ### Weekly operational full-history audit
 

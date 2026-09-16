@@ -20,16 +20,16 @@ const props = withDefaults(defineProps<{
   identityKey: string
   focusBarEnd?: string | null
   markers?: KlineMarker[]
+  markerSelectionEnabled?: boolean
   referenceCallouts?: KlineReferenceCallout[]
   referenceSelection?: KlineReferenceSelection[]
   focusRequestId?: number
-}>(), { markers: () => [] })
+}>(), { markers: () => [], markerSelectionEnabled: true })
 
 const emit = defineEmits<{
   loadEarlier: []
   'focus-resolved': [focusBarEnd: string]
   'marker-select': [marker: KlineMarker]
-  'reference-select': [id: string]
 }>()
 const chart = ref<InstanceType<typeof KlineChart> | null>(null)
 const root = ref<HTMLElement | null>(null)
@@ -105,9 +105,9 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :range-detector-source-identity="rangeDetectorSourceIdentity"
       :range-detector-anchor-time="rangeDetectorAnchorTime"
       :alert-markers="markers"
+      :marker-selection-enabled="markerSelectionEnabled"
       :reference-callouts="referenceCallouts"
       :reference-selection="referenceSelection"
-      @reference-select="emit('reference-select', $event)"
       @need-more-before="emit('loadEarlier')"
       @follow-latest-change="followLatest = $event"
       @marker-select="emit('marker-select', $event)"

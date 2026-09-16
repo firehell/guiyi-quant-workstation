@@ -338,12 +338,11 @@ export async function mockMarketDetail(page, options = {}) {
 
     if (url.pathname.endsWith('/newow/product-capabilities')) {
       return route.fulfill({ json: {
-        schema_version: 'newow_product_capabilities_v1',
-        release_stage: 'weekly',
-        open_frequencies: ['1w'],
+        schema_version: 'newow_product_capabilities_v2',
+        release_stage: 'daily',
+        open_frequencies: ['1w', '1d'],
         open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
         deferred_frequencies: [
-          { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
           { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
         ],
         deferred_sections: [

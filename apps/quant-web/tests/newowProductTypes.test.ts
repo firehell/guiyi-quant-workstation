@@ -179,13 +179,12 @@ test('shares one Newow strategy and frequency allowlist authority across route a
   assert.equal(NEWOW_PRODUCT_FREQUENCIES, NEWOW_FREQUENCIES)
 })
 
-test('loads the server-owned weekly release capability and rejects widened payloads', async () => {
+test('loads the server-owned daily release capability and rejects widened or legacy payloads', async () => {
   const payload = {
-    schema_version: 'newow_product_capabilities_v1',
-    release_stage: 'weekly',
-    open_frequencies: ['1w'],
+    schema_version: 'newow_product_capabilities_v2',
+    release_stage: 'daily',
+    open_frequencies: ['1w', '1d'],
     deferred_frequencies: [
-      { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
     open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
@@ -207,7 +206,24 @@ test('loads the server-owned weekly release capability and rejects widened paylo
 
   await assert.rejects(
     getNewowProductCapabilities({
-      request: async () => ({ ...payload, open_frequencies: ['1w', '1d'] }),
+      request: async () => ({ ...payload, open_frequencies: ['1w', '1d', '60m'] }),
+    }),
+    (error: unknown) =>
+      error instanceof NewowProductRequestError
+      && error.code === 'NEWOW_RESPONSE_INVALID',
+  )
+  await assert.rejects(
+    getNewowProductCapabilities({
+      request: async () => ({
+        ...payload,
+        schema_version: 'newow_product_capabilities_v1',
+        release_stage: 'weekly',
+        open_frequencies: ['1w'],
+        deferred_frequencies: [
+          { frequency: '1d', reason_code: 'NEWOW_DAILY_RELEASE_PENDING' },
+          { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+        ],
+      }),
     }),
     (error: unknown) =>
       error instanceof NewowProductRequestError
@@ -558,7 +574,7 @@ export function chartWire(options: { product?: string; strategy?: 'trend' | 'osc
       identity: { product, strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64),
       data_revision_identity: null, snapshot_token: options.token === undefined ? 'snapshot-a' : options.token,
-      reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+      reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
     },
     section: 'chart' as const,
     chart: {
@@ -735,7 +751,7 @@ function comparatorWire() {
 export function referenceItem(id: string, returnPct: string) {
   return {
     reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
-    formula_versions: FORMULAS, reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+    formula_versions: FORMULAS, reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
     entry_signal_id: `entry-${id}`, entry_sequence: 1, entry_bar_end: '2026-08-14T07:00:00Z', entry_trading_day: '2026-08-14', entry_reference_price: '100.100',
     exit_signal_id: `exit-${id}`, exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15', exit_reference_price: '101.35125',
     status: 'CLOSED', holding_bars: 1, reference_return_pct: returnPct, mark_bar_end: null, mark_reference_price: null, mark_change_pct: null,

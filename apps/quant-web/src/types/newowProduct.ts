@@ -18,13 +18,10 @@ export interface NewowDeferredSection {
 }
 
 export interface NewowProductCapabilities {
-  readonly schema_version: 'newow_product_capabilities_v1'
-  readonly release_stage: 'weekly'
-  readonly open_frequencies: readonly ['1w']
-  readonly deferred_frequencies: readonly [
-    NewowDeferredFrequency,
-    NewowDeferredFrequency,
-  ]
+  readonly schema_version: 'newow_product_capabilities_v2'
+  readonly release_stage: 'daily'
+  readonly open_frequencies: readonly ['1w', '1d']
+  readonly deferred_frequencies: readonly [NewowDeferredFrequency]
   readonly open_sections: readonly ['chart', 'auxiliary', 'reference', 'comparator']
   readonly deferred_sections: readonly [NewowDeferredSection]
 }
@@ -78,7 +75,7 @@ export interface NewowProductMeta {
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v2'
-  readonly futures_adaptation_version: 'newow_futures_segment_interrupt_v1'
+  readonly futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2'
 }
 
 export interface NewowProductBar {
@@ -190,7 +187,7 @@ export interface NewowReferenceTrade {
   readonly segment_id: string
   readonly formula_versions: readonly string[]
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v2'
-  readonly futures_adaptation_version: 'newow_futures_segment_interrupt_v1'
+  readonly futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2'
   readonly entry_signal_id: string
   readonly entry_sequence: number
   readonly entry_bar_end: string

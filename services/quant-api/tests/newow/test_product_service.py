@@ -19,6 +19,7 @@ from app.market_data.domain import ResolvedContractSegment
 from app.market_data.newow.product_query import ProductReadWindow
 from app.market_data.newow.product_reader import (
     ProductReadSet,
+    ProductReadSource,
     ResolvedPerformanceWindow,
 )
 from app.market_data.newow.resource_gate import HeavyResourceGate, NewowResourceBusy
@@ -186,9 +187,7 @@ def test_chart_authenticates_full_lifecycle_before_applying_small_limit(product_
     )
 
     result = service.query(
-        ProductServiceQuery(
-            "rb", "main_rise", "1d", as_of=fake.as_of, chart_limit=2
-        )
+        ProductServiceQuery("rb", "main_rise", "1d", as_of=fake.as_of, chart_limit=2)
     )
 
     assert result.chart.value is not None
@@ -233,9 +232,7 @@ def test_non_trend_chart_has_no_trend_channel_layer(product_cases):
     )
 
     result = service.query(
-        ProductServiceQuery(
-            "rb", "oscillation", "1d", as_of=case.bars[-1].bar.bar_end
-        )
+        ProductServiceQuery("rb", "oscillation", "1d", as_of=case.bars[-1].bar.bar_end)
     )
 
     assert result.chart.value is not None
@@ -255,10 +252,15 @@ def test_trend_channel_page_uses_full_lifecycle_prefix(product_cases):
     assert full.chart.value is not None and page.chart.value is not None
     assert full.chart.value.trend_channel is not None
     assert page.chart.value.trend_channel is not None
-    assert page.chart.value.trend_channel.points == full.chart.value.trend_channel.points[-10:]
+    assert (
+        page.chart.value.trend_channel.points
+        == full.chart.value.trend_channel.points[-10:]
+    )
 
 
-def test_chart_projection_does_not_mix_same_timestamp_events_across_physical_segments(product_cases):
+def test_chart_projection_does_not_mix_same_timestamp_events_across_physical_segments(
+    product_cases,
+):
     case = product_cases.primitive_input("trend", "1d")
     second = tuple(
         replace(
@@ -280,13 +282,21 @@ def test_chart_projection_does_not_mix_same_timestamp_events_across_physical_seg
     )
 
     result = service.query(
-        ProductServiceQuery("rb", "trend", "1d", as_of=bars[-1].bar.bar_end, chart_limit=10)
+        ProductServiceQuery(
+            "rb", "trend", "1d", as_of=bars[-1].bar.bar_end, chart_limit=10
+        )
     )
 
     assert result.chart.value is not None
-    assert {frame.bar.bar.segment_id for frame in result.chart.value.replay.frames} == {"rb:RB2705:segment-2"}
-    assert {action.segment_id for action in result.chart.value.replay.actions} <= {"rb:RB2705:segment-2"}
-    assert {hint.segment_id for hint in result.chart.value.replay.hints} <= {"rb:RB2705:segment-2"}
+    assert {frame.bar.bar.segment_id for frame in result.chart.value.replay.frames} == {
+        "rb:RB2705:segment-2"
+    }
+    assert {action.segment_id for action in result.chart.value.replay.actions} <= {
+        "rb:RB2705:segment-2"
+    }
+    assert {hint.segment_id for hint in result.chart.value.replay.hints} <= {
+        "rb:RB2705:segment-2"
+    }
 
 
 def test_identical_service_misses_share_reader_and_calculation(product_cases):
@@ -662,6 +672,149 @@ def test_snapshot_token_allows_reference_with_compatible_common_facts(product_ca
     assert reference.meta.input_content_sha256 != chart.meta.input_content_sha256
 
 
+def test_snapshot_token_allows_different_source_window_counts_with_shared_bars(product_cases):
+    service, reader, build, clear = _service(product_cases)
+    original_load = reader.load
+
+    def load_with_source_counts(query, as_of):
+        loaded = original_load(query, as_of)
+        bars = tuple(item for item in loaded.replay_bars if item.bar.bar_end <= as_of)
+        if len(reader.loads) == 1:
+            bars = bars[-10:]
+        source = ProductReadSource(
+            loaded.frequency,
+            "same-canonical-source",
+            bars[-1].bar.bar_end,
+            as_of,
+            "futures-input-policy-v1",
+            len(bars),
+            len(bars),
+            0,
+        )
+        return replace(
+            loaded,
+            bars_by_frequency={loaded.frequency: bars},
+            sources={loaded.frequency: source},
+        )
+
+    reader.load = load_with_source_counts
+    chart = service.query(ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end))
+    reference = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", section="reference",
+        performance_since=build.trading_day,
+        performance_through=clear.trading_day,
+        as_of=clear.bar_end,
+        snapshot_token=chart.meta.snapshot_token,
+    ))
+
+    assert reference.meta.snapshot_token == chart.meta.snapshot_token
+    assert reference.reference.value is not None
+
+
+def test_snapshot_token_allows_raw_only_extension_before_shared_bars(product_cases):
+    service, reader, build, clear = _service(product_cases)
+    original_load = reader.load
+
+    def load_with_raw_only_extension(query, as_of):
+        loaded = original_load(query, as_of)
+        bars = tuple(item for item in loaded.replay_bars if item.bar.bar_end <= as_of)
+        source = ProductReadSource(
+            loaded.frequency,
+            "same-canonical-source",
+            bars[-1].bar.bar_end,
+            as_of,
+            "futures-input-policy-v1",
+            len(bars) + (0 if len(reader.loads) == 1 else 1),
+            len(bars),
+            0 if len(reader.loads) == 1 else 1,
+        )
+        return replace(loaded, bars_by_frequency={loaded.frequency: bars},
+                       sources={loaded.frequency: source})
+
+    reader.load = load_with_raw_only_extension
+    chart = service.query(ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end))
+    reference = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", section="reference",
+        performance_since=build.trading_day,
+        performance_through=clear.trading_day,
+        as_of=clear.bar_end,
+        snapshot_token=chart.meta.snapshot_token,
+    ))
+
+    assert reference.meta.snapshot_token == chart.meta.snapshot_token
+
+
+@pytest.mark.parametrize("changed_field", ["source_identity", "input_policy_version"])
+def test_snapshot_token_rejects_cross_window_source_version_change(
+    product_cases, changed_field
+):
+    service, reader, build, clear = _service(product_cases)
+    original_load = reader.load
+
+    def load_with_revised_source(query, as_of):
+        loaded = original_load(query, as_of)
+        bars = tuple(item for item in loaded.replay_bars if item.bar.bar_end <= as_of)
+        if len(reader.loads) == 1:
+            bars = bars[-10:]
+        source = ProductReadSource(
+            loaded.frequency,
+            "canonical-source",
+            bars[-1].bar.bar_end,
+            as_of,
+            "futures-input-policy-v1",
+            len(bars),
+            len(bars),
+            0,
+        )
+        if len(reader.loads) > 1:
+            source = replace(source, **{changed_field: "revised-version"})
+        return replace(loaded, bars_by_frequency={loaded.frequency: bars},
+                       sources={loaded.frequency: source})
+
+    reader.load = load_with_revised_source
+    chart = service.query(ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end))
+
+    with pytest.raises(
+        NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"
+    ):
+        service.query(ProductServiceQuery(
+            "rb", "trend", "1d", section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+            snapshot_token=chart.meta.snapshot_token,
+        ))
+
+
+def test_snapshot_token_rejects_changed_source_counts_for_same_window(product_cases):
+    service, reader, _build, clear = _service(product_cases)
+    original_load = reader.load
+
+    def load_with_revised_source(query, as_of):
+        loaded = original_load(query, as_of)
+        bars = tuple(item for item in loaded.replay_bars if item.bar.bar_end <= as_of)
+        source = ProductReadSource(
+            loaded.frequency,
+            "same-canonical-source",
+            bars[-1].bar.bar_end,
+            as_of,
+            "futures-input-policy-v1",
+            len(bars) + (len(reader.loads) - 1),
+            len(bars),
+            0,
+        )
+        return replace(loaded, sources={loaded.frequency: source})
+
+    reader.load = load_with_revised_source
+    request = ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end)
+    chart = service.query(request)
+
+    with pytest.raises(
+        NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"
+    ):
+        service.query(replace(request, snapshot_token=chart.meta.snapshot_token))
+
+
 @pytest.mark.parametrize("shorter_reference", [False, True])
 @pytest.mark.parametrize("changed_boundary", ["source", "predecessor"])
 def test_snapshot_reference_extends_boundary_context_without_conflicting_bars(
@@ -673,8 +826,14 @@ def test_snapshot_reference_extends_boundary_context_without_conflicting_bars(
     original_load = reader.load
     first = reader.bars[0].bar
     boundary = OwnerBoundary(
-        "rb", "RB2509", first.physical_contract, "older-segment", first.segment_id,
-        first.trading_day, first.bar_end - timedelta(hours=1), "rank1-boundary",
+        "rb",
+        "RB2509",
+        first.physical_contract,
+        "older-segment",
+        first.segment_id,
+        first.trading_day,
+        first.bar_end - timedelta(hours=1),
+        "rank1-boundary",
     )
 
     def bounded_load(query, as_of):
@@ -683,21 +842,31 @@ def test_snapshot_reference_extends_boundary_context_without_conflicting_bars(
         return replace(
             read,
             bars_by_frequency={read.frequency: bars},
-            owners=(ResolvedContractSegment(
-                first.physical_contract, first.trading_day, bars[-1].bar.trading_day
-            ),),
+            owners=(
+                ResolvedContractSegment(
+                    first.physical_contract, first.trading_day, bars[-1].bar.trading_day
+                ),
+            ),
             boundaries=() if len(reader.loads) == 1 else (boundary,),
         )
 
     reader.load = bounded_load
     cutoff = clear.bar_end + timedelta(microseconds=1)
     chart = service.query(ProductServiceQuery("rb", "trend", "1d", as_of=cutoff))
-    reference = service.query(ProductServiceQuery(
-        "rb", "trend", "1d", section="reference", as_of=cutoff,
-        performance_since=build.trading_day,
-        performance_through=build.trading_day if shorter_reference else clear.trading_day,
-        snapshot_token=chart.meta.snapshot_token,
-    ))
+    reference = service.query(
+        ProductServiceQuery(
+            "rb",
+            "trend",
+            "1d",
+            section="reference",
+            as_of=cutoff,
+            performance_since=build.trading_day,
+            performance_through=build.trading_day
+            if shorter_reference
+            else clear.trading_day,
+            snapshot_token=chart.meta.snapshot_token,
+        )
+    )
 
     assert reference.meta.snapshot_token == chart.meta.snapshot_token
     assert reference.reference.value.reference_cutoff <= cutoff
@@ -705,14 +874,25 @@ def test_snapshot_reference_extends_boundary_context_without_conflicting_bars(
     changed = (
         replace(boundary, source_identity="changed-rank1-boundary")
         if changed_boundary == "source"
-        else replace(boundary, old_contract="RB2701", old_segment_id="changed-older-segment")
+        else replace(
+            boundary, old_contract="RB2701", old_segment_id="changed-older-segment"
+        )
     )
-    reader.load = lambda query, as_of: replace(bounded_load(query, as_of), boundaries=(changed,))
-    with pytest.raises(NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"):
-        service.query(ProductServiceQuery(
-            "rb", "trend", "1d", as_of=cutoff,
-            snapshot_token=reference.meta.snapshot_token,
-        ))
+    reader.load = lambda query, as_of: replace(
+        bounded_load(query, as_of), boundaries=(changed,)
+    )
+    with pytest.raises(
+        NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"
+    ):
+        service.query(
+            ProductServiceQuery(
+                "rb",
+                "trend",
+                "1d",
+                as_of=cutoff,
+                snapshot_token=reference.meta.snapshot_token,
+            )
+        )
 
 
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
@@ -780,12 +960,14 @@ class _MultiReader:
 
     def __init__(self, bars_by_frequency):
         self.bars_by_frequency = bars_by_frequency
+        self.loads = []
 
     def resolve_chart_window(self, _product, frequency, _limit, _as_of):
         bars = self.bars_by_frequency[frequency]
         return ProductReadWindow(bars[0].bar.trading_day, bars[-1].bar.trading_day)
 
     def load(self, query, as_of):
+        self.loads.append((query, as_of))
         bars = self.bars_by_frequency[query.frequency]
         first = bars[0].bar
         last = bars[-1].bar
@@ -860,3 +1042,9 @@ def test_comparator_is_explicit_and_never_becomes_reference_trade(product_cases)
     assert result.comparator.delivery == "delivered"
     assert result.comparator.value.value is not None
     assert result.reference.delivery == "not_requested"
+    assert len(reader.loads) == 1
+    query, loaded_as_of = reader.loads[0]
+    assert loaded_as_of == as_of
+    assert query.frequency is ProductFrequency.DAILY
+    assert query.since == case.bars[0].bar.trading_day
+    assert query.through == case.bars[-1].bar.trading_day

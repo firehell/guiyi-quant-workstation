@@ -25,16 +25,15 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await page.screenshot({ path: testInfo.outputPath(`subing-reference-fixture-${viewport.width}x${viewport.height}.png`) })
     await page.locator('.subing-reference').screenshot({ path: testInfo.outputPath(`subing-reference-table-fixture-${viewport.width}.png`) })
     await page.getByTestId('kline-shell').scrollIntoViewIfNeeded()
-    await page.locator('.reference-callout').first().focus()
-    await page.keyboard.press('Enter')
-    await expect(page.getByRole('dialog', { name: '历史重算参考信号' })).toContainText('非实际预警 Event')
-    await page.getByRole('button', { name: '查看 AlertEvent #9' }).click()
-    await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('2026-09-03 12:30 北京时间')
+    const firstCallout = page.locator('.reference-callout').first()
+    await expect(firstCallout).toHaveAttribute('role', 'img')
+    await firstCallout.click({ force: true })
+    await expect(page.getByRole('dialog', { name: '历史重算参考信号' })).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
 }
 
-test('dense SuBing reference nodes keep their real micro size and expand on focus', async ({ page }) => {
+test('dense SuBing reference nodes keep their real micro size without becoming interactive cards', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await mockSubingReference(page, { response() {
     const data = subingReferenceFixture()
@@ -65,10 +64,10 @@ test('dense SuBing reference nodes keep their real micro size and expand on focu
   const before = await target.boundingBox()
   expect(before?.width).toBeLessThanOrEqual(8.5)
   expect(before?.height).toBeLessThanOrEqual(8.5)
-  await target.focus()
-  await expect(target).toContainText('同向信号')
-  await expect.poll(async () => (await target.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(168)
-  await expect.poll(async () => (await target.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(52)
+  await target.click({ force: true })
+  await expect(page.getByRole('dialog', { name: '历史重算参考信号' })).toHaveCount(0)
+  expect((await target.boundingBox())?.width ?? 0).toBeLessThanOrEqual(8.5)
+  expect((await target.boundingBox())?.height ?? 0).toBeLessThanOrEqual(8.5)
 })
 
 test('historical unavailable keeps immutable events and Rule facts visible', async ({ page }) => {

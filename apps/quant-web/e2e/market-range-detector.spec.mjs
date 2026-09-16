@@ -51,8 +51,9 @@ async function mockRangeWorkspace(page, { total = 540 } = {}) {
 }
 
 async function enableRangeDetector(page) {
-  await page.getByText('指标设置', { exact: true }).click()
-  await page.getByRole('checkbox', { name: '箱体识别（Range）', exact: true }).check()
+  const control = page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /箱体识别/ })
+  await control.click()
+  await expect(control).toHaveAttribute('aria-pressed', 'true')
 }
 
 test.describe('Range Detector chart overlay', () => {
@@ -60,9 +61,7 @@ test.describe('Range Detector chart overlay', () => {
     await mockRangeWorkspace(page)
     await page.goto('/market/chart?symbol=ag&series_kind=actual_dominant&frequency=15m')
 
-    await expect(page.getByText('指标设置', { exact: true })).toBeVisible()
-    await page.getByText('指标设置', { exact: true }).click()
-    await expect(page.getByRole('checkbox', { name: '箱体识别（Range）', exact: true })).toHaveCount(1)
+    await expect(page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /箱体识别/ })).toHaveAttribute('aria-pressed', 'false')
     await expect(page.locator('.free-workspace')).toHaveAttribute('data-range-detector-warmup', 'disabled')
   })
 
@@ -153,7 +152,7 @@ test.describe('Range Detector chart overlay', () => {
 
     const kline = page.locator('.free-workspace')
     await expect(kline).toHaveAttribute('data-range-detector-warmup', 'ready')
-    await expect(page.getByRole('checkbox', { name: 'EMA21', exact: true })).not.toBeChecked()
+    await expect(page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /EMA21/ })).toHaveAttribute('aria-pressed', 'false')
     await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-range-detector-range-count', /[1-9]/)
   })
 

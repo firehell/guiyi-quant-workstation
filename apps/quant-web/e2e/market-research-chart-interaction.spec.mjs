@@ -14,9 +14,10 @@ test('unified Free keeps research in disclosures and chart usable at desktop and
   }
   await page.getByText('市场背景', { exact: true }).click()
   await expect(page.getByText('日线趋势', { exact: true })).toBeVisible()
-  await expect(page.getByText('20日位置', { exact: true })).toBeVisible()
+  const background = page.locator('#detail-disclosure-market-background')
+  await expect(background.getByText('20日位置', { exact: true })).toBeVisible()
   await page.getByText('市场背景', { exact: true }).click()
-  await expect(page.getByText('20日位置', { exact: true })).not.toBeVisible()
+  await expect(background.getByText('20日位置', { exact: true })).not.toBeVisible()
 })
 
 test('missing OI does not fabricate research facts', async ({ page }) => {
@@ -24,7 +25,7 @@ test('missing OI does not fabricate research facts', async ({ page }) => {
   await page.goto(freeAg)
   await expect(page.getByTestId('kline-shell')).toBeVisible()
   await page.getByText('市场背景', { exact: true }).click()
-  await expect(page.getByText('OI 1D', { exact: true }).locator('..')).toContainText('—')
+  await expect(page.locator('#detail-disclosure-market-background').getByText('OI 1D', { exact: true }).locator('..')).toContainText('—')
 })
 
 test('research endpoint failure leaves the unified Kline readable', async ({ page }) => {

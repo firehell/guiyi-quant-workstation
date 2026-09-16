@@ -12,7 +12,8 @@ if TYPE_CHECKING:
 
 
 REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v2"
-FUTURES_ADAPTATION_VERSION = "newow_futures_segment_interrupt_v1"
+FUTURES_ADAPTATION_VERSION = "newow_futures_segment_interrupt_no_trade_v2"
+FUTURES_INPUT_POLICY_VERSION = "newow_futures_effective_observation_v1"
 
 
 def utc_timestamp(value: datetime) -> datetime:

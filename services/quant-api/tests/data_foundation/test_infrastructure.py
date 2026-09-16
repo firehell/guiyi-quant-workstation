@@ -832,6 +832,42 @@ def test_rqdata_daily_adapter_uses_exchange_daily_zero_trade_ohlc(tmp_path) -> N
     session.close()
 
 
+def test_rqdata_daily_keeps_close_independent_from_settlement(tmp_path) -> None:
+    """有成交日线必须使用交易所 close，不得把 settlement 写进 CanonicalBar.close。"""
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 6, 1, 5, tzinfo=UTC)
+    adapter = RQDataMarketAdapter(
+        session=session,
+        client=ExchangeDailyClient(
+            {
+                "JM2509": pd.DataFrame(
+                    [
+                        {
+                            "date": date(2025, 1, 6),
+                            "open": 100,
+                            "high": 110,
+                            "low": 90,
+                            "close": 105,
+                            "volume": 10,
+                            "total_turnover": 1050,
+                            "open_interest": 20,
+                            "settlement": 999,
+                            "prev_settlement": 980,
+                        }
+                    ]
+                )
+            }
+        ),
+    )
+
+    batch = _fetch(adapter, DatasetKey("contract", "jm", "JM2509", "1d"), (expected,))
+
+    assert [(bar.open, bar.high, bar.low, bar.close) for bar in batch.bars] == [
+        (Decimal("100"), Decimal("110"), Decimal("90"), Decimal("105"))
+    ]
+    session.close()
+
+
 def test_rqdata_daily_and_weekly_normalize_zero_volume_nan_ohl_to_close(
     tmp_path,
 ) -> None:

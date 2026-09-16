@@ -1,6 +1,6 @@
 import type { KlineReferenceCallout } from '../types/referenceCallout.ts'
 
-export const REFERENCE_CALLOUT_BOX = Object.freeze({ width: 168, height: 52 })
+export const REFERENCE_CALLOUT_BOX = Object.freeze({ width: 96, height: 38 })
 export const REFERENCE_CALLOUT_COMPACT = Object.freeze({ width: 28, height: 28 })
 const REFERENCE_CALLOUT_MICRO = Object.freeze({ width: 8, height: 8 })
 
@@ -52,9 +52,7 @@ export function layoutReferenceCallouts(
       : null
     const compact = full === null
     const rectangle = full ?? compactPlacement(point, width, height, placed, forceMicro)
-    // Every visible reference action remains a focusable button. Micro nodes are
-    // the final density fallback; their accessible name and click identity stay
-    // on the existing button, while the selected node can expand on focus.
+    // Micro nodes are the final passive display fallback when labels cannot fit.
     if (rectangle === null) continue
     if (!compact) fullCount += 1
     const line = lineEndpoint(point.x, point.y, rectangle)

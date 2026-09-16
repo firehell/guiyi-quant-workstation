@@ -168,7 +168,8 @@ newow_marker_reference_zero_cost_v1
 ```
 
 `newow_main_rise_ma35_ma45_page_v1` 与全部公式版本保持不变；
-`newow_futures_segment_interrupt_v1` 保持不变，因为本设计不改变换月中断规则。
+本设计当时保留 `newow_futures_segment_interrupt_v1`，因为它不改变换月中断规则；后续严格无交易日输入适配
+已按 active canonical 升级为 `newow_futures_segment_interrupt_no_trade_v2`。
 
 新的 reference model version 参与 ReferenceTrade ID、snapshot/cache identity 和 Web 兼容性判断。旧 typed v1
 响应不得被 v2 客户端静默接纳，旧 snapshot token/cursor 不得跨版本复用。旧固定 `/trend-detail` D1 接口不变。

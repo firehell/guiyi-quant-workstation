@@ -42,9 +42,9 @@ export function normalizeSubingReference(value: unknown, symbol: string): Subing
   }
   return value as SubingReferenceResponse
 }
-export const subingActionLabel = (action: SubingReferenceSignal['action']) => ({ OPEN_LONG: '开多', OPEN_SHORT: '开空', REVERSE_TO_LONG: '平空·开多', REVERSE_TO_SHORT: '平多·开空', SAME_DIRECTION: '同向信号·不加仓' })[action]
+export const subingActionLabel = (action: SubingReferenceSignal['action']) => ({ OPEN_LONG: '建仓', OPEN_SHORT: '建仓', REVERSE_TO_LONG: '平空·开多', REVERSE_TO_SHORT: '平多·开空', SAME_DIRECTION: '同向·不加仓' })[action]
 export function referenceTone(value: string | null): 'gain' | 'loss' | 'neutral' { return value === null || /^-?0(?:\.0+)?$/.test(value) ? 'neutral' : value.startsWith('-') ? 'loss' : 'gain' }
-export function subingCallouts(signals: SubingReferenceSignal[]): KlineReferenceCallout[] { return signals.map((signal) => ({ id: signal.signal_id, time: signal.bar_end, physicalContract: signal.physical_contract, price: signal.reference_price, title: subingActionLabel(signal.action), detail: `${formatMarketDecimal(signal.reference_price)}${signal.closed_return_pct === null ? '' : ` · 平仓 ${referenceDecimalDisplay(signal.closed_return_pct)}%`}`, tone: referenceTone(signal.closed_return_pct), above: signal.direction === 'sell' })) }
+export function subingCallouts(signals: SubingReferenceSignal[]): KlineReferenceCallout[] { return signals.map((signal) => ({ id: signal.signal_id, time: signal.bar_end, physicalContract: signal.physical_contract, price: signal.reference_price, title: subingActionLabel(signal.action), detail: signal.closed_return_pct !== null ? `${formatMarketDecimal(signal.reference_price)} (${referenceDecimalDisplay(signal.closed_return_pct)}%)` : signal.action === 'SAME_DIRECTION' ? formatMarketDecimal(signal.reference_price) : `建仓价: ${formatMarketDecimal(signal.reference_price)}`, tone: referenceTone(signal.closed_return_pct), above: signal.direction === 'sell' })) }
 /** Display rounding of a server Decimal only; never recomputes performance. */
 export function referenceDecimalDisplay(value: string | null, signed = true): string {
   return formatDecimalText(value, { maximumFractionDigits: 2, minimumFractionDigits: 2, signed })

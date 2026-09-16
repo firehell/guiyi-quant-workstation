@@ -1644,7 +1644,7 @@ function chartWire(options: { strategy?: 'trend' | 'oscillation' | 'main_rise'; 
       schema_version: 'newow_product_detail_v2', identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64), data_revision_identity: options.revision ?? null,
       snapshot_token: options.token === undefined ? 'snapshot-a' : options.token,
-      reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+      reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
     },
     section: 'chart',
     chart: { delivery: 'delivered', status: readyStatus(), value: {
@@ -1721,7 +1721,7 @@ function auxiliaryWire(request: Extract<NewowProductRequest, { section: 'auxilia
 function referenceItem(id: string, returnPct: string) {
   return {
     reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
-    formula_versions: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2'], reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_v1',
+    formula_versions: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2'], reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
     entry_signal_id: `entry-${id}`, entry_sequence: 1, entry_bar_end: '2026-08-14T07:00:00Z', entry_trading_day: '2026-08-14', entry_reference_price: '100.100',
     exit_signal_id: `exit-${id}`, exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15', exit_reference_price: '101.35125', status: 'CLOSED', holding_bars: 1,
     reference_return_pct: returnPct, mark_bar_end: null, mark_reference_price: null, mark_change_pct: null, interrupted_at: null, interruption_reason: null, statistics_membership: 'CLOSED_ENTRY_IN_WINDOW', hint_ids: [],
