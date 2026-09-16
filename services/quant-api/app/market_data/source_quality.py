@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+PRICE_UNAVAILABLE_CLASSIFICATION_VERSION = "rqdata-d1-zero-ohl-v1"
+
 
 @dataclass(frozen=True, slots=True)
 class PriceUnavailableFact:
@@ -21,8 +23,11 @@ class PriceUnavailableFact:
     request_sha256: str
     response_sha256: str
     observed_at: datetime
+    classification_version: str = PRICE_UNAVAILABLE_CLASSIFICATION_VERSION
 
     def __post_init__(self) -> None:
+        if self.classification_version != PRICE_UNAVAILABLE_CLASSIFICATION_VERSION:
+            raise ValueError("SOURCE_QUALITY_CLASSIFICATION_INVALID")
         for field in ("bar_end", "observed_at"):
             value = getattr(self, field)
             if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
@@ -60,6 +65,7 @@ class PriceUnavailableFact:
             "request_sha256": self.request_sha256,
             "response_sha256": self.response_sha256,
             "observed_at": self.observed_at.isoformat(),
+            "classification_version": self.classification_version,
         }
 
     @classmethod
@@ -81,6 +87,7 @@ class PriceUnavailableFact:
                 request_sha256=record["request_sha256"],  # type: ignore[arg-type]
                 response_sha256=record["response_sha256"],  # type: ignore[arg-type]
                 observed_at=datetime.fromisoformat(record["observed_at"]),  # type: ignore[arg-type]
+                classification_version=record["classification_version"],  # type: ignore[arg-type]
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError("SOURCE_QUALITY_EVIDENCE_INVALID") from exc

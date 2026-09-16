@@ -22,6 +22,7 @@ from app.market_data.domain import (
     DatasetKind,
 )
 from app.market_data.errors import InfrastructureError
+from app.market_data.source_quality import PriceUnavailableFact
 from app.market_data.session_clock import (
     SHANGHAI,
     SessionClockError,
@@ -521,7 +522,7 @@ class DatabaseCoverageSource:
         except SessionClockError as exc:
             raise InfrastructureError(exc.code) from exc
 
-    def valid_boundaries(self, key: DatasetKey, bars: tuple[CanonicalBar, ...]) -> bool:
+    def valid_boundaries(self, key: DatasetKey, bars: tuple[CanonicalBar | PriceUnavailableFact, ...]) -> bool:
         """Validate partition pairs using fresh, call-local authoritative facts."""
         if not bars:
             return False

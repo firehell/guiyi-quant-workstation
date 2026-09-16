@@ -96,7 +96,11 @@ def test_each_authoritative_owner_segment_restarts_all_strategy_state(
     fresh_second = replay_strategy(case.identity, second)
 
     assert combined.frames[len(first) :] == fresh_second.frames
-    assert tuple(frame.bar for frame in combined.frames[len(first) :]) == second
+    # Replay now adds an independent calculation-segment identity; the source
+    # Bar and owner must still be unchanged by the reset.
+    assert tuple(frame.bar.bar for frame in combined.frames[len(first) :]) == tuple(
+        item.bar for item in second
+    )
 
 
 def test_owned_sc_weekly_shape_keeps_zero_bar_owner_and_sc2303_prefix(product_cases):

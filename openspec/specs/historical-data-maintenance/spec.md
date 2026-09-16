@@ -195,6 +195,13 @@ Event 或通知。月分区仍依次经过 staging 与完整发布校验。任�
 已开始的派生/发布失败 MUST NOT 按缺源错误码自动推迟或重试。额度耗尽 MUST 返回 `partial`，不得报告 `passed`。部分成功 MUST 显式返回 `partial/failed`；不得
 自动 retry，任何真实 RQData/Canonical apply 仍需一次与 exact plan hash 对应的独立授权。
 
+对 physical contract `1d`，若 RQData 完整返回严格匹配已批准零 O/H/L、正 close 和正 volume
+的来源行，维护层 MAY 将其作为版本化 `PRICE_UNAVAILABLE` 质量事实计入端点覆盖，继续同批后续
+窗口；不得生成 CanonicalBar、归为 NO_TRADE 或扩大到 W1/continuous。合法 Bar 与质量事实
+必须逐日互斥并共同精确覆盖 TargetWindow，且每个异常端点仍须通过权威 Calendar/Session/
+合约生命周期校验。其他来源异常、缺日、重复冲突和发布不明 MUST 保持 fail-closed。
+整月仅有该类质量事实时可发布零行情行的分区，但正常严格读取不得将其视为完整价格历史。
+
 #### Scenario: Warm-up dry-run is read-only
 
 - **WHEN** operator 未传 `--apply`

@@ -21,7 +21,7 @@ import uuid
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from app.market_data.domain import BarFrequency, CanonicalBar, ContractError, DatasetKey
+from app.market_data.domain import BarFrequency, CanonicalBar, ContractError, DatasetKey, DatasetKind
 from app.market_data.source_quality import PriceUnavailableFact
 
 
@@ -69,7 +69,7 @@ class PublishedPartition:
     source_quality_sha256: str | None = None
 
 
-PartitionBoundaryValidator = Callable[[DatasetKey, tuple[CanonicalBar, ...]], bool]
+PartitionBoundaryValidator = Callable[[DatasetKey, tuple[CanonicalBar | PriceUnavailableFact, ...]], bool]
 
 
 class CatalogPartitionLike(Protocol):
@@ -329,7 +329,10 @@ class CanonicalMonthlyStore:
         expected_ends = tuple(_utc(item) for item in request.expected_bar_ends)
         # 与维护层计算的期望 bar_end 序列必须逐根相等，禁止缺 bar 或多余 bar
         exceptions = tuple(request.price_unavailable)
-        if exceptions and request.dataset.frequency is not BarFrequency.D1:
+        if exceptions and (
+            request.dataset.frequency is not BarFrequency.D1
+            or request.dataset.kind is not DatasetKind.CONTRACT
+        ):
             raise StorageError("SOURCE_QUALITY_FREQUENCY_INVALID")
         if any(not isinstance(item, PriceUnavailableFact) for item in exceptions):
             raise StorageError("SOURCE_QUALITY_EVIDENCE_INVALID")
@@ -344,7 +347,10 @@ class CanonicalMonthlyStore:
         for item in exceptions:
             if item.trading_day.year != request.year or item.trading_day.month != request.month:
                 raise StorageError("PARTITION_MONTH_MISMATCH")
-        if self.boundary_validator is not None and not self.boundary_validator(request.dataset, request.bars):
+        # The authority must validate both kinds of source endpoint. In particular,
+        # an all-exception month cannot bypass Calendar/Session/lifecycle checks.
+        boundary_facts: tuple[CanonicalBar | PriceUnavailableFact, ...] = (*request.bars, *exceptions)
+        if self.boundary_validator is not None and not self.boundary_validator(request.dataset, boundary_facts):
             raise StorageError("SESSION_BOUNDARY_INVALID")
 
 

@@ -511,17 +511,6 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                     bar.bar_end.isoformat(),
                 )
             )
-            owner = next(
-                (
-                    candidate
-                    for candidate in read.owners
-                    if candidate.contract == bar.physical_contract
-                    and candidate.start_trading_day
-                    <= bar.trading_day
-                    <= candidate.end_trading_day
-                ),
-                None,
-            )
             # A section may start at this owner or end partway through it.
             # Its clipped end and optional predecessor are not per-Bar facts.
             # Shared boundary facts are compared independently below.
@@ -537,10 +526,37 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                     bar.source_identity,
                     str(bar.observation_eligible),
                     item.source_bar_sha256 or "",
-                    "" if owner is None else owner.start_trading_day.isoformat(),
                 )
             )
             proof[key] = sha256(value.encode()).hexdigest()
+            if frequency is ProductFrequency.DAILY:
+                day_key = "|".join((
+                    "price-state", frequency.value, bar.physical_contract,
+                    bar.trading_day.isoformat(),
+                ))
+                proof[day_key] = sha256(
+                    "|".join(("bar", bar.segment_id, value)).encode()
+                ).hexdigest()
+    for frequency, interruptions in read.data_interruptions_by_frequency.items():
+        for gap in interruptions:
+            key = "|".join((
+                "price-unavailable", frequency.value, gap.physical_contract,
+                gap.trading_day.isoformat(),
+            ))
+            value = "|".join((
+                gap.segment_id, gap.effective_at.isoformat(), gap.source_identity,
+            ))
+            proof[key] = sha256(value.encode()).hexdigest()
+            day_key = "|".join((
+                "price-state", frequency.value, gap.physical_contract,
+                gap.trading_day.isoformat(),
+            ))
+            if day_key in proof:
+                raise NewowProductServiceError("NEWOW_DATA_IDENTITY_INVALID")
+            proof[day_key] = sha256(
+                "|".join(("gap", gap.segment_id, gap.effective_at.isoformat(),
+                          gap.source_identity)).encode()
+            ).hexdigest()
     for boundary in read.boundaries:
         key = "|".join(
             (
@@ -578,6 +594,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                 str(source.raw_bar_count),
                 str(source.effective_bar_count),
                 str(source.no_trade_bar_count),
+                str(source.price_unavailable_count),
             )
         )
         proof[key] = sha256(value.encode()).hexdigest()
@@ -590,7 +607,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                 REFERENCE_MODEL_VERSION,
                 SOURCE_FACT_ADAPTER_VERSION,
                 "main_contract_map:rank1:calendar_session_v1",
-                "newow_product_dependency_proof_v4",
+                "newow_product_dependency_proof_v6",
             )
         ).encode()
     ).hexdigest()

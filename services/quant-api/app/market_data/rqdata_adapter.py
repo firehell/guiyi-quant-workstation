@@ -271,7 +271,8 @@ class RQDataMarketAdapter:
         }
         proofs = source_proof if source_proof is not None else {}
         rows = self._exchange_daily_rows(
-            key, tuple(expected_by_day), cache=cache, source_proof=proofs
+            key, tuple(expected_by_day), cache=cache, source_proof=proofs,
+            allow_price_unavailable=key.kind is DatasetKind.CONTRACT,
         )
         bars: list[CanonicalBar] = []
         exceptions: list[PriceUnavailableFact] = []
@@ -313,6 +314,8 @@ class RQDataMarketAdapter:
         rows = self._exchange_daily_rows(
             key, source_days, cache=cache, source_proof=source_proof
         )
+        if any(classify_exchange_daily_price_unavailable(row) for row in rows.values()):
+            raise InfrastructureError("RQDATA_ZERO_OHL_INVALID")
         required_by_week: dict[tuple[int, int], set[date]] = {}
         for trading_day in source_days:
             iso = _iso_week(trading_day)
@@ -353,6 +356,7 @@ class RQDataMarketAdapter:
         *,
         cache: dict[tuple[str, date], dict[str, Any]] | None = None,
         source_proof: dict[tuple[str, date], tuple[str, str, datetime]] | None = None,
+        allow_price_unavailable: bool = False,
     ) -> dict[date, dict[str, Any]]:
         """按真实合约分组读取交易所日线；每个交易日只接受一行。"""
         active_cache = cache if cache is not None else {}
@@ -408,7 +412,8 @@ class RQDataMarketAdapter:
                         raise InfrastructureError("RQDATA_EXCHANGE_DAILY_DUPLICATE")
                     seen.add(trading_day)
                     active_cache[(contract, trading_day)] = (
-                        _normalize_exchange_daily_zero_volume_row(row)
+                        row if allow_price_unavailable and classify_exchange_daily_price_unavailable(row)
+                        else _normalize_exchange_daily_zero_volume_row(row)
                     )
                     if source_proof is not None:
                         source_proof[(contract, trading_day)] = (
@@ -418,6 +423,8 @@ class RQDataMarketAdapter:
                 cached_row = active_cache.get((contract, trading_day))
                 if cached_row is None:
                     continue
+                if not allow_price_unavailable and classify_exchange_daily_price_unavailable(cached_row):
+                    raise InfrastructureError("RQDATA_ZERO_OHL_INVALID")
                 if trading_day in result:
                     raise InfrastructureError("RQDATA_EXCHANGE_DAILY_DUPLICATE")
                 result[trading_day] = cached_row
@@ -976,8 +983,6 @@ def _normalize_exchange_daily_zero_volume_row(
     row: dict[str, Any],
 ) -> dict[str, Any]:
     """将 RQData 零量日的全空 O/H/L 规范为同一行 close，不借用 settlement。"""
-    if classify_exchange_daily_price_unavailable(row):
-        return row
     open_value = _optional_decimal(_row_value(row, "open", required=False))
     high_value = _optional_decimal(_row_value(row, "high", required=False))
     low_value = _optional_decimal(_row_value(row, "low", required=False))

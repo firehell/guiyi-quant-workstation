@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, timedelta
+from datetime import timedelta
 from threading import Event, Thread
 from time import sleep
 
@@ -29,6 +29,7 @@ from app.market_data.newow.product_service import (
     NewowProductServiceError,
     ProductSection,
     ProductServiceQuery,
+    _dependency_proof,
 )
 
 
@@ -706,6 +707,80 @@ def test_snapshot_token_rejects_a_revised_common_bar(product_cases):
         NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"
     ):
         service.query(replace(request, snapshot_token=first.meta.snapshot_token))
+
+
+def test_dependency_proof_shared_bar_ignores_clipped_owner_start(product_cases):
+    service, reader, _build, clear = _service(product_cases)
+    query = NewowProductQuery(
+        "rb", "trend", ProductFrequency.DAILY,
+        reader.bars[0].bar.trading_day, clear.trading_day,
+        reader.bars[0].bar.trading_day, clear.trading_day, clear.bar_end,
+    )
+    read = reader.load(query, clear.bar_end)
+    bar = read.bars_by_frequency[ProductFrequency.DAILY][0].bar
+    owner_a = ResolvedContractSegment(
+        bar.physical_contract, bar.trading_day, clear.trading_day,
+    )
+    owner_b = replace(owner_a, start_trading_day=bar.trading_day + timedelta(days=1))
+    shared_key = "|".join((
+        "bar", "1d", bar.physical_contract, bar.segment_id, bar.bar_end.isoformat(),
+    ))
+    assert _dependency_proof(replace(read, owners=(owner_a,)))[shared_key] == (
+        _dependency_proof(replace(read, owners=(owner_b,)))[shared_key]
+    )
+
+
+def test_dependency_proof_binds_price_interruption_identity(product_cases):
+    _service_instance, reader, _build, clear = _service(product_cases)
+    query = NewowProductQuery(
+        "rb", "trend", ProductFrequency.DAILY,
+        reader.bars[0].bar.trading_day, clear.trading_day,
+        reader.bars[0].bar.trading_day, clear.trading_day, clear.bar_end,
+    )
+    read = reader.load(query, clear.bar_end)
+    bar = read.bars_by_frequency[ProductFrequency.DAILY][0].bar
+    gap = DataInterruption(
+        "rb", ProductFrequency.DAILY, bar.physical_contract,
+        bar.segment_id, bar.trading_day, bar.bar_end, "source-a",
+    )
+    without_bar = replace(
+        read,
+        bars_by_frequency={ProductFrequency.DAILY:
+                           tuple(item for item in read.bars_by_frequency[ProductFrequency.DAILY]
+                                 if item.bar.bar_end != gap.effective_at)},
+    )
+    first = replace(without_bar, data_interruptions_by_frequency={ProductFrequency.DAILY: (gap,)})
+    second = replace(without_bar, data_interruptions_by_frequency={
+        ProductFrequency.DAILY: (replace(gap, source_identity="source-b"),)
+    })
+    assert _dependency_proof(first) != _dependency_proof(second)
+
+
+def test_dependency_proof_shared_day_bar_to_gap_conflicts(product_cases):
+    _service_instance, reader, _build, clear = _service(product_cases)
+    query = NewowProductQuery(
+        "rb", "trend", ProductFrequency.DAILY,
+        reader.bars[0].bar.trading_day, clear.trading_day,
+        reader.bars[0].bar.trading_day, clear.trading_day, clear.bar_end,
+    )
+    read = reader.load(query, clear.bar_end)
+    bars = read.bars_by_frequency[ProductFrequency.DAILY]
+    changed = bars[1]
+    gap = DataInterruption(
+        "rb", ProductFrequency.DAILY, changed.bar.physical_contract,
+        changed.bar.segment_id, changed.bar.trading_day,
+        changed.bar.bar_end, "source-gap",
+    )
+    gap_read = replace(
+        read,
+        bars_by_frequency={ProductFrequency.DAILY: (bars[0], *bars[2:])},
+        data_interruptions_by_frequency={ProductFrequency.DAILY: (gap,)},
+    )
+    key = "|".join((
+        "price-state", "1d", changed.bar.physical_contract,
+        changed.bar.trading_day.isoformat(),
+    ))
+    assert _dependency_proof(read)[key] != _dependency_proof(gap_read)[key]
 
 
 def test_snapshot_token_allows_reference_with_compatible_common_facts(product_cases):
