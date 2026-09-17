@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 
 from guiyi_quant.newow.product_contracts import (
+    DataInterruption,
     FeatureRuntimeStatus,
     StrategyHint,
     TradeEligibility,
@@ -305,6 +306,38 @@ def test_verified_initial_clear_is_a_diagnostic_without_a_reference_trade(
 
     assert result.trades == ()
     assert result.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+
+
+def test_initial_clear_evidence_survives_later_price_interruption(product_cases):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.main_rise_lifecycle_input(
+        (*([Decimal("100")] * 35), Decimal("90"), Decimal("90"))
+    )
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    preceding = case.bars[-2].bar
+    following = case.bars[-1].bar
+    gap_at = preceding.bar_end + (following.bar_end - preceding.bar_end) / 2
+    gap = DataInterruption(
+        product=case.identity.product,
+        frequency=case.identity.frequency,
+        physical_contract=following.physical_contract,
+        segment_id=following.segment_id,
+        trading_day=gap_at.date(),
+        effective_at=gap_at,
+        source_identity="market_data_service:price_unavailable:v1",
+    )
+    replay = replay_strategy(
+        case.identity, case.bars,
+        lifecycle_evidence=(evidence,), data_interruptions=(gap,),
+    )
+
+    result = ReferenceTradeProjector().project(
+        replay, (), following.bar_end, data_interruptions=(gap,)
+    )
+
+    assert "INITIAL_CLEAR_NO_ENTRY" in result.diagnostics
+    assert result.trades == ()
 
 
 def test_initial_clear_projector_independently_rejects_missing_or_stale_evidence(

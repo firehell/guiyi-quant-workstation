@@ -273,6 +273,25 @@ def test_source_and_integrity_failures_are_not_blind_download_targets(reason, ex
     assert report["repair_targets"] == []
 
 
+def test_verified_price_unavailable_is_a_known_interruption_not_unknown():
+    module = _audit_module()
+
+    class Reader(AuditReader):
+        def check_dependency(self, *args):
+            raise MarketDataError("PRICE_UNAVAILABLE")
+
+    def forbidden(_request):
+        raise AssertionError("proven source interruption must not become a download")
+
+    report = module.NewowReadinessAudit(reader=Reader(), plan=forbidden).run(
+        module.ReadinessRequest(("rb",), datetime(2026, 9, 4, 8, tzinfo=UTC))
+    )
+
+    assert all(row["status"] == "DATA_INTERRUPTED" for row in report["dependencies"])
+    assert all(row["reason"] == "PRICE_UNAVAILABLE" for row in report["dependencies"])
+    assert report["repair_targets"] == []
+
+
 def test_matrix_preserves_section_evidence_states_and_fixed_asof():
     module = _audit_module()
     from guiyi_quant.newow.product_contracts import FeatureStatus
