@@ -14,6 +14,7 @@
 `MarketHomeOverviewService` SHALL 从 `load_active_products()`、`load_product_taxonomy()`、
 `DatabaseCoverageSource.latest_complete_day()` 和 `MarketDataService` 组合 completed D1/W1 response。
 现场 compute 时指标 Bar 查询 MUST 为每个 active product 至多一次目标日 rank1 physical contract D1 和一次 W1；
+D1 历史缺失时 MAY 额外一次只查询目标日端点以独立证明报价，该报价不得用于替代完整指标窗口；
 同一物理合约成为主力前的合法历史 MAY 用于 warm-up，但不得跨合约计算价差、量比、OI 变化或 ATR。
 目标日、主力合约和统计合约身份 MUST 显式可复核；日线与周线都按统一 target day 截止。
 dominant summary MUST 只读取一次。该 service MUST NOT 建立 provider、Redis Live 或写服务。
@@ -55,18 +56,45 @@ D1 predecessor 使 target-day 变动率不可计算的情况。
 - **WHEN** product 有 target-day D1 但 W1 EMA warm-up 不足或 W1 无数据
 - **THEN** product item 仍存在，`weekly_trend=unavailable`，并且所有缺失 metrics 保持 null
 
-#### Scenario: Verified source price is unavailable in the physical history
-
-- **WHEN** D1 同合约历史含权威 `PRICE_UNAVAILABLE` 质量事实，严格行情入口拒绝该历史页
-- **THEN** overview 保留其他品种，当前品种计入 `unavailable_count` 且不生成该品种指标行，也不再读取该品种 W1；不得跨缺价日拼接历史或补造价格
-- **WHEN** 仅 W1 同合约历史返回 `PRICE_UNAVAILABLE` 而目标日 D1 可用
-- **THEN** 保留 D1 品种行，`weekly_trend=unavailable`；其他结构性分区或身份错误仍使 overview fail closed
-
 #### Scenario: Weekly mapped dataset is absent
 
 - **WHEN** product 有 target-day D1，但该合约没有已提交 W1 历史
 - **THEN** response MUST 保留该 product item并返回 `weekly_trend=unavailable`；D1 的同类
-  integrity failure 和 W1 的物理分区缺失仍 MUST fail closed
+  非缺失完整性错误仍 MUST fail closed；W1 已确认历史缺失须仅禁用周趋势并显式披露
+
+### Requirement: Historical D1 price interruptions do not hide a recovered quote
+
+Market Home SHALL use the explicit MDS D1 quality window for the target-day physical owner.
+The requested window MUST be covered exactly by valid Bars and authoritative source exceptions;
+missing endpoints MUST fail the affected history read; corrupt partitions or missing identity/Calendar/Session MUST still fail the snapshot closed.
+The last `PRICE_UNAVAILABLE` endpoint is a calculation boundary. D1 metrics SHALL use only the
+continuous suffix after that endpoint and retain their existing warm-up/null rules. No price is
+synthesized and no older valid Bars are fetched to replace exceptional endpoints. W1 remains an
+independent strict read with no D1 substitution. Missing W1 history disables only weekly metrics and emits `weekly_history_unavailable`; source-price failures emit `weekly_price_unavailable`. Newow formulas and reference trades are unchanged.
+
+An item with a valid target-day D1 Bar SHALL remain a participant even when its historical window
+contains source exceptions. Its `reason_codes` SHALL include `daily_price_interrupted`, and
+`daily_rewarming` when the post-interruption daily trend is not ready. Desktop and mobile SHALL
+show the interruption disclosure.
+If D1 history has unknown missing endpoints, a separately verified target-day quote MAY remain
+visible, but ALL D1 metrics MUST be null/unavailable and `daily_history_unavailable` MUST be shown,
+never normal rewarming. This does not repair the historical data or prove strategy readiness.
+Only an error with both code and reason `DATASET_OR_PARTITION_MISSING` is eligible; extra, duplicate,
+wrong-day endpoints and missing Calendar/Session remain integrity failures. The headline SHALL identify participants as target-day D1 quote
+availability, not Newow strategy readiness or complete historical indicator coverage.
+The metric policy identity SHALL be `physical_owner_quality_v3`, invalidating older projections
+without rewriting production data or projection files from HTTP reads.
+
+#### Scenario: A historical gap is followed by a valid target-day quote
+
+- **WHEN** a verified source exception is followed by only one valid D1 Bar at target day
+- **THEN** the product and its close remain visible; daily change and daily trend are unavailable
+- **AND** subsequent sufficient continuous Bars restore each metric under its existing warm-up rules
+
+#### Scenario: The target day itself has no usable source price
+
+- **WHEN** the target-day endpoint is `PRICE_UNAVAILABLE`
+- **THEN** the product is counted unavailable; an older close MUST NOT be labeled as the target-day quote
 
 ### Requirement: Market Home derived projection is removable and never authoritative
 
@@ -143,8 +171,8 @@ contract、mapping date 与 exchange。Item SHALL 只包含 completed D1 close�
 position、target、order 或任何退役策略事实。
 
 构造时 universe MUST 非空、normalized、唯一，taxonomy keys MUST 精确匹配。缺失或重复
-dominant identity、coverage failure、mapping/physical integrity failure MUST fail closed as a typed
-HTTP 409；API 不得泄露内部异常。
+dominant identity、mapping/physical integrity failure MUST fail closed as a typed
+HTTP 409；API 不得泄露内部异常。已分类的指标窗口历史缺失仅隔离相应指标，报价须独立证明，不能宣称完整历史。
 
 #### Scenario: Authority configuration cannot be loaded
 

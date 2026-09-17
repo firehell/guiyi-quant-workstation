@@ -1,0 +1,24 @@
+[
+  {
+    "symbol": "pt",
+    "contract": "PT2612",
+    "frequency": "1d",
+    "through": "2026-09-17",
+    "listed_date": "2025-12-15",
+    "expected": 186,
+    "actual": 186,
+    "missing_count": 0,
+    "missing": []
+  },
+  {
+    "symbol": "ss",
+    "contract": "SS2611",
+    "frequency": "1d",
+    "through": "2026-09-17",
+    "listed_date": "2025-11-18",
+    "expected": 205,
+    "actual": 205,
+    "missing_count": 0,
+    "missing": []
+  }
+]

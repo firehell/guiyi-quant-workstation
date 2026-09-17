@@ -2,7 +2,7 @@
 import MarketStateIcon from './MarketStateIcon.vue'
 import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
 import type { MarketHomeSort, MarketHomeSortDirection } from '@/utils/marketHomeWorkspace'
-import { marketHomeDirection, marketHomePercent, marketHomePrice, marketHomeRatio } from '@/utils/marketHomePresentation'
+import { marketHomeDirection, marketHomePercent, marketHomePrice, marketHomeRatio, marketHomeQualityNotice } from '@/utils/marketHomePresentation'
 import { productSectorLabel } from '@/utils/productDirectory'
 import type { MarketHomeLiveDisplayRow } from '@/utils/marketHomeLiveView'
 
@@ -38,7 +38,7 @@ function quoteLabel(row: DisplayRow) {
         <th scope="col"><span class="market-home-sr-only">详情</span></th>
       </tr></thead>
       <tbody><tr v-for="row in rows" :key="row.symbol" :data-symbol="row.symbol" tabindex="0" :aria-label="`${row.symbol.toUpperCase()} ${row.product_name}，按 Enter 进入品种复核`" @click="$emit('open', row)" @keyup.enter="$emit('open', row)">
-        <th scope="row"><strong>{{ row.product_name }}</strong> <span class="product-code">{{ row.symbol.toUpperCase() }}</span></th>
+        <th scope="row"><strong>{{ row.product_name }}</strong> <span class="product-code">{{ row.symbol.toUpperCase() }}</span><small v-if="marketHomeQualityNotice(row.reason_codes)" class="quality-note">{{ marketHomeQualityNotice(row.reason_codes) }}</small></th>
         <td class="sector-label">{{ productSectorLabel(row.sector) }}</td>
         <td class="close-price" :class="marketHomeDirection(row.price_change_1d)"><strong>{{ marketHomePrice(row.close) }}</strong><small>{{ quoteLabel(row) }}</small></td>
         <td><span class="change-badge" :class="marketHomeDirection(row.price_change_1d)" :title="row.liveQuote ? '同物理合约较上一完整交易日收盘' : '完整日线 1d 涨跌幅'">{{ marketHomePercent(row.price_change_1d) }}</span></td>
@@ -52,3 +52,7 @@ function quoteLabel(row: DisplayRow) {
     </table>
   </div>
 </template>
+
+<style scoped>
+.quality-note { display: block; max-width: 16rem; white-space: normal; font-size: 12px; font-weight: 400; color: var(--gy-text-secondary); }
+</style>
