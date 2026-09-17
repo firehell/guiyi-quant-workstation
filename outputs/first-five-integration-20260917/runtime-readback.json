@@ -1,0 +1,221 @@
+{
+  "readonly": true,
+  "captured_at": "2026-09-17T04:43:51.454249+00:00",
+  "requests": {
+    "api": {
+      "status": 200,
+      "body": {
+        "status": "ok",
+        "service": "guiyi-quant-api",
+        "version": "1.10.10",
+        "readonly": true
+      }
+    },
+    "runtime": {
+      "status": 200,
+      "body": {
+        "status": "degraded",
+        "generated_at": "2026-09-17T04:43:51.471922+00:00",
+        "readonly": true,
+        "would_start_services": false,
+        "would_enqueue_jobs": false,
+        "would_send_notifications": false,
+        "components": {
+          "db": {
+            "status": "ok",
+            "latency_ms": 4.11,
+            "error_type": null,
+            "error_message": null
+          },
+          "redis": {
+            "status": "ok",
+            "latency_ms": 19.07,
+            "error_type": null,
+            "error_message": null
+          },
+          "live_market": {
+            "status": "ok",
+            "configured_enabled": true,
+            "operational_count": 60,
+            "subscribed_count": 0,
+            "last_heartbeat_at": "2026-09-17T04:43:49.819203+00:00",
+            "last_bar_at": "2026-09-17T03:30:00+00:00",
+            "phase_counts": {
+              "BREAK": 60
+            },
+            "error_type": null,
+            "error_message": null
+          },
+          "after_market": {
+            "status": "ok",
+            "configured_enabled": true,
+            "run_state": "completed",
+            "expected_trading_day": "2026-09-16",
+            "current_run": null,
+            "last_run": {
+              "trading_day": "2026-09-16",
+              "status": "passed",
+              "attempts": 1,
+              "started_at": "2026-09-16T18:05:06.153662+08:00",
+              "finished_at": "2026-09-16T18:07:36.645537+08:00",
+              "products": [
+                "a",
+                "ag",
+                "al",
+                "ao",
+                "ap",
+                "au",
+                "b",
+                "bu",
+                "bz",
+                "c",
+                "cf",
+                "cj",
+                "cu",
+                "eb",
+                "ec",
+                "eg",
+                "fg",
+                "fu",
+                "hc",
+                "i",
+                "j",
+                "jd",
+                "jm",
+                "l",
+                "lc",
+                "lh",
+                "m",
+                "ma",
+                "ni",
+                "oi",
+                "p",
+                "pb",
+                "pd",
+                "pf",
+                "pg",
+                "pk",
+                "pl",
+                "pp",
+                "pr",
+                "ps",
+                "pt",
+                "px",
+                "rb",
+                "rm",
+                "rs",
+                "ru",
+                "sa",
+                "sc",
+                "sf",
+                "sh",
+                "si",
+                "sm",
+                "sn",
+                "sr",
+                "ss",
+                "ta",
+                "ur",
+                "v",
+                "y",
+                "zn"
+              ],
+              "error_code": null,
+              "failure_notification": null
+            },
+            "last_successful_trading_day": "2026-09-16",
+            "last_failure": null,
+            "error_type": null,
+            "error_message": null
+          },
+          "weekly_audit": {
+            "status": "not_run",
+            "readonly": true,
+            "scope": "operational_full_history",
+            "through": null,
+            "finding_count": null,
+            "started_at": null,
+            "updated_at": null,
+            "finished_at": null,
+            "completed": null,
+            "total": null,
+            "current_symbol": null
+          },
+          "alert": {
+            "status": "degraded",
+            "configured_enabled": true,
+            "notification": {
+              "transport": "pushplus",
+              "configured": true,
+              "audience_count": 2,
+              "would_send": false
+            },
+            "last_heartbeat_at": "2026-09-17T04:43:48.055900+00:00",
+            "enabled_rule_count": 2,
+            "scope_product_count": 60,
+            "processing_state": "ok",
+            "notification_state": "failed",
+            "last_processed_bar_at": "2026-09-17T03:30:00+00:00",
+            "last_processing_success_at": "2026-09-17T03:30:18.093319+00:00",
+            "last_processing_failure_at": "2026-09-04T18:30:02.865088+00:00",
+            "processing_error_type": null,
+            "last_event_at": "2026-09-17T03:30:13.275671+00:00",
+            "last_transport_attempt_at": "2026-09-17T03:30:13.275671+00:00",
+            "last_provider_accepted_at": "2026-09-17T03:30:11.103333+00:00",
+            "last_notification_failure_at": "2026-09-17T03:30:13.275671+00:00",
+            "notification_acknowledged_at": null,
+            "notification_error_type": "notification_transport_failed",
+            "consecutive_notification_failures": 2,
+            "rule_status": {
+              "htdy_original_15m": {
+                "last_evaluated_bar_at": "2026-09-17T03:30:00+00:00",
+                "last_event_at": "2026-09-17T03:30:13.275671+00:00",
+                "last_failure_at": "2026-09-14T07:00:03.500819+00:00",
+                "error_type": null
+              },
+              "subing_ths_alert_15m_v1": {
+                "last_evaluated_bar_at": "2026-09-17T03:30:00+00:00",
+                "last_event_at": "2026-09-17T03:30:08.435241+00:00",
+                "last_failure_at": "2026-09-17T03:30:16.035531+00:00",
+                "error_type": null
+              }
+            },
+            "error_type": null
+          }
+        }
+      }
+    }
+  },
+  "launch_roots": {
+    "api": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1",
+      "commit": "b49e2499de654092b48e60e181102c02e16ce89f",
+      "working_directory": "/Users/zhangzhao"
+    },
+    "web": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1",
+      "commit": "b49e2499de654092b48e60e181102c02e16ce89f",
+      "working_directory": "/Users/zhangzhao"
+    },
+    "live": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1",
+      "commit": "b49e2499de654092b48e60e181102c02e16ce89f",
+      "working_directory": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1"
+    },
+    "alert": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1",
+      "commit": "b49e2499de654092b48e60e181102c02e16ce89f",
+      "working_directory": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1"
+    },
+    "after-market": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1",
+      "commit": "b49e2499de654092b48e60e181102c02e16ce89f",
+      "working_directory": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1"
+    },
+    "weekly-audit": {
+      "root": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1",
+      "commit": "b49e2499de654092b48e60e181102c02e16ce89f",
+      "working_directory": "/Volumes/扩展盘/guiyi-quant-runtime-v1.10.10-r1"
+    }
+  }
+}
