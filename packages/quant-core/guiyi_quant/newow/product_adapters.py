@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from decimal import Decimal
 
 from .escape_d123 import EscapeState, initial_escape_state, step_escape_d123
@@ -23,6 +24,7 @@ from .oscillation_channel import (
 )
 from .product_contracts import (
     ActionKind,
+    DataInterruption,
     EvidenceStatus,
     FeatureRuntimeStatus,
     FeatureStatus,
@@ -39,6 +41,7 @@ from .product_contracts import (
     TradeEligibility,
     validate_lifecycle_replay_evidence,
 )
+from .product_identity import build_calculation_segment_id
 from .profile import NEWOW_TREND_D1_PAGE_V2
 from .trend_band import (
     TrendBandStateValue,
@@ -174,6 +177,7 @@ def _new_action(
         source_marker_id=source_marker_id,
         source_related_marker_ids=source_related_marker_ids,
         trade_eligibility=trade_eligibility,
+        calculation_segment_id=product_bar.calculation_segment_id,
     )
 
 
@@ -216,6 +220,7 @@ def _pair_action(
         entry.identity != action.identity
         or entry.physical_contract != action.physical_contract
         or entry.segment_id != action.segment_id
+        or entry.calculation_segment_id != action.calculation_segment_id
     ):
         raise ValueError("NEWOW_PRODUCT_PAIRING_CONFLICT")
     if referenced is not None and referenced not in (
@@ -296,6 +301,7 @@ def _hint(
         anchor_price=price,
         source_marker_id=source_marker_id,
         source_related_marker_ids=source_related_marker_ids,
+        calculation_segment_id=product_bar.calculation_segment_id,
     )
 
 
@@ -686,17 +692,62 @@ def _main_rise_frame(
     return frame, result.state, tuple(diagnostics)
 
 
+def label_calculation_segments(
+    identity: ProductIdentity,
+    bars: tuple[ProductBar, ...],
+    data_interruptions: tuple[DataInterruption, ...] = (),
+) -> tuple[ProductBar, ...]:
+    """Attach stable calculation identities without changing physical-owner facts."""
+    inputs = tuple(bars)
+    _validate_inputs(identity, inputs)
+    gaps = tuple(data_interruptions)
+    if gaps and identity.frequency is not ProductFrequency.DAILY:
+        raise ValueError("NEWOW_PRODUCT_INVALID_DATA_INTERRUPTION")
+    if any(
+        not isinstance(gap, DataInterruption)
+        or gap.product != identity.product
+        or gap.frequency is not identity.frequency
+        for gap in gaps
+    ):
+        raise ValueError("NEWOW_PRODUCT_INVALID_DATA_INTERRUPTION")
+    if tuple(sorted(gaps, key=lambda gap: gap.effective_at)) != gaps or len({
+        (gap.physical_contract, gap.segment_id, gap.effective_at) for gap in gaps
+    }) != len(gaps):
+        raise ValueError("NEWOW_PRODUCT_INVALID_DATA_INTERRUPTION")
+    gap_cursor = 0
+    last_gap_by_owner: dict[tuple[str, str], datetime] = {}
+    labeled: list[ProductBar] = []
+    for product_bar in inputs:
+        while gap_cursor < len(gaps) and gaps[gap_cursor].effective_at <= product_bar.bar.bar_end:
+            gap = gaps[gap_cursor]
+            last_gap_by_owner[(gap.physical_contract, gap.segment_id)] = gap.effective_at
+            gap_cursor += 1
+        owner = (product_bar.bar.physical_contract, product_bar.bar.segment_id)
+        gap_at = last_gap_by_owner.get(owner)
+        labeled.append(replace(
+            product_bar,
+            calculation_segment_id=(
+                build_calculation_segment_id(owner[1], gap_at)
+                if gap_at is not None else owner[1]
+            ),
+        ))
+    return tuple(labeled)
+
+
 def replay_strategy(
     identity: ProductIdentity,
     bars: tuple[ProductBar, ...],
     *,
     lifecycle_evidence: tuple[LifecycleReplayEvidence, ...] = (),
+    data_interruptions: tuple[DataInterruption, ...] = (),
 ) -> StrategyReplay:
     """Replay one strategy, resetting all state at each authoritative segment."""
     inputs = tuple(bars)
     _validate_inputs(identity, inputs)
     evidence = tuple(lifecycle_evidence)
     verified_owners = validate_lifecycle_replay_evidence(identity, inputs, evidence)
+    gaps = tuple(data_interruptions)
+    labeled_inputs = label_calculation_segments(identity, inputs, gaps)
     frames: list[StrategyFrame] = []
     diagnostics: list[str] = []
     current_segment: str | None = None
@@ -705,10 +756,10 @@ def replay_strategy(
     escape_state = initial_escape_state()
     oscillation_state = OscillationState()
     main_rise_state = initial_main_rise_state()
-
-    for product_bar in inputs:
-        if product_bar.bar.segment_id != current_segment:
-            current_segment = product_bar.bar.segment_id
+    for product_bar in labeled_inputs:
+        owner = (product_bar.bar.physical_contract, product_bar.bar.segment_id)
+        if product_bar.calculation_segment_id != current_segment:
+            current_segment = product_bar.calculation_segment_id
             pairing = _PairingState()
             trend_state = initial_trend_band_state()
             escape_state = initial_escape_state()
@@ -732,7 +783,12 @@ def replay_strategy(
                     product_bar.bar.physical_contract,
                     product_bar.bar.segment_id,
                 )
-                in verified_owners,
+                in verified_owners and not any(
+                    gap.physical_contract == owner[0]
+                    and gap.segment_id == owner[1]
+                    and gap.effective_at < product_bar.bar.bar_end
+                    for gap in gaps
+                ),
             )
         frames.append(frame)
         diagnostics.extend(found)
@@ -745,5 +801,5 @@ def replay_strategy(
         tuple(hint for frame in frame_tuple for hint in frame.hints),
         tuple(dict.fromkeys(diagnostics)),
         evidence,
-        inputs,
+        labeled_inputs,
     )

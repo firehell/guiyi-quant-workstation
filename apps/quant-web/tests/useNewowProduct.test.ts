@@ -1638,21 +1638,21 @@ function chartWire(options: { strategy?: 'trend' | 'oscillation' | 'main_rise'; 
     : strategy === 'oscillation'
       ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
-  const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close: options.close ?? '101.500', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
+  const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close: options.close ?? '101.500', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
   return {
     meta: {
-      schema_version: 'newow_product_detail_v2', identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
+      schema_version: 'newow_product_detail_v3', identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64), data_revision_identity: options.revision ?? null,
       snapshot_token: options.token === undefined ? 'snapshot-a' : options.token,
-      reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
+      reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart',
     chart: { delivery: 'delivered', status: readyStatus(), value: {
-      chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64),
+      chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), price_unavailable_days: [],
       bars: [bar],
       frames: [{ bar_end: '2026-08-14T07:00:00Z', main_state: 'BUILD', main_values: { B: '100.100' }, status: readyStatus(), action_ids: ['build-1'], hint_ids: [] }],
       trend_channel: strategy === 'trend' ? trendChannelForBars([bar]) : null,
-      actions: [{ signal_id: 'build-1', kind: 'BUILD', bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', reference_price: '100.100', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', related_build_id: null, trade_eligibility: 'ELIGIBLE', sequence: 1 }],
+      actions: [{ signal_id: 'build-1', kind: 'BUILD', bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', reference_price: '100.100', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', related_build_id: null, trade_eligibility: 'ELIGIBLE', sequence: 1 }],
       hints: [], diagnostics: [], next_before: null, repainting: false, formal_signal_eligible: true, allowed_uses: ['product_chart', 'reference_input'],
     } },
     auxiliary: notRequested(), reference: notRequested(), explanation: notRequested(), comparator: notRequested(),
@@ -1682,8 +1682,8 @@ function referenceWire(options: { token?: string | null; hash?: string; referenc
   return {
     ...base, section: 'reference', chart: notRequested(),
     reference: { delivery: 'delivered', status: readyStatus(), value: {
-      performance_since: options.performanceSince ?? '2025-01-01', performance_through: '2026-08-15', actual_available_through: '2026-08-15', reference_cutoff: '2026-08-15T07:00:00Z', reference_input_sha256: options.referenceHash ?? 'c'.repeat(64),
-      summary: { membership_policy: 'closed_entry_in_requested_window', closed_count: 1, win_count: 1, loss_count: 0, flat_count: 0, win_rate_pct: '100.00', mean_return_pct: '1.2500', sum_return_percentage_points: '1.2500', open_count: 0, interrupted_count: 0, initial_count: 0 },
+      performance_since: options.performanceSince ?? '2025-01-01', performance_through: '2026-08-15', actual_available_through: '2026-08-15', reference_cutoff: '2026-08-15T07:00:00Z', reference_input_sha256: options.referenceHash ?? 'c'.repeat(64), history_coverage: 'FULL', unavailable_days: [], coverage_intervals: [],
+      summary: { membership_policy: 'closed_entry_in_requested_window', closed_count: 1, win_count: 1, loss_count: 0, flat_count: 0, win_rate_pct: '100.00', mean_return_pct: '1.2500', sum_return_percentage_points: '1.2500', open_count: 0, interrupted_count: 0, rollover_interrupted_count: 0, data_interrupted_count: 0, initial_count: 0 },
       items: options.items ?? [referenceItem('trade-1', '1.2500')], next_before: options.nextBefore ?? null, executable: false, auto_order: false, allowed_uses: ['page_parity_reference', 'research_display'],
     } },
   }
@@ -1720,8 +1720,8 @@ function auxiliaryWire(request: Extract<NewowProductRequest, { section: 'auxilia
 
 function referenceItem(id: string, returnPct: string) {
   return {
-    reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
-    formula_versions: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2'], reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
+    reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+    formula_versions: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v2'], reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     entry_signal_id: `entry-${id}`, entry_sequence: 1, entry_bar_end: '2026-08-14T07:00:00Z', entry_trading_day: '2026-08-14', entry_reference_price: '100.100',
     exit_signal_id: `exit-${id}`, exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15', exit_reference_price: '101.35125', status: 'CLOSED', holding_bars: 1,
     reference_return_pct: returnPct, mark_bar_end: null, mark_reference_price: null, mark_change_pct: null, interrupted_at: null, interruption_reason: null, statistics_membership: 'CLOSED_ENTRY_IN_WINDOW', hint_ids: [],

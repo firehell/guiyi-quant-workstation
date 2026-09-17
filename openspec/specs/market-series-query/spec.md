@@ -6,6 +6,32 @@
 
 ## Requirements
 
+### Requirement: Ordinary historical reads prove every promised endpoint
+
+Physical and actual-dominant interval queries and pages SHALL compare returned Bar identities with the Calendar, Session, lifecycle and rank1 owner endpoints for the requested committed window. A missing interior minute, session tail or page-adjacent endpoint MUST fail closed; a later Bar MUST NOT conceal the earlier gap. Page cursors retain their existing inclusive/exclusive contract. Maintenance strict readback MAY use its already frozen authoritative target endpoints rather than querying Calendar a second time, but MUST compare the complete returned sequence exactly. An all-zero `NO_TRADE` Bar does not become a usable research price solely because its endpoint exists.
+
+#### Scenario: One minute is absent between returned Bars
+
+- **GIVEN** five completed 1m Session endpoints and a committed physical partition containing only the first and fifth
+- **WHEN** an ordinary range or page query reads the window
+- **THEN** the read fails with a typed missing-data error instead of returning a shortened successful series
+
+### Requirement: Narrow D1 quality-aware read never weakens strict market series
+
+普通 historical series 读取遇到含 `PRICE_UNAVAILABLE` 的月分区 MUST 保持 fail-closed，
+不得将有来源记录但无合法价格的交易日伪装成零价 Bar、无交易日或完整价格序列。
+仅显式的 Newow D1 质量感知路径 MAY 从同一 MarketDataService 读取合法 Bar、
+逐日异常、完整端点覆盖与 rank1 owner，并在策略计算中形成断点。W1、盘中周期及其他
+未适配消费者不得借此绕过原完整性条件；映射、Calendar/Session 或物理身份不足时
+仍 MUST 拒绝部分回放。
+
+#### Scenario: Source price is unavailable on a completed D1 trading day
+
+- **GIVEN** a month partition records an authoritative `PRICE_UNAVAILABLE` day without a valid OHLC Bar
+- **WHEN** an ordinary historical series consumer reads that window
+- **THEN** the read fails closed and does not synthesize a price or silently skip the day
+- **AND** only the explicit Newow D1 quality-aware read may return the verified interruption as a calculation boundary
+
 ### Requirement: Replay diagnostics preserve stable codes and distinguish missing facts
 
 `MarketDataError.code` MUST remain backward compatible. Physical contract replay validation SHALL

@@ -6,6 +6,18 @@
 
 ## Requirements
 
+### Requirement: Provider responses retain request identity and trading-day attribution
+
+The RQData adapter MUST verify each raw `order_book_id` against the requested physical or continuous contract before normalizing Bars. It MUST reject duplicate raw endpoints or duplicate exchange-daily rows, including rows later filtered from a requested missing subset. The maintainer MUST bind each fetched batch to its DatasetKey and requested endpoints and reject a misplaced batch or duplicate normalized endpoint before publication. A permitted refresh MAY replace an older committed value only within the frozen planned target; provider duplicates are never treated as a refresh.
+
+For 1m fetches, provider `start_date` and `end_date` MUST derive from authoritative trading-day ownership of the requested Session endpoints, including night trading across civil days and weekends. The response MUST reject an endpoint whose reported trading day disagrees with that ownership. No failed attribution may trigger a retry or partial Canonical publication.
+
+#### Scenario: Friday night belongs to Monday trading day
+
+- **GIVEN** a requested completed Friday-night 1m endpoint attributed by Calendar/Session to Monday
+- **WHEN** the maintainer builds an RQData request
+- **THEN** the provider date window uses Monday and a wrong-contract or duplicate response fails before any partition is published
+
 ### Requirement: Interrupted after-market closeout is explicit and never success
 
 Target database, Redis, Canonical and universe dependencies MUST be composed from pinned target sources, not
@@ -187,6 +199,9 @@ frequency MUST fail closed。`--apply` MUST 要求相同的 lowercase
 SHA-256 `--expected-plan-sha256`，在 maintenance lock 内重算计划；identity、lifecycle、session 或 hash
 漂移时，必须在首次 provider 请求和写入前 fail closed。
 
+CLI 结果中 `provider_request_count` SHALL 表示冻结计划的预计请求数，
+`provider_requests` SHALL 表示该次执行实际请求数（dry-run 为零），两者不得互相代用。
+
 apply 只可为指定 physical contract 获取 `1m/1d` 基础事实；`1w` MUST 由同一交易所完整日行情在 adapter
 边界聚合，`5m/15m/30m/60m` 只由质量通过的同 contract `1m` 派生；不得写 continuous、其它 contract、
 MainContractMap、Rule、Scope、Runtime、Redis Live、
@@ -194,6 +209,13 @@ Event 或通知。月分区仍依次经过 staging 与完整发布校验。任�
 停止该 contract 的后续 target。仅同族同月存在待补 `1m` target 时，才可在开始派生前推迟至源发布后；
 已开始的派生/发布失败 MUST NOT 按缺源错误码自动推迟或重试。额度耗尽 MUST 返回 `partial`，不得报告 `passed`。部分成功 MUST 显式返回 `partial/failed`；不得
 自动 retry，任何真实 RQData/Canonical apply 仍需一次与 exact plan hash 对应的独立授权。
+
+对 physical contract `1d`，若 RQData 完整返回严格匹配已批准零 O/H/L、正 close 和正 volume
+的来源行，维护层 MAY 将其作为版本化 `PRICE_UNAVAILABLE` 质量事实计入端点覆盖，继续同批后续
+窗口；不得生成 CanonicalBar、归为 NO_TRADE 或扩大到 W1/continuous。合法 Bar 与质量事实
+必须逐日互斥并共同精确覆盖 TargetWindow，且每个异常端点仍须通过权威 Calendar/Session/
+合约生命周期校验。其他来源异常、缺日、重复冲突和发布不明 MUST 保持 fail-closed。
+整月仅有该类质量事实时可发布零行情行的分区，但正常严格读取不得将其视为完整价格历史。
 
 #### Scenario: Warm-up dry-run is read-only
 

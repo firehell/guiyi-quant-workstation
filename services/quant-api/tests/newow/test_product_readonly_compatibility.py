@@ -23,7 +23,7 @@ class _ForbiddenWriteSession:
 def test_new_get_uses_one_product_frequency_and_no_write_seam(
     monkeypatch, product_cases, section, component
 ):
-    frequency = "1w"
+    frequency = "1d"
     _reader, query, fake = product_cases.paged_reader(prefix_bars=90, frequency=frequency)
     monkeypatch.setattr(
         market_newow, "build_market_data_service", lambda _session: fake

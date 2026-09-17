@@ -7,9 +7,10 @@ import pytest
 
 from guiyi_quant.newow.cup_handle import calculate_cup_handle_series
 from guiyi_quant.newow.models import NewowDailyBar
-from guiyi_quant.newow.product_adapters import replay_strategy
+from guiyi_quant.newow.product_adapters import label_calculation_segments, replay_strategy
 from guiyi_quant.newow.product_auxiliary import calculate_product_auxiliary
 from guiyi_quant.newow.product_contracts import (
+    DataInterruption,
     FeatureRuntimeStatus,
     ProductBar,
     ProductFrequency,
@@ -29,6 +30,24 @@ def _mirror(result):
     return mirror
 
 
+def test_d1_auxiliary_restarts_at_price_gap_without_changing_owner(product_cases):
+    case = product_cases.primitive_input("trend", "1d")
+    split = len(case.bars) // 2
+    before = case.bars[split - 1].bar
+    after = case.bars[split].bar
+    gap_at = before.bar_end + (after.bar_end - before.bar_end) / 2
+    gap = DataInterruption(
+        case.identity.product, case.identity.frequency, after.physical_contract,
+        after.segment_id, gap_at.date(), gap_at, "source-quality:test",
+    )
+    labeled = label_calculation_segments(case.identity, case.bars, (gap,))
+    full = calculate_product_auxiliary(case.identity, labeled)
+    suffix = calculate_product_auxiliary(case.identity, case.bars[split:])
+    assert len(full.main_force_control.segments) == 2
+    assert full.main_force_control.segments[1].segment_id != after.segment_id
+    assert full.main_force_control.segments[1].value == suffix.main_force_control.segments[0].value
+
+
 def _two_owner_segments(bars: tuple[ProductBar, ...]) -> tuple[ProductBar, ...]:
     split = len(bars) // 2
     return tuple(
@@ -36,6 +55,7 @@ def _two_owner_segments(bars: tuple[ProductBar, ...]) -> tuple[ProductBar, ...]:
         if index < split
         else replace(
             product_bar,
+            calculation_segment_id="rb:RB2711:2026-02-01T00:00:00+00:00",
             bar=replace(
                 product_bar.bar,
                 physical_contract="RB2711",

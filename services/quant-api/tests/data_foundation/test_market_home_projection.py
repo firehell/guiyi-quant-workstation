@@ -186,7 +186,7 @@ def test_projection_store_round_trip_preserves_wire_types(tmp_path: Path) -> Non
     assert restored is not None
     assert restored == payload
     raw = path.read_text(encoding="utf-8")
-    assert '"schema_version":2' in raw
+    assert '"schema_version":3' in raw
     assert '"close":"1234.5"' in raw
     assert '"price_change_5d":null' in raw
 
@@ -201,7 +201,7 @@ def test_projection_read_rejects_v1_and_falls_back_without_writing(tmp_path: Pat
         generated_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
     )
     v1 = path.read_text(encoding="utf-8").replace(
-        '"schema_version":2', '"schema_version":1'
+        '"schema_version":3', '"schema_version":2'
     )
     path.write_text(v1, encoding="utf-8")
     service = _Service()
@@ -334,7 +334,7 @@ def test_projection_store_rejects_schema_target_digest_and_payload_identity_mism
     assert store.load(MarketHomeAuthorityIdentity(TARGET, "b" * 64)) is None
     assert store.load(MarketHomeAuthorityIdentity(date(2026, 9, 1), "a" * 64)) is None
 
-    path.write_text(valid.replace('"schema_version":2', '"schema_version":1'), encoding="utf-8")
+    path.write_text(valid.replace('"schema_version":3', '"schema_version":2'), encoding="utf-8")
     assert store.load(IDENTITY) is None
 
     path.write_text(

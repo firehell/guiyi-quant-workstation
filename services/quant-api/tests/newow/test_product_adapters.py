@@ -19,6 +19,7 @@ from guiyi_quant.newow.oscillation_channel import (
 from guiyi_quant.newow.product_adapters import replay_strategy
 from guiyi_quant.newow.product_contracts import (
     ActionKind,
+    DataInterruption,
     ProductBar,
     ProductFrequency,
     TradeEligibility,
@@ -38,6 +39,70 @@ def test_adapter_preserves_every_primitive_prefix_value(
         prefix = replace(case, bars=case.bars[:end])
         actual = replay_strategy(prefix.identity, prefix.bars)
         assert actual.main_values == prefix.run_original_primitive().main_values
+
+
+@pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
+def test_price_gap_restarts_all_d1_indicator_state_at_clean_suffix(product_cases, strategy):
+    case = product_cases.primitive_input(strategy, "1d")
+    split = len(case.bars) // 2
+    preceding = case.bars[split - 1].bar
+    following = case.bars[split].bar
+    gap_at = preceding.bar_end + (following.bar_end - preceding.bar_end) / 2
+    gap = DataInterruption(
+        product=case.identity.product,
+        frequency=case.identity.frequency,
+        physical_contract=following.physical_contract,
+        segment_id=following.segment_id,
+        trading_day=gap_at.date(),
+        effective_at=gap_at,
+        source_identity="market_data_service:price_unavailable:v1",
+    )
+    full = replay_strategy(case.identity, case.bars, data_interruptions=(gap,))
+    clean_suffix = replay_strategy(case.identity, case.bars[split:])
+    assert tuple((frame.main_state, frame.main_values, frame.availability)
+                 for frame in full.frames[split:]) == tuple(
+                     (frame.main_state, frame.main_values, frame.availability)
+                     for frame in clean_suffix.frames)
+    assert full.frames[split].bar.bar == case.bars[split].bar
+    assert full.frames[split].bar.calculation_segment_id != following.segment_id
+    assert full.frames[split].bar.calculation_segment_id == full.frames[-1].bar.calculation_segment_id
+    assert full.frames[split - 1].bar.calculation_segment_id == preceding.segment_id
+    assert all(action.calculation_segment_id == full.frames[split].bar.calculation_segment_id
+               for action in full.actions if action.bar_end >= following.bar_end)
+
+
+@pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
+def test_price_gap_keeps_verified_lifecycle_input_while_relabeling_frames(
+    product_cases, strategy
+):
+    case = product_cases.primitive_input(strategy, "1d")
+    split = len(case.bars) // 2
+    preceding = case.bars[split - 1].bar
+    following = case.bars[split].bar
+    gap_at = preceding.bar_end + (following.bar_end - preceding.bar_end) / 2
+    gap = DataInterruption(
+        product=case.identity.product,
+        frequency=case.identity.frequency,
+        physical_contract=following.physical_contract,
+        segment_id=following.segment_id,
+        trading_day=gap_at.date(),
+        effective_at=gap_at,
+        source_identity="market_data_service:price_unavailable:v1",
+    )
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+
+    replay = replay_strategy(
+        case.identity, case.bars,
+        lifecycle_evidence=(evidence,), data_interruptions=(gap,),
+    )
+
+    assert replay.lifecycle_input_bars == tuple(frame.bar for frame in replay.frames)
+    assert tuple(item.bar for item in replay.lifecycle_input_bars) == tuple(
+        item.bar for item in case.bars
+    )
+    assert replay.lifecycle_evidence == (evidence,)
+    assert replay.frames[split].bar.bar == following
+    assert replay.frames[split].bar.calculation_segment_id != following.segment_id
 
 
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])

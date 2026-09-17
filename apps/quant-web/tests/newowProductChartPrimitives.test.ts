@@ -37,6 +37,17 @@ test('projects each server-owned main layer for all nine strategy-period identit
   }
 })
 
+test('does not connect a main line across a price-gap calculation segment', () => {
+  const response = chartResponse('trend', '1d')
+  response.value!.bars[1] = {
+    ...response.value!.bars[1]!,
+    calculation_segment_id: 'segment-1|price-gap:2026-08-15T00:00:00Z',
+  }
+  const model = buildNewowProductChartModel(response)
+  assert.equal(model.mainLines.length, 4)
+  assert.equal(model.mainLines.every((line) => line.points.length === 1), true)
+})
+
 test('preserves initial-clear eligibility into the marker label and detail model', () => {
   const response = chartResponse('main_rise', '1d')
   const value = response.value!
@@ -111,7 +122,7 @@ test('preserves same-Bar CLEAR then BUILD identities and keeps hint anchor separ
 test('splits server values at physical owner boundaries instead of connecting contracts', () => {
   const response = chartResponse('main_rise', '1d')
   const value = response.value!
-  value.bars[1] = { ...value.bars[1]!, physical_contract: 'JM2605', segment_id: 'segment-2' }
+  value.bars[1] = { ...value.bars[1]!, physical_contract: 'JM2605', segment_id: 'segment-2', calculation_segment_id: 'segment-2' }
 
   const model = buildNewowProductChartModel(response)
 
@@ -231,16 +242,16 @@ function chartResponse(
   ]
   return {
     meta: {
-      schema_version: 'newow_product_detail_v2',
+      schema_version: 'newow_product_detail_v3',
       identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64),
-      data_revision_identity: null, snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v2',
-      futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
+      data_revision_identity: null, snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v3',
+      futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart',
     status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null },
     value: {
-      chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), bars,
+      chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), price_unavailable_days: [], bars,
       frames: bars.map((item, index) => ({
         bar_end: item.bar_end, main_state: index === 0 ? 'FLAT' : 'HOLD',
         main_values: { [keys[0]!]: index === 0 ? '101' : '102', [keys[1]!]: index === 0 ? '99' : '100' },
@@ -255,7 +266,7 @@ function chartResponse(
 function bar(barEnd: string, tradingDay: string, close: string) {
   return {
     bar_end: barEnd, trading_day: tradingDay, open: close, high: '110', low: '90', close,
-    volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'segment-1',
+    volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'segment-1', calculation_segment_id: 'segment-1',
     source_identity: 'canonical:jm:JM2601', observation_eligible: true, completed: true as const,
   }
 }

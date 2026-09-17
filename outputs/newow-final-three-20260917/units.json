@@ -1,0 +1,122 @@
+[
+  {
+    "symbol": "b",
+    "contract": "B2411",
+    "through": "2024-10-23",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "bz",
+    "contract": "BZ2605",
+    "through": "2026-04-20",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "bz",
+    "contract": "BZ2610",
+    "through": "2026-09-15",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2412",
+    "through": "2024-11-20",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2501",
+    "through": "2024-12-13",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2502",
+    "through": "2025-01-15",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2503",
+    "through": "2025-02-21",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2505",
+    "through": "2025-04-18",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2506",
+    "through": "2025-05-22",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2507",
+    "through": "2025-06-23",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2508",
+    "through": "2025-07-21",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2510",
+    "through": "2025-09-18",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2511",
+    "through": "2025-10-17",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2512",
+    "through": "2025-11-21",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2602",
+    "through": "2026-01-13",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2604",
+    "through": "2026-03-23",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2605",
+    "through": "2026-04-15",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2607",
+    "through": "2026-06-23",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2610",
+    "through": "2026-09-15",
+    "frequency": "1d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2406",
+    "through": "2024-05-23",
+    "frequency": "1d"
+  }
+]

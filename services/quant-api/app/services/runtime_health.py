@@ -129,11 +129,14 @@ def build_runtime_health(
     )
     components["alert"] = _collect_alert_health(
         redis_connection,
+        session=session,
         now=current_time,
         configured_enabled=alert_enabled,
         notification=notification,
         transport_error_type=transport_error_type,
         freshness_seconds=alert_freshness_seconds,
+        live_coverage=components["live_market"].get("coverage", {}),
+        after_market=components["after_market"],
     )
 
     overall = _overall_status(components.values())
@@ -172,11 +175,14 @@ def _alert_runtime_activation_enabled() -> bool:
 def _collect_alert_health(
     connection: Redis | None,
     *,
+    session: Session | None = None,
     now: datetime,
     configured_enabled: bool,
     notification: dict[str, object],
     transport_error_type: str | None,
     freshness_seconds: int,
+    live_coverage: Mapping[str, object] | None = None,
+    after_market: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     empty = {
         "configured_enabled": configured_enabled,
@@ -198,6 +204,8 @@ def _collect_alert_health(
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
         "rule_status": empty_alert_runtime_status()["rule_status"],
+        "coverage": {},
+        "coverage_state": "unverified",
         "error_type": None,
     }
     if not configured_enabled:
@@ -247,6 +255,21 @@ def _collect_alert_health(
         enabled_rule_count = _nonnegative_int(heartbeat.get("enabled_rule_count"))
         scope_product_count = _nonnegative_int(heartbeat.get("scope_product_count"))
         available = heartbeat.get("available") is True
+        coverage = _alert_coverage(heartbeat, enabled_rule_count, scope_product_count)
+        weekly_cache: dict[tuple[str, date], bool] = {}
+        def weekly_finished(symbol: str, day: date) -> bool:
+            key = (symbol, day)
+            if key not in weekly_cache:
+                try:
+                    weekly_cache[key] = (
+                        _trading_week_finished(session, symbol, day) if session is not None else False
+                    )
+                except Exception:  # noqa: BLE001 - health never exposes database internals
+                    weekly_cache[key] = False
+            return weekly_cache[key]
+        coverage = _evaluate_alert_coverage(
+            coverage, live_coverage or {}, now, after_market or {}, weekly_finished
+        )
     except ValueError:
         return {
             "status": RUNTIME_STATUS_DEGRADED,
@@ -259,6 +282,17 @@ def _collect_alert_health(
         "last_heartbeat_at": _iso(heartbeat_at),
         "enabled_rule_count": enabled_rule_count,
         "scope_product_count": scope_product_count,
+        "coverage": coverage,
+        "coverage_state": (
+            "evaluation_failed" if any(item["state"] == "evaluation_failed" for item in coverage.values())
+            else "evaluation_lagging" if any(item["state"] == "evaluation_lagging" for item in coverage.values())
+            else "data_lagging" if any(item["state"] == "data_lagging" for item in coverage.values())
+            else "unverified" if any(item["state"] == "unverified" for item in coverage.values())
+            else "pending" if any(item["state"] == "pending" for item in coverage.values())
+            else "waiting_canonical" if any(item["state"] == "waiting_canonical" for item in coverage.values())
+            else "not_due" if coverage and all(item["state"] == "not_due" for item in coverage.values())
+            else "ok" if coverage else "unverified"
+        ),
     }
     stale = (
         heartbeat_at > now or (now - heartbeat_at).total_seconds() > freshness_seconds
@@ -284,7 +318,7 @@ def _collect_alert_health(
             "error_type": "alert_runtime_status_invalid",
         }
     if runtime_status is None:
-        return {"status": RUNTIME_STATUS_OK, **payload}
+        return {"status": RUNTIME_STATUS_DEGRADED if payload["coverage_state"] in {"unverified", "evaluation_lagging", "data_lagging", "evaluation_failed"} else RUNTIME_STATUS_OK, **payload}
     observed_status = (
         RUNTIME_STATUS_DEGRADED
         if (
@@ -296,10 +330,152 @@ def _collect_alert_health(
                     Mapping[str, Mapping[str, object]], runtime_status["rule_status"]
                 ).values()
             )
+            or payload["coverage_state"] in {"unverified", "evaluation_lagging", "data_lagging", "evaluation_failed"}
         )
         else RUNTIME_STATUS_OK
     )
     return {"status": observed_status, **payload, **observation}
+
+
+def _alert_coverage(
+    heartbeat: Mapping[str, object], enabled_rule_count: int, scope_product_count: int
+) -> dict[str, dict[str, object]]:
+    if heartbeat.get("coverage_schema_version") != 1:
+        return {}
+    raw = heartbeat.get("coverage")
+    if not isinstance(raw, Mapping) or len(raw) > enabled_rule_count * max(scope_product_count, 1) * 7:
+        raise ValueError("ALERT_COVERAGE_INVALID")
+    if enabled_rule_count and scope_product_count and not raw:
+        raise ValueError("ALERT_COVERAGE_INVALID")
+    result: dict[str, dict[str, object]] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not isinstance(value, Mapping):
+            raise ValueError("ALERT_COVERAGE_INVALID")
+        state = value.get("state")
+        if state not in {"ok", "evaluation_failed", "unverified"}:
+            raise ValueError("ALERT_COVERAGE_INVALID")
+        if state == "ok" and value.get("last_evaluated_bar_at") is None:
+            raise ValueError("ALERT_COVERAGE_INVALID")
+        result[key] = dict(value)
+    return result
+
+
+def _evaluate_alert_coverage(
+    coverage: Mapping[str, dict[str, object]],
+    live_coverage: Mapping[str, object],
+    now: datetime,
+    after_market: Mapping[str, object] | None = None,
+    weekly_finished: Callable[[str, date], bool] | None = None,
+) -> dict[str, dict[str, object]]:
+    result: dict[str, dict[str, object]] = {}
+    for key, item in coverage.items():
+        updated = dict(item)
+        symbol = item.get("symbol")
+        frequency = item.get("frequency")
+        live = live_coverage.get(symbol) if isinstance(symbol, str) else None
+        if isinstance(item.get("previous_unresolved"), str):
+            updated["state"] = "evaluation_failed"
+            result[key] = updated
+            continue
+        if frequency in {"1d", "1w"} and item["state"] != "evaluation_failed":
+            successful_day = (after_market or {}).get("last_successful_trading_day")
+            evaluated_day = item.get("trading_day")
+            if frequency == "1d" and isinstance(successful_day, str) and not isinstance(evaluated_day, str):
+                updated["state"] = "evaluation_lagging"
+            elif isinstance(successful_day, str) and isinstance(evaluated_day, str):
+                source_day = date.fromisoformat(successful_day)
+                seen_day = date.fromisoformat(evaluated_day)
+                completed_week_end = now.astimezone(SHANGHAI).date()
+                completed_week_end -= timedelta(days=completed_week_end.weekday() + 1)
+                if (
+                    frequency == "1w" and isinstance(symbol, str)
+                    and weekly_finished is not None and weekly_finished(symbol, source_day)
+                ):
+                    completed_week_end = source_day
+                overdue = (source_day > seen_day if frequency == "1d" else
+                           completed_week_end.isocalendar()[:2] > seen_day.isocalendar()[:2])
+                if overdue:
+                    # The after-market run covers D1; it does not certify a W1 asset.
+                    updated["state"] = "evaluation_lagging" if frequency == "1d" else "unverified"
+                elif (
+                    frequency == "1w" and source_day.weekday() == 4
+                    and source_day.isocalendar()[:2] > seen_day.isocalendar()[:2]
+                ):
+                    # Friday without a complete forward Calendar is uncertain,
+                    # never proof that last week's W1 evaluation is current.
+                    updated["state"] = "unverified"
+            elif item["state"] == "unverified":
+                updated["state"] = "waiting_canonical"
+        elif frequency in {"1m", "5m", "15m", "30m", "60m"} and item["state"] != "evaluation_failed":
+            sessions = live.get("sessions") if isinstance(live, Mapping) else None
+            if not isinstance(sessions, list) or not sessions:
+                updated["state"] = "unverified"
+            else:
+                evaluated = _optional_timestamp(item.get("last_evaluated_bar_at"))
+                due = _first_session_endpoint_after(sessions, frequency, evaluated)
+                if due is None:
+                    updated["state"] = "ok" if evaluated is not None else "not_due"
+                elif now >= due + timedelta(seconds=60):
+                    updated["state"] = (
+                        "data_lagging" if isinstance(live, Mapping) and live.get("state") == "lagging"
+                        else "evaluation_lagging"
+                    )
+                    updated["first_unresolved_bar_end"] = _iso(due)
+                elif item["state"] == "unverified":
+                    updated["state"] = "pending"
+        result[key] = updated
+    return result
+
+
+def _trading_week_finished(session: Session, symbol: str, day: date) -> bool:
+    """Use known exchange Calendar facts; absence of future facts is not completion."""
+    exchange = session.scalar(select(Instrument.exchange_code).where(Instrument.symbol == symbol))
+    if not isinstance(exchange, str):
+        return False
+    sunday = day + timedelta(days=7 - day.isoweekday())
+    remaining = tuple(day + timedelta(days=offset) for offset in range(1, (sunday - day).days + 1))
+    if not remaining:
+        return True
+    rows = tuple(session.execute(
+        select(TradingCalendar.trade_date, TradingCalendar.is_trading_day).where(
+            TradingCalendar.exchange_code == exchange,
+            TradingCalendar.trade_date > day,
+            TradingCalendar.trade_date <= sunday,
+        ).order_by(TradingCalendar.trade_date)
+    ))
+    return (
+        tuple(row.trade_date for row in rows) == remaining
+        and not any(row.is_trading_day for row in rows)
+    )
+
+
+def _first_session_endpoint_after(
+    sessions: list[object], frequency: object, evaluated: datetime | None
+) -> datetime | None:
+    widths = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}
+    if not isinstance(frequency, str):
+        raise ValueError("ALERT_COVERAGE_FREQUENCY_INVALID")
+    width = widths.get(frequency)
+    if width is None:
+        raise ValueError("ALERT_COVERAGE_FREQUENCY_INVALID")
+    candidates: list[datetime] = []
+    for raw in sessions:
+        if not isinstance(raw, Mapping):
+            raise ValueError("LIVE_COVERAGE_SESSION_INVALID")
+        start = _required_timestamp(raw.get("start"))
+        end = _required_timestamp(raw.get("end"))
+        if start >= end:
+            raise ValueError("LIVE_COVERAGE_SESSION_INVALID")
+        if evaluated is None or evaluated < start:
+            candidate = min(start + timedelta(minutes=width), end)
+        elif evaluated >= end:
+            continue
+        else:
+            elapsed = int((evaluated - start).total_seconds() // 60)
+            candidate = min(start + timedelta(minutes=((elapsed // width) + 1) * width), end)
+        if evaluated is None or candidate > evaluated:
+            candidates.append(candidate)
+    return min(candidates) if candidates else None
 
 
 def _alert_runtime_observation(
@@ -376,6 +552,8 @@ def _collect_live_market_health(
         "last_heartbeat_at": None,
         "last_bar_at": None,
         "phase_counts": {},
+        "coverage": {},
+        "coverage_state": "unverified",
         "error_type": None,
         "error_message": None,
     }
@@ -422,6 +600,7 @@ def _collect_live_market_health(
         last_bar_at = _optional_timestamp(heartbeat.get("last_bar_at"))
         phase_counts = _phase_counts(heartbeat.get("phase_counts"))
         available = heartbeat.get("available") is True
+        coverage = _live_coverage(heartbeat, operational_count)
     except ValueError:
         return {
             "status": RUNTIME_STATUS_DEGRADED
@@ -437,6 +616,14 @@ def _collect_live_market_health(
         "last_heartbeat_at": _iso(heartbeat_at),
         "last_bar_at": _iso(last_bar_at),
         "phase_counts": phase_counts,
+        "coverage": coverage,
+        "coverage_state": (
+            "lagging" if any(item["state"] == "lagging" for item in coverage.values())
+            else "unverified" if any(item["state"] == "unverified" for item in coverage.values())
+            else "pending" if any(item["state"] == "pending" for item in coverage.values())
+            else "not_due" if coverage and all(item["state"] == "not_due" for item in coverage.values())
+            else "ok" if coverage else "unverified"
+        ),
     }
     stale = (
         heartbeat_at > now or (now - heartbeat_at).total_seconds() > freshness_seconds
@@ -455,7 +642,40 @@ def _collect_live_market_health(
             **payload,
             "error_type": "live_unavailable",
         }
-    return {"status": RUNTIME_STATUS_OK, **payload}
+    return {
+        "status": RUNTIME_STATUS_DEGRADED
+        if payload["coverage_state"] in {"lagging", "unverified"}
+        else RUNTIME_STATUS_OK,
+        **payload,
+    }
+
+
+def _live_coverage(
+    heartbeat: Mapping[str, object], operational_count: int
+) -> dict[str, dict[str, object]]:
+    if heartbeat.get("coverage_schema_version") != 1:
+        return {}
+    raw = heartbeat.get("coverage")
+    if not isinstance(raw, Mapping) or len(raw) != operational_count:
+        raise ValueError("LIVE_COVERAGE_INVALID")
+    result: dict[str, dict[str, object]] = {}
+    for symbol, value in raw.items():
+        if not isinstance(symbol, str) or not isinstance(value, Mapping):
+            raise ValueError("LIVE_COVERAGE_INVALID")
+        state = value.get("state")
+        if state not in {"ok", "pending", "lagging", "not_due", "unverified"}:
+            raise ValueError("LIVE_COVERAGE_INVALID")
+        result[symbol] = {
+            "state": state,
+            "trading_day": value.get("trading_day"),
+            "contract": value.get("contract"),
+            "expected_bar_end": value.get("expected_bar_end"),
+            "expected_by_frequency": value.get("expected_by_frequency", {}),
+            "sessions": value.get("sessions", []),
+            "last_observed_bar_end": value.get("last_observed_bar_end"),
+            "first_missing_bar_end": value.get("first_missing_bar_end"),
+        }
+    return result
 
 
 def _collect_after_market_health(

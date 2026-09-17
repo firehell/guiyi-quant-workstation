@@ -22,6 +22,7 @@ from app.market_data.domain import (
     DatasetKind,
 )
 from app.market_data.errors import InfrastructureError
+from app.market_data.source_quality import PriceUnavailableFact
 from app.market_data.session_clock import (
     SHANGHAI,
     SessionClockError,
@@ -344,6 +345,31 @@ class DatabaseCoverageSource:
             )
         )
 
+    def trading_days_for_bar_ends(
+        self,
+        key: DatasetKey,
+        ends: tuple[datetime, ...],
+    ) -> tuple[date, ...]:
+        """Bind requested endpoints to authoritative Calendar/Session trading days."""
+        if not ends or len(set(ends)) != len(ends):
+            raise InfrastructureError("PROVIDER_WINDOW_INVALID")
+        try:
+            days = MarketCatalog(self.session, PROJECT_ROOT).trading_days_overlapping_window(
+                key.symbol, min(ends) - timedelta(microseconds=1), max(ends)
+            )
+        except CatalogError as exc:
+            raise InfrastructureError(exc.code) from exc
+        pairs = self.expected_bar_end_pairs_for_trading_days(key, days)
+        by_end: dict[datetime, date] = {}
+        for end, day in pairs:
+            if end in by_end:
+                raise InfrastructureError("PROVIDER_TRADING_DAY_INVALID")
+            by_end[end] = day
+        try:
+            return tuple(by_end[end] for end in ends)
+        except KeyError as exc:
+            raise InfrastructureError("PROVIDER_TRADING_DAY_MISSING") from exc
+
     def expected_bar_end_pairs_for_trading_days(
         self,
         key: DatasetKey,
@@ -521,7 +547,7 @@ class DatabaseCoverageSource:
         except SessionClockError as exc:
             raise InfrastructureError(exc.code) from exc
 
-    def valid_boundaries(self, key: DatasetKey, bars: tuple[CanonicalBar, ...]) -> bool:
+    def valid_boundaries(self, key: DatasetKey, bars: tuple[CanonicalBar | PriceUnavailableFact, ...]) -> bool:
         """Validate partition pairs using fresh, call-local authoritative facts."""
         if not bars:
             return False

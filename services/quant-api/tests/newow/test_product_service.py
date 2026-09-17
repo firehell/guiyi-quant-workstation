@@ -1,22 +1,25 @@
 from dataclasses import replace
-from datetime import timedelta
+from datetime import date, timedelta
 from threading import Event, Thread
 from time import sleep
+from types import SimpleNamespace
 
 import pytest
 
-from guiyi_quant.newow.product_adapters import replay_strategy
+from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
 from guiyi_quant.newow.product_contracts import (
     ActionKind,
+    DataInterruption,
     ProductFrequency,
     TradeEligibility,
 )
+from guiyi_quant.newow.product_identity import build_segment_id
 from app.market_data.domain import BarFrequency
 from guiyi_quant.newow.oscillation_channel import CHANNEL_FORMULA_VERSION
 
 from app.market_data.domain import ResolvedContractSegment
 
-from app.market_data.newow.product_query import ProductReadWindow
+from app.market_data.newow.product_query import NewowProductQuery, ProductReadWindow
 from app.market_data.newow.product_reader import (
     ProductReadSet,
     ProductReadSource,
@@ -28,7 +31,48 @@ from app.market_data.newow.product_service import (
     NewowProductServiceError,
     ProductSection,
     ProductServiceQuery,
+    _dependency_proof,
+    _reference_coverage_intervals,
 )
+from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus
+
+
+def test_intraday_reference_coverage_keeps_mixed_warmup_day_warming():
+    day = date(2026, 9, 3)
+    def frame(status):
+        bar = SimpleNamespace(
+            trading_day=day, observation_eligible=True,
+            physical_contract="RB2605", segment_id="segment-rb",
+        )
+        return SimpleNamespace(
+            bar=SimpleNamespace(bar=bar, calculation_segment_id="calculation-rb"),
+            availability=SimpleNamespace(status=status),
+        )
+    read = SimpleNamespace(
+        frequency=ProductFrequency.HOURLY, data_interruptions=(), owners=(),
+    )
+    replay = SimpleNamespace(frames=(frame(FeatureRuntimeStatus.WARMING), frame(FeatureRuntimeStatus.READY)))
+    intervals = _reference_coverage_intervals(read, replay, day, day)
+    assert len(intervals) == 1
+    assert intervals[0].status == "WARMING"
+
+
+def test_intraday_reference_coverage_groups_bars_by_trading_day(product_cases):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=16, frequency="60m")
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: fake.as_of,
+    )
+    result = service.query(ProductServiceQuery(
+        "rb", "trend", "60m", section="reference",
+        performance_since=query.performance_since,
+        performance_through=query.performance_through,
+        as_of=fake.as_of,
+    ))
+    intervals = result.reference.value.coverage_intervals
+    assert intervals
+    assert all(interval.since <= interval.through for interval in intervals)
+    assert len({(interval.since, interval.physical_contract) for interval in intervals}) == len(intervals)
 
 
 class _Reader:
@@ -96,6 +140,40 @@ def _service(product_cases, frequency="1d"):
     return service, reader, build, clear
 
 
+def test_snapshot_proof_warmup_bar_does_not_borrow_another_owner(product_cases):
+    _service_instance, reader, _build, clear = _service(product_cases)
+    since = reader.bars[0].bar.trading_day
+    through = reader.bars[-1].bar.trading_day
+    read = reader.load(
+        NewowProductQuery(
+            "rb", "trend", "1d", since=since, through=through,
+            performance_since=since, performance_through=through,
+            as_of=clear.bar_end,
+        ),
+        clear.bar_end,
+    )
+    first = read.replay_bars[0]
+    warmup = replace(
+        first,
+        bar=replace(
+            first.bar,
+            segment_id=build_segment_id(
+                "rb", first.bar.physical_contract, first.bar.bar_end + timedelta(days=1)
+            ),
+            observation_eligible=False,
+        ),
+    )
+    base = replace(read, bars_by_frequency={read.frequency: (warmup,)}, owners=())
+    earlier_owner = ResolvedContractSegment(
+        first.bar.physical_contract,
+        first.bar.trading_day,
+        first.bar.trading_day,
+    )
+    extended = replace(base, owners=(earlier_owner,))
+
+    assert _dependency_proof(base) == _dependency_proof(extended)
+
+
 def test_reference_cutoff_keeps_later_clear_open_until_user_extends_window(
     product_cases,
 ):
@@ -130,6 +208,77 @@ def test_reference_cutoff_keeps_later_clear_open_until_user_extends_window(
     assert extended.reference.value.summary.open_count == 0
     assert extended.reference.value.summary.closed_count == 1
     assert extended.reference.value.reference_cutoff == clear.bar_end
+
+
+def test_reference_service_propagates_price_gap_as_data_interruption(product_cases):
+    case = product_cases.primitive_input("trend", "1d")
+    replay = replay_strategy(case.identity, case.bars)
+    entry = next(action for action in replay.actions if action.kind is ActionKind.BUILD)
+    bars = tuple(bar for bar in case.bars if bar.bar.bar_end <= entry.bar_end)
+    gap_at = entry.bar_end + timedelta(days=1)
+    gap = DataInterruption(
+        product="rb", frequency=ProductFrequency.DAILY,
+        physical_contract=entry.physical_contract, segment_id=entry.segment_id,
+        trading_day=gap_at.date(), effective_at=gap_at,
+        source_identity="market_data_service:price_unavailable:v1",
+    )
+    reader = _Reader(bars, gap_at, gap_at)
+    original_load = reader.load
+
+    def load(query, as_of):
+        return replace(original_load(query, as_of),
+                       data_interruptions_by_frequency={query.frequency: (gap,)})
+
+    reader.load = load
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: gap_at + timedelta(days=1),
+    )
+    result = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", section="reference",
+        performance_since=entry.trading_day,
+        performance_through=gap_at.date(), as_of=gap_at,
+    ))
+    assert result.reference.value.summary.interrupted_count == 1
+    assert result.reference.value.summary.data_interrupted_count == 1
+    assert result.reference.value.summary.rollover_interrupted_count == 0
+    assert result.reference.value.summary.closed_count == 0
+    assert result.reference.value.summary.interrupted_trades[0].status == "DATA_INTERRUPTED"
+    assert result.reference.value.history_coverage == "PARTIAL"
+    assert result.reference.value.unavailable_days == (gap_at.date(),)
+    assert result.reference.value.coverage_intervals[-1].status == "PRICE_UNAVAILABLE"
+    assert result.reference.status.status == "warming"
+    chart = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", section="chart", as_of=gap_at,
+    ))
+    assert chart.chart.status.status == "warming"
+    reader.load = original_load
+    clean = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: gap_at + timedelta(days=1),
+    ).query(ProductServiceQuery(
+        "rb", "trend", "1d", section="chart", as_of=gap_at,
+    ))
+    assert chart.meta.input_content_sha256 != clean.meta.input_content_sha256
+
+
+def test_snapshot_fingerprint_binds_source_bar_digest(product_cases):
+    from app.market_data.newow.product_service import _fingerprint
+
+    _service_instance, reader, _build, clear = _service(product_cases)
+    read = reader.load(
+        NewowProductQuery("rb", "trend", "1d", clear.trading_day, clear.trading_day,
+                          clear.trading_day, clear.trading_day, clear.bar_end),
+        clear.bar_end,
+    )
+    identity = build_product_identity("rb", "trend", "1d")
+    original = _fingerprint(read, identity)
+    changed_bars = tuple(
+        replace(bar, source_bar_sha256="a" * 64) if index == 0 else bar
+        for index, bar in enumerate(read.replay_bars)
+    )
+    changed = replace(read, bars_by_frequency={ProductFrequency.DAILY: changed_bars})
+    assert original != _fingerprint(changed, identity)
 
 
 def test_chart_does_not_call_reference_or_auxiliary(monkeypatch, product_cases):
@@ -524,7 +673,7 @@ def test_reference_cursor_from_v1_contract_is_rejected_after_v2_upgrade(
     monkeypatch.setattr(
         product_service_module,
         "REFERENCE_MODEL_VERSION",
-        "newow_marker_reference_zero_cost_v2",
+        "newow_marker_reference_zero_cost_v3",
     )
     with pytest.raises(
         NewowProductServiceError, match="NEWOW_CURSOR_GENERATION_CONFLICT"
@@ -634,6 +783,80 @@ def test_snapshot_token_rejects_a_revised_common_bar(product_cases):
         NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"
     ):
         service.query(replace(request, snapshot_token=first.meta.snapshot_token))
+
+
+def test_dependency_proof_shared_bar_ignores_clipped_owner_start(product_cases):
+    service, reader, _build, clear = _service(product_cases)
+    query = NewowProductQuery(
+        "rb", "trend", ProductFrequency.DAILY,
+        reader.bars[0].bar.trading_day, clear.trading_day,
+        reader.bars[0].bar.trading_day, clear.trading_day, clear.bar_end,
+    )
+    read = reader.load(query, clear.bar_end)
+    bar = read.bars_by_frequency[ProductFrequency.DAILY][0].bar
+    owner_a = ResolvedContractSegment(
+        bar.physical_contract, bar.trading_day, clear.trading_day,
+    )
+    owner_b = replace(owner_a, start_trading_day=bar.trading_day + timedelta(days=1))
+    shared_key = "|".join((
+        "bar", "1d", bar.physical_contract, bar.segment_id, bar.bar_end.isoformat(),
+    ))
+    assert _dependency_proof(replace(read, owners=(owner_a,)))[shared_key] == (
+        _dependency_proof(replace(read, owners=(owner_b,)))[shared_key]
+    )
+
+
+def test_dependency_proof_binds_price_interruption_identity(product_cases):
+    _service_instance, reader, _build, clear = _service(product_cases)
+    query = NewowProductQuery(
+        "rb", "trend", ProductFrequency.DAILY,
+        reader.bars[0].bar.trading_day, clear.trading_day,
+        reader.bars[0].bar.trading_day, clear.trading_day, clear.bar_end,
+    )
+    read = reader.load(query, clear.bar_end)
+    bar = read.bars_by_frequency[ProductFrequency.DAILY][0].bar
+    gap = DataInterruption(
+        "rb", ProductFrequency.DAILY, bar.physical_contract,
+        bar.segment_id, bar.trading_day, bar.bar_end, "source-a",
+    )
+    without_bar = replace(
+        read,
+        bars_by_frequency={ProductFrequency.DAILY:
+                           tuple(item for item in read.bars_by_frequency[ProductFrequency.DAILY]
+                                 if item.bar.bar_end != gap.effective_at)},
+    )
+    first = replace(without_bar, data_interruptions_by_frequency={ProductFrequency.DAILY: (gap,)})
+    second = replace(without_bar, data_interruptions_by_frequency={
+        ProductFrequency.DAILY: (replace(gap, source_identity="source-b"),)
+    })
+    assert _dependency_proof(first) != _dependency_proof(second)
+
+
+def test_dependency_proof_shared_day_bar_to_gap_conflicts(product_cases):
+    _service_instance, reader, _build, clear = _service(product_cases)
+    query = NewowProductQuery(
+        "rb", "trend", ProductFrequency.DAILY,
+        reader.bars[0].bar.trading_day, clear.trading_day,
+        reader.bars[0].bar.trading_day, clear.trading_day, clear.bar_end,
+    )
+    read = reader.load(query, clear.bar_end)
+    bars = read.bars_by_frequency[ProductFrequency.DAILY]
+    changed = bars[1]
+    gap = DataInterruption(
+        "rb", ProductFrequency.DAILY, changed.bar.physical_contract,
+        changed.bar.segment_id, changed.bar.trading_day,
+        changed.bar.bar_end, "source-gap",
+    )
+    gap_read = replace(
+        read,
+        bars_by_frequency={ProductFrequency.DAILY: (bars[0], *bars[2:])},
+        data_interruptions_by_frequency={ProductFrequency.DAILY: (gap,)},
+    )
+    key = "|".join((
+        "price-state", "1d", changed.bar.physical_contract,
+        changed.bar.trading_day.isoformat(),
+    ))
+    assert _dependency_proof(read)[key] != _dependency_proof(gap_read)[key]
 
 
 def test_snapshot_token_allows_reference_with_compatible_common_facts(product_cases):

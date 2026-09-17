@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
+import hashlib
+import json
 import os
 import re
 from typing import Any, Protocol
@@ -36,6 +38,7 @@ from app.market_data.metadata import (
     calendar_session_index,
 )
 from app.market_data.session_clock import SHANGHAI
+from app.market_data.source_quality import PriceUnavailableFact
 from app.models import Instrument, MainContractMap, TradingCalendar
 
 
@@ -201,6 +204,7 @@ class RQDataMarketAdapter:
         if not requests:
             raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
         cache: dict[tuple[str, date], dict[str, Any]] = {}
+        source_proof: dict[tuple[str, date], tuple[str, str, datetime]] = {}
         batches: dict[int, BarBatch] = {}
         order = sorted(
             range(len(requests)),
@@ -213,16 +217,25 @@ class RQDataMarketAdapter:
             if not expected:
                 raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
             if key.frequency is BarFrequency.D1:
-                bars = self._daily_bars(key, expected, cache=cache)
+                daily = self._daily_bars(
+                    key, expected, cache=cache, source_proof=source_proof
+                )
+                batches[index] = BarBatch(
+                    daily.bars, daily.price_unavailable, key, expected
+                )
+                continue
             elif key.frequency is BarFrequency.W1:
-                bars = self._weekly_bars(key, expected, cache=cache)
+                bars = self._weekly_bars(key, expected, cache=cache, source_proof=source_proof)
             else:
-                bars = self._minute_bars(key, expected)
-            batches[index] = BarBatch(bars)
+                bars = self._minute_bars(key, expected, request.expected_trading_days)
+            batches[index] = BarBatch(bars, source_key=key, requested_ends=expected)
         return tuple(batches[index] for index in range(len(requests)))
 
     def _minute_bars(
-        self, key: DatasetKey, expected: tuple[datetime, ...]
+        self,
+        key: DatasetKey,
+        expected: tuple[datetime, ...],
+        expected_trading_days: tuple[date, ...] | None,
     ) -> tuple[CanonicalBar, ...]:
         """1m 保持 get_price；期货日/周线另走交易所日行情。"""
         order_book_id = (
@@ -230,12 +243,19 @@ class RQDataMarketAdapter:
             if key.kind is DatasetKind.CONTINUOUS
             else key.series_or_contract
         )
+        if expected_trading_days is None:
+            raise InfrastructureError("PROVIDER_TRADING_DAY_MISSING")
+        if len(expected_trading_days) != len(expected):
+            raise InfrastructureError("PROVIDER_TRADING_DAY_INVALID")
+        expected_by_end = dict(zip(expected, expected_trading_days, strict=True))
+        if len(expected_by_end) != len(expected):
+            raise InfrastructureError("PROVIDER_WINDOW_INVALID")
         try:
             rows = _records(
                 self.client.price(
                     order_book_id,
-                    min(expected).date(),
-                    max(expected).date(),
+                    min(expected_trading_days),
+                    max(expected_trading_days),
                     key.frequency.value,
                 )
             )
@@ -243,11 +263,23 @@ class RQDataMarketAdapter:
             if _is_rqdata_quota_error(exc):
                 raise InfrastructureError("PROVIDER_QUOTA_EXHAUSTED") from exc
             raise
-        bars = [
-            _canonical_bar(row, bar_end, _row_date(row))
-            for row in rows
-            if (bar_end := _row_datetime(row)) in expected
-        ]
+        bars: list[CanonicalBar] = []
+        seen: set[datetime] = set()
+        first_day, last_day = min(expected_trading_days), max(expected_trading_days)
+        for row in rows:
+            if row.get("order_book_id") != order_book_id:
+                raise InfrastructureError("RQDATA_SOURCE_CONTRACT_MISMATCH")
+            bar_end = _row_datetime(row)
+            trading_day = _row_date(row)
+            if not first_day <= trading_day <= last_day:
+                raise InfrastructureError("RQDATA_SOURCE_TRADING_DAY_MISMATCH")
+            if bar_end in seen:
+                raise InfrastructureError("RQDATA_SOURCE_BAR_DUPLICATE")
+            seen.add(bar_end)
+            if bar_end in expected_by_end:
+                if trading_day != expected_by_end[bar_end]:
+                    raise InfrastructureError("RQDATA_SOURCE_TRADING_DAY_MISMATCH")
+                bars.append(_canonical_bar(row, bar_end, trading_day))
         return tuple(sorted(bars, key=lambda item: item.bar_end))
 
     def _daily_bars(
@@ -256,17 +288,40 @@ class RQDataMarketAdapter:
         expected: tuple[datetime, ...],
         *,
         cache: dict[tuple[str, date], dict[str, Any]] | None = None,
-    ) -> tuple[CanonicalBar, ...]:
+        source_proof: dict[tuple[str, date], tuple[str, str, datetime]] | None = None,
+    ) -> BarBatch:
         """期货日线取交易所日行情；continuous 按交易日 rank1 合约拼接。"""
         expected_by_day = {
             value.astimezone(SHANGHAI).date(): value for value in expected
         }
-        rows = self._exchange_daily_rows(key, tuple(expected_by_day), cache=cache)
-        return tuple(
-            _canonical_bar(row, expected_by_day[trading_day], trading_day)
-            for trading_day, row in sorted(rows.items())
-            if trading_day in expected_by_day
+        proofs = source_proof if source_proof is not None else {}
+        rows = self._exchange_daily_rows(
+            key, tuple(expected_by_day), cache=cache, source_proof=proofs,
+            allow_price_unavailable=key.kind is DatasetKind.CONTRACT,
         )
+        bars: list[CanonicalBar] = []
+        exceptions: list[PriceUnavailableFact] = []
+        contracts = self._contracts_by_day(key, tuple(expected_by_day))
+        for trading_day, row in sorted(rows.items()):
+            if trading_day not in expected_by_day:
+                continue
+            if classify_exchange_daily_price_unavailable(row):
+                proof = proofs.get((contracts[trading_day], trading_day))
+                if proof is None:
+                    raise InfrastructureError("RQDATA_SOURCE_PROOF_MISSING")
+                exceptions.append(PriceUnavailableFact(
+                    bar_end=expected_by_day[trading_day], trading_day=trading_day,
+                    open=_decimal(row, "open"), high=_decimal(row, "high"),
+                    low=_decimal(row, "low"), close=_decimal(row, "close"),
+                    volume=_decimal(row, "volume"),
+                    turnover=_decimal(row, "turnover") if "turnover" in row else
+                    _decimal(row, "total_turnover") if "total_turnover" in row else _decimal(row, "amount"),
+                    open_interest=_optional_decimal(_row_value(row, "open_interest", "open_oi", "close_oi", required=False)),
+                    request_sha256=proof[0], response_sha256=proof[1], observed_at=proof[2],
+                ))
+            else:
+                bars.append(_canonical_bar(row, expected_by_day[trading_day], trading_day))
+        return BarBatch(tuple(bars), tuple(exceptions))
 
     def _weekly_bars(
         self,
@@ -274,13 +329,18 @@ class RQDataMarketAdapter:
         expected: tuple[datetime, ...],
         *,
         cache: dict[tuple[str, date], dict[str, Any]] | None = None,
+        source_proof: dict[tuple[str, date], tuple[str, str, datetime]] | None = None,
     ) -> tuple[CanonicalBar, ...]:
         """期货周线仅由同一交易所日行情在完整 ISO 周内聚合。"""
         expected_by_week = {
             _iso_week(value.astimezone(SHANGHAI).date()): value for value in expected
         }
         source_days = self._weekly_source_trading_days(key, expected)
-        rows = self._exchange_daily_rows(key, source_days, cache=cache)
+        rows = self._exchange_daily_rows(
+            key, source_days, cache=cache, source_proof=source_proof
+        )
+        if any(classify_exchange_daily_price_unavailable(row) for row in rows.values()):
+            raise InfrastructureError("RQDATA_ZERO_OHL_INVALID")
         required_by_week: dict[tuple[int, int], set[date]] = {}
         for trading_day in source_days:
             iso = _iso_week(trading_day)
@@ -320,6 +380,8 @@ class RQDataMarketAdapter:
         days: tuple[date, ...],
         *,
         cache: dict[tuple[str, date], dict[str, Any]] | None = None,
+        source_proof: dict[tuple[str, date], tuple[str, str, datetime]] | None = None,
+        allow_price_unavailable: bool = False,
     ) -> dict[date, dict[str, Any]]:
         """按真实合约分组读取交易所日线；每个交易日只接受一行。"""
         active_cache = cache if cache is not None else {}
@@ -355,22 +417,43 @@ class RQDataMarketAdapter:
                     raise
                 if self._source_observer is not None:
                     self._source_observer.after_response(source_request, rows)
+                observed_at = datetime.now(UTC)
+                request_sha = hashlib.sha256(json.dumps({
+                    "contract": contract,
+                    "start": source_request.start.isoformat(),
+                    "end": source_request.end.isoformat(),
+                    "expected_dates": tuple(day.isoformat() for day in source_request.expected_dates),
+                }, sort_keys=True).encode()).hexdigest()
+                response_sha = hashlib.sha256(json.dumps(
+                    rows, sort_keys=True, default=str, separators=(",", ":")
+                ).encode()).hexdigest()
                 allowed = set(missing_days)
                 seen: set[date] = set()
                 for row in rows:
+                    if row.get("order_book_id") != contract:
+                        raise InfrastructureError("RQDATA_SOURCE_CONTRACT_MISMATCH")
                     trading_day = _row_date(row)
-                    if trading_day not in allowed:
-                        continue
                     if trading_day in seen:
                         raise InfrastructureError("RQDATA_EXCHANGE_DAILY_DUPLICATE")
                     seen.add(trading_day)
+                    if not source_request.start <= trading_day <= source_request.end:
+                        raise InfrastructureError("RQDATA_SOURCE_TRADING_DAY_MISMATCH")
+                    if trading_day not in allowed:
+                        continue
                     active_cache[(contract, trading_day)] = (
-                        _normalize_exchange_daily_zero_volume_row(row)
+                        row if allow_price_unavailable and classify_exchange_daily_price_unavailable(row)
+                        else _normalize_exchange_daily_zero_volume_row(row)
                     )
+                    if source_proof is not None:
+                        source_proof[(contract, trading_day)] = (
+                            request_sha, response_sha, observed_at
+                        )
             for trading_day in contract_days:
                 cached_row = active_cache.get((contract, trading_day))
                 if cached_row is None:
                     continue
+                if not allow_price_unavailable and classify_exchange_daily_price_unavailable(cached_row):
+                    raise InfrastructureError("RQDATA_ZERO_OHL_INVALID")
                 if trading_day in result:
                     raise InfrastructureError("RQDATA_EXCHANGE_DAILY_DUPLICATE")
                 result[trading_day] = cached_row
@@ -957,6 +1040,33 @@ def _normalize_exchange_daily_zero_volume_row(
         )
         return normalized
     return row
+
+
+def classify_exchange_daily_price_unavailable(row: dict[str, Any]) -> bool:
+    """Recognize only the observed traded zero-O/H/L source shape.
+
+    This never turns the row into a CanonicalBar or decides that a source
+    request, trading-day identity, or the whole month is complete.
+    """
+    try:
+        values = tuple(_optional_decimal(_row_value(row, name, required=False)) for name in
+                       ("open", "high", "low", "close", "volume"))
+        turnover = _optional_decimal(
+            _row_value(row, "turnover", "total_turnover", "amount", required=False)
+        )
+        open_interest = _optional_decimal(
+            _row_value(row, "open_interest", "open_oi", "close_oi", required=False)
+        )
+    except (InfrastructureError, TypeError, ValueError):
+        return False
+    open_, high, low, close, volume = values
+    return (
+        open_ == high == low == Decimal(0)
+        and close is not None and close.is_finite() and close > 0
+        and volume is not None and volume.is_finite() and volume > 0
+        and turnover is not None and turnover.is_finite() and turnover >= 0
+        and (open_interest is None or (open_interest.is_finite() and open_interest >= 0))
+    )
 
 
 def _decimal(row: dict[str, Any], field: str) -> Decimal:

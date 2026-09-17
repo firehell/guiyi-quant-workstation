@@ -106,6 +106,7 @@ def _rows(*, invalid: bool = False) -> list[dict]:
     for offset, trading_day in enumerate(_source_request().expected_dates):
         result.append(
             {
+                "order_book_id": "EC2607",
                 "date": trading_day,
                 "open": Decimal("0") if invalid and offset == 0 else Decimal("100.10"),
                 "high": Decimal("101.20"),
@@ -492,7 +493,20 @@ def test_prepare_rejects_root_hash_and_nonweekly_scope_before_provider(
     assert manager.provider_calls == manager.writes == 0
 
 
-def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> None:
+@pytest.mark.parametrize("receipt_failure", [False, True])
+def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(
+    tmp_path, monkeypatch, receipt_failure,
+) -> None:
+    import scripts.newow_weekly_recovery as recovery_module
+
+    write_json = recovery_module._write_json_exclusive
+
+    def guarded_write(path, payload):
+        if receipt_failure and path.name == "warmup-result.json":
+            raise OSError("injected receipt write failure")
+        return write_json(path, payload)
+
+    monkeypatch.setattr(recovery_module, "_write_json_exclusive", guarded_write)
     source = _source_request()
     units = [
         {
@@ -588,7 +602,7 @@ def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> 
         )
 
     attempt = create_attempt_directory(tmp_path, "batch-001")
-    result = execute_prepared_batch(
+    arguments = dict(
         manifest=manifest,
         attempt_dir=attempt,
         prepared_sha256="9" * 64,
@@ -598,12 +612,20 @@ def test_execute_prepared_batch_rechecks_hash_reads_back_and_stops(tmp_path) -> 
         current_canonical_root_sha256="e" * 64,
         open_unit=open_unit,
     )
+    if receipt_failure:
+        with pytest.raises(OSError, match="injected receipt"):
+            execute_prepared_batch(**arguments)
+        assert events == ["locked:EC2607", "invalidate:EC2607"]
+        assert not (attempt / "unit-002-si-SI2401").exists()
+        return
+    result = execute_prepared_batch(**arguments)
 
     assert result["status"] == "partial"
     assert [unit["contract"] for unit in result["completed"]] == ["EC2607"]
     assert result["failed"]["contract"] == "SI2401"
     assert result["unattempted"] == []
     assert result["retries"] == 0
+    assert json.loads((attempt / "unit-001-ec-EC2607" / "warmup-result.json").read_text())["provider_requests"] == 2
     assert events == [
         "locked:EC2607",
         "invalidate:EC2607",
@@ -1856,3 +1878,104 @@ def test_daily_execution_digest_binds_verifier_and_consumer_inputs(
     assert first != second
     with pytest.raises(RecoveryError, match="^EXECUTION_CHECKOUT_DIRTY$"):
         _require_clean_execution_checkout(commit, project_root=root)
+
+
+@pytest.mark.parametrize("case", ["bars", "mixed", "quality_only", "missing", "overlap", "wrong_day", "wrong_expected"])
+def test_daily_readback_proves_exact_quality_coverage(tmp_path, monkeypatch, case):
+    from app.market_data import market_data_service as service_module
+
+    root = tmp_path / "canonical"
+    root.mkdir()
+    path = root / "part.parquet"
+    path.write_bytes(b"pinned-partition")
+    ends = tuple(datetime(2026, 3, day, 7, tzinfo=UTC) for day in (30, 31))
+    points = tuple(SimpleNamespace(bar_end=end, trading_day=end.date()) for end in ends)
+    bars, facts = points, ()
+    if case == "mixed":
+        bars, facts = points[:1], points[1:]
+    elif case == "quality_only":
+        bars, facts = (), points
+    elif case == "missing":
+        bars = points[:1]
+    elif case == "overlap":
+        facts = points[1:]
+    elif case == "wrong_day":
+        bars = (points[0], SimpleNamespace(bar_end=ends[1], trading_day=ends[0].date()))
+    partition = SimpleNamespace(year=2026, month=3, file_path=path, row_count=len(bars))
+    catalog = SimpleNamespace(canonical_root=root, all_partitions=lambda key: (partition,))
+
+    class Store:
+        def read_catalog_partition_quality(self, value):
+            assert value is partition
+            return bars, facts
+
+        def read_catalog_partition(self, value):
+            pytest.fail("explicit D1 recovery must use the quality reader")
+
+    class Service:
+        def __init__(self, *args):
+            pass
+
+        def read_physical_daily_quality(self, request, *, require_window_coverage):
+            assert request.start == ends[0] - timedelta(microseconds=1)
+            assert request.end == ends[1]
+            assert require_window_coverage is False
+            return bars, facts
+
+        def expected_contract_replay_endpoints(self, **kwargs):
+            assert kwargs["after"] == ends[0] - timedelta(microseconds=1)
+            assert kwargs["cutoff"] == ends[1]
+            assert kwargs["trading_day"] == ends[1].date()
+            expected = tuple((p.bar_end, p.trading_day) for p in points)
+            return expected[:1] if case == "wrong_expected" else expected
+
+    monkeypatch.setattr(service_module, "MarketDataService", Service)
+    unit = {"symbol": "pg", "contract": "PG2607", "frequency": "1d", "targets": [{
+        "dataset": ["contract", "pg", "PG2607", "1d"], "year": 2026, "month": 3,
+        "expected_start": ends[0].isoformat(), "expected_end": ends[1].isoformat(),
+        "expected_bar_count": 2,
+    }]}
+    manager = SimpleNamespace(catalog=catalog, store=Store())
+    if case in {"missing", "overlap", "wrong_day", "wrong_expected"}:
+        with pytest.raises(RecoveryError, match="POST_COMMIT_MDS_INVALID"):
+            _post_commit_readback(manager, unit)
+    else:
+        result = _post_commit_readback(manager, unit)["catalog_partitions"][0]
+        assert result["mds_bar_count"] == len(bars)
+        assert result["mds_price_unavailable_count"] == len(facts)
+        assert result["mds_endpoint_count"] == 2
+
+
+@pytest.mark.parametrize("written", [0, 5])
+def test_receipt_short_write_fails_closed(tmp_path, monkeypatch, written):
+    import scripts.newow_weekly_recovery as recovery_module
+
+    real_write = recovery_module.os.write
+
+    def short_write(fd, content):
+        return real_write(fd, content[:written])
+
+    monkeypatch.setattr(recovery_module.os, "write", short_write)
+    path = tmp_path / "receipt.json"
+    with pytest.raises(OSError, match="RECEIPT_SHORT_WRITE"):
+        _write_json_exclusive(path, {"provider_requests": 10})
+    assert path.stat().st_size == written
+
+
+@pytest.mark.parametrize("phase", ["request", "response"])
+def test_source_capture_short_write_stops_before_consuming_response(tmp_path, monkeypatch, phase):
+    import scripts.newow_weekly_recovery as recovery_module
+
+    attempt = create_attempt_directory(tmp_path, "capture")
+    request = _source_request()
+    observer = AttemptJournal(attempt, (request,))
+    if phase == "response":
+        observer.before_request(request)
+    real_write = recovery_module.os.write
+    monkeypatch.setattr(recovery_module.os, "write", lambda fd, content: real_write(fd, content[:5]))
+    with pytest.raises(RecoveryError):
+        if phase == "request":
+            observer.before_request(request)
+        else:
+            observer.after_response(request, tuple(_rows()))
+    assert not (attempt / "source-response-0001.json").exists()

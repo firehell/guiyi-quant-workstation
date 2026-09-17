@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { installNewowProductFixtures, buildNewowFixtureEnvelopeForTest, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
-test('weekly summary eagerly loads open reference data and keeps deferred explanation explicit', async ({ page }) => {
+test('daily summary eagerly loads open reference data and keeps deferred explanation explicit', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto(newowRoute())
@@ -56,7 +56,7 @@ test('weekly summary eagerly loads open reference data and keeps deferred explan
   await info.click()
   await expect(dialog).toBeVisible()
   await expect(page.getByRole('button', { name: '60m', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '1w', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: '1d', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('#newow-details')).toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(dialog).not.toBeVisible()
@@ -100,8 +100,8 @@ test('historical exact locate keeps window state separate from current explanati
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   await page.locator('.newow-reference').scrollIntoViewIfNeeded()
   await page.getByRole('button', { name: '加载更多参考历史', exact: true }).click()
-  await page.getByRole('button', { name: /定位参考记录 trend-1w-interrupted/ }).click()
-  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1w-bi')
+  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-bi')
   expect(productRequests(fixture, 'chart').at(-1).url.searchParams.get('from')).toBe('2026-01-05')
   await page.getByRole('button', { name: '查看依据', exact: true }).click()
   const dialog = page.getByRole('dialog')
@@ -123,7 +123,7 @@ for (const [width, height] of [[1280, 800], [1440, 900], [1920, 1080], [2560, 14
     await page.goto(newowRoute())
     const stage = page.getByTestId('newow-product-chart-stage')
     await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
-    await expect(stage).toHaveAttribute('data-channel-point-count', '64')
+    await expect(stage).toHaveAttribute('data-channel-point-count', '95')
     expect(productRequests(fixture, 'explanation')).toHaveLength(0)
     expect(productRequests(fixture, 'comparator')).toHaveLength(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -218,6 +218,7 @@ for (const width of [1440, 390]) {
           payload.reference.value.items = []
           payload.reference.value.summary.open_count = 0
           payload.reference.value.summary.interrupted_count = 0
+          payload.reference.value.summary.rollover_interrupted_count = 0
           payload.reference.value.summary.initial_count = 0
         }
         await route.fulfill({ json: payload })
@@ -230,7 +231,7 @@ for (const width of [1440, 390]) {
     await page.locator('.newow-reference').scrollIntoViewIfNeeded()
     const waiting = page.getByTestId('newow-reference-waiting')
     await expect(waiting).toContainText('空仓等待中')
-    await expect(waiting).toContainText('状态时间 2026-06-14')
+    await expect(waiting).toContainText('状态时间 2026-08-03')
     await expect(waiting).not.toContainText('%')
     await expect(waiting).toHaveCSS('border-left-color', 'rgb(57, 123, 209)')
     await page.getByLabel('筛选参考历史').selectOption('interrupted')

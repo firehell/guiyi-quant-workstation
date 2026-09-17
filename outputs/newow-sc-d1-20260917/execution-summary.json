@@ -1,0 +1,207 @@
+{
+  "code_commit": "b8e540b43bf5b38fee5dc09bde77af5742695389",
+  "prepared_sha256": "96a2f03aabb847ddc01563e942e196ee3fe6a9ccc358983b31c7d0416d42beab",
+  "status": "passed",
+  "failed": null,
+  "unattempted": [],
+  "retries": 0,
+  "contract": "SC2611",
+  "result": {
+    "applied": 11,
+    "blocked": 0,
+    "failed": 0,
+    "failures": [],
+    "provider_requests": 11,
+    "status": "passed"
+  },
+  "attempt": {
+    "outcome_unknown": false,
+    "requests_started": 11,
+    "responses_saved": 11,
+    "retry_allowed": false,
+    "state": "response_saved"
+  },
+  "readback": {
+    "catalog_partitions": [
+      {
+        "catalog_row_count": 20,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "92b465e3190bcb1562ed0c8008034e886ed76f198264186a59089f3ed4102772",
+        "mds_bar_count": 20,
+        "mds_endpoint_count": 20,
+        "mds_price_unavailable_count": 0,
+        "month": 11,
+        "physical_row_count": 20,
+        "year": 2025
+      },
+      {
+        "catalog_row_count": 23,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "74a09eb11df22ebcdf142859d0dd0868f7ca16732634f443b8693bb2136236de",
+        "mds_bar_count": 23,
+        "mds_endpoint_count": 23,
+        "mds_price_unavailable_count": 0,
+        "month": 12,
+        "physical_row_count": 23,
+        "year": 2025
+      },
+      {
+        "catalog_row_count": 20,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "4a40fadc68da247d02dbc8c39c27e2f9633d2c2857f68a688c2170b1e43df474",
+        "mds_bar_count": 20,
+        "mds_endpoint_count": 20,
+        "mds_price_unavailable_count": 0,
+        "month": 1,
+        "physical_row_count": 20,
+        "year": 2026
+      },
+      {
+        "catalog_row_count": 14,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "115d9d063f833603955a6dacee9450c6bcec3b0daee9b42329ab9e18f706eca4",
+        "mds_bar_count": 14,
+        "mds_endpoint_count": 14,
+        "mds_price_unavailable_count": 0,
+        "month": 2,
+        "physical_row_count": 14,
+        "year": 2026
+      },
+      {
+        "catalog_row_count": 22,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "410c1bb46289bc1a7bf3d4092515546afb532e67f740a357d836078aace775f1",
+        "mds_bar_count": 22,
+        "mds_endpoint_count": 22,
+        "mds_price_unavailable_count": 0,
+        "month": 3,
+        "physical_row_count": 22,
+        "year": 2026
+      },
+      {
+        "catalog_row_count": 21,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "22b5f51fe472d1e6cce46f24c6c3ee2848f71fe7927d537825c4dbbbb17a9590",
+        "mds_bar_count": 21,
+        "mds_endpoint_count": 21,
+        "mds_price_unavailable_count": 0,
+        "month": 4,
+        "physical_row_count": 21,
+        "year": 2026
+      },
+      {
+        "catalog_row_count": 18,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "dcd6ac3a48845217f4533b12e384f61c16da3d0afbdd6fe578b4dc26d2c437d0",
+        "mds_bar_count": 18,
+        "mds_endpoint_count": 18,
+        "mds_price_unavailable_count": 0,
+        "month": 5,
+        "physical_row_count": 18,
+        "year": 2026
+      },
+      {
+        "catalog_row_count": 21,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "6a15e9e7e5f58c4739f23fc055dfb6c70ffd944504423cb977f4d2d9fd9879f3",
+        "mds_bar_count": 21,
+        "mds_endpoint_count": 21,
+        "mds_price_unavailable_count": 0,
+        "month": 6,
+        "physical_row_count": 21,
+        "year": 2026
+      },
+      {
+        "catalog_row_count": 23,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "120b8c9fde18a8e1b5d225d1df518b99ebcb5802cccd5b7915fbe603ca85751b",
+        "mds_bar_count": 23,
+        "mds_endpoint_count": 23,
+        "mds_price_unavailable_count": 0,
+        "month": 7,
+        "physical_row_count": 23,
+        "year": 2026
+      },
+      {
+        "catalog_row_count": 21,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "eaa17c62ef4011fd0f77cdddf1ac0ef4241d9c0c6c904d27f52678d2fbcbe639",
+        "mds_bar_count": 21,
+        "mds_endpoint_count": 21,
+        "mds_price_unavailable_count": 0,
+        "month": 8,
+        "physical_row_count": 21,
+        "year": 2026
+      },
+      {
+        "catalog_row_count": 12,
+        "dataset": [
+          "contract",
+          "sc",
+          "SC2611",
+          "1d"
+        ],
+        "file_sha256": "792e3216787242e7fae3493ce42803272634be9c94ca4cbc2269d08e6d5efdff",
+        "mds_bar_count": 12,
+        "mds_endpoint_count": 12,
+        "mds_price_unavailable_count": 0,
+        "month": 9,
+        "physical_row_count": 12,
+        "year": 2026
+      }
+    ],
+    "catalog_physical_mds": "passed",
+    "mds_target_count": 11
+  },
+  "remaining_target_count": 0
+}

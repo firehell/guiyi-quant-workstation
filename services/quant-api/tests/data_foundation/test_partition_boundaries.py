@@ -12,6 +12,7 @@ from app.market_data.catalog import CatalogPartition
 from app.market_data.coverage_source import DatabaseCoverageSource
 from app.market_data.domain import CanonicalBar, DatasetKey
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest, StorageError
+from app.market_data.source_quality import PriceUnavailableFact
 from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
 
 
@@ -61,6 +62,69 @@ def _request(key, bars):
 def _partition(result):
     return CatalogPartition(result.dataset, result.year, result.month, result.coverage_start,
         result.coverage_end, result.parquet_path, result.row_count)
+
+
+def _price_unavailable(day=date(2025, 1, 6), *, bar_end=None):
+    return PriceUnavailableFact(
+        bar_end=bar_end or _bar(day, 67).bar_end, trading_day=day,
+        open=Decimal(0), high=Decimal(0), low=Decimal(0),
+        close=Decimal(100), volume=Decimal(1), turnover=Decimal(10),
+        open_interest=Decimal(20), request_sha256="a" * 64,
+        response_sha256="b" * 64,
+        observed_at=datetime(2025, 1, 10, tzinfo=UTC),
+    )
+
+
+def test_d1_all_exception_month_uses_real_authority_boundary(authority):
+    _session, coverage, root = authority
+    store = CanonicalMonthlyStore(root / "canonical", boundary_validator=coverage.valid_boundaries)
+    fact = _price_unavailable()
+    request = PublishRequest(_key("contract", "1d"), 2025, 1, (), (fact.bar_end,), (fact,))
+    published = store.publish(request)
+    assert published.row_count == 0
+    assert published.source_quality == (fact,)
+    assert PriceUnavailableFact.from_record(fact.to_record()) == fact
+    assert fact.to_record()["classification_version"] == "rqdata-d1-zero-ohl-v1"
+
+
+def test_d1_all_exception_month_uses_production_composition(authority):
+    from app.market_data.composition import build_historical_data_manager
+
+    session, _coverage, root = authority
+    config = root / "config/data/universe"
+    config.mkdir(parents=True)
+    (config / "product_window_starts.csv").write_bytes((root / "starts.csv").read_bytes())
+    (config / "active_history_floor.txt").write_bytes((root / "floor.txt").read_bytes())
+    manager = build_historical_data_manager(
+        session, data_root=root / "canonical", config_root=root / "config",
+    )
+    fact = _price_unavailable()
+    request = PublishRequest(_key("contract", "1d"), 2025, 1, (), (fact.bar_end,), (fact,))
+    published = manager.store.publish(request)
+    assert published.row_count == 0
+    assert manager.store.read_catalog_partition_quality(
+        replace(_partition(published), source_quality=(fact,),
+                source_quality_sha256=published.source_quality_sha256,
+                source_coverage_start=published.source_coverage_start,
+                source_coverage_end=published.source_coverage_end)
+    ) == ((), (fact,))
+
+
+@pytest.mark.parametrize("fault", ["wrong_day", "closed_day", "outside_lifecycle"])
+def test_d1_exception_endpoint_must_match_authority(authority, fault):
+    session, coverage, root = authority
+    store = CanonicalMonthlyStore(root / "canonical", boundary_validator=coverage.valid_boundaries)
+    fact = _price_unavailable()
+    if fault == "wrong_day":
+        fact = replace(fact, trading_day=date(2025, 1, 7))
+    elif fault == "closed_day":
+        fact = replace(fact, trading_day=date(2025, 1, 4))
+    else:
+        session.execute(update(Contract).values(expired_date=date(2025, 1, 6)))
+        session.commit()
+    request = PublishRequest(_key("contract", "1d"), 2025, 1, (), (fact.bar_end,), (fact,))
+    with pytest.raises(StorageError, match="SESSION_BOUNDARY_INVALID"):
+        store.publish(request)
 
 
 @pytest.mark.parametrize("kind", ["continuous", "contract"])

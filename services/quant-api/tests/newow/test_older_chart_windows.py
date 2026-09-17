@@ -89,7 +89,7 @@ def test_chart_page_cursor_from_v1_contract_is_rejected_after_v2_upgrade(
     monkeypatch.setattr(
         product_service_module,
         "REFERENCE_MODEL_VERSION",
-        "newow_marker_reference_zero_cost_v2",
+        "newow_marker_reference_zero_cost_v3",
     )
     with pytest.raises(ValueError, match="NEWOW_CURSOR_GENERATION_CONFLICT"):
         service.query(replace(request, chart_before=v1_cursor))

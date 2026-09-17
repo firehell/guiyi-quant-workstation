@@ -57,7 +57,7 @@ def market_home_projection_path(canonical_root: Path) -> Path:
 class MarketHomeProjectionEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     generated_at: datetime
     target_as_of: date
     authority_digest: str

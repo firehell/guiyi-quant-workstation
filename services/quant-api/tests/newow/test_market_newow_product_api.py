@@ -33,27 +33,27 @@ from app.schemas.market_newow_product import (
 def _service_result(product_cases):
     from newow.test_product_service import _service
 
-    service, _reader, _build, clear = _service(product_cases, "1w")
+    service, _reader, _build, clear = _service(product_cases, "1d")
     result = service.query(
-        ProductServiceQuery("rb", "trend", "1w", as_of=clear.bar_end, chart_limit=10)
+        ProductServiceQuery("rb", "trend", "1d", as_of=clear.bar_end, chart_limit=10)
     )
     return result, clear.bar_end
 
 
 def _initial_clear_service_result(product_cases):
     reader, _query, fake = product_cases.paged_reader(
-        prefix_bars=36, page_size=20, frequency="1w"
+        prefix_bars=36, page_size=20, frequency="1d"
     )
     values = (*(["100"] * 35), "90")
     physical = tuple(
         replace(bar, open=value, high=value, low=value, close=value)
         for bar, value in zip(
-            fake.physical[("RB2605", BarFrequency.W1)], values, strict=True
+            fake.physical[("RB2605", BarFrequency.D1)], values, strict=True
         )
     )
-    fake.physical[("RB2605", BarFrequency.W1)] = physical
-    fake.expected_physical[("RB2605", BarFrequency.W1)] = physical
-    fake.actual[BarFrequency.W1] = tuple(
+    fake.physical[("RB2605", BarFrequency.D1)] = physical
+    fake.expected_physical[("RB2605", BarFrequency.D1)] = physical
+    fake.actual[BarFrequency.D1] = tuple(
         bar for bar in physical if bar.trading_day >= fake.segments[0].start_trading_day
     )
     service = NewowProductService(
@@ -62,7 +62,7 @@ def _initial_clear_service_result(product_cases):
     )
     return service.query(
         ProductServiceQuery(
-            "rb", "main_rise", "1w", as_of=fake.as_of, chart_limit=2
+            "rb", "main_rise", "1d", as_of=fake.as_of, chart_limit=2
         )
     )
 
@@ -73,10 +73,11 @@ def test_daily_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v2",
+        "schema_version": "newow_product_capabilities_v3",
         "release_stage": "daily",
-        "open_frequencies": ["1w", "1d"],
+        "open_frequencies": ["1d"],
         "deferred_frequencies": [
+            {"frequency": "1w", "reason_code": "NEWOW_WEEKLY_RELEASE_PENDING"},
             {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"},
         ],
         "open_sections": ["chart", "auxiliary", "reference", "comparator"],
@@ -89,7 +90,7 @@ def test_daily_release_capabilities_are_public_without_database_access():
     }
 
 
-@pytest.mark.parametrize("frequency", ["60m"])
+@pytest.mark.parametrize("frequency", ["1w", "60m"])
 def test_daily_release_rejects_deferred_product_frequencies_before_service(
     monkeypatch, frequency
 ):
@@ -118,7 +119,7 @@ def test_daily_release_rejects_deferred_product_frequencies_before_service(
     assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
 
 
-@pytest.mark.parametrize("frequency", ["60m"])
+@pytest.mark.parametrize("frequency", ["1w", "60m"])
 def test_daily_release_rejects_deferred_historical_frequencies_before_resolver(
     monkeypatch, frequency
 ):
@@ -179,7 +180,7 @@ def test_daily_release_admits_daily_product_frequency_to_service(monkeypatch):
     assert response.json() == {"detail": {"code": "NEWOW_DATA_UNAVAILABLE"}}
 
 
-@pytest.mark.parametrize("frequency", ["1w", "1d"])
+@pytest.mark.parametrize("frequency", ["1d"])
 def test_daily_release_defers_cross_frequency_explanation_before_service(
     monkeypatch, frequency
 ):
@@ -228,7 +229,7 @@ def test_strategy_detail_returns_only_requested_typed_section(
             params={
                 "product": "rb",
                 "strategy": "trend",
-                "frequency": "1w",
+                "frequency": "1d",
                 "as_of": as_of.isoformat(),
             },
         )
@@ -248,10 +249,10 @@ def test_strategy_detail_returns_only_requested_typed_section(
         body["chart"]["value"]["chart_from"] <= body["chart"]["value"]["chart_through"]
     )
     assert len(body["chart"]["value"]["page_identity"]) == 64
-    assert body["meta"]["schema_version"] == "newow_product_detail_v2"
+    assert body["meta"]["schema_version"] == "newow_product_detail_v3"
     assert (
         body["meta"]["reference_model_version"]
-        == "newow_marker_reference_zero_cost_v2"
+        == "newow_marker_reference_zero_cost_v3"
     )
     assert body["chart"]["value"]["next_older_window"] is None
     assert body["chart"]["value"]["formal_signal_eligible"] is True
@@ -300,7 +301,7 @@ def test_strategy_detail_normalizes_ascii_product_before_service(
                 params={
                     "product": product,
                     "strategy": strategy,
-                    "frequency": "1w",
+                    "frequency": "1d",
                 },
             )
     finally:
@@ -329,7 +330,7 @@ def test_strategy_detail_rejects_non_ascii_or_ambiguous_product_before_service(
                 params={
                     "product": product,
                     "strategy": "trend",
-                    "frequency": "1w",
+                    "frequency": "1d",
                 },
             )
     finally:
@@ -361,7 +362,7 @@ def test_historical_snapshot_normalizes_ascii_product_before_resolver(monkeypatc
         with TestClient(app) as client:
             response = client.get(
                 "/api/v1/market/newow/historical-snapshot",
-                params={"product": "JM", "strategy": "trend", "frequency": "1w"},
+                params={"product": "JM", "strategy": "trend", "frequency": "1d"},
             )
     finally:
         app.dependency_overrides.clear()
@@ -375,10 +376,10 @@ def test_typed_api_serializes_verified_initial_clear_without_entry(product_cases
     result = _initial_clear_service_result(product_cases)
     payload = market_newow._product_response(result).model_dump(mode="json")
 
-    assert payload["meta"]["schema_version"] == "newow_product_detail_v2"
+    assert payload["meta"]["schema_version"] == "newow_product_detail_v3"
     assert (
         payload["meta"]["reference_model_version"]
-        == "newow_marker_reference_zero_cost_v2"
+        == "newow_marker_reference_zero_cost_v3"
     )
     assert payload["chart"]["value"]["actions"] == [
         {
@@ -404,6 +405,7 @@ def test_typed_action_rejects_invalid_initial_clear_cross_fields(field, value):
         "reference_price": "100.100",
         "physical_contract": "PT2610",
         "segment_id": "pt:PT2610:2025-01-01T00:00:00+00:00",
+        "calculation_segment_id": "pt:PT2610:2025-01-01T00:00:00+00:00",
         "related_build_id": None,
         "trade_eligibility": "INITIAL_CLEAR_NO_ENTRY",
         "sequence": 0,
@@ -496,7 +498,7 @@ def test_historical_snapshot_strict_query_and_exact_cutoff(monkeypatch):
     with TestClient(app) as client:
         ok = client.get(
             "/api/v1/market/newow/historical-snapshot",
-            params={"product": "rb", "strategy": "trend", "frequency": "1w"},
+            params={"product": "rb", "strategy": "trend", "frequency": "1d"},
         )
         duplicate = client.get(
             "/api/v1/market/newow/historical-snapshot?product=rb&product=ag&strategy=trend&frequency=1w"
@@ -506,7 +508,7 @@ def test_historical_snapshot_strict_query_and_exact_cutoff(monkeypatch):
             params={
                 "product": "rb",
                 "strategy": "trend",
-                "frequency": "1w",
+                "frequency": "1d",
                 "as_of": cutoff.isoformat(),
             },
         )
@@ -520,10 +522,10 @@ def test_historical_snapshot_strict_query_and_exact_cutoff(monkeypatch):
 def test_older_chart_window_round_trip_and_invalid_binding(monkeypatch, product_cases):
     from newow.test_older_chart_windows import setup_service
 
-    service, _, facts = setup_service(product_cases, "1w")
+    service, _, facts = setup_service(product_cases, "1d")
     monkeypatch.setattr(market_newow, "_build_product_service", lambda *_args: service)
     app.dependency_overrides[get_db] = lambda: object()
-    params = {"product": "rb", "strategy": "trend", "frequency": "1w"}
+    params = {"product": "rb", "strategy": "trend", "frequency": "1d"}
     try:
         with TestClient(app) as client:
             first = client.get("/api/v1/market/newow/strategy-detail", params=params)
@@ -579,7 +581,7 @@ def test_historical_snapshot_preserves_typed_resource_and_service_errors(monkeyp
             resolver.error = error
             response = client.get(
                 "/api/v1/market/newow/historical-snapshot",
-                params={"product": "rb", "strategy": "trend", "frequency": "1w"},
+                params={"product": "rb", "strategy": "trend", "frequency": "1d"},
             )
             assert response.status_code == status
             assert response.json() == {"detail": {"code": code}}
@@ -603,7 +605,7 @@ def test_strategy_detail_rejects_unknown_or_cross_section_inputs(monkeypatch):
                 params={
                     "product": "rb",
                     "strategy": "trend",
-                    "frequency": "1w",
+                    "frequency": "1d",
                     "evidence": "forged",
                 },
             ).status_code
@@ -615,7 +617,7 @@ def test_strategy_detail_rejects_unknown_or_cross_section_inputs(monkeypatch):
                 params={
                     "product": "rb",
                     "strategy": "trend",
-                    "frequency": "1w",
+                    "frequency": "1d",
                     "history_limit": 3,
                 },
             ).status_code
@@ -627,7 +629,7 @@ def test_strategy_detail_rejects_unknown_or_cross_section_inputs(monkeypatch):
                 params={
                     "product": "rb",
                     "strategy": "trend",
-                    "frequency": "1w",
+                    "frequency": "1d",
                     "as_of": "2026-01-01T00:00:00",
                 },
             ).status_code
@@ -641,12 +643,12 @@ def test_reference_uses_decimal_strings_and_null_empty_closed_metrics(
 ):
     from newow.test_product_service import _service
 
-    service, _reader, build, clear = _service(product_cases, "1w")
+    service, _reader, build, clear = _service(product_cases, "1d")
     result = service.query(
         ProductServiceQuery(
             "rb",
             "trend",
-            "1w",
+            "1d",
             section="reference",
             performance_since=build.trading_day,
             performance_through=build.trading_day,
@@ -667,7 +669,7 @@ def test_reference_uses_decimal_strings_and_null_empty_closed_metrics(
             params={
                 "product": "rb",
                 "strategy": "trend",
-                "frequency": "1w",
+                "frequency": "1d",
                 "section": "reference",
                 "performance_since": build.trading_day.isoformat(),
                 "performance_through": build.trading_day.isoformat(),
@@ -703,13 +705,13 @@ def test_strategy_detail_maps_future_as_of_and_safe_internal_errors(monkeypatch)
             params={
                 "product": "rb",
                 "strategy": "trend",
-                "frequency": "1w",
+                "frequency": "1d",
                 "as_of": datetime(2100, 1, 1, tzinfo=UTC).isoformat(),
             },
         )
         internal = client.get(
             "/api/v1/market/newow/strategy-detail",
-            params={"product": "rb", "strategy": "trend", "frequency": "1w"},
+            params={"product": "rb", "strategy": "trend", "frequency": "1d"},
         )
     app.dependency_overrides.clear()
     assert future.status_code == 422
@@ -733,14 +735,14 @@ def test_strategy_detail_normalizes_mds_failure_to_public_conflict(monkeypatch):
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.get(
             "/api/v1/market/newow/strategy-detail",
-            params={"product": "rb", "strategy": "trend", "frequency": "1w"},
+            params={"product": "rb", "strategy": "trend", "frequency": "1d"},
         )
     app.dependency_overrides.clear()
 
     assert response.status_code == 409
     assert response.json() == {"detail": {
         "code": "NEWOW_DATA_UNAVAILABLE",
-        "diagnostic": {"reason": "MAIN_CONTRACT_MAP_MISSING", "context": {"symbol": "rb", "frequency": "1w"},
+        "diagnostic": {"reason": "MAIN_CONTRACT_MAP_MISSING", "context": {"symbol": "rb", "frequency": "1d"},
                        "historical_candidate_recoverable": True},
     }}
 

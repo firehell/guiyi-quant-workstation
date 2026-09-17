@@ -132,6 +132,8 @@ class ProductBar:
     bar: NewowDailyBar
     frequency: ProductFrequency
     series_kind: str = "actual_dominant"
+    calculation_segment_id: str | None = None
+    source_bar_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.bar, NewowDailyBar) or self.bar.completed is not True:
@@ -153,6 +155,15 @@ class ProductBar:
             raise ValueError("NEWOW_PRODUCT_INVALID_VOLUME_OR_OI")
         if self.series_kind != "actual_dominant":
             raise ValueError("NEWOW_PRODUCT_INVALID_SERIES")
+        if self.calculation_segment_id is None:
+            object.__setattr__(self, "calculation_segment_id", self.bar.segment_id)
+        else:
+            _text(self.calculation_segment_id)
+        if self.source_bar_sha256 is not None and (
+            len(self.source_bar_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in self.source_bar_sha256)
+        ):
+            raise ValueError("NEWOW_PRODUCT_INVALID_SOURCE_DIGEST")
         object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
         object.__setattr__(
             self, "bar", replace(self.bar, bar_end=utc_timestamp(self.bar.bar_end))
@@ -305,6 +316,30 @@ class OwnerBoundary:
 
 
 @dataclass(frozen=True, slots=True)
+class DataInterruption:
+    """A proven unusable source-price day, distinct from a rank-1 rollover."""
+
+    product: str
+    frequency: ProductFrequency
+    physical_contract: str
+    segment_id: str
+    trading_day: date
+    effective_at: datetime
+    source_identity: str
+
+    def __post_init__(self) -> None:
+        for value in (
+            self.product, self.physical_contract, self.segment_id, self.source_identity
+        ):
+            _text(value)
+        if self.product != self.product.lower() or self.physical_contract != self.physical_contract.upper():
+            raise ValueError("NEWOW_PRODUCT_INVALID_DATA_INTERRUPTION")
+        object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
+        _day(self.trading_day)
+        object.__setattr__(self, "effective_at", utc_timestamp(self.effective_at))
+
+
+@dataclass(frozen=True, slots=True)
 class FeatureStatus:
     status: FeatureRuntimeStatus
     evidence_status: EvidenceStatus
@@ -336,6 +371,7 @@ class StrategyAction:
     source_marker_id: str | None = None
     source_related_marker_ids: tuple[str, ...] = ()
     trade_eligibility: TradeEligibility = TradeEligibility.ELIGIBLE
+    calculation_segment_id: str | None = None
     signal_id: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -350,6 +386,10 @@ class StrategyAction:
                 _text(value)
         object.__setattr__(self, "bar_end", utc_timestamp(self.bar_end))
         object.__setattr__(self, "kind", ActionKind(self.kind))
+        if self.calculation_segment_id is None:
+            object.__setattr__(self, "calculation_segment_id", self.segment_id)
+        else:
+            _text(self.calculation_segment_id)
         object.__setattr__(
             self, "trade_eligibility", TradeEligibility(self.trade_eligibility)
         )
@@ -375,6 +415,7 @@ class StrategyAction:
                 self.bar_end,
                 self.kind,
                 self.sequence,
+                self.calculation_segment_id,
             ),
         )
 
@@ -394,6 +435,7 @@ class StrategyHint:
     source_related_marker_ids: tuple[str, ...] = ()
     quantity_effect: str = "none"
     retrospective: bool = False
+    calculation_segment_id: str | None = None
     hint_id: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -406,6 +448,10 @@ class StrategyHint:
             _text(self.source_marker_id)
         object.__setattr__(self, "bar_end", utc_timestamp(self.bar_end))
         object.__setattr__(self, "known_at", utc_timestamp(self.known_at))
+        if self.calculation_segment_id is None:
+            object.__setattr__(self, "calculation_segment_id", self.segment_id)
+        else:
+            _text(self.calculation_segment_id)
         if (
             self.quantity_effect != "none"
             or self.retrospective is not False
@@ -425,6 +471,7 @@ class StrategyHint:
                 self.bar_end,
                 self.kind,
                 self.sequence,
+                self.calculation_segment_id,
             ),
         )
 

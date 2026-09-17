@@ -63,6 +63,82 @@ def test_startup_composition_requires_exact_registry_evaluator_and_policy_covera
     assert called is False
 
 
+def test_rule_coverage_preserves_failed_product_after_peer_success() -> None:
+    now = datetime(2026, 9, 4, 1, 16, tzinfo=UTC)
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        sender=None,  # type: ignore[arg-type]
+        operational_products=("rb", "ag"),
+        taxonomy={},
+    )
+    runtime._record_rule_result(
+        HTDY_ALERT_RULE_CODE, evaluated_bar_at=None, at=now,
+        event_created=False, error_type="evaluation_failed",
+        coverage_identity=("rb", "15m", "RB2610", date(2026, 9, 4)),
+    )
+    runtime._record_rule_result(
+        HTDY_ALERT_RULE_CODE, evaluated_bar_at=now, at=now,
+        event_created=False, error_type=None,
+        coverage_identity=("ag", "15m", "AG2610", date(2026, 9, 4)),
+    )
+    assert runtime._coverage_progress[(HTDY_ALERT_RULE_CODE, "rb", "15m")]["state"] == "evaluation_failed"
+    assert runtime._coverage_progress[(HTDY_ALERT_RULE_CODE, "ag", "15m")]["state"] == "ok"
+
+
+def test_alert_health_detects_one_due_unevaluated_frequency() -> None:
+    now = datetime(2026, 9, 4, 1, 17, tzinfo=UTC)
+    expected = now - timedelta(minutes=2)
+    heartbeat = {
+        "generated_at": now.isoformat(), "available": True,
+        "enabled_rule_count": 1, "scope_product_count": 2,
+        "coverage_schema_version": 1,
+        "coverage": {
+            "rule:rb:15m": {"rule_code": "rule", "symbol": "rb", "frequency": "15m", "state": "ok", "last_evaluated_bar_at": expected.isoformat()},
+            "rule:ag:15m": {"rule_code": "rule", "symbol": "ag", "frequency": "15m", "state": "unverified", "last_evaluated_bar_at": None},
+        },
+    }
+    health = _collect_alert_health(
+        SimpleNamespace(get=lambda key: json.dumps(heartbeat) if key == "alert:heartbeat" else None),
+        now=now, configured_enabled=True,
+        notification={"configured": True}, transport_error_type=None,
+        freshness_seconds=30,
+        live_coverage={
+            symbol: {"state": "ok", "sessions": [{"start": (expected - timedelta(minutes=15)).isoformat(), "end": expected.isoformat()}]}
+            for symbol in ("rb", "ag")
+        },
+    )
+    assert health["status"] == "degraded"
+    assert health["coverage"]["rule:rb:15m"]["state"] == "ok"
+    assert health["coverage"]["rule:ag:15m"]["state"] == "evaluation_lagging"
+
+
+def test_alert_first_unresolved_minute_does_not_slide_with_latest_bar() -> None:
+    start = datetime(2026, 9, 4, 1, tzinfo=UTC)
+    evaluated = start + timedelta(minutes=1)
+    heartbeat = {
+        "generated_at": (start + timedelta(minutes=15, seconds=3)).isoformat(),
+        "available": True, "enabled_rule_count": 1, "scope_product_count": 1,
+        "coverage_schema_version": 1,
+        "coverage": {"rule:rb:1m": {
+            "rule_code": "rule", "symbol": "rb", "frequency": "1m",
+            "state": "ok", "last_evaluated_bar_at": evaluated.isoformat(),
+        }},
+    }
+    for minutes in (10, 11, 15):
+        now = start + timedelta(minutes=minutes, seconds=3)
+        heartbeat["generated_at"] = now.isoformat()
+        health = _collect_alert_health(
+            SimpleNamespace(get=lambda key: json.dumps(heartbeat) if key == "alert:heartbeat" else None),
+            now=now, configured_enabled=True,
+            notification={"configured": True}, transport_error_type=None,
+            freshness_seconds=30,
+            live_coverage={"rb": {"state": "ok", "sessions": [{"start": start.isoformat(), "end": (start + timedelta(minutes=20)).isoformat()}]}},
+        )
+        assert health["coverage"]["rule:rb:1m"]["state"] == "evaluation_lagging"
+        assert health["coverage"]["rule:rb:1m"]["first_unresolved_bar_end"] == (start + timedelta(minutes=2)).isoformat()
+
+
 def test_startup_composition_rejects_malformed_policy_before_db(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -458,6 +534,12 @@ def test_unrelated_live_frequency_does_not_clear_rule_failure_or_health(rule_cod
             "alert:heartbeat": json.dumps({
                 "generated_at": first_bar_at.isoformat(), "available": True,
                 "enabled_rule_count": 1, "scope_product_count": 1,
+                "coverage_schema_version": 1,
+                "coverage": {
+                    f"{rule_code}:rb:15m": runtime._coverage_progress.get(
+                        (rule_code, "rb", "15m"), {"state": "unverified"}
+                    )
+                },
             }),
             "alert:runtime-status": json.dumps(runtime._current_runtime_status()),
         }

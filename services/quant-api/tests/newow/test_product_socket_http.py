@@ -9,7 +9,7 @@ import httpx2 as httpx
 from newow.socket_app_support import socket_app
 
 DETAIL = "/api/v1/market/newow/strategy-detail"
-IDENTITY = {"product": "rb", "strategy": "trend", "frequency": "1w"}
+IDENTITY = {"product": "rb", "strategy": "trend", "frequency": "1d"}
 BASE = {**IDENTITY, "as_of": "2024-06-04T08:00:00+00:00"}
 
 

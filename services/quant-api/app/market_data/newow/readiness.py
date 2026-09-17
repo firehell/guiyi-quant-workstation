@@ -104,6 +104,12 @@ class AuditBudget:
 
 
 def _failure(exc: Exception) -> dict[str, Any]:
+    if isinstance(exc, MarketDataError) and exc.code == "PRICE_UNAVAILABLE":
+        return {
+            "status": "DATA_INTERRUPTED",
+            "error": {"code": "NEWOW_SOURCE_PRICE_UNAVAILABLE"},
+            "reason": "PRICE_UNAVAILABLE",
+        }
     if isinstance(exc, (CatalogError, SessionClockError)):
         exc = MarketDataError(exc.code)
     _http, detail = public_product_error(exc)

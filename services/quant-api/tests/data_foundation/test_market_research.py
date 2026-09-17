@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -23,6 +24,23 @@ def test_missing_latest_oi_is_unavailable_not_zero() -> None:
     result = calculate_research_metrics(daily, _weekly_bars(30))
 
     assert result.oi_change_1d is None
+
+
+def test_no_trade_zero_price_breaks_generic_indicator_warmup() -> None:
+    daily = _daily_bars(30)
+    no_trade = replace(
+        daily[-2], open=Decimal(0), high=Decimal(0),
+        low=Decimal(0), close=Decimal(0), volume=Decimal(0),
+        turnover=Decimal(0),
+    )
+
+    metrics = calculate_research_metrics(
+        daily[:-2] + (no_trade, daily[-1]), _weekly_bars(30)
+    )
+
+    assert metrics.price_change_1d is None
+    assert metrics.daily_trend == "unavailable"
+    assert metrics.atr14_percentile252 is None
 
 
 def test_returns_position_and_turnover_use_frozen_lookbacks() -> None:
@@ -95,6 +113,27 @@ def test_product_snapshot_preserves_identity_and_uses_market_data_service_only()
     assert snapshot.sector == "black"
     assert snapshot.as_of == date(2025, 1, 30)
     assert len(snapshot.recent_daily) == 30
+
+
+def test_actual_dominant_research_metrics_use_target_owner_physical_history() -> None:
+    service = _FakeMarketDataService()
+    service.daily = _daily_bars(30)
+    service.physical_daily = _daily_bars(
+        30, closes=[Decimal(200 + index) for index in range(30)]
+    )
+    service.physical_weekly = _weekly_bars(30)
+    service.physical_calls = []
+
+    snapshot = MarketResearchService(service).product_snapshot(
+        ResearchSeriesIdentity("jm", "actual_dominant")
+    )
+
+    assert snapshot.metrics.price_change_1d == Decimal(229) / Decimal(228) - 1
+    assert snapshot.metric_contract == "JM2510"
+    assert snapshot.recent_daily == service.daily
+    assert [(call["contract"], call["frequency"].value) for call in service.physical_calls] == [
+        ("JM2510", "1d"), ("JM2510", "1w"),
+    ]
 
 
 def _daily_bars(
@@ -176,4 +215,18 @@ class _FakeMarketDataService:
                 actual_contract="JM2510",
                 dominant_mapping_date=date(2025, 1, 30),
             ),
+        )
+
+    def dominant_segment_for_day(self, symbol, trading_day):
+        from app.market_data.market_data_service import DominantContractSegmentSummary
+        return DominantContractSegmentSummary(
+            symbol, "JM2510", trading_day, trading_day
+        )
+
+    def query_physical_bars_as_of(self, **kwargs):
+        self.physical_calls.append(kwargs)
+        return (
+            self.physical_daily
+            if kwargs["frequency"].value == "1d"
+            else self.physical_weekly
         )

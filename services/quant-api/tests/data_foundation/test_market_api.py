@@ -126,6 +126,7 @@ class FakeResearchService:
             contract=None,
             as_of=date(2025, 1, 2),
             current_dominant="JM2509",
+            metric_contract="JM2509",
             dominant_mapping_date=date(2025, 1, 2),
             metrics=SimpleNamespace(
                 daily_trend="up",

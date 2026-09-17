@@ -32,7 +32,7 @@ test('activates generic facts and mounts Newow in the unified workspace', () => 
   assert.match(source, /import NewowProductWorkspace/)
   assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow' && newowCapabilities\.capabilities\.value && newowFrequencyOpen"/)
   assert.match(template, /:capabilities="newowCapabilities\.capabilities\.value"/)
-  assert.match(template, /切换到已开放周线/)
+  assert.match(template, /切换到已开放日线/)
   assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free' && header"/)
   assert.doesNotMatch(template, /<HtdyDetailWorkspace\s+v-else(?:\s|>)/)
   assert.doesNotMatch(template, /TrendDetailWorkspace/)

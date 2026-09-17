@@ -59,8 +59,8 @@ database connections remain separately authorized operations, not a consequence 
 
 Readiness audit SHALL use the existing reader and shared validated MDS rank1 owner enumeration before
 reading physical prefixes. It SHALL enumerate the complete planned matrix, but only read dependencies for the
-currently opened release scope. In the daily stage this means `1w` and `1d` chart, auxiliary, reference and comparator;
-`60m` main cases and all explanation cases remain visible as `UNOPENED`, cause no reader calls and do not count
+currently opened release scope. In the daily stage this means `1d` chart, auxiliary, reference and comparator;
+`1w/60m` main cases and all explanation cases remain visible as `UNOPENED`, cause no reader calls and do not count
 as incomplete readiness. When a later stage opens them, the audit SHALL collect every independent
 contract/frequency failure across that newly opened scope, preserving owner segments and consumer provenance.
 Missing metadata SHALL retain UNKNOWN enumeration and null counts, with only bounded repair proposals.
@@ -504,10 +504,11 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 依赖前收的指标按这两根有效观察计算，因此无交易间隔后的价格跳空仍由恢复交易 Bar 自身表达。
 该规则对 owner 前同物理合约 warm-up 和 owner 内有效观察一致适用。
 
-部分零价、正 `volume`、正 `turnover`、`turnover` 缺失或其他不能严格证明无交易的非正价格事实 MUST
-继续 fail-closed。reader/readiness SHALL 公开 raw、effective 与 `NO_TRADE` 数量，并把
-`newow_futures_effective_observation_v1` 纳入输入证明；产品与 ReferenceTrade 使用
-`newow_futures_segment_interrupt_no_trade_v2`，不得笼统声明证券页面原样 parity。
+部分零价、`turnover` 缺失或其他不能严格证明无交易的非正价格事实 MUST 继续 fail-closed；
+唯一例外是 Canonical 市场存储合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`。
+它是来源质量中断，不是 `NO_TRADE` 或行情 Bar。reader/readiness SHALL 公开 raw、effective、
+`NO_TRADE` 与价格不可用数量，并把 `newow_futures_quality_observation_v2` 纳入输入证明；
+产品与 ReferenceTrade 使用 `newow_futures_quality_segment_v3`，不得笼统声明证券页面原样 parity。
 
 #### Scenario: A zero-activity futures day appears in warm-up
 
@@ -519,7 +520,32 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 
 - **GIVEN** 非正价格 Bar 的 `volume`、`turnover` 或其他严格条件不满足
 - **WHEN** reader 构造策略输入
-- **THEN** 返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
+- **THEN** 除上述已证明的窄 D1 类型外，返回 `NEWOW_SOURCE_NONPOSITIVE_PRICE`，不把异常降级为无交易日
+
+### Requirement: D1 price-unavailable days split calculation and reference history
+
+同一物理合约的 D1 `PRICE_UNAVAILABLE` 日 MUST 在该合约有效前缀切断计算，即使当时尚未成为
+rank1。物理合约及 owner segment 身份保持原样，计算区段 MUST 有独立版本化身份；后续有效
+completed Bar 从新段重新预热所有依赖指标和策略状态，不得跨断点继承递推状态或配对见证。
+其他 owner 的异常不得传染当前完好 owner。只有满足各自真实预热条件的当前状态可标 READY；
+最新已完成日恰为缺价或仍在预热时，不得以断点前旧 Frame 冒充当前 READY。
+
+断点前真实 CLOSED 参考交易可保留；断点时 OPEN MUST 转为 `DATA_INTERRUPTED`，保留 entry 和
+中断时间，但无 exit、无已完成收益。断点后 CLEAR 不得配对断点前 BUILD；无可验证 BUILD 的
+初始 HOLD 不得制造 OPEN。`DATA_INTERRUPTED` 与换月中断分别标示，均不计入 CLOSED 统计。
+统计仅可汇总有效计算区段内的真实 CLOSED 样本；历史窗口若有缺价或重新预热，MUST 明示
+`PARTIAL`、排除区段及原因，不得展示为连续完整历史收益。页面参考仍为零成本乐观展示，
+不是模拟或真实成交；不得从数据缺陷推断交易所停市或供应方错误。
+
+#### Scenario: One price gap during an open reference trade
+
+- **WHEN** 完整来源证明显示 owner 内一日价格不可用
+- **THEN** 该日无 Bar/Marker/成交，OPEN 变为 DATA_INTERRUPTED 且已完成收益为空；后续计算重新预热
+
+#### Scenario: Clean suffix after a gap
+
+- **WHEN** 新计算段已有足量有效 completed Bar
+- **THEN** 当前策略可 READY，但历史窗口仍显式 PARTIAL 且只展示有效区段样本统计
 
 ### Requirement: Sectioned product delivery is computation-bounded
 
@@ -784,16 +810,16 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 
 分阶段发布 MUST 由无数据库依赖的 `GET /api/v1/market/newow/product-capabilities` 返回唯一公开边界，
 并由当前与历史 typed endpoint 在进入 reader/service 前执行同一 server-owned Gate。当前日版 stage 开放
-`1w` 与 `1d` 的 chart/auxiliary/reference/comparator；`60m` 仍返回 `NEWOW_FREQUENCY_NOT_OPEN`，依赖未开放
+仅 `1d` 的 chart/auxiliary/reference/comparator；`1w` 和 `60m` 仍返回 `NEWOW_FREQUENCY_NOT_OPEN`，依赖未开放
 跨周期输入的 explanation 返回 `NEWOW_SECTION_NOT_OPEN`。Web 必须严格校验 capability envelope；旧链接和
 存储偏好不得把未开放周期静默改写为已开放周期，而要显示本版未开放并提供明确回到已开放周期的操作。
 该 stage 不删除 kernel/reader 的三周期能力，不改变 HTDY/SuBing/Free，也不改变旧 `/trend-detail` 的固定 D1
-兼容语义。后续 60m 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
+兼容语义。后续 `1w` 或 `60m` 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
 
-#### Scenario: Deferred hourly request cannot bypass the daily stage
+#### Scenario: Deferred weekly and hourly requests cannot bypass the daily stage
 
-- **GIVEN** 当前 capability 的 `release_stage=daily` 且 `open_frequencies=["1w","1d"]`
-- **WHEN** 客户端直接请求 typed current/historical endpoint 的 `60m`
+- **GIVEN** 当前 capability 的 `release_stage=daily` 且 `open_frequencies=["1d"]`
+- **WHEN** 客户端直接请求 typed current/historical endpoint 的 `1w` 或 `60m`
 - **THEN** 服务在构造 reader/service 前返回分类 409 `NEWOW_FREQUENCY_NOT_OPEN`
 - **AND** 不改写 frequency、不请求其他周期、不影响旧固定 D1 兼容 endpoint
 
@@ -806,10 +832,10 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 
 #### Scenario: Cross-frequency explanation remains closed
 
-- **GIVEN** 周线与日线主图和独立同周期面板可用，但 explanation 仍需要未开放的 60m 输入
-- **WHEN** 客户端请求 `1w` 或 `1d` 的 `section=explanation`
+- **GIVEN** 日线主图和独立同周期面板可用，但 explanation 仍需要未开放的跨周期输入
+- **WHEN** 客户端请求 `1d` 的 `section=explanation`
 - **THEN** 返回分类 409 `NEWOW_SECTION_NOT_OPEN`
-- **AND** 不删除输入后沿用综合总分，也不创造周线或日线简化评分
+- **AND** 不删除输入后沿用综合总分，也不创造日线简化评分
 
 #### Scenario: A requested explanation has an evidence gap
 

@@ -14,7 +14,7 @@ const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 let opener: HTMLElement | null = null
 let generation = 0
-let closing = false
+let pendingProgrammaticCloses = 0
 let scrollLocks: Array<{ element: HTMLElement; overflow: string; top: number; left: number }> = []
 
 function unlockScroll() {
@@ -37,17 +37,29 @@ function lockScroll() {
   }
 }
 
+function closeProgrammatically() {
+  if (!dialog.value?.open) return
+  pendingProgrammaticCloses++
+  dialog.value.close()
+}
+
+function handleNativeClose() {
+  if (pendingProgrammaticCloses > 0) {
+    pendingProgrammaticCloses--
+    return
+  }
+  if (props.open) emit('close')
+}
+
 watch(() => [props.open, props.identityKey] as const, async ([open, identity], prior) => {
   const current = ++generation
   const identityChanged = Boolean(prior && prior[1] !== identity)
   if (!open || identityChanged) {
-    closing = true
-    dialog.value?.close()
+    closeProgrammatically()
     unlockScroll()
     if (!open && prior?.[1] === identity && opener?.isConnected) opener.focus({ preventScroll: true })
     opener = null
     if (identityChanged && prior?.[0]) emit('close')
-    closing = false
     return
   }
 
@@ -92,8 +104,7 @@ function backdrop(event: MouseEvent) {
 
 onBeforeUnmount(() => {
   ++generation
-  closing = true
-  dialog.value?.close()
+  closeProgrammatically()
   unlockScroll()
   opener = null
 })
@@ -105,7 +116,7 @@ onBeforeUnmount(() => {
     class="market-facts-dialog"
     aria-labelledby="market-facts-dialog-title"
     @cancel.prevent="close"
-    @close="!closing && open && close()"
+    @close="handleNativeClose"
     @click="backdrop"
     @keydown="trapTab"
   >

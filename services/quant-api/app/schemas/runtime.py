@@ -26,6 +26,8 @@ class RuntimeLiveMarketHealth(BaseModel):
     last_heartbeat_at: str | None = None
     last_bar_at: str | None = None
     phase_counts: dict[str, int] = Field(default_factory=dict)
+    coverage_state: str = "unverified"
+    coverage: dict[str, dict[str, object]] = Field(default_factory=dict)
     error_type: str | None = None
     error_message: str | None = None
 
@@ -157,6 +159,8 @@ class RuntimeAlertHealth(BaseModel):
     notification_error_type: str | None = None
     consecutive_notification_failures: int = 0
     rule_status: dict[str, RuntimeAlertRuleStatus] = Field(default_factory=dict)
+    coverage_state: str = "unverified"
+    coverage: dict[str, dict[str, object]] = Field(default_factory=dict)
     error_type: str | None = None
 
 

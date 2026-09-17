@@ -23,8 +23,13 @@ Dataset。
 `futures.get_exchange_daily`：真实合约直接读取，`continuous/MAIN` 按每个交易日 rank1
 `MainContractMap` 拼接对应真实合约。`1w` 仅由同一交易所日行情在完整 ISO 周内聚合，缺任一应有
 交易日事实即失败。RQData 对零成交日返回 `volume=0`、有效正 `close` 且 O/H/L 同时为空或同时为零时，adapter
-只允许用同一行 `close` 规范成平价 OHLC；交易所原始的全零 O/H/L/close 零成交行保留其事实，非零成交、部分价格缺失、部分零价或无效 `close` 仍须失败。
+只允许用同一行 `close` 规范成平价 OHLC；交易所原始的全零 O/H/L/close 零成交行保留其事实。
+对物理合约 D1 严格匹配 O/H/L=0、`close>0`、`volume>0` 且其余来源、身份和端点校验通过的行，
+仅按已批准的 `PRICE_UNAVAILABLE` 质量事实记录并中断 Newow 计算，不生成 CanonicalBar；
+其他非零成交、部分价格缺失、部分零价或无效 `close` 仍须失败。W1 不得借此缺价日聚合成功。
 不得用 `get_price` 的期货日/周 `close` 或 `settlement` 互相替代。
+
+来源响应中的原始 `order_book_id`、端点唯一性和交易日归属在归一化前验证；同一响应的重复行不能由字典覆盖。分钟 provider 请求的日期窗口从 Calendar/Session 所属交易日得出，夜盘跨自然日、周末仍按所属交易日请求。维护计划冻结允许补缺或 refresh 的端点，只有该集合内的来源记录可进入发布。
 
 ## 2. Canonical 物理合同
 
@@ -47,6 +52,7 @@ canonical/
 校验。新发布文件以实际 Parquet bytes 的全小写 SHA-256 命名为 `part.<sha256>.parquet`，不可变、
 无覆盖，先完成文件与目录 durability，再在既有 DB 事务内 register/flush，并通过真实
 `MarketDataService` strict-read 校验候选 Catalog URI。事务 commit 是该月新指针唯一可见点。
+维护 strict-read 对计划中冻结的 expected 端点做精确读回；普通查询与分页独立按 Calendar/Session 证明请求窗口端点完整，缺口不能以缩短返回窗口掩盖。
 每 DatasetKey 每月只有一个 active Catalog pointer，记录 `coverage_start`、`coverage_end`、
 `row_count` 与精确 `file_uri`；不要求目录中只有一个物理文件，不新增 schema、version table、
 history API、sidecar 或发布清单。

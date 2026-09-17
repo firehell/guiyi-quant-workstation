@@ -142,7 +142,7 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/g
   --as-of 2026-09-13T06:36:13+00:00 --max-work 100000 --timeout-seconds 1800
 ```
 
-## Newow 日线候选工程（1w+1d 开放，60m 仍 UNOPENED）
+## Newow 日线候选工程（仅 1d 开放，1w/60m 为 UNOPENED）
 
 以下组验证日版 capability v2、恢复器严格单频 1d、跨频 plan/hash 隔离、close 与 settlement 分离。
 不授权 RQData 下载、Canonical 写入或 Runtime。真实 D1 总包 prepare/apply 仍走独立 Gate。

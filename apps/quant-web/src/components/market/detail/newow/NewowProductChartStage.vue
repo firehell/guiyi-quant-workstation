@@ -485,6 +485,10 @@ defineExpose({ revealSignal, scrollToLatest })
       <button type="button" :aria-label="fullscreen ? '退出图表全屏' : '图表全屏'" @click="toggleFullscreen">{{ fullscreen ? '退出全屏' : '全屏' }}</button>
     </div>
     </div>
+    <details v-if="response?.value?.price_unavailable_days.length" class="newow-product-chart-stage__quality-gaps" data-testid="newow-chart-price-gaps">
+      <summary>日线来源价格不可用 {{ response.value.price_unavailable_days.length }} 日；指标已分段重算</summary>
+      <ul><li v-for="gap in response.value.price_unavailable_days" :key="`${gap.segment_id}:${gap.trading_day}`">{{ gap.trading_day }} · {{ gap.physical_contract }} · 无可用开高低价；未生成 K 线或交易信号</li></ul>
+    </details>
     <div
       ref="container"
       class="newow-product-chart-stage__chart"

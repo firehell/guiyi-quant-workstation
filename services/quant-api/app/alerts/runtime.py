@@ -188,6 +188,7 @@ class AlertRuntime:
         self.heartbeat_store = heartbeat_store
         self.runtime_status_store = runtime_status_store
         self._runtime_status: dict[str, object] | None = None
+        self._coverage_progress: dict[tuple[str, str, str], dict[str, object]] = {}
         self.clock = clock or (lambda: datetime.now(UTC))
         self.stop_requested = stop_requested or (lambda: False)
 
@@ -361,6 +362,7 @@ class AlertRuntime:
                             at=processing_now,
                             event_created=rule_event_created,
                             error_type=None,
+                            coverage_identity=(trigger.symbol, trigger.frequency.value, window.contract, window.trading_day),
                         )
                         messages.extend(rule_messages)
                         recorded_rule_result = True
@@ -376,6 +378,7 @@ class AlertRuntime:
                             at=processing_now,
                             event_created=False,
                             error_type=_rule_error_type(str(exc)),
+                            coverage_identity=(trigger.symbol, trigger.frequency.value, None, trigger.bar.trading_day),
                         )
                         recorded_rule_result = True
                     except Exception:
@@ -491,6 +494,7 @@ class AlertRuntime:
                                     at=processing_now,
                                     event_created=rule_event_created,
                                     error_type=None,
+                                    coverage_identity=(symbol, frequency.value, window.contract, window.trading_day),
                                 )
                                 messages.extend(item_messages)
                                 recorded_rule_result = True
@@ -507,6 +511,7 @@ class AlertRuntime:
                                         at=processing_now,
                                         event_created=False,
                                         error_type=_rule_error_type(str(exc)),
+                                        coverage_identity=(symbol, frequency.value, None, trigger.trading_day),
                                     )
                                     recorded_rule_result = True
                                 except Exception:
@@ -640,6 +645,23 @@ class AlertRuntime:
                     ).input_frequencies
                 )
             }
+            coverage = {
+                f"{rule.rule_code}:{symbol}:{frequency}": {
+                    "rule_code": rule.rule_code,
+                    "symbol": symbol,
+                    "frequency": frequency,
+                    **self._coverage_progress.get(
+                        (rule.rule_code, symbol, frequency),
+                        {"state": "unverified", "contract": None, "trading_day": None,
+                         "last_evaluated_bar_at": None, "last_success_at": None,
+                         "error_type": None},
+                    ),
+                }
+                for rule in enabled
+                for symbol in sorted(self._operational_products)
+                for frequency in get_alert_rule_definition(rule.rule_code).input_frequencies
+                if service.rule_allows_event(rule, symbol=symbol, frequency=frequency)
+            }
             if session.in_transaction():
                 session.rollback()
         self.heartbeat_store.write(
@@ -650,6 +672,8 @@ class AlertRuntime:
                 "available": True,
                 "enabled_rule_count": len(enabled),
                 "scope_product_count": len(scope),
+                "coverage_schema_version": 1,
+                "coverage": coverage,
             },
             ttl_seconds=_HEARTBEAT_TTL_SECONDS,
         )
@@ -679,6 +703,7 @@ class AlertRuntime:
         at: datetime,
         event_created: bool,
         error_type: str | None,
+        coverage_identity: tuple[str, str, str | None, date] | None = None,
     ) -> None:
         status = self._current_runtime_status()
         rule_status = dict(cast(Mapping[str, object], status["rule_status"]))
@@ -693,6 +718,30 @@ class AlertRuntime:
             current["last_event_at"] = _iso_timestamp(at)
         rule_status[rule_code] = current
         self._update_runtime_status(rule_status=rule_status)
+        if coverage_identity is not None:
+            symbol, frequency, contract, trading_day = coverage_identity
+            key = (rule_code, symbol, frequency)
+            previous = self._coverage_progress.get(key, {})
+            previous_unresolved = previous.get("previous_unresolved")
+            if previous.get("trading_day") != trading_day.isoformat():
+                if previous.get("state") == "evaluation_failed":
+                    previous_unresolved = previous.get("trading_day")
+                previous = {}
+            self._coverage_progress[key] = {
+                "state": "ok" if error_type is None else "evaluation_failed",
+                "contract": contract,
+                "trading_day": trading_day.isoformat(),
+                "last_evaluated_bar_at": (
+                    _iso_timestamp(evaluated_bar_at) if evaluated_bar_at is not None
+                    else previous.get("last_evaluated_bar_at")
+                ),
+                "last_success_at": (
+                    _iso_timestamp(at) if error_type is None
+                    else previous.get("last_success_at")
+                ),
+                "error_type": error_type,
+                "previous_unresolved": previous_unresolved,
+            }
 
     def _current_runtime_status(self) -> dict[str, object]:
         if self._runtime_status is None:

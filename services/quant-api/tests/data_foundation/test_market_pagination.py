@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
@@ -24,7 +24,7 @@ from app.market_data.market_data_service import (
     MarketDataService,
 )
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
-from app.models import Exchange, Instrument, TradingCalendar, TradingSession
+from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
 
 
 @pytest.fixture
@@ -72,6 +72,22 @@ def _publish(
     key: DatasetKey,
     bars: tuple[CanonicalBar, ...],
 ) -> None:
+    if key.kind.value == "contract" and catalog.session.scalar(
+        select(Contract).where(Contract.contract_code == key.series_or_contract)
+    ) is None:
+        catalog.session.add(Contract(
+            contract_code=key.series_or_contract, instrument_symbol=key.symbol,
+            exchange_code="DCE", listed_date=date(2025, 1, 1),
+            expired_date=date(2026, 1, 1),
+        ))
+    for day in {bar.trading_day for bar in bars}:
+        if catalog.session.scalar(select(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == day,
+        )) is None:
+            catalog.session.add(TradingCalendar(
+                exchange_code="DCE", trade_date=day, is_trading_day=True,
+            ))
     partition = store.publish(
         PublishRequest(
             dataset=key,
@@ -98,13 +114,13 @@ def _calendar_and_map(
     month: int = 1,
 ) -> None:
     for day, contract in rows:
-        session.add(
-            TradingCalendar(
-                exchange_code="DCE",
-                trade_date=date(2025, month, day),
-                is_trading_day=True,
-            )
-        )
+        if session.scalar(select(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == date(2025, month, day),
+        )) is None:
+            session.add(TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, month, day), is_trading_day=True,
+            ))
         catalog.upsert_main_contracts((("jm", date(2025, month, day), contract),))
 
 
@@ -395,13 +411,17 @@ def test_query_page_actual_dominant_cursor_keeps_next_trading_day_night_owner(
         DatasetKey("contract", "jm", "JM2509", "1m"),
         (first, cursor_bar),
     )
-    session.add(
-        TradingCalendar(
-            exchange_code="DCE",
-            trade_date=trading_day,
-            is_trading_day=True,
-        )
-    )
+    session.add(TradingSession(
+        exchange_code="DCE", instrument_symbol="jm", session_name="night",
+        start_time=time(21), end_time=time(21, 2),
+        effective_from=date(2025, 1, 6), is_active=True,
+    ))
+    session.add(TradingCalendar(
+        exchange_code="DCE", trade_date=date(2025, 1, 3), is_trading_day=True,
+    ))
+    session.scalar(select(TradingCalendar).where(
+        TradingCalendar.exchange_code == "DCE", TradingCalendar.trade_date == trading_day,
+    )).has_night_session = True
     catalog.upsert_main_contracts((("jm", trading_day, "JM2509"),))
     session.commit()
 
@@ -491,6 +511,34 @@ def test_query_page_actual_dominant_week_uses_complete_week_owner(session, tmp_p
     assert result.resolved_contract_segments[0].contract == "JM2509"
 
 
+def test_weekly_actual_page_rejects_missing_week_adjacent_to_cursor(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "1w"),
+             (_bar(3, 103), _bar(17, 117), _bar(24, 124)))
+    days = tuple(day for day in range(1, 25) if date(2025, 1, day).weekday() < 5)
+    _calendar_and_map(session, catalog, tuple((day, "JM2509") for day in days))
+    session.commit()
+    with pytest.raises(MarketDataError, match="MAPPED_CONTRACT_DATASET_MISSING"):
+        service.query_page(SeriesPageQuery(
+            "actual_dominant", "jm", "1w",
+            before=datetime(2025, 1, 17, 7, tzinfo=UTC), limit=1,
+        ))
+
+
+def test_weekly_actual_page_does_not_require_unfinished_cursor_week_owner(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "1w"), (_bar(3, 103),))
+    days = tuple(day for day in range(1, 11) if date(2025, 1, day).weekday() < 5)
+    _calendar_and_map(session, catalog, tuple((day, "JM2509") for day in days if day < 10))
+    session.add(TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, 10), is_trading_day=True))
+    session.commit()
+    result = service.query_page(SeriesPageQuery(
+        "actual_dominant", "jm", "1w",
+        before=datetime(2025, 1, 10, 6, tzinfo=UTC), limit=1,
+    ))
+    assert tuple(bar.trading_day for bar in result.bars) == (date(2025, 1, 3),)
+
+
 def test_query_page_actual_dominant_week_ignores_newer_owner_after_latest_canonical_bar(session, tmp_path) -> None:
     catalog, service, store = _service(session, tmp_path)
     _publish(catalog, store, DatasetKey("contract", "jm", "JM2505", "1w"), (_bar(10, 105),))
@@ -512,13 +560,10 @@ def test_query_page_actual_dominant_week_rejects_missing_weekday_owner_fact(sess
     catalog, service, store = _service(session, tmp_path)
     _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "1w"), (_bar(10, 209),))
     for day in (6, 7, 9, 10):
-        session.add(
-            TradingCalendar(
-                exchange_code="DCE",
-                trade_date=date(2025, 1, day),
-                is_trading_day=True,
-            )
-        )
+        if day != 10:
+            session.add(TradingCalendar(
+                exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
+            ))
         catalog.upsert_main_contracts((("jm", date(2025, 1, day), "JM2509"),))
     session.add(
         TradingCalendar(
@@ -545,7 +590,6 @@ def test_query_page_actual_dominant_remains_fail_closed(session, tmp_path, failu
     catalog, service, store = _service(session, tmp_path)
     if failure == "missing_map":
         _publish(catalog, store, DatasetKey("contract", "jm", "JM2505", "1d"), (_bar(2, 100),))
-        session.add(TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, 2), is_trading_day=True))
         expected = "MAIN_CONTRACT_MAP_MISSING"
     else:
         _calendar_and_map(session, catalog, ((2, "JM2505"),))
@@ -767,7 +811,7 @@ def test_weekly_page_reuses_calendar_within_read_only(session, tmp_path, monkeyp
     assert [bar.close for bar in result.bars] == ([Decimal('110')] if limit == 1 else [Decimal('105'), Decimal('110')])
     assert result.has_more_before is (limit == 1)
     assert calls[('jm', date(2025, 1, 6), date(2025, 1, 19))] == 1
-    assert len(calls) <= 2  # one candidate batch and one boundary check
+    assert len(calls) <= 3  # candidate batch, boundary check, strict expected window
 
     # Same service, new read: Friday is now a non-trading day, so its bar cannot survive.
     session.execute(update(TradingCalendar).where(TradingCalendar.trade_date == date(2025, 1, 17)).values(is_trading_day=False))

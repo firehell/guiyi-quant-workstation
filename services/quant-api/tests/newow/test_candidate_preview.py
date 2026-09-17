@@ -90,14 +90,14 @@ def test_identity_is_current_git_and_lightweight(preview, monkeypatch):
     )
 
 
-def test_weekly_release_capabilities_are_available_without_database(preview):
+def test_daily_only_capabilities_are_available_without_database(preview):
     app, sessions, _factory = preview
 
     response = TestClient(app).get("/api/v1/market/newow/product-capabilities")
 
     assert response.status_code == 200
     assert response.json()["release_stage"] == "daily"
-    assert response.json()["open_frequencies"] == ["1w", "1d"]
+    assert response.json()["open_frequencies"] == ["1d"]
     assert response.json()["open_sections"] == [
         "chart",
         "auxiliary",
@@ -198,7 +198,7 @@ def test_newow_real_query_respects_cutoff(preview, monkeypatch, product_cases):
     from app.preview import create_preview_app
     from app.market_data.newow.snapshot_cache import SnapshotCache
 
-    _reader, query, fake = product_cases.paged_reader(prefix_bars=90, frequency="1w")
+    _reader, query, fake = product_cases.paged_reader(prefix_bars=90, frequency="1d")
     monkeypatch.setattr(market_newow, "build_market_data_service", lambda session: fake)
     monkeypatch.setattr(
         market_newow, "build_database_coverage_source", lambda session: fake.coverage
@@ -215,7 +215,7 @@ def test_newow_real_query_respects_cutoff(preview, monkeypatch, product_cases):
         params={
             "product": "rb",
             "strategy": "trend",
-            "frequency": "1w",
+            "frequency": "1d",
             "section": "chart",
             "from": query.since.isoformat(),
             "through": query.through.isoformat(),
@@ -281,7 +281,7 @@ def test_historical_resolver_uses_fixed_clock(preview, monkeypatch):
     monkeypatch.setattr(market_newow, "_build_historical_resolver", resolver)
     response = TestClient(preview[0]).get(
         "/api/v1/market/newow/historical-snapshot",
-        params={"product": "rb", "strategy": "trend", "frequency": "1w"},
+        params={"product": "rb", "strategy": "trend", "frequency": "1d"},
     )
     assert response.status_code == 409
     assert captured == [datetime(2026, 9, 3, 8, tzinfo=UTC)]

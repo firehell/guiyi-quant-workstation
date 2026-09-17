@@ -68,6 +68,19 @@ test('unwraps only the delivered requested section and preserves every Decimal a
   assert.throws(() => chartCoordinate('1e999'), /finite chart coordinate/)
 })
 
+test('accepts explicit partial history intervals without treating warming as a price bar', () => {
+  const raw = referenceWire()
+  raw.reference.value!.history_coverage = 'PARTIAL'
+  raw.reference.value!.unavailable_days = ['2026-08-14']
+  raw.reference.value!.coverage_intervals = [
+    { since: '2026-08-14', through: '2026-08-14', status: 'PRICE_UNAVAILABLE', physical_contract: 'JM2601', segment_id: 'owner-1', calculation_segment_id: null },
+    { since: '2026-08-15', through: '2026-08-15', status: 'WARMING', physical_contract: 'JM2601', segment_id: 'owner-1', calculation_segment_id: 'owner-1|price-gap:2026-08-14T07:00:00Z' },
+  ]
+  const parsed = normalizeNewowProductResponse(raw, { ...expected, section: 'reference' })
+  assert.equal(parsed.value!.history_coverage, 'PARTIAL')
+  assert.equal(parsed.value!.coverage_intervals[1]!.status, 'WARMING')
+})
+
 test('normalizes an aligned independent trend channel and requires it for trend', () => {
   const missing = chartWire()
   delete (missing.chart.value as Record<string, unknown>).trend_channel
@@ -181,10 +194,11 @@ test('shares one Newow strategy and frequency allowlist authority across route a
 
 test('loads the server-owned daily release capability and rejects widened or legacy payloads', async () => {
   const payload = {
-    schema_version: 'newow_product_capabilities_v2',
+    schema_version: 'newow_product_capabilities_v3',
     release_stage: 'daily',
-    open_frequencies: ['1w', '1d'],
+    open_frequencies: ['1d'],
     deferred_frequencies: [
+      { frequency: '1w', reason_code: 'NEWOW_WEEKLY_RELEASE_PENDING' },
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
     open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
@@ -243,7 +257,7 @@ test('rejects chart facts later than the fixed snapshot as_of', () => {
   const hintBar = chartWire()
   hintBar.chart.value!.hints = [{
     hint_id: 'future-hint', kind: 'D4', bar_end: '2026-08-15T07:00:01Z', known_at: AS_OF,
-    anchor_price: null, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+    anchor_price: null, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
     retrospective: false, quantity_effect: 'none', sequence: null,
   }]
   assert.throws(() => normalizeNewowProductResponse(hintBar, expected), /hints\[0\].bar_end.*as_of/)
@@ -251,7 +265,7 @@ test('rejects chart facts later than the fixed snapshot as_of', () => {
   const knownAt = chartWire()
   knownAt.chart.value!.hints = [{
     hint_id: 'future-known', kind: 'D4', bar_end: '2026-08-14T07:00:00Z', known_at: '2026-08-15T07:00:01Z',
-    anchor_price: null, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+    anchor_price: null, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
     retrospective: false, quantity_effect: 'none', sequence: null,
   }]
   knownAt.chart.value!.frames[0]!.hint_ids = ['future-known']
@@ -567,21 +581,21 @@ export function chartWire(options: { product?: string; strategy?: 'trend' | 'osc
     ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
   const close = options.close ?? '101.500'
-  const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close, volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
+  const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close, volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
   return {
     meta: {
-      schema_version: 'newow_product_detail_v2',
+      schema_version: 'newow_product_detail_v3',
       identity: { product, strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
       as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64),
       data_revision_identity: null, snapshot_token: options.token === undefined ? 'snapshot-a' : options.token,
-      reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
+      reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart' as const,
     chart: {
       delivery: 'delivered' as const,
       status: featureStatus('ready'),
       value: {
-        chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64),
+        chart_from: '2026-08-14', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), price_unavailable_days: [],
         bars: [bar],
         frames: [{ bar_end: '2026-08-14T07:00:00Z', main_state: 'BUILD', main_values: { B: '100.100', nullable: null }, status: featureStatus('ready'), action_ids: options.actions === undefined ? ['build-1'] : [], hint_ids: [] }],
         trend_channel: strategy === 'trend' ? trendChannelForBars([bar]) : null,
@@ -598,6 +612,7 @@ test('accepts only a structurally valid main-rise initial clear without entry', 
   const wire = chartWire({ strategy: 'main_rise', actions: [{
     signal_id: 'initial-clear', kind: 'CLEAR', bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14',
     reference_price: '100.100', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+    calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
     related_build_id: null, trade_eligibility: 'INITIAL_CLEAR_NO_ENTRY', sequence: 0,
   }] })
   wire.chart.value.frames[0]!.action_ids = ['initial-clear']
@@ -660,8 +675,8 @@ export function referenceWire(options: { token?: string | null; hash?: string; r
       status: featureStatus('ready'),
       value: {
         performance_since: options.performanceSince ?? '2025-01-01', performance_through: '2026-08-15', actual_available_through: '2026-08-15',
-        reference_cutoff: AS_OF, reference_input_sha256: options.referenceHash ?? 'c'.repeat(64),
-        summary: { membership_policy: 'closed_entry_in_requested_window', closed_count: closedCount, win_count: closedCount, loss_count: 0, flat_count: 0, win_rate_pct: closedCount ? '100.00' : null, mean_return_pct: closedCount ? '1.2500' : null, sum_return_percentage_points: closedCount ? '1.2500' : null, open_count: 0, interrupted_count: 0, initial_count: 0 },
+        reference_cutoff: AS_OF, reference_input_sha256: options.referenceHash ?? 'c'.repeat(64), history_coverage: 'FULL', unavailable_days: [], coverage_intervals: [],
+        summary: { membership_policy: 'closed_entry_in_requested_window', closed_count: closedCount, win_count: closedCount, loss_count: 0, flat_count: 0, win_rate_pct: closedCount ? '100.00' : null, mean_return_pct: closedCount ? '1.2500' : null, sum_return_percentage_points: closedCount ? '1.2500' : null, open_count: 0, interrupted_count: 0, rollover_interrupted_count: 0, data_interrupted_count: 0, initial_count: 0 },
         items: options.items ?? (closedCount ? [referenceItem('trade-1', '1.2500')] : []), next_before: options.nextBefore ?? null,
         executable: false, auto_order: false, allowed_uses: ['page_parity_reference', 'research_display'],
       },
@@ -750,8 +765,8 @@ function comparatorWire() {
 
 export function referenceItem(id: string, returnPct: string) {
   return {
-    reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
-    formula_versions: FORMULAS, reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
+    reference_trade_id: id, product: 'jm', strategy_code: 'trend', frequency: '1d', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00',
+    formula_versions: FORMULAS, reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     entry_signal_id: `entry-${id}`, entry_sequence: 1, entry_bar_end: '2026-08-14T07:00:00Z', entry_trading_day: '2026-08-14', entry_reference_price: '100.100',
     exit_signal_id: `exit-${id}`, exit_bar_end: '2026-08-15T07:00:00Z', exit_trading_day: '2026-08-15', exit_reference_price: '101.35125',
     status: 'CLOSED', holding_bars: 1, reference_return_pct: returnPct, mark_bar_end: null, mark_reference_price: null, mark_change_pct: null,
@@ -760,7 +775,7 @@ export function referenceItem(id: string, returnPct: string) {
 }
 
 function action(id: string, kind: 'BUILD' | 'CLEAR', sequence: number, barEnd: string) {
-  return { signal_id: id, kind, bar_end: barEnd, trading_day: barEnd.slice(0, 10), reference_price: '100.100', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', related_build_id: kind === 'CLEAR' ? 'build-1' : null, trade_eligibility: 'ELIGIBLE', sequence }
+  return { signal_id: id, kind, bar_end: barEnd, trading_day: barEnd.slice(0, 10), reference_price: '100.100', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', related_build_id: kind === 'CLEAR' ? 'build-1' : null, trade_eligibility: 'ELIGIBLE', sequence }
 }
 
 function featureStatus(status: 'ready' | 'warming', reasonCode: string | null = null) {

@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
 from hashlib import sha256
+from itertools import groupby
 import json
 from secrets import token_urlsafe
 
@@ -19,7 +20,9 @@ from guiyi_quant.newow.page_comparator import (
     VerifiedPageComparatorEvidence,
     compare_page_windows,
 )
-from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
+from guiyi_quant.newow.product_adapters import (
+    build_product_identity, label_calculation_segments, replay_strategy,
+)
 from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
 
 from .product_macd import MACD_CACHE_IDENTITY, calculate_macd_display
@@ -74,7 +77,7 @@ from .source_facts import (
 )
 
 
-SCHEMA_VERSION = "newow_product_detail_v2"
+SCHEMA_VERSION = "newow_product_detail_v3"
 
 
 class ProductSection(StrEnum):
@@ -186,6 +189,7 @@ class ChartSectionValue:
     page_identity: str
     trend_channel: TrendChannelLayer | None
     next_older_window: str | None = None
+    price_unavailable_days: tuple[tuple[date, str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +211,19 @@ class ReferenceSectionValue:
     reference_cutoff: datetime
     reference_input_sha256: str
     entry_sequences: tuple[tuple[str, int], ...]
+    history_coverage: str = "FULL"
+    unavailable_days: tuple[date, ...] = ()
+    coverage_intervals: tuple[ReferenceCoverageInterval, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceCoverageInterval:
+    since: date
+    through: date
+    status: str
+    physical_contract: str
+    segment_id: str
+    calculation_segment_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -265,6 +282,82 @@ def _ready(
     return FeatureStatus(FeatureRuntimeStatus.READY, evidence)
 
 
+def _has_unresolved_tail_gap(read: ProductReadSet) -> bool:
+    """A stale pre-gap frame cannot represent the current completed D1 state."""
+    latest_bar = max((item.bar.bar_end for item in read.replay_bars), default=None)
+    return any(
+        gap.effective_at <= read.as_of
+        and (latest_bar is None or gap.effective_at > latest_bar)
+        for gap in read.data_interruptions
+    )
+
+
+def _reference_coverage_intervals(
+    read: ProductReadSet,
+    replay: StrategyReplay,
+    since: date,
+    through: date,
+) -> tuple[ReferenceCoverageInterval, ...]:
+    """Describe observed valid and excluded D1 stretches without inferring prices."""
+    mapped_gaps = tuple(
+        gap for gap in read.data_interruptions
+        if since <= gap.trading_day <= through
+        and (not read.owners or any(
+            owner.contract == gap.physical_contract
+            and owner.start_trading_day <= gap.trading_day <= owner.end_trading_day
+            for owner in read.owners
+        ))
+    )
+    events = [
+        (
+            frame.bar.bar.trading_day,
+            "VALID" if frame.availability.status is FeatureRuntimeStatus.READY else "WARMING",
+            frame.bar.bar.physical_contract,
+            frame.bar.bar.segment_id,
+            frame.bar.calculation_segment_id,
+        )
+        for frame in replay.frames
+        if frame.bar.bar.observation_eligible
+        and since <= frame.bar.bar.trading_day <= through
+    ]
+    events.extend(
+        (
+            gap.trading_day, "PRICE_UNAVAILABLE", gap.physical_contract,
+            gap.segment_id, None,
+        )
+        for gap in mapped_gaps
+    )
+    events.sort(key=lambda item: item[0])
+    daily_events = []
+    for day, grouped in groupby(events, key=lambda item: item[0]):
+        same_day = tuple(grouped)
+        if len(same_day) > 1:
+            if read.frequency is not ProductFrequency.HOURLY or len({item[2:] for item in same_day}) != 1:
+                raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
+            if any(item[1] == "PRICE_UNAVAILABLE" for item in same_day):
+                raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
+        status = "WARMING" if any(item[1] == "WARMING" for item in same_day) else same_day[0][1]
+        daily_events.append((day, status, *same_day[0][2:]))
+    intervals: list[ReferenceCoverageInterval] = []
+    previous_day: date | None = None
+    for day, status, contract, segment_id, calculation_segment_id in daily_events:
+        if previous_day is not None and day <= previous_day:
+            raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
+        previous_day = day
+        if intervals and (
+            intervals[-1].status,
+            intervals[-1].physical_contract,
+            intervals[-1].segment_id,
+            intervals[-1].calculation_segment_id,
+        ) == (status, contract, segment_id, calculation_segment_id):
+            intervals[-1] = replace(intervals[-1], through=day)
+        else:
+            intervals.append(ReferenceCoverageInterval(
+                day, day, status, contract, segment_id, calculation_segment_id,
+            ))
+    return tuple(intervals)
+
+
 def _not_requested() -> SectionDelivery:
     return SectionDelivery("not_requested", None, None)
 
@@ -289,6 +382,7 @@ def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
                     bar.open_interest,
                     bar.source_identity,
                     bar.observation_eligible,
+                    item.source_bar_sha256,
                 )
             )
     owners = tuple(
@@ -320,10 +414,22 @@ def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
             source.raw_bar_count,
             source.effective_bar_count,
             source.no_trade_bar_count,
+            source.price_unavailable_count,
         )
         for frequency, source in sorted(
             read.sources.items(), key=lambda item: str(item[0])
         )
+    )
+    interruptions = tuple(
+        (
+            frequency.value, item.physical_contract, item.segment_id,
+            item.trading_day.isoformat(), item.effective_at.isoformat(),
+            item.source_identity,
+        )
+        for frequency, values in sorted(
+            read.data_interruptions_by_frequency.items(), key=lambda item: str(item[0])
+        )
+        for item in values
     )
     payload = json.dumps(
         {
@@ -339,6 +445,7 @@ def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
             "owners": owners,
             "boundaries": boundaries,
             "sources": sources,
+            "interruptions": interruptions,
         },
         separators=(",", ":"),
         sort_keys=True,
@@ -415,20 +522,10 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                     bar.bar_end.isoformat(),
                 )
             )
-            owner = next(
-                (
-                    candidate
-                    for candidate in read.owners
-                    if candidate.contract == bar.physical_contract
-                    and candidate.start_trading_day
-                    <= bar.trading_day
-                    <= candidate.end_trading_day
-                ),
-                None,
-            )
-            # A section may start at this owner or end partway through it.
-            # Its clipped end and optional predecessor are not per-Bar facts.
-            # Shared boundary facts are compared independently below.
+            # The segment ID already binds the owner start. A physical warm-up
+            # bar may also fall inside an earlier owner visible only to a wider
+            # section; borrowing that owner's start makes equal bars conflict.
+            # Shared owner transitions are compared as boundaries below.
             value = "|".join(
                 (
                     bar.trading_day.isoformat(),
@@ -440,10 +537,38 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                     str(bar.open_interest),
                     bar.source_identity,
                     str(bar.observation_eligible),
-                    "" if owner is None else owner.start_trading_day.isoformat(),
+                    item.source_bar_sha256 or "",
                 )
             )
             proof[key] = sha256(value.encode()).hexdigest()
+            if frequency is ProductFrequency.DAILY:
+                day_key = "|".join((
+                    "price-state", frequency.value, bar.physical_contract,
+                    bar.trading_day.isoformat(),
+                ))
+                proof[day_key] = sha256(
+                    "|".join(("bar", bar.segment_id, value)).encode()
+                ).hexdigest()
+    for frequency, interruptions in read.data_interruptions_by_frequency.items():
+        for gap in interruptions:
+            key = "|".join((
+                "price-unavailable", frequency.value, gap.physical_contract,
+                gap.trading_day.isoformat(),
+            ))
+            value = "|".join((
+                gap.segment_id, gap.effective_at.isoformat(), gap.source_identity,
+            ))
+            proof[key] = sha256(value.encode()).hexdigest()
+            day_key = "|".join((
+                "price-state", frequency.value, gap.physical_contract,
+                gap.trading_day.isoformat(),
+            ))
+            if day_key in proof:
+                raise NewowProductServiceError("NEWOW_DATA_IDENTITY_INVALID")
+            proof[day_key] = sha256(
+                "|".join(("gap", gap.segment_id, gap.effective_at.isoformat(),
+                          gap.source_identity)).encode()
+            ).hexdigest()
     for boundary in read.boundaries:
         key = "|".join(
             (
@@ -481,6 +606,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                 str(source.raw_bar_count),
                 str(source.effective_bar_count),
                 str(source.no_trade_bar_count),
+                str(source.price_unavailable_count),
             )
         )
         proof[key] = sha256(value.encode()).hexdigest()
@@ -493,7 +619,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                 REFERENCE_MODEL_VERSION,
                 SOURCE_FACT_ADAPTER_VERSION,
                 "main_contract_map:rank1:calendar_session_v1",
-                "newow_product_dependency_proof_v4",
+                "newow_product_dependency_proof_v6",
             )
         ).encode()
     ).hexdigest()
@@ -815,7 +941,10 @@ class NewowProductService:
                 calculate_macd_display(identity, read)
                 if request.component is AuxiliaryComponent.MACD
                 else calculate_auxiliary_component(
-                    identity, read.replay_bars, request.component.value, as_of=read.as_of
+                    identity,
+                    label_calculation_segments(identity, read.replay_bars, read.data_interruptions),
+                    request.component.value,
+                    as_of=read.as_of,
                 )
             )
             self._check_cancelled(cancelled)
@@ -863,6 +992,7 @@ class NewowProductService:
             identity,
             read.replay_bars,
             lifecycle_evidence=read.lifecycle_evidence,
+            data_interruptions=read.data_interruptions,
         )
         frames = tuple(
             frame
@@ -910,6 +1040,12 @@ class NewowProductService:
                 "NEWOW_CHART_WARMING",
             )
         )
+        if _has_unresolved_tail_gap(read):
+            status = FeatureStatus(
+                FeatureRuntimeStatus.WARMING,
+                EvidenceStatus.ACTIVE_CODE_VERIFIED,
+                "NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING",
+            )
         return SectionDelivery(
             "delivered",
             status,
@@ -925,6 +1061,16 @@ class NewowProductService:
                 )
                 if identity.strategy is ProductStrategy.TREND
                 else None,
+                price_unavailable_days=tuple(
+                    (gap.trading_day, gap.physical_contract, gap.segment_id)
+                    for gap in read.data_interruptions
+                    if read.display_window.since <= gap.trading_day <= read.display_window.through
+                    and any(
+                        owner.contract == gap.physical_contract
+                        and owner.start_trading_day <= gap.trading_day <= owner.end_trading_day
+                        for owner in read.owners
+                    )
+                ),
             ),
         )
 
@@ -941,9 +1087,11 @@ class NewowProductService:
             identity,
             read.replay_bars,
             lifecycle_evidence=read.lifecycle_evidence,
+            data_interruptions=read.data_interruptions,
         )
         projection = ReferenceTradeProjector().project(
-            replay, read.boundaries, resolved.cutoff
+            replay, read.boundaries, resolved.cutoff,
+            data_interruptions=read.data_interruptions,
         )
         summary = summarize_reference(
             projection,
@@ -1001,6 +1149,19 @@ class NewowProductService:
             if len(all_items) > len(items) and items
             else None
         )
+        coverage_intervals = _reference_coverage_intervals(
+            read, replay, resolved.requested_since, resolved.actual_through,
+        )
+        unavailable_days = tuple(sorted({
+            gap.trading_day
+            for gap in read.data_interruptions
+            if any(
+                interval.status == "PRICE_UNAVAILABLE"
+                and interval.since <= gap.trading_day <= interval.through
+                and interval.physical_contract == gap.physical_contract
+                for interval in coverage_intervals
+            )
+        }))
         value = ReferenceSectionValue(
             projection,
             summary,
@@ -1011,6 +1172,11 @@ class NewowProductService:
             resolved.cutoff,
             fact_key,
             tuple(sorted(entry_sequences.items())),
+            "PARTIAL" if any(
+                interval.status != "VALID" for interval in coverage_intervals
+            ) else "FULL",
+            unavailable_days,
+            coverage_intervals,
         )
         status = (
             _ready()
@@ -1021,6 +1187,15 @@ class NewowProductService:
                 resolved.reason_code or "NEWOW_REFERENCE_WINDOW_PARTIAL",
             )
         )
+        if _has_unresolved_tail_gap(read) or (
+            read.data_interruptions and replay.frames
+            and replay.frames[-1].availability.status is not FeatureRuntimeStatus.READY
+        ):
+            status = FeatureStatus(
+                FeatureRuntimeStatus.WARMING,
+                EvidenceStatus.ACTIVE_CODE_VERIFIED,
+                "NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING",
+            )
         return SectionDelivery("delivered", status, value)
 
     def _explanation(
@@ -1035,6 +1210,7 @@ class NewowProductService:
                 lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(
                     frequency, ()
                 ),
+                data_interruptions=read.data_interruptions_by_frequency.get(frequency, ()),
             )
             for frequency, bars in read.bars_by_frequency.items()
         }
@@ -1047,6 +1223,7 @@ class NewowProductService:
                 lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(
                     frequency, ()
                 ),
+                data_interruptions=read.data_interruptions_by_frequency.get(frequency, ()),
             )
             for frequency, bars in read.bars_by_frequency.items()
         }

@@ -15,8 +15,6 @@ from typing import Literal
 from app.market_data.domain import (
     BarFrequency,
     CanonicalBar,
-    SeriesKind,
-    SeriesPageQuery,
     normalize_contract_for_symbol,
 )
 from app.market_data.errors import InfrastructureError
@@ -32,6 +30,7 @@ from app.market_data.research_metrics import Trend, calculate_research_metrics
 
 MarketHomeStatus = Literal["ready", "degraded"]
 MarketHomeFreshness = Literal["fresh", "stale", "unavailable"]
+METRIC_POLICY_VERSION = "physical_owner_v2"
 
 
 class MarketHomeOverviewError(RuntimeError):
@@ -135,7 +134,7 @@ class MarketHomeOverviewService:
             for symbol in self._products
         ]
         encoded = json.dumps(
-            records,
+            {"metric_policy_version": METRIC_POLICY_VERSION, "products": records},
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
@@ -155,18 +154,20 @@ class MarketHomeOverviewService:
         stale_count = 0
         unavailable_count = 0
         for symbol in self._products:
+            try:
+                owner = self._market_data.dominant_segment_for_day(
+                    symbol, target_as_of
+                )
+            except MarketDataError as exc:
+                raise MarketHomeOverviewError(
+                    "MARKET_HOME_DOMINANT_CONTEXT_INVALID"
+                ) from exc
             daily = _query_through_target(
                 self._market_data,
                 symbol=symbol,
+                contract=owner.contract,
                 frequency=BarFrequency.D1,
                 limit=300,
-                target_as_of=target_as_of,
-            )
-            weekly = _query_through_target(
-                self._market_data,
-                symbol=symbol,
-                frequency=BarFrequency.W1,
-                limit=80,
                 target_as_of=target_as_of,
             )
             if not daily:
@@ -175,6 +176,14 @@ class MarketHomeOverviewService:
             if daily[-1].trading_day != target_as_of:
                 stale_count += 1
                 continue
+            weekly = _query_through_target(
+                self._market_data,
+                symbol=symbol,
+                contract=owner.contract,
+                frequency=BarFrequency.W1,
+                limit=80,
+                target_as_of=target_as_of,
+            )
             metrics = calculate_research_metrics(daily, weekly)
             dominant = dominants[symbol]
             taxonomy = self._taxonomy[symbol]
@@ -184,8 +193,8 @@ class MarketHomeOverviewService:
                     product_name=taxonomy.name,
                     sector=taxonomy.sector,
                     exchange=dominant.exchange,
-                    actual_contract=dominant.actual_contract,
-                    dominant_mapping_date=dominant.dominant_mapping_date,
+                    actual_contract=owner.contract,
+                    dominant_mapping_date=target_as_of,
                     data_as_of=target_as_of,
                     close=daily[-1].close,
                     price_change_1d=metrics.price_change_1d,
@@ -277,27 +286,24 @@ def _query_through_target(
     market_data: MarketDataService,
     *,
     symbol: str,
+    contract: str,
     frequency: BarFrequency,
     limit: int,
     target_as_of: date,
 ) -> tuple[CanonicalBar, ...]:
     try:
-        result = market_data.query_page(
-            SeriesPageQuery(
-                series_kind=SeriesKind.ACTUAL_DOMINANT,
-                symbol=symbol,
-                frequency=frequency,
-                limit=limit,
-            )
+        bars = market_data.query_physical_bars_as_of(
+            symbol=symbol,
+            contract=contract,
+            frequency=frequency,
+            trading_day=target_as_of,
+            limit=limit,
         )
     except MarketDataError as exc:
-        if exc.code == "QUERY_WINDOW_EMPTY" or (
-            frequency is BarFrequency.W1
-            and exc.code == "ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT"
-        ):
+        if exc.code in {"QUERY_WINDOW_EMPTY", "PRICE_UNAVAILABLE"}:
             return ()
         raise MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR") from exc
-    return _through_target(result.bars, target_as_of)
+    return _through_target(bars, target_as_of)
 
 
 def _reason_codes(metrics) -> tuple[str, ...]:
