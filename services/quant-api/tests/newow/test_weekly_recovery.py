@@ -48,6 +48,7 @@ from scripts.newow_weekly_recovery import (
     prepare_bounded_units,
     read_attempt_outcome,
     run_bounded_units,
+    source_isolation_policy,
     write_prepared_manifest,
 )
 
@@ -1691,12 +1692,20 @@ def test_prepare_cli_writes_hash_locked_manifest_without_provider(
     assert cleaned == [True]
 
 
-@pytest.mark.parametrize("value", [None, "60m", "1m", "daily", 1, ["1d"]])
+@pytest.mark.parametrize("value", [None, "1m", "daily", 1, ["1d"]])
 def test_recovery_frequency_rejects_other_scopes(value) -> None:
     from scripts import newow_weekly_recovery as module
 
     with pytest.raises(RecoveryError, match="^RECOVERY_SCOPE_INVALID$"):
         module._recovery_frequency(value)
+
+
+def test_recovery_frequency_accepts_hourly_profile() -> None:
+    from scripts import newow_weekly_recovery as module
+
+    assert module._recovery_frequency("60m") == "60m"
+    assert module._allowed_target_frequencies("60m") == frozenset({"1m", "60m"})
+    assert module._prepare_schema("60m") == "newow_hourly_recovery_prepare_v1"
 
 
 def test_daily_prepare_freezes_only_native_daily_targets(tmp_path: Path) -> None:
@@ -1979,3 +1988,351 @@ def test_source_capture_short_write_stops_before_consuming_response(tmp_path, mo
         else:
             observer.after_response(request, tuple(_rows()))
     assert not (attempt / "source-response-0001.json").exists()
+
+
+def _hourly_prepare_fixture(tmp_path):
+    minute = DatasetKey("contract", "pt", "PT2610", "1m")
+    hourly = DatasetKey("contract", "pt", "PT2610", "60m")
+    ends = (datetime(2026, 9, 14, 7, 0, tzinfo=UTC),)
+    targets = (
+        _Target(minute, 2026, 9, ends, ends, ()),
+        _Target(hourly, 2026, 9, ends, ends, ()),
+    )
+    windows = tuple(_contract_warmup_target_payload(item) for item in targets)
+    plan = ContractWarmupPlan(
+        symbol="pt",
+        contract="PT2610",
+        provider="rqdata",
+        listed_date=date(2026, 2, 1),
+        expired_date=date(2026, 10, 1),
+        requested_through=date(2026, 9, 15),
+        effective_through=date(2026, 9, 15),
+        target_windows=windows,
+        direct_target_count=1,
+        derived_target_count=1,
+        expected_bar_count=2,
+        provider_request_count=0,
+        plan_sha256="a" * 64,
+        frequency="60m",
+        dependency_frequencies=("1m",),
+        frequencies=("1m", "60m"),
+    )
+
+    class Manager:
+        catalog = SimpleNamespace(canonical_root=tmp_path / "canonical")
+        provider_calls = 0
+        writes = 0
+
+        def _contract_warmup_plan(self, request):
+            assert str(getattr(request.frequency, "value", request.frequency)) == "60m"
+            return plan, targets
+
+    class Adapter:
+        client_initialized = False
+
+        def exchange_daily_source_requests(self, requests):
+            raise AssertionError("60m prepare must not use exchange daily")
+
+    Manager.catalog.canonical_root.mkdir()
+    return Manager(), Adapter(), plan
+
+
+def test_prepare_hourly_uses_native_60m_plan_without_exchange_daily(tmp_path) -> None:
+    manager, adapter, plan = _hourly_prepare_fixture(tmp_path)
+
+    manifest = prepare_bounded_units(
+        manager=manager,
+        adapter=adapter,
+        requests=(
+            ContractWarmupRequest("pt", "PT2610", date(2026, 9, 15), frequency="60m"),
+        ),
+        expected_data_root=manager.catalog.canonical_root,
+        code_commit="b" * 40,
+        execution_code_sha256="d" * 64,
+        config_sha256="c" * 64,
+        recovery_frequency="60m",
+    )
+
+    assert manifest["schema_version"] == "newow_hourly_recovery_prepare_v1"
+    assert manifest["units"][0]["frequency"] == "60m"
+    assert manifest["units"][0]["source_requests"] == []
+    assert manifest["units"][0]["provider_request_count"] == 0
+    assert {item["dataset"][3] for item in manifest["units"][0]["targets"]} == {
+        "1m",
+        "60m",
+    }
+    assert plan.plan_sha256 == manifest["units"][0]["plan_sha256"]
+    assert adapter.client_initialized is False
+
+
+def test_prepare_hourly_rejects_source_isolation_policy(tmp_path) -> None:
+    manager, adapter, _plan = _hourly_prepare_fixture(tmp_path)
+
+    with pytest.raises(RecoveryError, match="^RECOVERY_SCOPE_INVALID$"):
+        prepare_bounded_units(
+            manager=manager,
+            adapter=adapter,
+            requests=(
+                ContractWarmupRequest(
+                    "pt", "PT2610", date(2026, 9, 15), frequency="60m"
+                ),
+            ),
+            expected_data_root=manager.catalog.canonical_root,
+            code_commit="b" * 40,
+            execution_code_sha256="d" * 64,
+            config_sha256="c" * 64,
+            continuation_policy=source_isolation_policy(),
+            recovery_frequency="60m",
+        )
+
+
+def test_prepare_hourly_rejects_daily_or_weekly_targets(tmp_path) -> None:
+    manager, adapter, plan = _hourly_prepare_fixture(tmp_path)
+    daily = _Target(
+        DatasetKey("contract", "pt", "PT2610", "1d"),
+        2026,
+        9,
+        (datetime(2026, 9, 14, 7, 0, tzinfo=UTC),),
+        (datetime(2026, 9, 14, 7, 0, tzinfo=UTC),),
+        (),
+    )
+
+    def mixed_plan(request):
+        assert str(getattr(request.frequency, "value", request.frequency)) == "60m"
+        return plan, (daily,)
+
+    manager._contract_warmup_plan = mixed_plan
+    with pytest.raises(RecoveryError, match="^RECOVERY_SCOPE_INVALID$"):
+        prepare_bounded_units(
+            manager=manager,
+            adapter=adapter,
+            requests=(
+                ContractWarmupRequest(
+                    "pt", "PT2610", date(2026, 9, 15), frequency="60m"
+                ),
+            ),
+            expected_data_root=manager.catalog.canonical_root,
+            code_commit="b" * 40,
+            execution_code_sha256="d" * 64,
+            config_sha256="c" * 64,
+            recovery_frequency="60m",
+        )
+
+
+def test_execute_hourly_fail_closes_without_isolation(tmp_path) -> None:
+    unit = {
+        "symbol": "pt",
+        "contract": "PT2610",
+        "through": "2026-09-15",
+        "frequency": "60m",
+        "plan_sha256": "a" * 64,
+        "source_requests": [],
+        "targets": [
+            {
+                "dataset": ["contract", "pt", "PT2610", "60m"],
+                "year": 2026,
+                "month": 9,
+                "expected_start": "2026-09-14T07:00:00+00:00",
+                "expected_end": "2026-09-14T07:00:00+00:00",
+                "expected_bar_count": 1,
+            }
+        ],
+    }
+    manifest = {
+        "schema_version": "newow_hourly_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "units": [unit, {**unit, "contract": "PT2608", "plan_sha256": "f" * 64}],
+    }
+
+    class Manager:
+        def contract_warmup(self, request, *, before_apply=None):
+            if request.apply:
+                if before_apply is not None:
+                    before_apply()
+                return SimpleNamespace(
+                    status="failed",
+                    applied=0,
+                    blocked=0,
+                    failed=1,
+                    provider_requests=0,
+                    failures=({"reason_code": "ATOMIC_PUBLISH_FAILED"},),
+                )
+            return SimpleNamespace(plan=SimpleNamespace(target_windows=()))
+
+    def open_unit(_observer, _unit):
+        return (Manager(), lambda: None, lambda: {}, lambda: None)
+
+    attempt = create_attempt_directory(tmp_path, "hourly-001")
+    result = execute_prepared_batch(
+        manifest=manifest,
+        attempt_dir=attempt,
+        prepared_sha256="9" * 64,
+        current_code_commit="b" * 40,
+        current_execution_code_sha256="d" * 64,
+        current_config_sha256="c" * 64,
+        current_canonical_root_sha256="e" * 64,
+        open_unit=open_unit,
+    )
+
+    assert result["status"] == "failed"
+    assert result["failed"]["contract"] == "PT2610"
+    assert result["unattempted"][0]["contract"] == "PT2608"
+    assert "isolated" not in result
+    assert result["retries"] == 0
+
+
+def test_execute_prepared_batch_applies_and_replans_hourly_at_hourly_frequency(
+    tmp_path: Path,
+) -> None:
+    unit = {
+        "symbol": "ag",
+        "contract": "AG2412",
+        "through": "2026-09-15",
+        "frequency": "60m",
+        "plan_sha256": "a" * 64,
+        "source_requests": [],
+        "targets": [
+            {
+                "dataset": ["contract", "ag", "AG2412", "1m"],
+                "year": 2026,
+                "month": 9,
+                "expected_start": "2026-09-14T13:00:00+00:00",
+                "expected_end": "2026-09-14T13:00:00+00:00",
+                "expected_bar_count": 1,
+            },
+            {
+                "dataset": ["contract", "ag", "AG2412", "60m"],
+                "year": 2026,
+                "month": 9,
+                "expected_start": "2026-09-14T13:00:00+00:00",
+                "expected_end": "2026-09-14T13:00:00+00:00",
+                "expected_bar_count": 1,
+            },
+        ],
+    }
+    manifest = {
+        "schema_version": "newow_hourly_recovery_prepare_v1",
+        "code_commit": "b" * 40,
+        "execution_code_sha256": "d" * 64,
+        "config_sha256": "c" * 64,
+        "canonical_root_sha256": "e" * 64,
+        "units": [unit],
+    }
+    seen: list[tuple[str, str]] = []
+
+    class Manager:
+        def contract_warmup(self, request, *, before_apply=None):
+            frequency = str(getattr(request.frequency, "value", request.frequency))
+            seen.append(("apply" if request.apply else "replan", frequency))
+            if request.apply:
+                assert before_apply is not None
+                before_apply()
+                return SimpleNamespace(
+                    status="passed",
+                    applied=2,
+                    blocked=0,
+                    failed=0,
+                    provider_requests=5,
+                    failures=(),
+                )
+            return SimpleNamespace(
+                plan=SimpleNamespace(plan_sha256="f" * 64, target_windows=())
+            )
+
+    def open_unit(_journal, _unit):
+        assert tuple(_journal.allowed_requests) == ()
+        return (
+            Manager(),
+            lambda: None,
+            lambda: {"catalog_partitions": [], "mds_target_count": 0},
+            lambda: None,
+        )
+
+    attempt = create_attempt_directory(tmp_path, "hourly-batch-001")
+    result = execute_prepared_batch(
+        manifest=manifest,
+        attempt_dir=attempt,
+        prepared_sha256="9" * 64,
+        current_code_commit="b" * 40,
+        current_execution_code_sha256="d" * 64,
+        current_config_sha256="c" * 64,
+        current_canonical_root_sha256="e" * 64,
+        open_unit=open_unit,
+    )
+
+    assert seen == [("apply", "60m"), ("replan", "60m")]
+    assert result["status"] == "passed"
+    assert result["completed"][0]["remaining_target_count"] == 0
+    assert result["completed"][0]["result"]["provider_requests"] == 5
+    receipt = json.loads((attempt / "invocation-receipt.json").read_text())
+    assert receipt["schema_version"] == "newow_hourly_recovery_invocation_v1"
+
+
+def test_hourly_readback_does_not_use_quality_reader(tmp_path, monkeypatch) -> None:
+    from app.market_data import market_data_service as service_module
+
+    root = tmp_path / "canonical"
+    root.mkdir()
+    path = root / "part.parquet"
+    path.write_bytes(b"pinned-partition")
+    end = datetime(2026, 9, 14, 13, tzinfo=UTC)
+    bars = (SimpleNamespace(bar_end=end, trading_day=date(2026, 9, 14)),)
+    partition = SimpleNamespace(year=2026, month=9, file_path=path, row_count=1)
+    catalog = SimpleNamespace(canonical_root=root, all_partitions=lambda key: (partition,))
+
+    class Store:
+        def read_catalog_partition_quality(self, value):
+            pytest.fail("60m recovery must not use the D1 quality reader")
+
+        def read_catalog_partition(self, value):
+            assert value is partition
+            return bars
+
+    class Service:
+        def __init__(self, *args):
+            pass
+
+        def query(self, request):
+            return SimpleNamespace(bars=bars)
+
+    monkeypatch.setattr(service_module, "MarketDataService", Service)
+    manager = SimpleNamespace(catalog=catalog, store=Store())
+    unit = {
+        "symbol": "ag",
+        "contract": "AG2412",
+        "frequency": "60m",
+        "targets": [
+            {
+                "dataset": ["contract", "ag", "AG2412", "60m"],
+                "year": 2026,
+                "month": 9,
+                "expected_start": end.isoformat(),
+                "expected_end": end.isoformat(),
+                "expected_bar_count": 1,
+            }
+        ],
+    }
+    readback = _post_commit_readback(manager, unit)
+    assert readback["mds_target_count"] == 1
+
+
+def test_parser_accepts_hourly_frequency() -> None:
+    args = parser().parse_args(
+        [
+            "prepare",
+            "--project-env",
+            "env",
+            "--units",
+            "units.json",
+            "--output-root",
+            "out",
+            "--name",
+            "hourly",
+            "--frequency",
+            "60m",
+        ]
+    )
+    assert args.frequency == "60m"
