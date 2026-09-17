@@ -99,7 +99,7 @@ test('missing view migrates to the unified Free identity', async ({ page }) => {
   expect(new URL(page.url()).searchParams.get('frequency')).toBe('15m')
 })
 
-test('Newow weekly route mounts its chart while its bounded independent daily quote is pending', async ({ page }) => {
+test('Newow daily route mounts its chart while its bounded independent daily quote is pending', async ({ page }) => {
   const requests = await mockMarketDetail(page)
   const typedRequests = []
   const genericRequests = []
@@ -112,7 +112,7 @@ test('Newow weekly route mounts its chart while its bounded independent daily qu
     await new Promise(() => {})
   })
 
-  await page.goto('/market/chart?symbol=jm&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1w')
+  await page.goto('/market/chart?symbol=jm&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d')
 
   await expect(page.locator('[data-detail-workspace="newow"]')).toBeVisible()
   await expect(page.getByTestId('newow-product-chart-stage')).toBeVisible()
@@ -689,7 +689,7 @@ test('leaving the Free shell closes its live series resource', async ({ page }) 
     window.__marketDetailSockets?.filter((socket) => socket.url.includes('/api/v1/market/ws') && !socket.closed).length ?? 0
   ))).toBeGreaterThan(0)
 
-  await navigateClient(page, '/market/chart?symbol=jm&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1w')
+  await navigateClient(page, '/market/chart?symbol=jm&view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d')
   await expect(page.locator('[data-detail-workspace="newow"]')).toBeVisible()
   await expect.poll(() => page.evaluate(() => (
     window.__marketDetailSockets
