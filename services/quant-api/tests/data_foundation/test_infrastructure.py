@@ -19,6 +19,7 @@ from app.market_data.rqdata_adapter import (
     ExchangeDailySourceRequest,
     RQDataClient,
     RQDataMarketAdapter,
+    classify_exchange_daily_price_unavailable,
 )
 from app.market_data.session_clock import SHANGHAI
 from app.models import (
@@ -996,7 +997,6 @@ def test_rqdata_daily_and_weekly_normalize_zero_volume_zero_ohl_to_close(
     [
         (0, 100, 0, 0),
         (0, 100, 0, 1),
-        (0, 0, 0, 1),
     ],
 )
 def test_rqdata_daily_rejects_partial_or_traded_zero_ohl(
@@ -1033,6 +1033,54 @@ def test_rqdata_daily_rejects_partial_or_traded_zero_ohl(
     with pytest.raises(InfrastructureError, match="^RQDATA_ZERO_OHL_INVALID$"):
         _fetch(adapter, DatasetKey("contract", "jm", "JM2509", "1d"), (expected,))
 
+    session.close()
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({"open": 0, "high": 0, "low": 0, "close": 3929, "volume": 2,
+          "total_turnover": 78700, "open_interest": 10}, True),
+        ({"open": 0, "high": 0, "low": 0, "close": 0, "volume": 0,
+          "total_turnover": 0, "open_interest": 10}, False),
+        ({"open": 0, "high": 10, "low": 0, "close": 10, "volume": 2,
+          "total_turnover": 20, "open_interest": 10}, False),
+        ({"open": 0, "high": 0, "low": 0, "close": 10, "volume": 2,
+          "total_turnover": -1, "open_interest": 10}, False),
+        ({"open": 0, "high": 0, "low": 0, "close": 10, "volume": 2,
+          "total_turnover": 20, "open_interest": -1}, False),
+        ({"open": 0, "high": 0, "low": 0, "close": 10, "volume": 0,
+          "total_turnover": 0, "open_interest": 10}, False),
+    ],
+)
+def test_price_unavailable_classification_is_narrow_and_keeps_invalid_rows_out(
+    fields, expected
+) -> None:
+    assert classify_exchange_daily_price_unavailable(fields) is expected
+
+
+def test_d1_provider_batch_retains_traded_zero_ohl_as_source_fact(tmp_path) -> None:
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 6, 1, 5, tzinfo=UTC)
+    adapter = RQDataMarketAdapter(
+        session=session,
+        client=ExchangeDailyClient({
+            "JM2509": pd.DataFrame([{
+                "date": date(2025, 1, 6), "open": 0, "high": 0, "low": 0,
+                "close": 100, "volume": 2, "total_turnover": 200,
+                "open_interest": 20,
+            }])
+        }),
+    )
+    from app.market_data.historical_data_manager import BarFetchRequest
+    batch = adapter.fetch_many((BarFetchRequest(
+        DatasetKey("contract", "jm", "JM2509", "1d"), (expected,)
+    ),))[0]
+    assert batch.bars == ()
+    assert len(batch.price_unavailable) == 1
+    assert batch.price_unavailable[0].bar_end == expected
+    assert batch.price_unavailable[0].close == Decimal(100)
+    assert batch.price_unavailable[0].volume == Decimal(2)
     session.close()
 
 

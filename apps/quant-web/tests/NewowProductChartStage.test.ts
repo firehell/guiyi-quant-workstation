@@ -535,13 +535,13 @@ function chartResponse(): MutableChartResponse {
   const bars = [bar('2026-08-15T07:00:00Z', '2026-08-15')]
   return {
     meta: {
-      schema_version: 'newow_product_detail_v2',
+      schema_version: 'newow_product_detail_v3',
       identity: { product: 'jm', strategy: 'oscillation', frequency: '60m', series_kind: 'actual_dominant', profile_id: 'newow_product_oscillation_60m_v1', formula_versions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v1'] },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64), data_revision_identity: null,
-      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v2', futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2',
+      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart', status: ready(), value: {
-      chart_from: '2026-08-15', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), bars,
+      chart_from: '2026-08-15', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), price_unavailable_days: [], bars,
       frames: [{ bar_end: bars[0]!.bar_end, main_state: 'BUILD', main_values: { upper: '110', lower: '90' }, status: ready(), action_ids: ['build-stable'], hint_ids: ['hint-stable'] }],
       actions: [{ signal_id: 'build-stable', kind: 'BUILD', bar_end: bars[0]!.bar_end, trading_day: bars[0]!.trading_day, reference_price: '90', physical_contract: 'JM2601', segment_id: 'segment-1', related_build_id: null, trade_eligibility: 'ELIGIBLE', sequence: 0 }],
       hints: [{ hint_id: 'hint-stable', kind: 'D4', bar_end: bars[0]!.bar_end, known_at: '2026-08-15T08:30:00Z', anchor_price: '88', physical_contract: 'JM2601', segment_id: 'segment-1', retrospective: false, quantity_effect: 'none', sequence: 1 }],

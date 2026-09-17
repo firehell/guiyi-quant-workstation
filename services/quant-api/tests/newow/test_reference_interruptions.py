@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 
 from guiyi_quant.newow.product_contracts import (
+    DataInterruption,
     OwnerBoundary,
     ProductBar,
     StrategyHint,
@@ -117,6 +118,94 @@ def test_interruption_retains_negative_decimal_mark_without_fabricating_exit(
     assert trade.reference_return_pct is None
     assert trade.interrupted_at == case.boundaries[0].effective_at
     assert trade.interruption_reason == "OWNER_BOUNDARY"
+
+
+def test_source_price_gap_interrupts_open_reference_without_an_exit(product_cases):
+    case = product_cases.interrupted(mark="90")
+    gap = DataInterruption(
+        product=case.identity.product,
+        frequency=case.identity.frequency,
+        physical_contract=case.entry.physical_contract,
+        segment_id=case.entry.segment_id,
+        trading_day=datetime(2026, 1, 9, tzinfo=UTC).date(),
+        effective_at=datetime(2026, 1, 9, 7, tzinfo=UTC),
+        source_identity="market_data_service:price_unavailable:v1",
+    )
+    projection = ReferenceTradeProjector().project(
+        case.replay, (), gap.effective_at, data_interruptions=(gap,)
+    )
+
+    trade = projection.trades[0]
+    assert trade.status == "DATA_INTERRUPTED"
+    assert trade.interrupted_at == gap.effective_at
+    assert trade.interruption_reason == "SOURCE_PRICE_UNAVAILABLE"
+    assert trade.exit_signal_id is None
+    assert trade.exit_reference_price is None
+    assert trade.reference_return_pct is None
+
+
+def test_later_known_gap_does_not_change_fixed_prefix_reference(product_cases):
+    case = product_cases.interrupted()
+    gap = DataInterruption(
+        product=case.identity.product,
+        frequency=case.identity.frequency,
+        physical_contract=case.entry.physical_contract,
+        segment_id=case.entry.segment_id,
+        trading_day=datetime(2026, 1, 9, tzinfo=UTC).date(),
+        effective_at=datetime(2026, 1, 9, 7, tzinfo=UTC),
+        source_identity="market_data_service:price_unavailable:v1",
+    )
+    trade = ReferenceTradeProjector().project(
+        case.replay, (), case.entry.bar_end, data_interruptions=(gap,)
+    ).trades[0]
+    assert trade.status == "OPEN"
+    assert trade.interrupted_at is None
+
+
+def test_clear_cannot_pair_across_a_price_gap(product_cases):
+    case = product_cases.closed(entry="100", exit="110")
+    between = case.entry.bar_end + (case.exit.bar_end - case.entry.bar_end) / 2
+    gap = DataInterruption(
+        product=case.identity.product,
+        frequency=case.identity.frequency,
+        physical_contract=case.entry.physical_contract,
+        segment_id=case.entry.segment_id,
+        trading_day=between.date(),
+        effective_at=between,
+        source_identity="market_data_service:price_unavailable:v1",
+    )
+    with pytest.raises(ValueError, match="NEWOW_REFERENCE_PAIRING_CONFLICT"):
+        ReferenceTradeProjector().project(
+            case.replay, (), case.as_of, data_interruptions=(gap,)
+        )
+
+
+def test_new_entry_after_gap_does_not_reuse_old_open_owner(product_cases):
+    case = product_cases.interrupted()
+    first = case.bars[0]
+    later = _bar_like(
+        first, bar_end=first.bar.bar_end + timedelta(days=3), close="110"
+    )
+    gap_at = first.bar.bar_end + timedelta(days=1)
+    gap = DataInterruption(
+        product=case.identity.product,
+        frequency=case.identity.frequency,
+        physical_contract=case.entry.physical_contract,
+        segment_id=case.entry.segment_id,
+        trading_day=gap_at.date(),
+        effective_at=gap_at,
+        source_identity="market_data_service:price_unavailable:v1",
+    )
+    new_entry = product_cases.action(case.identity, later, "BUILD", "110")
+    replay = product_cases.replay(
+        case.identity, (first, later), (case.entry, new_entry), ("BUILD", "BUILD")
+    )
+    trades = ReferenceTradeProjector().project(
+        replay, (), later.bar.bar_end, data_interruptions=(gap,)
+    ).trades
+    assert [trade.status for trade in trades] == ["DATA_INTERRUPTED", "OPEN"]
+    assert trades[0].entry_signal_id == case.entry.signal_id
+    assert trades[1].entry_signal_id == new_entry.signal_id
 
 
 def test_future_boundary_and_pre_boundary_prefix_leave_the_trade_open(product_cases):

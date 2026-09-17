@@ -67,15 +67,15 @@ export interface NewowFeatureStatus {
 }
 
 export interface NewowProductMeta {
-  readonly schema_version: 'newow_product_detail_v2'
+  readonly schema_version: 'newow_product_detail_v3'
   readonly identity: NewowProductWireIdentity
   readonly as_of: string
   readonly read_at: string
   readonly input_content_sha256: string
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v2'
-  readonly futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v3'
+  readonly futures_adaptation_version: 'newow_futures_quality_segment_v3'
 }
 
 export interface NewowProductBar {
@@ -89,6 +89,7 @@ export interface NewowProductBar {
   readonly open_interest: number | null
   readonly physical_contract: string
   readonly segment_id: string
+  readonly calculation_segment_id: string
   readonly source_identity: string
   readonly observation_eligible: boolean
   readonly completed: true
@@ -129,6 +130,7 @@ export interface NewowProductAction {
   readonly reference_price: string
   readonly physical_contract: string
   readonly segment_id: string
+  readonly calculation_segment_id: string
   readonly related_build_id: string | null
   readonly trade_eligibility: 'ELIGIBLE' | 'WARMUP_ONLY' | 'NO_ELIGIBLE_ENTRY' | 'INITIAL_CLEAR_NO_ENTRY'
   readonly sequence: number
@@ -142,6 +144,7 @@ export interface NewowProductHint {
   readonly anchor_price: string | null
   readonly physical_contract: string
   readonly segment_id: string
+  readonly calculation_segment_id: string
   readonly retrospective: false
   readonly quantity_effect: 'none'
   readonly sequence: number | null
@@ -151,6 +154,11 @@ export interface NewowChartValue {
   readonly chart_from: string
   readonly chart_through: string
   readonly page_identity: string
+  readonly price_unavailable_days: readonly {
+    readonly trading_day: string
+    readonly physical_contract: string
+    readonly segment_id: string
+  }[]
   readonly bars: readonly NewowProductBar[]
   readonly frames: readonly NewowProductFrame[]
   readonly trend_channel: NewowTrendChannelLayer | null
@@ -175,6 +183,8 @@ export interface NewowReferenceSummary {
   readonly sum_return_percentage_points: string | null
   readonly open_count: number
   readonly interrupted_count: number
+  readonly rollover_interrupted_count: number
+  readonly data_interrupted_count: number
   readonly initial_count: number
 }
 
@@ -185,9 +195,10 @@ export interface NewowReferenceTrade {
   readonly frequency: NewowProductFrequency
   readonly physical_contract: string
   readonly segment_id: string
+  readonly calculation_segment_id: string
   readonly formula_versions: readonly string[]
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v2'
-  readonly futures_adaptation_version: 'newow_futures_segment_interrupt_no_trade_v2'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v3'
+  readonly futures_adaptation_version: 'newow_futures_quality_segment_v3'
   readonly entry_signal_id: string
   readonly entry_sequence: number
   readonly entry_bar_end: string
@@ -197,7 +208,7 @@ export interface NewowReferenceTrade {
   readonly exit_bar_end: string | null
   readonly exit_trading_day: string | null
   readonly exit_reference_price: string | null
-  readonly status: 'OPEN' | 'CLOSED' | 'ROLLOVER_INTERRUPTED'
+  readonly status: 'OPEN' | 'CLOSED' | 'ROLLOVER_INTERRUPTED' | 'DATA_INTERRUPTED'
   readonly holding_bars: number
   readonly reference_return_pct: string | null
   readonly mark_bar_end: string | null
@@ -215,6 +226,16 @@ export interface NewowReferenceValue {
   readonly actual_available_through: string
   readonly reference_cutoff: string
   readonly reference_input_sha256: string
+  readonly history_coverage: 'FULL' | 'PARTIAL'
+  readonly unavailable_days: readonly string[]
+  readonly coverage_intervals: readonly {
+    readonly since: string
+    readonly through: string
+    readonly status: 'VALID' | 'WARMING' | 'PRICE_UNAVAILABLE'
+    readonly physical_contract: string
+    readonly segment_id: string
+    readonly calculation_segment_id: string | null
+  }[]
   readonly summary: NewowReferenceSummary
   readonly items: readonly NewowReferenceTrade[]
   readonly next_before: string | null

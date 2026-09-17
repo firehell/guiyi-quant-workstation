@@ -10,15 +10,17 @@
 物理 DatasetKey SHALL 精确为 `(kind, symbol, series_or_contract, frequency)`；kind 仅允许
 `continuous|contract`，frequency 仅允许七个正式周期。每 Dataset 每自然月 SHALL 只有一个 active
 Catalog pointer。新文件 SHALL 以实际 Parquet bytes 的 SHA-256 命名 `part.<sha256>.parquet`，
-不可变且不得覆盖；旧物理文件 SHALL 保留供已取得旧 URI 的 reader 使用。本阶段 MUST NOT 新增 GC、
-history API、schema、version table、active overlay、sidecar 或内容清单。
+不可变且不得覆盖；旧物理文件 SHALL 保留供已取得旧 URI 的 reader 使用。除下述 D1 来源价格不可用的
+最小 Catalog 质量字段与 migration 外，MUST NOT 新增 GC、history API、version table、active overlay、
+sidecar 或内容清单。
 
 #### Scenario: 非法物理身份
 - **WHEN** 输入 actual_dominant、未支持周期或 kind/series 不匹配
 - **THEN** 系统在创建路径或 Catalog 身份前拒绝输入
 
 ### Requirement: Contract partition preserves valid lifecycle warm-up
-对 `contract` Dataset，所有 rank1 映射所需的 Bar end MUST 被持久化 Bar end 包含；每一条已持久化 Bar 又
+对 `contract` Dataset，所有 rank1 映射所需的端点 MUST 被持久化 Bar end 或下述已验证的 D1
+`PRICE_UNAVAILABLE` 质量事实恰好覆盖；每一条已持久化 Bar 又
 MUST 被 Contract 的 active lifecycle、TradingCalendar 与 TradingSession 共同证明合法。非 rank1 的同物理
 合约 warm-up Bar 因此可被保留，但不得改变 `actual_dominant` 的 rank1 owner 解析。`continuous` Dataset
 继续要求 persisted 与 expected 精确相等，不采用此 superset 合同。refresh 覆盖含合法 warm-up 的 contract
@@ -44,9 +46,31 @@ schema、identity、主键单调唯一、OHLCV、session/frequency、coverage �
 - **WHEN** 候选月未覆盖 TargetWindow 的预期 bars
 - **THEN** 该月不发布，后续 update 将其仍视为待处理目标
 
+### Requirement: Narrow D1 source-price exception preserves coverage without inventing prices
+仅物理合约 `1d` 的 RQData exchange-daily 行同时满足 O/H/L 为零、`close>0`、`volume>0`，
+且其他字段、身份、Calendar/Session 与生命周期通过校验时，MAY 记为 `PRICE_UNAVAILABLE`。
+它不是 `NO_TRADE`，也不是合法 CanonicalBar；不得用 close、settlement、前价或插值填充价格。
+其他零价、缺失、重复、冲突或来源身份不明仍 MUST fail closed。原始字段、交易日、端点、来源
+request/response 摘要、取得时间和分类规则版本 MUST 与分区质量事实绑定并可读回。
+
+候选月的合法 Parquet 行端点与异常端点 MUST 互斥且精确覆盖权威预期集合；质量字段及摘要与
+不可变 Parquet URI 同一 Catalog pointer 原子注册。`row_count` 和价格 coverage 只计合法行；
+完整来源异常月 MAY 有零行空 Parquet 与空价格 coverage，但 MUST 保有来源 coverage。
+普通严格消费者 MUST 拒绝该分区，显式质量感知消费者才可读取类型化的合法行和异常事实。
+来源异常不得使 W1 或其他未适配周期被推断为完整。
+
+#### Scenario: One known source-price day and one valid day
+- **WHEN** 同一月的合法行与经过来源证明的异常日恰好覆盖全部预期端点
+- **THEN** 分区仅发布合法 Bar 行及独立质量事实；严格读取拒绝，质量感知读取返回两类事实
+
+#### Scenario: Unknown or conflicting day
+- **WHEN** 存在缺日、重复、额外端点、身份漂移、文件或质量摘要冲突
+- **THEN** 发布或读取 fail closed，不将异常改写为合法价，也不把该日从目标集合删除
+
 ### Requirement: Immutable publication uses Catalog commit as its visibility point
 候选 MUST 完成全部发布校验，再完成不可变文件及目录 durability，随后在既有 DB 事务内
-register/flush，并由真实 MarketDataService strict-read 校验候选 Catalog URI。commit SHALL 是
+register/flush，并由真实 MarketDataService strict-read 校验无异常候选、质量感知 read 校验
+有异常候选的 Catalog URI。commit SHALL 是
 新 pointer 唯一可见点；原子单位 SHALL 是 partition，不保证跨月、跨周期或 metadata 全局 snapshot。
 
 #### Scenario: Failure before commit

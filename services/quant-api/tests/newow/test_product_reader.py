@@ -20,12 +20,26 @@ from app.market_data.domain import (
     SeriesPageCursorMode,
 )
 from app.market_data.market_data_service import MarketDataError
+from app.market_data.source_quality import PriceUnavailableFact
 from app.market_data.newow.product_query import NewowProductQuery
 from app.market_data.newow.product_reader import (
     NewowProductReadCancelled,
     NewowProductReader,
     NewowProductReadError,
+    _product_bar,
 )
+
+
+def test_reader_source_digest_changes_when_only_turnover_changes(product_cases):
+    _reader, _query, fake = product_cases.paged_reader(prefix_bars=2, page_size=2)
+    bar = replace(fake.physical[("RB2605", BarFrequency.H1)][0], turnover=Decimal("100"))
+    first = _product_bar("rb", ProductFrequency.HOURLY, "RB2605", "owner", bar, True)
+    second = _product_bar(
+        "rb", ProductFrequency.HOURLY, "RB2605", "owner",
+        replace(bar, turnover=bar.turnover + Decimal("1")), True,
+    )
+    assert first.bar == second.bar
+    assert first.source_bar_sha256 != second.source_bar_sha256
 
 
 def test_reader_consumes_all_prefix_pages(product_cases):
@@ -78,6 +92,39 @@ def test_reader_consumes_all_prefix_pages(product_cases):
     assert evidence.source_identity == "market_data_service:canonical_v2"
 
 
+def test_d1_reader_carries_proven_physical_gap_into_reset_without_claiming_full_lifecycle(
+    product_cases, monkeypatch
+):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=50, frequency="1d")
+    owner = fake.segments[0]
+    original = fake.physical[(owner.contract, BarFrequency.D1)]
+    missing = original[20]
+    reduced = (*original[:20], *original[21:])
+    fake.physical[(owner.contract, BarFrequency.D1)] = reduced
+    fake.actual[BarFrequency.D1] = reduced
+    gap = PriceUnavailableFact(
+        missing.bar_end, missing.trading_day, Decimal(0), Decimal(0), Decimal(0),
+        missing.close, Decimal(2), Decimal(200), Decimal(10),
+        "a" * 64, "b" * 64, fake.as_of,
+    )
+
+    def ranked_quality(request):
+        return fake.query_actual_dominant_trading_days(request), ((owner.contract, gap),)
+
+    def prefix_quality(*, symbol, contract, through, cutoff):
+        return tuple(bar for bar in reduced if bar.bar_end <= cutoff), (gap,)
+
+    monkeypatch.setattr(fake, "query_actual_dominant_trading_days_quality", ranked_quality,
+                        raising=False)
+    monkeypatch.setattr(fake, "query_contract_replay_quality", prefix_quality,
+                        raising=False)
+    read = reader.load(query, fake.as_of)
+    assert len(read.replay_bars) == 49
+    assert read.data_interruptions[0].effective_at == gap.bar_end
+    assert read.data_interruptions[0].physical_contract == owner.contract
+    assert read.lifecycle_evidence == ()
+
+
 @pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
 def test_reads_requested_canonical_frequency_without_fallback(product_cases, frequency):
     reader, query, fake = product_cases.paged_reader(prefix_bars=3, frequency=frequency)
@@ -120,7 +167,7 @@ def test_strict_futures_no_trade_fact_is_not_an_effective_strategy_observation(
         original[4].bar_end,
     ]
     source = result.sources[ProductFrequency.DAILY]
-    assert source.input_policy_version == "newow_futures_effective_observation_v1"
+    assert source.input_policy_version == "newow_futures_quality_observation_v2"
     assert source.raw_bar_count == 5
     assert source.effective_bar_count == 4
     assert source.no_trade_bar_count == 1
@@ -138,7 +185,7 @@ def test_strict_futures_no_trade_fact_is_not_an_effective_strategy_observation(
         "actual_bar_count": 5,
         "effective_bar_count": 4,
         "no_trade_bar_count": 1,
-        "input_policy_version": "newow_futures_effective_observation_v1",
+        "input_policy_version": "newow_futures_quality_observation_v2",
         "cutoff": original[-1].bar_end.isoformat(),
     }
 

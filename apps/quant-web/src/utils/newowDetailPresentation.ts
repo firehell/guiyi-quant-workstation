@@ -69,6 +69,7 @@ export function referencePercentDisplay(value: string | null | undefined): { tex
   return { text: formatMarketPercent(value, 'percentage_points', true), direction }
 }
 export function referenceInterruptionLabel(reason: string | null): string {
+  if (reason === 'SOURCE_PRICE_UNAVAILABLE') return '源日线价格不可用，交易参考中断；不计入完整收益'
   if (reason === 'OWNER_BOUNDARY') return '物理合约区段结束'
   if (reason === 'OWNER_BOUNDARY_MARK_UNAVAILABLE') return '物理合约区段结束时缺少可验证估值'
   return '原因未识别（原始码见技术详情）'

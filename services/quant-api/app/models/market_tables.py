@@ -21,11 +21,13 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     Time,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -239,7 +241,10 @@ class MarketPartition(Base):
     __table_args__ = (
         UniqueConstraint("dataset_id", "year", "month", name="uq_market_partitions_month"),
         CheckConstraint("month BETWEEN 1 AND 12", name="ck_market_partitions_month"),
-        CheckConstraint("coverage_start < coverage_end", name="ck_market_partitions_window"),
+        CheckConstraint("(coverage_start IS NULL AND coverage_end IS NULL) OR coverage_start < coverage_end", name="ck_market_partitions_window"),
+        CheckConstraint("(coverage_start IS NULL) = (coverage_end IS NULL)", name="ck_market_partitions_price_coverage_pair"),
+        CheckConstraint("(source_coverage_start IS NULL AND source_coverage_end IS NULL) OR (source_coverage_start IS NOT NULL AND source_coverage_end IS NOT NULL AND source_coverage_start < source_coverage_end)", name="ck_market_partitions_source_window"),
+        CheckConstraint("(source_quality IS NULL) = (source_quality_sha256 IS NULL)", name="ck_market_partitions_quality_pair"),
         CheckConstraint("row_count >= 0", name="ck_market_partitions_row_count"),
     )
 
@@ -247,8 +252,15 @@ class MarketPartition(Base):
     dataset_id: Mapped[int] = mapped_column(ForeignKey("market_datasets.id"), nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     month: Mapped[int] = mapped_column(Integer, nullable=False)
-    coverage_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    coverage_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    coverage_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    coverage_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_coverage_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_coverage_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_quality: Mapped[list[dict] | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        nullable=True,
+    )
+    source_quality_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     file_uri: Mapped[str] = mapped_column(Text, nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

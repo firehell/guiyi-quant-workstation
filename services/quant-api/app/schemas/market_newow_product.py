@@ -20,9 +20,9 @@ EvidenceStatusValue = Literal[
     "OUT_OF_SCOPE",
 ]
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
-ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v2"]
+ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v3"]
 FuturesAdaptationVersionValue = Literal[
-    "newow_futures_segment_interrupt_no_trade_v2"
+    "newow_futures_quality_segment_v3"
 ]
 
 
@@ -46,7 +46,7 @@ class ProductIdentityOut(_Out):
 
 
 class ProductMetaOut(_Out):
-    schema_version: Literal["newow_product_detail_v2"]
+    schema_version: Literal["newow_product_detail_v3"]
     identity: ProductIdentityOut
     as_of: datetime
     read_at: datetime
@@ -68,6 +68,7 @@ class ProductBarOut(_Out):
     open_interest: int | None
     physical_contract: str
     segment_id: str
+    calculation_segment_id: str
     source_identity: str
     observation_eligible: bool
     completed: Literal[True]
@@ -81,6 +82,7 @@ class ProductActionOut(_Out):
     reference_price: str
     physical_contract: str
     segment_id: str
+    calculation_segment_id: str
     related_build_id: str | None
     trade_eligibility: Literal[
         "ELIGIBLE",
@@ -109,6 +111,7 @@ class ProductHintOut(_Out):
     anchor_price: str | None
     physical_contract: str
     segment_id: str
+    calculation_segment_id: str
     retrospective: Literal[False]
     quantity_effect: Literal["none"]
     sequence: int | None
@@ -141,10 +144,17 @@ class TrendChannelLayerOut(_Out):
     points: list[TrendChannelPointOut]
 
 
+class ChartPriceUnavailableDayOut(_Out):
+    trading_day: date
+    physical_contract: str
+    segment_id: str
+
+
 class ChartValueOut(_Out):
     chart_from: date
     chart_through: date
     page_identity: str
+    price_unavailable_days: list[ChartPriceUnavailableDayOut]
     bars: list[ProductBarOut]
     frames: list[ProductFrameOut]
     trend_channel: TrendChannelLayerOut | None
@@ -165,6 +175,7 @@ class ReferenceTradeOut(_Out):
     frequency: ProductFrequencyValue
     physical_contract: str
     segment_id: str
+    calculation_segment_id: str
     formula_versions: list[str]
     reference_model_version: ReferenceModelVersionValue
     futures_adaptation_version: FuturesAdaptationVersionValue
@@ -177,7 +188,7 @@ class ReferenceTradeOut(_Out):
     exit_bar_end: datetime | None
     exit_trading_day: date | None
     exit_reference_price: str | None
-    status: Literal["OPEN", "CLOSED", "ROLLOVER_INTERRUPTED"]
+    status: Literal["OPEN", "CLOSED", "ROLLOVER_INTERRUPTED", "DATA_INTERRUPTED"]
     holding_bars: int
     reference_return_pct: str | None
     mark_bar_end: datetime | None
@@ -200,7 +211,18 @@ class ReferenceSummaryOut(_Out):
     sum_return_percentage_points: str | None
     open_count: int
     interrupted_count: int
+    rollover_interrupted_count: int
+    data_interrupted_count: int
     initial_count: int
+
+
+class ReferenceCoverageIntervalOut(_Out):
+    since: date
+    through: date
+    status: Literal["VALID", "WARMING", "PRICE_UNAVAILABLE"]
+    physical_contract: str
+    segment_id: str
+    calculation_segment_id: str | None
 
 
 class ReferenceValueOut(_Out):
@@ -209,6 +231,9 @@ class ReferenceValueOut(_Out):
     actual_available_through: date
     reference_cutoff: datetime
     reference_input_sha256: str
+    history_coverage: Literal["FULL", "PARTIAL"]
+    unavailable_days: list[date]
+    coverage_intervals: list[ReferenceCoverageIntervalOut]
     summary: ReferenceSummaryOut
     items: list[ReferenceTradeOut]
     next_before: str | None

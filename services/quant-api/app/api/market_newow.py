@@ -442,6 +442,7 @@ def _bar(item) -> dict[str, object]:
         "open_interest": bar.open_interest,
         "physical_contract": bar.physical_contract,
         "segment_id": bar.segment_id,
+        "calculation_segment_id": item.calculation_segment_id,
         "source_identity": bar.source_identity,
         "observation_eligible": bar.observation_eligible,
         "completed": True,
@@ -497,6 +498,14 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             "chart_from": value.actual_window.since,
             "chart_through": value.actual_window.through,
             "page_identity": value.page_identity,
+            "price_unavailable_days": [
+                {
+                    "trading_day": day,
+                    "physical_contract": contract,
+                    "segment_id": segment_id,
+                }
+                for day, contract, segment_id in value.price_unavailable_days
+            ],
             "bars": [_bar(item) for item in value.bars],
             "frames": [
                 {
@@ -540,6 +549,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                     "reference_price": _decimal(item.reference_price),
                     "physical_contract": item.physical_contract,
                     "segment_id": item.segment_id,
+                    "calculation_segment_id": item.calculation_segment_id,
                     "related_build_id": item.related_build_id,
                     "trade_eligibility": item.trade_eligibility.value,
                     "sequence": item.sequence,
@@ -555,6 +565,7 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                     "anchor_price": _decimal(item.anchor_price),
                     "physical_contract": item.physical_contract,
                     "segment_id": item.segment_id,
+                    "calculation_segment_id": item.calculation_segment_id,
                     "retrospective": False,
                     "quantity_effect": "none",
                     "sequence": item.sequence,
@@ -577,6 +588,19 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
             "actual_available_through": value.actual_available_through,
             "reference_cutoff": value.reference_cutoff,
             "reference_input_sha256": value.reference_input_sha256,
+            "history_coverage": value.history_coverage,
+            "unavailable_days": list(value.unavailable_days),
+            "coverage_intervals": [
+                {
+                    "since": interval.since,
+                    "through": interval.through,
+                    "status": interval.status,
+                    "physical_contract": interval.physical_contract,
+                    "segment_id": interval.segment_id,
+                    "calculation_segment_id": interval.calculation_segment_id,
+                }
+                for interval in value.coverage_intervals
+            ],
             "summary": {
                 "membership_policy": value.summary.membership_policy,
                 "closed_count": value.summary.closed_count,
@@ -590,6 +614,8 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                 ),
                 "open_count": value.summary.open_count,
                 "interrupted_count": value.summary.interrupted_count,
+                "rollover_interrupted_count": value.summary.rollover_interrupted_count,
+                "data_interrupted_count": value.summary.data_interrupted_count,
                 "initial_count": value.summary.initial_count,
             },
             "items": [

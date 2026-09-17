@@ -29,6 +29,7 @@ from app.market_data.historical_data_manager import (
     _Target,
 )
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
+from app.market_data.source_quality import PriceUnavailableFact
 from app.models import (
     Contract,
     Exchange,
@@ -66,6 +67,39 @@ def _read_committed_month(manager, key, year, month):
     partition = next(item for item in manager.catalog.all_partitions(key)
                      if (item.year, item.month) == (year, month))
     return manager.store.read_catalog_partition(partition)
+
+
+def test_manager_publishes_exact_d1_exception_without_a_fabricated_bar(
+    session, tmp_path
+) -> None:
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    first = datetime(2025, 1, 2, 7, tzinfo=UTC)
+    last = datetime(2025, 1, 3, 7, tzinfo=UTC)
+    valid = CanonicalBar(
+        first, date(2025, 1, 2), Decimal(100), Decimal(101), Decimal(99),
+        Decimal(100), Decimal(1), Decimal(100), Decimal(10),
+    )
+    exception = PriceUnavailableFact(
+        last, date(2025, 1, 3), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+        "a" * 64, "b" * 64, datetime(2026, 9, 15, tzinfo=UTC),
+    )
+    manager = _manager(session, tmp_path, FakeCoverage({}), FakeProvider({}))
+    target = _Target(key, 2025, 1, (first, last), (first, last), ())
+    manager._publish_fetched_partition(target, (BarBatch((valid,), (exception,)),))
+    partition = manager.catalog.all_partitions(key)[0]
+    assert manager.store.read_catalog_partition_quality(partition) == (
+        (valid,), (exception,),
+    )
+    existing, reason = manager._existing_partition(key, 2025, 1)
+    assert reason is None
+    assert existing == (valid,)
+    manager.coverage.ends[key.as_tuple()] = (first, last)
+    classification = manager._classify_contract_partition(
+        key, 2025, 1, (first, last), existing, date(2025, 1, 3),
+    )
+    assert classification.missing_mapped == ()
+    assert classification.expected == (first, last)
 
 
 class FakeCoverage:

@@ -60,7 +60,7 @@ const waiting = computed(() => {
   if (!bar?.completed || !bar.observation_eligible || frame?.status.status !== 'ready'
     || frame.status.evidence_status !== 'ACTIVE_CODE_VERIFIED' || frame.main_state !== 'FLAT'
     || Date.parse(bar.bar_end) > Date.parse(chart.meta.as_of)
-    || reference.value.items.some(item => item.status === 'OPEN' && item.physical_contract === bar.physical_contract && item.segment_id === bar.segment_id)) return null
+    || reference.value.items.some(item => item.status === 'OPEN' && item.physical_contract === bar.physical_contract && item.segment_id === bar.segment_id && item.calculation_segment_id === bar.calculation_segment_id)) return null
   return bar
 })
 function rowTime(trade: NewowReferenceTrade, time: string | null): string {
@@ -127,13 +127,18 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
     <template v-if="model">
       <section class="newow-reference__summary" data-testid="newow-reference-summary" aria-label="参考交易统计摘要">
         <p class="newow-reference__availability" role="status">{{ model.statusExplanation }}</p>
+        <div v-if="response?.value?.history_coverage === 'PARTIAL'" role="status">
+          <p>历史覆盖不完整；仅统计有效区段内已完成的参考交易，跨中断记录不计入收益。</p>
+          <ul><li v-for="interval in response.value.coverage_intervals" :key="`${interval.segment_id}:${interval.since}:${interval.status}`">{{ interval.since }} → {{ interval.through }} · {{ interval.physical_contract }} · {{ interval.status === 'VALID' ? '有效计算区段' : interval.status === 'PRICE_UNAVAILABLE' ? '来源价格不可用' : '重新预热中' }}</li></ul>
+        </div>
         <dl>
           <div><dt>已完成</dt><dd>{{ model.summary.closedCount }}</dd></div>
           <div><dt>胜率</dt><dd>{{ model.summary.winRateText }}</dd></div>
           <div><dt>平均单笔</dt><dd>{{ model.summary.meanText }}</dd></div>
           <div><dt>收益合计</dt><dd>{{ model.summary.sumText }} <small>{{ model.summary.sumUnit }}</small></dd></div>
           <div><dt>未清仓</dt><dd>{{ model.counts.open }}</dd></div>
-          <div><dt>换月中断</dt><dd>{{ model.counts.interrupted }}</dd></div>
+          <div><dt>换月中断</dt><dd>{{ model.counts.rolloverInterrupted }}</dd></div>
+          <div><dt>数据中断</dt><dd>{{ model.counts.dataInterrupted }}</dd></div>
           <div><dt>期初已有</dt><dd>{{ model.counts.initial }}</dd></div>
         </dl>
         <p v-if="model.summary.closedCount === 0">暂无已完成参考交易；统计指标不是 0%。</p>
@@ -154,7 +159,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
             <option value="all">全部</option>
             <option value="closed">已清仓</option>
             <option value="open">未清仓</option>
-            <option value="interrupted">换月中断</option>
+            <option value="interrupted">中断记录</option>
             <option value="initial">期初已有</option>
           </select>
         </label>
@@ -163,9 +168,9 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 
       <div class="newow-reference__cards">
         <article v-for="row in visibleModel?.rows ?? []" :key="row.id" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id">
-          <header :title="`${row.trade.entry_bar_end} → ${row.trade.exit_bar_end ?? row.trade.mark_bar_end ?? row.trade.interrupted_at}`"><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : '换月中断' }}</strong><span>{{ row.trade.physical_contract }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.trade.exit_bar_end ? rowTime(row.trade, row.trade.exit_bar_end) : row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.interrupted_at) }}</span><span v-if="row.initial">期初已有</span></header>
+          <header :title="`${row.trade.entry_bar_end} → ${row.trade.exit_bar_end ?? row.trade.mark_bar_end ?? row.trade.interrupted_at}`"><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断' }}</strong><span>{{ row.trade.physical_contract }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.trade.exit_bar_end ? rowTime(row.trade, row.trade.exit_bar_end) : row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.interrupted_at) }}</span><span v-if="row.initial">期初已有</span></header>
           <div class="newow-reference__card-body">
-            <p>▲ 参考建仓 {{ formatMarketDecimal(row.trade.entry_reference_price) }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} <template v-if="row.category === 'closed'">　▼ 参考清仓 {{ formatMarketDecimal(row.trade.exit_reference_price) }} · {{ rowTime(row.trade, row.trade.exit_bar_end) }}</template><template v-else-if="row.category === 'interrupted'">　换月中断 · {{ referenceInterruptionLabel(row.trade.interruption_reason) }}</template></p>
+            <p>▲ 参考建仓 {{ formatMarketDecimal(row.trade.entry_reference_price) }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} <template v-if="row.category === 'closed'">　▼ 参考清仓 {{ formatMarketDecimal(row.trade.exit_reference_price) }} · {{ rowTime(row.trade, row.trade.exit_bar_end) }}</template><template v-else-if="row.category === 'interrupted'">　{{ row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断' }} · {{ referenceInterruptionLabel(row.trade.interruption_reason) }}</template></p>
             <p class="newow-reference__return">{{ row.category === 'open' ? '参考浮动' : row.category === 'closed' ? '已清仓收益' : '中断浮动' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</span><small v-if="row.category !== 'closed'" :title="row.valuationText"> · 估值 {{ rowTime(row.trade, row.trade.mark_bar_end) }}</small></p>
             <button type="button" :aria-label="`定位参考记录 ${row.id} 的建仓信号`" @click="emit('locate', row.trade)">定位图表</button>
             <button type="button" :aria-label="`展开参考记录 ${row.id}`" :aria-expanded="expanded.includes(row.id)" @click="toggle(row.id)">查看详情</button>

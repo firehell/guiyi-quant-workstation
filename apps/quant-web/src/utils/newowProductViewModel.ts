@@ -68,6 +68,8 @@ export interface NewowReferencePanelViewModel {
   readonly counts: {
     readonly open: number
     readonly interrupted: number
+    readonly rolloverInterrupted: number
+    readonly dataInterrupted: number
     readonly initial: number
   }
   readonly performanceWindow: {
@@ -112,6 +114,8 @@ export function buildNewowReferencePanelViewModel(
     counts: {
       open: value.summary.open_count,
       interrupted: value.summary.interrupted_count,
+      rolloverInterrupted: value.summary.rollover_interrupted_count,
+      dataInterrupted: value.summary.data_interrupted_count,
       initial: value.summary.initial_count,
     },
     performanceWindow: {

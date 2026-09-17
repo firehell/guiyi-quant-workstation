@@ -40,7 +40,13 @@ def calculate_macd_display(
     identity: ProductIdentity, read: ProductReadSet
 ) -> MacdDisplayLayer:
     # Share the auxiliary identity/order/owner seam; never seed from a viewport.
-    owners = _validated_segments(identity, read.replay_bars, read.as_of)
+    from guiyi_quant.newow.product_adapters import label_calculation_segments
+
+    owners = _validated_segments(
+        identity,
+        label_calculation_segments(identity, read.replay_bars, read.data_interruptions),
+        read.as_of,
+    )
     segments: list[AuxiliarySegment[MacdDisplayData]] = []
     for owner in owners:
         visible = tuple(

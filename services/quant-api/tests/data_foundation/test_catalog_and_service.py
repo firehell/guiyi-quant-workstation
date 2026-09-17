@@ -20,10 +20,12 @@ from app.market_data.domain import (
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
+from app.market_data.source_quality import PriceUnavailableFact
 from app.models import (
     Contract,
     Exchange,
     Instrument,
+    MainContractMap,
     MarketPartition,
     TradingCalendar,
     TradingSession,
@@ -110,6 +112,163 @@ def test_catalog_registers_minimal_month_partition(session, tmp_path) -> None:
     assert row.file_path == partition.parquet_path
     assert row.row_count == 1
     assert not hasattr(row, "manifest_path")
+
+
+def test_month_publication_requires_exact_valid_or_source_exception_coverage(
+    session, tmp_path
+) -> None:
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    valid = _bar(2, 100)
+    missing_at = datetime(2025, 1, 3, 7, tzinfo=UTC)
+    exception = PriceUnavailableFact(
+        bar_end=missing_at, trading_day=date(2025, 1, 3),
+        open=Decimal(0), high=Decimal(0), low=Decimal(0),
+        close=Decimal(100), volume=Decimal(2), turnover=Decimal(200),
+        open_interest=Decimal(10),
+        request_sha256="a" * 64, response_sha256="b" * 64,
+        observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+    )
+    store = CanonicalMonthlyStore(tmp_path)
+    request = PublishRequest(
+        key, 2025, 1, (valid,), (valid.bar_end, missing_at),
+        price_unavailable=(exception,),
+    )
+    published = store.publish(request)
+    catalog = MarketCatalog(session, tmp_path)
+    catalog.register_partition(published)
+    session.commit()
+    partition = catalog.all_partitions(key)[0]
+    bars, unavailable = store.read_catalog_partition_quality(partition)
+    assert bars == (valid,)
+    assert unavailable == (exception,)
+    assert partition.row_count == 1
+    assert partition.coverage_end == valid.bar_end
+    with pytest.raises(MarketDataError, match="PRICE_UNAVAILABLE"):
+        MarketDataService(catalog, store).query(SeriesQuery(
+            "contract", "jm", "1d",
+            datetime(2025, 1, 1, 7, tzinfo=UTC), missing_at,
+            contract="JM2509",
+        ))
+
+
+def test_source_exception_cannot_cover_unknown_or_overlapping_bar(session, tmp_path):
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    valid = _bar(2, 100)
+    exception = PriceUnavailableFact(
+        bar_end=valid.bar_end, trading_day=valid.trading_day,
+        open=Decimal(0), high=Decimal(0), low=Decimal(0),
+        close=Decimal(100), volume=Decimal(2), turnover=Decimal(200),
+        open_interest=Decimal(10), request_sha256="a" * 64,
+        response_sha256="b" * 64,
+        observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+    )
+    store = CanonicalMonthlyStore(tmp_path)
+    with pytest.raises(Exception, match="SOURCE_QUALITY_COVERAGE_INVALID"):
+        store.publish(PublishRequest(
+            key, 2025, 1, (valid,), (valid.bar_end,),
+            price_unavailable=(exception,),
+        ))
+
+
+def test_all_price_unavailable_month_has_no_fake_price_coverage(session, tmp_path):
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    unavailable_at = datetime(2025, 1, 2, 7, tzinfo=UTC)
+    exception = PriceUnavailableFact(
+        bar_end=unavailable_at, trading_day=date(2025, 1, 2),
+        open=Decimal(0), high=Decimal(0), low=Decimal(0),
+        close=Decimal(100), volume=Decimal(2), turnover=Decimal(200),
+        open_interest=Decimal(10), request_sha256="a" * 64,
+        response_sha256="b" * 64, observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+    )
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    catalog.register_partition(store.publish(PublishRequest(
+        key, 2025, 1, (), (unavailable_at,), price_unavailable=(exception,),
+    )))
+    session.commit()
+    partition = catalog.all_partitions(key)[0]
+    assert partition.coverage_start is None
+    assert partition.coverage_end is None
+    assert partition.row_count == 0
+    assert store.read_catalog_partition_quality(partition) == ((), (exception,))
+
+
+def test_quality_read_rejects_catalog_source_window_mismatch(session, tmp_path):
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    unavailable_at = datetime(2025, 1, 2, 7, tzinfo=UTC)
+    exception = PriceUnavailableFact(
+        bar_end=unavailable_at, trading_day=date(2025, 1, 2),
+        open=Decimal(0), high=Decimal(0), low=Decimal(0),
+        close=Decimal(100), volume=Decimal(2), turnover=Decimal(200),
+        open_interest=Decimal(10), request_sha256="a" * 64,
+        response_sha256="b" * 64, observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+    )
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    catalog.register_partition(store.publish(PublishRequest(
+        key, 2025, 1, (), (unavailable_at,), price_unavailable=(exception,),
+    )))
+    partition = catalog.all_partitions(key)[0]
+    from dataclasses import replace
+    from app.market_data.storage import StorageError
+    with pytest.raises(StorageError, match="SOURCE_QUALITY_COVERAGE_INVALID"):
+        store.read_catalog_partition_quality(replace(
+            partition, source_coverage_end=unavailable_at + timedelta(days=1),
+        ))
+
+
+def test_actual_dominant_d1_quality_read_proves_every_owner_day(session, tmp_path):
+    session.scalar(select(TradingSession)).is_active = False
+    session.add(Contract(
+        contract_code="JM2509", instrument_symbol="jm", exchange_code="DCE",
+        listed_date=date(2025, 1, 1), expired_date=date(2025, 12, 1),
+        provider="rqdata",
+    ))
+    session.add(TradingCalendar(
+        exchange_code="DCE", trade_date=date(2025, 1, 1), is_trading_day=False,
+    ))
+    for day in (2, 3):
+        session.add(TradingSession(
+            exchange_code="DCE", instrument_symbol="jm", session_name="day",
+            start_time=time(9), end_time=time(15),
+            effective_from=date(2025, 1, day), effective_to=date(2025, 1, day),
+            is_active=True, provider="rqdata",
+        ))
+        session.add(TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
+        ))
+        session.add(MainContractMap(
+            symbol="jm", trade_date=date(2025, 1, day), contract_code="JM2509",
+            rank=1, rule="volume_open_interest",
+        ))
+    session.commit()
+    valid = _bar(2, 100)
+    missing_at = datetime(2025, 1, 3, 7, tzinfo=UTC)
+    exception = PriceUnavailableFact(
+        missing_at, date(2025, 1, 3), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+        "a" * 64, "b" * 64, datetime(2026, 9, 15, tzinfo=UTC),
+    )
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    catalog.register_partition(store.publish(PublishRequest(
+        key, 2025, 1, (valid,), (valid.bar_end, missing_at),
+        price_unavailable=(exception,),
+    )))
+    session.commit()
+    result, unavailable = MarketDataService(catalog, store).query_actual_dominant_trading_days_quality(
+        ActualDominantTradingDayQuery("jm", "1d", date(2025, 1, 2), date(2025, 1, 3))
+    )
+    assert result.bars == (valid,)
+    assert unavailable == (("JM2509", exception),)
+    assert result.resolved_contract_segments[0].contract == "JM2509"
+    prefix_bars, prefix_gaps = MarketDataService(catalog, store).query_contract_replay_quality(
+        symbol="jm", contract="JM2509", through=date(2025, 1, 3),
+        cutoff=missing_at,
+    )
+    assert prefix_bars == (valid,)
+    assert prefix_gaps == (exception,)
 
 
 def test_catalog_contract_fact_normalizes_exact_identity(session, tmp_path) -> None:

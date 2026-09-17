@@ -28,6 +28,7 @@ export interface NewowProductChartBar {
   readonly volume: number
   readonly physicalContract: string
   readonly segmentId: string
+  readonly calculationSegmentId: string
   readonly sourceIdentity: string
 }
 
@@ -136,6 +137,7 @@ export function buildNewowProductChartModel(
     volume: bar.volume,
     physicalContract: bar.physical_contract,
     segmentId: bar.segment_id,
+    calculationSegmentId: bar.calculation_segment_id,
     sourceIdentity: bar.source_identity,
   }))
   const barByEnd = new Map(bars.map((bar) => [bar.barEnd, bar]))
@@ -148,10 +150,10 @@ export function buildNewowProductChartModel(
     for (const bar of bars) {
       const frame = frameByEnd.get(bar.barEnd)
       const text = frame?.main_values[key]
-      const nextOwner = `${bar.physicalContract}:${bar.segmentId}`
+      const nextOwner = `${bar.physicalContract}:${bar.calculationSegmentId}`
       if (text == null || frame?.status.status !== 'ready') { line = null; continue }
       if (line === null || owner !== nextOwner) {
-        line = { id: `${key}:${nextOwner}:${run++}`, key, label, segmentId: bar.segmentId, points: [] }
+        line = { id: `${key}:${nextOwner}:${run++}`, key, label, segmentId: bar.calculationSegmentId, points: [] }
         mainLines.push(line)
       }
       line.points.push({ barEnd: bar.barEnd, tradingDay: bar.tradingDay, value: chartCoordinate(text) })
