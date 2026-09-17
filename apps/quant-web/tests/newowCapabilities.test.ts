@@ -37,3 +37,18 @@ test('capability failure stays unavailable without inventing legacy defaults', a
   assert.deepEqual(state.openFrequencies.value, [])
   assert.equal(state.isFrequencyOpen('1d'), false)
 })
+
+test('weekly candidate capability opens W1 only in a candidate response', async () => {
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v4',
+    release_stage: 'daily_weekly_candidate',
+    open_frequencies: ['1d', '1w'],
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w'), true)
+  assert.equal(state.isFrequencyOpen('60m'), false)
+})

@@ -437,6 +437,123 @@ def test_actual_dominant_d1_quality_read_proves_every_owner_day(
         )
 
 
+def test_contract_weekly_quality_read_has_no_bar_for_proven_price_gap(session, tmp_path):
+    session.scalar(select(TradingSession)).is_active = False
+    session.add(Contract(
+        contract_code="JM2509", instrument_symbol="jm", exchange_code="DCE",
+        listed_date=date(2025, 1, 1), expired_date=date(2025, 12, 1),
+        provider="rqdata",
+    ))
+    session.add(TradingCalendar(
+        exchange_code="DCE", trade_date=date(2025, 1, 1), is_trading_day=False,
+    ))
+    for day in (2, 3):
+        session.add(TradingSession(
+            exchange_code="DCE", instrument_symbol="jm", session_name="day",
+            start_time=time(9), end_time=time(15),
+            effective_from=date(2025, 1, day), effective_to=date(2025, 1, day),
+            is_active=True, provider="rqdata",
+        ))
+        session.add(TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
+        ))
+        session.add(MainContractMap(
+            symbol="jm", trade_date=date(2025, 1, day), contract_code="JM2509",
+            rank=1, rule="volume_open_interest",
+        ))
+    session.commit()
+    valid = _bar(2, 100)
+    gap_end = datetime(2025, 1, 3, 7, tzinfo=UTC)
+    exception = PriceUnavailableFact(
+        gap_end, date(2025, 1, 3), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+        "a" * 64, "b" * 64, datetime(2026, 9, 15, tzinfo=UTC),
+    )
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    catalog.register_partition(store.publish(PublishRequest(
+        key, 2025, 1, (valid,), (valid.bar_end, gap_end),
+        price_unavailable=(exception,),
+    )))
+    session.commit()
+    market = MarketDataService(catalog, store)
+    bars, interruptions = market.query_contract_weekly_replay_quality(
+        symbol="jm", contract="JM2509", through=date(2025, 1, 3), cutoff=gap_end,
+    )
+    assert bars == ()
+    assert len(interruptions) == 1
+    assert interruptions[0].week_end == gap_end
+    assert interruptions[0].unavailable_days == (date(2025, 1, 3),)
+    actual, actual_gaps = market.query_actual_dominant_trading_days_quality(
+        ActualDominantTradingDayQuery("jm", "1w", date(2025, 1, 2), date(2025, 1, 3)),
+    )
+    assert actual.bars == ()
+    assert len(actual_gaps) == 1
+    assert actual_gaps[0][0] == "JM2509"
+    assert actual_gaps[0][1] == interruptions[0]
+    incomplete, incomplete_gaps = market.query_actual_dominant_trading_days_quality(
+        ActualDominantTradingDayQuery("jm", "1w", date(2025, 1, 2), date(2025, 1, 2)),
+    )
+    assert incomplete.bars == ()
+    assert incomplete_gaps == ()
+    with pytest.raises(MarketDataError):
+        market.query_contract_trading_days(ContractTradingDayQuery(
+            "jm", "JM2509", "1w", date(2025, 1, 2), date(2025, 1, 3),
+        ))
+
+
+@pytest.mark.parametrize("mismatch", [None, "close", "turnover"])
+def test_contract_weekly_quality_read_validates_stored_normal_week(
+    session, tmp_path, mismatch,
+):
+    session.scalar(select(TradingSession)).is_active = False
+    session.add(Contract(
+        contract_code="JM2509", instrument_symbol="jm", exchange_code="DCE",
+        listed_date=date(2025, 1, 1), expired_date=date(2025, 12, 1),
+        provider="rqdata",
+    ))
+    session.add(TradingCalendar(
+        exchange_code="DCE", trade_date=date(2025, 1, 1), is_trading_day=False,
+    ))
+    for day in (2, 3):
+        session.add(TradingSession(
+            exchange_code="DCE", instrument_symbol="jm", session_name="day",
+            start_time=time(9), end_time=time(15),
+            effective_from=date(2025, 1, day), effective_to=date(2025, 1, day),
+            is_active=True, provider="rqdata",
+        ))
+        session.add(TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
+        ))
+    session.commit()
+    first, second = _bar(2, 100), _bar(3, 101)
+    weekly = CanonicalBar(
+        second.bar_end, second.trading_day, first.open, second.high,
+        first.low, Decimal(102 if mismatch == "close" else 101),
+        Decimal(2), Decimal(21 if mismatch == "turnover" else 20), Decimal(20),
+    )
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "1d"),
+             (first, second))
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "1w"),
+             (weekly,))
+    session.commit()
+    market = MarketDataService(catalog, store)
+    if mismatch is not None:
+        with pytest.raises(MarketDataError, match="WEEKLY_SOURCE_BAR_CONFLICT"):
+            market.query_contract_weekly_replay_quality(
+                symbol="jm", contract="JM2509", through=date(2025, 1, 3),
+                cutoff=second.bar_end,
+            )
+    else:
+        assert market.query_contract_weekly_replay_quality(
+            symbol="jm", contract="JM2509", through=date(2025, 1, 3),
+            cutoff=second.bar_end,
+        ) == ((weekly,), ())
+
+
 def test_catalog_contract_fact_normalizes_exact_identity(session, tmp_path) -> None:
     session.add(
         Contract(
@@ -1980,7 +2097,13 @@ def test_query_fails_closed_for_missing_or_invalid_physical_partition(
 
 
 def test_query_hot_path_has_no_digest_manifest_or_gap_dependency() -> None:
-    source = inspect.getsource(MarketDataService)
+    source = "\n".join(inspect.getsource(method) for method in (
+        MarketDataService.query,
+        MarketDataService.query_page,
+        MarketDataService._read_physical,
+        MarketDataService._actual_dominant,
+        MarketDataService._actual_dominant_page,
+    ))
     assert "sha256" not in source.lower()
     assert "manifest" not in source.lower()
     assert "data_gap" not in source.lower()

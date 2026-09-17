@@ -557,8 +557,8 @@ class ProductCases:
         )
         return StrategyReplay(identity, frames, actions, (), ())
 
-    def open(self):
-        case = self.closed()
+    def open(self, frequency="1d"):
+        case = self.closed(frequency=frequency)
         return replace(
             case,
             exit=None,
@@ -570,8 +570,8 @@ class ProductCases:
             ),
         )
 
-    def interrupted(self, mark="90"):
-        case = self.open()
+    def interrupted(self, mark="90", frequency="1d"):
+        case = self.open(frequency=frequency)
         value = Decimal(mark)
         last = replace(
             case.bars[-1],

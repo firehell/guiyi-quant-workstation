@@ -168,6 +168,8 @@ def _report(units: list[dict[str, Any]]) -> dict[str, Any]:
                         cutoff=f"{through}T07:00:00+00:00",
                         actual_bar_count=1,
                         expected_bar_count=1,
+                        price_unavailable_count=0,
+                        source_quality="NORMAL",
                     )
                 dependencies.append(dependency)
     return {
@@ -915,6 +917,58 @@ def test_partition_rejects_missing_dependency_even_when_work_used_is_synced() ->
     report = _report([_ordinary_unit()])
     report["dependencies"].pop(0)
     report["work_used"] -= 1
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(report)
+
+
+def test_partition_accepts_explained_weekly_interruption_as_complete_dependency() -> None:
+    report = _report([])
+    dependency = next(row for row in report["dependencies"] if row["status"] == "DATA_READY")
+    dependency.update(
+        actual_bar_count=0,
+        expected_bar_count=1,
+        price_unavailable_count=1,
+        source_quality="WEEKLY_INTERRUPTED",
+    )
+
+    assert partition_ordinary_units(report) == ()
+
+
+def test_campaign_loads_hash_locked_full_native_report_over_manifest_limit(tmp_path) -> None:
+    report = _report([])
+    report["_padding"] = "x" * (17 * 1024 * 1024)
+    path = tmp_path / "full-readiness.json"
+    content = json.dumps(report).encode()
+    path.write_bytes(content)
+    digest = hashlib.sha256(content).hexdigest()
+
+    assert campaign._load_hash_locked_report(path, digest)["status"] == "audited"
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        campaign._load_hash_locked_report(path, "0" * 64)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing_quality", "wrong_count", "wrong_label", "bool_count"],
+)
+def test_partition_rejects_inconsistent_weekly_interruption_proof(mutation: str) -> None:
+    report = _report([])
+    dependency = next(row for row in report["dependencies"] if row["status"] == "DATA_READY")
+    dependency.update(
+        actual_bar_count=0,
+        expected_bar_count=1,
+        price_unavailable_count=1,
+        source_quality="WEEKLY_INTERRUPTED",
+    )
+    if mutation == "missing_quality":
+        del dependency["source_quality"]
+    elif mutation == "wrong_count":
+        dependency["actual_bar_count"] = 1
+    elif mutation == "wrong_label":
+        dependency["source_quality"] = "NORMAL"
+    elif mutation == "bool_count":
+        dependency["price_unavailable_count"] = True
 
     with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
         partition_ordinary_units(report)

@@ -123,7 +123,7 @@ export async function installNewowProductFixtures(page, options = {}) {
     if (request.method() !== 'GET') return unexpected(route, state, `non-GET ${request.method()} ${url.pathname}`)
 
     if (url.pathname === '/api/v1/market/newow/product-capabilities') {
-      return route.fulfill({ json: dailyCapabilities() })
+      return route.fulfill({ json: options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities() })
     }
 
     if (url.pathname === '/api/v1/market/newow/strategy-detail') {
@@ -213,6 +213,18 @@ function dailyCapabilities() {
     ],
     open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
     deferred_sections: [{ section: 'explanation', reason_code: 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN' }],
+  }
+}
+
+function weeklyCandidateCapabilities() {
+  return {
+    ...dailyCapabilities(),
+    schema_version: 'newow_product_capabilities_v4',
+    release_stage: 'daily_weekly_candidate',
+    open_frequencies: ['1d', '1w'],
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
   }
 }
 
@@ -443,7 +455,8 @@ function meta(url, strategy, frequency, section, options) {
     read_at: '2026-09-03T08:00:01.000Z', input_content_sha256: section === 'chart' && url.searchParams.has('snapshot_token') && url.searchParams.has('from') && !url.searchParams.has('chart_before') ? 'f'.repeat(64) : HASH[section] || HASH.chart,
     data_revision_identity: revision, snapshot_token: options.tokenlessSections?.includes(section) ? null : `snapshot:${strategy}:${frequency}:${revision}`,
     reference_model_version: 'newow_marker_reference_zero_cost_v3',
-    futures_adaptation_version: 'newow_futures_quality_segment_v3',
+    futures_adaptation_version: frequency === '1w'
+      ? 'newow_futures_weekly_quality_segment_v1' : 'newow_futures_quality_segment_v3',
   }
 }
 
@@ -596,7 +609,9 @@ function referenceValue(url, strategy, frequency, options) {
 function trade(tradeId, strategy, frequency, entry, exit, status, result, mark, entrySignalId, entrySequence, entryPrice, exitSignalId, exitPrice, markOwner, markPrice, membership = 'entry_in_window_v1') {
   return {
     reference_trade_id: tradeId, product: 'rb', strategy_code: strategy, frequency, physical_contract: entry.physical_contract, segment_id: entry.segment_id, calculation_segment_id: entry.calculation_segment_id,
-    formula_versions: formulas(strategy), reference_model_version: 'newow_marker_reference_zero_cost_v3', futures_adaptation_version: 'newow_futures_quality_segment_v3',
+    formula_versions: formulas(strategy), reference_model_version: 'newow_marker_reference_zero_cost_v3',
+    futures_adaptation_version: frequency === '1w'
+      ? 'newow_futures_weekly_quality_segment_v1' : 'newow_futures_quality_segment_v3',
     entry_signal_id: entrySignalId, entry_sequence: entrySequence, entry_bar_end: entry.bar_end, entry_trading_day: entry.trading_day, entry_reference_price: entryPrice,
     exit_signal_id: exit ? exitSignalId : null, exit_bar_end: exit?.bar_end || null, exit_trading_day: exit?.trading_day || null, exit_reference_price: exit ? exitPrice : null,
     status, holding_bars: 1, reference_return_pct: result, mark_bar_end: exit ? null : markOwner.bar_end, mark_reference_price: exit ? null : markPrice, mark_change_pct: mark,

@@ -42,7 +42,7 @@ from typing import Literal, Protocol, cast
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.market_data.aggregation import AggregationError, aggregate_from_1m
-from app.market_data.catalog import ContractFact, MaintenanceLease, MarketCatalog
+from app.market_data.catalog import CatalogPartition, ContractFact, MaintenanceLease, MarketCatalog
 from app.market_data.domain import (
     INTRADAY_DERIVED_FREQUENCIES,
     PROVIDER_FETCH_FREQUENCIES,
@@ -64,6 +64,10 @@ from app.market_data.storage import (
     StorageError,
 )
 from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.weekly_quality import (
+    classify_weekly_source,
+    weekly_daily_revision_sha256,
+)
 
 
 class CoverageSource(Protocol):
@@ -543,6 +547,13 @@ class ContractWarmupPlanner:
         )
         targets: list[_Target] = []
         diagnostics: dict[tuple[DatasetKey, int, int], dict[str, object]] = {}
+        weekly_quality_exclusions: list[tuple[str, str]] = []
+        weekly_daily_partitions = (
+            self.catalog.all_partitions(DatasetKey(
+                DatasetKind.CONTRACT, symbol, contract, BarFrequency.D1,
+            ))
+            if BarFrequency.W1 in planned_frequencies else ()
+        )
         for target_frequency in planned_frequencies:
             key = DatasetKey(
                 DatasetKind.CONTRACT,
@@ -565,11 +576,32 @@ class ContractWarmupPlanner:
                 if not expected:
                     continue
                 existing, physical_reason = self._existing_partition(key, year, month)
+                quality_exclusions: dict[datetime, str] = {}
+                if target_frequency is BarFrequency.W1:
+                    for week_end in expected:
+                        proof = self._weekly_price_interruption(
+                            key, fact, week_end, weekly_daily_partitions,
+                        )
+                        if proof is not None:
+                            if any(bar.bar_end == week_end for bar in existing):
+                                raise ValueError("WEEKLY_SOURCE_BAR_CONFLICT")
+                            quality_exclusions[week_end] = proof
+                            weekly_quality_exclusions.append((week_end.isoformat(), proof))
+                    expected = tuple(
+                        end for end in expected if end not in quality_exclusions
+                    )
                 if physical_reason is not None:
                     diagnostics[key, year, month] = self._scope_diagnostic(
                         key, year, month, existing, physical_reason=physical_reason,
+                        quality_exclusion_count=len(quality_exclusions),
                     )
-                    targets.append(_Target(key, year, month, expected, expected, ()))
+                    if quality_exclusions:
+                        diagnostics[key, year, month]["weekly_quality_interruptions"] = tuple(
+                            {"week_end": end.isoformat(), "source_identity": proof}
+                            for end, proof in sorted(quality_exclusions.items())
+                        )
+                    if expected:
+                        targets.append(_Target(key, year, month, expected, expected, ()))
                     continue
                 classification = self._classify_contract_partition(
                     key,
@@ -581,7 +613,13 @@ class ContractWarmupPlanner:
                 )
                 diagnostics[key, year, month] = self._scope_diagnostic(
                     key, year, month, existing, classification=classification,
+                    quality_exclusion_count=len(quality_exclusions),
                 )
+                if quality_exclusions:
+                    diagnostics[key, year, month]["weekly_quality_interruptions"] = tuple(
+                        {"week_end": end.isoformat(), "source_identity": proof}
+                        for end, proof in sorted(quality_exclusions.items())
+                    )
                 if classification.outside_lifecycle:
                     targets.append(
                         _Target(
@@ -635,6 +673,12 @@ class ContractWarmupPlanner:
                 _contract_warmup_hash_target_payload(target) for target in targets
             ),
         }
+        if weekly_quality_exclusions:
+            plan_identity = {
+                **plan_identity,
+                "schema_version": 3,
+                "weekly_quality_exclusions": tuple(weekly_quality_exclusions),
+            }
         plan_sha256 = hashlib.sha256(
             json.dumps(
                 plan_identity,
@@ -679,6 +723,7 @@ class ContractWarmupPlanner:
         key: DatasetKey, year: int, month: int, existing: tuple[CanonicalBar, ...],
         *, physical_reason: str | None = None,
         classification: _ContractPartitionClassification | None = None,
+        quality_exclusion_count: int = 0,
     ) -> dict[str, object]:
         """Bounded read evidence only; does not change maintenance targets or hash."""
         reasons: list[str] = []
@@ -689,11 +734,67 @@ class ContractWarmupPlanner:
                 reasons.append("REPLAY_ENDPOINTS_EXTRA")
             if classification.missing_mapped:
                 reasons.append("REPLAY_ENDPOINTS_MISSING")
+        if quality_exclusion_count:
+            reasons.append("WEEKLY_SOURCE_PRICE_UNAVAILABLE")
         if any(not price.is_finite() or price <= 0 for bar in existing
                for price in (bar.open, bar.high, bar.low, bar.close)):
             reasons.append("SOURCE_NONPOSITIVE_PRICE")
         return {"dataset": key.as_tuple(), "year": year, "month": month,
                 "reason_codes": tuple(reasons)}
+
+    def _weekly_price_interruption(
+        self, key: DatasetKey, fact: ContractFact, week_end: datetime,
+        daily_partitions: tuple[CatalogPartition, ...],
+    ) -> str | None:
+        """Return a pinned D1 proof only when every day in the week is explained."""
+        last_day = week_end.astimezone(SHANGHAI).date()
+        monday = last_day - timedelta(days=last_day.isoweekday() - 1)
+        days = self.coverage.contract_trading_days(
+            fact, monday, monday + timedelta(days=6),
+        )
+        daily_key = DatasetKey(
+            DatasetKind.CONTRACT, key.symbol, key.series_or_contract, BarFrequency.D1,
+        )
+        by_month: dict[tuple[int, int], list[CatalogPartition]] = {}
+        for partition in daily_partitions:
+            by_month.setdefault((partition.year, partition.month), []).append(partition)
+        months = {(day.year, day.month) for day in days}
+        if not any(
+            item.trading_day in days
+            for month in months
+            for partition in by_month.get(month, ())
+            for item in partition.source_quality
+        ):
+            return None
+        ends = self.coverage.expected_bar_ends_for_trading_days(daily_key, days)
+        if not days or len(ends) != len(days) or ends[-1] != week_end:
+            raise ValueError("WEEKLY_SOURCE_WEEK_INVALID")
+        expected = tuple(zip(ends, days, strict=True))
+        bars: list[CanonicalBar] = []
+        gaps: list[PriceUnavailableFact] = []
+        revisions: list[tuple[str, str | None]] = []
+        for month in sorted(months):
+            partitions = by_month.get(month, ())
+            if len(partitions) != 1:
+                raise ValueError("WEEKLY_SOURCE_DAILY_PARTITION_INVALID")
+            partition = partitions[0]
+            normal, unavailable = self.store.read_catalog_partition_quality(partition)
+            bars.extend(bar for bar in normal if bar.trading_day in days)
+            gaps.extend(item for item in unavailable if item.trading_day in days)
+            revisions.append((partition.file_path.name, partition.source_quality_sha256))
+        sorted_bars = tuple(sorted(bars, key=lambda bar: bar.bar_end))
+        revision_sha256 = weekly_daily_revision_sha256(tuple(revisions), sorted_bars)
+        coverage = classify_weekly_source(
+            product=key.symbol,
+            physical_contract=key.series_or_contract,
+            expected_daily_endpoints=expected,
+            daily_bars=sorted_bars,
+            price_unavailable=tuple(sorted(gaps, key=lambda item: item.bar_end)),
+            daily_revision_sha256=revision_sha256,
+        )
+        if coverage.interruption is None:
+            raise ValueError("WEEKLY_SOURCE_QUALITY_PROOF_INVALID")
+        return coverage.interruption.source_identity
 
     def _classify_contract_partition(
         self,

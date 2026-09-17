@@ -14,6 +14,7 @@ from guiyi_quant.newow.product_contracts import (
     TradeEligibility,
 )
 from guiyi_quant.newow.reference_trades import ReferenceTradeProjector
+from guiyi_quant.newow.product_identity import futures_adaptation_version
 
 
 def _forged_actions(replay, actions):
@@ -73,6 +74,19 @@ def test_closed_trade_covers_the_reference_contract_and_uses_action_prices(
     assert trade.interruption_reason is None
     assert trade.statistics_membership is None
     assert trade.hint_ids == ()
+
+
+def test_weekly_quality_adaptation_has_its_own_version_without_changing_daily(
+    product_cases,
+):
+    assert futures_adaptation_version("1d") == "newow_futures_quality_segment_v3"
+    assert futures_adaptation_version("1w") == "newow_futures_weekly_quality_segment_v1"
+    for frequency in ("1d", "1w"):
+        case = product_cases.closed(frequency=frequency)
+        trade = ReferenceTradeProjector().project(
+            case.replay, case.boundaries, case.as_of,
+        ).trades[0]
+        assert trade.futures_adaptation_version == futures_adaptation_version(frequency)
 
 
 def test_reference_trade_id_changes_when_reference_model_moves_from_v1_to_v2(

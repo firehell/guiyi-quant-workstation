@@ -26,8 +26,8 @@ from guiyi_quant.newow.product_contracts import (
     TradeEligibility,
 )
 from guiyi_quant.newow.product_identity import (
-    FUTURES_ADAPTATION_VERSION,
     REFERENCE_MODEL_VERSION,
+    futures_adaptation_version,
     utc_timestamp,
 )
 
@@ -106,7 +106,7 @@ def _meta_violations(meta: object, prefix: str, expected_as_of: datetime) -> lis
         violations.append(f"{prefix}_AS_OF_MISMATCH")
     if getattr(meta, "reference_model_version", None) != REFERENCE_MODEL_VERSION:
         violations.append(f"{prefix}_CONTRACT_MISMATCH")
-    if getattr(meta, "futures_adaptation_version", None) != FUTURES_ADAPTATION_VERSION:
+    if getattr(meta, "futures_adaptation_version", None) != futures_adaptation_version("1w"):
         violations.append(f"{prefix}_CONTRACT_MISMATCH")
     if getattr(meta, "data_revision_identity", object()) is not None:
         violations.append(f"{prefix}_DATA_REVISION_UNEXPECTED")

@@ -30,10 +30,20 @@ DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = (
     ("explanation", "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"),
 )
 
+CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v4"] = (
+    "newow_product_capabilities_v4"
+)
+CANDIDATE_RELEASE_STAGE: Literal["daily_weekly_candidate"] = "daily_weekly_candidate"
+CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
+CANDIDATE_DEFERRED_FREQUENCIES = (
+    (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
+)
 
-def require_open_frequency(frequency: ProductFrequency) -> None:
+
+def require_open_frequency(frequency: ProductFrequency, *, candidate: bool = False) -> None:
     """Reject product requests outside the currently published frequency scope."""
-    if ProductFrequency(frequency) not in OPEN_FREQUENCIES:
+    allowed = CANDIDATE_OPEN_FREQUENCIES if candidate else OPEN_FREQUENCIES
+    if ProductFrequency(frequency) not in allowed:
         raise ValueError("NEWOW_FREQUENCY_NOT_OPEN")
 
 

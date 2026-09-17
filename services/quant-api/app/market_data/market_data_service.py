@@ -59,6 +59,11 @@ from app.market_data.session_clock import (
 )
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
 from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.weekly_quality import (
+    WeeklySourceInterruption,
+    classify_weekly_source,
+    weekly_daily_revision_sha256,
+)
 from app.models import Instrument, MainContractMap
 
 
@@ -437,8 +442,10 @@ class MarketDataService:
 
     def query_actual_dominant_trading_days_quality(
         self, request: ActualDominantTradingDayQuery,
-    ) -> tuple[MarketSeriesResult, tuple[tuple[str, PriceUnavailableFact], ...]]:
-        """D1 rank-1 read: every mapped day has a Bar or proven unavailable price."""
+    ) -> tuple[MarketSeriesResult, tuple[tuple[str, PriceUnavailableFact | WeeklySourceInterruption], ...]]:
+        """D1/W1 rank-1 read with exact source interruptions."""
+        if request.frequency is BarFrequency.W1:
+            return self._actual_dominant_weekly_quality(request)
         if request.frequency is not BarFrequency.D1:
             raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
         start, end = self._trading_day_window(
@@ -496,6 +503,83 @@ class MarketDataService:
                 requested_trading_day_window=(request.since, request.through),
             ),
             tuple(exceptions),
+        )
+
+    def _actual_dominant_weekly_quality(
+        self, request: ActualDominantTradingDayQuery,
+    ) -> tuple[MarketSeriesResult, tuple[tuple[str, WeeklySourceInterruption], ...]]:
+        start, end = self._trading_day_window(
+            symbol=request.symbol, since=request.since, through=request.through,
+        )
+        try:
+            windows = self.catalog.session_windows_overlapping_window(
+                request.symbol, start, end,
+            )
+            mappings = self.catalog.main_map(
+                request.symbol, request.since, request.through,
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        days = tuple(
+            day for day, _ in windows if request.since <= day <= request.through
+        )
+        by_day = {item.trade_date: item for item in mappings}
+        if not days or set(days) != set(by_day):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        query = SeriesQuery(
+            SeriesKind.ACTUAL_DOMINANT, request.symbol, BarFrequency.W1,
+            start, end,
+        )
+        completed = tuple(
+            by_day[day] for day, sessions in windows
+            if day in by_day and max(window.end for window in sessions) <= end
+        )
+        try:
+            selected = self._weekly_mappings(query, completed)
+        except MarketDataError as exc:
+            if exc.code != "COMPLETE_WEEK_MISSING":
+                raise
+            return (
+                replace(
+                    self._result(query, (), ()),
+                    requested_trading_day_window=(request.since, request.through),
+                ),
+                (),
+            )
+        weekly_owner = {item.trade_date: item.contract for item in selected}
+        session_end = {
+            day: max(window.end for window in sessions) for day, sessions in windows
+        }
+        bars: list[CanonicalBar] = []
+        interruptions: list[tuple[str, WeeklySourceInterruption]] = []
+        for contract in dict.fromkeys(item.contract for item in selected):
+            through = max(day for day, owner in weekly_owner.items() if owner == contract)
+            physical, gaps = self.query_contract_weekly_replay_quality(
+                symbol=request.symbol, contract=contract, through=through,
+                cutoff=session_end[through],
+            )
+            bars.extend(
+                bar for bar in physical
+                if weekly_owner.get(bar.trading_day) == contract
+            )
+            interruptions.extend(
+                (contract, gap) for gap in gaps
+                if weekly_owner.get(gap.expected_daily_endpoints[-1][1]) == contract
+            )
+        bars.sort(key=lambda bar: bar.bar_end)
+        interruptions.sort(key=lambda item: item[1].week_end)
+        bar_days = {bar.trading_day for bar in bars}
+        gap_days = {gap.expected_daily_endpoints[-1][1] for _, gap in interruptions}
+        if (bar_days & gap_days or bar_days | gap_days != set(weekly_owner)
+            or len(bars) + len(interruptions) != len(selected)):
+            raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
+        valid_mappings = tuple(item for item in selected if item.trade_date in bar_days)
+        return (
+            replace(
+                self._result(query, tuple(bars), _segments(valid_mappings)),
+                requested_trading_day_window=(request.since, request.through),
+            ),
+            tuple(interruptions),
         )
 
     def query_actual_dominant_recent_bars(
@@ -624,6 +708,128 @@ class MarketDataService:
                 "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason=reason, context=context,
             )
         return bars, exceptions
+
+    def query_contract_weekly_replay_quality(
+        self, *, symbol: str, contract: str, through: date, cutoff: datetime,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[WeeklySourceInterruption, ...]]:
+        """Read stored W1 Bars and explain absent complete weeks using pinned D1 facts.
+
+        The ordinary series API remains strict. No W1 Bar is synthesized here.
+        """
+        daily_bars, daily_gaps = self.query_contract_replay_quality(
+            symbol=symbol, contract=contract, through=through, cutoff=cutoff,
+        )
+        weekly_expected = self.expected_contract_replay_endpoints(
+            symbol=symbol, contract=contract, frequency=BarFrequency.W1,
+            trading_day=through, cutoff=cutoff,
+        )
+        if not weekly_expected:
+            return (), ()
+        daily_expected = self.expected_contract_replay_endpoints(
+            symbol=symbol, contract=contract, frequency=BarFrequency.D1,
+            trading_day=through, cutoff=cutoff,
+        )
+        daily_key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency.D1)
+        weekly_key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency.W1)
+        daily_rows = self.catalog.all_partitions(daily_key)
+        daily_partitions = {(row.year, row.month): row for row in daily_rows}
+        if len(daily_partitions) != len(daily_rows):
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID")
+        weekly_months = {(day.year, day.month) for _, day in weekly_expected}
+        stored: list[CanonicalBar] = []
+        weekly_rows = self.catalog.all_partitions(weekly_key)
+        if len({(row.year, row.month) for row in weekly_rows}) != len(weekly_rows):
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID")
+        try:
+            for row in weekly_rows:
+                if (row.year, row.month) in weekly_months:
+                    stored.extend(
+                        bar for bar in self.store.read_catalog_partition(row)
+                        if bar.bar_end <= cutoff
+                    )
+        except StorageError as exc:
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+        by_end = {bar.bar_end: bar for bar in stored}
+        if len(by_end) != len(stored) or set(by_end) - {end for end, _ in weekly_expected}:
+            raise MarketDataError("WEEKLY_SOURCE_BAR_CONFLICT")
+        normal: list[CanonicalBar] = []
+        interruptions: list[WeeklySourceInterruption] = []
+        for week_end, week_day in weekly_expected:
+            week = week_day.isocalendar()[:2]
+            expected = tuple(
+                point for point in daily_expected
+                if point[1].isocalendar()[:2] == week
+            )
+            bars = tuple(
+                bar for bar in daily_bars
+                if bar.trading_day.isocalendar()[:2] == week
+            )
+            gaps = tuple(
+                gap for gap in daily_gaps
+                if gap.trading_day.isocalendar()[:2] == week
+            )
+            months = sorted({(day.year, day.month) for _, day in expected})
+            if any(month not in daily_partitions for month in months):
+                raise MarketDataError(
+                    "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                    reason="DATASET_OR_PARTITION_MISSING",
+                    context={"contract": contract, "trading_day": week_day},
+                )
+            revision = weekly_daily_revision_sha256(
+                tuple((daily_partitions[month].file_path.name,
+                       daily_partitions[month].source_quality_sha256) for month in months),
+                bars,
+            )
+            try:
+                coverage = classify_weekly_source(
+                    product=symbol, physical_contract=contract,
+                    expected_daily_endpoints=expected,
+                    daily_bars=bars, price_unavailable=gaps,
+                    daily_revision_sha256=revision,
+                )
+            except ValueError as exc:
+                reason = (
+                    "REPLAY_ENDPOINTS_MISSING"
+                    if str(exc) == "WEEKLY_SOURCE_ENDPOINTS_MISSING"
+                    else "DATA_INTEGRITY_INVALID"
+                )
+                raise MarketDataError(
+                    "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                    reason=reason,
+                    context={"contract": contract, "trading_day": week_day},
+                ) from exc
+            persisted = by_end.get(week_end)
+            if coverage.interruption is not None:
+                if persisted is not None:
+                    raise MarketDataError(
+                        "WEEKLY_SOURCE_BAR_CONFLICT",
+                        context={"contract": contract, "trading_day": week_day},
+                    )
+                interruptions.append(coverage.interruption)
+                continue
+            if persisted is None:
+                raise MarketDataError(
+                    "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                    reason="REPLAY_ENDPOINTS_MISSING",
+                    context={"contract": contract, "trading_day": week_day},
+                )
+            # Reuse the writer's source aggregation only for equality validation.
+            from app.market_data.rqdata_adapter import _aggregate_daily_rows
+
+            expected_bar = _aggregate_daily_rows(tuple(
+                (bar.trading_day, {
+                    "open": bar.open, "high": bar.high, "low": bar.low,
+                    "close": bar.close, "volume": bar.volume,
+                    "turnover": bar.turnover, "open_interest": bar.open_interest,
+                }) for bar in bars
+            ), bar_end=week_end)
+            if persisted != expected_bar:
+                raise MarketDataError(
+                    "WEEKLY_SOURCE_BAR_CONFLICT",
+                    context={"contract": contract, "trading_day": week_day},
+                )
+            normal.append(persisted)
+        return tuple(normal), tuple(interruptions)
 
     def validate_contract_replay_coverage(
         self,

@@ -30,7 +30,20 @@ Physical and actual-dominant interval queries and pages SHALL compare returned B
 - **GIVEN** a month partition records an authoritative `PRICE_UNAVAILABLE` day without a valid OHLC Bar
 - **WHEN** an ordinary historical series consumer reads that window
 - **THEN** the read fails closed and does not synthesize a price or silently skip the day
-- **AND** only the explicit Newow / Market Home D1 quality-aware reads may return the verified interruption as a calculation boundary
+- **AND** only the explicit Newow / Market Home D1 quality-aware reads may return the verified D1 interruption as a calculation boundary
+
+### Requirement: Candidate Newow W1 quality replay proves the complete D1 source week
+
+隔离候选的 Newow W1 质量路径 MAY 从 MDS 读取已存正常 W1 Bar 与由物理 D1 来源确定性重建的周中断。
+每个已完成 ISO 周 MUST 使用 Contract lifecycle、Calendar/Session 给出的全部应有 D1 端点，要求正常 Bar 与
+合法 `PRICE_UNAVAILABLE` 事实互斥且并集精确等于应有集合。质量周 MUST 只返回无 OHLC 的中断，
+不得同时返回 W1 Bar；普通 strict W1 查询继续 fail-closed。正常周的已存 W1 数值 MUST 与同源 D1
+聚合一致；查询不得临时聚合替代 W1 Bar。缺日、重复、错合约、旧 W1 冲突和来源 revision 不明 MUST 拒绝。
+
+#### Scenario: A proven price gap and an ordinary missing day share a week
+
+- **WHEN** 某周有合法 D1 缺价事实，但另一个权威 D1 端点没有 Bar 或质量事实
+- **THEN** 该周仍为缺失来源，不能仅因存在缺价事实而认作完整中断周
 
 ### Requirement: Replay diagnostics preserve stable codes and distinguish missing facts
 

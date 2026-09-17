@@ -508,7 +508,8 @@ Canonical/MDS；适配层 MUST NOT 用前收、结算价、插值或任意正数
 唯一例外是 Canonical 市场存储合同严格定义且完整可验证的物理合约 D1 `PRICE_UNAVAILABLE`。
 它是来源质量中断，不是 `NO_TRADE` 或行情 Bar。reader/readiness SHALL 公开 raw、effective、
 `NO_TRADE` 与价格不可用数量，并把 `newow_futures_quality_observation_v2` 纳入输入证明；
-产品与 ReferenceTrade 使用 `newow_futures_quality_segment_v3`，不得笼统声明证券页面原样 parity。
+日版产品与 ReferenceTrade 使用 `newow_futures_quality_segment_v3`；隔离候选 W1 使用
+`newow_futures_weekly_quality_segment_v1`，不改写既有 D1 Trade ID。不得笼统声明证券页面原样 parity。
 
 #### Scenario: A zero-activity futures day appears in warm-up
 
@@ -536,6 +537,14 @@ completed Bar 从新段重新预热所有依赖指标和策略状态，不得跨
 统计仅可汇总有效计算区段内的真实 CLOSED 样本；历史窗口若有缺价或重新预热，MUST 明示
 `PARTIAL`、排除区段及原因，不得展示为连续完整历史收益。页面参考仍为零成本乐观展示，
 不是模拟或真实成交；不得从数据缺陷推断交易所停市或供应方错误。
+
+W1 只在完整 ISO 周末应用由 D1 来源逐端点证明的 `weekly-d1-quality-v1` 中断；一周多日缺价合并为
+一个稳定中断，保留原始缺价日期和来源摘要。该周无有效 W1 Bar，后续正常周从新计算区段按周线
+预热。末尾中断即使没有后继 Bar 也必须终止当前 READY/OPEN；跨断点 CLEAR 不得配对旧 BUILD。
+普通缺日、同端点旧 W1 与质量冲突时返回来源错误，不得按质量中断跳过。
+只读 dependency 报告中的 W1 `DATA_READY` 表示预期端点由正常 W1 Bar 与已证实中断精确覆盖，
+不等于策略当前 READY 或历史全正常；报告必须给出 `source_quality` 和中断数量，且两种数量之和
+等于预期端点数。候选验收须单列中断依赖与当前业务状态。
 
 #### Scenario: One price gap during an open reference trade
 
@@ -815,6 +824,9 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 存储偏好不得把未开放周期静默改写为已开放周期，而要显示本版未开放并提供明确回到已开放周期的操作。
 该 stage 不删除 kernel/reader 的三周期能力，不改变 HTDY/SuBing/Free，也不改变旧 `/trend-detail` 的固定 D1
 兼容语义。后续 `1w` 或 `60m` 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
+隔离只读候选可使用 `newow_product_capabilities_v4`、`daily_weekly_candidate` 声明 `1d/1w` 的
+chart/auxiliary/reference/comparator；正式应用继续保留上述 daily v3 Gate，直到独立发布与 Runtime Gate。
+候选的 `60m` 和 explanation 仍关闭；Web 必须逐版本严格校验成对的 schema/stage/open/deferred 集合。
 
 #### Scenario: Deferred weekly and hourly requests cannot bypass the daily stage
 

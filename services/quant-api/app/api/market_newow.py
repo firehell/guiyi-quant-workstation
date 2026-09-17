@@ -32,6 +32,10 @@ from app.market_data.newow.historical_snapshot import (
 from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
     CAPABILITY_SCHEMA_VERSION,
+    CANDIDATE_CAPABILITY_SCHEMA_VERSION,
+    CANDIDATE_DEFERRED_FREQUENCIES,
+    CANDIDATE_OPEN_FREQUENCIES,
+    CANDIDATE_RELEASE_STAGE,
     DEFERRED_FREQUENCIES,
     DEFERRED_SECTIONS,
     OPEN_FREQUENCIES,
@@ -136,15 +140,18 @@ def _normalize_public_product(product: str) -> str:
 @router.get(
     "/product-capabilities", response_model=NewowProductCapabilitiesResponse
 )
-def newow_product_capabilities() -> NewowProductCapabilitiesResponse:
+def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResponse:
     """Return the single public scope used by clients for this staged release."""
+    candidate = getattr(request.state, "candidate_preview_as_of", None) is not None
+    frequencies = CANDIDATE_OPEN_FREQUENCIES if candidate else OPEN_FREQUENCIES
+    deferred = CANDIDATE_DEFERRED_FREQUENCIES if candidate else DEFERRED_FREQUENCIES
     return NewowProductCapabilitiesResponse(
-        schema_version=CAPABILITY_SCHEMA_VERSION,
-        release_stage=RELEASE_STAGE,
-        open_frequencies=[item.value for item in OPEN_FREQUENCIES],
+        schema_version=(CANDIDATE_CAPABILITY_SCHEMA_VERSION if candidate else CAPABILITY_SCHEMA_VERSION),
+        release_stage=(CANDIDATE_RELEASE_STAGE if candidate else RELEASE_STAGE),
+        open_frequencies=[item.value for item in frequencies],
         deferred_frequencies=[
             DeferredFrequencyOut(frequency=frequency.value, reason_code=reason)
-            for frequency, reason in DEFERRED_FREQUENCIES
+            for frequency, reason in deferred
         ],
         open_sections=list(OPEN_SECTIONS),
         deferred_sections=[
@@ -276,7 +283,10 @@ def newow_historical_snapshot(
 
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
-        require_open_frequency(ProductFrequency(frequency))
+        require_open_frequency(
+            ProductFrequency(frequency),
+            candidate=getattr(request.state, "candidate_preview_as_of", None) is not None,
+        )
         result = _build_historical_resolver(session, cancelled, lambda: now).resolve(
             product, ProductStrategy(strategy), ProductFrequency(frequency)
         )
@@ -341,7 +351,10 @@ def newow_strategy_detail(
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
     product = _normalize_public_product(product)
     try:
-        require_open_frequency(ProductFrequency(frequency))
+        require_open_frequency(
+            ProductFrequency(frequency),
+            candidate=getattr(request.state, "candidate_preview_as_of", None) is not None,
+        )
         require_open_section(section)
 
         def cancelled() -> bool:

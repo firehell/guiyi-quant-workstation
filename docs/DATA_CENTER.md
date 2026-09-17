@@ -27,6 +27,10 @@ Dataset。
 对物理合约 D1 严格匹配 O/H/L=0、`close>0`、`volume>0` 且其余来源、身份和端点校验通过的行，
 仅按已批准的 `PRICE_UNAVAILABLE` 质量事实记录并中断 Newow 计算，不生成 CanonicalBar；
 其他非零成交、部分价格缺失、部分零价或无效 `close` 仍须失败。W1 不得借此缺价日聚合成功。
+隔离候选的 Newow W1 质量读取可把已完成周内的 D1 合法 Bar 与 `PRICE_UNAVAILABLE` 事实逐端点证明为完整互斥集合：
+有缺价的周只形成 `weekly-d1-quality-v1` 计算中断，不返回 W1 价格 Bar；普通 MDS W1 查询仍严格失败。
+同周还有未解释缺日、重复或身份冲突时不得豁免。现有正常 W1 必须与同一 D1 来源聚合数值一致；
+分区写入、正式数据恢复及 Runtime 切换分别受各自 Gate 约束。
 不得用 `get_price` 的期货日/周 `close` 或 `settlement` 互相替代。
 
 来源响应中的原始 `order_book_id`、端点唯一性和交易日归属在归一化前验证；同一响应的重复行不能由字典覆盖。分钟 provider 请求的日期窗口从 Calendar/Session 所属交易日得出，夜盘跨自然日、周末仍按所属交易日请求。维护计划冻结允许补缺或 refresh 的端点，只有该集合内的来源记录可进入发布。

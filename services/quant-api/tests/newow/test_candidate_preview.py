@@ -90,14 +90,18 @@ def test_identity_is_current_git_and_lightweight(preview, monkeypatch):
     )
 
 
-def test_daily_only_capabilities_are_available_without_database(preview):
+def test_daily_weekly_candidate_capabilities_are_available_without_database(preview):
     app, sessions, _factory = preview
 
     response = TestClient(app).get("/api/v1/market/newow/product-capabilities")
 
     assert response.status_code == 200
-    assert response.json()["release_stage"] == "daily"
-    assert response.json()["open_frequencies"] == ["1d"]
+    assert response.json()["schema_version"] == "newow_product_capabilities_v4"
+    assert response.json()["release_stage"] == "daily_weekly_candidate"
+    assert response.json()["open_frequencies"] == ["1d", "1w"]
+    assert response.json()["deferred_frequencies"] == [
+        {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"}
+    ]
     assert response.json()["open_sections"] == [
         "chart",
         "auxiliary",

@@ -23,9 +23,9 @@ from .product_contracts import (
     validate_lifecycle_replay_evidence,
 )
 from .product_identity import (
-    FUTURES_ADAPTATION_VERSION,
     REFERENCE_MODEL_VERSION,
     build_reference_trade_id,
+    futures_adaptation_version,
     utc_timestamp,
 )
 
@@ -362,7 +362,7 @@ def _open_trade(entry: StrategyAction, holding_bars: int = 0) -> ReferenceTrade:
         calculation_segment_id=entry.calculation_segment_id,
         formula_versions=identity.formula_versions,
         reference_model_version=REFERENCE_MODEL_VERSION,
-        futures_adaptation_version=FUTURES_ADAPTATION_VERSION,
+        futures_adaptation_version=futures_adaptation_version(identity.frequency),
         entry_signal_id=entry.signal_id,
         entry_bar_end=entry.bar_end,
         entry_trading_day=entry.trading_day,

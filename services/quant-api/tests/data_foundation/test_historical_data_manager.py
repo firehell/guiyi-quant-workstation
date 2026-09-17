@@ -1166,6 +1166,82 @@ def test_contract_warmup_batches_exact_lifecycle_daily_with_weekly_snapshot(
     assert tuple(session.scalars(select(MainContractMap))) == ()
 
 
+@pytest.mark.parametrize("corrupt_weekly_partition", [False, True])
+def test_weekly_plan_excludes_only_fully_proven_price_unavailable_week(
+    session, tmp_path, corrupt_weekly_partition,
+):
+    _add_contract(session, symbol="pf", contract="PF2611",
+                  listed_date=date(2025, 1, 6), expired_date=date(2025, 2, 1))
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    weekly = DatasetKey("contract", "pf", "PF2611", "1w")
+    ends = tuple(_daily(day, 100 + day).bar_end for day in (*range(6, 11), *range(13, 18)))
+    coverage = FakeCoverage({daily.as_tuple(): ends, weekly.as_tuple(): (ends[4], ends[-1])})
+    coverage.latest_day = date(2025, 1, 17)
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    exception = PriceUnavailableFact(
+        ends[2], date(2025, 1, 8), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+        "a" * 64, "b" * 64, datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    bars = tuple(_daily(day, 100 + day) for day in (*range(6, 8), *range(9, 11), *range(13, 18)))
+    published = manager.store.publish(PublishRequest(
+        daily, 2025, 1, bars, ends, (exception,),
+    ))
+    manager.catalog.register_partition(published)
+    if corrupt_weekly_partition:
+        weekly_partition = manager.store.publish(PublishRequest(
+            weekly, 2025, 1, (_daily(17, 117),), (ends[-1],),
+        ))
+        manager.catalog.register_partition(weekly_partition)
+    manager.catalog.session.commit()
+    if corrupt_weekly_partition:
+        manager.catalog.all_partitions(weekly)[0].file_path.write_bytes(
+            b"invalid weekly partition"
+        )
+
+    request = historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 17), frequency="1w")
+    first = manager.contract_warmup(request).plan
+    second = manager.contract_warmup(request).plan
+    assert first.plan_sha256 == second.plan_sha256
+    weekly_targets = [row for row in first.target_windows if row["dataset"] == weekly.as_tuple()]
+    assert len(weekly_targets) == 1
+    assert weekly_targets[0]["missing_start"] == ends[-1].isoformat()
+    assert weekly_targets[0]["missing_end"] == ends[-1].isoformat()
+    assert any("WEEKLY_SOURCE_PRICE_UNAVAILABLE" in row["reason_codes"]
+               for row in first.scope_diagnostics)
+    proof = next(row["weekly_quality_interruptions"] for row in first.scope_diagnostics
+                 if row.get("weekly_quality_interruptions"))
+    assert proof[0]["week_end"] == ends[4].isoformat()
+    assert len(proof[0]["source_identity"]) == 64
+
+
+def test_weekly_plan_does_not_excuse_unexplained_day_in_price_gap_week(session, tmp_path):
+    _add_contract(session, symbol="pf", contract="PF2611",
+                  listed_date=date(2025, 1, 6), expired_date=date(2025, 2, 1))
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    weekly = DatasetKey("contract", "pf", "PF2611", "1w")
+    ends = tuple(_daily(day, 100 + day).bar_end for day in range(6, 11))
+    coverage = FakeCoverage({daily.as_tuple(): ends, weekly.as_tuple(): (ends[-1],)})
+    coverage.latest_day = date(2025, 1, 10)
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    exception = PriceUnavailableFact(
+        ends[2], date(2025, 1, 8), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+        "a" * 64, "b" * 64, datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    bars = tuple(_daily(day, 100 + day) for day in (6, 7, 10))
+    published = manager.store.publish(PublishRequest(
+        daily, 2025, 1, bars, tuple(ends[i] for i in (0, 1, 2, 4)),
+        (exception,),
+    ))
+    manager.catalog.register_partition(published)
+    manager.catalog.session.commit()
+    with pytest.raises(ValueError, match="WEEKLY_SOURCE_ENDPOINTS_MISSING"):
+        manager.contract_warmup(historical.ContractWarmupRequest(
+            "pf", "PF2611", date(2025, 1, 10), frequency="1w",
+        ))
+
+
 def test_contract_warmup_group_attributes_daily_merge_failure_to_daily_target(
     session, tmp_path
 ) -> None:
