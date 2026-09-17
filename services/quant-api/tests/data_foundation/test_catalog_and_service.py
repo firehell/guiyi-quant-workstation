@@ -12,6 +12,7 @@ from app.db.base import Base
 from app.market_data.catalog import CatalogError, ContractFact, MarketCatalog
 from app.market_data.domain import (
     ActualDominantTradingDayQuery,
+    BarFrequency,
     CanonicalBar,
     ContractTradingDayQuery,
     DatasetKey,
@@ -2277,3 +2278,114 @@ def test_recovery_daily_readback_uses_real_catalog_parquet_and_calendar(
     assert partition["mds_endpoint_count"] == 2
     assert partition["mds_price_unavailable_count"] == len(quality_days)
     assert partition["physical_row_count"] == partition["mds_bar_count"] == 2 - len(quality_days)
+
+
+@pytest.mark.parametrize("gap_days", [(3,), (4,), (2, 3, 4), ()])
+def test_home_daily_quality_page_preserves_exact_endpoints(session, tmp_path, gap_days):
+    market = _home_quality_market(session, tmp_path, gap_days=gap_days)
+    bars, gaps = market.query_physical_daily_quality_as_of(
+        symbol="jm", contract="JM2509", trading_day=date(2025, 1, 4), limit=3,
+    )
+    assert [bar.trading_day.day for bar in bars] == [d for d in (2, 3, 4) if d not in gap_days]
+    assert [gap.trading_day.day for gap in gaps] == list(gap_days)
+    if gap_days:
+        with pytest.raises(MarketDataError, match="PRICE_UNAVAILABLE"):
+            market.query_physical_bars_as_of(
+                symbol="jm", contract="JM2509", frequency="1d",
+                trading_day=date(2025, 1, 4), limit=3,
+            )
+
+
+@pytest.mark.parametrize("missing_day", [2, 3, 4])
+def test_home_daily_quality_page_rejects_missing_prefix_interior_and_tail(
+    session, tmp_path, missing_day,
+):
+    market = _home_quality_market(session, tmp_path, missing_day=missing_day)
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        market.query_physical_daily_quality_as_of(
+            symbol="jm", contract="JM2509", trading_day=date(2025, 1, 4), limit=3,
+        )
+
+
+def test_home_daily_quality_page_bounds_quality_to_requested_window(session, tmp_path):
+    market = _home_quality_market(session, tmp_path, gap_days=(2, 4))
+    bars, gaps = market.query_physical_daily_quality_as_of(
+        symbol="jm", contract="JM2509", trading_day=date(2025, 1, 3), limit=1,
+    )
+    assert [bar.trading_day.day for bar in bars] == [3]
+    assert gaps == ()
+
+
+@pytest.mark.parametrize("corruption", ["duplicate", "overlap", "wrong_day"])
+def test_home_daily_quality_page_rejects_conflicting_identities(
+    session, tmp_path, monkeypatch, corruption,
+):
+    from dataclasses import replace
+    market = _home_quality_market(session, tmp_path, gap_days=(3,))
+    original = market.read_physical_daily_quality
+    def corrupt(*args, **kwargs):
+        bars, gaps = original(*args, **kwargs)
+        if corruption == "duplicate":
+            bars = (*bars, bars[0])
+        elif corruption == "overlap":
+            bars = (bars[0], _bar(3, 100), bars[-1])
+        else:
+            bars = (replace(bars[0], trading_day=date(2025, 1, 1)), bars[-1])
+        return bars, gaps
+    monkeypatch.setattr(market, "read_physical_daily_quality", corrupt)
+    with pytest.raises(MarketDataError, match="BAR_IDENTITY_CONFLICT"):
+        market.query_physical_daily_quality_as_of(
+            symbol="jm", contract="JM2509", trading_day=date(2025, 1, 4), limit=3,
+        )
+
+
+def _home_quality_market(session, tmp_path, *, gap_days=(), missing_day=None):
+    session.scalar(select(TradingSession)).is_active = False
+    session.add_all(TradingSession(
+        exchange_code="DCE", instrument_symbol="jm", session_name="day",
+        start_time=time(9), end_time=time(15),
+        effective_from=date(2025, 1, day), effective_to=date(2025, 1, day),
+        is_active=True, provider="rqdata",
+    ) for day in (2, 3, 4))
+    session.add(Contract(
+        contract_code="JM2509", instrument_symbol="jm", exchange_code="DCE",
+        listed_date=date(2025, 1, 2), expired_date=date(2025, 12, 1), provider="rqdata",
+    ))
+    session.add_all(TradingCalendar(
+        exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
+    ) for day in (2, 3, 4))
+    bars = tuple(_bar(day, 100 + day) for day in (2, 3, 4)
+                 if day not in gap_days and day != missing_day)
+    gaps = tuple(PriceUnavailableFact(
+        _bar(day, 100).bar_end, date(2025, 1, day), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+        "a" * 64, "b" * 64, datetime(2026, 9, 15, tzinfo=UTC),
+    ) for day in gap_days)
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    catalog.register_partition(store.publish(PublishRequest(
+        key, 2025, 1, bars,
+        tuple(sorted([bar.bar_end for bar in bars] + [gap.bar_end for gap in gaps])),
+        price_unavailable=gaps,
+    )))
+    session.commit()
+    return MarketDataService(catalog, store)
+
+
+def test_weekly_identity_conflict_is_not_classified_as_missing_history(session, tmp_path):
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    session.add_all(TradingCalendar(
+        exchange_code='DCE', trade_date=date(2025, 1, day), is_trading_day=day < 4,
+    ) for day in range(1, 6))
+    market = MarketDataService(catalog, store)
+    with pytest.raises(MarketDataError) as caught:
+        market._validate_actual_endpoints(
+            'jm', BarFrequency.W1,
+            {date(2025, 1, 2): 'JM2509', date(2025, 1, 3): 'JM2509'},
+            (_bar(2, 100),), datetime(2025, 1, 1, tzinfo=UTC),
+            datetime(2025, 1, 3, 7, tzinfo=UTC), missing_code='DATASET_OR_PARTITION_MISSING',
+        )
+    assert caught.value.code == 'DATASET_OR_PARTITION_MISSING'
+    assert caught.value.reason == 'REPLAY_ENDPOINTS_EXTRA'

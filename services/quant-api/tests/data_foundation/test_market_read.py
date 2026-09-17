@@ -146,6 +146,9 @@ class WindowMarketDataService:
             resolved_contract_segments=self.segments,
         )
 
+    def query_alert_history_prefix(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        return self.query_page(request)
+
     @staticmethod
     def validate_actual_dominant_alert_window(**_kwargs) -> None:
         return None

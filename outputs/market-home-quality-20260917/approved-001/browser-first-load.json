@@ -1,0 +1,68 @@
+{
+  "candidate_commit": "cf291fb52abb75d733e6281f40aec001bd2c7ee0",
+  "as_of": "2026-09-17T07:00:00.000001+00:00",
+  "fixture": false,
+  "refresh": false,
+  "checks": [
+    {
+      "symbol": "pt",
+      "strategy": "trend",
+      "frequency": "1d",
+      "natural_new_page": true,
+      "chart_state": "ready",
+      "reference_summary_visible": true,
+      "screenshot": "pt-trend-first-load.png",
+      "sha256": "b814ad1fb9442b54c4ad40e57a8cec405240f802de08e414cc8b1a3cdfd65c63"
+    },
+    {
+      "symbol": "pt",
+      "strategy": "oscillation",
+      "frequency": "1d",
+      "natural_new_page": true,
+      "chart_state": "ready",
+      "reference_summary_visible": true,
+      "screenshot": "pt-oscillation-first-load.png",
+      "sha256": "7c133db41ca5a62c48bdbc4e2c0217b68a0585d31a7072fe6afc4c777db75fc5"
+    },
+    {
+      "symbol": "pt",
+      "strategy": "main_rise",
+      "frequency": "1d",
+      "natural_new_page": true,
+      "chart_state": "ready",
+      "reference_summary_visible": true,
+      "screenshot": "pt-main_rise-first-load.png",
+      "sha256": "8fdf29829f1fc4edf0bc2d87c3da3b311760c3992543490338405b24307ca08f"
+    },
+    {
+      "symbol": "ss",
+      "strategy": "trend",
+      "frequency": "1d",
+      "natural_new_page": true,
+      "chart_state": "ready",
+      "reference_summary_visible": true,
+      "screenshot": "ss-trend-first-load.png",
+      "sha256": "c1e58c150fc3719fb1b96af8997a4387b016aaae3666817f655daca233a3442f"
+    },
+    {
+      "symbol": "ss",
+      "strategy": "oscillation",
+      "frequency": "1d",
+      "natural_new_page": true,
+      "chart_state": "ready",
+      "reference_summary_visible": true,
+      "screenshot": "ss-oscillation-first-load.png",
+      "sha256": "4bf9dd92dfb397a031980162dedb612c9095e4ec682dfe549b8733346dff8edb"
+    },
+    {
+      "symbol": "ss",
+      "strategy": "main_rise",
+      "frequency": "1d",
+      "natural_new_page": true,
+      "chart_state": "ready",
+      "reference_summary_visible": true,
+      "screenshot": "ss-main_rise-first-load.png",
+      "sha256": "760182b3fd407b8164a626e04afa16c7b32cad75e0b76e2bb3f37871bc3b1471"
+    }
+  ]
+}

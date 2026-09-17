@@ -1,0 +1,16 @@
+{
+  "as_of": "2026-09-17T07:00:00.000001+00:00",
+  "candidate_commit": "cf291fb52abb75d733e6281f40aec001bd2c7ee0",
+  "recovery_commit": "b3d161b2c",
+  "ready_products": 60,
+  "total_products": 60,
+  "ready_checks": 360,
+  "total_checks": 360,
+  "method": "Differential verification: prior complete 360-check matrix plus 30 post-apply checks for BZ/EB/PG/PT/SS. Only PT2612/SS2611 D1 data changed; Newow code unchanged. Not a fresh post-apply full 360 rerun.",
+  "post_apply_ready_checks": 30,
+  "source_files": [
+    "newow-all60.json",
+    "newow-after-focus.json"
+  ],
+  "blocked_products": []
+}

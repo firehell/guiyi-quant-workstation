@@ -217,7 +217,7 @@ def test_snapshot_marks_old_daily_data_stale_without_fabricating_item() -> None:
     assert [item.symbol for item in snapshot.items] == ["jm"]
 
 
-def test_snapshot_treats_empty_daily_query_as_unavailable_without_weekly_read() -> None:
+def test_snapshot_treats_empty_daily_query_as_unavailable_without_reading_weekly() -> None:
     from app.market_data.market_home_overview import MarketHomeOverviewService
 
     market_data = _FakeMarketDataService(
@@ -242,7 +242,8 @@ def test_snapshot_treats_empty_daily_query_as_unavailable_without_weekly_read() 
     ]
 
 
-def test_snapshot_fails_closed_for_partition_integrity_error() -> None:
+@pytest.mark.parametrize("error_code", ["PARTITION_INTEGRITY_INVALID", "BAR_IDENTITY_CONFLICT", "TRADING_SESSION_MISSING", "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"])
+def test_snapshot_fails_closed_for_partition_integrity_error(error_code) -> None:
     from app.market_data.market_home_overview import (
         MarketHomeOverviewError,
         MarketHomeOverviewService,
@@ -262,7 +263,7 @@ def test_snapshot_fails_closed_for_partition_integrity_error() -> None:
             ),
         ),
         failures={
-            ("jm", "1d"): MarketDataError("DATASET_OR_PARTITION_MISSING"),
+            ("jm", "1d"): MarketDataError(error_code),
         },
     )
 
@@ -275,17 +276,25 @@ def test_snapshot_fails_closed_for_partition_integrity_error() -> None:
         ).snapshot()
 
 
-def test_snapshot_isolates_verified_source_price_unavailable() -> None:
+def test_snapshot_isolates_verified_target_day_price_unavailable(monkeypatch) -> None:
     from app.market_data.market_home_overview import MarketHomeOverviewService
 
     market_data = _FakeMarketDataService(
         daily={"jm": _bars(30, end=TARGET), "rb": _bars(30, end=TARGET)},
         weekly={"jm": _bars(22, end=TARGET), "rb": _bars(22, end=TARGET)},
         failures={
-            ("rb", "1d"): MarketDataError("PRICE_UNAVAILABLE"),
             ("rb", "1w"): MarketDataError("DATASET_OR_PARTITION_MISSING"),
         },
     )
+
+    from types import SimpleNamespace
+    original = market_data.query_physical_daily_quality_as_of
+    def quality(**kwargs):
+        bars, gaps = original(**kwargs)
+        if kwargs['symbol'] == 'rb':
+            return bars[:-1], (SimpleNamespace(bar_end=bars[-1].bar_end),)
+        return bars, gaps
+    monkeypatch.setattr(market_data, 'query_physical_daily_quality_as_of', quality)
 
     snapshot = MarketHomeOverviewService(
         market_data=market_data,
@@ -704,6 +713,13 @@ class _FakeMarketDataService:
             "contract", symbol, frequency, limit=limit, contract=contract
         )).bars
 
+    def query_physical_daily_quality_as_of(self, *, symbol, contract, trading_day, limit):
+        from app.market_data.domain import BarFrequency
+        return self.query_physical_bars_as_of(
+            symbol=symbol, contract=contract, frequency=BarFrequency.D1,
+            trading_day=trading_day, limit=limit,
+        ), ()
+
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
         self.dominant_reads += 1
         return self.dominants
@@ -747,3 +763,89 @@ def _bars(
             )
         )
     return tuple(values)
+
+
+@pytest.mark.parametrize("tail_size", [0, 1, 22])
+def test_snapshot_preserves_quote_and_rewarms_after_source_price_gap(tail_size):
+    from types import SimpleNamespace
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+    from app.market_data.research_metrics import calculate_research_metrics
+
+    daily = _bars(60, end=TARGET)
+    gap_index = len(daily) - tail_size - 1
+    gap = daily[gap_index]
+    valid = daily[:gap_index] + daily[gap_index + 1:]
+    market = _FakeMarketDataService(
+        daily={"jm": daily, "rb": daily}, weekly={"jm": (), "rb": ()},
+        failures={("jm", "1d"): MarketDataError("PRICE_UNAVAILABLE")},
+    )
+    def quality(**kwargs):
+        if kwargs["symbol"] == "jm":
+            return valid, (SimpleNamespace(bar_end=gap.bar_end, trading_day=gap.trading_day),)
+        return daily, ()
+    market.query_physical_daily_quality_as_of = quality
+    snapshot = MarketHomeOverviewService(
+        market_data=market, products=("jm", "rb"), taxonomy=_taxonomy(),
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot()
+    assert snapshot.participant_count == (2 if tail_size else 1)
+    assert snapshot.unavailable_count == (0 if tail_size else 1)
+    if tail_size:
+        item = snapshot.items[0]
+        expected = calculate_research_metrics(daily[gap_index + 1:], ())
+        assert item.close == daily[-1].close
+        assert item.price_change_1d == expected.price_change_1d
+        assert item.daily_trend == expected.daily_trend
+        assert item.atr14_percentile252 == expected.atr14_percentile252
+        assert "daily_price_interrupted" in item.reason_codes
+        assert ("daily_rewarming" in item.reason_codes) == (tail_size < 22)
+        assert item.weekly_trend == "unavailable"
+
+
+@pytest.mark.parametrize('frequency', ['1d', '1w'])
+def test_missing_history_withholds_only_affected_metrics_not_verified_quote(frequency):
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+    daily = _bars(30, end=TARGET)
+    market = _FakeMarketDataService(
+        daily={"jm": daily, "rb": daily}, weekly={"jm": daily, "rb": daily},
+        failures={("jm", frequency): MarketDataError("DATASET_OR_PARTITION_MISSING")},
+    )
+    original = market.query_physical_daily_quality_as_of
+    def quality(**kwargs):
+        if kwargs['limit'] == 1:
+            return (daily[-1],), ()
+        return original(**kwargs)
+    market.query_physical_daily_quality_as_of = quality
+    snapshot = MarketHomeOverviewService(
+        market_data=market, products=("jm", "rb"), taxonomy=_taxonomy(),
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot()
+    item = snapshot.items[0]
+    assert snapshot.participant_count == 2
+    assert item.close == daily[-1].close
+    if frequency == '1d':
+        assert item.price_change_1d is None
+        assert item.daily_trend == 'unavailable'
+        assert item.weekly_trend == 'up'
+        assert 'daily_history_unavailable' in item.reason_codes
+        assert 'daily_rewarming' not in item.reason_codes
+    else:
+        assert item.price_change_1d is not None
+        assert item.daily_trend == 'up'
+        assert item.weekly_trend == 'unavailable'
+        assert 'weekly_history_unavailable' in item.reason_codes
+
+
+@pytest.mark.parametrize('reason', ['REPLAY_ENDPOINTS_EXTRA', 'REPLAY_ORDER_INVALID', 'TRADING_CALENDAR_MISSING'])
+def test_weekly_integrity_failure_is_not_downgraded_to_missing_history(reason):
+    from app.market_data.market_home_overview import MarketHomeOverviewService, MarketHomeOverviewError
+    market = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET), "rb": _bars(30, end=TARGET)},
+        weekly={"jm": (), "rb": ()},
+        failures={("jm", "1w"): MarketDataError("DATASET_OR_PARTITION_MISSING", reason=reason)},
+    )
+    with pytest.raises(MarketHomeOverviewError, match="MARKET_HOME_DATA_INTEGRITY_ERROR"):
+        MarketHomeOverviewService(
+            market_data=market, products=("jm", "rb"), taxonomy=_taxonomy(),
+            latest_complete_day=_TargetDay(TARGET),
+        ).snapshot()

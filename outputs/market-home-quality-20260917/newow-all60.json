@@ -1,0 +1,3578 @@
+[
+  {
+    "symbol": "a",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.514
+  },
+  {
+    "symbol": "a",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.363
+  },
+  {
+    "symbol": "a",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.634
+  },
+  {
+    "symbol": "a",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.644
+  },
+  {
+    "symbol": "a",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.739
+  },
+  {
+    "symbol": "a",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.15
+  },
+  {
+    "symbol": "ag",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.76
+  },
+  {
+    "symbol": "ag",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.554
+  },
+  {
+    "symbol": "ag",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.762
+  },
+  {
+    "symbol": "ag",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.728
+  },
+  {
+    "symbol": "ag",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.884
+  },
+  {
+    "symbol": "ag",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.994
+  },
+  {
+    "symbol": "ao",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.317
+  },
+  {
+    "symbol": "ao",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.355
+  },
+  {
+    "symbol": "ao",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.554
+  },
+  {
+    "symbol": "al",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.649
+  },
+  {
+    "symbol": "al",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.251
+  },
+  {
+    "symbol": "al",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.229
+  },
+  {
+    "symbol": "al",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 11.35
+  },
+  {
+    "symbol": "au",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.423
+  },
+  {
+    "symbol": "au",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.102
+  },
+  {
+    "symbol": "au",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.283
+  },
+  {
+    "symbol": "ap",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.005
+  },
+  {
+    "symbol": "ap",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 11.118
+  },
+  {
+    "symbol": "ap",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.721
+  },
+  {
+    "symbol": "ap",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.642
+  },
+  {
+    "symbol": "ap",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 10.303
+  },
+  {
+    "symbol": "bz",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.935
+  },
+  {
+    "symbol": "bz",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.946
+  },
+  {
+    "symbol": "bz",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.07
+  },
+  {
+    "symbol": "bz",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.797
+  },
+  {
+    "symbol": "b",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.059
+  },
+  {
+    "symbol": "b",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.524
+  },
+  {
+    "symbol": "b",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 10.087
+  },
+  {
+    "symbol": "b",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.943
+  },
+  {
+    "symbol": "c",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.185
+  },
+  {
+    "symbol": "c",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.692
+  },
+  {
+    "symbol": "c",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.984
+  },
+  {
+    "symbol": "c",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 8.411
+  },
+  {
+    "symbol": "cf",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.501
+  },
+  {
+    "symbol": "cf",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.304
+  },
+  {
+    "symbol": "cf",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.842
+  },
+  {
+    "symbol": "bu",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.882
+  },
+  {
+    "symbol": "bu",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.135
+  },
+  {
+    "symbol": "bu",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.809
+  },
+  {
+    "symbol": "bu",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 13.665
+  },
+  {
+    "symbol": "ec",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.982
+  },
+  {
+    "symbol": "ec",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.511
+  },
+  {
+    "symbol": "ec",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.683
+  },
+  {
+    "symbol": "cu",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.457
+  },
+  {
+    "symbol": "cu",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.409
+  },
+  {
+    "symbol": "cu",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.463
+  },
+  {
+    "symbol": "cj",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.827
+  },
+  {
+    "symbol": "cj",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.473
+  },
+  {
+    "symbol": "cj",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.756
+  },
+  {
+    "symbol": "cj",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.15
+  },
+  {
+    "symbol": "al",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.913
+  },
+  {
+    "symbol": "al",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.859
+  },
+  {
+    "symbol": "ao",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.782
+  },
+  {
+    "symbol": "ao",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.437
+  },
+  {
+    "symbol": "ao",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.955
+  },
+  {
+    "symbol": "ap",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.836
+  },
+  {
+    "symbol": "au",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.246
+  },
+  {
+    "symbol": "au",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.787
+  },
+  {
+    "symbol": "au",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.264
+  },
+  {
+    "symbol": "b",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.143
+  },
+  {
+    "symbol": "b",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.677
+  },
+  {
+    "symbol": "bu",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.529
+  },
+  {
+    "symbol": "bu",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.837
+  },
+  {
+    "symbol": "bz",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.06
+  },
+  {
+    "symbol": "bz",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.118
+  },
+  {
+    "symbol": "c",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.489
+  },
+  {
+    "symbol": "c",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.759
+  },
+  {
+    "symbol": "cf",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.088
+  },
+  {
+    "symbol": "cf",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.546
+  },
+  {
+    "symbol": "cf",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.46
+  },
+  {
+    "symbol": "cj",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.132
+  },
+  {
+    "symbol": "cj",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.976
+  },
+  {
+    "symbol": "cu",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.79
+  },
+  {
+    "symbol": "cu",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.824
+  },
+  {
+    "symbol": "cu",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.018
+  },
+  {
+    "symbol": "eb",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.498
+  },
+  {
+    "symbol": "eb",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.073
+  },
+  {
+    "symbol": "eb",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.281
+  },
+  {
+    "symbol": "eb",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.456
+  },
+  {
+    "symbol": "eb",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.5
+  },
+  {
+    "symbol": "eb",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.098
+  },
+  {
+    "symbol": "ec",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.085
+  },
+  {
+    "symbol": "ec",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.245
+  },
+  {
+    "symbol": "ec",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.364
+  },
+  {
+    "symbol": "eg",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.46
+  },
+  {
+    "symbol": "eg",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.402
+  },
+  {
+    "symbol": "eg",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.401
+  },
+  {
+    "symbol": "eg",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.907
+  },
+  {
+    "symbol": "eg",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.613
+  },
+  {
+    "symbol": "eg",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.472
+  },
+  {
+    "symbol": "fg",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.644
+  },
+  {
+    "symbol": "fg",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.626
+  },
+  {
+    "symbol": "fg",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.362
+  },
+  {
+    "symbol": "fg",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.483
+  },
+  {
+    "symbol": "fg",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.623
+  },
+  {
+    "symbol": "fg",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.616
+  },
+  {
+    "symbol": "fu",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.611
+  },
+  {
+    "symbol": "fu",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.55
+  },
+  {
+    "symbol": "fu",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.794
+  },
+  {
+    "symbol": "fu",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.938
+  },
+  {
+    "symbol": "fu",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.988
+  },
+  {
+    "symbol": "fu",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.004
+  },
+  {
+    "symbol": "hc",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.638
+  },
+  {
+    "symbol": "hc",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.501
+  },
+  {
+    "symbol": "hc",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.577
+  },
+  {
+    "symbol": "hc",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.459
+  },
+  {
+    "symbol": "hc",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.737
+  },
+  {
+    "symbol": "hc",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.307
+  },
+  {
+    "symbol": "i",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.62
+  },
+  {
+    "symbol": "i",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.697
+  },
+  {
+    "symbol": "i",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.461
+  },
+  {
+    "symbol": "i",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.519
+  },
+  {
+    "symbol": "i",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.555
+  },
+  {
+    "symbol": "i",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.706
+  },
+  {
+    "symbol": "j",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.452
+  },
+  {
+    "symbol": "j",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.699
+  },
+  {
+    "symbol": "j",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.573
+  },
+  {
+    "symbol": "j",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.307
+  },
+  {
+    "symbol": "j",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.632
+  },
+  {
+    "symbol": "j",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.644
+  },
+  {
+    "symbol": "jd",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.028
+  },
+  {
+    "symbol": "jd",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.773
+  },
+  {
+    "symbol": "jd",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.053
+  },
+  {
+    "symbol": "jd",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.997
+  },
+  {
+    "symbol": "jd",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.396
+  },
+  {
+    "symbol": "jd",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.446
+  },
+  {
+    "symbol": "jm",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.593
+  },
+  {
+    "symbol": "jm",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.11
+  },
+  {
+    "symbol": "jm",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.545
+  },
+  {
+    "symbol": "jm",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.437
+  },
+  {
+    "symbol": "jm",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.628
+  },
+  {
+    "symbol": "jm",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.607
+  },
+  {
+    "symbol": "l",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.671
+  },
+  {
+    "symbol": "l",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.73
+  },
+  {
+    "symbol": "l",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.557
+  },
+  {
+    "symbol": "l",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.467
+  },
+  {
+    "symbol": "l",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.581
+  },
+  {
+    "symbol": "l",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.953
+  },
+  {
+    "symbol": "lc",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.477
+  },
+  {
+    "symbol": "lc",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.22
+  },
+  {
+    "symbol": "lc",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.388
+  },
+  {
+    "symbol": "lc",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.234
+  },
+  {
+    "symbol": "lc",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.52
+  },
+  {
+    "symbol": "lc",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.561
+  },
+  {
+    "symbol": "lh",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.738
+  },
+  {
+    "symbol": "lh",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.495
+  },
+  {
+    "symbol": "lh",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.617
+  },
+  {
+    "symbol": "lh",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.514
+  },
+  {
+    "symbol": "lh",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.784
+  },
+  {
+    "symbol": "lh",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.937
+  },
+  {
+    "symbol": "m",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.608
+  },
+  {
+    "symbol": "m",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.299
+  },
+  {
+    "symbol": "m",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.537
+  },
+  {
+    "symbol": "m",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.504
+  },
+  {
+    "symbol": "m",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.712
+  },
+  {
+    "symbol": "m",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.805
+  },
+  {
+    "symbol": "ma",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.612
+  },
+  {
+    "symbol": "ma",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.696
+  },
+  {
+    "symbol": "ma",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.636
+  },
+  {
+    "symbol": "ma",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.668
+  },
+  {
+    "symbol": "ma",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.723
+  },
+  {
+    "symbol": "ma",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.683
+  },
+  {
+    "symbol": "ni",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.678
+  },
+  {
+    "symbol": "ni",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.969
+  },
+  {
+    "symbol": "ni",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.164
+  },
+  {
+    "symbol": "ni",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.954
+  },
+  {
+    "symbol": "ni",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.589
+  },
+  {
+    "symbol": "ni",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.778
+  },
+  {
+    "symbol": "oi",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.671
+  },
+  {
+    "symbol": "oi",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.801
+  },
+  {
+    "symbol": "oi",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.477
+  },
+  {
+    "symbol": "oi",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.662
+  },
+  {
+    "symbol": "oi",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.739
+  },
+  {
+    "symbol": "oi",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.731
+  },
+  {
+    "symbol": "p",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.749
+  },
+  {
+    "symbol": "p",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.749
+  },
+  {
+    "symbol": "p",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.566
+  },
+  {
+    "symbol": "p",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.15
+  },
+  {
+    "symbol": "p",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.689
+  },
+  {
+    "symbol": "p",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.243
+  },
+  {
+    "symbol": "pb",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.805
+  },
+  {
+    "symbol": "pb",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.126
+  },
+  {
+    "symbol": "pb",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.375
+  },
+  {
+    "symbol": "pb",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.677
+  },
+  {
+    "symbol": "pb",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.993
+  },
+  {
+    "symbol": "pb",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 7.152
+  },
+  {
+    "symbol": "pd",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.405
+  },
+  {
+    "symbol": "pd",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.571
+  },
+  {
+    "symbol": "pd",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.447
+  },
+  {
+    "symbol": "pd",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.573
+  },
+  {
+    "symbol": "pd",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.393
+  },
+  {
+    "symbol": "pd",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.58
+  },
+  {
+    "symbol": "pf",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.324
+  },
+  {
+    "symbol": "pf",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.128
+  },
+  {
+    "symbol": "pf",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.265
+  },
+  {
+    "symbol": "pf",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.551
+  },
+  {
+    "symbol": "pf",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.562
+  },
+  {
+    "symbol": "pf",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.404
+  },
+  {
+    "symbol": "pg",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.337
+  },
+  {
+    "symbol": "pg",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.26
+  },
+  {
+    "symbol": "pg",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.318
+  },
+  {
+    "symbol": "pg",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.808
+  },
+  {
+    "symbol": "pg",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.634
+  },
+  {
+    "symbol": "pg",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.592
+  },
+  {
+    "symbol": "pk",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.707
+  },
+  {
+    "symbol": "pk",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.287
+  },
+  {
+    "symbol": "pk",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.62
+  },
+  {
+    "symbol": "pk",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.374
+  },
+  {
+    "symbol": "pk",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.889
+  },
+  {
+    "symbol": "pk",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.705
+  },
+  {
+    "symbol": "pl",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.745
+  },
+  {
+    "symbol": "pl",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.926
+  },
+  {
+    "symbol": "pl",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.592
+  },
+  {
+    "symbol": "pl",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.905
+  },
+  {
+    "symbol": "pl",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.736
+  },
+  {
+    "symbol": "pl",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.983
+  },
+  {
+    "symbol": "pp",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.592
+  },
+  {
+    "symbol": "pp",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.249
+  },
+  {
+    "symbol": "pp",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.531
+  },
+  {
+    "symbol": "pp",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.148
+  },
+  {
+    "symbol": "pp",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.538
+  },
+  {
+    "symbol": "pp",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.726
+  },
+  {
+    "symbol": "pr",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.492
+  },
+  {
+    "symbol": "pr",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.061
+  },
+  {
+    "symbol": "pr",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.416
+  },
+  {
+    "symbol": "pr",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.981
+  },
+  {
+    "symbol": "pr",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.551
+  },
+  {
+    "symbol": "pr",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.251
+  },
+  {
+    "symbol": "ps",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.98
+  },
+  {
+    "symbol": "ps",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.491
+  },
+  {
+    "symbol": "ps",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 0.892
+  },
+  {
+    "symbol": "ps",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.515
+  },
+  {
+    "symbol": "ps",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.037
+  },
+  {
+    "symbol": "ps",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.637
+  },
+  {
+    "symbol": "pt",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 0.335
+  },
+  {
+    "symbol": "pt",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 0.572
+  },
+  {
+    "symbol": "pt",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 0.341
+  },
+  {
+    "symbol": "pt",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 0.534
+  },
+  {
+    "symbol": "pt",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 0.313
+  },
+  {
+    "symbol": "pt",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 0.557
+  },
+  {
+    "symbol": "px",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.535
+  },
+  {
+    "symbol": "px",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.292
+  },
+  {
+    "symbol": "px",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.385
+  },
+  {
+    "symbol": "px",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.148
+  },
+  {
+    "symbol": "px",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.571
+  },
+  {
+    "symbol": "px",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.176
+  },
+  {
+    "symbol": "rb",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.644
+  },
+  {
+    "symbol": "rb",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.633
+  },
+  {
+    "symbol": "rb",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.658
+  },
+  {
+    "symbol": "rb",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.168
+  },
+  {
+    "symbol": "rb",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.689
+  },
+  {
+    "symbol": "rb",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.33
+  },
+  {
+    "symbol": "rm",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.691
+  },
+  {
+    "symbol": "rm",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.642
+  },
+  {
+    "symbol": "rm",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.611
+  },
+  {
+    "symbol": "rm",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.676
+  },
+  {
+    "symbol": "rm",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.612
+  },
+  {
+    "symbol": "rm",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.906
+  },
+  {
+    "symbol": "rs",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.377
+  },
+  {
+    "symbol": "rs",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.025
+  },
+  {
+    "symbol": "rs",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.369
+  },
+  {
+    "symbol": "rs",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.004
+  },
+  {
+    "symbol": "rs",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.394
+  },
+  {
+    "symbol": "rs",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.807
+  },
+  {
+    "symbol": "ru",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.711
+  },
+  {
+    "symbol": "ru",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.779
+  },
+  {
+    "symbol": "ru",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.583
+  },
+  {
+    "symbol": "ru",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.446
+  },
+  {
+    "symbol": "ru",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.704
+  },
+  {
+    "symbol": "ru",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.775
+  },
+  {
+    "symbol": "sa",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.629
+  },
+  {
+    "symbol": "sa",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.524
+  },
+  {
+    "symbol": "sa",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.594
+  },
+  {
+    "symbol": "sa",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.579
+  },
+  {
+    "symbol": "sa",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.623
+  },
+  {
+    "symbol": "sa",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.457
+  },
+  {
+    "symbol": "sc",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.058
+  },
+  {
+    "symbol": "sc",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 7.931
+  },
+  {
+    "symbol": "sc",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.266
+  },
+  {
+    "symbol": "sc",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 8.232
+  },
+  {
+    "symbol": "sc",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.117
+  },
+  {
+    "symbol": "sc",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 8.668
+  },
+  {
+    "symbol": "sf",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.825
+  },
+  {
+    "symbol": "sf",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.67
+  },
+  {
+    "symbol": "sf",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.796
+  },
+  {
+    "symbol": "sf",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.642
+  },
+  {
+    "symbol": "sf",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.998
+  },
+  {
+    "symbol": "sf",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.805
+  },
+  {
+    "symbol": "sh",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.549
+  },
+  {
+    "symbol": "sh",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.322
+  },
+  {
+    "symbol": "sh",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.348
+  },
+  {
+    "symbol": "sh",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.131
+  },
+  {
+    "symbol": "sh",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.633
+  },
+  {
+    "symbol": "sh",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.326
+  },
+  {
+    "symbol": "si",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.724
+  },
+  {
+    "symbol": "si",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.603
+  },
+  {
+    "symbol": "si",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.542
+  },
+  {
+    "symbol": "si",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.402
+  },
+  {
+    "symbol": "si",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.828
+  },
+  {
+    "symbol": "si",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.283
+  },
+  {
+    "symbol": "sm",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.577
+  },
+  {
+    "symbol": "sm",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.335
+  },
+  {
+    "symbol": "sm",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.574
+  },
+  {
+    "symbol": "sm",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.263
+  },
+  {
+    "symbol": "sm",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.72
+  },
+  {
+    "symbol": "sm",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.548
+  },
+  {
+    "symbol": "sn",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.63
+  },
+  {
+    "symbol": "sn",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.229
+  },
+  {
+    "symbol": "sn",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.35
+  },
+  {
+    "symbol": "sn",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.239
+  },
+  {
+    "symbol": "sn",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.789
+  },
+  {
+    "symbol": "sn",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.503
+  },
+  {
+    "symbol": "sr",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.715
+  },
+  {
+    "symbol": "sr",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.475
+  },
+  {
+    "symbol": "sr",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.603
+  },
+  {
+    "symbol": "sr",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.761
+  },
+  {
+    "symbol": "sr",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.491
+  },
+  {
+    "symbol": "sr",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.788
+  },
+  {
+    "symbol": "ss",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 2.11
+  },
+  {
+    "symbol": "ss",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 4.811
+  },
+  {
+    "symbol": "ss",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 2.101
+  },
+  {
+    "symbol": "ss",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 5.014
+  },
+  {
+    "symbol": "ss",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 1.789
+  },
+  {
+    "symbol": "ss",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "error": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+    "seconds": 5.312
+  },
+  {
+    "symbol": "ta",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.424
+  },
+  {
+    "symbol": "ta",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.148
+  },
+  {
+    "symbol": "ta",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.487
+  },
+  {
+    "symbol": "ta",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.453
+  },
+  {
+    "symbol": "ta",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.705
+  },
+  {
+    "symbol": "ta",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.377
+  },
+  {
+    "symbol": "ur",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.455
+  },
+  {
+    "symbol": "ur",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.824
+  },
+  {
+    "symbol": "ur",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.276
+  },
+  {
+    "symbol": "ur",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.423
+  },
+  {
+    "symbol": "ur",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.394
+  },
+  {
+    "symbol": "ur",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.136
+  },
+  {
+    "symbol": "v",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.767
+  },
+  {
+    "symbol": "v",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.299
+  },
+  {
+    "symbol": "v",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.659
+  },
+  {
+    "symbol": "v",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.718
+  },
+  {
+    "symbol": "v",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.692
+  },
+  {
+    "symbol": "v",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.542
+  },
+  {
+    "symbol": "y",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.477
+  },
+  {
+    "symbol": "y",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.89
+  },
+  {
+    "symbol": "y",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.371
+  },
+  {
+    "symbol": "y",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.295
+  },
+  {
+    "symbol": "y",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 1.607
+  },
+  {
+    "symbol": "y",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 4.395
+  },
+  {
+    "symbol": "zn",
+    "strategy": "trend",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.502
+  },
+  {
+    "symbol": "zn",
+    "strategy": "trend",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 5.987
+  },
+  {
+    "symbol": "zn",
+    "strategy": "oscillation",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 2.349
+  },
+  {
+    "symbol": "zn",
+    "strategy": "oscillation",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.411
+  },
+  {
+    "symbol": "zn",
+    "strategy": "main_rise",
+    "section": "chart",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 3.027
+  },
+  {
+    "symbol": "zn",
+    "strategy": "main_rise",
+    "section": "reference",
+    "as_of": "2026-09-17T07:00:00.000001+00:00",
+    "delivery": "delivered",
+    "status": "ready",
+    "reason": null,
+    "seconds": 6.86
+  }
+]

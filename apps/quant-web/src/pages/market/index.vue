@@ -177,6 +177,10 @@ onBeforeUnmount(() => {
         <div><h1>{{ sector ? productSectorLabel(sector) : '全部品种' }}</h1><span>{{ rows.length }}</span><p>{{ rows.some((row) => row.liveQuote) ? '最新已完成行情；日周指标仍为收盘口径' : '最近完整交易日收盘快照' }}</p></div>
         <div class="market-home-live-status" :class="`market-home-live-status--${live.connection.value}`" aria-live="polite"><span>{{ liveStatus }}</span><button v-if="live.connection.value === 'stale' || live.connection.value === 'unavailable'" type="button" @click="live.restart">重连行情</button></div>
       </header>
+      <details v-if="home.overview.data.value" class="market-home-coverage">
+        <summary>日线报价可用 {{ home.overview.data.value.participant_count }} / {{ home.overview.data.value.active_count }} · 过期 {{ home.overview.data.value.stale_count }} · 报价不可用 {{ home.overview.data.value.unavailable_count }}</summary>
+        <p>截至 {{ home.overview.data.value.target_as_of }}；可用数不代表牛哇策略或全部历史指标已就绪。历史缺价在品种行单独提示，指标按连续有效数据预热。</p>
+      </details>
       <p v-if="home.overview.unavailable.value && !home.overview.data.value" class="market-dashboard-page__error" role="alert">行情快照暂不可用；没有可展示的上一份成功快照。</p>
       <p v-else-if="home.overview.stale.value" class="market-dashboard-page__error" role="alert">行情刷新失败；正在展示上一份成功快照。</p>
       <MarketHomeSkeleton v-if="loading && !home.overview.data.value" />

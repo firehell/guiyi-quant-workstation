@@ -209,6 +209,11 @@ transport 失败 SHALL 在既有有界 Runtime 日志中仅记录固定白名单
 原始异常或 cause。SDK 明确返回拒绝码时可分类为 provider rejected，`900` 分类为 rate limited；SDK 的
 `-1` 或无法证明请求结果的异常必须保守分类为 request outcome unknown，无法安全分类时回落 `UNKNOWN`。
 诊断分类不得改变 schema v6 聚合状态、通用 `notification_transport_failed` 兼容语义或发送次数。
+单次或连续 PushPlus 投递失败属于保留的通知诊断事实，不得仅凭 `notification_state=failed` 把
+Alert operational health、Runtime aggregate health 或每日盘后增量数据结果判为失败/降级。
+`last_notification_failure_at`、`notification_error_type` 与失败次数仍须可读；formatter 准备失败、
+sender acceptance 无效、未分类 sender 异常、通知配置缺失、
+heartbeat/Rule 评估异常、到期 coverage 缺口，以及盘后行情和质量失败继续按各自合同降级或阻断。
 
 #### Scenario: Transport fails after Event commit
 
@@ -238,11 +243,21 @@ HTDY 五个日内周期 SHALL 只消费同周期 completed Live Bar；D1/W1 SHAL
 共享预警窗口 MUST 通过 typed `LiveBarObservation` 保留并逐根校验 Live payload contract、trading_day
 和端点唯一性，读取范围 MUST 不晚于事件 cutoff。缺失、错误或非规范的合约身份 MUST 拒绝，
 不得丢弃原始 contract 后以冻结 snapshot 为其补写身份；历史多 owner 窗口仍按 MainContractMap 校验。
+Canonical 历史前缀的选择 MUST 截止于事件 cutoff，但前缀端点校验只覆盖已发布历史；不得在合并 Live
+之前要求当前交易日已有历史 MainContractMap 或 Canonical。共享 `bars_until` MUST 在合并后验证整个
+返回窗口的 Calendar/Session/owner 端点；历史尾部缺失、Live 缺失或重叠冲突均拒绝。普通历史分页
+继续按请求 cutoff 严格校验，不允许借此将 Live 视作 Canonical。
 forward-only `first_seen` 只接受触发窗口的最新 completed Bar；Kernel repaint zone 中的历史 Bar 仅供
 Web retrospective 研究展示，不创建持久 Event 或通知。
 `AlertEvent.bar_end` SHALL 是观察 Bar 时间，`detected_at` SHALL 是 Runtime 首次识别时间；Event 冻结后，
 重绘消失、重现或方向变化均不得改写或重发。startup、repair、replay、backfill 与 EOD recalculation MUST NOT
 创建历史 HTDY Event 或通知。
+
+#### Scenario: Published history precedes the current Live trading day
+
+- **WHEN** 日盘或夜盘的 completed Live cutoff 已到达，而当前交易日 MainContractMap 尚未盘后发布
+- **THEN** Alert 合并经过验证的历史前缀和 frozen Live owner，按交易日归属校验完整窗口后才运行评价
+- **AND** 周五夜盘归属下一交易日、换月和历史/Live 间隙使用相同规则，不合成映射或 Bar
 
 #### Scenario: A 5m, 15m or 60m context has an internal Session gap
 
