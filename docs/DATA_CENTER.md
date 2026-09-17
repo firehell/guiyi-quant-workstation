@@ -367,6 +367,8 @@ expected day 才是 `degraded/missed`。合法 `current_run` 也只是已持久�
 通知使用固定脱敏内容，含 trading day、公开 error code、attempts 与“系统运维提醒，非交易指令”；
 不用 Topic、`AlertEvent`、DB、retry、replay 或 fallback。provider accepted 不等于送达；通知失败只记录
 `failure_notification=failed`，不改写或重试主 after-market 结果。`missed/stuck` 只是 health，不会发送。
+HTDY/苏冰 AlertEvent 的 PushPlus 投递失败也只保留在 Alert 通知诊断中；每日增量是否 `passed`
+仍由维护输入、质量校验、Canonical/Catalog 提交及既有盘后状态合同决定，不读取 Alert 投递结果。
 Canonical commit 结果不确定时，盘后状态保留 `COMMIT_OUTCOME_UNKNOWN`，本次停止且不重试，
 不发布 `canonical_updated` 或执行成功后的 Live 清理；须用独立只读事务确认 Catalog 结果。
 

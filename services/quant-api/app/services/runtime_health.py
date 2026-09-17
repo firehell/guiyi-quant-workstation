@@ -27,7 +27,11 @@ from sqlalchemy.orm import Session
 from app.alerts.notification_composition import notification_transport_status_from_env
 from app.alerts.notification_config import NOTIFICATION_CONFIG_ENV
 from app.alerts.pushplus import PUSHPLUS_TRANSPORT
-from app.alerts.runtime import empty_alert_runtime_status, validate_alert_runtime_status
+from app.alerts.runtime import (
+    NOTIFICATION_TRANSPORT_FAILURE,
+    empty_alert_runtime_status,
+    validate_alert_runtime_status,
+)
 from app.redis_connections import get_redis_connection
 from app.core.env import PROJECT_ROOT
 from app.market_data.after_market import public_after_market_status
@@ -322,8 +326,11 @@ def _collect_alert_health(
     observed_status = (
         RUNTIME_STATUS_DEGRADED
         if (
-            "failed"
-            in {observation["processing_state"], observation["notification_state"]}
+            observation["processing_state"] == "failed"
+            or (
+                observation["notification_state"] == "failed"
+                and observation["notification_error_type"] != NOTIFICATION_TRANSPORT_FAILURE
+            )
             or any(
                 rule["error_type"] is not None
                 for rule in cast(
