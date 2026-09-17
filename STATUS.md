@@ -1,14 +1,12 @@
 # 当前状态
 
-文档整理：2026-09-15；最新 Market Web 只读候选复核截至 `2026-09-15 08:11 CST`，正式 Runtime
-现场身份仍沿用 `2026-09-14 22:15:31 CST` 的最后读回。
-正式 Release 与现役 Runtime 均为 `v1.10.10@b49e2499de654092b48e60e181102c02e16ce89f`；annotated tag、
-main/origin-main、GitHub Release target、detached Runtime root 与服务 identity 已分别读回一致。API/Web 200、
-Live/Alert fresh；当日 18:05 盘后自然运行已完成 60 品种，当前 Event transport 为 provider accepted，
-但 provider accepted 不证明用户实际收到。首次自然 weekly audit 仍为 not_run，因此不声明 `RUNTIME_READY`。
-本轮 Market Web 发布前十一项已提交为 `develop@0963cef3427d195fc4ec34ec818bc97dd570f23d`，并完成代码、
-测试与该 exact commit 的真实只读候选验收；它没有进入
-v1.10.10 Release/Runtime。JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
+文档整理：2026-09-17。正式 Release 为 `v1.10.11@c9dd8d42d3bb62e6e9e85416faee7ff64866a11c`，
+annotated tag、main/origin-main 与 GitHub Release target 已读回一致；现役 Runtime 仍为
+`v1.10.10@b49e2499de654092b48e60e181102c02e16ce89f`，未因发布自动切换。
+牛哇 D1 候选 `develop@344b3e6c51bd4a7987078e7e16629c5eba975e65` 已在固定截点
+`2026-09-16T07:00:00.000001+00:00` 完成 60 品种 × 3 策略自然首次加载 180/180；W1/60m
+继续关闭。v1.10.12 发布候选及 main/tag/Release Gate 独立，Runtime promotion 另行授权。
+JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
@@ -17,7 +15,7 @@ v1.10.10 Release/Runtime。JM 物理合约历史缺口保持外部数据 Gate，
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.10@b49e2499d`，annotated tag、GitHub Release target、main/origin-main 与 API/Web 版本已读回一致 |
+| 正式 Release | `RELEASED` | `v1.10.11@c9dd8d42d`，annotated tag、GitHub Release target 与 main/origin-main 已读回一致；Runtime 另见下行 |
 | 现役 Runtime | v1.10.10 `RUNTIME_PROMOTED / SERVICE_READBACK_PASSED`，未声明 `RUNTIME_READY` | 六服务 installed/loaded 均绑定 `b49e2499d`；API/Web 200、Live/Alert fresh；实际收件与首次自然 weekly audit Gate 保留 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASE_CANDIDATE / EXTERNAL_GATE_PENDING` | `develop@0963cef34` 已完成完整 Web E2E、exact-commit 真实只读候选 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍阻塞该数据项，不授权写入、Release 或 Runtime |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
@@ -27,7 +25,7 @@ v1.10.10 Release/Runtime。JM 物理合约历史缺口保持外部数据 Gate，
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 已进入现役 v1.10.8 Runtime；仅自然盘后及后续交易日增量验收未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
-| 牛哇 D1 60 品种候选 | `60/60 D1_READY / SC_CANDIDATE_ACCEPTED`（固定截止） | `b8e540b43`、截止 `2026-09-16`：SC2611 11 分区恢复、215 端点读回通过；全 60 品种三策略主图与历史参考收益 180/180 READY，SC 首次加载页面 3/3 通过。全 180 页面旧证据仍绑定 `3a76203fd`/9 月 15 日；附属栏目预热/未开放状态保留，不等于 Release/Runtime。见 `outputs/newow-sc-d1-20260917/验收报告.md` |
+| 牛哇 D1 60 品种候选 | `60/60 D1_READY / FIRST_LOAD_180_OF_180`（固定截止） | `develop@344b3e6c5`、截止 `2026-09-16T07:00:00.000001+00:00`：三策略首次加载 180/180；W1/60m 仍关闭。页面原始结果见 `output/playwright/newow-d1-only-20260917/manifest.json`，不等于 Release/Runtime |
 | 本轮稳定版 | v1.10.10 `RELEASED / RUNTIME_PROMOTED / SERVICE_READBACK_PASSED` | 六服务身份、API/Web、Live/Alert 与当日自然盘后已读回；实际收件及首次自然周检验收保留 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
