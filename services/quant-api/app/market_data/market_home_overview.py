@@ -30,7 +30,7 @@ from app.market_data.research_metrics import Trend, calculate_research_metrics
 
 MarketHomeStatus = Literal["ready", "degraded"]
 MarketHomeFreshness = Literal["fresh", "stale", "unavailable"]
-METRIC_POLICY_VERSION = "physical_owner_v1"
+METRIC_POLICY_VERSION = "physical_owner_v2"
 
 
 class MarketHomeOverviewError(RuntimeError):
@@ -300,7 +300,7 @@ def _query_through_target(
             limit=limit,
         )
     except MarketDataError as exc:
-        if exc.code == "QUERY_WINDOW_EMPTY":
+        if exc.code in {"QUERY_WINDOW_EMPTY", "PRICE_UNAVAILABLE"}:
             return ()
         raise MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR") from exc
     return _through_target(bars, target_as_of)

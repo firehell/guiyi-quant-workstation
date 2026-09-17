@@ -55,6 +55,13 @@ D1 predecessor 使 target-day 变动率不可计算的情况。
 - **WHEN** product 有 target-day D1 但 W1 EMA warm-up 不足或 W1 无数据
 - **THEN** product item 仍存在，`weekly_trend=unavailable`，并且所有缺失 metrics 保持 null
 
+#### Scenario: Verified source price is unavailable in the physical history
+
+- **WHEN** D1 同合约历史含权威 `PRICE_UNAVAILABLE` 质量事实，严格行情入口拒绝该历史页
+- **THEN** overview 保留其他品种，当前品种计入 `unavailable_count` 且不生成该品种指标行；不得跨缺价日拼接历史或补造价格
+- **WHEN** 仅 W1 同合约历史返回 `PRICE_UNAVAILABLE` 而目标日 D1 可用
+- **THEN** 保留 D1 品种行，`weekly_trend=unavailable`；其他结构性分区或身份错误仍使 overview fail closed
+
 #### Scenario: Weekly mapped dataset is absent
 
 - **WHEN** product 有 target-day D1，但该合约没有已提交 W1 历史

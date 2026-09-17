@@ -277,6 +277,52 @@ def test_snapshot_fails_closed_for_partition_integrity_error() -> None:
         ).snapshot()
 
 
+def test_snapshot_isolates_verified_source_price_unavailable() -> None:
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+
+    market_data = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET), "rb": _bars(30, end=TARGET)},
+        weekly={"jm": _bars(22, end=TARGET), "rb": _bars(22, end=TARGET)},
+        failures={("rb", "1d"): MarketDataError("PRICE_UNAVAILABLE")},
+    )
+
+    snapshot = MarketHomeOverviewService(
+        market_data=market_data,
+        products=("jm", "rb"),
+        taxonomy=_taxonomy(),
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot()
+
+    assert snapshot.status == "degraded"
+    assert snapshot.unavailable_count == 1
+    assert snapshot.participant_count == 1
+    assert [item.symbol for item in snapshot.items] == ["jm"]
+
+
+def test_snapshot_retains_daily_item_when_weekly_source_price_unavailable() -> None:
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+
+    market_data = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET)},
+        weekly={"jm": _bars(22, end=TARGET)},
+        dominants=(DominantContractSummary(
+            symbol="jm", product_name="焦煤", sector="black", exchange="DCE",
+            actual_contract="JM2505", dominant_mapping_date=TARGET,
+        ),),
+        failures={("jm", "1w"): MarketDataError("PRICE_UNAVAILABLE")},
+    )
+
+    snapshot = MarketHomeOverviewService(
+        market_data=market_data,
+        products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="black")},
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot()
+
+    assert snapshot.participant_count == 1
+    assert snapshot.items[0].weekly_trend == "unavailable"
+
+
 def test_snapshot_keeps_daily_item_when_physical_weekly_history_is_absent() -> None:
     from app.market_data.market_home_overview import MarketHomeOverviewService
 
