@@ -199,6 +199,9 @@ frequency MUST fail closed。`--apply` MUST 要求相同的 lowercase
 SHA-256 `--expected-plan-sha256`，在 maintenance lock 内重算计划；identity、lifecycle、session 或 hash
 漂移时，必须在首次 provider 请求和写入前 fail closed。
 
+CLI 结果中 `provider_request_count` SHALL 表示冻结计划的预计请求数，
+`provider_requests` SHALL 表示该次执行实际请求数（dry-run 为零），两者不得互相代用。
+
 apply 只可为指定 physical contract 获取 `1m/1d` 基础事实；`1w` MUST 由同一交易所完整日行情在 adapter
 边界聚合，`5m/15m/30m/60m` 只由质量通过的同 contract `1m` 派生；不得写 continuous、其它 contract、
 MainContractMap、Rule、Scope、Runtime、Redis Live、

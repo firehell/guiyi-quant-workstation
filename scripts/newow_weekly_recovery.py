@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 from typing import Any, Callable, Literal, Mapping, TypeVar, cast
+from zoneinfo import ZoneInfo
 
 from app.market_data.historical_data_manager import (
     BarFetchRequest,
@@ -384,7 +385,8 @@ class AttemptJournal:
             os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW,
         )
         try:
-            os.write(fd, content)
+            if os.write(fd, content) != len(content):
+                raise OSError("RECEIPT_SHORT_WRITE")
             os.fsync(fd)
         finally:
             os.close(fd)
@@ -418,7 +420,8 @@ class AttemptJournal:
             0o600,
         )
         try:
-            os.write(fd, content)
+            if os.write(fd, content) != len(content):
+                raise OSError("RECEIPT_SHORT_WRITE")
             os.fsync(fd)
         finally:
             os.close(fd)
@@ -1120,6 +1123,11 @@ def execute_prepared_batch(
                 "provider_requests": result.provider_requests,
                 "failures": [dict(item) for item in result.failures],
             }
+            # Preserve the returned mutation outcome before any independent readback.
+            # Failure to persist it stops the batch; stdout is never the receipt.
+            _write_json_exclusive(
+                validated_unit_dir() / "warmup-result.json", result_payload,
+            )
             if result.status not in {"passed", "noop"}:
                 observer.mark_failed("RECOVERY_RESULT_NOT_PASSED")
                 safe_unit_dir = validated_unit_dir()
@@ -1466,7 +1474,8 @@ def _write_json_exclusive(path: Path, payload: object) -> str:
         0o600,
     )
     try:
-        os.write(fd, content)
+        if os.write(fd, content) != len(content):
+            raise OSError("RECEIPT_SHORT_WRITE")
         os.fsync(fd)
     finally:
         os.close(fd)
@@ -1581,6 +1590,7 @@ def _post_commit_readback(
         raise RecoveryError("POST_COMMIT_READBACK_INVALID")
     root = Path(manager.catalog.canonical_root).resolve()
     service = MarketDataService(manager.catalog, manager.store)
+    quality_aware = _recovery_frequency(unit.get("frequency")) == "1d"
     partitions: list[dict[str, object]] = []
     for raw in targets:
         try:
@@ -1629,28 +1639,59 @@ def _post_commit_readback(
                 or not resolved.is_relative_to(root)
             ):
                 raise OSError
-            physical = manager.store.read_catalog_partition(partition)
+            if quality_aware:
+                physical, _ = manager.store.read_catalog_partition_quality(partition)
+            else:
+                physical = manager.store.read_catalog_partition(partition)
             content_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
         except OSError as exc:
             raise RecoveryError("POST_COMMIT_PHYSICAL_INVALID") from exc
         if len(physical) != partition.row_count:
             raise RecoveryError("POST_COMMIT_PHYSICAL_INVALID")
-        result = service.query(
-            SeriesQuery(
-                series_kind=SeriesKind.CONTRACT,
+        request = SeriesQuery(
+            series_kind=SeriesKind.CONTRACT,
+            symbol=key.symbol,
+            contract=key.series_or_contract,
+            frequency=key.frequency,
+            start=expected_start - timedelta(microseconds=1),
+            end=expected_end,
+        )
+        quality_counts: dict[str, int] = {}
+        if quality_aware:
+            bars, exceptions = service.read_physical_daily_quality(
+                request, require_window_coverage=False,
+            )
+            expected = service.expected_contract_replay_endpoints(
                 symbol=key.symbol,
                 contract=key.series_or_contract,
                 frequency=key.frequency,
-                start=expected_start - timedelta(microseconds=1),
-                end=expected_end,
+                trading_day=expected_end.astimezone(ZoneInfo("Asia/Shanghai")).date(),
+                cutoff=expected_end,
+                after=request.start,
+                since=expected_start.astimezone(ZoneInfo("Asia/Shanghai")).date(),
             )
-        )
-        if (
-            len(result.bars) != expected_count
-            or result.bars[0].bar_end != expected_start
-            or result.bars[-1].bar_end != expected_end
-        ):
-            raise RecoveryError("POST_COMMIT_MDS_INVALID")
+            actual = tuple(sorted(
+                (item.bar_end, item.trading_day) for item in (*bars, *exceptions)
+            ))
+            if (
+                len(expected) != expected_count
+                or expected[0][0] != expected_start
+                or expected[-1][0] != expected_end
+                or actual != expected
+            ):
+                raise RecoveryError("POST_COMMIT_MDS_INVALID")
+            quality_counts = {
+                "mds_price_unavailable_count": len(exceptions),
+                "mds_endpoint_count": len(actual),
+            }
+        else:
+            bars = service.query(request).bars
+            if (
+                len(bars) != expected_count
+                or bars[0].bar_end != expected_start
+                or bars[-1].bar_end != expected_end
+            ):
+                raise RecoveryError("POST_COMMIT_MDS_INVALID")
         partitions.append(
             {
                 "dataset": list(key.as_tuple()),
@@ -1659,7 +1700,8 @@ def _post_commit_readback(
                 "file_sha256": content_sha256,
                 "catalog_row_count": partition.row_count,
                 "physical_row_count": len(physical),
-                "mds_bar_count": len(result.bars),
+                "mds_bar_count": len(bars),
+                **quality_counts,
             }
         )
     return {

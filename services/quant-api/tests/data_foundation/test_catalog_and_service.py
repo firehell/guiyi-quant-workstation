@@ -2226,3 +2226,54 @@ def test_listing_lower_bound_still_rejects_required_missing_facts(session, tmp_p
             as_of=datetime(2025, 11, 28, 2, tzinfo=UTC), latest=date(2025, 11, 28),
             calendar_since=date(2025, 11, 27),
         )
+
+
+@pytest.mark.parametrize("quality_days", [(), (3,), (2, 3)])
+def test_recovery_daily_readback_uses_real_catalog_parquet_and_calendar(
+    session, tmp_path, quality_days,
+):
+    from types import SimpleNamespace
+    from scripts.newow_weekly_recovery import _post_commit_readback
+
+    session.scalar(select(TradingSession)).is_active = False
+    session.add(Contract(
+        contract_code="JM2509", instrument_symbol="jm", exchange_code="DCE",
+        listed_date=date(2025, 1, 2), expired_date=date(2025, 9, 1), provider="rqdata",
+    ))
+    for day in (2, 3):
+        session.add(TradingSession(
+            exchange_code="DCE", instrument_symbol="jm", session_name="day",
+            start_time=time(9), end_time=time(15), effective_from=date(2025, 1, day),
+            effective_to=date(2025, 1, day), is_active=True, provider="rqdata",
+        ))
+        session.add(TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
+        ))
+    session.commit()
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    bars = tuple(_bar(day, 100) for day in (2, 3) if day not in quality_days)
+    facts = tuple(PriceUnavailableFact(
+        bar_end=_bar(day, 100).bar_end, trading_day=date(2025, 1, day),
+        open=Decimal(0), high=Decimal(0), low=Decimal(0), close=Decimal(100),
+        volume=Decimal(2), turnover=Decimal(200), open_interest=Decimal(10),
+        request_sha256="a" * 64, response_sha256="b" * 64,
+        observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+    ) for day in quality_days)
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    catalog.register_partition(store.publish(PublishRequest(
+        key, 2025, 1, bars, tuple(_bar(day, 100).bar_end for day in (2, 3)),
+        price_unavailable=facts,
+    )))
+    session.commit()
+    result = _post_commit_readback(SimpleNamespace(catalog=catalog, store=store), {
+        "symbol": "jm", "contract": "JM2509", "frequency": "1d", "targets": [{
+            "dataset": list(key.as_tuple()), "year": 2025, "month": 1,
+            "expected_start": _bar(2, 100).bar_end.isoformat(),
+            "expected_end": _bar(3, 100).bar_end.isoformat(), "expected_bar_count": 2,
+        }],
+    })
+    partition = result["catalog_partitions"][0]
+    assert partition["mds_endpoint_count"] == 2
+    assert partition["mds_price_unavailable_count"] == len(quality_days)
+    assert partition["physical_row_count"] == partition["mds_bar_count"] == 2 - len(quality_days)

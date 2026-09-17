@@ -178,6 +178,7 @@ def contract_warmup_payload(result: ContractWarmupResult) -> dict[str, object]:
         "derived_target_count": plan.derived_target_count,
         "expected_bar_count": plan.expected_bar_count,
         "provider_request_count": plan.provider_request_count,
+        "provider_requests": result.provider_requests,
         "plan_sha256": plan.plan_sha256,
         "applied": result.applied,
         "blocked": result.blocked,
