@@ -27,6 +27,7 @@ v1.10.10 Release/Runtime。JM 物理合约历史缺口保持外部数据 Gate，
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 已进入现役 v1.10.8 Runtime；仅自然盘后及后续交易日增量验收未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
+| 牛哇 D1 60 品种候选 | `57/60 CANDIDATE_ACCEPTED / EXTERNAL_GATE_PENDING` | 固定截止 `2026-09-15`，SI/J/EG 三策略日线计算、历史参考收益及首次加载页面新增 9/9 验收；此前 54 品种证据仍按各自 exact commit 保留。B/BZ/PG 尚有 1/2/17 个数据修复目标；不等于 Release 或 Runtime。见 `outputs/newow-d1-3-acceptance-20260917/验收报告.md` |
 | 本轮稳定版 | v1.10.10 `RELEASED / RUNTIME_PROMOTED / SERVICE_READBACK_PASSED` | 六服务身份、API/Web、Live/Alert 与当日自然盘后已读回；实际收件及首次自然周检验收保留 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
