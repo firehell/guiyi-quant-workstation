@@ -212,7 +212,7 @@ transport 失败 SHALL 在既有有界 Runtime 日志中仅记录固定白名单
 单次或连续 PushPlus 投递失败属于保留的通知诊断事实，不得仅凭 `notification_state=failed` 把
 Alert operational health、Runtime aggregate health 或每日盘后增量数据结果判为失败/降级。
 `last_notification_failure_at`、`notification_error_type` 与失败次数仍须可读；formatter 准备失败、
-sender acceptance 无效、通知配置缺失、
+sender acceptance 无效、未分类 sender 异常、通知配置缺失、
 heartbeat/Rule 评估异常、到期 coverage 缺口，以及盘后行情和质量失败继续按各自合同降级或阻断。
 
 #### Scenario: Transport fails after Event commit

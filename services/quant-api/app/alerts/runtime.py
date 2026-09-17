@@ -575,14 +575,18 @@ class AlertRuntime:
             except NotificationTransportError as exc:
                 self._record_notification_failure(
                     at=processing_now,
-                    error_type=NOTIFICATION_TRANSPORT_FAILURE,
+                    error_type=(
+                        NOTIFICATION_ACCEPTANCE_INVALID
+                        if exc.diagnostic_code == "PUSHPLUS_ACCEPTANCE_INVALID"
+                        else NOTIFICATION_TRANSPORT_FAILURE
+                    ),
                 )
                 self._log_notification_failure(message, exc.diagnostic_code)
                 continue
             except Exception:
                 self._record_notification_failure(
                     at=processing_now,
-                    error_type=NOTIFICATION_TRANSPORT_FAILURE,
+                    error_type=NOTIFICATION_PREPARATION_FAILURE,
                 )
                 self._log_notification_failure(message, "UNKNOWN")
                 continue
