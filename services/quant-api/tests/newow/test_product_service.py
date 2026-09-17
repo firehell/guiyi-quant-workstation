@@ -1,7 +1,8 @@
 from dataclasses import replace
-from datetime import timedelta
+from datetime import date, timedelta
 from threading import Event, Thread
 from time import sleep
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,7 +32,47 @@ from app.market_data.newow.product_service import (
     ProductSection,
     ProductServiceQuery,
     _dependency_proof,
+    _reference_coverage_intervals,
 )
+from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus
+
+
+def test_intraday_reference_coverage_keeps_mixed_warmup_day_warming():
+    day = date(2026, 9, 3)
+    def frame(status):
+        bar = SimpleNamespace(
+            trading_day=day, observation_eligible=True,
+            physical_contract="RB2605", segment_id="segment-rb",
+        )
+        return SimpleNamespace(
+            bar=SimpleNamespace(bar=bar, calculation_segment_id="calculation-rb"),
+            availability=SimpleNamespace(status=status),
+        )
+    read = SimpleNamespace(
+        frequency=ProductFrequency.HOURLY, data_interruptions=(), owners=(),
+    )
+    replay = SimpleNamespace(frames=(frame(FeatureRuntimeStatus.WARMING), frame(FeatureRuntimeStatus.READY)))
+    intervals = _reference_coverage_intervals(read, replay, day, day)
+    assert len(intervals) == 1
+    assert intervals[0].status == "WARMING"
+
+
+def test_intraday_reference_coverage_groups_bars_by_trading_day(product_cases):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=16, frequency="60m")
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: fake.as_of,
+    )
+    result = service.query(ProductServiceQuery(
+        "rb", "trend", "60m", section="reference",
+        performance_since=query.performance_since,
+        performance_through=query.performance_through,
+        as_of=fake.as_of,
+    ))
+    intervals = result.reference.value.coverage_intervals
+    assert intervals
+    assert all(interval.since <= interval.through for interval in intervals)
+    assert len({(interval.since, interval.physical_contract) for interval in intervals}) == len(intervals)
 
 
 class _Reader:

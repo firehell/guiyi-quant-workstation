@@ -151,9 +151,9 @@ test('detail preferences v2 migrate v1 and v9 without persisting route-owned fac
   })
 })
 
-test('ordinary unified Market Home product entry uses the discovered weekly Newow capability', () => {
-  assert.deepEqual(marketHomeUnifiedProductChartQuery('ag', '1w'), {
+test('ordinary unified Market Home product entry uses the discovered daily Newow capability', () => {
+  assert.deepEqual(marketHomeUnifiedProductChartQuery('ag', '1d'), {
     view: 'newow', symbol: 'ag', strategy: 'trend', series_kind: 'actual_dominant',
-    contract: undefined, frequency: '1w', focus_bar_end: undefined,
+    contract: undefined, frequency: '1d', focus_bar_end: undefined,
   })
 })

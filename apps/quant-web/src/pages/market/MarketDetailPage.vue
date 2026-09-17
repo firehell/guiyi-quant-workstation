@@ -264,7 +264,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             v-else-if="routeResult.identity.view === 'newow'"
             :title="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在读取牛哇开放能力' : newowCapabilities.state.value === 'unavailable' ? '牛哇开放能力不可用' : '当前牛哇周期未开放'"
             :message="newowCapabilities.state.value === 'unavailable' ? (newowCapabilities.error.value ?? '无法确认开放范围。') : newowFrequencyOpen ? '正在确认当前发布阶段。' : `${routeResult.identity.frequency} 尚未开放（${newowCapabilities.deferredFrequencyReason(routeResult.identity.frequency as '1w' | '1d' | '60m') ?? 'NEWOW_FREQUENCY_NOT_OPEN'}）。`"
-            recovery-label="切换到已开放周线"
+            recovery-label="切换到已开放日线"
             :can-recover="newowCapabilities.state.value === 'ready' && !newowFrequencyOpen && newowCapabilities.openFrequencies.value.length > 0"
             :can-return-market="true"
             @recover="switchNewowToOpenFrequency"

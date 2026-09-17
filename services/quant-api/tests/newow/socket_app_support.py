@@ -28,9 +28,9 @@ def _serve(listener):
     import uvicorn
 
     cases = ProductCases()
-    _, _, facts = cases.paged_reader(prefix_bars=520, frequency="1w")
-    primitive = cases.primitive_input("trend", "1w").bars
-    key = ("RB2605", BarFrequency.W1)
+    _, _, facts = cases.paged_reader(prefix_bars=520, frequency="1d")
+    primitive = cases.primitive_input("trend", "1d").bars
+    key = ("RB2605", BarFrequency.D1)
     # Repeat owned OHLC facts so history has multiple real BUILD/CLEAR pairs.
     facts.physical[key] = tuple(
         replace(
@@ -46,7 +46,7 @@ def _serve(listener):
         for source in (primitive[index % len(primitive)].bar,)
     )
     facts.expected_physical = dict(facts.physical)
-    facts.actual[BarFrequency.W1] = tuple(
+    facts.actual[BarFrequency.D1] = tuple(
         bar
         for bar in facts.physical[key]
         if bar.trading_day >= facts.segments[0].start_trading_day

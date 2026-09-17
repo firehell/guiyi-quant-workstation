@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { NEWOW_STRATEGIES, installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
-for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1w']) {
+for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
   test(`${strategy} ${frequency}: native panes, indicator replacement and exact Hint dialog`, async ({ page }) => {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
@@ -47,7 +47,7 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1w']) {
     await expect(dialog).toContainText('known_at')
     expect(productRequests(fixture, 'explanation')).toHaveLength(0)
     await page.keyboard.press('Escape')
-    if (strategy === 'trend' && frequency === '1w') {
+    if (strategy === 'trend' && frequency === '1d') {
       await page.getByRole('button', { name: '图表全屏', exact: true }).click()
       await expect.poll(() => stage.evaluate(element => document.fullscreenElement === element)).toBe(true)
       await page.getByRole('button', { name: '退出图表全屏', exact: true }).click()
@@ -60,23 +60,12 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1w']) {
   })
 }
 
-test('weekly cup disclosure stays local and never requests the daily component', async ({ page }) => {
+test('weekly deep link remains closed without requesting strategy data', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
-  await page.goto(newowRoute())
-  const stage = page.getByTestId('newow-product-chart-stage')
-  await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
-  await page.getByRole('button', { name: '杯柄说明', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('杯柄仅适用于 1d')
-  await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
-  await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
-  await page.keyboard.press('Escape')
-  await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
-  await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
-  expect(productRequests(fixture, 'chart')).toHaveLength(1)
-  expect(productRequests(fixture, 'auxiliary').map(item => item.url.searchParams.get('component'))).toEqual(['macd'])
-  await expect(page.getByRole('button', { name: '60m', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '1d', exact: true })).toHaveCount(1)
-  await expect(stage).toHaveAttribute('data-frequency', '1w')
-  await expect(stage).toHaveAttribute('data-auxiliary-component', 'macd')
+  await page.goto(newowRoute('trend', '1w'))
+  await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toBeVisible()
+  await expect(page.getByText(/1w 尚未开放/)).toBeVisible()
+  expect(productRequests(fixture, 'chart')).toHaveLength(0)
+  expect(productRequests(fixture, 'auxiliary')).toHaveLength(0)
   assertNoUnexpectedRequests(fixture)
 })

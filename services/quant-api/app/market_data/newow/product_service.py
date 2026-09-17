@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
 from hashlib import sha256
+from itertools import groupby
 import json
 from secrets import token_urlsafe
 
@@ -327,9 +328,19 @@ def _reference_coverage_intervals(
         for gap in mapped_gaps
     )
     events.sort(key=lambda item: item[0])
+    daily_events = []
+    for day, grouped in groupby(events, key=lambda item: item[0]):
+        same_day = tuple(grouped)
+        if len(same_day) > 1:
+            if read.frequency is not ProductFrequency.HOURLY or len({item[2:] for item in same_day}) != 1:
+                raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
+            if any(item[1] == "PRICE_UNAVAILABLE" for item in same_day):
+                raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
+        status = "WARMING" if any(item[1] == "WARMING" for item in same_day) else same_day[0][1]
+        daily_events.append((day, status, *same_day[0][2:]))
     intervals: list[ReferenceCoverageInterval] = []
     previous_day: date | None = None
-    for day, status, contract, segment_id, calculation_segment_id in events:
+    for day, status, contract, segment_id, calculation_segment_id in daily_events:
         if previous_day is not None and day <= previous_day:
             raise NewowProductServiceError("NEWOW_COVERAGE_IDENTITY_CONFLICT")
         previous_day = day

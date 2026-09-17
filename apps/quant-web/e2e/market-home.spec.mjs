@@ -42,8 +42,9 @@ function degradedStaleOverview() {
 function runtime(status = 'degraded') { return { status, generated_at: '2026-09-02T01:00:00Z', readonly: true, would_start_services: false, would_enqueue_jobs: false, would_send_notifications: false, components: {} } }
 function dailyCapabilities() {
   return {
-    schema_version: 'newow_product_capabilities_v2', release_stage: 'daily', open_frequencies: ['1w', '1d'],
+    schema_version: 'newow_product_capabilities_v3', release_stage: 'daily', open_frequencies: ['1d'],
     deferred_frequencies: [
+      { frequency: '1w', reason_code: 'NEWOW_WEEKLY_RELEASE_PENDING' },
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
     open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],
@@ -132,7 +133,7 @@ test('top navigation exposes market, messages, and one keyboard product search',
   await search.fill('jm')
   await expect(page.getByRole('option', { name: /焦煤.*JM/ })).toBeVisible()
   await search.press('Enter')
-  await expect(page).toHaveURL(/view=newow.*symbol=jm.*strategy=trend.*frequency=1w/)
+  await expect(page).toHaveURL(/view=newow.*symbol=jm.*strategy=trend.*frequency=1d/)
   await expect(page.getByLabel('返回市场', { exact: true })).toBeVisible()
   await expect(page.getByRole('listbox', { name: '搜索60品种' })).toHaveCount(0)
   await search.click()
@@ -402,7 +403,7 @@ test('sector counts use authority and filtering toggles locally with keyboard ro
   await expect(page.locator('tbody tr')).toHaveCount(60)
   expectHomeReads(requests)
   await page.locator('tbody tr[data-symbol="ag"]').press('Enter')
-  await expect(page).toHaveURL(/view=newow.*symbol=ag.*strategy=trend.*series_kind=actual_dominant.*frequency=1w/)
+  await expect(page).toHaveURL(/view=newow.*symbol=ag.*strategy=trend.*series_kind=actual_dominant.*frequency=1d/)
 })
 
 test('sort and sector survive refresh and browser back while absent sector recovers to all', async ({ page }) => {
@@ -504,7 +505,7 @@ test('header product search opens the safe default Newow route', async ({ page }
   expect(url.pathname).toBe('/market/chart')
   expect(url.searchParams.get('view')).toBe('newow')
   expect(url.searchParams.get('symbol')).toBe('ag')
-  expect(url.searchParams.get('frequency')).toBe('1w')
+  expect(url.searchParams.get('frequency')).toBe('1d')
   expect(url.searchParams.get('series_kind')).toBe('actual_dominant')
   expect(requests.unexpected).toEqual([])
 })

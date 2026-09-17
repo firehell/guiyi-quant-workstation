@@ -194,10 +194,11 @@ test('shares one Newow strategy and frequency allowlist authority across route a
 
 test('loads the server-owned daily release capability and rejects widened or legacy payloads', async () => {
   const payload = {
-    schema_version: 'newow_product_capabilities_v2',
+    schema_version: 'newow_product_capabilities_v3',
     release_stage: 'daily',
-    open_frequencies: ['1w', '1d'],
+    open_frequencies: ['1d'],
     deferred_frequencies: [
+      { frequency: '1w', reason_code: 'NEWOW_WEEKLY_RELEASE_PENDING' },
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
     open_sections: ['chart', 'auxiliary', 'reference', 'comparator'],

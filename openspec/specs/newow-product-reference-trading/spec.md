@@ -59,8 +59,8 @@ database connections remain separately authorized operations, not a consequence 
 
 Readiness audit SHALL use the existing reader and shared validated MDS rank1 owner enumeration before
 reading physical prefixes. It SHALL enumerate the complete planned matrix, but only read dependencies for the
-currently opened release scope. In the daily stage this means `1w` and `1d` chart, auxiliary, reference and comparator;
-`60m` main cases and all explanation cases remain visible as `UNOPENED`, cause no reader calls and do not count
+currently opened release scope. In the daily stage this means `1d` chart, auxiliary, reference and comparator;
+`1w/60m` main cases and all explanation cases remain visible as `UNOPENED`, cause no reader calls and do not count
 as incomplete readiness. When a later stage opens them, the audit SHALL collect every independent
 contract/frequency failure across that newly opened scope, preserving owner segments and consumer provenance.
 Missing metadata SHALL retain UNKNOWN enumeration and null counts, with only bounded repair proposals.
@@ -810,16 +810,16 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 
 分阶段发布 MUST 由无数据库依赖的 `GET /api/v1/market/newow/product-capabilities` 返回唯一公开边界，
 并由当前与历史 typed endpoint 在进入 reader/service 前执行同一 server-owned Gate。当前日版 stage 开放
-`1w` 与 `1d` 的 chart/auxiliary/reference/comparator；`60m` 仍返回 `NEWOW_FREQUENCY_NOT_OPEN`，依赖未开放
+仅 `1d` 的 chart/auxiliary/reference/comparator；`1w` 和 `60m` 仍返回 `NEWOW_FREQUENCY_NOT_OPEN`，依赖未开放
 跨周期输入的 explanation 返回 `NEWOW_SECTION_NOT_OPEN`。Web 必须严格校验 capability envelope；旧链接和
 存储偏好不得把未开放周期静默改写为已开放周期，而要显示本版未开放并提供明确回到已开放周期的操作。
 该 stage 不删除 kernel/reader 的三周期能力，不改变 HTDY/SuBing/Free，也不改变旧 `/trend-detail` 的固定 D1
-兼容语义。后续 60m 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
+兼容语义。后续 `1w` 或 `60m` 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
 
-#### Scenario: Deferred hourly request cannot bypass the daily stage
+#### Scenario: Deferred weekly and hourly requests cannot bypass the daily stage
 
-- **GIVEN** 当前 capability 的 `release_stage=daily` 且 `open_frequencies=["1w","1d"]`
-- **WHEN** 客户端直接请求 typed current/historical endpoint 的 `60m`
+- **GIVEN** 当前 capability 的 `release_stage=daily` 且 `open_frequencies=["1d"]`
+- **WHEN** 客户端直接请求 typed current/historical endpoint 的 `1w` 或 `60m`
 - **THEN** 服务在构造 reader/service 前返回分类 409 `NEWOW_FREQUENCY_NOT_OPEN`
 - **AND** 不改写 frequency、不请求其他周期、不影响旧固定 D1 兼容 endpoint
 
@@ -832,10 +832,10 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 
 #### Scenario: Cross-frequency explanation remains closed
 
-- **GIVEN** 周线与日线主图和独立同周期面板可用，但 explanation 仍需要未开放的 60m 输入
-- **WHEN** 客户端请求 `1w` 或 `1d` 的 `section=explanation`
+- **GIVEN** 日线主图和独立同周期面板可用，但 explanation 仍需要未开放的跨周期输入
+- **WHEN** 客户端请求 `1d` 的 `section=explanation`
 - **THEN** 返回分类 409 `NEWOW_SECTION_NOT_OPEN`
-- **AND** 不删除输入后沿用综合总分，也不创造周线或日线简化评分
+- **AND** 不删除输入后沿用综合总分，也不创造日线简化评分
 
 #### Scenario: A requested explanation has an evidence gap
 
