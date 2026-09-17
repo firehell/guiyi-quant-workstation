@@ -415,20 +415,10 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                     bar.bar_end.isoformat(),
                 )
             )
-            owner = next(
-                (
-                    candidate
-                    for candidate in read.owners
-                    if candidate.contract == bar.physical_contract
-                    and candidate.start_trading_day
-                    <= bar.trading_day
-                    <= candidate.end_trading_day
-                ),
-                None,
-            )
-            # A section may start at this owner or end partway through it.
-            # Its clipped end and optional predecessor are not per-Bar facts.
-            # Shared boundary facts are compared independently below.
+            # The segment ID already binds the owner start. A physical warm-up
+            # bar may also fall inside an earlier owner visible only to a wider
+            # section; borrowing that owner's start makes equal bars conflict.
+            # Shared owner transitions are compared as boundaries below.
             value = "|".join(
                 (
                     bar.trading_day.isoformat(),
@@ -440,7 +430,6 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                     str(bar.open_interest),
                     bar.source_identity,
                     str(bar.observation_eligible),
-                    "" if owner is None else owner.start_trading_day.isoformat(),
                 )
             )
             proof[key] = sha256(value.encode()).hexdigest()
@@ -493,7 +482,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                 REFERENCE_MODEL_VERSION,
                 SOURCE_FACT_ADAPTER_VERSION,
                 "main_contract_map:rank1:calendar_session_v1",
-                "newow_product_dependency_proof_v4",
+                "newow_product_dependency_proof_v5",
             )
         ).encode()
     ).hexdigest()

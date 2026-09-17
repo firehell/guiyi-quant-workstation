@@ -11,12 +11,13 @@ from guiyi_quant.newow.product_contracts import (
     ProductFrequency,
     TradeEligibility,
 )
+from guiyi_quant.newow.product_identity import build_segment_id
 from app.market_data.domain import BarFrequency
 from guiyi_quant.newow.oscillation_channel import CHANNEL_FORMULA_VERSION
 
 from app.market_data.domain import ResolvedContractSegment
 
-from app.market_data.newow.product_query import ProductReadWindow
+from app.market_data.newow.product_query import NewowProductQuery, ProductReadWindow
 from app.market_data.newow.product_reader import (
     ProductReadSet,
     ProductReadSource,
@@ -28,6 +29,7 @@ from app.market_data.newow.product_service import (
     NewowProductServiceError,
     ProductSection,
     ProductServiceQuery,
+    _dependency_proof,
 )
 
 
@@ -94,6 +96,40 @@ def _service(product_cases, frequency="1d"):
     now = clear.bar_end.replace(year=2027)
     service = NewowProductService(lambda _context, _cancelled: reader, now=lambda: now)
     return service, reader, build, clear
+
+
+def test_snapshot_proof_warmup_bar_does_not_borrow_another_owner(product_cases):
+    _service_instance, reader, _build, clear = _service(product_cases)
+    since = reader.bars[0].bar.trading_day
+    through = reader.bars[-1].bar.trading_day
+    read = reader.load(
+        NewowProductQuery(
+            "rb", "trend", "1d", since=since, through=through,
+            performance_since=since, performance_through=through,
+            as_of=clear.bar_end,
+        ),
+        clear.bar_end,
+    )
+    first = read.replay_bars[0]
+    warmup = replace(
+        first,
+        bar=replace(
+            first.bar,
+            segment_id=build_segment_id(
+                "rb", first.bar.physical_contract, first.bar.bar_end + timedelta(days=1)
+            ),
+            observation_eligible=False,
+        ),
+    )
+    base = replace(read, bars_by_frequency={read.frequency: (warmup,)}, owners=())
+    earlier_owner = ResolvedContractSegment(
+        first.bar.physical_contract,
+        first.bar.trading_day,
+        first.bar.trading_day,
+    )
+    extended = replace(base, owners=(earlier_owner,))
+
+    assert _dependency_proof(base) == _dependency_proof(extended)
 
 
 def test_reference_cutoff_keeps_later_clear_open_until_user_extends_window(
