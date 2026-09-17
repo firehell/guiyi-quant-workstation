@@ -276,6 +276,66 @@ def test_snapshot_fails_closed_for_partition_integrity_error(error_code) -> None
         ).snapshot()
 
 
+def test_snapshot_isolates_verified_target_day_price_unavailable(monkeypatch) -> None:
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+
+    market_data = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET), "rb": _bars(30, end=TARGET)},
+        weekly={"jm": _bars(22, end=TARGET), "rb": _bars(22, end=TARGET)},
+        failures={
+            ("rb", "1w"): MarketDataError("DATASET_OR_PARTITION_MISSING"),
+        },
+    )
+
+    from types import SimpleNamespace
+    original = market_data.query_physical_daily_quality_as_of
+    def quality(**kwargs):
+        bars, gaps = original(**kwargs)
+        if kwargs['symbol'] == 'rb':
+            return bars[:-1], (SimpleNamespace(bar_end=bars[-1].bar_end),)
+        return bars, gaps
+    monkeypatch.setattr(market_data, 'query_physical_daily_quality_as_of', quality)
+
+    snapshot = MarketHomeOverviewService(
+        market_data=market_data,
+        products=("jm", "rb"),
+        taxonomy=_taxonomy(),
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot()
+
+    assert snapshot.status == "degraded"
+    assert snapshot.unavailable_count == 1
+    assert snapshot.participant_count == 1
+    assert [item.symbol for item in snapshot.items] == ["jm"]
+    assert [(request.symbol, request.frequency.value) for request in market_data.requests] == [
+        ("jm", "1d"), ("jm", "1w"), ("rb", "1d"),
+    ]
+
+
+def test_snapshot_retains_daily_item_when_weekly_source_price_unavailable() -> None:
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+
+    market_data = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET)},
+        weekly={"jm": _bars(22, end=TARGET)},
+        dominants=(DominantContractSummary(
+            symbol="jm", product_name="焦煤", sector="black", exchange="DCE",
+            actual_contract="JM2505", dominant_mapping_date=TARGET,
+        ),),
+        failures={("jm", "1w"): MarketDataError("PRICE_UNAVAILABLE")},
+    )
+
+    snapshot = MarketHomeOverviewService(
+        market_data=market_data,
+        products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="black")},
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot()
+
+    assert snapshot.participant_count == 1
+    assert snapshot.items[0].weekly_trend == "unavailable"
+
+
 def test_snapshot_keeps_daily_item_when_physical_weekly_history_is_absent() -> None:
     from app.market_data.market_home_overview import MarketHomeOverviewService
 
