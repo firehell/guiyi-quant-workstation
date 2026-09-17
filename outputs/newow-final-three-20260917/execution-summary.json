@@ -1,0 +1,232 @@
+{
+  "status": "passed",
+  "code_commit": "3a76203fd71a0b031df4d8dc0b21d9c4ada1fb79",
+  "prepared_sha256": "e3038cedeb47a81f57c6d3ec0f827a2dde9175c662ec733c15b7622c59991545",
+  "approved_in_current_conversation": true,
+  "actual_requests": 182,
+  "applied": 182,
+  "units": [
+    {
+      "symbol": "b",
+      "contract": "B2411",
+      "through": "2024-10-23",
+      "status": "passed",
+      "actual_requests": 10,
+      "applied": 10,
+      "price_unavailable": 1,
+      "valid_bars": 201,
+      "remaining": 0
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2605",
+      "through": "2026-04-20",
+      "status": "passed",
+      "actual_requests": 8,
+      "applied": 8,
+      "price_unavailable": 2,
+      "valid_bars": 157,
+      "remaining": 0
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2610",
+      "through": "2026-09-15",
+      "status": "passed",
+      "actual_requests": 6,
+      "applied": 6,
+      "price_unavailable": 1,
+      "valid_bars": 125,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2412",
+      "through": "2024-11-20",
+      "status": "passed",
+      "actual_requests": 10,
+      "applied": 10,
+      "price_unavailable": 5,
+      "valid_bars": 194,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2501",
+      "through": "2024-12-13",
+      "status": "passed",
+      "actual_requests": 9,
+      "applied": 9,
+      "price_unavailable": 1,
+      "valid_bars": 182,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2502",
+      "through": "2025-01-15",
+      "status": "passed",
+      "actual_requests": 8,
+      "applied": 8,
+      "price_unavailable": 7,
+      "valid_bars": 157,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2503",
+      "through": "2025-02-21",
+      "status": "passed",
+      "actual_requests": 9,
+      "applied": 9,
+      "price_unavailable": 1,
+      "valid_bars": 181,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2505",
+      "through": "2025-04-18",
+      "status": "passed",
+      "actual_requests": 10,
+      "applied": 10,
+      "price_unavailable": 2,
+      "valid_bars": 199,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2506",
+      "through": "2025-05-22",
+      "status": "passed",
+      "actual_requests": 10,
+      "applied": 10,
+      "price_unavailable": 12,
+      "valid_bars": 191,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2507",
+      "through": "2025-06-23",
+      "status": "passed",
+      "actual_requests": 10,
+      "applied": 10,
+      "price_unavailable": 6,
+      "valid_bars": 193,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2508",
+      "through": "2025-07-21",
+      "status": "passed",
+      "actual_requests": 10,
+      "applied": 10,
+      "price_unavailable": 4,
+      "valid_bars": 193,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2510",
+      "through": "2025-09-18",
+      "status": "passed",
+      "actual_requests": 10,
+      "applied": 10,
+      "price_unavailable": 2,
+      "valid_bars": 202,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2511",
+      "through": "2025-10-17",
+      "status": "passed",
+      "actual_requests": 8,
+      "applied": 8,
+      "price_unavailable": 1,
+      "valid_bars": 164,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2512",
+      "through": "2025-11-21",
+      "status": "passed",
+      "actual_requests": 9,
+      "applied": 9,
+      "price_unavailable": 2,
+      "valid_bars": 180,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2602",
+      "through": "2026-01-13",
+      "status": "passed",
+      "actual_requests": 10,
+      "applied": 10,
+      "price_unavailable": 6,
+      "valid_bars": 201,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2604",
+      "through": "2026-03-23",
+      "status": "passed",
+      "actual_requests": 9,
+      "applied": 9,
+      "price_unavailable": 3,
+      "valid_bars": 177,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2605",
+      "through": "2026-04-15",
+      "status": "passed",
+      "actual_requests": 10,
+      "applied": 10,
+      "price_unavailable": 1,
+      "valid_bars": 201,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2607",
+      "through": "2026-06-23",
+      "status": "passed",
+      "actual_requests": 9,
+      "applied": 9,
+      "price_unavailable": 3,
+      "valid_bars": 177,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2610",
+      "through": "2026-09-15",
+      "status": "passed",
+      "actual_requests": 9,
+      "applied": 9,
+      "price_unavailable": 2,
+      "valid_bars": 180,
+      "remaining": 0
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2406",
+      "through": "2024-05-23",
+      "status": "passed",
+      "actual_requests": 8,
+      "applied": 8,
+      "price_unavailable": 1,
+      "valid_bars": 157,
+      "remaining": 0
+    }
+  ],
+  "unattempted": [],
+  "retries": 0
+}
