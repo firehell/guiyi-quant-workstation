@@ -27,7 +27,7 @@ v1.10.10 Release/Runtime。JM 物理合约历史缺口保持外部数据 Gate，
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 已进入现役 v1.10.8 Runtime；仅自然盘后及后续交易日增量验收未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
-| 牛哇 D1 60 品种候选 | `60/60 CANDIDATE_ACCEPTED`（固定截止） | `3a76203fd`、截止 `2026-09-15`：B/BZ/PG 20 合约恢复完成，全 60 品种三策略数据与首次加载页面 180/180 统一验收。最新 `2026-09-16` 只读矩阵为 59/60，SC2611 新增历史前缀缺口、三策略 UNKNOWN，未扩批写入；不等于 Release/Runtime。见 `outputs/newow-final-three-20260917/验收报告.md` |
+| 牛哇 D1 60 品种候选 | `60/60 CANDIDATE_ACCEPTED`（固定截止） | `3a76203fd`、截止 `2026-09-15`：B/BZ/PG 20 合约恢复完成，全 60 品种三策略数据与首次加载页面 180/180 统一验收。最新 `2026-09-16` 只读矩阵为 59/60，SC2611 新增历史前缀缺口（214 端点）；诊断原因丢失已在 b8e540b43 修复并只读复验，恢复批次待批准，未扩批写入；不等于 Release/Runtime。见 `outputs/newow-final-three-20260917/验收报告.md`、`outputs/newow-sc-d1-20260917/恢复批次.md` |
 | 本轮稳定版 | v1.10.10 `RELEASED / RUNTIME_PROMOTED / SERVICE_READBACK_PASSED` | 六服务身份、API/Web、Live/Alert 与当日自然盘后已读回；实际收件及首次自然周检验收保留 |
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
