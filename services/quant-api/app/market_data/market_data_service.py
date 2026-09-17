@@ -811,6 +811,25 @@ class MarketDataService:
             (),
         )
 
+    def query_alert_history_prefix(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        """Read a published intraday prefix for subsequent Canonical/Live validation.
+
+        The event cutoff bounds selection, not Canonical publication. Only the
+        merged Alert window can prove coverage through that completed Live bar.
+        Ordinary historical page queries retain their exact endpoint contract.
+        """
+        try:
+            assert_not_retired(request.symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        if (
+            request.series_kind is not SeriesKind.ACTUAL_DOMINANT
+            or request.frequency not in INTRADAY_FREQUENCIES
+            or request.before is None
+        ):
+            raise MarketDataError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        return self._actual_dominant_page(request, published_prefix=True)
+
     def query_page_inclusive(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         """Return one physical page including its exact completed-bar endpoint.
 
@@ -968,6 +987,8 @@ class MarketDataService:
     def _actual_dominant_page(
         self,
         request: SeriesPageQuery,
+        *,
+        published_prefix: bool = False,
     ) -> MarketSeriesPageResult:
         # ``before`` limits physical bars by ``bar_end`` below.  It must not
         # limit map facts by natural date because a Friday-night bar belongs
@@ -1032,6 +1053,7 @@ class MarketDataService:
                         mapping_by_day,
                         available_contract_days,
                         weekly_calendar,
+                        published_prefix=published_prefix,
                     )
         if not selected:
             available_days = {day for _, day in available_contract_days}
@@ -1052,6 +1074,7 @@ class MarketDataService:
             mapping_by_day,
             available_contract_days,
             weekly_calendar,
+            published_prefix=published_prefix,
         )
 
     def _actual_page_result(
@@ -1061,6 +1084,8 @@ class MarketDataService:
         mapping_by_day: dict[date, MainMapFact],
         available_contract_days: set[tuple[str, date]],
         weekly_calendar: dict[date, tuple[date, ...]],
+        *,
+        published_prefix: bool = False,
     ) -> MarketSeriesPageResult:
         page = selected[: request.limit]
         self._validate_actual_page_boundary(
@@ -1119,7 +1144,7 @@ class MarketDataService:
         else:
             upper_end = (
                 request.before - timedelta(microseconds=1)
-                if request.before is not None
+                if request.before is not None and not published_prefix
                 else max(bar.bar_end for bar in selected)
             )
             try:

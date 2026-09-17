@@ -46,6 +46,8 @@ class MarketPageReader(Protocol):
 
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult: ...
 
+    def query_alert_history_prefix(self, request: SeriesPageQuery) -> MarketSeriesPageResult: ...
+
     def validate_contract_replay_coverage(
         self,
         *,
@@ -238,9 +240,12 @@ class MarketReadService:
 
         recovery_state = self._read_recovery_state(trading_day, identity.symbol, contract)
 
-        historical_page = self.history_page(
-            replace(identity, before=cutoff + timedelta(microseconds=1), limit=limit)
-        )
+        try:
+            historical_page = self._market_data.query_alert_history_prefix(
+                replace(identity, before=cutoff + timedelta(microseconds=1), limit=limit)
+            )
+        except MarketDataError as exc:
+            raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE") from exc
         historical = historical_page.bars
         live = self._verified_live_bars(
             trading_day=trading_day,
@@ -288,6 +293,9 @@ class MarketReadService:
             bar_contracts=bar_contracts,
             recovery_state=recovery_state,
         )
+        # The published prefix alone does not prove the tail up to the event.
+        # Validate every merged endpoint, including the history/Live seam.
+        self.validate_alert_window(window, context_bars=len(bars))
         self.assert_window_current(window)
         return window
 
@@ -329,13 +337,13 @@ class MarketReadService:
         except Exception as exc:  # noqa: BLE001 - incomplete Alert input must not degrade
             raise MarketReadWindowError("MARKET_READ_LIVE_UNAVAILABLE") from exc
 
-    def validate_htdy_alert_window(
+    def validate_alert_window(
         self,
         window: MarketReadWindow,
         *,
         context_bars: int,
     ) -> None:
-        """Prove HTDY's cross-owner actual-dominant context endpoints."""
+        """Prove cross-owner actual-dominant Alert context endpoints."""
         if (
             isinstance(context_bars, bool)
             or not isinstance(context_bars, int)

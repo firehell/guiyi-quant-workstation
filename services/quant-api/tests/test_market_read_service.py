@@ -580,6 +580,9 @@ class _MarketPageReader:
             resolved_contract_segments=self._segments,
         )
 
+    def query_alert_history_prefix(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+        return self.query_page(request)
+
     @staticmethod
     def validate_actual_dominant_alert_window(**_kwargs) -> None:
         return None
@@ -1225,9 +1228,8 @@ def test_bars_until_rejects_fixed_in_session_gap_before_htdy_signal_changes() ->
     service, full = read(all_bars[41:])
     assert HtdyOriginalEvaluator().evaluate_candidates(service, full)[0].observation_types == ("buy",)
     sparse_live = all_bars[41:61] + all_bars[62:]
-    service, sparse = read(sparse_live)
     with pytest.raises(MarketReadWindowError, match="MARKET_READ_WINDOW_INCOMPLETE"):
-        HtdyOriginalEvaluator().evaluate_candidates(service, sparse)
+        read(sparse_live)
 
 
 def test_rule_specific_alert_windows_keep_subing_on_current_contract_lifecycle(
@@ -1380,7 +1382,7 @@ def test_rule_specific_alert_windows_keep_subing_on_current_contract_lifecycle(
                 "actual_dominant", "rb", "15m",
                 before=current_bars[-1].bar_end + timedelta(microseconds=1), limit=64,
             ))
-        with pytest.raises(MarketDataError, match="MAPPED_CONTRACT_DATASET_MISSING"):
+        with pytest.raises(MarketReadWindowError, match="MARKET_READ_WINDOW_INCOMPLETE"):
             market_read.bars_until(
                 SeriesPageQuery("actual_dominant", "rb", "15m"),
                 trading_day=trading_days[-1], end=current_bars[-1].bar_end, limit=64,
@@ -1924,3 +1926,74 @@ def test_current_contract_replay_maps_only_market_data_history_errors(
 
     with pytest.raises(expected_type, match=expected):
         service.current_contract_replay_window(_replay_window(), after=None)
+
+
+@pytest.mark.parametrize("boundary", ["day", "night", "weekend_night"])
+@pytest.mark.parametrize("limit", [3, 64])
+@pytest.mark.parametrize("rollover", [False, True])
+@pytest.mark.parametrize("defect", ["none", "history_tail", "live_gap", "missing_old_map"])
+def test_alert_window_joins_published_history_before_current_rank1_is_catalogued(
+    tmp_path, boundary: str, limit: int, defect: str, rollover: bool,
+) -> None:
+    """After-market owns old maps; today's verified Live snapshot owns the new day."""
+    prior = date(2026, 9, 18) if boundary == "weekend_night" else date(2026, 9, 17)
+    current = date(2026, 9, 21) if boundary == "weekend_night" else date(2026, 9, 18)
+    historical = tuple(_bar(datetime.combine(prior, t, UTC), prior) for t in (time(1, 45), time(2)))
+    live_date = current if boundary == "day" else prior
+    live_times = (time(1, 45), time(2)) if boundary == "day" else (time(13, 15), time(13, 30))
+    live = tuple(_bar(datetime.combine(live_date, t, UTC), current) for t in live_times)
+    cutoff = live[-1].bar_end
+    if defect == "history_tail":
+        historical = historical[:-1]
+    if defect == "live_gap":
+        live = live[1:]
+    old_contract = "RB2605" if rollover else "RB2610"
+
+    class Live(_ContractReplayLiveStore):
+        def bar_observations(self, trading_day, symbol, frequency, after, until, **kwargs):
+            assert (trading_day, symbol, frequency) == (current, "rb", "15m")
+            return tuple(LiveBarObservation(bar, "RB2610") for bar in live if bar.bar_end <= until)
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _add_replay_metadata(session, (prior, current))
+        if rollover:
+            session.add(Contract(contract_code=old_contract, instrument_symbol="rb", exchange_code="SHFE",
+                                 listed_date=prior, expired_date=date(2027, 1, 1)))
+        for offset in range(1, (current - prior).days):
+            session.add(TradingCalendar(exchange_code="SHFE", trade_date=prior + timedelta(days=offset),
+                                        is_trading_day=False, provider="rqdata"))
+        if boundary != "day":
+            session.add(TradingSession(
+                exchange_code="SHFE", instrument_symbol="rb", session_name="night",
+                start_time=time(21), end_time=time(23), effective_from=current,
+                effective_to=current, crosses_midnight=False, is_active=True, provider="rqdata",
+            ))
+        if defect != "missing_old_map":
+            session.add(MainContractMap(symbol="rb", trade_date=prior, rank=1, contract_code=old_contract))
+        catalog = MarketCatalog(session, tmp_path)
+        store = CanonicalMonthlyStore(tmp_path)
+        catalog.register_partition(store.publish(PublishRequest(
+            DatasetKey("contract", "rb", old_contract, "15m"), 2026, 9,
+            historical, tuple(bar.bar_end for bar in historical),
+        )))
+        session.commit()
+        mds = MarketDataService(catalog, store)
+        service = MarketReadService(
+            market_data=mds, phase_resolver=_ForbiddenPhaseReader(),
+            operational_products=("rb",), live_store=Live(live),
+        )
+        query = SeriesPageQuery("actual_dominant", "rb", "15m",
+                                before=cutoff + timedelta(microseconds=1), limit=limit)
+        # Ordinary history must remain strict: Live is never Canonical.
+        with pytest.raises(MarketDataError):
+            mds.query_page(query)
+        if defect == "none":
+            result = service.bars_until(query, trading_day=current, end=cutoff, limit=limit)
+            assert result.bars == (historical + live)[-limit:]
+            assert result.bar_contracts == ((old_contract,) * len(historical) + ("RB2610",) * len(live))[-limit:]
+        else:
+            with pytest.raises(MarketReadWindowError, match="MARKET_READ_WINDOW_INCOMPLETE"):
+                service.bars_until(query, trading_day=current, end=cutoff, limit=limit)
+    engine.dispose()

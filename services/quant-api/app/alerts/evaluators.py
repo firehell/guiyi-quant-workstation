@@ -103,7 +103,7 @@ class HtdyOriginalEvaluator:
         window: MarketReadWindow,
     ) -> tuple[AlertObservationCandidate, ...]:
         if window.frequency in {item.value for item in INTRADAY_FREQUENCIES}:
-            market_read.validate_htdy_alert_window(
+            market_read.validate_alert_window(
                 window,
                 context_bars=self.context_bars,
             )
