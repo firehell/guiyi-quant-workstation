@@ -573,6 +573,90 @@ def test_alert_health_acknowledges_failure_without_erasing_failure_facts() -> No
     assert alert["consecutive_notification_failures"] == 1
 
 
+def test_notification_delivery_failure_does_not_change_passed_data_health(monkeypatch) -> None:
+    now = datetime(2026, 9, 17, 12, 45, tzinfo=UTC)
+    monkeypatch.setattr(
+        "app.services.runtime_health._collect_after_market_health",
+        lambda *_args, **_kwargs: {
+            "status": "ok", "run_state": "passed",
+            "last_successful_trading_day": "2026-09-17",
+        },
+    )
+    failure_at = now - timedelta(minutes=1)
+    status = empty_alert_runtime_status()
+    status.update({
+        "last_processed_bar_at": now.isoformat(),
+        "last_processing_success_at": now.isoformat(),
+        "last_event_at": failure_at.isoformat(),
+        "last_transport_attempt_at": failure_at.isoformat(),
+        "last_provider_accepted_at": (now - timedelta(minutes=2)).isoformat(),
+        "last_notification_failure_at": failure_at.isoformat(),
+        "notification_error_type": "notification_transport_failed",
+        "consecutive_notification_failures": 1,
+    })
+    heartbeat = {
+        "generated_at": now.isoformat(),
+        "available": True,
+        "enabled_rule_count": 1,
+        "scope_product_count": 1,
+        "coverage_schema_version": 1,
+        "coverage": {"htdy_original_15m:rb:1d": {
+            "rule_code": "htdy_original_15m", "symbol": "rb",
+            "frequency": "1d", "state": "ok",
+            "trading_day": "2026-09-17",
+            "last_evaluated_bar_at": now.isoformat(),
+        }},
+    }
+    values = {
+        "alert:heartbeat": json.dumps(heartbeat),
+        "alert:runtime-status": json.dumps(status),
+    }
+    TestingSessionLocal = _session_factory()
+
+    with TestingSessionLocal() as session:
+        health = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(values=values),
+            now=now,
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+
+    alert = health["components"]["alert"]
+    assert alert["coverage_state"] == "ok"
+    assert alert["processing_state"] == "ok"
+    assert alert["notification_state"] == "failed"
+    assert alert["notification_error_type"] == "notification_transport_failed"
+    assert alert["last_notification_failure_at"] == failure_at.isoformat()
+    assert alert["consecutive_notification_failures"] == 1
+    assert alert["status"] == "ok"
+    assert health["status"] == "ok"
+    assert health["components"]["after_market"] == {
+        "status": "ok", "run_state": "passed",
+        "last_successful_trading_day": "2026-09-17",
+    }
+
+    status["last_processing_failure_at"] = now.isoformat()
+    status["processing_error_type"] = "processing_failed"
+    values["alert:runtime-status"] = json.dumps(status)
+    with TestingSessionLocal() as session:
+        processing_failed = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(values=values),
+            now=now,
+            live_runtime_enabled=False,
+            after_market_automation_enabled=True,
+            alert_runtime_enabled=True,
+            notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+    assert processing_failed["components"]["alert"]["status"] == "degraded"
+    assert processing_failed["status"] == "degraded"
+
+
 def test_alert_health_new_failure_after_acknowledgement_is_failed_again() -> None:
     now = datetime(2026, 8, 14, 2, 45, tzinfo=UTC)
     latest_failure_at = now - timedelta(minutes=1)

@@ -209,6 +209,10 @@ transport 失败 SHALL 在既有有界 Runtime 日志中仅记录固定白名单
 原始异常或 cause。SDK 明确返回拒绝码时可分类为 provider rejected，`900` 分类为 rate limited；SDK 的
 `-1` 或无法证明请求结果的异常必须保守分类为 request outcome unknown，无法安全分类时回落 `UNKNOWN`。
 诊断分类不得改变 schema v6 聚合状态、通用 `notification_transport_failed` 兼容语义或发送次数。
+单次或连续 PushPlus 投递失败属于保留的通知诊断事实，不得仅凭 `notification_state=failed` 把
+Alert operational health、Runtime aggregate health 或每日盘后增量数据结果判为失败/降级。
+`last_notification_failure_at`、`notification_error_type` 与失败次数仍须可读；通知配置缺失、
+heartbeat/Rule 评估异常、到期 coverage 缺口，以及盘后行情和质量失败继续按各自合同降级或阻断。
 
 #### Scenario: Transport fails after Event commit
 

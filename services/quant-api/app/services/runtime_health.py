@@ -322,8 +322,7 @@ def _collect_alert_health(
     observed_status = (
         RUNTIME_STATUS_DEGRADED
         if (
-            "failed"
-            in {observation["processing_state"], observation["notification_state"]}
+            observation["processing_state"] == "failed"
             or any(
                 rule["error_type"] is not None
                 for rule in cast(
