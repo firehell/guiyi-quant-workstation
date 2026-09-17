@@ -1,0 +1,9 @@
+{
+  "mode": "local_candidate_readonly",
+  "code_sha": "b8e540b43bf5b38fee5dc09bde77af5742695389",
+  "as_of": "2026-09-16T07:00:00.000001+00:00",
+  "realtime": false,
+  "candidate_origin": "http://127.0.0.1:8010",
+  "status_origin": "http://127.0.0.1:8000",
+  "cutoff_scope": "bars_newow_and_subing_reference; home_projection_and_dominants_have_own_timestamps"
+}
