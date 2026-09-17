@@ -20,6 +20,7 @@ from app.alerts.notification import (
     ALERT_NOTIFICATION_POLICIES,
     AlertNotificationMessage,
     AlertNotificationPolicy,
+    AlertNotificationDispatcher,
     NotificationTransportError,
     ProviderAcceptance,
 )
@@ -407,6 +408,56 @@ def test_invalid_sender_acceptance_is_logged_with_event_identity(
         "frequency": "15m",
         "bar_end": at.isoformat(),
     }
+
+
+def test_sender_preparation_and_invalid_provider_reference_are_not_delivery_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    at = datetime(2026, 9, 14, 1, 0, tzinfo=UTC)
+    message = AlertNotificationMessage(
+        rule_code=HTDY_ALERT_RULE_CODE, symbol="rb", product_name="螺纹钢",
+        contract="RB2610", frequency="15m", bar_end=at, detected_at=at,
+        result_codes=("buy",),
+    )
+
+    class Transport:
+        @staticmethod
+        def send(_delivery):
+            raise AssertionError("transport must not run when formatting fails")
+
+    def broken_formatter(_message):
+        raise ValueError("fixture formatter failure")
+
+    monkeypatch.setattr(
+        "app.alerts.notification._notification_policy",
+        lambda rule_code: AlertNotificationPolicy(
+            rule_code=rule_code, title="fixture", audience=ALERT_AUDIENCE_OWNER,
+            formatter=broken_formatter,
+        ),
+    )
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        evaluators={}, sender=AlertNotificationDispatcher(Transport()),
+        operational_products=(), taxonomy={},
+    )
+    runtime._send_messages_once([message], processing_now=at)
+    assert runtime._current_runtime_status()["notification_error_type"] == (
+        "notification_preparation_failed"
+    )
+
+    class InvalidReferenceSender:
+        @staticmethod
+        def send(_message):
+            raise NotificationTransportError(
+                diagnostic_code="PUSHPLUS_ACCEPTANCE_INVALID"
+            )
+
+    runtime._sender = InvalidReferenceSender()  # type: ignore[assignment]
+    runtime._send_messages_once([message], processing_now=at)
+    assert runtime._current_runtime_status()["notification_error_type"] == (
+        "notification_acceptance_invalid"
+    )
 
 
 def test_live_trigger_accepts_only_completed_intraday_bar_shape() -> None:
