@@ -561,7 +561,30 @@ class MarketDataService:
         actual = tuple(sorted((bar.bar_end, bar.trading_day) for bar in bars))
         combined = tuple(sorted((*actual, *((item.bar_end, item.trading_day) for item in exceptions))))
         if combined != expected:
-            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
+            context: dict[str, object] = {
+                "symbol": symbol, "contract": contract, "frequency": BarFrequency.D1,
+                "trading_day": through, "cutoff": cutoff,
+                "expected_count": len(expected), "actual_count": len(combined),
+            }
+            if any(b[0] <= a[0] or b[1] < a[1] for a, b in zip(combined, combined[1:])):
+                reason = "REPLAY_ORDER_INVALID"
+            elif set(combined) - set(expected):
+                reason = "REPLAY_ENDPOINTS_EXTRA"
+            else:
+                present = set(combined)
+                missing = tuple(point for point in expected if point not in present)
+                reason = (
+                    "REPLAY_PREFIX_MISSING"
+                    if combined and combined == expected[-len(combined):]
+                    else "REPLAY_ENDPOINTS_MISSING"
+                )
+                context.update(
+                    missing_count=len(missing), first_missing_at=missing[0][0],
+                    first_missing_day=missing[0][1],
+                )
+            raise MarketDataError(
+                "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason=reason, context=context,
+            )
         return bars, exceptions
 
     def validate_contract_replay_coverage(

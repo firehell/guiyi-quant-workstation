@@ -277,3 +277,45 @@ def test_explicit_historical_search_skips_only_proven_missing_candidates(
         with pytest.raises(type(error)):
             resolver.resolve("rb", "trend", "1d")
         assert calls == [END]
+
+
+@pytest.mark.parametrize(
+    "indices,reason,recoverable",
+    [
+        ((2,), "REPLAY_PREFIX_MISSING", True),
+        ((0, 2), "REPLAY_ENDPOINTS_MISSING", True),
+        ((), "REPLAY_ENDPOINTS_MISSING", True),
+        ((0, 1, 2, 2), "REPLAY_ORDER_INVALID", False),
+        ((-1, 0, 1, 2), "REPLAY_ENDPOINTS_EXTRA", False),
+    ],
+)
+@pytest.mark.parametrize("quality_tail", [False, True])
+def test_quality_replay_preserves_bounded_gap_diagnostic(indices, reason, recoverable, quality_tail):
+    from app.market_data.newow.public_errors import public_product_error
+    from app.market_data.newow.readiness import _failure
+
+    service = object.__new__(MarketDataService)
+    service.catalog = SimpleNamespace(contract_fact=lambda *_args: SimpleNamespace(
+        listed_date=DAY - timedelta(days=10), expired_date=DAY + timedelta(days=10),
+    ))
+    service._trading_day_window = lambda **_kwargs: (END - timedelta(days=10), END)
+    service.expected_contract_replay_endpoints = lambda **_kwargs: EXPECTED
+    points = ((EXPECTED[0][0] - timedelta(hours=1), DAY), *EXPECTED)
+    bars = tuple(SimpleNamespace(bar_end=points[i + 1][0], trading_day=points[i + 1][1])
+                 for i in indices)
+    service.read_physical_daily_quality = lambda *_args, **_kwargs: (
+        (bars[:-1], bars[-1:]) if quality_tail and bars else (bars, ())
+    )
+    with pytest.raises(MarketDataError) as raised:
+        service.query_contract_replay_quality(
+            symbol="sc", contract="SC2611", through=DAY, cutoff=END,
+        )
+    error = raised.value
+    assert error.reason == reason
+    assert error.context["expected_count"] == 3
+    assert error.context["actual_count"] == len(indices)
+    status, detail = public_product_error(error)
+    assert status == 409
+    assert detail["code"] == "NEWOW_DATA_UNAVAILABLE"
+    assert detail["diagnostic"]["historical_candidate_recoverable"] is recoverable
+    assert _failure(error)["status"] == ("DATA_UNAVAILABLE" if recoverable else "INTEGRITY_ERROR")
