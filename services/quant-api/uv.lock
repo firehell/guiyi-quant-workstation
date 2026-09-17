@@ -1087,7 +1087,7 @@ wheels = [
 
 [[package]]
 name = "quant-api"
-version = "1.10.12"
+version = "1.10.13"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

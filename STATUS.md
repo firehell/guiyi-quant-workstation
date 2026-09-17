@@ -1,8 +1,8 @@
 # 当前状态
 
-文档整理：2026-09-17。正式 Release 为 `v1.10.12@5603b99d5e372c5b3972ca408a2aafbbbd9d245f`，
-annotated tag、main/origin-main 与 GitHub Release target 已读回一致；本机六项服务现役 Runtime
-已切换至同一 exact commit，旧 `v1.10.10@b49e2499de654092b48e60e181102c02e16ce89f` root 保留。
+文档整理：2026-09-17。正式 Release 为 `v1.10.13@39e463f8d238ca283252c389673ef6fc654b094f`，
+annotated tag、origin/main 与 GitHub Release target 已读回一致；本机六项服务现役 Runtime
+仍为 `v1.10.12@5603b99d5e372c5b3972ca408a2aafbbbd9d245f`，本版未切换 Runtime。
 牛哇 D1 在发布合并提交上以固定截点 `2026-09-16T07:00:00.000001+00:00` 完成
 60 品种 × 3 策略自然首次加载 180/180；W1/60m 继续关闭。Market Home 在同一发布候选上
 57/60 正常，BZ/EB/PG 因源价不可用而降级，owner 已接受该发布边界。Runtime 切换身份已读回，
@@ -12,21 +12,36 @@ JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixtu
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
-## 2026-09-17 日线质量修复与受控补数验收（非新发布）
+## v1.10.13 Release（Runtime 未切换）
 
-首页质量修复候选已完成测试与独立 Review，PR #373 面向 develop；不改变上方现役 v1.10.12 身份。
+PR #374 已于 2026-09-17 合并至 main；annotated tag `v1.10.13`、peeled commit、origin/main 与
+GitHub Release target 均为 `39e463f8d238ca283252c389673ef6fc654b094f`。发布范围包括首页
+可信日线报价与历史缺价边界、Alert 通知失败分类及健康状态、Alert 历史与 Live completed window
+连续性校验，以及 PT2612/SS2611 已批准补数的验收记录。补数先前已按独立授权完成，本次发布没有
+执行新的 provider、Canonical 或生产数据库写入。Newow 仍仅开放 1d，1w/60m 保持关闭。
+
+候选 `6043736417c9a5bdfaf75bcf856619434988c704` 与发布合并提交文件树一致；本次后端定向
+415 passed、补充 Alert/Live 114 passed，Web 624 passed / 1 skipped、生产 build 通过，首页
+Chromium E2E 31 passed，OpenSpec 9 passed，secret scan 0 finding，diff check 通过。现役
+Runtime 仍为 v1.10.12；新版 Live/Alert、自然盘后和周审计没有新版本运行证据，不能声明
+`RUNTIME_READY`。W1 部分来源异常工作树仍在进行且有未提交修改，不属于本次 Release。
+
+## 2026-09-17 日线质量修复与受控补数验收（已随 v1.10.13 发布代码）
+
+首页质量修复已完成测试与独立 Review，PR #373 已合入 develop，代码随 v1.10.13 发布；
+不改变上方现役 v1.10.12 Runtime 身份。
 owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21 个请求与 21 个分区均成功，
 零失败、零重试；截至 2026-09-17 物理覆盖分别为 186/186、205/205。固定该日 cutoff 的本轮完整
 360 项策略读取基线，加上补数后五品种 30 项复验，三策略 chart/reference 综合为 60/60；PT/SS
 六个真实新页面首载通过。首页候选报价 60/60，历史 PRICE_UNAVAILABLE 仍保留为计算边界。
-这不表示已发布首页新口径、全 60 品种重新逐页浏览器验收或 RUNTIME_READY；release/Runtime Gate
-仍保留。详细范围与证据见 `outputs/market-home-quality-20260917/CLOSEOUT.md`。
+这不表示全 60 品种重新逐页浏览器验收或 RUNTIME_READY；Runtime Gate 仍保留。
+详细范围与证据见 `outputs/market-home-quality-20260917/CLOSEOUT.md`。
 
 ## 当前阶段
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.12@5603b99d5`，annotated tag、GitHub Release target 与 main/origin-main 已读回一致；Runtime 另见下行 |
+| 正式 Release | `RELEASED` | `v1.10.13@39e463f8d`，annotated tag、GitHub Release target 与 origin/main 已读回一致；Runtime 另见下行 |
 | 现役 Runtime | v1.10.12 `RUNTIME_PROMOTED / SERVICE_READBACK / HEALTH_DEGRADED`，未声明 `RUNTIME_READY` | 六项服务 installed/loaded root 与 commit 均为 `5603b99d5`，API/Web 200；Alert 通知失败保留，新 root 的 Live/Alert coverage 未验证，after-market 报 `after_market_run_missed`；自然业务 Gate 保留 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
