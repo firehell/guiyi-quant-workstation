@@ -361,7 +361,9 @@ def test_quality_read_rejects_catalog_source_window_mismatch(session, tmp_path):
         ))
 
 
-def test_actual_dominant_d1_quality_read_proves_every_owner_day(session, tmp_path):
+def test_actual_dominant_d1_quality_read_proves_every_owner_day(
+    session, tmp_path, monkeypatch
+):
     session.scalar(select(TradingSession)).is_active = False
     session.add(Contract(
         contract_code="JM2509", instrument_symbol="jm", exchange_code="DCE",
@@ -407,12 +409,31 @@ def test_actual_dominant_d1_quality_read_proves_every_owner_day(session, tmp_pat
     assert result.bars == (valid,)
     assert unavailable == (("JM2509", exception),)
     assert result.resolved_contract_segments[0].contract == "JM2509"
-    prefix_bars, prefix_gaps = MarketDataService(catalog, store).query_contract_replay_quality(
+    market = MarketDataService(catalog, store)
+    original_window = market._trading_day_window
+
+    def night_anchored_window(*, symbol, since, through):
+        start, end = original_window(symbol=symbol, since=since, through=through)
+        return start - timedelta(days=2), end
+
+    # An overnight first session can precede the first daily partition's
+    # synthetic coverage_start without implying a missing trading-day Bar.
+    monkeypatch.setattr(market, "_trading_day_window", night_anchored_window)
+    prefix_bars, prefix_gaps = market.query_contract_replay_quality(
         symbol="jm", contract="JM2509", through=date(2025, 1, 3),
         cutoff=missing_at,
     )
     assert prefix_bars == (valid,)
     assert prefix_gaps == (exception,)
+    monkeypatch.setattr(
+        market, "read_physical_daily_quality",
+        lambda *_args, **_kwargs: ((valid,), ()),
+    )
+    with pytest.raises(MarketDataError, match="CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"):
+        market.query_contract_replay_quality(
+            symbol="jm", contract="JM2509", through=date(2025, 1, 3),
+            cutoff=missing_at,
+        )
 
 
 def test_catalog_contract_fact_normalizes_exact_identity(session, tmp_path) -> None:
