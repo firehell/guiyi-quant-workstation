@@ -12,6 +12,16 @@ JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixtu
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
+## 2026-09-17 日线质量修复与受控补数验收（非新发布）
+
+首页质量修复候选已完成测试与独立 Review，PR #373 面向 develop；不改变上方现役 v1.10.12 身份。
+owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21 个请求与 21 个分区均成功，
+零失败、零重试；截至 2026-09-17 物理覆盖分别为 186/186、205/205。固定该日 cutoff 的本轮完整
+360 项策略读取基线，加上补数后五品种 30 项复验，三策略 chart/reference 综合为 60/60；PT/SS
+六个真实新页面首载通过。首页候选报价 60/60，历史 PRICE_UNAVAILABLE 仍保留为计算边界。
+这不表示已发布首页新口径、全 60 品种重新逐页浏览器验收或 RUNTIME_READY；release/Runtime Gate
+仍保留。详细范围与证据见 `outputs/market-home-quality-20260917/CLOSEOUT.md`。
+
 ## 当前阶段
 
 | 项目 | 阶段 | 说明 |
