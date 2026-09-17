@@ -105,7 +105,6 @@ def test_snapshot_excludes_product_without_completed_daily_bar_and_counts_unavai
         ("jm", "1d"),
         ("jm", "1w"),
         ("rb", "1d"),
-        ("rb", "1w"),
     ]
 
 
@@ -218,7 +217,7 @@ def test_snapshot_marks_old_daily_data_stale_without_fabricating_item() -> None:
     assert [item.symbol for item in snapshot.items] == ["jm"]
 
 
-def test_snapshot_treats_empty_daily_query_as_unavailable_and_still_reads_weekly() -> None:
+def test_snapshot_treats_empty_daily_query_as_unavailable_without_weekly_read() -> None:
     from app.market_data.market_home_overview import MarketHomeOverviewService
 
     market_data = _FakeMarketDataService(
@@ -240,7 +239,6 @@ def test_snapshot_treats_empty_daily_query_as_unavailable_and_still_reads_weekly
         ("jm", "1d"),
         ("jm", "1w"),
         ("rb", "1d"),
-        ("rb", "1w"),
     ]
 
 
@@ -283,7 +281,10 @@ def test_snapshot_isolates_verified_source_price_unavailable() -> None:
     market_data = _FakeMarketDataService(
         daily={"jm": _bars(30, end=TARGET), "rb": _bars(30, end=TARGET)},
         weekly={"jm": _bars(22, end=TARGET), "rb": _bars(22, end=TARGET)},
-        failures={("rb", "1d"): MarketDataError("PRICE_UNAVAILABLE")},
+        failures={
+            ("rb", "1d"): MarketDataError("PRICE_UNAVAILABLE"),
+            ("rb", "1w"): MarketDataError("DATASET_OR_PARTITION_MISSING"),
+        },
     )
 
     snapshot = MarketHomeOverviewService(
@@ -297,6 +298,9 @@ def test_snapshot_isolates_verified_source_price_unavailable() -> None:
     assert snapshot.unavailable_count == 1
     assert snapshot.participant_count == 1
     assert [item.symbol for item in snapshot.items] == ["jm"]
+    assert [(request.symbol, request.frequency.value) for request in market_data.requests] == [
+        ("jm", "1d"), ("jm", "1w"), ("rb", "1d"),
+    ]
 
 
 def test_snapshot_retains_daily_item_when_weekly_source_price_unavailable() -> None:

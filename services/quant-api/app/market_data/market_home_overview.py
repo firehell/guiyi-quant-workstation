@@ -170,6 +170,12 @@ class MarketHomeOverviewService:
                 limit=300,
                 target_as_of=target_as_of,
             )
+            if not daily:
+                unavailable_count += 1
+                continue
+            if daily[-1].trading_day != target_as_of:
+                stale_count += 1
+                continue
             weekly = _query_through_target(
                 self._market_data,
                 symbol=symbol,
@@ -178,12 +184,6 @@ class MarketHomeOverviewService:
                 limit=80,
                 target_as_of=target_as_of,
             )
-            if not daily:
-                unavailable_count += 1
-                continue
-            if daily[-1].trading_day != target_as_of:
-                stale_count += 1
-                continue
             metrics = calculate_research_metrics(daily, weekly)
             dominant = dominants[symbol]
             taxonomy = self._taxonomy[symbol]
