@@ -1,0 +1,1146 @@
+{
+  "readonly": true,
+  "code_commit": "abd3b4d2a5da9b047ca47521411c60f8d47db49f",
+  "captured_at": "2026-09-17T04:46:41.802656+00:00",
+  "provider_requests": 0,
+  "data_writes": 0,
+  "home_error": {
+    "type": "MarketHomeOverviewError",
+    "code": "MARKET_HOME_DATA_INTEGRITY_ERROR",
+    "cause_code": "DATASET_OR_PARTITION_MISSING"
+  },
+  "target_as_of": "2026-09-16",
+  "physical_reads": [
+    {
+      "symbol": "a",
+      "contract": "A2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "a",
+      "contract": "A2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 42,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "ag",
+      "contract": "AG2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 227,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ag",
+      "contract": "AG2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 47,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "al",
+      "contract": "AL2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 227,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "al",
+      "contract": "AL2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 47,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "ao",
+      "contract": "AO2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 163,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ao",
+      "contract": "AO2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 34,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "ap",
+      "contract": "AP2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ap",
+      "contract": "AP2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 33,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "au",
+      "contract": "AU2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 243,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "au",
+      "contract": "AU2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 51,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "b",
+      "contract": "B2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "b",
+      "contract": "B2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 42,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "bu",
+      "contract": "BU2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 227,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "bu",
+      "contract": "BU2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 47,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2610",
+      "frequency": "1d",
+      "status": "failed",
+      "code": "DATASET_OR_PARTITION_MISSING"
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2610",
+      "frequency": "1w",
+      "status": "failed",
+      "code": "DATASET_OR_PARTITION_MISSING"
+    },
+    {
+      "symbol": "c",
+      "contract": "C2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "c",
+      "contract": "C2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 42,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "cf",
+      "contract": "CF2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "cf",
+      "contract": "CF2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 33,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 33,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "cu",
+      "contract": "CU2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 227,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "cu",
+      "contract": "CU2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 47,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "eb",
+      "contract": "EB2610",
+      "frequency": "1d",
+      "status": "failed",
+      "code": "PRICE_UNAVAILABLE"
+    },
+    {
+      "symbol": "eb",
+      "contract": "EB2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 5,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "ec",
+      "contract": "EC2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 219,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ec",
+      "contract": "EC2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 7,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "eg",
+      "contract": "EG2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 218,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "eg",
+      "contract": "EG2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 3,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "fg",
+      "contract": "FG2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "fg",
+      "contract": "FG2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "fu",
+      "contract": "FU2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 215,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "fu",
+      "contract": "FU2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "hc",
+      "contract": "HC2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 163,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "hc",
+      "contract": "HC2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 2,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "i",
+      "contract": "I2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "i",
+      "contract": "I2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 5,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "jd",
+      "contract": "JD2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 198,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "jd",
+      "contract": "JD2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 1,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "jm",
+      "contract": "JM2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "jm",
+      "contract": "JM2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "l",
+      "contract": "L2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "l",
+      "contract": "L2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "lc",
+      "contract": "LC2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "lc",
+      "contract": "LC2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "lh",
+      "contract": "LH2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 198,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "lh",
+      "contract": "LH2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 6,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "m",
+      "contract": "M2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "m",
+      "contract": "M2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 5,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "ma",
+      "contract": "MA2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 222,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ma",
+      "contract": "MA2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 5,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "ni",
+      "contract": "NI2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 227,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ni",
+      "contract": "NI2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 3,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 1,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "p",
+      "contract": "P2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "p",
+      "contract": "P2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 5,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "pb",
+      "contract": "PB2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 227,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "pb",
+      "contract": "PB2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "pd",
+      "contract": "PD2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 197,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "pd",
+      "contract": "PD2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 41,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 42,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2610",
+      "frequency": "1d",
+      "status": "failed",
+      "code": "DATASET_OR_PARTITION_MISSING"
+    },
+    {
+      "symbol": "pg",
+      "contract": "PG2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 8,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "pk",
+      "contract": "PK2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 9,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "pl",
+      "contract": "PL2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 6,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "pp",
+      "contract": "PP2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "pp",
+      "contract": "PP2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "pr",
+      "contract": "PR2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "ps",
+      "contract": "PS2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ps",
+      "contract": "PS2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "pt",
+      "contract": "PT2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 197,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "pt",
+      "contract": "PT2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 41,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "px",
+      "contract": "PX2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 6,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "rb",
+      "contract": "RB2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 163,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "rb",
+      "contract": "RB2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 2,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "rm",
+      "contract": "RM2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "rm",
+      "contract": "RM2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 0,
+      "through": null
+    },
+    {
+      "symbol": "ru",
+      "contract": "RU2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 163,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ru",
+      "contract": "RU2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 5,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "sa",
+      "contract": "SA2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "sa",
+      "contract": "SA2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "sc",
+      "contract": "SC2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 1,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "sc",
+      "contract": "SC2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 0,
+      "through": null
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "sf",
+      "contract": "SF2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 6,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "sh",
+      "contract": "SH2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 5,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "si",
+      "contract": "SI2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "si",
+      "contract": "SI2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2611",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 205,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "sm",
+      "contract": "SM2611",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 5,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "sn",
+      "contract": "SN2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 227,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "sn",
+      "contract": "SN2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 3,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "sr",
+      "contract": "SR2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "sr",
+      "contract": "SR2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 5,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "ss",
+      "contract": "SS2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 227,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ss",
+      "contract": "SS2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 5,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "ta",
+      "contract": "TA2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ta",
+      "contract": "TA2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "ur",
+      "contract": "UR2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "ur",
+      "contract": "UR2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "v",
+      "contract": "V2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "v",
+      "contract": "V2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "y",
+      "contract": "Y2701",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 162,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "y",
+      "contract": "Y2701",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 6,
+      "through": "2026-09-11"
+    },
+    {
+      "symbol": "zn",
+      "contract": "ZN2610",
+      "frequency": "1d",
+      "status": "passed",
+      "count": 227,
+      "through": "2026-09-16"
+    },
+    {
+      "symbol": "zn",
+      "contract": "ZN2610",
+      "frequency": "1w",
+      "status": "passed",
+      "count": 4,
+      "through": "2026-09-11"
+    }
+  ],
+  "health": {
+    "status": "degraded",
+    "generated_at": "2026-09-17T04:46:46.112344+00:00",
+    "readonly": true,
+    "would_start_services": false,
+    "would_enqueue_jobs": false,
+    "would_send_notifications": false,
+    "components": {
+      "db": {
+        "status": "ok",
+        "latency_ms": 0.25,
+        "error_type": null,
+        "error_message": null
+      },
+      "redis": {
+        "status": "ok",
+        "latency_ms": 2.22,
+        "error_type": null,
+        "error_message": null
+      },
+      "live_market": {
+        "status": "degraded",
+        "configured_enabled": true,
+        "operational_count": 60,
+        "subscribed_count": 0,
+        "last_heartbeat_at": "2026-09-17T04:46:45.356703+00:00",
+        "last_bar_at": "2026-09-17T03:30:00+00:00",
+        "phase_counts": {
+          "BREAK": 60
+        },
+        "coverage": {},
+        "coverage_state": "unverified",
+        "error_type": null,
+        "error_message": null
+      },
+      "after_market": {
+        "status": "ok",
+        "configured_enabled": true,
+        "run_state": "completed",
+        "expected_trading_day": "2026-09-16",
+        "current_run": null,
+        "last_run": {
+          "trading_day": "2026-09-16",
+          "status": "passed",
+          "attempts": 1,
+          "started_at": "2026-09-16T18:05:06.153662+08:00",
+          "finished_at": "2026-09-16T18:07:36.645537+08:00",
+          "products": [
+            "a",
+            "ag",
+            "al",
+            "ao",
+            "ap",
+            "au",
+            "b",
+            "bu",
+            "bz",
+            "c",
+            "cf",
+            "cj",
+            "cu",
+            "eb",
+            "ec",
+            "eg",
+            "fg",
+            "fu",
+            "hc",
+            "i",
+            "j",
+            "jd",
+            "jm",
+            "l",
+            "lc",
+            "lh",
+            "m",
+            "ma",
+            "ni",
+            "oi",
+            "p",
+            "pb",
+            "pd",
+            "pf",
+            "pg",
+            "pk",
+            "pl",
+            "pp",
+            "pr",
+            "ps",
+            "pt",
+            "px",
+            "rb",
+            "rm",
+            "rs",
+            "ru",
+            "sa",
+            "sc",
+            "sf",
+            "sh",
+            "si",
+            "sm",
+            "sn",
+            "sr",
+            "ss",
+            "ta",
+            "ur",
+            "v",
+            "y",
+            "zn"
+          ],
+          "error_code": null,
+          "failure_notification": null
+        },
+        "last_successful_trading_day": "2026-09-16",
+        "last_failure": null,
+        "error_type": null,
+        "error_message": null
+      },
+      "alert": {
+        "status": "degraded",
+        "configured_enabled": true,
+        "notification": {
+          "transport": "pushplus",
+          "configured": true,
+          "audience_count": 2,
+          "would_send": false
+        },
+        "last_heartbeat_at": "2026-09-17T04:46:39.123719+00:00",
+        "enabled_rule_count": 2,
+        "scope_product_count": 60,
+        "processing_state": "ok",
+        "notification_state": "failed",
+        "last_processed_bar_at": "2026-09-17T03:30:00+00:00",
+        "last_processing_success_at": "2026-09-17T03:30:18.093319+00:00",
+        "last_processing_failure_at": "2026-09-04T18:30:02.865088+00:00",
+        "processing_error_type": null,
+        "last_event_at": "2026-09-17T03:30:13.275671+00:00",
+        "last_transport_attempt_at": "2026-09-17T03:30:13.275671+00:00",
+        "last_provider_accepted_at": "2026-09-17T03:30:11.103333+00:00",
+        "last_notification_failure_at": "2026-09-17T03:30:13.275671+00:00",
+        "notification_acknowledged_at": null,
+        "notification_error_type": "notification_transport_failed",
+        "consecutive_notification_failures": 2,
+        "rule_status": {
+          "htdy_original_15m": {
+            "last_evaluated_bar_at": "2026-09-17T03:30:00+00:00",
+            "last_event_at": "2026-09-17T03:30:13.275671+00:00",
+            "last_failure_at": "2026-09-14T07:00:03.500819+00:00",
+            "error_type": null
+          },
+          "subing_ths_alert_15m_v1": {
+            "last_evaluated_bar_at": "2026-09-17T03:30:00+00:00",
+            "last_event_at": "2026-09-17T03:30:08.435241+00:00",
+            "last_failure_at": "2026-09-17T03:30:16.035531+00:00",
+            "error_type": null
+          }
+        },
+        "coverage": {},
+        "coverage_state": "unverified",
+        "error_type": null
+      },
+      "weekly_audit": {
+        "status": "not_run",
+        "readonly": true,
+        "finding_count": null,
+        "started_at": null,
+        "updated_at": null,
+        "finished_at": null,
+        "completed": null,
+        "total": null,
+        "current_symbol": null,
+        "through": null,
+        "scope": "operational_full_history"
+      }
+    }
+  }
+}
