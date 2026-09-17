@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 import hashlib
 import io
@@ -2061,6 +2062,10 @@ def test_prepare_hourly_uses_native_60m_plan_without_exchange_daily(tmp_path) ->
         "1m",
         "60m",
     }
+    assert [item["expected_bar_ends"] for item in manifest["units"][0]["targets"]] == [
+        [end.isoformat()]
+        for end in (datetime(2026, 9, 14, 7, 0, tzinfo=UTC),) * 2
+    ]
     assert plan.plan_sha256 == manifest["units"][0]["plan_sha256"]
     assert adapter.client_initialized is False
 
@@ -2271,7 +2276,71 @@ def test_execute_prepared_batch_applies_and_replans_hourly_at_hourly_frequency(
     assert receipt["schema_version"] == "newow_hourly_recovery_invocation_v1"
 
 
-def test_hourly_readback_does_not_use_quality_reader(tmp_path, monkeypatch) -> None:
+def test_hourly_readback_uses_frozen_night_session_maintenance_expected(
+    tmp_path, monkeypatch
+) -> None:
+    from app.market_data import market_data_service as service_module
+
+    root = tmp_path / "canonical"
+    root.mkdir()
+    path = root / "part.parquet"
+    path.write_bytes(b"pinned-partition")
+    bar_end = datetime(2026, 9, 15, 2, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    trading_day = date(2026, 9, 14)
+    bars = (SimpleNamespace(bar_end=bar_end, trading_day=trading_day),)
+    partition = SimpleNamespace(year=2026, month=9, file_path=path, row_count=1)
+    catalog = SimpleNamespace(canonical_root=root, all_partitions=lambda key: (partition,))
+    seen: list[tuple[object, tuple[datetime, ...]]] = []
+
+    class Store:
+        def read_catalog_partition_quality(self, value):
+            pytest.fail("60m recovery must not use the D1 quality reader")
+
+        def read_catalog_partition(self, value):
+            assert value is partition
+            return bars
+
+    class Service:
+        def __init__(self, *args):
+            pass
+
+        def query(self, request):
+            pytest.fail("60m readback must not recompute Calendar through query()")
+
+        def query_maintenance_expected(self, request, expected):
+            seen.append((request, expected))
+            assert expected == (bar_end,)
+            assert request.start == bar_end - timedelta(microseconds=1)
+            assert request.end == bar_end
+            assert request.end.astimezone(ZoneInfo("Asia/Shanghai")).date() != trading_day
+            return SimpleNamespace(bars=bars)
+
+    monkeypatch.setattr(service_module, "MarketDataService", Service)
+    manager = SimpleNamespace(catalog=catalog, store=Store())
+    unit = {
+        "symbol": "ag",
+        "contract": "AG2412",
+        "frequency": "60m",
+        "targets": [
+            {
+                "dataset": ["contract", "ag", "AG2412", "60m"],
+                "year": 2026,
+                "month": 9,
+                "expected_start": bar_end.isoformat(),
+                "expected_end": bar_end.isoformat(),
+                "expected_bar_count": 1,
+                "expected_bar_ends": [bar_end.isoformat()],
+            }
+        ],
+    }
+    readback = _post_commit_readback(manager, unit)
+    assert readback["mds_target_count"] == 1
+    assert len(seen) == 1
+    assert bars[0].trading_day == trading_day
+    assert bars[0].bar_end.astimezone(ZoneInfo("Asia/Shanghai")).date() != trading_day
+
+
+def test_hourly_readback_rejects_missing_frozen_bar_ends(tmp_path, monkeypatch) -> None:
     from app.market_data import market_data_service as service_module
 
     root = tmp_path / "canonical"
@@ -2288,7 +2357,6 @@ def test_hourly_readback_does_not_use_quality_reader(tmp_path, monkeypatch) -> N
             pytest.fail("60m recovery must not use the D1 quality reader")
 
         def read_catalog_partition(self, value):
-            assert value is partition
             return bars
 
     class Service:
@@ -2296,7 +2364,10 @@ def test_hourly_readback_does_not_use_quality_reader(tmp_path, monkeypatch) -> N
             pass
 
         def query(self, request):
-            return SimpleNamespace(bars=bars)
+            pytest.fail("60m readback must not recompute Calendar through query()")
+
+        def query_maintenance_expected(self, request, expected):
+            pytest.fail("missing expected_bar_ends must fail closed before MDS")
 
     monkeypatch.setattr(service_module, "MarketDataService", Service)
     manager = SimpleNamespace(catalog=catalog, store=Store())
@@ -2315,8 +2386,51 @@ def test_hourly_readback_does_not_use_quality_reader(tmp_path, monkeypatch) -> N
             }
         ],
     }
-    readback = _post_commit_readback(manager, unit)
-    assert readback["mds_target_count"] == 1
+    with pytest.raises(RecoveryError, match="^POST_COMMIT_READBACK_INVALID$"):
+        _post_commit_readback(manager, unit)
+
+
+def test_hourly_execution_digest_includes_mds(tmp_path: Path) -> None:
+    from scripts import newow_weekly_recovery as module
+
+    assert (
+        "services/quant-api/app/market_data/market_data_service.py"
+        in module._HOURLY_EXECUTION_CODE_PATHS
+    )
+    root = tmp_path / "checkout"
+    root.mkdir()
+    for relative in module._HOURLY_EXECUTION_CODE_PATHS:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative, encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        cwd=root,
+        check=True,
+    )
+    first = _current_execution_code_sha256(recovery_frequency="60m", project_root=root)
+    weekly = _current_execution_code_sha256(recovery_frequency="1w", project_root=root)
+    mds = root / "services/quant-api/app/market_data/market_data_service.py"
+    mds.write_text("changed", encoding="utf-8")
+    second = _current_execution_code_sha256(recovery_frequency="60m", project_root=root)
+    weekly_after = _current_execution_code_sha256(
+        recovery_frequency="1w", project_root=root
+    )
+
+    assert first != second
+    assert first != weekly
+    assert weekly == weekly_after
 
 
 def test_parser_accepts_hourly_frequency() -> None:

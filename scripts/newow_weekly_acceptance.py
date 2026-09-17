@@ -1071,7 +1071,7 @@ def accept_product_report(
     if type(report.get("writes")) is not int or report.get("writes") != 0:
         violations.append("WRITES_NOT_ZERO")
     scope = report.get("frequency_scope")
-    if not isinstance(scope, list) or frequency not in scope:
+    if scope != [frequency]:
         violations.append("FREQUENCY_SCOPE_MISMATCH")
     if report.get("as_of") != expected.isoformat():
         violations.append("AS_OF_MISMATCH")

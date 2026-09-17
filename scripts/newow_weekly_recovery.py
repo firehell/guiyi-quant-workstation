@@ -71,6 +71,14 @@ _D1_EXECUTION_CODE_PATHS = tuple(
         )
     )
 )
+_HOURLY_EXECUTION_CODE_PATHS = tuple(
+    dict.fromkeys(
+        (
+            *_EXECUTION_CODE_PATHS,
+            "services/quant-api/app/market_data/market_data_service.py",
+        )
+    )
+)
 _T = TypeVar("_T")
 _SOURCE_ISOLATION_POLICY_SCHEMA = "newow_weekly_recovery_continuation_policy_v1"
 _SOURCE_ISOLATION_MODE = "isolate_known_source_quality"
@@ -988,6 +996,23 @@ def prepare_bounded_units(
             )
             if any(item.contract != plan.contract for item in source_requests):
                 raise RecoveryError("SOURCE_SCOPE_INVALID")
+        if frequency == "60m":
+            try:
+                target_payloads = [
+                    {
+                        **dict(window),
+                        "expected_bar_ends": [
+                            item.isoformat() for item in target.expected
+                        ],
+                    }
+                    for window, target in zip(
+                        plan.target_windows, targets, strict=True
+                    )
+                ]
+            except ValueError as exc:
+                raise RecoveryError("RECOVERY_SCOPE_INVALID") from exc
+        else:
+            target_payloads = [dict(item) for item in plan.target_windows]
         units.append(
             {
                 "symbol": plan.symbol,
@@ -1001,7 +1026,7 @@ def prepare_bounded_units(
                 "target_count": len(targets),
                 "expected_bar_count": plan.expected_bar_count,
                 "provider_request_count": plan.provider_request_count,
-                "targets": [dict(item) for item in plan.target_windows],
+                "targets": target_payloads,
                 "source_requests": [_request_payload(item) for item in source_requests],
             }
         )
@@ -1542,7 +1567,12 @@ def _current_execution_code_sha256(
 ) -> str:
     root = project_root or Path(__file__).resolve().parents[1]
     frequency = _recovery_frequency(recovery_frequency)
-    paths = _D1_EXECUTION_CODE_PATHS if frequency == "1d" else _EXECUTION_CODE_PATHS
+    if frequency == "1d":
+        paths = _D1_EXECUTION_CODE_PATHS
+    elif frequency == "60m":
+        paths = _HOURLY_EXECUTION_CODE_PATHS
+    else:
+        paths = _EXECUTION_CODE_PATHS
     digest = hashlib.sha256()
     try:
         for relative in paths:
@@ -1600,16 +1630,19 @@ def _post_commit_readback(
 ) -> dict[str, object]:
     """Verify committed targets through Catalog, physical files and MDS."""
     from app.market_data.domain import DatasetKey, SeriesKind, SeriesQuery
-    from app.market_data.market_data_service import MarketDataService
+    from app.market_data.market_data_service import MarketDataError, MarketDataService
 
     targets = unit.get("targets")
     if not isinstance(targets, list) or not targets:
         raise RecoveryError("POST_COMMIT_READBACK_INVALID")
     root = Path(manager.catalog.canonical_root).resolve()
     service = MarketDataService(manager.catalog, manager.store)
-    quality_aware = _recovery_frequency(unit.get("frequency")) == "1d"
+    frequency = _recovery_frequency(unit.get("frequency"))
+    quality_aware = frequency == "1d"
+    hourly = frequency == "60m"
     partitions: list[dict[str, object]] = []
     for raw in targets:
+        expected_ends: tuple[datetime, ...] | None = None
         try:
             if not isinstance(raw, Mapping):
                 raise ValueError
@@ -1622,6 +1655,13 @@ def _post_commit_readback(
             expected_start = datetime.fromisoformat(str(raw["expected_start"]))
             expected_end = datetime.fromisoformat(str(raw["expected_end"]))
             expected_count = int(raw["expected_bar_count"])
+            if hourly:
+                raw_ends = raw.get("expected_bar_ends")
+                if not isinstance(raw_ends, list) or len(raw_ends) != expected_count:
+                    raise ValueError
+                expected_ends = tuple(
+                    datetime.fromisoformat(str(item)) for item in raw_ends
+                )
         except (KeyError, TypeError, ValueError) as exc:
             raise RecoveryError("POST_COMMIT_READBACK_INVALID") from exc
         if (
@@ -1629,13 +1669,20 @@ def _post_commit_readback(
             or key.symbol != unit["symbol"]
             or key.series_or_contract != unit["contract"]
             or key.frequency.value
-            not in _allowed_target_frequencies(
-                _recovery_frequency(unit.get("frequency"))
-            )
+            not in _allowed_target_frequencies(frequency)
             or expected_start.tzinfo is None
             or expected_end.tzinfo is None
             or expected_start > expected_end
             or expected_count <= 0
+            or (
+                hourly
+                and (
+                    expected_ends is None
+                    or any(item.tzinfo is None for item in expected_ends)
+                    or expected_ends[0] != expected_start
+                    or expected_ends[-1] != expected_end
+                )
+            )
         ):
             raise RecoveryError("POST_COMMIT_READBACK_INVALID")
         rows = tuple(
@@ -1701,6 +1748,17 @@ def _post_commit_readback(
                 "mds_price_unavailable_count": len(exceptions),
                 "mds_endpoint_count": len(actual),
             }
+        elif hourly:
+            if expected_ends is None:
+                raise RecoveryError("POST_COMMIT_READBACK_INVALID")
+            try:
+                bars = service.query_maintenance_expected(
+                    request, expected_ends
+                ).bars
+            except MarketDataError as exc:
+                raise RecoveryError("POST_COMMIT_MDS_INVALID") from exc
+            if tuple(bar.bar_end for bar in bars) != expected_ends:
+                raise RecoveryError("POST_COMMIT_MDS_INVALID")
         else:
             bars = service.query(request).bars
             if (

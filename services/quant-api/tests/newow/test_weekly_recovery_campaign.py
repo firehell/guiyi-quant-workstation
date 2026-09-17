@@ -4172,6 +4172,18 @@ def test_hourly_campaign_rejects_source_only_isolation(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize("count", [None, True, -1, "5"])
+def test_hourly_campaign_rejects_unknown_provider_request_count(count: object) -> None:
+    unit = _hourly_unit(0, requests=3)
+    if count is None:
+        del unit["provider_request_count"]
+    else:
+        unit["provider_request_count"] = count
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(_hourly_report([unit]), recovery_frequency="60m")
+
+
 def test_hourly_campaign_batches_derive_before_download(tmp_path: Path) -> None:
     units = [
         _hourly_unit(0, requests=0),

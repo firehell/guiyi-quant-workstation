@@ -1191,6 +1191,22 @@ def test_product_acceptance_keeps_pt_regression_and_rejects_hourly_page_ready():
     assert weekly["deferred_page_reason"] == "NEWOW_WEEKLY_RELEASE_PENDING"
 
 
+def test_product_acceptance_rejects_mixed_frequency_scope():
+    from scripts.newow_weekly_acceptance import accept_product_report
+
+    report = _product_report(symbol="au", frequency="60m")
+    report["frequency_scope"] = ["1d", "1w", "60m"]
+    result = accept_product_report(
+        report,
+        symbol="au",
+        frequency="60m",
+        as_of=AS_OF,
+    )
+    assert result["accepted"] is False
+    assert "FREQUENCY_SCOPE_MISMATCH" in result["violations"]
+    assert result["page_ready"] is False
+
+
 @pytest.mark.parametrize("symbol", ["au", "pd"])
 def test_product_acceptance_classifies_ordinary_hourly_gap(symbol):
     from scripts.newow_weekly_acceptance import accept_product_report

@@ -906,15 +906,12 @@ def _partition_execution_units(
             )
         )
         count = item.get("provider_request_count") if item is not None else None
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
         if count == 0:
             derive.append(unit)
             continue
-        rank = (
-            count
-            if isinstance(count, int) and not isinstance(count, bool)
-            else 10**9
-        )
-        download.append((rank, unit))
+        download.append((count, unit))
     download.sort(key=lambda pair: (pair[0], pair[1]["symbol"], pair[1]["contract"]))
     batches: list[tuple[dict[str, Any], ...]] = []
     for index in range(0, len(derive), 20):
