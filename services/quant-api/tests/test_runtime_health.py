@@ -639,6 +639,27 @@ def test_notification_delivery_failure_does_not_change_passed_data_health(monkey
         "last_successful_trading_day": "2026-09-17",
     }
 
+    for error_type in (
+        "notification_preparation_failed",
+        "notification_acceptance_invalid",
+    ):
+        status["notification_error_type"] = error_type
+        values["alert:runtime-status"] = json.dumps(status)
+        with TestingSessionLocal() as session:
+            malformed_notification = build_runtime_health(
+                session,
+                redis_factory=lambda: FakeRedis(values=values),
+                now=now,
+                live_runtime_enabled=False,
+                after_market_automation_enabled=True,
+                alert_runtime_enabled=True,
+                notification_transport_configured=True,
+                after_market_status_path=None,
+            )
+        assert malformed_notification["components"]["alert"]["status"] == "degraded"
+        assert malformed_notification["status"] == "degraded"
+
+    status["notification_error_type"] = "notification_transport_failed"
     status["last_processing_failure_at"] = now.isoformat()
     status["processing_error_type"] = "processing_failed"
     values["alert:runtime-status"] = json.dumps(status)
