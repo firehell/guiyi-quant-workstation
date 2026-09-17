@@ -26,3 +26,15 @@ test('volume ratios use two decimals without exposing binary arithmetic noise', 
     assert.equal(marketHomeRatio(input), expected)
   }
 })
+
+test('source interruption disclosure keeps recovered prices distinct from strategy readiness', async () => {
+  const { marketHomeQualityNotice } = await import('../src/utils/marketHomePresentation.ts')
+  assert.equal(marketHomeQualityNotice([]), null)
+  assert.equal(marketHomeQualityNotice(['daily_price_interrupted']), '历史日线有缺价；日线指标仅使用缺价后的连续数据')
+  assert.equal(marketHomeQualityNotice(['daily_price_interrupted', 'daily_rewarming']), '历史日线有缺价；日趋势重新预热中')
+})
+
+test('missing history stays unavailable rather than being labeled normal warmup', async () => {
+  const { marketHomeQualityNotice } = await import('../src/utils/marketHomePresentation.ts')
+  assert.equal(marketHomeQualityNotice(['daily_history_unavailable', 'weekly_history_unavailable']), '日线历史不完整；日线指标不可用。周线历史不完整；周趋势不可用')
+})

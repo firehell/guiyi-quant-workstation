@@ -634,3 +634,29 @@ test('directory failure and recovery stay independent from quote rows and retain
   await expect(page.getByRole('option', { name: /黄金.*AU/ })).toBeVisible()
   await expect(page.locator('tbody tr')).toHaveCount(2)
 })
+
+for (const width of [1440, 390]) {
+  test(`source price gap keeps recovered quote with disclosure at width ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    const value = overview()
+    value.items[0].reason_codes = ['daily_price_interrupted', 'daily_rewarming']
+    value.items[0].daily_trend = 'unavailable'
+    value.items[0].price_change_1d = null
+    value.items[0].volume_ratio20 = null
+    value.summary.price_up_count = 0
+    value.summary.price_unavailable_count = 1
+    value.summary.daily_up_count = 0
+    value.summary.daily_unavailable_count = 1
+    value.summary.aligned_up_count = 0
+    value.sectors[0].median_price_change_1d = null
+    await mockMarketHomeApi(page, [], events(), value)
+    await page.goto('/market')
+    const container = page.locator(width === 390 ? '.mobile-list' : '.table-wrap')
+    await expect(container).toContainText('历史日线有缺价；日趋势重新预热中')
+    await expect(container).toContainText('白银')
+    await expect(container).toContainText('100')
+    await expect(page.locator('.market-home-coverage')).toContainText('日线报价可用 2 / 2')
+    await page.locator('.market-home-coverage summary').click()
+    await expect(page.locator('.market-home-coverage')).toContainText('不代表牛哇策略或全部历史指标已就绪')
+  })
+}

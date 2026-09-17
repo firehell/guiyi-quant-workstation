@@ -179,3 +179,7 @@
   .market-dashboard-page .market-message-filters input, .market-dashboard-page .market-message-filters select { width: 100%; min-width: 0; }
   .market-dashboard-page .market-message-list { grid-template-columns: minmax(0, 1fr); }
 }
+
+.market-home-coverage { margin: 8px 0 12px; color: var(--gy-text-secondary); font-size: 12px; }
+.market-home-coverage summary { cursor: pointer; }
+.market-home-coverage p { margin: 6px 0; }
