@@ -1234,7 +1234,7 @@ def test_rule_specific_alert_windows_keep_subing_on_current_contract_lifecycle(
     tmp_path,
 ) -> None:
     """Catches applying HTDY's cross-owner 32-bar proof to SuBing replay."""
-    from app.alerts.evaluators import HtdyOriginalEvaluator, SubingThs15mEvaluator
+    from app.alerts.evaluators import HtdyOriginalEvaluator
 
     first = date(2026, 9, 1)
     through = date(2026, 9, 21)
@@ -1371,35 +1371,20 @@ def test_rule_specific_alert_windows_keep_subing_on_current_contract_lifecycle(
             operational_products=("rb",),
             live_store=Live(current_bars),
         )
-        actual_page = market_data.query_page(
-            SeriesPageQuery(
-                "actual_dominant",
-                "rb",
-                "15m",
-                before=current_bars[-1].bar_end + timedelta(microseconds=1),
-                limit=64,
-            )
-        )
         assert len(current_bars) == 120
-        assert len(actual_page.bars) == 64
         assert missing_old_owner not in tuple(
             (bar.bar_end, bar.trading_day) for bar in old_bars
         )
-
-        window = market_read.bars_until(
-            SeriesPageQuery("actual_dominant", "rb", "15m"),
-            trading_day=trading_days[-1],
-            end=current_bars[-1].bar_end,
-            limit=64,
-        )
-        candidates = SubingThs15mEvaluator().evaluate_candidates(market_read, window)
-
-        assert len(candidates) == 1
-        assert candidates[0].bar_end == current_bars[-1].bar_end
-        with pytest.raises(
-            MarketReadWindowError, match="MARKET_READ_WINDOW_INCOMPLETE"
-        ):
-            HtdyOriginalEvaluator().evaluate_candidates(market_read, window)
+        with pytest.raises(MarketDataError, match="MAPPED_CONTRACT_DATASET_MISSING"):
+            market_data.query_page(SeriesPageQuery(
+                "actual_dominant", "rb", "15m",
+                before=current_bars[-1].bar_end + timedelta(microseconds=1), limit=64,
+            ))
+        with pytest.raises(MarketDataError, match="MAPPED_CONTRACT_DATASET_MISSING"):
+            market_read.bars_until(
+                SeriesPageQuery("actual_dominant", "rb", "15m"),
+                trading_day=trading_days[-1], end=current_bars[-1].bar_end, limit=64,
+            )
 
         htdy_prices = (
             103.048, 93.344, 90.627, 102.765, 91.059, 100.975, 109.429, 99.274,

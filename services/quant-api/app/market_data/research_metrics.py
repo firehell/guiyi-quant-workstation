@@ -41,8 +41,8 @@ def calculate_research_metrics(
     weekly_bars: Sequence[CanonicalBar],
 ) -> ResearchMetrics:
     """计算 P0 冻结的共享研究指标，不以缺失数据替代为零。"""
-    daily = tuple(daily_bars)
-    weekly = tuple(weekly_bars)
+    daily = _after_last_no_trade(tuple(daily_bars))
+    weekly = _after_last_no_trade(tuple(weekly_bars))
     return ResearchMetrics(
         price_change_1d=_change(daily, 1, field="close"),
         price_change_5d=_change(daily, 5, field="close"),
@@ -61,6 +61,18 @@ def calculate_research_metrics(
         ),
         atr14_percentile252=_atr_percentile(daily),
     )
+
+
+def _after_last_no_trade(bars: tuple[CanonicalBar, ...]) -> tuple[CanonicalBar, ...]:
+    """A zero-price no-trade fact interrupts numeric history without erasing time."""
+    for index in range(len(bars) - 1, -1, -1):
+        bar = bars[index]
+        if (
+            bar.open == bar.high == bar.low == bar.close == 0
+            and bar.volume == 0
+        ):
+            return bars[index + 1:]
+    return bars
 
 
 def _change(

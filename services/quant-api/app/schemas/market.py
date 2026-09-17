@@ -81,6 +81,7 @@ class ProductResearchResponse(BaseModel):
     contract: str | None
     as_of: date
     current_dominant: str
+    metric_contract: str | None
     dominant_mapping_date: date
     daily_trend: str
     weekly_trend: str

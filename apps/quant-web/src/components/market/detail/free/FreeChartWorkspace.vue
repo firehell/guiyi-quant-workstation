@@ -71,6 +71,7 @@ const backgroundSections = computed<readonly MarketDetailDisclosureSection[]>(()
   tone: props.researchError ? 'unavailable' : 'default',
   rows: props.research
     ? [
+        { label: props.research.series_kind === 'continuous' ? '统计序列' : '统计合约', value: props.research.series_kind === 'continuous' ? 'MAIN 连续' : props.research.metric_contract ?? '—', source: 'market' },
         { label: '日线趋势', value: props.research.daily_trend, source: 'market' },
         { label: '周线趋势', value: props.research.weekly_trend, source: 'market' },
         { label: '20日位置', value: String(props.research.position20 ?? '—'), source: 'market' },

@@ -165,6 +165,7 @@ def product_research(
         contract=snapshot.contract,
         as_of=snapshot.as_of,
         current_dominant=snapshot.current_dominant,
+        metric_contract=snapshot.metric_contract,
         dominant_mapping_date=snapshot.dominant_mapping_date,
         daily_trend=metrics.daily_trend,
         weekly_trend=metrics.weekly_trend,

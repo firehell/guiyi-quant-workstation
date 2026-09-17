@@ -14,7 +14,60 @@ from app.db.session import get_db
 from app.main import app
 from app.models import Exchange, Instrument, TradingCalendar
 from app.alerts.runtime import empty_alert_runtime_status
-from app.services.runtime_health import build_runtime_health
+from app.services.runtime_health import _evaluate_alert_coverage, _trading_week_finished, build_runtime_health
+
+
+def test_alert_daily_stale_after_successful_canonical_day_and_weekly_unverified() -> None:
+    now = datetime(2026, 9, 17, 12, tzinfo=UTC)
+    items = {
+        "daily": {"symbol": "rb", "frequency": "1d", "state": "ok", "trading_day": "2026-09-15"},
+        "weekly": {"symbol": "rb", "frequency": "1w", "state": "ok", "trading_day": "2026-09-04"},
+    }
+    observed = _evaluate_alert_coverage(
+        items, {}, now, {"last_successful_trading_day": "2026-09-16"}
+    )
+    assert observed["daily"]["state"] == "evaluation_lagging"
+    assert observed["weekly"]["state"] == "unverified"
+    just_completed = _evaluate_alert_coverage(
+        {
+            "daily": {"symbol": "rb", "frequency": "1d", "state": "unverified", "trading_day": None},
+            "weekly": {"symbol": "rb", "frequency": "1w", "state": "ok", "trading_day": "2026-09-11"},
+        }, {}, datetime(2026, 9, 14, 12, tzinfo=UTC),
+        {"last_successful_trading_day": "2026-09-14"},
+    )
+    assert just_completed["daily"]["state"] == "evaluation_lagging"
+    assert just_completed["weekly"]["state"] == "ok"
+    finished_friday = _evaluate_alert_coverage(
+        {"weekly": {"symbol": "rb", "frequency": "1w", "state": "ok",
+                    "trading_day": "2026-09-11"}},
+        {}, datetime(2026, 9, 18, 12, tzinfo=UTC),
+        {"last_successful_trading_day": "2026-09-18"},
+        lambda symbol, day: symbol == "rb" and day == date(2026, 9, 18),
+    )
+    assert finished_friday["weekly"]["state"] == "unverified"
+    carried_failure = _evaluate_alert_coverage(
+        {"daily": {"symbol": "rb", "frequency": "1d", "state": "ok",
+                   "trading_day": "2026-09-17", "previous_unresolved": "2026-09-16"}},
+        {}, now,
+    )
+    assert carried_failure["daily"]["state"] == "evaluation_failed"
+
+
+def test_alert_week_completion_uses_exchange_calendar() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine)() as session:
+        session.add(Instrument(symbol="rb", name="RB", exchange_code="SHFE", is_active=True))
+        session.add_all([
+            TradingCalendar(exchange_code="SHFE", trade_date=date(2026, 9, 18), is_trading_day=True),
+            TradingCalendar(exchange_code="SHFE", trade_date=date(2026, 9, 19), is_trading_day=False),
+            TradingCalendar(exchange_code="SHFE", trade_date=date(2026, 9, 20), is_trading_day=False),
+            TradingCalendar(exchange_code="SHFE", trade_date=date(2026, 9, 21), is_trading_day=True),
+        ])
+        session.flush()
+        assert _trading_week_finished(session, "rb", date(2026, 9, 18)) is True
+        assert _trading_week_finished(session, "rb", date(2026, 9, 17)) is False
+        assert _trading_week_finished(session, "rb", date(2026, 9, 14)) is False
 
 
 def test_runtime_api_preserves_v3_progress_and_weekly_audit_fields(monkeypatch):
@@ -100,6 +153,8 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(
         "last_heartbeat_at": None,
         "last_bar_at": None,
         "phase_counts": {},
+        "coverage": {},
+        "coverage_state": "unverified",
         "error_type": None,
         "error_message": None,
     }
@@ -141,6 +196,8 @@ def test_runtime_health_endpoint_exposes_market_runtime_components(
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
         "rule_status": empty_alert_runtime_status()["rule_status"],
+        "coverage": {},
+        "coverage_state": "unverified",
         "error_type": None,
     }
     assert payload["components"]["alert"]["rule_status"] == empty_alert_runtime_status()["rule_status"]
@@ -246,7 +303,7 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
     assert missing["components"]["alert"]["error_type"] == "alert_heartbeat_missing"
     assert stale["components"]["alert"]["error_type"] == "alert_heartbeat_stale"
     assert fresh["components"]["alert"] == {
-        "status": "ok",
+        "status": "degraded",
         "configured_enabled": True,
         "notification": {
             "transport": "pushplus",
@@ -271,6 +328,8 @@ def test_alert_health_missing_stale_and_fresh_heartbeat(monkeypatch, tmp_path) -
         "notification_error_type": None,
         "consecutive_notification_failures": 0,
         "rule_status": empty_alert_runtime_status()["rule_status"],
+        "coverage": {},
+        "coverage_state": "unverified",
         "error_type": None,
     }
     rendered = json.dumps(fresh, ensure_ascii=False)
@@ -366,7 +425,8 @@ def test_alert_health_accepts_v2_heartbeat_counts() -> None:
         )
 
     alert = health["components"]["alert"]
-    assert alert["status"] == "ok"
+    assert alert["status"] == "degraded"
+    assert alert["coverage_state"] == "unverified"
     assert alert["enabled_rule_count"] == 2
     assert alert["scope_product_count"] == 1
 
@@ -444,7 +504,7 @@ def test_alert_health_derives_latest_processing_and_notification_outcomes() -> N
         )
 
     healthy_alert = healthy["components"]["alert"]
-    assert healthy_alert["status"] == "ok"
+    assert healthy_alert["status"] == "degraded"
     assert healthy_alert["processing_state"] == "ok"
     assert healthy_alert["notification_state"] == "provider_accepted"
     failed_alert = failed["components"]["alert"]
@@ -504,8 +564,8 @@ def test_alert_health_acknowledges_failure_without_erasing_failure_facts() -> No
         )
 
     alert = health["components"]["alert"]
-    assert health["status"] == "ok"
-    assert alert["status"] == "ok"
+    assert health["status"] == "degraded"
+    assert alert["status"] == "degraded"
     assert alert["notification_state"] == "acknowledged"
     assert alert["last_notification_failure_at"] == failure_at.isoformat()
     assert alert["notification_acknowledged_at"] == acknowledged_at.isoformat()
@@ -609,7 +669,7 @@ def test_alert_health_distinguishes_missing_from_invalid_runtime_status(
         )
 
     missing_alert = missing["components"]["alert"]
-    assert missing_alert["status"] == "ok"
+    assert missing_alert["status"] == "degraded"
     assert missing_alert["processing_state"] == "unobserved"
     assert missing_alert["notification_state"] == "unobserved"
     invalid_alert = invalid["components"]["alert"]
@@ -714,7 +774,7 @@ def test_alert_health_structural_transport_is_ready_from_process_environment(
         )
 
     assert calls == ["structural-check"]
-    assert payload["components"]["alert"]["status"] == "ok"
+    assert payload["components"]["alert"]["status"] == "degraded"
     assert payload["components"]["alert"]["notification"] == {
         "transport": "pushplus",
         "configured": True,
@@ -770,6 +830,11 @@ def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
                     "subscribed_count": 4,
                     "last_bar_at": (now - timedelta(minutes=1)).isoformat(),
                     "phase_counts": {"trading": 4},
+                    "coverage_schema_version": 1,
+                    "coverage": {
+                        symbol: {"state": "ok", "trading_day": "2026-08-10", "contract": symbol.upper(), "expected_bar_end": now.isoformat(), "last_observed_bar_end": now.isoformat(), "first_missing_bar_end": None}
+                        for symbol in ("a", "ag", "cu", "rb")
+                    },
                     "available": True,
                 }
             )
@@ -796,6 +861,38 @@ def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
     assert live["last_heartbeat_at"] == now.isoformat()
     assert live["last_bar_at"] == (now - timedelta(minutes=1)).isoformat()
     assert live["phase_counts"] == {"trading": 4}
+    assert live["coverage_state"] == "ok"
+
+
+def test_runtime_health_exposes_one_stalled_live_product() -> None:
+    now = datetime(2026, 8, 10, 1, 2, tzinfo=UTC)
+    heartbeat = {
+        "generated_at": now.isoformat(),
+        "operational_count": 2,
+        "subscribed_count": 2,
+        "last_bar_at": now.isoformat(),
+        "phase_counts": {"trading": 2},
+        "available": True,
+        "coverage_schema_version": 1,
+        "coverage": {
+            "a": {"state": "ok"},
+            "ag": {"state": "lagging", "first_missing_bar_end": (now - timedelta(minutes=6)).isoformat()},
+        },
+    }
+    with _session_factory()() as session:
+        payload = build_runtime_health(
+            session,
+            redis_factory=lambda: FakeRedis(values={"live:heartbeat": json.dumps(heartbeat)}),
+            now=now,
+            live_runtime_enabled=True,
+            alert_runtime_enabled=False,
+            notification_transport_configured=False,
+            after_market_status_path=None,
+        )
+    live = payload["components"]["live_market"]
+    assert live["status"] == "degraded"
+    assert live["coverage_state"] == "lagging"
+    assert live["coverage"]["ag"]["first_missing_bar_end"] == (now - timedelta(minutes=6)).isoformat()
 
 
 def test_runtime_health_missing_or_stale_live_heartbeat_only_degrades_when_enabled() -> (

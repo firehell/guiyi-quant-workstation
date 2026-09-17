@@ -360,6 +360,19 @@ promotion、真实通知、provider acceptance 与微信实际送达均是彼此
 
 ### Requirement: Runtime aggregate health preserves current rule errors
 
+Live and Alert heartbeats SHALL additionally expose bounded per-product coverage for the operational Scope. Live coverage MUST retain the first unresolved completed 1m endpoint even if a later Bar arrives. Alert coverage MUST be keyed by Rule, product and enabled frequency; a successful evaluation for one key MUST NOT erase another key's failure. Aggregate health SHALL distinguish due data lag from evaluation lag using Session-derived Live frequency endpoints and a fixed evaluation budget. Legacy heartbeats lacking coverage SHALL be `unverified`, not evidence that every Scope item is healthy. These health projections MUST NOT create or retry Events, transport messages, or historical repairs, and MUST NOT alter the `alert:runtime-status` v6 notification record.
+When the Live subscription snapshot is absent, current-day coverage SHALL be `unverified`, including after authorized cleanup unless a separate persisted completion fact proves it. An unresolved prior-day Live gap or prior-day Alert evaluation failure SHALL remain visible across a trading-day change. D1 evaluation coverage MAY use a successful after-market trading day as its source deadline. W1 coverage SHALL not infer a new weekly deadline from an ISO week change alone; it requires a completed trading week in the exchange Calendar, and absent W1 Canonical completion proof remains `unverified`.
+
+#### Scenario: One operational product stops while peers continue
+
+- **WHEN** a completed endpoint for one product remains unresolved beyond its due budget while another product publishes later Bars
+- **THEN** aggregate health is degraded and names the stalled product without declaring the entire transport unavailable
+
+#### Scenario: A Rule evaluates one product but not another
+
+- **WHEN** the second product has a due completed input and no successful evaluation
+- **THEN** Alert health identifies that Rule, product and frequency as evaluation lagging despite the first product succeeding
+
 聚合Alert health MUST 检查两条Rule当前error_type；任一Rule仍为evaluation_failed等当前错误时，
 不能因进程运行或aggregate旧字段为ok而显示整体健康。后续成功eval清空当前error_type后可以回绿，
 Rule的last_failure_at MUST 保留，现有全局失败事实继续按原合同保存；不新增Rule历史分类或计数字段。

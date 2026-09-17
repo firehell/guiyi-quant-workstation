@@ -741,6 +741,75 @@ class FakeClient:
         return self.frame
 
 
+def test_minute_request_uses_authoritative_trading_day_for_friday_night(tmp_path) -> None:
+    session, _starts = _session(tmp_path)
+    night_end = datetime(2025, 1, 3, 13, 1, tzinfo=UTC)
+    trading_day = date(2025, 1, 6)
+    frame = pd.DataFrame([{
+        "order_book_id": "JM2509",
+        "datetime": datetime(2025, 1, 3, 21, 1),
+        "trading_date": trading_day,
+        "open": 100, "high": 101, "low": 99, "close": 100,
+        "volume": 1, "total_turnover": 100, "open_interest": 20,
+    }])
+    client = FakeClient(frame)
+    adapter = RQDataMarketAdapter(session=session, client=client)
+    request = BarFetchRequest(
+        DatasetKey("contract", "jm", "JM2509", "1m"),
+        (night_end,),
+        (trading_day,),
+    )
+
+    assert adapter.fetch_many((request,))[0].bars[0].trading_day == trading_day
+    assert client.calls == [("JM2509", trading_day, trading_day, "1m")]
+    session.close()
+
+
+def test_coverage_resolves_friday_night_endpoint_to_monday_trading_day(tmp_path) -> None:
+    session, starts = _session(tmp_path)
+    session.add(TradingCalendar(
+        exchange_code="DCE", trade_date=date(2025, 1, 3), is_trading_day=True,
+    ))
+    session.add(TradingSession(
+        exchange_code="DCE", instrument_symbol="jm", session_name="night",
+        start_time=time(21), end_time=time(23),
+        effective_from=date(2025, 1, 6), effective_to=date(2025, 1, 6),
+        is_active=True,
+    ))
+    session.commit()
+    coverage = DatabaseCoverageSource(session, starts)
+    key = DatasetKey("contract", "jm", "JM2509", "1m")
+
+    assert coverage.trading_days_for_bar_ends(
+        key, (datetime(2025, 1, 3, 13, 1, tzinfo=UTC),)
+    ) == (date(2025, 1, 6),)
+    session.close()
+
+
+@pytest.mark.parametrize("identities", [("JM2505",), ("JM2509", "JM2509")])
+def test_minute_response_rejects_wrong_contract_or_duplicate_endpoint(
+    tmp_path, identities
+) -> None:
+    session, _starts = _session(tmp_path)
+    expected = datetime(2025, 1, 6, 1, 1, tzinfo=UTC)
+    frame = pd.DataFrame([{
+        "order_book_id": identity,
+        "datetime": datetime(2025, 1, 6, 9, 1),
+        "trading_date": date(2025, 1, 6),
+        "open": 100, "high": 101, "low": 99, "close": 100,
+        "volume": 1, "total_turnover": 100, "open_interest": 20,
+    } for identity in identities])
+    adapter = RQDataMarketAdapter(session=session, client=FakeClient(frame))
+
+    with pytest.raises(InfrastructureError):
+        adapter.fetch_many((BarFetchRequest(
+            DatasetKey("contract", "jm", "JM2509", "1m"),
+            (expected,),
+            (date(2025, 1, 6),),
+        ),))
+    session.close()
+
+
 class SplitContinuousClient:
     version = "test"
 
@@ -762,7 +831,31 @@ class ExchangeDailyClient:
 
     def exchange_daily(self, order_book_id, start, end):
         self.calls.append((order_book_id, start, end))
-        return self.frames[order_book_id]
+        frame = self.frames[order_book_id].copy()
+        if "order_book_id" not in frame.columns:
+            frame["order_book_id"] = order_book_id
+        return frame
+
+
+def test_exchange_daily_rejects_response_for_another_contract(tmp_path) -> None:
+    session, _starts = _session(tmp_path)
+    frame = pd.DataFrame([{
+        "order_book_id": "JM2505",
+        "date": date(2025, 1, 6),
+        "open": 100, "high": 101, "low": 99, "close": 100,
+        "volume": 1, "total_turnover": 100, "open_interest": 20,
+    }])
+    adapter = RQDataMarketAdapter(
+        session=session, client=ExchangeDailyClient({"JM2509": frame})
+    )
+
+    with pytest.raises(InfrastructureError, match="RQDATA_SOURCE_CONTRACT_MISMATCH"):
+        _fetch(
+            adapter,
+            DatasetKey("contract", "jm", "JM2509", "1d"),
+            (datetime(2025, 1, 6, 1, 5, tzinfo=UTC),),
+        )
+    session.close()
 
 
 def _bar(end: datetime, trading_day: date):
@@ -1631,7 +1724,11 @@ def test_continuous_main_does_not_fall_back_from_88_to_99(tmp_path) -> None:
     client = SplitContinuousClient({"JM88": pd.DataFrame(), "JM99": index_frame})
     adapter = RQDataMarketAdapter(session=session, client=client)
 
-    batch = _fetch(adapter, DatasetKey("continuous", "jm", "MAIN", "1m"), (expected,))
+    batch = adapter.fetch_many((BarFetchRequest(
+        DatasetKey("continuous", "jm", "MAIN", "1m"),
+        (expected,),
+        (date(2025, 1, 6),),
+    ),))[0]
 
     assert batch.bars == ()
     assert client.calls == [("JM88", date(2025, 1, 6), date(2025, 1, 6), "1m")]

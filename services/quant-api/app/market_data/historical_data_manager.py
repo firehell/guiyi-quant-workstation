@@ -89,6 +89,11 @@ class CoverageSource(Protocol):
         key: DatasetKey,
         trading_days: tuple[date, ...],
     ) -> tuple[datetime, ...]: ...
+    def trading_days_for_bar_ends(
+        self,
+        key: DatasetKey,
+        ends: tuple[datetime, ...],
+    ) -> tuple[date, ...]: ...
     def contract_trading_days(
         self,
         fact: ContractFact,
@@ -144,6 +149,8 @@ class BarBatch:
 
     bars: tuple[CanonicalBar, ...]
     price_unavailable: tuple[PriceUnavailableFact, ...] = ()
+    source_key: DatasetKey | None = None
+    requested_ends: tuple[datetime, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +159,7 @@ class BarFetchRequest:
 
     key: DatasetKey
     expected: tuple[datetime, ...]
+    expected_trading_days: tuple[date, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -2154,7 +2162,13 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 provider_requests += len(fetch_targets)
                 with self._progress("provider", target.key, target.year, target.month):
                     batches = self.provider.fetch_many(tuple(
-                        BarFetchRequest(fetch_target.key, fetch_target.missing)
+                        BarFetchRequest(
+                            fetch_target.key,
+                            fetch_target.missing,
+                            self.coverage.trading_days_for_bar_ends(
+                                fetch_target.key, fetch_target.missing
+                            ) if fetch_target.key.frequency is BarFrequency.M1 else None,
+                        )
                         for fetch_target in fetch_targets
                     ))
                 if len(batches) != len(fetch_targets):
@@ -2376,8 +2390,19 @@ class HistoricalDataManager(ContractWarmupPlanner):
     ) -> tuple[CanonicalBar, ...]:
         """在任何分区写入前验证 provider 批次可构成完整目标窗口。"""
         merged = {bar.bar_end: bar for bar in target.existing}
+        seen_fetched: set[datetime] = set()
+        allowed = set(target.missing)
         for batch in batches:
+            if (batch.source_key is not None or batch.requested_ends is not None) and (
+                batch.source_key != target.key or batch.requested_ends != target.missing
+            ):
+                raise StorageError("PROVIDER_BATCH_IDENTITY_MISMATCH")
             for bar in batch.bars:
+                if bar.bar_end in seen_fetched:
+                    raise StorageError("PROVIDER_BAR_DUPLICATE")
+                if bar.bar_end not in allowed:
+                    raise StorageError("PROVIDER_BAR_OUTSIDE_REQUEST")
+                seen_fetched.add(bar.bar_end)
                 merged[bar.bar_end] = bar
         bars = tuple(merged[item] for item in target.expected if item in merged)
         exceptions = self._merged_price_unavailable(target, batches)
@@ -2517,7 +2542,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                                      *(item.bar_end for item in exceptions)))) != target.expected:
                         raise StorageError("STRICT_READ_VERIFICATION_FAILED")
                     return
-            result = MarketDataService(self.catalog, self.store).query(
+            result = MarketDataService(self.catalog, self.store).query_maintenance_expected(
                 SeriesQuery(
                     series_kind=series_kind,
                     symbol=target.key.symbol,
@@ -2525,7 +2550,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     frequency=target.key.frequency,
                     start=target.expected[0] - timedelta(microseconds=1),
                     end=target.expected[-1],
-                )
+                ),
+                target.expected,
             )
         except MarketDataError as exc:
             raise StorageError("STRICT_READ_VERIFICATION_FAILED") from exc

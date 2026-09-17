@@ -17,6 +17,7 @@ from app.market_data.domain import (
     DatasetKey,
     ResolvedContractSegment,
     SeriesQuery,
+    SeriesPageQuery,
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
@@ -97,6 +98,149 @@ def _query(kind: str, frequency: str = "1d") -> SeriesQuery:
         datetime(2025, 1, 1, 7, tzinfo=UTC),
         datetime(2025, 1, 3, 7, tzinfo=UTC),
     )
+
+
+def test_actual_dominant_rejects_missing_intraday_endpoints_in_query_and_page(
+    session, tmp_path
+) -> None:
+    session.scalar(select(TradingSession)).end_time = time(9, 5)
+    day = date(2025, 1, 2)
+    session.add(TradingCalendar(
+        exchange_code="DCE", trade_date=day, is_trading_day=True,
+    ))
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    key = DatasetKey("contract", "jm", "JM2509", "1m")
+    first = CanonicalBar(
+        datetime(2025, 1, 2, 1, 1, tzinfo=UTC), day,
+        Decimal(100), Decimal(101), Decimal(99), Decimal(100),
+        Decimal(1), Decimal(100), Decimal(20),
+    )
+    last = CanonicalBar(
+        datetime(2025, 1, 2, 1, 5, tzinfo=UTC), day,
+        Decimal(100), Decimal(101), Decimal(99), Decimal(100),
+        Decimal(1), Decimal(100), Decimal(20),
+    )
+    _publish(catalog, store, key, (first, last))
+    catalog.upsert_main_contracts((("jm", day, "JM2509"),))
+    session.commit()
+    service = MarketDataService(catalog, store)
+
+    with pytest.raises(MarketDataError, match="MAPPED_CONTRACT_DATASET_MISSING"):
+        service.query(SeriesQuery(
+            "actual_dominant", "jm", "1m",
+            datetime(2025, 1, 2, 1, tzinfo=UTC),
+            datetime(2025, 1, 2, 1, 5, tzinfo=UTC),
+        ))
+    with pytest.raises(MarketDataError, match="MAPPED_CONTRACT_DATASET_MISSING"):
+        service.query_page(SeriesPageQuery(
+            "actual_dominant", "jm", "1m", limit=5,
+        ))
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        service.query(SeriesQuery(
+            "contract", "jm", "1m",
+            datetime(2025, 1, 2, 1, tzinfo=UTC),
+            datetime(2025, 1, 2, 1, 5, tzinfo=UTC),
+            contract="JM2509",
+        ))
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        service.query_page(SeriesPageQuery(
+            "contract", "jm", "1m", limit=5, contract="JM2509",
+        ))
+
+
+def test_page_cursor_rejects_missing_bar_immediately_before_cursor(session, tmp_path) -> None:
+    session.scalar(select(TradingSession)).end_time = time(9, 5)
+    day = date(2025, 1, 2)
+    session.add(TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True))
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    bars = tuple(CanonicalBar(
+        datetime(2025, 1, 2, 1, minute, tzinfo=UTC), day,
+        Decimal(100), Decimal(101), Decimal(99), Decimal(100),
+        Decimal(1), Decimal(100), Decimal(20),
+    ) for minute in (1, 2, 3, 5))
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "1m"), bars)
+    catalog.upsert_main_contracts((("jm", day, "JM2509"),))
+    session.commit()
+    service = MarketDataService(catalog, store)
+    for kind, contract in (("contract", "JM2509"), ("actual_dominant", None)):
+        with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING|MAPPED_CONTRACT_DATASET_MISSING"):
+            service.query_page(SeriesPageQuery(
+                kind, "jm", "1m", before=bars[-1].bar_end,
+                limit=2, contract=contract,
+            ))
+
+
+def test_physical_as_of_page_does_not_include_future_contract_bars(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    session.add_all(tuple(
+        TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, day),
+            is_trading_day=True,
+        ) for day in (2, 3, 4)
+    ))
+    _publish(catalog, store, key, (_bar(2, 100), _bar(3, 101), _bar(4, 102)))
+    session.commit()
+
+    bars = MarketDataService(catalog, store).query_physical_bars_as_of(
+        symbol="jm", contract="JM2509", frequency="1d",
+        trading_day=date(2025, 1, 3), limit=3,
+    )
+
+    assert tuple(bar.trading_day for bar in bars) == (
+        date(2025, 1, 2), date(2025, 1, 3),
+    )
+
+
+def test_physical_daily_as_of_does_not_require_prelisting_sessions(session, tmp_path) -> None:
+    session.scalar(select(TradingSession)).effective_from = date(2025, 9, 15)
+    session.add_all((
+        TradingCalendar(exchange_code="DCE", trade_date=date(2025, 9, 12), is_trading_day=True),
+        TradingCalendar(exchange_code="DCE", trade_date=date(2025, 9, 15), is_trading_day=True),
+    ))
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    bar = _bar(15, 100, month=9)
+    _publish(catalog, store, key, (bar,))
+    session.commit()
+
+    assert MarketDataService(catalog, store).query_physical_bars_as_of(
+        symbol="jm", contract="JM2509", frequency="1d",
+        trading_day=date(2025, 9, 15), limit=5,
+    ) == (bar,)
+
+
+def test_physical_weekly_range_rejects_missing_middle_week(session, tmp_path) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    key = DatasetKey("contract", "jm", "JM2509", "1w")
+    session.add_all(tuple(
+        TradingCalendar(
+            exchange_code="DCE",
+            trade_date=date(2025, 1, day),
+            is_trading_day=date(2025, 1, day).weekday() < 5,
+        ) for day in range(1, 18)
+    ))
+    _publish(catalog, store, key, (_bar(3, 100), _bar(17, 102)))
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        MarketDataService(catalog, store).query(SeriesQuery(
+            "contract", "jm", "1w",
+            datetime(2025, 1, 3, 7, tzinfo=UTC) - timedelta(microseconds=1),
+            datetime(2025, 1, 17, 7, tzinfo=UTC),
+            contract="JM2509",
+        ))
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        MarketDataService(catalog, store).query_page(SeriesPageQuery(
+            "contract", "jm", "1w", limit=2, contract="JM2509",
+        ))
 
 
 def test_catalog_registers_minimal_month_partition(session, tmp_path) -> None:
@@ -737,6 +881,12 @@ def test_contract_bars_for_trading_day_returns_empty_only_for_formal_nontrading_
 def test_continuous_and_contract_query_use_catalogued_physical_partitions(
     session, tmp_path
 ) -> None:
+    session.add_all(tuple(
+        TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, day),
+            is_trading_day=True,
+        ) for day in (2, 3)
+    ))
     catalog = MarketCatalog(session, tmp_path)
     store = CanonicalMonthlyStore(tmp_path)
     continuous = DatasetKey("continuous", "jm", "MAIN", "1d")
@@ -765,6 +915,16 @@ def test_continuous_and_contract_query_use_catalogued_physical_partitions(
 
 
 def test_query_reads_across_monthly_physical_partitions(session, tmp_path) -> None:
+    session.add_all((
+        TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, 31),
+            is_trading_day=True,
+        ),
+        TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 2, 1),
+            is_trading_day=True,
+        ),
+    ))
     catalog = MarketCatalog(session, tmp_path)
     store = CanonicalMonthlyStore(tmp_path)
     key = DatasetKey("continuous", "jm", "MAIN", "1d")
@@ -808,6 +968,10 @@ def test_query_fails_closed_for_an_internal_missing_month(session, tmp_path) -> 
 def test_derived_query_reads_derived_partition_without_1m_fallback(
     session, tmp_path
 ) -> None:
+    session.add(TradingCalendar(
+        exchange_code="DCE", trade_date=date(2025, 1, 2),
+        is_trading_day=True,
+    ))
     catalog = MarketCatalog(session, tmp_path)
     store = CanonicalMonthlyStore(tmp_path)
     key = DatasetKey("continuous", "jm", "MAIN", "15m")
@@ -965,7 +1129,7 @@ def test_actual_dominant_uses_the_next_trading_day_for_a_night_session(
             "jm",
             "1m",
             datetime(2025, 1, 3, 13, 1, tzinfo=UTC),
-            datetime(2025, 1, 3, 14, tzinfo=UTC),
+            datetime(2025, 1, 3, 13, 2, tzinfo=UTC),
         )
     )
 
@@ -1097,7 +1261,15 @@ def test_contract_trading_day_query_uses_weekend_night_and_last_session_bounds(
         Decimal(10),
         Decimal(20),
     )
-    _publish(catalog, store, contract, (friday_night, monday_close, tuesday))
+    from dataclasses import replace
+    night_bars = (
+        friday_night,
+        replace(friday_night, bar_end=datetime(2025, 1, 3, 15, tzinfo=UTC)),
+    )
+    day_bars = tuple(replace(
+        monday_close, bar_end=datetime(2025, 1, 6, hour, tzinfo=UTC)
+    ) for hour in range(2, 8))
+    _publish(catalog, store, contract, (*night_bars, *day_bars, tuesday))
     session.add_all(
         (
             Contract(
@@ -1146,7 +1318,7 @@ def test_contract_trading_day_query_uses_weekend_night_and_last_session_bounds(
         )
     )
 
-    assert result.bars == (friday_night, monday_close)
+    assert result.bars == (*night_bars, *day_bars)
     assert result.request_identity["start"] == "2025-01-03T13:00:00+00:00"
     assert result.request_identity["end"] == "2025-01-06T07:00:00+00:00"
 
@@ -1439,6 +1611,7 @@ def test_contract_trading_day_query_fails_closed_for_incomplete_first_session(
 def test_trading_day_query_includes_weekend_night_and_excludes_future_day(
     session, tmp_path
 ) -> None:
+    session.scalar(select(TradingSession)).end_time = time(9, 5)
     catalog = MarketCatalog(session, tmp_path)
     store = CanonicalMonthlyStore(tmp_path)
     contract = DatasetKey("contract", "jm", "JM2509", "1m")
@@ -1464,7 +1637,16 @@ def test_trading_day_query_includes_weekend_night_and_excludes_future_day(
         Decimal(10),
         Decimal(20),
     )
-    _publish(catalog, store, contract, (friday_night, monday_day))
+    from dataclasses import replace
+    night_bars = tuple(replace(
+        friday_night,
+        bar_end=datetime(2025, 1, 3, 13, minute, tzinfo=UTC),
+    ) for minute in range(1, 6))
+    day_bars = tuple(replace(
+        monday_day,
+        bar_end=datetime(2025, 1, 6, 1, minute, tzinfo=UTC),
+    ) for minute in range(1, 6))
+    _publish(catalog, store, contract, (*night_bars, *day_bars))
     session.add_all(
         (
             TradingCalendar(
@@ -1481,7 +1663,7 @@ def test_trading_day_query_includes_weekend_night_and_excludes_future_day(
                 instrument_symbol="jm",
                 session_name="night",
                 start_time=time(21),
-                end_time=time(23),
+                end_time=time(21, 5),
                 effective_from=date(2025, 1, 6),
                 is_active=True,
             ),
@@ -1501,9 +1683,9 @@ def test_trading_day_query_includes_weekend_night_and_excludes_future_day(
         )
     )
 
-    assert result.bars == (friday_night, monday_day)
+    assert result.bars == (*night_bars, *day_bars)
     assert result.request_identity["start"] == "2025-01-03T13:00:00+00:00"
-    assert result.request_identity["end"] == "2025-01-06T07:00:00+00:00"
+    assert result.request_identity["end"] == "2025-01-06T01:05:00+00:00"
     assert result.requested_trading_day_window == (
         date(2025, 1, 6),
         date(2025, 1, 6),

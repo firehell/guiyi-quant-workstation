@@ -106,6 +106,7 @@ def _rows(*, invalid: bool = False) -> list[dict]:
     for offset, trading_day in enumerate(_source_request().expected_dates):
         result.append(
             {
+                "order_book_id": "EC2607",
                 "date": trading_day,
                 "open": Decimal("0") if invalid and offset == 0 else Decimal("100.10"),
                 "high": Decimal("101.20"),

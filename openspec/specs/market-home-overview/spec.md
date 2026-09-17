@@ -13,7 +13,9 @@
 
 `MarketHomeOverviewService` SHALL 从 `load_active_products()`、`load_product_taxonomy()`、
 `DatabaseCoverageSource.latest_complete_day()` 和 `MarketDataService` 组合 completed D1/W1 response。
-现场 compute 时 Bar 查询 MUST 为每个 active product 至多一次 `actual_dominant` D1 和一次 W1；
+现场 compute 时指标 Bar 查询 MUST 为每个 active product 至多一次目标日 rank1 physical contract D1 和一次 W1；
+同一物理合约成为主力前的合法历史 MAY 用于 warm-up，但不得跨合约计算价差、量比、OI 变化或 ATR。
+目标日、主力合约和统计合约身份 MUST 显式可复核；日线与周线都按统一 target day 截止。
 dominant summary MUST 只读取一次。该 service MUST NOT 建立 provider、Redis Live 或写服务。
 
 每个 participant 都是有统一 target day completed D1、并通过 dominant identity 校验的 product；它不要求
@@ -55,10 +57,9 @@ D1 predecessor 使 target-day 变动率不可计算的情况。
 
 #### Scenario: Weekly mapped dataset is absent
 
-- **WHEN** product 有 target-day D1，但 W1 actual-dominant query 报告
-  `ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT`
+- **WHEN** product 有 target-day D1，但该合约没有已提交 W1 历史
 - **THEN** response MUST 保留该 product item并返回 `weekly_trend=unavailable`；D1 的同类
-  integrity failure 和 W1 的 `MAPPED_CONTRACT_DATASET_MISSING` 仍 MUST fail closed
+  integrity failure 和 W1 的物理分区缺失仍 MUST fail closed
 
 ### Requirement: Market Home derived projection is removable and never authoritative
 
@@ -71,7 +72,7 @@ Projection SHALL 固定存放在 active Canonical root 下：
 该文件 MUST NOT 被视为 Canonical Bar、Catalog row、MainContractMap 或策略事实。文件删除后，
 系统 MUST 能完全依赖 authoritative compute 返回同一 HTTP contract。
 
-Projection envelope MUST 使用 schema version 2，并绑定：
+Projection envelope MUST 使用 schema version 3，并绑定统计口径版本；schema 2 的旧统计缓存 MUST 被拒绝并重算。
 
 - timezone-aware `generated_at`；
 - `target_as_of`；

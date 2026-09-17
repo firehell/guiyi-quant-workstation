@@ -46,6 +46,7 @@ class ProductResearchSnapshot:
     dominant_mapping_date: date
     metrics: ResearchMetrics
     recent_daily: tuple[CanonicalBar, ...]
+    metric_contract: str | None
 
 
 class MarketResearchService:
@@ -81,6 +82,27 @@ class MarketResearchService:
         )
         if dominant is None:
             raise MarketDataError("DOMINANT_CONTEXT_MISSING")
+        metric_daily, metric_weekly = daily, weekly
+        metric_contract = identity.contract
+        if identity.series_kind is SeriesKind.ACTUAL_DOMINANT:
+            owner = self._market_data.dominant_segment_for_day(
+                identity.symbol, daily[-1].trading_day
+            )
+            metric_contract = owner.contract
+            metric_daily = self._market_data.query_physical_bars_as_of(
+                symbol=identity.symbol,
+                contract=owner.contract,
+                frequency=BarFrequency.D1,
+                trading_day=daily[-1].trading_day,
+                limit=300,
+            )
+            metric_weekly = self._market_data.query_physical_bars_as_of(
+                symbol=identity.symbol,
+                contract=owner.contract,
+                frequency=BarFrequency.W1,
+                trading_day=daily[-1].trading_day,
+                limit=80,
+            )
         return ProductResearchSnapshot(
             symbol=identity.symbol,
             product_name=dominant.product_name,
@@ -91,6 +113,7 @@ class MarketResearchService:
             as_of=daily[-1].trading_day,
             current_dominant=dominant.actual_contract,
             dominant_mapping_date=dominant.dominant_mapping_date,
-            metrics=calculate_research_metrics(daily, weekly),
+            metrics=calculate_research_metrics(metric_daily, metric_weekly),
             recent_daily=tuple(daily[-80:]),
+            metric_contract=metric_contract,
         )

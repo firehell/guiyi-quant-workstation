@@ -495,6 +495,7 @@ def _live_service(
     phases: FakePhases,
     store: Any,
     products: tuple[str, ...] = ("j", "jm"),
+    coverage_sessions=None,
 ) -> Any:
     module = importlib.import_module("app.market_data.live_market")
     return module.LiveMarketService(
@@ -503,6 +504,7 @@ def _live_service(
         phase_resolver=phases,
         store=store,
         operational_products=products,
+        coverage_sessions=coverage_sessions,
     )
 
 
@@ -786,6 +788,153 @@ def test_trading_heartbeat_becomes_unavailable_when_completed_bars_are_stale() -
     assert json.loads(fake.values["live:heartbeat"])["available"] is False
 
 
+def test_live_heartbeat_reports_one_stalled_product_without_hiding_healthy_peer() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC),
+        datetime(2025, 1, 2, 1, 1, tzinfo=UTC),
+    )
+    fake = FakeRedis()
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505", ("rb", day): "RB2505"}),
+        phases=FakePhases({
+            "j": _phase("j", day, window),
+            "rb": _phase("rb", day, window),
+        }),
+        store=module.RedisLiveStore(fake),
+        products=("j", "rb"),
+    )
+    first = _bar(1)
+    service.reconcile(first.bar_end)
+    assert service.ingest("J2505", first, now=first.bar_end + timedelta(seconds=2)) is None
+    service.flush_due(first.bar_end + timedelta(seconds=2))
+    service.reconcile(first.bar_end + timedelta(minutes=6))
+
+    heartbeat = json.loads(fake.values["live:heartbeat"])
+    assert heartbeat["coverage_schema_version"] == 1
+    assert heartbeat["coverage"]["j"]["state"] == "ok"
+    assert heartbeat["coverage"]["rb"]["state"] == "lagging"
+    assert heartbeat["coverage"]["rb"]["first_missing_bar_end"] == first.bar_end.isoformat()
+
+
+def test_live_coverage_exposes_short_tail_frequency_due_endpoints() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(
+        datetime(2025, 1, 2, 1, tzinfo=UTC),
+        datetime(2025, 1, 2, 1, 7, tzinfo=UTC),
+    )
+    service = _live_service(
+        client=FakeLiveClient(),
+        dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}),
+        store=module.RedisLiveStore(FakeRedis()),
+        products=("j",),
+    )
+    service.reconcile(window.end + timedelta(seconds=2))
+    item = service._coverage_snapshot(window.end + timedelta(seconds=2), service._phases(window.end + timedelta(seconds=2)))["j"]
+    assert item["expected_by_frequency"] == {
+        "1m": window.end.isoformat(),
+        "5m": window.end.isoformat(),
+        "15m": window.end.isoformat(),
+        "30m": window.end.isoformat(),
+        "60m": window.end.isoformat(),
+    }
+
+
+def test_live_coverage_after_restart_uses_full_authoritative_day() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    morning = SessionWindow(datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 1, 1, tzinfo=UTC))
+    afternoon = SessionWindow(datetime(2025, 1, 2, 5, tzinfo=UTC), datetime(2025, 1, 2, 5, 1, tzinfo=UTC))
+    fake = FakeRedis()
+    service = _live_service(
+        client=FakeLiveClient(), dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, afternoon)}),
+        store=module.RedisLiveStore(fake), products=("j",),
+        coverage_sessions=lambda _symbol, _day: (morning, afternoon),
+    )
+    now = afternoon.end + timedelta(seconds=2)
+    service.reconcile(now)
+    current = CanonicalBar(afternoon.end, day, Decimal(100), Decimal(101), Decimal(99), Decimal(100), Decimal(1), Decimal(100), Decimal(20))
+    service.ingest("J2505", current, now=now)
+    service.flush_due(now)
+    item = json.loads(fake.values["live:heartbeat"])["coverage"]["j"]
+    assert item["state"] == "lagging"
+    assert item["first_missing_bar_end"] == morning.end.isoformat()
+
+
+def test_live_coverage_requires_persisted_evidence_after_cleanup() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 1, 1, tzinfo=UTC))
+    fake = FakeRedis()
+    phases = FakePhases({"j": _phase("j", day, window)})
+    store = module.RedisLiveStore(fake)
+    service = _live_service(
+        client=FakeLiveClient(), dominants=FakeDominants({("j", day): "J2505"}),
+        phases=phases, store=store, products=("j",),
+        coverage_sessions=lambda _symbol, _day: (window,),
+    )
+    now = window.end + timedelta(seconds=2)
+    service.reconcile(now)
+    service.ingest("J2505", _bar(1), now=now)
+    service.flush_due(now)
+    assert json.loads(fake.values["live:heartbeat"])["coverage"]["j"]["state"] == "ok"
+    store.cleanup_trading_day(day)
+    phases.phases["j"] = ProductMarketPhase("j", MarketPhase.CLOSED, None, None, None)
+    service.reconcile(now + timedelta(minutes=1))
+    assert json.loads(fake.values["live:heartbeat"])["coverage"]["j"]["state"] == "unverified"
+
+
+def test_live_coverage_lost_snapshot_during_trading_is_unverified() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    day = date(2025, 1, 2)
+    window = SessionWindow(datetime(2025, 1, 2, 1, tzinfo=UTC), datetime(2025, 1, 2, 1, 1, tzinfo=UTC))
+    fake = FakeRedis()
+    store = module.RedisLiveStore(fake)
+    service = _live_service(
+        client=FakeLiveClient(), dominants=FakeDominants({("j", day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", day, window)}), store=store,
+        products=("j",), coverage_sessions=lambda _symbol, _day: (window,),
+    )
+    now = window.end + timedelta(seconds=2)
+    service.reconcile(now)
+    service.ingest("J2505", _bar(1), now=now)
+    service.flush_due(now)
+    assert json.loads(fake.values["live:heartbeat"])["coverage"]["j"]["state"] == "ok"
+    store.cleanup_trading_day(day)
+    service.reconcile(now + timedelta(minutes=1))
+    assert json.loads(fake.values["live:heartbeat"])["coverage"]["j"]["state"] == "unverified"
+
+
+def test_live_coverage_carries_previous_unresolved_day() -> None:
+    module = importlib.import_module("app.market_data.live_market")
+    old_day, new_day = date(2025, 1, 2), date(2025, 1, 3)
+    window = SessionWindow(datetime(2025, 1, 3, 1, tzinfo=UTC), datetime(2025, 1, 3, 1, 1, tzinfo=UTC))
+    service = _live_service(
+        client=FakeLiveClient(), dominants=FakeDominants({("j", new_day): "J2505"}),
+        phases=FakePhases({"j": _phase("j", new_day, window)}),
+        store=module.RedisLiveStore(FakeRedis()), products=("j",),
+        coverage_sessions=lambda _symbol, _day: (window,),
+    )
+    missing = datetime(2025, 1, 2, 1, 1, tzinfo=UTC).isoformat()
+    service._coverage_cache["j"] = {
+        "trading_day": old_day.isoformat(), "contract": "J2505",
+        "state": "lagging", "first_missing_bar_end": missing,
+    }
+    now = window.start
+    service.reconcile(now)
+    item = service._coverage_snapshot(now, service._phases(now))["j"]
+    assert item["state"] == "lagging"
+    assert item["previous_unresolved"] == missing
+    later = now + timedelta(minutes=1)
+    item = service._coverage_snapshot(later, service._phases(later))["j"]
+    assert item["state"] == "lagging"
+    assert item["previous_unresolved"] == missing
+
 def test_first_completed_bar_is_published_only_after_live_heartbeat_is_ready(monkeypatch) -> None:
     """The Alert consumer must never observe a completed Bar before readiness."""
     from app.core.env import PROJECT_ROOT
@@ -834,6 +983,15 @@ def test_first_completed_bar_is_published_only_after_live_heartbeat_is_ready(mon
             "subscribed_count": 1,
             "last_bar_at": bar.bar_end.isoformat(),
             "phase_counts": {"TRADING": 1},
+            "coverage_schema_version": 1,
+            "coverage": {"j": {
+                "trading_day": day.isoformat(), "contract": "J2505",
+                "sessions": [{"start": window.start.isoformat(), "end": window.end.isoformat()}],
+                "expected_bar_end": bar.bar_end.isoformat(),
+                "expected_by_frequency": {"1m": bar.bar_end.isoformat()},
+                "last_observed_bar_end": bar.bar_end.isoformat(),
+                "first_missing_bar_end": None, "state": "ok",
+            }},
             "available": True,
         }
     ]

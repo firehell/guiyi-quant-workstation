@@ -559,6 +559,7 @@ class LiveMarketService:
         clock: Callable[[], datetime] | None = None,
         recovery_fetch_factory: Callable | None = None,
         recovery_sessions: Callable[[str, date], tuple[SessionWindow, ...]] | None = None,
+        coverage_sessions: Callable[[str, date], tuple[SessionWindow, ...]] | None = None,
         recovery_guard_factory: Callable[[str], ContextManager] | None = None,
     ) -> None:
         self._provider_factory = provider_factory
@@ -578,6 +579,11 @@ class LiveMarketService:
         ] = {}
         self._finalized: set[tuple[str, datetime]] = set()
         self._known_sessions: dict[tuple[str, date], tuple[SessionWindow, ...]] = {}
+        self._coverage_session_source = coverage_sessions
+        self._coverage_session_cache: dict[tuple[str, date], tuple[SessionWindow, ...]] = {}
+        self._coverage_cache: dict[str, dict[str, object]] = {}
+        self._coverage_cache_minute: datetime | None = None
+        self._coverage_dirty: set[str] = set()
         self._last_bar_at: datetime | None = None
         self._last_flush_failed = False
         self._available = True
@@ -623,6 +629,11 @@ class LiveMarketService:
             and phases[symbol].trading_day == trading_day
         )
         if trading_day != self._trading_day:
+            self._coverage_session_cache = {
+                key: value for key, value in self._coverage_session_cache.items()
+                if key[1] == trading_day
+            }
+            self._coverage_cache_minute = None
             stored_contracts = self._store.subscriptions(trading_day)
             current_contracts: dict[str, str] = {}
             if stored_contracts is not None:
@@ -775,6 +786,7 @@ class LiveMarketService:
                 self._mark_redis_unavailable(now, phases)
                 self._last_flush_failed = True
                 return ()
+            self._coverage_dirty.add(symbol)
             due.append((key, bar, window, frozen_contract))
 
         if not due:
@@ -1090,9 +1102,119 @@ class LiveMarketService:
                 "subscribed_count": len(self._channels),
                 "last_bar_at": None if self._last_bar_at is None else self._last_bar_at.isoformat(),
                 "phase_counts": dict(sorted(counts.items())),
+                "coverage_schema_version": 1,
+                "coverage": self._coverage_snapshot(now, phases),
                 "available": self._available and self._provider_available and bar_feed_fresh,
             }
         )
+
+    def _coverage_snapshot(
+        self, now: datetime, phases: Mapping[str, ProductMarketPhase]
+    ) -> dict[str, dict[str, object]]:
+        minute = now.replace(second=0, microsecond=0)
+        refresh_all = self._coverage_cache_minute != minute
+        symbols = self._products if refresh_all else tuple(self._coverage_dirty)
+        for symbol in symbols:
+            previous = self._coverage_cache.get(symbol)
+            current = self._coverage_item(
+                symbol, now, phases[symbol]
+            )
+            if previous is not None:
+                unresolved = previous.get("previous_unresolved")
+                if previous.get("trading_day") != current.get("trading_day") and previous.get("state") == "lagging":
+                    unresolved = unresolved or previous.get("first_missing_bar_end")
+                if isinstance(unresolved, str):
+                    current["previous_unresolved"] = unresolved
+                    current["first_missing_bar_end"] = current.get("first_missing_bar_end") or unresolved
+                    current["state"] = "lagging"
+            self._coverage_cache[symbol] = current
+        self._coverage_cache_minute = minute
+        self._coverage_dirty.clear()
+        return dict(self._coverage_cache)
+
+    def _coverage_item(
+        self, symbol: str, now: datetime, phase: ProductMarketPhase
+    ) -> dict[str, object]:
+        day = phase.trading_day or self._trading_day
+        contract = self._contracts.get(symbol)
+        item: dict[str, object] = {
+            "trading_day": day.isoformat() if day else None,
+            "contract": contract,
+            "sessions": [],
+            "expected_bar_end": None,
+            "expected_by_frequency": {},
+            "last_observed_bar_end": None,
+            "first_missing_bar_end": None,
+            "state": "unverified",
+        }
+        if day is None or contract is None:
+            return item
+        key = (symbol, day)
+        if self._coverage_session_source is not None:
+            if key not in self._coverage_session_cache:
+                try:
+                    windows = self._coverage_session_source(symbol, day)
+                except Exception:
+                    return item
+                if not windows:
+                    return item
+                self._coverage_session_cache[key] = windows
+            windows = self._coverage_session_cache[key]
+        else:
+            windows = self._known_sessions.get(key, ())
+        if not windows:
+            return item
+        item["sessions"] = [
+            {"start": window.start.isoformat(), "end": window.end.isoformat()}
+            for window in windows
+        ]
+        try:
+            subscriptions = self._store.subscriptions(day)
+        except Exception:
+            return item
+        if subscriptions is None:
+            return item
+        if subscriptions.get(symbol) != contract:
+            return item
+        expected = tuple(
+            window.start + timedelta(minutes=minute)
+            for window in windows
+            for minute in range(1, int((window.end - window.start).total_seconds() // 60) + 1)
+            if window.start + timedelta(minutes=minute) + _FINALIZATION_DELAY <= now
+        )
+        if not expected:
+            item["state"] = "not_due"
+            return item
+        item["expected_bar_end"] = expected[-1].isoformat()
+        expected_by_frequency: dict[str, str] = {BarFrequency.M1.value: expected[-1].isoformat()}
+        for frequency, width in ((BarFrequency.M5, 5), (BarFrequency.M15, 15),
+                                 (BarFrequency.M30, 30), (BarFrequency.H1, 60)):
+            due = tuple(
+                min(window.start + timedelta(minutes=minute), window.end)
+                for window in windows
+                for minute in range(width, int((window.end - window.start).total_seconds() // 60) + width, width)
+                if min(window.start + timedelta(minutes=minute), window.end) + _FINALIZATION_DELAY <= now
+            )
+            if due:
+                expected_by_frequency[frequency.value] = max(due).isoformat()
+        item["expected_by_frequency"] = expected_by_frequency
+        try:
+            observations = self._store.bar_observations(
+                day, symbol, BarFrequency.M1, None, now,
+                inclusive_after=True, expected_contract=contract,
+            )
+        except Exception:
+            return item
+        seen = {observation.bar.bar_end for observation in observations}
+        if observations:
+            item["last_observed_bar_end"] = max(seen).isoformat()
+        missing = tuple(end for end in expected if end not in seen)
+        if missing:
+            item["first_missing_bar_end"] = missing[0].isoformat()
+            item["state"] = "lagging" if missing[0] + _LIVE_BAR_FRESHNESS <= now else "pending"
+        else:
+            item["state"] = "ok"
+        return item
 
     def _reject(self, code: str) -> str:
         self.rejections.append(code)

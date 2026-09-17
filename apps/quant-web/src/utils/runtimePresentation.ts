@@ -56,11 +56,17 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
   const alertDisabled = !alert.configured_enabled || alert.status === 'disabled'
   const processingState = alertDisabled
     ? '提醒未启用'
-    : alert.processing_state === 'ok'
+    : alert.coverage_state === 'evaluation_lagging' || alert.coverage_state === 'data_lagging' || alert.coverage_state === 'evaluation_failed'
+      ? '局部覆盖异常'
+      : alert.coverage_state === 'unverified'
+        ? '覆盖未验证'
+        : alert.processing_state === 'ok'
       ? '处理正常'
       : alert.processing_state === 'failed'
         ? '处理失败'
         : '未获自然验证'
+  const liveIssues = Object.entries(live.coverage ?? {}).filter(([, item]) => item.state === 'lagging' || item.state === 'unverified').map(([symbol]) => symbol)
+  const alertIssues = Object.entries(alert.coverage ?? {}).filter(([, item]) => ['evaluation_failed', 'evaluation_lagging', 'data_lagging', 'unverified'].includes(item.state)).map(([key]) => key)
 
   const items: RuntimeStatusPresentationItem[] = [
     {
@@ -75,7 +81,7 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
       key: 'live',
       label: '实时行情',
       state: liveLabel(live.status),
-      detail: `${live.subscribed_count} / ${live.operational_count} 品种`,
+      detail: liveIssues.length ? `${live.subscribed_count} / ${live.operational_count} 品种；待核 ${liveIssues.slice(0, 3).join('、')}${liveIssues.length > 3 ? ` 等 ${liveIssues.length} 项` : ''}` : `${live.subscribed_count} / ${live.operational_count} 品种`,
       timestamp: live.last_bar_at
         ? `最近 K 线 ${formatRuntimeTimestamp(live.last_bar_at)}`
         : `心跳 ${formatRuntimeTimestamp(live.last_heartbeat_at)}`,
@@ -85,7 +91,7 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
       key: 'alert',
       label: '提醒服务',
       state: processingState,
-      detail: alertDisabled ? '运行观察已关闭' : alertNotificationLabel(alert.notification_state),
+      detail: alertDisabled ? '运行观察已关闭' : alertIssues.length ? `${alertNotificationLabel(alert.notification_state)}；待核 ${alertIssues.slice(0, 2).join('、')}${alertIssues.length > 2 ? ` 等 ${alertIssues.length} 项` : ''}` : alertNotificationLabel(alert.notification_state),
       timestamp: alert.last_processed_bar_at
         ? `最近处理 ${formatRuntimeTimestamp(alert.last_processed_bar_at)}`
         : `心跳 ${formatRuntimeTimestamp(alert.last_heartbeat_at)}`,

@@ -182,6 +182,7 @@ function marketDisclosure(
       updatedAt: latest?.time ?? null,
       tone,
       rows: [
+        { label: research?.series_kind === 'continuous' ? '统计序列' : '统计合约', value: research?.series_kind === 'continuous' ? 'MAIN 连续' : research?.metric_contract ?? '—', source: 'market' },
         { label: '成交额', value: numberText(latest?.turnover), source: 'market' },
         { label: '量比20', value: numberText(research?.volume_ratio20), source: 'market' },
         { label: 'OI 1D', value: percentText(research?.oi_change_1d), source: 'market' },

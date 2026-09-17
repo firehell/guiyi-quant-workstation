@@ -19,6 +19,8 @@ export interface RuntimeLiveMarketHealth {
   last_heartbeat_at: string | null
   last_bar_at: string | null
   phase_counts: Record<string, number>
+  coverage_state?: string
+  coverage?: Record<string, { state: string; first_missing_bar_end?: string | null; expected_bar_end?: string | null }>
   error_type: string | null
   error_message: string | null
 }
@@ -122,6 +124,8 @@ export interface RuntimeAlertHealth {
   consecutive_notification_failures: number
   error_type: string | null
   rule_status?: RuntimeAlertProjection['rule_status']
+  coverage_state?: string
+  coverage?: Record<string, { state: string; symbol?: string; frequency?: string; error_type?: string | null }>
 }
 
 export interface RuntimeHealthResponse {

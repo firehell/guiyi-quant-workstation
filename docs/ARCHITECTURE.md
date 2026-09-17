@@ -75,7 +75,7 @@ flowchart LR
 ## Consumer boundaries
 
 - Canonical publication 先完成校验、不可变 hash 文件和 durability，再在既有 Catalog 事务 register/flush、真实 `MarketDataService` strict-read 后 commit 单月 active pointer；不引入全局 snapshot 或新表。reader 对精确 Catalog URI 的同一份 bytes 校验 hash 并解析，保留旧文件供已有 reader 使用。
-- `MarketDataService` 是唯一 Historical Bar reader；`actual_dominant` 只通过 `MainContractMap rank=1` 解析，identity、coverage 或物理可读性异常 fail-closed。
+- `MarketDataService` 是唯一 Historical Bar reader；普通区间和分页用 Calendar/Session/lifecycle/rank1 证明所承诺窗口的每个端点，`actual_dominant` 只通过 `MainContractMap rank=1` 解析，identity、coverage 或物理可读性异常 fail-closed。维护 strict-read 用冻结目标端点精确读回，避免同一事务内第二次解析 Calendar。
 - 默认关闭的 `app.preview` 只组合 Market/Newow routers、SuBing 历史 reference GET 与共享 read-only transaction，固定 code SHA / cutoff；不导入正常 app 或创建 Live/Alert/EOD/provider。候选 Web 精确白名单代理到 8010，只有既有 health/current-events 两项 GET 到受监督的 8000，并显示独立来源与时间口径；启动入口与 fixture 验证见 `TESTING.md`。
 - Web 只消费 typed Market/Alert API，不计算策略、建仓或清仓。
 - Market WebSocket 先订阅再读快照；快照、state 更新和单连接定时恢复读取在同一有界后台入口执行，每次在 worker 内新建、使用并关闭 Session 与同步 Redis。每进程最多四项读取，满额立即失败，无无界队列；调用取消后仍待实际 worker 结束才释放额度。内部 Bar Pub/Sub 携带物理合约，详情连接只转发与当前交易日/owner 一致的 Bar，并在 owner 变化后先 reset；定时恢复保留 `realtime/post_close` 来源，盘后延迟完成 Bar 不冒充 tick 实时。Pub/Sub 与发送继续在事件循环执行。
@@ -87,7 +87,7 @@ flowchart LR
 - `ReferenceTradeProjector` 是无网络、无 DB、无 Redis 的纯 Decimal 投影，只按同策略、周期、物理合约、区段及版本精确配对主动作。它输出 OPEN/CLOSED/ROLLOVER_INTERRUPTED、明确统计窗口和乐观摘要，不创建或代表 Position、Order、Account、Execution、Fill、AlertEvent、PnL 或 Ledger。
 - Newow 解释层显式携带各输入周期 `bar_end`、请求 `as_of`、规则身份和证据状态；解释与 Hint 不得反向改变主动作。照妖镜重绘图层、五窗口页面比较器及其样本末理论平仓与 ReferenceTrade authority 隔离。
 - `/market/chart?view=newow` 以单一 Newow 控制器承载趋势、震荡、主升浪 × `1w/1d/60m` 长期范围，并按 capability 只消费当前开放子集；请求切换使用 generation/Abort 隔离，资源按 section 独立呈现，兼容事实不足时显式降级。既有 `view=trend` 与 `GET /api/v1/market/newow/trend-detail` 保持固定 `actual_dominant + 1d` 兼容语义，并经同一趋势公式路径提供结果，不保留第二套算法。HTDY、SuBing 与 Free 的读取和 Marker authority 不变。
-- `MarketHomeOverviewService` 是 completed D1/W1 首页事实的唯一计算 authority。Market Home projection 只是可删除、可重建的性能读模型，位于同一 Canonical root 下的 `.derived/market-home-overview.json`，不属于 Canonical Bar 或 Catalog authority。
+- `MarketHomeOverviewService` 是 completed D1/W1 首页事实的唯一计算 authority；通用指标取目标日 rank1 同一物理合约截至目标日的 D1/W1 历史，允许该合约成为主力前的 warm-up，不跨合约相减。Market Home projection 只是可删除、可重建的性能读模型，位于同一 Canonical root 下的 `.derived/market-home-overview.json`，不属于 Canonical Bar 或 Catalog authority。
 - `/market` overview API 先校验 active/taxonomy/target identity 并尝试读取 projection；缺失、损坏或 identity 不匹配时回退 `MarketHomeOverviewService -> MarketDataService`，HTTP 请求本身不创建或更新 projection。
 - 任何正式 `guiyi data update/refresh/contract-warmup --apply` 与自然 after-market 都必须在 authoritative manager 已取得 maintenance lease 后、数据 mutation 前失效旧 projection；失效失败必须 fail-closed。after-market 只有在既有 `canonical_updated`、rank1/Live reconciliation 与 cleanup 全部完成后，且 owner-written Market Home projection activation marker 已启用时，才在 existing maintenance lease 内 best-effort 生成新 projection；生成失败或 lease unavailable 只造成首页回退现场计算，不改变已成功的核心 maintenance 结论。
 - 受监督 after-market 在既有 `HistoricalDataManager` 中选择 Catalog-bounded `daily` 范围；公开 update 的 full 语义不变。schema-v3 `current_run`、日志和 health 都是观测面，不是 checkpoint、发布权威或数据完整性证明。

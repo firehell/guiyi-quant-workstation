@@ -6,6 +6,18 @@
 
 ## Requirements
 
+### Requirement: Provider responses retain request identity and trading-day attribution
+
+The RQData adapter MUST verify each raw `order_book_id` against the requested physical or continuous contract before normalizing Bars. It MUST reject duplicate raw endpoints or duplicate exchange-daily rows, including rows later filtered from a requested missing subset. The maintainer MUST bind each fetched batch to its DatasetKey and requested endpoints and reject a misplaced batch or duplicate normalized endpoint before publication. A permitted refresh MAY replace an older committed value only within the frozen planned target; provider duplicates are never treated as a refresh.
+
+For 1m fetches, provider `start_date` and `end_date` MUST derive from authoritative trading-day ownership of the requested Session endpoints, including night trading across civil days and weekends. The response MUST reject an endpoint whose reported trading day disagrees with that ownership. No failed attribution may trigger a retry or partial Canonical publication.
+
+#### Scenario: Friday night belongs to Monday trading day
+
+- **GIVEN** a requested completed Friday-night 1m endpoint attributed by Calendar/Session to Monday
+- **WHEN** the maintainer builds an RQData request
+- **THEN** the provider date window uses Monday and a wrong-contract or duplicate response fails before any partition is published
+
 ### Requirement: Interrupted after-market closeout is explicit and never success
 
 Target database, Redis, Canonical and universe dependencies MUST be composed from pinned target sources, not

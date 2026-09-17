@@ -154,6 +154,7 @@ export interface ProductResearchResponse {
   contract: string | null
   as_of: string
   current_dominant: string
+  metric_contract: string | null
   dominant_mapping_date: string
   daily_trend: 'up' | 'down' | 'neutral' | 'unavailable'
   weekly_trend: 'up' | 'down' | 'neutral' | 'unavailable'

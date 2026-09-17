@@ -6,6 +6,16 @@
 
 ## Requirements
 
+### Requirement: Ordinary historical reads prove every promised endpoint
+
+Physical and actual-dominant interval queries and pages SHALL compare returned Bar identities with the Calendar, Session, lifecycle and rank1 owner endpoints for the requested committed window. A missing interior minute, session tail or page-adjacent endpoint MUST fail closed; a later Bar MUST NOT conceal the earlier gap. Page cursors retain their existing inclusive/exclusive contract. Maintenance strict readback MAY use its already frozen authoritative target endpoints rather than querying Calendar a second time, but MUST compare the complete returned sequence exactly. An all-zero `NO_TRADE` Bar does not become a usable research price solely because its endpoint exists.
+
+#### Scenario: One minute is absent between returned Bars
+
+- **GIVEN** five completed 1m Session endpoints and a committed physical partition containing only the first and fifth
+- **WHEN** an ordinary range or page query reads the window
+- **THEN** the read fails with a typed missing-data error instead of returning a shortened successful series
+
 ### Requirement: Narrow D1 quality-aware read never weakens strict market series
 
 普通 historical series 读取遇到含 `PRICE_UNAVAILABLE` 的月分区 MUST 保持 fail-closed，

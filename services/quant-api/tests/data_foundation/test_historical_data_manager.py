@@ -102,6 +102,43 @@ def test_manager_publishes_exact_d1_exception_without_a_fabricated_bar(
     assert classification.expected == (first, last)
 
 
+def test_manager_rejects_duplicate_provider_bar_before_publish(session, tmp_path) -> None:
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    end = datetime(2025, 1, 2, 7, tzinfo=UTC)
+    first = CanonicalBar(
+        end, date(2025, 1, 2), Decimal(100), Decimal(101), Decimal(99),
+        Decimal(100), Decimal(1), Decimal(100), Decimal(10),
+    )
+    second = CanonicalBar(
+        end, date(2025, 1, 2), Decimal(101), Decimal(102), Decimal(100),
+        Decimal(101), Decimal(1), Decimal(101), Decimal(10),
+    )
+    manager = _manager(session, tmp_path, FakeCoverage({}), FakeProvider({}))
+    target = _Target(key, 2025, 1, (end,), (end,), ())
+
+    with pytest.raises(Exception, match="PROVIDER_BAR_DUPLICATE"):
+        manager._publish_fetched_partition(target, (BarBatch((first, second)),))
+    assert manager.catalog.all_partitions(key) == ()
+
+
+def test_manager_rejects_batch_bound_to_another_contract(session, tmp_path) -> None:
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    other = DatasetKey("contract", "jm", "JM2505", "1d")
+    end = datetime(2025, 1, 2, 7, tzinfo=UTC)
+    bar = CanonicalBar(
+        end, date(2025, 1, 2), Decimal(100), Decimal(101), Decimal(99),
+        Decimal(100), Decimal(1), Decimal(100), Decimal(10),
+    )
+    manager = _manager(session, tmp_path, FakeCoverage({}), FakeProvider({}))
+    target = _Target(key, 2025, 1, (end,), (end,), ())
+
+    with pytest.raises(Exception, match="PROVIDER_BATCH_IDENTITY_MISMATCH"):
+        manager._publish_fetched_partition(
+            target, (BarBatch((bar,), source_key=other, requested_ends=(end,)),)
+        )
+    assert manager.catalog.all_partitions(key) == ()
+
+
 class FakeCoverage:
     def __init__(self, ends: dict[tuple[str, str, str, str], tuple[datetime, ...]]) -> None:
         self.ends = ends
@@ -162,6 +199,12 @@ class FakeCoverage:
             for value in self.ends.get(key.as_tuple(), ())
             if value.date() in allowed
         )
+
+    def trading_days_for_bar_ends(
+        self, key: DatasetKey, ends: tuple[datetime, ...]
+    ) -> tuple[date, ...]:
+        assert set(ends).issubset(self.ends.get(key.as_tuple(), ()))
+        return tuple(value.date() for value in ends)
 
     def contract_trading_days(
         self,
@@ -1029,7 +1072,7 @@ def test_contract_warmup_apply_publishes_only_exact_family_and_derives_from_1m(
         )
     )
 
-    assert result.status == "passed"
+    assert result.status == "passed", result.failures
     assert result.readonly is False
     assert result.plan == dry_run.plan
     assert result.applied == 7
@@ -3517,7 +3560,9 @@ def test_refresh_failure_preserves_committed_pointer_and_old_reader(
         catalog = MarketCatalog(reader, tmp_path)
         query = SeriesQuery(series_kind="continuous", symbol="jm", frequency="1d",
                             start=old_bar.bar_end - timedelta(microseconds=1), end=old_bar.bar_end)
-        result = MarketDataService(catalog, manager.store).query(query)
+        result = MarketDataService(catalog, manager.store).query_maintenance_expected(
+            query, (old_bar.bar_end,)
+        )
         assert result.bars == ((new_bar,) if failure == "committed_then_error" else (old_bar,))
         assert (catalog.all_partitions(key)[0] == old_pointer) == (failure != "committed_then_error")
     assert len(tuple(tmp_path.rglob("part.*.parquet"))) == 2

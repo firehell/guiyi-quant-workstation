@@ -287,38 +287,37 @@ def build_live_market_service(session: Session) -> LiveMarketService:
     from app.market_data.rqdata_adapter import RQDataClient
 
     from app.market_data.aggregation import SessionWindow
+    from app.market_data.session_clock import resolved_session_windows_for_trading_day
+    from app.models import Instrument, TradingCalendar
+    from sqlalchemy import select
+
+    def coverage_sessions(symbol: str, trading_day: date) -> tuple[SessionWindow, ...]:
+        exchange = session.scalar(select(Instrument.exchange_code).where(
+            Instrument.symbol == symbol, Instrument.is_active.is_(True),
+        ))
+        if exchange is None:
+            raise ValueError("LIVE_COVERAGE_AUTHORITY_UNAVAILABLE")
+        calendar = session.scalar(select(TradingCalendar).where(
+            TradingCalendar.exchange_code == exchange,
+            TradingCalendar.trade_date == trading_day,
+        ))
+        if calendar is None or not calendar.is_trading_day:
+            raise ValueError("LIVE_COVERAGE_AUTHORITY_UNAVAILABLE")
+        return tuple(
+            item.window for item in resolved_session_windows_for_trading_day(
+                session, exchange=exchange, symbol=symbol, trading_day=trading_day,
+            ) if not item.is_night or calendar.has_night_session
+        )
 
     recovery_fetch_factory: Callable | None = None
     recovery_sessions_source: Callable[[str, date], tuple[SessionWindow, ...]] | None = None
     recovery_guard_factory: Callable[[str], ContextManager] | None = None
     if os.getenv("GUIYI_LIVE_RECOVERY_ENABLED", "0") == "1":
         from app.market_data.rqdata_adapter import RQDataLiveRecoveryAdapter
-        from app.market_data.session_clock import resolved_session_windows_for_trading_day
-        from app.models import Instrument, TradingCalendar
-        from sqlalchemy import select
-
-        def recovery_sessions(symbol, trading_day):
-            exchange = session.scalar(select(Instrument.exchange_code).where(
-                Instrument.symbol == symbol, Instrument.is_active.is_(True),
-            ))
-            if exchange is None:
-                raise ValueError("LIVE_RECOVERY_AUTHORITY_UNAVAILABLE")
-            calendar = session.scalar(select(TradingCalendar).where(
-                TradingCalendar.exchange_code == exchange,
-                TradingCalendar.trade_date == trading_day,
-            ))
-            if calendar is None or not calendar.is_trading_day:
-                raise ValueError("LIVE_RECOVERY_AUTHORITY_UNAVAILABLE")
-            return tuple(
-                item.window for item in resolved_session_windows_for_trading_day(
-                    session, exchange=exchange, symbol=symbol, trading_day=trading_day,
-                ) if not item.is_night or calendar.has_night_session
-            )
-
         from app.market_data.live_recovery_guard import recovery_guard
 
         recovery_fetch_factory = RQDataLiveRecoveryAdapter
-        recovery_sessions_source = recovery_sessions
+        recovery_sessions_source = coverage_sessions
         recovery_guard_factory = recovery_guard
     rqdata = RQDataClient()
     return LiveMarketService(
@@ -326,6 +325,7 @@ def build_live_market_service(session: Session) -> LiveMarketService:
         dominant_source=rqdata,
         recovery_fetch_factory=recovery_fetch_factory,
         recovery_sessions=recovery_sessions_source,
+        coverage_sessions=coverage_sessions,
         recovery_guard_factory=recovery_guard_factory,
         phase_resolver=MarketPhaseResolver(session),
         store=RedisLiveStore(cast(RedisClient, get_redis_connection())),

@@ -217,19 +217,25 @@ class RQDataMarketAdapter:
             if not expected:
                 raise InfrastructureError("PROVIDER_WINDOW_EMPTY")
             if key.frequency is BarFrequency.D1:
-                batches[index] = self._daily_bars(
+                daily = self._daily_bars(
                     key, expected, cache=cache, source_proof=source_proof
+                )
+                batches[index] = BarBatch(
+                    daily.bars, daily.price_unavailable, key, expected
                 )
                 continue
             elif key.frequency is BarFrequency.W1:
                 bars = self._weekly_bars(key, expected, cache=cache, source_proof=source_proof)
             else:
-                bars = self._minute_bars(key, expected)
-            batches[index] = BarBatch(bars)
+                bars = self._minute_bars(key, expected, request.expected_trading_days)
+            batches[index] = BarBatch(bars, source_key=key, requested_ends=expected)
         return tuple(batches[index] for index in range(len(requests)))
 
     def _minute_bars(
-        self, key: DatasetKey, expected: tuple[datetime, ...]
+        self,
+        key: DatasetKey,
+        expected: tuple[datetime, ...],
+        expected_trading_days: tuple[date, ...] | None,
     ) -> tuple[CanonicalBar, ...]:
         """1m 保持 get_price；期货日/周线另走交易所日行情。"""
         order_book_id = (
@@ -237,12 +243,19 @@ class RQDataMarketAdapter:
             if key.kind is DatasetKind.CONTINUOUS
             else key.series_or_contract
         )
+        if expected_trading_days is None:
+            raise InfrastructureError("PROVIDER_TRADING_DAY_MISSING")
+        if len(expected_trading_days) != len(expected):
+            raise InfrastructureError("PROVIDER_TRADING_DAY_INVALID")
+        expected_by_end = dict(zip(expected, expected_trading_days, strict=True))
+        if len(expected_by_end) != len(expected):
+            raise InfrastructureError("PROVIDER_WINDOW_INVALID")
         try:
             rows = _records(
                 self.client.price(
                     order_book_id,
-                    min(expected).date(),
-                    max(expected).date(),
+                    min(expected_trading_days),
+                    max(expected_trading_days),
                     key.frequency.value,
                 )
             )
@@ -250,11 +263,23 @@ class RQDataMarketAdapter:
             if _is_rqdata_quota_error(exc):
                 raise InfrastructureError("PROVIDER_QUOTA_EXHAUSTED") from exc
             raise
-        bars = [
-            _canonical_bar(row, bar_end, _row_date(row))
-            for row in rows
-            if (bar_end := _row_datetime(row)) in expected
-        ]
+        bars: list[CanonicalBar] = []
+        seen: set[datetime] = set()
+        first_day, last_day = min(expected_trading_days), max(expected_trading_days)
+        for row in rows:
+            if row.get("order_book_id") != order_book_id:
+                raise InfrastructureError("RQDATA_SOURCE_CONTRACT_MISMATCH")
+            bar_end = _row_datetime(row)
+            trading_day = _row_date(row)
+            if not first_day <= trading_day <= last_day:
+                raise InfrastructureError("RQDATA_SOURCE_TRADING_DAY_MISMATCH")
+            if bar_end in seen:
+                raise InfrastructureError("RQDATA_SOURCE_BAR_DUPLICATE")
+            seen.add(bar_end)
+            if bar_end in expected_by_end:
+                if trading_day != expected_by_end[bar_end]:
+                    raise InfrastructureError("RQDATA_SOURCE_TRADING_DAY_MISMATCH")
+                bars.append(_canonical_bar(row, bar_end, trading_day))
         return tuple(sorted(bars, key=lambda item: item.bar_end))
 
     def _daily_bars(
@@ -405,12 +430,16 @@ class RQDataMarketAdapter:
                 allowed = set(missing_days)
                 seen: set[date] = set()
                 for row in rows:
+                    if row.get("order_book_id") != contract:
+                        raise InfrastructureError("RQDATA_SOURCE_CONTRACT_MISMATCH")
                     trading_day = _row_date(row)
-                    if trading_day not in allowed:
-                        continue
                     if trading_day in seen:
                         raise InfrastructureError("RQDATA_EXCHANGE_DAILY_DUPLICATE")
                     seen.add(trading_day)
+                    if not source_request.start <= trading_day <= source_request.end:
+                        raise InfrastructureError("RQDATA_SOURCE_TRADING_DAY_MISMATCH")
+                    if trading_day not in allowed:
+                        continue
                     active_cache[(contract, trading_day)] = (
                         row if allow_price_unavailable and classify_exchange_daily_price_unavailable(row)
                         else _normalize_exchange_daily_zero_volume_row(row)

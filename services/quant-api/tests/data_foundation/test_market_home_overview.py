@@ -52,6 +52,34 @@ def test_snapshot_uses_one_completed_day_and_preserves_metric_nulls() -> None:
         ("rb", "1d"),
         ("rb", "1w"),
     ]
+    assert all(request.series_kind.value == "contract" for request in market_data.requests)
+    assert [(request.symbol, request.contract) for request in market_data.requests] == [
+        ("jm", "JM2505"), ("jm", "JM2505"),
+        ("rb", "RB2505"), ("rb", "RB2505"),
+    ]
+
+
+def test_snapshot_uses_target_day_owner_when_later_mapping_has_rolled() -> None:
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+
+    market_data = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET)},
+        weekly={"jm": _bars(22, end=TARGET)},
+        dominants=(DominantContractSummary(
+            symbol="jm", product_name="焦煤", sector="black", exchange="DCE",
+            actual_contract="JM2509", dominant_mapping_date=TARGET + timedelta(days=1),
+        ),),
+    )
+    market_data.target_owners = {"jm": "JM2505"}
+
+    snapshot = MarketHomeOverviewService(
+        market_data=market_data, products=("jm",),
+        taxonomy={"jm": ProductTaxonomyEntry(name="焦煤", sector="black")},
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot()
+
+    assert snapshot.items[0].actual_contract == "JM2505"
+    assert {request.contract for request in market_data.requests} == {"JM2505"}
 
 
 def test_snapshot_excludes_product_without_completed_daily_bar_and_counts_unavailable() -> None:
@@ -249,12 +277,12 @@ def test_snapshot_fails_closed_for_partition_integrity_error() -> None:
         ).snapshot()
 
 
-def test_snapshot_keeps_daily_item_when_weekly_mapped_dataset_is_missing() -> None:
+def test_snapshot_keeps_daily_item_when_physical_weekly_history_is_absent() -> None:
     from app.market_data.market_home_overview import MarketHomeOverviewService
 
     market_data = _FakeMarketDataService(
         daily={"jm": _bars(30, end=TARGET)},
-        weekly={"jm": _bars(22, end=TARGET)},
+        weekly={"jm": ()},
         dominants=(
             DominantContractSummary(
                 symbol="jm",
@@ -265,9 +293,6 @@ def test_snapshot_keeps_daily_item_when_weekly_mapped_dataset_is_missing() -> No
                 dominant_mapping_date=TARGET,
             ),
         ),
-        failures={
-            ("jm", "1w"): MarketDataError("ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT"),
-        },
     )
 
     snapshot = MarketHomeOverviewService(
@@ -611,6 +636,23 @@ class _FakeMarketDataService:
             next_before=None,
             resolved_contract_segments=(),
         )
+
+    def dominant_segment_for_day(self, symbol, trading_day):
+        from app.market_data.market_data_service import DominantContractSegmentSummary
+        dominant = next(item for item in self.dominants if item.symbol == symbol)
+        return DominantContractSegmentSummary(
+            symbol,
+            getattr(self, "target_owners", {}).get(symbol, dominant.actual_contract),
+            trading_day, trading_day,
+        )
+
+    def query_physical_bars_as_of(
+        self, *, symbol, contract, frequency, trading_day, limit
+    ):
+        from app.market_data.domain import SeriesPageQuery
+        return self.query_page(SeriesPageQuery(
+            "contract", symbol, frequency, limit=limit, contract=contract
+        )).bars
 
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
         self.dominant_reads += 1
