@@ -1050,3 +1050,307 @@ def test_pt_cli_serializes_the_two_already_read_results_without_a_third_query(
     assert payload["chart_result"]["section"] == "chart"
     assert payload["reference_result"]["section"] == "reference"
     assert len(service.queries) == 2
+
+
+def _product_report(
+    *,
+    symbol: str = "au",
+    frequency: str = "60m",
+    status: str = "DATA_READY",
+    reason: str | None = None,
+    provider_request_count: int | None = None,
+) -> dict:
+    as_of = AS_OF.isoformat()
+    dependency = {
+        "symbol": symbol,
+        "contract": f"{symbol.upper()}2612",
+        "frequency": frequency,
+        "through": "2026-09-11",
+        "as_of": as_of,
+        "status": status,
+        "reason": reason,
+        "consumers": [
+            {"strategy": "trend", "frequency": frequency, "section": "chart"}
+        ],
+        "owners": [{"since": "2024-01-01", "through": "2026-09-11"}],
+    }
+    if status == "DATA_READY":
+        dependency.update(
+            cutoff=f"2026-09-11T07:00:00+00:00",
+            actual_bar_count=1,
+            expected_bar_count=1,
+        )
+    repairs = []
+    if provider_request_count is not None:
+        repairs.append(
+            {
+                "symbol": symbol,
+                "contract": f"{symbol.upper()}2612",
+                "frequency": frequency,
+                "through": "2026-09-11",
+                "requested_through": "2026-09-11",
+                "plan_sha256": "a" * 64,
+                "status": "PROPOSED",
+                "provider_request_count": provider_request_count,
+            }
+        )
+    enumerations = [
+        {
+            "symbol": symbol,
+            "frequency": frequency,
+            "section": section,
+            "status": "UNOPENED" if section == "explanation" else "ENUMERATED",
+            "reason": (
+                "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+                if section == "explanation"
+                else None
+            ),
+            "as_of": as_of,
+            **(
+                {}
+                if section == "explanation"
+                else {
+                    "since": "2026-01-01",
+                    "through": "2026-09-11",
+                    "owner_count": 1,
+                }
+            ),
+        }
+        for section in ("chart", "auxiliary", "reference", "explanation")
+    ]
+    cases = [
+        {
+            "symbol": symbol,
+            "strategy": strategy,
+            "frequency": frequency,
+            "main": {
+                "status": "UNOPENED",
+                "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+            },
+            "sections": {
+                name: {
+                    "status": "UNOPENED",
+                    "reason": "NEWOW_HOURLY_RELEASE_PENDING",
+                }
+                for name in (
+                    "chart",
+                    "auxiliary:macd",
+                    "auxiliary:main_force_control",
+                    "auxiliary:up_down_energy",
+                    "auxiliary:zhaoyao_mirror",
+                    "auxiliary:cup_handle",
+                    "reference",
+                    "explanation",
+                    "comparator",
+                )
+            },
+        }
+        for strategy in STRATEGIES
+    ]
+    return {
+        "schema_version": 1,
+        "command": "data.newow-readiness",
+        "readonly": True,
+        "status": "audited",
+        "complete": True,
+        "as_of": as_of,
+        "release_stage": "daily",
+        "matrix": True,
+        "frequency_scope": [frequency],
+        "product_count": 1,
+        "provider_requests": 0,
+        "writes": 0,
+        "enumerations": enumerations,
+        "dependencies": [dependency],
+        "repair_targets": repairs,
+        "metadata_proposals": [],
+        "cases": cases if frequency == "60m" else [],
+    }
+
+
+def test_product_acceptance_keeps_pt_regression_and_rejects_hourly_page_ready():
+    from scripts.newow_weekly_acceptance import accept_product_report
+
+    hourly = accept_product_report(
+        _product_report(symbol="pt", frequency="60m"),
+        symbol="pt",
+        frequency="60m",
+        as_of=AS_OF,
+    )
+    assert hourly["accepted"] is True
+    assert hourly["page_ready"] is False
+    assert hourly["deferred_page_reason"] == "NEWOW_HOURLY_RELEASE_PENDING"
+
+    weekly = accept_product_report(
+        _product_report(symbol="pt", frequency="1w", status="DATA_READY"),
+        symbol="pt",
+        frequency="1w",
+        as_of=AS_OF,
+    )
+    assert weekly["page_ready"] is False
+    assert weekly["deferred_page_reason"] == "NEWOW_WEEKLY_RELEASE_PENDING"
+
+
+def test_product_acceptance_rejects_mixed_frequency_scope():
+    from scripts.newow_weekly_acceptance import accept_product_report
+
+    report = _product_report(symbol="au", frequency="60m")
+    report["frequency_scope"] = ["1d", "1w", "60m"]
+    result = accept_product_report(
+        report,
+        symbol="au",
+        frequency="60m",
+        as_of=AS_OF,
+    )
+    assert result["accepted"] is False
+    assert "FREQUENCY_SCOPE_MISMATCH" in result["violations"]
+    assert result["page_ready"] is False
+
+
+@pytest.mark.parametrize("symbol", ["au", "pd"])
+def test_product_acceptance_classifies_ordinary_hourly_gap(symbol):
+    from scripts.newow_weekly_acceptance import accept_product_report
+
+    result = accept_product_report(
+        _product_report(
+            symbol=symbol,
+            frequency="60m",
+            status="DATA_UNAVAILABLE",
+            reason="REPLAY_PREFIX_MISSING",
+            provider_request_count=7,
+        ),
+        symbol=symbol,
+        frequency="60m",
+        as_of=AS_OF,
+    )
+    assert result["accepted"] is True
+    assert result["page_ready"] is False
+    assert result["classifications"]["ordinary_gap"] >= 1
+
+
+def test_product_acceptance_classifies_price_unavailable_without_inventing_bars():
+    from scripts.newow_weekly_acceptance import accept_product_report
+
+    result = accept_product_report(
+        _product_report(
+            symbol="eb",
+            frequency="60m",
+            status="DATA_INTERRUPTED",
+            reason="PRICE_UNAVAILABLE",
+        ),
+        symbol="eb",
+        frequency="60m",
+        as_of=AS_OF,
+    )
+    assert result["accepted"] is True
+    assert result["classifications"]["interrupted"] >= 1
+    assert result["classifications"]["ordinary_gap"] == 0
+    assert result["page_ready"] is False
+
+
+def test_product_acceptance_classifies_derived_only_and_source_and_integrity():
+    from scripts.newow_weekly_acceptance import accept_product_report
+
+    derived = accept_product_report(
+        _product_report(symbol="au", frequency="60m", provider_request_count=0),
+        symbol="au",
+        frequency="60m",
+        as_of=AS_OF,
+    )
+    assert derived["classifications"]["derived_only"] == 1
+
+    source = accept_product_report(
+        _product_report(
+            symbol="ec",
+            frequency="1w",
+            status="SOURCE_EXCEPTION",
+            reason="SOURCE_NONPOSITIVE_PRICE",
+        ),
+        symbol="ec",
+        frequency="1w",
+        as_of=AS_OF,
+    )
+    assert source["classifications"]["source"] >= 1
+    assert source["page_ready"] is False
+
+    integrity = accept_product_report(
+        _product_report(
+            symbol="ao",
+            frequency="60m",
+            status="INTEGRITY_ERROR",
+            reason="ATOMIC_PUBLISH_FAILED",
+        ),
+        symbol="ao",
+        frequency="60m",
+        as_of=AS_OF,
+    )
+    assert integrity["classifications"]["integrity"] >= 1
+
+
+def test_product_acceptance_rejects_unknown_trading_session_as_not_ready():
+    from scripts.newow_weekly_acceptance import accept_product_report
+
+    report = _product_report(
+        symbol="au",
+        frequency="60m",
+        status="UNKNOWN",
+        reason="TRADING_SESSION_MISSING",
+    )
+    report["metadata_proposals"] = [
+        {
+            "symbol": "au",
+            "contract": "AU2304",
+            "frequency": "60m",
+            "status": "UNKNOWN",
+            "reason": "TRADING_SESSION_MISSING",
+            "proposal": "BOUNDED_METADATA_REPAIR_REVIEW_REQUIRED",
+        }
+    ]
+    result = accept_product_report(
+        report,
+        symbol="au",
+        frequency="60m",
+        as_of=AS_OF,
+    )
+    assert result["accepted"] is False
+    assert result["page_ready"] is False
+    assert "UNKNOWN_STATUS" in result["violations"]
+    assert result["classifications"]["unknown"] >= 1
+    assert result["classifications"]["metadata"] == 1
+    assert result["classifications"]["ordinary_gap"] == 0
+
+
+def test_product_cli_never_opens_session_or_provider(tmp_path):
+    from scripts.newow_weekly_acceptance import main
+
+    report_path = tmp_path / "au-60m.json"
+    report_path.write_text(
+        __import__("json").dumps(_product_report()), encoding="utf-8"
+    )
+    calls = []
+
+    def forbidden():
+        calls.append(True)
+        raise AssertionError("product acceptance opened a session/provider")
+
+    output = io.StringIO()
+    code = main(
+        [
+            "product",
+            "--symbol",
+            "au",
+            "--frequency",
+            "60m",
+            "--as-of",
+            AS_OF.isoformat(),
+            "--report",
+            str(report_path),
+        ],
+        stdout=output,
+        session_factory=forbidden,
+    )
+    payload = __import__("json").loads(output.getvalue())
+    assert code == 0
+    assert payload["accepted"] is True
+    assert payload["page_ready"] is False
+    assert calls == []

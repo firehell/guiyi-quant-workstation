@@ -1,4 +1,4 @@
-"""Bounded, auditable Newow W1/D1 recovery orchestration."""
+"""Bounded, auditable Newow W1/D1/60m recovery orchestration."""
 
 from __future__ import annotations
 
@@ -71,30 +71,47 @@ _D1_EXECUTION_CODE_PATHS = tuple(
         )
     )
 )
+_HOURLY_EXECUTION_CODE_PATHS = tuple(
+    dict.fromkeys(
+        (
+            *_EXECUTION_CODE_PATHS,
+            "services/quant-api/app/market_data/market_data_service.py",
+        )
+    )
+)
 _T = TypeVar("_T")
 _SOURCE_ISOLATION_POLICY_SCHEMA = "newow_weekly_recovery_continuation_policy_v1"
 _SOURCE_ISOLATION_MODE = "isolate_known_source_quality"
 _SOURCE_ISOLATION_ERROR_CODES = ("RQDATA_ZERO_OHL_INVALID",)
-RecoveryFrequency = Literal["1w", "1d"]
+RecoveryFrequency = Literal["1w", "1d", "60m"]
 _PREPARE_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_prepare_v1",
     "1d": "newow_daily_recovery_prepare_v1",
+    "60m": "newow_hourly_recovery_prepare_v1",
 }
 _RESULT_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_result_v1",
     "1d": "newow_daily_recovery_result_v1",
+    "60m": "newow_hourly_recovery_result_v1",
 }
 _INVOCATION_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_invocation_v1",
     "1d": "newow_daily_recovery_invocation_v1",
+    "60m": "newow_hourly_recovery_invocation_v1",
 }
 _ERROR_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_error_v1",
     "1d": "newow_daily_recovery_error_v1",
+    "60m": "newow_hourly_recovery_error_v1",
 }
 _SOURCE_ISOLATION_POLICY_SCHEMA_BY_FREQUENCY: dict[RecoveryFrequency, str] = {
     "1w": _SOURCE_ISOLATION_POLICY_SCHEMA,
     "1d": "newow_daily_recovery_continuation_policy_v1",
+}
+_ALLOWED_TARGET_FREQUENCIES: dict[RecoveryFrequency, frozenset[str]] = {
+    "1w": frozenset({"1d", "1w"}),
+    "1d": frozenset({"1d"}),
+    "60m": frozenset({"1m", "60m"}),
 }
 
 
@@ -103,7 +120,7 @@ class RecoveryError(RuntimeError):
 
 
 def _recovery_frequency(value: object) -> RecoveryFrequency:
-    if type(value) is not str or value not in ("1w", "1d"):
+    if type(value) is not str or value not in ("1w", "1d", "60m"):
         raise RecoveryError("RECOVERY_SCOPE_INVALID")
     return cast(RecoveryFrequency, value)
 
@@ -111,7 +128,7 @@ def _recovery_frequency(value: object) -> RecoveryFrequency:
 def _allowed_target_frequencies(
     recovery_frequency: RecoveryFrequency,
 ) -> frozenset[str]:
-    return frozenset({"1d", "1w"} if recovery_frequency == "1w" else {"1d"})
+    return _ALLOWED_TARGET_FREQUENCIES[_recovery_frequency(recovery_frequency)]
 
 
 def _prepare_schema(recovery_frequency: RecoveryFrequency) -> str:
@@ -154,7 +171,7 @@ class _ExecutionEnvironment:
 
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(
-        description="Prepare or execute one bounded Newow W1/D1 recovery batch."
+        description="Prepare or execute one bounded Newow W1/D1/60m recovery batch."
     )
     commands = value.add_subparsers(dest="mode", required=True)
     prepare = commands.add_parser("prepare", allow_abbrev=False)
@@ -162,7 +179,7 @@ def parser() -> argparse.ArgumentParser:
     prepare.add_argument("--units", required=True)
     prepare.add_argument("--output-root", required=True)
     prepare.add_argument("--name", required=True)
-    prepare.add_argument("--frequency", choices=("1w", "1d"), default="1w")
+    prepare.add_argument("--frequency", choices=("1w", "1d", "60m"), default="1w")
     prepare.add_argument("--isolate-known-source-quality", action="store_true")
     apply = commands.add_parser("apply", allow_abbrev=False)
     apply.add_argument("--project-env", required=True)
@@ -181,6 +198,8 @@ def source_isolation_policy(
 ) -> dict[str, object]:
     """Return the one supported, hash-bound continuation policy."""
     frequency = _recovery_frequency(recovery_frequency)
+    if frequency == "60m":
+        raise RecoveryError("RECOVERY_SCOPE_INVALID")
     body: dict[str, object] = {
         "schema_version": _SOURCE_ISOLATION_POLICY_SCHEMA_BY_FREQUENCY[frequency],
         "mode": _SOURCE_ISOLATION_MODE,
@@ -962,16 +981,38 @@ def prepare_bounded_units(
         target_frequencies = {target.key.frequency.value for target in targets}
         if not target_frequencies <= allowed_targets:
             raise RecoveryError("RECOVERY_SCOPE_INVALID")
-        bar_requests = tuple(
-            BarFetchRequest(target.key, target.missing)
-            for target in targets
-            if target.key.frequency.value in allowed_targets
-        )
-        source_requests = (
-            adapter.exchange_daily_source_requests(bar_requests) if bar_requests else ()
-        )
-        if any(item.contract != plan.contract for item in source_requests):
-            raise RecoveryError("SOURCE_SCOPE_INVALID")
+        if frequency == "60m":
+            source_requests: tuple[ExchangeDailySourceRequest, ...] = ()
+        else:
+            bar_requests = tuple(
+                BarFetchRequest(target.key, target.missing)
+                for target in targets
+                if target.key.frequency.value in allowed_targets
+            )
+            source_requests = (
+                adapter.exchange_daily_source_requests(bar_requests)
+                if bar_requests
+                else ()
+            )
+            if any(item.contract != plan.contract for item in source_requests):
+                raise RecoveryError("SOURCE_SCOPE_INVALID")
+        if frequency == "60m":
+            try:
+                target_payloads = [
+                    {
+                        **dict(window),
+                        "expected_bar_ends": [
+                            item.isoformat() for item in target.expected
+                        ],
+                    }
+                    for window, target in zip(
+                        plan.target_windows, targets, strict=True
+                    )
+                ]
+            except ValueError as exc:
+                raise RecoveryError("RECOVERY_SCOPE_INVALID") from exc
+        else:
+            target_payloads = [dict(item) for item in plan.target_windows]
         units.append(
             {
                 "symbol": plan.symbol,
@@ -985,7 +1026,7 @@ def prepare_bounded_units(
                 "target_count": len(targets),
                 "expected_bar_count": plan.expected_bar_count,
                 "provider_request_count": plan.provider_request_count,
-                "targets": [dict(item) for item in plan.target_windows],
+                "targets": target_payloads,
                 "source_requests": [_request_payload(item) for item in source_requests],
             }
         )
@@ -1411,6 +1452,7 @@ def _validated_unit(
         or unit.get("frequency") != recovery_frequency
         or re.fullmatch(r"[0-9a-f]{64}", plan_sha256) is None
         or not isinstance(source_requests, list)
+        or (recovery_frequency == "60m" and source_requests)
     ):
         raise RecoveryError("PREPARED_MANIFEST_INVALID")
     try:
@@ -1525,7 +1567,12 @@ def _current_execution_code_sha256(
 ) -> str:
     root = project_root or Path(__file__).resolve().parents[1]
     frequency = _recovery_frequency(recovery_frequency)
-    paths = _D1_EXECUTION_CODE_PATHS if frequency == "1d" else _EXECUTION_CODE_PATHS
+    if frequency == "1d":
+        paths = _D1_EXECUTION_CODE_PATHS
+    elif frequency == "60m":
+        paths = _HOURLY_EXECUTION_CODE_PATHS
+    else:
+        paths = _EXECUTION_CODE_PATHS
     digest = hashlib.sha256()
     try:
         for relative in paths:
@@ -1583,16 +1630,19 @@ def _post_commit_readback(
 ) -> dict[str, object]:
     """Verify committed targets through Catalog, physical files and MDS."""
     from app.market_data.domain import DatasetKey, SeriesKind, SeriesQuery
-    from app.market_data.market_data_service import MarketDataService
+    from app.market_data.market_data_service import MarketDataError, MarketDataService
 
     targets = unit.get("targets")
     if not isinstance(targets, list) or not targets:
         raise RecoveryError("POST_COMMIT_READBACK_INVALID")
     root = Path(manager.catalog.canonical_root).resolve()
     service = MarketDataService(manager.catalog, manager.store)
-    quality_aware = _recovery_frequency(unit.get("frequency")) == "1d"
+    frequency = _recovery_frequency(unit.get("frequency"))
+    quality_aware = frequency == "1d"
+    hourly = frequency == "60m"
     partitions: list[dict[str, object]] = []
     for raw in targets:
+        expected_ends: tuple[datetime, ...] | None = None
         try:
             if not isinstance(raw, Mapping):
                 raise ValueError
@@ -1605,6 +1655,13 @@ def _post_commit_readback(
             expected_start = datetime.fromisoformat(str(raw["expected_start"]))
             expected_end = datetime.fromisoformat(str(raw["expected_end"]))
             expected_count = int(raw["expected_bar_count"])
+            if hourly:
+                raw_ends = raw.get("expected_bar_ends")
+                if not isinstance(raw_ends, list) or len(raw_ends) != expected_count:
+                    raise ValueError
+                expected_ends = tuple(
+                    datetime.fromisoformat(str(item)) for item in raw_ends
+                )
         except (KeyError, TypeError, ValueError) as exc:
             raise RecoveryError("POST_COMMIT_READBACK_INVALID") from exc
         if (
@@ -1612,13 +1669,20 @@ def _post_commit_readback(
             or key.symbol != unit["symbol"]
             or key.series_or_contract != unit["contract"]
             or key.frequency.value
-            not in _allowed_target_frequencies(
-                _recovery_frequency(unit.get("frequency"))
-            )
+            not in _allowed_target_frequencies(frequency)
             or expected_start.tzinfo is None
             or expected_end.tzinfo is None
             or expected_start > expected_end
             or expected_count <= 0
+            or (
+                hourly
+                and (
+                    expected_ends is None
+                    or any(item.tzinfo is None for item in expected_ends)
+                    or expected_ends[0] != expected_start
+                    or expected_ends[-1] != expected_end
+                )
+            )
         ):
             raise RecoveryError("POST_COMMIT_READBACK_INVALID")
         rows = tuple(
@@ -1684,6 +1748,17 @@ def _post_commit_readback(
                 "mds_price_unavailable_count": len(exceptions),
                 "mds_endpoint_count": len(actual),
             }
+        elif hourly:
+            if expected_ends is None:
+                raise RecoveryError("POST_COMMIT_READBACK_INVALID")
+            try:
+                bars = service.query_maintenance_expected(
+                    request, expected_ends
+                ).bars
+            except MarketDataError as exc:
+                raise RecoveryError("POST_COMMIT_MDS_INVALID") from exc
+            if tuple(bar.bar_end for bar in bars) != expected_ends:
+                raise RecoveryError("POST_COMMIT_MDS_INVALID")
         else:
             bars = service.query(request).bars
             if (
@@ -1820,6 +1895,8 @@ def main(
         elif args.mode == "prepare":
             recovery_frequency = _recovery_frequency(args.frequency)
             error_schema = _ERROR_SCHEMA_BY_FREQUENCY[recovery_frequency]
+            if args.isolate_known_source_quality and recovery_frequency == "60m":
+                raise RecoveryError("RECOVERY_SCOPE_INVALID")
             code_commit = _current_code_commit()
             _require_clean_execution_checkout(code_commit)
             environment = _open_execution_environment(Path(args.project_env))

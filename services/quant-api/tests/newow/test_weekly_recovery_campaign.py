@@ -40,6 +40,7 @@ from scripts.newow_weekly_recovery import (
     load_prepared_manifest,
     prepare_bounded_units,
     read_attempt_outcome,
+    source_isolation_policy,
     write_prepared_manifest,
 )
 from scripts import newow_weekly_recovery_campaign as campaign
@@ -672,8 +673,9 @@ def _native_apply_result(
                 "applied": 0,
                 "blocked": 0,
                 "failed": 0,
-                "provider_requests": (
-                    frozen_unit["target_count"] if frozen_unit["source_requests"] else 0
+                "provider_requests": frozen_unit.get(
+                    "provider_request_count",
+                    frozen_unit["target_count"] if frozen_unit["source_requests"] else 0,
                 ),
                 "failures": [],
             },
@@ -742,11 +744,10 @@ def _native_apply_result(
         "retries": 0,
     }
     receipt = {
-        "schema_version": (
-            "newow_daily_recovery_invocation_v1"
-            if recovery_frequency == "1d"
-            else "newow_weekly_recovery_invocation_v1"
-        ),
+        "schema_version": {
+            "1d": "newow_daily_recovery_invocation_v1",
+            "60m": "newow_hourly_recovery_invocation_v1",
+        }.get(recovery_frequency, "newow_weekly_recovery_invocation_v1"),
         "prepared_sha256": digest,
         **IDENTITY,
         "unit_count": len(child["units"]),
@@ -758,11 +759,10 @@ def _native_apply_result(
         if return_code is None
         else return_code,
         "batch_result": {
-            "schema_version": (
-                "newow_daily_recovery_result_v1"
-                if recovery_frequency == "1d"
-                else "newow_weekly_recovery_result_v1"
-            ),
+            "schema_version": {
+                "1d": "newow_daily_recovery_result_v1",
+                "60m": "newow_hourly_recovery_result_v1",
+            }.get(recovery_frequency, "newow_weekly_recovery_result_v1"),
             "status": status,
             "readonly": False,
             "attempt_dir": str(native_attempt),
@@ -4070,3 +4070,295 @@ def test_campaign_revalidates_each_partial_exception_from_its_own_attempt(
     )
 
     assert attempts == ["prior-apply-001", "prior-apply-002"]
+
+
+def _hourly_unit(index: int = 0, *, requests: int = 1) -> dict[str, Any]:
+    unit = _ordinary_unit(index)
+    unit["frequency"] = "60m"
+    unit["provider_request_count"] = requests
+    unit["consumers"] = [
+        {**consumer, "frequency": "60m"} for consumer in unit["consumers"]
+    ]
+    unit["target_windows"] = [
+        {
+            "dataset": ["contract", unit["symbol"], unit["contract"], "1m"],
+            "year": 2026,
+            "month": 9,
+            "expected_bar_count": 8,
+        },
+        {
+            "dataset": ["contract", unit["symbol"], unit["contract"], "60m"],
+            "year": 2026,
+            "month": 9,
+            "expected_bar_count": 2,
+        },
+    ]
+    return unit
+
+
+def _hourly_report(units: list[dict[str, Any]]) -> dict[str, Any]:
+    report = _report(units)
+    report["release_stage"] = "daily"
+    report["frequency_scope"] = ["60m"]
+    for row in report["enumerations"]:
+        row["frequency"] = "60m"
+    for row in report["dependencies"]:
+        row["frequency"] = "60m"
+        row["consumers"] = [
+            {**consumer, "frequency": "60m"} for consumer in row["consumers"]
+        ]
+    return report
+
+
+def _hourly_native_child(
+    root: Path,
+    batch_id: str,
+    units: tuple[dict[str, Any], ...],
+    *,
+    identity: Mapping[str, str] = IDENTITY,
+    provider_request_count: int = 0,
+) -> dict[str, Any]:
+    child_units = []
+    for item in units:
+        child_units.append(
+            {
+                "symbol": item["symbol"],
+                "contract": item["contract"],
+                "through": item["through"],
+                "frequency": "60m",
+                "plan_sha256": item["expected_plan_sha256"],
+                "target_count": 2,
+                "expected_bar_count": 2,
+                "provider_request_count": item.get(
+                    "provider_request_count", provider_request_count
+                ),
+                "targets": [
+                    {
+                        "dataset": [
+                            "contract",
+                            item["symbol"],
+                            item["contract"],
+                            "1m",
+                        ],
+                        "year": 2026,
+                        "month": 9,
+                        "expected_start": "2026-09-01T01:01:00+00:00",
+                        "expected_end": "2026-09-01T02:00:00+00:00",
+                        "expected_bar_count": 1,
+                    },
+                    {
+                        "dataset": [
+                            "contract",
+                            item["symbol"],
+                            item["contract"],
+                            "60m",
+                        ],
+                        "year": 2026,
+                        "month": 9,
+                        "expected_start": "2026-09-01T02:00:00+00:00",
+                        "expected_end": "2026-09-01T02:00:00+00:00",
+                        "expected_bar_count": 1,
+                    },
+                ],
+                "source_requests": [],
+            }
+        )
+    manifest = {
+        "schema_version": "newow_hourly_recovery_prepare_v1",
+        **identity,
+        "unit_count": len(child_units),
+        "units": child_units,
+    }
+    path = root / f"{batch_id}.prepare.json"
+    digest = _write_json_exclusive(path, manifest)
+    return {
+        "status": "prepared",
+        "readonly": True,
+        "provider_requests": 0,
+        "writes": 0,
+        "prepared_file": str(path),
+        "prepared_sha256": digest,
+        "unit_count": len(child_units),
+    }
+
+
+def test_hourly_campaign_rejects_source_isolation(tmp_path: Path) -> None:
+    with pytest.raises(RecoveryError, match="^RECOVERY_SCOPE_INVALID$"):
+        prepare_campaign(
+            _hourly_report([_hourly_unit(0, requests=0)]),
+            report_sha256="f" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *_args: pytest.fail("isolation reached prepare"),
+            continuation_policy=source_isolation_policy(),
+            name="hourly-isolation",
+            recovery_frequency="60m",
+        )
+
+
+def test_hourly_campaign_rejects_partial_source_exception(tmp_path: Path) -> None:
+    with pytest.raises(RecoveryError, match="^RECOVERY_SCOPE_INVALID$"):
+        prepare_campaign(
+            _hourly_report([_hourly_unit(0, requests=0)]),
+            report_sha256="f" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *_args: pytest.fail(
+                "partial exception reached prepare"
+            ),
+            partial_source_exception_attempt_path=tmp_path / "attempt",
+            name="hourly-partial",
+            recovery_frequency="60m",
+        )
+
+
+def test_hourly_campaign_rejects_source_only_isolation(tmp_path: Path) -> None:
+    with pytest.raises(RecoveryError, match="^RECOVERY_SCOPE_INVALID$"):
+        prepare_campaign(
+            _hourly_report([_hourly_unit(0, requests=0)]),
+            report_sha256="f" * 64,
+            evidence_root=tmp_path,
+            execution_identity=IDENTITY,
+            invoke_batch=lambda *_args: pytest.fail("source-only reached prepare"),
+            source_only_prepared_path=tmp_path / "source.prepare.json",
+            name="hourly-source-only",
+            recovery_frequency="60m",
+        )
+
+
+@pytest.mark.parametrize("count", [None, True, -1, "5"])
+def test_hourly_campaign_rejects_unknown_provider_request_count(count: object) -> None:
+    unit = _hourly_unit(0, requests=3)
+    if count is None:
+        del unit["provider_request_count"]
+    else:
+        unit["provider_request_count"] = count
+
+    with pytest.raises(RecoveryError, match="^CAMPAIGN_REPORT_INVALID$"):
+        partition_ordinary_units(_hourly_report([unit]), recovery_frequency="60m")
+
+
+def test_hourly_campaign_batches_derive_before_download(tmp_path: Path) -> None:
+    units = [
+        _hourly_unit(0, requests=0),
+        _hourly_unit(1, requests=3),
+        _hourly_unit(2, requests=9),
+        _hourly_unit(3, requests=4),
+        _hourly_unit(4, requests=2),
+        _hourly_unit(5, requests=8),
+        _hourly_unit(6, requests=1),
+    ]
+    batches = partition_ordinary_units(
+        _hourly_report(units), recovery_frequency="60m"
+    )
+    assert len(batches) == 3
+    assert [item["contract"] for item in batches[0]] == [units[0]["contract"]]
+    download_contracts = [item["contract"] for batch in batches[1:] for item in batch]
+    assert download_contracts == [
+        units[6]["contract"],
+        units[4]["contract"],
+        units[1]["contract"],
+        units[3]["contract"],
+        units[5]["contract"],
+        units[2]["contract"],
+    ]
+    assert all(len(batch) <= 5 for batch in batches[1:])
+
+    manifest = prepare_campaign(
+        _hourly_report(units),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda child_units, batch_id, root: _hourly_native_child(
+            root, batch_id, child_units
+        ),
+        name="hourly-six",
+        recovery_frequency="60m",
+    )
+    assert manifest["schema_version"] == "newow_hourly_recovery_campaign_v1"
+    assert manifest["audit"]["frequency_scope"] == ["60m"]
+    assert manifest["totals"]["batch_count"] == 3
+    assert manifest["totals"]["unit_count"] == 7
+    validate_campaign_manifest(manifest, evidence_root=tmp_path)
+
+
+def test_hourly_campaign_apply_accepts_hourly_result_schema(tmp_path: Path) -> None:
+    manifest = prepare_campaign(
+        _hourly_report([_hourly_unit(0, requests=0)]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda child_units, batch_id, root: _hourly_native_child(
+            root, batch_id, child_units
+        ),
+        name="hourly-apply",
+        recovery_frequency="60m",
+    )
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "hourly-apply-001",
+        invoke_batch=_native_apply_result,
+    )
+
+    assert result["status"] == "passed"
+    started = json.loads(
+        (tmp_path / "hourly-apply-001" / "campaign-started.json").read_text()
+    )
+    assert started["schema_version"] == "newow_hourly_recovery_campaign_started_v1"
+    assert result["summary"]["success_unit_count"] == 1
+    assert result["summary"]["unknown_unit_count"] == 0
+    assert result["completed_batch_ids"] == ["batch-001"]
+
+
+def test_hourly_campaign_apply_accepts_provider_requests_without_source_journal(
+    tmp_path: Path,
+) -> None:
+    manifest = prepare_campaign(
+        _hourly_report([_hourly_unit(0, requests=5)]),
+        report_sha256="f" * 64,
+        evidence_root=tmp_path,
+        execution_identity=IDENTITY,
+        invoke_batch=lambda child_units, batch_id, root: _hourly_native_child(
+            root, batch_id, child_units, provider_request_count=5
+        ),
+        name="hourly-download",
+        recovery_frequency="60m",
+    )
+
+    result = execute_campaign(
+        manifest,
+        attempt_root=tmp_path / "hourly-download-001",
+        invoke_batch=_native_apply_result,
+    )
+
+    assert result["status"] == "passed"
+    assert result["summary"]["success_unit_count"] == 1
+    assert result["summary"]["unknown_unit_count"] == 0
+    assert (
+        result["completed_batches"][0]["native_result"]["result"]["completed"][0][
+            "result"
+        ]["provider_requests"]
+        == 5
+    )
+
+
+def test_hourly_campaign_parser_accepts_frequency() -> None:
+    args = parser().parse_args(
+        [
+            "prepare",
+            "--project-env",
+            "env",
+            "--report",
+            "report.json",
+            "--expected-report-sha256",
+            "a" * 64,
+            "--output-root",
+            "out",
+            "--name",
+            "hourly",
+            "--frequency",
+            "60m",
+        ]
+    )
+    assert args.frequency == "60m"

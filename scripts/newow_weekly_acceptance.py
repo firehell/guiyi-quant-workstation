@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import re
 import sys
-from typing import Callable, TextIO
+from typing import Callable, Mapping, TextIO
 
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import (
@@ -1008,6 +1008,203 @@ def run_pt_probe(
         return validate_pt_initial_clear(chart, reference)
 
 
+_DEFERRED_PAGE_REASONS = {
+    ProductFrequency.WEEKLY.value: "NEWOW_WEEKLY_RELEASE_PENDING",
+    ProductFrequency.HOURLY.value: "NEWOW_HOURLY_RELEASE_PENDING",
+}
+_PRODUCT_CLASSIFICATIONS = (
+    "ordinary_gap",
+    "derived_only",
+    "metadata",
+    "source",
+    "integrity",
+    "warming",
+    "not_applicable",
+    "unopened",
+    "interrupted",
+    "unknown",
+)
+
+
+def accept_product_report(
+    report: object,
+    *,
+    symbol: str,
+    frequency: str,
+    as_of: datetime | str,
+) -> dict[str, object]:
+    """Accept one native readiness report for an explicit symbol/frequency/as_of."""
+
+    violations: list[str] = []
+    try:
+        expected = _instant(as_of)
+    except ValueError:
+        expected = FROZEN_AS_OF
+        violations.append("AS_OF_INVALID")
+    if re.fullmatch(r"[a-z]{1,8}", symbol or "") is None:
+        violations.append("SYMBOL_INVALID")
+    if frequency not in {
+        ProductFrequency.WEEKLY.value,
+        ProductFrequency.DAILY.value,
+        ProductFrequency.HOURLY.value,
+    }:
+        violations.append("FREQUENCY_INVALID")
+    if not isinstance(report, dict):
+        return {
+            "schema_version": "newow_product_acceptance_v1",
+            "accepted": False,
+            "page_ready": False,
+            "violations": sorted(set((*violations, "REPORT_SCHEMA_INVALID"))),
+            "classifications": {name: 0 for name in _PRODUCT_CLASSIFICATIONS},
+        }
+    if report.get("schema_version") != 1:
+        violations.append("REPORT_SCHEMA_INVALID")
+    if report.get("command") != "data.newow-readiness":
+        violations.append("REPORT_COMMAND_INVALID")
+    if report.get("readonly") is not True:
+        violations.append("REPORT_NOT_READONLY")
+    if (
+        type(report.get("provider_requests")) is not int
+        or report.get("provider_requests") != 0
+    ):
+        violations.append("PROVIDER_REQUESTS_NOT_ZERO")
+    if type(report.get("writes")) is not int or report.get("writes") != 0:
+        violations.append("WRITES_NOT_ZERO")
+    scope = report.get("frequency_scope")
+    if scope != [frequency]:
+        violations.append("FREQUENCY_SCOPE_MISMATCH")
+    if report.get("as_of") != expected.isoformat():
+        violations.append("AS_OF_MISMATCH")
+
+    classifications: Counter[str] = Counter()
+    rows: list[dict[str, object]] = []
+    for source, key in (
+        ("dependency", "dependencies"),
+        ("repair", "repair_targets"),
+        ("metadata", "metadata_proposals"),
+        ("enumeration", "enumerations"),
+        ("case", "cases"),
+    ):
+        values = report.get(key)
+        if values is None:
+            continue
+        if not isinstance(values, list):
+            violations.append(f"{key.upper()}_INVALID")
+            continue
+        for item in values:
+            if not isinstance(item, dict):
+                violations.append(f"{key.upper()}_INVALID")
+                continue
+            if item.get("symbol") not in {None, symbol}:
+                continue
+            if item.get("frequency") not in {None, frequency}:
+                continue
+            kind = _classify_product_row(source, item, frequency)
+            if kind == "unknown":
+                violations.append("UNKNOWN_STATUS")
+            classifications[kind] += 1
+            rows.append(
+                {
+                    "source": source,
+                    "status": item.get("status"),
+                    "reason": item.get("reason"),
+                    "classification": kind,
+                    "contract": item.get("contract"),
+                }
+            )
+
+    deferred_reason = _DEFERRED_PAGE_REASONS.get(frequency)
+    page_ready = False
+    if frequency == ProductFrequency.DAILY.value:
+        page_ready = not violations and not any(
+            row["classification"]
+            in {
+                "ordinary_gap",
+                "source",
+                "integrity",
+                "unknown",
+                "interrupted",
+            }
+            for row in rows
+            if row["source"] in {"dependency", "repair"}
+        )
+    elif deferred_reason is None:
+        violations.append("FREQUENCY_INVALID")
+
+    unique_violations = sorted(set(violations))
+    return {
+        "schema_version": "newow_product_acceptance_v1",
+        "accepted": not unique_violations,
+        "page_ready": page_ready,
+        "symbol": symbol,
+        "frequency": frequency,
+        "as_of": expected.isoformat(),
+        "deferred_page_reason": deferred_reason,
+        "violations": unique_violations,
+        "classifications": {
+            name: int(classifications.get(name, 0)) for name in _PRODUCT_CLASSIFICATIONS
+        },
+        "rows": rows,
+    }
+
+
+def _classify_product_row(source: str, row: Mapping, frequency: str) -> str:
+    status = row.get("status")
+    reason = row.get("reason")
+    if source == "metadata":
+        return "metadata"
+    if source == "enumeration":
+        if status == "UNOPENED":
+            return "unopened"
+        if status == "ENUMERATED":
+            return "not_applicable"
+        return "unknown"
+    if source == "case":
+        main = row.get("main") if isinstance(row.get("main"), dict) else {}
+        status = main.get("status")
+        reason = main.get("reason")
+        if frequency in _DEFERRED_PAGE_REASONS:
+            if status == "UNOPENED":
+                return "unopened"
+            return "unknown"
+        if status == "READY":
+            return "not_applicable"
+        if status == "WARMING":
+            return "warming"
+        if status == "NOT_APPLICABLE":
+            return "not_applicable"
+        if status == "UNOPENED":
+            return "unopened"
+        return "unknown"
+    if status == "DATA_READY":
+        return "not_applicable"
+    if status == "PROPOSED":
+        count = row.get("provider_request_count")
+        if count == 0:
+            return "derived_only"
+        return "ordinary_gap"
+    if status == "DATA_UNAVAILABLE":
+        return "ordinary_gap"
+    if status in {"DATA_INTERRUPTED", "PRICE_UNAVAILABLE"} or reason in {
+        "PRICE_UNAVAILABLE",
+        "NO_TRADE",
+    }:
+        return "interrupted"
+    if status == "SOURCE_EXCEPTION":
+        return "source"
+    if status == "INTEGRITY_ERROR":
+        return "integrity"
+    if status == "WARMING":
+        return "warming"
+    if status == "NOT_APPLICABLE":
+        return "not_applicable"
+    if status == "UNOPENED":
+        return "unopened"
+    if status in {"UNKNOWN", "UNSTARTED"}:
+        return "unknown"
+    return "unknown"
+
+
 def _read_bytes(path: str, maximum: int) -> bytes:
     try:
         target = Path(path)
@@ -1024,6 +1221,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     commands = parser.add_subparsers(dest="mode", required=True)
     commands.add_parser("pt", allow_abbrev=False)
+    product = commands.add_parser("product", allow_abbrev=False)
+    product.add_argument("--symbol", required=True)
+    product.add_argument("--frequency", required=True, choices=("1w", "1d", "60m"))
+    product.add_argument("--as-of", required=True)
+    product.add_argument("--report", required=True)
     summary = commands.add_parser("summary", allow_abbrev=False)
     summary.add_argument("--report", required=True)
     summary.add_argument("--scope", required=True)
@@ -1044,6 +1246,15 @@ def main(
             payload = run_pt_probe(
                 session_factory=session_factory,
                 service_factory=service_factory,
+            )
+            code = 0 if payload["accepted"] is True else 1
+        elif args.mode == "product":
+            report = json.loads(_read_bytes(args.report, 256 * 1024 * 1024))
+            payload = accept_product_report(
+                report,
+                symbol=args.symbol,
+                frequency=args.frequency,
+                as_of=args.as_of,
             )
             code = 0 if payload["accepted"] is True else 1
         else:
