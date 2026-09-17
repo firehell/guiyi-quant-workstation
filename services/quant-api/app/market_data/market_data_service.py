@@ -467,7 +467,7 @@ class MarketDataService:
         bars, exceptions = self.read_physical_daily_quality(SeriesQuery(
             SeriesKind.CONTRACT, symbol, BarFrequency.D1,
             start, end, contract=contract,
-        ))
+        ), require_window_coverage=False)
         bars = tuple(bar for bar in bars if bar.bar_end <= cutoff)
         exceptions = tuple(item for item in exceptions if item.bar_end <= cutoff)
         expected = self.expected_contract_replay_endpoints(
