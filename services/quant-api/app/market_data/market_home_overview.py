@@ -26,11 +26,12 @@ from app.market_data.market_data_service import (
 from app.market_data.product_retirement import normalize_symbol
 from app.market_data.product_taxonomy import ProductTaxonomyEntry
 from app.market_data.research_metrics import Trend, calculate_research_metrics
+from app.market_data.source_quality import PriceUnavailableFact
 
 
 MarketHomeStatus = Literal["ready", "degraded"]
 MarketHomeFreshness = Literal["fresh", "stale", "unavailable"]
-METRIC_POLICY_VERSION = "physical_owner_v2"
+METRIC_POLICY_VERSION = "physical_owner_quality_v3"
 
 
 class MarketHomeOverviewError(RuntimeError):
@@ -162,21 +163,21 @@ class MarketHomeOverviewService:
                 raise MarketHomeOverviewError(
                     "MARKET_HOME_DOMINANT_CONTEXT_INVALID"
                 ) from exc
-            daily = _query_through_target(
-                self._market_data,
-                symbol=symbol,
-                contract=owner.contract,
-                frequency=BarFrequency.D1,
-                limit=300,
+            daily, gaps, history_missing = _daily_inputs(
+                self._market_data, symbol=symbol, contract=owner.contract,
                 target_as_of=target_as_of,
             )
+            daily = _through_target(daily, target_as_of)
+            if gaps:
+                boundary = max(gap.bar_end for gap in gaps)
+                daily = tuple(bar for bar in daily if bar.bar_end > boundary)
             if not daily:
                 unavailable_count += 1
                 continue
             if daily[-1].trading_day != target_as_of:
                 stale_count += 1
                 continue
-            weekly = _query_through_target(
+            weekly, weekly_reasons = _query_through_target(
                 self._market_data,
                 symbol=symbol,
                 contract=owner.contract,
@@ -184,7 +185,14 @@ class MarketHomeOverviewService:
                 limit=80,
                 target_as_of=target_as_of,
             )
-            metrics = calculate_research_metrics(daily, weekly)
+            metrics = calculate_research_metrics(() if history_missing else daily, weekly)
+            quality_reasons = weekly_reasons
+            if history_missing:
+                quality_reasons += ("daily_history_unavailable",)
+            if gaps:
+                quality_reasons += ("daily_price_interrupted",)
+                if metrics.daily_trend == "unavailable":
+                    quality_reasons += ("daily_rewarming",)
             dominant = dominants[symbol]
             taxonomy = self._taxonomy[symbol]
             items.append(
@@ -204,7 +212,7 @@ class MarketHomeOverviewService:
                     atr14_percentile252=metrics.atr14_percentile252,
                     daily_trend=metrics.daily_trend,
                     weekly_trend=metrics.weekly_trend,
-                    reason_codes=_reason_codes(metrics),
+                    reason_codes=_reason_codes(metrics) + quality_reasons,
                 )
             )
 
@@ -282,6 +290,36 @@ def _through_target(
     return tuple(bar for bar in bars if bar.trading_day <= target_as_of)
 
 
+def _daily_inputs(
+    market_data: MarketDataService, *, symbol: str, contract: str, target_as_of: date,
+) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...], bool]:
+    try:
+        bars, gaps = market_data.query_physical_daily_quality_as_of(
+            symbol=symbol, contract=contract, trading_day=target_as_of, limit=300,
+        )
+        return bars, gaps, False
+    except MarketDataError as exc:
+        if exc.code == "QUERY_WINDOW_EMPTY":
+            return (), (), False
+        if not _missing_history(exc):
+            raise MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR") from exc
+    # A separate one-endpoint quote contract does not satisfy the history
+    # contract. Its Bar must never seed any daily metric after history failed.
+    try:
+        bars, gaps = market_data.query_physical_daily_quality_as_of(
+            symbol=symbol, contract=contract, trading_day=target_as_of, limit=1,
+        )
+        return bars, gaps, True
+    except MarketDataError as exc:
+        if exc.code == "QUERY_WINDOW_EMPTY" or _missing_history(exc):
+            return (), (), True
+        raise MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR") from exc
+
+
+def _missing_history(exc: MarketDataError) -> bool:
+    return exc.code == exc.reason == "DATASET_OR_PARTITION_MISSING"
+
+
 def _query_through_target(
     market_data: MarketDataService,
     *,
@@ -290,7 +328,7 @@ def _query_through_target(
     frequency: BarFrequency,
     limit: int,
     target_as_of: date,
-) -> tuple[CanonicalBar, ...]:
+) -> tuple[tuple[CanonicalBar, ...], tuple[str, ...]]:
     try:
         bars = market_data.query_physical_bars_as_of(
             symbol=symbol,
@@ -300,10 +338,14 @@ def _query_through_target(
             limit=limit,
         )
     except MarketDataError as exc:
-        if exc.code in {"QUERY_WINDOW_EMPTY", "PRICE_UNAVAILABLE"}:
-            return ()
+        if exc.code == "QUERY_WINDOW_EMPTY":
+            return (), ()
+        if _missing_history(exc):
+            return (), ("weekly_history_unavailable",)
+        if exc.code == "PRICE_UNAVAILABLE":
+            return (), ("weekly_price_unavailable",)
         raise MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR") from exc
-    return _through_target(bars, target_as_of)
+    return _through_target(bars, target_as_of), ()
 
 
 def _reason_codes(metrics) -> tuple[str, ...]:

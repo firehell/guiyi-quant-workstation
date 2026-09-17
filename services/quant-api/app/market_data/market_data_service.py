@@ -223,6 +223,44 @@ class MarketDataService:
             raise MarketDataError("MARKET_HOME_LIVE_DAILY_AFTER_CUTOFF")
         return result.bars
 
+    def query_physical_daily_quality_as_of(
+        self, *, symbol: str, contract: str, trading_day: date, limit: int,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...]]:
+        """A bounded completed D1 window, counting source gaps as endpoints.
+
+        This explicit quality consumer must never shorten its promised window
+        to committed coverage or backfill missing prices with older valid Bars.
+        Ordinary series/page readers remain strict.
+        """
+        page = SeriesPageQuery(
+            SeriesKind.CONTRACT, symbol, BarFrequency.D1,
+            contract=contract, limit=limit,
+        )
+        assert page.contract is not None
+        _, cutoff = self._trading_day_window(
+            symbol=page.symbol, since=trading_day, through=trading_day,
+        )
+        expected = self.expected_contract_replay_endpoints(
+            symbol=page.symbol, contract=page.contract, frequency=BarFrequency.D1,
+            trading_day=trading_day, cutoff=cutoff,
+        )[-page.limit:]
+        if not expected or expected[-1] != (cutoff, trading_day):
+            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE")
+        bars, gaps = self.read_physical_daily_quality(SeriesQuery(
+            SeriesKind.CONTRACT, page.symbol, BarFrequency.D1,
+            expected[0][0] - timedelta(microseconds=1), cutoff,
+            contract=page.contract,
+        ), require_window_coverage=False)
+        actual = tuple(sorted(
+            [(bar.bar_end, bar.trading_day) for bar in bars]
+            + [(gap.bar_end, gap.trading_day) for gap in gaps]
+        ))
+        if actual != expected:
+            if len(set(actual)) != len(actual) or set(actual) - set(expected):
+                raise MarketDataError("BAR_IDENTITY_CONFLICT")
+            raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+        return bars, gaps
+
     def query_physical_bars_as_of(
         self,
         *,
@@ -980,7 +1018,7 @@ class MarketDataService:
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
         if tuple(day for day, _ in calendar_days) != expected_days:
-            raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+            raise MarketDataError("DATASET_OR_PARTITION_MISSING", reason="TRADING_CALENDAR_MISSING")
         if any(is_trading_day for _, is_trading_day in calendar_days):
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
 
@@ -1425,6 +1463,10 @@ class MarketDataService:
                 raise MarketDataError(exc.code) from exc
         actual = tuple(sorted((bar.bar_end, bar.trading_day) for bar in bars))
         if actual != tuple(sorted(expected)):
+            if len(set(actual)) != len(actual):
+                raise MarketDataError(missing_code, reason="REPLAY_ORDER_INVALID")
+            if set(actual) - set(expected):
+                raise MarketDataError(missing_code, reason="REPLAY_ENDPOINTS_EXTRA")
             raise MarketDataError(missing_code)
 
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:

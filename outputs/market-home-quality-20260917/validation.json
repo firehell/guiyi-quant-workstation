@@ -1,0 +1,52 @@
+{
+  "schema": "market_home_quality_validation_v1",
+  "code_commit": "247cc2d3adbbfac61ad3e3a842e2a681183cbdf4",
+  "snapshot_only_followup": "fb02c3e3b",
+  "target_days": [
+    "2026-09-16",
+    "2026-09-17"
+  ],
+  "newow_cutoff": "2026-09-17T07:00:00.000001+00:00",
+  "backend": {
+    "passed": 1749,
+    "skipped": 59
+  },
+  "frontend_unit": {
+    "passed": 624,
+    "skipped": 1
+  },
+  "frontend_build": "passed",
+  "home_e2e": {
+    "passed": 31,
+    "snapshots_visually_reviewed": 6
+  },
+  "openspec": {
+    "passed": 9
+  },
+  "ruff": "passed",
+  "secret_scan_findings": 0,
+  "mypy": {
+    "errors": 11,
+    "same_errors_present_on_prechange_baseline": true
+  },
+  "independent_review": "passed",
+  "browser": {
+    "natural_first_load": true,
+    "overview_http": "ok",
+    "quote_participants": 60,
+    "active_products": 60,
+    "stale": 0,
+    "quote_unavailable": 0,
+    "horizontal_overflow": false,
+    "limitation": "Live websocket is intentionally forbidden by the read-only preview; its connection errors are not D1 failures."
+  },
+  "provider_requests": 0,
+  "production_writes": 0,
+  "runtime_switches": 0,
+  "gates": {
+    "pr_create": "auto_review_rejected_destination_authorization_pending",
+    "data_prepare": "auto_review_rejected_maintenance_lock_authorization_pending",
+    "release": "not_authorized",
+    "runtime_promotion": "not_authorized"
+  }
+}
