@@ -373,9 +373,24 @@ promotion、真实通知、provider acceptance 与微信实际送达均是彼此
 - **WHEN** implementation、full verification 与 independent review 完成
 - **THEN** 结论最多为允许进入 release candidate，不能声明 RELEASED、RUNTIME_READY、真实通知或业务闭环
 
-### Requirement: Runtime aggregate health preserves current rule errors
+### Requirement: Market operational health and Alert diagnostics are independent
 
-Live and Alert heartbeats SHALL additionally expose bounded per-product coverage for the operational Scope. Live coverage MUST retain the first unresolved completed 1m endpoint even if a later Bar arrives. Alert coverage MUST be keyed by Rule, product and enabled frequency; a successful evaluation for one key MUST NOT erase another key's failure. Aggregate health SHALL distinguish due data lag from evaluation lag using Session-derived Live frequency endpoints and a fixed evaluation budget. Legacy heartbeats lacking coverage SHALL be `unverified`, not evidence that every Scope item is healthy. These health projections MUST NOT create or retry Events, transport messages, or historical repairs, and MUST NOT alter the `alert:runtime-status` v6 notification record.
+Runtime operational health v2 SHALL aggregate only DB, Redis, Live market and after-market incremental maintenance.
+Alert processing, Rule, coverage, transport and notification configuration failures SHALL remain visible in the Alert
+component but SHALL NOT degrade the top-level operational health. Optional weekly audit remains independent.
+Fresh, available Live with all operational products explicitly CLOSED and complete phase counts SHALL be operationally
+healthy despite unverified coverage after cleanup or a closed-session restart. Coverage MUST remain unverified;
+this exception MUST NOT hide known lagging, stale/missing/future heartbeats, unavailable connections, or unverified
+coverage during trading or unknown/incomplete phases. After-market failure/missed/stuck/invalid-state semantics remain unchanged.
+
+#### Scenario: Closed Live and completed increments with Alert failures
+
+- **WHEN** DB/Redis are healthy, Live heartbeat is fresh and available with all products CLOSED, and the expected after-market increment passed
+- **THEN** top-level health is ok even if Live coverage is unverified and Alert processing or notifications failed; diagnostic evidence remains unchanged
+
+### Requirement: Alert component health preserves current rule errors
+
+Live and Alert heartbeats SHALL additionally expose bounded per-product coverage for the operational Scope. Live coverage MUST retain the first unresolved completed 1m endpoint even if a later Bar arrives. Alert coverage MUST be keyed by Rule, product and enabled frequency; a successful evaluation for one key MUST NOT erase another key's failure. Alert component health SHALL distinguish due data lag from evaluation lag using Session-derived Live frequency endpoints and a fixed evaluation budget. Legacy heartbeats lacking coverage SHALL be `unverified`, not evidence that every Scope item is healthy. These health projections MUST NOT create or retry Events, transport messages, or historical repairs, and MUST NOT alter the `alert:runtime-status` v6 notification record.
 When the Live subscription snapshot is absent, current-day coverage SHALL be `unverified`, including after authorized cleanup unless a separate persisted completion fact proves it. An unresolved prior-day Live gap or prior-day Alert evaluation failure SHALL remain visible across a trading-day change. D1 evaluation coverage MAY use a successful after-market trading day as its source deadline. W1 coverage SHALL not infer a new weekly deadline from an ISO week change alone; it requires a completed trading week in the exchange Calendar, and absent W1 Canonical completion proof remains `unverified`.
 
 #### Scenario: One operational product stops while peers continue

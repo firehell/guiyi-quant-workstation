@@ -143,7 +143,11 @@ def build_runtime_health(
         after_market=components["after_market"],
     )
 
-    overall = _overall_status(components.values())
+    # Operational health follows the market-data path. Alert processing and
+    # delivery remain visible diagnostics, not prerequisites for healthy data.
+    overall = _overall_status(
+        components[name] for name in ("db", "redis", "live_market", "after_market")
+    )
     # Historical audit is optional and does not redefine operational service health.
     components["weekly_audit"] = weekly_audit_health(weekly_audit_status_path,
         identity=runtime_heartbeat_identity(), products=load_operational_products(), now=current_time)
@@ -649,9 +653,20 @@ def _collect_live_market_health(
             **payload,
             "error_type": "live_unavailable",
         }
+    all_closed = (
+        operational_count > 0
+        and phase_counts.get("CLOSED", 0) == operational_count
+        and sum(phase_counts.values()) == operational_count
+    )
+    # After cleanup or a closed-session restart, coverage remains unverified.
+    # That is not an operational failure while every product is known closed.
+    # Preserve actual lagging evidence and all heartbeat/availability failures.
+    coverage_unhealthy = payload["coverage_state"] == "lagging" or (
+        payload["coverage_state"] == "unverified" and not all_closed
+    )
     return {
         "status": RUNTIME_STATUS_DEGRADED
-        if payload["coverage_state"] in {"lagging", "unverified"}
+        if coverage_unhealthy
         else RUNTIME_STATUS_OK,
         **payload,
     }

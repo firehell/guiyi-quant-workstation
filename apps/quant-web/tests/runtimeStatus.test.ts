@@ -1,6 +1,25 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+test('healthy market overview keeps independent alert failures and closed coverage visible', async () => {
+  const { runtimeStatusPresentation } = await import('../src/utils/runtimePresentation.ts')
+  const payload = runtimeHealth({ status: 'ok' })
+  Object.assign(payload.components.live_market, {
+    phase_counts: { CLOSED: 60 }, subscribed_count: 0, coverage_state: 'unverified',
+    coverage: { a: { state: 'unverified' } },
+  })
+  Object.assign(payload.components.after_market, { status: 'ok', run_state: 'completed', current_run: null })
+  Object.assign(payload.components.alert, { status: 'degraded', processing_state: 'failed', notification_state: 'failed' })
+  const items = runtimeStatusPresentation(payload)
+  assert.equal(items[0].state, '整体正常')
+  assert.equal(items[0].tone, 'normal')
+  assert.match(items[0].detail, /实时行情与盘后增量.*独立诊断/)
+  assert.equal(items[1].state, '休市正常')
+  assert.match(items[1].detail, /待核 a/)
+  assert.equal(items[2].state, '处理失败')
+  assert.match(items[2].detail, /通知失败/)
+})
+
 test('interrupted closeout is not displayed as completed maintenance', async () => {
   const { runtimeStatusPresentation } = await import('../src/utils/runtimePresentation.ts')
   const payload = runtimeHealth()

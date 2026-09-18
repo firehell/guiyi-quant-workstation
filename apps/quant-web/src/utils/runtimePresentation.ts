@@ -53,6 +53,9 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
   const live = snapshot.components.live_market
   const alert = snapshot.components.alert
   const afterMarket = snapshot.components.after_market
+  const liveClosed = live.operational_count > 0
+    && live.phase_counts.CLOSED === live.operational_count
+    && Object.values(live.phase_counts).reduce((sum, count) => sum + count, 0) === live.operational_count
   const alertDisabled = !alert.configured_enabled || alert.status === 'disabled'
   const processingState = alertDisabled
     ? '提醒未启用'
@@ -73,14 +76,14 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
       key: 'overall',
       label: '运行概况',
       state: overallLabel(snapshot.status),
-      detail: '只读健康快照',
+      detail: '实时行情与盘后增量（含 DB/Redis）；提醒和通知独立诊断',
       timestamp: `生成 ${formatRuntimeTimestamp(snapshot.generated_at)}`,
       tone: statusTone(snapshot.status),
     },
     {
       key: 'live',
       label: '实时行情',
-      state: liveLabel(live.status),
+      state: live.status === 'ok' && liveClosed ? '休市正常' : liveLabel(live.status),
       detail: liveIssues.length ? `${live.subscribed_count} / ${live.operational_count} 品种；待核 ${liveIssues.slice(0, 3).join('、')}${liveIssues.length > 3 ? ` 等 ${liveIssues.length} 项` : ''}` : `${live.subscribed_count} / ${live.operational_count} 品种`,
       timestamp: live.last_bar_at
         ? `最近 K 线 ${formatRuntimeTimestamp(live.last_bar_at)}`
