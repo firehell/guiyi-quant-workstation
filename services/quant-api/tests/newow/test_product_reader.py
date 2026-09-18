@@ -1047,6 +1047,48 @@ def test_historical_candidate_requires_final_session_end_plus_one_microsecond(pr
     )
 
 
+def test_weekly_candidates_use_calendar_week_authority_and_stop_at_two(product_cases):
+    _, _, fake = product_cases.paged_reader(prefix_bars=3, frequency="1w")
+    fake.coverage.start = date(2026, 8, 1)
+    fake.as_of = datetime(2026, 9, 18, 8, tzinfo=UTC)
+    cutoffs = {
+        date(2026, 9, 14): (date(2026, 9, 18), datetime(2026, 9, 18, 7, 0, 0, 1, tzinfo=UTC)),
+        date(2026, 9, 7): (date(2026, 9, 11), datetime(2026, 9, 11, 7, 0, 0, 1, tzinfo=UTC)),
+    }
+    calls = []
+
+    def completed(*, symbol, week_monday, as_of):
+        calls.append(week_monday)
+        assert (symbol, as_of) == ("rb", fake.as_of)
+        return cutoffs.get(week_monday)
+
+    fake.completed_calendar_week = completed
+    reader = NewowProductReader(
+        fake, coverage=fake.coverage, active_products=("rb",),
+        now=lambda: fake.as_of,
+    )
+    assert reader.weekly_snapshot_candidates(
+        "rb", as_of=fake.as_of, limit=2,
+    ) == (cutoffs[date(2026, 9, 14)], cutoffs[date(2026, 9, 7)])
+    assert calls == [date(2026, 9, 14), date(2026, 9, 7)]
+
+
+def test_current_owner_context_is_independent_of_historical_week(product_cases):
+    reader, _, fake = product_cases.paged_reader(prefix_bars=3, frequency="1w")
+    overlapping = fake.trading_days_overlapping_window
+    fake.trading_days_overlapping_window = (
+        lambda *, symbol, start, end: overlapping(symbol, start, end)
+    )
+    during_session = datetime(2023, 1, 2, 3, tzinfo=UTC)
+    assert reader.current_owner_context("rb", during_session) == {
+        "status": "known", "physical_contract": "RB2605",
+    }
+    fake.failures["owner"] = MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+    assert reader.current_owner_context("rb", during_session) == {
+        "status": "unknown", "physical_contract": None,
+    }
+
+
 def test_historical_candidates_fill_twenty_after_filtering_day_at_exact_close(product_cases):
     days = tuple(date(2026, 8, 10) + timedelta(days=index) for index in range(21))
     def sessions(day):

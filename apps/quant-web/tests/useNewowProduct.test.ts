@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { nextTick, ref } from 'vue'
 
-import { getNewowDailySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../src/api/newowProduct.ts'
+import { getNewowDailySnapshot, getNewowWeeklySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../src/api/newowProduct.ts'
 import { useNewowProduct } from '../src/composables/useNewowProduct.ts'
 import type { MarketDetailIdentity } from '../src/types/marketDetail.ts'
 import type { NewowProductRequest, NewowProductSection, NewowProductSectionResponse } from '../src/types/newowProduct.ts'
@@ -10,6 +10,60 @@ import { normalizeNewowProductResponse } from '../src/utils/newowProductTypes.ts
 import { resolveNewowPanelRenderState } from '../src/utils/newowProductViewModel.ts'
 
 const AS_OF = '2026-08-15T07:00:00.000Z'
+
+test('default W1 waits for one complete-week cutoff before loading panels', async () => {
+  const pending: Pending[] = []
+  let resolveWeekly!: (value: any) => void
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1w')),
+    now: () => '2026-09-18T08:00:00Z',
+    fetchSection: controlled(pending),
+    fetchWeeklySnapshot: () => new Promise(resolve => { resolveWeekly = resolve }),
+  })
+  await nextTick()
+  assert.equal(pending.length, 0)
+  resolveWeekly({ schema_version: 'newow_weekly_snapshot_v1', product: 'jm', strategy: 'trend', frequency: '1w', series_kind: 'actual_dominant', requested_at: '2026-09-18T08:00:00Z', expected_period_end: '2026-09-18T07:00:00.000001Z', available_period_end: '2026-09-11T07:00:00.000001Z', as_of: '2026-09-11T07:00:00.000001Z', freshness: 'pending_update', current_context: { status: 'unknown', physical_contract: null } }); await flush()
+  assert.equal(pending[0]!.request.asOf, '2026-09-11T07:00:00.000001Z')
+  pending[0]!.resolve(normalizedChart(pending[0]!.request)); await flush()
+  const reference = state.loadReference()
+  assert.equal(pending[1]!.request.asOf, pending[0]!.request.asOf)
+  const value = referenceWire({ items: [] })
+  value.meta.as_of = pending[1]!.request.asOf
+  value.meta.identity.frequency = '1w'
+  value.meta.identity.profile_id = 'newow_product_trend_1w_v1'
+  value.meta.futures_adaptation_version = 'newow_futures_weekly_quality_segment_v1'
+  pending[1]!.resolve(normalizeNewowProductResponse(value, pending[1]!.request)); await reference
+  assert.equal(state.weeklySnapshot.value?.freshness, 'pending_update')
+  state.dispose()
+})
+
+test('weekly snapshot client rejects a mismatched cutoff', async () => {
+  const identity = { product: 'rb', strategy: 'trend' as const, frequency: '1w' as const, seriesKind: 'actual_dominant' as const }
+  const payload = { schema_version: 'newow_weekly_snapshot_v1', product: 'rb', strategy: 'trend', frequency: '1w', series_kind: 'actual_dominant', requested_at: '2026-09-18T08:00:00Z', expected_period_end: '2026-09-18T07:00:00.000001Z', available_period_end: '2026-09-11T07:00:00.000001Z', as_of: '2026-09-11T07:00:00.000001Z', freshness: 'pending_update', current_context: { status: 'unknown', physical_contract: null } }
+  assert.equal((await getNewowWeeklySnapshot(identity, { request: async () => payload })).as_of, payload.as_of)
+  await assert.rejects(() => getNewowWeeklySnapshot(identity, { request: async () => ({ ...payload, as_of: payload.expected_period_end }) }), /NEWOW_RESPONSE_INVALID/)
+})
+
+test('weekly refresh invalidates the old cutoff before requesting new panels', async () => {
+  const pending: Pending[] = []
+  const cutoffs = ['2026-09-11T07:00:00.000001Z', '2026-09-18T07:00:00.000001Z']
+  let calls = 0
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1w')),
+    fetchSection: controlled(pending),
+    fetchWeeklySnapshot: async () => {
+      const as_of = cutoffs[calls++]!
+      return { schema_version: 'newow_weekly_snapshot_v1', product: 'jm', strategy: 'trend', frequency: '1w', series_kind: 'actual_dominant', requested_at: '2026-09-18T08:00:00Z', expected_period_end: cutoffs[1]!, available_period_end: as_of, as_of, freshness: calls === 1 ? 'pending_update' : 'current', current_context: { status: 'known', physical_contract: 'JM2601' } }
+    },
+  })
+  await flush()
+  assert.equal(pending[0]!.request.asOf, cutoffs[0])
+  pending[0]!.resolve(normalizedChart(pending[0]!.request)); await flush()
+  state.refreshCurrent(); await flush()
+  assert.equal(pending[1]!.request.asOf, cutoffs[1])
+  assert.equal(state.weeklySnapshot.value?.freshness, 'current')
+  state.dispose()
+})
 
 test('default D1 waits for a verified close and pins every panel to its cutoff', async () => {
   const pending: Pending[] = []
@@ -1626,6 +1680,7 @@ function newowIdentity(strategy: 'trend' | 'oscillation' | 'main_rise', frequenc
 function normalizedChart(request: NewowProductRequest, options: { token?: string | null; hash?: string; close?: string; revision?: string | null } = {}) {
   const raw = chartWire({ strategy: request.identity.strategy, frequency: request.identity.frequency, ...options })
   raw.meta.as_of = request.asOf
+  if (request.identity.frequency === '1w') raw.meta.futures_adaptation_version = 'newow_futures_weekly_quality_segment_v1'
   return normalizeNewowProductResponse(raw, request)
 }
 

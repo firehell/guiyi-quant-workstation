@@ -233,7 +233,7 @@ onBeforeUnmount(() => loader.dispose())
     </section>
     </template>
     </NewowProductChartStage></div>
-    <div class="newow-product-workspace__snapshot-controls" :data-as-of="loader.historicalSnapshot.value?.as_of ?? loader.dailySnapshot.value?.as_of">
+    <div class="newow-product-workspace__snapshot-controls" :data-as-of="loader.historicalSnapshot.value?.as_of ?? loader.dailySnapshot.value?.as_of ?? loader.weeklySnapshot.value?.as_of">
       <template v-if="loader.historicalSnapshot.value">
         <span :title="loader.historicalSnapshot.value.as_of">历史快照截至 {{ historicalAsOfLabel }}（交易日 {{ loader.historicalSnapshot.value.trading_day }}）</span>
         <button @click="loader.returnToCurrent">返回当前</button>
@@ -241,7 +241,9 @@ onBeforeUnmount(() => loader.dispose())
       <template v-else>
         <span v-if="loader.dailySnapshot.value" :title="loader.dailySnapshot.value.as_of">日线截至 {{ loader.dailySnapshot.value.available_trading_day }} 收盘</span>
         <span v-if="loader.dailySnapshot.value?.freshness === 'pending_update'" role="status">{{ loader.dailySnapshot.value.expected_trading_day }} 日线待更新</span>
-        <span v-if="loader.dailyLoading.value" role="status">正在确认最近完整日线…</span>
+        <span v-if="loader.weeklySnapshot.value" :title="loader.weeklySnapshot.value.as_of">周线截至 {{ loader.weeklySnapshot.value.available_period_end }}，当前主力 {{ loader.weeklySnapshot.value.current_context.physical_contract ?? '不可判定' }}</span>
+        <span v-if="loader.weeklySnapshot.value?.freshness === 'pending_update'" role="status">{{ loader.weeklySnapshot.value.expected_period_end }} 周线待发布</span>
+        <span v-if="loader.dailyLoading.value" role="status">正在确认最近完整{{ identity.frequency === '1w' ? '周线' : '日线' }}…</span>
         <span v-if="loader.dailyError.value" role="status">{{ newowErrorDisplay(loader.dailyError.value) }}</span>
         <button :disabled="loader.historicalLoading.value" @click="loader.switchToHistorical">查看最近可用历史快照</button>
         <button @click="refreshCurrent">刷新当前</button>

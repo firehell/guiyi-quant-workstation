@@ -19,6 +19,8 @@ from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrateg
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.core.env import PROJECT_ROOT
+from app.market_data.after_market import _load_status, public_after_market_status
 from app.market_data.composition import (
     build_database_coverage_source,
     build_market_data_service,
@@ -30,6 +32,10 @@ from app.market_data.newow.historical_snapshot import (
     NewowHistoricalSnapshotResolver,
 )
 from app.market_data.newow.daily_snapshot import NewowDailySnapshotResolver
+from app.market_data.newow.weekly_snapshot import (
+    NewowWeeklySnapshotResolver,
+    publication_state_from_status,
+)
 from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
     AU_PERIOD_PREVIEW_FREQUENCIES,
@@ -97,6 +103,7 @@ from app.schemas.market_newow_product import (
     DeferredSectionOut,
     NewowHistoricalSnapshotResponse,
     NewowDailySnapshotResponse,
+    NewowWeeklySnapshotResponse,
     NewowProductCapabilitiesResponse,
     NewowProductResponse,
 )
@@ -337,6 +344,21 @@ def _build_daily_resolver(
     return NewowDailySnapshotResolver(reader, service_factory, now=now, cancelled=cancelled)
 
 
+def _build_weekly_resolver(
+    session: Session, cancelled: Callable[[], bool], now: Callable[[], datetime]
+) -> NewowWeeklySnapshotResolver:
+    reader, service_factory = _build_snapshot_inputs(session, cancelled, now)
+    status = public_after_market_status(_load_status(
+        PROJECT_ROOT / ".run" / "after-market-status.json"
+    ))
+    return NewowWeeklySnapshotResolver(
+        reader, service_factory, now=now, cancelled=cancelled,
+        publication_state=lambda product, day, at: publication_state_from_status(
+            status, product, day, at,
+        ),
+    )
+
+
 @router.get("/historical-snapshot", response_model=NewowHistoricalSnapshotResponse)
 def newow_historical_snapshot(
     request: Request,
@@ -427,6 +449,49 @@ def newow_daily_snapshot(
     except Exception as exc:
         status, detail = public_product_error(
             exc, context={"symbol": product, "frequency": frequency}
+        )
+        raise HTTPException(status_code=status, detail=detail) from exc
+
+
+@router.get("/weekly-snapshot", response_model=NewowWeeklySnapshotResponse)
+def newow_weekly_snapshot(
+    request: Request,
+    product: str = Query(...),
+    strategy: Literal["trend", "oscillation", "main_rise"] = Query(...),
+    frequency: Literal["1w"] = Query("1w"),
+    session: Session = Depends(get_db),
+) -> NewowWeeklySnapshotResponse:
+    if (set(request.query_params) - _HISTORICAL_QUERY_FIELDS) or any(
+        len(request.query_params.getlist(key)) != 1 for key in request.query_params
+    ):
+        raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
+    product = _normalize_public_product(product)
+
+    def cancelled() -> bool:
+        try:
+            return from_thread.run(request.is_disconnected)
+        except RuntimeError:
+            return False
+
+    now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
+    try:
+        _enforce_product_frequency(request, product, frequency)
+        result = _build_weekly_resolver(session, cancelled, lambda: now).resolve(
+            product, ProductStrategy(strategy), ProductFrequency(frequency),
+        )
+        return NewowWeeklySnapshotResponse(
+            product=result.product, strategy=result.strategy.value,
+            frequency=result.frequency.value, requested_at=result.requested_at,
+            expected_period_end=result.expected_period_end,
+            available_period_end=result.available_period_end,
+            as_of=result.as_of, freshness=result.freshness,
+            current_context=result.current_context,
+        )
+    except (ActiveUniverseError, ProductTaxonomyError) as exc:
+        raise HTTPException(status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}) from exc
+    except Exception as exc:
+        status, detail = public_product_error(
+            exc, context={"symbol": product, "frequency": frequency},
         )
         raise HTTPException(status_code=status, detail=detail) from exc
 

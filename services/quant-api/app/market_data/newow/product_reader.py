@@ -308,6 +308,67 @@ class NewowProductReader:
             batch_end = batch_start - timedelta(days=1)
         return tuple(candidates)
 
+    def weekly_snapshot_candidates(
+        self, product: str, *, as_of: datetime, limit: int = 2,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> tuple[tuple[date, datetime], ...]:
+        """Choose bounded complete ISO weeks from Calendar and Session authority."""
+        cutoff = utc_timestamp(as_of)
+        if product not in self._active_products or type(limit) is not int or not 1 <= limit <= 2:
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        if cutoff > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+        start = self._coverage.product_start(product)
+        local_day = cutoff.astimezone(_SHANGHAI).date()
+        monday = local_day - timedelta(days=local_day.isoweekday() - 1)
+        candidates: list[tuple[date, datetime]] = []
+        for _ in range(20):
+            if monday + timedelta(days=6) < start or len(candidates) == limit:
+                break
+            self._check_cancelled()
+            if cancelled is not None and cancelled():
+                raise NewowProductReadCancelled("NEWOW_READ_CANCELLED")
+            candidate = self._market_data.completed_calendar_week(
+                symbol=product, week_monday=monday, as_of=cutoff,
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+            monday -= timedelta(days=7)
+        return tuple(candidates)
+
+    def current_owner_context(
+        self, product: str, at: datetime,
+    ) -> dict[str, str | None]:
+        """Read current Session owner separately from any historical snapshot."""
+        instant = utc_timestamp(at)
+        if product not in self._active_products or instant > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        unknown = {"status": "unknown", "physical_contract": None}
+        try:
+            days = self._market_data.trading_days_overlapping_window(
+                symbol=product, start=instant - timedelta(days=1),
+                end=instant + _MICROSECOND,
+            )
+            active = tuple(
+                day for day in days
+                if any(window.start <= instant < window.end for window in
+                       self._market_data.session_windows(symbol=product, trading_day=day))
+            )
+            if len(active) != 1:
+                return unknown
+            owners = self.dependency_owners(product, active[0], active[0])
+        except MarketDataError:
+            return unknown
+        if len(owners) != 1:
+            return unknown
+        return {"status": "known", "physical_contract": owners[0].contract}
+
+    def weekly_tail_unpublished(self, product: str, week_end: date) -> bool:
+        if product not in self._active_products:
+            raise NewowProductReadError("NEWOW_INVALID_PRODUCT")
+        self._check_cancelled()
+        return self._market_data.weekly_tail_unpublished(symbol=product, week_end=week_end)
+
     def resolve_performance_window(
         self,
         product: str,

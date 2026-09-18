@@ -759,6 +759,20 @@ class NewowDailySnapshotResponse(_Out):
     freshness: Literal["current", "pending_update"]
 
 
+class NewowWeeklySnapshotResponse(_Out):
+    schema_version: Literal["newow_weekly_snapshot_v1"] = "newow_weekly_snapshot_v1"
+    product: str
+    strategy: ProductStrategyValue
+    frequency: Literal["1w"] = "1w"
+    series_kind: Literal["actual_dominant"] = "actual_dominant"
+    requested_at: datetime
+    expected_period_end: datetime
+    available_period_end: datetime
+    as_of: datetime
+    freshness: Literal["current", "pending_update"]
+    current_context: dict[str, str | None]
+
+
 class DeferredFrequencyOut(_Out):
     frequency: ProductFrequencyValue
     reason_code: str

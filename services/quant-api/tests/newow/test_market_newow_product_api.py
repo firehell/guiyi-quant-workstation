@@ -23,6 +23,7 @@ from app.market_data.newow.product_service import (
 )
 from app.market_data.newow.historical_snapshot import HistoricalSnapshot
 from app.market_data.newow.daily_snapshot import DailySnapshot
+from app.market_data.newow.weekly_snapshot import WeeklySnapshot
 from app.market_data.newow.resource_gate import NewowResourceBusy
 from app.schemas.market_newow_product import (
     NewowProductResponse,
@@ -123,6 +124,42 @@ def test_daily_snapshot_endpoint_returns_exact_verified_cutoff_and_pending_day(m
         "available_trading_day": "2026-09-17",
         "as_of": "2026-09-17T07:00:00.000001Z",
         "freshness": "pending_update",
+    }
+
+
+def test_weekly_snapshot_endpoint_returns_shared_cutoff_and_separate_current_owner(monkeypatch):
+    requested = datetime(2026, 9, 18, 8, tzinfo=UTC)
+    newer = datetime(2026, 9, 18, 7, 0, 0, 1, tzinfo=UTC)
+    older = datetime(2026, 9, 11, 7, 0, 0, 1, tzinfo=UTC)
+
+    class Resolver:
+        def resolve(self, product, strategy, frequency):
+            assert (product, strategy.value, frequency.value) == ("rb", "trend", "1w")
+            return WeeklySnapshot(
+                product, strategy, frequency, requested, newer, older, older,
+                "pending_update", {"status": "unknown", "physical_contract": None},
+            )
+
+    monkeypatch.setattr(market_newow, "_enforce_product_frequency", lambda *_args: None)
+    monkeypatch.setattr(market_newow, "_build_weekly_resolver", lambda *_args: Resolver(), raising=False)
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/weekly-snapshot", params={
+                "product": "rb", "strategy": "trend", "frequency": "1w",
+            })
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert response.json() == {
+        "schema_version": "newow_weekly_snapshot_v1",
+        "product": "rb", "strategy": "trend", "frequency": "1w",
+        "series_kind": "actual_dominant", "requested_at": "2026-09-18T08:00:00Z",
+        "expected_period_end": "2026-09-18T07:00:00.000001Z",
+        "available_period_end": "2026-09-11T07:00:00.000001Z",
+        "as_of": "2026-09-11T07:00:00.000001Z",
+        "freshness": "pending_update",
+        "current_context": {"status": "unknown", "physical_contract": None},
     }
 
 

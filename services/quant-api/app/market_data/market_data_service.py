@@ -417,6 +417,47 @@ class MarketDataService:
             if day <= latest and max(window.end for window in sessions) <= as_of
         )
 
+    def completed_calendar_week(
+        self, *, symbol: str, week_monday: date, as_of: datetime,
+    ) -> tuple[date, datetime] | None:
+        """Return the last Session cutoff only after an entire ISO week is known."""
+        if week_monday.isoweekday() != 1 or as_of.tzinfo is None or as_of.utcoffset() is None:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        calendar = self._exact_calendar(
+            symbol, week_monday, week_monday + timedelta(days=6),
+        )
+        trading_days = tuple(day for day, trades in calendar if trades)
+        if not trading_days:
+            return None
+        last_day = trading_days[-1]
+        last_end = max(
+            window.end for window in self.session_windows(
+                symbol=symbol, trading_day=last_day,
+            )
+        )
+        cutoff = last_end.astimezone(UTC) + timedelta(microseconds=1)
+        return (last_day, cutoff) if cutoff <= as_of.astimezone(UTC) else None
+
+    def weekly_tail_unpublished(self, *, symbol: str, week_end: date) -> bool:
+        """Prove the completed tail week has no rank1 facts at all.
+
+        A partly published week is an internal mapping gap, never a fallback.
+        """
+        monday = week_end - timedelta(days=week_end.isoweekday() - 1)
+        days = tuple(day for day, trades in self._exact_calendar(
+            symbol, monday, monday + timedelta(days=6),
+        ) if trades)
+        if not days or days[-1] != week_end:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        try:
+            mappings = self.catalog.main_map(symbol, days[0], week_end)
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        mapped_days = {mapping.trade_date for mapping in mappings}
+        if mapped_days and mapped_days != set(days):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        return not mapped_days
+
     def query_actual_dominant_trading_days(
         self,
         request: ActualDominantTradingDayQuery,

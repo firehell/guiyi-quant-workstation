@@ -1,6 +1,7 @@
 import type {
   NewowHistoricalSnapshot,
   NewowDailySnapshot,
+  NewowWeeklySnapshot,
   NewowProductCapabilities,
   NewowProductRequest,
   NewowProductSectionResponse,
@@ -24,6 +25,7 @@ const UNAVAILABLE_CODES = new Set([
   'NEWOW_DATA_UNAVAILABLE', 'NEWOW_SOURCE_NONPOSITIVE_PRICE', 'NEWOW_COMPLETE_TRADING_DAY_MISSING',
   'NEWOW_COMPLETE_PERIOD_MISSING', 'NEWOW_HISTORICAL_SNAPSHOT_UNAVAILABLE',
   'NEWOW_FREQUENCY_NOT_OPEN', 'NEWOW_SECTION_NOT_OPEN',
+  'NEWOW_WEEKLY_UNKNOWN', 'NEWOW_WEEKLY_FAILED', 'NEWOW_WEEKLY_STALE',
 ])
 
 export class NewowProductRequestError extends Error {
@@ -167,6 +169,49 @@ export async function getNewowDailySnapshot(
   }
   if (!isDailySnapshot(payload, identity)) throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
   return payload
+}
+
+export async function getNewowWeeklySnapshot(
+  identity: NewowProductRequest['identity'],
+  options: NewowProductRequestOptions = {},
+): Promise<NewowWeeklySnapshot> {
+  const transport = options.request ?? defaultRequest
+  let payload: unknown
+  try {
+    payload = await transport('/market/newow/weekly-snapshot', {
+      params: { product: identity.product, strategy: identity.strategy, frequency: identity.frequency },
+      signal: options.signal,
+    })
+  } catch (error) {
+    if (error instanceof NewowProductRequestError) throw error
+    throw classifyTransportError(error)
+  }
+  if (!isWeeklySnapshot(payload, identity)) throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
+  return payload
+}
+
+function isWeeklySnapshot(value: unknown, identity: NewowProductRequest['identity']): value is NewowWeeklySnapshot {
+  if (!isRecord(value) || value.schema_version !== 'newow_weekly_snapshot_v1'
+    || value.product !== identity.product || value.strategy !== identity.strategy
+    || value.frequency !== '1w' || value.frequency !== identity.frequency
+    || value.series_kind !== 'actual_dominant'
+    || !isRecord(value.current_context)
+    || (value.current_context.status !== 'known' && value.current_context.status !== 'unknown')
+    || (value.current_context.status === 'known'
+      ? typeof value.current_context.physical_contract !== 'string' || value.current_context.physical_contract.length === 0
+      : value.current_context.physical_contract !== null)
+    || !validInstant(value.requested_at) || !validInstant(value.expected_period_end)
+    || !validInstant(value.available_period_end) || !validInstant(value.as_of)) return false
+  return value.as_of === value.available_period_end
+    && Date.parse(value.available_period_end) <= Date.parse(value.expected_period_end)
+    && Date.parse(value.expected_period_end) <= Date.parse(value.requested_at)
+    && (value.freshness === 'current'
+      ? value.available_period_end === value.expected_period_end
+      : value.freshness === 'pending_update' && value.available_period_end < value.expected_period_end)
+}
+
+function validInstant(value: unknown): value is string {
+  return typeof value === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value))
 }
 
 function isDailySnapshot(value: unknown, identity: NewowProductRequest['identity']): value is NewowDailySnapshot {
