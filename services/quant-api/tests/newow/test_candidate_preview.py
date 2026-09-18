@@ -111,6 +111,25 @@ def test_daily_weekly_candidate_capabilities_are_available_without_database(prev
     assert sessions == []
 
 
+def test_au_period_preview_opens_only_au_without_database(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_AU_PERIOD_PREVIEW", "1")
+    app, sessions, _factory = preview
+    client = TestClient(app)
+
+    capability = client.get("/api/v1/market/newow/product-capabilities")
+    assert capability.status_code == 200
+    assert capability.json()["schema_version"] == "newow_product_capabilities_v5"
+    assert capability.json()["open_frequencies"] == ["1d", "1w", "60m"]
+    assert capability.json()["deferred_frequencies"] == []
+    refused = client.get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "jm", "strategy": "trend", "frequency": "60m"},
+    )
+    assert refused.status_code == 403
+    assert refused.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+    assert sessions == []
+
+
 def test_subing_reference_path_is_narrowly_admitted(preview):
     from app.preview import _preview_path_allowed
 

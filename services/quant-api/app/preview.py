@@ -104,6 +104,14 @@ def create_preview_app(
             if len({key for key, value in query}) != len(query):
                 raise ValueError
             values = dict(query)
+            au_period_preview = os.getenv("GUIYI_AU_PERIOD_PREVIEW") == "1"
+            if (au_period_preview and raw_path in {
+                "/api/v1/market/newow/strategy-detail",
+                "/api/v1/market/newow/historical-snapshot",
+            } and values.get("product", "").lower() != "au"):
+                return JSONResponse(
+                    status_code=403, content={"detail": {"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}}
+                )
             field = {
                 "/api/v1/market/bars/page": "before",
                 "/api/v1/market/newow/strategy-detail": "as_of",
@@ -115,6 +123,7 @@ def create_preview_app(
                 values[field] = min(requested, cutoff).isoformat()
                 request.scope["query_string"] = urlencode(values).encode("ascii")
             request.state.candidate_preview_as_of = cutoff
+            request.state.au_period_preview = au_period_preview
         except (ValueError, UnicodeError):
             return JSONResponse(
                 status_code=422, content={"detail": {"code": "PREVIEW_QUERY_INVALID"}}

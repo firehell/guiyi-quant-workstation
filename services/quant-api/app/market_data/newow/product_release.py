@@ -38,6 +38,11 @@ CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
 CANDIDATE_DEFERRED_FREQUENCIES = (
     (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
 )
+AU_PERIOD_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v5"
+AU_PERIOD_PREVIEW_STAGE = "au_daily_weekly_hourly_candidate"
+AU_PERIOD_PREVIEW_FREQUENCIES = (
+    ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY,
+)
 
 
 def require_open_frequency(frequency: ProductFrequency, *, candidate: bool = False) -> None:

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { useNewowCapabilities } from '../src/composables/useNewowCapabilities.ts'
+import { getNewowProductCapabilities } from '../src/api/newowProduct.ts'
 import type { NewowProductCapabilities } from '../src/types/newowProduct.ts'
 
 const daily = (): NewowProductCapabilities => ({
@@ -51,4 +52,17 @@ test('weekly candidate capability opens W1 only in a candidate response', async 
   await state.load()
   assert.equal(state.isFrequencyOpen('1w'), true)
   assert.equal(state.isFrequencyOpen('60m'), false)
+})
+
+test('AU period preview accepts its exact all-period capability', async () => {
+  const payload = {
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v5',
+    release_stage: 'au_daily_weekly_hourly_candidate',
+    open_frequencies: ['1d', '1w', '60m'],
+    deferred_frequencies: [],
+  }
+  const accepted = await getNewowProductCapabilities({ request: async () => payload })
+  assert.deepEqual(accepted.open_frequencies, ['1d', '1w', '60m'])
+  assert.equal(Object.isFrozen(accepted), true)
 })

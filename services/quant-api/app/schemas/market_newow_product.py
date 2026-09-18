@@ -757,8 +757,8 @@ class DeferredSectionOut(_Out):
 
 
 class NewowProductCapabilitiesResponse(_Out):
-    schema_version: Literal["newow_product_capabilities_v3", "newow_product_capabilities_v4"]
-    release_stage: Literal["daily", "daily_weekly_candidate"]
+    schema_version: Literal["newow_product_capabilities_v3", "newow_product_capabilities_v4", "newow_product_capabilities_v5"]
+    release_stage: Literal["daily", "daily_weekly_candidate", "au_daily_weekly_hourly_candidate"]
     open_frequencies: list[ProductFrequencyValue]
     deferred_frequencies: list[DeferredFrequencyOut]
     open_sections: list[

@@ -70,16 +70,19 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const candidate = value.schema_version === 'newow_product_capabilities_v4'
     && value.release_stage === 'daily_weekly_candidate'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
-  if ((!daily && !candidate)
+  const auPreview = value.schema_version === 'newow_product_capabilities_v5'
+    && value.release_stage === 'au_daily_weekly_hourly_candidate'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w', '60m'])
+  if ((!daily && !candidate && !auPreview)
     || !sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])
   ) return false
   if (!Array.isArray(value.deferred_frequencies)
-    || value.deferred_frequencies.length !== (daily ? 2 : 1)) return false
+    || value.deferred_frequencies.length !== (daily ? 2 : candidate ? 1 : 0)) return false
   if (!Array.isArray(value.deferred_sections) || value.deferred_sections.length !== 1) return false
   return (daily
     ? isDeferred(value.deferred_frequencies[0], '1w', 'NEWOW_WEEKLY_RELEASE_PENDING')
       && isDeferred(value.deferred_frequencies[1], '60m', 'NEWOW_HOURLY_RELEASE_PENDING')
-    : isDeferred(value.deferred_frequencies[0], '60m', 'NEWOW_HOURLY_RELEASE_PENDING'))
+    : candidate ? isDeferred(value.deferred_frequencies[0], '60m', 'NEWOW_HOURLY_RELEASE_PENDING') : true)
     && isDeferred(value.deferred_sections[0], 'explanation', 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN')
 }
 
