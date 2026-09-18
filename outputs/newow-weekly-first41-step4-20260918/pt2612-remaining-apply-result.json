@@ -1,0 +1,9 @@
+{
+  "status": "passed",
+  "plan_sha256": "843bb24f1979e3e399eafc6c71c3136260440a3fd4c8b3a832f4b4c98f6883fe",
+  "applied": 20,
+  "blocked": 0,
+  "failed": 0,
+  "provider_requests": 20,
+  "failures": []
+}

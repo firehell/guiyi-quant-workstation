@@ -1,0 +1,41 @@
+{
+  "mode": "local_candidate_readonly_browser",
+  "code_sha": "067190c6847c1cf95f6c31af1ed633427d34a65d",
+  "default_navigation_without_as_of": true,
+  "url_pattern": "http://127.0.0.1:5174/market/chart?symbol=pt&view=newow&strategy={strategy}&frequency=1w&series_kind=actual_dominant",
+  "rows": [
+    {
+      "strategy": "trend",
+      "chart_state": "ready",
+      "auxiliary_state": "warming",
+      "displayed_weekly_as_of": "2026-09-18T07:00:00.000001Z",
+      "displayed_current_contract": "不可判定",
+      "reference_completed": 2,
+      "reference_rollover_interrupted": 1,
+      "reference_data_interrupted": 0,
+      "reference_simple_sum_percentage_points": "30.03"
+    },
+    {
+      "strategy": "oscillation",
+      "chart_state": "ready",
+      "auxiliary_state": "warming",
+      "displayed_weekly_as_of": "2026-09-18T07:00:00.000001Z",
+      "displayed_current_contract": "不可判定",
+      "reference_completed": 0,
+      "reference_rollover_interrupted": 1,
+      "reference_data_interrupted": 0,
+      "reference_simple_sum_percentage_points": null
+    },
+    {
+      "strategy": "main_rise",
+      "chart_state": "ready",
+      "auxiliary_state": "warming",
+      "displayed_weekly_as_of": "2026-09-18T07:00:00.000001Z",
+      "displayed_current_contract": "不可判定",
+      "reference_completed": 0,
+      "reference_rollover_interrupted": 0,
+      "reference_data_interrupted": 0,
+      "reference_simple_sum_percentage_points": null
+    }
+  ]
+}

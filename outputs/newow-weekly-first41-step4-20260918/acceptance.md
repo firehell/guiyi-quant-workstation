@@ -43,3 +43,44 @@ PT 三策略真实默认首载随即显示**下一缺口 2025-12-26**，因此�
 PT 三项仍为数据阻断，不能升级为页面通过。PT D1 三策略默认页面主图保持
 `ready`。剩余前缀的只读范围与新授权 Gate 见
 [`pt2612-remaining-repair-approval.md`](pt2612-remaining-repair-approval.md)。
+
+## 2026-09-18 PT2612 剩余前缀批次与复验
+
+用户已对上述第二批 20 个 D1/W1 活动月目标一次性授权。执行前重算计划
+`843bb24f1979e3e399eafc6c71c3136260440a3fd4c8b3a832f4b4c98f6883fe`，
+核对 20 个活动状态、路径、行数及原文件 SHA 均未变化。原生
+`contract_warmup` 在维护锁下按该哈希一次执行，结果 `passed`、
+`applied=20`、`provider_requests=20`、`blocked=0`、`failed=0`；未启用首页
+投影失效钩子，未重试。参见
+[`pt2612-remaining-apply-result.json`](pt2612-remaining-apply-result.json)。
+
+只读回读确认 10 个 D1 月分区 SHA 与写入前逐一相同；10 个 W1 月分区均
+有活动文件，合计 39 根完整周 Bar（原有 2 根，补齐 37 根），从
+`2025-12-19` 延续到 `2026-09-18`。同一范围重新规划的直接目标为 0。
+逐分区路径、SHA、行数和交易日见
+[`pt2612-remaining-postapply-readback.json`](pt2612-remaining-postapply-readback.json)。
+
+隔离候选代码 `067190c6847c1cf95f6c31af1ed633427d34a65d`；无固定
+`as_of` 的 PT 趋势、震荡、主升浪默认快照都返回 HTTP 200，周截止一致为
+`2026-09-18T07:00:00.000001Z`，`freshness=current`，当前主力上下文仍为
+`unknown`，没有从历史合约推断当前主力。三策略主图、参考交易/收益均返回
+`ready`；主图与各面板使用相同截止及请求传入的快照 token。三策略 MACD
+均为合法 `warming`；震荡比较器因当前物理合约区段 Bar 数不足为
+`NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS`，另外两策略比较器不适用。
+`explanation` 路由尚未开放，返回 `NEWOW_SECTION_NOT_OPEN`，不计通过。
+完整响应身份和状态见
+[`pt2612-remaining-postapply-snapshots.json`](pt2612-remaining-postapply-snapshots.json)、
+[`pt2612-remaining-postapply-sections.json`](pt2612-remaining-postapply-sections.json)。
+
+真实浏览器三页默认入口未传 `as_of`；三页主图均 `ready`、辅助资源均
+`warming`，一致显示上述周截止与“当前主力不可判定”。参考交易区可读，
+趋势显示 2 笔已完成、1 笔换月中断，震荡显示 1 笔换月中断；零已完成
+交易的两页收益显示 `—`，没有伪装成 0%。参见
+[`pt2612-remaining-browser-readback.json`](pt2612-remaining-browser-readback.json)。
+PT D1 的 10 个月活动文件 SHA 未变，三策略 D1 默认主图均 HTTP 200 / `ready`；
+见 [`pt2612-remaining-d1-regression.json`](pt2612-remaining-d1-regression.json)。
+
+**修正前文阶段结论：**首批六品种 18/18 默认入口均已观察，18/18
+主图及参考交易页面可读；PD 三页与 PT 三页的 MACD 合法预热，
+不能记作全策略 READY。PT 的三项原数据阻断已解除。此项仍是隔离
+候选页面验收，不代表 W1 正式开放、41/123 验收、发布或 Runtime。

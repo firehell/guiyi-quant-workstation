@@ -1,0 +1,41 @@
+[
+  {
+    "strategy": "trend",
+    "http_status": 200,
+    "as_of": "2026-09-18T14:43:44.521747Z",
+    "profile_id": "newow_product_trend_1d_v1",
+    "chart_status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "bar_count": 199,
+    "snapshot_token": "JQC3GtVb_LGQggFr8466LT0RFEapThu1"
+  },
+  {
+    "strategy": "oscillation",
+    "http_status": 200,
+    "as_of": "2026-09-18T14:43:45.063144Z",
+    "profile_id": "newow_product_oscillation_1d_v1",
+    "chart_status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "bar_count": 199,
+    "snapshot_token": "3HVtktNscwD_ODAAwVnydTz_qwaVLv2w"
+  },
+  {
+    "strategy": "main_rise",
+    "http_status": 200,
+    "as_of": "2026-09-18T14:43:45.538176Z",
+    "profile_id": "newow_product_main_rise_1d_v1",
+    "chart_status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "bar_count": 199,
+    "snapshot_token": "ep8DNTNulu7M8-hafRXqqFf8WhUeUF-N"
+  }
+]

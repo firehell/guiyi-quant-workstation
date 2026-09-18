@@ -67,3 +67,10 @@ provider 与 Canonical/Catalog 写入待本批次明确授权，尚未 apply。
 最多 20 个 provider 请求，见
 [`../newow-weekly-first41-step4-20260918/pt2612-remaining-repair-approval.md`](../newow-weekly-first41-step4-20260918/pt2612-remaining-repair-approval.md)。
 该新批次尚未授权或执行；不得复用已消费的首批授权。
+
+2026-09-18 PT2612 第二个精确批次获一次性授权并执行，20 个 D1/W1
+分区提交，20 次 RQData 来源请求、零失败；10 个月 D1 文件 SHA 未变，
+W1 合计 39 根，剩余直接目标为 0。PT 三策略默认周快照与浏览器主图、
+参考交易可读；MACD 合法预热，震荡比较器区段不足，不计全策略 READY。
+六品种 18/18 主图及参考交易现均可读，其中 6/18 的 MACD 合法预热；详见
+[`../newow-weekly-first41-step4-20260918/acceptance.md`](../newow-weekly-first41-step4-20260918/acceptance.md)。
