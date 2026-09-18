@@ -37,6 +37,7 @@ from app.market_data.newow.product_release import (
     AU_PERIOD_PREVIEW_STAGE,
     CAPABILITY_SCHEMA_VERSION,
     CANDIDATE_CAPABILITY_SCHEMA_VERSION,
+    CANDIDATE_WEEKLY_PRODUCTS,
     CANDIDATE_DEFERRED_FREQUENCIES,
     CANDIDATE_OPEN_FREQUENCIES,
     CANDIDATE_RELEASE_STAGE,
@@ -54,6 +55,7 @@ from app.market_data.newow.product_release import (
     OPEN_SECTIONS,
     RELEASE_STAGE,
     require_open_frequency,
+    require_candidate_weekly_product,
     require_open_section,
 )
 from app.market_data.newow.inflight import (
@@ -172,10 +174,13 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
         candidate=getattr(request.state, "candidate_preview_as_of", None) is not None,
         hourly_preview=hourly is not None,
     )
+    if selected is ProductFrequency.WEEKLY and getattr(request.state, "candidate_preview_as_of", None) is not None:
+        require_candidate_weekly_product(product)
 
 
 @router.get(
-    "/product-capabilities", response_model=NewowProductCapabilitiesResponse
+    "/product-capabilities", response_model=NewowProductCapabilitiesResponse,
+    response_model_exclude_none=True,
 )
 def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResponse:
     """Return the single public scope used by clients for this staged release."""
@@ -208,6 +213,10 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
             CANDIDATE_RELEASE_STAGE if candidate else RELEASE_STAGE
         ),
         open_frequencies=[item.value for item in frequencies],
+        weekly_products=(
+            list(CANDIDATE_WEEKLY_PRODUCTS)
+            if candidate and not au_preview and not hourly_preview else None
+        ),
         deferred_frequencies=[
             DeferredFrequencyOut(frequency=frequency.value, reason_code=reason)
             for frequency, reason in deferred

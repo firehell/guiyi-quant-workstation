@@ -40,7 +40,7 @@
 
 ### R1：补完能力范围和时间合同（原任务0/1收尾）
 
-- [ ] `useNewowCapabilities.ts` 增加 product-aware 判断，相关页面传入当前 product；切换品种立即重算。
+- [x] `useNewowCapabilities.ts` 增加 product-aware 判断，相关页面传入当前 product；切换品种立即重算。
 - [ ] 前端从已验证 capabilities 消费范围，不把前后端重复字面清单当作两个权威；严格校验合法类型、唯一性与范围语义。
 - [ ] 所有页面/深链接/显式 API/历史入口/比较器的41资格一致，19品种明确待开放，D1全60保留。
 - [ ] 核对 readiness 的只读全域审计与产品发布 scope：可审计未开放品种输入，但不得把它记作可发布 READY。
@@ -51,11 +51,11 @@
 
 ### R2：周线质量与参考交易（原任务2）
 
-- [ ] 核实旧周质量实现是否已在其他提交中完成，能证明符合合同才复用，不整分支复制。
-- [ ] 完整ISO周、同物理合约来源、预期D1端点互斥覆盖、合法短owner、不完整来源和revision冲突分别测试。
-- [ ] 把已证实缺价周的无OHLC中断证明贯通MDS→reader→calculation segment→策略→ReferenceTrade→缓存。
+- [x] 核实旧周质量实现是否已在其他提交中完成，能证明符合合同才复用，不整分支复制。
+- [x] 完整ISO周、同物理合约来源、预期D1端点互斥覆盖、合法短owner、不完整来源和revision冲突分别测试。
+- [x] 把已证实缺价周的无OHLC中断证明贯通MDS→reader→calculation segment→策略→ReferenceTrade→缓存。
 - [ ] 周中断只在完成端点生效；断后有效周重新预热，NO_TRADE不等同中断，未知缺日不获豁免。
-- [ ] 跨断点/合约不配对，不造BUILD/exit/收益；D1身份和原公式不变。
+- [x] 跨断点/合约不配对，不造BUILD/exit/收益；D1身份和原公式不变。
 - [ ] 测试prefix/batch/incremental/restart一致性；来源冲突保留真实阻塞，继续其他独立工程。
 
 出口：原详细计划任务2的质量与重放测试通过；进入 R3。

@@ -21,6 +21,7 @@ export interface NewowProductCapabilities {
   readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7'
   readonly release_stage: 'daily' | 'daily_weekly_candidate' | 'au_daily_weekly_hourly_candidate' | 'pd_pt_hourly_candidate' | 'ap_hourly_candidate'
   readonly open_frequencies: readonly ['1d'] | readonly ['1d', '1w'] | readonly ['1d', '1w', '60m'] | readonly ['1d', '60m']
+  readonly weekly_products?: readonly string[]
   readonly deferred_frequencies:
     | readonly [NewowDeferredFrequency, NewowDeferredFrequency]
     | readonly [NewowDeferredFrequency]

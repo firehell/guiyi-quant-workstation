@@ -102,6 +102,9 @@ def test_daily_weekly_candidate_capabilities_are_available_without_database(prev
     assert response.json()["schema_version"] == "newow_product_capabilities_v4"
     assert response.json()["release_stage"] == "daily_weekly_candidate"
     assert response.json()["open_frequencies"] == ["1d", "1w"]
+    assert len(response.json()["weekly_products"]) == 41
+    assert "au" in response.json()["weekly_products"]
+    assert "b" not in response.json()["weekly_products"]
     assert response.json()["deferred_frequencies"] == [
         {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"}
     ]
@@ -112,6 +115,20 @@ def test_daily_weekly_candidate_capabilities_are_available_without_database(prev
         "comparator",
     ]
     assert sessions == []
+
+    blocked = TestClient(app).get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "b", "strategy": "trend", "frequency": "1w"},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    history = TestClient(app).get(
+        "/api/v1/market/newow/historical-snapshot",
+        params={"product": "b", "strategy": "trend", "frequency": "1w"},
+    )
+    assert history.status_code == 409
+    assert history.json()["detail"]["code"] == "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    assert len(sessions) == 2
 
 
 def test_au_period_preview_opens_only_au_without_database(preview, monkeypatch):

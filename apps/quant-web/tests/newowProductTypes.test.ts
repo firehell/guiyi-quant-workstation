@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+
 import kernelMacdFixture from '../e2e/fixtures/newow-rich-macd.json' with { type: 'json' }
 import { buildNewowFixtureEnvelopeForTest, NEWOW_AS_OF } from '../e2e/newow-product.helpers.mjs'
 
@@ -223,6 +224,7 @@ test('loads the server-owned daily release capability and rejects widened or leg
     schema_version: 'newow_product_capabilities_v4',
     release_stage: 'daily_weekly_candidate',
     open_frequencies: ['1d', '1w'],
+    weekly_products: 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' '),
     deferred_frequencies: [
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],

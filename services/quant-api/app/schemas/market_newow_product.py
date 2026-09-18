@@ -785,6 +785,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "ap_hourly_candidate",
     ]
     open_frequencies: list[ProductFrequencyValue]
+    weekly_products: list[str] | None = None
     deferred_frequencies: list[DeferredFrequencyOut]
     open_sections: list[
         Literal["chart", "auxiliary", "reference", "explanation", "comparator"]

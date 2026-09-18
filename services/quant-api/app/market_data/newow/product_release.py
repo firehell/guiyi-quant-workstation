@@ -35,6 +35,12 @@ CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v4"] = 
 )
 CANDIDATE_RELEASE_STAGE: Literal["daily_weekly_candidate"] = "daily_weekly_candidate"
 CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
+CANDIDATE_WEEKLY_PRODUCTS = (
+    "a", "ag", "al", "ao", "ap", "au", "bu", "c", "cf", "cu", "ec", "fg",
+    "fu", "hc", "i", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "p", "pb",
+    "pd", "pp", "ps", "pt", "rb", "rm", "ru", "sa", "sc", "sn", "ss", "ta", "ur",
+    "v", "y", "zn",
+)
 CANDIDATE_DEFERRED_FREQUENCIES = (
     (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
 )
@@ -72,6 +78,11 @@ def require_open_frequency(
         allowed = OPEN_FREQUENCIES
     if ProductFrequency(frequency) not in allowed:
         raise ValueError("NEWOW_FREQUENCY_NOT_OPEN")
+
+
+def require_candidate_weekly_product(product: str) -> None:
+    if product not in CANDIDATE_WEEKLY_PRODUCTS:
+        raise ValueError("NEWOW_PRODUCT_FREQUENCY_NOT_OPEN")
 
 
 def require_open_section(section: ProductSectionName) -> None:

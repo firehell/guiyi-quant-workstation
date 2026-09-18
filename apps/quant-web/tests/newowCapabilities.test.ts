@@ -5,6 +5,8 @@ import { useNewowCapabilities } from '../src/composables/useNewowCapabilities.ts
 import { getNewowProductCapabilities } from '../src/api/newowProduct.ts'
 import type { NewowProductCapabilities } from '../src/types/newowProduct.ts'
 
+const weeklyProducts = 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' ')
+
 const daily = (): NewowProductCapabilities => ({
   schema_version: 'newow_product_capabilities_v3',
   release_stage: 'daily',
@@ -45,12 +47,16 @@ test('weekly candidate capability opens W1 only in a candidate response', async 
     schema_version: 'newow_product_capabilities_v4',
     release_stage: 'daily_weekly_candidate',
     open_frequencies: ['1d', '1w'],
+    weekly_products: weeklyProducts,
     deferred_frequencies: [
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
   }))
   await state.load()
-  assert.equal(state.isFrequencyOpen('1w'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'au'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'b'), false)
+  assert.deepEqual(state.openFrequenciesFor('au'), ['1d', '1w'])
+  assert.deepEqual(state.openFrequenciesFor('b'), ['1d'])
   assert.equal(state.isFrequencyOpen('60m'), false)
 })
 

@@ -851,8 +851,11 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 该 stage 不删除 kernel/reader 的三周期能力，不改变 HTDY/SuBing/Free，也不改变旧 `/trend-detail` 的固定 D1
 兼容语义。后续 `1w` 或 `60m` 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
 隔离只读候选可使用 `newow_product_capabilities_v4`、`daily_weekly_candidate` 声明 `1d/1w` 的
-chart/auxiliary/reference/comparator；正式应用继续保留上述 daily v3 Gate，直到独立发布与 Runtime Gate。
+chart/auxiliary/reference/comparator；候选响应同时携带唯一的 `weekly_products`，仅首批 41 品种的
+`1w` 请求可进入 reader，其余 19 品种返回 `NEWOW_PRODUCT_FREQUENCY_NOT_OPEN`。正式应用
+继续保留原 daily v3 envelope 和 Gate，直到独立发布与 Runtime Gate。
 候选的 `60m` 和 explanation 仍关闭；Web 必须逐版本严格校验成对的 schema/stage/open/deferred 集合。
+AU 单品种周期预览及 PD/PT/AP 的 60m 预览保持原 envelope 和品种限制，不复用 v4 的 41 品种字段。
 
 #### Scenario: Deferred weekly and hourly requests cannot bypass the daily stage
 

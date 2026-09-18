@@ -61,16 +61,18 @@ export async function getNewowProductCapabilities(
 }
 
 function isProductCapabilities(value: unknown): value is NewowProductCapabilities {
-  if (!isRecord(value) || Object.keys(value).sort().join(',') !== [
-    'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
-    'release_stage', 'schema_version',
-  ].join(',')) return false
+  if (!isRecord(value)) return false
   const daily = value.schema_version === 'newow_product_capabilities_v3'
     && value.release_stage === 'daily'
     && sameLiteralArray(value.open_frequencies, ['1d'])
   const candidate = value.schema_version === 'newow_product_capabilities_v4'
     && value.release_stage === 'daily_weekly_candidate'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const expectedKeys = [
+    'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
+    'release_stage', 'schema_version', ...(candidate ? ['weekly_products'] : []),
+  ]
+  if (Object.keys(value).sort().join(',') !== expectedKeys.join(',')) return false
   const auPreview = value.schema_version === 'newow_product_capabilities_v5'
     && value.release_stage === 'au_daily_weekly_hourly_candidate'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w', '60m'])
@@ -82,6 +84,10 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   if ((!daily && !candidate && !auPreview && !hourlyPreview)
     || !sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])
   ) return false
+  if (candidate && (!Array.isArray(value.weekly_products)
+    || value.weekly_products.some(item => typeof item !== 'string' || !/^[a-z]{1,8}$/.test(item))
+    || new Set(value.weekly_products).size !== value.weekly_products.length
+    || value.weekly_products.length !== 41)) return false
   if (!Array.isArray(value.deferred_frequencies)
     || value.deferred_frequencies.length !== (daily ? 2 : (candidate || hourlyPreview) ? 1 : 0)) return false
   if (!Array.isArray(value.deferred_sections) || value.deferred_sections.length !== 1) return false
@@ -118,6 +124,7 @@ function freezeProductCapabilities(
   for (const item of value.deferred_frequencies) Object.freeze(item)
   for (const item of value.deferred_sections) Object.freeze(item)
   Object.freeze(value.open_frequencies)
+  if (value.weekly_products) Object.freeze(value.weekly_products)
   Object.freeze(value.deferred_frequencies)
   Object.freeze(value.open_sections)
   Object.freeze(value.deferred_sections)
