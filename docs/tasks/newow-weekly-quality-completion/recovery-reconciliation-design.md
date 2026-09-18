@@ -206,3 +206,41 @@ bz 的 BZ2605 在零提交状态失败：2 个来源响应均已保存，其中�
 身份、审计 hash 与剩余来源预算。b、bz 的已知局部问题可跳过继续；再出现共享实现缺陷、
 来源额度/维护锁/身份变化、提交未知或 journal 不完整时停止后续写入并调查。最终分别报告
 已完成、跳过、未尝试名单及代码、生产数据、页面、Release、Runtime 各自的验收状态。
+
+### 全批执行结果
+
+质量端点修复固定在提交 `2a5cc2bbd`，相关 432 项测试通过并完成独立只读 Review。
+队列前的完整全域只读审计 SHA-256 为
+`b77007e7af9482c4b2d28f5523597e11a81d657f61a43d81608e0652f94465d4`。
+曾有一份 900 秒审计因时间预算返回 incomplete，未用于生产恢复；2400 秒重跑才作为基线。
+队列按 operational 顺序处理 60/60 品种，无未尝试品种；中途 RM 的维护锁占用发生在
+prepare，零来源与零写入。确认锁释放后重新审计、重新 prepare，RM 最终通过。
+EB 的 task-local 回执解析脚本曾因空 `failures` 数组中止；已核对其已知 partial、完整来源
+journal 和独立只读后审计，将 EB 记为跳过后从下一品种接续，无 EB 重试。
+
+| 本轮品种结果 | 数量 | 名单 |
+| --- | ---: | --- |
+| 完成输入与单品种读回 | 41 | A、AG、AL、AO、AP、AU、BU、C、CF、CU、EC、FG、FU、HC、I、JD、JM、L、LC、LH、M、MA、NI、P、PB、PD、PP、PS、PT、RB、RM、RU、SA、SC、SN、SS、TA、UR、V、Y、ZN |
+| apply 中已知问题，品种跳过 | 7 | B、BZ、EB、EG、J、PG、SI |
+| 审计需单独判断，零写入跳过 | 12 | CJ、OI、PF、PK、PL、PR、PX、RS、SF、SH、SM、SR |
+
+队列 41/60 完成，完成率 68.3%；60/60 已处理一遍。逐品种队列实际发起
+2,488 次来源请求、356 个单元通过；加上队列前 RB/FG 小样本，共 2,571 次来源请求。
+task-local 进度为 `product-progress.jsonl`、`product-progress-v2.jsonl` 和
+`product-progress-v3.jsonl`；RM 的旧 `halt_shared` 与后来 `complete` 是同一品种的两条
+事件，统计时按最终结果去重。三个队列段均未超过全批 7,553 请求上限，未出现提交结果未知。
+
+全批后全域只读审计 SHA-256 为
+`7e8c741a3dc75a61325e42e28bdacc25b7ae4ad2a29d322c02755857b2158661`：
+固定同一 `as_of`，60/60 品种、2,448 条依赖，`complete=true`、`readonly=true`、
+零 provider、零写入。DATA_READY 1,808（队列前 1,166），DATA_UNAVAILABLE 564、
+INTEGRITY_ERROR 38、SOURCE_EXCEPTION 10、NOT_APPLICABLE 28；修复目标
+PROPOSED 172、REVIEW_REQUIRED 120。这是 W1 历史输入验收，不是 D1 全域回归、
+180 个策略组合、页面首次加载、release 或 Runtime 证据。
+
+已知问题的处理边界：B2411 的质量事实需按精确旧/新 revision 与原始来源单独核对并恢复；
+BZ2605、PG2406、SI2310 的 `RecoveryError` 须逐份核对冻结请求与保存的响应身份；
+EB2403、J2505 的 `PARTITION_PRICE_UNAVAILABLE` 和 EG2601 的
+`RQDATA_ZERO_OHL_INVALID` 保持质量中断语义。12 个审计跳过品种的
+`REVIEW_REQUIRED` 均含 `SOURCE_NONPOSITIVE_PRICE` 诊断，不能仅凭普通补数计划写入。
+已通过单品种也不推导 W1 页面或 Runtime 可用；后续先处理上述问题并补齐相应消费层证据。
