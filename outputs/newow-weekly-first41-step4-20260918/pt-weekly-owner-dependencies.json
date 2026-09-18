@@ -1,0 +1,40 @@
+{
+  "schema_version": "pt_w1_owner_dependencies_v1",
+  "readonly": true,
+  "product_start": "2025-11-27",
+  "owners": [
+    {
+      "contract": "PT2606",
+      "start_trading_day": "2025-11-27",
+      "end_trading_day": "2026-05-25",
+      "status": "DATA_READY",
+      "reason": null
+    },
+    {
+      "contract": "PT2608",
+      "start_trading_day": "2026-05-26",
+      "end_trading_day": "2026-07-21",
+      "status": "DATA_READY",
+      "reason": null
+    },
+    {
+      "contract": "PT2610",
+      "start_trading_day": "2026-07-22",
+      "end_trading_day": "2026-09-16",
+      "status": "DATA_READY",
+      "reason": null
+    },
+    {
+      "contract": "PT2612",
+      "start_trading_day": "2026-09-17",
+      "end_trading_day": "2026-09-18",
+      "status": "blocked",
+      "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "reason": "REPLAY_ENDPOINTS_MISSING",
+      "context": {
+        "contract": "PT2612",
+        "trading_day": "2025-12-26"
+      }
+    }
+  ]
+}

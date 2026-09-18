@@ -57,3 +57,13 @@ PT 缺口的只读精确修复计划与写入前分区身份见
 [`../newow-weekly-first41-step4-20260918/pt2612-repair-approval.md`](../newow-weekly-first41-step4-20260918/pt2612-repair-approval.md)。
 范围为 `PT2612 / 2025-12-15～19 / D1+W1`，计划哈希已固定；
 provider 与 Canonical/Catalog 写入待本批次明确授权，尚未 apply。
+
+2026-09-18 PT 首个精确批次已单独获批并一次完成：
+`PT2612 / 2025-12-15～19 / D1+W1`，计划哈希
+`b73956d81b95f4a43f3186e5ece968e92438ab4d04adf73896141fa5cc76f11b`，
+`applied=2`、`failed=blocked=0`、provider 请求 2；写入后 D1 内容未变、
+2025-12-19 W1/MDS 通过。PT 三策略页面转为报 2025-12-26 内部缺口，
+仍未 READY。新只读计划限定 PT2612 剩余完整前缀 20 个 D1/W1 月目标、
+最多 20 个 provider 请求，见
+[`../newow-weekly-first41-step4-20260918/pt2612-remaining-repair-approval.md`](../newow-weekly-first41-step4-20260918/pt2612-remaining-repair-approval.md)。
+该新批次尚未授权或执行；不得复用已消费的首批授权。

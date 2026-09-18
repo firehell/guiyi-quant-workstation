@@ -1,0 +1,72 @@
+{
+  "code_sha": "041257178d43c50998c67399c8353d5b3773f1ef",
+  "default_weekly": true,
+  "rows": [
+    {
+      "strategy": "trend",
+      "http_status": 409,
+      "seconds": 0.54,
+      "as_of": null,
+      "freshness": null,
+      "available_period_end": null,
+      "current_context": null,
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "symbol": "pt",
+            "frequency": "1w",
+            "contract": "PT2612",
+            "trading_day": "2025-12-26"
+          },
+          "historical_candidate_recoverable": true
+        }
+      }
+    },
+    {
+      "strategy": "oscillation",
+      "http_status": 409,
+      "seconds": 0.47,
+      "as_of": null,
+      "freshness": null,
+      "available_period_end": null,
+      "current_context": null,
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "symbol": "pt",
+            "frequency": "1w",
+            "contract": "PT2612",
+            "trading_day": "2025-12-26"
+          },
+          "historical_candidate_recoverable": true
+        }
+      }
+    },
+    {
+      "strategy": "main_rise",
+      "http_status": 409,
+      "seconds": 0.51,
+      "as_of": null,
+      "freshness": null,
+      "available_period_end": null,
+      "current_context": null,
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "symbol": "pt",
+            "frequency": "1w",
+            "contract": "PT2612",
+            "trading_day": "2025-12-26"
+          },
+          "historical_candidate_recoverable": true
+        }
+      }
+    }
+  ]
+}

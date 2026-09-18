@@ -1,6 +1,11 @@
 # PT2612 / 2025-12-19 周线修复授权包
 
-状态：**只读计划完成，尚未授权或执行写入**。证据由当前任务分支的
+状态：**已按单独授权执行一次，批次成功并已只读回读**。执行结果见
+[`pt2612-apply-result.json`](pt2612-apply-result.json) 与
+[`pt2612-postapply-readback.json`](pt2612-postapply-readback.json)。此授权已消费，
+不覆盖随后发现的 2025-12-26 缺口；后续范围见
+[`pt2612-remaining-repair-approval.md`](pt2612-remaining-repair-approval.md)。
+证据由当前任务分支的
 `data contract-warmup` 原生 planner 生成；[精确计划](pt2612-weekly-repair-plan.json)
 和[写入前读回](pt2612-before-readback.json)已保存。计划连续两次只读生成相同哈希。
 
@@ -48,3 +53,7 @@ MDS physical 与 actual-dominant 读回同一数据身份。随后用最新候�
 只读核对两活动分区与 MDS 后再决定；**不盲目重试**。若已提交但验收失败，
 保留写入前 D1 文件及校验和作为恢复锚点，另拟精确 Catalog 恢复计划并取得授权，
 不自动回滚或删除数据。
+
+实际执行调用相同原生 `contract_warmup` 方法并使用上述计划哈希，省略 CLI
+可选的首页投影失效钩子，未删除授权范围外的生产投影文件；维护锁、输入校验
+和原子 Catalog 激活仍由该方法执行。

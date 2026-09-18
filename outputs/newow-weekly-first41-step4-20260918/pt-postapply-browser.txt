@@ -1,0 +1,22 @@
+### Result
+[{"strategy":"trend","url":"http://127.0.0.1:5174/market/chart?symbol=pt&view=newow&strategy=trend&frequency=1w&series_kind=actual_dominant","chart":"unavailable","state":"UNAVAILABLE","snapshot":"同合约历史 Bar 缺失（pt · PT2612 · 1w · 2025-12-26）。可重试本面板，或主动查看最近可用历史快照；数据修复需单独处理。\n查看最近可用历史快照\n刷新当前","code_sha":"041257178d43c50998c67399c8353d5b3773f1ef"},{"strategy":"oscillation","url":"http://127.0.0.1:5174/market/chart?symbol=pt&view=newow&strategy=oscillation&frequency=1w&series_kind=actual_dominant","chart":"unavailable","state":"UNAVAILABLE","snapshot":"同合约历史 Bar 缺失（pt · PT2612 · 1w · 2025-12-26）。可重试本面板，或主动查看最近可用历史快照；数据修复需单独处理。\n查看最近可用历史快照\n刷新当前","code_sha":"041257178d43c50998c67399c8353d5b3773f1ef"},{"strategy":"main_rise","url":"http://127.0.0.1:5174/market/chart?symbol=pt&view=newow&strategy=main_rise&frequency=1w&series_kind=actual_dominant","chart":"unavailable","state":"UNAVAILABLE","snapshot":"同合约历史 Bar 缺失（pt · PT2612 · 1w · 2025-12-26）。可重试本面板，或主动查看最近可用历史快照；数据修复需单独处理。\n查看最近可用历史快照\n刷新当前","code_sha":"041257178d43c50998c67399c8353d5b3773f1ef"}]
+### Ran Playwright code
+```js
+await (async (page) => {
+  const rows=[];
+  for (const strategy of ['trend','oscillation','main_rise']) {
+    await page.goto(`http://127.0.0.1:5174/market/chart?symbol=pt&view=newow&strategy=${strategy}&frequency=1w&series_kind=actual_dominant`);
+    await page.locator('[data-detail-workspace="newow"]').waitFor({timeout:20000});
+    await page.waitForFunction(() => {const w=document.querySelector('[data-detail-workspace="newow"]');return w?.getAttribute('data-chart-state')==='unavailable' && !document.body.innerText.includes('正在确认最近完整周线');},null,{timeout:30000});
+    rows.push(await page.evaluate((strategy)=>({strategy,url:location.href,chart:document.querySelector('[data-detail-workspace="newow"]')?.getAttribute('data-chart-state'),state:document.querySelector('.newow-status')?.getAttribute('data-state'),snapshot:document.querySelector('.newow-product-workspace__snapshot-controls')?.innerText,code_sha:document.querySelector('aside,[role=complementary]')?.innerText.match(/代码 ([0-9a-f]{40})/)?.[1]}),strategy));
+  }
+  return rows;
+}
+)(page);
+```
+### Page
+- Page URL: http://127.0.0.1:5174/market/chart?symbol=pt&view=newow&strategy=main_rise&frequency=1w&series_kind=actual_dominant
+- Page Title: 归一量化工作站
+- Console: 2 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-09-18T14-23-32-576Z.log#L1-L16

@@ -1,0 +1,11 @@
+{
+  "schema_version": "pt2612_preapply_v1",
+  "checked_at": "2026-09-18T14:19:57.269357+00:00",
+  "code_sha": "041257178d43c50998c67399c8353d5b3773f1ef",
+  "plan_sha256": "b73956d81b95f4a43f3186e5ece968e92438ab4d04adf73896141fa5cc76f11b",
+  "d1_active_file_sha256": "4a3662400a4c5196c1225ef9c9c44fc0c3716df0d04f4f1995d8aeebbc499798",
+  "d1_row_count": 13,
+  "w1_active_partition_count": 0,
+  "provider_request_budget": 2,
+  "preflight": "passed"
+}
