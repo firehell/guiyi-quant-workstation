@@ -52,3 +52,8 @@ Bar 与中断身份；W1 跨合约 CLEAR 不关闭旧参考交易。D1 固定参
 12 组合主要页面可读，PD 三策略 MACD 合法预热，PT 三策略被
 `PT2612 / 2025-12-19` 同合约 W1 端点缺口阻断。18/18 已实际观察，
 不得记作 18/18 READY；41/123 矩阵、数据修复、release 和 Runtime 均未完成。
+
+PT 缺口的只读精确修复计划与写入前分区身份见
+[`../newow-weekly-first41-step4-20260918/pt2612-repair-approval.md`](../newow-weekly-first41-step4-20260918/pt2612-repair-approval.md)。
+范围为 `PT2612 / 2025-12-15～19 / D1+W1`，计划哈希已固定；
+provider 与 Canonical/Catalog 写入待本批次明确授权，尚未 apply。
