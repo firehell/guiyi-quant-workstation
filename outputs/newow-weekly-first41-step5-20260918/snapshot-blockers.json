@@ -1,0 +1,46 @@
+{
+  "code_sha": "1675aa42a13afe4eccd319e29d444e98d2f31d20",
+  "as_of": null,
+  "default_weekly": true,
+  "readonly": true,
+  "applied": false,
+  "note": "Fresh candidate weekly-snapshot HTTP 409 readback; exact repair plan and D1/W1 source classification require separate native prepare.",
+  "rows": [
+    {
+      "product": "al",
+      "reason": "REPLAY_PREFIX_MISSING",
+      "frequency": "1d",
+      "contract": "AL2611",
+      "through": "2026-09-18",
+      "expected_count": 206,
+      "actual_count": 5,
+      "missing_count": 201,
+      "first_missing_day": "2025-11-18"
+    },
+    {
+      "product": "sc",
+      "reason": "REPLAY_ENDPOINTS_MISSING",
+      "frequency": "1w",
+      "contract": "SC2611",
+      "first_missing_day": "2025-11-07"
+    },
+    {
+      "product": "ss",
+      "reason": "REPLAY_ENDPOINTS_MISSING",
+      "frequency": "1w",
+      "contract": "SS2611",
+      "first_missing_day": "2025-11-21"
+    },
+    {
+      "product": "zn",
+      "reason": "REPLAY_PREFIX_MISSING",
+      "frequency": "1d",
+      "contract": "ZN2611",
+      "through": "2026-09-18",
+      "expected_count": 206,
+      "actual_count": 5,
+      "missing_count": 201,
+      "first_missing_day": "2025-11-18"
+    }
+  ]
+}

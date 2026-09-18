@@ -16,7 +16,9 @@ AU、PD/PT、AP 隔离预览保留原边界。候选 v4 独有 `weekly_products`
 本次复验：后端 candidate/API/weekly-quality 85 passed，共享 MDS/reader/adapter/reference
 326 passed；前端 capability/types/详情页 52 passed，production Web build 与 TypeScript
 检查通过；Ruff、OpenSpec 9/9、secret scan 0、diff check 通过。
-未执行真实数据读写或页面矩阵。
+以下表格与紧接的“本轮新证据”记录基线收敛当时的历史快照；后续步骤以本文件末尾追加的
+步骤 2–5 证据为准，不能用表格旧状态判断当前进度。
+当时未执行真实数据读写或页面矩阵。
 
 | 任务 | 状态 | 已完成的安全动作 | 外部 Gate |
 | --- | --- | --- | --- |
@@ -74,3 +76,19 @@ W1 合计 39 根，剩余直接目标为 0。PT 三策略默认周快照与浏�
 参考交易可读；MACD 合法预热，震荡比较器区段不足，不计全策略 READY。
 六品种 18/18 主图及参考交易现均可读，其中 6/18 的 MACD 合法预热；详见
 [`../newow-weekly-first41-step4-20260918/acceptance.md`](../newow-weekly-first41-step4-20260918/acceptance.md)。
+
+2026-09-19 步骤 5 固定 41 品种／123 组合的只读候选验收已执行，逐品种结论及原始证据见
+[`../newow-weekly-first41-step5-20260918/acceptance.md`](../newow-weekly-first41-step5-20260918/acceptance.md)。
+17＋18 两批 105 个默认页面均有首载终态；连同首批 18 个，共 111 组合主图和参考可读，
+AL、SC、SS、ZN 的 12 组合真实来源阻断。可读品种中 6 个有合法辅助预热。
+W1 原生只读审计覆盖固定 41 品种、1670 条来源依赖，1660 READY、8 UNAVAILABLE、
+2 个短 owner NOT_APPLICABLE；报告 complete 表示审计完成，正式 W1 123 个策略仍为 UNOPENED。
+D1 候选 chart 60×3 为 179 ready、RS 震荡 1 warming；初次全域原生审计预算耗尽后，
+四个有界只读批次补齐原 84 个未检，最初合并为 176 READY、RS 震荡
+1 WARMING、AL 三策略 3 DATA_UNAVAILABLE。随后同截止时间对 AL、ZN 六案例重新只读核查均 READY；
+按各品种最新证据为 179 READY、1 WARMING、0 未检。审计跨多个时刻，未冻结共同数据修订；
+AL、ZN 的最新 W1 快照阻塞为 2611 合约 REPLAY_ENDPOINTS_MISSING，早期 D1 前缀错误单独保留。
+余下 19 品种的 W1 和 60m 候选请求
+38/38 被拒绝。未执行 provider、Canonical、Catalog 写入或 Runtime 变更。
+步骤 5 状态仍为 PARTIAL：12 个 W1 组合有来源阻断；
+原始浏览器首次故障与独立后续首载分别保留，不将后者覆盖前者。

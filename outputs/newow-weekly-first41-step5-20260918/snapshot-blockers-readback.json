@@ -1,0 +1,83 @@
+{
+  "code_sha": "1675aa42a13afe4eccd319e29d444e98d2f31d20",
+  "readonly": true,
+  "checked_at": "2026-09-18T17:52:28.156427+00:00",
+  "rows": [
+    {
+      "product": "al",
+      "http_status": 409,
+      "response": {
+        "detail": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "symbol": "al",
+              "frequency": "1w",
+              "contract": "AL2611",
+              "trading_day": "2025-11-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      }
+    },
+    {
+      "product": "sc",
+      "http_status": 409,
+      "response": {
+        "detail": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "symbol": "sc",
+              "frequency": "1w",
+              "contract": "SC2611",
+              "trading_day": "2025-11-07"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      }
+    },
+    {
+      "product": "ss",
+      "http_status": 409,
+      "response": {
+        "detail": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "symbol": "ss",
+              "frequency": "1w",
+              "contract": "SS2611",
+              "trading_day": "2025-11-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      }
+    },
+    {
+      "product": "zn",
+      "http_status": 409,
+      "response": {
+        "detail": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "reason": "REPLAY_ENDPOINTS_MISSING",
+            "context": {
+              "symbol": "zn",
+              "frequency": "1w",
+              "contract": "ZN2611",
+              "trading_day": "2025-11-21"
+            },
+            "historical_candidate_recoverable": true
+          }
+        }
+      }
+    }
+  ]
+}

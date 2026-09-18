@@ -1,0 +1,281 @@
+{
+  "code_sha": "1675aa42a13afe4eccd319e29d444e98d2f31d20",
+  "at": "2026-09-18T14:58:29.263536+00:00",
+  "weekly_products": [
+    "a",
+    "ag",
+    "al",
+    "ao",
+    "ap",
+    "au",
+    "bu",
+    "c",
+    "cf",
+    "cu",
+    "ec",
+    "fg",
+    "fu",
+    "hc",
+    "i",
+    "jd",
+    "jm",
+    "l",
+    "lc",
+    "lh",
+    "m",
+    "ma",
+    "ni",
+    "p",
+    "pb",
+    "pd",
+    "pp",
+    "ps",
+    "pt",
+    "rb",
+    "rm",
+    "ru",
+    "sa",
+    "sc",
+    "sn",
+    "ss",
+    "ta",
+    "ur",
+    "v",
+    "y",
+    "zn"
+  ],
+  "open_frequencies": [
+    "1d",
+    "1w"
+  ],
+  "rows": [
+    {
+      "product": "b",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "b",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "bz",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "bz",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "cj",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "cj",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "eb",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "eb",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "eg",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "eg",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "j",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "j",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "oi",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "oi",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "pf",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "pf",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "pg",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "pg",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "pk",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "pk",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "pl",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "pl",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "pr",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "pr",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "px",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "px",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "rs",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "rs",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "sf",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "sf",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "sh",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "sh",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "si",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "si",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "sm",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "sm",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "sr",
+      "frequency": "1w",
+      "http_status": 409,
+      "code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    },
+    {
+      "product": "sr",
+      "frequency": "60m",
+      "http_status": 409,
+      "code": "NEWOW_FREQUENCY_NOT_OPEN"
+    }
+  ]
+}
