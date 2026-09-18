@@ -101,11 +101,19 @@ def _query(kind: str, frequency: str = "1d") -> SeriesQuery:
     )
 
 
+def _add_page_contract(session: Session, *, listed: date = date(2025, 1, 2)) -> None:
+    session.add(Contract(
+        contract_code="JM2509", instrument_symbol="jm", exchange_code="DCE",
+        listed_date=listed, expired_date=date(2025, 12, 1), provider="rqdata",
+    ))
+
+
 def test_actual_dominant_rejects_missing_intraday_endpoints_in_query_and_page(
     session, tmp_path
 ) -> None:
     session.scalar(select(TradingSession)).end_time = time(9, 5)
     day = date(2025, 1, 2)
+    _add_page_contract(session)
     session.add(TradingCalendar(
         exchange_code="DCE", trade_date=day, is_trading_day=True,
     ))
@@ -197,6 +205,7 @@ def test_physical_night_page_does_not_require_prelisting_day_session(
 def test_page_cursor_rejects_missing_bar_immediately_before_cursor(session, tmp_path) -> None:
     session.scalar(select(TradingSession)).end_time = time(9, 5)
     day = date(2025, 1, 2)
+    _add_page_contract(session)
     session.add(TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True))
     catalog = MarketCatalog(session, tmp_path)
     store = CanonicalMonthlyStore(tmp_path)
@@ -217,12 +226,35 @@ def test_page_cursor_rejects_missing_bar_immediately_before_cursor(session, tmp_
             ))
 
 
+def test_physical_page_rejects_whole_missing_first_listed_trading_day(session, tmp_path) -> None:
+    session.scalar(select(TradingSession)).end_time = time(9, 1)
+    _add_page_contract(session)
+    session.add_all(TradingCalendar(
+        exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
+    ) for day in (2, 3))
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    bar = CanonicalBar(
+        datetime(2025, 1, 3, 1, 1, tzinfo=UTC), date(2025, 1, 3),
+        Decimal(100), Decimal(101), Decimal(99), Decimal(100),
+        Decimal(1), Decimal(100), Decimal(20),
+    )
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "1m"), (bar,))
+    session.commit()
+
+    with pytest.raises(MarketDataError, match="DATASET_OR_PARTITION_MISSING"):
+        MarketDataService(catalog, store).query_page(SeriesPageQuery(
+            "contract", "jm", "1m", limit=5, contract="JM2509",
+        ))
+
+
 def test_physical_as_of_page_does_not_include_future_contract_bars(
     session, tmp_path
 ) -> None:
     catalog = MarketCatalog(session, tmp_path)
     store = CanonicalMonthlyStore(tmp_path)
     key = DatasetKey("contract", "jm", "JM2509", "1d")
+    _add_page_contract(session)
     session.add_all(tuple(
         TradingCalendar(
             exchange_code="DCE", trade_date=date(2025, 1, day),
@@ -251,6 +283,7 @@ def test_physical_daily_as_of_does_not_require_prelisting_sessions(session, tmp_
     catalog = MarketCatalog(session, tmp_path)
     store = CanonicalMonthlyStore(tmp_path)
     key = DatasetKey("contract", "jm", "JM2509", "1d")
+    _add_page_contract(session, listed=date(2025, 9, 15))
     bar = _bar(15, 100, month=9)
     _publish(catalog, store, key, (bar,))
     session.commit()
@@ -265,6 +298,7 @@ def test_physical_weekly_range_rejects_missing_middle_week(session, tmp_path) ->
     catalog = MarketCatalog(session, tmp_path)
     store = CanonicalMonthlyStore(tmp_path)
     key = DatasetKey("contract", "jm", "JM2509", "1w")
+    _add_page_contract(session)
     session.add_all(tuple(
         TradingCalendar(
             exchange_code="DCE",
