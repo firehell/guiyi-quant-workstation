@@ -25,7 +25,7 @@ onMounted(async () => {
     <NMessageProvider>
       <aside v-if="candidatePreview.enabled" data-testid="candidate-preview-banner" class="candidate-preview-banner">
         本地候选只读预览 · 非实时 · {{ previewState }}<br>
-        代码 {{ candidatePreview.codeSha }} · K线 / 牛哇截止上限 {{ candidatePreview.asOf }}<br>
+        代码 {{ candidatePreview.codeSha }} · {{ candidatePreview.defaultWeekly ? '周线按当前完整周只读解析' : `K线 / 牛哇截止上限 ${candidatePreview.asOf}` }}<br>
         候选查询来源 {{ candidateOriginHost() }}；首页投影与主力元数据使用各自时间戳。<br>
         受监督正式状态来源 127.0.0.1:8000，仅 Runtime health / 当前事件，保留各自时间戳。<br>
         仅首页、牛哇与苏冰历史参考可预览；其他接口明确返回 PREVIEW_ROUTE_FORBIDDEN。

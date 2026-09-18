@@ -12,8 +12,10 @@ const wsProxyTarget = process.env.VITE_PROXY_WS_TARGET || apiProxyTarget.replace
 export default defineConfig(({ mode, command }) => {
   const candidate = mode === 'candidate-preview'
   const cutoff = process.env.GUIYI_PREVIEW_AS_OF || ''
-  const instant = candidate ? previewInstant(cutoff) : null
-  if (candidate && (command !== 'serve' || instant === null || instant > BigInt(Date.now()) * 1_000_000n)) {
+  const defaultWeekly = candidate && process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY === '1'
+  const instant = candidate && !defaultWeekly ? previewInstant(cutoff) : null
+  if (candidate && (command !== 'serve'
+    || (defaultWeekly ? cutoff !== '' : instant === null || instant > BigInt(Date.now()) * 1_000_000n))) {
     throw new Error('PREVIEW_CUTOFF_INVALID_OR_NOT_DEV_SERVER')
   }
   const candidateOrigin = candidate ? resolveCandidateOrigin() : 'http://127.0.0.1:8010'
@@ -30,6 +32,7 @@ export default defineConfig(({ mode, command }) => {
     define: {
       'import.meta.env.VITE_CANDIDATE_PREVIEW': JSON.stringify(candidate ? '1' : '0'),
       'import.meta.env.VITE_PREVIEW_AS_OF': JSON.stringify(candidate ? cutoff : ''),
+      'import.meta.env.VITE_PREVIEW_DEFAULT_WEEKLY': JSON.stringify(defaultWeekly ? '1' : '0'),
       'import.meta.env.VITE_PREVIEW_CODE_SHA': JSON.stringify(codeSha),
       ...(candidate ? {
         'import.meta.env.VITE_PREVIEW_CANDIDATE_ORIGIN': JSON.stringify(candidateOrigin),

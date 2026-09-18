@@ -49,6 +49,35 @@ def test_default_off_and_invalid_cutoff(monkeypatch):
             create_preview_app(enabled=True, as_of=value)
 
 
+def test_default_weekly_preview_uses_request_clock_and_exposes_exact_route(preview, monkeypatch):
+    from app.preview import create_preview_app
+    from app.api import market_newow
+
+    monkeypatch.setenv("GUIYI_PREVIEW_DEFAULT_WEEKLY", "1")
+    monkeypatch.delenv("GUIYI_PREVIEW_AS_OF", raising=False)
+    monkeypatch.delenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", raising=False)
+    monkeypatch.delenv("GUIYI_AU_PERIOD_PREVIEW", raising=False)
+    app = create_preview_app(enabled=True, session_factory=preview[2])
+    seen = []
+
+    class Resolver:
+        def resolve(self, product, strategy, frequency):
+            seen.append((product, strategy.value, frequency.value))
+            raise ValueError("NEWOW_WEEKLY_UNKNOWN")
+
+    monkeypatch.setattr(market_newow, "_build_weekly_resolver", lambda *_args: Resolver())
+    with TestClient(app) as client:
+        identity = client.get("/api/preview/identity")
+        weekly = client.get("/api/v1/market/newow/weekly-snapshot", params={
+            "product": "rb", "strategy": "trend", "frequency": "1w",
+        })
+    assert identity.status_code == 200
+    assert identity.json()["as_of"] is None
+    assert identity.json()["default_weekly"] is True
+    assert weekly.status_code == 409
+    assert seen == [("rb", "trend", "1w")]
+
+
 def test_identity_is_current_git_and_lightweight(preview, monkeypatch):
     from app.core.env import PROJECT_ROOT
     from app.market_data import composition

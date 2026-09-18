@@ -30,6 +30,7 @@ PREVIEW_PATHS = frozenset(
         "/api/v1/market/newow/strategy-detail",
         "/api/v1/market/newow/historical-snapshot",
         "/api/v1/market/newow/daily-snapshot",
+        "/api/v1/market/newow/weekly-snapshot",
     }
 )
 _SUBING_REFERENCE_PATH = re.compile(
@@ -95,13 +96,17 @@ def create_preview_app(
     as_of: str | None = None,
     session_factory: Callable[[], Session] | None = None,
 ) -> FastAPI:
-    """Default off; explicit cutoff required before importing database composition."""
+    """Default off; fixed cutoff or explicit wall-clock W1 preview only."""
     if not (
         enabled if enabled is not None else os.getenv("GUIYI_CANDIDATE_PREVIEW") == "1"
     ):
         raise ValueError("PREVIEW_DISABLED")
-    cutoff = _instant(as_of if as_of is not None else os.getenv("GUIYI_PREVIEW_AS_OF"))
-    if cutoff > datetime.now(UTC):
+    default_weekly = os.getenv("GUIYI_PREVIEW_DEFAULT_WEEKLY") == "1"
+    configured_as_of = as_of if as_of is not None else os.getenv("GUIYI_PREVIEW_AS_OF")
+    if default_weekly and configured_as_of:
+        raise ValueError("PREVIEW_CUTOFF_INVALID")
+    cutoff = None if default_weekly else _instant(configured_as_of)
+    if cutoff is not None and cutoff > datetime.now(UTC):
         raise ValueError("PREVIEW_CUTOFF_INVALID")
     code_sha = _code_sha()
     candidate_origin = _candidate_origin()
@@ -166,10 +171,11 @@ def create_preview_app(
             if _SUBING_REFERENCE_PATH.fullmatch(raw_path):
                 field = "as_of"
             if field:
-                requested = _instant(values[field]) if field in values else cutoff
-                values[field] = min(requested, cutoff).isoformat()
+                request_cutoff = cutoff or datetime.now(UTC)
+                requested = _instant(values[field]) if field in values else request_cutoff
+                values[field] = min(requested, request_cutoff).isoformat()
                 request.scope["query_string"] = urlencode(values).encode("ascii")
-            request.state.candidate_preview_as_of = cutoff
+            request.state.candidate_preview_as_of = cutoff or datetime.now(UTC)
             request.state.au_period_preview = au_period_preview
             request.state.hourly_preview_products = hourly_products
         except (ValueError, UnicodeError):
@@ -197,7 +203,8 @@ def create_preview_app(
         return {
             "mode": "local_candidate_readonly",
             "code_sha": code_sha,
-            "as_of": cutoff.isoformat(),
+            "as_of": cutoff.isoformat() if cutoff is not None else None,
+            "default_weekly": default_weekly,
             "realtime": False,
             "candidate_origin": candidate_origin,
             "status_origin": DEFAULT_STATUS_ORIGIN,

@@ -11,6 +11,7 @@ test('proxy allows exact GET resources only, never encoded paths or WS', async (
   assert.equal(previewTarget('GET', '/api/v1/market/bars/page?symbol=rb'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/v1/market/newow/product-capabilities'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/v1/market/newow/daily-snapshot?product=rb&strategy=trend&frequency=1d'), 'http://127.0.0.1:8010')
+  assert.equal(previewTarget('GET', '/api/v1/market/newow/weekly-snapshot?product=rb&strategy=trend&frequency=1w'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/v1/market/jm/subing/reference?since=2026-08-01'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/preview/identity'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/runtime/health'), 'http://127.0.0.1:8000')
@@ -26,6 +27,33 @@ test('proxy allows exact GET resources only, never encoded paths or WS', async (
     assert.equal(previewTarget(method, '/api/runtime/health'), null)
   }
   assert.equal(previewTarget('GET', '/api/runtime/health', true), null)
+})
+
+test('wall-clock weekly preview matches a dynamic identity without a fixed cutoff', async (context) => {
+  const { matchesPreviewIdentity } = await import('../src/utils/candidatePreview.ts')
+  const config = { enabled: true, codeSha: 'a'.repeat(40), asOf: '', defaultWeekly: true }
+  const payload = { mode: 'local_candidate_readonly', code_sha: config.codeSha,
+    as_of: null, default_weekly: true, realtime: false,
+    candidate_origin: 'http://127.0.0.1:8010', status_origin: 'http://127.0.0.1:8000' }
+  assert.equal(matchesPreviewIdentity(payload, config), true)
+  assert.equal(matchesPreviewIdentity({ ...payload, as_of: '2026-09-18T07:00:00Z' }, config), false)
+  assert.equal(matchesPreviewIdentity({ ...payload, default_weekly: false }, config), false)
+  context.mock.method(Date, 'now', () => Date.parse('2026-09-18T08:00:00Z'))
+  const old = process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY
+  const cutoff = process.env.GUIYI_PREVIEW_AS_OF
+  process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY = '1'
+  delete process.env.GUIYI_PREVIEW_AS_OF
+  try {
+    const { default: configFactory } = await import('../vite.config.ts')
+    const result = (configFactory as Function)({ mode: 'candidate-preview', command: 'serve' })
+    assert.equal(JSON.parse(result.define['import.meta.env.VITE_PREVIEW_DEFAULT_WEEKLY']), '1')
+    assert.equal(JSON.parse(result.define['import.meta.env.VITE_PREVIEW_AS_OF']), '')
+  } finally {
+    if (old === undefined) delete process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY
+    else process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY = old
+    if (cutoff === undefined) delete process.env.GUIYI_PREVIEW_AS_OF
+    else process.env.GUIYI_PREVIEW_AS_OF = cutoff
+  }
 })
 
 test('browser preview identity must match code, cutoff and both fixed origins', async () => {

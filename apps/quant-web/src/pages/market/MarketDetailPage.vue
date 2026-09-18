@@ -40,6 +40,7 @@ const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].in
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
 const newowHistoricalAsOf = ref<string | null>(null)
 const newowDailyAsOf = ref<string | null>(null)
+const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: string | null }>({ asOf: null, physicalContract: null })
 const newowCapabilities = useNewowCapabilities()
 const newowOpenFrequencies = computed(() => newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
@@ -52,10 +53,14 @@ const newowWorkspace = ref<InstanceType<typeof NewowProductWorkspace> | null>(nu
 const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(null)
 const hasHtdyHistory = ref(false)
 const hasSubingHistory = ref(false)
+const quoteContract = computed(() => explicitIdentity.value?.frequency === '1w'
+  ? newowWeeklyQuoteContext.value.physicalContract
+  : controller.productCatalog.value.find(item => item.product.toLowerCase() === explicitIdentity.value?.symbol)?.actual_contract ?? null)
 const dailyQuote = useNewowDailyQuote({
   symbol: computed(() => isNewowView.value ? explicitIdentity.value!.symbol : null),
-  contract: computed(() => controller.productCatalog.value.find(item => item.product.toLowerCase() === explicitIdentity.value?.symbol)?.actual_contract ?? null),
-  snapshotAsOf: newowDailyAsOf,
+  contract: quoteContract,
+  snapshotAsOf: computed(() => explicitIdentity.value?.frequency === '1w'
+    ? newowWeeklyQuoteContext.value.asOf : newowDailyAsOf.value),
 })
 const productOptions = computed(() => normalizeProductOptions(controller.productCatalog.value))
 const productSelectorStatus = computed(() => productOptions.value.length > 0
@@ -65,7 +70,7 @@ const header = computed(() => {
   const base = controller.state.value.header
   if (!base || !isNewowView.value) return base
   const quote = dailyQuote.quote.value
-  return { ...base, ...(quote ?? {}), displayContract: quote ? controller.productCatalog.value.find(item => item.product.toLowerCase() === explicitIdentity.value?.symbol)?.actual_contract ?? null : null, freshness: quote ? 'fresh' as const : 'unavailable' as const }
+  return { ...base, ...(quote ?? {}), displayContract: quote ? quoteContract.value : null, freshness: quote ? 'fresh' as const : 'unavailable' as const }
 })
 const identityWarning = ref(
   typeof window !== 'undefined' && window.history.state?.contractCleared === true
@@ -88,6 +93,7 @@ async function activateRoute() {
   const generation = ++activationGeneration
   newowHistoricalAsOf.value = null
   newowDailyAsOf.value = null
+  newowWeeklyQuoteContext.value = { asOf: null, physicalContract: null }
   hasHtdyHistory.value = false
   hasSubingHistory.value = false
   const result = routeResult.value
@@ -263,6 +269,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @focus-resolved="resolveFocus"
             @snapshot-mode="newowHistoricalAsOf = $event"
             @daily-snapshot-as-of="newowDailyAsOf = $event"
+            @weekly-quote-context="newowWeeklyQuoteContext = $event"
             @refresh-current="dailyQuote.refresh"
           />
           <MarketDetailUnavailable

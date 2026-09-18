@@ -7,6 +7,7 @@ export const candidatePreview = Object.freeze({
   enabled: import.meta.env?.VITE_CANDIDATE_PREVIEW === '1',
   codeSha: import.meta.env?.VITE_PREVIEW_CODE_SHA || '',
   asOf: import.meta.env?.VITE_PREVIEW_AS_OF || '',
+  defaultWeekly: import.meta.env?.VITE_PREVIEW_DEFAULT_WEEKLY === '1',
   candidateOrigin: import.meta.env?.VITE_PREVIEW_CANDIDATE_ORIGIN || DEFAULT_CANDIDATE_ORIGIN,
 })
 
@@ -14,6 +15,7 @@ export type PreviewIdentityExpected = {
   enabled?: boolean
   codeSha: string
   asOf: string
+  defaultWeekly?: boolean
   candidateOrigin?: string
 }
 
@@ -31,8 +33,10 @@ export function matchesPreviewIdentity(
   const expectedOrigin = expected.candidateOrigin || DEFAULT_CANDIDATE_ORIGIN
   return identity.mode === 'local_candidate_readonly'
     && identity.code_sha === expected.codeSha
-    && typeof identity.as_of === 'string'
-    && expectedInstant !== null && previewInstant(identity.as_of) === expectedInstant
+    && (expected.defaultWeekly
+      ? identity.default_weekly === true && identity.as_of === null
+      : typeof identity.as_of === 'string'
+        && expectedInstant !== null && previewInstant(identity.as_of) === expectedInstant)
     && identity.realtime === false
     && identity.candidate_origin === expectedOrigin
     && identity.status_origin === DEFAULT_STATUS_ORIGIN

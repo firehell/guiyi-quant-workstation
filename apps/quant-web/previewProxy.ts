@@ -11,6 +11,7 @@ const candidatePaths = new Set([
   '/api/v1/market/newow/product-capabilities',
   '/api/v1/market/newow/strategy-detail', '/api/v1/market/newow/historical-snapshot',
   '/api/v1/market/newow/daily-snapshot',
+  '/api/v1/market/newow/weekly-snapshot',
 ])
 
 export function resolveCandidateOrigin(raw = process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN): string {

@@ -61,7 +61,8 @@ interface ChartLoadOptions {
 export function useNewowProduct(options: UseNewowProductOptions) {
   const fetchSection: FetchSection = options.fetchSection
     ?? ((request, signal) => getNewowProductSection(request, { signal }))
-  const now = options.now ?? (() => candidatePreview.enabled ? candidatePreview.asOf : new Date())
+  const now = options.now ?? (() => candidatePreview.enabled && !candidatePreview.defaultWeekly
+    ? candidatePreview.asOf : new Date())
   const currentIdentity = shallowRef<NewowProductIdentity | null>(null)
   const asOf = shallowRef<string | null>(null)
   const historicalSnapshot = shallowRef<NewowHistoricalSnapshot | null>(null)
