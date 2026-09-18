@@ -306,7 +306,10 @@ class NewowReadinessAudit:
         # retaining every consumer; one apply plan must cover the full needed prefix.
         repair_groups: dict[tuple, dict[str, Any]] = {}
         for dependency in dependencies.values():
-            if dependency.get("reason") not in _DOWNLOAD:
+            if dependency.get("reason") not in _DOWNLOAD and not (
+                dependency.get("frequency") == "1w"
+                and dependency.get("reason") == "DATA_INTEGRITY_INVALID"
+            ):
                 continue
             repair_key = (
                 dependency["symbol"],
@@ -361,6 +364,14 @@ class NewowReadinessAudit:
                         provider_request_count=None,
                     )
                     continue
+                numeric_weekly_repair = (
+                    repair_key[2] == "1w"
+                    and any(
+                        item.get("dataset") == ("contract", repair_key[0], repair_key[1], "1w")
+                        and "WEEKLY_DAILY_VALUE_CONFLICT" in item.get("reason_codes", ())
+                        for item in diagnostics
+                    )
+                )
                 scope_conflicts = [
                     item
                     for item in dependencies.values()
@@ -369,6 +380,11 @@ class NewowReadinessAudit:
                     and item["frequency"] in plan_result.get("frequencies", ())
                     and item["_owner"].end_trading_day <= repair_through
                     and item["status"] in {"SOURCE_EXCEPTION", "INTEGRITY_ERROR"}
+                    and not (
+                        numeric_weekly_repair
+                        and item["frequency"] == "1w"
+                        and item.get("reason") == "DATA_INTEGRITY_INVALID"
+                    )
                 ]
                 if scope_conflicts or any(
                     set(item["reason_codes"])

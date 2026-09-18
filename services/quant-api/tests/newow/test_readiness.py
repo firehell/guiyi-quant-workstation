@@ -594,6 +594,37 @@ def test_entire_planner_scope_cannot_reintroduce_excluded_companion(
     assert target["scope_diagnostics"][0]["reason_codes"] == (reason,)
 
 
+def test_weekly_numeric_integrity_is_proposed_only_with_planner_proof():
+    module = _audit_module()
+
+    class Reader(AuditReader):
+        def check_dependency(self, product, frequency, owner, as_of):
+            if frequency == "1w":
+                raise MarketDataError(
+                    "WEEKLY_SOURCE_BAR_CONFLICT", reason="DATA_INTEGRITY_INVALID"
+                )
+            return super().check_dependency(product, frequency, owner, as_of)
+
+    def plan(request):
+        return {
+            "plan_sha256": "a" * 64,
+            "expected_bar_count": 2,
+            "provider_request_count": 2,
+            "frequencies": ("1d", "1w"),
+            "scope_diagnostics": ({
+                "dataset": ("contract", "rb", request.contract, "1w"),
+                "reason_codes": ("WEEKLY_DAILY_VALUE_CONFLICT",),
+            },),
+        }
+
+    report = module.NewowReadinessAudit(reader=Reader(), plan=plan).run(
+        module.ReadinessRequest(("rb",), datetime(2026, 9, 4, 8, tzinfo=UTC))
+    )
+    weekly = [row for row in report["repair_targets"] if row["frequency"] == "1w"]
+    assert len(weekly) == 2
+    assert all(row["status"] == "PROPOSED" for row in weekly)
+
+
 def test_known_daily_integrity_cannot_be_hidden_by_weekly_missing_candidate():
     module = _audit_module()
 
