@@ -10,6 +10,7 @@ test('proxy allows exact GET resources only, never encoded paths or WS', async (
   const { previewTarget } = await import('../previewProxy.ts')
   assert.equal(previewTarget('GET', '/api/v1/market/bars/page?symbol=rb'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/v1/market/newow/product-capabilities'), 'http://127.0.0.1:8010')
+  assert.equal(previewTarget('GET', '/api/v1/market/newow/daily-snapshot?product=rb&strategy=trend&frequency=1d'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/v1/market/jm/subing/reference?since=2026-08-01'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/preview/identity'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/runtime/health'), 'http://127.0.0.1:8000')

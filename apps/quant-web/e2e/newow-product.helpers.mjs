@@ -126,6 +126,21 @@ export async function installNewowProductFixtures(page, options = {}) {
       return route.fulfill({ json: dailyCapabilities() })
     }
 
+    if (url.pathname === '/api/v1/market/newow/daily-snapshot') {
+      const strategy = url.searchParams.get('strategy')
+      if (url.searchParams.get('product') !== 'rb' || !NEWOW_STRATEGIES.includes(strategy) || url.searchParams.get('frequency') !== '1d') {
+        return unexpected(route, state, `invalid daily snapshot ${url.href}`)
+      }
+      return route.fulfill({ json: {
+        schema_version: 'newow_daily_snapshot_v1', product: 'rb', strategy,
+        frequency: '1d', series_kind: 'actual_dominant',
+        requested_at: options.frozenNow ?? NEWOW_AS_OF,
+        expected_trading_day: '2026-09-03', available_trading_day: '2026-09-03',
+        as_of: options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
+        freshness: 'current',
+      } })
+    }
+
     if (url.pathname === '/api/v1/market/newow/strategy-detail') {
       const section = url.searchParams.get('section') || 'chart'
       const strategy = url.searchParams.get('strategy') || 'trend'

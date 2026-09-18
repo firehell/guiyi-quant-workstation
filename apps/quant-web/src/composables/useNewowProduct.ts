@@ -1,6 +1,6 @@
 import { computed, readonly, shallowRef, watch, type Ref, type ShallowRef } from 'vue'
 
-import { getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
+import { getNewowDailySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
 import { candidatePreview } from '../utils/candidatePreview.ts'
 import { previewInstant } from '../utils/candidatePreviewInstant.ts'
 import type { MarketDetailIdentity } from '../types/marketDetail.ts'
@@ -11,6 +11,7 @@ import {
 import type {
   NewowAuxiliaryComponent,
   NewowHistoricalSnapshot,
+  NewowDailySnapshot,
   NewowChartValue,
   NewowProductIdentity,
   NewowProductRequest,
@@ -33,6 +34,7 @@ export interface UseNewowProductOptions {
   readonly fetchSection?: FetchSection
   readonly now?: () => Date | string
   readonly fetchHistoricalSnapshot?: (identity: NewowProductIdentity, signal: AbortSignal) => Promise<NewowHistoricalSnapshot>
+  readonly fetchDailySnapshot?: (identity: NewowProductIdentity, signal: AbortSignal) => Promise<NewowDailySnapshot>
 }
 
 interface SectionResource {
@@ -61,9 +63,13 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const currentIdentity = shallowRef<NewowProductIdentity | null>(null)
   const asOf = shallowRef<string | null>(null)
   const historicalSnapshot = shallowRef<NewowHistoricalSnapshot | null>(null)
+  const dailySnapshot = shallowRef<NewowDailySnapshot | null>(null)
+  const dailyError = shallowRef<string | null>(null)
+  const dailyLoading = shallowRef(false)
   const historicalError = shallowRef<string | null>(null)
   const historicalLoading = shallowRef(false)
   let resolverController: AbortController | null = null
+  let dailyController: AbortController | null = null
   const resources = Object.fromEntries(
     (['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const)
       .map((section) => [section, createResource()]),
@@ -75,6 +81,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const auxiliaryRebuildAttempts = new Set<string>()
   let generation = 0
   let disposed = false
+  let preservingCurrentChart = false
   const acceptedCurrentChartWindow = shallowRef(false)
   const acceptedHistoricalChartWindow = shallowRef(false)
   const acceptedAuxiliaryWindow = shallowRef<{ from: string; through: string } | null>(null)
@@ -95,19 +102,61 @@ export function useNewowProduct(options: UseNewowProductOptions) {
 
   function replaceIdentity(): void {
     generation += 1
+    preservingCurrentChart = false
     resolverController?.abort()
     resolverController = null
+    dailyController?.abort()
+    dailyController = null
+    dailySnapshot.value = null
+    dailyError.value = null
+    dailyLoading.value = false
     historicalLoading.value = false
     resetAll()
     historicalSnapshot.value = null
     historicalError.value = null
     currentIdentity.value = validatedIdentity(options.identity.value)
     asOf.value = currentIdentity.value === null ? null : validNow(now())
-    if (!disposed && currentIdentity.value !== null) void loadChart()
+    if (!disposed && currentIdentity.value !== null) void loadCurrent()
+  }
+
+  function loadCurrent(): void {
+    const current = currentIdentity.value
+    if (current === null) return
+    // Injected section transports retain the original direct mode unless the
+    // daily resolver is also injected; production always resolves D1 first.
+    if (current.frequency !== '1d' || (options.fetchSection !== undefined && options.fetchDailySnapshot === undefined)) {
+      void loadChart()
+      return
+    }
+    const controller = new AbortController()
+    dailyController = controller
+    const requestedGeneration = generation
+    dailyLoading.value = true
+    const fetchDaily = options.fetchDailySnapshot ?? ((identity: NewowProductIdentity, signal: AbortSignal) => getNewowDailySnapshot(identity, { signal }))
+    void fetchDaily(current, controller.signal).then(snapshot => {
+      if (disposed || controller.signal.aborted || dailyController !== controller || generation !== requestedGeneration || currentIdentity.value !== current) return
+      if (preservingCurrentChart) resetAll()
+      preservingCurrentChart = false
+      dailySnapshot.value = snapshot
+      asOf.value = snapshot.as_of
+      void loadChart()
+    }).catch(error => {
+      if (disposed || controller.signal.aborted || dailyController !== controller || generation !== requestedGeneration) return
+      dailyError.value = error instanceof NewowProductRequestError ? error.message : 'NEWOW_API_UNAVAILABLE'
+      if (!preservingCurrentChart) {
+        resources.chart.state.value = 'unavailable'
+        resources.chart.error.value = dailyError.value
+      }
+      preservingCurrentChart = false
+    }).finally(() => {
+      if (dailyController === controller) { dailyController = null; dailyLoading.value = false }
+    })
   }
 
   async function switchToHistorical(): Promise<void> {
     if (disposed || currentIdentity.value === null) return
+    dailyController?.abort()
+    dailyController = null
     resolverController?.abort()
     const controller = new AbortController()
     resolverController = controller
@@ -121,6 +170,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       if (disposed || controller.signal.aborted || resolverController !== controller || generation !== resolverGeneration || currentIdentity.value !== requestedIdentity) return
       generation += 1
       resetAll()
+      dailySnapshot.value = null
       historicalSnapshot.value = resolved
       // Preserve the server's exact microsecond cutoff; Date.toISOString() truncates it.
       asOf.value = resolved.as_of
@@ -133,23 +183,36 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   function returnToCurrent(): void {
-    resetCurrentGeneration()
+    resetCurrentGeneration(false)
   }
 
   function refreshCurrent(): void {
-    resetCurrentGeneration()
+    resetCurrentGeneration(true)
   }
 
-  function resetCurrentGeneration(): void {
+  function resetCurrentGeneration(preserveChart: boolean): void {
     resolverController?.abort()
     resolverController = null
+    dailyController?.abort()
+    dailyController = null
     generation += 1
-    resetAll()
+    preservingCurrentChart = preserveChart && currentIdentity.value?.frequency === '1d'
+      && dailySnapshot.value !== null && resources.chart.data.value !== null
+      && historicalSnapshot.value === null
+    if (preservingCurrentChart) {
+      for (const controller of controllers.values()) controller.abort()
+      controllers.clear()
+    } else {
+      resetAll()
+      dailySnapshot.value = null
+    }
+    dailyError.value = null
+    dailyLoading.value = false
     historicalSnapshot.value = null
     historicalError.value = null
     historicalLoading.value = false
-    asOf.value = currentIdentity.value === null ? null : validNow(now())
-    if (!disposed && currentIdentity.value !== null) void loadChart()
+    if (!preservingCurrentChart) asOf.value = currentIdentity.value === null ? null : validNow(now())
+    if (!disposed && currentIdentity.value !== null) loadCurrent()
   }
 
   async function loadChart(load: ChartLoadOptions = {}): Promise<void> {
@@ -322,6 +385,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       if (request.section === 'chart' && request.chartBefore === undefined) {
         acceptedCurrentChartWindow.value = request.from === undefined && request.through === undefined
           && request.chartOlderWindow === undefined && historicalSnapshot.value === null
+          && dailySnapshot.value?.freshness !== 'pending_update'
         acceptedHistoricalChartWindow.value = !acceptedCurrentChartWindow.value
       }
       resource.data.value = accepted
@@ -567,6 +631,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     generation += 1
     resolverController?.abort()
     resolverController = null
+    dailyController?.abort()
+    dailyController = null
     stopWatch()
     resetAll()
     currentIdentity.value = null
@@ -602,6 +668,9 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     identity: readonly(currentIdentity),
     asOf: readonly(asOf),
     historicalSnapshot: readonly(historicalSnapshot),
+    dailySnapshot: readonly(dailySnapshot),
+    dailyError: readonly(dailyError),
+    dailyLoading: readonly(dailyLoading),
     historicalError: readonly(historicalError),
     historicalLoading: readonly(historicalLoading),
     sections: resources,

@@ -22,6 +22,7 @@ from app.market_data.newow.product_service import (
     ProductServiceQuery,
 )
 from app.market_data.newow.historical_snapshot import HistoricalSnapshot
+from app.market_data.newow.daily_snapshot import DailySnapshot
 from app.market_data.newow.resource_gate import NewowResourceBusy
 from app.schemas.market_newow_product import (
     NewowProductResponse,
@@ -87,6 +88,41 @@ def test_daily_release_capabilities_are_public_without_database_access():
                 "reason_code": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN",
             }
         ],
+    }
+
+
+def test_daily_snapshot_endpoint_returns_exact_verified_cutoff_and_pending_day(monkeypatch):
+    requested = datetime(2026, 9, 18, 8, tzinfo=UTC)
+    cutoff = datetime(2026, 9, 17, 7, 0, 0, 1, tzinfo=UTC)
+
+    class Resolver:
+        def resolve(self, product, strategy, frequency):
+            assert (product, strategy.value, frequency.value) == ("rb", "trend", "1d")
+            return DailySnapshot(
+                product, strategy, frequency, requested,
+                date(2026, 9, 18), date(2026, 9, 17), cutoff, "pending_update"
+            )
+
+    monkeypatch.setattr(market_newow, "_build_daily_resolver", lambda *_args: Resolver())
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/daily-snapshot", params={
+                "product": "rb", "strategy": "trend", "frequency": "1d"
+            })
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "schema_version": "newow_daily_snapshot_v1",
+        "product": "rb", "strategy": "trend", "frequency": "1d",
+        "series_kind": "actual_dominant",
+        "requested_at": "2026-09-18T08:00:00Z",
+        "expected_trading_day": "2026-09-18",
+        "available_trading_day": "2026-09-17",
+        "as_of": "2026-09-17T07:00:00.000001Z",
+        "freshness": "pending_update",
     }
 
 

@@ -287,6 +287,25 @@ def test_historical_resolver_uses_fixed_clock(preview, monkeypatch):
     assert captured == [datetime(2026, 9, 3, 8, tzinfo=UTC)]
 
 
+def test_daily_resolver_uses_fixed_preview_clock(preview, monkeypatch):
+    from app.api import market_newow
+    from app.market_data.market_data_service import MarketDataError
+
+    captured = []
+
+    def resolver(session, cancelled, now):
+        captured.append(now())
+        raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+
+    monkeypatch.setattr(market_newow, "_build_daily_resolver", resolver)
+    response = TestClient(preview[0]).get(
+        "/api/v1/market/newow/daily-snapshot",
+        params={"product": "rb", "strategy": "trend", "frequency": "1d"},
+    )
+    assert response.status_code == 409
+    assert captured == [datetime(2026, 9, 3, 8, tzinfo=UTC)]
+
+
 @pytest.mark.parametrize(
     "query", ["before=bad", "before=2026-09-01T08:00:00", "before=x&before=y"]
 )

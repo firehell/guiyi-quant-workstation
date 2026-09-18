@@ -746,6 +746,19 @@ class NewowHistoricalSnapshotResponse(_Out):
     validated_sections: list[Literal["chart", "zhaoyao_mirror"]]
 
 
+class NewowDailySnapshotResponse(_Out):
+    schema_version: Literal["newow_daily_snapshot_v1"] = "newow_daily_snapshot_v1"
+    product: str
+    strategy: ProductStrategyValue
+    frequency: Literal["1d"] = "1d"
+    series_kind: Literal["actual_dominant"] = "actual_dominant"
+    requested_at: datetime
+    expected_trading_day: date
+    available_trading_day: date
+    as_of: datetime
+    freshness: Literal["current", "pending_update"]
+
+
 class DeferredFrequencyOut(_Out):
     frequency: ProductFrequencyValue
     reason_code: str

@@ -182,6 +182,9 @@ def _updater(
     metadata_day: date | None = None,
     notification_error: Exception | None = None,
     recovery_guard_factory=None,
+    consumer_guard_factory=None,
+    consumer_audit=None,
+    consumer_revision=None,
 ):
     manager = _Manager(trading_day, results, metadata_day=metadata_day)
     rqdata = _RQData(readiness)
@@ -200,8 +203,143 @@ def _updater(
         ),
         now=lambda: datetime(2026, 8, 10, 17, 0),
         recovery_guard_factory=recovery_guard_factory or nullcontext,
+        consumer_guard_factory=consumer_guard_factory,
+        consumer_audit=consumer_audit,
+        consumer_revision=consumer_revision,
     )
     return updater, manager, rqdata, sleeps, notices, live_store
+
+
+def test_consumer_audit_runs_after_update_guard_and_keeps_primary_result(tmp_path):
+    held = False
+    acquisitions = 0
+    calls = []
+
+    @contextmanager
+    def guard():
+        nonlocal held, acquisitions
+        assert not held
+        acquisitions += 1
+        held = True
+        try:
+            yield
+        finally:
+            held = False
+
+    def audit(products, day):
+        assert not held and acquisitions == 2, "read-only audit runs after a short guard probe"
+        calls.append((products, day))
+        return {"status": "audited", "case_count": 180, "main_ready_count": 180,
+                "reference_ready_count": 180, "auxiliary_ready_count": 900,
+                "budget_exhausted": False, "failures": []}
+
+    updater, *_ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True],
+        results=[_result("passed")], recovery_guard_factory=guard,
+        consumer_audit=audit,
+    )
+    assert updater.run().status == "passed"
+    assert len(calls) == 1
+    assert acquisitions == 3
+    status = _status(tmp_path / "after-market-status.json")
+    assert status["last_run"]["status"] == "passed"
+    assert status["consumer_checks"]["newow_d1"]["main_ready_count"] == 180
+
+
+def test_consumer_audit_runs_after_failed_primary_batch(tmp_path):
+    calls = []
+
+    def audit(products, day):
+        calls.append((products, day))
+        return {"status": "incomplete", "case_count": 180, "main_ready_count": 120,
+                "reference_ready_count": 120, "auxiliary_ready_count": 600,
+                "budget_exhausted": False, "failures": []}
+
+    updater, *_ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True],
+        results=[_result("failed", stop_reason="UPDATE_FAILED")],
+        consumer_audit=audit,
+    )
+    assert updater.run().status == "failed"
+    assert len(calls) == 1
+    status = _status(tmp_path / "after-market-status.json")
+    assert status["consumer_checks"]["newow_d1"]["status"] == "incomplete"
+
+
+def test_newow_d1_catalog_revision_tracks_scoped_map_and_ignores_other_product():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.db.base import Base
+    from app.market_data.after_market import _newow_d1_catalog_revision
+    from app.models import Exchange, Instrument, MainContractMap
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Exchange(code="SHFE", name="SHFE"))
+        session.add_all([
+            Instrument(symbol="rb", name="RB", exchange_code="SHFE"),
+            Instrument(symbol="cu", name="CU", exchange_code="SHFE"),
+        ])
+        session.add_all([
+            MainContractMap(symbol="rb", trade_date=date(2026, 8, 10), contract_code="RB2610"),
+            MainContractMap(symbol="cu", trade_date=date(2026, 8, 10), contract_code="CU2610"),
+        ])
+        session.commit()
+        baseline = _newow_d1_catalog_revision(session, ("rb",), date(2026, 8, 10))
+        session.query(MainContractMap).filter_by(symbol="cu").one().contract_code = "CU2611"
+        session.commit()
+        assert _newow_d1_catalog_revision(session, ("rb",), date(2026, 8, 10)) == baseline
+        session.query(MainContractMap).filter_by(symbol="rb").one().contract_code = "RB2611"
+        session.commit()
+        assert _newow_d1_catalog_revision(session, ("rb",), date(2026, 8, 10)) != baseline
+
+
+def test_consumer_audit_marks_input_changed_and_busy_is_not_verified(tmp_path):
+    def audit(_products, _day):
+        return {
+            "status": "audited", "case_count": 180, "main_ready_count": 180,
+            "reference_ready_count": 180, "auxiliary_ready_count": 900,
+            "budget_exhausted": False, "failures": [],
+            "input_revision": "a" * 64,
+        }
+    updater, *_ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True],
+        results=[_result("passed")], consumer_audit=audit,
+        consumer_revision=lambda _products, _day: "b" * 64,
+    )
+    assert updater.run().status == "passed"
+    status = _status(tmp_path / "after-market-status.json")
+    assert status["consumer_checks"]["newow_d1"]["status"] == "input_changed"
+
+    @contextmanager
+    def busy():
+        raise RuntimeError("LIVE_RECOVERY_BUSY")
+        yield
+
+    updater, *_ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True],
+        results=[_result("passed")], consumer_audit=audit,
+        consumer_guard_factory=busy,
+    )
+    assert updater.run().status == "passed"
+    status = _status(tmp_path / "after-market-status.json")
+    assert status["consumer_checks"]["newow_d1"]["status"] == "not_verified"
+
+
+def test_consumer_audit_failure_does_not_rewrite_successful_maintenance(tmp_path):
+    def audit(_products, _day):
+        raise RuntimeError("private consumer exception")
+
+    updater, *_ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True],
+        results=[_result("passed")], consumer_audit=audit,
+    )
+    assert updater.run().status == "passed"
+    status = _status(tmp_path / "after-market-status.json")
+    assert status["last_run"]["status"] == "passed"
+    assert status["consumer_checks"]["newow_d1"]["status"] == "not_verified"
 
 
 def _after_market_guard_process(root, connection):

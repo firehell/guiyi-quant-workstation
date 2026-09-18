@@ -218,7 +218,7 @@ onBeforeUnmount(() => loader.dispose())
         <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</span>
       </div>
     </section>
-    <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading'" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="重试主图" :can-recover="true" :can-return-market="false" @recover="loader.loadChart()" />
+    <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新日线" :can-recover="true" :can-return-market="false" @recover="loader.refreshCurrent()" />
     <div v-else ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :loading="loader.sections.chart.state.value === 'loading'" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @explain-main="openDialog('explanation')" @explain-auxiliary="openDialog('indicator')">
     <template #auxiliary-controls>
     <section class="newow-product-workspace__auxiliary" aria-label="Newow 辅助图层">
@@ -232,12 +232,16 @@ onBeforeUnmount(() => loader.dispose())
     </section>
     </template>
     </NewowProductChartStage></div>
-    <div class="newow-product-workspace__snapshot-controls" :data-as-of="loader.historicalSnapshot.value?.as_of">
+    <div class="newow-product-workspace__snapshot-controls" :data-as-of="loader.historicalSnapshot.value?.as_of ?? loader.dailySnapshot.value?.as_of">
       <template v-if="loader.historicalSnapshot.value">
         <span :title="loader.historicalSnapshot.value.as_of">历史快照截至 {{ historicalAsOfLabel }}（交易日 {{ loader.historicalSnapshot.value.trading_day }}）</span>
         <button @click="loader.returnToCurrent">返回当前</button>
       </template>
       <template v-else>
+        <span v-if="loader.dailySnapshot.value" :title="loader.dailySnapshot.value.as_of">日线截至 {{ loader.dailySnapshot.value.available_trading_day }} 收盘</span>
+        <span v-if="loader.dailySnapshot.value?.freshness === 'pending_update'" role="status">{{ loader.dailySnapshot.value.expected_trading_day }} 日线待更新</span>
+        <span v-if="loader.dailyLoading.value" role="status">正在确认最近完整日线…</span>
+        <span v-if="loader.dailyError.value" role="status">{{ newowErrorDisplay(loader.dailyError.value) }}</span>
         <button :disabled="loader.historicalLoading.value" @click="loader.switchToHistorical">查看最近可用历史快照</button>
         <button @click="refreshCurrent">刷新当前</button>
         <span v-if="loader.historicalError.value" role="status">{{ newowErrorDisplay(loader.historicalError.value) }}</span>

@@ -7,11 +7,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import math
 import os
 import re
 import stat
+import subprocess
 import tempfile
 import time
 from collections.abc import Callable, Mapping
@@ -136,6 +138,9 @@ class AfterMarketUpdater:
         market_home_projection_invalidate: Callable[[], None] | None = None,
         market_home_projection_refresh: Callable[[], object] | None = None,
         recovery_guard_factory: Callable[[], AbstractContextManager] | None = None,
+        consumer_guard_factory: Callable[[], AbstractContextManager] | None = None,
+        consumer_audit: Callable[[tuple[str, ...], date], Mapping[str, object]] | None = None,
+        consumer_revision: Callable[[tuple[str, ...], date], str] | None = None,
     ) -> None:
         self.manager = manager
         self.rqdata = rqdata
@@ -147,6 +152,10 @@ class AfterMarketUpdater:
         self.market_home_projection_invalidate = market_home_projection_invalidate
         self.market_home_projection_refresh = market_home_projection_refresh
         self.recovery_guard_factory = recovery_guard_factory or nullcontext
+        self.consumer_guard_factory = consumer_guard_factory or self.recovery_guard_factory
+        self.consumer_audit = consumer_audit
+        self.consumer_revision = consumer_revision
+        self._run_started_at: str | None = None
         self.monotonic = time.monotonic
         self._current: dict[str, Any] = {}
         self._progress_failed = False
@@ -155,10 +164,85 @@ class AfterMarketUpdater:
     def run(self) -> AfterMarketResult:
         """执行一次受限盘后维护，并写入仅含公开字段的状态。"""
         with self.recovery_guard_factory():
-            return self._run_guarded()
+            result = self._run_guarded()
+        if self.consumer_audit is not None:
+            self._run_consumer_audit(result)
+        return result
+
+    def _run_consumer_audit(self, result: AfterMarketResult) -> None:
+        check: dict[str, object] = {"status": "not_verified"}
+        if result.error_code != "NON_TRADING_DAY":
+            try:
+                # Probe the guard briefly, then run the bounded read outside it.
+                with self.consumer_guard_factory():
+                    pass
+                products = load_operational_products()
+                check = _public_consumer_audit(self.consumer_audit(products, result.trading_day))
+                check.update(
+                    trading_day=result.trading_day.isoformat(),
+                    checked_at=_local_timestamp(self.now()).isoformat(),
+                    run_started_at=self._run_started_at,
+                )
+                code_commit = _local_code_commit()
+                if code_commit is not None:
+                    check["code_commit"] = code_commit
+                # A concurrent maintenance run cannot be recorded as this run's
+                # acceptance. The callback also compares DB revision before/after.
+                with self.consumer_guard_factory():
+                    if self.consumer_revision is not None and check.get("input_revision") is not None:
+                        if self.consumer_revision(products, result.trading_day) != check["input_revision"]:
+                            check["status"] = "input_changed"
+                    self._write_consumer_check(result, check)
+                    return
+            except RuntimeError as exc:
+                if str(exc) == "LIVE_RECOVERY_BUSY":
+                    # The primary status already carries not_verified.
+                    return
+                _diagnostic_warning(
+                    "after_market_consumer_audit_failed exception_type=%s",
+                    type(exc).__name__,
+                )
+            except Exception as exc:  # noqa: BLE001 - primary result remains authoritative
+                _diagnostic_warning(
+                    "after_market_consumer_audit_failed exception_type=%s",
+                    type(exc).__name__,
+                )
+        check.update(
+            trading_day=result.trading_day.isoformat(),
+            checked_at=_local_timestamp(self.now()).isoformat(),
+            run_started_at=self._run_started_at,
+        )
+        try:
+            with self.consumer_guard_factory():
+                self._write_consumer_check(result, check)
+        except Exception as exc:  # noqa: BLE001 - diagnostic status cannot change maintenance
+            _diagnostic_warning(
+                "after_market_consumer_status_write_failed exception_type=%s",
+                type(exc).__name__,
+            )
+
+    def _write_consumer_check(self, result: AfterMarketResult, check: dict[str, object]) -> None:
+        try:
+            payload = _load_status(self.status_path)
+            last = payload.get("last_run")
+            if (
+                not isinstance(last, dict)
+                or last.get("started_at") != self._run_started_at
+                or last.get("status") != result.status
+                or payload.get("current_run") is not None
+            ):
+                return
+            payload["consumer_checks"] = {"newow_d1": check}
+            _atomic_write_status(self.status_path, payload)
+        except Exception as exc:  # noqa: BLE001 - diagnostic write cannot alter maintenance
+            _diagnostic_warning(
+                "after_market_consumer_status_write_failed exception_type=%s",
+                type(exc).__name__,
+            )
 
     def _run_guarded(self) -> AfterMarketResult:
         started_at = _local_timestamp(self.now())
+        self._run_started_at = started_at.isoformat()
         products = load_operational_products()
         self._write_current_run(started_at, products)
         # 先用仅依赖 Calendar 的日期判断今天是否为交易日。当天 Session 正是下方
@@ -439,6 +523,12 @@ class AfterMarketUpdater:
                 previous.get("last_successful_trading_day")
             ),
             "last_failure": _public_last_failure(previous.get("last_failure")),
+            "consumer_checks": {"newow_d1": {
+                "status": "not_verified",
+                "trading_day": result.trading_day.isoformat(),
+                "checked_at": finished_at.isoformat(),
+                "run_started_at": started_at.isoformat(),
+            }},
         }
         if interruption is not None:
             payload["last_interruption"] = interruption
@@ -606,6 +696,87 @@ def build_after_market_updater(
     notification_transport: NotificationTransport | None = None
     if failure_notification:
         notification_transport = _ConfiguredNotificationTransport()
+
+    def audit_newow_d1(products: tuple[str, ...], _trading_day: date) -> Mapping[str, object]:
+        # Freeze each product's own target Session cutoff, including after midnight.
+        from datetime import UTC
+        from app.db.readonly import readonly_transaction
+        from app.db.session import SessionLocal
+        from app.market_data.composition import build_market_data_service
+        from app.market_data.newow.readiness import ReadinessRequest
+        from app.market_data.newow.readiness_composition import build_newow_readiness
+        from guiyi_quant.newow.product_contracts import ProductFrequency
+
+        started = time.monotonic()
+        failures: list[dict[str, str]] = []
+        ready_counts = {"chart": 0, "reference": 0, "auxiliary": 0}
+        cutoffs: list[dict[str, str]] = []
+        unverified: list[str] = []
+        case_count = 0
+        complete = True
+        budget_exhausted = False
+        with SessionLocal() as session, readonly_transaction(session, timeout_seconds=900):
+            market = build_market_data_service(session)
+            input_revision = _newow_d1_catalog_revision(session, products, _trading_day)
+            for index, product in enumerate(products):
+                if time.monotonic() - started >= 900:
+                    budget_exhausted = True
+                    complete = False
+                    unverified.extend(products[index:])
+                    break
+                try:
+                    cutoff = max(
+                        window.end.astimezone(UTC)
+                        for window in market.session_windows(symbol=product, trading_day=_trading_day)
+                    ) + timedelta(microseconds=1)
+                    if cutoff > datetime.now(UTC):
+                        unverified.append(product)
+                        complete = False
+                        continue
+                    remaining = max(1, 900 - int(time.monotonic() - started))
+                    report = build_newow_readiness(session, request=ReadinessRequest(
+                        products=(product,), as_of=cutoff, matrix=True,
+                        max_work=1000, timeout_seconds=min(60, remaining),
+                        frequencies=(ProductFrequency.DAILY,),
+                    ))
+                except Exception:  # noqa: BLE001 - no private diagnostic in public receipt
+                    unverified.append(product)
+                    complete = False
+                    continue
+                if report["budget_exhausted"]:
+                    unverified.append(product)
+                cases = tuple(case for case in report["cases"] if case["frequency"] == "1d")
+                case_count += len(cases)
+                cutoffs.append({"product": product, "as_of": cutoff.isoformat()})
+                chart_rows = tuple(row for row in report["enumerations"]
+                                   if row["frequency"] == "1d" and row["section"] == "chart")
+                complete = complete and report["complete"] and len(cases) == 3 and len(chart_rows) == 1
+                complete = complete and chart_rows[0].get("status") == "ENUMERATED" and chart_rows[0].get("through") == _trading_day.isoformat()
+                budget_exhausted = budget_exhausted or report["budget_exhausted"]
+                for case in cases:
+                    for section, state in case["sections"].items():
+                        if section != "chart" and section != "reference" and not section.startswith("auxiliary:"):
+                            continue
+                        family = "auxiliary" if section.startswith("auxiliary:") else section
+                        if state["status"] == "READY":
+                            ready_counts[family] += 1
+                        else:
+                            failures.append({
+                                "product": case["symbol"], "strategy": case["strategy"],
+                                "section": section, "reason": str(state.get("reason") or state["status"]),
+                            })
+        return {
+            "status": "incomplete" if failures or unverified or not complete or case_count != 180 else "audited",
+            "input_revision": input_revision,
+            "product_cutoffs": cutoffs,
+            "unverified_products": unverified,
+            "case_count": case_count,
+            "main_ready_count": ready_counts["chart"],
+            "reference_ready_count": ready_counts["reference"],
+            "auxiliary_ready_count": ready_counts["auxiliary"],
+            "budget_exhausted": budget_exhausted,
+            "failures": failures,
+        }
     return AfterMarketUpdater(
         manager=manager,
         rqdata=client,
@@ -617,7 +788,73 @@ def build_after_market_updater(
         market_home_projection_invalidate=projection_store.invalidate,
         market_home_projection_refresh=projection_refresh,
         recovery_guard_factory=lambda: after_market_recovery_guard(wait=True),
+        consumer_guard_factory=lambda: after_market_recovery_guard(wait=False),
+        consumer_audit=audit_newow_d1,
+        consumer_revision=lambda products, day: _read_newow_d1_catalog_revision(products, day),
     )
+
+
+def _newow_d1_catalog_revision(session: Any, products: tuple[str, ...], day: date) -> str:
+    """Hash the D1 Catalog inputs, including immutable partition pointers."""
+    from sqlalchemy import select
+
+    from app.models import (
+        Contract, Exchange, Instrument, MainContractMap, MarketDataset,
+        MarketPartition, TradingCalendar, TradingSession,
+    )
+
+    product_symbols = tuple(sorted(products))
+    exchanges = tuple(sorted(set(session.scalars(
+        select(Instrument.exchange_code).where(Instrument.symbol.in_(product_symbols))
+    ))))
+    tables = (
+        ("instrument", select(Instrument.__table__).where(Instrument.symbol.in_(product_symbols))),
+        ("exchange", select(Exchange.__table__).where(Exchange.code.in_(exchanges))),
+        ("contract", select(Contract.__table__).where(Contract.instrument_symbol.in_(product_symbols))),
+        ("calendar", select(TradingCalendar.__table__).where(
+            TradingCalendar.exchange_code.in_(exchanges), TradingCalendar.trade_date <= day
+        )),
+        ("session", select(TradingSession.__table__).where(TradingSession.instrument_symbol.in_(product_symbols))),
+        ("rank1", select(MainContractMap.__table__).where(
+            MainContractMap.symbol.in_(product_symbols), MainContractMap.trade_date <= day
+        )),
+        ("dataset", select(MarketDataset.__table__).where(
+            MarketDataset.symbol.in_(product_symbols), MarketDataset.kind == "contract",
+            MarketDataset.frequency == "1d",
+        )),
+        ("partition", select(MarketPartition.__table__).join(
+            MarketDataset.__table__, MarketPartition.dataset_id == MarketDataset.id
+        ).where(
+            MarketDataset.symbol.in_(product_symbols), MarketDataset.kind == "contract",
+            MarketDataset.frequency == "1d",
+        )),
+    )
+    digest = hashlib.sha256()
+    for name, statement in tables:
+        digest.update(name.encode("ascii"))
+        for row in session.execute(statement.order_by(statement.selected_columns.id)).yield_per(1000):
+            digest.update(json.dumps(tuple(row), sort_keys=True, default=str, ensure_ascii=True).encode("utf-8"))
+            digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def _local_code_commit() -> str | None:
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT,
+            capture_output=True, text=True, check=True, timeout=5,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return sha if re.fullmatch(r"[0-9a-f]{40}", sha) else None
+
+
+def _read_newow_d1_catalog_revision(products: tuple[str, ...], day: date) -> str:
+    from app.db.readonly import readonly_transaction
+    from app.db.session import SessionLocal
+
+    with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
+        return _newow_d1_catalog_revision(session, products, day)
 
 
 def _market_home_projection_refresh_enabled() -> bool:
@@ -880,12 +1117,96 @@ def public_after_market_status(value: object) -> dict[str, object]:
                     return {}
         public["last_interruption"] = interruption
     if schema_version >= 2:
-        return {
+        result = {
             "schema_version": schema_version,
             "current_run": current_run,
             **public,
         }
+        consumer_checks = value.get("consumer_checks")
+        if isinstance(consumer_checks, Mapping):
+            daily = consumer_checks.get("newow_d1")
+            if isinstance(daily, Mapping):
+                sanitized = _public_consumer_audit(daily)
+                day = _public_trading_day(daily.get("trading_day"))
+                checked = _public_timestamp(daily.get("checked_at"))
+                if day is not None and checked is not None:
+                    result["consumer_checks"] = {"newow_d1": {
+                        **sanitized, "trading_day": day, "checked_at": checked,
+                    }}
+        return result
     return public
+
+
+def _public_consumer_audit(value: object) -> dict[str, object]:
+    if isinstance(value, Mapping) and value.get("status") == "not_verified":
+        started = _public_timestamp(value.get("run_started_at"))
+        return {"status": "not_verified", **({"run_started_at": started} if started else {})}
+    if not isinstance(value, Mapping) or value.get("status") not in {"audited", "incomplete", "input_changed"}:
+        return {"status": "not_verified"}
+    run_started_at = value.get("run_started_at")
+    if run_started_at is not None and _public_timestamp(run_started_at) is None:
+        return {"status": "not_verified"}
+    counts = ("case_count", "main_ready_count", "reference_ready_count", "auxiliary_ready_count")
+    if any(type(value.get(key)) is not int or not 0 <= value[key] <= 1800 for key in counts):
+        return {"status": "not_verified"}
+    if type(value.get("budget_exhausted")) is not bool:
+        return {"status": "not_verified"}
+    audit_as_of = value.get("as_of")
+    if audit_as_of is not None and _public_timestamp(audit_as_of) is None:
+        return {"status": "not_verified"}
+    revision = value.get("input_revision")
+    if revision is not None and (not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{64}", revision) is None):
+        return {"status": "not_verified"}
+    code_commit = value.get("code_commit")
+    if code_commit is not None and (not isinstance(code_commit, str) or re.fullmatch(r"[0-9a-f]{40}", code_commit) is None):
+        return {"status": "not_verified"}
+    raw_unverified = value.get("unverified_products")
+    if raw_unverified is not None and (not isinstance(raw_unverified, list) or len(raw_unverified) > 60 or any(
+        not isinstance(item, str) or _PUBLIC_PRODUCT_CODE.fullmatch(item) is None for item in raw_unverified
+    ) or len(set(raw_unverified)) != len(raw_unverified)):
+        return {"status": "not_verified"}
+    raw_cutoffs = value.get("product_cutoffs")
+    if raw_cutoffs is not None and (not isinstance(raw_cutoffs, list) or len(raw_cutoffs) > 60):
+        return {"status": "not_verified"}
+    cutoffs: list[dict[str, str]] = []
+    if isinstance(raw_cutoffs, list):
+        for row in raw_cutoffs:
+            if not isinstance(row, Mapping) or not isinstance(row.get("product"), str) or _PUBLIC_PRODUCT_CODE.fullmatch(row["product"]) is None or _public_timestamp(row.get("as_of")) is None:
+                return {"status": "not_verified"}
+            cutoffs.append({"product": row["product"], "as_of": row["as_of"]})
+        if len({row["product"] for row in cutoffs}) != len(cutoffs):
+            return {"status": "not_verified"}
+    raw_failures = value.get("failures")
+    if not isinstance(raw_failures, list) or len(raw_failures) > 1800:
+        return {"status": "not_verified"}
+    failures: list[dict[str, str]] = []
+    for row in raw_failures:
+        if not isinstance(row, Mapping):
+            return {"status": "not_verified"}
+        product = row.get("product")
+        strategy = row.get("strategy")
+        section = row.get("section")
+        reason = row.get("reason")
+        if (
+            not isinstance(product, str) or _PUBLIC_PRODUCT_CODE.fullmatch(product) is None
+            or strategy not in {"trend", "oscillation", "main_rise"}
+            or section not in {"chart", "reference", "auxiliary:macd", "auxiliary:main_force_control", "auxiliary:up_down_energy", "auxiliary:zhaoyao_mirror", "auxiliary:cup_handle"}
+            or not isinstance(reason, str) or re.fullmatch(r"[A-Z][A-Z0-9_]{0,79}", reason) is None
+        ):
+            return {"status": "not_verified"}
+        failures.append({"product": product, "strategy": strategy, "section": section, "reason": reason})
+    return {
+        "status": value["status"],
+        **{key: value[key] for key in counts},
+        "budget_exhausted": value["budget_exhausted"],
+        "failures": failures,
+        **({"as_of": audit_as_of} if audit_as_of is not None else {}),
+        **({"input_revision": revision} if revision is not None else {}),
+        **({"code_commit": code_commit} if code_commit is not None else {}),
+        **({"product_cutoffs": cutoffs} if raw_cutoffs is not None else {}),
+        **({"unverified_products": raw_unverified} if raw_unverified is not None else {}),
+        **({"run_started_at": run_started_at} if run_started_at is not None else {}),
+    }
 
 
 def _public_last_interruption(value: object) -> dict[str, object] | None:
