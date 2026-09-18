@@ -1863,7 +1863,7 @@ def test_contract_weekly_candidate_closure_rejects_old_week_affected_by_new_dail
     old_week = CanonicalBar(
         old_daily[-1].bar_end, days[-1], old_daily[0].open,
         max(bar.high for bar in old_daily), min(bar.low for bar in old_daily),
-        old_daily[-1].close, Decimal("5"), Decimal("5"), old_daily[-1].open_interest,
+        old_daily[-1].close, Decimal("5"), Decimal("50"), old_daily[-1].open_interest,
     )
     coverage = FakeCoverage({
         daily.as_tuple(): tuple(bar.bar_end for bar in old_daily),
@@ -1880,6 +1880,73 @@ def test_contract_weekly_candidate_closure_rejects_old_week_affected_by_new_dail
                      (old_daily[0].bar_end,), old_daily)
     with pytest.raises(historical.StorageError, match="WEEKLY_SOURCE_BAR_CONFLICT"):
         manager._require_contract_weekly_candidate_closure(((target, BarBatch(new_daily[:1])),))
+
+
+def test_contract_weekly_plan_includes_old_week_when_daily_day_is_missing(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2509", "1w")
+    days = tuple(date(2025, 1, day) for day in (6, 7, 8, 9, 10))
+    bars = tuple(_daily_on(day, 100 + index, 1) for index, day in enumerate(days))
+    week = CanonicalBar(
+        bars[-1].bar_end, days[-1], bars[0].open,
+        max(bar.high for bar in bars), min(bar.low for bar in bars),
+        bars[-1].close, Decimal("5"), Decimal("50"), bars[-1].open_interest,
+    )
+    coverage = FakeCoverage({
+        daily.as_tuple(): tuple(bar.bar_end for bar in bars),
+        weekly.as_tuple(): (week.bar_end,),
+    })
+    coverage.latest_day = days[-1]
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    _publish_existing(manager, daily, tuple(bar for index, bar in enumerate(bars) if index != 2))
+    _publish_existing(manager, weekly, (week,))
+
+    plan = manager.contract_warmup(
+        historical.ContractWarmupRequest("jm", "JM2509", days[-1], frequency="1w")
+    ).plan
+    assert {tuple(target["dataset"]) for target in plan.target_windows} == {
+        daily.as_tuple(), weekly.as_tuple(),
+    }
+    assert any(
+        "WEEKLY_DAILY_VALUE_CONFLICT" in row["reason_codes"]
+        for row in plan.scope_diagnostics if row["dataset"] == weekly.as_tuple()
+    )
+
+
+def test_contract_weekly_closure_ignores_unrelated_old_price_interruption(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2509", "1w")
+    days = tuple(date(2025, 1, day) for day in (6, 7, 8, 9, 10))
+    bars = tuple(_daily_on(day, 100 + index, 1) for index, day in enumerate(days))
+    week = CanonicalBar(
+        bars[-1].bar_end, days[-1], bars[0].open,
+        max(bar.high for bar in bars), min(bar.low for bar in bars),
+        bars[-1].close, Decimal("5"), Decimal("50"), bars[-1].open_interest,
+    )
+    coverage = FakeCoverage({daily.as_tuple(): tuple(bar.bar_end for bar in bars)})
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    old_day = _daily_on(date(2024, 12, 30), 90, 1)
+    interrupted_end = _daily_on(date(2024, 12, 31), 90, 1).bar_end
+    exception = PriceUnavailableFact(
+        interrupted_end, date(2024, 12, 31), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(90), Decimal(1), Decimal(1), Decimal(1),
+        "a" * 64, "b" * 64, datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    old_partition = manager.store.publish(PublishRequest(
+        daily, 2024, 12, (old_day,), (old_day.bar_end, interrupted_end), (exception,),
+    ))
+    manager.catalog.register_partition(old_partition)
+    manager.catalog.session.commit()
+    _publish_existing(manager, daily, bars)
+    _publish_existing(manager, weekly, (week,))
+    target = _Target(daily, 2025, 1, tuple(bar.bar_end for bar in bars),
+                     (bars[0].bar_end,), bars)
+
+    manager._require_contract_weekly_candidate_closure(((target, BarBatch((bars[0],))),))
 
 
 def test_contract_weekly_apply_rejects_group_drift_before_daily_or_weekly_publish(
@@ -2010,6 +2077,44 @@ def test_contract_weekly_registration_failure_rolls_back_all_pointers(
     assert result.applied == 0
     assert manager.catalog.all_partitions(daily) == ()
     assert manager.catalog.all_partitions(weekly) == ()
+
+
+def test_contract_weekly_post_commit_failure_reports_committed_partial(
+    session, tmp_path, monkeypatch
+) -> None:
+    daily = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2509", "1w")
+    days = tuple(date(2025, 1, day) for day in (6, 7, 8, 9, 10))
+    bars = tuple(_daily_on(day, 100 + index, 1) for index, day in enumerate(days))
+    week = CanonicalBar(
+        bars[-1].bar_end, days[-1], bars[0].open,
+        max(bar.high for bar in bars), min(bar.low for bar in bars),
+        bars[-1].close, Decimal("5"), Decimal("50"), bars[-1].open_interest,
+    )
+    coverage = FakeCoverage({
+        daily.as_tuple(): tuple(bar.bar_end for bar in bars),
+        weekly.as_tuple(): (week.bar_end,),
+    })
+    manager = _manager(session, tmp_path, coverage, FakeProvider({
+        daily.as_tuple(): bars, weekly.as_tuple(): (week,),
+    }))
+    targets = (
+        _Target(daily, 2025, 1, tuple(bar.bar_end for bar in bars),
+                tuple(bar.bar_end for bar in bars), ()),
+        _Target(weekly, 2025, 1, (week.bar_end,), (week.bar_end,), ()),
+    )
+    monkeypatch.setattr(
+        manager, "_verify_contract_weekly_post_commit",
+        lambda *_args: (_ for _ in ()).throw(historical.StorageError("POST_COMMIT_MDS_INVALID")),
+    )
+    result = manager._execute_apply(
+        "contract_warmup", targets, (), days[-1], weekly_daily_companions=False,
+    )
+    assert result.status == "partial"
+    assert result.applied == 2
+    assert result.stop_reason == "post_commit_readback_failed"
+    assert len(manager.catalog.all_partitions(daily)) == 1
+    assert len(manager.catalog.all_partitions(weekly)) == 1
 
 
 def test_contract_warmup_empty_plan_hash_isolated_by_every_scope(

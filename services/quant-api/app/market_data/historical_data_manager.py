@@ -41,6 +41,7 @@ from time import monotonic
 from typing import Literal, Protocol, cast
 
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.market_data.aggregation import AggregationError, aggregate_from_1m
 from app.market_data.catalog import CatalogPartition, ContractFact, MaintenanceLease, MarketCatalog
@@ -772,7 +773,10 @@ class ContractWarmupPlanner:
                 fact, monday, monday + timedelta(days=6),
             )
             if not days or days[-1] != last_day or any(day not in daily_by_day for day in days):
-                continue  # Missing D1 is handled by normal coverage and source-quality checks.
+                # An existing W1 cannot remain active if its D1 dependency is
+                # absent; a D1-only commit would make this hidden conflict worse.
+                conflicts.append(bar.bar_end)
+                continue
             rows = tuple((day, {
                 field: getattr(daily_by_day[day], field)
                 for field in ("open", "high", "low", "close", "volume", "turnover", "open_interest")
@@ -2257,7 +2261,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
         )
         by_day: dict[date, CanonicalBar] = {}
         for partition in self.catalog.all_partitions(daily_key):
-            for bar in self.store.read_catalog_partition(partition):
+            bars, _exceptions = self.store.read_catalog_partition_quality(partition)
+            for bar in bars:
                 if bar.trading_day in by_day:
                     raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
                 by_day[bar.trading_day] = bar
@@ -2310,7 +2315,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
         weekly: dict[datetime, CanonicalBar] = {}
         for key, dest in ((daily_key, daily), (weekly_key, weekly)):
             for partition in self.catalog.all_partitions(key):
-                for bar in self.store.read_catalog_partition(partition):
+                bars, _exceptions = self.store.read_catalog_partition_quality(partition)
+                for bar in bars:
                     identity = bar.trading_day if key.frequency is BarFrequency.D1 else bar.bar_end
                     if identity in dest:
                         raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
@@ -2593,6 +2599,20 @@ class HistoricalDataManager(ContractWarmupPlanner):
         fetched: list[tuple[_Target, BarBatch]] = []
         provider_requests = 0
         failure_target = targets[0]
+        sample = failure_target.key
+        watched_keys = tuple(
+            DatasetKey(DatasetKind.CONTRACT, sample.symbol,
+                       sample.series_or_contract, frequency)
+            for frequency in (BarFrequency.D1, BarFrequency.W1)
+        )
+
+        def active_revisions() -> tuple[tuple[object, ...], ...]:
+            return tuple(
+                self._partition_revision(partition)
+                for key in watched_keys for partition in self.catalog.all_partitions(key)
+            )
+
+        initial_revisions = active_revisions()
         try:
             for group in groups:
                 failure_target = group[-1]
@@ -2629,6 +2649,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     candidates.append((item, self.store.publish(PublishRequest(
                         item.key, item.year, item.month, bars, item.expected, exceptions,
                     ))))
+            if active_revisions() != initial_revisions:
+                raise StorageError("CONTRACT_WARMUP_PLAN_CHANGED")
             for item, partition in candidates:
                 failure_target = item
                 self.catalog.register_partition(partition)
@@ -2659,11 +2681,42 @@ class HistoricalDataManager(ContractWarmupPlanner):
             except Exception:
                 pass
             raise StorageError("COMMIT_OUTCOME_UNKNOWN") from exc
+        try:
+            self._verify_contract_weekly_post_commit(targets, through)
+        except Exception as exc:  # committed facts must remain visible for investigation
+            return MaintenanceResult(
+                action="contract_warmup", status="partial", through=through,
+                planned=len(targets), applied=len(targets), blocked=0,
+                failed=1, provider_requests=provider_requests,
+                stop_reason="post_commit_readback_failed",
+                failures=(_failure(failure_target, exc),),
+            )
         return MaintenanceResult(
             action="contract_warmup", status="passed", through=through,
             planned=len(targets), applied=len(targets), blocked=0,
             failed=0, provider_requests=provider_requests,
         )
+
+    def _verify_contract_weekly_post_commit(
+        self, targets: tuple[_Target, ...], through: date | None,
+    ) -> None:
+        """Read committed pointers in a fresh DB session, then replan the scope."""
+        with Session(self.catalog.session.get_bind(), autoflush=False) as independent:
+            verifier = HistoricalDataManager(
+                catalog=MarketCatalog(independent, self.catalog.canonical_root),
+                store=self.store, coverage=self.coverage,
+                metadata=self.metadata, provider=self.provider,
+            )
+            for target in targets:
+                verifier._strict_verify(target)
+        if through is None:
+            raise StorageError("POST_COMMIT_READBACK_INVALID")
+        sample = targets[0].key
+        _plan, remaining = self._contract_warmup_plan(ContractWarmupRequest(
+            sample.symbol, sample.series_or_contract, through, frequency="1w",
+        ))
+        if remaining:
+            raise StorageError("POST_COMMIT_REPLAN_REMAINS")
 
 
     def _weekly_daily_companions(

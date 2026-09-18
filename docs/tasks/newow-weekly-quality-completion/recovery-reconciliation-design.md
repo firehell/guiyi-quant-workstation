@@ -39,6 +39,10 @@ P7 共 318 次 apply：293 passed、24 partial、1 failed；已查明的失败�
 `DATA_INTEGRITY_INVALID` 转为修复建议。readiness 入口已增加“planner 能证明 W1/D1 数值冲突”
 时的受控路由；RB 单品种复核现为 `PROPOSED`、2 个 D1/W1 目标、预计 2 次来源请求。
 全局修复数量须重新审计，不能沿用初次结果作为新批次分母。
+独立 Review 发现并已修复三项执行缺口：旧 W1 对应 D1 缺日时纳入周线目标；扫描历史
+`PRICE_UNAVAILABLE` 时使用质量感知读取且仅阻断受影响周；统一激活后以新 Catalog session
+读回目标，并重做同合约 W1 计划。激活前再次复核全部 active D1/W1 分区版本。提交后验证失败
+明确返回 partial 并保留已提交事实，不能自动重试。
 
 ### 已由代码和回执证明
 
