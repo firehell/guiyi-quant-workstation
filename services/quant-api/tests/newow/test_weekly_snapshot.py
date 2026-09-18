@@ -1,6 +1,6 @@
 """Default W1 snapshots keep a calendar cutoff separate from current owner facts."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -122,6 +122,57 @@ def test_internal_source_conflict_does_not_search_older_weeks():
     assert calls == [NEW]
 
 
+@pytest.mark.parametrize("code", [
+    "WEEKLY_SOURCE_BAR_CONFLICT",
+    "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+])
+def test_weekly_source_failure_never_uses_previous_week(code):
+    calls = []
+
+    class Service:
+        def query(self, query):
+            calls.append(query.as_of)
+            raise MarketDataError(code)
+
+    with pytest.raises(MarketDataError, match=code):
+        resolver(Service(), publication="pending_update").resolve("rb", "trend", "1w")
+    assert calls == [NEW]
+
+
+def test_proven_price_interruption_stays_on_current_week_without_fallback():
+    calls = []
+
+    class Service:
+        def query(self, query):
+            calls.append(query.as_of)
+            return delivered(query, value={"price_unavailable_days": [date(2026, 9, 17)]})
+
+    snapshot = resolver(Service(), publication="pending_update").resolve(
+        "rb", "trend", "1w",
+    )
+    assert calls == [NEW]
+    assert snapshot.as_of == NEW
+    assert snapshot.freshness == "current"
+
+
+def test_current_owner_rollover_does_not_rewrite_historical_week_cutoff():
+    class RolledReader(Reader):
+        def current_owner_context(self, product, at):
+            return {"status": "known", "physical_contract": "RB2701"}
+
+    class Service:
+        def query(self, query):
+            assert query.as_of == NEW
+            return delivered(query)
+
+    snapshot = NewowWeeklySnapshotResolver(
+        RolledReader(), lambda _cancelled: Service(), now=lambda: REQUESTED,
+        publication_state=lambda _product, _day, _at: "unknown",
+    ).resolve("rb", "trend", "1w")
+    assert snapshot.as_of == NEW
+    assert snapshot.current_context == {"status": "known", "physical_contract": "RB2701"}
+
+
 def test_publication_state_uses_exact_maintenance_day_and_terminal_result():
     running = {"current_run": {
         "scheduled_date": "2026-09-18", "products": ["rb"],
@@ -152,3 +203,15 @@ def test_publication_state_uses_existing_schedule_only_before_1805():
         "trading_day": "2026-09-11", "status": "passed", "products": ["au"],
     }}
     assert publication_state_from_status(other_last, "rb", date(2026, 9, 18), REQUESTED) == "unknown"
+
+
+def test_weekend_cannot_keep_a_previous_friday_run_pending():
+    weekend = REQUESTED + timedelta(days=1)
+    running = {"current_run": {
+        "scheduled_date": "2026-09-18", "products": ["rb"],
+    }, "last_run": None}
+    assert publication_state_from_status(running, "rb", date(2026, 9, 18), weekend) == "stale"
+    assert publication_state_from_status(
+        {"last_run": {"trading_day": "2026-09-18", "status": "failed", "products": ["rb"]}},
+        "rb", date(2026, 9, 18), weekend,
+    ) == "failed"

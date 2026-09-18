@@ -41,6 +41,34 @@ def test_short_week_uses_last_authoritative_session_not_friday():
     ) == (date(2026, 9, 30), last_end + timedelta(microseconds=1))
 
 
+def test_week_in_progress_and_weekend_use_the_same_last_session_cutoff():
+    market = object.__new__(MarketDataService)
+    monday = date(2026, 9, 14)
+    friday_end = datetime(2026, 9, 18, 7, tzinfo=UTC)
+    market._exact_calendar = MethodType(
+        lambda _self, symbol, since, through: tuple(
+            (monday + timedelta(days=index), index < 5) for index in range(7)
+        ), market,
+    )
+    market.session_windows = MethodType(
+        lambda _self, *, symbol, trading_day: (
+            SessionWindow(friday_end - timedelta(hours=7), friday_end),
+        ), market,
+    )
+    assert market.completed_calendar_week(
+        symbol="rb", week_monday=monday,
+        as_of=datetime(2026, 9, 17, 8, tzinfo=UTC),
+    ) is None
+    cutoff = friday_end + timedelta(microseconds=1)
+    assert market.completed_calendar_week(
+        symbol="rb", week_monday=monday, as_of=cutoff,
+    ) == (date(2026, 9, 18), cutoff)
+    assert market.completed_calendar_week(
+        symbol="rb", week_monday=monday,
+        as_of=datetime(2026, 9, 19, 8, tzinfo=UTC),
+    ) == (date(2026, 9, 18), cutoff)
+
+
 def test_weekly_tail_fallback_requires_whole_week_unpublished():
     market = object.__new__(MarketDataService)
     monday = date(2026, 9, 14)

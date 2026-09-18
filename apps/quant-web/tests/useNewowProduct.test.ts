@@ -33,6 +33,20 @@ test('default W1 waits for one complete-week cutoff before loading panels', asyn
   value.meta.identity.profile_id = 'newow_product_trend_1w_v1'
   value.meta.futures_adaptation_version = 'newow_futures_weekly_quality_segment_v1'
   pending[1]!.resolve(normalizeNewowProductResponse(value, pending[1]!.request)); await reference
+  for (const load of [
+    () => state.loadAuxiliary('macd'),
+    () => state.loadExplanation(),
+    () => state.loadComparator(),
+  ]) {
+    const request = load()
+    const next = pending.at(-1)!
+    assert.equal(next.request.asOf, pending[0]!.request.asOf)
+    next.resolve(normalizedStatus(next.request, null))
+    await request
+    assert.equal(state.sections[next.request.section].state.value, 'warming')
+    assert.equal(state.sections[next.request.section].data.value?.meta.as_of, pending[0]!.request.asOf)
+    assert.equal(state.sections[next.request.section].error.value, null)
+  }
   assert.equal(state.weeklySnapshot.value?.freshness, 'pending_update')
   state.dispose()
 })
@@ -1697,6 +1711,9 @@ function normalizedAuxiliary(request: NewowProductRequest, token: string | null 
 
 function normalizedStatus(request: NewowProductRequest, token: string | null) {
   const raw = chartWire({ strategy: request.identity.strategy, frequency: request.identity.frequency, token }) as Record<string, unknown>
+  const meta = raw.meta as Record<string, unknown>
+  meta.as_of = request.asOf
+  if (request.identity.frequency === '1w') meta.futures_adaptation_version = 'newow_futures_weekly_quality_segment_v1'
   raw.section = request.section
   raw.chart = { delivery: 'not_requested', status: null, value: null }
   raw[request.section] = { delivery: 'delivered', status: { status: 'warming', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: 'NEWOW_WARMING' }, value: null }

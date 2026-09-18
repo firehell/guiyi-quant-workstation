@@ -38,6 +38,8 @@ def publication_state_from_status(
         return "failed" if last.get("status") != "passed" else "stale"
     if isinstance(current, Mapping):
         if current.get("scheduled_date") == target and product in current.get("products", ()):
+            if at.astimezone(_SHANGHAI).date() > target_day:
+                return "stale"
             return "pending_update"
         return "unknown"
     if (
