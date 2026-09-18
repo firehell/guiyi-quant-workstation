@@ -44,3 +44,13 @@
 
 - 候选代码与页面只读验收：89 项 ready 可作为候选页面证据；151 项保持数据或价格事实阻塞。
 - develop 集成、main/tag/release、Runtime promotion 与自然业务验收尚未执行。生产补数或 Canonical/DB 写入需另行明确范围授权。
+
+## 144 项缺分区处理与复验（同一固定截止）
+
+owner 后续明确授权处理上述 144 项。先按原诊断的物理合约、频率与生命周期逐月生成 [只读计划](missing-partition-plan.json)：144/144 成功、88 个不同物理合约、1,189 个去重月目标；逐项计划相加的 RQData 请求上限为 254 次。执行保持单合约单周期、锁内重算 plan hash、一次请求、不自动重试。首层 [执行回执](missing-partition-apply.json) 中 A2609 日线先行试运行成功，140 项随后通过；OI2609 与 PF2609 日线各有一个 9 月分区因 `RQDATA_ZERO_OHL_INVALID` 被拒，均只读回查并隔离；SC2611 日线规划零目标，未写入。
+
+首层复验揭露两类不同问题：一是另一个物理合约的真实分区缺口；二是周一挂牌合约首根 Bar 之前的周末 Session 边界被误当成缺分区。后者以预期交易日端点核验修复，保留真实缺 Bar 时 fail closed；独立 Review 发现直读路径遗漏退役品种拒绝，已补回并测试。最终代码提交 `64b6bda0b`。对仍属于原 144 组合的新合约，另存 [第二层只读计划](second-wave-plan.json) 与 [执行回执](second-wave-apply.json)：24/24 通过。RS 30 分随后显现的 RS2701 单个派生分区另有 [精确计划](third-wave-plan.json) 与 [回执](third-wave-apply.json)，零新增 RQData 请求。三层合计发布 **1,442 个月分区，实际 RQData 请求 154 次**，未超出 254 次预算；OI/PF 失败分区未重试。
+
+最终 [240 项数据读回](post-repair-data-readback.json) 与 [真实 Chromium 页面读回](post-repair-page-readback.json) 均使用 `2026-09-18 18:30 +08:00` 截止：**223 ready、17 blocked**。15m、30m、60m 各 60/60；1d 为 43/60。浏览器中 223 个 ready 页面有图表和参考统计，输入 hash 与固定数据读回一致；10 个计算冲突页面的参考 API 为 409、无统计；7 个缺价页面显示“行情事实不可用”、无参考统计。非 15m 的可加载页面均显示“本周期未启用预警”。
+
+17 个 1d 阻塞：`PRICE_UNAVAILABLE` 为 BZ、C、EB、I、P、PG、Y；`SUBING_REFERENCE_DATA_CONFLICT` 为 OI、PF、PK、PL、PR、PX、RS、SF、SH、SM。对后 10 项的主力映射物理合约做了[只读非正 Close 扫描](conflict-source-scan.json)，10/10 均存在该来源数值事实；其中 OI/PF 的 9 月源请求另被 `RQDATA_ZERO_OHL_INVALID` 硬校验拒绝。当前不补造 OHLC、不绕过冲突或扩大源请求；这 17 项仍需各自的数据质量/参考口径诊断。全部验收是候选数据与页面证据，不等于 develop 集成、release、Runtime 或自然业务通过。

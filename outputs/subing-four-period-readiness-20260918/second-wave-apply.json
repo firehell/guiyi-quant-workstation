@@ -1,0 +1,272 @@
+{
+  "schema": "subing-second-wave-apply-v1",
+  "status": "passed",
+  "max_provider_requests": 24,
+  "items": [
+    {
+      "symbol": "al",
+      "contract": "AL2611",
+      "frequency": "1d",
+      "status": "passed",
+      "plan_sha256": "2e6a0764a7ff20223151037b6f46a165c1b0db789aff3f152d95be1038e4ee70",
+      "provider_requests": 11,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "zn",
+      "contract": "ZN2611",
+      "frequency": "1d",
+      "status": "passed",
+      "plan_sha256": "27aa374fcbe5cab11463bf2e000cec8789cfdef07367f1d91a756bb5862dcfc3",
+      "provider_requests": 11,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "cu",
+      "contract": "CU2610",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "dd8be6e75913a041f3545877a35ced7b77e949b2b7f78fc7da9e55d4f018ce05",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "hc",
+      "contract": "HC2701",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "b920cbc6d2ada0fa9eaad16f23ba8afc92b0870640d91e849fe1ba4920a955c5",
+      "provider_requests": 0,
+      "applied_partitions": 9,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "jd",
+      "contract": "JD2611",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "7e89a7c8bbabc9eeeb34d7faf2a317c77a86015358255da2970de509aa424079",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "ni",
+      "contract": "NI2610",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "ad40a6420ca42728a92dc2619f3e93ca16f30f0f0dd790a8c65353b9bf9355b6",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2701",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "1bbe494581a8fe30978a918b1156b46bf3ff38b2a0d4678cc87387685bb5632e",
+      "provider_requests": 0,
+      "applied_partitions": 9,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "pt",
+      "contract": "PT2612",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "93be6d96472ce0043a01b94f04613c5be182f7e33eaeab46912b9d95c2535518",
+      "provider_requests": 0,
+      "applied_partitions": 10,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "rb",
+      "contract": "RB2701",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "ebd95b9673555199bdfd6c6a5567a2a6c73765a50cba2ec0e1d32ae55b9db0b7",
+      "provider_requests": 0,
+      "applied_partitions": 9,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2611",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "b57fccdda7a5de60785811b8aa9657f87d17e641fb8d84d26c01e855b9c1f69a",
+      "provider_requests": 1,
+      "applied_partitions": 12,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "sc",
+      "contract": "SC2611",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "1e07cfaa3442ddf75eb166d0dea8e4e33d3f239f1b32bdc0c74ce238a8dbb06b",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "sn",
+      "contract": "SN2610",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "a9fb166529ab347a955fe90d9338ea04f47478a12a78f13d6733984e87698e27",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "ss",
+      "contract": "SS2611",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "62980714ba5e88d9a70d4878c537079be59d8e7eda102b6b6d2f93d50a890857",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "zn",
+      "contract": "ZN2611",
+      "frequency": "30m",
+      "status": "passed",
+      "plan_sha256": "d11195a8469d1dd84d41c6007ec17eb7662de0eee7c4716a2dfc6450bde62c6e",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "cu",
+      "contract": "CU2610",
+      "frequency": "60m",
+      "status": "passed",
+      "plan_sha256": "ae1dea6c67dd6a1ad1824e8d12d3c80f7632d1149bc19ec37400797f8e464fc9",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "hc",
+      "contract": "HC2701",
+      "frequency": "60m",
+      "status": "passed",
+      "plan_sha256": "0df739880a609222d8711f171c57cf728bfc8ccc7021cde536dc2b5318e4371f",
+      "provider_requests": 0,
+      "applied_partitions": 9,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "jd",
+      "contract": "JD2611",
+      "frequency": "60m",
+      "status": "passed",
+      "plan_sha256": "37bb3ab3a962fbcfe6bdb3ac6c6c73a294a26ca9831d1d186a4da64b755cb73b",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "ni",
+      "contract": "NI2610",
+      "frequency": "60m",
+      "status": "passed",
+      "plan_sha256": "28071e58d19c1cadccb25b8432cf6ca3a573f77894fea9f75517a82fbb57465e",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2701",
+      "frequency": "60m",
+      "status": "passed",
+      "plan_sha256": "e2bf3e3ce31713cafef975a506fdd8265f54749c2c0371a330f10cc86c716012",
+      "provider_requests": 0,
+      "applied_partitions": 9,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2611",
+      "frequency": "60m",
+      "status": "passed",
+      "plan_sha256": "63e5b4c58023c4d58e3c1e274f812ba5915cd3f2d1d727e6d01befabe03086d8",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "sc",
+      "contract": "SC2611",
+      "frequency": "60m",
+      "status": "passed",
+      "plan_sha256": "e8bddc936dec9e242ff2f89c89ecf52d835428611738babbbdb204ce8976abd7",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "sn",
+      "contract": "SN2610",
+      "frequency": "60m",
+      "status": "passed",
+      "plan_sha256": "b409f184c9b94a3371aa5b41b0e7856c16a52cfd227d1454ede7291c198b7406",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "ss",
+      "contract": "SS2611",
+      "frequency": "60m",
+      "status": "passed",
+      "plan_sha256": "a20faea61fa3624849d7d0e254cde72108b7d0f1f27d82cf0df443b6c3968c43",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    },
+    {
+      "symbol": "zn",
+      "contract": "ZN2611",
+      "frequency": "60m",
+      "status": "passed",
+      "plan_sha256": "3ce4168eee9cf238f5e0624d38b79f7eb9ed586cfc2fa03c0f8f15077b8483c1",
+      "provider_requests": 0,
+      "applied_partitions": 11,
+      "failure_codes": [],
+      "remaining_targets": []
+    }
+  ],
+  "provider_request_budget_consumed": 23
+}

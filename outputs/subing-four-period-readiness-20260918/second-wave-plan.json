@@ -1,0 +1,4716 @@
+{
+  "schema": "subing-second-wave-readonly-plan-v1",
+  "as_of": "2026-09-18T18:30:00+08:00",
+  "plans": [
+    {
+      "symbol": "al",
+      "contract": "AL2611",
+      "frequency": "1d",
+      "requested_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "2e6a0764a7ff20223151037b6f46a165c1b0db789aff3f152d95be1038e4ee70",
+      "dependency_frequencies": [],
+      "frequencies": [
+        "1d"
+      ],
+      "provider_request_count": 11,
+      "direct_target_count": 11,
+      "derived_target_count": 0,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-18T07:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 9,
+          "missing_start": "2025-11-18T07:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 9
+        },
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-01T07:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 23,
+          "missing_start": "2025-12-01T07:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 23
+        },
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T07:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 20,
+          "missing_start": "2026-01-05T07:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 20
+        },
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-02T07:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 14,
+          "missing_start": "2026-02-02T07:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 14
+        },
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-02T07:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 22,
+          "missing_start": "2026-03-02T07:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 22
+        },
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-01T07:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2026-04-01T07:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T07:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 18,
+          "missing_start": "2026-05-06T07:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 18
+        },
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-06-01T07:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2026-06-01T07:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-07-01T07:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 23,
+          "missing_start": "2026-07-01T07:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 23
+        },
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-08-03T07:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2026-08-03T07:00:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "al",
+            "AL2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-09-01T07:00:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 14,
+          "missing_start": "2026-09-01T07:00:00+00:00",
+          "missing_end": "2026-09-11T07:00:00+00:00",
+          "missing_bar_count": 9
+        }
+      ]
+    },
+    {
+      "symbol": "cu",
+      "contract": "CU2610",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "dd8be6e75913a041f3545877a35ced7b77e949b2b7f78fc7da9e55d4f018ce05",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 10,
+          "expected_start": "2025-10-15T13:30:00+00:00",
+          "expected_end": "2025-10-31T07:00:00+00:00",
+          "expected_bar_count": 192,
+          "missing_start": "2025-10-15T13:30:00+00:00",
+          "missing_end": "2025-10-31T07:00:00+00:00",
+          "missing_bar_count": 192
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-10-31T13:30:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 320,
+          "missing_start": "2025-10-31T13:30:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 320
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T13:30:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 368,
+          "missing_start": "2025-11-28T13:30:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 368
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T01:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 312,
+          "missing_start": "2026-01-05T01:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 312
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T13:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 216,
+          "missing_start": "2026-01-30T13:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 216
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T13:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 352,
+          "missing_start": "2026-02-27T13:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 352
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T13:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 328,
+          "missing_start": "2026-03-31T13:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 328
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 280,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 280
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T13:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 328,
+          "missing_start": "2026-05-29T13:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 328
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T13:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 368,
+          "missing_start": "2026-06-30T13:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 368
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T13:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 336,
+          "missing_start": "2026-07-31T13:30:00+00:00",
+          "missing_end": "2026-08-24T07:00:00+00:00",
+          "missing_bar_count": 256
+        }
+      ]
+    },
+    {
+      "symbol": "cu",
+      "contract": "CU2610",
+      "frequency": "60m",
+      "requested_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "ae1dea6c67dd6a1ad1824e8d12d3c80f7632d1149bc19ec37400797f8e464fc9",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "60m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 10,
+          "expected_start": "2025-10-15T14:00:00+00:00",
+          "expected_end": "2025-10-31T07:00:00+00:00",
+          "expected_bar_count": 108,
+          "missing_start": "2025-10-15T14:00:00+00:00",
+          "missing_end": "2025-10-31T07:00:00+00:00",
+          "missing_bar_count": 108
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-10-31T14:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 180,
+          "missing_start": "2025-10-31T14:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 180
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T14:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 207,
+          "missing_start": "2025-11-28T14:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 207
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T02:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 176,
+          "missing_start": "2026-01-05T02:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 176
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T14:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 122,
+          "missing_start": "2026-01-30T14:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 122
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T14:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 198,
+          "missing_start": "2026-02-27T14:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 198
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T14:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 185,
+          "missing_start": "2026-03-31T14:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 185
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T02:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 158,
+          "missing_start": "2026-05-06T02:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 158
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T14:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 185,
+          "missing_start": "2026-05-29T14:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 185
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T14:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 207,
+          "missing_start": "2026-06-30T14:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 207
+        },
+        {
+          "dataset": [
+            "contract",
+            "cu",
+            "CU2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T14:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 189,
+          "missing_start": "2026-07-31T14:00:00+00:00",
+          "missing_end": "2026-08-24T07:00:00+00:00",
+          "missing_bar_count": 144
+        }
+      ]
+    },
+    {
+      "symbol": "hc",
+      "contract": "HC2701",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2026-01-16",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2026-01-16",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "b920cbc6d2ada0fa9eaad16f23ba8afc92b0870640d91e849fe1ba4920a955c5",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 9,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-15T13:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 132,
+          "missing_start": "2026-01-15T13:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 132
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T13:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 164,
+          "missing_start": "2026-01-30T13:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 164
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T13:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 264,
+          "missing_start": "2026-02-27T13:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 264
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T13:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 248,
+          "missing_start": "2026-03-31T13:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 248
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 212,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 212
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T13:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 248,
+          "missing_start": "2026-05-29T13:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 248
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T13:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 276,
+          "missing_start": "2026-06-30T13:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 276
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T13:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 252,
+          "missing_start": "2026-07-31T13:30:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 252
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T13:30:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-08-31T13:30:00+00:00",
+          "missing_end": "2026-09-01T07:00:00+00:00",
+          "missing_bar_count": 12
+        }
+      ]
+    },
+    {
+      "symbol": "hc",
+      "contract": "HC2701",
+      "frequency": "60m",
+      "requested_window": {
+        "start": "2026-01-16",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2026-01-16",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "0df739880a609222d8711f171c57cf728bfc8ccc7021cde536dc2b5318e4371f",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "60m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 9,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-15T14:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 77,
+          "missing_start": "2026-01-15T14:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 77
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T14:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 96,
+          "missing_start": "2026-01-30T14:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 96
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T14:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 154,
+          "missing_start": "2026-02-27T14:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 154
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T14:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 145,
+          "missing_start": "2026-03-31T14:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 145
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T02:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 124,
+          "missing_start": "2026-05-06T02:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 124
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T14:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 145,
+          "missing_start": "2026-05-29T14:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 145
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T14:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 161,
+          "missing_start": "2026-06-30T14:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 161
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T14:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 147,
+          "missing_start": "2026-07-31T14:00:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 147
+        },
+        {
+          "dataset": [
+            "contract",
+            "hc",
+            "HC2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T14:00:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 98,
+          "missing_start": "2026-08-31T14:00:00+00:00",
+          "missing_end": "2026-09-01T07:00:00+00:00",
+          "missing_bar_count": 7
+        }
+      ]
+    },
+    {
+      "symbol": "jd",
+      "contract": "JD2611",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2025-11-26",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-26",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "7e89a7c8bbabc9eeeb34d7faf2a317c77a86015358255da2970de509aa424079",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-26T01:30:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 24,
+          "missing_start": "2025-11-26T01:30:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 24
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-01T01:30:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 184,
+          "missing_start": "2025-12-01T01:30:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 184
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T01:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 160,
+          "missing_start": "2026-01-05T01:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 160
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-02T01:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 112,
+          "missing_start": "2026-02-02T01:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 112
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-02T01:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 176,
+          "missing_start": "2026-03-02T01:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 176
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-01T01:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-04-01T01:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 168
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 144,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 144
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-06-01T01:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-06-01T01:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 168
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-07-01T01:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 184,
+          "missing_start": "2026-07-01T01:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 184
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-08-03T01:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-08-03T01:30:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 168
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-09-01T01:30:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 112,
+          "missing_start": "2026-09-01T01:30:00+00:00",
+          "missing_end": "2026-09-07T07:00:00+00:00",
+          "missing_bar_count": 40
+        }
+      ]
+    },
+    {
+      "symbol": "jd",
+      "contract": "JD2611",
+      "frequency": "60m",
+      "requested_window": {
+        "start": "2025-11-26",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-26",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "37bb3ab3a962fbcfe6bdb3ac6c6c73a294a26ca9831d1d186a4da64b755cb73b",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "60m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-26T02:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 15,
+          "missing_start": "2025-11-26T02:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 15
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-01T02:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 115,
+          "missing_start": "2025-12-01T02:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 115
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T02:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 100,
+          "missing_start": "2026-01-05T02:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 100
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-02T02:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 70,
+          "missing_start": "2026-02-02T02:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 70
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-02T02:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 110,
+          "missing_start": "2026-03-02T02:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 110
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-01T02:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 105,
+          "missing_start": "2026-04-01T02:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 105
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T02:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 90,
+          "missing_start": "2026-05-06T02:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 90
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-06-01T02:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 105,
+          "missing_start": "2026-06-01T02:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 105
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-07-01T02:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 115,
+          "missing_start": "2026-07-01T02:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 115
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-08-03T02:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 105,
+          "missing_start": "2026-08-03T02:00:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 105
+        },
+        {
+          "dataset": [
+            "contract",
+            "jd",
+            "JD2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-09-01T02:00:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 70,
+          "missing_start": "2026-09-01T02:00:00+00:00",
+          "missing_end": "2026-09-07T07:00:00+00:00",
+          "missing_bar_count": 25
+        }
+      ]
+    },
+    {
+      "symbol": "ni",
+      "contract": "NI2610",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "ad40a6420ca42728a92dc2619f3e93ca16f30f0f0dd790a8c65353b9bf9355b6",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 10,
+          "expected_start": "2025-10-15T13:30:00+00:00",
+          "expected_end": "2025-10-31T07:00:00+00:00",
+          "expected_bar_count": 192,
+          "missing_start": "2025-10-15T13:30:00+00:00",
+          "missing_end": "2025-10-31T07:00:00+00:00",
+          "missing_bar_count": 192
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-10-31T13:30:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 320,
+          "missing_start": "2025-10-31T13:30:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 320
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T13:30:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 368,
+          "missing_start": "2025-11-28T13:30:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 368
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T01:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 312,
+          "missing_start": "2026-01-05T01:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 312
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T13:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 216,
+          "missing_start": "2026-01-30T13:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 216
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T13:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 352,
+          "missing_start": "2026-02-27T13:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 352
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T13:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 328,
+          "missing_start": "2026-03-31T13:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 328
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 280,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 280
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T13:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 328,
+          "missing_start": "2026-05-29T13:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 328
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T13:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 368,
+          "missing_start": "2026-06-30T13:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 368
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T13:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 336,
+          "missing_start": "2026-07-31T13:30:00+00:00",
+          "missing_end": "2026-08-24T07:00:00+00:00",
+          "missing_bar_count": 256
+        }
+      ]
+    },
+    {
+      "symbol": "ni",
+      "contract": "NI2610",
+      "frequency": "60m",
+      "requested_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "28071e58d19c1cadccb25b8432cf6ca3a573f77894fea9f75517a82fbb57465e",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "60m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 10,
+          "expected_start": "2025-10-15T14:00:00+00:00",
+          "expected_end": "2025-10-31T07:00:00+00:00",
+          "expected_bar_count": 108,
+          "missing_start": "2025-10-15T14:00:00+00:00",
+          "missing_end": "2025-10-31T07:00:00+00:00",
+          "missing_bar_count": 108
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-10-31T14:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 180,
+          "missing_start": "2025-10-31T14:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 180
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T14:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 207,
+          "missing_start": "2025-11-28T14:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 207
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T02:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 176,
+          "missing_start": "2026-01-05T02:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 176
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T14:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 122,
+          "missing_start": "2026-01-30T14:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 122
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T14:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 198,
+          "missing_start": "2026-02-27T14:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 198
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T14:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 185,
+          "missing_start": "2026-03-31T14:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 185
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T02:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 158,
+          "missing_start": "2026-05-06T02:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 158
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T14:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 185,
+          "missing_start": "2026-05-29T14:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 185
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T14:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 207,
+          "missing_start": "2026-06-30T14:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 207
+        },
+        {
+          "dataset": [
+            "contract",
+            "ni",
+            "NI2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T14:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 189,
+          "missing_start": "2026-07-31T14:00:00+00:00",
+          "missing_end": "2026-08-24T07:00:00+00:00",
+          "missing_bar_count": 144
+        }
+      ]
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2701",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2026-01-19",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2026-01-19",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "1bbe494581a8fe30978a918b1156b46bf3ff38b2a0d4678cc87387685bb5632e",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 9,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-16T13:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 120,
+          "missing_start": "2026-01-16T13:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 120
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T13:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 164,
+          "missing_start": "2026-01-30T13:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 164
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T13:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 264,
+          "missing_start": "2026-02-27T13:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 264
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T13:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 248,
+          "missing_start": "2026-03-31T13:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 248
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 212,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 212
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T13:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 248,
+          "missing_start": "2026-05-29T13:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 248
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T13:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 276,
+          "missing_start": "2026-06-30T13:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 276
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T13:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 252,
+          "missing_start": "2026-07-31T13:30:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 252
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T13:30:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-08-31T13:30:00+00:00",
+          "missing_end": "2026-09-08T07:00:00+00:00",
+          "missing_bar_count": 72
+        }
+      ]
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2701",
+      "frequency": "60m",
+      "requested_window": {
+        "start": "2026-01-19",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2026-01-19",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "e2bf3e3ce31713cafef975a506fdd8265f54749c2c0371a330f10cc86c716012",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "60m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 9,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-16T14:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 70,
+          "missing_start": "2026-01-16T14:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 70
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T14:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 96,
+          "missing_start": "2026-01-30T14:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 96
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T14:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 154,
+          "missing_start": "2026-02-27T14:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 154
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T14:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 145,
+          "missing_start": "2026-03-31T14:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 145
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T02:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 124,
+          "missing_start": "2026-05-06T02:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 124
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T14:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 145,
+          "missing_start": "2026-05-29T14:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 145
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T14:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 161,
+          "missing_start": "2026-06-30T14:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 161
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T14:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 147,
+          "missing_start": "2026-07-31T14:00:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 147
+        },
+        {
+          "dataset": [
+            "contract",
+            "oi",
+            "OI2701",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T14:00:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 98,
+          "missing_start": "2026-08-31T14:00:00+00:00",
+          "missing_end": "2026-09-08T07:00:00+00:00",
+          "missing_bar_count": 42
+        }
+      ]
+    },
+    {
+      "symbol": "pt",
+      "contract": "PT2612",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2025-12-15",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-12-15",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "93be6d96472ce0043a01b94f04613c5be182f7e33eaeab46912b9d95c2535518",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 10,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "pt",
+            "PT2612",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-15T01:30:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 104,
+          "missing_start": "2025-12-15T01:30:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 104
+        },
+        {
+          "dataset": [
+            "contract",
+            "pt",
+            "PT2612",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T01:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 160,
+          "missing_start": "2026-01-05T01:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 160
+        },
+        {
+          "dataset": [
+            "contract",
+            "pt",
+            "PT2612",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-02T01:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 112,
+          "missing_start": "2026-02-02T01:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 112
+        },
+        {
+          "dataset": [
+            "contract",
+            "pt",
+            "PT2612",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-02T01:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 176,
+          "missing_start": "2026-03-02T01:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 176
+        },
+        {
+          "dataset": [
+            "contract",
+            "pt",
+            "PT2612",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-01T01:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-04-01T01:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 168
+        },
+        {
+          "dataset": [
+            "contract",
+            "pt",
+            "PT2612",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 144,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 144
+        },
+        {
+          "dataset": [
+            "contract",
+            "pt",
+            "PT2612",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-06-01T01:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-06-01T01:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 168
+        },
+        {
+          "dataset": [
+            "contract",
+            "pt",
+            "PT2612",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-07-01T01:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 184,
+          "missing_start": "2026-07-01T01:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 184
+        },
+        {
+          "dataset": [
+            "contract",
+            "pt",
+            "PT2612",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-08-03T01:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-08-03T01:30:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 168
+        },
+        {
+          "dataset": [
+            "contract",
+            "pt",
+            "PT2612",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-09-01T01:30:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 112,
+          "missing_start": "2026-09-01T01:30:00+00:00",
+          "missing_end": "2026-09-16T07:00:00+00:00",
+          "missing_bar_count": 96
+        }
+      ]
+    },
+    {
+      "symbol": "rb",
+      "contract": "RB2701",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2026-01-16",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2026-01-16",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "ebd95b9673555199bdfd6c6a5567a2a6c73765a50cba2ec0e1d32ae55b9db0b7",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 9,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "rb",
+            "RB2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-15T13:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 132,
+          "missing_start": "2026-01-15T13:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 132
+        },
+        {
+          "dataset": [
+            "contract",
+            "rb",
+            "RB2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T13:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 164,
+          "missing_start": "2026-01-30T13:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 164
+        },
+        {
+          "dataset": [
+            "contract",
+            "rb",
+            "RB2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T13:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 264,
+          "missing_start": "2026-02-27T13:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 264
+        },
+        {
+          "dataset": [
+            "contract",
+            "rb",
+            "RB2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T13:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 248,
+          "missing_start": "2026-03-31T13:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 248
+        },
+        {
+          "dataset": [
+            "contract",
+            "rb",
+            "RB2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 212,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 212
+        },
+        {
+          "dataset": [
+            "contract",
+            "rb",
+            "RB2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T13:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 248,
+          "missing_start": "2026-05-29T13:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 248
+        },
+        {
+          "dataset": [
+            "contract",
+            "rb",
+            "RB2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T13:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 276,
+          "missing_start": "2026-06-30T13:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 276
+        },
+        {
+          "dataset": [
+            "contract",
+            "rb",
+            "RB2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T13:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 252,
+          "missing_start": "2026-07-31T13:30:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 252
+        },
+        {
+          "dataset": [
+            "contract",
+            "rb",
+            "RB2701",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T13:30:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-08-31T13:30:00+00:00",
+          "missing_end": "2026-09-01T07:00:00+00:00",
+          "missing_bar_count": 12
+        }
+      ]
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2611",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2025-11-17",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-17",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "b57fccdda7a5de60785811b8aa9657f87d17e641fb8d84d26c01e855b9c1f69a",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 1,
+      "direct_target_count": 1,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "1m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-09-01T01:01:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 3150,
+          "missing_start": "2026-09-18T01:01:00+00:00",
+          "missing_end": "2026-09-18T07:00:00+00:00",
+          "missing_bar_count": 225
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-17T01:30:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 80,
+          "missing_start": "2025-11-17T01:30:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 80
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-01T01:30:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 184,
+          "missing_start": "2025-12-01T01:30:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 184
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T01:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 160,
+          "missing_start": "2026-01-05T01:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 160
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-02T01:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 112,
+          "missing_start": "2026-02-02T01:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 112
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-02T01:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 176,
+          "missing_start": "2026-03-02T01:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 176
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-01T01:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-04-01T01:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 168
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 144,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 144
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-06-01T01:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-06-01T01:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 168
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-07-01T01:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 184,
+          "missing_start": "2026-07-01T01:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 184
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-08-03T01:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 168,
+          "missing_start": "2026-08-03T01:30:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 168
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-09-01T01:30:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 112,
+          "missing_start": "2026-09-01T01:30:00+00:00",
+          "missing_end": "2026-09-18T07:00:00+00:00",
+          "missing_bar_count": 80
+        }
+      ]
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2611",
+      "frequency": "60m",
+      "requested_window": {
+        "start": "2025-11-17",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-17",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "3706481d1e219e44a674820c6d99bdfcd31adb3e00916326de4d196523813cd0",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "60m"
+      ],
+      "provider_request_count": 1,
+      "direct_target_count": 1,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "1m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-09-01T01:01:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 3150,
+          "missing_start": "2026-09-18T01:01:00+00:00",
+          "missing_end": "2026-09-18T07:00:00+00:00",
+          "missing_bar_count": 225
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-17T02:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 50,
+          "missing_start": "2025-11-17T02:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 50
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-01T02:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 115,
+          "missing_start": "2025-12-01T02:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 115
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T02:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 100,
+          "missing_start": "2026-01-05T02:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 100
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-02T02:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 70,
+          "missing_start": "2026-02-02T02:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 70
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-02T02:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 110,
+          "missing_start": "2026-03-02T02:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 110
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-01T02:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 105,
+          "missing_start": "2026-04-01T02:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 105
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T02:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 90,
+          "missing_start": "2026-05-06T02:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 90
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-06-01T02:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 105,
+          "missing_start": "2026-06-01T02:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 105
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-07-01T02:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 115,
+          "missing_start": "2026-07-01T02:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 115
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-08-03T02:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 105,
+          "missing_start": "2026-08-03T02:00:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 105
+        },
+        {
+          "dataset": [
+            "contract",
+            "rs",
+            "RS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-09-01T02:00:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 70,
+          "missing_start": "2026-09-01T02:00:00+00:00",
+          "missing_end": "2026-09-18T07:00:00+00:00",
+          "missing_bar_count": 50
+        }
+      ]
+    },
+    {
+      "symbol": "sc",
+      "contract": "SC2611",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2025-11-03",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-03",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "1e07cfaa3442ddf75eb166d0dea8e4e33d3f239f1b32bdc0c74ce238a8dbb06b",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-10-31T13:30:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 380,
+          "missing_start": "2025-10-31T13:30:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 380
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T13:30:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 437,
+          "missing_start": "2025-11-28T13:30:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 437
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T01:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 369,
+          "missing_start": "2026-01-05T01:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 369
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T13:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 255,
+          "missing_start": "2026-01-30T13:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 255
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T13:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 418,
+          "missing_start": "2026-02-27T13:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 418
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T13:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 388,
+          "missing_start": "2026-03-31T13:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 388
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 331,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 331
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T13:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 388,
+          "missing_start": "2026-05-29T13:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 388
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T13:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 437,
+          "missing_start": "2026-06-30T13:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 437
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T13:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 399,
+          "missing_start": "2026-07-31T13:30:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 399
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T13:30:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 266,
+          "missing_start": "2026-08-31T13:30:00+00:00",
+          "missing_end": "2026-09-15T07:00:00+00:00",
+          "missing_bar_count": 209
+        }
+      ]
+    },
+    {
+      "symbol": "sc",
+      "contract": "SC2611",
+      "frequency": "60m",
+      "requested_window": {
+        "start": "2025-11-03",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-03",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "e8bddc936dec9e242ff2f89c89ecf52d835428611738babbbdb204ce8976abd7",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "60m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-10-31T14:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 220,
+          "missing_start": "2025-10-31T14:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 220
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T14:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 253,
+          "missing_start": "2025-11-28T14:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 253
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T02:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 214,
+          "missing_start": "2026-01-05T02:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 214
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T14:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 148,
+          "missing_start": "2026-01-30T14:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 148
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T14:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 242,
+          "missing_start": "2026-02-27T14:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 242
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T14:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 225,
+          "missing_start": "2026-03-31T14:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 225
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T02:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 192,
+          "missing_start": "2026-05-06T02:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 192
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T14:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 225,
+          "missing_start": "2026-05-29T14:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 225
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T14:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 253,
+          "missing_start": "2026-06-30T14:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 253
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T14:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 231,
+          "missing_start": "2026-07-31T14:00:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 231
+        },
+        {
+          "dataset": [
+            "contract",
+            "sc",
+            "SC2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T14:00:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 154,
+          "missing_start": "2026-08-31T14:00:00+00:00",
+          "missing_end": "2026-09-15T07:00:00+00:00",
+          "missing_bar_count": 121
+        }
+      ]
+    },
+    {
+      "symbol": "sn",
+      "contract": "SN2610",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "a9fb166529ab347a955fe90d9338ea04f47478a12a78f13d6733984e87698e27",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 10,
+          "expected_start": "2025-10-15T13:30:00+00:00",
+          "expected_end": "2025-10-31T07:00:00+00:00",
+          "expected_bar_count": 192,
+          "missing_start": "2025-10-15T13:30:00+00:00",
+          "missing_end": "2025-10-31T07:00:00+00:00",
+          "missing_bar_count": 192
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-10-31T13:30:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 320,
+          "missing_start": "2025-10-31T13:30:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 320
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T13:30:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 368,
+          "missing_start": "2025-11-28T13:30:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 368
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T01:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 312,
+          "missing_start": "2026-01-05T01:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 312
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T13:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 216,
+          "missing_start": "2026-01-30T13:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 216
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T13:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 352,
+          "missing_start": "2026-02-27T13:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 352
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T13:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 328,
+          "missing_start": "2026-03-31T13:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 328
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 280,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 280
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T13:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 328,
+          "missing_start": "2026-05-29T13:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 328
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T13:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 368,
+          "missing_start": "2026-06-30T13:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 368
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T13:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 336,
+          "missing_start": "2026-07-31T13:30:00+00:00",
+          "missing_end": "2026-08-25T07:00:00+00:00",
+          "missing_bar_count": 272
+        }
+      ]
+    },
+    {
+      "symbol": "sn",
+      "contract": "SN2610",
+      "frequency": "60m",
+      "requested_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-10-16",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "b409f184c9b94a3371aa5b41b0e7856c16a52cfd227d1454ede7291c198b7406",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "60m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 10,
+          "expected_start": "2025-10-15T14:00:00+00:00",
+          "expected_end": "2025-10-31T07:00:00+00:00",
+          "expected_bar_count": 108,
+          "missing_start": "2025-10-15T14:00:00+00:00",
+          "missing_end": "2025-10-31T07:00:00+00:00",
+          "missing_bar_count": 108
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-10-31T14:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 180,
+          "missing_start": "2025-10-31T14:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 180
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T14:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 207,
+          "missing_start": "2025-11-28T14:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 207
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T02:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 176,
+          "missing_start": "2026-01-05T02:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 176
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T14:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 122,
+          "missing_start": "2026-01-30T14:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 122
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T14:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 198,
+          "missing_start": "2026-02-27T14:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 198
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T14:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 185,
+          "missing_start": "2026-03-31T14:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 185
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T02:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 158,
+          "missing_start": "2026-05-06T02:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 158
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T14:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 185,
+          "missing_start": "2026-05-29T14:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 185
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T14:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 207,
+          "missing_start": "2026-06-30T14:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 207
+        },
+        {
+          "dataset": [
+            "contract",
+            "sn",
+            "SN2610",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T14:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 189,
+          "missing_start": "2026-07-31T14:00:00+00:00",
+          "missing_end": "2026-08-25T07:00:00+00:00",
+          "missing_bar_count": 153
+        }
+      ]
+    },
+    {
+      "symbol": "ss",
+      "contract": "SS2611",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "62980714ba5e88d9a70d4878c537079be59d8e7eda102b6b6d2f93d50a890857",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-17T13:30:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 144,
+          "missing_start": "2025-11-17T13:30:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 144
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T13:30:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 368,
+          "missing_start": "2025-11-28T13:30:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 368
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T01:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 312,
+          "missing_start": "2026-01-05T01:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 312
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T13:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 216,
+          "missing_start": "2026-01-30T13:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 216
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T13:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 352,
+          "missing_start": "2026-02-27T13:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 352
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T13:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 328,
+          "missing_start": "2026-03-31T13:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 328
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 280,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 280
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T13:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 328,
+          "missing_start": "2026-05-29T13:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 328
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T13:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 368,
+          "missing_start": "2026-06-30T13:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 368
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T13:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 336,
+          "missing_start": "2026-07-31T13:30:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 336
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T13:30:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 224,
+          "missing_start": "2026-08-31T13:30:00+00:00",
+          "missing_end": "2026-09-16T07:00:00+00:00",
+          "missing_bar_count": 192
+        }
+      ]
+    },
+    {
+      "symbol": "ss",
+      "contract": "SS2611",
+      "frequency": "60m",
+      "requested_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "a20faea61fa3624849d7d0e254cde72108b7d0f1f27d82cf0df443b6c3968c43",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "60m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-17T14:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 81,
+          "missing_start": "2025-11-17T14:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 81
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T14:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 207,
+          "missing_start": "2025-11-28T14:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 207
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T02:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 176,
+          "missing_start": "2026-01-05T02:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 176
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T14:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 122,
+          "missing_start": "2026-01-30T14:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 122
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T14:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 198,
+          "missing_start": "2026-02-27T14:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 198
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T14:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 185,
+          "missing_start": "2026-03-31T14:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 185
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T02:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 158,
+          "missing_start": "2026-05-06T02:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 158
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T14:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 185,
+          "missing_start": "2026-05-29T14:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 185
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T14:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 207,
+          "missing_start": "2026-06-30T14:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 207
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T14:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 189,
+          "missing_start": "2026-07-31T14:00:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 189
+        },
+        {
+          "dataset": [
+            "contract",
+            "ss",
+            "SS2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T14:00:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 126,
+          "missing_start": "2026-08-31T14:00:00+00:00",
+          "missing_end": "2026-09-16T07:00:00+00:00",
+          "missing_bar_count": 108
+        }
+      ]
+    },
+    {
+      "symbol": "zn",
+      "contract": "ZN2611",
+      "frequency": "1d",
+      "requested_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "27aa374fcbe5cab11463bf2e000cec8789cfdef07367f1d91a756bb5862dcfc3",
+      "dependency_frequencies": [],
+      "frequencies": [
+        "1d"
+      ],
+      "provider_request_count": 11,
+      "direct_target_count": 11,
+      "derived_target_count": 0,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-18T07:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 9,
+          "missing_start": "2025-11-18T07:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 9
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-01T07:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 23,
+          "missing_start": "2025-12-01T07:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 23
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T07:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 20,
+          "missing_start": "2026-01-05T07:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 20
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-02T07:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 14,
+          "missing_start": "2026-02-02T07:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 14
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-02T07:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 22,
+          "missing_start": "2026-03-02T07:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 22
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-01T07:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2026-04-01T07:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T07:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 18,
+          "missing_start": "2026-05-06T07:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 18
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-06-01T07:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2026-06-01T07:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-07-01T07:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 23,
+          "missing_start": "2026-07-01T07:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 23
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-08-03T07:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2026-08-03T07:00:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-09-01T07:00:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 14,
+          "missing_start": "2026-09-01T07:00:00+00:00",
+          "missing_end": "2026-09-11T07:00:00+00:00",
+          "missing_bar_count": 9
+        }
+      ]
+    },
+    {
+      "symbol": "zn",
+      "contract": "ZN2611",
+      "frequency": "30m",
+      "requested_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "d11195a8469d1dd84d41c6007ec17eb7662de0eee7c4716a2dfc6450bde62c6e",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "30m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-17T13:30:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 144,
+          "missing_start": "2025-11-17T13:30:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 144
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T13:30:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 368,
+          "missing_start": "2025-11-28T13:30:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 368
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T01:30:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 312,
+          "missing_start": "2026-01-05T01:30:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 312
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T13:30:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 216,
+          "missing_start": "2026-01-30T13:30:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 216
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T13:30:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 352,
+          "missing_start": "2026-02-27T13:30:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 352
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T13:30:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 328,
+          "missing_start": "2026-03-31T13:30:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 328
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T01:30:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 280,
+          "missing_start": "2026-05-06T01:30:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 280
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T13:30:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 328,
+          "missing_start": "2026-05-29T13:30:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 328
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T13:30:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 368,
+          "missing_start": "2026-06-30T13:30:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 368
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T13:30:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 336,
+          "missing_start": "2026-07-31T13:30:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 336
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "30m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T13:30:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 224,
+          "missing_start": "2026-08-31T13:30:00+00:00",
+          "missing_end": "2026-09-17T07:00:00+00:00",
+          "missing_bar_count": 208
+        }
+      ]
+    },
+    {
+      "symbol": "zn",
+      "contract": "ZN2611",
+      "frequency": "60m",
+      "requested_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "effective_window": {
+        "start": "2025-11-18",
+        "through": "2026-09-18"
+      },
+      "plan_sha256": "3ce4168eee9cf238f5e0624d38b79f7eb9ed586cfc2fa03c0f8f15077b8483c1",
+      "dependency_frequencies": [
+        "1m"
+      ],
+      "frequencies": [
+        "1m",
+        "60m"
+      ],
+      "provider_request_count": 0,
+      "direct_target_count": 0,
+      "derived_target_count": 11,
+      "targets": [
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-17T14:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 81,
+          "missing_start": "2025-11-17T14:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 81
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-11-28T14:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 207,
+          "missing_start": "2025-11-28T14:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 207
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T02:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 176,
+          "missing_start": "2026-01-05T02:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 176
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-01-30T14:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 122,
+          "missing_start": "2026-01-30T14:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 122
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-02-27T14:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 198,
+          "missing_start": "2026-02-27T14:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 198
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-03-31T14:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 185,
+          "missing_start": "2026-03-31T14:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 185
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T02:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 158,
+          "missing_start": "2026-05-06T02:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 158
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-05-29T14:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 185,
+          "missing_start": "2026-05-29T14:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 185
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-06-30T14:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 207,
+          "missing_start": "2026-06-30T14:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 207
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-07-31T14:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 189,
+          "missing_start": "2026-07-31T14:00:00+00:00",
+          "missing_end": "2026-08-31T07:00:00+00:00",
+          "missing_bar_count": 189
+        },
+        {
+          "dataset": [
+            "contract",
+            "zn",
+            "ZN2611",
+            "60m"
+          ],
+          "year": 2026,
+          "month": 9,
+          "expected_start": "2026-08-31T14:00:00+00:00",
+          "expected_end": "2026-09-18T07:00:00+00:00",
+          "expected_bar_count": 126,
+          "missing_start": "2026-08-31T14:00:00+00:00",
+          "missing_end": "2026-09-17T07:00:00+00:00",
+          "missing_bar_count": 117
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "summary": {
+    "items": 24,
+    "errors": 0,
+    "provider_requests": 24,
+    "zero_targets": 0,
+    "by_frequency": {
+      "1d": 2,
+      "30m": 12,
+      "60m": 10
+    }
+  }
+}
