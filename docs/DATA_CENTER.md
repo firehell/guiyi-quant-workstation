@@ -366,6 +366,15 @@ coverage/RQData/update 尝试之前写入 `current_run`，白名单化保留 `at
 启动在新 run 建立前被拒绝；纯文件 reader 物理上无法观测这次未留下任何字节变化的尝试。`last_run.failure_notification`
 只允许 `{attempted_at,state=provider_accepted|failed,error_type}` 公开字段，不保存 provider reference。
 
+Runtime operational health v2 只由行情运行链的 `db`、`redis`、`live_market` 与 `after_market`
+共同决定。Alert 处理、Rule、coverage 和通知失败仍公开在独立组件中，不影响顶层 health；
+可选 weekly audit 同样不参与。Live 已启用、心跳新鲜且 available=true，所有 operational 品种
+明确为 CLOSED（计数完整且无其他 phase）时，cleanup 或休市重启后的 `coverage=unverified`
+不再使 Live operational health 降级；原 coverage 和缺失证据仍保留，不表示历史连续性已通过。
+已知 lagging、开市或未知 phase 的未验证 coverage、心跳缺失/过期/未来、连接不可用继续降级。
+盘后增量的失败、缺跑、卡住、状态不可读及以下时序规则保持不变；不得以提醒失败掩盖行情失败，
+也不得通过清除历史错误、重跑盘后或补发通知改变健康展示。
+
 只读 Runtime health 从 `operational_products.txt` 对应的 `Instrument.exchange_code` 与权威
 `TradingCalendar` 唯一解析 expected trading day：上海时间 18:20 前只考虑先前交易日，18:20
 起当日可成为 expected day；交易所结果不唯一、产品/日历事实不完整或 chronology 无效时均
