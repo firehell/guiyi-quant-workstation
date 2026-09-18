@@ -1629,6 +1629,20 @@ def test_contract_trading_day_query_preserves_missing_contract_error(
         )
 
 
+def test_contract_trading_day_query_rejects_retired_product(
+    session, tmp_path
+) -> None:
+    with pytest.raises(MarketDataError, match="^PRODUCT_RETIRED$"):
+        MarketDataService(
+            MarketCatalog(session, tmp_path),
+            CanonicalMonthlyStore(tmp_path),
+        ).query_contract_trading_days(
+            ContractTradingDayQuery(
+                "br", "BR2509", "1d", date(2025, 1, 6), date(2025, 1, 6),
+            )
+        )
+
+
 def test_contract_trading_day_query_rejects_non_rqdata_contract(
     session, tmp_path
 ) -> None:

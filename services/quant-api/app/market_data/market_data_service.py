@@ -619,6 +619,10 @@ class MarketDataService:
     ) -> MarketSeriesResult:
         """按合约有效期内的精确交易日读取单一物理合约。"""
         try:
+            assert_not_retired(request.symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        try:
             fact = self.catalog.contract_fact(request.symbol, request.contract)
         except CatalogError as exc:
             code = (
