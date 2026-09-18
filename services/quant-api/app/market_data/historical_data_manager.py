@@ -9,7 +9,8 @@ RQData 拉取组装成可审计的维护流程。消费者（MarketDataService�
 HistoricalDataManager
     唯一维护入口：规划目标月分区、区分经 BarSource 获取的 base/weekly 目标与日内 1m 派生目标、
     调用 store.publish 完成校验与不可变候选安装，再 register_partition
-    并 strict_verify 读回；Catalog commit 是单分区可见点。apply=False 时只返回 planned 窗口，不写库与文件。
+    并 strict_verify 读回；普通 Catalog commit 是单分区可见点，显式合约 W1 可统一激活 D1/W1。
+    apply=False 时只返回 planned 窗口，不写库与文件。
 
 CoverageSource（Protocol，实现见 coverage_source.DatabaseCoverageSource）
     从交易所日历、会话模板与品种窗口推导「应有 bar_end」序列；不读 Parquet、不拉行情。
@@ -554,6 +555,14 @@ class ContractWarmupPlanner:
             ))
             if BarFrequency.W1 in planned_frequencies else ()
         )
+        daily_by_day: dict[date, CanonicalBar] = {}
+        if BarFrequency.W1 in planned_frequencies:
+            for partition in weekly_daily_partitions:
+                bars, _ = self.store.read_catalog_partition_quality(partition)
+                for bar in bars:
+                    if bar.trading_day in daily_by_day:
+                        raise StorageError("WEEKLY_DAILY_SOURCE_DUPLICATE")
+                    daily_by_day[bar.trading_day] = bar
         for target_frequency in planned_frequencies:
             key = DatasetKey(
                 DatasetKind.CONTRACT,
@@ -615,6 +624,16 @@ class ContractWarmupPlanner:
                     key, year, month, existing, classification=classification,
                     quality_exclusion_count=len(quality_exclusions),
                 )
+                numeric_conflicts: tuple[datetime, ...] = ()
+                if target_frequency is BarFrequency.W1:
+                    numeric_conflicts = self._weekly_numeric_conflicts(
+                        fact, existing, expected, daily_by_day,
+                    )
+                    if numeric_conflicts:
+                        diagnostics[key, year, month]["reason_codes"] = (
+                            *cast(tuple[str, ...], diagnostics[key, year, month]["reason_codes"]),
+                            "WEEKLY_DAILY_VALUE_CONFLICT",
+                        )
                 if quality_exclusions:
                     diagnostics[key, year, month]["weekly_quality_interruptions"] = tuple(
                         {"week_end": end.isoformat(), "source_identity": proof}
@@ -638,10 +657,14 @@ class ContractWarmupPlanner:
                             year,
                             month,
                             classification.expected,
-                            classification.missing_mapped,
+                            tuple(sorted(set(classification.missing_mapped).union(numeric_conflicts))),
                             existing,
                         )
                     )
+                elif numeric_conflicts:
+                    targets.append(_Target(
+                        key, year, month, classification.expected, numeric_conflicts, existing,
+                    ))
 
         targets = self._with_contract_weekly_daily_context(
             targets,
@@ -650,6 +673,13 @@ class ContractWarmupPlanner:
             diagnostics,
         )
         target_windows = tuple(_contract_warmup_target_payload(item) for item in targets)
+        weekly_input_revisions = ()
+        if BarFrequency.W1 in planned_frequencies:
+            weekly_key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency.W1)
+            weekly_input_revisions = tuple(
+                self._partition_revision(partition)
+                for partition in (*weekly_daily_partitions, *self.catalog.all_partitions(weekly_key))
+            )
         plan_identity: Mapping[str, object] = {
             "schema_version": 2,
             "command": "data.contract-warmup",
@@ -673,10 +703,13 @@ class ContractWarmupPlanner:
                 _contract_warmup_hash_target_payload(target) for target in targets
             ),
         }
+        if weekly_input_revisions:
+            plan_identity = {**plan_identity, "schema_version": 4,
+                             "weekly_input_revisions": weekly_input_revisions}
         if weekly_quality_exclusions:
             plan_identity = {
                 **plan_identity,
-                "schema_version": 3,
+                "schema_version": 4 if weekly_input_revisions else 3,
                 "weekly_quality_exclusions": tuple(weekly_quality_exclusions),
             }
         plan_sha256 = hashlib.sha256(
@@ -717,6 +750,44 @@ class ContractWarmupPlanner:
             ),
             tuple(targets),
         )
+
+    def _weekly_numeric_conflicts(
+        self,
+        fact: ContractFact,
+        existing: tuple[CanonicalBar, ...],
+        expected: tuple[datetime, ...],
+        daily_by_day: Mapping[date, CanonicalBar],
+    ) -> tuple[datetime, ...]:
+        """Treat a complete old W1 Bar that disagrees with active D1 as a repair target."""
+        from app.market_data.rqdata_adapter import _aggregate_daily_rows
+
+        required = set(expected)
+        conflicts: list[datetime] = []
+        for bar in existing:
+            if bar.bar_end not in required:
+                continue
+            last_day = bar.trading_day
+            monday = last_day - timedelta(days=last_day.isoweekday() - 1)
+            days = self.coverage.contract_trading_days(
+                fact, monday, monday + timedelta(days=6),
+            )
+            if not days or days[-1] != last_day or any(day not in daily_by_day for day in days):
+                continue  # Missing D1 is handled by normal coverage and source-quality checks.
+            rows = tuple((day, {
+                field: getattr(daily_by_day[day], field)
+                for field in ("open", "high", "low", "close", "volume", "turnover", "open_interest")
+            }) for day in days)
+            if _aggregate_daily_rows(rows, bar_end=bar.bar_end) != bar:
+                conflicts.append(bar.bar_end)
+        return tuple(sorted(conflicts))
+
+    @staticmethod
+    def _partition_revision(partition: CatalogPartition) -> tuple[object, ...]:
+        name = partition.file_path.name
+        if not (name.startswith("part.") and name.endswith(".parquet") and len(name) == 77):
+            name = hashlib.sha256(partition.file_path.read_bytes()).hexdigest()
+        return (partition.dataset.as_tuple(), partition.year, partition.month, name,
+                partition.row_count, partition.source_quality_sha256)
 
     @staticmethod
     def _scope_diagnostic(
@@ -2222,6 +2293,57 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 if _aggregate_daily_rows(rows, bar_end=bar.bar_end) != bar:
                     raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
 
+    def _require_contract_weekly_candidate_closure(
+        self, paired: tuple[tuple[_Target, BarBatch], ...],
+    ) -> None:
+        """Validate every old or new W1 touched by candidate D1 before activation."""
+        if not paired:
+            return
+        from app.market_data.rqdata_adapter import _aggregate_daily_rows
+
+        sample = paired[0][0].key
+        daily_key = DatasetKey(DatasetKind.CONTRACT, sample.symbol,
+                               sample.series_or_contract, BarFrequency.D1)
+        weekly_key = DatasetKey(DatasetKind.CONTRACT, sample.symbol,
+                                sample.series_or_contract, BarFrequency.W1)
+        daily: dict[date, CanonicalBar] = {}
+        weekly: dict[datetime, CanonicalBar] = {}
+        for key, dest in ((daily_key, daily), (weekly_key, weekly)):
+            for partition in self.catalog.all_partitions(key):
+                for bar in self.store.read_catalog_partition(partition):
+                    identity = bar.trading_day if key.frequency is BarFrequency.D1 else bar.bar_end
+                    if identity in dest:
+                        raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+                    dest[identity] = bar
+        touched_days: set[date] = set()
+        touched_ends: set[datetime] = set()
+        for target, batch in paired:
+            if target.key.frequency is BarFrequency.D1:
+                touched_days.update(bar.trading_day for bar in batch.bars)
+            elif target.key.frequency is BarFrequency.W1:
+                touched_ends.update(bar.bar_end for bar in batch.bars)
+            for bar in self._merged_fetched_bars(target, (batch,)):
+                if target.key.frequency is BarFrequency.D1:
+                    daily[bar.trading_day] = bar
+                elif target.key.frequency is BarFrequency.W1:
+                    weekly[bar.bar_end] = bar
+        fact = self.catalog.contract_fact(sample.symbol, sample.series_or_contract)
+        for bar in weekly.values():
+            last_day = bar.trading_day
+            monday = last_day - timedelta(days=last_day.isoweekday() - 1)
+            if bar.bar_end not in touched_ends and not any(
+                monday <= day <= monday + timedelta(days=6) for day in touched_days
+            ):
+                continue
+            days = self.coverage.contract_trading_days(fact, monday, monday + timedelta(days=6))
+            if not days or days[-1] != last_day or any(day not in daily for day in days):
+                raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+            rows = tuple((day, {field: getattr(daily[day], field)
+                                for field in ("open", "high", "low", "close", "volume",
+                                              "turnover", "open_interest")}) for day in days)
+            if _aggregate_daily_rows(rows, bar_end=bar.bar_end) != bar:
+                raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+
     def _execute_apply(
         self,
         action: str,
@@ -2237,6 +2359,16 @@ class HistoricalDataManager(ContractWarmupPlanner):
         """apply 核心循环：先聚合已有 1m，再 fetch，最后扫剩余日内派生目标。"""
         remaining_derived = list(intraday_derived)
         fetched_targets = tuple(fetched)
+        if (
+            action == "contract_warmup"
+            and not remaining_derived
+            and any(target.key.frequency is BarFrequency.W1 for target in fetched_targets)
+            and all(target.key.frequency in {BarFrequency.D1, BarFrequency.W1}
+                    for target in fetched_targets)
+        ):
+            return self._execute_contract_weekly_atomic(
+                fetched_targets, through,
+            )
         pending_minute_months = {
             (*_family(target.key), target.year, target.month)
             for target in fetched_targets
@@ -2449,6 +2581,88 @@ class HistoricalDataManager(ContractWarmupPlanner):
             len(failures),
             provider_requests,
             failures=tuple(failures),
+        )
+
+    def _execute_contract_weekly_atomic(
+        self,
+        targets: tuple[_Target, ...],
+        through: date | None,
+    ) -> MaintenanceResult:
+        """Validate all D1/W1 fetch groups before one Catalog activation."""
+        groups = _contract_warmup_fetch_groups(targets)
+        fetched: list[tuple[_Target, BarBatch]] = []
+        provider_requests = 0
+        failure_target = targets[0]
+        try:
+            for group in groups:
+                failure_target = group[-1]
+                provider_requests += len(group)
+                with self._progress(
+                    "provider", failure_target.key, failure_target.year, failure_target.month
+                ):
+                    batches = self.provider.fetch_many(tuple(
+                        BarFetchRequest(
+                            item.key, item.missing,
+                            self.coverage.trading_days_for_bar_ends(item.key, item.missing)
+                            if item.key.frequency is BarFrequency.M1 else None,
+                        ) for item in group
+                    ))
+                if len(batches) != len(group):
+                    raise StorageError("PROVIDER_BATCH_COUNT_MISMATCH")
+                paired = tuple(zip(group, batches, strict=True))
+                for item, batch in paired:
+                    failure_target = item
+                    self._merged_fetched_bars(item, (batch,))
+                self._require_contract_weekly_daily_parity(paired)
+                fetched.extend(paired)
+
+            self._require_contract_weekly_candidate_closure(tuple(fetched))
+
+            # Publishing creates immutable candidates only. Readers cannot see
+            # them until all Catalog registrations commit in one transaction.
+            candidates = []
+            for item, batch in fetched:
+                failure_target = item
+                bars = self._merged_fetched_bars(item, (batch,))
+                exceptions = self._merged_price_unavailable(item, (batch,))
+                with self._progress("publishing", item.key, item.year, item.month):
+                    candidates.append((item, self.store.publish(PublishRequest(
+                        item.key, item.year, item.month, bars, item.expected, exceptions,
+                    ))))
+            for item, partition in candidates:
+                failure_target = item
+                self.catalog.register_partition(partition)
+            for item, _partition in candidates:
+                failure_target = item
+                self._strict_verify(item)
+        except Exception as exc:  # noqa: BLE001 - native per-contract failure boundary
+            self.catalog.session.rollback()
+            if _is_global_failure(exc):
+                raise
+            return MaintenanceResult(
+                action="contract_warmup",
+                status="partial" if getattr(exc, "code", None) == "PROVIDER_QUOTA_EXHAUSTED" else "failed",
+                through=through,
+                planned=len(targets),
+                applied=0,
+                blocked=0,
+                failed=1,
+                provider_requests=provider_requests,
+                stop_reason="contract_warmup_target_failed",
+                failures=(_failure(failure_target, exc),),
+            )
+        try:
+            self.catalog.session.commit()
+        except Exception as exc:
+            try:
+                self.catalog.session.rollback()
+            except Exception:
+                pass
+            raise StorageError("COMMIT_OUTCOME_UNKNOWN") from exc
+        return MaintenanceResult(
+            action="contract_warmup", status="passed", through=through,
+            planned=len(targets), applied=len(targets), blocked=0,
+            failed=0, provider_requests=provider_requests,
         )
 
 

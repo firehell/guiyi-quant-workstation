@@ -72,7 +72,9 @@ request/response 摘要、取得时间和分类规则版本 MUST 与分区质量
 候选 MUST 完成全部发布校验，再完成不可变文件及目录 durability，随后在既有 DB 事务内
 register/flush，并由真实 MarketDataService strict-read 校验无异常候选、质量感知 read 校验
 有异常候选的 Catalog URI。commit SHALL 是
-新 pointer 唯一可见点；原子单位 SHALL 是 partition，不保证跨月、跨周期或 metadata 全局 snapshot。
+新 pointer 唯一可见点。普通维护的原子单位 SHALL 是 partition；仅含 D1/W1 目标的 physical-contract warm-up
+恢复可在候选 D1/W1 全部验证后，把该合约有界目标分区置于同一个 Catalog 事务内激活。
+这不保证跨合约、metadata 或消费者多次查询的全局 snapshot。
 
 #### Scenario: Failure before commit
 - **WHEN** validation、文件发布、register/flush 或 strict-read 失败且尚未尝试 commit
