@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 import { execFileSync } from 'node:child_process'
-import { candidatePreviewPlugin, candidatePreviewProxy } from './previewProxy.ts'
+import { candidatePreviewPlugin, candidatePreviewProxy, candidatePreviewWebPort, resolveCandidateOrigin } from './previewProxy.ts'
 import { previewInstant } from './src/utils/candidatePreviewInstant.ts'
 
 const apiProxyTarget = process.env.VITE_PROXY_API_TARGET || 'http://127.0.0.1:8000'
@@ -16,18 +16,23 @@ export default defineConfig(({ mode, command }) => {
   if (candidate && (command !== 'serve' || instant === null || instant > BigInt(Date.now()) * 1_000_000n)) {
     throw new Error('PREVIEW_CUTOFF_INVALID_OR_NOT_DEV_SERVER')
   }
+  const candidateOrigin = candidate ? resolveCandidateOrigin() : 'http://127.0.0.1:8010'
+  if (candidate && !/^http:\/\/127\.0\.0\.1:801[01]$/.test(candidateOrigin)) {
+    throw new Error('PREVIEW_CANDIDATE_ORIGIN_INVALID')
+  }
   const codeSha = candidate ? execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8',
   }).trim() : ''
   if (candidate && !/^[0-9a-f]{40}$/.test(codeSha)) throw new Error('PREVIEW_CODE_IDENTITY_UNAVAILABLE')
   return {
     envDir: fileURLToPath(new URL('../../', import.meta.url)),
-    plugins: [vue(), ...(candidate ? [candidatePreviewPlugin()] : [])],
+    plugins: [vue(), ...(candidate ? [candidatePreviewPlugin(candidateOrigin)] : [])],
     define: {
       'import.meta.env.VITE_CANDIDATE_PREVIEW': JSON.stringify(candidate ? '1' : '0'),
       'import.meta.env.VITE_PREVIEW_AS_OF': JSON.stringify(candidate ? cutoff : ''),
       'import.meta.env.VITE_PREVIEW_CODE_SHA': JSON.stringify(codeSha),
       ...(candidate ? {
+        'import.meta.env.VITE_PREVIEW_CANDIDATE_ORIGIN': JSON.stringify(candidateOrigin),
         'import.meta.env.VITE_API_BASE_URL': JSON.stringify('/api/v1'),
         'import.meta.env.VITE_MARKET_WS_URL': JSON.stringify(''),
       } : {}),
@@ -56,9 +61,9 @@ export default defineConfig(({ mode, command }) => {
     },
     server: {
       host: candidate ? '127.0.0.1' : '0.0.0.0',
-      port: candidate ? 5174 : 5173,
+      port: candidate ? candidatePreviewWebPort(candidateOrigin) : 5173,
       strictPort: candidate,
-      proxy: candidate ? candidatePreviewProxy() : {
+      proxy: candidate ? candidatePreviewProxy(candidateOrigin) : {
         '/api': {
           target: apiProxyTarget,
           changeOrigin: true,

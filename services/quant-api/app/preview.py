@@ -31,6 +31,9 @@ PREVIEW_PATHS = frozenset(
 _SUBING_REFERENCE_PATH = re.compile(
     r"^/api/v1/market/[a-z]{1,8}/subing/reference$"
 )
+_LOCAL_CANDIDATE_ORIGIN = re.compile(r"^http://127\.0\.0\.1:801[01]$")
+DEFAULT_CANDIDATE_ORIGIN = "http://127.0.0.1:8010"
+DEFAULT_STATUS_ORIGIN = "http://127.0.0.1:8000"
 
 
 def _preview_path_allowed(path: str) -> bool:
@@ -73,6 +76,13 @@ def _hourly_preview_products() -> frozenset[str] | None:
     return items or None
 
 
+def _candidate_origin() -> str:
+    raw = os.getenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN") or DEFAULT_CANDIDATE_ORIGIN
+    if _LOCAL_CANDIDATE_ORIGIN.fullmatch(raw) is None:
+        raise ValueError("PREVIEW_CANDIDATE_ORIGIN_INVALID")
+    return raw
+
+
 def create_preview_app(
     *,
     enabled: bool | None = None,
@@ -88,6 +98,7 @@ def create_preview_app(
     if cutoff > datetime.now(UTC):
         raise ValueError("PREVIEW_CUTOFF_INVALID")
     code_sha = _code_sha()
+    candidate_origin = _candidate_origin()
 
     from app.api import market, market_newow, market_subing_reference
     from app.db.session import SessionLocal, get_db
@@ -182,8 +193,8 @@ def create_preview_app(
             "code_sha": code_sha,
             "as_of": cutoff.isoformat(),
             "realtime": False,
-            "candidate_origin": "http://127.0.0.1:8010",
-            "status_origin": "http://127.0.0.1:8000",
+            "candidate_origin": candidate_origin,
+            "status_origin": DEFAULT_STATUS_ORIGIN,
             "cutoff_scope": "bars_newow_and_subing_reference; home_projection_and_dominants_have_own_timestamps",
         }
 

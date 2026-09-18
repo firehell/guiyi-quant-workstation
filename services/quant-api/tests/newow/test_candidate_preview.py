@@ -21,6 +21,7 @@ def preview(monkeypatch):
 
     monkeypatch.delenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", raising=False)
     monkeypatch.delenv("GUIYI_AU_PERIOD_PREVIEW", raising=False)
+    monkeypatch.delenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN", raising=False)
     engine = create_engine(
         "sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
     )
@@ -236,7 +237,38 @@ def test_preview_identity_declares_subing_reference_with_the_cutoff_scope(previe
     app, _sessions, _factory = preview
     response = TestClient(app).get("/api/preview/identity")
     assert response.status_code == 200
-    assert "subing_reference" in response.json()["cutoff_scope"]
+    payload = response.json()
+    assert "subing_reference" in payload["cutoff_scope"]
+    assert payload["candidate_origin"] == "http://127.0.0.1:8010"
+    assert payload["status_origin"] == "http://127.0.0.1:8000"
+
+
+def test_preview_identity_candidate_origin_can_be_overflow_8011(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN", "http://127.0.0.1:8011")
+    from app.preview import create_preview_app
+
+    _app, _sessions, factory = preview
+    app = create_preview_app(
+        enabled=True, as_of="2026-09-03T08:00:00Z", session_factory=factory
+    )
+    payload = TestClient(app).get("/api/preview/identity").json()
+    assert payload["candidate_origin"] == "http://127.0.0.1:8011"
+
+
+def test_preview_identity_rejects_non_loopback_or_non_overflow_origin(monkeypatch):
+    from app.preview import create_preview_app
+
+    monkeypatch.setenv("GUIYI_CANDIDATE_PREVIEW", "1")
+    for value in (
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8012",
+        "http://0.0.0.0:8011",
+        "https://127.0.0.1:8011",
+        "http://127.0.0.1:8011/extra",
+    ):
+        monkeypatch.setenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN", value)
+        with pytest.raises(ValueError, match="PREVIEW_CANDIDATE_ORIGIN_INVALID"):
+            create_preview_app(enabled=True, as_of="2026-09-03T08:00:00Z")
 
 
 @pytest.mark.parametrize(
