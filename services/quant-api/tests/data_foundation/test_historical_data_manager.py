@@ -1228,7 +1228,10 @@ def test_weekly_plan_excludes_only_fully_proven_price_unavailable_week(
     second = manager.contract_warmup(request).plan
     assert first.plan_sha256 == second.plan_sha256
     weekly_targets = [row for row in first.target_windows if row["dataset"] == weekly.as_tuple()]
+    daily_targets = [row for row in first.target_windows if row["dataset"] == daily.as_tuple()]
     assert len(weekly_targets) == 1
+    assert len(daily_targets) == 1
+    assert daily_targets[0]["expected_bar_count"] == 10  # includes the older unavailable-price endpoint
     assert weekly_targets[0]["missing_start"] == ends[-1].isoformat()
     assert weekly_targets[0]["missing_end"] == ends[-1].isoformat()
     assert any("WEEKLY_SOURCE_PRICE_UNAVAILABLE" in row["reason_codes"]
@@ -1237,6 +1240,54 @@ def test_weekly_plan_excludes_only_fully_proven_price_unavailable_week(
                  if row.get("weekly_quality_interruptions"))
     assert proof[0]["week_end"] == ends[4].isoformat()
     assert len(proof[0]["source_identity"]) == 64
+
+
+def test_weekly_companion_publish_retains_unrelated_price_unavailable_fact(
+    session, tmp_path
+) -> None:
+    from app.market_data.rqdata_adapter import _aggregate_daily_rows
+
+    _add_contract(session, symbol="pf", contract="PF2611",
+                  listed_date=date(2025, 1, 6), expired_date=date(2025, 2, 1))
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    weekly = DatasetKey("contract", "pf", "PF2611", "1w")
+    all_days = tuple(date(2025, 1, day) for day in (*range(6, 11), *range(13, 18)))
+    bars = tuple(_daily_on(day, 100 + index, 1) for index, day in enumerate(all_days))
+    ends = tuple(bar.bar_end for bar in bars)
+    coverage = FakeCoverage({daily.as_tuple(): ends, weekly.as_tuple(): (ends[4], ends[-1])})
+    coverage.latest_day = all_days[-1]
+    exception = PriceUnavailableFact(
+        ends[2], all_days[2], Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+        "a" * 64, "b" * 64, datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    second_week = bars[5:]
+    week = _aggregate_daily_rows(tuple((bar.trading_day, {
+        field: getattr(bar, field) for field in (
+            "open", "high", "low", "close", "volume", "turnover", "open_interest"
+        )
+    }) for bar in second_week), bar_end=ends[-1])
+    manager = _manager(session, tmp_path, coverage, FakeProvider({
+        daily.as_tuple(): second_week, weekly.as_tuple(): (week,),
+    }))
+    old_partition = manager.store.publish(PublishRequest(
+        daily, 2025, 1, tuple(bar for index, bar in enumerate(bars) if index != 2),
+        ends, (exception,),
+    ))
+    manager.catalog.register_partition(old_partition)
+    manager.catalog.session.commit()
+
+    request = historical.ContractWarmupRequest("pf", "PF2611", all_days[-1], frequency="1w")
+    plan = manager.contract_warmup(request).plan
+    result = manager.contract_warmup(replace(
+        request, expected_plan_sha256=plan.plan_sha256, apply=True,
+    ))
+
+    assert result.status == "passed"
+    partition = manager.catalog.all_partitions(daily)[0]
+    _stored_bars, exceptions = manager.store.read_catalog_partition_quality(partition)
+    assert exceptions == (exception,)
+    assert manager.contract_warmup(request).plan.target_windows == ()
 
 
 def test_weekly_plan_does_not_excuse_unexplained_day_in_price_gap_week(session, tmp_path):

@@ -991,6 +991,12 @@ class ContractWarmupPlanner:
                     target = _Target(key, year, month, expected, expected, ())
                 else:
                     present = {bar.bar_end.astimezone(UTC) for bar in existing}
+                    present.update(
+                        item.bar_end.astimezone(UTC)
+                        for partition in self.catalog.all_partitions(key)
+                        if (partition.year, partition.month) == (year, month)
+                        for item in partition.source_quality
+                    )
                     target = _Target(
                         key,
                         year,
@@ -2775,6 +2781,11 @@ class HistoricalDataManager(ContractWarmupPlanner):
             if physical_reason is not None:
                 raise StorageError(physical_reason)
             present = {bar.bar_end for bar in existing}
+            present.update(
+                item.bar_end for partition in self.catalog.all_partitions(daily_key)
+                if (partition.year, partition.month) == (year, month)
+                for item in partition.source_quality
+            )
             expected = tuple(sorted(present.union(refresh)))
             companions.append(
                 _Target(
