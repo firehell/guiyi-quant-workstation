@@ -140,7 +140,7 @@ test('main chart exposes same-as_of retry and explicit refresh-current without c
   await page.goto(newowRoute())
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'unavailable')
   await expect(page.locator('.quote-header__price strong')).toHaveText('—')
-  await page.getByRole('button', { name: '重试主图', exact: true }).click()
+  await page.getByRole('button', { name: '刷新日线', exact: true }).click()
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   expect(productRequests(fixture, 'chart')).toHaveLength(2)
   expect(productRequests(fixture, 'chart').map(item => item.url.searchParams.get('as_of'))).toEqual([NEWOW_AS_OF, NEWOW_AS_OF])

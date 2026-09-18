@@ -1,4 +1,4 @@
-"""One bounded campaign over native Newow W1 recovery batches."""
+"""One bounded campaign over native Newow W1/D1/60m recovery batches."""
 
 from __future__ import annotations
 
@@ -35,24 +35,30 @@ _DAILY_VERIFICATION_PROCESS_TIMEOUT_SECONDS = 330
 _CAMPAIGN_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_campaign_v1",
     "1d": "newow_daily_recovery_campaign_v1",
+    "60m": "newow_hourly_recovery_campaign_v1",
 }
 _CAMPAIGN_RESULT_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_campaign_result_v1",
     "1d": "newow_daily_recovery_campaign_result_v1",
+    "60m": "newow_hourly_recovery_campaign_result_v1",
 }
 _CAMPAIGN_STARTED_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_campaign_started_v1",
     "1d": "newow_daily_recovery_campaign_started_v1",
+    "60m": "newow_hourly_recovery_campaign_started_v1",
 }
 _CAMPAIGN_BATCH_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_campaign_batch_v1",
     "1d": "newow_daily_recovery_campaign_batch_v1",
+    "60m": "newow_hourly_recovery_campaign_batch_v1",
 }
 _CAMPAIGN_ERROR_SCHEMA_BY_FREQUENCY: dict[native.RecoveryFrequency, str] = {
     "1w": "newow_weekly_recovery_campaign_error_v1",
     "1d": "newow_daily_recovery_campaign_error_v1",
+    "60m": "newow_hourly_recovery_campaign_error_v1",
 }
 _CAMPAIGN_SCHEMA = _CAMPAIGN_SCHEMA_BY_FREQUENCY["1w"]
+_HOURLY_DOWNLOAD_BATCH = 5
 _HASH = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 _SYMBOL = re.compile(r"[a-z]{1,8}")
@@ -93,7 +99,7 @@ _UNKNOWN_UNIT_ERROR_CODES = {
 
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(
-        description="Prepare or execute one bounded Newow W1 recovery campaign."
+        description="Prepare or execute one bounded Newow W1/D1/60m recovery campaign."
     )
     commands = value.add_subparsers(dest="mode", required=True)
     prepare = commands.add_parser("prepare", allow_abbrev=False)
@@ -102,7 +108,7 @@ def parser() -> argparse.ArgumentParser:
     prepare.add_argument("--expected-report-sha256", required=True)
     prepare.add_argument("--output-root", required=True)
     prepare.add_argument("--name", required=True)
-    prepare.add_argument("--frequency", choices=("1w", "1d"), default="1w")
+    prepare.add_argument("--frequency", choices=("1w", "1d", "60m"), default="1w")
     prepare.add_argument("--isolate-known-source-quality", action="store_true")
     prepare.add_argument("--prior-campaign")
     prepare.add_argument("--expected-prior-campaign-sha256")
@@ -303,6 +309,22 @@ def main(
                 )
             ):
                 raise RecoveryError("D1_SOURCE_ONLY_ISOLATION_UNSUPPORTED")
+            if recovery_frequency == "60m" and (
+                args.isolate_known_source_quality
+                or args.partial_source_exception_attempt
+                or any(
+                    value is not None
+                    for value in (
+                        args.source_only_prepared,
+                        args.expected_source_only_prepared_sha256,
+                        args.source_only_attempt,
+                        args.source_only_unit_index,
+                        args.source_only_request_index,
+                        args.expected_source_only_request_sha256,
+                    )
+                )
+            ):
+                raise RecoveryError("RECOVERY_SCOPE_INVALID")
             report = _load_hash_locked_mapping(
                 Path(args.report),
                 args.expected_report_sha256,
@@ -858,6 +880,48 @@ def execute_campaign(
         return result
 
 
+def _partition_execution_units(
+    frequency: native.RecoveryFrequency,
+    units: tuple[dict[str, Any], ...],
+    targets: Sequence[Mapping[str, Any]],
+) -> tuple[tuple[dict[str, Any], ...], ...]:
+    if frequency != "60m":
+        return tuple(
+            tuple(units[index : index + 20]) for index in range(0, len(units), 20)
+        )
+    lookup = {
+        (item["symbol"], item["contract"], item["frequency"], item["through"]): item
+        for item in targets
+        if item.get("status") == "PROPOSED"
+    }
+    derive: list[dict[str, Any]] = []
+    download: list[tuple[int, dict[str, Any]]] = []
+    for unit in units:
+        item = lookup.get(
+            (
+                unit["symbol"],
+                unit["contract"],
+                unit["frequency"],
+                unit["through"],
+            )
+        )
+        count = item.get("provider_request_count") if item is not None else None
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+        if count == 0:
+            derive.append(unit)
+            continue
+        download.append((count, unit))
+    download.sort(key=lambda pair: (pair[0], pair[1]["symbol"], pair[1]["contract"]))
+    batches: list[tuple[dict[str, Any], ...]] = []
+    for index in range(0, len(derive), 20):
+        batches.append(tuple(derive[index : index + 20]))
+    download_units = [item for _rank, item in download]
+    for index in range(0, len(download_units), _HOURLY_DOWNLOAD_BATCH):
+        batches.append(tuple(download_units[index : index + _HOURLY_DOWNLOAD_BATCH]))
+    return tuple(batches)
+
+
 def partition_ordinary_units(
     report: Mapping[str, Any],
     *,
@@ -877,7 +941,7 @@ def partition_ordinary_units(
         for item in targets
         if item["status"] == "PROPOSED"
     )
-    return tuple(tuple(units[index : index + 20]) for index in range(0, len(units), 20))
+    return _partition_execution_units(frequency, units, targets)
 
 
 def _prior_isolated_unit(binding: Mapping[str, Any]) -> dict[str, Any]:
@@ -1717,6 +1781,22 @@ def prepare_campaign(
         )
     ):
         raise RecoveryError("D1_SOURCE_ONLY_ISOLATION_UNSUPPORTED")
+    if frequency == "60m" and (
+        continuation_policy is not None
+        or partial_source_exception_attempt_path is not None
+        or any(
+            value is not None
+            for value in (
+                source_only_prepared_path,
+                expected_source_only_prepared_sha256,
+                source_only_attempt_path,
+                source_only_unit_index,
+                source_only_request_index,
+                expected_source_only_request_sha256,
+            )
+        )
+    ):
+        raise RecoveryError("RECOVERY_SCOPE_INVALID")
     prior_isolations = _derive_prior_isolations(
         root,
         policy=policy,
@@ -1829,10 +1909,7 @@ def prepare_campaign(
         and (item["symbol"], item["contract"], item["frequency"], item["through"])
         not in partial_keys
     )
-    batches = tuple(
-        tuple(executable_units[index : index + 20])
-        for index in range(0, len(executable_units), 20)
-    )
+    batches = _partition_execution_units(frequency, executable_units, proposed)
     children: list[dict[str, Any]] = []
     artifact_prefix = _campaign_artifact_prefix(name, report_sha256)
     writer_guard = _prepare_writer_guard(root, identity["canonical_root_sha256"])
@@ -3235,6 +3312,7 @@ def _completed_unit_matches(
         return False
     source_request_count = len(source_requests)
     target_count = frozen.get("target_count")
+    provider_plan = frozen.get("provider_request_count")
     if not isinstance(target_count, int) or isinstance(target_count, bool):
         return False
     if completion_status == "noop":
@@ -3242,6 +3320,17 @@ def _completed_unit_matches(
         expected_source_requests = 0
         if source_requests:
             return False
+    elif frozen.get("frequency") == "60m":
+        if source_requests:
+            return False
+        if (
+            not isinstance(provider_plan, int)
+            or isinstance(provider_plan, bool)
+            or provider_plan < 0
+        ):
+            return False
+        expected_provider_requests = provider_plan
+        expected_source_requests = 0
     else:
         expected_provider_requests = target_count if source_requests else 0
         expected_source_requests = source_request_count

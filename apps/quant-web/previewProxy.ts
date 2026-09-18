@@ -6,6 +6,7 @@ const candidatePaths = new Set([
   '/api/v1/market/research/home-overview',
   '/api/v1/market/newow/product-capabilities',
   '/api/v1/market/newow/strategy-detail', '/api/v1/market/newow/historical-snapshot',
+  '/api/v1/market/newow/daily-snapshot',
 ])
 
 export function previewTarget(method: string, rawURL: string, upgrade = false): string | null {

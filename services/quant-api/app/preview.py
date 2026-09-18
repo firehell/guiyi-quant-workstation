@@ -25,6 +25,7 @@ PREVIEW_PATHS = frozenset(
         "/api/v1/market/newow/product-capabilities",
         "/api/v1/market/newow/strategy-detail",
         "/api/v1/market/newow/historical-snapshot",
+        "/api/v1/market/newow/daily-snapshot",
     }
 )
 _SUBING_REFERENCE_PATH = re.compile(

@@ -53,6 +53,30 @@ test('normal quote retains null echo contract and unbounded fetch', async () => 
   assert.equal(q.quote.value?.close, 105)
   q.dispose()
 })
+test('daily quote waits for the accepted snapshot and uses its exclusive cutoff', async () => {
+  const snapshotAsOf = ref<string | null>(null)
+  const requests = []
+  const q = useNewowDailyQuote({
+    symbol: ref('rb'), contract: ref('RB2605'), snapshotAsOf,
+    fetchPage: async request => {
+      requests.push(request)
+      const result = page()
+      result.request.before = request.before ?? null
+      return result
+    },
+  })
+  await nextTick()
+  assert.equal(requests.length, 0)
+  snapshotAsOf.value = '2026-09-03T07:00:00.000001Z'
+  await nextTick(); await nextTick()
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].before, snapshotAsOf.value)
+  assert.equal(q.quote.value?.close, 105)
+  snapshotAsOf.value = null
+  await nextTick()
+  assert.equal(q.quote.value, null)
+  q.dispose()
+})
 test('rollover keeps latest close but never computes a cross-contract change', () => {
   const p = page(); p.resolved_contract_segments = [{contract:'RB2601',start_trading_day:'2026-09-02',end_trading_day:'2026-09-02'}, {contract:'RB2605',start_trading_day:'2026-09-03',end_trading_day:'2026-09-03'}]
   assert.equal(projectNewowDailyQuote(p, 'rb', 'RB2605').pct, null)

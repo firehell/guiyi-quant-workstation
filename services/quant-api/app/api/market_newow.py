@@ -29,6 +29,7 @@ from app.market_data.newow.product_reader import (
 from app.market_data.newow.historical_snapshot import (
     NewowHistoricalSnapshotResolver,
 )
+from app.market_data.newow.daily_snapshot import NewowDailySnapshotResolver
 from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
     CAPABILITY_SCHEMA_VERSION,
@@ -78,6 +79,7 @@ from app.schemas.market_newow_product import (
     DeferredFrequencyOut,
     DeferredSectionOut,
     NewowHistoricalSnapshotResponse,
+    NewowDailySnapshotResponse,
     NewowProductCapabilitiesResponse,
     NewowProductResponse,
 )
@@ -211,9 +213,9 @@ def _build_product_service(
     )
 
 
-def _build_historical_resolver(
+def _build_snapshot_inputs(
     session: Session, cancelled: Callable[[], bool], now: Callable[[], datetime]
-) -> NewowHistoricalSnapshotResolver:
+):
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(session)
     active = load_active_products()
@@ -245,9 +247,21 @@ def _build_historical_resolver(
             now=now,
         )
 
-    return NewowHistoricalSnapshotResolver(
-        reader, service_factory, now=now, cancelled=cancelled
-    )
+    return reader, service_factory
+
+
+def _build_historical_resolver(
+    session: Session, cancelled: Callable[[], bool], now: Callable[[], datetime]
+) -> NewowHistoricalSnapshotResolver:
+    reader, service_factory = _build_snapshot_inputs(session, cancelled, now)
+    return NewowHistoricalSnapshotResolver(reader, service_factory, now=now, cancelled=cancelled)
+
+
+def _build_daily_resolver(
+    session: Session, cancelled: Callable[[], bool], now: Callable[[], datetime]
+) -> NewowDailySnapshotResolver:
+    reader, service_factory = _build_snapshot_inputs(session, cancelled, now)
+    return NewowDailySnapshotResolver(reader, service_factory, now=now, cancelled=cancelled)
 
 
 @router.get("/historical-snapshot", response_model=NewowHistoricalSnapshotResponse)
@@ -292,6 +306,51 @@ def newow_historical_snapshot(
         raise HTTPException(
             status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
         ) from exc
+    except Exception as exc:
+        status, detail = public_product_error(
+            exc, context={"symbol": product, "frequency": frequency}
+        )
+        raise HTTPException(status_code=status, detail=detail) from exc
+
+
+@router.get("/daily-snapshot", response_model=NewowDailySnapshotResponse)
+def newow_daily_snapshot(
+    request: Request,
+    product: str = Query(...),
+    strategy: Literal["trend", "oscillation", "main_rise"] = Query(...),
+    frequency: Literal["1d"] = Query("1d"),
+    session: Session = Depends(get_db),
+) -> NewowDailySnapshotResponse:
+    if (set(request.query_params) - _HISTORICAL_QUERY_FIELDS) or any(
+        len(request.query_params.getlist(key)) != 1 for key in request.query_params
+    ):
+        raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
+    product = _normalize_public_product(product)
+
+    def cancelled() -> bool:
+        try:
+            return from_thread.run(request.is_disconnected)
+        except RuntimeError:
+            return False
+
+    now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
+    try:
+        require_open_frequency(ProductFrequency(frequency))
+        result = _build_daily_resolver(session, cancelled, lambda: now).resolve(
+            product, ProductStrategy(strategy), ProductFrequency(frequency)
+        )
+        return NewowDailySnapshotResponse(
+            product=result.product,
+            strategy=result.strategy.value,
+            frequency=result.frequency.value,
+            requested_at=result.requested_at,
+            expected_trading_day=result.expected_trading_day,
+            available_trading_day=result.available_trading_day,
+            as_of=result.as_of,
+            freshness=result.freshness,
+        )
+    except (ActiveUniverseError, ProductTaxonomyError) as exc:
+        raise HTTPException(status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}) from exc
     except Exception as exc:
         status, detail = public_product_error(
             exc, context={"symbol": product, "frequency": frequency}

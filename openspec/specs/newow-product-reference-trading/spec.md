@@ -461,9 +461,35 @@ identity 与确认时间语义；`pivot_at` 不得冒充首次可知时间，其
 - **WHEN** 用户平移、缩放或加载历史窗口
 - **THEN** 副图只按当前可见窗口重新缩放，时间坐标与主图对齐，不连接成通用指标折线
 
+### Requirement: Default D1 view uses a verified completed close
+
+默认 `1d` 页面 MUST 先由服务端按权威 Calendar/Session 解析最近已完成交易日，
+并使用该日最后 Session 结束后一个微秒作为整个页面的统一 `as_of`。
+服务端 SHALL 使用既有 reader 验证主图的 owner、物理历史、质量和预热；
+返回 `requested_at`、`expected_trading_day`、`available_trading_day`、`as_of` 与
+`freshness`。页面 MUST 标明实际收盘日期，待更新时 MUST 同时标明目标交易日。
+日线未完成时不得要求尚未发布的当日历史映射，也不得用墙钟时间冒充日线事实截止。
+
+若最近已完成交易日缺少尚未发布的 MainContractMap，默认解析 MAY 验证并展示前一完成交易日，
+且只能后退这一个末尾交易日。其他数据缺失、质量/身份冲突、损坏或来源错误 MUST 显式失败，
+不得扫描更早历史凑成成功。主图解析成功后，参考及副图 SHALL 使用同一 `as_of` 独立报告状态。
+该模式不改变固定 `as_of` 请求的 owner 校验、策略公式或参考收益。
+
+#### Scenario: Post-close publication is pending
+
+- **GIVEN** 最新已完成交易日的映射尚未发布，前一完成日的日线已通过完整输入验证
+- **WHEN** 用户打开默认日线页面
+- **THEN** 主图使用前一完成日的精确截止，页面显示目标日待更新，参考及副图使用相同截止
+
+#### Scenario: Historical input is corrupt
+
+- **GIVEN** 最新候选的物理分区或身份存在冲突
+- **WHEN** 用户打开默认日线页面
+- **THEN** 页面明确失败，不自动回退前一日
+
 ### Requirement: Historical snapshot selection is explicit and verified
 
-当前快照输入不足 MUST 明确不可用，不得自动使用历史数据或推断缺失 owner。
+显式当前事实请求输入不足 MUST 明确不可用，不得自动使用历史数据或推断缺失 owner。
 用户主动选择历史入口后，服务端 SHALL 从权威完成交易日逆序检查最多 20 个候选；
 候选 as_of 为该日最后 Session 结束后一个微秒且不得晚于当前时间。
 返回候选前 MUST 使用既有 reader 验证主图和照妖镜所需完整输入，包括同合约 warm-up 和物理可读性。

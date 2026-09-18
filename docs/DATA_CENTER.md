@@ -342,6 +342,19 @@ Lua 隔离不是错误回滚保证；结果未知后仅只读核对五根及水�
 不补发通知。输入恢复与自然 completed Bar 评估、通知实际送达及 RUNTIME_READY 分别验收。
 具体命令和隔离测试入口只见 `TESTING.md`。
 
+Newow 默认日线由独立只读解析取得最近完整收盘快照，并显式区分目标交易日与实际可用交易日。
+18:05 盘后任务继续负责既有 operational 60 增量与当日映射发布；
+`canonical_updated` 和盘后任务 passed 只说明各自原有阶段，不直接证明牛哇三策略全部可读。
+若当日映射尚未发布，Newow 仅允许验证并显示前一完成日，标记当日待更新；
+其他输入质量或身份冲突继续失败关闭。此机制不引入盘中 RQData 抓取或额外重试。
+盘后主任务终态写入并释放维护锁后，按每品种目标日 Session 截止，以新只读事务验证
+operational 60 的 D1 三策略主图、参考与已开放辅助面板；每品种最多 60 秒，总计最多
+900 秒。审计在维护锁外运行，开始与提交时仅非等待短暂核锁，并比较所依赖的 D1 Catalog、
+rank1、Calendar/Session 与不可变 Parquet 分区指针摘要。`consumer_checks.newow_d1` 单独记录
+验收数、失败项、未检品种、逐品种截止、输入摘要与运行 commit；`input_changed` 不构成验收通过。
+消费验收超时或异常只记 `not_verified`/`incomplete`，不得改写主任务终态、触发新的下载、
+生产重试或发送额外通知。未执行或旧 Runtime 没有该字段表示未验证。
+
 ### 盘后 Runtime 状态合同
 
 `.run/after-market-status.json` 写 schema v3；读取兼容旧 schema v1/v2。schema v3 在受监督自然盘后运行开始、任何

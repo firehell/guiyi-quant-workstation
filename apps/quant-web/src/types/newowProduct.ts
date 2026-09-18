@@ -37,6 +37,19 @@ export interface NewowHistoricalSnapshot {
   readonly validated_sections: readonly ['chart', 'zhaoyao_mirror']
 }
 
+export interface NewowDailySnapshot {
+  readonly schema_version: 'newow_daily_snapshot_v1'
+  readonly product: string
+  readonly strategy: NewowProductStrategy
+  readonly frequency: '1d'
+  readonly series_kind: 'actual_dominant'
+  readonly requested_at: string
+  readonly expected_trading_day: string
+  readonly available_trading_day: string
+  readonly as_of: string
+  readonly freshness: 'current' | 'pending_update'
+}
+
 export const NEWOW_PRODUCT_SECTIONS = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const
 export type NewowProductSection = (typeof NEWOW_PRODUCT_SECTIONS)[number]
 export type NewowAuxiliaryComponent = 'macd' | 'main_force_control' | 'up_down_energy' | 'zhaoyao_mirror' | 'cup_handle'

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { nextTick, ref } from 'vue'
 
-import { getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../src/api/newowProduct.ts'
+import { getNewowDailySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../src/api/newowProduct.ts'
 import { useNewowProduct } from '../src/composables/useNewowProduct.ts'
 import type { MarketDetailIdentity } from '../src/types/marketDetail.ts'
 import type { NewowProductRequest, NewowProductSection, NewowProductSectionResponse } from '../src/types/newowProduct.ts'
@@ -10,6 +10,62 @@ import { normalizeNewowProductResponse } from '../src/utils/newowProductTypes.ts
 import { resolveNewowPanelRenderState } from '../src/utils/newowProductViewModel.ts'
 
 const AS_OF = '2026-08-15T07:00:00.000Z'
+
+test('default D1 waits for a verified close and pins every panel to its cutoff', async () => {
+  const pending: Pending[] = []
+  let resolveDaily!: (value: any) => void
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => '2026-09-18T08:00:00Z',
+    fetchSection: controlled(pending),
+    fetchDailySnapshot: () => new Promise(resolve => { resolveDaily = resolve }),
+  })
+  await nextTick()
+  assert.equal(pending.length, 0)
+  resolveDaily({ schema_version: 'newow_daily_snapshot_v1', product: 'rb', strategy: 'trend', frequency: '1d', series_kind: 'actual_dominant', requested_at: '2026-09-18T08:00:00Z', expected_trading_day: '2026-09-18', available_trading_day: '2026-09-17', as_of: '2026-09-17T07:00:00.000001Z', freshness: 'pending_update' })
+  await flush()
+  assert.equal(pending[0]!.request.asOf, '2026-09-17T07:00:00.000001Z')
+  pending[0]!.resolve(normalizedChart(pending[0]!.request)); await flush()
+  const reference = state.loadReference()
+  assert.equal(pending[1]!.request.asOf, pending[0]!.request.asOf)
+  const referenceWireValue = referenceWire()
+  referenceWireValue.meta.as_of = pending[1]!.request.asOf
+  pending[1]!.resolve(normalizeNewowProductResponse(referenceWireValue, pending[1]!.request)); await reference
+  assert.equal(state.dailySnapshot.value?.freshness, 'pending_update')
+  assert.equal(state.currentChartWindow.value, false)
+  assert.equal(state.historicalChartWindow.value, true)
+  state.dispose()
+})
+
+test('daily snapshot client rejects mismatched dates and preserves microsecond cutoff', async () => {
+  const identity = { product: 'rb', strategy: 'trend' as const, frequency: '1d' as const, seriesKind: 'actual_dominant' as const }
+  const payload = { schema_version: 'newow_daily_snapshot_v1', product: 'rb', strategy: 'trend', frequency: '1d', series_kind: 'actual_dominant', requested_at: '2026-09-18T08:00:00Z', expected_trading_day: '2026-09-18', available_trading_day: '2026-09-17', as_of: '2026-09-17T07:00:00.000001Z', freshness: 'pending_update' }
+  assert.equal((await getNewowDailySnapshot(identity, { request: async () => payload })).as_of, payload.as_of)
+  await assert.rejects(() => getNewowDailySnapshot(identity, { request: async () => ({ ...payload, available_trading_day: '2026-09-19' }) }), /NEWOW_RESPONSE_INVALID/)
+})
+
+test('refresh keeps accepted D1 chart visible until a new cutoff is accepted', async () => {
+  const pending: Pending[] = []
+  const daily: Array<(value: any) => void> = []
+  const state = useNewowProduct({
+    identity: ref(newowIdentity('trend', '1d')),
+    now: () => '2026-09-18T08:00:00Z',
+    fetchSection: controlled(pending),
+    fetchDailySnapshot: () => new Promise(resolve => { daily.push(resolve) }),
+  })
+  const snapshot = { schema_version: 'newow_daily_snapshot_v1', product: 'rb', strategy: 'trend', frequency: '1d', series_kind: 'actual_dominant', requested_at: '2026-09-18T08:00:00Z', expected_trading_day: '2026-09-18', available_trading_day: '2026-09-17', as_of: '2026-09-17T07:00:00.000001Z', freshness: 'pending_update' }
+  daily[0]!(snapshot); await flush()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request)); await flush()
+  const accepted = state.sections.chart.data.value
+  state.refreshCurrent()
+  assert.equal(state.sections.chart.data.value, accepted)
+  assert.equal(state.dailySnapshot.value?.available_trading_day, '2026-09-17')
+  daily[1]!({ ...snapshot, available_trading_day: '2026-09-18', as_of: '2026-09-18T07:00:00.000001Z', freshness: 'current' }); await flush()
+  assert.equal(pending[1]!.request.asOf, '2026-09-18T07:00:00.000001Z')
+  pending[1]!.resolve(normalizedChart(pending[1]!.request)); await flush()
+  assert.equal(state.dailySnapshot.value?.available_trading_day, '2026-09-18')
+  state.dispose()
+})
 
 test('fixed preview cutoff retains microseconds through every current generation', async () => {
   const cutoff = '2026-09-08T07:00:00.000001+00:00'

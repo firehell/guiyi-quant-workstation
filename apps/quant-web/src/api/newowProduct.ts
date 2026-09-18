@@ -1,5 +1,6 @@
 import type {
   NewowHistoricalSnapshot,
+  NewowDailySnapshot,
   NewowProductCapabilities,
   NewowProductRequest,
   NewowProductSectionResponse,
@@ -124,6 +125,42 @@ export async function getNewowHistoricalSnapshot(
   }
   if (!isHistoricalSnapshot(payload, identity)) throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
   return payload
+}
+
+export async function getNewowDailySnapshot(
+  identity: NewowProductRequest['identity'],
+  options: NewowProductRequestOptions = {},
+): Promise<NewowDailySnapshot> {
+  const transport = options.request ?? defaultRequest
+  let payload: unknown
+  try {
+    payload = await transport('/market/newow/daily-snapshot', {
+      params: { product: identity.product, strategy: identity.strategy, frequency: identity.frequency },
+      signal: options.signal,
+    })
+  } catch (error) {
+    if (error instanceof NewowProductRequestError) throw error
+    throw classifyTransportError(error)
+  }
+  if (!isDailySnapshot(payload, identity)) throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
+  return payload
+}
+
+function isDailySnapshot(value: unknown, identity: NewowProductRequest['identity']): value is NewowDailySnapshot {
+  if (!isRecord(value) || value.schema_version !== 'newow_daily_snapshot_v1'
+    || value.product !== identity.product || value.strategy !== identity.strategy
+    || value.frequency !== '1d' || value.frequency !== identity.frequency
+    || value.series_kind !== 'actual_dominant'
+    || !validCalendarDate(value.expected_trading_day as string)
+    || !validCalendarDate(value.available_trading_day as string)
+    || typeof value.requested_at !== 'string' || !Number.isFinite(Date.parse(value.requested_at))
+    || typeof value.as_of !== 'string' || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value.as_of)
+    || !Number.isFinite(Date.parse(value.as_of))) return false
+  const expected = value.expected_trading_day as string
+  const available = value.available_trading_day as string
+  return available <= expected
+    && (value.freshness === 'current' ? available === expected : value.freshness === 'pending_update' && available < expected)
+    && Date.parse(value.as_of) <= Date.parse(value.requested_at)
 }
 
 function isHistoricalSnapshot(value: unknown, identity: NewowProductRequest['identity']): value is NewowHistoricalSnapshot {
