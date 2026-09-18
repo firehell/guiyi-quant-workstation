@@ -8,24 +8,24 @@
 | 周期 | ready | blocked | ready/60 |
 |---|---:|---:|---:|
 | 15m | 53 | 7 | 88.3% |
+| 30m | 6 | 54 | 10.0% |
+| 60m | 11 | 49 | 18.3% |
+| 1d | 19 | 41 | 31.7% |
 
 ## 15m
 
 - 完成：A, AG, AL, AO, AU, B, BU, BZ, C, CF, CJ, EB, EC, EG, FG, FU, I, J, JD, JM, L, LC, LH, M, MA, OI, P, PB, PD, PG, PK, PL, PP, PR, PS, PT, PX, RM, RS, RU, SA, SC, SF, SH, SI, SM, SR, SS, TA, UR, V, Y, ZN。
 - 阻塞：AP, CU, HC, NI, PF, RB, SN。
-| 30m | 6 | 54 | 10.0% |
 
 ## 30m
 
 - 完成：A, AG, AU, B, BU, BZ。
 - 阻塞：AL, AO, AP, C, CF, CJ, CU, EB, EC, EG, FG, FU, HC, I, J, JD, JM, L, LC, LH, M, MA, NI, OI, P, PB, PD, PF, PG, PK, PL, PP, PR, PS, PT, PX, RB, RM, RS, RU, SA, SC, SF, SH, SI, SM, SN, SR, SS, TA, UR, V, Y, ZN。
-| 60m | 11 | 49 | 18.3% |
 
 ## 60m
 
 - 完成：A, AG, AO, AP, AU, B, BU, BZ, PD, PT, RB。
 - 阻塞：AL, C, CF, CJ, CU, EB, EC, EG, FG, FU, HC, I, J, JD, JM, L, LC, LH, M, MA, NI, OI, P, PB, PF, PG, PK, PL, PP, PR, PS, PX, RM, RS, RU, SA, SC, SF, SH, SI, SM, SN, SR, SS, TA, UR, V, Y, ZN。
-| 1d | 19 | 41 | 31.7% |
 
 ## 1d
 
