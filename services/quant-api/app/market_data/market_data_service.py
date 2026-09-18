@@ -976,10 +976,17 @@ class MarketDataService:
             else datetime.min.replace(tzinfo=UTC)
         )
         try:
-            days = self.catalog.trading_days_overlapping_window(
-                key.symbol,
-                max(lower, min(bar.bar_end for bar in selected) - timedelta(microseconds=1)),
-                upper_end,
+            # The first physical bar may be a night bar on the calendar day
+            # before its trading day (including the contract's listing day).
+            # Only that bar's trading day and later can contribute endpoints
+            # to this page; the prior calendar day need not have a Session.
+            days = tuple(
+                day for day, _ in self.catalog.session_windows_overlapping_window(
+                    key.symbol,
+                    max(lower, min(bar.bar_end for bar in selected) - timedelta(microseconds=1)),
+                    upper_end,
+                    earliest=min(bar.trading_day for bar in selected),
+                )
             )
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc

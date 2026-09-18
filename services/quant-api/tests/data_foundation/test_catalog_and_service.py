@@ -150,6 +150,50 @@ def test_actual_dominant_rejects_missing_intraday_endpoints_in_query_and_page(
         ))
 
 
+def test_physical_night_page_does_not_require_prelisting_day_session(
+    session, tmp_path
+) -> None:
+    listing_day = date(2025, 1, 3)
+    prior_day = date(2025, 1, 2)
+    session.add_all((
+        TradingCalendar(exchange_code="DCE", trade_date=prior_day, is_trading_day=True),
+        TradingCalendar(exchange_code="DCE", trade_date=listing_day, is_trading_day=True),
+        Contract(
+            contract_code="JM2509", instrument_symbol="jm", exchange_code="DCE",
+            listed_date=listing_day, expired_date=date(2025, 9, 1), provider="rqdata",
+        ),
+    ))
+    template = session.scalar(select(TradingSession))
+    template.start_time = time(21)
+    template.end_time = time(22)
+    template.effective_from = listing_day
+    template.effective_to = listing_day
+    session.commit()
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    bar = CanonicalBar(
+        datetime(2025, 1, 2, 14, tzinfo=UTC), listing_day,
+        Decimal(100), Decimal(101), Decimal(99), Decimal(100),
+        Decimal(1), Decimal(100), Decimal(20),
+    )
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "60m"), (bar,))
+    catalog.upsert_main_contracts((("jm", listing_day, "JM2509"),))
+    session.commit()
+    service = MarketDataService(catalog, store)
+
+    result = service.query_page(SeriesPageQuery(
+        "contract", "jm", "60m", limit=5, contract="JM2509",
+    ))
+    assert result.bars == (bar,)
+
+    template.is_active = False
+    session.commit()
+    with pytest.raises(MarketDataError, match="TRADING_SESSION_MISSING"):
+        service.query_page(SeriesPageQuery(
+            "contract", "jm", "60m", limit=5, contract="JM2509",
+        ))
+
+
 def test_page_cursor_rejects_missing_bar_immediately_before_cursor(session, tmp_path) -> None:
     session.scalar(select(TradingSession)).end_time = time(9, 5)
     day = date(2025, 1, 2)
