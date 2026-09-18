@@ -641,17 +641,35 @@ class MarketDataService:
             since=since,
             through=through,
         )
+        query = SeriesQuery(
+            SeriesKind.CONTRACT,
+            request.symbol,
+            request.frequency,
+            start,
+            end,
+            contract=request.contract,
+        )
+        assert query.physical_key is not None
+        bars, _ = self._read_physical(
+            query.physical_key, query, require_window_coverage=False,
+        )
+        try:
+            days = self.catalog.trading_days_overlapping_window(
+                request.symbol, start, end,
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        self._validate_actual_endpoints(
+            request.symbol,
+            request.frequency,
+            {day: request.contract for day in days},
+            bars,
+            start,
+            end,
+            missing_code="DATASET_OR_PARTITION_MISSING",
+        )
         return replace(
-            self.query(
-                SeriesQuery(
-                    SeriesKind.CONTRACT,
-                    request.symbol,
-                    request.frequency,
-                    start,
-                    end,
-                    contract=request.contract,
-                )
-            ),
+            self._result(query, bars, ()),
             requested_trading_day_window=(since, through),
         )
 

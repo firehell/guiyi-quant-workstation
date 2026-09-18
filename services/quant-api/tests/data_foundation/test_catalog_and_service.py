@@ -1778,6 +1778,37 @@ def test_contract_trading_day_query_clamps_to_contract_active_floor(
     assert result.request_identity["end"] == "2025-01-06T07:00:00+00:00"
 
 
+def test_contract_trading_day_query_accepts_complete_monday_listing_after_weekend(
+    session, tmp_path
+) -> None:
+    catalog = MarketCatalog(session, tmp_path)
+    store = CanonicalMonthlyStore(tmp_path)
+    first_bar = _bar(6, 209)
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "1d"), (first_bar,))
+    session.add_all((
+        Contract(
+            contract_code="JM2509", instrument_symbol="jm", exchange_code="DCE",
+            listed_date=date(2025, 1, 6), expired_date=date(2025, 9, 25),
+            status="active",
+        ),
+        TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, 3), is_trading_day=True),
+        TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, 6), is_trading_day=True),
+        TradingSession(
+            exchange_code="DCE", instrument_symbol="jm", session_name="night",
+            start_time=time(21), end_time=time(23),
+            effective_from=date(2025, 1, 6), is_active=True,
+        ),
+    ))
+    session.commit()
+
+    result = MarketDataService(catalog, store).query_contract_trading_days(
+        ContractTradingDayQuery("jm", "JM2509", "1d", date(2025, 1, 6), date(2025, 1, 6))
+    )
+
+    assert result.bars == (first_bar,)
+    assert result.request_identity["start"] == "2025-01-03T13:00:00+00:00"
+
+
 def test_contract_trading_day_query_fails_closed_for_incomplete_first_session(
     session, tmp_path
 ) -> None:
