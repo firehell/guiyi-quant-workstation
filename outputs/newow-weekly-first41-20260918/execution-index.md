@@ -6,7 +6,7 @@
 本索引只记录本任务的新证据；历史报告仅作定位，不替代本次验证。
 
 2026-09-18 基线接续：原 `33a2` worktree 在完整 dirty 快照保存后从本机消失；
-快照位于 `/private/tmp/newow-first41-baseline-20260918/`，含旧分支已提交差异、
+快照位于本索引同级 `baseline-preservation.tar.gz`，含旧分支已提交差异、
 tracked binary patch、两个 untracked 文件及 SHA-256 manifest。现于
 `codex/newow-first41-baseline-converged@fbee36b776` 接续，原树未被本任务清理。
 逐文件对照后，MDS、reader、identity、ReferenceTrade 与主要回归文件均已在 develop；
