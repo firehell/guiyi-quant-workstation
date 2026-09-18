@@ -40,6 +40,8 @@ export function newowErrorDisplay(error: string | null): string | null {
     NEWOW_WEEKLY_UNKNOWN: '周线发布状态不可判定，请核查日历、时段和数据',
     NEWOW_WEEKLY_FAILED: '最近完整周线发布失败，请核查维护结果',
     NEWOW_WEEKLY_STALE: '最近完整周线已过期，请核查数据发布与缓存',
+    NEWOW_SNAPSHOT_GENERATION_CONFLICT: '读取期间数据快照发生变化，请刷新当前页面',
+    NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE: '五窗口页面比较器仅适用于震荡策略',
     NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS: '当前物理合约区段不足 20 根 Bar，暂不能进行窗口比较',
     NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL: '本周尚未完成，参考计算仅截至最近已完成周线',
     NEWOW_REFERENCE_WEEKLY_COMPLETION_PENDING: '本周尚未形成已完成周线',

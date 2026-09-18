@@ -1,0 +1,90 @@
+[
+  {
+    "section": "chart",
+    "component": null,
+    "http_status": 200,
+    "code": null,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "8_PeFqeTs1ekFg_uLerX_rB2hJ4L6wVh",
+    "input_sha": "34d3df330c7381f6998a298b3aacb4ba424283efeded699ac678f25b9d2f251e",
+    "status": "ready",
+    "seconds": 4.22
+  },
+  {
+    "section": "auxiliary",
+    "component": "macd",
+    "http_status": 200,
+    "code": null,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "8_PeFqeTs1ekFg_uLerX_rB2hJ4L6wVh",
+    "input_sha": "34d3df330c7381f6998a298b3aacb4ba424283efeded699ac678f25b9d2f251e",
+    "status": "ready",
+    "seconds": 4.02
+  },
+  {
+    "section": "auxiliary",
+    "component": "main_force_control",
+    "http_status": 200,
+    "code": null,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "8_PeFqeTs1ekFg_uLerX_rB2hJ4L6wVh",
+    "input_sha": "34d3df330c7381f6998a298b3aacb4ba424283efeded699ac678f25b9d2f251e",
+    "status": "ready",
+    "seconds": 3.84
+  },
+  {
+    "section": "auxiliary",
+    "component": "up_down_energy",
+    "http_status": 200,
+    "code": null,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "8_PeFqeTs1ekFg_uLerX_rB2hJ4L6wVh",
+    "input_sha": "34d3df330c7381f6998a298b3aacb4ba424283efeded699ac678f25b9d2f251e",
+    "status": "ready",
+    "seconds": 3.98
+  },
+  {
+    "section": "auxiliary",
+    "component": "zhaoyao_mirror",
+    "http_status": 200,
+    "code": null,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "8_PeFqeTs1ekFg_uLerX_rB2hJ4L6wVh",
+    "input_sha": "34d3df330c7381f6998a298b3aacb4ba424283efeded699ac678f25b9d2f251e",
+    "status": "ready",
+    "seconds": 3.88
+  },
+  {
+    "section": "auxiliary",
+    "component": "cup_handle",
+    "http_status": 200,
+    "code": null,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": null,
+    "input_sha": "34d3df330c7381f6998a298b3aacb4ba424283efeded699ac678f25b9d2f251e",
+    "status": "not_applicable",
+    "seconds": 3.94
+  },
+  {
+    "section": "reference",
+    "component": null,
+    "http_status": 200,
+    "code": null,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "8_PeFqeTs1ekFg_uLerX_rB2hJ4L6wVh",
+    "input_sha": "f2809ea6c58d4a7a4563c30aee63f3b1f6241bfc3abd490657d217fab81fc8f5",
+    "status": "ready",
+    "seconds": 5.96
+  },
+  {
+    "section": "comparator",
+    "component": null,
+    "http_status": 200,
+    "code": null,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": null,
+    "input_sha": "34d3df330c7381f6998a298b3aacb4ba424283efeded699ac678f25b9d2f251e",
+    "status": "unavailable",
+    "seconds": 3.95
+  }
+]

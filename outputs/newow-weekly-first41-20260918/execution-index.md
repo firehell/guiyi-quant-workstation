@@ -44,3 +44,11 @@ Bar 与中断身份；W1 跨合约 CLEAR 不关闭旧参考交易。D1 固定参
 最终定向组 476 passed；Ruff 与 `git diff --check` 通过。
 此处为隔离代码证据；真实完整周 MDS→reader、进程重启及混合零价真实样本
 仍随现场/集成验收核对，不记作 41/123 READY。
+
+2026-09-18 任务 3 已形成隔离代码与测试；任务 4 在只读候选预览进行六品种
+真实默认首载。授权推送的 `6be43683f` 已在 GitHub 远端核对；本轮新增代码与
+证据尚未推送。六品种 18 组合逐项证据见
+[`../newow-weekly-first41-step4-20260918/acceptance.md`](../newow-weekly-first41-step4-20260918/acceptance.md)：
+12 组合主要页面可读，PD 三策略 MACD 合法预热，PT 三策略被
+`PT2612 / 2025-12-19` 同合约 W1 端点缺口阻断。18/18 已实际观察，
+不得记作 18/18 READY；41/123 矩阵、数据修复、release 和 Runtime 均未完成。
