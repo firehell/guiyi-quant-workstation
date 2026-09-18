@@ -36,7 +36,11 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
   }
 
   const openFrequencies = computed<readonly NewowProductFrequency[]>(() => capabilities.value?.open_frequencies ?? [])
-  const isFrequencyOpen = (frequency: NewowProductFrequency) => openFrequencies.value.includes(frequency)
+  const openFrequenciesFor = (symbol: string): readonly NewowProductFrequency[] =>
+    capabilities.value?.schema_version === 'newow_product_capabilities_v5' && symbol.toLowerCase() !== 'au'
+      ? [] : openFrequencies.value
+  const isFrequencyOpen = (frequency: NewowProductFrequency, symbol = '') =>
+    openFrequenciesFor(symbol).includes(frequency)
   const isSectionOpen = (section: NewowProductSection) => (capabilities.value?.open_sections as readonly string[] | undefined)?.includes(section) === true
   const deferredFrequencyReason = (frequency: NewowProductFrequency) => capabilities.value?.deferred_frequencies.find(item => item.frequency === frequency)?.reason_code ?? null
   const deferredSectionReason = (section: NewowProductSection) => capabilities.value?.deferred_sections.find(item => item.section === section)?.reason_code ?? null
@@ -46,6 +50,7 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
     state: readonly(state),
     error: readonly(error),
     openFrequencies,
+    openFrequenciesFor,
     load,
     isFrequencyOpen,
     isSectionOpen,

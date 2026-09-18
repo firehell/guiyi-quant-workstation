@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
@@ -1182,12 +1182,21 @@ class MarketDataService:
             else datetime.min.replace(tzinfo=UTC)
         )
         try:
+            listed = (
+                self.catalog.contract_fact(key.symbol, key.series_or_contract).listed_date
+                if key.kind is DatasetKind.CONTRACT else min(bar.trading_day for bar in selected)
+            )
+            window_start = (
+                min(bar.bar_end for bar in selected) - timedelta(microseconds=1)
+                if has_sentinel else
+                datetime.combine(listed - timedelta(days=7), time.min, SHANGHAI).astimezone(UTC)
+            )
             days = tuple(
                 day for day, _ in self.catalog.session_windows_overlapping_window(
                     key.symbol,
-                    max(lower, min(bar.bar_end for bar in selected) - timedelta(microseconds=1)),
+                    window_start,
                     upper_end,
-                    earliest=min(bar.trading_day for bar in selected),
+                    earliest=(min(bar.trading_day for bar in selected) if has_sentinel else listed),
                 )
             )
         except CatalogError as exc:
