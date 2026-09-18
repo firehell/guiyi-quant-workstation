@@ -89,6 +89,21 @@ def test_weekly_quality_adaptation_has_its_own_version_without_changing_daily(
         assert trade.futures_adaptation_version == futures_adaptation_version(frequency)
 
 
+def test_daily_reference_identity_and_values_remain_fixed_after_weekly_quality(product_cases):
+    case = product_cases.closed(frequency="1d", entry="100", exit="110")
+    trade = ReferenceTradeProjector().project(
+        case.replay, case.boundaries, case.as_of,
+    ).trades[0]
+    assert trade.reference_trade_id == (
+        "d7fe03fcd7e5d0678d594d454b4fb539717e4eef9e14277734ba2ddb1b2c6cc6"
+    )
+    assert trade.frequency == "1d"
+    assert trade.entry_reference_price == Decimal("100")
+    assert trade.exit_reference_price == Decimal("110")
+    assert trade.reference_return_pct == Decimal("10")
+    assert trade.holding_bars == 1
+
+
 def test_reference_trade_id_changes_when_reference_model_moves_from_v1_to_v2(
     product_cases, monkeypatch
 ):

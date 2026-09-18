@@ -49,6 +49,18 @@ def test_complete_normal_week_has_no_interruption():
     assert len(result.daily_bars) == 5
 
 
+def test_complete_week_with_no_trade_daily_fact_is_not_a_price_interruption():
+    no_trade = CanonicalBar(
+        _end(9), date(2026, 9, 9),
+        *(Decimal(0) for _ in range(6)), None,
+    )
+    bars = tuple(no_trade if day == 9 else _bar(day)
+                 for day in (7, 8, 9, 10, 11))
+    result = _classify(bars=bars)
+    assert result.daily_bars == bars
+    assert result.interruption is None
+
+
 def test_one_or_multiple_proven_price_gaps_make_one_weekly_interruption():
     result = _classify(gaps=(_unavailable(9),))
     assert result.daily_bars == ()

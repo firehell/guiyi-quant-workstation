@@ -33,3 +33,14 @@ AU、PD/PT、AP 隔离预览保留原边界。候选 v4 独有 `weekly_products`
 定向测试 6 passed；周线 ReferenceTrade 中断定向测试 4 passed；MDS/reader
 相关 fixture 回归 327 passed。以上均为隔离
 代码测试，不是 41/123 现场、页面、发布或 Runtime 证据。
+
+2026-09-18 任务 2 补证（基线 `717c0b206`）：完整周端点正常/缺价/未知缺口互斥；
+已存 W1 Bar 与缺价周冲突、混合 `NO_TRADE` D1 与不一致 W1 冲突均阻断。
+W1 `NO_TRADE` 不产生中断，也不推进策略观察；缺价周在原完成端点中断，
+三策略的 prefix、逐周增量与纯函数重建结果一致。reader 重建后保留同一
+Bar 与中断身份；W1 跨合约 CLEAR 不关闭旧参考交易。D1 固定参考交易 ID、
+入/出价格、收益及持有 Bar 数新增回归哨兵。独立 Standards/Spec Review
+均无 Confirmed Issue；review 指出的时间中点与空真断言已修正。
+最终定向组 476 passed；Ruff 与 `git diff --check` 通过。
+此处为隔离代码证据；真实完整周 MDS→reader、进程重启及混合零价真实样本
+仍随现场/集成验收核对，不记作 41/123 READY。

@@ -9,6 +9,7 @@ from app.market_data.domain import BarFrequency, ResolvedContractSegment
 from app.market_data.newow.product_query import NewowProductQuery
 from app.market_data.newow.product_reader import NewowProductReader
 from guiyi_quant.newow.product_adapters import replay_strategy
+from guiyi_quant.newow.product_contracts import DataInterruption
 from guiyi_quant.newow.product_identity import build_segment_id
 
 
@@ -63,6 +64,51 @@ def test_rebuild_from_the_same_completed_prefix_is_restore_stable(
     after_restart = replay_strategy(case.identity, case.bars[:checkpoint])
 
     assert after_restart == before_restart
+
+
+@pytest.mark.parametrize("strategy", _STRATEGIES)
+def test_weekly_price_gap_keeps_prefix_incremental_and_rebuild_parity(
+    product_cases, strategy
+):
+    case = product_cases.primitive_input(strategy, "1w")
+    split = len(case.bars) // 2
+    missing = case.bars[split].bar
+    bars = (*case.bars[:split], *case.bars[split + 1:])
+    before = bars[split - 1].bar
+    after = bars[split].bar
+    gap_at = missing.bar_end
+    assert before.bar_end < gap_at < after.bar_end
+    gap = DataInterruption(
+        product=case.identity.product,
+        frequency=case.identity.frequency,
+        physical_contract=after.physical_contract,
+        segment_id=after.segment_id,
+        trading_day=missing.trading_day,
+        effective_at=gap_at,
+        source_identity="market_data_service:weekly_quality:v1:proved-gap",
+    )
+    batch = replay_strategy(case.identity, bars, data_interruptions=(gap,))
+    incremental = tuple(
+        replay_strategy(
+            case.identity, bars[:end],
+            data_interruptions=(gap,) if end > split else (),
+        ).frames[-1]
+        for end in range(1, len(bars) + 1)
+    )
+    assert incremental == batch.frames
+    assert batch.frames[:split] == replay_strategy(
+        case.identity, bars[:split],
+    ).frames
+    assert gap_at not in {frame.bar.bar.bar_end for frame in batch.frames}
+    assert batch.frames[split].bar.calculation_segment_id != before.segment_id
+    assert all(
+        frame.bar.calculation_segment_id == batch.frames[split].bar.calculation_segment_id
+        for frame in batch.frames[split:]
+    )
+    replay_strategy(case.identity, bars)
+    assert replay_strategy(
+        case.identity, bars, data_interruptions=(gap,),
+    ) == batch
 
 
 @pytest.mark.parametrize("strategy", _STRATEGIES)

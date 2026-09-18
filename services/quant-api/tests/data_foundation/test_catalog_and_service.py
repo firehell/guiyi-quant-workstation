@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
@@ -580,8 +581,21 @@ def test_contract_weekly_quality_read_has_no_bar_for_proven_price_gap(session, t
             "jm", "JM2509", "1w", date(2025, 1, 2), date(2025, 1, 3),
         ))
 
+    # A stored weekly Bar and a proved D1 price gap cannot represent the same
+    # complete week, even when the stored row itself is structurally valid.
+    weekly_key = DatasetKey("contract", "jm", "JM2509", "1w")
+    catalog.register_partition(store.publish(PublishRequest(
+        weekly_key, 2025, 1, (_bar(3, 100),), (gap_end,),
+    )))
+    session.commit()
+    with pytest.raises(MarketDataError, match="WEEKLY_SOURCE_BAR_CONFLICT"):
+        market.query_contract_weekly_replay_quality(
+            symbol="jm", contract="JM2509", through=date(2025, 1, 3),
+            cutoff=gap_end,
+        )
 
-@pytest.mark.parametrize("mismatch", [None, "close", "turnover"])
+
+@pytest.mark.parametrize("mismatch", [None, "close", "turnover", "mixed_no_trade"])
 def test_contract_weekly_quality_read_validates_stored_normal_week(
     session, tmp_path, mismatch,
 ):
@@ -606,9 +620,17 @@ def test_contract_weekly_quality_read_validates_stored_normal_week(
         ))
     session.commit()
     first, second = _bar(2, 100), _bar(3, 101)
+    if mismatch == "mixed_no_trade":
+        first = replace(
+            first, open=Decimal(0), high=Decimal(0), low=Decimal(0),
+            close=Decimal(0), volume=Decimal(0), turnover=Decimal(0),
+        )
     weekly = CanonicalBar(
-        second.bar_end, second.trading_day, first.open, second.high,
-        first.low, Decimal(102 if mismatch == "close" else 101),
+        second.bar_end, second.trading_day,
+        Decimal(100) if mismatch == "mixed_no_trade" else first.open,
+        second.high,
+        Decimal(100) if mismatch == "mixed_no_trade" else first.low,
+        Decimal(102 if mismatch == "close" else 101),
         Decimal(2), Decimal(21 if mismatch == "turnover" else 20), Decimal(20),
     )
     store = CanonicalMonthlyStore(tmp_path)

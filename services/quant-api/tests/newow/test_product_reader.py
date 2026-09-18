@@ -21,7 +21,7 @@ from app.market_data.domain import (
 )
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.source_quality import PriceUnavailableFact
-from app.market_data.weekly_quality import WeeklySourceInterruption
+from app.market_data.weekly_quality import classify_weekly_source
 from app.market_data.newow.product_query import NewowProductQuery
 from app.market_data.newow.product_reader import (
     NewowProductReadCancelled,
@@ -57,17 +57,19 @@ def test_weekly_reader_keeps_proven_gap_even_without_a_following_bar(
         bar for bar in fake.physical[("RB2605", period)] if bar != removed
     )
     fake.actual[period] = tuple(bar for bar in fake.actual[period] if bar != removed)
-    week = removed.trading_day.isocalendar()
-    gap = WeeklySourceInterruption(
-        product="rb", physical_contract="RB2605",
-        iso_year=week.year, iso_week=week.week,
-        week_end=removed.bar_end,
-        expected_daily_endpoints=((removed.bar_end, removed.trading_day),),
-        unavailable_days=(removed.trading_day,),
-        quality_source_hashes=(("a" * 64, "b" * 64),),
-        daily_revision_sha256="c" * 64,
-        source_identity="d" * 64,
+    source_fact = PriceUnavailableFact(
+        removed.bar_end, removed.trading_day,
+        Decimal(0), Decimal(0), Decimal(0), removed.close,
+        Decimal(1), Decimal(0), removed.open_interest,
+        "a" * 64, "b" * 64, fake.as_of,
     )
+    gap = classify_weekly_source(
+        product="rb", physical_contract="RB2605",
+        expected_daily_endpoints=((removed.bar_end, removed.trading_day),),
+        daily_bars=(), price_unavailable=(source_fact,),
+        daily_revision_sha256="c" * 64,
+    ).interruption
+    assert gap is not None
     fake.query_actual_dominant_trading_days_quality = lambda request: (
         fake.query_actual_dominant_trading_days(request), (("RB2605", gap),),
     )
@@ -83,6 +85,13 @@ def test_weekly_reader_keeps_proven_gap_even_without_a_following_bar(
     assert read.data_interruptions[0].effective_at == removed.bar_end
     assert read.data_interruptions[0].frequency is ProductFrequency.WEEKLY
     assert read.data_interruptions_by_frequency[ProductFrequency.DAILY] == ()
+    rebuilt_reader = NewowProductReader(
+        fake, coverage=fake.coverage, active_products=("rb",),
+        now=lambda: fake.as_of,
+    )
+    rebuilt = rebuilt_reader.load(query, product_cases.as_of)
+    assert rebuilt.replay_bars == read.replay_bars
+    assert rebuilt.data_interruptions == read.data_interruptions
     dependency = reader.check_dependency(
         "rb", ProductFrequency.WEEKLY, fake.segments[0], product_cases.as_of,
     )
@@ -279,9 +288,11 @@ def test_pre_owner_no_trade_fact_does_not_advance_warmup(product_cases):
         },
     ],
 )
-def test_non_strict_zero_price_fact_still_fails_closed(product_cases, changes):
-    reader, query, fake = product_cases.paged_reader(prefix_bars=3, frequency="1d")
-    key = ("RB2605", BarFrequency.D1)
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_non_strict_zero_price_fact_still_fails_closed(product_cases, changes, frequency):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=3, frequency=frequency)
+    period = BarFrequency(frequency)
+    key = ("RB2605", period)
     original = fake.physical[key]
     zero_prices = {
         "open": Decimal(0),
@@ -291,7 +302,7 @@ def test_non_strict_zero_price_fact_still_fails_closed(product_cases, changes):
     }
     damaged = replace(original[0], **{**zero_prices, **changes})
     fake.physical[key] = (damaged, *original[1:])
-    fake.actual[BarFrequency.D1] = fake.physical[key]
+    fake.actual[period] = fake.physical[key]
     fake.expected_physical = dict(fake.physical)
 
     with pytest.raises(
@@ -301,16 +312,18 @@ def test_non_strict_zero_price_fact_still_fails_closed(product_cases, changes):
 
 
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
 def test_no_trade_day_pauses_each_strategy_exactly_like_an_absent_observation(
-    product_cases, strategy
+    product_cases, strategy, frequency
 ):
     no_trade_reader, no_trade_query, no_trade_market = product_cases.paged_reader(
-        prefix_bars=60, frequency="1d"
+        prefix_bars=60, frequency=frequency
     )
     absent_reader, absent_query, absent_market = product_cases.paged_reader(
-        prefix_bars=60, frequency="1d"
+        prefix_bars=60, frequency=frequency
     )
-    key = ("RB2605", BarFrequency.D1)
+    period = BarFrequency(frequency)
+    key = ("RB2605", period)
     raw = no_trade_market.physical[key]
     no_trade = replace(
         raw[20],
@@ -322,7 +335,7 @@ def test_no_trade_day_pauses_each_strategy_exactly_like_an_absent_observation(
         turnover=Decimal(0),
     )
     no_trade_market.physical[key] = (*raw[:20], no_trade, *raw[21:])
-    no_trade_market.actual[BarFrequency.D1] = tuple(
+    no_trade_market.actual[period] = tuple(
         bar
         for bar in no_trade_market.physical[key]
         if bar.trading_day >= no_trade_market.segments[0].start_trading_day
@@ -331,7 +344,7 @@ def test_no_trade_day_pauses_each_strategy_exactly_like_an_absent_observation(
 
     absent = absent_market.physical[key]
     absent_market.physical[key] = (*absent[:20], *absent[21:])
-    absent_market.actual[BarFrequency.D1] = tuple(
+    absent_market.actual[period] = tuple(
         bar
         for bar in absent_market.physical[key]
         if bar.trading_day >= absent_market.segments[0].start_trading_day
@@ -340,7 +353,7 @@ def test_no_trade_day_pauses_each_strategy_exactly_like_an_absent_observation(
 
     observed = no_trade_reader.load(no_trade_query, no_trade_market.as_of)
     baseline = absent_reader.load(absent_query, absent_market.as_of)
-    identity = build_product_identity("rb", strategy, ProductFrequency.DAILY)
+    identity = build_product_identity("rb", strategy, ProductFrequency(frequency))
 
     assert observed.replay_bars == baseline.replay_bars
     assert replay_strategy(
