@@ -12,6 +12,7 @@ test('preview identifies both sources, fixes cutoff and never subscribes to live
   await installNewowProductFixtures(page, {
     frozenNow: '2026-09-07T08:00:00.000Z',
     apiAsOf: NEWOW_AS_OF,
+    weeklyCandidate: true,
   })
   // Actual-preview wire shape: Decimal strings plus the API's non-null bounded echo.
   const quoteRequests = []
