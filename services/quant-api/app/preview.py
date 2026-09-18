@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
 from app.db.readonly import readonly_transaction
+from app.market_data.newow.product_release import HOURLY_PRODUCT_PREVIEW_SYMBOLS
 
 
 PREVIEW_PATHS = frozenset(
@@ -68,7 +69,7 @@ def _hourly_preview_products() -> frozenset[str] | None:
         part.strip().lower()
         for part in raw.split(",")
         if re.fullmatch(r"[a-z]{1,8}", part.strip().lower() or "")
-    ) & {"pd", "pt"}
+    ) & HOURLY_PRODUCT_PREVIEW_SYMBOLS
     return items or None
 
 
@@ -114,8 +115,10 @@ def create_preview_app(
             if len({key for key, value in query}) != len(query):
                 raise ValueError
             values = dict(query)
-            au_period_preview = os.getenv("GUIYI_AU_PERIOD_PREVIEW") == "1"
-            hourly_products = None if au_period_preview else _hourly_preview_products()
+            hourly_products = _hourly_preview_products()
+            au_period_preview = (
+                os.getenv("GUIYI_AU_PERIOD_PREVIEW") == "1" and hourly_products is None
+            )
             if (au_period_preview and raw_path in {
                 "/api/v1/market/newow/strategy-detail",
                 "/api/v1/market/newow/historical-snapshot",

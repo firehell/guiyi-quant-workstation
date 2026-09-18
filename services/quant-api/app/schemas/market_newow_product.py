@@ -762,12 +762,14 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v4",
         "newow_product_capabilities_v5",
         "newow_product_capabilities_v6",
+        "newow_product_capabilities_v7",
     ]
     release_stage: Literal[
         "daily",
         "daily_weekly_candidate",
         "au_daily_weekly_hourly_candidate",
         "pd_pt_hourly_candidate",
+        "ap_hourly_candidate",
     ]
     open_frequencies: list[ProductFrequencyValue]
     deferred_frequencies: list[DeferredFrequencyOut]

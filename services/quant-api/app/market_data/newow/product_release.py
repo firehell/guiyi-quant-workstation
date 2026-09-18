@@ -43,15 +43,15 @@ AU_PERIOD_PREVIEW_STAGE = "au_daily_weekly_hourly_candidate"
 AU_PERIOD_PREVIEW_FREQUENCIES = (
     ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY,
 )
-HOURLY_PRODUCT_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v6"
-HOURLY_PRODUCT_PREVIEW_STAGE = "pd_pt_hourly_candidate"
+HOURLY_PRODUCT_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v7"
+HOURLY_PRODUCT_PREVIEW_STAGE = "ap_hourly_candidate"
 HOURLY_PRODUCT_PREVIEW_FREQUENCIES = (
     ProductFrequency.DAILY, ProductFrequency.HOURLY,
 )
 HOURLY_PRODUCT_PREVIEW_DEFERRED = (
     (ProductFrequency.WEEKLY, "NEWOW_WEEKLY_RELEASE_PENDING"),
 )
-HOURLY_PRODUCT_PREVIEW_SYMBOLS = frozenset({"pd", "pt"})
+HOURLY_PRODUCT_PREVIEW_SYMBOLS = frozenset({"ap"})
 
 
 def require_open_frequency(

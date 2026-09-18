@@ -233,8 +233,8 @@ test('loads the server-owned daily release capability and rejects widened or leg
 
   const hourly = {
     ...payload,
-    schema_version: 'newow_product_capabilities_v6',
-    release_stage: 'pd_pt_hourly_candidate',
+    schema_version: 'newow_product_capabilities_v7',
+    release_stage: 'ap_hourly_candidate',
     open_frequencies: ['1d', '60m'],
     deferred_frequencies: [
       { frequency: '1w', reason_code: 'NEWOW_WEEKLY_RELEASE_PENDING' },
@@ -243,6 +243,18 @@ test('loads the server-owned daily release capability and rejects widened or leg
   assert.deepEqual(await getNewowProductCapabilities({
     request: async () => hourly,
   }), hourly)
+  await assert.rejects(
+    getNewowProductCapabilities({
+      request: async () => ({
+        ...hourly,
+        schema_version: 'newow_product_capabilities_v6',
+        release_stage: 'pd_pt_hourly_candidate',
+      }),
+    }),
+    (error: unknown) =>
+      error instanceof NewowProductRequestError
+      && error.code === 'NEWOW_RESPONSE_INVALID',
+  )
 
   await assert.rejects(
     getNewowProductCapabilities({

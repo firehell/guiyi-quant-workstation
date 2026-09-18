@@ -73,8 +73,8 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const auPreview = value.schema_version === 'newow_product_capabilities_v5'
     && value.release_stage === 'au_daily_weekly_hourly_candidate'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w', '60m'])
-  const hourlyPreview = value.schema_version === 'newow_product_capabilities_v6'
-    && value.release_stage === 'pd_pt_hourly_candidate'
+  const hourlyPreview = value.schema_version === 'newow_product_capabilities_v7'
+    && value.release_stage === 'ap_hourly_candidate'
     && sameLiteralArray(value.open_frequencies, ['1d', '60m'])
   if ((!daily && !candidate && !auPreview && !hourlyPreview)
     || !sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])

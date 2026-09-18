@@ -40,7 +40,7 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
     const current = capabilities.value
     const normalized = symbol.toLowerCase()
     if (current?.schema_version === 'newow_product_capabilities_v5' && normalized !== 'au') return []
-    if (current?.schema_version === 'newow_product_capabilities_v6' && normalized !== 'pd' && normalized !== 'pt') {
+    if (current?.schema_version === 'newow_product_capabilities_v7' && normalized !== 'ap') {
       return current.open_frequencies.filter((item): item is '1d' => item === '1d')
     }
     return openFrequencies.value
