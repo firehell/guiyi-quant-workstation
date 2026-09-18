@@ -5,11 +5,30 @@ import { normalizeSubingReference, subingCallouts } from '../src/utils/subingRef
 import { useSubingReference } from '../src/composables/useSubingReference.ts'
 import { formatMarketDecimal } from '../src/utils/marketDisplay.ts'
 
-export const referenceFixture = (symbol = 'jm') => ({ symbol, frequency: '15m', series_kind: 'actual_dominant', formula_version: 'subing_ths_15m_v3', reference_model_version: 'subing_reference_reverse_close_v1', as_of: '2026-09-08T16:00:00+08:00', performance_since: '2026-08-12', performance_through: '2026-09-08', reference_cutoff: '2026-09-08T15:00:00+08:00', input_snapshot_hash: 'a'.repeat(64), executable: false, auto_order: false, source: 'historical_replay', summary: { closed_count: 0, win_count: 0, loss_count: 0, flat_count: 0, open_count: 0, interrupted_count: 0, initial_count: 0, win_rate_pct: null, mean_return_pct: null, sum_return_percentage_points: '0' }, signals: [], items: [], next_before: null })
+export const referenceFixture = (symbol = 'jm') => ({ symbol, frequency: '15m', series_kind: 'actual_dominant', formula_version: 'subing_ths_15m_v3', reference_model_version: 'subing_reference_reverse_close_v1', as_of: '2026-09-08T16:00:00+08:00', performance_since: '2026-08-12', performance_through: '2026-09-08', reference_cutoff: '2026-09-08T15:00:00+08:00', input_snapshot_hash: 'a'.repeat(64), executable: false, auto_order: false, source: 'historical_replay', research_status: 'ready', summary: { closed_count: 0, win_count: 0, loss_count: 0, flat_count: 0, open_count: 0, interrupted_count: 0, initial_count: 0, win_rate_pct: null, mean_return_pct: null, sum_return_percentage_points: '0' }, signals: [], indicators: [], items: [], next_before: null })
 
 test('reference normalizer rejects wrong authority and unsafe financial values', () => {
   assert.equal(normalizeSubingReference(referenceFixture(), 'jm').summary.sum_return_percentage_points, '0')
   for (const patch of [{ symbol: 'rb' }, { executable: true }, { auto_order: true }, { formula_version: 'old' }, { source: 'events' }, { summary: { ...referenceFixture().summary, mean_return_pct: 1.2 } }]) assert.throws(() => normalizeSubingReference({ ...referenceFixture(), ...patch }, 'jm'))
+})
+
+test('new research periods require matching formula identity', () => {
+  for (const [frequency, formula_version] of [['30m', 'subing_ths_30m_v1'], ['60m', 'subing_ths_60m_v1'], ['1d', 'subing_ths_1d_v1']]) {
+    assert.equal(normalizeSubingReference({ ...referenceFixture(), frequency, formula_version }, 'jm').frequency, frequency)
+    assert.throws(() => normalizeSubingReference({ ...referenceFixture(), frequency }, 'jm'))
+  }
+})
+
+test('late response from an earlier period cannot replace the selected period', async () => {
+  let resolve!: (value: unknown) => void
+  const loader = useSubingReference((_symbol, query) => query.frequency === '30m'
+    ? new Promise(done => { resolve = done })
+    : Promise.resolve({ ...referenceFixture(), frequency: '60m', formula_version: 'subing_ths_60m_v1' }))
+  const pending = loader.refresh('jm', { frequency: '30m' })
+  await loader.refresh('jm', { frequency: '60m' })
+  resolve({ ...referenceFixture(), frequency: '30m', formula_version: 'subing_ths_30m_v1' })
+  await pending
+  assert.equal(loader.data.value?.frequency, '60m')
 })
 
 test('chart callouts use compact price lines and Chinese-market return colors', () => {

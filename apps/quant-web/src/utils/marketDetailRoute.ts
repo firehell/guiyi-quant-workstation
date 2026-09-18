@@ -15,6 +15,7 @@ import { isHtdyAlertEvent } from './alertRules.ts'
 const SERIES_KINDS = new Set<SeriesKind>(['continuous', 'actual_dominant', 'contract'])
 const FREQUENCIES = new Set<MarketFrequency>(MARKET_FREQUENCIES)
 const NEWOW_FREQUENCY_SET = new Set<MarketFrequency>(NEWOW_FREQUENCIES)
+const SUBING_FREQUENCY_SET = new Set<MarketFrequency>(['15m', '30m', '60m', '1d'])
 const NEWOW_STRATEGY_SET = new Set<string>(NEWOW_STRATEGIES)
 const FIXED_IDENTITIES: Record<Extract<MarketDetailView, 'trend' | 'subing'>, Pick<MarketDetailIdentity, 'seriesKind' | 'frequency'>> = {
   trend: { seriesKind: 'actual_dominant', frequency: '1d' },
@@ -53,7 +54,7 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     : parseFrequency(query.frequency)
   if (!frequency) return invalid('DETAIL_FREQUENCY_INVALID', symbol, recoveryFor(viewValue, symbol))
 
-  if (fixed && (seriesKind !== fixed.seriesKind || frequency !== fixed.frequency)) {
+  if (fixed && (seriesKind !== fixed.seriesKind || !SUBING_FREQUENCY_SET.has(frequency))) {
     return invalid('DETAIL_SUBING_IDENTITY_INVALID', symbol, {
       view: viewValue, symbol, ...fixed,
     })
@@ -117,7 +118,8 @@ export function resolveViewSwitchIdentity(
   if (view === 'trend') {
     return { view: 'newow', symbol, strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' }
   }
-  if (view === 'subing') return { view, symbol, ...FIXED_IDENTITIES.subing }
+  if (view === 'subing') return { view, symbol, ...FIXED_IDENTITIES.subing,
+    frequency: previous?.view === 'subing' && sameSymbol(previous.symbol, symbol) && SUBING_FREQUENCY_SET.has(previous.frequency) ? previous.frequency : '15m' }
   if (previous?.view === view && sameSymbol(previous.symbol, symbol)) {
     if (previous.seriesKind !== 'contract' || previous.contract) {
       return {

@@ -451,10 +451,12 @@ MUST 以当前 failure timestamp 做一次精确 CAS，保留原失败、公开�
 
 ### Requirement: Historical reference uses the existing formula and an independent model
 
-苏冰专用历史参考 SHALL 复用唯一 `SubingThs15mKernel` 和 `subing_ths_15m_v3`，不得恢复已退役策略。
+苏冰专用历史参考 SHALL 复用唯一 `SubingThs15mKernel` 算法；15m 保持 `subing_ths_15m_v3`，
+30m、60m、1d 分别使用 `subing_ths_30m_v1`、`subing_ths_60m_v1`、`subing_ths_1d_v1`。
+参数按各周期 Bar 数计算，不按分钟换算；新增周期只用于历史研究，不得恢复已退役策略或扩大正式 Alert Rule。
 参考模型 SHALL 为 `subing_reference_reverse_close_v1`：首次 buy 开多、首次 sell 开空；反向信号在同一已完成
 信号 Bar close 平仓并反手，同向信号不加仓、不重置入场。参考身份 MUST 绑定品种、物理合约、rank1 segment、
-公式、参考模型及入场信号，平仓显式关联入场；不得依赖显示窗口或最近标记猜测。
+周期、公式、参考模型及入场信号，平仓显式关联入场；不得依赖显示窗口或最近标记猜测。
 历史参考 SHALL 标记 `source=historical_replay`、`executable=false`、`auto_order=false`，不创建 Event、订单、
 持仓账本、通知或 Scope 写入，也不声明牛哇公式 parity、因果回测或账户收益。
 
@@ -471,10 +473,12 @@ MUST 以当前 failure timestamp 做一次精确 CAS，保留原失败、公开�
 ### Requirement: Historical reads prove the selected completed window
 
 历史参考 SHALL 只通过现有 `MarketDataService`、rank1 segment loader、Calendar 和 Session 读取 Canonical，
-不读取 Live、不下载或补写。默认最近 20 个完成交易日由完整 Calendar/Session 决定，不以现有数据回退；
+不读取 Live、不下载或补写。日内默认最近 20 个完成交易日、1d 默认最近 120 个完成交易日，
+均由完整 Calendar/Session 决定，不以现有数据回退；
 显式日期区间 MUST 完整读取，结束日为已完成交易日，单请求跨度最多 365 个日期间隔。
 每个 owner SHALL 读取并验证自己的完整物理 lifecycle prefix，状态不跨合约继承；只有 owner 有效期间可输出信号。
 前段结束、Session、映射、Calendar、Bar coverage 或物理事实冲突 MUST 整个参考面 fail closed，不能缩短窗口。
+完整输入若仍未满足指标预热，SHALL 返回 `warming`，不得把零交易解释为已计算无信号。
 
 #### Scenario: Calendar tail or an owner final day is missing
 
@@ -501,13 +505,18 @@ OPEN 只用本合约已完成 Bar 标记浮动；中断记录不生成退出价�
 
 ### Requirement: Historical reference API and visual sources stay distinct
 
-`GET /api/v1/market/{symbol}/subing/reference` SHALL 固定 actual_dominant/15m，接受 `since`、`through`、
+`GET /api/v1/market/{symbol}/subing/reference` SHALL 固定 actual_dominant，`frequency` 缺省 15m，
+仅接受 15m、30m、60m、1d；接受 `since`、`through`、
 `as_of`、`before`、`limit`（默认 50，最大 200）；拒绝未知/重复 query、未来或无时区截止。
 返回 typed signal/trade/summary、窗口、cutoff、版本和 input_snapshot_hash；价格/收益为十进制字符串。
+用于展示 EMA21/MACD 的逐 Bar 值 SHALL 来自同一次物理合约前缀内核重放，并带物理合约身份；
+图表不能用当前已加载 K 线另行初始化指标作为苏冰信号依据。
 单进程 SHALL 最多一个计算和 30 秒协作式检查预算，不落盘派生缓存，不输出内部错误详情。
 图表 SHALL 显示可避让的白底细边框价格/平仓收益标注，空间不足收起为可交互标记；只锚定匹配的时间与物理合约。
 列表 SHALL 显示方向、状态、合约、开平时间价格、持有 Bar 数和参考收益，点击记录定位对应 Bar。
-历史与实际 Event MUST 分别保留身份、来源和详情；刷新/切换窗口撤销旧参考详情，迟到响应不得覆盖新身份。
+历史与实际 Event MUST 分别保留身份、来源和详情；刷新/切换窗口或周期撤销旧参考详情，
+迟到响应不得覆盖新身份。30m、60m、1d 不读取或展示仅支持 15m 的苏冰 Event/Scope/Runtime 事实，
+并标为历史研究、本周期未启用预警。
 
 #### Scenario: Historical data is unavailable but actual events exist
 

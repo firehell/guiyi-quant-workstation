@@ -13,7 +13,7 @@ from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from guiyi_quant.subing_reference import (
-    FORMULA_VERSION,
+    FORMULA_VERSIONS,
     REFERENCE_MODEL_VERSION,
     ReferenceBar,
     ReferenceSegment,
@@ -53,6 +53,7 @@ class SubingReferenceQuery:
     as_of: datetime | None = None
     before: str | None = None
     limit: int = 50
+    frequency: str = "15m"
 
 
 class SubingReferenceService:
@@ -77,12 +78,14 @@ class SubingReferenceService:
         as_of = query.as_of or now
         self._validate_query(query, as_of, now)
         since, through, cutoff = self._window(query, as_of)
+        frequency = BarFrequency(query.frequency)
         self.check_cancelled()
-        segments, inputs = self._inputs(query.symbol, since, through, cutoff)
+        segments, inputs = self._inputs(query.symbol, since, through, cutoff, frequency)
         self.check_cancelled()
         try:
             projection = project_reference(
-                query.symbol, segments, since=since, through=through, as_of=cutoff
+                query.symbol, segments, since=since, through=through, as_of=cutoff,
+                frequency=query.frequency,
             )
         except ReferenceProjectionError as exc:
             raise SubingReferenceError("SUBING_REFERENCE_DATA_CONFLICT") from exc
@@ -90,8 +93,8 @@ class SubingReferenceService:
         fingerprint = _hash(
             {
                 "symbol": query.symbol,
-                "frequency": "15m",
-                "formula_version": FORMULA_VERSION,
+                "frequency": query.frequency,
+                "formula_version": FORMULA_VERSIONS[query.frequency],
                 "reference_model_version": REFERENCE_MODEL_VERSION,
                 "since": since,
                 "through": through,
@@ -128,9 +131,9 @@ class SubingReferenceService:
         return _wire(
             {
                 "symbol": query.symbol,
-                "frequency": "15m",
+                "frequency": query.frequency,
                 "series_kind": "actual_dominant",
-                "formula_version": FORMULA_VERSION,
+                "formula_version": FORMULA_VERSIONS[query.frequency],
                 "reference_model_version": REFERENCE_MODEL_VERSION,
                 "as_of": as_of,
                 "performance_since": since,
@@ -140,8 +143,10 @@ class SubingReferenceService:
                 "executable": False,
                 "auto_order": False,
                 "source": "historical_replay",
+                "research_status": projection.readiness,
                 "summary": asdict(projection.summary),
                 "signals": [asdict(item) for item in projection.signals],
+                "indicators": [asdict(item) for item in projection.indicators],
                 "items": [asdict(item) for item in items],
                 "next_before": next_before,
             }
@@ -151,6 +156,8 @@ class SubingReferenceService:
         self, query: SubingReferenceQuery, as_of: datetime, now: datetime
     ) -> None:
         if (
+            query.frequency not in FORMULA_VERSIONS
+            or
             query.symbol not in self.active_products
             or not re.fullmatch(r"[a-z]{1,3}", query.symbol)
             or type(query.limit) is not int
@@ -217,7 +224,8 @@ class SubingReferenceService:
         through = query.through or days[-1]
         if through != days[-1]:
             raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
-        since = query.since or days[max(0, len(days) - 20)]
+        default_days = 120 if query.frequency == "1d" else 20
+        since = query.since or days[max(0, len(days) - default_days)]
         if since > through:
             raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
         sessions = self._session_windows(query.symbol, through)
@@ -227,19 +235,20 @@ class SubingReferenceService:
         return since, through, cutoff
 
     def _inputs(
-        self, symbol: str, since: date, through: date, cutoff: datetime
+        self, symbol: str, since: date, through: date, cutoff: datetime,
+        frequency: BarFrequency,
     ) -> tuple[tuple[ReferenceSegment, ...], list[dict[str, Any]]]:
         try:
             loaded = ActualDominantResearchSegmentLoader(self.market_data).load(
                 symbol=symbol,
-                frequencies=(BarFrequency.M15,),
+                frequencies=(frequency,),
                 since=since,
                 through=through,
             )
         except MarketDataError as exc:
-            self._raise_data_unavailable(exc, "actual_dominant_replay", symbol)
-        actual = loaded.results[BarFrequency.M15]
-        _identity(actual, symbol, "actual_dominant", None)
+            self._raise_data_unavailable(exc, "actual_dominant_replay", symbol, frequency)
+        actual = loaded.results[frequency]
+        _identity(actual, symbol, "actual_dominant", None, frequency)
         _order(actual)
         owners = loaded.authoritative_segments
         if actual.requested_trading_day_window != (
@@ -272,7 +281,7 @@ class SubingReferenceService:
             expected = self.market_data.expected_contract_replay_endpoints(
                 symbol=symbol,
                 contract=owner.contract,
-                frequency=BarFrequency.M15,
+                frequency=frequency,
                 trading_day=own_last_day,
                 cutoff=end,
                 after=None,
@@ -285,7 +294,7 @@ class SubingReferenceService:
                     ContractTradingDayQuery(
                         symbol,
                         owner.contract,
-                        BarFrequency.M15,
+                        frequency,
                         expected[0][1],
                         own_last_day,
                     )
@@ -297,7 +306,7 @@ class SubingReferenceService:
                 context = {
                     "symbol": symbol,
                     "contract": owner.contract,
-                    "frequency": BarFrequency.M15.value,
+                    "frequency": frequency.value,
                     "expected_count": len(expected),
                     **getattr(exc, "context", {}),
                 }
@@ -309,7 +318,7 @@ class SubingReferenceService:
                         "context": context,
                     },
                 ) from exc
-            _identity(physical, symbol, "contract", owner.contract)
+            _identity(physical, symbol, "contract", owner.contract, frequency)
             _order(physical)
             if (
                 physical.requested_trading_day_window != (expected[0][1], own_last_day)
@@ -373,7 +382,8 @@ class SubingReferenceService:
 
     @staticmethod
     def _raise_data_unavailable(
-        exc: MarketDataError, stage: str, symbol: str
+        exc: MarketDataError, stage: str, symbol: str,
+        frequency: BarFrequency = BarFrequency.M15,
     ) -> None:
         reason = getattr(exc, "reason", None) or data_reason(exc.code)
         if reason not in DATA_REASONS:
@@ -385,7 +395,7 @@ class SubingReferenceService:
                 "reason": reason,
                 "context": {
                     "symbol": symbol,
-                    "frequency": BarFrequency.M15.value,
+                    "frequency": frequency.value,
                     **getattr(exc, "context", {}),
                 },
             },
@@ -393,13 +403,14 @@ class SubingReferenceService:
 
 
 def _identity(
-    result: MarketSeriesResult, symbol: str, kind: str, contract: str | None
+    result: MarketSeriesResult, symbol: str, kind: str, contract: str | None,
+    frequency: BarFrequency,
 ) -> None:
     expected = {
         "symbol": symbol,
         "series_kind": kind,
         "contract": contract,
-        "frequency": "15m",
+        "frequency": frequency.value,
     }
     if any(
         result.request_identity.get(key) != value for key, value in expected.items()

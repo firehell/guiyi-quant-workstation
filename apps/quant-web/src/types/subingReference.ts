@@ -3,6 +3,7 @@ export interface SubingReferenceSignal {
   direction: 'buy' | 'sell'; reference_price: string
   action: 'OPEN_LONG' | 'OPEN_SHORT' | 'REVERSE_TO_LONG' | 'REVERSE_TO_SHORT' | 'SAME_DIRECTION'
   entry_trade_id: string | null; closed_trade_id: string | null; closed_return_pct: string | null
+  dif?: string | null; dea?: string | null; macd?: string | null; ema21?: string | null
 }
 export interface SubingReferenceTrade {
   reference_trade_id: string; side: 'LONG' | 'SHORT'; physical_contract: string; segment_id: string
@@ -13,10 +14,11 @@ export interface SubingReferenceTrade {
   interrupted_at: string | null; initial: boolean
 }
 export interface SubingReferenceResponse {
-  symbol: string; frequency: '15m'; series_kind: 'actual_dominant'; formula_version: 'subing_ths_15m_v3'
+  symbol: string; frequency: '15m' | '30m' | '60m' | '1d'; series_kind: 'actual_dominant'; formula_version: 'subing_ths_15m_v3' | 'subing_ths_30m_v1' | 'subing_ths_60m_v1' | 'subing_ths_1d_v1'
   reference_model_version: 'subing_reference_reverse_close_v1'; as_of: string; performance_since: string; performance_through: string
-  reference_cutoff: string; input_snapshot_hash: string; executable: false; auto_order: false; source: 'historical_replay'
+  reference_cutoff: string; input_snapshot_hash: string; executable: false; auto_order: false; source: 'historical_replay'; research_status: 'ready' | 'warming'
   summary: { closed_count: number; win_count: number; loss_count: number; flat_count: number; open_count: number; interrupted_count: number; initial_count: number; win_rate_pct: string | null; mean_return_pct: string | null; sum_return_percentage_points: string }
-  signals: SubingReferenceSignal[]; items: SubingReferenceTrade[]; next_before: string | null
+  signals: SubingReferenceSignal[]; indicators: SubingReferenceIndicator[]; items: SubingReferenceTrade[]; next_before: string | null
 }
-export interface SubingReferenceQuery { since?: string; through?: string; as_of?: string; before?: string; limit?: number }
+export interface SubingReferenceIndicator { bar_end: string; physical_contract: string; segment_id: string; dif: string | null; dea: string | null; macd: string | null; ema21: string | null }
+export interface SubingReferenceQuery { frequency?: SubingReferenceResponse['frequency']; since?: string; through?: string; as_of?: string; before?: string; limit?: number }

@@ -27,7 +27,7 @@ from app.schemas.subing_reference import SubingReferenceResponse
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 _GATE = BoundedSemaphore(1)
-_FIELDS = frozenset({"since", "through", "as_of", "before", "limit"})
+_FIELDS = frozenset({"since", "through", "as_of", "before", "limit", "frequency"})
 
 
 def _build_service(
@@ -50,6 +50,7 @@ def subing_reference(
     as_of: datetime | None = None,
     before: str | None = Query(default=None, max_length=129),
     limit: int = Query(default=50, ge=1, le=200),
+    frequency: str = "15m",
     session: Session = Depends(get_db),
 ) -> SubingReferenceResponse:
     keys = [key for key, _ in request.query_params.multi_items()]
@@ -65,7 +66,7 @@ def subing_reference(
 
     try:
         result = _build_service(session, check_cancelled).query(
-            SubingReferenceQuery(symbol, since, through, as_of, before, limit)
+            SubingReferenceQuery(symbol, since, through, as_of, before, limit, frequency)
         )
         return SubingReferenceResponse.model_validate(result)
     except SubingReferenceError as exc:

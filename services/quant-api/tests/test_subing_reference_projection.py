@@ -71,6 +71,31 @@ def test_real_kernel_reversals_preserve_decimal_prices_and_explicit_links():
     assert result.trades[-1].mark_reference_price == Decimal(80)
 
 
+def test_periods_share_formula_values_but_keep_independent_signal_identity():
+    seg = segment()
+    options = dict(since=date(2026, 1, 1), through=date(2026, 1, 9), as_of=START + timedelta(days=9))
+    results = {frequency: project_reference("RB", (seg,), frequency=frequency, **options)
+               for frequency in ("15m", "30m", "60m", "1d")}
+    assert all([s.direction for s in value.signals] == ["buy", "sell", "buy", "sell"]
+               for value in results.values())
+    assert len({value.signals[0].signal_id for value in results.values()}) == 4
+    assert len({value.trades[0].reference_trade_id for value in results.values()}) == 4
+    for value in results.values():
+        first_signal = value.signals[0]
+        matching = next(point for point in value.indicators if point.bar_end == first_signal.bar_end)
+        assert (matching.dif, matching.dea, matching.macd, matching.ema21) == (
+            first_signal.dif, first_signal.dea, first_signal.macd, first_signal.ema21)
+
+
+def test_complete_short_lifecycle_reports_warming_instead_of_zero_signal_readiness():
+    short = segment([100] * 10)
+    result = project(short)
+    assert result.readiness == "warming"
+    assert result.signals == ()
+    assert result.indicators
+    assert all(point.ema21 is None for point in result.indicators)
+
+
 def test_first_sell_opens_short_without_fabricated_long():
     result = project(segment([100] * 50 + [80]))
     assert result.signals[0].action == "OPEN_SHORT"

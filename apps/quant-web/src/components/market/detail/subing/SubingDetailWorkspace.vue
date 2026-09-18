@@ -76,28 +76,30 @@ const selectedHistory = computed(() => model.value.history.find((item) => item.i
 
 async function refresh() {
   const identity = { ...props.identity }
-  await Promise.all([loader.sync(identity, props.bars, props.mutation.kind), alertFacts.refresh({ symbol: identity.symbol, frequency: '15m' })])
+  if (identity.frequency === '15m') await Promise.all([loader.sync(identity, props.bars, props.mutation.kind), alertFacts.refresh({ symbol: identity.symbol, frequency: '15m' })])
+  else await loader.sync(identity, [], 'replace')
 }
 function openHistory() { tabs.value?.openHistory() }
 defineExpose({ openHistory })
 watch([() => props.identity, () => props.bars, () => props.mutation], () => { void refresh() }, { immediate: true, deep: true })
 watch(() => model.value.history.length, (value) => emit('history-availability', value > 0), { immediate: true })
 watch(() => reference.data.value?.input_snapshot_hash, () => { focusIntent += 1; referenceSelection.value = []; selectedTrade.value = null; referenceFocus.value = null; referenceFocusNotice.value = null }, { flush: 'sync' })
-watch(identityKey, () => { focusIntent += 1; referenceSelection.value = []; selectedTrade.value = null; referenceFocusNotice.value = null; referenceFocus.value = null; void reference.refresh(props.identity.symbol) }, { immediate: true })
+watch(identityKey, () => { focusIntent += 1; referenceSelection.value = []; selectedTrade.value = null; selectedEvent.value = null; referenceFocusNotice.value = null; referenceFocus.value = null; void reference.refresh(props.identity.symbol, { frequency: props.identity.frequency as '15m' | '30m' | '60m' | '1d' }) }, { immediate: true })
 onBeforeUnmount(() => { loader.dispose(); alertFacts.dispose(); reference.dispose() })
 </script>
 
 <template>
   <section class="subing-workspace" data-detail-workspace="subing">
     <p v-if="identityWarning" class="subing-workspace__hint" role="status">{{ identityWarning }}</p>
-    <div ref="chartRegion" class="subing-workspace__chart"><SubingChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" period="15m" :series-kind="identity.seriesKind" :identity-key="identityKey" :focus-bar-end="referenceFocus ?? focusBarEnd ?? identity.focusBarEnd" :reference-callouts="callouts" :focus-request-id="referenceFocusRequestId" :reference-selection="referenceSelection" :markers="loader.markers.value" :visible-main-indicators="['ema_21']" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" /></div>
+    <div ref="chartRegion" class="subing-workspace__chart"><SubingChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :identity-key="identityKey" :focus-bar-end="referenceFocus ?? focusBarEnd ?? identity.focusBarEnd" :reference-callouts="callouts" :reference-indicators="reference.data.value?.indicators ?? []" :focus-request-id="referenceFocusRequestId" :reference-selection="referenceSelection" :markers="identity.frequency === '15m' ? loader.markers.value : []" :visible-main-indicators="['ema_21']" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" /></div>
     <p v-if="missingCalloutCount" class="subing-workspace__hint" role="status">{{ missingCalloutCount }} 个历史参考信号尚未匹配当前已载 Bar 与物理合约；可在参考记录中点击定位，数据不足时不绘制。</p>
     <p class="subing-workspace__reference-source">历史重算·乐观参考｜零费用/零滑点 <span>白底标注 · 实际预警为 S↑ / S↓</span></p>
-    <SubingReferencePanel :data="reference.data.value" :loading="reference.loading.value" :error="reference.error.value" @refresh="reference.refresh(identity.symbol, $event)" @load-more="reference.loadMore" @focus="focusTrade" @details="selectedTrade = $event" />
+    <p v-if="identity.frequency !== '15m'" class="subing-workspace__hint" role="status">历史研究，本周期未启用预警；正式 S↑ / S↓ 仅在 15分周期。</p>
+    <SubingReferencePanel :data="reference.data.value" :loading="reference.loading.value" :error="reference.error.value" @refresh="reference.refresh(identity.symbol, { ...$event, frequency: identity.frequency as '15m' | '30m' | '60m' | '1d' })" @load-more="reference.loadMore" @focus="focusTrade" @details="selectedTrade = $event" />
     <p v-if="referenceFocusNotice" role="status">{{ referenceFocusNotice }}</p>
     <MarketDetailDrawer :open="selectedTrade !== null" title="历史参考记录详情" @close="selectedTrade = null"><template v-if="selectedTrade"><p>{{ selectedTrade.side === 'LONG' ? '多头参考' : '空头参考' }} · {{ selectedTrade.status === 'CLOSED' ? '已平参考' : selectedTrade.status === 'OPEN' ? '未平参考' : '换月中断' }} · {{ selectedTrade.physical_contract }}</p><p>开仓参考 {{ formatMarketDecimal(selectedTrade.entry_reference_price) }} · {{ formatBeijingInstant(selectedTrade.entry_bar_end) }}</p><p>平仓参考 {{ formatMarketDecimal(selectedTrade.exit_reference_price) }} · {{ selectedTrade.exit_bar_end ? formatBeijingInstant(selectedTrade.exit_bar_end) : '尚无配对平仓' }}</p><p>持有 {{ selectedTrade.holding_bars }} 根 Bar · {{ selectedTrade.initial ? '窗口初始记录' : '窗口内新开参考' }}</p><p>历史重算·乐观参考｜零费用/零滑点</p><p>{{ selectedTrade.reference_trade_id }}</p></template></MarketDetailDrawer>
-    <p class="subing-workspace__hint">实际预警记录 · 以下仅为已持久化 AlertEvent，与历史重算信号独立；同一 Bar 可以同时存在。</p>
-    <MarketDetailSectionTabs ref="tabs" :tabs="[]" :active-id="activeTab" :history="model.history" history-selectable @select="activeTab = $event" @history-select="selectedEvent = Number($event.id.replace('subing-event:', ''))">
+    <p v-if="identity.frequency === '15m'" class="subing-workspace__hint">实际预警记录 · 以下仅为已持久化 AlertEvent，与历史重算信号独立；同一 Bar 可以同时存在。</p>
+    <MarketDetailSectionTabs v-if="identity.frequency === '15m'" ref="tabs" :tabs="[]" :active-id="activeTab" :history="model.history" history-selectable @select="activeTab = $event" @history-select="selectedEvent = Number($event.id.replace('subing-event:', ''))">
       <template #default><MarketDetailInsightDeck :identity-key="identityKey" :sections="model.disclosureSections" :default-open="true" /></template>
     </MarketDetailSectionTabs>
     <MarketDetailDrawer :open="selectedHistory !== null" title="苏冰预警详情" @close="selectedEvent = null">

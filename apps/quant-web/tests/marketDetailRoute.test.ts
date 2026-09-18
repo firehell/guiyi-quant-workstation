@@ -46,6 +46,17 @@ test('roundtrips a completed Newow focus through the unified route', () => {
   assert.deepEqual(parseMarketDetailRoute(serializeMarketDetailIdentity(identity)), { kind: 'valid', identity })
 })
 
+test('SuBing research routes accept only four actual dominant periods', () => {
+  for (const frequency of ['15m', '30m', '60m', '1d']) {
+    const parsed = parseMarketDetailRoute({ view: 'subing', symbol: 'jm', series_kind: 'actual_dominant', frequency })
+    assert.equal(parsed.kind, 'valid')
+    if (parsed.kind === 'valid') assert.equal(parsed.identity.frequency, frequency)
+  }
+  for (const frequency of ['1m', '5m', '1w']) {
+    assert.equal(parseMarketDetailRoute({ view: 'subing', symbol: 'jm', series_kind: 'actual_dominant', frequency }).kind, 'invalid')
+  }
+})
+
 test('rejects explicit fixed-view identity conflicts without correcting the URL', () => {
   assert.deepEqual(parseMarketDetailRoute({
     view: 'trend', symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m',

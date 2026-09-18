@@ -17,6 +17,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import type { KlineReferenceCallout, KlineReferenceSelection } from '@/types/referenceCallout'
+import type { SubingReferenceIndicator } from '@/types/subingReference'
 import { layoutReferenceCallouts, matchesReferenceBar, REFERENCE_CALLOUT_BOX, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import KlineHoverLegend from '@/components/kline/KlineHoverLegend.vue'
 import type {
@@ -55,6 +56,7 @@ const props = withDefaults(defineProps<{
   researchMarkers?: KlineMarker[]
   markerSelectionEnabled?: boolean
   referenceCallouts?: KlineReferenceCallout[]
+  referenceIndicators?: SubingReferenceIndicator[]
   referenceSelection?: KlineReferenceSelection[]
 }>(), {
   loading: false,
@@ -243,6 +245,7 @@ watch(() => props.period, () => {
 watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
 }, { deep: true })
+watch(() => props.referenceIndicators, () => { renderDerivedSeries() }, { deep: true })
 
 watch(
   () => [props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime],
@@ -451,6 +454,21 @@ function renderDerivedSeries(): void {
       anchorTime: props.rangeDetectorAnchorTime,
     },
   })
+  if (props.referenceIndicators) {
+    const byIdentity = new Map(props.referenceIndicators.map(point => [`${Date.parse(point.bar_end)}:${point.physical_contract}`, point]))
+    const exact = renderedBars.flatMap(bar => {
+      const point = byIdentity.get(`${Date.parse(bar.time)}:${bar.physicalContract ?? ''}`)
+      return point ? [{ time: bar.time, point }] : []
+    })
+    const values = (key: 'dif' | 'dea' | 'macd' | 'ema21') => exact.flatMap(({ time, point }) => {
+      const value = point[key] === null ? NaN : Number(point[key])
+      return Number.isFinite(value) ? [{ time, value }] : []
+    })
+    derivedData.ema.ema_21 = values('ema21')
+    derivedData.macd.dif = values('dif')
+    derivedData.macd.dea = values('dea')
+    derivedData.macd.histogram = values('macd')
+  }
   const theme = resolveChartTheme()
 
   emaLines.ema_10?.applyOptions({ color: theme.ema10 })

@@ -12,13 +12,19 @@ const isTime = (value: unknown) => typeof value === 'string' && /(?:Z|[+-]\d{2}:
 const isMoney = (value: unknown) => typeof value === 'string' && value.length < 100 && decimal.test(value)
 export function normalizeSubingReference(value: unknown, symbol: string): SubingReferenceResponse {
   const root = record(value)
-  requireThat(root.symbol === symbol.toLowerCase() && root.frequency === '15m' && root.series_kind === 'actual_dominant' && root.formula_version === 'subing_ths_15m_v3' && root.reference_model_version === 'subing_reference_reverse_close_v1' && root.executable === false && root.auto_order === false && root.source === 'historical_replay')
+  const versions: Record<string, string> = { '15m': 'subing_ths_15m_v3', '30m': 'subing_ths_30m_v1', '60m': 'subing_ths_60m_v1', '1d': 'subing_ths_1d_v1' }
+  requireThat(root.symbol === symbol.toLowerCase() && typeof root.frequency === 'string' && versions[root.frequency] === root.formula_version && root.series_kind === 'actual_dominant' && root.reference_model_version === 'subing_reference_reverse_close_v1' && root.executable === false && root.auto_order === false && root.source === 'historical_replay' && ['ready', 'warming'].includes(root.research_status as string))
   requireThat(isTime(root.as_of) && isTime(root.reference_cutoff) && typeof root.performance_since === 'string' && day.test(root.performance_since) && typeof root.performance_through === 'string' && day.test(root.performance_through) && root.performance_since <= root.performance_through && typeof root.input_snapshot_hash === 'string' && /^[a-f0-9]{64}$/.test(root.input_snapshot_hash))
   const summary = record(root.summary)
   for (const key of ['closed_count', 'win_count', 'loss_count', 'flat_count', 'open_count', 'interrupted_count', 'initial_count']) requireThat(Number.isSafeInteger(summary[key]) && (summary[key] as number) >= 0)
   for (const key of ['win_rate_pct', 'mean_return_pct']) requireThat(summary[key] === null || isMoney(summary[key]))
   requireThat(isMoney(summary.sum_return_percentage_points))
-  requireThat(Array.isArray(root.signals) && Array.isArray(root.items) && (root.next_before === null || isText(root.next_before)))
+  requireThat(Array.isArray(root.signals) && Array.isArray(root.indicators) && Array.isArray(root.items) && (root.next_before === null || isText(root.next_before)))
+  for (const raw of root.indicators) {
+    const point = record(raw)
+    requireThat(isTime(point.bar_end) && isText(point.physical_contract) && isText(point.segment_id))
+    for (const key of ['dif', 'dea', 'macd', 'ema21']) requireThat(point[key] === null || isMoney(point[key]))
+  }
   const ids = new Set<string>()
   for (const raw of root.signals) {
     const signal = record(raw)
@@ -27,6 +33,7 @@ export function normalizeSubingReference(value: unknown, symbol: string): Subing
     requireThat(signal.action === 'SAME_DIRECTION' || (signal.direction === 'buy' ? ['OPEN_LONG', 'REVERSE_TO_LONG'] : ['OPEN_SHORT', 'REVERSE_TO_SHORT']).includes(signal.action as string))
     for (const key of ['entry_trade_id', 'closed_trade_id']) requireThat(signal[key] === null || isText(signal[key]))
     requireThat(signal.closed_return_pct === null || isMoney(signal.closed_return_pct))
+    for (const key of ['dif', 'dea', 'macd', 'ema21']) requireThat(signal[key] === undefined || signal[key] === null || isMoney(signal[key]))
   }
   ids.clear()
   for (const raw of root.items) {

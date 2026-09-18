@@ -469,7 +469,7 @@ def _contract_warmup_scope(
     elif frequency is BarFrequency.W1:
         planned = (BarFrequency.D1, BarFrequency.W1)
         dependencies = (BarFrequency.D1.value,)
-    elif frequency in (BarFrequency.M15, BarFrequency.H1):
+    elif frequency in (BarFrequency.M15, BarFrequency.M30, BarFrequency.H1):
         planned = (BarFrequency.M1, frequency)
         dependencies = (BarFrequency.M1.value,)
     else:

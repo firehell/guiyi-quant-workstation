@@ -116,6 +116,16 @@ class Coverage:
         return date(2026, 7, 1)
 
 
+class FrequencyMarket(Market):
+    def query_actual_dominant_trading_days(self, request):
+        result = super().query_actual_dominant_trading_days(request)
+        return replace(result, request_identity={**result.request_identity, "frequency": request.frequency.value})
+
+    def query_contract_trading_days(self, request):
+        result = super().query_contract_trading_days(request)
+        return replace(result, request_identity={**result.request_identity, "frequency": request.frequency.value})
+
+
 @pytest.fixture
 def case():
     market = Market()
@@ -140,6 +150,20 @@ def test_defaults_twenty_complete_days_and_explicit_identity(case):
         isinstance(item["entry_reference_price"], str) for item in result["items"]
     )
     assert market.requests[-1].since == market.days[0]
+
+
+@pytest.mark.parametrize("frequency", ("30m", "60m", "1d"))
+def test_new_frequency_uses_same_physical_replay_with_separate_identity(frequency):
+    market = FrequencyMarket()
+    service = SubingReferenceService(
+        market, coverage=Coverage(), active_products={"rb"},
+        now=lambda: datetime(2026, 7, 25, 7, tzinfo=UTC),
+    )
+    result = service.query(SubingReferenceQuery("rb", frequency=frequency))
+    assert result["frequency"] == frequency
+    assert result["formula_version"] == f"subing_ths_{frequency}_v1"
+    assert result["signals"] and result["items"]
+    assert all(request.frequency.value == frequency for request in market.requests)
 
 
 def test_paging_keeps_summary_signals_and_snapshot_stable(case):

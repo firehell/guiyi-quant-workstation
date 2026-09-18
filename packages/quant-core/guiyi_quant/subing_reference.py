@@ -22,6 +22,12 @@ from .indicators.subing_ths import SUBING_THS_FORMULA_VERSION, SubingThs15mKerne
 
 FORMULA_VERSION = SUBING_THS_FORMULA_VERSION
 REFERENCE_MODEL_VERSION = "subing_reference_reverse_close_v1"
+FORMULA_VERSIONS = {
+    "15m": FORMULA_VERSION,
+    "30m": "subing_ths_30m_v1",
+    "60m": "subing_ths_60m_v1",
+    "1d": "subing_ths_1d_v1",
+}
 
 
 class ReferenceProjectionError(ValueError):
@@ -64,6 +70,10 @@ class ReferenceSignal:
     entry_trade_id: str | None
     closed_trade_id: str | None
     closed_return_pct: Decimal | None
+    dif: Decimal | None = None
+    dea: Decimal | None = None
+    macd: Decimal | None = None
+    ema21: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +119,19 @@ class ReferenceProjection:
     signals: tuple[ReferenceSignal, ...]
     trades: tuple[ReferenceTrade, ...]
     summary: ReferenceSummary
+    readiness: Literal["ready", "warming"] = "ready"
+    indicators: tuple[ReferenceIndicator, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceIndicator:
+    bar_end: datetime
+    physical_contract: str
+    segment_id: str
+    dif: Decimal | None
+    dea: Decimal | None
+    macd: Decimal | None
+    ema21: Decimal | None
 
 
 def _conflict() -> None:
@@ -217,6 +240,7 @@ def project_reference(
     since: date,
     through: date,
     as_of: datetime,
+    frequency: str = "15m",
 ) -> ReferenceProjection:
     """Replay physical prefixes, then project each rank1 ownership independently.
 
@@ -239,7 +263,8 @@ def project_reference(
         )
     ):
         return _project_reference(
-            symbol, segments, since=since, through=through, as_of=as_of
+            symbol, segments, since=since, through=through, as_of=as_of,
+            frequency=frequency,
         )
 
 
@@ -250,6 +275,7 @@ def _project_reference(
     since: date,
     through: date,
     as_of: datetime,
+    frequency: str,
 ) -> ReferenceProjection:
     """Replay physical prefixes, then project each rank1 ownership independently.
 
@@ -258,20 +284,27 @@ def _project_reference(
     Dates are exchange trading days, not calendar dates of night-session bars.
     """
     _validate(symbol, segments, since, through, as_of)
+    if frequency not in FORMULA_VERSIONS:
+        _conflict()
     signals: list[ReferenceSignal] = []
     trades: list[ReferenceTrade] = []
+    indicators: list[ReferenceIndicator] = []
+    warming = False
     for segment in segments:
         kernel = SubingThs15mKernel()
         state = kernel.initial_state()
         current: ReferenceTrade | None = None
         entry_index = 0
+        ready_in_window = False
         base = (
             symbol,
             segment.physical_contract,
             segment.segment_id,
-            FORMULA_VERSION,
+            FORMULA_VERSIONS[frequency],
             REFERENCE_MODEL_VERSION,
         )
+        if frequency != "15m":
+            base += (frequency,)
         for index, bar in enumerate(segment.bars):
             if bar.bar_end > as_of or bar.trading_day > through:
                 break
@@ -280,6 +313,16 @@ def _project_reference(
             )
             if not result.valid:
                 _conflict()
+            if result.ready and segment.owner_since <= bar.trading_day <= segment.owner_through and since <= bar.trading_day <= through:
+                ready_in_window = True
+            if segment.owner_since <= bar.trading_day <= segment.owner_through and since <= bar.trading_day <= through:
+                indicators.append(ReferenceIndicator(
+                    bar.bar_end, segment.physical_contract, segment.segment_id,
+                    Decimal(str(result.dif)) if result.dif is not None else None,
+                    Decimal(str(result.dea)) if result.dea is not None else None,
+                    Decimal(str(result.macd)) if result.macd is not None else None,
+                    Decimal(str(result.ema21)) if result.ema21 is not None else None,
+                ))
             if bar.trading_day < segment.owner_since:
                 continue
             if current is not None:
@@ -361,6 +404,10 @@ def _project_reference(
                             current.reference_trade_id,
                             closed_id,
                             closed_return,
+                            Decimal(str(result.dif)) if result.dif is not None else None,
+                            Decimal(str(result.dea)) if result.dea is not None else None,
+                            Decimal(str(result.macd)) if result.macd is not None else None,
+                            Decimal(str(result.ema21)) if result.ema21 is not None else None,
                         )
                     )
         if current is not None:
@@ -380,6 +427,8 @@ def _project_reference(
                     mark_change_pct=None,
                 )
             trades.append(current)
+        if not ready_in_window:
+            warming = True
     owner_ends = {segment.segment_id: segment.owner_through for segment in segments}
     selected = tuple(
         t
@@ -408,4 +457,4 @@ def _project_reference(
         total / len(returns) if returns else None,
         total,
     )
-    return ReferenceProjection(tuple(signals), selected, summary)
+    return ReferenceProjection(tuple(signals), selected, summary, "warming" if warming else "ready", tuple(indicators))

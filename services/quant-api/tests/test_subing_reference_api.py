@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.main import app
 from app.market_data.subing_reference import SubingReferenceError, SubingReferenceService
 from app.market_data.market_data_service import MarketDataError
-from test_subing_reference_service import Market, Coverage
+from test_subing_reference_service import Market, FrequencyMarket, Coverage
 
 
 @pytest.fixture
@@ -40,6 +40,22 @@ def test_real_projection_response_has_typed_strings_and_stable_pages(client):
     assert page.status_code == 200
     assert page.json()["summary"] == body["summary"]
     assert body["items"] != page.json()["items"]
+
+
+@pytest.mark.parametrize("frequency", ("30m", "60m", "1d"))
+def test_research_frequency_api_keeps_alert_independent(client, monkeypatch, frequency):
+    service = SubingReferenceService(
+        FrequencyMarket(), coverage=Coverage(), active_products={"rb"},
+        now=lambda: datetime(2026, 7, 25, 7, tzinfo=UTC),
+    )
+    monkeypatch.setattr(market_subing_reference, "_build_service", lambda *_: service)
+    response = client.get("/api/v1/market/rb/subing/reference", params={"frequency": frequency})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["frequency"] == frequency
+    assert body["formula_version"] == f"subing_ths_{frequency}_v1"
+    assert body["signals"][0]["ema21"] is not None
+    assert body["source"] == "historical_replay"
 
 
 @pytest.mark.parametrize(

@@ -2024,14 +2024,14 @@ def test_contract_warmup_empty_plan_hash_isolated_by_every_scope(
                 "pf", "PF2611", date(2025, 1, 2), frequency=frequency
             )
         ).plan
-        for frequency in (None, "1d", "1w", "15m", "60m")
+        for frequency in (None, "1d", "1w", "15m", "30m", "60m")
     }
 
     assert all(plan.target_windows == () for plan in plans.values())
     assert len({plan.plan_sha256 for plan in plans.values()}) == len(plans)
 
 
-@pytest.mark.parametrize("frequency", ("1m", "5m", "30m", "invalid"))
+@pytest.mark.parametrize("frequency", ("1m", "5m", "invalid"))
 def test_contract_warmup_rejects_unsupported_frequency_scope_before_planning(
     session, tmp_path, frequency
 ) -> None:

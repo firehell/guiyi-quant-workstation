@@ -26,6 +26,10 @@ class SubingReferenceSignalOut(ReferenceOut):
     entry_trade_id: str | None
     closed_trade_id: str | None
     closed_return_pct: str | None
+    dif: str | None = None
+    dea: str | None = None
+    macd: str | None = None
+    ema21: str | None = None
 
 
 class SubingReferenceTradeOut(ReferenceOut):
@@ -64,11 +68,21 @@ class SubingReferenceSummaryOut(ReferenceOut):
     sum_return_percentage_points: str
 
 
+class SubingReferenceIndicatorOut(ReferenceOut):
+    bar_end: str
+    physical_contract: str
+    segment_id: str
+    dif: str | None
+    dea: str | None
+    macd: str | None
+    ema21: str | None
+
+
 class SubingReferenceResponse(ReferenceOut):
     symbol: str
-    frequency: Literal["15m"]
+    frequency: Literal["15m", "30m", "60m", "1d"]
     series_kind: Literal["actual_dominant"]
-    formula_version: Literal["subing_ths_15m_v3"]
+    formula_version: Literal["subing_ths_15m_v3", "subing_ths_30m_v1", "subing_ths_60m_v1", "subing_ths_1d_v1"]
     reference_model_version: Literal["subing_reference_reverse_close_v1"]
     as_of: str
     performance_since: str
@@ -78,7 +92,9 @@ class SubingReferenceResponse(ReferenceOut):
     executable: Literal[False]
     auto_order: Literal[False]
     source: Literal["historical_replay"]
+    research_status: Literal["ready", "warming"]
     summary: SubingReferenceSummaryOut
     signals: list[SubingReferenceSignalOut]
+    indicators: list[SubingReferenceIndicatorOut]
     items: list[SubingReferenceTradeOut]
     next_before: str | None

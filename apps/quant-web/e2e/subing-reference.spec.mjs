@@ -13,6 +13,20 @@ test('historical reference uses the unified API base exactly once', async ({ pag
   expect(referencePaths).toEqual(['/api/v1/market/jm/subing/reference'])
 })
 
+test('30m research loads its own reference without querying 15m events', async ({ page }) => {
+  const frequencies = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.endsWith('/subing/reference')) frequencies.push(new URL(request.url()).searchParams.get('frequency'))
+  })
+  const facts = await mockSubingReference(page, { response: () => ({ ...subingReferenceFixture(), frequency: '30m', formula_version: 'subing_ths_30m_v1' }) })
+  await page.goto('/market/chart?symbol=jm&view=subing&series_kind=actual_dominant&frequency=30m')
+  await expect(page.getByText('历史研究，本周期未启用预警；正式 S↑ / S↓ 仅在 15分周期。')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '乐观参考交易' })).toBeVisible()
+  expect(frequencies).toEqual(['30m'])
+  expect(facts.alertRequests).toHaveLength(0)
+  await expect(page.getByRole('button', { name: '预警记录' })).toHaveCount(0)
+})
+
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
   test(`SuBing historical fixture preview ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport)
