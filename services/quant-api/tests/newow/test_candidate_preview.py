@@ -130,6 +130,40 @@ def test_au_period_preview_opens_only_au_without_database(preview, monkeypatch):
     assert sessions == []
 
 
+def test_hourly_preview_opens_only_pd_pt_60m_without_database(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", "pd,pt")
+    app, sessions, _factory = preview
+    client = TestClient(app)
+
+    capability = client.get("/api/v1/market/newow/product-capabilities")
+    assert capability.status_code == 200
+    assert capability.json()["schema_version"] == "newow_product_capabilities_v6"
+    assert capability.json()["release_stage"] == "pd_pt_hourly_candidate"
+    assert capability.json()["open_frequencies"] == ["1d", "60m"]
+    assert capability.json()["deferred_frequencies"] == [
+        {"frequency": "1w", "reason_code": "NEWOW_WEEKLY_RELEASE_PENDING"}
+    ]
+    refused_product = client.get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "jm", "strategy": "trend", "frequency": "60m"},
+    )
+    assert refused_product.status_code == 403
+    assert refused_product.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+    refused_week = client.get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "pd", "strategy": "trend", "frequency": "1w"},
+    )
+    assert refused_week.status_code == 409
+    assert refused_week.json()["detail"]["code"] == "NEWOW_FREQUENCY_NOT_OPEN"
+    historical = client.get(
+        "/api/v1/market/newow/historical-snapshot",
+        params={"product": "au", "strategy": "trend", "frequency": "60m"},
+    )
+    assert historical.status_code == 403
+    assert historical.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+    assert sessions == []
+
+
 def test_subing_reference_path_is_narrowly_admitted(preview):
     from app.preview import _preview_path_allowed
 

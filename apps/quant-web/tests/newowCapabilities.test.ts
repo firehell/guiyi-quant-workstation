@@ -72,3 +72,25 @@ test('AU period preview accepts its exact all-period capability', async () => {
   assert.equal(state.isFrequencyOpen('60m', 'jm'), false)
   assert.equal(state.isFrequencyOpen('60m', 'au'), true)
 })
+
+test('PD/PT hourly preview opens 60m only for those products and keeps W1 closed', async () => {
+  const payload = {
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v6',
+    release_stage: 'pd_pt_hourly_candidate',
+    open_frequencies: ['1d', '60m'],
+    deferred_frequencies: [
+      { frequency: '1w', reason_code: 'NEWOW_WEEKLY_RELEASE_PENDING' },
+    ],
+  }
+  const accepted = await getNewowProductCapabilities({ request: async () => payload })
+  assert.deepEqual(accepted.open_frequencies, ['1d', '60m'])
+  const state = useNewowCapabilities(async () => accepted)
+  await state.load()
+  assert.deepEqual(state.openFrequenciesFor('pd'), ['1d', '60m'])
+  assert.deepEqual(state.openFrequenciesFor('pt'), ['1d', '60m'])
+  assert.deepEqual(state.openFrequenciesFor('jm'), ['1d'])
+  assert.equal(state.isFrequencyOpen('60m', 'pd'), true)
+  assert.equal(state.isFrequencyOpen('60m', 'jm'), false)
+  assert.equal(state.isFrequencyOpen('1w', 'pd'), false)
+})

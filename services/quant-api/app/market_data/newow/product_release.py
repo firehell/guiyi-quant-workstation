@@ -43,11 +43,30 @@ AU_PERIOD_PREVIEW_STAGE = "au_daily_weekly_hourly_candidate"
 AU_PERIOD_PREVIEW_FREQUENCIES = (
     ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY,
 )
+HOURLY_PRODUCT_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v6"
+HOURLY_PRODUCT_PREVIEW_STAGE = "pd_pt_hourly_candidate"
+HOURLY_PRODUCT_PREVIEW_FREQUENCIES = (
+    ProductFrequency.DAILY, ProductFrequency.HOURLY,
+)
+HOURLY_PRODUCT_PREVIEW_DEFERRED = (
+    (ProductFrequency.WEEKLY, "NEWOW_WEEKLY_RELEASE_PENDING"),
+)
+HOURLY_PRODUCT_PREVIEW_SYMBOLS = frozenset({"pd", "pt"})
 
 
-def require_open_frequency(frequency: ProductFrequency, *, candidate: bool = False) -> None:
+def require_open_frequency(
+    frequency: ProductFrequency,
+    *,
+    candidate: bool = False,
+    hourly_preview: bool = False,
+) -> None:
     """Reject product requests outside the currently published frequency scope."""
-    allowed = CANDIDATE_OPEN_FREQUENCIES if candidate else OPEN_FREQUENCIES
+    if hourly_preview:
+        allowed = HOURLY_PRODUCT_PREVIEW_FREQUENCIES
+    elif candidate:
+        allowed = CANDIDATE_OPEN_FREQUENCIES
+    else:
+        allowed = OPEN_FREQUENCIES
     if ProductFrequency(frequency) not in allowed:
         raise ValueError("NEWOW_FREQUENCY_NOT_OPEN")
 

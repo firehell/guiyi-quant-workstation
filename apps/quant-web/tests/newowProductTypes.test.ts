@@ -231,6 +231,19 @@ test('loads the server-owned daily release capability and rejects widened or leg
     request: async () => candidate,
   }), candidate)
 
+  const hourly = {
+    ...payload,
+    schema_version: 'newow_product_capabilities_v6',
+    release_stage: 'pd_pt_hourly_candidate',
+    open_frequencies: ['1d', '60m'],
+    deferred_frequencies: [
+      { frequency: '1w', reason_code: 'NEWOW_WEEKLY_RELEASE_PENDING' },
+    ],
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => hourly,
+  }), hourly)
+
   await assert.rejects(
     getNewowProductCapabilities({
       request: async () => ({ ...payload, open_frequencies: ['1w', '1d', '60m'] }),

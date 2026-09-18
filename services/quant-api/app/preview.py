@@ -62,6 +62,16 @@ def _code_sha() -> str:
     return sha
 
 
+def _hourly_preview_products() -> frozenset[str] | None:
+    raw = os.getenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", "")
+    items = frozenset(
+        part.strip().lower()
+        for part in raw.split(",")
+        if re.fullmatch(r"[a-z]{1,8}", part.strip().lower() or "")
+    ) & {"pd", "pt"}
+    return items or None
+
+
 def create_preview_app(
     *,
     enabled: bool | None = None,
@@ -105,6 +115,7 @@ def create_preview_app(
                 raise ValueError
             values = dict(query)
             au_period_preview = os.getenv("GUIYI_AU_PERIOD_PREVIEW") == "1"
+            hourly_products = None if au_period_preview else _hourly_preview_products()
             if (au_period_preview and raw_path in {
                 "/api/v1/market/newow/strategy-detail",
                 "/api/v1/market/newow/historical-snapshot",
@@ -112,6 +123,22 @@ def create_preview_app(
                 return JSONResponse(
                     status_code=403, content={"detail": {"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}}
                 )
+            if hourly_products and raw_path in {
+                "/api/v1/market/newow/strategy-detail",
+                "/api/v1/market/newow/historical-snapshot",
+            }:
+                product = values.get("product", "").lower()
+                frequency = values.get("frequency")
+                if frequency == "60m" and product not in hourly_products:
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": {"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}},
+                    )
+                if frequency == "1w":
+                    return JSONResponse(
+                        status_code=409,
+                        content={"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}},
+                    )
             field = {
                 "/api/v1/market/bars/page": "before",
                 "/api/v1/market/newow/strategy-detail": "as_of",
@@ -124,6 +151,7 @@ def create_preview_app(
                 request.scope["query_string"] = urlencode(values).encode("ascii")
             request.state.candidate_preview_as_of = cutoff
             request.state.au_period_preview = au_period_preview
+            request.state.hourly_preview_products = hourly_products
         except (ValueError, UnicodeError):
             return JSONResponse(
                 status_code=422, content={"detail": {"code": "PREVIEW_QUERY_INVALID"}}
