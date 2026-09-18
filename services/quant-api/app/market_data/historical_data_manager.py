@@ -2166,6 +2166,62 @@ class HistoricalDataManager(ContractWarmupPlanner):
             weekly_daily_companions=True,
         )
 
+    def _require_contract_weekly_daily_parity(
+        self,
+        paired: tuple[tuple[_Target, BarBatch], ...],
+    ) -> None:
+        """Reject a fetched W1 Bar unless it equals the D1 facts to be committed."""
+        weekly = tuple(
+            (target, batch) for target, batch in paired
+            if target.key.kind is DatasetKind.CONTRACT
+            and target.key.frequency is BarFrequency.W1
+        )
+        if not weekly:
+            return
+        from app.market_data.rqdata_adapter import _aggregate_daily_rows
+
+        key = weekly[0][0].key
+        daily_key = DatasetKey(
+            DatasetKind.CONTRACT, key.symbol, key.series_or_contract, BarFrequency.D1,
+        )
+        by_day: dict[date, CanonicalBar] = {}
+        for partition in self.catalog.all_partitions(daily_key):
+            for bar in self.store.read_catalog_partition(partition):
+                if bar.trading_day in by_day:
+                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+                by_day[bar.trading_day] = bar
+        for target, batch in paired:
+            if target.key == daily_key:
+                for bar in batch.bars:
+                    by_day[bar.trading_day] = bar
+        fact = self.catalog.contract_fact(key.symbol, key.series_or_contract)
+        for target, batch in weekly:
+            for bar in self._merged_fetched_bars(target, (batch,)):
+                last_day = bar.trading_day
+                monday = last_day - timedelta(days=last_day.isoweekday() - 1)
+                days = self.coverage.contract_trading_days(
+                    fact, monday, monday + timedelta(days=6),
+                )
+                if not days or days[-1] != last_day or any(day not in by_day for day in days):
+                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+                rows = tuple(
+                    (
+                        day,
+                        {
+                            "open": by_day[day].open,
+                            "high": by_day[day].high,
+                            "low": by_day[day].low,
+                            "close": by_day[day].close,
+                            "volume": by_day[day].volume,
+                            "turnover": by_day[day].turnover,
+                            "open_interest": by_day[day].open_interest,
+                        },
+                    )
+                    for day in days
+                )
+                if _aggregate_daily_rows(rows, bar_end=bar.bar_end) != bar:
+                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+
     def _execute_apply(
         self,
         action: str,
@@ -2281,6 +2337,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         fetch_target,
                         (batch,),
                     )
+                if action == "contract_warmup":
+                    self._require_contract_weekly_daily_parity(paired)
                 for fetch_target, batch in paired:
                     failure_target = fetch_target
                     self._publish_fetched(fetch_target, (batch,))
