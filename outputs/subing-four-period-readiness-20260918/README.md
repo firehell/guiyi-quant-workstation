@@ -54,3 +54,31 @@ owner 后续明确授权处理上述 144 项。先按原诊断的物理合约、
 最终 [240 项数据读回](post-repair-data-readback.json) 与 [真实 Chromium 页面读回](post-repair-page-readback.json) 均使用 `2026-09-18 18:30 +08:00` 截止：**223 ready、17 blocked**。15m、30m、60m 各 60/60；1d 为 43/60。浏览器中 223 个 ready 页面有图表和参考统计，输入 hash 与固定数据读回一致；10 个计算冲突页面的参考 API 为 409、无统计；7 个缺价页面显示“行情事实不可用”、无参考统计。非 15m 的可加载页面均显示“本周期未启用预警”。
 
 17 个 1d 阻塞：`PRICE_UNAVAILABLE` 为 BZ、C、EB、I、P、PG、Y；`SUBING_REFERENCE_DATA_CONFLICT` 为 OI、PF、PK、PL、PR、PX、RS、SF、SH、SM。对后 10 项的主力映射物理合约做了[只读非正 Close 扫描](conflict-source-scan.json)，10/10 均存在该来源数值事实；其中 OI/PF 的 9 月源请求另被 `RQDATA_ZERO_OHL_INVALID` 硬校验拒绝。当前不补造 OHLC、不绕过冲突或扩大源请求；这 17 项仍需各自的数据质量/参考口径诊断。全部验收是候选数据与页面证据，不等于 develop 集成、release、Runtime 或自然业务通过。
+
+## 17 个日线来源问题逐项诊断与同截止复验（2026-09-19）
+
+在候选分支 `ad2c48fff` 上重读生产 Catalog、MainContractMap 和 Canonical，PostgreSQL 使用只读事务；再次以 `2026-09-18 18:30 +08:00` 查询 SuBing 17 项，并用隔离的 loopback 候选 API/Web 在真实 Chromium 逐页复验。逐项主力分段、物理前缀、来源质量日及哈希、非正 Close 的合约与日期、数据返回码和页面结果见 [d1-17-source-diagnosis.json](d1-17-source-diagnosis.json)。未请求 provider，未发布分区或修改生产 DB、Scope、Runtime、通知。
+
+| 品种 | 触发层 | 精确来源事实 |
+|---|---|---|
+| BZ | 物理前缀 `PRICE_UNAVAILABLE` | BZ2610：2026-03-20 |
+| C | 物理前缀 `PRICE_UNAVAILABLE` | C2609：2026-09-10 |
+| EB | 物理前缀 `PRICE_UNAVAILABLE` | EB2606：2025-07-03、08-29、09-19 |
+| I | 物理前缀 `PRICE_UNAVAILABLE` | I2609：2026-09-09 |
+| P | 物理前缀 `PRICE_UNAVAILABLE` | P2609：2026-09-09 |
+| PG | 物理前缀 `PRICE_UNAVAILABLE` | PG2605：2025-06-04 |
+| Y | 物理前缀 `PRICE_UNAVAILABLE` | Y2609：2026-09-09 |
+| OI | 投影前缀 Close≤0 | 3 根；2025-11-17 至 11-21 |
+| PF | 投影前缀 Close≤0 | 180 根；2025-06-17 至 2026-02-27 |
+| PK | 投影前缀 Close≤0 | 1 根；2025-12-19 |
+| PL | 投影前缀 Close≤0 | 328 根；2025-07-23 至 2026-05-22 |
+| PR | 投影前缀 Close≤0 | 292 根；2025-05-21 至 2026-04-07 |
+| PX | 投影前缀 Close≤0 | 101 根；2025-07-15 至 2026-02-27 |
+| RS | 投影前缀 Close≤0 | 229 根；2025-09-15 至 2026-09-09，其中 5 根处于主力持有日 |
+| SF | 投影前缀 Close≤0 | 15 根；2025-05-20 至 12-24 |
+| SH | 投影前缀 Close≤0 | 6 根；2025-07-15 至 12-25 |
+| SM | 投影前缀 Close≤0 | 43 根；2025-07-15 至 2026-04-15 |
+
+七项来源质量事实均位于当前苏冰读取的物理合约预热前缀内，形态为零 Open/High/Low、正 Close；对照记录带请求与响应哈希。十项的非正 Close 在 Canonical 物理前缀中，`_inputs` 均成功，`project_reference` 在输入校验处拒绝；除 RS 的 5 根外，其余均在该合约的非主力日。此前 `conflict-source-scan.json` 统计整个合约生命周期，不能解释为主力持有日错误；本段按苏冰实际消费的前缀重新计数。Canonical 旧 Bar 的直接 RQData 原始响应未在此次审计中重取，不能仅凭现有零值判定 provider 或发布环节哪一层产生了异常。
+
+同截止重读结果仍为 **7 个 `PRICE_UNAVAILABLE`、10 个 `SUBING_REFERENCE_DATA_CONFLICT`**。浏览器 7 个缺价页均显示“行情事实不可用”，无工作区或参考统计；另 10 个页面有图表，参考 API 均为 409 且无参考统计。17/17 保持 fail closed，未进入 ready。OI/PF 的 9 月硬无效源分区仍是另外两项未关闭的来源缺口；解决前缀异常后也须独立读回。当前没有依据跳过物理预热前缀、替换零价或宣布 240/240 ready；PR #378 保持草稿，develop 集成 Gate 仍未关闭。
