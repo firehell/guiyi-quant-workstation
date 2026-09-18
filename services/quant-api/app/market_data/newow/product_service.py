@@ -40,6 +40,7 @@ from guiyi_quant.newow.product_identity import (
     FUTURES_ADAPTATION_VERSION,
     FUTURES_INPUT_POLICY_VERSION,
     REFERENCE_MODEL_VERSION,
+    futures_adaptation_version,
     utc_timestamp,
 )
 from guiyi_quant.newow.trend_channel_display import (
@@ -500,7 +501,7 @@ def _snapshot_namespace(identity: ProductIdentity, as_of: datetime) -> str:
         "contract": (
             SCHEMA_VERSION,
             REFERENCE_MODEL_VERSION,
-            FUTURES_ADAPTATION_VERSION,
+            futures_adaptation_version(identity.frequency),
         ),
     }
     return sha256(
@@ -541,7 +542,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
                 )
             )
             proof[key] = sha256(value.encode()).hexdigest()
-            if frequency is ProductFrequency.DAILY:
+            if frequency in (ProductFrequency.DAILY, ProductFrequency.WEEKLY):
                 day_key = "|".join((
                     "price-state", frequency.value, bar.physical_contract,
                     bar.trading_day.isoformat(),
@@ -614,7 +615,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
         "|".join(
             (
                 SCHEMA_VERSION,
-                FUTURES_ADAPTATION_VERSION,
+                futures_adaptation_version(read.frequency),
                 FUTURES_INPUT_POLICY_VERSION,
                 REFERENCE_MODEL_VERSION,
                 SOURCE_FACT_ADAPTER_VERSION,
@@ -893,7 +894,7 @@ class NewowProductService:
         payload = (
             SCHEMA_VERSION,
             REFERENCE_MODEL_VERSION,
-            FUTURES_ADAPTATION_VERSION,
+            futures_adaptation_version(request.frequency),
             request.product,
             request.strategy.value,
             request.frequency.value,
@@ -969,6 +970,7 @@ class NewowProductService:
             fact_key,
             None,
             None,
+            futures_adaptation_version=futures_adaptation_version(request.frequency),
         )
         return NewowProductResult(
             meta,

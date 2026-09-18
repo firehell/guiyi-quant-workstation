@@ -218,6 +218,42 @@ test('loads the server-owned daily release capability and rejects widened or leg
   assert.deepEqual(result, payload)
   assert.equal(Object.isFrozen(result), true)
 
+  const candidate = {
+    ...payload,
+    schema_version: 'newow_product_capabilities_v4',
+    release_stage: 'daily_weekly_candidate',
+    open_frequencies: ['1d', '1w'],
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => candidate,
+  }), candidate)
+
+  const hourly = {
+    ...payload,
+    schema_version: 'newow_product_capabilities_v7',
+    release_stage: 'ap_hourly_candidate',
+    open_frequencies: ['1d', '60m'],
+    deferred_frequencies: [
+      { frequency: '1w', reason_code: 'NEWOW_WEEKLY_RELEASE_PENDING' },
+    ],
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => hourly,
+  }), hourly)
+  const pdPtHourly = {
+    ...hourly,
+    schema_version: 'newow_product_capabilities_v6',
+    release_stage: 'pd_pt_hourly_candidate',
+  }
+  assert.deepEqual(await getNewowProductCapabilities({ request: async () => pdPtHourly }), pdPtHourly)
+  await assert.rejects(
+    getNewowProductCapabilities({ request: async () => ({ ...pdPtHourly, release_stage: 'ap_hourly_candidate' }) }),
+    (error: unknown) => error instanceof NewowProductRequestError && error.code === 'NEWOW_RESPONSE_INVALID',
+  )
+
   await assert.rejects(
     getNewowProductCapabilities({
       request: async () => ({ ...payload, open_frequencies: ['1w', '1d', '60m'] }),

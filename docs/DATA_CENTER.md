@@ -27,6 +27,10 @@ Dataset。
 对物理合约 D1 严格匹配 O/H/L=0、`close>0`、`volume>0` 且其余来源、身份和端点校验通过的行，
 仅按已批准的 `PRICE_UNAVAILABLE` 质量事实记录并中断 Newow 计算，不生成 CanonicalBar；
 其他非零成交、部分价格缺失、部分零价或无效 `close` 仍须失败。W1 不得借此缺价日聚合成功。
+隔离候选的 Newow W1 质量读取可把已完成周内的 D1 合法 Bar 与 `PRICE_UNAVAILABLE` 事实逐端点证明为完整互斥集合：
+有缺价的周只形成 `weekly-d1-quality-v1` 计算中断，不返回 W1 价格 Bar；普通 MDS W1 查询仍严格失败。
+同周还有未解释缺日、重复或身份冲突时不得豁免。现有正常 W1 必须与同一 D1 来源聚合数值一致；
+分区写入、正式数据恢复及 Runtime 切换分别受各自 Gate 约束。
 不得用 `get_price` 的期货日/周 `close` 或 `settlement` 互相替代。
 
 来源响应中的原始 `order_book_id`、端点唯一性和交易日归属在归一化前验证；同一响应的重复行不能由字典覆盖。分钟 provider 请求的日期窗口从 Calendar/Session 所属交易日得出，夜盘跨自然日、周末仍按所属交易日请求。维护计划冻结允许补缺或 refresh 的端点，只有该集合内的来源记录可进入发布。
@@ -214,7 +218,11 @@ plan hash identity。省略 `--frequency` 时维持七周期；显式 `1d` 只�
 也不得跨 scope 复用 hash。其它显式 frequency 均 fail-closed。`1w` 只由同一交易所完整日行情聚合，四个日内派生周期只由同 contract `1m` 生成。dry-run
 只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
 MainContractMap、Redis Live、Rule、Scope、Event 或 notification。任一显式 scope 的 provider、发布或派生失败
-必须立刻停止该 contract 的后续 target。仅当同族同月存在待补 `1m` 目标时，才在开始派生前推迟到源发布后；
+必须立刻停止该 contract 的后续 target。显式 `1w` 把端点齐全但与 active D1 周聚合数值不一致的旧 W1
+纳入修复目标，并绑定现有 D1/W1 分区 revision 到 plan hash。该 scope 先验证本合约全部 D1/W1 候选
+和受影响旧周线，再一次提交目标 Catalog 指针；失败时保留旧 active 指针。默认七周期仅当目标
+全部属于 D1/W1 时使用该边界；包含日内目标时仍按分区维护。
+仅当同族同月存在待补 `1m` 目标时，才在开始派生前推迟到源发布后；
 已经开始的派生/发布失败不得按缺源错误码推迟重试。额度耗尽返回 `partial`，不得报告 `passed`。分区失败可明确部分成功，不能自动重试。
 
 同物理合约派生使用的 Session 窗口与 warm-up coverage 一致：按上市日、到期日前一日和 `through`
@@ -222,7 +230,8 @@ MainContractMap、Redis Live、Rule、Scope、Event 或 notification。任一显
 Calendar/Session 必须具备逐日权威事实，缺失即失败；`continuous` Session 查询仍保留既有维护起点。
 
 warm-up 只读结果的 `scope_diagnostics` 保留整个 frequency scope 的逐分区有界原因及是否为计划目标，
-包括不缺 endpoint 但含原始非正价格的 source companion。该诊断不改变维护目标、apply 规则或既有 plan hash。
+包括不缺 endpoint 但含原始非正价格的 source companion。普通 source-quality 诊断本身不改变维护目标；
+显式 `1w` 的数值冲突是独立修复目标，并进入 plan hash。
 
 普通 W1 或显式 D1 总包可冻结版本化的“来源质量异常单元隔离”策略；旧 prepare/attempt 保持原停批语义，
 且 W1/D1 的 policy、manifest、result、invocation 和 prior-isolation schema 不得跨 profile 复用。

@@ -701,7 +701,7 @@ def label_calculation_segments(
     inputs = tuple(bars)
     _validate_inputs(identity, inputs)
     gaps = tuple(data_interruptions)
-    if gaps and identity.frequency is not ProductFrequency.DAILY:
+    if gaps and identity.frequency not in (ProductFrequency.DAILY, ProductFrequency.WEEKLY):
         raise ValueError("NEWOW_PRODUCT_INVALID_DATA_INTERRUPTION")
     if any(
         not isinstance(gap, DataInterruption)

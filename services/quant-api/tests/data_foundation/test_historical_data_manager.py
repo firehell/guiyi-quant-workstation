@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import fields, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 import hashlib
@@ -338,9 +338,33 @@ class _ChangingSnapshotProvider(FakeProvider):
     ) -> tuple[BarBatch, ...]:
         self.revision += 1
         self.batch_calls.append(tuple(request.key for request in requests))
-        return tuple(
+        batches = tuple(
             self._batch(request.key, request.expected, self.revision)
             for request in requests
+        )
+        daily_bars = tuple(
+            bar for request, batch in zip(requests, batches, strict=True)
+            if request.key == self.daily for bar in batch.bars
+        )
+        if not daily_bars:
+            return batches
+        from app.market_data.rqdata_adapter import _aggregate_daily_rows
+
+        return tuple(
+            BarBatch(tuple(
+                _aggregate_daily_rows(tuple(
+                    (bar.trading_day, {
+                        "open": bar.open, "high": bar.high, "low": bar.low,
+                        "close": bar.close, "volume": bar.volume,
+                        "turnover": bar.turnover,
+                        "open_interest": bar.open_interest,
+                    })
+                    for bar in daily_bars
+                    if bar.trading_day.isocalendar()[:2] == end.date().isocalendar()[:2]
+                ), bar_end=end)
+                for end in request.expected
+            )) if request.key == self.weekly else batch
+            for request, batch in zip(requests, batches, strict=True)
         )
 
 
@@ -1166,6 +1190,82 @@ def test_contract_warmup_batches_exact_lifecycle_daily_with_weekly_snapshot(
     assert tuple(session.scalars(select(MainContractMap))) == ()
 
 
+@pytest.mark.parametrize("corrupt_weekly_partition", [False, True])
+def test_weekly_plan_excludes_only_fully_proven_price_unavailable_week(
+    session, tmp_path, corrupt_weekly_partition,
+):
+    _add_contract(session, symbol="pf", contract="PF2611",
+                  listed_date=date(2025, 1, 6), expired_date=date(2025, 2, 1))
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    weekly = DatasetKey("contract", "pf", "PF2611", "1w")
+    ends = tuple(_daily(day, 100 + day).bar_end for day in (*range(6, 11), *range(13, 18)))
+    coverage = FakeCoverage({daily.as_tuple(): ends, weekly.as_tuple(): (ends[4], ends[-1])})
+    coverage.latest_day = date(2025, 1, 17)
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    exception = PriceUnavailableFact(
+        ends[2], date(2025, 1, 8), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+        "a" * 64, "b" * 64, datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    bars = tuple(_daily(day, 100 + day) for day in (*range(6, 8), *range(9, 11), *range(13, 18)))
+    published = manager.store.publish(PublishRequest(
+        daily, 2025, 1, bars, ends, (exception,),
+    ))
+    manager.catalog.register_partition(published)
+    if corrupt_weekly_partition:
+        weekly_partition = manager.store.publish(PublishRequest(
+            weekly, 2025, 1, (_daily(17, 117),), (ends[-1],),
+        ))
+        manager.catalog.register_partition(weekly_partition)
+    manager.catalog.session.commit()
+    if corrupt_weekly_partition:
+        manager.catalog.all_partitions(weekly)[0].file_path.write_bytes(
+            b"invalid weekly partition"
+        )
+
+    request = historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 17), frequency="1w")
+    first = manager.contract_warmup(request).plan
+    second = manager.contract_warmup(request).plan
+    assert first.plan_sha256 == second.plan_sha256
+    weekly_targets = [row for row in first.target_windows if row["dataset"] == weekly.as_tuple()]
+    assert len(weekly_targets) == 1
+    assert weekly_targets[0]["missing_start"] == ends[-1].isoformat()
+    assert weekly_targets[0]["missing_end"] == ends[-1].isoformat()
+    assert any("WEEKLY_SOURCE_PRICE_UNAVAILABLE" in row["reason_codes"]
+               for row in first.scope_diagnostics)
+    proof = next(row["weekly_quality_interruptions"] for row in first.scope_diagnostics
+                 if row.get("weekly_quality_interruptions"))
+    assert proof[0]["week_end"] == ends[4].isoformat()
+    assert len(proof[0]["source_identity"]) == 64
+
+
+def test_weekly_plan_does_not_excuse_unexplained_day_in_price_gap_week(session, tmp_path):
+    _add_contract(session, symbol="pf", contract="PF2611",
+                  listed_date=date(2025, 1, 6), expired_date=date(2025, 2, 1))
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    weekly = DatasetKey("contract", "pf", "PF2611", "1w")
+    ends = tuple(_daily(day, 100 + day).bar_end for day in range(6, 11))
+    coverage = FakeCoverage({daily.as_tuple(): ends, weekly.as_tuple(): (ends[-1],)})
+    coverage.latest_day = date(2025, 1, 10)
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    exception = PriceUnavailableFact(
+        ends[2], date(2025, 1, 8), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+        "a" * 64, "b" * 64, datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    bars = tuple(_daily(day, 100 + day) for day in (6, 7, 10))
+    published = manager.store.publish(PublishRequest(
+        daily, 2025, 1, bars, tuple(ends[i] for i in (0, 1, 2, 4)),
+        (exception,),
+    ))
+    manager.catalog.register_partition(published)
+    manager.catalog.session.commit()
+    with pytest.raises(ValueError, match="WEEKLY_SOURCE_ENDPOINTS_MISSING"):
+        manager.contract_warmup(historical.ContractWarmupRequest(
+            "pf", "PF2611", date(2025, 1, 10), frequency="1w",
+        ))
+
+
 def test_contract_warmup_group_attributes_daily_merge_failure_to_daily_target(
     session, tmp_path
 ) -> None:
@@ -1666,6 +1766,250 @@ def test_contract_warmup_explicit_weekly_groups_cross_month_daily_companions(
             "pf", "PF2611", through, frequency="1w"
         )
     ).plan.target_windows == ()
+
+
+def test_contract_weekly_apply_rejects_provider_turnover_drift_before_publish(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2509", "1w")
+    days = tuple(date(2025, 1, day) for day in (6, 7, 8, 9, 10))
+    daily_bars = tuple(_daily_on(day, 100 + index, 1) for index, day in enumerate(days))
+    week_end = daily_bars[-1].bar_end
+    expected_week = CanonicalBar(
+        week_end, days[-1], daily_bars[0].open,
+        max(bar.high for bar in daily_bars),
+        min(bar.low for bar in daily_bars), daily_bars[-1].close,
+        Decimal("5"), Decimal("50"), daily_bars[-1].open_interest,
+    )
+    provider_week = replace(expected_week, turnover=Decimal("50.0000001"))
+    coverage = FakeCoverage({
+        daily.as_tuple(): tuple(bar.bar_end for bar in daily_bars),
+        weekly.as_tuple(): (week_end,),
+    })
+    manager = _manager(
+        session, tmp_path, coverage,
+        FakeProvider({weekly.as_tuple(): (provider_week,)}),
+    )
+    _publish_existing(manager, daily, daily_bars)
+    target = _Target(weekly, 2025, 1, (week_end,), (week_end,), ())
+
+    result = manager._execute_apply(
+        "contract_warmup", (target,), (), days[-1],
+        weekly_daily_companions=False, fail_stop=True,
+    )
+
+    assert result.status == "failed"
+    assert result.applied == 0
+    assert result.failed == 1
+    assert manager.catalog.all_partitions(weekly) == ()
+    assert _read_committed_month(manager, daily, 2025, 1) == daily_bars
+
+
+def test_contract_weekly_plan_repairs_existing_bar_with_numeric_drift(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2509", "1w")
+    days = tuple(date(2025, 1, day) for day in (6, 7, 8, 9, 10))
+    daily_bars = tuple(_daily_on(day, 100 + index, 1) for index, day in enumerate(days))
+    week_end = daily_bars[-1].bar_end
+    expected_week = CanonicalBar(
+        week_end, days[-1], daily_bars[0].open,
+        max(bar.high for bar in daily_bars), min(bar.low for bar in daily_bars),
+        daily_bars[-1].close, Decimal("5"), Decimal("50"), daily_bars[-1].open_interest,
+    )
+    coverage = FakeCoverage({
+        daily.as_tuple(): tuple(bar.bar_end for bar in daily_bars),
+        weekly.as_tuple(): (week_end,),
+    })
+    coverage.latest_day = days[-1]
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    _publish_existing(manager, daily, daily_bars)
+    _publish_existing(manager, weekly, (replace(expected_week, turnover=Decimal("50.0000001")),))
+
+    plan = manager.contract_warmup(
+        historical.ContractWarmupRequest("jm", "JM2509", days[-1], frequency="1w")
+    ).plan
+
+    assert any(
+        window["dataset"] == weekly.as_tuple() and window["missing_bar_count"] == 1
+        for window in plan.target_windows
+    )
+    assert any(
+        "WEEKLY_DAILY_VALUE_CONFLICT" in item["reason_codes"]
+        for item in plan.scope_diagnostics if item["dataset"] == weekly.as_tuple()
+    )
+    assert any(window["dataset"] == daily.as_tuple() for window in plan.target_windows)
+
+    original_hash = plan.plan_sha256
+    _publish_existing(manager, daily, tuple(
+        replace(bar, turnover=bar.turnover + Decimal("0.0000001"))
+        if index == 0 else bar for index, bar in enumerate(daily_bars)
+    ))
+    revised = manager.contract_warmup(
+        historical.ContractWarmupRequest("jm", "JM2509", days[-1], frequency="1w")
+    ).plan
+    assert revised.plan_sha256 != original_hash
+
+
+def test_contract_weekly_candidate_closure_rejects_old_week_affected_by_new_daily(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2509", "1w")
+    days = tuple(date(2025, 1, day) for day in (6, 7, 8, 9, 10))
+    old_daily = tuple(_daily_on(day, 100 + index, 1) for index, day in enumerate(days))
+    old_week = CanonicalBar(
+        old_daily[-1].bar_end, days[-1], old_daily[0].open,
+        max(bar.high for bar in old_daily), min(bar.low for bar in old_daily),
+        old_daily[-1].close, Decimal("5"), Decimal("5"), old_daily[-1].open_interest,
+    )
+    coverage = FakeCoverage({
+        daily.as_tuple(): tuple(bar.bar_end for bar in old_daily),
+        weekly.as_tuple(): (old_week.bar_end,),
+    })
+    manager = _manager(session, tmp_path, coverage, FakeProvider({}))
+    _publish_existing(manager, daily, old_daily)
+    _publish_existing(manager, weekly, (old_week,))
+    new_daily = tuple(
+        replace(bar, turnover=bar.turnover + Decimal("1")) if index == 0 else bar
+        for index, bar in enumerate(old_daily)
+    )
+    target = _Target(daily, 2025, 1, tuple(bar.bar_end for bar in old_daily),
+                     (old_daily[0].bar_end,), old_daily)
+    with pytest.raises(historical.StorageError, match="WEEKLY_SOURCE_BAR_CONFLICT"):
+        manager._require_contract_weekly_candidate_closure(((target, BarBatch(new_daily[:1])),))
+
+
+def test_contract_weekly_apply_rejects_group_drift_before_daily_or_weekly_publish(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2509", "1w")
+    days = tuple(date(2025, 1, day) for day in (6, 7, 8, 9, 10))
+    daily_bars = tuple(_daily_on(day, 100 + index, 1) for index, day in enumerate(days))
+    week_end = daily_bars[-1].bar_end
+    mismatched_week = CanonicalBar(
+        week_end, days[-1], daily_bars[0].open,
+        max(bar.high for bar in daily_bars),
+        min(bar.low for bar in daily_bars), daily_bars[-1].close,
+        Decimal("5"), Decimal("50.0000001"), daily_bars[-1].open_interest,
+    )
+    coverage = FakeCoverage({
+        daily.as_tuple(): tuple(bar.bar_end for bar in daily_bars),
+        weekly.as_tuple(): (week_end,),
+    })
+    manager = _manager(
+        session, tmp_path, coverage,
+        FakeProvider({daily.as_tuple(): daily_bars, weekly.as_tuple(): (mismatched_week,)}),
+    )
+    daily_target = _Target(
+        daily, 2025, 1, tuple(bar.bar_end for bar in daily_bars),
+        tuple(bar.bar_end for bar in daily_bars), (),
+    )
+    weekly_target = _Target(weekly, 2025, 1, (week_end,), (week_end,), ())
+
+    result = manager._execute_apply(
+        "contract_warmup", (daily_target, weekly_target), (), days[-1],
+        weekly_daily_companions=False, fail_stop=True,
+    )
+
+    assert result.status == "failed"
+    assert result.applied == 0
+    assert manager.catalog.all_partitions(daily) == ()
+    assert manager.catalog.all_partitions(weekly) == ()
+
+
+def test_contract_weekly_later_group_drift_keeps_all_active_pointers_unchanged(
+    session, tmp_path
+) -> None:
+    daily = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2509", "1w")
+    january = tuple(_daily_on(date(2025, 1, day), 100 + day, 1) for day in range(27, 32))
+    february = tuple(_daily_on(date(2025, 2, day), 100 + day, 1) for day in range(3, 8))
+
+    def week_from(values: tuple[CanonicalBar, ...], *, drift: Decimal) -> CanonicalBar:
+        return CanonicalBar(
+            values[-1].bar_end, values[-1].trading_day, values[0].open,
+            max(bar.high for bar in values), min(bar.low for bar in values),
+            values[-1].close, Decimal("5"), Decimal("50") + drift,
+            values[-1].open_interest,
+        )
+
+    january_week = week_from(january, drift=Decimal("0"))
+    february_week = week_from(february, drift=Decimal("0.0000001"))
+    coverage = FakeCoverage({
+        daily.as_tuple(): tuple(bar.bar_end for bar in (*january, *february)),
+        weekly.as_tuple(): (january_week.bar_end, february_week.bar_end),
+    })
+    manager = _manager(
+        session, tmp_path, coverage,
+        FakeProvider({
+            daily.as_tuple(): (*january, *february),
+            weekly.as_tuple(): (january_week, february_week),
+        }),
+    )
+    targets = (
+        _Target(daily, 2025, 1, tuple(x.bar_end for x in january), tuple(x.bar_end for x in january), ()),
+        _Target(daily, 2025, 2, tuple(x.bar_end for x in february), tuple(x.bar_end for x in february), ()),
+        _Target(weekly, 2025, 1, (january_week.bar_end,), (january_week.bar_end,), ()),
+        _Target(weekly, 2025, 2, (february_week.bar_end,), (february_week.bar_end,), ()),
+    )
+
+    result = manager._execute_apply(
+        "contract_warmup", targets, (), date(2025, 2, 7),
+        weekly_daily_companions=False, fail_stop=True,
+    )
+
+    assert result.status == "failed"
+    assert result.applied == 0
+    assert manager.catalog.all_partitions(daily) == ()
+    assert manager.catalog.all_partitions(weekly) == ()
+
+
+def test_contract_weekly_registration_failure_rolls_back_all_pointers(
+    session, tmp_path, monkeypatch
+) -> None:
+    daily = DatasetKey("contract", "jm", "JM2509", "1d")
+    weekly = DatasetKey("contract", "jm", "JM2509", "1w")
+    days = tuple(date(2025, 1, day) for day in (6, 7, 8, 9, 10))
+    daily_bars = tuple(_daily_on(day, 100 + index, 1) for index, day in enumerate(days))
+    week = CanonicalBar(
+        daily_bars[-1].bar_end, days[-1], daily_bars[0].open,
+        max(bar.high for bar in daily_bars), min(bar.low for bar in daily_bars),
+        daily_bars[-1].close, Decimal("5"), Decimal("5"), daily_bars[-1].open_interest,
+    )
+    coverage = FakeCoverage({
+        daily.as_tuple(): tuple(bar.bar_end for bar in daily_bars),
+        weekly.as_tuple(): (week.bar_end,),
+    })
+    manager = _manager(session, tmp_path, coverage, FakeProvider({
+        daily.as_tuple(): daily_bars, weekly.as_tuple(): (week,),
+    }))
+    targets = (
+        _Target(daily, 2025, 1, tuple(bar.bar_end for bar in daily_bars),
+                tuple(bar.bar_end for bar in daily_bars), ()),
+        _Target(weekly, 2025, 1, (week.bar_end,), (week.bar_end,), ()),
+    )
+    original = manager.catalog.register_partition
+    calls = 0
+
+    def fail_second(partition):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("registration failed")
+        return original(partition)
+
+    monkeypatch.setattr(manager.catalog, "register_partition", fail_second)
+    result = manager._execute_apply(
+        "contract_warmup", targets, (), days[-1], weekly_daily_companions=False,
+    )
+    assert result.status == "failed"
+    assert result.applied == 0
+    assert manager.catalog.all_partitions(daily) == ()
+    assert manager.catalog.all_partitions(weekly) == ()
 
 
 def test_contract_warmup_empty_plan_hash_isolated_by_every_scope(

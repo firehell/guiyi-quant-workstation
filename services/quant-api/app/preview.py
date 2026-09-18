@@ -14,6 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
 from app.db.readonly import readonly_transaction
+from app.market_data.newow.product_release import (
+    HOURLY_PRODUCT_PREVIEW_SYMBOLS,
+    PD_PT_HOURLY_PREVIEW_SYMBOLS,
+)
 
 
 PREVIEW_PATHS = frozenset(
@@ -31,6 +35,9 @@ PREVIEW_PATHS = frozenset(
 _SUBING_REFERENCE_PATH = re.compile(
     r"^/api/v1/market/[a-z]{1,8}/subing/reference$"
 )
+_LOCAL_CANDIDATE_ORIGIN = re.compile(r"^http://127\.0\.0\.1:801[01]$")
+DEFAULT_CANDIDATE_ORIGIN = "http://127.0.0.1:8010"
+DEFAULT_STATUS_ORIGIN = "http://127.0.0.1:8000"
 
 
 def _preview_path_allowed(path: str) -> bool:
@@ -63,6 +70,25 @@ def _code_sha() -> str:
     return sha
 
 
+def _hourly_preview_products() -> frozenset[str] | None:
+    raw = os.getenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", "")
+    items = frozenset(
+        part.strip().lower()
+        for part in raw.split(",")
+        if re.fullmatch(r"[a-z]{1,8}", part.strip().lower() or "")
+    ) & HOURLY_PRODUCT_PREVIEW_SYMBOLS
+    if items & PD_PT_HOURLY_PREVIEW_SYMBOLS and items != PD_PT_HOURLY_PREVIEW_SYMBOLS:
+        raise ValueError("PREVIEW_SCOPE_INVALID")
+    return items or None
+
+
+def _candidate_origin() -> str:
+    raw = os.getenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN") or DEFAULT_CANDIDATE_ORIGIN
+    if _LOCAL_CANDIDATE_ORIGIN.fullmatch(raw) is None:
+        raise ValueError("PREVIEW_CANDIDATE_ORIGIN_INVALID")
+    return raw
+
+
 def create_preview_app(
     *,
     enabled: bool | None = None,
@@ -78,6 +104,7 @@ def create_preview_app(
     if cutoff > datetime.now(UTC):
         raise ValueError("PREVIEW_CUTOFF_INVALID")
     code_sha = _code_sha()
+    candidate_origin = _candidate_origin()
 
     from app.api import market, market_newow, market_subing_reference
     from app.db.session import SessionLocal, get_db
@@ -105,6 +132,33 @@ def create_preview_app(
             if len({key for key, value in query}) != len(query):
                 raise ValueError
             values = dict(query)
+            hourly_products = _hourly_preview_products()
+            au_period_preview = (
+                os.getenv("GUIYI_AU_PERIOD_PREVIEW") == "1" and hourly_products is None
+            )
+            if (au_period_preview and raw_path in {
+                "/api/v1/market/newow/strategy-detail",
+                "/api/v1/market/newow/historical-snapshot",
+            } and values.get("product", "").lower() != "au"):
+                return JSONResponse(
+                    status_code=403, content={"detail": {"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}}
+                )
+            if hourly_products and raw_path in {
+                "/api/v1/market/newow/strategy-detail",
+                "/api/v1/market/newow/historical-snapshot",
+            }:
+                product = values.get("product", "").lower()
+                frequency = values.get("frequency")
+                if frequency == "60m" and product not in hourly_products:
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": {"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}},
+                    )
+                if frequency == "1w":
+                    return JSONResponse(
+                        status_code=409,
+                        content={"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}},
+                    )
             field = {
                 "/api/v1/market/bars/page": "before",
                 "/api/v1/market/newow/strategy-detail": "as_of",
@@ -116,6 +170,8 @@ def create_preview_app(
                 values[field] = min(requested, cutoff).isoformat()
                 request.scope["query_string"] = urlencode(values).encode("ascii")
             request.state.candidate_preview_as_of = cutoff
+            request.state.au_period_preview = au_period_preview
+            request.state.hourly_preview_products = hourly_products
         except (ValueError, UnicodeError):
             return JSONResponse(
                 status_code=422, content={"detail": {"code": "PREVIEW_QUERY_INVALID"}}
@@ -143,8 +199,8 @@ def create_preview_app(
             "code_sha": code_sha,
             "as_of": cutoff.isoformat(),
             "realtime": False,
-            "candidate_origin": "http://127.0.0.1:8010",
-            "status_origin": "http://127.0.0.1:8000",
+            "candidate_origin": candidate_origin,
+            "status_origin": DEFAULT_STATUS_ORIGIN,
             "cutoff_scope": "bars_newow_and_subing_reference; home_projection_and_dominants_have_own_timestamps",
         }
 

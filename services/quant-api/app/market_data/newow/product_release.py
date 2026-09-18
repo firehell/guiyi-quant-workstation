@@ -30,10 +30,47 @@ DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = (
     ("explanation", "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"),
 )
 
+CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v4"] = (
+    "newow_product_capabilities_v4"
+)
+CANDIDATE_RELEASE_STAGE: Literal["daily_weekly_candidate"] = "daily_weekly_candidate"
+CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
+CANDIDATE_DEFERRED_FREQUENCIES = (
+    (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
+)
+AU_PERIOD_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v5"
+AU_PERIOD_PREVIEW_STAGE = "au_daily_weekly_hourly_candidate"
+AU_PERIOD_PREVIEW_FREQUENCIES = (
+    ProductFrequency.DAILY, ProductFrequency.WEEKLY, ProductFrequency.HOURLY,
+)
+HOURLY_PRODUCT_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v7"
+HOURLY_PRODUCT_PREVIEW_STAGE = "ap_hourly_candidate"
+PD_PT_HOURLY_PREVIEW_SCHEMA_VERSION = "newow_product_capabilities_v6"
+PD_PT_HOURLY_PREVIEW_STAGE = "pd_pt_hourly_candidate"
+HOURLY_PRODUCT_PREVIEW_FREQUENCIES = (
+    ProductFrequency.DAILY, ProductFrequency.HOURLY,
+)
+HOURLY_PRODUCT_PREVIEW_DEFERRED = (
+    (ProductFrequency.WEEKLY, "NEWOW_WEEKLY_RELEASE_PENDING"),
+)
+PD_PT_HOURLY_PREVIEW_SYMBOLS = frozenset({"pd", "pt"})
+HOURLY_PRODUCT_PREVIEW_SYMBOLS = PD_PT_HOURLY_PREVIEW_SYMBOLS | {"ap"}
 
-def require_open_frequency(frequency: ProductFrequency) -> None:
+
+def require_open_frequency(
+    frequency: ProductFrequency,
+    *,
+    candidate: bool = False,
+    hourly_preview: bool = False,
+) -> None:
     """Reject product requests outside the currently published frequency scope."""
-    if ProductFrequency(frequency) not in OPEN_FREQUENCIES:
+    if hourly_preview:
+        allowed = HOURLY_PRODUCT_PREVIEW_FREQUENCIES
+    elif candidate:
+        allowed = CANDIDATE_OPEN_FREQUENCIES
+    else:
+        allowed = OPEN_FREQUENCIES
+    if ProductFrequency(frequency) not in allowed:
         raise ValueError("NEWOW_FREQUENCY_NOT_OPEN")
 
 

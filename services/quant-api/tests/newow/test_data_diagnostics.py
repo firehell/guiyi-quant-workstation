@@ -205,6 +205,21 @@ def test_public_context_never_serializes_unvalidated_locations_or_details():
     }
 
 
+def test_weekly_source_bar_conflict_is_a_safe_nonrecoverable_integrity_error():
+    from app.market_data.newow.public_errors import public_product_error
+    from app.market_data.newow.readiness import _failure
+
+    error = MarketDataError(
+        "WEEKLY_SOURCE_BAR_CONFLICT",
+        context={"contract": "A2609", "trading_day": date(2026, 6, 18)},
+    )
+    status, detail = public_product_error(error)
+    assert status == 409
+    assert detail["diagnostic"]["reason"] == "DATA_INTEGRITY_INVALID"
+    assert detail["diagnostic"]["historical_candidate_recoverable"] is False
+    assert _failure(error)["status"] == "INTEGRITY_ERROR"
+
+
 @pytest.mark.parametrize(
     "error,continues",
     [

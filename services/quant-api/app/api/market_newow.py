@@ -32,9 +32,24 @@ from app.market_data.newow.historical_snapshot import (
 from app.market_data.newow.daily_snapshot import NewowDailySnapshotResolver
 from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
+    AU_PERIOD_PREVIEW_FREQUENCIES,
+    AU_PERIOD_PREVIEW_SCHEMA_VERSION,
+    AU_PERIOD_PREVIEW_STAGE,
     CAPABILITY_SCHEMA_VERSION,
+    CANDIDATE_CAPABILITY_SCHEMA_VERSION,
+    CANDIDATE_DEFERRED_FREQUENCIES,
+    CANDIDATE_OPEN_FREQUENCIES,
+    CANDIDATE_RELEASE_STAGE,
     DEFERRED_FREQUENCIES,
     DEFERRED_SECTIONS,
+    HOURLY_PRODUCT_PREVIEW_DEFERRED,
+    HOURLY_PRODUCT_PREVIEW_FREQUENCIES,
+    HOURLY_PRODUCT_PREVIEW_SCHEMA_VERSION,
+    HOURLY_PRODUCT_PREVIEW_STAGE,
+    HOURLY_PRODUCT_PREVIEW_SYMBOLS,
+    PD_PT_HOURLY_PREVIEW_SCHEMA_VERSION,
+    PD_PT_HOURLY_PREVIEW_STAGE,
+    PD_PT_HOURLY_PREVIEW_SYMBOLS,
     OPEN_FREQUENCIES,
     OPEN_SECTIONS,
     RELEASE_STAGE,
@@ -135,18 +150,67 @@ def _normalize_public_product(product: str) -> str:
     return product.lower()
 
 
+def _hourly_preview_products(request: Request) -> frozenset[str] | None:
+    return getattr(request.state, "hourly_preview_products", None)
+
+
+def _enforce_product_frequency(request: Request, product: str, frequency: str) -> None:
+    selected = ProductFrequency(frequency)
+    hourly = _hourly_preview_products(request)
+    if (
+        hourly is not None
+        and selected is ProductFrequency.HOURLY
+        and product not in (hourly & HOURLY_PRODUCT_PREVIEW_SYMBOLS)
+    ):
+        raise HTTPException(
+            status_code=403, detail={"code": "PREVIEW_PRODUCT_OUT_OF_SCOPE"}
+        )
+    if getattr(request.state, "au_period_preview", False):
+        return
+    require_open_frequency(
+        selected,
+        candidate=getattr(request.state, "candidate_preview_as_of", None) is not None,
+        hourly_preview=hourly is not None,
+    )
+
+
 @router.get(
     "/product-capabilities", response_model=NewowProductCapabilitiesResponse
 )
-def newow_product_capabilities() -> NewowProductCapabilitiesResponse:
+def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResponse:
     """Return the single public scope used by clients for this staged release."""
+    candidate = getattr(request.state, "candidate_preview_as_of", None) is not None
+    au_preview = candidate and getattr(request.state, "au_period_preview", False)
+    hourly_products = _hourly_preview_products(request) if candidate and not au_preview else None
+    hourly_preview = hourly_products is not None
+    pd_pt_preview = hourly_preview and hourly_products <= PD_PT_HOURLY_PREVIEW_SYMBOLS
+    frequencies = (
+        AU_PERIOD_PREVIEW_FREQUENCIES if au_preview else
+        HOURLY_PRODUCT_PREVIEW_FREQUENCIES if hourly_preview else
+        CANDIDATE_OPEN_FREQUENCIES if candidate else OPEN_FREQUENCIES
+    )
+    deferred = (
+        () if au_preview else
+        HOURLY_PRODUCT_PREVIEW_DEFERRED if hourly_preview else
+        CANDIDATE_DEFERRED_FREQUENCIES if candidate else DEFERRED_FREQUENCIES
+    )
     return NewowProductCapabilitiesResponse(
-        schema_version=CAPABILITY_SCHEMA_VERSION,
-        release_stage=RELEASE_STAGE,
-        open_frequencies=[item.value for item in OPEN_FREQUENCIES],
+        schema_version=(
+            AU_PERIOD_PREVIEW_SCHEMA_VERSION if au_preview else
+            PD_PT_HOURLY_PREVIEW_SCHEMA_VERSION if pd_pt_preview else
+            HOURLY_PRODUCT_PREVIEW_SCHEMA_VERSION if hourly_preview else
+            CANDIDATE_CAPABILITY_SCHEMA_VERSION if candidate else CAPABILITY_SCHEMA_VERSION
+        ),
+        release_stage=(
+            AU_PERIOD_PREVIEW_STAGE if au_preview else
+            PD_PT_HOURLY_PREVIEW_STAGE if pd_pt_preview else
+            HOURLY_PRODUCT_PREVIEW_STAGE if hourly_preview else
+            CANDIDATE_RELEASE_STAGE if candidate else RELEASE_STAGE
+        ),
+        open_frequencies=[item.value for item in frequencies],
         deferred_frequencies=[
             DeferredFrequencyOut(frequency=frequency.value, reason_code=reason)
-            for frequency, reason in DEFERRED_FREQUENCIES
+            for frequency, reason in deferred
         ],
         open_sections=list(OPEN_SECTIONS),
         deferred_sections=[
@@ -290,7 +354,7 @@ def newow_historical_snapshot(
 
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
-        require_open_frequency(ProductFrequency(frequency))
+        _enforce_product_frequency(request, product, frequency)
         result = _build_historical_resolver(session, cancelled, lambda: now).resolve(
             product, ProductStrategy(strategy), ProductFrequency(frequency)
         )
@@ -400,7 +464,7 @@ def newow_strategy_detail(
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_QUERY"})
     product = _normalize_public_product(product)
     try:
-        require_open_frequency(ProductFrequency(frequency))
+        _enforce_product_frequency(request, product, frequency)
         require_open_section(section)
 
         def cancelled() -> bool:

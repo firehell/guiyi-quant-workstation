@@ -41,8 +41,9 @@ const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
 const newowHistoricalAsOf = ref<string | null>(null)
 const newowDailyAsOf = ref<string | null>(null)
 const newowCapabilities = useNewowCapabilities()
+const newowOpenFrequencies = computed(() => newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
-  || newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '60m'))
+  || newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '60m', explicitIdentity.value.symbol))
 const shellReady = computed(() => isWorkspacePreview.value && (
   (isNewowView.value && newowCapabilities.state.value !== 'loading') || (controller.state.value.header !== null && !controller.state.value.loading)
 ))
@@ -111,7 +112,7 @@ function recover() {
 
 function switchNewowToOpenFrequency() {
   const identity = explicitIdentity.value
-  const frequency = newowCapabilities.openFrequencies.value[0]
+  const frequency = newowOpenFrequencies.value[0]
   if (identity?.view !== 'newow' || !frequency) return
   selectIdentity({ ...identity, frequency, focusBarEnd: undefined })
 }
@@ -234,7 +235,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
       <MarketDetailViewNav
         :identity="routeResult.identity"
         :products="controller.productCatalog.value"
-        :newow-frequencies="newowCapabilities.openFrequencies.value"
+        :newow-frequencies="newowOpenFrequencies"
         :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
         @select="selectIdentity"
         @contract-cleared="selectContractCleared"
@@ -269,7 +270,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             :title="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在读取牛哇开放能力' : newowCapabilities.state.value === 'unavailable' ? '牛哇开放能力不可用' : '当前牛哇周期未开放'"
             :message="newowCapabilities.state.value === 'unavailable' ? (newowCapabilities.error.value ?? '无法确认开放范围。') : newowFrequencyOpen ? '正在确认当前发布阶段。' : `${routeResult.identity.frequency} 尚未开放（${newowCapabilities.deferredFrequencyReason(routeResult.identity.frequency as '1w' | '1d' | '60m') ?? 'NEWOW_FREQUENCY_NOT_OPEN'}）。`"
             recovery-label="切换到已开放日线"
-            :can-recover="newowCapabilities.state.value === 'ready' && !newowFrequencyOpen && newowCapabilities.openFrequencies.value.length > 0"
+            :can-recover="newowCapabilities.state.value === 'ready' && !newowFrequencyOpen && newowOpenFrequencies.length > 0"
             :can-return-market="true"
             @recover="switchNewowToOpenFrequency"
             @return-market="goBack"

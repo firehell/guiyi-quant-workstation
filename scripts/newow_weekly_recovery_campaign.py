@@ -325,10 +325,9 @@ def main(
                 )
             ):
                 raise RecoveryError("RECOVERY_SCOPE_INVALID")
-            report = _load_hash_locked_mapping(
+            report = _load_hash_locked_report(
                 Path(args.report),
                 args.expected_report_sha256,
-                "CAMPAIGN_REPORT_INVALID",
             )
             identity = (
                 _current_execution_identity(Path(args.project_env))
@@ -2567,6 +2566,17 @@ def _validate_native_report_sections(
                 or expected_count < 0
             ):
                 raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+            if recovery_frequency == "1w":
+                interrupted_count = raw.get("price_unavailable_count")
+                source_quality = raw.get("source_quality")
+                if (
+                    type(interrupted_count) is not int
+                    or interrupted_count < 0
+                    or actual_count + interrupted_count != expected_count
+                    or source_quality
+                    != ("WEEKLY_INTERRUPTED" if interrupted_count else "NORMAL")
+                ):
+                    raise RecoveryError("CAMPAIGN_REPORT_INVALID")
         elif (
             not isinstance(raw.get("reason"), str)
             or not raw.get("reason")
@@ -2927,6 +2937,32 @@ def _load_hash_locked_mapping(
         return native.load_prepared_manifest(path, digest)
     except RecoveryError as exc:
         raise RecoveryError(error_code) from exc
+
+
+def _load_hash_locked_report(path: Path, expected_sha256: str) -> dict[str, Any]:
+    """Read a complete native audit with a larger bound than execution manifests."""
+    if _HASH.fullmatch(expected_sha256) is None:
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    maximum = 64 * 1024 * 1024
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > maximum:
+                raise OSError
+            content = os.read(fd, maximum + 1)
+            if len(content) != info.st_size:
+                raise OSError
+        finally:
+            os.close(fd)
+        if hashlib.sha256(content).hexdigest() != expected_sha256:
+            raise ValueError
+        report = json.loads(content)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID") from exc
+    if not isinstance(report, dict):
+        raise RecoveryError("CAMPAIGN_REPORT_INVALID")
+    return report
 
 
 def _decoded_mapping(value: str) -> dict[str, Any]:

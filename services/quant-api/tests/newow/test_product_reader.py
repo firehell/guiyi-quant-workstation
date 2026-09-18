@@ -21,6 +21,7 @@ from app.market_data.domain import (
 )
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.weekly_quality import WeeklySourceInterruption
 from app.market_data.newow.product_query import NewowProductQuery
 from app.market_data.newow.product_reader import (
     NewowProductReadCancelled,
@@ -40,6 +41,54 @@ def test_reader_source_digest_changes_when_only_turnover_changes(product_cases):
     )
     assert first.bar == second.bar
     assert first.source_bar_sha256 != second.source_bar_sha256
+
+
+@pytest.mark.parametrize("gap_index", [5, 11])
+def test_weekly_reader_keeps_proven_gap_even_without_a_following_bar(
+    product_cases, gap_index,
+):
+    reader, query, fake = product_cases.paged_reader(
+        prefix_bars=12, page_size=20, frequency="1w",
+        context_frequencies=("1d",),
+    )
+    period = BarFrequency.W1
+    removed = fake.physical[("RB2605", period)][gap_index]
+    fake.physical[("RB2605", period)] = tuple(
+        bar for bar in fake.physical[("RB2605", period)] if bar != removed
+    )
+    fake.actual[period] = tuple(bar for bar in fake.actual[period] if bar != removed)
+    week = removed.trading_day.isocalendar()
+    gap = WeeklySourceInterruption(
+        product="rb", physical_contract="RB2605",
+        iso_year=week.year, iso_week=week.week,
+        week_end=removed.bar_end,
+        expected_daily_endpoints=((removed.bar_end, removed.trading_day),),
+        unavailable_days=(removed.trading_day,),
+        quality_source_hashes=(("a" * 64, "b" * 64),),
+        daily_revision_sha256="c" * 64,
+        source_identity="d" * 64,
+    )
+    fake.query_actual_dominant_trading_days_quality = lambda request: (
+        fake.query_actual_dominant_trading_days(request), (("RB2605", gap),),
+    )
+    fake.query_contract_weekly_replay_quality = lambda **kwargs: (
+        tuple(bar for bar in fake.physical[("RB2605", period)]
+              if bar.bar_end <= kwargs["cutoff"]),
+        (gap,) if gap.week_end <= kwargs["cutoff"] else (),
+    )
+
+    read = reader.load(query, product_cases.as_of)
+    assert removed.bar_end not in {bar.bar.bar_end for bar in read.replay_bars}
+    assert len(read.data_interruptions) == 1
+    assert read.data_interruptions[0].effective_at == removed.bar_end
+    assert read.data_interruptions[0].frequency is ProductFrequency.WEEKLY
+    assert read.data_interruptions_by_frequency[ProductFrequency.DAILY] == ()
+    dependency = reader.check_dependency(
+        "rb", ProductFrequency.WEEKLY, fake.segments[0], product_cases.as_of,
+    )
+    assert dependency["status"] == "DATA_READY"
+    assert dependency["source_quality"] == "WEEKLY_INTERRUPTED"
+    assert dependency["price_unavailable_count"] == 1
 
 
 def test_reader_consumes_all_prefix_pages(product_cases):
@@ -417,6 +466,28 @@ def test_night_session_boundary_uses_next_trading_day_without_natural_date_guess
         for b in result.boundaries
     ] == [("RB2609", date(2023, 1, 9), boundary_time)]
     assert max(request[2] for request in fake.owner_requests) == date(2023, 1, 9)
+
+
+def test_weekly_reader_can_exclude_only_an_unmapped_unfinished_night_tail(
+    product_cases,
+):
+    reader, query, fake = _weekly_reader(product_cases)
+    boundary_time = datetime(2023, 1, 6, 13, tzinfo=UTC)
+    fake.sessions[date(2023, 1, 9)] = (
+        SessionWindow(boundary_time, boundary_time + timedelta(hours=2)),
+        *fake.sessions[date(2023, 1, 9)],
+    )
+    original = fake.actual_dominant_segments
+
+    def unmapped_tail(symbol, since, through):
+        if through == date(2023, 1, 9):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        return original(symbol, since, through)
+
+    fake.actual_dominant_segments = unmapped_tail
+    result = reader.load(query, boundary_time)
+    assert result.boundaries == ()
+    assert fake.owner_requests[-1][2] == date(2023, 1, 6)
 
 
 def test_request_end_is_not_rollover_but_later_effective_mapping_is(product_cases):

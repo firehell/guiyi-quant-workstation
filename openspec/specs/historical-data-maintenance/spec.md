@@ -199,6 +199,13 @@ frequency MUST fail closed。`--apply` MUST 要求相同的 lowercase
 SHA-256 `--expected-plan-sha256`，在 maintenance lock 内重算计划；identity、lifecycle、session 或 hash
 漂移时，必须在首次 provider 请求和写入前 fail closed。
 
+显式 `1w` 的计划 MUST 比较现有完整 W1 与其物理合约 active D1 的确定性周聚合；数值不一致即使端点齐全
+也 SHALL 成为 W1 修复目标，并规划相同 ISO 周的 D1 companion。计划 hash MUST 绑定全部 active D1/W1
+分区 revision 与来源质量摘要。该 scope 的全部 D1/W1 候选 MUST 在激活前完成来源、物理与受影响旧周线的
+闭包一致性校验；任一失败时本合约零 active 指针变化。全部候选通过后，Catalog 在一个事务中激活本合约
+目标分区；commit 结果不明必须停批并独立只读查明。默认七周期仅当目标全部属于 D1/W1 时使用该
+原子边界；含日内目标的总包仍保持原分区边界。此合同不扩展到其他合约。
+
 CLI 结果中 `provider_request_count` SHALL 表示冻结计划的预计请求数，
 `provider_requests` SHALL 表示该次执行实际请求数（dry-run 为零），两者不得互相代用。
 

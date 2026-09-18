@@ -550,6 +550,21 @@ test('daily deep link opens while weekly and hourly remain closed', async ({ pag
   assertNoUnexpectedRequests(fixture)
 })
 
+test('isolated weekly candidate opens three W1 strategies and keeps 60m closed', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { weeklyCandidate: true })
+  for (const strategy of ['trend', 'oscillation', 'main_rise']) {
+    await page.goto(newowRoute(strategy, '1w'))
+    await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  }
+  await page.goto(newowRoute('trend', '1d'))
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  await page.goto(newowRoute('trend', '1w'))
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
+  await page.goto(newowRoute('trend', '60m'))
+  await expect(page.getByText(/60m 尚未开放/)).toBeVisible()
+  assertNoUnexpectedRequests(fixture)
+})
+
 test('reference cursor generation conflict rebuilds from an unbound first page once', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page, { cursorConflictOnce: 'trend:1d:reference' })
   await page.goto(newowRoute())

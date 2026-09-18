@@ -1600,6 +1600,32 @@ def test_rqdata_final_owner_batch_fetches_complete_week_once_for_partial_daily_w
     session.close()
 
 
+def test_weekly_source_requests_skip_an_excluded_middle_quality_week(tmp_path) -> None:
+    session, _starts = _session(tmp_path)
+    contract = session.scalar(select(Contract).where(Contract.contract_code == "JM2509"))
+    assert contract is not None
+    contract.expired_date = date(2025, 2, 1)
+    _add_provider_calendar_facts(session, date(2025, 1, 11), date(2025, 1, 24))
+    session.commit()
+    adapter = RQDataMarketAdapter(session=session, client=object())
+    key = DatasetKey("contract", "jm", "JM2509", "1w")
+    expected = (
+        datetime(2025, 1, 10, 1, 5, tzinfo=UTC),
+        datetime(2025, 1, 24, 1, 5, tzinfo=UTC),
+    )
+
+    requests = adapter.exchange_daily_source_requests(
+        (BarFetchRequest(key, expected),)
+    )
+
+    assert len(requests) == 1
+    assert requests[0].expected_dates == tuple(
+        date(2025, 1, day)
+        for day in (*range(6, 11), *range(20, 25))
+    )
+    session.close()
+
+
 def test_rqdata_weekly_continuous_aggregates_daily_rank1_segments(tmp_path) -> None:
     """continuous 周线跨 rank1 切换时按每日映射合并交易所日事实。"""
     session, _starts = _session(tmp_path)
