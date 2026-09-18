@@ -15,7 +15,7 @@ import NewowReferencePanel from './NewowReferencePanel.vue'
 import NewowDetailDialog from './NewowDetailDialog.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 const props = defineProps<{ identity: MarketDetailIdentity; capabilities: NewowProductCapabilities }>()
-const emit = defineEmits<{ 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'refresh-current': [] }>()
+const emit = defineEmits<{ 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'refresh-current': [] }>()
 const identity = computed(() => props.identity)
 const identityKey = computed(() => [props.identity.view, props.identity.symbol, props.identity.strategy, props.identity.frequency].join(':'))
 const selectedStrategy = computed(() => props.identity.strategy as NewowProductStrategy)
@@ -175,6 +175,7 @@ watch(loader.historicalSnapshot, async () => {
   selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
   dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
+watch(loader.dailySnapshot, snapshot => emit('daily-snapshot-as-of', snapshot?.as_of ?? null), { immediate: true, flush: 'sync' })
 // The single loader's invalidation also revokes display retention, even when the chart proof is unchanged.
 watch(loader.sections.auxiliary.state, state => {
   if (state === 'input_conflict' || state === 'not_requested') retainedPane.value = null

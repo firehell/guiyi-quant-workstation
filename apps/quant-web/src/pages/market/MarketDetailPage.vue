@@ -39,6 +39,7 @@ const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? rou
 const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
 const newowHistoricalAsOf = ref<string | null>(null)
+const newowDailyAsOf = ref<string | null>(null)
 const newowCapabilities = useNewowCapabilities()
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
   || newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '60m'))
@@ -53,6 +54,7 @@ const hasSubingHistory = ref(false)
 const dailyQuote = useNewowDailyQuote({
   symbol: computed(() => isNewowView.value ? explicitIdentity.value!.symbol : null),
   contract: computed(() => controller.productCatalog.value.find(item => item.product.toLowerCase() === explicitIdentity.value?.symbol)?.actual_contract ?? null),
+  snapshotAsOf: newowDailyAsOf,
 })
 const productOptions = computed(() => normalizeProductOptions(controller.productCatalog.value))
 const productSelectorStatus = computed(() => productOptions.value.length > 0
@@ -84,6 +86,7 @@ let activationGeneration = 0
 async function activateRoute() {
   const generation = ++activationGeneration
   newowHistoricalAsOf.value = null
+  newowDailyAsOf.value = null
   hasHtdyHistory.value = false
   hasSubingHistory.value = false
   const result = routeResult.value
@@ -258,6 +261,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             :capabilities="newowCapabilities.capabilities.value"
             @focus-resolved="resolveFocus"
             @snapshot-mode="newowHistoricalAsOf = $event"
+            @daily-snapshot-as-of="newowDailyAsOf = $event"
             @refresh-current="dailyQuote.refresh"
           />
           <MarketDetailUnavailable

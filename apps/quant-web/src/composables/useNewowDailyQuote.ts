@@ -52,29 +52,30 @@ export function projectNewowDailyQuote(page: MarketBarsPageResponse, symbol: str
 export function useNewowDailyQuote(options: {
   symbol: Readonly<Ref<string | null>>
   contract: Readonly<Ref<string | null>>
+  snapshotAsOf?: Readonly<Ref<string | null>>
   fetchPage?: (request: MarketBarsPageRequest, signal: AbortSignal) => Promise<MarketBarsPageResponse>
 }) {
   const page = shallowRef<MarketBarsPageResponse | null>(null)
   const state = shallowRef<'loading' | 'ready' | 'unavailable'>('unavailable')
   const fetchPage = options.fetchPage ?? (async (request, signal) => (await import('../api/market.ts')).getMarketBarsPage(request, signal))
-  const before = candidatePreview.enabled ? candidatePreview.asOf : null
+  const before = computed(() => candidatePreview.enabled ? candidatePreview.asOf ?? null : options.snapshotAsOf?.value ?? null)
   let generation = 0
   let controller: AbortController | null = null
   async function load(symbol: string | null): Promise<void> {
     const current = ++generation
     controller?.abort(); page.value = null
-    if (!symbol) { state.value = 'unavailable'; return }
+    if (!symbol || (options.snapshotAsOf && !options.snapshotAsOf.value)) { state.value = 'unavailable'; return }
     controller = new AbortController(); state.value = 'loading'
     try {
-      const response = await fetchPage({ series_kind: 'actual_dominant', symbol, frequency: '1d', limit: 2, ...(before === null ? {} : { before }) }, controller.signal)
+      const response = await fetchPage({ series_kind: 'actual_dominant', symbol, frequency: '1d', limit: 2, ...(before.value === null ? {} : { before: before.value }) }, controller.signal)
       if (generation !== current) return
       page.value = response; state.value = 'ready'
     } catch { if (generation === current) state.value = 'unavailable' }
   }
-  const stop = watch(options.symbol, symbol => { void load(symbol) }, { immediate: true, flush: 'sync' })
+  const stop = watch(() => [options.symbol.value, options.snapshotAsOf?.value] as const, ([symbol]) => { void load(symbol) }, { immediate: true, flush: 'sync' })
   const quote = computed(() => {
     if (!page.value || !options.symbol.value || !options.contract.value) return null
-    try { return projectNewowDailyQuote(page.value, options.symbol.value, options.contract.value, before) } catch { return null }
+    try { return projectNewowDailyQuote(page.value, options.symbol.value, options.contract.value, before.value) } catch { return null }
   })
   return {
     quote,
