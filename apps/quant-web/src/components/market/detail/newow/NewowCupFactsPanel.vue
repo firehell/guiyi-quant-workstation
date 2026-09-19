@@ -12,7 +12,7 @@ const points = (witness: NewowCupWitness) => projectNewowCupPoints(witness)
 <template>
   <section class="newow-cup-facts" aria-label="归一杯柄候选事实">
     <header><h3>归一杯柄候选</h3><span>{{ physicalContract }} · {{ segmentId }}</span></header>
-    <p>已确认结构示意，非完整 K 线；非牛哇私有原公式。</p>
+    <p>服务端杯柄事实：已确认结构示意，非完整 K 线；非牛哇私有原公式。</p>
     <p v-if="witnesses.length === 0" role="status">当前区段没有已确认杯柄事实；这不表示策略看空。</p>
     <article v-for="witness in witnesses" :key="witness.witness_id" class="newow-cup-facts__card">
       <svg viewBox="0 0 240 70" role="img" :aria-label="`杯柄候选 ${witness.candidate_id} 的四个已确认拐点`">

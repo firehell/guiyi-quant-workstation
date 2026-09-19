@@ -32,7 +32,7 @@ const emit = defineEmits<{
   reload: [window: { performanceSince: string; performanceThrough: string }]
   retry: []
   'load-more': []
-  locate: [trade: NewowReferenceTrade]
+  locate: [trade: NewowReferenceTrade, endpoint: 'entry' | 'exit']
 }>()
 
 const filter = ref<'all' | NewowReferenceCategory | 'initial'>('all')
@@ -195,12 +195,18 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
       </div>
 
       <div class="newow-reference__cards">
-        <article v-for="row in visibleModel?.rows ?? []" :key="row.id" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id">
+        <article v-for="row in visibleModel?.rows ?? []" :key="row.id" :id="`reference-trade-${row.id}`" class="newow-reference__card" :data-reference-category="row.category" :data-reference-initial="row.initial" :data-selected="selectedSignalId === row.trade.entry_signal_id" tabindex="-1">
           <header :title="`${row.trade.entry_bar_end} → ${row.trade.exit_bar_end ?? row.trade.mark_bar_end ?? row.trade.interrupted_at}`"><strong>{{ row.category === 'open' ? '未清仓' : row.category === 'closed' ? '已清仓' : row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断' }}</strong><span>{{ row.trade.physical_contract }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} → {{ row.trade.exit_bar_end ? rowTime(row.trade, row.trade.exit_bar_end) : row.category === 'open' ? '至估值日' : rowTime(row.trade, row.trade.interrupted_at) }}</span><span v-if="row.initial">期初已有</span></header>
           <div class="newow-reference__card-body">
-            <p>▲ 参考建仓 {{ formatMarketDecimal(row.trade.entry_reference_price) }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }} <template v-if="row.category === 'closed'">　▼ 参考清仓 {{ formatMarketDecimal(row.trade.exit_reference_price) }} · {{ rowTime(row.trade, row.trade.exit_bar_end) }}</template><template v-else-if="row.category === 'interrupted'">　{{ row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断' }} · {{ referenceInterruptionLabel(row.trade.interruption_reason) }}</template></p>
-            <p class="newow-reference__return">{{ row.category === 'open' ? '参考浮动' : row.category === 'closed' ? '已清仓收益' : '中断浮动' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</span><small v-if="row.category !== 'closed'" :title="row.valuationText"> · 估值 {{ rowTime(row.trade, row.trade.mark_bar_end) }}</small></p>
-            <button type="button" :aria-label="`定位参考记录 ${row.id} 的建仓信号`" @click="emit('locate', row.trade)">定位图表</button>
+            <dl class="newow-reference__facts">
+              <div><dt>参考建仓</dt><dd>▲ {{ formatMarketDecimal(row.trade.entry_reference_price) }} · {{ rowTime(row.trade, row.trade.entry_bar_end) }}</dd></div>
+              <div v-if="row.category === 'closed'"><dt>参考清仓</dt><dd>▼ {{ formatMarketDecimal(row.trade.exit_reference_price) }} · {{ rowTime(row.trade, row.trade.exit_bar_end) }}</dd></div>
+              <div v-if="row.category !== 'closed' && row.trade.mark_bar_end !== null && row.trade.mark_reference_price !== null"><dt>参考估值</dt><dd>{{ formatMarketDecimal(row.trade.mark_reference_price) }} · {{ rowTime(row.trade, row.trade.mark_bar_end) }}</dd></div>
+              <div v-if="row.category === 'interrupted'"><dt>中断说明</dt><dd>{{ row.trade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断' }} · {{ referenceInterruptionLabel(row.trade.interruption_reason) }}</dd></div>
+            </dl>
+            <p class="newow-reference__return">{{ row.category === 'open' ? '参考浮动' : row.category === 'closed' ? '已清仓收益' : '中断浮动' }} <span class="newow-return-badge" :data-direction="referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).direction">{{ referencePercentDisplay(row.category === 'closed' ? row.trade.reference_return_pct : row.trade.mark_change_pct).text }}</span></p>
+            <button type="button" :aria-label="`定位参考记录 ${row.id} 的建仓信号`" @click="emit('locate', row.trade, 'entry')">定位建仓</button>
+            <button v-if="row.trade.exit_signal_id !== null && row.trade.exit_bar_end !== null && row.trade.exit_trading_day !== null" type="button" :aria-label="`定位参考记录 ${row.id} 的清仓信号`" @click="emit('locate', row.trade, 'exit')">定位清仓</button>
             <button type="button" :aria-label="`展开参考记录 ${row.id}`" :aria-expanded="expanded.includes(row.id)" @click="toggle(row.id)">查看详情</button>
           </div>
           <div v-if="expanded.includes(row.id)" class="newow-reference__details">
@@ -242,6 +248,9 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference__card header { margin-bottom:6px; }
 .newow-reference__card header strong { font-size:12px; padding:4px 10px; border-radius:7px; background:var(--gy-bg-elevated); }
 .newow-reference__card-body > p:first-child { flex:1; }
+.newow-reference__facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:var(--gy-space-2); flex:1; min-width:min(100%, 360px); }
+.newow-reference__facts div { min-width:0; padding:var(--gy-space-2); border-radius:var(--gy-radius-sm); background:var(--gy-bg-elevated); }
+.newow-reference__facts dt { color:var(--gy-text-muted); font-size:var(--gy-font-size-xs); }.newow-reference__facts dd { margin:4px 0 0; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
 .newow-reference__return { font-variant-numeric:tabular-nums; }
 .newow-reference__details { margin-top:12px; color:var(--gy-text-secondary); overflow-wrap:anywhere; }
 .newow-reference__state { color: var(--gy-status-warning); }
