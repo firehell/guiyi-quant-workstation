@@ -1,6 +1,6 @@
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Context, Decimal, Inexact, ROUND_DOWN, localcontext
 
 import pytest
 
@@ -9,6 +9,8 @@ from guiyi_quant.subing_reference import (
     ReferenceSegment,
     ReferenceProjectionError,
     project_reference,
+    replay_subing_step,
+    seed_subing_replay_state,
 )
 from guiyi_quant.indicators.subing_ths import SubingThs15mKernel
 
@@ -69,6 +71,46 @@ def test_real_kernel_reversals_preserve_decimal_prices_and_explicit_links():
     assert result.summary.loss_count == 3
     assert result.summary.win_rate_pct == 0
     assert result.trades[-1].mark_reference_price == Decimal(80)
+
+
+@pytest.mark.parametrize("frequency", ("15m", "30m", "60m", "1d"))
+def test_public_projection_and_bounded_per_bar_state_share_one_step(frequency):
+    seg = segment()
+    expected = project_reference(
+        "RB", (seg,), since=date(2026, 1, 1), through=date(2026, 1, 9),
+        as_of=START + timedelta(days=9), frequency=frequency,
+    )
+    state = seed_subing_replay_state()
+    signals = []
+    closed = []
+    indicators = []
+    for bar in seg.bars:
+        state, signal, trade, indicator = replay_subing_step(
+            "RB", seg, frequency, False, state, bar,
+            since=date(2026, 1, 1), through=date(2026, 1, 9),
+        )
+        if signal is not None:
+            signals.append(signal)
+        if trade is not None:
+            closed.append(trade)
+        if indicator is not None:
+            indicators.append(indicator)
+    assert tuple(signals) == expected.signals
+    assert tuple((*closed, state.current)) == expected.trades
+    assert tuple(indicators) == expected.indicators
+
+
+def test_per_bar_replay_freezes_decimal_policy_like_public_projection():
+    seg = segment()
+    state = seed_subing_replay_state()
+    with localcontext(Context(prec=6, rounding=ROUND_DOWN, traps=[Inexact])):
+        for bar in seg.bars:
+            state, _signal, _closed, _indicator = replay_subing_step(
+                "RB", seg, "15m", False, state, bar,
+                since=date(2026, 1, 1), through=date(2026, 1, 9),
+            )
+    assert state.current is not None
+    assert state.current.mark_change_pct == Decimal(0)
 
 
 def test_15m_v1_reference_identity_golden_is_unchanged():

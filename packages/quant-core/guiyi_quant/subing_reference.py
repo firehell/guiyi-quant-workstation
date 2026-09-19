@@ -18,7 +18,11 @@ import json
 import math
 from typing import Literal, TypeAlias
 
-from .indicators.subing_ths import SUBING_THS_FORMULA_VERSION, SubingThs15mKernel
+from .indicators.subing_ths import (
+    SUBING_THS_FORMULA_VERSION,
+    SubingThs15mKernel,
+    SubingThs15mState,
+)
 
 FORMULA_VERSION = SUBING_THS_FORMULA_VERSION
 REFERENCE_MODEL_VERSION = "subing_reference_reverse_close_v1"
@@ -150,6 +154,26 @@ class ReferenceIndicator:
     ema21: Decimal | None
 
 
+@dataclass(slots=True)
+class SubingReplayState:
+    """Bounded state for one physical calculation segment.
+
+    It owns no event history.  The caller consumes the optional signal/closed
+    trade emitted by each step, which makes a full projection and incremental
+    replay use precisely the same formula and lifecycle transition.
+    """
+
+    kernel_state: SubingThs15mState
+    current: ReferenceTrade | None = None
+    entry_index: int = 0
+    processed_count: int = 0
+    ready_in_window: bool = False
+
+
+def seed_subing_replay_state() -> SubingReplayState:
+    return SubingReplayState(SubingThs15mKernel().initial_state())
+
+
 def _conflict() -> None:
     raise ReferenceProjectionError("SUBING_REFERENCE_DATA_CONFLICT")
 
@@ -173,6 +197,147 @@ def _return(trade: ReferenceTrade, price: Decimal) -> Decimal:
     if trade.side == "SHORT":
         change = -change
     return change / trade.entry_reference_price * 100
+
+
+def _replay_subing_step(
+    symbol: str,
+    segment: ReferenceSegment,
+    frequency: str,
+    quality_segmented: bool,
+    state: SubingReplayState,
+    bar: ReferenceBar,
+    *,
+    since: date,
+    through: date,
+) -> tuple[SubingReplayState, ReferenceSignal | None, ReferenceTrade | None, ReferenceIndicator | None]:
+    """Advance one completed bar for one already-validated calculation segment."""
+
+    if not isinstance(state, SubingReplayState):
+        raise TypeError("state must be SubingReplayState")
+    calculation_segment_id = segment.calculation_segment_id or segment.segment_id
+    kernel = SubingThs15mKernel()
+    state.kernel_state, result = kernel.step(
+        state.kernel_state, float(bar.close), bar_end=bar.bar_end.isoformat()
+    )
+    state.processed_count += 1
+    if not result.valid:
+        _conflict()
+    in_owner = segment.owner_since <= bar.trading_day <= segment.owner_through
+    in_window = in_owner and since <= bar.trading_day <= through
+    if result.ready and in_window:
+        state.ready_in_window = True
+    indicator = None
+    if in_window:
+        indicator = ReferenceIndicator(
+            bar.bar_end, segment.physical_contract, segment.segment_id,
+            calculation_segment_id,
+            Decimal(str(result.dif)) if result.dif is not None else None,
+            Decimal(str(result.dea)) if result.dea is not None else None,
+            Decimal(str(result.macd)) if result.macd is not None else None,
+            Decimal(str(result.ema21)) if result.ema21 is not None else None,
+        )
+    if not in_owner:
+        return state, None, None, indicator
+    if state.current is not None:
+        state.current = replace(
+            state.current,
+            holding_bars=state.processed_count - 1 - state.entry_index,
+            mark_bar_end=bar.bar_end,
+            mark_reference_price=bar.close,
+            mark_change_pct=_return(state.current, bar.close),
+        )
+    base: tuple[str, ...] = (
+        symbol, segment.physical_contract, segment.segment_id,
+        FORMULA_VERSIONS[frequency],
+        REFERENCE_MODEL_VERSION_V2 if quality_segmented else REFERENCE_MODEL_VERSION,
+    )
+    if quality_segmented:
+        base += (calculation_segment_id,)
+    if frequency != "15m":
+        base += (frequency,)
+    emitted_signal = None
+    emitted_closed = None
+    for direction in result.result_codes:
+        # The formula can emit at most one signal per completed bar.  Retain the
+        # guard so a future kernel change fails closed instead of inventing an
+        # ambiguous action ordering.
+        if emitted_signal is not None:
+            _conflict()
+        signal_id = _identity(
+            "signal", *base, bar.bar_end.astimezone(timezone.utc).isoformat(), direction,
+        )
+        side: Literal["LONG", "SHORT"] = "LONG" if direction == "buy" else "SHORT"
+        closed_id = None
+        closed_return = None
+        action: Literal["OPEN_LONG", "OPEN_SHORT", "REVERSE_TO_LONG", "REVERSE_TO_SHORT", "SAME_DIRECTION"] = "SAME_DIRECTION"
+        if state.current is None or state.current.side != side:
+            action = (
+                "OPEN_LONG" if side == "LONG" else "OPEN_SHORT"
+            ) if state.current is None else (
+                "REVERSE_TO_LONG" if side == "LONG" else "REVERSE_TO_SHORT"
+            )
+            if state.current is not None:
+                closed_return = _return(state.current, bar.close)
+                state.current = replace(
+                    state.current, status="CLOSED", exit_signal_id=signal_id,
+                    exit_bar_end=bar.bar_end, exit_trading_day=bar.trading_day,
+                    exit_reference_price=bar.close, reference_return_pct=closed_return,
+                    mark_bar_end=None, mark_reference_price=None, mark_change_pct=None,
+                )
+                emitted_closed = state.current
+                closed_id = state.current.reference_trade_id
+            state.current = ReferenceTrade(
+                reference_trade_id=_identity("trade", *base, signal_id), side=side,
+                physical_contract=segment.physical_contract, segment_id=segment.segment_id,
+                calculation_segment_id=calculation_segment_id, entry_signal_id=signal_id,
+                entry_bar_end=bar.bar_end, entry_trading_day=bar.trading_day,
+                entry_reference_price=bar.close, mark_bar_end=bar.bar_end,
+                mark_reference_price=bar.close, mark_change_pct=Decimal(0),
+                initial=bar.trading_day < since,
+            )
+            state.entry_index = state.processed_count - 1
+        if in_window:
+            emitted_signal = ReferenceSignal(
+                signal_id, bar.bar_end, bar.trading_day, segment.physical_contract,
+                segment.segment_id, calculation_segment_id, direction, bar.close, action,
+                state.current.reference_trade_id, closed_id, closed_return,
+                Decimal(str(result.dif)) if result.dif is not None else None,
+                Decimal(str(result.dea)) if result.dea is not None else None,
+                Decimal(str(result.macd)) if result.macd is not None else None,
+                Decimal(str(result.ema21)) if result.ema21 is not None else None,
+            )
+    return state, emitted_signal, emitted_closed, indicator
+
+
+def replay_subing_step(
+    symbol: str,
+    segment: ReferenceSegment,
+    frequency: str,
+    quality_segmented: bool,
+    state: SubingReplayState,
+    bar: ReferenceBar,
+    *,
+    since: date,
+    through: date,
+) -> tuple[SubingReplayState, ReferenceSignal | None, ReferenceTrade | None, ReferenceIndicator | None]:
+    """Advance one bar with the projection's fixed Decimal arithmetic policy."""
+
+    with localcontext(
+        Context(
+            prec=28,
+            rounding=ROUND_HALF_EVEN,
+            Emin=-999999,
+            Emax=999999,
+            capitals=1,
+            clamp=0,
+            flags=[],
+            traps=[InvalidOperation, DivisionByZero, Overflow],
+        )
+    ):
+        return _replay_subing_step(
+            symbol, segment, frequency, quality_segmented, state, bar,
+            since=since, through=through,
+        )
 
 
 def _validate(
@@ -342,133 +507,21 @@ def _project_reference(
     warming = False
     latest_processed_count = 0
     for segment in segments:
-        kernel = SubingThs15mKernel()
-        state = kernel.initial_state()
-        current: ReferenceTrade | None = None
-        entry_index = 0
-        ready_in_window = False
-        processed_count = 0
-        calculation_segment_id = segment.calculation_segment_id or segment.segment_id
-        base: tuple[str, ...] = (
-            symbol,
-            segment.physical_contract,
-            segment.segment_id,
-            FORMULA_VERSIONS[frequency],
-            REFERENCE_MODEL_VERSION_V2 if quality_segmented else REFERENCE_MODEL_VERSION,
-        )
-        if quality_segmented:
-            base += (calculation_segment_id,)
-        if frequency != "15m":
-            base += (frequency,)
-        for index, bar in enumerate(segment.bars):
+        state = seed_subing_replay_state()
+        for bar in segment.bars:
             if bar.bar_end > as_of or bar.trading_day > through:
                 break
-            processed_count += 1
-            state, result = kernel.step(
-                state, float(bar.close), bar_end=bar.bar_end.isoformat()
+            state, signal, closed, indicator = replay_subing_step(
+                symbol, segment, frequency, quality_segmented, state, bar,
+                since=since, through=through,
             )
-            if not result.valid:
-                _conflict()
-            if result.ready and segment.owner_since <= bar.trading_day <= segment.owner_through and since <= bar.trading_day <= through:
-                ready_in_window = True
-            if segment.owner_since <= bar.trading_day <= segment.owner_through and since <= bar.trading_day <= through:
-                indicators.append(ReferenceIndicator(
-                    bar.bar_end, segment.physical_contract, segment.segment_id,
-                    calculation_segment_id,
-                    Decimal(str(result.dif)) if result.dif is not None else None,
-                    Decimal(str(result.dea)) if result.dea is not None else None,
-                    Decimal(str(result.macd)) if result.macd is not None else None,
-                    Decimal(str(result.ema21)) if result.ema21 is not None else None,
-                ))
-            if bar.trading_day < segment.owner_since:
-                continue
-            if current is not None:
-                current = replace(
-                    current,
-                    holding_bars=index - entry_index,
-                    mark_bar_end=bar.bar_end,
-                    mark_reference_price=bar.close,
-                    mark_change_pct=_return(current, bar.close),
-                )
-            for direction in result.result_codes:
-                signal_id = _identity(
-                    "signal",
-                    *base,
-                    bar.bar_end.astimezone(timezone.utc).isoformat(),
-                    direction,
-                )
-                side: Literal["LONG", "SHORT"] = (
-                    "LONG" if direction == "buy" else "SHORT"
-                )
-                closed_id = None
-                closed_return = None
-                action: Literal[
-                    "OPEN_LONG",
-                    "OPEN_SHORT",
-                    "REVERSE_TO_LONG",
-                    "REVERSE_TO_SHORT",
-                    "SAME_DIRECTION",
-                ] = "SAME_DIRECTION"
-                if current is None or current.side != side:
-                    if current is None:
-                        action = "OPEN_LONG" if side == "LONG" else "OPEN_SHORT"
-                    else:
-                        action = (
-                            "REVERSE_TO_LONG" if side == "LONG" else "REVERSE_TO_SHORT"
-                        )
-                    if current is not None:
-                        closed_return = _return(current, bar.close)
-                        current = replace(
-                            current,
-                            status="CLOSED",
-                            exit_signal_id=signal_id,
-                            exit_bar_end=bar.bar_end,
-                            exit_trading_day=bar.trading_day,
-                            exit_reference_price=bar.close,
-                            reference_return_pct=closed_return,
-                            mark_bar_end=None,
-                            mark_reference_price=None,
-                            mark_change_pct=None,
-                        )
-                        closed_id = current.reference_trade_id
-                        trades.append(current)
-                    current = ReferenceTrade(
-                        reference_trade_id=_identity("trade", *base, signal_id),
-                        side=side,
-                        physical_contract=segment.physical_contract,
-                        segment_id=segment.segment_id,
-                        calculation_segment_id=calculation_segment_id,
-                        entry_signal_id=signal_id,
-                        entry_bar_end=bar.bar_end,
-                        entry_trading_day=bar.trading_day,
-                        entry_reference_price=bar.close,
-                        mark_bar_end=bar.bar_end,
-                        mark_reference_price=bar.close,
-                        mark_change_pct=Decimal(0),
-                        initial=bar.trading_day < since,
-                    )
-                    entry_index = index
-                if since <= bar.trading_day <= through:
-                    signals.append(
-                        ReferenceSignal(
-                            signal_id,
-                            bar.bar_end,
-                            bar.trading_day,
-                            segment.physical_contract,
-                            segment.segment_id,
-                            calculation_segment_id,
-                            direction,
-                            bar.close,
-                            action,
-                            current.reference_trade_id,
-                            closed_id,
-                            closed_return,
-                            Decimal(str(result.dif)) if result.dif is not None else None,
-                            Decimal(str(result.dea)) if result.dea is not None else None,
-                            Decimal(str(result.macd)) if result.macd is not None else None,
-                            Decimal(str(result.ema21)) if result.ema21 is not None else None,
-                        )
-                    )
+            if indicator is not None:
+                indicators.append(indicator)
+            if closed is not None:
+                trades.append(closed)
+            if signal is not None:
+                signals.append(signal)
+        current = state.current
         if current is not None:
             quality_interruption = segment.quality_interrupted_at
             interruption = segment.interrupted_at
@@ -502,9 +555,9 @@ def _project_reference(
                     mark_change_pct=None,
                 )
             trades.append(current)
-        if not ready_in_window:
+        if not state.ready_in_window:
             warming = True
-        latest_processed_count = processed_count
+        latest_processed_count = state.processed_count
     owner_ends = {
         (segment.calculation_segment_id or segment.segment_id): segment.owner_through
         for segment in segments
