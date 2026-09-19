@@ -228,6 +228,7 @@ class NewowReferenceReplayState:
     interrupted_entries: tuple[tuple[str, str, str], ...] = ()
     pending_hints: tuple[StrategyHint, ...] = ()
     processed_event_ids: tuple[str, ...] = ()
+    verified_lifecycle_owners: tuple[tuple[str, str], ...] = ()
     diagnostics: tuple[str, ...] = ()
 
 
@@ -239,6 +240,21 @@ def _event_id(boundary: ReferenceBoundary) -> str:
         boundary.trading_day.isoformat(),
     )
     return sha256(json.dumps(wire, separators=(",", ":")).encode()).hexdigest()
+
+
+def _stream_for(replay: StrategyReplay) -> StreamIdentity:
+    return StreamIdentity(
+        strategy_code=f"newow_{replay.identity.strategy.value}",
+        formula_versions=replay.identity.formula_versions,
+        profile_id=replay.identity.profile_id,
+        reference_model_version=REFERENCE_MODEL_VERSION,
+        futures_adaptation_version=futures_adaptation_version(replay.identity.frequency),
+        product=replay.identity.product,
+        frequency=replay.identity.frequency.value,
+        series_kind=replay.identity.series_kind,
+        recording_mode="historical_replay",
+        observation_policy_version=None,
+    )
 
 
 def _reference_return(entry: Decimal, exit_: Decimal) -> Decimal:
@@ -388,6 +404,54 @@ def _validate_initial_clear_no_entry(
             or frame.actions
         ):
             raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+    return positions[key]
+
+
+def _validate_checkpointed_initial_clear(
+    replay: StrategyReplay,
+    action: StrategyAction,
+    positions: dict[tuple[str, str, datetime], int],
+    frames_by_owner: dict[tuple[str, str], list[StrategyFrame]],
+    verified_owners: set[tuple[str, str]],
+    has_prior_actions: bool,
+) -> int:
+    """Validate the current CLEAR using a previously verified owner lifecycle."""
+
+    owner = (action.physical_contract, action.segment_id)
+    key = (*owner, action.bar_end)
+    matching = tuple(
+        frame for frame in frames_by_owner.get(owner, ())
+        if frame.bar.bar.bar_end == action.bar_end
+    )
+    if (
+        action.identity != replay.identity
+        or replay.identity.strategy is not ProductStrategy.MAIN_RISE
+        or action.kind is not ActionKind.CLEAR
+        or action.related_build_id is not None
+        or action.sequence != 0
+        or action.source_marker_id is not None
+        or action.source_related_marker_ids
+        or owner not in verified_owners
+        or key not in positions
+        or has_prior_actions
+        or len(matching) != 1
+    ):
+        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+    current = matching[0]
+    values = dict(current.main_values)
+    ma35 = values.get("ma35")
+    ma45 = values.get("ma45")
+    if (
+        current.availability.status is not FeatureRuntimeStatus.READY
+        or not current.bar.bar.observation_eligible
+        or current.main_state is not MainState.CLEAR
+        or current.actions != (action,)
+        or ma35 is None
+        or ma45 is None
+        or ma35 >= ma45
+        or action.reference_price != ma45
+    ):
+        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     return positions[key]
 
 
@@ -574,6 +638,50 @@ class ReferenceTradeProjector:
         )
         return projection
 
+    def seed(self, replay: StrategyReplay) -> NewowReferenceReplayState:
+        """Verify immutable lifecycle evidence once, without retaining its frames."""
+
+        if not isinstance(replay, StrategyReplay):
+            raise ValueError("NEWOW_REFERENCE_INVALID_REPLAY")
+        actions = _dedupe_actions(tuple(replay.actions))
+        initial_actions = tuple(
+            action for action in actions
+            if action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+        )
+        verified: frozenset[tuple[str, str]] = frozenset()
+        if replay.lifecycle_evidence and initial_actions:
+            try:
+                verified = validate_lifecycle_replay_evidence(
+                    replay.identity, replay.lifecycle_input_bars,
+                    replay.lifecycle_evidence,
+                )
+            except ValueError as error:
+                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT") from error
+        if initial_actions:
+            positions, _ = _effective_bar_positions(
+                replay, max(frame.bar.bar.bar_end for frame in replay.frames),
+            )
+            frames_by_owner: dict[tuple[str, str], list[StrategyFrame]] = {}
+            for frame in replay.frames:
+                owner = (frame.bar.bar.physical_contract, frame.bar.bar.segment_id)
+                frames_by_owner.setdefault(owner, []).append(frame)
+            for action in initial_actions:
+                owner = (action.physical_contract, action.segment_id)
+                has_prior = any(
+                    candidate is not action
+                    and (candidate.physical_contract, candidate.segment_id) == owner
+                    and (candidate.bar_end, candidate.sequence)
+                    < (action.bar_end, action.sequence)
+                    for candidate in actions
+                )
+                _validate_initial_clear_no_entry(
+                    replay, action, positions, frames_by_owner, verified, has_prior,
+                )
+        return NewowReferenceReplayState(
+            stream=_stream_for(replay),
+            verified_lifecycle_owners=tuple(sorted(verified)),
+        )
+
     def advance(
         self,
         state: NewowReferenceReplayState | None,
@@ -618,7 +726,19 @@ class ReferenceTradeProjector:
             if action.bar_end <= as_of
             and action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
         )
-        verified_owners: frozenset[tuple[str, str]] = frozenset()
+        checkpoint_verified_owners = set(
+            () if state is None else state.verified_lifecycle_owners
+        )
+        verified_owners = set(checkpoint_verified_owners)
+        if replay.lifecycle_evidence and initial_actions:
+            try:
+                verified_owners.update(validate_lifecycle_replay_evidence(
+                    replay.identity,
+                    replay.lifecycle_input_bars,
+                    replay.lifecycle_evidence,
+                ))
+            except ValueError as error:
+                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT") from error
         if initial_actions:
             try:
                 effective_frames = tuple(
@@ -627,17 +747,19 @@ class ReferenceTradeProjector:
                     if frame.bar.bar.bar_end <= as_of
                 )
                 effective_bars = tuple(frame.bar for frame in effective_frames)
-                verified_owners = validate_lifecycle_replay_evidence(
-                    replay.identity,
-                    replay.lifecycle_input_bars,
-                    replay.lifecycle_evidence,
-                )
                 lifecycle_prefix = tuple(
                     bar
                     for bar in replay.lifecycle_input_bars
                     if bar.bar.bar_end <= as_of
                 )
-                if effective_bars != lifecycle_prefix:
+                if (
+                    any(
+                        (action.physical_contract, action.segment_id)
+                        not in checkpoint_verified_owners
+                        for action in initial_actions
+                    )
+                    and effective_bars != lifecycle_prefix
+                ):
                     raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
             except ValueError as error:
                 raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT") from error
@@ -647,25 +769,14 @@ class ReferenceTradeProjector:
                 continue
             owner = (frame.bar.bar.physical_contract, frame.bar.bar.segment_id)
             frames_by_owner.setdefault(owner, []).append(frame)
-        diagnostics = [
-            diagnostic for diagnostic in dict.fromkeys((
-                *(() if state is None else state.diagnostics),
-                *replay.diagnostics,
-            ))
-            if diagnostic not in {"NO_ELIGIBLE_ENTRY", "INITIAL_CLEAR_NO_ENTRY"}
-        ]
-        stream = StreamIdentity(
-            strategy_code=f"newow_{replay.identity.strategy.value}",
-            formula_versions=replay.identity.formula_versions,
-            profile_id=replay.identity.profile_id,
-            reference_model_version=REFERENCE_MODEL_VERSION,
-            futures_adaptation_version=futures_adaptation_version(replay.identity.frequency),
-            product=replay.identity.product,
-            frequency=replay.identity.frequency.value,
-            series_kind=replay.identity.series_kind,
-            recording_mode="historical_replay",
-            observation_policy_version=None,
-        )
+        diagnostics = list(dict.fromkeys((
+            *(() if state is None else state.diagnostics),
+            *(
+                diagnostic for diagnostic in replay.diagnostics
+                if diagnostic not in {"NO_ELIGIBLE_ENTRY", "INITIAL_CLEAR_NO_ENTRY"}
+            ),
+        )))
+        stream = _stream_for(replay)
         if state is not None and state.stream != stream:
             raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
         reference_states: dict[tuple[str, str], UnifiedReferenceState] = {
@@ -870,10 +981,17 @@ class ReferenceTradeProjector:
                         action_boundary is not None and action.bar_end >= action_boundary.effective_at
                     ):
                         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
-                    _validate_initial_clear_no_entry(
-                        replay, action, positions, frames_by_owner, verified_owners,
-                        owner in owners_with_prior_actions,
-                    )
+                    if owner in checkpoint_verified_owners:
+                        _validate_checkpointed_initial_clear(
+                            replay, action, positions, frames_by_owner, verified_owners,
+                            owner in owners_with_prior_actions,
+                        )
+                    else:
+                        _validate_initial_clear_no_entry(
+                            replay, action, positions, frames_by_owner,
+                            frozenset(verified_owners),
+                            owner in owners_with_prior_actions,
+                        )
                     owners_with_prior_actions.add(owner)
                     if "INITIAL_CLEAR_NO_ENTRY" not in diagnostics:
                         diagnostics.append("INITIAL_CLEAR_NO_ENTRY")
@@ -949,12 +1067,6 @@ class ReferenceTradeProjector:
                 for event in same_bar_events:
                     apply_event(event)
                 continue
-            if (
-                reference_state.open_trade is None
-                and reference_state.computed_through is not None
-                and bar.bar_end <= reference_state.computed_through
-            ):
-                reference_state = UnifiedReferenceState.flat(stream)
             try:
                 opening = next(
                     (
@@ -1069,6 +1181,7 @@ class ReferenceTradeProjector:
                 hint for hint in visible_hints if hint.hint_id in active_hint_ids
             ),
             processed_event_ids=tuple(sorted(processed_event_ids)),
+            verified_lifecycle_owners=tuple(sorted(verified_owners)),
             diagnostics=projection.diagnostics,
         )
         return next_state, projection

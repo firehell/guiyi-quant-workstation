@@ -4,6 +4,8 @@ from copy import copy
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, ROUND_DOWN, ROUND_UP, localcontext
+from hashlib import sha256
+import json
 
 import pytest
 
@@ -222,6 +224,121 @@ def test_public_projector_checkpoint_resumes_into_rollover_interruption(product_
     assert tuple(merged.values()) == expected.trades
     assert resumed.active_trades == ()
     assert len(resumed.processed_event_ids) == 1
+
+
+def test_incremental_projector_rejects_older_owner_frame_after_close(product_cases):
+    case = product_cases.closed()
+    projector = ReferenceTradeProjector()
+    state, _ = projector.advance(None, case.replay, (), case.as_of)
+    snapshot = repr(state)
+    entry_only = replace(
+        case.replay,
+        frames=case.replay.frames[:1],
+        actions=(case.entry,),
+        hints=(),
+        lifecycle_input_bars=case.replay.lifecycle_input_bars[:1],
+        lifecycle_evidence=(),
+    )
+
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        projector.advance(state, entry_only, (), case.entry.bar_end)
+    assert repr(state) == snapshot
+
+
+def test_newow_checkpoint_rejects_public_open_price_divergence(product_cases):
+    case = product_cases.open()
+    state, _ = ReferenceTradeProjector().advance(
+        None, case.replay, (), case.as_of,
+    )
+    contract, segment, unified = next(
+        item for item in state.reference_states if item[2].open_trade is not None
+    )
+    checkpoint = AdapterCheckpoint(
+        state, case.bars[-1].bar.bar_end, "prefix", contract, segment,
+        unified.open_trade.calculation_segment_id, state.stream, unified,
+    )
+    payload = json.loads(adapter_checkpoint_to_json(
+        checkpoint, strategy_schema="newow_reference_replay_v1",
+    ))
+    payload["strategy_state"]["fields"]["active_trades"]["$tuple"][0][
+        "fields"
+    ]["entry_reference_price"] = {"$decimal": "999"}
+    body = {key: value for key, value in payload.items() if key != "checksum_sha256"}
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    payload["checksum_sha256"] = sha256(canonical.encode()).hexdigest()
+
+    with pytest.raises(ValueError, match="active trades"):
+        adapter_checkpoint_from_json(
+            json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True),
+            expected_stream=state.stream,
+            expected_strategy_schema="newow_reference_replay_v1",
+        )
+
+
+def test_initial_clear_checkpoint_carries_verified_lifecycle_without_frame_history(
+    product_cases,
+):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,),
+    )
+    projector = ReferenceTradeProjector()
+    seeded = projector.seed(replay)
+    prefix_frames = replay.frames[:-1]
+    prefix = replace(
+        replay,
+        frames=prefix_frames,
+        actions=(),
+        hints=tuple(hint for frame in prefix_frames for hint in frame.hints),
+        lifecycle_input_bars=tuple(frame.bar for frame in prefix_frames),
+        lifecycle_evidence=(),
+        diagnostics=(),
+    )
+    prefix_as_of = prefix_frames[-1].bar.bar.bar_end
+    state, prefix_projection = projector.advance(seeded, prefix, (), prefix_as_of)
+    assert prefix_projection.diagnostics == ()
+    assert state.verified_lifecycle_owners == ((
+        case.bars[0].bar.physical_contract, case.bars[0].bar.segment_id,
+    ),)
+    contract, segment, unified = state.reference_states[0]
+    checkpoint = AdapterCheckpoint(
+        state, prefix_as_of, "prefix", contract, segment,
+        prefix_frames[-1].bar.calculation_segment_id, state.stream, unified,
+    )
+    restored = adapter_checkpoint_from_json(
+        adapter_checkpoint_to_json(
+            checkpoint, strategy_schema="newow_reference_replay_v1",
+        ),
+        expected_stream=state.stream,
+        expected_strategy_schema="newow_reference_replay_v1",
+    )
+    clear_frame = replay.frames[-1]
+    tail = replace(
+        replay,
+        frames=(clear_frame,),
+        actions=clear_frame.actions,
+        hints=clear_frame.hints,
+        lifecycle_input_bars=(clear_frame.bar,),
+        lifecycle_evidence=(),
+        diagnostics=("INITIAL_CLEAR_NO_ENTRY",),
+    )
+
+    resumed, projection = projector.advance(
+        restored.strategy_state, tail, (), clear_frame.bar.bar.bar_end,
+    )
+    assert projection.trades == ()
+    assert projection.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+
+    empty_tail = replace(
+        tail, frames=(), actions=(), hints=(), lifecycle_input_bars=(), diagnostics=(),
+    )
+    _, empty_projection = projector.advance(
+        resumed, empty_tail, (), clear_frame.bar.bar.bar_end,
+    )
+    assert empty_projection.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
 
 
 def test_weekly_quality_adaptation_has_its_own_version_without_changing_daily(

@@ -341,8 +341,33 @@ def _validate_strategy_state(
         }
         if set(open_by_entry) != {trade.entry_signal_id for trade in state.active_trades}:
             raise ValueError("strategy checkpoint Newow active trades are inconsistent")
-        if set(open_by_entry) != {action.signal_id for action in state.active_actions}:
+        active_actions = {action.signal_id: action for action in state.active_actions}
+        if set(open_by_entry) != set(active_actions):
             raise ValueError("strategy checkpoint Newow active actions are inconsistent")
+        public_trades = {trade.entry_signal_id: trade for trade in state.active_trades}
+        for entry_id, unified in open_by_entry.items():
+            public = public_trades[entry_id]
+            action = active_actions[entry_id]
+            if (
+                public.status is not NewowReferenceTradeStatus.OPEN
+                or public.physical_contract != unified.physical_contract
+                or public.segment_id != unified.owner_segment_id
+                or public.calculation_segment_id != unified.calculation_segment_id
+                or public.entry_bar_end != unified.entry_bar_end
+                or public.entry_trading_day != unified.entry_trading_day
+                or public.entry_reference_price != unified.entry_reference_price
+                or public.holding_bars != unified.holding_bars
+                or public.mark_bar_end != unified.mark_bar_end
+                or public.mark_reference_price != unified.mark_reference_price
+                or public.mark_change_pct != unified.mark_return
+                or action.physical_contract != unified.physical_contract
+                or action.segment_id != unified.owner_segment_id
+                or action.calculation_segment_id != unified.calculation_segment_id
+                or action.bar_end != unified.entry_bar_end
+                or action.trading_day != unified.entry_trading_day
+                or action.reference_price != unified.entry_reference_price
+            ):
+                raise ValueError("strategy checkpoint Newow active trades are inconsistent")
 
 
 def adapter_checkpoint_to_json(
