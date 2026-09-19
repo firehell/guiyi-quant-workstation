@@ -151,6 +151,7 @@ test('history locate requires exact signal ID plus bar_end and requests display 
 test('reference locate only accepts the requested endpoint in the same physical contract and segment', () => {
   const response = referenceResponse()
   const closed = response.value!.items.find((trade) => trade.reference_trade_id === 'initial')!
+  const open = response.value!.items.find((trade) => trade.reference_trade_id === 'open')!
   const chart = chartResponse()
   const exit = { ...closed, exit_signal_id: 'exit-initial', exit_bar_end: '2025-12-21T07:00:00Z', exit_trading_day: '2025-12-21' }
 
@@ -165,6 +166,11 @@ test('reference locate only accepts the requested endpoint in the same physical 
   chart.value!.bars.push({ ...chart.value!.bars[0]!, bar_end: '2025-12-21T07:00:00Z', physical_contract: 'OTHER', segment_id: 'other' })
   assert.deepEqual(resolveLocate(exit, chart, true, 'exit'), {
     kind: 'unavailable', signalId: 'exit-initial', barEnd: '2025-12-21T07:00:00Z',
+  })
+  const sameContractWrongCalculation = chartResponse()
+  sameContractWrongCalculation.value!.actions[0] = { ...sameContractWrongCalculation.value!.actions[0]!, calculation_segment_id: 'other-calculation' }
+  assert.deepEqual(resolveLocate(open, sameContractWrongCalculation, true), {
+    kind: 'unavailable', signalId: 'entry-open', barEnd: '2026-08-14T07:00:00Z',
   })
 })
 
@@ -456,7 +462,7 @@ function chartResponse(): Mutable<NewowProductSectionResponse<'chart'>> {
       frames: [],
       actions: [{
         signal_id: 'entry-open', kind: 'BUILD', bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', reference_price: '100.000',
-        physical_contract: 'JM2601', segment_id: 'segment-1', related_build_id: null, trade_eligibility: 'ELIGIBLE', sequence: 0,
+        physical_contract: 'JM2601', segment_id: 'segment-1', calculation_segment_id: 'segment-1', related_build_id: null, trade_eligibility: 'ELIGIBLE', sequence: 0,
       }],
       hints: [{
         hint_id: 'hint-loaded', kind: 'D4', bar_end: '2026-08-14T07:00:00Z', known_at: '2026-08-14T07:00:00Z', anchor_price: '99.000',

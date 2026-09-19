@@ -29,3 +29,10 @@ test('cup geometry retains order for Decimal values beyond JavaScript Number pre
   assert.ok(points[0]!.y < points[3]!.y)
   assert.ok(points[3]!.y < points[1]!.y)
 })
+
+test('cup geometry accepts wire scientific notation and treats signed zero as equal', () => {
+  const scientific = projectNewowCupPoints(witness(['1e+2', '8e1', '1.1e2', '9e1']))
+  assert.equal(scientific.every(point => point.available), true)
+  assert.ok(scientific[2]!.y < scientific[0]!.y)
+  assert.deepEqual(projectNewowCupPoints(witness(['-0', '0', '0.0', '+0e0'])).map(point => point.y), [35, 35, 35, 35])
+})

@@ -12,3 +12,9 @@
 - 快捷日期以服务端已接受的可用截止日为锚；覆盖不足仍由服务端响应说明，不把日期静默缩短后冒称完整窗口。
 
 代表性 fixture 截图位于 `apps/quant-web/e2e/*newow*.spec.mjs-snapshots/`；已在隔离预览生成并人工查看，桌面 1440px 与手机 390px 均为 fixture 场景，不是实时行情、策略或收益验证。当前保留的原站截图只用于信息层级、浅底卡片、橙色强调、胶囊按钮和弹窗密度的视觉对照。
+
+## 第二批参考记录与定位（2026-09-19）
+
+提交 `aba4b2f30` / `8947cbf9b` 在隔离 fixture 中将每条 ReferenceTrade 分为参考建仓、参考清仓、参考估值和中断说明；中断不表达为清仓，估值不表达为成交。建仓/清仓定位只接受真实 signal ID、bar 时间、物理合约与 segment；缺少清仓事实时不提供定位。迟到响应会按 identity、快照和请求序号失效，只有图表 focus 回读后才显示成功；“返回原记录”按 `reference_trade_id` 恢复卡片焦点，不改统计窗口、筛选或分页。
+
+已人工检查受控 fixture 的 1440px `newow-desktop-reference-chromium-darwin.png` 与 390px `newow-mobile-oscillation-reference-chromium-darwin.png`。两张图显示浅底卡片、红绿数字和可读的事实组；手机截图无页面横向溢出。它们只证明固定 fixture 的 UI，不证明原站完全一致、实时行情、策略收益、发布或 Runtime。

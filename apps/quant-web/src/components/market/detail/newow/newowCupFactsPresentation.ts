@@ -5,10 +5,11 @@ export interface NewowCupPointPresentation { readonly x: number; readonly y: num
 interface ExactDecimal { readonly sign: bigint; readonly coefficient: bigint; readonly scale: number }
 
 function exactDecimal(value: string): ExactDecimal | null {
-  const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(value)
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(value)
   if (match === null) return null
   const digits = `${match[2]}${match[3] ?? ''}`.replace(/^0+(?=\d)/, '')
-  return { sign: match[1] === '-' ? -1n : 1n, coefficient: BigInt(digits), scale: (match[3] ?? '').length }
+  const coefficient = BigInt(digits)
+  return { sign: coefficient === 0n ? 1n : match[1] === '-' ? -1n : 1n, coefficient, scale: (match[3] ?? '').length - Number(match[4] ?? '0') }
 }
 
 function compareExact(left: ExactDecimal, right: ExactDecimal): number {

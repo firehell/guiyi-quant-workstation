@@ -168,9 +168,10 @@ export function resolveNewowReferenceLocate(
   const tradingDay = endpoint === 'entry' ? trade.entry_trading_day : trade.exit_trading_day
   if (signalId === null || barEnd === null || tradingDay === null) return { kind: 'unavailable', signalId, barEnd }
   if (!crossSectionCompatible) return { kind: 'unavailable', signalId, barEnd }
-  const sameOwner = (value: { physical_contract: string; segment_id: string }) => (
+  const sameOwner = (value: { physical_contract: string; segment_id: string; calculation_segment_id: string }) => (
     value.physical_contract === trade.physical_contract
     && value.segment_id === trade.segment_id
+    && value.calculation_segment_id === trade.calculation_segment_id
   )
   const exact = chart?.value?.actions.some((action) => (
     action.signal_id === signalId && action.bar_end === barEnd && sameOwner(action)
