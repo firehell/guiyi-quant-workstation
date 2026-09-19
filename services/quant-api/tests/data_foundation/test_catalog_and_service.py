@@ -454,6 +454,51 @@ def test_subing_d1_quality_union_is_exact_and_existing_quality_reader_rejects_ne
     assert facts == (interruption,)
 
 
+@pytest.mark.parametrize(
+    ("kind", "contract"),
+    (("contract", "JM2509"), ("actual_dominant", None)),
+)
+def test_strict_d1_pages_reject_nonpositive_close_quality_fact(
+    session, tmp_path, kind, contract,
+) -> None:
+    _add_page_contract(session, listed=date(2025, 1, 1))
+    for day in (date(2025, 1, 2), date(2025, 1, 3)):
+        session.add(TradingCalendar(
+            exchange_code="DCE", trade_date=day, is_trading_day=True,
+        ))
+        session.add(MainContractMap(
+            symbol="jm", trade_date=day, contract_code="JM2509",
+            rank=1, rule="volume_open_interest",
+        ))
+    valid = _bar(2, 100)
+    break_at = datetime(2025, 1, 3, 7, tzinfo=UTC)
+    interruption = NonpositiveCloseFact(
+        bar_end=break_at, trading_day=date(2025, 1, 3),
+        open=Decimal(0), high=Decimal(0), low=Decimal(0), close=Decimal(0),
+        volume=Decimal(0), turnover=Decimal(0), open_interest=Decimal(10),
+        request_sha256="c" * 64, response_sha256="d" * 64,
+        observed_at=datetime(2026, 9, 19, tzinfo=UTC),
+    )
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    catalog.register_partition(store.publish(PublishRequest(
+        DatasetKey("contract", "jm", "JM2509", "1d"),
+        2025,
+        1,
+        (valid,),
+        (valid.bar_end, break_at),
+        nonpositive_close=(interruption,),
+    )))
+    session.commit()
+
+    with pytest.raises(
+        MarketDataError, match="SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+    ):
+        MarketDataService(catalog, store).query_page(SeriesPageQuery(
+            kind, "jm", "1d", limit=2, contract=contract,
+        ))
+
+
 def test_all_price_unavailable_month_has_no_fake_price_coverage(session, tmp_path):
     key = DatasetKey("contract", "jm", "JM2509", "1d")
     unavailable_at = datetime(2025, 1, 2, 7, tzinfo=UTC)

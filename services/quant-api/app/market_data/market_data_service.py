@@ -1218,8 +1218,12 @@ class MarketDataService:
                         upper=request.before, inclusive_upper=inclusive_before,
                     )
                     return selected, True
-                if isinstance(event, PriceUnavailableFact):
-                    raise MarketDataError("PRICE_UNAVAILABLE")
+                if isinstance(event, SourceQualityFact):
+                    raise MarketDataError(
+                        "PRICE_UNAVAILABLE"
+                        if isinstance(event, PriceUnavailableFact)
+                        else "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED"
+                    )
                 if previous_end is not None and event.bar_end >= previous_end:
                     raise MarketDataError("BAR_IDENTITY_CONFLICT")
                 selected.append(event)
@@ -1338,8 +1342,8 @@ class MarketDataService:
         selected: list[CanonicalBar] = []
         available_contract_days: set[tuple[str, date]] = set()
         for _, month_partitions in _partition_month_groups(partitions):
-            candidates: list[CanonicalBar | PriceUnavailableFact] = []
-            month_events: list[tuple[CatalogPartition, CanonicalBar | PriceUnavailableFact]] = []
+            candidates: list[CanonicalBar | SourceQualityFact] = []
+            month_events: list[tuple[CatalogPartition, CanonicalBar | SourceQualityFact]] = []
             for partition in month_partitions:
                 bars, unavailable = (
                     self._partition_quality(partition)
@@ -1388,8 +1392,12 @@ class MarketDataService:
                         published_prefix=published_prefix,
                         has_more_before=True,
                     )
-                if isinstance(event, PriceUnavailableFact):
-                    raise MarketDataError("PRICE_UNAVAILABLE")
+                if isinstance(event, SourceQualityFact):
+                    raise MarketDataError(
+                        "PRICE_UNAVAILABLE"
+                        if isinstance(event, PriceUnavailableFact)
+                        else "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED"
+                    )
                 if any(item.bar_end == event.bar_end for item in selected):
                     raise MarketDataError("BAR_IDENTITY_CONFLICT")
                 selected.append(event)
@@ -1655,7 +1663,7 @@ class MarketDataService:
 
     def _partition_quality(
         self, partition: CatalogPartition,
-    ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...]]:
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]:
         """Read one validated D1 partition without collapsing source facts into bars."""
         try:
             values, unavailable = self.store.read_catalog_partition_quality(partition)
