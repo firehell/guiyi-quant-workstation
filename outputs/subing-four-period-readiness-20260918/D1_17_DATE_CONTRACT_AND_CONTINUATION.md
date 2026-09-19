@@ -55,17 +55,26 @@
 - 精确请求、日期列表、权威哈希及旧 plan/result/journal/offline verdict 绑定见
   `d1-17-source-verification-continuation-candidate.json`。
 
-## 执行边界
+## 续行执行结算
 
-续行候选保持 `execute=false`。实际 provider 执行尚未获授权，本轮不执行下面命令：
+16 次冻结总预算由原批次 9 次和续行 7 次全部消耗，零重试；原第 9 次失败回执保持 `failed`，离线 v2 仅证明其已保存响应在目标日/上下文日分离合同下有效，不改写原执行历史。
 
-```bash
-PYTHONPATH=services/quant-api:. uv run --project services/quant-api \
-  python scripts/subing_d1_source_verify.py execute \
-  --project-env '/Users/zhangzhao/Library/Application Support/GuiyiQuant/project.env' \
-  --candidate "$PWD/outputs/subing-four-period-readiness-20260918/d1-17-source-verification-continuation-candidate.json" \
-  --expected-plan-sha256 c89cd8786323370ff86a178c6bf91ac9a3fe2ab88bac73ceb0daa00b7f5eeb1e \
-  --output-root "$PWD/outputs/subing-four-period-readiness-20260918" \
-  --attempt-id d1-source-only-continuation-20260919-001 \
-  --execute-source-query
-```
+owner 后续明确批准该冻结计划，实际来源采集于 `2026-09-19T12:21:41.610718+08:00`
+完成：
+
+- `7/7` 请求 started、saved、completed，`0` failed、`0` unexecuted、`0` retry；
+- `21/21` 目标日全部观察，并保存 `18` 个权威允许的上下文日；
+- RS2609、PF2611 的 20 个目标日均为 `NONPOSITIVE_CLOSE_SOURCE_FACT`，逐日与当前
+  Canonical OHLCV 完全一致；
+- Y2609/2026-09-09 为 `ZERO_OHL_POSITIVE_CLOSE_SOURCE_FACT`，该目标行不在当前
+  Canonical 分区中，fresh source 仍不满足硬校验；
+- RS 五个 rank1 日全部确认非正 Close，且与 Canonical 精确一致；
+- 两批合计 66 个目标日已全部取得 source evidence：52 个非正 Close、6 个零 OHL 正
+  Close、8 个正 OHLC；后 8 个属于 OI/PF 九月独立端点，但其分区仍混有 10 个非正 Close；
+- 原 1,207 个异常日期现为 `1,207/1,207` 有保存的来源响应，未知项归零；
+- 16 个目标 contract-month 中没有完整有效来源可进入生产修复，`223/240` 与 17 个 D1
+  阻塞均未变化。
+
+Canonical、PostgreSQL、Redis、manager apply、页面、Scope、通知、release 和 Runtime 写入均为
+`0`。机器结算见 `d1-17-source-verification-complete.json`；原始响应、journal、回执和 plan
+续行 claim 仅保留本机并由 `.gitignore` 排除；原批次 claim 已作为不含行情原文的历史执行身份随旧结算受控入库。

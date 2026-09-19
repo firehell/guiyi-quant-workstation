@@ -85,3 +85,24 @@ owner 随后授权冻结 plan `2c764158c097919fdb7a87ec3935c364905a122ff95d10cc9
 - Canonical、PostgreSQL、Redis 写入均为 0；未做页面或 240 矩阵复验。
 
 逐请求、逐日期及文件 hash 见 [执行结算](d1-17-source-verification-execution.json) 与 [说明](D1_17_SOURCE_VERIFICATION_EXECUTION.md)。
+
+## 续行后的最终来源决定
+
+冻结的 16 请求预算已全部使用：原批次 9 次、续行 7 次、零重试。原第 9 次 `SOURCE_RESPONSE_IDENTITY_INVALID` 失败回执保持不变；offline v2 只对已保存的 9 份响应做零 provider 的合同复验，不能表述为原批次执行成功。66 个目标日与两批共 28 个上下文日分开计数，OI/PF 九月 18 日仍是 66 个目标日内的独立端点子集。
+
+日期合同修正后，owner 批准的新 plan
+`c89cd8786323370ff86a178c6bf91ac9a3fe2ab88bac73ceb0daa00b7f5eeb1e` 已在 exact
+commit `69102a9e6882a7b2f7175b6e2f06a9f1b9ebe56c` 上执行完成。7/7 请求、21/21 目标日成功，
+保存 18 个合法上下文日，零重试、零生产写入。
+
+最终事实：
+
+- PF2611 的 10 日与 RS2609 的 10 日均为非正 Close；20/20 与现有 Canonical OHLCV 精确一致。
+- Y2609/2026-09-09 的 fresh source 仍为零 OHL 正 Close；当前 Canonical 没有该目标行。
+- RS 五个 rank1 日全部确认非正 Close，不再是 unknown。
+- 两批 66 个目标日已全部观察；原 1,207 个异常日期已有来源证据 1,207/1,207。
+- OI2609/PF2609 九月 18 个独立端点中仍有 10 个非正 Close，不能以 8 个正值端点发布混合分区。
+- 16 个目标 contract-month 的生产修复资格仍为 0；17 项继续 fail closed，223/240 不变。
+
+因此没有数据修复执行计划可申请。下一步只能在两个明确方向中选择：继续保留 17 项阻塞并向上游核查
+异常来源，或另行批准新的产品/物理前缀业务合同和版本；后者不是数据修复，不能由本轮证据自动晋升。

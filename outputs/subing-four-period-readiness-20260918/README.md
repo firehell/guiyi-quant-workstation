@@ -86,3 +86,10 @@ owner 后续明确授权处理上述 144 项。先按原诊断的物理合约、
 随后继续核对本机已有 source-response、journal、Catalog 质量 hash、Canonical 文件 hash 与当前[正式 warm-up dry-run](d1-17-contract-warmup-dryrun.json)，形成 [17 项来源证据刷新](d1-17-source-evidence-refresh.json)、[16 请求 source-only 候选](d1-17-source-verification-candidate.json)、[机器可读修复范围](d1-17-repair-scope.json)及[修复决定](D1_17_REPAIR_DECISION.md)。1,207 个既有异常日期中，1,159 个有已保存原始来源响应，48 个尚缺 raw replay；OI/PF 九月另有 18 个硬校验失败日期无保存响应。下一批仅为 16 次、66 日期、零写入的来源验证候选，当前未请求 provider。正式 dry-run 证明苏冰实际消费前缀内没有缺分区目标；全生命周期规划的 42 个目标中，OI2609/PF2609 九月 2 项保留为独立缺失分区 Gate，其余 40 项、20 个合约明确排除在本任务之外。
 
 owner 后续授权并执行上述冻结 source-only 候选，详见 [执行说明](D1_17_SOURCE_VERIFICATION_EXECUTION.md)与[机器结算](d1-17-source-verification-execution.json)。批次在第 9 个请求因 PF2611/2025-12 返回 10 个额外区间交易日而按合同停止：started/saved 9、完成 8、失败 1、未执行 7，零重试。共保存 55 行 raw，其中目标 45 日、额外 10 日；原 1,207 个异常日已有来源证据增加到 1,186 日，PF2611 10 日、RS2609 10 日、Y2609 1 日仍未执行。OI/PF 九月 18 日均已观察，但含 10 个非正 Close；当前零个完整分区具备生产修复条件。未执行 Canonical、数据库、页面、release 或 Runtime 操作。
+
+日期合同随后修正为区分传输窗口、目标日与权威允许上下文；旧 9 份响应离线复验通过且旧失败回执保持不变。
+owner 批准的 7 请求/21 目标日续行计划随后 7/7 完成，另保存 18 个合法上下文日，零失败、零重试、零生产
+写入。两批 66 个目标日全部闭合，原 1,207 个异常日期来源证据达到 1,207/1,207；但新增目标均继续证明
+source-invalid，OI/PF 九月仍为混合异常分区，因此可修复完整分区仍为 0，最终 223/240 与 17 个 D1 阻塞
+均不变。见[续行合同与结算](D1_17_DATE_CONTRACT_AND_CONTINUATION.md)和
+[最终机器结算](d1-17-source-verification-complete.json)。
