@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import UTC, datetime
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -16,6 +17,36 @@ from app.market_data.newow.product_release import REMAINING_WEEKLY_V2_PRODUCTS
 from app.market_data.newow.readiness import ReadinessRequest
 from app.market_data.newow.readiness_composition import build_newow_readiness
 from guiyi_quant.newow.product_contracts import ProductFrequency
+
+
+def proposed_unit_batches(
+    report: dict[str, object],
+) -> tuple[tuple[dict[str, str], ...], ...]:
+    targets = report.get("repair_targets")
+    if not isinstance(targets, list):
+        raise ValueError("REMAINING19_REPAIR_TARGETS_INVALID")
+    units: list[dict[str, str]] = []
+    for target in targets:
+        if not isinstance(target, dict) or target.get("status") != "PROPOSED":
+            continue
+        values = {
+            "symbol": target.get("symbol"),
+            "contract": target.get("contract"),
+            "through": target.get("through"),
+            "frequency": target.get("frequency"),
+            "expected_plan_sha256": target.get("plan_sha256"),
+        }
+        if (
+            any(not isinstance(item, str) for item in values.values())
+            or values["frequency"] != "1w"
+            or len(values["expected_plan_sha256"]) != 64
+        ):
+            raise ValueError("REMAINING19_REPAIR_TARGETS_INVALID")
+        units.append({key: str(item) for key, item in values.items()})
+    return tuple(
+        tuple(units[index:index + 20])
+        for index in range(0, len(units), 20)
+    )
 
 
 def parse_products(values: list[str]) -> tuple[str, ...]:
@@ -37,6 +68,7 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--output", required=True)
     value.add_argument("--matrix", action="store_true")
     value.add_argument("--consumer-only", action="store_true")
+    value.add_argument("--units-output-root")
     value.add_argument("--max-work", type=int, default=100000)
     value.add_argument("--timeout-seconds", type=int, default=600)
     return value
@@ -78,7 +110,34 @@ def main(argv: list[str] | None = None) -> int:
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str) + "\n")
+    report_bytes = (
+        json.dumps(report, ensure_ascii=False, indent=2, default=str) + "\n"
+    ).encode()
+    output.write_bytes(report_bytes)
+    batches = proposed_unit_batches(report)
+    unit_index = None
+    if args.units_output_root:
+        unit_root = Path(args.units_output_root)
+        unit_root.mkdir(parents=True, exist_ok=True)
+        entries = []
+        for index, batch in enumerate(batches, start=1):
+            path = unit_root / f"units-{index:03d}.json"
+            content = (json.dumps(batch, ensure_ascii=False, indent=2) + "\n").encode()
+            path.write_bytes(content)
+            entries.append({
+                "path": str(path),
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "unit_count": len(batch),
+            })
+        unit_index = unit_root / "units-index.json"
+        unit_index.write_text(json.dumps({
+            "schema_version": "newow_remaining19_prepare_units_v1",
+            "report_path": str(output),
+            "report_sha256": hashlib.sha256(report_bytes).hexdigest(),
+            "batch_count": len(entries),
+            "unit_count": sum(item["unit_count"] for item in entries),
+            "batches": entries,
+        }, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps({
         "status": report["status"],
         "complete": report["complete"],
@@ -86,6 +145,9 @@ def main(argv: list[str] | None = None) -> int:
         "main_case_count": report["main_case_count"],
         "main_ready_count": report["main_ready_count"],
         "repair_target_count": len(report["repair_targets"]),
+        "proposed_unit_count": sum(len(batch) for batch in batches),
+        "unit_batch_count": len(batches),
+        "units_index": None if unit_index is None else str(unit_index),
         "provider_requests": report["provider_requests"],
         "writes": report["writes"],
         "catalog_revision_stable": before == after,
