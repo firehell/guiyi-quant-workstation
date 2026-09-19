@@ -356,11 +356,19 @@ Newow 默认日线由独立只读解析取得最近完整收盘快照，并显�
 `canonical_updated` 和盘后任务 passed 只说明各自原有阶段，不直接证明牛哇三策略全部可读。
 若当日映射尚未发布，Newow 仅允许验证并显示前一完成日，标记当日待更新；
 其他输入质量或身份冲突继续失败关闭。此机制不引入盘中 RQData 抓取或额外重试。
-盘后主任务终态写入并释放维护锁后，按每品种目标日 Session 截止，以新只读事务验证
-operational 60 的 D1 三策略主图、参考与已开放辅助面板；每品种最多 60 秒，总计最多
-900 秒。审计在维护锁外运行，开始与提交时仅非等待短暂核锁，并比较所依赖的 D1 Catalog、
-rank1、Calendar/Session 与不可变 Parquet 分区指针摘要。`consumer_checks.newow_d1` 单独记录
-验收数、失败项、未检品种、逐品种截止、输入摘要与运行 commit；`input_changed` 不构成验收通过。
+盘后主任务终态写入并释放维护锁后，以新只读事务分别验证 operational 60 的 D1 和固定候选
+41 品种的 W1。两个范围都覆盖三策略主图、参考与 5 个已开放辅助面板；D1 按每品种目标日
+Session 截止，W1 按已发布完整周截止。健康路径复用同一行情窗口，先验证消费者；只有阻断失败
+品种才调用 `ContractWarmupPlanner` 生成只读差量提案，不在消费者阶段执行下载或写入。D1/W1
+各最多 600 秒，总计最多 1200 秒；该预算来自 2026-09-19 完整 60×3 与 41×3 只读实测，
+最终用时 1103.196 秒且两个范围均未耗尽。
+
+审计在维护锁外运行，开始与提交时仅非等待短暂核锁，并比较所依赖的 Catalog、rank1、
+Calendar/Session 与不可变 Parquet 分区指针摘要；W1 摘要同时绑定 D1 与 W1 输入。
+`consumer_checks.newow_d1` 与 `consumer_checks.newow_w1` 分别记录验收数、失败项、未检品种、
+逐品种截止、输入摘要、只读预热提案与运行 commit。`READY` 之外的 `WARMING`、
+`NOT_APPLICABLE`、`UNAVAILABLE`、`DATA_INTERRUPTED` 保持显式合法状态；未知、预算耗尽、
+未检或 `input_changed` 不构成验收通过。
 消费验收超时或异常只记 `not_verified`/`incomplete`，不得改写主任务终态、触发新的下载、
 生产重试或发送额外通知。未执行或旧 Runtime 没有该字段表示未验证。
 

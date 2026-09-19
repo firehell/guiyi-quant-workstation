@@ -163,6 +163,34 @@ def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_depende
     assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 12
 
 
+def test_candidate_weekly_scope_opens_only_the_versioned_first_41_products():
+    module = _audit_module()
+    from guiyi_quant.newow.product_contracts import ProductFrequency
+
+    report = module.NewowReadinessAudit(reader=AuditReader()).run(
+        module.ReadinessRequest(
+            ("rb", "au"),
+            datetime(2026, 9, 4, 8, tzinfo=UTC),
+            matrix=True,
+            frequencies=(ProductFrequency.WEEKLY,),
+            max_work=1,
+            candidate_weekly=True,
+        )
+    )
+    weekly = [case for case in report["cases"] if case["frequency"] == "1w"]
+    assert report["release_stage"] == "daily_weekly_candidate"
+    assert weekly
+    assert all(case["main"]["status"] != "UNOPENED" for case in weekly)
+
+    with pytest.raises(ValueError, match="NEWOW_READINESS_ARGUMENT_INVALID"):
+        module.ReadinessRequest(
+            ("bz",),
+            datetime(2026, 9, 4, 8, tzinfo=UTC),
+            frequencies=(ProductFrequency.WEEKLY,),
+            candidate_weekly=True,
+        )
+
+
 def test_daily_readonly_scope_and_public_daily_matrix_are_distinct():
     module = _audit_module()
     from guiyi_quant.newow.product_contracts import ProductFrequency
@@ -670,3 +698,40 @@ def test_repair_scope_coalesces_one_contract_to_latest_required_through():
         "auxiliary",
         "reference",
     }
+
+
+def test_consumer_only_matrix_skips_dependency_enumeration_and_keeps_all_sections():
+    module = _audit_module()
+    from app.market_data.newow.product_service import SectionDelivery
+    from guiyi_quant.newow.product_contracts import FeatureStatus
+
+    class Reader:
+        def __getattr__(self, name):
+            raise AssertionError(f"consumer-only audit must not call reader.{name}")
+
+    class Service:
+        def query(self, request):
+            return SimpleNamespace(**{
+                request.section: SectionDelivery(
+                    "delivered",
+                    FeatureStatus("ready", "ACTIVE_CODE_VERIFIED"),
+                    None,
+                )
+            })
+
+    report = module.NewowReadinessAudit(reader=Reader(), service=Service()).run(
+        module.ReadinessRequest(
+            ("rb",),
+            datetime(2026, 9, 4, 8, tzinfo=UTC),
+            matrix=True,
+            frequencies=("1w",),
+            candidate_weekly=True,
+            consumer_only=True,
+        )
+    )
+
+    assert report["complete"] is True
+    assert report["enumerations"] == report["dependencies"] == []
+    assert len(report["cases"]) == 3
+    assert all(len(case["sections"]) == 7 for case in report["cases"])
+    assert report["work_used"] == 21

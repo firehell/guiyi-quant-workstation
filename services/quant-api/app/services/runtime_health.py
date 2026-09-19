@@ -907,6 +907,8 @@ def _collect_after_market_health(
             "last_failure": public["last_failure"],
             "error_type": "after_market_status_invalid",
         }
+    if isinstance(public.get("consumer_checks"), Mapping):
+        base["consumer_checks"] = public["consumer_checks"]
     status = (
         RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
     )

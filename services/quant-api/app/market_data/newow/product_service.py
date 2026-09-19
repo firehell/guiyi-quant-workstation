@@ -11,6 +11,8 @@ from hashlib import sha256
 from itertools import groupby
 import json
 from secrets import token_urlsafe
+from threading import Lock
+from typing import TypeVar
 
 from guiyi_quant.newow.composite_explanation import calculate_composite_explanation
 from guiyi_quant.newow.context_alignment import ContextSnapshot
@@ -79,6 +81,8 @@ from .source_facts import (
 
 
 SCHEMA_VERSION = "newow_product_detail_v3"
+_K = TypeVar("_K")
+_V = TypeVar("_V")
 
 
 class ProductSection(StrEnum):
@@ -637,6 +641,7 @@ class NewowProductService:
         inflight: InFlightCoordinator | None = None,
         now: Callable[[], datetime] | None = None,
         cancelled: Callable[[], bool] | None = None,
+        reuse_read_inputs: bool = False,
     ) -> None:
         self._reader_factory = reader_factory
         self._cache = cache or SnapshotCache()
@@ -644,6 +649,16 @@ class NewowProductService:
         self._inflight = inflight or InFlightCoordinator()
         self._now = now or (lambda: datetime.now(UTC))
         self._cancelled = cancelled
+        self._reuse_read_inputs = reuse_read_inputs
+        self._read_input_lock = Lock()
+        self._chart_windows: dict[
+            tuple[str, ProductFrequency, int, datetime], ProductReadWindow
+        ] = {}
+        self._performance_windows: dict[
+            tuple[str, ProductFrequency, date | None, date | None, datetime],
+            ResolvedPerformanceWindow,
+        ] = {}
+        self._reads: dict[tuple[object, ...], ProductReadSet] = {}
 
     def query(self, request: ProductServiceQuery) -> NewowProductResult:
         if not isinstance(request, ProductServiceQuery):
@@ -720,12 +735,23 @@ class NewowProductService:
             window = older
             read_as_of = as_of
         elif request.section is ProductSection.REFERENCE:
-            resolved = reader.resolve_performance_window(
+            performance_key = (
                 request.product,
                 request.frequency,
                 request.performance_since,
                 request.performance_through,
                 as_of,
+            )
+            resolved = self._cached_read_input(
+                self._performance_windows,
+                performance_key,
+                lambda: reader.resolve_performance_window(
+                    request.product,
+                    request.frequency,
+                    request.performance_since,
+                    request.performance_through,
+                    as_of,
+                ),
             )
             window = ProductReadWindow(
                 resolved.requested_since, resolved.actual_through
@@ -735,8 +761,15 @@ class NewowProductService:
             window = ProductReadWindow(request.since, request.through)
             read_as_of = as_of
         else:
-            window = reader.resolve_chart_window(
+            chart_key = (
                 request.product, request.frequency, request.chart_limit, as_of
+            )
+            window = self._cached_read_input(
+                self._chart_windows,
+                chart_key,
+                lambda: reader.resolve_chart_window(
+                    request.product, request.frequency, request.chart_limit, as_of
+                ),
             )
             read_as_of = as_of
         low_query = NewowProductQuery(
@@ -751,7 +784,11 @@ class NewowProductService:
             history_limit=request.history_limit,
             history_before=request.history_before,
         )
-        read = reader.load(low_query, read_as_of)
+        read = self._cached_read_input(
+            self._reads,
+            self._market_read_key(low_query, read_as_of),
+            lambda: reader.load(low_query, read_as_of),
+        )
         self._check_cancelled(cancelled)
         if resolved is not None and request.frequency is ProductFrequency.WEEKLY:
             completed = tuple(
@@ -854,6 +891,42 @@ class NewowProductService:
             proof=proof, related_values=related, value_factory=bind_snapshot,
         )
         return bind_snapshot(token) if token is not None else result
+
+    def _cached_read_input(
+        self,
+        cache: dict[_K, _V],
+        key: _K,
+        load: Callable[[], _V],
+    ) -> _V:
+        if not self._reuse_read_inputs:
+            return load()
+        with self._read_input_lock:
+            cached = cache.get(key)
+            if cached is not None:
+                return cached
+            value = load()
+            cache[key] = value
+            return value
+
+    @staticmethod
+    def _market_read_key(
+        query: NewowProductQuery, read_as_of: datetime
+    ) -> tuple[object, ...]:
+        # Reader output contains market facts and owner evidence only. Strategy
+        # identity is applied later by _calculate, so all three strategies may
+        # safely share one immutable ProductReadSet for the same bounded input.
+        return (
+            query.product,
+            query.frequency,
+            query.since,
+            query.through,
+            query.performance_since,
+            query.performance_through,
+            read_as_of,
+            query.series_kind,
+            query.history_limit,
+            query.history_before,
+        )
 
     @staticmethod
     def _check_cancelled(cancelled: Callable[[], bool]) -> None:

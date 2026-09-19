@@ -155,14 +155,14 @@ reference_interruptions、reference_statistics、replay_invariants、snapshot_ca
 **修改/测试：** `app/market_data/after_market.py`、maintenance/planner、相关 health/public schema，
 `tests/data_foundation/test_after_market.py` 与直接相关 planner 测试、DATA_CENTER.md。
 
-- [ ] 为消费者审计添加 W1 41 范围，复用 D1 有界执行骨架；维护终态/锁释放后新只读事务运行。
-- [ ] 测试输入修订在检查中改变、锁忙、超时和未检项；不能写成功，不启动下载、retry、通知。
-- [ ] 分开 canonical_updated 与 consumer_checks.newow_w1；按合法策略状态验收，不强制所有都 READY。
-- [ ] 依据六品种耗时确定 D1+W1 总预算；如无法在既有边界完成，先优化重复读取与可复用证明，
+- [x] 为消费者审计添加 W1 41 范围，复用 D1 有界执行骨架；维护终态/锁释放后新只读事务运行。
+- [x] 测试输入修订在检查中改变、锁忙、超时和未检项；不能写成功，不启动下载、retry、通知。
+- [x] 分开 canonical_updated 与 consumer_checks.newow_w1；按合法策略状态验收，不强制所有都 READY。
+- [x] 依据六品种耗时确定 D1+W1 总预算；如无法在既有边界完成，先优化重复读取与可复用证明，
   必要调度/持续运行边界变更需写明决策，不无界延长或省略检查。
-- [ ] 新 owner 的物理预热以真实消费窗口验证；已有 update 若不覆盖，复用 ContractWarmupPlanner 生成差量，
+- [x] 新 owner 的物理预热以真实消费窗口验证；已有 update 若不覆盖，复用 ContractWarmupPlanner 生成差量，
   在数据维护阶段执行，消费者只读阶段不执行 mutation。
-- [ ] 默认关闭任何新增生产 writer/扩围行为。需要持续授权时生成可审查范围与实测请求/字节/时限预算。
+- [x] 默认关闭任何新增生产 writer/扩围行为。需要持续授权时生成可审查范围与实测请求/字节/时限预算。
 - [ ] 假时钟验证完整周发布→Catalog/MDS→消费检查→默认页面及重启后的同一结果。
 
 **出口：** 持续维护代码与授权差量明确；自然周事件尚未发生时保持待验证，不能宣称 Runtime ready。

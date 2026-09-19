@@ -1268,6 +1268,50 @@ def test_enabled_after_market_preserves_activation_state_after_completed_run(
     assert after_market["configured_enabled"] is True
 
 
+def test_after_market_health_exposes_weekly_consumer_check_without_promoting_it(
+    monkeypatch, tmp_path
+) -> None:
+    status_path = tmp_path / "after-market-status.json"
+    check = {
+        "status": "incomplete", "frequency": "1w",
+        "trading_day": "2026-08-10", "checked_at": "2026-08-10T17:31:00+08:00",
+        "case_count": 3, "main_ready_count": 0, "reference_ready_count": 0,
+        "auxiliary_ready_count": 0, "budget_exhausted": False,
+        "failures": [], "warmup_proposals": [],
+    }
+    status_path.write_text(json.dumps({
+        "schema_version": 3,
+        "current_run": None,
+        "last_run": {
+            "trading_day": "2026-08-10", "status": "passed", "attempts": 1,
+            "started_at": "2026-08-10T17:00:00+08:00",
+            "finished_at": "2026-08-10T17:30:00+08:00",
+            "products": ["jm"], "error_code": None,
+        },
+        "last_successful_trading_day": "2026-08-10",
+        "last_failure": None,
+        "consumer_checks": {"newow_w1": check},
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",)
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        _seed_calendar(
+            session, exchanges={"DCE": ("jm",)},
+            days={"DCE": ((date(2026, 8, 10), True),)},
+        )
+        payload = build_runtime_health(
+            session, redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 11, 8, 0, tzinfo=UTC),
+            live_runtime_enabled=False, after_market_automation_enabled=True,
+            after_market_status_path=status_path,
+        )
+    after_market = payload["components"]["after_market"]
+    assert after_market["status"] == "ok"
+    assert after_market["consumer_checks"]["newow_w1"]["status"] == "incomplete"
+
+
 @pytest.mark.parametrize(
     "legacy_payload",
     (

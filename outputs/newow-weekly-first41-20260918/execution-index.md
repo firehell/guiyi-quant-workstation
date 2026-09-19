@@ -103,3 +103,21 @@ SHA-256 全部不变，44 个 W1 月分区完成发布，缺价质量事实为 0
 固定 41 品种当前合并为 123/123 页面可读；其余 19 品种 W1/60m 的关闭范围未改。
 完整回执见
 [`../newow-weekly-first41-step5-recovery-20260919/recovery-closeout.md`](../newow-weekly-first41-step5-recovery-20260919/recovery-closeout.md)。
+
+2026-09-19 步骤 6 已完成候选代码与当前数据只读验收。盘后主任务释放维护锁后，
+独立记录 `consumer_checks.newow_d1` 与 `consumer_checks.newow_w1`；W1 固定 41 品种，
+输入修订同时绑定 D1/W1。消费者优先验证三策略主图、参考交易和 5 个辅助区段；
+只有阻断失败品种才调用原生 `ContractWarmupPlanner` 生成精确只读提案，消费者阶段
+没有 provider、Canonical/Catalog 写入、retry 或通知能力。重复行情窗口可跨区段及策略复用，
+D1/W1 各有 600 秒、总计 1200 秒的有界预算。
+
+当前 Catalog 的完整只读事务用时 1103.196 秒：D1 180/180、W1 123/123 均为
+`audited`，两个范围均 `budget_exhausted=false`，未检项、阻断失败和预热提案均为 0。
+D1 为 179 个主图 READY、180 个参考 READY，剩余显式状态合法；W1 主图与参考均
+123/123 READY。当前结论为 `no mutation needed`，不制造新数据批次。该证据没有写入
+正式 after-market 状态，也不证明新版本已发布、Runtime 已切换或下一自然完整周已发生；
+完整周发布后的自然消费与重启同结果仍是部署后的 Gate。
+定向盘后/readiness/health 回归 174 passed；完整 Newow、盘后与 Runtime health 回归
+2025 passed、1 skipped，其中两项 socket 用例因沙箱禁止绑定回环端口后在允许本机端口的
+环境 2/2 通过。完整周/周快照/重启不变量补充组 57 passed；Ruff、OpenSpec 9/9、
+secret scan 0 findings 与 `git diff --check` 通过。

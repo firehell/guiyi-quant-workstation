@@ -185,6 +185,7 @@ def _updater(
     consumer_guard_factory=None,
     consumer_audit=None,
     consumer_revision=None,
+    consumer_check_keys=("newow_d1",),
 ):
     manager = _Manager(trading_day, results, metadata_day=metadata_day)
     rqdata = _RQData(readiness)
@@ -206,8 +207,70 @@ def _updater(
         consumer_guard_factory=consumer_guard_factory,
         consumer_audit=consumer_audit,
         consumer_revision=consumer_revision,
+        consumer_check_keys=consumer_check_keys,
     )
     return updater, manager, rqdata, sleeps, notices, live_store
+
+
+def _consumer_result(*, frequency: str, ready: int, status: str = "audited"):
+    return {
+        "status": status,
+        "frequency": frequency,
+        "case_count": ready,
+        "main_ready_count": ready,
+        "reference_ready_count": ready,
+        "auxiliary_ready_count": ready * 5,
+        "budget_exhausted": False,
+        "failures": [],
+        "warmup_proposals": [],
+        "input_revision": ("a" if frequency == "1d" else "b") * 64,
+    }
+
+
+def test_consumer_audit_bundle_keeps_daily_and_weekly_checks_separate(tmp_path):
+    def audit(_products, _day):
+        return {
+            "newow_d1": _consumer_result(frequency="1d", ready=180),
+            "newow_w1": _consumer_result(frequency="1w", ready=123),
+        }
+
+    def revisions(_products, _day):
+        return {"newow_d1": "a" * 64, "newow_w1": "c" * 64}
+
+    updater, *_ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True],
+        results=[_result("passed")], consumer_audit=audit,
+        consumer_revision=revisions,
+        consumer_check_keys=("newow_d1", "newow_w1"),
+    )
+    assert updater.run().status == "passed"
+    status = _status(tmp_path / "after-market-status.json")
+    assert status["last_run"]["status"] == "passed"
+    assert status["consumer_checks"]["newow_d1"]["status"] == "audited"
+    assert status["consumer_checks"]["newow_w1"]["status"] == "input_changed"
+    assert status["consumer_checks"]["newow_w1"]["frequency"] == "1w"
+    public = public_after_market_status(status)
+    assert set(public["consumer_checks"]) == {"newow_d1", "newow_w1"}
+    assert public["consumer_checks"]["newow_w1"]["status"] == "input_changed"
+
+
+def test_consumer_audit_bundle_busy_keeps_both_checks_not_verified(tmp_path):
+    @contextmanager
+    def busy():
+        raise RuntimeError("LIVE_RECOVERY_BUSY")
+        yield
+
+    updater, *_ = _updater(
+        tmp_path, trading_day=date(2026, 8, 10), readiness=[True],
+        results=[_result("passed")],
+        consumer_audit=lambda *_: pytest.fail("busy guard must block audit"),
+        consumer_guard_factory=busy,
+        consumer_check_keys=("newow_d1", "newow_w1"),
+    )
+    assert updater.run().status == "passed"
+    status = _status(tmp_path / "after-market-status.json")
+    assert set(status["consumer_checks"]) == {"newow_d1", "newow_w1"}
+    assert {item["status"] for item in status["consumer_checks"].values()} == {"not_verified"}
 
 
 def test_consumer_audit_runs_after_update_guard_and_keeps_primary_result(tmp_path):
