@@ -9,7 +9,7 @@ from hashlib import sha256
 import json
 
 from .contracts import (
-    ActionKind, BoundaryReason, ReferenceAction, ReferenceBoundary, ReferenceState,
+    ActionKind, BoundaryReason, CompletedReferenceBar, ReferenceAction, ReferenceBoundary, ReferenceState,
     ReferenceMark, ReferenceTrade, ReferenceTransition, Side, TradeStatus,
 )
 
@@ -42,7 +42,10 @@ def _validate_open_match(trade: ReferenceTrade, action: ReferenceAction) -> None
         raise ValueError("CLOSE bar_end cannot precede entry")
 
 
-def _input_hash(actions: tuple[ReferenceAction, ...], boundaries: tuple[ReferenceBoundary, ...]) -> str:
+def _input_hash(
+    actions: tuple[ReferenceAction, ...], boundaries: tuple[ReferenceBoundary, ...],
+    completed: CompletedReferenceBar | None,
+) -> str:
     """Hash just this bounded input batch; durable deduplication remains P3 work."""
     def action_wire(action: ReferenceAction) -> tuple[object, ...]:
         return (
@@ -59,7 +62,11 @@ def _input_hash(actions: tuple[ReferenceAction, ...], boundaries: tuple[Referenc
             boundary.trading_day.isoformat(),
         )
 
-    wire = {"actions": [action_wire(action) for action in actions], "boundaries": [boundary_wire(boundary) for boundary in boundaries]}
+    completed_wire = None if completed is None else (
+        completed.physical_contract, completed.owner_segment_id, completed.calculation_segment_id,
+        completed.bar_end.isoformat(), completed.trading_day.isoformat(), str(completed.reference_price),
+    )
+    wire = {"actions": [action_wire(action) for action in actions], "boundaries": [boundary_wire(boundary) for boundary in boundaries], "completed": completed_wire}
     return sha256(json.dumps(wire, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
 
 
@@ -71,6 +78,7 @@ def reduce_reference(
     completed_bar_end: datetime | None = None,
     completed_trading_day: date | None = None,
     completed_reference_price: Decimal | None = None,
+    completed_bar: CompletedReferenceBar | None = None,
 ) -> ReferenceTransition:
     """Apply one already-validated completed input batch without side effects."""
     if not isinstance(state, ReferenceState):
@@ -97,6 +105,14 @@ def reduce_reference(
     ]
     if len(boundary_keys) != len(set(boundary_keys)):
         raise ValueError("boundaries must not repeat a segment at the same bar_end")
+    if completed_bar is not None:
+        if not isinstance(completed_bar, CompletedReferenceBar):
+            raise TypeError("completed_bar must be CompletedReferenceBar")
+        if any(value is not None for value in (completed_bar_end, completed_trading_day, completed_reference_price)):
+            raise ValueError("completed_bar cannot be combined with legacy completed fields")
+        completed_bar_end = completed_bar.bar_end
+        completed_trading_day = completed_bar.trading_day
+        completed_reference_price = completed_bar.reference_price
     if completed_bar_end is not None:
         from .contracts import _day, _instant
         _instant(completed_bar_end, "completed_bar_end")
@@ -105,7 +121,7 @@ def reduce_reference(
             from .contracts import _price
             _price(completed_reference_price, "completed_reference_price")
 
-    input_hash = _input_hash(actions, boundaries)
+    input_hash = _input_hash(actions, boundaries, completed_bar)
     positions = [*(action.bar_end for action in actions), *(boundary.bar_end for boundary in boundaries)]
     target = completed_bar_end
     if completed_bar_end is not None and any(position > completed_bar_end for position in positions):
@@ -193,6 +209,16 @@ def reduce_reference(
         if current is not None:
             if completed_reference_price is None:
                 raise ValueError("OPEN completed bar requires completed_reference_price")
+            if completed_bar is not None and (
+                completed_bar.physical_contract,
+                completed_bar.owner_segment_id,
+                completed_bar.calculation_segment_id,
+            ) != (
+                current.physical_contract,
+                current.owner_segment_id,
+                current.calculation_segment_id,
+            ):
+                raise ValueError("completed_bar must match OPEN physical contract and segments")
             holding_bars = current.holding_bars + int(completed_bar_end > current.entry_bar_end)
             mark_return = _return(current.entry_reference_price, completed_reference_price, current.side)
             current = replace(

@@ -178,6 +178,25 @@ class ReferenceBoundary:
 
 
 @dataclass(frozen=True, slots=True)
+class CompletedReferenceBar:
+    """Authoritative completed mark, including the owner identity that produced it."""
+
+    physical_contract: str
+    owner_segment_id: str
+    calculation_segment_id: str
+    bar_end: datetime
+    trading_day: date
+    reference_price: Decimal
+
+    def __post_init__(self) -> None:
+        for name in ("physical_contract", "owner_segment_id", "calculation_segment_id"):
+            _text(getattr(self, name), name)
+        _instant(self.bar_end, "bar_end")
+        _day(self.trading_day, "trading_day")
+        _price(self.reference_price, "reference_price")
+
+
+@dataclass(frozen=True, slots=True)
 class ReferenceTrade:
     reference_trade_id: str
     stream: StreamIdentity

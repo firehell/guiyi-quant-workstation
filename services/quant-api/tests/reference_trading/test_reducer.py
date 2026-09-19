@@ -8,6 +8,7 @@ import pytest
 from guiyi_quant.reference_trading import (
     ActionKind,
     BoundaryReason,
+    CompletedReferenceBar,
     RecordingMode,
     ReferenceAction,
     ReferenceBoundary,
@@ -295,6 +296,22 @@ def test_open_completed_bar_requires_explicit_mark_price() -> None:
             opened.state, completed_bar_end=start + timedelta(days=1),
             completed_trading_day=date(2026, 9, 20),
         )
+
+
+def test_same_completed_watermark_with_different_owner_mark_is_a_conflict() -> None:
+    start = datetime(2026, 9, 19, 15, tzinfo=UTC)
+    opened = reduce_reference(ReferenceState.flat(stream()), actions=(action(ActionKind.OPEN_LONG, "open-1", at=start),))
+    completed = CompletedReferenceBar(
+        physical_contract="RB2601", owner_segment_id="owner-1", calculation_segment_id="calc-1",
+        bar_end=start + timedelta(days=1), trading_day=date(2026, 9, 20), reference_price=Decimal("100"),
+    )
+    first = reduce_reference(opened.state, completed_bar=completed)
+    conflicting = CompletedReferenceBar(
+        physical_contract="RB2602", owner_segment_id="owner-2", calculation_segment_id="calc-2",
+        bar_end=completed.bar_end, trading_day=completed.trading_day, reference_price=Decimal("100"),
+    )
+    with pytest.raises(ValueError, match="computed_through"):
+        reduce_reference(first.state, completed_bar=conflicting)
 
 
 def test_batch_rejects_conflicting_boundaries_for_one_segment_at_one_bar() -> None:
