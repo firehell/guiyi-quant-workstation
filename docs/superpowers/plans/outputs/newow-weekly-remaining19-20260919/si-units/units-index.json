@@ -1,0 +1,19 @@
+{
+  "schema_version": "newow_remaining19_prepare_units_v1",
+  "report_path": "docs/superpowers/plans/outputs/newow-weekly-remaining19-20260919/si-readiness.json",
+  "report_sha256": "87f517817d10fed78871eed930873653c6f03b303f54a2220242f58a6650f806",
+  "batch_count": 2,
+  "unit_count": 25,
+  "batches": [
+    {
+      "path": "docs/superpowers/plans/outputs/newow-weekly-remaining19-20260919/si-units/units-001.json",
+      "sha256": "206dcf54d373e4aeadfc053350777dabf1cc9a6a885353a4d8ad6a023d6f5384",
+      "unit_count": 20
+    },
+    {
+      "path": "docs/superpowers/plans/outputs/newow-weekly-remaining19-20260919/si-units/units-002.json",
+      "sha256": "4846e185f843677f862c9033c583362a4971e2dec477d1bd57d92a08681f1fdb",
+      "unit_count": 5
+    }
+  ]
+}

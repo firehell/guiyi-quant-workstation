@@ -1,0 +1,19 @@
+{
+  "schema_version": "newow_remaining19_prepare_units_v1",
+  "report_path": "docs/superpowers/plans/outputs/newow-weekly-remaining19-20260919/pg-readiness.json",
+  "report_sha256": "7a1af98be25ef8defd1cc8f18449c3ee4569dbb0bdff6f7b132a6a7b5f7f7fbd",
+  "batch_count": 2,
+  "unit_count": 25,
+  "batches": [
+    {
+      "path": "docs/superpowers/plans/outputs/newow-weekly-remaining19-20260919/pg-units/units-001.json",
+      "sha256": "275cc8efe91bb09e31222fae0ef91fee163ee8250682a146cc305e9396abae1a",
+      "unit_count": 20
+    },
+    {
+      "path": "docs/superpowers/plans/outputs/newow-weekly-remaining19-20260919/pg-units/units-002.json",
+      "sha256": "347ed28303d55f12e26f04298a9fa243bc0b4ea3c850925e885d00d0e9f2dd4a",
+      "unit_count": 5
+    }
+  ]
+}
