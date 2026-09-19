@@ -26,9 +26,12 @@ export function projectNewowDetail(
   const ready = lifecycle === 'ready' && latestBar?.observation_eligible && frame?.status.status === 'ready'
   const state = ready ? frame!.main_state : 'UNAVAILABLE'
   const result = explanation?.value?.target_absorb
+  const direct = value?.price_reference
   const compatible = explanationCompatible && chart && explanation && JSON.stringify(chart.meta.identity) === JSON.stringify(explanation.meta.identity) && chart.meta.as_of === explanation.meta.as_of
   const targetValid = currentChartWindow && ready && compatible && explanationLifecycle === 'ready' && result?.status === 'ready' && result.evidence_status === 'ACTIVE_CODE_VERIFIED' && result.as_of === chart.meta.as_of
   const targetPrice = (kind: 'target' | 'absorb') => {
+    const priceDirect = direct?.[kind]
+    if (currentChartWindow && ready && priceDirect?.status.status === 'ready' && priceDirect.raw !== null && priceDirect.display !== null && direct?.anchor_bar_end === latestBar?.bar_end && direct.physical_contract === latestBar?.physical_contract && direct.segment_id === latestBar?.segment_id && direct.calculation_segment_id === latestBar?.calculation_segment_id && direct.as_of === chart?.meta.as_of) return { display: priceDirect.display, display_value: priceDirect.display, bar_end: direct.anchor_bar_end }
     const price = result?.value?.[kind]
     return targetValid && price && /^\d+(\.\d+)?$/.test(price.display_value) && Number.isFinite(Number(price.display_value)) && price.physical_contract === latestBar?.physical_contract && price.segment_id === latestBar?.segment_id && Date.parse(price.bar_end) <= Date.parse(chart!.meta.as_of) ? price : null
   }

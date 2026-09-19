@@ -144,7 +144,10 @@ export interface NewowTrendChannelPoint {
   readonly physical_contract: string
   readonly segment_id: string
   readonly source_identity: string
+  readonly calculation_segment_id: string
 }
+
+export interface NewowChartPriceReference { readonly surface: 'chart_legend'; readonly frequency: NewowProductFrequency; readonly as_of: string; readonly anchor_bar_end: string; readonly physical_contract: string; readonly segment_id: string; readonly calculation_segment_id: string; readonly input_sha256: string; readonly formula_version: 'newow_chart_legend_hhv_llv10_page_v1'; readonly adapter_version: 'newow_chart_price_projection_v1'; readonly target: { readonly raw: string | null; readonly display: string | null; readonly status: NewowFeatureStatus }; readonly absorb: { readonly raw: string | null; readonly display: string | null; readonly status: NewowFeatureStatus } }
 
 export interface NewowTrendChannelLayer {
   readonly kind: 'trend_channel'
@@ -193,6 +196,7 @@ export interface NewowChartValue {
   readonly bars: readonly NewowProductBar[]
   readonly frames: readonly NewowProductFrame[]
   readonly trend_channel: NewowTrendChannelLayer | null
+  readonly price_reference: NewowChartPriceReference | null
   readonly actions: readonly NewowProductAction[]
   readonly hints: readonly NewowProductHint[]
   readonly diagnostics: readonly string[]

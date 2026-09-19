@@ -34,6 +34,7 @@ class TrendChannelPoint:
     physical_contract: str
     segment_id: str
     source_identity: str
+    calculation_segment_id: str
 
     def __post_init__(self) -> None:
         for value in (
@@ -41,6 +42,7 @@ class TrendChannelPoint:
             self.physical_contract,
             self.segment_id,
             self.source_identity,
+            self.calculation_segment_id,
         ):
             _text(value)
         if self.formula_version != CHANNEL_FORMULA_VERSION:
@@ -90,9 +92,15 @@ def _status(status: FeatureRuntimeStatus, reason: str | None = None) -> FeatureS
     return FeatureStatus(status, EvidenceStatus.ACTIVE_CODE_VERIFIED, reason)
 
 
-def _key(item: ProductBar) -> tuple[datetime, str, str, str]:
+def _key(item: ProductBar) -> tuple[datetime, str, str, str, str]:
     bar = item.bar
-    return (bar.bar_end, bar.physical_contract, bar.segment_id, bar.source_identity)
+    return (
+        bar.bar_end,
+        bar.physical_contract,
+        bar.segment_id,
+        bar.source_identity,
+        item.calculation_segment_id,
+    )
 
 
 def build_trend_channel_layer(
@@ -111,11 +119,11 @@ def build_trend_channel_layer(
         raise ValueError("NEWOW_TREND_CHANNEL_INVALID_BAR")
 
     calculated: dict[
-        tuple[datetime, str, str, str], tuple[ChannelPoint | None, str | None]
+        tuple[datetime, str, str, str, str], tuple[ChannelPoint | None, str | None]
     ] = {}
     owners_by_time: dict[datetime, set[tuple[str, str, str]]] = {}
     run: list[ProductBar] = []
-    run_owner: tuple[str, str] | None = None
+    run_owner: tuple[str, str, str] | None = None
 
     def flush() -> None:
         nonlocal run
@@ -165,7 +173,11 @@ def build_trend_channel_layer(
         run = []
 
     for item in replay:
-        owner = (item.bar.physical_contract, item.bar.segment_id)
+        owner = (
+            item.bar.physical_contract,
+            item.bar.segment_id,
+            item.calculation_segment_id,
+        )
         if run_owner is not None and owner != run_owner:
             flush()
         run_owner = owner
@@ -204,6 +216,7 @@ def build_trend_channel_layer(
                 bar.physical_contract,
                 bar.segment_id,
                 bar.source_identity,
+                item.calculation_segment_id,
             )
         )
     return TrendChannelLayer(tuple(points))
