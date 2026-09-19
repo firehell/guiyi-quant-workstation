@@ -355,6 +355,33 @@ pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-
 上述浏览器截图使用 route-intercept fixture，只证明视觉与交互，不代表生产历史收益或自然预警。
 真实历史读取、发布和 Runtime 验收单独报告；生产只读诊断按任务范围自主执行，测试不授权外部写入。
 
+## Unified Reference Trading P3 仓储
+
+纯 DTO、严格 seed/checkpoint、原子批次和内部快照测试可在无外部服务时运行：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/reference_trading \
+  services/quant-api/tests/alembic/test_reference_trading_migration.py \
+  -m 'not isolated_postgresql'
+```
+
+真实行锁、双 writer、故障回滚、NUMERIC 与 migration DDL 必须在本任务专用空白可销毁 PostgreSQL 运行；
+沿用下文 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL` guard，变量缺失导致的 skip 不算 P3 验收通过：
+
+```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:PORT/isolated_test_db' \
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/reference_trading/test_repository_postgresql.py \
+  services/quant-api/tests/alembic/test_reference_trading_migration.py \
+  -m isolated_postgresql
+```
+
+这两组测试不加载生产 `.env`，不执行生产 migration，不创建 enabled stream，也不连接 RQData、Canonical、
+Redis、通知或 Runtime。P3 不包含 P4 历史构建、P5 HTTP/Web 或 P6 worker。
+
 ## Market WebSocket 与统一详情页
 
 ```bash

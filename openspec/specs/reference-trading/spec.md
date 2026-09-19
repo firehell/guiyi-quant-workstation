@@ -4,7 +4,8 @@
 
 定义所有策略共用的 ReferenceTrading 领域合同。它只投影研究用途的参考交易，`executable=false`、
 `auto_order=false`，绝不创建 Order、Fill、Position、Ledger、Account PnL、AlertEvent 或通知。本规格冻结
-P0/P1 的公共身份和纯状态语义；持久化、历史构建、查询、Web 与 Runtime 仍是后续计划能力，不声明 active。
+P0/P1 的公共身份和纯状态语义，以及 P3 的持久化、原子批次与内部快照合同。历史构建、HTTP 查询、Web 与
+Runtime 仍是后续计划能力，不声明 active；新表和仓储代码不授权生产 migration、bootstrap 或 enable。
 
 ## Requirements
 
@@ -89,3 +90,53 @@ release or Runtime work.
 - **WHEN** a strategy/frequency adapter passes its isolated fixture and checkpoint tests
 - **THEN** only that row's historical code support and fixture evidence may be recorded
 - **AND** its Runtime remains disabled until a separate Runtime authorization and readback exist
+
+### Requirement: Durable revisions commit atomically and idempotently
+
+ReferenceTrading persistence SHALL use disabled streams, isolated candidate revisions and a monotonic commit sequence.
+Each calculation batch MUST atomically persist its source-action references, trade validity changes, marks, complete
+adapter checkpoint and evidence. A repeated `(stream, revision, batch_key)` with the same payload MUST return the
+durable receipt before checking a stale checkpoint; the same identity with different content MUST fail closed. A new
+batch MUST compare revision, sequence, stream row version and checkpoint hash under a fixed stream-to-revision lock
+order. Diagnostics and seed chunks MUST NOT advance valid calculation sequence.
+
+#### Scenario: Two writers submit the same prepared batch
+
+- **GIVEN** both writers start from the same durable checkpoint
+- **WHEN** they concurrently submit the same batch identity and payload
+- **THEN** exactly one commit advances the revision
+- **AND** the other returns the same sequence as a no-op without duplicating actions, trades or marks
+
+#### Scenario: A write fails after actions are inserted
+
+- **WHEN** any failure occurs after an intermediate table write but before transaction commit
+- **THEN** batch, actions, trade versions, marks and checkpoint all remain at the prior sequence
+
+### Requirement: Complete strategy checkpoints are strict and seed publication is fail-closed
+
+The repository MUST persist the exact canonical text produced by `adapter_checkpoint_to_json` and MUST validate it
+with `adapter_checkpoint_from_json` against the expected stream and strategy schema before commit and after read.
+Initialization chunks MUST be bounded, content-addressed and complete before a seal can create a readable checkpoint.
+Candidate revisions MUST remain invisible until a compare-and-swap publication verifies the expected dependency
+digest and sealed sequence. No public repository method may enable a stream.
+
+#### Scenario: One seed chunk is missing
+
+- **WHEN** a caller attempts to seal or publish an incomplete seed generation
+- **THEN** the candidate remains unreadable through the active stream pointer
+- **AND** no partial checkpoint becomes the stream's effective state
+
+### Requirement: Snapshot reads never mix revisions or future facts
+
+An internal snapshot SHALL bind stream, published revision and commit sequence. Trade versions use half-open
+`[valid_from_seq, valid_to_seq)` intervals; an old snapshot MUST remain stable after later commits. A cutoff before a
+close MUST return the prior OPEN version and its latest eligible mark, never the future exit or realized return.
+Forward reads MUST additionally require each action's actual `observed_at` not to exceed the cutoff. Candidate and
+invalid revisions MUST fail explicitly rather than switching to another revision.
+
+#### Scenario: A trade closes after a captured snapshot
+
+- **GIVEN** sequence 2 contains an OPEN trade and a reader captures that snapshot
+- **WHEN** sequence 3 closes the trade
+- **THEN** the captured sequence 2 still returns OPEN with its sequence-2 mark
+- **AND** sequence 3 returns CLOSED only for cutoffs that include the close and, in forward mode, its observation time

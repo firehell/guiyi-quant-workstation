@@ -20,7 +20,7 @@
 ## Newow 与参考交易
 
 - 本节冻结允许实现的稳定产品合同，不声明 Newow 三策略 × 三周期、ReferenceTrade 或新 Workspace 已发布、已部署或通过生产验收。
-- 公共 `ReferenceTrading` canonical 已冻结两种不可混淆的记录口径：`historical_replay` 是可从固定 Canonical 输入和版本重建的研究投影；`forward_observation` 只记录明确启用后实际观察的 completed 输入，默认 FLAT 起点。P0/P1 仅有纯 contracts/identity/reducer，尚未替换现有 projector、建立持久化查询或启用任何 worker；详见 `openspec/specs/reference-trading/spec.md`。
+- 公共 `ReferenceTrading` canonical 已冻结两种不可混淆的记录口径：`historical_replay` 是可从固定 Canonical 输入和版本重建的研究投影；`forward_observation` 只记录明确启用后实际观察的 completed 输入，默认 FLAT 起点。P0–P2 已有纯 contracts/reducer、严格完整 checkpoint 与现有牛哇/苏冰投影适配；P3 新增的六表与原子仓储仍只是默认 disabled 的工程能力，不代表生产 migration、历史构建、HTTP/Web 查询或 worker 已启用；详见 `openspec/specs/reference-trading/spec.md`。
 - Newow 主产品范围为趋势、震荡、主升浪 × `1w/1d/60m` 九个独立组合，全部只消费 completed Canonical `actual_dominant`，并继续通过 `MarketDataService`、Catalog 与 `MainContractMap` 取得行情和物理 owner。浏览器不聚合周期、不重算公式、不配对交易。
 - Newow 详情采用局部白色全宽 Shell、单层策略入口、唯一周期入口、原位展开解释与原生弹窗；K 线、成交量和单一副图共享时间轴。同品种同周期切换 Newow 策略时只替换策略所属图层，加载态清空旧事实但保留兼容窗口元数据，并仅在新时间轴完全兼容时恢复缩放；身份或时间轴不兼容时清空旧图层并重置。默认 MACD 为既有内核的只读显示（12/26/9、sma_window、histogram×2），不声明牛哇 MACD 原站 parity；其他副图替换同一 pane。
 - 日线收盘报价通过有界 `actual_dominant + 1d + limit=2` 独立读取并标记时间/非实时。参考记录随文档纵向滚动，首次可见读取一次、cursor 手动加载更多；解释和独立比较器按需读取。长身份/原始时间仍可在来源和详情中查询，缺失或不兼容证据不填示例值。

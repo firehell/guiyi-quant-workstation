@@ -1,0 +1,184 @@
+"""Strict application DTOs for reference-trading persistence."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Generic, Literal, TypeVar
+
+from guiyi_quant.reference_trading import (
+    RecordingMode,
+    ReferenceAction,
+    ReferenceTransition,
+)
+from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
+
+
+ItemT = TypeVar("ItemT")
+
+
+def _text(value: object, name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{name} must be non-empty text")
+    return value
+
+
+def _non_negative(value: object, name: str) -> int:
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return value
+
+
+def _sha256(value: object, name: str) -> str:
+    text = _text(value, name)
+    if len(text) != 64 or any(char not in "0123456789abcdef" for char in text):
+        raise ValueError(f"{name} must be a lowercase sha256")
+    return text
+
+
+@dataclass(frozen=True, slots=True)
+class CheckpointToken:
+    stream_id: str
+    revision_id: str
+    seq: int
+    row_version: int
+    state_hash: str
+
+    def __post_init__(self) -> None:
+        _text(self.stream_id, "stream_id")
+        _text(self.revision_id, "revision_id")
+        _non_negative(self.seq, "seq")
+        _non_negative(self.row_version, "row_version")
+        _sha256(self.state_hash, "state_hash")
+
+
+@dataclass(frozen=True, slots=True)
+class StoredStream:
+    stream_id: str
+    enabled: bool
+    active_revision_id: str | None
+    latest_seq: int
+    row_version: int
+    health: str
+
+
+@dataclass(frozen=True, slots=True)
+class SeedChunk:
+    batch_key: str
+    index: int
+    count: int
+    root_hash: str
+    content: str
+
+    def __post_init__(self) -> None:
+        _text(self.batch_key, "batch_key")
+        _non_negative(self.index, "index")
+        if type(self.count) is not int or self.count <= 0:
+            raise ValueError("count must be a positive integer")
+        if self.index >= self.count:
+            raise ValueError("index must be less than count")
+        _sha256(self.root_hash, "root_hash")
+        if not isinstance(self.content, str):
+            raise TypeError("content must be text")
+        if len(self.content.encode()) > 262_144:
+            raise ValueError("seed chunk exceeds size limit")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceAction:
+    action: ReferenceAction
+    observed_at: datetime | None = None
+    origin_revision_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.action, ReferenceAction):
+            raise TypeError("action must be ReferenceAction")
+        if self.action.stream.recording_mode is RecordingMode.FORWARD_OBSERVATION:
+            if (
+                not isinstance(self.observed_at, datetime)
+                or self.observed_at.tzinfo is None
+                or self.observed_at.utcoffset() is None
+            ):
+                raise ValueError("forward action requires timezone-aware observed_at")
+        elif self.observed_at is not None:
+            raise ValueError("historical action must not set observed_at")
+        if self.origin_revision_id is not None:
+            _text(self.origin_revision_id, "origin_revision_id")
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedBatch:
+    stream_id: str
+    revision_id: str
+    batch_key: str
+    expected: CheckpointToken
+    dependency_manifest: dict[str, object]
+    source_actions: tuple[SourceAction, ...]
+    transitions: tuple[ReferenceTransition, ...]
+    checkpoint: AdapterCheckpoint[object]
+    strategy_schema: str
+    source_evidence: dict[str, object]
+
+    def __post_init__(self) -> None:
+        for name in ("stream_id", "revision_id", "batch_key", "strategy_schema"):
+            _text(getattr(self, name), name)
+        if not isinstance(self.expected, CheckpointToken):
+            raise TypeError("expected must be CheckpointToken")
+        if (
+            self.expected.stream_id != self.stream_id
+            or self.expected.revision_id != self.revision_id
+        ):
+            raise ValueError("expected token identity does not match batch")
+        object.__setattr__(self, "source_actions", tuple(self.source_actions))
+        object.__setattr__(self, "transitions", tuple(self.transitions))
+        if not all(isinstance(item, SourceAction) for item in self.source_actions):
+            raise TypeError("source_actions must contain SourceAction")
+        if not all(isinstance(item, ReferenceTransition) for item in self.transitions):
+            raise TypeError("transitions must contain ReferenceTransition")
+        if not self.transitions:
+            raise ValueError("transitions must not be empty")
+        if self.checkpoint.stream is None or self.checkpoint.reference_state is None:
+            raise ValueError("checkpoint must include stream and reference_state")
+        if self.checkpoint.stream.stream_id != self.stream_id:
+            raise ValueError("checkpoint stream does not match batch")
+        if self.transitions[-1].state != self.checkpoint.reference_state:
+            raise ValueError("checkpoint reference state does not match final transition")
+
+
+@dataclass(frozen=True, slots=True)
+class CommitResult:
+    outcome: Literal["committed", "noop"]
+    revision_id: str
+    seq: int
+    checkpoint_hash: str
+
+    def __post_init__(self) -> None:
+        if self.outcome not in {"committed", "noop"}:
+            raise ValueError("outcome is invalid")
+        _text(self.revision_id, "revision_id")
+        _non_negative(self.seq, "seq")
+        _sha256(self.checkpoint_hash, "checkpoint_hash")
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotIdentity:
+    stream_id: str
+    revision_id: str
+    seq: int
+
+    def __post_init__(self) -> None:
+        _text(self.stream_id, "stream_id")
+        _text(self.revision_id, "revision_id")
+        _non_negative(self.seq, "seq")
+
+
+@dataclass(frozen=True, slots=True)
+class StoredPage(Generic[ItemT]):
+    items: tuple[ItemT, ...]
+    next_key: tuple[object, ...] | None
+    snapshot: SnapshotIdentity
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "items", tuple(self.items))
+        if not isinstance(self.snapshot, SnapshotIdentity):
+            raise TypeError("snapshot must be SnapshotIdentity")
