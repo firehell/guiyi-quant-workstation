@@ -217,6 +217,22 @@ def parser() -> argparse.ArgumentParser:
     return value
 
 
+def diagnosis_status(
+    results: list[dict[str, object]], *, catalog_revision_stable: bool
+) -> str:
+    """Fail closed unless every frozen contract was reproduced on one revision."""
+    if (
+        not catalog_revision_stable
+        or len(results) != 20
+        or any(
+            item.get("classification") != "SOURCE_VERIFICATION_REQUIRED"
+            for item in results
+        )
+    ):
+        return "blocked"
+    return "diagnosed"
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if _HASH.fullmatch(args.expected_input_sha256) is None:
@@ -255,8 +271,10 @@ def main(argv: list[str] | None = None) -> int:
                     "provider_query_required": False,
                 })
         after = catalog_revision(session, products, cutoff.date(), ("1d", "1w"))
+    status = diagnosis_status(results, catalog_revision_stable=before == after)
     payload: dict[str, Any] = {
         "schema_version": "newow_weekly_conflict_diagnosis_v1",
+        "status": status,
         "readonly": True,
         "provider_requests": 0,
         "writes": 0,
@@ -281,13 +299,13 @@ def main(argv: list[str] | None = None) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps({
-        "status": "diagnosed",
+        "status": status,
         "contract_count": len(results),
         "catalog_revision_stable": before == after,
         "provider_requests": 0,
         "writes": 0,
     }))
-    return 0
+    return 0 if status == "diagnosed" else 1
 
 
 if __name__ == "__main__":

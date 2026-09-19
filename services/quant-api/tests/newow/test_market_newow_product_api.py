@@ -353,6 +353,7 @@ def test_strategy_detail_returns_only_requested_typed_section(
     )
     assert len(body["chart"]["value"]["page_identity"]) == 64
     assert body["meta"]["schema_version"] == "newow_product_detail_v3"
+    assert "input_quality_policy" not in body["meta"]["identity"]
     assert (
         body["meta"]["reference_model_version"]
         == "newow_marker_reference_zero_cost_v3"
@@ -509,15 +510,23 @@ def test_quality_policy_is_omitted_for_v1_and_explicit_for_weekly_v2(product_cas
     )
     trade = reference.reference.value.items[0]
 
-    assert "input_quality_policy" not in market_newow._trade(trade, 0)
+    legacy_payload = market_newow._trade(trade, 0)
+    assert "input_quality_policy" not in legacy_payload
+    assert "input_quality_policy" not in ReferenceTradeOut.model_validate(
+        legacy_payload
+    ).model_dump(mode="json")
     candidate = replace(
         trade,
         input_quality_policy=InputQualityPolicy.WEEKLY_V2,
         futures_adaptation_version="newow_futures_weekly_quality_segment_v2",
     )
-    assert market_newow._trade(candidate, 0)["input_quality_policy"] == (
+    candidate_payload = market_newow._trade(candidate, 0)
+    assert candidate_payload["input_quality_policy"] == (
         "newow_weekly_input_quality_v2"
     )
+    assert ReferenceTradeOut.model_validate(candidate_payload).model_dump(mode="json")[
+        "input_quality_policy"
+    ] == "newow_weekly_input_quality_v2"
 
 
 @pytest.mark.parametrize(

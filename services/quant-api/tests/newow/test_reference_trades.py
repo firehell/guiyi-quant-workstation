@@ -545,13 +545,19 @@ def test_weekly_v2_reference_identity_isolated_even_without_a_break(product_case
         ),
     )
 
-    legacy_trade = ReferenceTradeProjector().project(
+    projector = ReferenceTradeProjector()
+    legacy_stream = projector.seed(legacy.replay).stream
+    candidate_stream = projector.seed(candidate_replay).stream
+    legacy_trade = projector.project(
         legacy.replay, legacy.boundaries, legacy.as_of,
     ).trades[0]
-    candidate_trade = ReferenceTradeProjector().project(
+    candidate_trade = projector.project(
         candidate_replay, legacy.boundaries, legacy.as_of,
     ).trades[0]
 
+    assert legacy_stream.futures_adaptation_version == "newow_futures_weekly_quality_segment_v1"
+    assert candidate_stream.futures_adaptation_version == "newow_futures_weekly_quality_segment_v2"
+    assert candidate_stream.stream_id != legacy_stream.stream_id
     assert legacy_trade.futures_adaptation_version == "newow_futures_weekly_quality_segment_v1"
     assert candidate_trade.futures_adaptation_version == "newow_futures_weekly_quality_segment_v2"
     assert candidate_trade.input_quality_policy is InputQualityPolicy.WEEKLY_V2

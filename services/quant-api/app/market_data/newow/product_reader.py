@@ -134,13 +134,13 @@ class ProductReadSet:
     performance_window: ProductReadWindow
     sources: Mapping[ProductFrequency, ProductReadSource]
     as_of: datetime
-    input_quality_policy: InputQualityPolicy = InputQualityPolicy.V1
     lifecycle_evidence_by_frequency: Mapping[
         ProductFrequency, tuple[LifecycleReplayEvidence, ...]
     ] = field(default_factory=lambda: MappingProxyType({}))
     data_interruptions_by_frequency: Mapping[
         ProductFrequency, tuple[DataInterruption, ...]
     ] = field(default_factory=lambda: MappingProxyType({}))
+    input_quality_policy: InputQualityPolicy = InputQualityPolicy.V1
 
     @property
     def replay_bars(self) -> tuple[ProductBar, ...]:
@@ -884,9 +884,9 @@ class NewowProductReader:
             performance,
             MappingProxyType(sources),
             cutoff,
-            policy,
             MappingProxyType(lifecycle_evidence),
             MappingProxyType(interruptions_by_frequency),
+            input_quality_policy=policy,
         )
 
     def dependency_owners(

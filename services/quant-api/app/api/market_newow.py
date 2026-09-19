@@ -60,9 +60,9 @@ from app.market_data.newow.product_release import (
     PD_PT_HOURLY_PREVIEW_SYMBOLS,
     OPEN_FREQUENCIES,
     OPEN_WEEKLY_PRODUCTS,
-    REMAINING_WEEKLY_V2_PRODUCTS,
     OPEN_SECTIONS,
     RELEASE_STAGE,
+    candidate_input_quality_policy,
     require_open_frequency,
     require_candidate_weekly_product,
     require_open_weekly_product,
@@ -170,14 +170,13 @@ def _hourly_preview_products(request: Request) -> frozenset[str] | None:
 def _input_quality_policy(
     request: Request, product: str, frequency: ProductFrequency | str,
 ) -> InputQualityPolicy:
-    selected = ProductFrequency(frequency)
-    if (
-        getattr(request.state, "candidate_preview_as_of", None) is not None
-        and selected is ProductFrequency.WEEKLY
-        and product in REMAINING_WEEKLY_V2_PRODUCTS
-    ):
-        return InputQualityPolicy.WEEKLY_V2
-    return InputQualityPolicy.V1
+    return candidate_input_quality_policy(
+        product,
+        frequency,
+        candidate_weekly=(
+            getattr(request.state, "candidate_preview_as_of", None) is not None
+        ),
+    )
 
 
 def _enforce_product_frequency(request: Request, product: str, frequency: str) -> None:

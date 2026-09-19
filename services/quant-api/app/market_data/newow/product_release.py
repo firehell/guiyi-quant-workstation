@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 from guiyi_quant.newow.product_contracts import ProductFrequency
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 
 
 ProductSectionName = Literal[
@@ -65,6 +66,23 @@ HOURLY_PRODUCT_PREVIEW_DEFERRED = (
 )
 PD_PT_HOURLY_PREVIEW_SYMBOLS = frozenset({"pd", "pt"})
 HOURLY_PRODUCT_PREVIEW_SYMBOLS = PD_PT_HOURLY_PREVIEW_SYMBOLS | {"ap"}
+
+
+def candidate_input_quality_policy(
+    product: str,
+    frequency: ProductFrequency | str,
+    *,
+    candidate_weekly: bool,
+) -> InputQualityPolicy:
+    """Resolve the one immutable input policy for a product-frequency scope."""
+    selected = ProductFrequency(frequency)
+    if (
+        candidate_weekly
+        and selected is ProductFrequency.WEEKLY
+        and product in REMAINING_WEEKLY_V2_PRODUCTS
+    ):
+        return InputQualityPolicy.WEEKLY_V2
+    return InputQualityPolicy.V1
 
 
 def require_open_frequency(

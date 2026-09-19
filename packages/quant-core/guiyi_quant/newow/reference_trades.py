@@ -259,7 +259,10 @@ def _stream_for(replay: StrategyReplay) -> StreamIdentity:
         formula_versions=replay.identity.formula_versions,
         profile_id=replay.identity.profile_id,
         reference_model_version=REFERENCE_MODEL_VERSION,
-        futures_adaptation_version=futures_adaptation_version(replay.identity.frequency),
+        futures_adaptation_version=futures_adaptation_version(
+            replay.identity.frequency,
+            replay.identity.input_quality_policy,
+        ),
         product=replay.identity.product,
         frequency=replay.identity.frequency.value,
         series_kind=replay.identity.series_kind,

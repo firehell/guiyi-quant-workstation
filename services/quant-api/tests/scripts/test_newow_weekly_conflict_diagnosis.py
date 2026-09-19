@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from app.market_data.domain import CanonicalBar
-from scripts.newow_weekly_conflict_diagnosis import field_differences
+from scripts.newow_weekly_conflict_diagnosis import diagnosis_status, field_differences
 
 
 def _bar(**overrides):
@@ -47,3 +47,14 @@ def test_field_differences_preserve_decimal_precision_and_all_seven_fields():
     assert result["turnover"]["stored"] == "1234.50"
     assert result["turnover"]["d1_aggregate"] is None
     assert result["open_interest"]["precision_equal"] is False
+
+
+def test_diagnosis_status_fails_closed_on_blocked_contract_or_catalog_drift():
+    diagnosed = [{"classification": "SOURCE_VERIFICATION_REQUIRED"}] * 20
+
+    assert diagnosis_status(diagnosed, catalog_revision_stable=True) == "diagnosed"
+    assert diagnosis_status(
+        [*diagnosed[:-1], {"classification": "DIAGNOSIS_BLOCKED"}],
+        catalog_revision_stable=True,
+    ) == "blocked"
+    assert diagnosis_status(diagnosed, catalog_revision_stable=False) == "blocked"

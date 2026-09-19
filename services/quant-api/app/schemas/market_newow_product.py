@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 ProductFrequencyValue = Literal["1w", "1d", "60m"]
@@ -48,7 +48,10 @@ class ProductIdentityOut(_Out):
     series_kind: Literal["actual_dominant"]
     profile_id: str
     formula_versions: list[str]
-    input_quality_policy: InputQualityPolicyValue | None = None
+    input_quality_policy: InputQualityPolicyValue | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class ProductMetaOut(_Out):
@@ -208,7 +211,10 @@ class ReferenceTradeOut(_Out):
     formula_versions: list[str]
     reference_model_version: ReferenceModelVersionValue
     futures_adaptation_version: FuturesAdaptationVersionValue
-    input_quality_policy: InputQualityPolicyValue | None = None
+    input_quality_policy: InputQualityPolicyValue | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     entry_signal_id: str
     entry_sequence: int
     entry_bar_end: datetime

@@ -160,3 +160,38 @@ def test_bounded_consumer_audits_keep_scopes_and_total_deadline_separate():
     assert result["newow_w1"]["case_count"] == 3
     assert [call[0] for call in calls] == ["newow_d1", "newow_w1"]
     assert all(1 <= call[3] <= 4 for call in calls)
+
+
+def test_candidate_weekly_audit_partitions_same_cutoff_by_quality_policy():
+    calls = []
+
+    def build(scope, products, as_of, timeout):
+        calls.append(products)
+        return {
+            "complete": True,
+            "budget_exhausted": False,
+            "provider_requests": 0,
+            "writes": 0,
+            "repair_targets": [],
+            "cases": [
+                _case(product, strategy, "READY", "READY", "NOT_APPLICABLE")
+                for product in products
+                for strategy in ("trend", "oscillation", "main_rise")
+            ],
+        }
+
+    cutoff = datetime(2026, 9, 18, 7, 0, 0, 1, tzinfo=UTC)
+    result = run_bounded_consumer_audits(
+        (ConsumerAuditScope("newow_w1", ("au", "b"), "1w", 10),),
+        resolve_cutoff=lambda _scope, _product: cutoff,
+        build_report=build,
+        input_revision=lambda _scope: "a" * 64,
+        clock=lambda: 0.0,
+        total_timeout_seconds=20,
+        partition_key=lambda _scope, product: (
+            "weekly_v2" if product == "b" else "v1"
+        ),
+    )
+
+    assert calls == [("au",), ("b",)]
+    assert result["newow_w1"]["case_count"] == 6

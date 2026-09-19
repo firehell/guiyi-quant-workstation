@@ -1,4 +1,5 @@
 import { chromium } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -6,6 +7,11 @@ const PRODUCTS = 'b bz cj eb eg j oi pf pg pk pl pr px rs sf sh si sm sr'.split(
 const STRATEGIES = ['trend', 'oscillation', 'main_rise']
 const CASES = PRODUCTS.flatMap(product => STRATEGIES.map(strategy => ({ product, strategy })))
 const BASE_URL = process.env.NEWOW_BROWSER_BASE_URL || 'http://127.0.0.1:5174'
+const CODE_SHA = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+const PAGE_STATE_BY_STATUS = new Map([
+  ['DATA_UNAVAILABLE', 'unavailable'],
+  ['INTEGRITY_ERROR', 'unavailable'],
+])
 const outputRoot = process.argv[2]
 const matrixPath = process.argv[3]
 if (!outputRoot || !matrixPath) throw new Error('BROWSER_ACCEPTANCE_ARGUMENT_INVALID')
@@ -17,15 +23,40 @@ await writeFile(outputPath, '')
 const matrix = JSON.parse(await readFile(matrixPath, 'utf8'))
 const expected = new Map(matrix.cases.map(item => [
   `${item.symbol}:${item.strategy}`,
-  { status: item.main.status, reason: item.main.reason, qualityPolicy: item.input_quality_policy },
+  {
+    status: item.main.status,
+    reason: item.main.reason,
+    apiCode: item.main.error?.code ?? null,
+    pageState: PAGE_STATE_BY_STATUS.get(item.main.status) ?? null,
+    qualityPolicy: item.input_quality_policy,
+  },
 ]))
-if (expected.size !== CASES.length) throw new Error('BROWSER_ACCEPTANCE_MATRIX_INVALID')
+if (
+  !/^[0-9a-f]{40}$/.test(CODE_SHA)
+  || expected.size !== CASES.length
+  || [...expected.values()].some(item => item.pageState === null || item.apiCode === null)
+) throw new Error('BROWSER_ACCEPTANCE_MATRIX_INVALID')
 
 const results = []
 let browser = null
 let fatal = null
+let previewIdentity = null
 
 try {
+  const identityResponse = await fetch(new URL('/api/preview/identity', BASE_URL), {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(10_000),
+  })
+  previewIdentity = await identityResponse.json()
+  if (
+    !identityResponse.ok
+    || previewIdentity?.mode !== 'local_candidate_readonly'
+    || previewIdentity?.code_sha !== CODE_SHA
+    || previewIdentity?.default_weekly !== true
+    || previewIdentity?.as_of !== null
+    || previewIdentity?.realtime !== false
+    || previewIdentity?.candidate_origin !== 'http://127.0.0.1:8010'
+  ) throw new Error('BROWSER_ACCEPTANCE_PREVIEW_IDENTITY_INVALID')
   browser = await chromium.launch({ channel: 'chrome', headless: true })
   for (let index = 0; index < CASES.length; index += 1) {
     const { product, strategy } = CASES[index]
@@ -92,12 +123,16 @@ try {
       const defaultAsOfAbsent = requests.length > 0 && requests.every(item => item.asOf === null)
       const pagePass = navigation?.status() === 200
         && bannerText.includes('身份已核对')
+        && bannerText.includes(`代码 ${CODE_SHA}`)
         && bannerText.includes('周线按当前完整周只读解析')
         && bannerText.includes('127.0.0.1:8010')
-        && chartState !== null && !['loading', 'not_requested'].includes(chartState)
+        && chartState === expectation.pageState
         && unavailableVisible
         && stateResponse !== undefined
+        && stateResponse.status === 409
+        && apiCode === expectation.apiCode
         && apiReason === expectation.reason
+        && expectation.qualityPolicy === 'newow_weekly_input_quality_v2'
         && defaultAsOfAbsent
         && pageErrors.length === 0
       result = {
@@ -113,7 +148,10 @@ try {
         apiStatus: stateResponse?.status ?? null,
         apiCode,
         apiReason,
+        codeSha: CODE_SHA,
         expectedStatus: expectation.status,
+        expectedPageState: expectation.pageState,
+        expectedApiCode: expectation.apiCode,
         expectedReason: expectation.reason,
         inputQualityPolicy: expectation.qualityPolicy,
         defaultAsOfAbsent,
@@ -157,6 +195,10 @@ try {
   const summary = {
     schemaVersion: 'newow_remaining19_browser_acceptance_v1',
     baseURL: BASE_URL,
+    codeSha: CODE_SHA,
+    previewIdentity,
+    matrixCodeSha: matrix.audit_identity?.code_sha ?? null,
+    catalogRevision: matrix.audit_identity?.catalog_revision_after ?? null,
     denominator: CASES.length,
     completed: results.length,
     pagePass: results.filter(item => item.pagePass).length,
