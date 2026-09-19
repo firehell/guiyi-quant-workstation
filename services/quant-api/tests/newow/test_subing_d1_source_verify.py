@@ -227,6 +227,65 @@ def test_repository_candidate_is_exactly_frozen_16_requests_and_66_dates() -> No
     assert len(identities) == 66
 
 
+def test_repository_raw_response_recovery_plan_is_exactly_scoped() -> None:
+    root = Path(__file__).resolve().parents[4]
+    evidence_root = root / "outputs/subing-four-period-readiness-20260918"
+    candidate = json.loads(
+        (evidence_root / "d1-17-source-response-recovery-candidate.json").read_text()
+    )
+    batch = source_verify.validate_candidate(candidate, str(candidate["plan_sha256"]))
+
+    source_verify._validate_response_recovery_evidence(batch, evidence_root)
+
+    identities = {
+        (selection.symbol, selection.transport.contract, day)
+        for selection in batch.selections
+        for day in selection.target_dates
+    }
+    assert len(batch.requests) == 10
+    assert len(identities) == 60
+    assert candidate["budget"] == {
+        "max_provider_requests": 10,
+        "expected_date_identities": 60,
+        "allowed_response_context_dates": 28,
+        "concurrency": 1,
+        "retries": 0,
+        "canonical_writes": 0,
+        "database_writes": 0,
+    }
+
+
+def test_raw_response_recovery_gate_rejects_reduced_scope() -> None:
+    root = Path(__file__).resolve().parents[4]
+    evidence_root = root / "outputs/subing-four-period-readiness-20260918"
+    candidate = json.loads(
+        (evidence_root / "d1-17-source-response-recovery-candidate.json").read_text()
+    )
+    candidate["requests"][0]["target_dates"] = candidate["requests"][0][
+        "target_dates"
+    ][1:]
+    digest_body = {
+        key: candidate["requests"][0][key]
+        for key in (
+            "contract", "start", "end", "target_dates",
+            "allowed_response_dates", "calendar_authority",
+        )
+    }
+    candidate["requests"][0]["request_sha256"] = hashlib.sha256(
+        _canonical(digest_body).encode()
+    ).hexdigest()
+    candidate["budget"]["expected_date_identities"] = 59
+    candidate["budget"]["allowed_response_context_dates"] = 29
+    candidate.pop("plan_sha256")
+    candidate["plan_sha256"] = hashlib.sha256(
+        _canonical(candidate).encode()
+    ).hexdigest()
+    batch = source_verify.validate_candidate(candidate, str(candidate["plan_sha256"]))
+
+    with pytest.raises(native.RecoveryError, match="SOURCE_RECOVERY_SCOPE_MISMATCH"):
+        source_verify._validate_response_recovery_evidence(batch, evidence_root)
+
+
 def test_candidate_rejects_duplicate_identity_even_with_valid_hash() -> None:
     candidate = _candidate()
     duplicate = deepcopy(candidate["requests"][0])  # type: ignore[index]

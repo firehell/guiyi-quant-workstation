@@ -52,6 +52,7 @@ from scripts.newow_weekly_recovery import (
 
 _SCHEMA_V1 = "subing-d1-source-verification-candidate-v1"
 _SCHEMA_V2 = "subing-d1-source-verification-candidate-v2"
+_SCHEMA_RECOVERY = "subing-d1-source-response-recovery-candidate-v1"
 _VALIDATOR_VERSION = "subing-d1-response-validator-v2"
 _CONTINUATION_ORDER = (13, 14, 11, 12, 9, 10, 15)
 _EVIDENCE_ROOT = PROJECT_ROOT / "outputs/subing-four-period-readiness-20260918"
@@ -742,8 +743,140 @@ def _validate_v2_cli_scope(args: argparse.Namespace, batch: FrozenBatch) -> Path
         or args.attempt_id != contract["attempt_id"]
     ):
         raise RecoveryError("SOURCE_EXECUTION_SCOPE_MISMATCH")
-    _validate_continuation_evidence(batch, supplied_root)
+    if batch.candidate.get("schema") == _SCHEMA_RECOVERY:
+        _validate_response_recovery_evidence(batch, supplied_root)
+    else:
+        _validate_continuation_evidence(batch, supplied_root)
     return supplied_root
+
+
+def _validate_response_recovery_evidence(
+    batch: FrozenBatch, output_root: Path
+) -> None:
+    """Prove a recovery batch is exactly the raw evidence missing from blocked targets."""
+    contract = batch.candidate.get("execution_contract")
+    if not isinstance(contract, Mapping):
+        raise RecoveryError("SOURCE_RECOVERY_EVIDENCE_INVALID")
+    evidence_names = {
+        "parent_plan_file_sha256": "d1-quality-segmentation-production-plan.json",
+        "parent_manifest_file_sha256":
+            "d1-quality-segmentation-raw-verified-candidate-manifest.json",
+        "offline_verdict_file_sha256": "d1-17-source-verification-offline-v2.json",
+        "continuation_candidate_file_sha256":
+            "d1-17-source-verification-continuation-candidate.json",
+        "source_complete_file_sha256": "d1-17-source-verification-complete.json",
+    }
+    if (
+        contract.get("authorization_scope")
+        != "MISSING_RAW_RESPONSE_RECOVERY_ONLY"
+        or contract.get("recovery_target_count") != 10
+        or contract.get("recovery_date_identity_count") != 60
+        or _HASH.fullmatch(str(contract.get("parent_plan_sha256"))) is None
+        or _HASH.fullmatch(str(contract.get("parent_manifest_sha256"))) is None
+        or any(
+            not isinstance(contract.get(key), str)
+            or _HASH.fullmatch(str(contract[key])) is None
+            or _sha256_file(output_root / filename) != contract[key]
+            for key, filename in evidence_names.items()
+        )
+    ):
+        raise RecoveryError("SOURCE_RECOVERY_EVIDENCE_INVALID")
+
+    plan = _read_json_regular(
+        output_root / evidence_names["parent_plan_file_sha256"],
+        maximum=2 * 1024 * 1024,
+    )
+    manifest = _read_json_regular(
+        output_root / evidence_names["parent_manifest_file_sha256"],
+        maximum=2 * 1024 * 1024,
+    )
+    offline = _read_json_regular(
+        output_root / evidence_names["offline_verdict_file_sha256"],
+        maximum=16 * 1024 * 1024,
+    )
+    continuation_value = _read_json_regular(
+        output_root / evidence_names["continuation_candidate_file_sha256"]
+    )
+    complete = _read_json_regular(
+        output_root / evidence_names["source_complete_file_sha256"],
+        maximum=2 * 1024 * 1024,
+    )
+    if (
+        plan.get("plan_sha256") != contract["parent_plan_sha256"]
+        or manifest.get("manifest_sha256") != contract["parent_manifest_sha256"]
+        or manifest.get("parent_plan_sha256") != plan.get("plan_sha256")
+        or manifest.get("blocked_target_count") != 10
+        or offline.get("status") != "offline_validation_passed"
+        or complete.get("schema") != "subing-d1-source-verification-complete-v1"
+        or complete.get("existing_1207_anomaly_source_evidence", {}).get(
+            "remaining_without_saved_source_response"
+        ) != 0
+    ):
+        raise RecoveryError("SOURCE_RECOVERY_EVIDENCE_INVALID")
+    continuation = validate_candidate(
+        continuation_value, str(continuation_value.get("plan_sha256"))
+    )
+
+    blocked_ids = {
+        (str(item.get("symbol")), str(item.get("contract")), str(item.get("month")))
+        for item in manifest.get("blocked_targets", ())
+        if isinstance(item, Mapping)
+    }
+    targets = {
+        (str(item.get("symbol")), str(item.get("contract")), str(item.get("month"))): item
+        for item in plan.get("targets", ())
+        if isinstance(item, Mapping)
+    }
+    if len(blocked_ids) != 10 or not blocked_ids <= set(targets):
+        raise RecoveryError("SOURCE_RECOVERY_EVIDENCE_INVALID")
+
+    expected: dict[tuple[str, str, str], set[date]] = {
+        identity: set() for identity in blocked_ids
+    }
+    for item in offline.get("target_classifications", ()):
+        if not isinstance(item, Mapping):
+            raise RecoveryError("SOURCE_RECOVERY_EVIDENCE_INVALID")
+        contract_code = str(item.get("contract"))
+        raw_day = _response_day(item.get("date"))
+        identity = (
+            contract_code.rstrip("0123456789").lower(),
+            contract_code,
+            raw_day.strftime("%Y-%m"),
+        )
+        if identity in expected:
+            expected[identity].add(raw_day)
+    for selection in continuation.selections:
+        for raw_day in selection.target_dates:
+            identity = (
+                selection.symbol,
+                selection.transport.contract,
+                raw_day.strftime("%Y-%m"),
+            )
+            if identity in expected:
+                expected[identity].add(raw_day)
+    for identity, target in targets.items():
+        if identity not in expected:
+            continue
+        affected = {date.fromisoformat(str(item)) for item in target.get("affected_dates", ())}
+        if not expected[identity] or not expected[identity] <= affected:
+            raise RecoveryError("SOURCE_RECOVERY_EVIDENCE_INVALID")
+        if target.get("operation") == "CREATE_MIXED_UNION_PARTITION" and expected[identity] != affected:
+            raise RecoveryError("SOURCE_RECOVERY_EVIDENCE_INVALID")
+
+    actual = {
+        (
+            selection.symbol,
+            selection.transport.contract,
+            selection.target_dates[0].strftime("%Y-%m"),
+        ): set(selection.target_dates)
+        for selection in batch.selections
+    }
+    if (
+        len(actual) != len(batch.selections)
+        or actual != expected
+        or sum(len(days) for days in actual.values()) != 60
+    ):
+        raise RecoveryError("SOURCE_RECOVERY_SCOPE_MISMATCH")
 
 
 def _calendar_authority_body(
@@ -826,7 +959,7 @@ def validate_candidate(
         raise RecoveryError("SOURCE_PLAN_HASH_MISMATCH")
     schema = value.get("schema")
     if (
-        schema not in {_SCHEMA_V1, _SCHEMA_V2}
+        schema not in {_SCHEMA_V1, _SCHEMA_V2, _SCHEMA_RECOVERY}
         or value.get("execute") is not False
         or value.get("provider") != "rqdata"
         or value.get("method") != "futures.get_exchange_daily"
@@ -878,7 +1011,9 @@ def validate_candidate(
     identities: set[tuple[str, date]] = set()
     for raw in raw_requests:
         expected_fields = (
-            _EXPECTED_REQUEST_FIELDS_V2 if schema == _SCHEMA_V2 else _EXPECTED_REQUEST_FIELDS
+            _EXPECTED_REQUEST_FIELDS_V2
+            if schema in {_SCHEMA_V2, _SCHEMA_RECOVERY}
+            else _EXPECTED_REQUEST_FIELDS
         )
         if not isinstance(raw, Mapping) or set(raw) != expected_fields:
             raise RecoveryError("SOURCE_CANDIDATE_INVALID")
@@ -901,7 +1036,7 @@ def validate_candidate(
             or reasons != sorted(set(reasons))
         ):
             raise RecoveryError("SOURCE_CANDIDATE_INVALID")
-        if schema == _SCHEMA_V2:
+        if schema in {_SCHEMA_V2, _SCHEMA_RECOVERY}:
             target_dates = _parse_dates(raw.get("target_dates"))
             allowed_dates = _parse_dates(raw.get("allowed_response_dates"))
             try:
@@ -963,7 +1098,7 @@ def validate_candidate(
     expected_count = budget.get("expected_date_identities")
     if type(expected_count) is not int or expected_count != len(identities):
         raise RecoveryError("SOURCE_CANDIDATE_INVALID")
-    if schema == _SCHEMA_V2:
+    if schema in {_SCHEMA_V2, _SCHEMA_RECOVERY}:
         context_count = sum(
             len(item.allowed_response_dates) - len(item.target_dates)
             for item in selections
@@ -1266,14 +1401,14 @@ def _load_preflight(
     batch = validate_candidate(candidate, args.expected_plan_sha256)
     output_root = (
         _validate_v2_cli_scope(args, batch)
-        if candidate.get("schema") == _SCHEMA_V2
+        if candidate.get("schema") in {_SCHEMA_V2, _SCHEMA_RECOVERY}
         else Path(args.output_root)
     )
     _validated_unused_attempt(output_root, args.attempt_id)
     _require_unclaimed_plan(output_root, args.expected_plan_sha256)
     _require_clean_execution_checkout(_current_code_commit())
     settings, identity = load_private_execution_settings(Path(args.project_env))
-    if candidate.get("schema") == _SCHEMA_V2:
+    if candidate.get("schema") in {_SCHEMA_V2, _SCHEMA_RECOVERY}:
         _authority_selections(settings, batch.selections)
     return batch, settings, identity
 
