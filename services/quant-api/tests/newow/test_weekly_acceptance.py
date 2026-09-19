@@ -1076,7 +1076,7 @@ def _product_report(
     }
     if status == "DATA_READY":
         dependency.update(
-            cutoff=f"2026-09-11T07:00:00+00:00",
+            cutoff="2026-09-11T07:00:00+00:00",
             actual_bar_count=1,
             expected_bar_count=1,
         )
