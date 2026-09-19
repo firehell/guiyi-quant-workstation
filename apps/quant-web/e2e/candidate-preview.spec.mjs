@@ -12,6 +12,7 @@ test('preview identifies both sources, fixes cutoff and never subscribes to live
   await installNewowProductFixtures(page, {
     frozenNow: '2026-09-07T08:00:00.000Z',
     apiAsOf: NEWOW_AS_OF,
+    weeklyCandidate: true,
   })
   // Actual-preview wire shape: Decimal strings plus the API's non-null bounded echo.
   const quoteRequests = []
@@ -42,6 +43,8 @@ test('preview identifies both sources, fixes cutoff and never subscribes to live
   await expect(page.getByTestId('candidate-preview-banner')).toContainText('8000')
   await expect(page.getByTestId('candidate-preview-banner')).toContainText('首页投影与主力元数据使用各自时间戳')
   await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-auxiliary-state', 'ready')
+  await page.getByRole('button', { name: '1d', exact: true }).click()
+  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   const quote = page.locator('[data-detail-section="quote"]')
   await expect(quote.locator('.quote-header__price strong')).toHaveText('953.12')
   await expect(quote.locator('.quote-header__price')).toContainText('+2.34')

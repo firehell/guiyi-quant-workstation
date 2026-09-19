@@ -1,0 +1,75 @@
+{
+  "schema_version": "pt2612_postapply_v1",
+  "checked_at": "2026-09-18T14:21:12.128348+00:00",
+  "readonly": true,
+  "d1_unchanged": true,
+  "w1_one_complete_bar": true,
+  "mds_weekly_quality_passed": true,
+  "new_plan_direct_target_count": 0,
+  "partitions": [
+    {
+      "dataset": [
+        "contract",
+        "pt",
+        "PT2612",
+        "1d"
+      ],
+      "year": 2025,
+      "month": 12,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2025/month=12/part.4a3662400a4c5196c1225ef9c9c44fc0c3716df0d04f4f1995d8aeebbc499798.parquet",
+      "file_sha256": "4a3662400a4c5196c1225ef9c9c44fc0c3716df0d04f4f1995d8aeebbc499798",
+      "row_count": 13,
+      "actual_trading_days": [
+        "2025-12-15",
+        "2025-12-16",
+        "2025-12-17",
+        "2025-12-18",
+        "2025-12-19",
+        "2025-12-22",
+        "2025-12-23",
+        "2025-12-24",
+        "2025-12-25",
+        "2025-12-26",
+        "2025-12-29",
+        "2025-12-30",
+        "2025-12-31"
+      ],
+      "actual_bar_ends": [
+        "2025-12-15T07:00:00+00:00",
+        "2025-12-16T07:00:00+00:00",
+        "2025-12-17T07:00:00+00:00",
+        "2025-12-18T07:00:00+00:00",
+        "2025-12-19T07:00:00+00:00",
+        "2025-12-22T07:00:00+00:00",
+        "2025-12-23T07:00:00+00:00",
+        "2025-12-24T07:00:00+00:00",
+        "2025-12-25T07:00:00+00:00",
+        "2025-12-26T07:00:00+00:00",
+        "2025-12-29T07:00:00+00:00",
+        "2025-12-30T07:00:00+00:00",
+        "2025-12-31T07:00:00+00:00"
+      ],
+      "price_unavailable_days": []
+    },
+    {
+      "dataset": [
+        "contract",
+        "pt",
+        "PT2612",
+        "1w"
+      ],
+      "year": 2025,
+      "month": 12,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1w/year=2025/month=12/part.50837ed4cfb473c8ef7939453520adcf8704afdc2eedf5c875058a69ae48249d.parquet",
+      "file_sha256": "50837ed4cfb473c8ef7939453520adcf8704afdc2eedf5c875058a69ae48249d",
+      "row_count": 1,
+      "actual_trading_days": [
+        "2025-12-19"
+      ],
+      "actual_bar_ends": [
+        "2025-12-19T07:00:00+00:00"
+      ],
+      "price_unavailable_days": []
+    }
+  ]
+}

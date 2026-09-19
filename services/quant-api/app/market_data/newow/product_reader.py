@@ -44,7 +44,9 @@ from app.market_data.domain import (
     SeriesPageQuery,
     normalize_contract_for_symbol,
 )
-from app.market_data.market_data_service import MarketDataService
+from app.market_data.market_data_service import MarketDataError, MarketDataService
+from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.weekly_quality import WeeklySourceInterruption
 
 from .product_query import NewowProductQuery, ProductReadWindow
 
@@ -67,6 +69,20 @@ class NewowProductReadError(ValueError):
 
 class NewowProductReadCancelled(RuntimeError):
     """The caller cancelled; no partial read set may escape."""
+
+
+def _quality_source_identity(
+    frequency: ProductFrequency,
+    gap: PriceUnavailableFact | WeeklySourceInterruption,
+) -> str:
+    if frequency is ProductFrequency.DAILY and isinstance(gap, PriceUnavailableFact):
+        return (
+            "market_data_service:price_unavailable:v1:"
+            f"{gap.request_sha256}:{gap.response_sha256}"
+        )
+    if frequency is ProductFrequency.WEEKLY and isinstance(gap, WeeklySourceInterruption):
+        return f"market_data_service:weekly_quality:v1:{gap.source_identity}"
+    raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
 
 
 class ProductCoverage(Protocol):
@@ -145,7 +161,10 @@ class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
         self._through = through
         self._as_of = as_of
         self._check_cancelled = check_cancelled
-        self.price_unavailable: tuple[tuple[str, object], ...] = ()
+        self.price_unavailable_by_frequency: dict[
+            BarFrequency,
+            tuple[tuple[str, PriceUnavailableFact | WeeklySourceInterruption], ...],
+        ] = {}
 
     def _query_actual_dominant_trading_days(
         self, request: ActualDominantTradingDayQuery
@@ -153,9 +172,9 @@ class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
         self._check_cancelled()
         bounded = replace(request, through=min(request.through, self._through))
         quality_query = getattr(self._market_data, "query_actual_dominant_trading_days_quality", None)
-        if bounded.frequency is BarFrequency.D1 and quality_query is not None:
+        if bounded.frequency in (BarFrequency.D1, BarFrequency.W1) and quality_query is not None:
             result, gaps = quality_query(bounded)
-            self.price_unavailable = tuple(
+            self.price_unavailable_by_frequency[bounded.frequency] = tuple(
                 (contract, gap) for contract, gap in gaps if gap.bar_end <= self._as_of
             )
         else:
@@ -288,6 +307,67 @@ class NewowProductReader:
                 break
             batch_end = batch_start - timedelta(days=1)
         return tuple(candidates)
+
+    def weekly_snapshot_candidates(
+        self, product: str, *, as_of: datetime, limit: int = 2,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> tuple[tuple[date, datetime], ...]:
+        """Choose bounded complete ISO weeks from Calendar and Session authority."""
+        cutoff = utc_timestamp(as_of)
+        if product not in self._active_products or type(limit) is not int or not 1 <= limit <= 2:
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        if cutoff > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+        start = self._coverage.product_start(product)
+        local_day = cutoff.astimezone(_SHANGHAI).date()
+        monday = local_day - timedelta(days=local_day.isoweekday() - 1)
+        candidates: list[tuple[date, datetime]] = []
+        for _ in range(20):
+            if monday + timedelta(days=6) < start or len(candidates) == limit:
+                break
+            self._check_cancelled()
+            if cancelled is not None and cancelled():
+                raise NewowProductReadCancelled("NEWOW_READ_CANCELLED")
+            candidate = self._market_data.completed_calendar_week(
+                symbol=product, week_monday=monday, as_of=cutoff,
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+            monday -= timedelta(days=7)
+        return tuple(candidates)
+
+    def current_owner_context(
+        self, product: str, at: datetime,
+    ) -> dict[str, str | None]:
+        """Read current Session owner separately from any historical snapshot."""
+        instant = utc_timestamp(at)
+        if product not in self._active_products or instant > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        unknown = {"status": "unknown", "physical_contract": None}
+        try:
+            days = self._market_data.trading_days_overlapping_window(
+                symbol=product, start=instant - timedelta(days=1),
+                end=instant + _MICROSECOND,
+            )
+            active = tuple(
+                day for day in days
+                if any(window.start <= instant < window.end for window in
+                       self._market_data.session_windows(symbol=product, trading_day=day))
+            )
+            if len(active) != 1:
+                return unknown
+            owners = self.dependency_owners(product, active[0], active[0])
+        except MarketDataError:
+            return unknown
+        if len(owners) != 1:
+            return unknown
+        return {"status": "known", "physical_contract": owners[0].contract}
+
+    def weekly_tail_unpublished(self, product: str, week_end: date) -> bool:
+        if product not in self._active_products:
+            raise NewowProductReadError("NEWOW_INVALID_PRODUCT")
+        self._check_cancelled()
+        return self._market_data.weekly_tail_unpublished(symbol=product, week_end=week_end)
 
     def resolve_performance_window(
         self,
@@ -494,15 +574,33 @@ class NewowProductReader:
             cutoff,
             self._check_cancelled,
         )
-        loaded = segment_loader.load(
-            symbol=query.product,
-            frequencies=tuple(BarFrequency(frequency) for frequency in frequencies),
-            since=lower,
-            through=days[-1],
-            allow_empty_frequencies=(
-                (BarFrequency.W1,) if ProductFrequency.WEEKLY in frequencies else ()
-            ),
-        )
+        def load_segments(through: date):
+            return segment_loader.load(
+                symbol=query.product,
+                frequencies=tuple(BarFrequency(frequency) for frequency in frequencies),
+                since=lower,
+                through=through,
+                allow_empty_frequencies=(
+                    (BarFrequency.W1,) if ProductFrequency.WEEKLY in frequencies else ()
+                ),
+            )
+
+        try:
+            loaded = load_segments(days[-1])
+        except MarketDataError as exc:
+            completed_days = tuple(
+                day for day in days
+                if max(window.end for window in sessions(day)) <= cutoff
+            )
+            if (
+                query.frequency is not ProductFrequency.WEEKLY
+                or exc.code != "MAIN_CONTRACT_MAP_MISSING"
+                or not completed_days
+                or completed_days[-1] == days[-1]
+            ):
+                raise
+            days = completed_days
+            loaded = load_segments(days[-1])
         owners = tuple(
             replace(segment, end_trading_day=min(segment.end_trading_day, days[-1]))
             for segment in loaded.authoritative_segments
@@ -558,6 +656,9 @@ class NewowProductReader:
             ProductFrequency, tuple[DataInterruption, ...]
         ] = {}
         for frequency in frequencies:
+            frequency_gaps = segment_loader.price_unavailable_by_frequency.get(
+                BarFrequency(frequency), ()
+            )
             actual = loaded.results[BarFrequency(frequency)].bars
             ranked = tuple(
                 tuple(
@@ -584,10 +685,17 @@ class NewowProductReader:
                     max(window.end for window in sessions(completed[-1]))
                     if completed else None
                 ) if frequency is ProductFrequency.DAILY else (
-                    bars[-1].bar_end if bars else None
+                    max((
+                        *(bar.bar_end for bar in bars),
+                        *(gap.bar_end for contract, gap in frequency_gaps
+                          if contract == owner.contract
+                          and owner.start_trading_day <= gap.trading_day <= owner.end_trading_day
+                          and gap.bar_end <= cutoff),
+                    ), default=None) if frequency is ProductFrequency.WEEKLY else
+                    (bars[-1].bar_end if bars else None)
                 )
                 owner_cutoffs.append(owner_cutoff)
-                end = owner_cutoff if frequency is ProductFrequency.DAILY else (
+                end = owner_cutoff if frequency in (ProductFrequency.DAILY, ProductFrequency.WEEKLY) else (
                     bars[-1].bar_end if bars else None
                 )
                 if end is not None:
@@ -597,17 +705,30 @@ class NewowProductReader:
             quality_prefix = (
                 frequency is ProductFrequency.DAILY
                 and getattr(self._market_data, "query_contract_replay_quality", None) is not None
+            ) or (
+                frequency is ProductFrequency.WEEKLY
+                and getattr(self._market_data, "query_contract_weekly_replay_quality", None) is not None
             )
-            prefix_gaps: dict[str, tuple[object, ...]] = {}
+            prefix_gaps: dict[
+                str, tuple[PriceUnavailableFact | WeeklySourceInterruption, ...]
+            ] = {}
             if quality_prefix:
                 prefixes = {}
                 for contract, end in contract_ends.items():
-                    physical, gaps = self._market_data.query_contract_replay_quality(
-                        symbol=query.product, contract=contract,
-                        through=end.astimezone(_SHANGHAI).date(), cutoff=end,
-                    )
+                    if frequency is ProductFrequency.DAILY:
+                        physical, daily_gaps = self._market_data.query_contract_replay_quality(
+                            symbol=query.product, contract=contract,
+                            through=end.astimezone(_SHANGHAI).date(), cutoff=end,
+                        )
+                    else:
+                        physical, weekly_gaps = self._market_data.query_contract_weekly_replay_quality(
+                            symbol=query.product, contract=contract,
+                            through=end.astimezone(_SHANGHAI).date(), cutoff=end,
+                        )
                     prefixes[contract] = physical
-                    prefix_gaps[contract] = gaps
+                    prefix_gaps[contract] = (
+                        daily_gaps if frequency is ProductFrequency.DAILY else weekly_gaps
+                    )
             else:
                 prefixes = {
                     contract: self._read_prefix(query.product, contract, frequency, end)
@@ -644,7 +765,7 @@ class NewowProductReader:
                 if owned != rank_bars:
                     raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
                 ranked_gaps = tuple(
-                    gap for contract, gap in segment_loader.price_unavailable
+                    gap for contract, gap in frequency_gaps
                     if contract == owner.contract
                     and owner.start_trading_day <= gap.trading_day <= owner.end_trading_day
                     and gap.bar_end <= owner_cutoff
@@ -668,10 +789,7 @@ class NewowProductReader:
                     product=query.product, frequency=frequency,
                     physical_contract=owner.contract, segment_id=segment_id,
                     trading_day=gap.trading_day, effective_at=gap.bar_end,
-                    source_identity=(
-                        "market_data_service:price_unavailable:v1:"
-                        f"{gap.request_sha256}:{gap.response_sha256}"
-                    ),
+                    source_identity=_quality_source_identity(frequency, gap),
                 ) for gap in gaps)
             for contract, prefix in prefixes.items():
                 if not quality_prefix:
@@ -758,10 +876,19 @@ class NewowProductReader:
             if frequency is ProductFrequency.WEEKLY:
                 return {"status": "NOT_APPLICABLE", "reason": "OWNER_HAS_NO_COMPLETED_BAR"}
             raise NewowProductReadError("NEWOW_COMPLETE_PERIOD_MISSING")
-        prefix = self._read_prefix(product, owner.contract, frequency, owned[-1][0])
-        self._validate_prefix(product, owner.contract, frequency, owned[-1][0], prefix,
-                              trading_day=owned[-1][1])
-        if prefix[-1].bar_end != owned[-1][0]:
+        if frequency is ProductFrequency.WEEKLY:
+            prefix, weekly_gaps = self._market_data.query_contract_weekly_replay_quality(
+                symbol=product, contract=owner.contract,
+                through=owned[-1][1], cutoff=owned[-1][0],
+            )
+        else:
+            prefix = self._read_prefix(product, owner.contract, frequency, owned[-1][0])
+            self._validate_prefix(product, owner.contract, frequency, owned[-1][0], prefix,
+                                  trading_day=owned[-1][1])
+            weekly_gaps = ()
+        actual_ends = {bar.bar_end for bar in prefix}
+        actual_ends.update(gap.week_end for gap in weekly_gaps)
+        if actual_ends != {end for end, _ in expected}:
             from app.market_data.market_data_service import MarketDataError
             raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
                                   reason="REPLAY_ENDPOINTS_MISSING")
@@ -778,12 +905,16 @@ class NewowProductReader:
             _product_bar(product, frequency, owner.contract, segment, bar,
                          bar.trading_day >= owner.start_trading_day)
             effective_bar_count += 1
-        return {"status": "DATA_READY", "expected_bar_count": len(expected),
+        result: dict[str, object] = {"status": "DATA_READY", "expected_bar_count": len(expected),
                 "actual_bar_count": len(prefix),
                 "effective_bar_count": effective_bar_count,
                 "no_trade_bar_count": no_trade_bar_count,
                 "input_policy_version": FUTURES_INPUT_POLICY_VERSION,
                 "cutoff": owned[-1][0].isoformat()}
+        if frequency is ProductFrequency.WEEKLY:
+            result["price_unavailable_count"] = len(weekly_gaps)
+            result["source_quality"] = "WEEKLY_INTERRUPTED" if weekly_gaps else "NORMAL"
+        return result
 
     def _validate_prefix(
         self, product: str, contract: str, frequency: ProductFrequency, cutoff: datetime,

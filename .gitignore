@@ -59,6 +59,7 @@ data/reports/source_interval_provenance_repair_apply_*/backups/
 
 # local bounded Newow recovery evidence (hash-bound, never a source tree input)
 /outputs/newow-weekly-recovery-attempts/
+/outputs/newow-weekly-quality-completion-20260917/
 
 # local scheduled research reports (dated observations, not release assets)
 data/reports/morning-note/

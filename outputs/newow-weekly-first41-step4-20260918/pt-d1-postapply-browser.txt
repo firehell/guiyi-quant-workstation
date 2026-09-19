@@ -1,0 +1,21 @@
+### Result
+[{"strategy":"trend","chart":"ready","auxiliary":"loading","state":"BUILD","snapshot":"日线截至 2026-09-18 收盘\n查看最近可用历史快照\n刷新当前"},{"strategy":"oscillation","chart":"ready","auxiliary":"loading","state":"HOLD","snapshot":"日线截至 2026-09-18 收盘\n查看最近可用历史快照\n刷新当前"},{"strategy":"main_rise","chart":"ready","auxiliary":"loading","state":"HOLD","snapshot":"日线截至 2026-09-18 收盘\n查看最近可用历史快照\n刷新当前"}]
+### Ran Playwright code
+```js
+await (async (page) => {
+  const rows=[];
+  for (const strategy of ['trend','oscillation','main_rise']) {
+    await page.goto(`http://127.0.0.1:5174/market/chart?symbol=pt&view=newow&strategy=${strategy}&frequency=1d&series_kind=actual_dominant`);
+    await page.locator('[data-detail-workspace="newow"]').waitFor({timeout:20000});
+    try { await page.waitForFunction(() => {const w=document.querySelector('[data-detail-workspace="newow"]'); return w && !['loading','not_requested'].includes(w.getAttribute('data-chart-state')) && !document.body.innerText.includes('正在确认最近完整日线');},null,{timeout:75000}); } catch (_) {}
+    rows.push(await page.evaluate((strategy)=>({strategy,chart:document.querySelector('[data-detail-workspace="newow"]')?.getAttribute('data-chart-state'),auxiliary:document.querySelector('[data-detail-workspace="newow"]')?.getAttribute('data-auxiliary-state'),state:document.querySelector('.newow-status')?.getAttribute('data-state'),snapshot:document.querySelector('.newow-product-workspace__snapshot-controls')?.innerText.slice(0,160)}),strategy));
+  }
+  return rows;
+}
+)(page);
+```
+### Page
+- Page URL: http://127.0.0.1:5174/market/chart?symbol=pt&view=newow&strategy=main_rise&frequency=1d&series_kind=actual_dominant
+- Page Title: 归一量化工作站
+### Events
+- New console entries: .playwright-cli/console-2026-09-18T14-23-32-576Z.log#L17-L32

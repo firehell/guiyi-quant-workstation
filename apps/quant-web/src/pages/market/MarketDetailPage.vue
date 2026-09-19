@@ -40,9 +40,11 @@ const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].in
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
 const newowHistoricalAsOf = ref<string | null>(null)
 const newowDailyAsOf = ref<string | null>(null)
+const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: string | null }>({ asOf: null, physicalContract: null })
 const newowCapabilities = useNewowCapabilities()
+const newowOpenFrequencies = computed(() => newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
-  || newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '60m'))
+  || newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '60m', explicitIdentity.value.symbol))
 const shellReady = computed(() => isWorkspacePreview.value && (
   (isNewowView.value && newowCapabilities.state.value !== 'loading') || (controller.state.value.header !== null && !controller.state.value.loading)
 ))
@@ -51,10 +53,14 @@ const newowWorkspace = ref<InstanceType<typeof NewowProductWorkspace> | null>(nu
 const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(null)
 const hasHtdyHistory = ref(false)
 const hasSubingHistory = ref(false)
+const quoteContract = computed(() => explicitIdentity.value?.frequency === '1w'
+  ? newowWeeklyQuoteContext.value.physicalContract
+  : controller.productCatalog.value.find(item => item.product.toLowerCase() === explicitIdentity.value?.symbol)?.actual_contract ?? null)
 const dailyQuote = useNewowDailyQuote({
   symbol: computed(() => isNewowView.value ? explicitIdentity.value!.symbol : null),
-  contract: computed(() => controller.productCatalog.value.find(item => item.product.toLowerCase() === explicitIdentity.value?.symbol)?.actual_contract ?? null),
-  snapshotAsOf: newowDailyAsOf,
+  contract: quoteContract,
+  snapshotAsOf: computed(() => explicitIdentity.value?.frequency === '1w'
+    ? newowWeeklyQuoteContext.value.asOf : newowDailyAsOf.value),
 })
 const productOptions = computed(() => normalizeProductOptions(controller.productCatalog.value))
 const productSelectorStatus = computed(() => productOptions.value.length > 0
@@ -64,7 +70,7 @@ const header = computed(() => {
   const base = controller.state.value.header
   if (!base || !isNewowView.value) return base
   const quote = dailyQuote.quote.value
-  return { ...base, ...(quote ?? {}), displayContract: quote ? controller.productCatalog.value.find(item => item.product.toLowerCase() === explicitIdentity.value?.symbol)?.actual_contract ?? null : null, freshness: quote ? 'fresh' as const : 'unavailable' as const }
+  return { ...base, ...(quote ?? {}), displayContract: quote ? quoteContract.value : null, freshness: quote ? 'fresh' as const : 'unavailable' as const }
 })
 const identityWarning = ref(
   typeof window !== 'undefined' && window.history.state?.contractCleared === true
@@ -87,6 +93,7 @@ async function activateRoute() {
   const generation = ++activationGeneration
   newowHistoricalAsOf.value = null
   newowDailyAsOf.value = null
+  newowWeeklyQuoteContext.value = { asOf: null, physicalContract: null }
   hasHtdyHistory.value = false
   hasSubingHistory.value = false
   const result = routeResult.value
@@ -111,7 +118,7 @@ function recover() {
 
 function switchNewowToOpenFrequency() {
   const identity = explicitIdentity.value
-  const frequency = newowCapabilities.openFrequencies.value[0]
+  const frequency = newowOpenFrequencies.value[0]
   if (identity?.view !== 'newow' || !frequency) return
   selectIdentity({ ...identity, frequency, focusBarEnd: undefined })
 }
@@ -234,7 +241,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
       <MarketDetailViewNav
         :identity="routeResult.identity"
         :products="controller.productCatalog.value"
-        :newow-frequencies="newowCapabilities.openFrequencies.value"
+        :newow-frequencies="newowOpenFrequencies"
         :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
         @select="selectIdentity"
         @contract-cleared="selectContractCleared"
@@ -262,6 +269,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             @focus-resolved="resolveFocus"
             @snapshot-mode="newowHistoricalAsOf = $event"
             @daily-snapshot-as-of="newowDailyAsOf = $event"
+            @weekly-quote-context="newowWeeklyQuoteContext = $event"
             @refresh-current="dailyQuote.refresh"
           />
           <MarketDetailUnavailable
@@ -269,7 +277,7 @@ onBeforeUnmount(() => { activationGeneration += 1; dailyQuote.dispose(); control
             :title="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在读取牛哇开放能力' : newowCapabilities.state.value === 'unavailable' ? '牛哇开放能力不可用' : '当前牛哇周期未开放'"
             :message="newowCapabilities.state.value === 'unavailable' ? (newowCapabilities.error.value ?? '无法确认开放范围。') : newowFrequencyOpen ? '正在确认当前发布阶段。' : `${routeResult.identity.frequency} 尚未开放（${newowCapabilities.deferredFrequencyReason(routeResult.identity.frequency as '1w' | '1d' | '60m') ?? 'NEWOW_FREQUENCY_NOT_OPEN'}）。`"
             recovery-label="切换到已开放日线"
-            :can-recover="newowCapabilities.state.value === 'ready' && !newowFrequencyOpen && newowCapabilities.openFrequencies.value.length > 0"
+            :can-recover="newowCapabilities.state.value === 'ready' && !newowFrequencyOpen && newowOpenFrequencies.length > 0"
             :can-return-market="true"
             @recover="switchNewowToOpenFrequency"
             @return-market="goBack"

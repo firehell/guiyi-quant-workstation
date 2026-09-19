@@ -8,6 +8,10 @@
 
 <!-- PDF_PAGE -->
 
+> 2026-09-18校订：本手册保留v3.2.82冻结公式与历史研究。最新详情为v3.3.46，
+> 请同时阅读[当前算法与AI审计](CURRENT_AUDIT.md)。三大策略已有不等于最新页面全复刻；
+> 新综合解释、六组合AI推荐、WR20趋势转折仍有缺口，正式周期仍仅1d。
+
 ## 01｜先说结论：我们复刻的到底是什么
 
 牛哇更像一套“分层读盘与行动解释系统”，不是一个能包打天下的神奇指标：
@@ -114,7 +118,7 @@ B[t] = 最近最多 10 根 T 的均值
 Yellow 当 Close[t] >= B[t]，否则 Blue
 ```
 
-`A` 用于快带展示，`B` 是慢带与参考 marker 价格。状态由 Blue 切到 Yellow 产生 BUILD；由 Yellow 切到 Blue 且存在同一段 BUILD 时产生 CLEAR。它是阶段切换器，不是预测下一根涨跌的分类器。
+`A`用于快带展示，`B`是慢带与参考marker价格。Blue→Yellow产生BUILD，Yellow→Blue产生CLEAR；存在同段有效BUILD才能将CLEAR闭合为参考交易。无入场的初始CLEAR只保留信号，见下一节。它是阶段切换器，不是预测下一根涨跌的分类器。
 
 <!-- PDF_PAGE -->
 
@@ -128,7 +132,8 @@ YELLOW ──继续满足──▶ HOLD
 BLUE ──继续满足──▶ FLAT
 ```
 
-实现保存 `previous_state`、最近 BUILD 的 marker 身份与参考价。CLEAR 必须关联稳定的 BUILD marker，不能用“往回找最近一次建仓”这种模糊逻辑。
+实现保存 `previous_state`、最近 BUILD 的 marker 身份与参考价。能闭合参考交易的CLEAR必须关联稳定的BUILD，不能模糊搜索。
+2026-09-18当前产品另支持`INITIAL_CLEAR_NO_ENTRY`：初始黄→蓝可显示无入场CLEAR，但没有利润、持有期或CLOSED交易；策略信号与交易配对不是同一层。
 
 期货中一旦 `physical_contract` 或 `segment_id` 改变，递归窗口与持有状态重置。原因很直接：新主力合约不是旧合约价格序列的无缝延续，不能把合成主连的跨合约跳跃当成策略波动，也不能把旧合约的 BUILD 与新合约的 CLEAR 配成一笔交易。
 
@@ -200,7 +205,7 @@ Position[t] = (Close[t] - Lower[t]) / Width[t]
 
 只有累计 10 根后才进入正式判断。未持有且当根 Low 触达 Lower，产生 BUILD；已持有且当根 High 触达 Upper，产生 CLEAR。
 
-注意同 Bar 规则：代码先检查 CLEAR，再检查 BUILD。因此若一根 K 线同时触及上下沿且此前持有，它可以先清仓、再建仓，最终状态仍为 holding。这是页面一致性语义，因果执行必须另行判断同一根 Bar 内先后顺序不可知的问题。
+注意同 Bar 规则：代码先检查CLEAR，再检查BUILD，因此可能同根清仓后重建。这是冻结旧版及原站历史回测口径；新版图表禁止同根重建。9月9日已逐值确认差异，owner已接受归一保留旧行为，不再称其新版图表完全一致。因果执行还须处理Bar内先后不可知。
 
 ![招商银行 60 分钟页面](screenshots/600036-SH-60min-trend.png)
 
@@ -232,7 +237,7 @@ absorb_N[t] = LLV(Low, N)
 默认 N = 10
 ```
 
-研究证据身份 `newow_target_absorb_display_selection_page_v2` 再依据当前视图和周/日趋势信号选择日通道或周通道，并相对昨收将显示值约束在 `[0.5, 2]` 倍。周线视图还有优先采用当前周线 HHV/LLV 的覆盖规则。该身份已完成冻结输入上的 parity，但当前 `develop` 没有把它保留为 active Quant Core 入口；产品化时需要依据证据重新落实现与测试。
+研究证据身份 `newow_target_absorb_display_selection_page_v2` 再依据当前视图和周/日趋势信号选择日通道或周通道，并可相对昨收将显示值约束在 `[0.5, 2]` 倍。周线视图还有当前周线HHV/LLV覆盖规则。2026-09-18已核对`target_absorb_display.py`和`trend_channel_display.py`存在；旧稿“尚无active入口”已过时。已有受控实现不等于所有分支可激活，昨收来源、周期选择和owner证据仍需逐项证明。
 
 正确理解：目标价是“当前公开窗口中的上沿参照”，吸筹价是“下沿参照”。它们会随新 Bar 滚动，不应被描述成基本面估值或保证到达的未来价格。
 
@@ -240,7 +245,7 @@ absorb_N[t] = LLV(Low, N)
 
 ## 16｜参数比较器：页面版为何看起来很聪明
 
-页面比较固定窗口 `10 / 20 / 24 / 30 / 52`：对每个 N 生成通道信号，按页面口径配对，并比较收益、回撤、交易数、胜率与期末持仓，最后排序。
+页面比较固定窗口 `10 / 20 / 24 / 30 / 52`：对每个 N 生成通道信号，按页面口径配对，并比较收益、回撤、交易数、胜率与期末持仓，最后排序。2026-09-18当前`page_comparator.py`已有受控实现；它不是顶部“AI分析”的两策略×三周期推荐，后者仍缺实现。
 
 证据包中的页面身份 `newow_hhv_llv_window_optimizer_page_v1` 的关键假设是：
 
@@ -404,7 +409,7 @@ VAR3 = (MA5 - MA120) / MA120
 震荡：所处位置
 ```
 
-输出不是一个裸分数，而是行动 token、方向、仓位区间、确定性拆分、风险 token 与第一行动原则。冻结研究身份为 `newow_composite_decision_page_v3_2_82`；当前 `develop` 未把它保留为 active 决策模块。
+输出不是一个裸分数，而是行动token、方向、仓位区间、确定性拆分、风险token与第一行动原则。冻结研究身份为`newow_composite_decision_page_v3_2_82`；2026-09-18代码已有`composite_explanation.py`的`newow_composite_decision_page_v3_2_82_reachable_v1`，但正式explanation section因跨频输入未开放而关闭。它仍非最新版CDV2，不能把旧合同已有解释为新版完成。
 
 归一保留页面控制流原样以实现 parity；任何逻辑修正必须另建 `newow_composite_decision_cleanroom_v1`，不能在原身份上“顺手修好”。
 
@@ -426,7 +431,7 @@ warning-neutral
 
 三格均不可达，实际会落到对应的 bearish-*。
 
-页面一致模式必须保留这个缺陷；clean-room 修正版可以改变分支顺序，但必须使用新公式身份并重新做回归、OOS 与解释一致性验证。
+旧身份重放保留该行为。最新版公开CDV2已调整warning分支顺序，应新建版本合同与回归，不应把修正继续标成旧公式或一概视作归一clean-room。是否用于研究交易另需增量价值证据。
 
 <!-- PDF_PAGE -->
 
@@ -443,17 +448,17 @@ warning-neutral
 
 总分理论上 100。出现趋势/震荡冲突时总分 cap 为 60；中性状态 cap 为 85。分数表示“输入之间的一致程度”，不是胜率、上涨概率或模型置信区间。
 
-27 个页面点的总分与各分项均在冻结证据中逐值匹配。重新产品化时要先恢复确定性规则和 golden tests；若改变权重或引入新 factor，必须创建新 `decision_policy_version`，不能继续使用页面身份。
+27个页面点的总分与各分项均为旧冻结证据。旧规则和测试当前已有；新版CDV2使用五项加`certExtra`、R0–R4和双轴仓位，不再采用旧60/85封顶，尚未迁移，详见[最新审计](CURRENT_AUDIT.md)。新规则需独立版本，不能覆盖历史parity结果。
 
 <!-- PDF_PAGE -->
 
 ## 29｜波动率：ATR20 / Close 只改变解释
 
 ```text
-volatility = ATR(20) / Close
+volatility = mean(最近最多20个 True Range) / Close
 ```
 
-页面将其分档，用于说明风险大小、止损空间和仓位谨慎程度。当前复刻中它不修改 13 格矩阵，也不偷偷提高或降低 BUILD/CLEAR 门槛。
+这里是简单TR均值，不是Wilder ATR递推。旧复刻用于解释，不修改13格矩阵或BUILD/CLEAR；新版CDV2把低/中/高波动另记0/−3/−8扣分，项目尚未迁移该用途。股票页面的仓位百分比不可直接当期货保证金比例。
 
 这是一个很重要的产品边界：波动率可以解释“同样的方向为何需要不同风险预算”，但风险预算属于后续 Risk Domain。策略公式、解释层与风险模型必须各自版本化。
 
@@ -492,7 +497,7 @@ AI 可以把 token 翻译成更自然的说明，但不能改变 token、策略�
 
 页面存在历史 A–E 月/周/日模板，也存在当前周日 4×4 输出。归一只保留可机器验证的输入分支与输出 token：趋势状态、震荡状态、目标/吸筹区间、确定性、波动率和第一行动。
 
-AI 自然语言文案具有私有模板或服务端行为，当前 27 个案例均标记 `unavailable`。因此正确实现是：
+冻结27个案例的AI copy仍标记`unavailable`，但不能据此断言所有模板都私有。2026-09-18公开详情源码已确认前端周日4×4和震荡三周期27格模板、后端`analysisText/ai_text`优先路径、综合决策仓位同步；后端生成方式未知。顶部六组合“AI分析”又是独立确定性回测排名，不是诊股模板，详见[最新审计](CURRENT_AUDIT.md)。归一建议实现边界仍是：
 
 1. Quant Core 生成 deterministic facts；
 2. 规则层生成稳定 explanation token；
@@ -653,7 +658,9 @@ NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT
 | 控盘 | `newow_main_force_control_page_v1` | explanation | source retained |
 | 照妖镜 | `newow_zhaoyao_mirror_repainting_page_v1` | repainting only | source retained |
 | 涨跌动能 | `newow_up_down_energy_page_v1` | explanation | source retained |
-| 目标/综合决策 | v3.2.82 parity identities | evidence snapshot | active restore pending |
+| 目标/吸筹 | `newow_target_absorb_display_selection_page_v2` | 受控页面解释 | 实现存在；部分来源Gate未关闭 |
+| 旧综合决策 | `newow_composite_decision_page_v3_2_82_reachable_v1` | 旧版解释 | 实现存在；正式跨频section未开放 |
+| 新CDV2 / 六组合AI / 趋势转折 | 原站公开新合同，见当前审计 | 待设计／实现 | 不属于旧版已通过清单 |
 | 因果回测 | `newow_causal_next_open_costed_v1` | research | source retained |
 
 <!-- PDF_PAGE -->
@@ -681,7 +688,7 @@ NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT
 | 主力控盘 | 副图状态与页面脚本重算 | `calculate_main_force_control` | 只解释价格强弱，不代表席位资金 |
 | 照妖镜 | 复刻峰值与警示控制流 | `calculate_zhaoyao_mirror` | repainting；禁止进入正式信号/OOS |
 | 涨跌动能 | VAR4/VAR3 与低位标记比对 | `calculate_up_down_energy` | segment 重算；短段 unavailable |
-| 综合决策 | 枚举 13 键并对 27 个页面点逐值比较 | parity evidence；3 warning 键不可达 | active 解释；token/六组合证据待补；不是仓位事实 |
+| 综合决策 | 枚举旧13键并对27个页面点逐值比较 | 旧parity evidence；旧3 warning键不可达 | 旧解释实现存在但正式section关闭；新CDV2尚缺；不是仓位事实 |
 | AI 诊股 | 保存模板分支与文本 hash | facts/token 设计；自然语言 unavailable | AI 只改写，不改变状态或仓位 |
 | 私有选股 | 只读请求与当日返回集合 | `UNKNOWN / OUT_OF_SCOPE` | 不迁移；自建透明 OpportunityRanker |
 
@@ -689,7 +696,7 @@ NEWOW_WEEKLY_EXECUTION_LIMIT_CONTRACT_INSUFFICIENT
 
 ## 附录 D｜验收、限制与证据入口
 
-以下数字仅为冻结的 v3.2.82 历史研究结果，不覆盖新版。新版盘点见 [2026-09-09 功能差异](../newow-current-review.md)。
+以下数字仅为冻结的v3.2.82历史研究结果，不覆盖新版。最新盘点见[2026-09-18算法与AI审计](CURRENT_AUDIT.md)，限定同输入证据见[9月9～10日功能差异](../newow-current-review.md)。
 
 页面一致性：27 cases；16 个可比较 feature 全部 27/27 matched；0 mismatch。
 期货迁移：rb/sc/m × 1d/1w/60m，9/9 series 通过。

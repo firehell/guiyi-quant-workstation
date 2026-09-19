@@ -11,6 +11,7 @@ test('proxy allows exact GET resources only, never encoded paths or WS', async (
   assert.equal(previewTarget('GET', '/api/v1/market/bars/page?symbol=rb'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/v1/market/newow/product-capabilities'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/v1/market/newow/daily-snapshot?product=rb&strategy=trend&frequency=1d'), 'http://127.0.0.1:8010')
+  assert.equal(previewTarget('GET', '/api/v1/market/newow/weekly-snapshot?product=rb&strategy=trend&frequency=1w'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/v1/market/jm/subing/reference?since=2026-08-01'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/preview/identity'), 'http://127.0.0.1:8010')
   assert.equal(previewTarget('GET', '/api/runtime/health'), 'http://127.0.0.1:8000')
@@ -28,6 +29,33 @@ test('proxy allows exact GET resources only, never encoded paths or WS', async (
   assert.equal(previewTarget('GET', '/api/runtime/health', true), null)
 })
 
+test('wall-clock weekly preview matches a dynamic identity without a fixed cutoff', async (context) => {
+  const { matchesPreviewIdentity } = await import('../src/utils/candidatePreview.ts')
+  const config = { enabled: true, codeSha: 'a'.repeat(40), asOf: '', defaultWeekly: true }
+  const payload = { mode: 'local_candidate_readonly', code_sha: config.codeSha,
+    as_of: null, default_weekly: true, realtime: false,
+    candidate_origin: 'http://127.0.0.1:8010', status_origin: 'http://127.0.0.1:8000' }
+  assert.equal(matchesPreviewIdentity(payload, config), true)
+  assert.equal(matchesPreviewIdentity({ ...payload, as_of: '2026-09-18T07:00:00Z' }, config), false)
+  assert.equal(matchesPreviewIdentity({ ...payload, default_weekly: false }, config), false)
+  context.mock.method(Date, 'now', () => Date.parse('2026-09-18T08:00:00Z'))
+  const old = process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY
+  const cutoff = process.env.GUIYI_PREVIEW_AS_OF
+  process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY = '1'
+  delete process.env.GUIYI_PREVIEW_AS_OF
+  try {
+    const { default: configFactory } = await import('../vite.config.ts')
+    const result = (configFactory as Function)({ mode: 'candidate-preview', command: 'serve' })
+    assert.equal(JSON.parse(result.define['import.meta.env.VITE_PREVIEW_DEFAULT_WEEKLY']), '1')
+    assert.equal(JSON.parse(result.define['import.meta.env.VITE_PREVIEW_AS_OF']), '')
+  } finally {
+    if (old === undefined) delete process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY
+    else process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY = old
+    if (cutoff === undefined) delete process.env.GUIYI_PREVIEW_AS_OF
+    else process.env.GUIYI_PREVIEW_AS_OF = cutoff
+  }
+})
+
 test('browser preview identity must match code, cutoff and both fixed origins', async () => {
   const { matchesPreviewIdentity } = await import('../src/utils/candidatePreview.ts')
   const config = { enabled: true, codeSha: 'a'.repeat(40), asOf: '2026-09-03T08:00:00.000Z' }
@@ -39,6 +67,86 @@ test('browser preview identity must match code, cutoff and both fixed origins', 
     { candidate_origin: 'http://127.0.0.1:8000' }, { realtime: true }]) {
     assert.equal(matchesPreviewIdentity({ ...payload, ...change }, config), false)
   }
+})
+
+test('overflow AP preview matches 8011 origin and rejects PD/PT 8010 identity', async () => {
+  const { matchesPreviewIdentity, candidateOriginHost } = await import('../src/utils/candidatePreview.ts')
+  const config = {
+    enabled: true,
+    codeSha: 'a'.repeat(40),
+    asOf: '2026-09-03T08:00:00.000Z',
+    candidateOrigin: 'http://127.0.0.1:8011',
+  }
+  const payload = {
+    mode: 'local_candidate_readonly',
+    code_sha: config.codeSha,
+    as_of: '2026-09-03T08:00:00+00:00',
+    realtime: false,
+    candidate_origin: 'http://127.0.0.1:8011',
+    status_origin: 'http://127.0.0.1:8000',
+  }
+  assert.equal(matchesPreviewIdentity(payload, config), true)
+  assert.equal(matchesPreviewIdentity({ ...payload, candidate_origin: 'http://127.0.0.1:8010' }, config), false)
+  assert.equal(candidateOriginHost(config.candidateOrigin), '127.0.0.1:8011')
+  assert.equal(candidateOriginHost('http://127.0.0.1:8010'), '127.0.0.1:8010')
+})
+
+test('8011 candidate origin proxies market API to 8011 and binds 5175, not PD/PT 8010/5174', async (context) => {
+  context.mock.method(Date, 'now', () => Date.parse('2026-09-18T00:00:00Z'))
+  const originalAsOf = process.env.GUIYI_PREVIEW_AS_OF
+  const originalOrigin = process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN
+  process.env.GUIYI_PREVIEW_AS_OF = '2026-09-17T07:00:00Z'
+  process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN = 'http://127.0.0.1:8011'
+  try {
+    const origin = 'http://127.0.0.1:8011'
+    const { previewTarget, candidatePreviewProxy, candidatePreviewWebPort } = await import('../previewProxy.ts')
+    assert.equal(previewTarget('GET', '/api/preview/identity', false, origin), origin)
+    assert.equal(previewTarget('GET', '/api/v1/market/newow/product-capabilities', false, origin), origin)
+    assert.equal(previewTarget('GET', '/api/runtime/health', false, origin), 'http://127.0.0.1:8000')
+    assert.equal(candidatePreviewProxy(origin)['^/api/(preview/identity|v1/market/)'].target, origin)
+    assert.equal(candidatePreviewWebPort(origin), 5175)
+    assert.equal(candidatePreviewWebPort('http://127.0.0.1:8010'), 5174)
+    const { default: config } = await import('../vite.config.ts')
+    const result = (config as Function)({ mode: 'candidate-preview', command: 'serve' })
+    assert.equal(result.server.port, 5175)
+    assert.equal(result.server.proxy['^/api/(preview/identity|v1/market/)'].target, origin)
+    assert.equal(JSON.parse(result.define['import.meta.env.VITE_PREVIEW_CANDIDATE_ORIGIN']), origin)
+  } finally {
+    if (originalAsOf === undefined) delete process.env.GUIYI_PREVIEW_AS_OF
+    else process.env.GUIYI_PREVIEW_AS_OF = originalAsOf
+    if (originalOrigin === undefined) delete process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN
+    else process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN = originalOrigin
+  }
+})
+
+test('AP 5175 overlay reuses origin-aligned proxy and does not bind 5174', async (context) => {
+  context.mock.method(Date, 'now', () => Date.parse('2026-09-18T00:00:00Z'))
+  const originalAsOf = process.env.GUIYI_PREVIEW_AS_OF
+  const originalOrigin = process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN
+  process.env.GUIYI_PREVIEW_AS_OF = '2026-09-17T07:00:00Z'
+  delete process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN
+  try {
+    const { default: overlay } = await import('../vite.ap5175.config.ts')
+    const result = (overlay as Function)({ mode: 'candidate-preview', command: 'serve' })
+    assert.equal(result.server.port, 5175)
+    assert.equal(result.server.host, '127.0.0.1')
+    assert.equal(result.server.proxy['^/api/(preview/identity|v1/market/)'].target, 'http://127.0.0.1:8011')
+    assert.equal(JSON.parse(result.define['import.meta.env.VITE_PREVIEW_CANDIDATE_ORIGIN']), 'http://127.0.0.1:8011')
+  } finally {
+    if (originalAsOf === undefined) delete process.env.GUIYI_PREVIEW_AS_OF
+    else process.env.GUIYI_PREVIEW_AS_OF = originalAsOf
+    if (originalOrigin === undefined) delete process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN
+    else process.env.GUIYI_PREVIEW_CANDIDATE_ORIGIN = originalOrigin
+  }
+})
+
+test('8011 candidate plugin refuses to share PD/PT web port 5174', async () => {
+  const { candidatePreviewPlugin } = await import('../previewProxy.ts')
+  const hook = candidatePreviewPlugin('http://127.0.0.1:8011').configResolved as Function
+  assert.throws(() => hook({ server: { host: '127.0.0.1', port: 5174 } }), /PREVIEW_OVERFLOW_PORT_REQUIRED/)
+  assert.doesNotThrow(() => hook({ server: { host: '127.0.0.1', port: 5175 } }))
+  const defaultHook = candidatePreviewPlugin('http://127.0.0.1:8010').configResolved as Function
+  assert.doesNotThrow(() => defaultHook({ server: { host: '127.0.0.1', port: 5174 } }))
 })
 
 test('candidate config keeps the exact exclusive cutoff string', async (context) => {

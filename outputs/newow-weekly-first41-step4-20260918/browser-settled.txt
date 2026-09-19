@@ -1,0 +1,33 @@
+### Result
+[{"product":"au","strategy":"trend","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"au","strategy":"oscillation","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"au","strategy":"main_rise","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"rb","strategy":"trend","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"rb","strategy":"oscillation","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"rb","strategy":"main_rise","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"cu","strategy":"trend","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"cu","strategy":"oscillation","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"cu","strategy":"main_rise","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"bu","strategy":"trend","chart":"not_requested","auxiliary":"not_requested","as_of":"2026-09-18T07:00:00.000001Z","reference":"参考交易\n\n页面参考 · 零手续费 / 零滑点 · 非账户成交\n\n参考口径说明\n统计起点\n统计终点\n读取中…\n\n正在加载…","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"bu","strategy":"oscillation","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"bu","strategy":"main_rise","chart":"ready","auxiliary":"ready","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"pd","strategy":"trend","chart":"ready","auxiliary":"warming","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"pd","strategy":"oscillation","chart":"ready","auxiliary":"warming","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"pd","strategy":"main_rise","chart":"ready","auxiliary":"warming","as_of":"2026-09-18T07:00:00.000001Z","reference":"ready","reason":"周线截至 2026-09-18T07:00:00.000001Z，当前主力 不可判定\n查看最近可用历史快照\n刷新当前"},{"product":"pt","strategy":"trend","chart":"unavailable","auxiliary":"not_requested","as_of":null,"reference":"参考交易\n\n页面参考 · 零手续费 / 零滑点 · 非账户成交\n\n参考口径说明\n统计起点\n统计终点\n应用统计窗口\n\n尚未请求。\n\n读取参考交易","reason":"同合约历史 Bar 缺失（pt · PT2612 · 1w · 2025-12-19）。可重试本面板，或主动查看最近可用历史快照；数据修复需单独处理。\n查看最近可用历史快照\n刷新当前"},{"product":"pt","strategy":"oscillation","chart":"unavailable","auxiliary":"not_requested","as_of":null,"reference":"参考交易\n\n页面参考 · 零手续费 / 零滑点 · 非账户成交\n\n参考口径说明\n统计起点\n统计终点\n应用统计窗口\n\n尚未请求。\n\n读取参考交易","reason":"同合约历史 Bar 缺失（pt · PT2612 · 1w · 2025-12-19）。可重试本面板，或主动查看最近可用历史快照；数据修复需单独处理。\n查看最近可用历史快照\n刷新当前"},{"product":"pt","strategy":"main_rise","chart":"unavailable","auxiliary":"not_requested","as_of":null,"reference":"参考交易\n\n页面参考 · 零手续费 / 零滑点 · 非账户成交\n\n参考口径说明\n统计起点\n统计终点\n应用统计窗口\n\n尚未请求。\n\n读取参考交易","reason":"同合约历史 Bar 缺失（pt · PT2612 · 1w · 2025-12-19）。可重试本面板，或主动查看最近可用历史快照；数据修复需单独处理。\n查看最近可用历史快照\n刷新当前"}]
+### Ran Playwright code
+```js
+await (async (page) => {
+  const rows = [];
+  for (const product of ['au','rb','cu','bu','pd','pt']) for (const strategy of ['trend','oscillation','main_rise']) {
+    await page.goto(`http://127.0.0.1:5174/market/chart?symbol=${product}&view=newow&strategy=${strategy}&frequency=1w&series_kind=actual_dominant`);
+    await page.locator('[data-detail-workspace="newow"]').waitFor({timeout:20000});
+    try { await page.waitForFunction(() => {
+      const w=document.querySelector('[data-detail-workspace="newow"]');
+      if (!w || w.getAttribute('data-chart-state')==='loading' || document.body.innerText.includes('正在确认最近完整周线')) return false;
+      if (w.getAttribute('data-chart-state')!=='ready') return true;
+      return w.getAttribute('data-auxiliary-state')!=='loading' && (!!document.querySelector('[data-testid="newow-reference-summary"]') || !!document.querySelector('.newow-reference__waiting'));
+    },null,{timeout:90000}); } catch (_) {}
+    rows.push(await page.evaluate(({product,strategy}) => {
+      const w=document.querySelector('[data-detail-workspace="newow"]');
+      const c=document.querySelector('.newow-product-workspace__snapshot-controls');
+      const summary=document.querySelector('[data-testid="newow-reference-summary"]');
+      const ref=document.querySelector('.newow-reference');
+      return {product,strategy,chart:w?.getAttribute('data-chart-state')??null,auxiliary:w?.getAttribute('data-auxiliary-state')??null,as_of:c?.getAttribute('data-as-of')??null,reference:summary?'ready':ref?.innerText.slice(0,140)??null,reason:c?.innerText.slice(0,140)??null};
+    },{product,strategy}));
+  }
+  return rows;
+}
+)(page);
+```
+### Page
+- Page URL: http://127.0.0.1:5174/market/chart?symbol=pt&view=newow&strategy=main_rise&frequency=1w&series_kind=actual_dominant
+- Page Title: 归一量化工作站
+- Console: 2 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-09-18T13-00-31-070Z.log#L177-L189

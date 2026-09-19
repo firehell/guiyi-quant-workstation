@@ -27,6 +27,10 @@ Dataset。
 对物理合约 D1 严格匹配 O/H/L=0、`close>0`、`volume>0` 且其余来源、身份和端点校验通过的行，
 仅按已批准的 `PRICE_UNAVAILABLE` 质量事实记录并中断 Newow 计算，不生成 CanonicalBar；
 其他非零成交、部分价格缺失、部分零价或无效 `close` 仍须失败。W1 不得借此缺价日聚合成功。
+隔离候选的 Newow W1 质量读取可把已完成周内的 D1 合法 Bar 与 `PRICE_UNAVAILABLE` 事实逐端点证明为完整互斥集合：
+有缺价的周只形成 `weekly-d1-quality-v1` 计算中断，不返回 W1 价格 Bar；普通 MDS W1 查询仍严格失败。
+同周还有未解释缺日、重复或身份冲突时不得豁免。现有正常 W1 必须与同一 D1 来源聚合数值一致；
+分区写入、正式数据恢复及 Runtime 切换分别受各自 Gate 约束。
 不得用 `get_price` 的期货日/周 `close` 或 `settlement` 互相替代。
 
 来源响应中的原始 `order_book_id`、端点唯一性和交易日归属在归一化前验证；同一响应的重复行不能由字典覆盖。分钟 provider 请求的日期窗口从 Calendar/Session 所属交易日得出，夜盘跨自然日、周末仍按所属交易日请求。维护计划冻结允许补缺或 refresh 的端点，只有该集合内的来源记录可进入发布。
@@ -214,7 +218,11 @@ plan hash identity。省略 `--frequency` 时维持七周期；显式 `1d` 只�
 也不得跨 scope 复用 hash。其它显式 frequency 均 fail-closed。`1w` 只由同一交易所完整日行情聚合，四个日内派生周期只由同 contract `1m` 生成。dry-run
 只读输出稳定 plan hash；apply 必须在 maintenance lock 内重算并匹配该 hash，且不会写 continuous、其它 contract、
 MainContractMap、Redis Live、Rule、Scope、Event 或 notification。任一显式 scope 的 provider、发布或派生失败
-必须立刻停止该 contract 的后续 target。仅当同族同月存在待补 `1m` 目标时，才在开始派生前推迟到源发布后；
+必须立刻停止该 contract 的后续 target。显式 `1w` 把端点齐全但与 active D1 周聚合数值不一致的旧 W1
+纳入修复目标，并绑定现有 D1/W1 分区 revision 到 plan hash。该 scope 先验证本合约全部 D1/W1 候选
+和受影响旧周线，再一次提交目标 Catalog 指针；失败时保留旧 active 指针。默认七周期仅当目标
+全部属于 D1/W1 时使用该边界；包含日内目标时仍按分区维护。
+仅当同族同月存在待补 `1m` 目标时，才在开始派生前推迟到源发布后；
 已经开始的派生/发布失败不得按缺源错误码推迟重试。额度耗尽返回 `partial`，不得报告 `passed`。分区失败可明确部分成功，不能自动重试。
 
 同物理合约派生使用的 Session 窗口与 warm-up coverage 一致：按上市日、到期日前一日和 `through`
@@ -222,7 +230,8 @@ MainContractMap、Redis Live、Rule、Scope、Event 或 notification。任一显
 Calendar/Session 必须具备逐日权威事实，缺失即失败；`continuous` Session 查询仍保留既有维护起点。
 
 warm-up 只读结果的 `scope_diagnostics` 保留整个 frequency scope 的逐分区有界原因及是否为计划目标，
-包括不缺 endpoint 但含原始非正价格的 source companion。该诊断不改变维护目标、apply 规则或既有 plan hash。
+包括不缺 endpoint 但含原始非正价格的 source companion。普通 source-quality 诊断本身不改变维护目标；
+显式 `1w` 的数值冲突是独立修复目标，并进入 plan hash。
 
 普通 W1 或显式 D1 总包可冻结版本化的“来源质量异常单元隔离”策略；旧 prepare/attempt 保持原停批语义，
 且 W1/D1 的 policy、manifest、result、invocation 和 prior-isolation schema 不得跨 profile 复用。
@@ -347,11 +356,21 @@ Newow 默认日线由独立只读解析取得最近完整收盘快照，并显�
 `canonical_updated` 和盘后任务 passed 只说明各自原有阶段，不直接证明牛哇三策略全部可读。
 若当日映射尚未发布，Newow 仅允许验证并显示前一完成日，标记当日待更新；
 其他输入质量或身份冲突继续失败关闭。此机制不引入盘中 RQData 抓取或额外重试。
-盘后主任务终态写入并释放维护锁后，按每品种目标日 Session 截止，以新只读事务验证
-operational 60 的 D1 三策略主图、参考与已开放辅助面板；每品种最多 60 秒，总计最多
-900 秒。审计在维护锁外运行，开始与提交时仅非等待短暂核锁，并比较所依赖的 D1 Catalog、
-rank1、Calendar/Session 与不可变 Parquet 分区指针摘要。`consumer_checks.newow_d1` 单独记录
-验收数、失败项、未检品种、逐品种截止、输入摘要与运行 commit；`input_changed` 不构成验收通过。
+盘后主任务终态写入并释放维护锁后，以新只读事务分别验证 operational 60 的 D1 和固定候选
+41 品种的 W1。两个范围都覆盖三策略主图、参考与 5 个已开放辅助面板；D1 按每品种目标日
+Session 截止，W1 按已发布完整周截止。健康路径复用同一行情窗口，先验证消费者；只有阻断失败
+品种才调用 `ContractWarmupPlanner` 生成只读差量提案，不在消费者阶段执行下载或写入。D1/W1
+各使用 600 秒、总计 1200 秒的非抢占协作预算，在产品、分组与报告调用边界检查；底层只读事务仍以数据库
+statement timeout 兜底，因此不得把 1200 秒表述为可中断单次调用的严格墙钟上限。该预算来自
+2026-09-19 完整 60×3 与 41×3 只读实测，
+最终用时 1103.196 秒且两个范围均未耗尽。
+
+审计在维护锁外运行，开始与提交时仅非等待短暂核锁，并比较所依赖的 Catalog、rank1、
+Calendar/Session 与不可变 Parquet 分区指针摘要；W1 摘要同时绑定 D1 与 W1 输入。
+`consumer_checks.newow_d1` 与 `consumer_checks.newow_w1` 分别记录验收数、失败项、未检品种、
+逐品种截止、输入摘要、只读预热提案与运行 commit。`READY` 之外的 `WARMING`、
+`NOT_APPLICABLE`、`UNAVAILABLE`、`DATA_INTERRUPTED` 保持显式合法状态；未知、预算耗尽、
+未检或 `input_changed` 不构成验收通过。
 消费验收超时或异常只记 `not_verified`/`incomplete`，不得改写主任务终态、触发新的下载、
 生产重试或发送额外通知。未执行或旧 Runtime 没有该字段表示未验证。
 
@@ -463,12 +482,17 @@ promotion 的通过条件不改变，interrupted 不能成为 after_market_compl
 释放完成。竞争者未取得写入权时只向调用方返回 `skipped_busy`，不改写持有者的状态、不获取 maintenance lock。
 独占的新尝试若遇到 maintenance lock 忙，持久化本次 `skipped_busy`；取锁异常则持久化脱敏的 `failed`，不沿用旧成功。
 写入锁无法安全建立时拒绝启动，不无锁改写状态或声称本次状态已持久化。中断仍保留未完成 running，进程退出释放锁。
-不等待、抢占或重试；审计不调用 provider/
+计划入口只在周六 09:00–23:00 的有限 launchd 触发窗口内工作，并在状态写入锁内以本周六 09:00
+作为 `scheduled_for` 身份去重。整周只有首次触发可建立尝试；`running/passed/findings/failed/skipped_busy`
+均终止本周后续触发，后续只返回无副作用的 `already_attempted`。手工入口保留 `trigger=manual`，计划入口记录
+`trigger=scheduled`。不等待、抢占或对已建立的尝试重试；审计不调用 provider/
 metadata writer/Redis，`provider_requests=0`、`data_writes=0`，只报告 finding，不修复、不通知。
 
 `.run/weekly-audit-status.json` 是单份原子替换的、最近取得写入权并建立运行的审计状态，不是所有调用的尝试日志、checkpoint 或 active data selector。
 它绑定 exact Runtime root/40 位 commit、operational 顺序、scope 和 `through`；运行超过 2h 映射 `stuck`，终态超过 8 天映射
-`stale`，身份、计数、时序或只读计数不符合合同则映射 `invalid`，缺文件是 `not_run`。`passed` 必须有已审计 cutoff、全部品种完成且 finding 为零。
+`stale`，身份、计数、时序或只读计数不符合合同则映射 `invalid`。独立 `weekly-audit-enabled` marker 缺失时为
+`disabled`；已启用但本周时点未到且无本周尝试为 `not_run`；已过本周时点仍无本周尝试为 `missed`。
+`missed` 只诊断漏跑，不授权补数、重跑或通知。`passed` 必须有已审计 cutoff、全部品种完成且 finding 为零。
 Runtime health 先独立计算现有服务 overall，再附加可选 `components.weekly_audit`摘要；旧状态缺字段不得推导历史健康，
 历史 finding 也不改写当前数据新鲜度或 Runtime overall。
 

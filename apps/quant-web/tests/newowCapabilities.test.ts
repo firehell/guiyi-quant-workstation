@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { useNewowCapabilities } from '../src/composables/useNewowCapabilities.ts'
+import { getNewowProductCapabilities } from '../src/api/newowProduct.ts'
 import type { NewowProductCapabilities } from '../src/types/newowProduct.ts'
+
+const weeklyProducts = 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' ')
 
 const daily = (): NewowProductCapabilities => ({
   schema_version: 'newow_product_capabilities_v3',
@@ -36,4 +39,86 @@ test('capability failure stays unavailable without inventing legacy defaults', a
   assert.equal(state.state.value, 'unavailable')
   assert.deepEqual(state.openFrequencies.value, [])
   assert.equal(state.isFrequencyOpen('1d'), false)
+})
+
+test('weekly candidate capability opens W1 only in a candidate response', async () => {
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v4',
+    release_stage: 'daily_weekly_candidate',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: weeklyProducts,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'au'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'b'), false)
+  assert.deepEqual(state.openFrequenciesFor('au'), ['1d', '1w'])
+  assert.deepEqual(state.openFrequenciesFor('b'), ['1d'])
+  assert.equal(state.isFrequencyOpen('60m'), false)
+})
+
+test('AU period preview accepts its exact all-period capability', async () => {
+  const payload = {
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v5',
+    release_stage: 'au_daily_weekly_hourly_candidate',
+    open_frequencies: ['1d', '1w', '60m'],
+    deferred_frequencies: [],
+  }
+  const accepted = await getNewowProductCapabilities({ request: async () => payload })
+  assert.deepEqual(accepted.open_frequencies, ['1d', '1w', '60m'])
+  assert.equal(Object.isFrozen(accepted), true)
+  const state = useNewowCapabilities(async () => accepted)
+  await state.load()
+  assert.deepEqual(state.openFrequenciesFor('au'), ['1d', '1w', '60m'])
+  assert.deepEqual(state.openFrequenciesFor('jm'), [])
+  assert.equal(state.isFrequencyOpen('60m', 'jm'), false)
+  assert.equal(state.isFrequencyOpen('60m', 'au'), true)
+})
+
+test('AP hourly preview opens 60m only for AP and keeps W1 and other products closed', async () => {
+  const payload = {
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v7',
+    release_stage: 'ap_hourly_candidate',
+    open_frequencies: ['1d', '60m'],
+    deferred_frequencies: [
+      { frequency: '1w', reason_code: 'NEWOW_WEEKLY_RELEASE_PENDING' },
+    ],
+  }
+  const accepted = await getNewowProductCapabilities({ request: async () => payload })
+  assert.deepEqual(accepted.open_frequencies, ['1d', '60m'])
+  const state = useNewowCapabilities(async () => accepted)
+  await state.load()
+  assert.deepEqual(state.openFrequenciesFor('ap'), ['1d', '60m'])
+  assert.deepEqual(state.openFrequenciesFor('pd'), ['1d'])
+  assert.deepEqual(state.openFrequenciesFor('pt'), ['1d'])
+  assert.deepEqual(state.openFrequenciesFor('au'), ['1d'])
+  assert.deepEqual(state.openFrequenciesFor('jm'), ['1d'])
+  assert.equal(state.isFrequencyOpen('60m', 'ap'), true)
+  assert.equal(state.isFrequencyOpen('60m', 'pd'), false)
+  assert.equal(state.isFrequencyOpen('60m', 'pt'), false)
+  assert.equal(state.isFrequencyOpen('1w', 'ap'), false)
+})
+
+test('PD/PT hourly preview remains scoped to PD and PT', async () => {
+  const payload = {
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v6',
+    release_stage: 'pd_pt_hourly_candidate',
+    open_frequencies: ['1d', '60m'],
+    deferred_frequencies: [
+      { frequency: '1w', reason_code: 'NEWOW_WEEKLY_RELEASE_PENDING' },
+    ],
+  }
+  const accepted = await getNewowProductCapabilities({ request: async () => payload })
+  const state = useNewowCapabilities(async () => accepted)
+  await state.load()
+  assert.deepEqual(state.openFrequenciesFor('pd'), ['1d', '60m'])
+  assert.deepEqual(state.openFrequenciesFor('pt'), ['1d', '60m'])
+  assert.deepEqual(state.openFrequenciesFor('ap'), ['1d'])
+  assert.equal(state.isFrequencyOpen('60m', 'au'), false)
 })

@@ -74,7 +74,9 @@ class RuntimeAfterMarketCurrentRun(BaseModel):
 class RuntimeWeeklyAuditHealth(BaseModel):
     """Optional full-history observation; independent of operational service health."""
 
-    status: Literal["not_run", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"]
+    status: Literal["disabled", "not_run", "missed", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"]
+    configured_enabled: bool = False
+    scheduled_for: str | None = None
     readonly: bool = True
     scope: Literal["operational_full_history"] = "operational_full_history"
     through: str | None = None
@@ -98,6 +100,36 @@ class RuntimeAfterMarketInterruption(BaseModel):
     reconciliation_verified: bool
 
 
+class RuntimeNewowWarmupProposal(BaseModel):
+    product: str
+    contract: str
+    frequency: Literal["1d", "1w"]
+    through: str
+    status: Literal["PROPOSED", "REVIEW_REQUIRED"]
+    expected_bar_count: int | None = None
+    provider_request_count: int | None = None
+    plan_sha256: str | None = None
+
+
+class RuntimeNewowConsumerCheck(BaseModel):
+    status: Literal["not_verified", "audited", "incomplete", "input_changed"]
+    frequency: Literal["1d", "1w"] | None = None
+    trading_day: str
+    checked_at: str
+    case_count: int | None = None
+    main_ready_count: int | None = None
+    reference_ready_count: int | None = None
+    auxiliary_ready_count: int | None = None
+    budget_exhausted: bool | None = None
+    failures: list[dict[str, str]] = Field(default_factory=list)
+    warmup_proposals: list[RuntimeNewowWarmupProposal] = Field(default_factory=list)
+    product_cutoffs: list[dict[str, str]] = Field(default_factory=list)
+    unverified_products: list[str] = Field(default_factory=list)
+    input_revision: str | None = None
+    code_commit: str | None = None
+    run_started_at: str | None = None
+
+
 class RuntimeAfterMarketHealth(BaseModel):
     """由本地公开状态文件派生的盘后维护摘要。"""
 
@@ -110,6 +142,9 @@ class RuntimeAfterMarketHealth(BaseModel):
     last_interruption: RuntimeAfterMarketInterruption | None = Field(default=None, exclude_if=lambda value: value is None)
     last_successful_trading_day: str | None = None
     last_failure: dict[str, str] | None = None
+    consumer_checks: dict[str, RuntimeNewowConsumerCheck] = Field(
+        default_factory=dict, exclude_if=lambda value: not value,
+    )
     error_type: str | None = None
     error_message: str | None = None
 

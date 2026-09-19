@@ -22,7 +22,7 @@ EvidenceStatusValue = Literal[
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
 ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v3"]
 FuturesAdaptationVersionValue = Literal[
-    "newow_futures_quality_segment_v3"
+    "newow_futures_quality_segment_v3", "newow_futures_weekly_quality_segment_v1"
 ]
 
 
@@ -759,6 +759,20 @@ class NewowDailySnapshotResponse(_Out):
     freshness: Literal["current", "pending_update"]
 
 
+class NewowWeeklySnapshotResponse(_Out):
+    schema_version: Literal["newow_weekly_snapshot_v1"] = "newow_weekly_snapshot_v1"
+    product: str
+    strategy: ProductStrategyValue
+    frequency: Literal["1w"] = "1w"
+    series_kind: Literal["actual_dominant"] = "actual_dominant"
+    requested_at: datetime
+    expected_period_end: datetime
+    available_period_end: datetime
+    as_of: datetime
+    freshness: Literal["current", "pending_update"]
+    current_context: dict[str, str | None]
+
+
 class DeferredFrequencyOut(_Out):
     frequency: ProductFrequencyValue
     reason_code: str
@@ -770,9 +784,22 @@ class DeferredSectionOut(_Out):
 
 
 class NewowProductCapabilitiesResponse(_Out):
-    schema_version: Literal["newow_product_capabilities_v3"]
-    release_stage: Literal["daily"]
+    schema_version: Literal[
+        "newow_product_capabilities_v3",
+        "newow_product_capabilities_v4",
+        "newow_product_capabilities_v5",
+        "newow_product_capabilities_v6",
+        "newow_product_capabilities_v7",
+    ]
+    release_stage: Literal[
+        "daily",
+        "daily_weekly_candidate",
+        "au_daily_weekly_hourly_candidate",
+        "pd_pt_hourly_candidate",
+        "ap_hourly_candidate",
+    ]
     open_frequencies: list[ProductFrequencyValue]
+    weekly_products: list[str] | None = None
     deferred_frequencies: list[DeferredFrequencyOut]
     open_sections: list[
         Literal["chart", "auxiliary", "reference", "explanation", "comparator"]

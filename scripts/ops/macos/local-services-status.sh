@@ -269,7 +269,7 @@ try:
         print(f"[local-services-status] after_market stage={stage} attempt={attempt} symbol={symbol} completed_operations={count}")
     weekly = components.get("weekly_audit") or {}
     status = weekly.get("status", "not_run")
-    statuses = {"not_run", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"}
+    statuses = {"disabled", "not_run", "missed", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"}
     status = status if isinstance(status, str) and status in statuses else "invalid"
     through, findings = weekly.get("through"), weekly.get("finding_count")
     through = through if isinstance(through, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", through) else "unknown"

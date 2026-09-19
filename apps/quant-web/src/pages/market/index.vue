@@ -68,7 +68,7 @@ async function refreshAll() {
 }
 
 function openProduct(item: MarketHomeRow) {
-  const frequency = newowCapabilities.openFrequencies.value[0]
+  const frequency = newowCapabilities.openFrequenciesFor(item.symbol)[0]
   if (newowCapabilities.state.value !== 'ready' || !frequency) {
     navigationError.value = newowCapabilities.error.value ?? '牛哇开放能力仍在读取，暂不能安全进入。'
     return
@@ -83,7 +83,7 @@ function openProduct(item: MarketHomeRow) {
 
 function openEvent(event: AlertEvent) { rememberPageState(); void router.push({ name: 'market-chart', query: marketHomeEventChartQuery(event) }) }
 function openView(view: 'newow' | 'htdy' | 'subing' | 'free', symbol: string) {
-  const frequency = newowCapabilities.openFrequencies.value[0] ?? null
+  const frequency = newowCapabilities.openFrequenciesFor(symbol)[0] ?? null
   if (view === 'newow' && (newowCapabilities.state.value !== 'ready' || frequency === null)) {
     navigationError.value = newowCapabilities.error.value ?? '牛哇开放能力仍在读取，暂不能安全进入。'
     return

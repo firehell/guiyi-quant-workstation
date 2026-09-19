@@ -19,6 +19,9 @@ def test_preview_entrypoint_exists():
 def preview(monkeypatch):
     from app.preview import create_preview_app
 
+    monkeypatch.delenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", raising=False)
+    monkeypatch.delenv("GUIYI_AU_PERIOD_PREVIEW", raising=False)
+    monkeypatch.delenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN", raising=False)
     engine = create_engine(
         "sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
     )
@@ -44,6 +47,35 @@ def test_default_off_and_invalid_cutoff(monkeypatch):
     for value in (None, "bad", "2026-09-03T08:00:00", "2999-01-01T00:00:00Z"):
         with pytest.raises(ValueError, match="PREVIEW_CUTOFF_INVALID"):
             create_preview_app(enabled=True, as_of=value)
+
+
+def test_default_weekly_preview_uses_request_clock_and_exposes_exact_route(preview, monkeypatch):
+    from app.preview import create_preview_app
+    from app.api import market_newow
+
+    monkeypatch.setenv("GUIYI_PREVIEW_DEFAULT_WEEKLY", "1")
+    monkeypatch.delenv("GUIYI_PREVIEW_AS_OF", raising=False)
+    monkeypatch.delenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", raising=False)
+    monkeypatch.delenv("GUIYI_AU_PERIOD_PREVIEW", raising=False)
+    app = create_preview_app(enabled=True, session_factory=preview[2])
+    seen = []
+
+    class Resolver:
+        def resolve(self, product, strategy, frequency):
+            seen.append((product, strategy.value, frequency.value))
+            raise ValueError("NEWOW_WEEKLY_UNKNOWN")
+
+    monkeypatch.setattr(market_newow, "_build_weekly_resolver", lambda *_args: Resolver())
+    with TestClient(app) as client:
+        identity = client.get("/api/preview/identity")
+        weekly = client.get("/api/v1/market/newow/weekly-snapshot", params={
+            "product": "rb", "strategy": "trend", "frequency": "1w",
+        })
+    assert identity.status_code == 200
+    assert identity.json()["as_of"] is None
+    assert identity.json()["default_weekly"] is True
+    assert weekly.status_code == 409
+    assert seen == [("rb", "trend", "1w")]
 
 
 def test_identity_is_current_git_and_lightweight(preview, monkeypatch):
@@ -90,20 +122,166 @@ def test_identity_is_current_git_and_lightweight(preview, monkeypatch):
     )
 
 
-def test_daily_only_capabilities_are_available_without_database(preview):
+def test_daily_weekly_candidate_capabilities_are_available_without_database(preview):
     app, sessions, _factory = preview
 
     response = TestClient(app).get("/api/v1/market/newow/product-capabilities")
 
     assert response.status_code == 200
-    assert response.json()["release_stage"] == "daily"
-    assert response.json()["open_frequencies"] == ["1d"]
+    assert response.json()["schema_version"] == "newow_product_capabilities_v4"
+    assert response.json()["release_stage"] == "daily_weekly_candidate"
+    assert response.json()["open_frequencies"] == ["1d", "1w"]
+    assert len(response.json()["weekly_products"]) == 41
+    assert "au" in response.json()["weekly_products"]
+    assert "b" not in response.json()["weekly_products"]
+    assert response.json()["deferred_frequencies"] == [
+        {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"}
+    ]
     assert response.json()["open_sections"] == [
         "chart",
         "auxiliary",
         "reference",
         "comparator",
     ]
+    assert sessions == []
+
+    blocked = TestClient(app).get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "b", "strategy": "trend", "frequency": "1w"},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    history = TestClient(app).get(
+        "/api/v1/market/newow/historical-snapshot",
+        params={"product": "b", "strategy": "trend", "frequency": "1w"},
+    )
+    assert history.status_code == 409
+    assert history.json()["detail"]["code"] == "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    assert len(sessions) == 2
+
+
+def test_au_period_preview_opens_only_au_without_database(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_AU_PERIOD_PREVIEW", "1")
+    app, sessions, _factory = preview
+    client = TestClient(app)
+
+    capability = client.get("/api/v1/market/newow/product-capabilities")
+    assert capability.status_code == 200
+    assert capability.json()["schema_version"] == "newow_product_capabilities_v5"
+    assert capability.json()["open_frequencies"] == ["1d", "1w", "60m"]
+    assert capability.json()["deferred_frequencies"] == []
+    refused = client.get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "jm", "strategy": "trend", "frequency": "60m"},
+    )
+    assert refused.status_code == 403
+    assert refused.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+    assert sessions == []
+
+
+def test_hourly_preview_opens_only_ap_60m_without_database(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", "ap")
+    app, sessions, _factory = preview
+    client = TestClient(app)
+
+    capability = client.get("/api/v1/market/newow/product-capabilities")
+    assert capability.status_code == 200
+    assert capability.json()["schema_version"] == "newow_product_capabilities_v7"
+    assert capability.json()["release_stage"] == "ap_hourly_candidate"
+    assert capability.json()["open_frequencies"] == ["1d", "60m"]
+    assert capability.json()["deferred_frequencies"] == [
+        {"frequency": "1w", "reason_code": "NEWOW_WEEKLY_RELEASE_PENDING"}
+    ]
+    for product in ("pd", "pt", "au", "jm"):
+        refused_product = client.get(
+            "/api/v1/market/newow/strategy-detail",
+            params={"product": product, "strategy": "trend", "frequency": "60m"},
+        )
+        assert refused_product.status_code == 403, product
+        assert refused_product.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+    refused_week = client.get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "ap", "strategy": "trend", "frequency": "1w"},
+    )
+    assert refused_week.status_code == 409
+    assert refused_week.json()["detail"]["code"] == "NEWOW_FREQUENCY_NOT_OPEN"
+    historical = client.get(
+        "/api/v1/market/newow/historical-snapshot",
+        params={"product": "pd", "strategy": "trend", "frequency": "60m"},
+    )
+    assert historical.status_code == 403
+    assert historical.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+    assert sessions == []
+    admitted = client.get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "ap", "strategy": "trend", "frequency": "60m"},
+    )
+    assert admitted.status_code != 403
+    assert admitted.json().get("detail", {}).get("code") != "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+
+
+def test_hourly_preview_ignores_leftover_au_env_when_ap_hourly_is_set(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", "ap")
+    monkeypatch.setenv("GUIYI_AU_PERIOD_PREVIEW", "1")
+    app, sessions, _factory = preview
+    client = TestClient(app)
+
+    capability = client.get("/api/v1/market/newow/product-capabilities")
+    assert capability.status_code == 200
+    assert capability.json()["schema_version"] == "newow_product_capabilities_v7"
+    assert capability.json()["release_stage"] == "ap_hourly_candidate"
+    assert capability.json()["open_frequencies"] == ["1d", "60m"]
+    refused_au = client.get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "au", "strategy": "trend", "frequency": "60m"},
+    )
+    assert refused_au.status_code == 403
+    assert refused_au.json()["detail"]["code"] == "PREVIEW_PRODUCT_OUT_OF_SCOPE"
+    refused_week = client.get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "ap", "strategy": "trend", "frequency": "1w"},
+    )
+    assert refused_week.status_code == 409
+    assert refused_week.json()["detail"]["code"] == "NEWOW_FREQUENCY_NOT_OPEN"
+    assert sessions == []
+
+
+def test_hourly_preview_preserves_pd_pt_scope(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", "pd,pt")
+    app, sessions, _factory = preview
+    client = TestClient(app)
+
+    capability = client.get("/api/v1/market/newow/product-capabilities")
+    assert capability.status_code == 200
+    assert capability.json()["schema_version"] == "newow_product_capabilities_v6"
+    assert capability.json()["release_stage"] == "pd_pt_hourly_candidate"
+    assert capability.json()["open_frequencies"] == ["1d", "60m"]
+    admitted = client.get(
+        "/api/v1/market/newow/strategy-detail",
+        params={"product": "pd", "strategy": "trend", "frequency": "60m"},
+    )
+    assert admitted.status_code != 403
+    assert admitted.json().get("detail", {}).get("code") != "NEWOW_FREQUENCY_NOT_OPEN"
+    assert capability.json()["deferred_frequencies"] == [
+        {"frequency": "1w", "reason_code": "NEWOW_WEEKLY_RELEASE_PENDING"}
+    ]
+
+
+def test_hourly_preview_rejects_mixed_ap_and_pd_pt_scope(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", "ap,pd")
+    app, sessions, _factory = preview
+    response = TestClient(app).get("/api/v1/market/newow/product-capabilities")
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "PREVIEW_QUERY_INVALID"
+    assert sessions == []
+
+
+def test_hourly_preview_rejects_partial_pd_pt_scope(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_HOURLY_PREVIEW_PRODUCTS", "pd")
+    app, sessions, _factory = preview
+    response = TestClient(app).get("/api/v1/market/newow/product-capabilities")
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "PREVIEW_QUERY_INVALID"
     assert sessions == []
 
 
@@ -124,7 +302,38 @@ def test_preview_identity_declares_subing_reference_with_the_cutoff_scope(previe
     app, _sessions, _factory = preview
     response = TestClient(app).get("/api/preview/identity")
     assert response.status_code == 200
-    assert "subing_reference" in response.json()["cutoff_scope"]
+    payload = response.json()
+    assert "subing_reference" in payload["cutoff_scope"]
+    assert payload["candidate_origin"] == "http://127.0.0.1:8010"
+    assert payload["status_origin"] == "http://127.0.0.1:8000"
+
+
+def test_preview_identity_candidate_origin_can_be_overflow_8011(preview, monkeypatch):
+    monkeypatch.setenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN", "http://127.0.0.1:8011")
+    from app.preview import create_preview_app
+
+    _app, _sessions, factory = preview
+    app = create_preview_app(
+        enabled=True, as_of="2026-09-03T08:00:00Z", session_factory=factory
+    )
+    payload = TestClient(app).get("/api/preview/identity").json()
+    assert payload["candidate_origin"] == "http://127.0.0.1:8011"
+
+
+def test_preview_identity_rejects_non_loopback_or_non_overflow_origin(monkeypatch):
+    from app.preview import create_preview_app
+
+    monkeypatch.setenv("GUIYI_CANDIDATE_PREVIEW", "1")
+    for value in (
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8012",
+        "http://0.0.0.0:8011",
+        "https://127.0.0.1:8011",
+        "http://127.0.0.1:8011/extra",
+    ):
+        monkeypatch.setenv("GUIYI_PREVIEW_CANDIDATE_ORIGIN", value)
+        with pytest.raises(ValueError, match="PREVIEW_CANDIDATE_ORIGIN_INVALID"):
+            create_preview_app(enabled=True, as_of="2026-09-03T08:00:00Z")
 
 
 @pytest.mark.parametrize(

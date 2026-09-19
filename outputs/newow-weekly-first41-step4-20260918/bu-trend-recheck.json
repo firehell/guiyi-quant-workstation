@@ -1,0 +1,14 @@
+{
+  "product": "bu",
+  "strategy": "trend",
+  "frequency": "1w",
+  "default_request_has_as_of": false,
+  "candidate_code_sha": "614e73a42c38bb00f7b488feca53d44fb2f6ff69",
+  "browser_result": {
+    "chart": "ready",
+    "auxiliary": "ready",
+    "reference_summary_count": 1,
+    "snapshot_as_of": "2026-09-18T07:00:00.000001Z"
+  },
+  "method": "fresh browser navigation followed by waiting for chart ready, auxiliary settled, and reference summary visible"
+}

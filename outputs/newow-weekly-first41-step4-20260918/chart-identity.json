@@ -1,0 +1,42 @@
+[
+  {
+    "product": "au",
+    "latest_physical_contract": "AU2610",
+    "latest_segment_id": "au:AU2610:2026-07-27T13:00:00+00:00",
+    "latest_bar_end": "2026-09-18T07:00:00Z",
+    "input_content_sha256": "16fb6d7f3279ec1eb1a9f829c6b30df7044224dc795ae7f734c8e821d07b5e2b",
+    "bar_count": 190
+  },
+  {
+    "product": "rb",
+    "latest_physical_contract": "RB2701",
+    "latest_segment_id": "rb:RB2701:2026-09-01T13:00:00+00:00",
+    "latest_bar_end": "2026-09-18T07:00:00Z",
+    "input_content_sha256": "97bb77a47051daee1f84ec08b89f824c4f5fa3f40a5b52964406f9078911c5d5",
+    "bar_count": 190
+  },
+  {
+    "product": "cu",
+    "latest_physical_contract": "CU2610",
+    "latest_segment_id": "cu:CU2610:2026-08-24T13:00:00+00:00",
+    "latest_bar_end": "2026-09-18T07:00:00Z",
+    "input_content_sha256": "5db41e7d089f32e5b33d20ffc9bd80b058e91f47b592c7cfdc33a0aeae3ddf9c",
+    "bar_count": 190
+  },
+  {
+    "product": "bu",
+    "latest_physical_contract": "BU2610",
+    "latest_segment_id": "bu:BU2610:2026-08-17T13:00:00+00:00",
+    "latest_bar_end": "2026-09-18T07:00:00Z",
+    "input_content_sha256": "3f189c397fc7fc0ee9354452aa9668e5359fbab9eb50f6d665a5b2b09f281b96",
+    "bar_count": 190
+  },
+  {
+    "product": "pd",
+    "latest_physical_contract": "PD2610",
+    "latest_segment_id": "pd:PD2610:2026-07-22T01:00:00+00:00",
+    "latest_bar_end": "2026-09-18T07:00:00Z",
+    "input_content_sha256": "9c947c56342875653e6c9d80c02f63bf1fc668efffb28b934f8b6def2f653c25",
+    "bar_count": 42
+  }
+]

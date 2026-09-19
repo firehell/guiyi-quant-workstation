@@ -1,0 +1,662 @@
+[
+  {
+    "strategy": "trend",
+    "section": "chart",
+    "component": null,
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "FuGbW4oh6Kgf7FekZuH7Ik0_68ae2WGx",
+    "profile_id": "newow_product_trend_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "chart_from",
+      "chart_through",
+      "page_identity",
+      "price_unavailable_days",
+      "bars",
+      "frames",
+      "trend_channel",
+      "actions",
+      "hints",
+      "diagnostics",
+      "next_before",
+      "next_older_window",
+      "repainting",
+      "formal_signal_eligible",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "trend",
+    "section": "auxiliary",
+    "component": "macd",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "FuGbW4oh6Kgf7FekZuH7Ik0_68ae2WGx",
+    "profile_id": "newow_product_trend_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "warming",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": "NEWOW_MACD_WARMING"
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "display_adapter_version",
+      "parameters",
+      "parameters_hash",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "trend",
+    "section": "auxiliary",
+    "component": "main_force_control",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "FuGbW4oh6Kgf7FekZuH7Ik0_68ae2WGx",
+    "profile_id": "newow_product_trend_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "trend",
+    "section": "auxiliary",
+    "component": "up_down_energy",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "FuGbW4oh6Kgf7FekZuH7Ik0_68ae2WGx",
+    "profile_id": "newow_product_trend_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "trend",
+    "section": "auxiliary",
+    "component": "zhaoyao_mirror",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "FuGbW4oh6Kgf7FekZuH7Ik0_68ae2WGx",
+    "profile_id": "newow_product_trend_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "trend",
+    "section": "auxiliary",
+    "component": "cup_handle",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "FuGbW4oh6Kgf7FekZuH7Ik0_68ae2WGx",
+    "profile_id": "newow_product_trend_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "not_applicable",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "trend",
+    "section": "reference",
+    "component": null,
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "FuGbW4oh6Kgf7FekZuH7Ik0_68ae2WGx",
+    "profile_id": "newow_product_trend_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "performance_since",
+      "performance_through",
+      "actual_available_through",
+      "reference_cutoff",
+      "reference_input_sha256",
+      "history_coverage",
+      "unavailable_days",
+      "coverage_intervals",
+      "summary",
+      "items",
+      "next_before",
+      "executable",
+      "auto_order",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "trend",
+    "section": "explanation",
+    "component": null,
+    "http_status": 409,
+    "error": {
+      "detail": {
+        "code": "NEWOW_SECTION_NOT_OPEN"
+      }
+    }
+  },
+  {
+    "strategy": "trend",
+    "section": "comparator",
+    "component": null,
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "FuGbW4oh6Kgf7FekZuH7Ik0_68ae2WGx",
+    "profile_id": "newow_product_trend_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "not_applicable",
+      "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+      "reason_code": "NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE"
+    },
+    "value_keys": null
+  },
+  {
+    "strategy": "oscillation",
+    "section": "chart",
+    "component": null,
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "82LnjwyaAK0qQc1dlrXbEiSduQ-444rv",
+    "profile_id": "newow_product_oscillation_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "chart_from",
+      "chart_through",
+      "page_identity",
+      "price_unavailable_days",
+      "bars",
+      "frames",
+      "trend_channel",
+      "actions",
+      "hints",
+      "diagnostics",
+      "next_before",
+      "next_older_window",
+      "repainting",
+      "formal_signal_eligible",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "oscillation",
+    "section": "auxiliary",
+    "component": "macd",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "82LnjwyaAK0qQc1dlrXbEiSduQ-444rv",
+    "profile_id": "newow_product_oscillation_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "warming",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": "NEWOW_MACD_WARMING"
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "display_adapter_version",
+      "parameters",
+      "parameters_hash",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "oscillation",
+    "section": "auxiliary",
+    "component": "main_force_control",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "82LnjwyaAK0qQc1dlrXbEiSduQ-444rv",
+    "profile_id": "newow_product_oscillation_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "oscillation",
+    "section": "auxiliary",
+    "component": "up_down_energy",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "82LnjwyaAK0qQc1dlrXbEiSduQ-444rv",
+    "profile_id": "newow_product_oscillation_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "oscillation",
+    "section": "auxiliary",
+    "component": "zhaoyao_mirror",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "82LnjwyaAK0qQc1dlrXbEiSduQ-444rv",
+    "profile_id": "newow_product_oscillation_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "oscillation",
+    "section": "auxiliary",
+    "component": "cup_handle",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "82LnjwyaAK0qQc1dlrXbEiSduQ-444rv",
+    "profile_id": "newow_product_oscillation_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "not_applicable",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "oscillation",
+    "section": "reference",
+    "component": null,
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "82LnjwyaAK0qQc1dlrXbEiSduQ-444rv",
+    "profile_id": "newow_product_oscillation_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "performance_since",
+      "performance_through",
+      "actual_available_through",
+      "reference_cutoff",
+      "reference_input_sha256",
+      "history_coverage",
+      "unavailable_days",
+      "coverage_intervals",
+      "summary",
+      "items",
+      "next_before",
+      "executable",
+      "auto_order",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "oscillation",
+    "section": "explanation",
+    "component": null,
+    "http_status": 409,
+    "error": {
+      "detail": {
+        "code": "NEWOW_SECTION_NOT_OPEN"
+      }
+    }
+  },
+  {
+    "strategy": "oscillation",
+    "section": "comparator",
+    "component": null,
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "82LnjwyaAK0qQc1dlrXbEiSduQ-444rv",
+    "profile_id": "newow_product_oscillation_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "unavailable",
+      "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+      "reason_code": "NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS"
+    },
+    "value_keys": [
+      "result",
+      "executable",
+      "page_parity",
+      "synthetic_terminal_is_reference_exit",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "main_rise",
+    "section": "chart",
+    "component": null,
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "0GyVF9NgCY2tk2PRfek-tbn8H9czA8Iy",
+    "profile_id": "newow_product_main_rise_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "chart_from",
+      "chart_through",
+      "page_identity",
+      "price_unavailable_days",
+      "bars",
+      "frames",
+      "trend_channel",
+      "actions",
+      "hints",
+      "diagnostics",
+      "next_before",
+      "next_older_window",
+      "repainting",
+      "formal_signal_eligible",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "main_rise",
+    "section": "auxiliary",
+    "component": "macd",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "0GyVF9NgCY2tk2PRfek-tbn8H9czA8Iy",
+    "profile_id": "newow_product_main_rise_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "warming",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": "NEWOW_MACD_WARMING"
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "display_adapter_version",
+      "parameters",
+      "parameters_hash",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "main_rise",
+    "section": "auxiliary",
+    "component": "main_force_control",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "0GyVF9NgCY2tk2PRfek-tbn8H9czA8Iy",
+    "profile_id": "newow_product_main_rise_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "main_rise",
+    "section": "auxiliary",
+    "component": "up_down_energy",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "0GyVF9NgCY2tk2PRfek-tbn8H9czA8Iy",
+    "profile_id": "newow_product_main_rise_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "main_rise",
+    "section": "auxiliary",
+    "component": "zhaoyao_mirror",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "0GyVF9NgCY2tk2PRfek-tbn8H9czA8Iy",
+    "profile_id": "newow_product_main_rise_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "main_rise",
+    "section": "auxiliary",
+    "component": "cup_handle",
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "0GyVF9NgCY2tk2PRfek-tbn8H9czA8Iy",
+    "profile_id": "newow_product_main_rise_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "not_applicable",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+    },
+    "value_keys": [
+      "component",
+      "formula_version",
+      "segments",
+      "repainting",
+      "formal_signal_eligible",
+      "page_parity",
+      "source_category",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "main_rise",
+    "section": "reference",
+    "component": null,
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "0GyVF9NgCY2tk2PRfek-tbn8H9czA8Iy",
+    "profile_id": "newow_product_main_rise_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "ready",
+      "evidence_status": "ACTIVE_CODE_VERIFIED",
+      "reason_code": null
+    },
+    "value_keys": [
+      "performance_since",
+      "performance_through",
+      "actual_available_through",
+      "reference_cutoff",
+      "reference_input_sha256",
+      "history_coverage",
+      "unavailable_days",
+      "coverage_intervals",
+      "summary",
+      "items",
+      "next_before",
+      "executable",
+      "auto_order",
+      "allowed_uses"
+    ]
+  },
+  {
+    "strategy": "main_rise",
+    "section": "explanation",
+    "component": null,
+    "http_status": 409,
+    "error": {
+      "detail": {
+        "code": "NEWOW_SECTION_NOT_OPEN"
+      }
+    }
+  },
+  {
+    "strategy": "main_rise",
+    "section": "comparator",
+    "component": null,
+    "http_status": 200,
+    "as_of": "2026-09-18T07:00:00.000001Z",
+    "snapshot_token": "0GyVF9NgCY2tk2PRfek-tbn8H9czA8Iy",
+    "profile_id": "newow_product_main_rise_1w_v1",
+    "delivery": "delivered",
+    "status": {
+      "status": "not_applicable",
+      "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+      "reason_code": "NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE"
+    },
+    "value_keys": null
+  }
+]

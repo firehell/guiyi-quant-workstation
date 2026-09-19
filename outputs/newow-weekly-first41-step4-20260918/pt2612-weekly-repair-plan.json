@@ -1,0 +1,101 @@
+{
+  "schema_version": 2,
+  "command": "data.contract-warmup",
+  "status": "planned",
+  "readonly": true,
+  "symbol": "pt",
+  "contract": "PT2612",
+  "provider": "rqdata",
+  "listed_date": "2025-12-15",
+  "expired_date": "2026-12-14",
+  "requested_window": {
+    "start": "2025-12-15",
+    "through": "2025-12-19"
+  },
+  "effective_window": {
+    "start": "2025-12-15",
+    "through": "2025-12-19"
+  },
+  "frequency": "1w",
+  "dependency_frequencies": [
+    "1d"
+  ],
+  "frequencies": [
+    "1d",
+    "1w"
+  ],
+  "direct_target_count": 2,
+  "derived_target_count": 0,
+  "expected_bar_count": 14,
+  "provider_request_count": 2,
+  "provider_requests": 0,
+  "plan_sha256": "b73956d81b95f4a43f3186e5ece968e92438ab4d04adf73896141fa5cc76f11b",
+  "applied": 0,
+  "blocked": 0,
+  "failed": 0,
+  "targets": [
+    {
+      "dataset": [
+        "contract",
+        "pt",
+        "PT2612",
+        "1d"
+      ],
+      "year": 2025,
+      "month": 12,
+      "expected_start": "2025-12-15T07:00:00+00:00",
+      "expected_end": "2025-12-31T07:00:00+00:00",
+      "expected_bar_count": 13,
+      "missing_start": "2025-12-15T07:00:00+00:00",
+      "missing_end": "2025-12-19T07:00:00+00:00",
+      "missing_bar_count": 5
+    },
+    {
+      "dataset": [
+        "contract",
+        "pt",
+        "PT2612",
+        "1w"
+      ],
+      "year": 2025,
+      "month": 12,
+      "expected_start": "2025-12-19T07:00:00+00:00",
+      "expected_end": "2025-12-19T07:00:00+00:00",
+      "expected_bar_count": 1,
+      "missing_start": "2025-12-19T07:00:00+00:00",
+      "missing_end": "2025-12-19T07:00:00+00:00",
+      "missing_bar_count": 1
+    }
+  ],
+  "scope_diagnostics": [
+    {
+      "dataset": [
+        "contract",
+        "pt",
+        "PT2612",
+        "1d"
+      ],
+      "year": 2025,
+      "month": 12,
+      "reason_codes": [
+        "WEEKLY_DAILY_CONTEXT"
+      ],
+      "planned": true
+    },
+    {
+      "dataset": [
+        "contract",
+        "pt",
+        "PT2612",
+        "1w"
+      ],
+      "year": 2025,
+      "month": 12,
+      "reason_codes": [
+        "REPLAY_ENDPOINTS_MISSING"
+      ],
+      "planned": true
+    }
+  ],
+  "failures": []
+}

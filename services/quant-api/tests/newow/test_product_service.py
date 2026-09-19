@@ -140,6 +140,29 @@ def _service(product_cases, frequency="1d"):
     return service, reader, build, clear
 
 
+def test_readiness_service_reuses_identical_read_inputs_across_sections(product_cases):
+    case = product_cases.primitive_input("trend", "1d")
+    reader = _Reader(case.bars, case.bars[-2].bar.bar_end, case.bars[-1].bar.bar_end)
+    now = case.bars[-1].bar.bar_end
+    service = NewowProductService(
+        lambda _context, _cancelled: reader,
+        now=lambda: now,
+        reuse_read_inputs=True,
+    )
+
+    for strategy, section, component in (
+        ("trend", "chart", None),
+        ("trend", "auxiliary", "macd"),
+        ("trend", "comparator", None),
+        ("oscillation", "chart", None),
+    ):
+        service.query(ProductServiceQuery(
+            "rb", strategy, "1d", section=section, component=component, as_of=now,
+        ))
+
+    assert len(reader.loads) == 1
+
+
 def test_snapshot_proof_warmup_bar_does_not_borrow_another_owner(product_cases):
     _service_instance, reader, _build, clear = _service(product_cases)
     since = reader.bars[0].bar.trading_day

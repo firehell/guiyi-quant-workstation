@@ -1,0 +1,309 @@
+{
+  "schema_version": "newow_w1_first6_snapshot_audit_v1",
+  "code_sha": "614e73a42c38bb00f7b488feca53d44fb2f6ff69",
+  "preview": {
+    "mode": "local_candidate_readonly",
+    "default_weekly": true,
+    "as_of": null,
+    "candidate_origin": "http://127.0.0.1:8010"
+  },
+  "records": [
+    {
+      "product": "au",
+      "strategy": "trend",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:51:05.530489Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 5.518
+    },
+    {
+      "product": "au",
+      "strategy": "oscillation",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:51:11.049631Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 5.123
+    },
+    {
+      "product": "au",
+      "strategy": "main_rise",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:51:16.173815Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 5.221
+    },
+    {
+      "product": "rb",
+      "strategy": "trend",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:51:21.394837Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 4.096
+    },
+    {
+      "product": "rb",
+      "strategy": "oscillation",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:51:25.491731Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 4.096
+    },
+    {
+      "product": "rb",
+      "strategy": "main_rise",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:51:29.587957Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 3.851
+    },
+    {
+      "product": "cu",
+      "strategy": "trend",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:51:33.439872Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 8.961
+    },
+    {
+      "product": "cu",
+      "strategy": "oscillation",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:51:42.401648Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 9.163
+    },
+    {
+      "product": "cu",
+      "strategy": "main_rise",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:51:51.564991Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 9.261
+    },
+    {
+      "product": "bu",
+      "strategy": "trend",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:52:00.826256Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 7.838
+    },
+    {
+      "product": "bu",
+      "strategy": "oscillation",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:52:08.664580Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 7.402
+    },
+    {
+      "product": "bu",
+      "strategy": "main_rise",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:52:16.067140Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 7.71
+    },
+    {
+      "product": "pd",
+      "strategy": "trend",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:52:23.777334Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 0.619
+    },
+    {
+      "product": "pd",
+      "strategy": "oscillation",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:52:24.396365Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 0.559
+    },
+    {
+      "product": "pd",
+      "strategy": "main_rise",
+      "http_status": 200,
+      "freshness": "current",
+      "requested_at": "2026-09-18T12:52:24.955899Z",
+      "expected_period_end": "2026-09-18T07:00:00.000001Z",
+      "available_period_end": "2026-09-18T07:00:00.000001Z",
+      "as_of": "2026-09-18T07:00:00.000001Z",
+      "current_context": {
+        "status": "unknown",
+        "physical_contract": null
+      },
+      "error_code": null,
+      "reason": null,
+      "seconds": 0.553
+    },
+    {
+      "product": "pt",
+      "strategy": "trend",
+      "http_status": 409,
+      "freshness": null,
+      "requested_at": null,
+      "expected_period_end": null,
+      "available_period_end": null,
+      "as_of": null,
+      "current_context": null,
+      "error_code": "NEWOW_DATA_UNAVAILABLE",
+      "reason": "REPLAY_ENDPOINTS_MISSING",
+      "seconds": 0.483
+    },
+    {
+      "product": "pt",
+      "strategy": "oscillation",
+      "http_status": 409,
+      "freshness": null,
+      "requested_at": null,
+      "expected_period_end": null,
+      "available_period_end": null,
+      "as_of": null,
+      "current_context": null,
+      "error_code": "NEWOW_DATA_UNAVAILABLE",
+      "reason": "REPLAY_ENDPOINTS_MISSING",
+      "seconds": 0.514
+    },
+    {
+      "product": "pt",
+      "strategy": "main_rise",
+      "http_status": 409,
+      "freshness": null,
+      "requested_at": null,
+      "expected_period_end": null,
+      "available_period_end": null,
+      "as_of": null,
+      "current_context": null,
+      "error_code": "NEWOW_DATA_UNAVAILABLE",
+      "reason": "REPLAY_ENDPOINTS_MISSING",
+      "seconds": 0.489
+    }
+  ]
+}

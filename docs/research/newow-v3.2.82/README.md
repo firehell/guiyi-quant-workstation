@@ -20,10 +20,11 @@
 
 ## 阅读入口
 
-- [2026-09-09 新版功能差异与后续任务](../newow-current-review.md)（App/Web 分别记录，不覆盖旧公式基线）
+- **[2026-09-18 最新算法与 AI 分析审计](CURRENT_AUDIT.md)**：先读此文。详情v3.3.46；逐项列出原始算法、期货适配、实现现状与缺口，拆分AI推荐／诊股／综合决策，附本次截图与哈希。
+- [2026-09-09～10 新版功能差异与逐值证据](../newow-current-review.md)（历史固定快照，不覆盖旧公式基线）
 
 - [归一量化｜牛哇策略复刻手册（Markdown 源稿）](REPLICATION_MANUAL.md)
-- [归一量化｜牛哇策略复刻手册（A4 PDF）](../../../output/pdf/newow-v3.2.82-futures-replication-manual.pdf)
+- 历史A4 PDF曾由源稿生成，不作为当前算法／完成状态入口；本轮不重新生成或恢复用户已删除的PDF。
 - [完整策略与指标报告](REPORT.md)
 - [页面一致性结果](evidence/core-page-parity-results.json)
 - [综合决策可达性](evidence/composite-reachability.json)
@@ -82,6 +83,8 @@ source registry为96项（86 GET、10 POST），SHA-256为
 另有 [匿名首页](screenshots/context/home-anonymous.png) 和 [桐昆股份日线采集现场](screenshots/context/stock-601233-trend-day.png) 两张上下文截图。
 
 ## 证据结论
+
+本节只指冻结v3.2.82证据，不代表最新详情v3.3.46已全部复刻。最新代码已存在目标/吸筹、参数比较器、旧综合解释、参考交易和因果研究；尚缺新版综合、六组合推荐、趋势转折等，见[最新审计](CURRENT_AUDIT.md)。
 
 - 27 个页面点、18 类 feature 已进入离线比较。
 - 16 个可机器比较的子项均为 `27/27 matched`，`mismatch=0`。

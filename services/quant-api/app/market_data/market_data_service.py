@@ -59,6 +59,11 @@ from app.market_data.session_clock import (
 )
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
 from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.weekly_quality import (
+    WeeklySourceInterruption,
+    classify_weekly_source,
+    weekly_daily_revision_sha256,
+)
 from app.models import Instrument, MainContractMap
 
 
@@ -303,8 +308,9 @@ class MarketDataService:
         if not partitions:
             return ()
         committed = tuple(
-            partition.coverage_end for partition in partitions
-            if partition.coverage_end is not None
+            partition.source_coverage_end or partition.coverage_end
+            for partition in partitions
+            if partition.source_coverage_end is not None or partition.coverage_end is not None
         )
         if not committed:
             raise MarketDataError("PRICE_UNAVAILABLE")
@@ -412,6 +418,47 @@ class MarketDataService:
             if day <= latest and max(window.end for window in sessions) <= as_of
         )
 
+    def completed_calendar_week(
+        self, *, symbol: str, week_monday: date, as_of: datetime,
+    ) -> tuple[date, datetime] | None:
+        """Return the last Session cutoff only after an entire ISO week is known."""
+        if week_monday.isoweekday() != 1 or as_of.tzinfo is None or as_of.utcoffset() is None:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        calendar = self._exact_calendar(
+            symbol, week_monday, week_monday + timedelta(days=6),
+        )
+        trading_days = tuple(day for day, trades in calendar if trades)
+        if not trading_days:
+            return None
+        last_day = trading_days[-1]
+        last_end = max(
+            window.end for window in self.session_windows(
+                symbol=symbol, trading_day=last_day,
+            )
+        )
+        cutoff = last_end.astimezone(UTC) + timedelta(microseconds=1)
+        return (last_day, cutoff) if cutoff <= as_of.astimezone(UTC) else None
+
+    def weekly_tail_unpublished(self, *, symbol: str, week_end: date) -> bool:
+        """Prove the completed tail week has no rank1 facts at all.
+
+        A partly published week is an internal mapping gap, never a fallback.
+        """
+        monday = week_end - timedelta(days=week_end.isoweekday() - 1)
+        days = tuple(day for day, trades in self._exact_calendar(
+            symbol, monday, monday + timedelta(days=6),
+        ) if trades)
+        if not days or days[-1] != week_end:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        try:
+            mappings = self.catalog.main_map(symbol, days[0], week_end)
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        mapped_days = {mapping.trade_date for mapping in mappings}
+        if mapped_days and mapped_days != set(days):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        return not mapped_days
+
     def query_actual_dominant_trading_days(
         self,
         request: ActualDominantTradingDayQuery,
@@ -437,8 +484,10 @@ class MarketDataService:
 
     def query_actual_dominant_trading_days_quality(
         self, request: ActualDominantTradingDayQuery,
-    ) -> tuple[MarketSeriesResult, tuple[tuple[str, PriceUnavailableFact], ...]]:
-        """D1 rank-1 read: every mapped day has a Bar or proven unavailable price."""
+    ) -> tuple[MarketSeriesResult, tuple[tuple[str, PriceUnavailableFact | WeeklySourceInterruption], ...]]:
+        """D1/W1 rank-1 read with exact source interruptions."""
+        if request.frequency is BarFrequency.W1:
+            return self._actual_dominant_weekly_quality(request)
         if request.frequency is not BarFrequency.D1:
             raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
         start, end = self._trading_day_window(
@@ -496,6 +545,83 @@ class MarketDataService:
                 requested_trading_day_window=(request.since, request.through),
             ),
             tuple(exceptions),
+        )
+
+    def _actual_dominant_weekly_quality(
+        self, request: ActualDominantTradingDayQuery,
+    ) -> tuple[MarketSeriesResult, tuple[tuple[str, WeeklySourceInterruption], ...]]:
+        start, end = self._trading_day_window(
+            symbol=request.symbol, since=request.since, through=request.through,
+        )
+        try:
+            windows = self.catalog.session_windows_overlapping_window(
+                request.symbol, start, end,
+            )
+            mappings = self.catalog.main_map(
+                request.symbol, request.since, request.through,
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        days = tuple(
+            day for day, _ in windows if request.since <= day <= request.through
+        )
+        by_day = {item.trade_date: item for item in mappings}
+        if not days or set(days) != set(by_day):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        query = SeriesQuery(
+            SeriesKind.ACTUAL_DOMINANT, request.symbol, BarFrequency.W1,
+            start, end,
+        )
+        completed = tuple(
+            by_day[day] for day, sessions in windows
+            if day in by_day and max(window.end for window in sessions) <= end
+        )
+        try:
+            selected = self._weekly_mappings(query, completed)
+        except MarketDataError as exc:
+            if exc.code != "COMPLETE_WEEK_MISSING":
+                raise
+            return (
+                replace(
+                    self._result(query, (), ()),
+                    requested_trading_day_window=(request.since, request.through),
+                ),
+                (),
+            )
+        weekly_owner = {item.trade_date: item.contract for item in selected}
+        session_end = {
+            day: max(window.end for window in sessions) for day, sessions in windows
+        }
+        bars: list[CanonicalBar] = []
+        interruptions: list[tuple[str, WeeklySourceInterruption]] = []
+        for contract in dict.fromkeys(item.contract for item in selected):
+            through = max(day for day, owner in weekly_owner.items() if owner == contract)
+            physical, gaps = self.query_contract_weekly_replay_quality(
+                symbol=request.symbol, contract=contract, through=through,
+                cutoff=session_end[through],
+            )
+            bars.extend(
+                bar for bar in physical
+                if weekly_owner.get(bar.trading_day) == contract
+            )
+            interruptions.extend(
+                (contract, gap) for gap in gaps
+                if weekly_owner.get(gap.expected_daily_endpoints[-1][1]) == contract
+            )
+        bars.sort(key=lambda bar: bar.bar_end)
+        interruptions.sort(key=lambda item: item[1].week_end)
+        bar_days = {bar.trading_day for bar in bars}
+        gap_days = {gap.expected_daily_endpoints[-1][1] for _, gap in interruptions}
+        if (bar_days & gap_days or bar_days | gap_days != set(weekly_owner)
+            or len(bars) + len(interruptions) != len(selected)):
+            raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
+        valid_mappings = tuple(item for item in selected if item.trade_date in bar_days)
+        return (
+            replace(
+                self._result(query, tuple(bars), _segments(valid_mappings)),
+                requested_trading_day_window=(request.since, request.through),
+            ),
+            tuple(interruptions),
         )
 
     def query_actual_dominant_recent_bars(
@@ -624,6 +750,128 @@ class MarketDataService:
                 "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason=reason, context=context,
             )
         return bars, exceptions
+
+    def query_contract_weekly_replay_quality(
+        self, *, symbol: str, contract: str, through: date, cutoff: datetime,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[WeeklySourceInterruption, ...]]:
+        """Read stored W1 Bars and explain absent complete weeks using pinned D1 facts.
+
+        The ordinary series API remains strict. No W1 Bar is synthesized here.
+        """
+        daily_bars, daily_gaps = self.query_contract_replay_quality(
+            symbol=symbol, contract=contract, through=through, cutoff=cutoff,
+        )
+        weekly_expected = self.expected_contract_replay_endpoints(
+            symbol=symbol, contract=contract, frequency=BarFrequency.W1,
+            trading_day=through, cutoff=cutoff,
+        )
+        if not weekly_expected:
+            return (), ()
+        daily_expected = self.expected_contract_replay_endpoints(
+            symbol=symbol, contract=contract, frequency=BarFrequency.D1,
+            trading_day=through, cutoff=cutoff,
+        )
+        daily_key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency.D1)
+        weekly_key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, BarFrequency.W1)
+        daily_rows = self.catalog.all_partitions(daily_key)
+        daily_partitions = {(row.year, row.month): row for row in daily_rows}
+        if len(daily_partitions) != len(daily_rows):
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID")
+        weekly_months = {(day.year, day.month) for _, day in weekly_expected}
+        stored: list[CanonicalBar] = []
+        weekly_rows = self.catalog.all_partitions(weekly_key)
+        if len({(row.year, row.month) for row in weekly_rows}) != len(weekly_rows):
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID")
+        try:
+            for row in weekly_rows:
+                if (row.year, row.month) in weekly_months:
+                    stored.extend(
+                        bar for bar in self.store.read_catalog_partition(row)
+                        if bar.bar_end <= cutoff
+                    )
+        except StorageError as exc:
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+        by_end = {bar.bar_end: bar for bar in stored}
+        if len(by_end) != len(stored) or set(by_end) - {end for end, _ in weekly_expected}:
+            raise MarketDataError("WEEKLY_SOURCE_BAR_CONFLICT")
+        normal: list[CanonicalBar] = []
+        interruptions: list[WeeklySourceInterruption] = []
+        for week_end, week_day in weekly_expected:
+            week = week_day.isocalendar()[:2]
+            expected = tuple(
+                point for point in daily_expected
+                if point[1].isocalendar()[:2] == week
+            )
+            bars = tuple(
+                bar for bar in daily_bars
+                if bar.trading_day.isocalendar()[:2] == week
+            )
+            gaps = tuple(
+                gap for gap in daily_gaps
+                if gap.trading_day.isocalendar()[:2] == week
+            )
+            months = sorted({(day.year, day.month) for _, day in expected})
+            if any(month not in daily_partitions for month in months):
+                raise MarketDataError(
+                    "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                    reason="DATASET_OR_PARTITION_MISSING",
+                    context={"contract": contract, "trading_day": week_day},
+                )
+            revision = weekly_daily_revision_sha256(
+                tuple((daily_partitions[month].file_path.name,
+                       daily_partitions[month].source_quality_sha256) for month in months),
+                bars,
+            )
+            try:
+                coverage = classify_weekly_source(
+                    product=symbol, physical_contract=contract,
+                    expected_daily_endpoints=expected,
+                    daily_bars=bars, price_unavailable=gaps,
+                    daily_revision_sha256=revision,
+                )
+            except ValueError as exc:
+                reason = (
+                    "REPLAY_ENDPOINTS_MISSING"
+                    if str(exc) == "WEEKLY_SOURCE_ENDPOINTS_MISSING"
+                    else "DATA_INTEGRITY_INVALID"
+                )
+                raise MarketDataError(
+                    "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                    reason=reason,
+                    context={"contract": contract, "trading_day": week_day},
+                ) from exc
+            persisted = by_end.get(week_end)
+            if coverage.interruption is not None:
+                if persisted is not None:
+                    raise MarketDataError(
+                        "WEEKLY_SOURCE_BAR_CONFLICT",
+                        context={"contract": contract, "trading_day": week_day},
+                    )
+                interruptions.append(coverage.interruption)
+                continue
+            if persisted is None:
+                raise MarketDataError(
+                    "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                    reason="REPLAY_ENDPOINTS_MISSING",
+                    context={"contract": contract, "trading_day": week_day},
+                )
+            # Reuse the writer's source aggregation only for equality validation.
+            from app.market_data.rqdata_adapter import _aggregate_daily_rows
+
+            expected_bar = _aggregate_daily_rows(tuple(
+                (bar.trading_day, {
+                    "open": bar.open, "high": bar.high, "low": bar.low,
+                    "close": bar.close, "volume": bar.volume,
+                    "turnover": bar.turnover, "open_interest": bar.open_interest,
+                }) for bar in bars
+            ), bar_end=week_end)
+            if persisted != expected_bar:
+                raise MarketDataError(
+                    "WEEKLY_SOURCE_BAR_CONFLICT",
+                    context={"contract": contract, "trading_day": week_day},
+                )
+            normal.append(persisted)
+        return tuple(normal), tuple(interruptions)
 
     def validate_contract_replay_coverage(
         self,
@@ -843,10 +1091,12 @@ class MarketDataService:
         if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
             return self._actual_dominant_page(request)
         assert request.physical_key is not None
+        bars, has_more = self._physical_page_bars(request.physical_key, request)
         return self._page_result(
             request,
-            self._physical_page_bars(request.physical_key, request),
+            bars,
             (),
+            has_more_before=has_more,
         )
 
     def query_alert_history_prefix(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
@@ -882,15 +1132,17 @@ class MarketDataService:
         if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
             raise MarketDataError("INCLUSIVE_PAGE_PHYSICAL_REQUIRED")
         assert request.physical_key is not None
+        bars, has_more = self._physical_page_bars(
+            request.physical_key,
+            request,
+            inclusive_before=True,
+        )
         return self._page_result(
             request,
-            self._physical_page_bars(
-                request.physical_key,
-                request,
-                inclusive_before=True,
-            ),
+            bars,
             (),
             cursor_mode=SeriesPageCursorMode.INCLUSIVE,
+            has_more_before=has_more,
         )
 
     def _physical_page_bars(
@@ -899,20 +1151,22 @@ class MarketDataService:
         request: SeriesPageQuery,
         *,
         inclusive_before: bool = False,
-    ) -> list[CanonicalBar]:
+    ) -> tuple[list[CanonicalBar], bool]:
         partitions = self.catalog.partitions_before(key, request.before)
         if not partitions:
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
-        if any(partition.source_quality for partition in partitions):
+        quality_aware = key.frequency is BarFrequency.D1
+        if not quality_aware and any(partition.source_quality for partition in partitions):
             raise MarketDataError("PRICE_UNAVAILABLE")
         selected: list[CanonicalBar] = []
         previous_end: datetime | None = None
         newer_partition: CatalogPartition | None = None
         for partition in partitions:
+            partition_end = partition.source_coverage_end or partition.coverage_end
             if (
                 newer_partition is None
                 and request.before is not None
-                and partition.coverage_end < request.before
+                and (partition_end is None or partition_end < request.before)
             ):
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
             if (
@@ -932,23 +1186,29 @@ class MarketDataService:
                     partition,
                     newer_partition,
                 )
-            values = self._partition_bars(partition)
-            for bar in reversed(values):
+            values, unavailable = (
+                self._partition_quality(partition)
+                if quality_aware else (self._partition_bars(partition), ())
+            )
+            events = sorted((*values, *unavailable), key=lambda item: item.bar_end, reverse=True)
+            for event in events:
                 if request.before is not None and (
-                    bar.bar_end > request.before
-                    or (not inclusive_before and bar.bar_end == request.before)
+                    event.bar_end > request.before
+                    or (not inclusive_before and event.bar_end == request.before)
                 ):
                     continue
-                if previous_end is not None and bar.bar_end >= previous_end:
-                    raise MarketDataError("BAR_IDENTITY_CONFLICT")
-                selected.append(bar)
-                previous_end = bar.bar_end
-                if len(selected) == request.limit + 1:
+                if len(selected) == request.limit:
                     self._validate_physical_page_endpoints(
                         key, selected, has_sentinel=True,
                         upper=request.before, inclusive_upper=inclusive_before,
                     )
-                    return selected
+                    return selected, True
+                if isinstance(event, PriceUnavailableFact):
+                    raise MarketDataError("PRICE_UNAVAILABLE")
+                if previous_end is not None and event.bar_end >= previous_end:
+                    raise MarketDataError("BAR_IDENTITY_CONFLICT")
+                selected.append(event)
+                previous_end = event.bar_end
             newer_partition = partition
         if not selected:
             raise MarketDataError("QUERY_WINDOW_EMPTY")
@@ -956,7 +1216,7 @@ class MarketDataService:
             key, selected, has_sentinel=False,
             upper=request.before, inclusive_upper=inclusive_before,
         )
-        return selected
+        return selected, False
 
     def _validate_physical_page_endpoints(
         self,
@@ -1013,8 +1273,12 @@ class MarketDataService:
         newer: CatalogPartition,
     ) -> None:
         """用完整 TradingCalendar 事实判断相邻 coverage 之间是否漏过交易日。"""
-        start_day = _local_date(older.coverage_end)
-        end_day = _local_date(newer.coverage_start)
+        older_end = older.source_coverage_end or older.coverage_end
+        newer_start = newer.source_coverage_start or newer.coverage_start
+        if older_end is None or newer_start is None:
+            raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+        start_day = _local_date(older_end)
+        end_day = _local_date(newer_start)
         if end_day <= start_day + timedelta(days=1):
             return
         expected_days = tuple(
@@ -1059,44 +1323,47 @@ class MarketDataService:
         selected: list[CanonicalBar] = []
         available_contract_days: set[tuple[str, date]] = set()
         for _, month_partitions in _partition_month_groups(partitions):
-            candidates: list[CanonicalBar] = []
-            month_bars = [
-                (partition, bar)
-                for partition in month_partitions
-                for bar in self._partition_bars(partition)
-                if request.before is None or bar.bar_end < request.before
-            ]
+            candidates: list[CanonicalBar | PriceUnavailableFact] = []
+            month_events: list[tuple[CatalogPartition, CanonicalBar | PriceUnavailableFact]] = []
+            for partition in month_partitions:
+                bars, unavailable = (
+                    self._partition_quality(partition)
+                    if request.frequency is BarFrequency.D1
+                    else (self._partition_bars(partition), ())
+                )
+                month_events.extend(
+                    (partition, event)
+                    for event in (*bars, *unavailable)
+                    if request.before is None or event.bar_end < request.before
+                )
             if request.frequency is BarFrequency.W1:
                 self._prime_weekly_calendar(
                     request.symbol,
-                    (bar.trading_day for _, bar in month_bars),
+                    (event.trading_day for _, event in month_events),
                     weekly_calendar,
                 )
-            for partition, bar in month_bars:
+            for partition, event in month_events:
                 available_contract_days.add(
-                    (partition.dataset.series_or_contract, bar.trading_day)
+                    (partition.dataset.series_or_contract, event.trading_day)
                 )
                 owner = (
                     self._page_weekly_owner(
                         request.symbol,
-                        bar.trading_day,
+                        event.trading_day,
                         mapping_by_day,
                         weekly_calendar,
                         strict_mapping=False,
                     )
                     if request.frequency is BarFrequency.W1
-                    else mapping_by_day.get(bar.trading_day)
+                    else mapping_by_day.get(event.trading_day)
                 )
                 if (
                     owner is not None
                     and owner.contract == partition.dataset.series_or_contract
                 ):
-                    candidates.append(bar)
-            for bar in sorted(candidates, key=lambda item: item.bar_end, reverse=True):
-                if any(item.bar_end == bar.bar_end for item in selected):
-                    raise MarketDataError("BAR_IDENTITY_CONFLICT")
-                selected.append(bar)
-                if len(selected) == request.limit + 1:
+                    candidates.append(event)
+            for event in sorted(candidates, key=lambda item: item.bar_end, reverse=True):
+                if len(selected) == request.limit:
                     return self._actual_page_result(
                         request,
                         selected,
@@ -1104,7 +1371,13 @@ class MarketDataService:
                         available_contract_days,
                         weekly_calendar,
                         published_prefix=published_prefix,
+                        has_more_before=True,
                     )
+                if isinstance(event, PriceUnavailableFact):
+                    raise MarketDataError("PRICE_UNAVAILABLE")
+                if any(item.bar_end == event.bar_end for item in selected):
+                    raise MarketDataError("BAR_IDENTITY_CONFLICT")
+                selected.append(event)
         if not selected:
             available_days = {day for _, day in available_contract_days}
             if any(day not in mapping_by_day for day in available_days):
@@ -1125,6 +1398,7 @@ class MarketDataService:
             available_contract_days,
             weekly_calendar,
             published_prefix=published_prefix,
+            has_more_before=False,
         )
 
     def _actual_page_result(
@@ -1136,8 +1410,10 @@ class MarketDataService:
         weekly_calendar: dict[date, tuple[date, ...]],
         *,
         published_prefix: bool = False,
+        has_more_before: bool | None = None,
     ) -> MarketSeriesPageResult:
         page = selected[: request.limit]
+        has_more = len(selected) > request.limit if has_more_before is None else has_more_before
         self._validate_actual_page_boundary(
             request,
             page,
@@ -1217,7 +1493,7 @@ class MarketDataService:
                 selected,
                 (
                     min(bar.bar_end for bar in selected) - timedelta(microseconds=1)
-                    if len(selected) > request.limit
+                    if has_more
                     else datetime.min.replace(tzinfo=UTC)
                 ),
                 upper_end,
@@ -1225,7 +1501,12 @@ class MarketDataService:
         segments = _segments(
             tuple(mapping_by_day[bar.trading_day] for bar in reversed(page))
         )
-        return self._page_result(request, selected, segments)
+        return self._page_result(
+            request,
+            selected,
+            segments,
+            has_more_before=has_more,
+        )
 
     def _validate_actual_page_boundary(
         self,
@@ -1356,6 +1637,21 @@ class MarketDataService:
         ):
             raise MarketDataError("BAR_IDENTITY_CONFLICT")
         return values
+
+    def _partition_quality(
+        self, partition: CatalogPartition,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...]]:
+        """Read one validated D1 partition without collapsing source facts into bars."""
+        try:
+            values, unavailable = self.store.read_catalog_partition_quality(partition)
+        except StorageError as exc:
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+        if any(
+            previous.bar_end >= current.bar_end
+            for previous, current in zip(values, values[1:])
+        ):
+            raise MarketDataError("BAR_IDENTITY_CONFLICT")
+        return values, unavailable
 
     def _actual_dominant(self, request: SeriesQuery) -> MarketSeriesResult:
         """按交易日主力映射拼接多合约物理数据，得到逻辑连续序列。
@@ -1926,9 +2222,13 @@ class MarketDataService:
         segments: tuple[ResolvedContractSegment, ...],
         *,
         cursor_mode: SeriesPageCursorMode = SeriesPageCursorMode.EXCLUSIVE,
+        has_more_before: bool | None = None,
     ) -> MarketSeriesPageResult:
         """将 newest-first 候选转换为稳定的 ascending 页面响应。"""
-        has_more = len(selected_descending) > request.limit
+        has_more = (
+            len(selected_descending) > request.limit
+            if has_more_before is None else has_more_before
+        )
         page = tuple(reversed(selected_descending[: request.limit]))
         identity = {
             "series_kind": request.series_kind.value,

@@ -1,0 +1,214 @@
+{
+  "schema_version": "pt2612_remaining_before_v1",
+  "readonly": true,
+  "partitions": [
+    {
+      "frequency": "1d",
+      "year": 2025,
+      "month": 12,
+      "active": true,
+      "row_count": 13,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2025/month=12/part.4a3662400a4c5196c1225ef9c9c44fc0c3716df0d04f4f1995d8aeebbc499798.parquet",
+      "file_sha256": "4a3662400a4c5196c1225ef9c9c44fc0c3716df0d04f4f1995d8aeebbc499798",
+      "first_trading_day": "2025-12-15",
+      "last_trading_day": "2025-12-31",
+      "w1_trading_days": null,
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1d",
+      "year": 2026,
+      "month": 1,
+      "active": true,
+      "row_count": 20,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2026/month=01/part.24435f74e23b259887bfb8375567061b297f108efa2e9277d356ecaeb3b112a3.parquet",
+      "file_sha256": "24435f74e23b259887bfb8375567061b297f108efa2e9277d356ecaeb3b112a3",
+      "first_trading_day": "2026-01-05",
+      "last_trading_day": "2026-01-30",
+      "w1_trading_days": null,
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1d",
+      "year": 2026,
+      "month": 2,
+      "active": true,
+      "row_count": 14,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2026/month=02/part.231e2db0286704c50434bac149e2d0ab7f2693712670563b356cf4549df60a79.parquet",
+      "file_sha256": "231e2db0286704c50434bac149e2d0ab7f2693712670563b356cf4549df60a79",
+      "first_trading_day": "2026-02-02",
+      "last_trading_day": "2026-02-27",
+      "w1_trading_days": null,
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1d",
+      "year": 2026,
+      "month": 3,
+      "active": true,
+      "row_count": 22,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2026/month=03/part.08ccc66326551ef8d8aeb11644a43f1e46829af98760d3605b703f3336267ae9.parquet",
+      "file_sha256": "08ccc66326551ef8d8aeb11644a43f1e46829af98760d3605b703f3336267ae9",
+      "first_trading_day": "2026-03-02",
+      "last_trading_day": "2026-03-31",
+      "w1_trading_days": null,
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1d",
+      "year": 2026,
+      "month": 4,
+      "active": true,
+      "row_count": 21,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2026/month=04/part.0aee1ecc8b52d09f2ef57d14f0ca17b89896ded8196a9a17d4b77a29de1d4f9a.parquet",
+      "file_sha256": "0aee1ecc8b52d09f2ef57d14f0ca17b89896ded8196a9a17d4b77a29de1d4f9a",
+      "first_trading_day": "2026-04-01",
+      "last_trading_day": "2026-04-30",
+      "w1_trading_days": null,
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1d",
+      "year": 2026,
+      "month": 5,
+      "active": true,
+      "row_count": 18,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2026/month=05/part.f910f538244273cdb88d53f7865e15350d09ecddca798128ee7693d48cba661f.parquet",
+      "file_sha256": "f910f538244273cdb88d53f7865e15350d09ecddca798128ee7693d48cba661f",
+      "first_trading_day": "2026-05-06",
+      "last_trading_day": "2026-05-29",
+      "w1_trading_days": null,
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1d",
+      "year": 2026,
+      "month": 6,
+      "active": true,
+      "row_count": 21,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2026/month=06/part.24851b02b039539862520ca5e8b0a576cad9015c4a3e0cc9bb07282ff81dd620.parquet",
+      "file_sha256": "24851b02b039539862520ca5e8b0a576cad9015c4a3e0cc9bb07282ff81dd620",
+      "first_trading_day": "2026-06-01",
+      "last_trading_day": "2026-06-30",
+      "w1_trading_days": null,
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1d",
+      "year": 2026,
+      "month": 7,
+      "active": true,
+      "row_count": 23,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2026/month=07/part.7e520f0fff9723b42df7d91e6ae6dee39dcbeee1add4ade5e789bebb7410e45d.parquet",
+      "file_sha256": "7e520f0fff9723b42df7d91e6ae6dee39dcbeee1add4ade5e789bebb7410e45d",
+      "first_trading_day": "2026-07-01",
+      "last_trading_day": "2026-07-31",
+      "w1_trading_days": null,
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1d",
+      "year": 2026,
+      "month": 8,
+      "active": true,
+      "row_count": 21,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2026/month=08/part.f0bf85a8904c1fc10f580b687dc2cf5ba8f2541ce1607558dcf94a87e30df854.parquet",
+      "file_sha256": "f0bf85a8904c1fc10f580b687dc2cf5ba8f2541ce1607558dcf94a87e30df854",
+      "first_trading_day": "2026-08-03",
+      "last_trading_day": "2026-08-31",
+      "w1_trading_days": null,
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1d",
+      "year": 2026,
+      "month": 9,
+      "active": true,
+      "row_count": 14,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1d/year=2026/month=09/part.195808e4d216e6ad2d414277d9a5ad79090d8c55999ccab20f39e0fe4333acf3.parquet",
+      "file_sha256": "195808e4d216e6ad2d414277d9a5ad79090d8c55999ccab20f39e0fe4333acf3",
+      "first_trading_day": "2026-09-01",
+      "last_trading_day": "2026-09-18",
+      "w1_trading_days": null,
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1w",
+      "year": 2025,
+      "month": 12,
+      "active": true,
+      "row_count": 1,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1w/year=2025/month=12/part.50837ed4cfb473c8ef7939453520adcf8704afdc2eedf5c875058a69ae48249d.parquet",
+      "file_sha256": "50837ed4cfb473c8ef7939453520adcf8704afdc2eedf5c875058a69ae48249d",
+      "first_trading_day": "2025-12-19",
+      "last_trading_day": "2025-12-19",
+      "w1_trading_days": [
+        "2025-12-19"
+      ],
+      "price_unavailable_count": 0
+    },
+    {
+      "frequency": "1w",
+      "year": 2026,
+      "month": 1,
+      "active": false
+    },
+    {
+      "frequency": "1w",
+      "year": 2026,
+      "month": 2,
+      "active": false
+    },
+    {
+      "frequency": "1w",
+      "year": 2026,
+      "month": 3,
+      "active": false
+    },
+    {
+      "frequency": "1w",
+      "year": 2026,
+      "month": 4,
+      "active": false
+    },
+    {
+      "frequency": "1w",
+      "year": 2026,
+      "month": 5,
+      "active": false
+    },
+    {
+      "frequency": "1w",
+      "year": 2026,
+      "month": 6,
+      "active": false
+    },
+    {
+      "frequency": "1w",
+      "year": 2026,
+      "month": 7,
+      "active": false
+    },
+    {
+      "frequency": "1w",
+      "year": 2026,
+      "month": 8,
+      "active": false
+    },
+    {
+      "frequency": "1w",
+      "year": 2026,
+      "month": 9,
+      "active": true,
+      "row_count": 1,
+      "file_path": "/Volumes/扩展盘/guiyi-quant-workstation/data/parquet/canonical/kind=contract/symbol=pt/series=PT2612/frequency=1w/year=2026/month=09/part.1fa5174650d580ee563dcaf4932c40582c4f5526e5e11f6f0a796c7045d9047a.parquet",
+      "file_sha256": "1fa5174650d580ee563dcaf4932c40582c4f5526e5e11f6f0a796c7045d9047a",
+      "first_trading_day": "2026-09-18",
+      "last_trading_day": "2026-09-18",
+      "w1_trading_days": [
+        "2026-09-18"
+      ],
+      "price_unavailable_count": 0
+    }
+  ]
+}

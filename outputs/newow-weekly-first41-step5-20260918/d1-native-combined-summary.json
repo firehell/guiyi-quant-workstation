@@ -1,0 +1,1689 @@
+{
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "readonly": true,
+  "provider_requests": 0,
+  "writes": 0,
+  "original_budget_exhausted": true,
+  "remainder_batches_complete": 4,
+  "cases": [
+    {
+      "product": "a",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "a",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "a",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ag",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ag",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ag",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "al",
+      "strategy": "main_rise",
+      "main": {
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "context": {
+              "actual_count": 5,
+              "contract": "AL2611",
+              "cutoff": "2026-09-18T07:00:00+00:00",
+              "expected_count": 206,
+              "first_missing_at": "2025-11-18T07:00:00+00:00",
+              "first_missing_day": "2025-11-18",
+              "frequency": "1d",
+              "missing_count": 201,
+              "symbol": "al",
+              "trading_day": "2026-09-18"
+            },
+            "historical_candidate_recoverable": true,
+            "reason": "REPLAY_PREFIX_MISSING"
+          }
+        },
+        "reason": "REPLAY_PREFIX_MISSING",
+        "status": "DATA_UNAVAILABLE"
+      }
+    },
+    {
+      "product": "al",
+      "strategy": "oscillation",
+      "main": {
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "context": {
+              "actual_count": 5,
+              "contract": "AL2611",
+              "cutoff": "2026-09-18T07:00:00+00:00",
+              "expected_count": 206,
+              "first_missing_at": "2025-11-18T07:00:00+00:00",
+              "first_missing_day": "2025-11-18",
+              "frequency": "1d",
+              "missing_count": 201,
+              "symbol": "al",
+              "trading_day": "2026-09-18"
+            },
+            "historical_candidate_recoverable": true,
+            "reason": "REPLAY_PREFIX_MISSING"
+          }
+        },
+        "reason": "REPLAY_PREFIX_MISSING",
+        "status": "DATA_UNAVAILABLE"
+      }
+    },
+    {
+      "product": "al",
+      "strategy": "trend",
+      "main": {
+        "error": {
+          "code": "NEWOW_DATA_UNAVAILABLE",
+          "diagnostic": {
+            "context": {
+              "actual_count": 5,
+              "contract": "AL2611",
+              "cutoff": "2026-09-18T07:00:00+00:00",
+              "expected_count": 206,
+              "first_missing_at": "2025-11-18T07:00:00+00:00",
+              "first_missing_day": "2025-11-18",
+              "frequency": "1d",
+              "missing_count": 201,
+              "symbol": "al",
+              "trading_day": "2026-09-18"
+            },
+            "historical_candidate_recoverable": true,
+            "reason": "REPLAY_PREFIX_MISSING"
+          }
+        },
+        "reason": "REPLAY_PREFIX_MISSING",
+        "status": "DATA_UNAVAILABLE"
+      }
+    },
+    {
+      "product": "ao",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ao",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ao",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ap",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ap",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ap",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "au",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "au",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "au",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "b",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "b",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "b",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "bu",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "bu",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "bu",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "bz",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "bz",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "bz",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "c",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "c",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "c",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "cf",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "cf",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "cf",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "cj",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "cj",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "cj",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "cu",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "cu",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "cu",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "eb",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "eb",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "eb",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ec",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ec",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ec",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "eg",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "eg",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "eg",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "fg",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "fg",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "fg",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "fu",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "fu",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "fu",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "hc",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "hc",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "hc",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "i",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "i",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "i",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "j",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "j",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "j",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "jd",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "jd",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "jd",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "jm",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "jm",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "jm",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "l",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "l",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "l",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "lc",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "lc",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "lc",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "lh",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "lh",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "lh",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "m",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "m",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "m",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ma",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ma",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ma",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ni",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ni",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "ni",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "oi",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "oi",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "oi",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "p",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "p",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "p",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "pb",
+      "strategy": "main_rise",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "pb",
+      "strategy": "oscillation",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "pb",
+      "strategy": "trend",
+      "main": {
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null,
+        "status": "READY"
+      }
+    },
+    {
+      "product": "pd",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pd",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pd",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pf",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pf",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pf",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pg",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pg",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pg",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pk",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pk",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pk",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pl",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pl",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pl",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pp",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pp",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pp",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pr",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pr",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pr",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ps",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ps",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ps",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pt",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pt",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "pt",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "px",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "px",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "px",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "rb",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "rb",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "rb",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "rm",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "rm",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "rm",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "rs",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "rs",
+      "strategy": "oscillation",
+      "main": {
+        "status": "WARMING",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": "NEWOW_OSCILLATION_WARMING"
+      }
+    },
+    {
+      "product": "rs",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ru",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ru",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ru",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sa",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sa",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sa",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sc",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sc",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sc",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sf",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sf",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sf",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sh",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sh",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sh",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "si",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "si",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "si",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sm",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sm",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sm",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sn",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sn",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sn",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sr",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sr",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "sr",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ss",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ss",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ss",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ta",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ta",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ta",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ur",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ur",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "ur",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "v",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "v",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "v",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "y",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "y",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "y",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "zn",
+      "strategy": "main_rise",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "zn",
+      "strategy": "oscillation",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    },
+    {
+      "product": "zn",
+      "strategy": "trend",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      }
+    }
+  ],
+  "states": {
+    "READY": 176,
+    "DATA_UNAVAILABLE": 3,
+    "WARMING": 1
+  }
+}

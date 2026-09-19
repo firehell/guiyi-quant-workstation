@@ -160,13 +160,16 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
   const revision = nullableText(value.data_revision_identity, 'meta.data_revision_identity')
   const token = nullableText(value.snapshot_token, 'meta.snapshot_token')
   requireExact(value.reference_model_version, 'newow_marker_reference_zero_cost_v3', 'meta.reference_model_version')
-  requireExact(value.futures_adaptation_version, 'newow_futures_quality_segment_v3', 'meta.futures_adaptation_version')
+  const adaptationVersion = normalizedIdentity.frequency === '1w'
+    ? 'newow_futures_weekly_quality_segment_v1'
+    : 'newow_futures_quality_segment_v3'
+  requireExact(value.futures_adaptation_version, adaptationVersion, 'meta.futures_adaptation_version')
   return {
     schema_version: 'newow_product_detail_v3',
     identity: normalizedIdentity,
     as_of: asOf, read_at: readAt, input_content_sha256: inputHash, data_revision_identity: revision,
     snapshot_token: token, reference_model_version: 'newow_marker_reference_zero_cost_v3',
-    futures_adaptation_version: 'newow_futures_quality_segment_v3',
+    futures_adaptation_version: adaptationVersion,
   }
 }
 

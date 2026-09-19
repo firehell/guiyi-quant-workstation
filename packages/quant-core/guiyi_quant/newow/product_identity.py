@@ -13,7 +13,15 @@ if TYPE_CHECKING:
 
 REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v3"
 FUTURES_ADAPTATION_VERSION = "newow_futures_quality_segment_v3"
+WEEKLY_FUTURES_ADAPTATION_VERSION = "newow_futures_weekly_quality_segment_v1"
 FUTURES_INPUT_POLICY_VERSION = "newow_futures_quality_observation_v2"
+
+
+def futures_adaptation_version(frequency: str) -> str:
+    return (
+        WEEKLY_FUTURES_ADAPTATION_VERSION
+        if frequency == "1w" else FUTURES_ADAPTATION_VERSION
+    )
 
 
 def utc_timestamp(value: datetime) -> datetime:
@@ -118,6 +126,6 @@ def build_reference_trade_id(entry: StrategyAction) -> str:
         {
             "entry_signal_id": entry.signal_id,
             "reference_model_version": REFERENCE_MODEL_VERSION,
-            "futures_adaptation_version": FUTURES_ADAPTATION_VERSION,
+            "futures_adaptation_version": futures_adaptation_version(entry.identity.frequency),
         }
     )

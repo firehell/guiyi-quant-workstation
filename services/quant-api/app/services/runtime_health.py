@@ -50,6 +50,7 @@ RUNTIME_STATUS_PENDING = "pending"
 DEFAULT_AFTER_MARKET_STATUS_PATH = PROJECT_ROOT / ".run" / "after-market-status.json"
 MARKET_RUNTIME_ACTIVATION_MARKER_NAME = "market-runtime-enabled"
 ALERT_RUNTIME_ACTIVATION_MARKER_NAME = "alert-runtime-enabled"
+WEEKLY_AUDIT_ACTIVATION_MARKER_NAME = "weekly-audit-enabled"
 
 
 def build_runtime_health(
@@ -61,6 +62,7 @@ def build_runtime_health(
     live_freshness_seconds: int | None = None,
     after_market_automation_enabled: bool | None = None,
     alert_runtime_enabled: bool | None = None,
+    weekly_audit_enabled: bool | None = None,
     notification_transport_configured: bool | None = None,
     alert_freshness_seconds: int = 30,
     after_market_status_path: Path | None = DEFAULT_AFTER_MARKET_STATUS_PATH,
@@ -89,6 +91,11 @@ def build_runtime_health(
         _alert_runtime_activation_enabled()
         if alert_runtime_enabled is None
         else alert_runtime_enabled
+    )
+    weekly_enabled = (
+        _weekly_audit_activation_enabled()
+        if weekly_audit_enabled is None
+        else weekly_audit_enabled
     )
     if notification_transport_configured is None:
         transport_present = bool(os.getenv(NOTIFICATION_CONFIG_ENV, ""))
@@ -150,7 +157,8 @@ def build_runtime_health(
     )
     # Historical audit is optional and does not redefine operational service health.
     components["weekly_audit"] = weekly_audit_health(weekly_audit_status_path,
-        identity=runtime_heartbeat_identity(), products=load_operational_products(), now=current_time)
+        identity=runtime_heartbeat_identity(), products=load_operational_products(), now=current_time,
+        configured_enabled=weekly_enabled)
     return {
         "status": overall,
         "generated_at": _iso(current_time),
@@ -174,6 +182,15 @@ def _market_runtime_activation_enabled() -> bool:
 def _alert_runtime_activation_enabled() -> bool:
     """Alert activation 与 Market marker 严格分离，读取异常时保持关闭。"""
     marker_path = PROJECT_ROOT / ".run" / ALERT_RUNTIME_ACTIVATION_MARKER_NAME
+    try:
+        return marker_path.read_text(encoding="utf-8") == "enabled\n"
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def _weekly_audit_activation_enabled() -> bool:
+    """Weekly audit installation is explicit and independent of Market/Alert."""
+    marker_path = PROJECT_ROOT / ".run" / WEEKLY_AUDIT_ACTIVATION_MARKER_NAME
     try:
         return marker_path.read_text(encoding="utf-8") == "enabled\n"
     except (OSError, UnicodeDecodeError):
@@ -794,6 +811,8 @@ def _collect_after_market_health(
             "run_state": "degraded",
             "error_type": "after_market_expected_day_invalid" if expected_day_error else "after_market_status_invalid",
         }
+    if isinstance(public.get("consumer_checks"), Mapping):
+        base["consumer_checks"] = public["consumer_checks"]
     if "last_interruption" in public:
         base["last_interruption"] = public["last_interruption"]
     if expected_day_error:

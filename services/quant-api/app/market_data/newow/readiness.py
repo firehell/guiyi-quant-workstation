@@ -26,6 +26,8 @@ from app.market_data.newow.product_service import (
 )
 from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
+    CANDIDATE_RELEASE_STAGE,
+    CANDIDATE_WEEKLY_PRODUCTS,
     RELEASE_STAGE,
     deferred_frequency_reason,
     deferred_section_reason,
@@ -52,6 +54,8 @@ class ReadinessRequest:
     max_work: int = 10000
     timeout_seconds: int = 300
     frequencies: tuple[ProductFrequency, ...] = tuple(ProductFrequency)
+    candidate_weekly: bool = False
+    consumer_only: bool = False
 
     def __post_init__(self) -> None:
         try:
@@ -68,8 +72,16 @@ class ReadinessRequest:
             or type(self.timeout_seconds) is not int
             or not 1 <= self.timeout_seconds <= 3600
             or type(self.matrix) is not bool
+            or type(self.candidate_weekly) is not bool
+            or type(self.consumer_only) is not bool
+            or (self.consumer_only and not self.matrix)
             or not frequencies
             or len(set(frequencies)) != len(frequencies)
+            or (
+                self.candidate_weekly
+                and ProductFrequency.WEEKLY in frequencies
+                and not set(self.products) <= set(CANDIDATE_WEEKLY_PRODUCTS)
+            )
         ):
             raise ValueError("NEWOW_READINESS_ARGUMENT_INVALID")
         object.__setattr__(self, "as_of", utc_timestamp(self.as_of))
@@ -147,6 +159,8 @@ class NewowReadinessAudit:
 
     def run(self, request: ReadinessRequest) -> dict[str, Any]:
         budget = self.budget or AuditBudget(request, self.clock)
+        if request.consumer_only:
+            return self._run_consumer_only(request, budget)
         cases: list[dict[str, Any]] = (
             [
                 {
@@ -433,8 +447,15 @@ class NewowReadinessAudit:
                 case["sections"][section_name] = state
                 if section is ProductSection.CHART:
                     case["main"] = state
-                deferred_reason = deferred_frequency_reason(
-                    ProductFrequency(case["frequency"])
+                selected_frequency = ProductFrequency(case["frequency"])
+                deferred_reason = (
+                    None
+                    if (
+                        request.candidate_weekly
+                        and selected_frequency is ProductFrequency.WEEKLY
+                        and case["symbol"] in CANDIDATE_WEEKLY_PRODUCTS
+                    )
+                    else deferred_frequency_reason(selected_frequency)
                 ) or deferred_section_reason(section.value)
                 if deferred_reason is not None:
                     state.update(status="UNOPENED", reason=deferred_reason)
@@ -499,7 +520,9 @@ class NewowReadinessAudit:
             "status": "incomplete" if incomplete or budget.exhausted else "audited",
             "complete": not incomplete and not budget.exhausted,
             "as_of": request.as_of.isoformat(),
-            "release_stage": RELEASE_STAGE,
+            "release_stage": (
+                CANDIDATE_RELEASE_STAGE if request.candidate_weekly else RELEASE_STAGE
+            ),
             "matrix": request.matrix,
             "frequency_scope": [item.value for item in request.frequencies],
             "product_count": len(request.products),
@@ -513,6 +536,98 @@ class NewowReadinessAudit:
             "dependencies": public_dependencies,
             "repair_targets": repairs,
             "metadata_proposals": metadata,
+            "cases": cases,
+            "provider_requests": 0,
+            "writes": 0,
+        }
+
+    def _run_consumer_only(
+        self, request: ReadinessRequest, budget: AuditBudget
+    ) -> dict[str, Any]:
+        cases: list[dict[str, Any]] = []
+        for symbol in request.products:
+            for strategy in ProductStrategy:
+                for frequency in request.frequencies:
+                    case: dict[str, Any] = {
+                        "symbol": symbol,
+                        "strategy": strategy.value,
+                        "frequency": frequency.value,
+                        "main": {"status": "UNSTARTED"},
+                        "sections": {},
+                    }
+                    cases.append(case)
+                    for section, component in (
+                        (ProductSection.CHART, None),
+                        *((ProductSection.AUXILIARY, item) for item in AuxiliaryComponent),
+                        (ProductSection.REFERENCE, None),
+                    ):
+                        section_name = (
+                            f"auxiliary:{component.value}" if component else section.value
+                        )
+                        state: dict[str, Any] = {"status": "UNSTARTED"}
+                        case["sections"][section_name] = state
+                        if section is ProductSection.CHART:
+                            case["main"] = state
+                        try:
+                            budget.take()
+                            if self.service is None:
+                                state.update(
+                                    status="UNKNOWN",
+                                    reason="VALIDATION_SERVICE_UNAVAILABLE",
+                                )
+                                continue
+                            result = self.service.query(ProductServiceQuery(
+                                symbol,
+                                strategy,
+                                frequency,
+                                section=section,
+                                component=component,
+                                as_of=request.as_of,
+                            ))
+                            budget.checkpoint()
+                            delivery = getattr(result, section.value)
+                            if delivery.status is None or delivery.delivery != "delivered":
+                                state.update(status="UNKNOWN")
+                            else:
+                                state.update(
+                                    status=delivery.status.status.value.upper(),
+                                    evidence_status=delivery.status.evidence_status.value,
+                                    reason=delivery.status.reason_code,
+                                )
+                        except AuditBudgetExceeded:
+                            continue
+                        except Exception as exc:
+                            state.update(_failure(exc))
+                            if budget.expired():
+                                state.update(
+                                    status="UNSTARTED", reason="BUDGET_EXHAUSTED"
+                                )
+        incomplete = any(
+            state["status"] in {"UNKNOWN", "UNSTARTED"}
+            for case in cases
+            for state in case["sections"].values()
+        )
+        return {
+            "schema_version": 1,
+            "command": "data.newow-readiness",
+            "readonly": True,
+            "status": "incomplete" if incomplete or budget.exhausted else "audited",
+            "complete": not incomplete and not budget.exhausted,
+            "as_of": request.as_of.isoformat(),
+            "release_stage": (
+                CANDIDATE_RELEASE_STAGE if request.candidate_weekly else RELEASE_STAGE
+            ),
+            "matrix": True,
+            "frequency_scope": [item.value for item in request.frequencies],
+            "product_count": len(request.products),
+            "main_case_count": len(cases),
+            "main_ready_count": sum(case["main"]["status"] == "READY" for case in cases),
+            "budget_exhausted": budget.exhausted,
+            "work_used": budget.used,
+            "enumerations": [],
+            "dependencies": [],
+            "repair_targets": [],
+            "metadata_proposals": [],
             "cases": cases,
             "provider_requests": 0,
             "writes": 0,

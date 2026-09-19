@@ -42,8 +42,9 @@ def test_adapter_preserves_every_primitive_prefix_value(
 
 
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
-def test_price_gap_restarts_all_d1_indicator_state_at_clean_suffix(product_cases, strategy):
-    case = product_cases.primitive_input(strategy, "1d")
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_price_gap_restarts_all_indicator_state_at_clean_suffix(product_cases, strategy, frequency):
+    case = product_cases.primitive_input(strategy, frequency)
     split = len(case.bars) // 2
     preceding = case.bars[split - 1].bar
     following = case.bars[split].bar

@@ -14,6 +14,7 @@ from guiyi_quant.newow.product_contracts import (
     TradeEligibility,
 )
 from guiyi_quant.newow.reference_trades import ReferenceTradeProjector
+from guiyi_quant.newow.product_identity import futures_adaptation_version
 
 
 def _forged_actions(replay, actions):
@@ -73,6 +74,34 @@ def test_closed_trade_covers_the_reference_contract_and_uses_action_prices(
     assert trade.interruption_reason is None
     assert trade.statistics_membership is None
     assert trade.hint_ids == ()
+
+
+def test_weekly_quality_adaptation_has_its_own_version_without_changing_daily(
+    product_cases,
+):
+    assert futures_adaptation_version("1d") == "newow_futures_quality_segment_v3"
+    assert futures_adaptation_version("1w") == "newow_futures_weekly_quality_segment_v1"
+    for frequency in ("1d", "1w"):
+        case = product_cases.closed(frequency=frequency)
+        trade = ReferenceTradeProjector().project(
+            case.replay, case.boundaries, case.as_of,
+        ).trades[0]
+        assert trade.futures_adaptation_version == futures_adaptation_version(frequency)
+
+
+def test_daily_reference_identity_and_values_remain_fixed_after_weekly_quality(product_cases):
+    case = product_cases.closed(frequency="1d", entry="100", exit="110")
+    trade = ReferenceTradeProjector().project(
+        case.replay, case.boundaries, case.as_of,
+    ).trades[0]
+    assert trade.reference_trade_id == (
+        "d7fe03fcd7e5d0678d594d454b4fb539717e4eef9e14277734ba2ddb1b2c6cc6"
+    )
+    assert trade.frequency == "1d"
+    assert trade.entry_reference_price == Decimal("100")
+    assert trade.exit_reference_price == Decimal("110")
+    assert trade.reference_return_pct == Decimal("10")
+    assert trade.holding_bars == 1
 
 
 def test_reference_trade_id_changes_when_reference_model_moves_from_v1_to_v2(

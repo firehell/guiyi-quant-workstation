@@ -1,6 +1,6 @@
 """Only MDS, coverage and the pure warm-up planner are composed for this audit."""
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import time
 
 from sqlalchemy.orm import Session
@@ -53,11 +53,39 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
     def plan(intent: ContractWarmupRequest) -> dict:
         return asdict(planner.plan(intent))
 
-    return NewowReadinessAudit(
+    audit = NewowReadinessAudit(
         reader=reader_factory((), None),
         plan=plan,
         budget=budget,
         service=NewowProductService(
-            reader_factory, now=lambda: request.as_of, cancelled=budget.expired
+            reader_factory,
+            now=lambda: request.as_of,
+            cancelled=budget.expired,
+            reuse_read_inputs=True,
         ),
-    ).run(request)
+    )
+    report = audit.run(request)
+    if not request.consumer_only or budget.expired():
+        return report
+
+    legal = {"READY", "WARMING", "NOT_APPLICABLE", "UNAVAILABLE", "DATA_INTERRUPTED"}
+    failed_products = tuple(dict.fromkeys(
+        str(case["symbol"])
+        for case in report["cases"]
+        if any(
+            state.get("status") not in legal
+            for state in case["sections"].values()
+        )
+    ))
+    if not failed_products:
+        return report
+    repair_report = audit.run(replace(
+        request,
+        products=failed_products,
+        matrix=False,
+        consumer_only=False,
+    ))
+    report["repair_targets"] = repair_report["repair_targets"]
+    report["metadata_proposals"] = repair_report["metadata_proposals"]
+    report["budget_exhausted"] = budget.exhausted
+    return report

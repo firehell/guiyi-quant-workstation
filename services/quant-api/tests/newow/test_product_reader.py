@@ -21,6 +21,7 @@ from app.market_data.domain import (
 )
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.weekly_quality import classify_weekly_source
 from app.market_data.newow.product_query import NewowProductQuery
 from app.market_data.newow.product_reader import (
     NewowProductReadCancelled,
@@ -40,6 +41,63 @@ def test_reader_source_digest_changes_when_only_turnover_changes(product_cases):
     )
     assert first.bar == second.bar
     assert first.source_bar_sha256 != second.source_bar_sha256
+
+
+@pytest.mark.parametrize("gap_index", [5, 11])
+def test_weekly_reader_keeps_proven_gap_even_without_a_following_bar(
+    product_cases, gap_index,
+):
+    reader, query, fake = product_cases.paged_reader(
+        prefix_bars=12, page_size=20, frequency="1w",
+        context_frequencies=("1d",),
+    )
+    period = BarFrequency.W1
+    removed = fake.physical[("RB2605", period)][gap_index]
+    fake.physical[("RB2605", period)] = tuple(
+        bar for bar in fake.physical[("RB2605", period)] if bar != removed
+    )
+    fake.actual[period] = tuple(bar for bar in fake.actual[period] if bar != removed)
+    source_fact = PriceUnavailableFact(
+        removed.bar_end, removed.trading_day,
+        Decimal(0), Decimal(0), Decimal(0), removed.close,
+        Decimal(1), Decimal(0), removed.open_interest,
+        "a" * 64, "b" * 64, fake.as_of,
+    )
+    gap = classify_weekly_source(
+        product="rb", physical_contract="RB2605",
+        expected_daily_endpoints=((removed.bar_end, removed.trading_day),),
+        daily_bars=(), price_unavailable=(source_fact,),
+        daily_revision_sha256="c" * 64,
+    ).interruption
+    assert gap is not None
+    fake.query_actual_dominant_trading_days_quality = lambda request: (
+        fake.query_actual_dominant_trading_days(request), (("RB2605", gap),),
+    )
+    fake.query_contract_weekly_replay_quality = lambda **kwargs: (
+        tuple(bar for bar in fake.physical[("RB2605", period)]
+              if bar.bar_end <= kwargs["cutoff"]),
+        (gap,) if gap.week_end <= kwargs["cutoff"] else (),
+    )
+
+    read = reader.load(query, product_cases.as_of)
+    assert removed.bar_end not in {bar.bar.bar_end for bar in read.replay_bars}
+    assert len(read.data_interruptions) == 1
+    assert read.data_interruptions[0].effective_at == removed.bar_end
+    assert read.data_interruptions[0].frequency is ProductFrequency.WEEKLY
+    assert read.data_interruptions_by_frequency[ProductFrequency.DAILY] == ()
+    rebuilt_reader = NewowProductReader(
+        fake, coverage=fake.coverage, active_products=("rb",),
+        now=lambda: fake.as_of,
+    )
+    rebuilt = rebuilt_reader.load(query, product_cases.as_of)
+    assert rebuilt.replay_bars == read.replay_bars
+    assert rebuilt.data_interruptions == read.data_interruptions
+    dependency = reader.check_dependency(
+        "rb", ProductFrequency.WEEKLY, fake.segments[0], product_cases.as_of,
+    )
+    assert dependency["status"] == "DATA_READY"
+    assert dependency["source_quality"] == "WEEKLY_INTERRUPTED"
+    assert dependency["price_unavailable_count"] == 1
 
 
 def test_reader_consumes_all_prefix_pages(product_cases):
@@ -230,9 +288,11 @@ def test_pre_owner_no_trade_fact_does_not_advance_warmup(product_cases):
         },
     ],
 )
-def test_non_strict_zero_price_fact_still_fails_closed(product_cases, changes):
-    reader, query, fake = product_cases.paged_reader(prefix_bars=3, frequency="1d")
-    key = ("RB2605", BarFrequency.D1)
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_non_strict_zero_price_fact_still_fails_closed(product_cases, changes, frequency):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=3, frequency=frequency)
+    period = BarFrequency(frequency)
+    key = ("RB2605", period)
     original = fake.physical[key]
     zero_prices = {
         "open": Decimal(0),
@@ -242,7 +302,7 @@ def test_non_strict_zero_price_fact_still_fails_closed(product_cases, changes):
     }
     damaged = replace(original[0], **{**zero_prices, **changes})
     fake.physical[key] = (damaged, *original[1:])
-    fake.actual[BarFrequency.D1] = fake.physical[key]
+    fake.actual[period] = fake.physical[key]
     fake.expected_physical = dict(fake.physical)
 
     with pytest.raises(
@@ -252,16 +312,18 @@ def test_non_strict_zero_price_fact_still_fails_closed(product_cases, changes):
 
 
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
 def test_no_trade_day_pauses_each_strategy_exactly_like_an_absent_observation(
-    product_cases, strategy
+    product_cases, strategy, frequency
 ):
     no_trade_reader, no_trade_query, no_trade_market = product_cases.paged_reader(
-        prefix_bars=60, frequency="1d"
+        prefix_bars=60, frequency=frequency
     )
     absent_reader, absent_query, absent_market = product_cases.paged_reader(
-        prefix_bars=60, frequency="1d"
+        prefix_bars=60, frequency=frequency
     )
-    key = ("RB2605", BarFrequency.D1)
+    period = BarFrequency(frequency)
+    key = ("RB2605", period)
     raw = no_trade_market.physical[key]
     no_trade = replace(
         raw[20],
@@ -273,7 +335,7 @@ def test_no_trade_day_pauses_each_strategy_exactly_like_an_absent_observation(
         turnover=Decimal(0),
     )
     no_trade_market.physical[key] = (*raw[:20], no_trade, *raw[21:])
-    no_trade_market.actual[BarFrequency.D1] = tuple(
+    no_trade_market.actual[period] = tuple(
         bar
         for bar in no_trade_market.physical[key]
         if bar.trading_day >= no_trade_market.segments[0].start_trading_day
@@ -282,7 +344,7 @@ def test_no_trade_day_pauses_each_strategy_exactly_like_an_absent_observation(
 
     absent = absent_market.physical[key]
     absent_market.physical[key] = (*absent[:20], *absent[21:])
-    absent_market.actual[BarFrequency.D1] = tuple(
+    absent_market.actual[period] = tuple(
         bar
         for bar in absent_market.physical[key]
         if bar.trading_day >= absent_market.segments[0].start_trading_day
@@ -291,7 +353,7 @@ def test_no_trade_day_pauses_each_strategy_exactly_like_an_absent_observation(
 
     observed = no_trade_reader.load(no_trade_query, no_trade_market.as_of)
     baseline = absent_reader.load(absent_query, absent_market.as_of)
-    identity = build_product_identity("rb", strategy, ProductFrequency.DAILY)
+    identity = build_product_identity("rb", strategy, ProductFrequency(frequency))
 
     assert observed.replay_bars == baseline.replay_bars
     assert replay_strategy(
@@ -417,6 +479,28 @@ def test_night_session_boundary_uses_next_trading_day_without_natural_date_guess
         for b in result.boundaries
     ] == [("RB2609", date(2023, 1, 9), boundary_time)]
     assert max(request[2] for request in fake.owner_requests) == date(2023, 1, 9)
+
+
+def test_weekly_reader_can_exclude_only_an_unmapped_unfinished_night_tail(
+    product_cases,
+):
+    reader, query, fake = _weekly_reader(product_cases)
+    boundary_time = datetime(2023, 1, 6, 13, tzinfo=UTC)
+    fake.sessions[date(2023, 1, 9)] = (
+        SessionWindow(boundary_time, boundary_time + timedelta(hours=2)),
+        *fake.sessions[date(2023, 1, 9)],
+    )
+    original = fake.actual_dominant_segments
+
+    def unmapped_tail(symbol, since, through):
+        if through == date(2023, 1, 9):
+            raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+        return original(symbol, since, through)
+
+    fake.actual_dominant_segments = unmapped_tail
+    result = reader.load(query, boundary_time)
+    assert result.boundaries == ()
+    assert fake.owner_requests[-1][2] == date(2023, 1, 6)
 
 
 def test_request_end_is_not_rollover_but_later_effective_mapping_is(product_cases):
@@ -961,6 +1045,48 @@ def test_historical_candidate_requires_final_session_end_plus_one_microsecond(pr
     assert reader.historical_snapshot_candidates("rb", as_of=final_end + timedelta(microseconds=1)) == (
         (day, final_end + timedelta(microseconds=1)),
     )
+
+
+def test_weekly_candidates_use_calendar_week_authority_and_stop_at_two(product_cases):
+    _, _, fake = product_cases.paged_reader(prefix_bars=3, frequency="1w")
+    fake.coverage.start = date(2026, 8, 1)
+    fake.as_of = datetime(2026, 9, 18, 8, tzinfo=UTC)
+    cutoffs = {
+        date(2026, 9, 14): (date(2026, 9, 18), datetime(2026, 9, 18, 7, 0, 0, 1, tzinfo=UTC)),
+        date(2026, 9, 7): (date(2026, 9, 11), datetime(2026, 9, 11, 7, 0, 0, 1, tzinfo=UTC)),
+    }
+    calls = []
+
+    def completed(*, symbol, week_monday, as_of):
+        calls.append(week_monday)
+        assert (symbol, as_of) == ("rb", fake.as_of)
+        return cutoffs.get(week_monday)
+
+    fake.completed_calendar_week = completed
+    reader = NewowProductReader(
+        fake, coverage=fake.coverage, active_products=("rb",),
+        now=lambda: fake.as_of,
+    )
+    assert reader.weekly_snapshot_candidates(
+        "rb", as_of=fake.as_of, limit=2,
+    ) == (cutoffs[date(2026, 9, 14)], cutoffs[date(2026, 9, 7)])
+    assert calls == [date(2026, 9, 14), date(2026, 9, 7)]
+
+
+def test_current_owner_context_is_independent_of_historical_week(product_cases):
+    reader, _, fake = product_cases.paged_reader(prefix_bars=3, frequency="1w")
+    overlapping = fake.trading_days_overlapping_window
+    fake.trading_days_overlapping_window = (
+        lambda *, symbol, start, end: overlapping(symbol, start, end)
+    )
+    during_session = datetime(2023, 1, 2, 3, tzinfo=UTC)
+    assert reader.current_owner_context("rb", during_session) == {
+        "status": "known", "physical_contract": "RB2605",
+    }
+    fake.failures["owner"] = MarketDataError("MAIN_CONTRACT_MAP_MISSING")
+    assert reader.current_owner_context("rb", during_session) == {
+        "status": "unknown", "physical_contract": None,
+    }
 
 
 def test_historical_candidates_fill_twenty_after_filtering_day_at_exact_close(product_cases):

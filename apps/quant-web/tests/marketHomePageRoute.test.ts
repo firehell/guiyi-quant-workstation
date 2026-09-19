@@ -108,7 +108,7 @@ async function loadPage() {
     import { ref } from '${vueUrl}'
     export function useNewowCapabilities() {
       return {
-        state: ref('ready'), error: ref(null), openFrequencies: ref(['1w']),
+        state: ref('ready'), error: ref(null), openFrequencies: ref(['1w']), openFrequenciesFor: () => ['1w'],
         load: async () => {},
       }
     }

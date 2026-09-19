@@ -1,6 +1,7 @@
 import type {
   NewowHistoricalSnapshot,
   NewowDailySnapshot,
+  NewowWeeklySnapshot,
   NewowProductCapabilities,
   NewowProductRequest,
   NewowProductSectionResponse,
@@ -24,6 +25,7 @@ const UNAVAILABLE_CODES = new Set([
   'NEWOW_DATA_UNAVAILABLE', 'NEWOW_SOURCE_NONPOSITIVE_PRICE', 'NEWOW_COMPLETE_TRADING_DAY_MISSING',
   'NEWOW_COMPLETE_PERIOD_MISSING', 'NEWOW_HISTORICAL_SNAPSHOT_UNAVAILABLE',
   'NEWOW_FREQUENCY_NOT_OPEN', 'NEWOW_SECTION_NOT_OPEN',
+  'NEWOW_WEEKLY_UNKNOWN', 'NEWOW_WEEKLY_FAILED', 'NEWOW_WEEKLY_STALE',
 ])
 
 export class NewowProductRequestError extends Error {
@@ -61,20 +63,42 @@ export async function getNewowProductCapabilities(
 }
 
 function isProductCapabilities(value: unknown): value is NewowProductCapabilities {
-  if (!isRecord(value) || Object.keys(value).sort().join(',') !== [
+  if (!isRecord(value)) return false
+  const daily = value.schema_version === 'newow_product_capabilities_v3'
+    && value.release_stage === 'daily'
+    && sameLiteralArray(value.open_frequencies, ['1d'])
+  const candidate = value.schema_version === 'newow_product_capabilities_v4'
+    && value.release_stage === 'daily_weekly_candidate'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
-    'release_stage', 'schema_version',
-  ].join(',')) return false
-  if (
-    value.schema_version !== 'newow_product_capabilities_v3'
-    || value.release_stage !== 'daily'
-    || !sameLiteralArray(value.open_frequencies, ['1d'])
+    'release_stage', 'schema_version', ...(candidate ? ['weekly_products'] : []),
+  ]
+  if (Object.keys(value).sort().join(',') !== expectedKeys.join(',')) return false
+  const auPreview = value.schema_version === 'newow_product_capabilities_v5'
+    && value.release_stage === 'au_daily_weekly_hourly_candidate'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w', '60m'])
+  const hourlyPreview = (
+    (value.schema_version === 'newow_product_capabilities_v6' && value.release_stage === 'pd_pt_hourly_candidate')
+    || (value.schema_version === 'newow_product_capabilities_v7' && value.release_stage === 'ap_hourly_candidate')
+  )
+    && sameLiteralArray(value.open_frequencies, ['1d', '60m'])
+  if ((!daily && !candidate && !auPreview && !hourlyPreview)
     || !sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])
   ) return false
-  if (!Array.isArray(value.deferred_frequencies) || value.deferred_frequencies.length !== 2) return false
+  if (candidate && (!Array.isArray(value.weekly_products)
+    || value.weekly_products.some(item => typeof item !== 'string' || !/^[a-z]{1,8}$/.test(item))
+    || new Set(value.weekly_products).size !== value.weekly_products.length
+    || value.weekly_products.length !== 41)) return false
+  if (!Array.isArray(value.deferred_frequencies)
+    || value.deferred_frequencies.length !== (daily ? 2 : (candidate || hourlyPreview) ? 1 : 0)) return false
   if (!Array.isArray(value.deferred_sections) || value.deferred_sections.length !== 1) return false
-  return isDeferred(value.deferred_frequencies[0], '1w', 'NEWOW_WEEKLY_RELEASE_PENDING')
-    && isDeferred(value.deferred_frequencies[1], '60m', 'NEWOW_HOURLY_RELEASE_PENDING')
+  return (daily
+    ? isDeferred(value.deferred_frequencies[0], '1w', 'NEWOW_WEEKLY_RELEASE_PENDING')
+      && isDeferred(value.deferred_frequencies[1], '60m', 'NEWOW_HOURLY_RELEASE_PENDING')
+    : candidate ? isDeferred(value.deferred_frequencies[0], '60m', 'NEWOW_HOURLY_RELEASE_PENDING')
+    : hourlyPreview ? isDeferred(value.deferred_frequencies[0], '1w', 'NEWOW_WEEKLY_RELEASE_PENDING')
+    : true)
     && isDeferred(value.deferred_sections[0], 'explanation', 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN')
 }
 
@@ -102,6 +126,7 @@ function freezeProductCapabilities(
   for (const item of value.deferred_frequencies) Object.freeze(item)
   for (const item of value.deferred_sections) Object.freeze(item)
   Object.freeze(value.open_frequencies)
+  if (value.weekly_products) Object.freeze(value.weekly_products)
   Object.freeze(value.deferred_frequencies)
   Object.freeze(value.open_sections)
   Object.freeze(value.deferred_sections)
@@ -144,6 +169,49 @@ export async function getNewowDailySnapshot(
   }
   if (!isDailySnapshot(payload, identity)) throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
   return payload
+}
+
+export async function getNewowWeeklySnapshot(
+  identity: NewowProductRequest['identity'],
+  options: NewowProductRequestOptions = {},
+): Promise<NewowWeeklySnapshot> {
+  const transport = options.request ?? defaultRequest
+  let payload: unknown
+  try {
+    payload = await transport('/market/newow/weekly-snapshot', {
+      params: { product: identity.product, strategy: identity.strategy, frequency: identity.frequency },
+      signal: options.signal,
+    })
+  } catch (error) {
+    if (error instanceof NewowProductRequestError) throw error
+    throw classifyTransportError(error)
+  }
+  if (!isWeeklySnapshot(payload, identity)) throw new NewowProductRequestError('NEWOW_RESPONSE_INVALID', 'response_invalid')
+  return payload
+}
+
+function isWeeklySnapshot(value: unknown, identity: NewowProductRequest['identity']): value is NewowWeeklySnapshot {
+  if (!isRecord(value) || value.schema_version !== 'newow_weekly_snapshot_v1'
+    || value.product !== identity.product || value.strategy !== identity.strategy
+    || value.frequency !== '1w' || value.frequency !== identity.frequency
+    || value.series_kind !== 'actual_dominant'
+    || !isRecord(value.current_context)
+    || (value.current_context.status !== 'known' && value.current_context.status !== 'unknown')
+    || (value.current_context.status === 'known'
+      ? typeof value.current_context.physical_contract !== 'string' || value.current_context.physical_contract.length === 0
+      : value.current_context.physical_contract !== null)
+    || !validInstant(value.requested_at) || !validInstant(value.expected_period_end)
+    || !validInstant(value.available_period_end) || !validInstant(value.as_of)) return false
+  return value.as_of === value.available_period_end
+    && Date.parse(value.available_period_end) <= Date.parse(value.expected_period_end)
+    && Date.parse(value.expected_period_end) <= Date.parse(value.requested_at)
+    && (value.freshness === 'current'
+      ? value.available_period_end === value.expected_period_end
+      : value.freshness === 'pending_update' && value.available_period_end < value.expected_period_end)
+}
+
+function validInstant(value: unknown): value is string {
+  return typeof value === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value))
 }
 
 function isDailySnapshot(value: unknown, identity: NewowProductRequest['identity']): value is NewowDailySnapshot {

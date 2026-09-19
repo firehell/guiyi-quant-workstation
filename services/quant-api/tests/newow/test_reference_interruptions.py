@@ -120,8 +120,9 @@ def test_interruption_retains_negative_decimal_mark_without_fabricating_exit(
     assert trade.interruption_reason == "OWNER_BOUNDARY"
 
 
-def test_source_price_gap_interrupts_open_reference_without_an_exit(product_cases):
-    case = product_cases.interrupted(mark="90")
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_source_price_gap_interrupts_open_reference_without_an_exit(product_cases, frequency):
+    case = product_cases.interrupted(mark="90", frequency=frequency)
     gap = DataInterruption(
         product=case.identity.product,
         frequency=case.identity.frequency,
@@ -162,8 +163,9 @@ def test_later_known_gap_does_not_change_fixed_prefix_reference(product_cases):
     assert trade.interrupted_at is None
 
 
-def test_clear_cannot_pair_across_a_price_gap(product_cases):
-    case = product_cases.closed(entry="100", exit="110")
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_clear_cannot_pair_across_a_price_gap(product_cases, frequency):
+    case = product_cases.closed(frequency=frequency, entry="100", exit="110")
     between = case.entry.bar_end + (case.exit.bar_end - case.entry.bar_end) / 2
     gap = DataInterruption(
         product=case.identity.product,
@@ -245,10 +247,11 @@ def test_related_clear_before_the_effective_boundary_remains_closed(product_case
     assert trade.mark_change_pct is None
 
 
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
 def test_related_clear_after_the_effective_boundary_cannot_close_the_trade(
-    product_cases,
+    product_cases, frequency,
 ):
-    case = product_cases.closed(entry="100", exit="90")
+    case = product_cases.closed(frequency=frequency, entry="100", exit="90")
     mark_bar = case.bars[-1]
     late_clear_bar = _bar_like(
         mark_bar,

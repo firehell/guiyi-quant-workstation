@@ -58,7 +58,8 @@ export function useNewowDailyQuote(options: {
   const page = shallowRef<MarketBarsPageResponse | null>(null)
   const state = shallowRef<'loading' | 'ready' | 'unavailable'>('unavailable')
   const fetchPage = options.fetchPage ?? (async (request, signal) => (await import('../api/market.ts')).getMarketBarsPage(request, signal))
-  const before = computed(() => candidatePreview.enabled ? candidatePreview.asOf ?? null : options.snapshotAsOf?.value ?? null)
+  const before = computed(() => candidatePreview.enabled && !candidatePreview.defaultWeekly
+    ? candidatePreview.asOf : options.snapshotAsOf?.value ?? null)
   let generation = 0
   let controller: AbortController | null = null
   async function load(symbol: string | null): Promise<void> {

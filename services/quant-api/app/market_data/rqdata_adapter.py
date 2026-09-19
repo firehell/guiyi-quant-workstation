@@ -368,11 +368,12 @@ class RQDataMarketAdapter:
         mondays = tuple(
             _iso_monday(value.astimezone(SHANGHAI).date()) for value in expected
         )
-        return self._source_trading_days(
+        target_weeks = {_iso_week(value.astimezone(SHANGHAI).date()) for value in expected}
+        return tuple(day for day in self._source_trading_days(
             key,
             min(mondays),
             max(mondays) + timedelta(days=6),
-        )
+        ) if _iso_week(day) in target_weeks)
 
     def _exchange_daily_rows(
         self,
