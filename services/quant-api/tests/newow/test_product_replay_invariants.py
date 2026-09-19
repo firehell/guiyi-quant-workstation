@@ -8,7 +8,13 @@ import pytest
 from app.market_data.domain import BarFrequency, ResolvedContractSegment
 from app.market_data.newow.product_query import NewowProductQuery
 from app.market_data.newow.product_reader import NewowProductReader
-from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
+from guiyi_quant.newow.product_adapters import (
+    build_product_identity,
+    label_calculation_segments,
+    replay_step,
+    replay_strategy,
+    seed_replay_state,
+)
 from guiyi_quant.newow.product_contracts import DataInterruption
 from guiyi_quant.newow.product_identity import InputQualityPolicy, build_segment_id
 
@@ -46,6 +52,24 @@ def test_batch_replay_equals_bar_by_bar_prefix_replay(
     )
 
     assert incremental_frames == batch.frames
+
+
+@pytest.mark.parametrize("strategy", _STRATEGIES)
+@pytest.mark.parametrize("frequency", _FREQUENCIES)
+def test_public_replay_and_persistable_per_bar_state_share_one_step(
+    product_cases, strategy, frequency
+):
+    """The public wrapper must not have a separate batch-only formula path."""
+    case = product_cases.primitive_input(strategy, frequency)
+    expected = replay_strategy(case.identity, case.bars).frames
+    state = seed_replay_state()
+    actual = []
+    for item in label_calculation_segments(case.identity, case.bars, ()):
+        state, frame, diagnostics = replay_step(case.identity, state, item)
+        assert diagnostics == ()
+        actual.append(frame)
+    assert tuple(actual) == expected
+    assert len(state.pairing.source_builds) <= 1
 
 
 @pytest.mark.parametrize("strategy", _STRATEGIES)
