@@ -51,8 +51,10 @@ Nginx reload 都是受控外部操作，必须明确包含在目标、环境、�
 
 ### Weekly operational full-history audit
 
-`com.guiyi.quant-weekly-audit.plist.template` 固定每周六 09:00（launchd `Weekday=6`）运行一次
-`operational_full_history` 只读审计，不含 `RunAtLoad/KeepAlive`，也没有 retry、provider/data write 或通知能力。
+`com.guiyi.quant-weekly-audit.plist.template` 从每周六 09:00 开始至 23:00 每小时提供一次有限触发机会，
+用于覆盖休眠/唤醒或短时不可运行；应用层以本周六 09:00 为身份，整周最多建立一次真实审计尝试。
+后续触发只返回 `already_attempted`，不会覆盖 `passed/findings/failed/skipped_busy`，因此不是失败 retry。
+任务仍是 `operational_full_history` 只读审计，不含 `RunAtLoad/KeepAlive`，也没有 provider/data write 或通知能力。
 `--render-only` 会渲染该模板，但不安装或启用它。
 
 每周 label 只能在获得该次安装的明确外部操作意图后，从目标 exact Runtime checkout 执行：
@@ -63,12 +65,14 @@ Nginx reload 都是受控外部操作，必须明确包含在目标、环境、�
 
 安装器在任何外部 mutation 前要求已安装 API plist 是非 symlink 普通文件，其
 `GUIYI_PROJECT_ROOT` 与当前 checkout 完全相同，`GUIYI_RUNTIME_COMMIT` 与当前 40 位 Git SHA 完全相同。
-此模式只替换/加载 `com.guiyi.quant-weekly-audit`：不 bootout/kickstart 其他 label，不写 Market/Alert marker，
+此模式原子写入独立的 `.run/weekly-audit-enabled` marker，并只替换/加载
+`com.guiyi.quant-weekly-audit`：不 bootout/kickstart 其他 label，不写 Market/Alert marker，
 不替换共享 launcher/log rotator。weekly plist 直接指向该 exact checkout 中的
-`scripts/ops/macos/run-local-service.sh weekly-audit`，避免使用其他 checkout 的启动器。
+`scripts/ops/macos/run-local-service.sh weekly-audit-scheduled`，避免使用其他 checkout 的启动器。
 
 `local-services-status.sh` 只从既有 Runtime health 打印有界的盘后 stage/attempt/symbol/成功操作数，
-及独立 weekly status/through/findings。weekly label 不是现有 operational health 的 required service；安装成功也不证明
+及独立 weekly status/through/findings。未安装显示 `disabled`，本周时点前显示 `not_run`，已过时点且没有本周尝试显示
+`missed`；诊断不会自动运行审计、修复数据或通知。weekly label 不是现有 operational health 的 required service；安装成功也不证明
 首次自然审计已通过、release 或 Runtime promotion。
 
 ### Market Runtime promotion preflight

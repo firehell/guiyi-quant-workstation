@@ -1150,6 +1150,33 @@ def test_runtime_health_uses_local_activation_marker_not_process_environment(
     assert live["error_type"] == "live_heartbeat_missing"
 
 
+def test_weekly_audit_marker_distinguishes_disabled_and_missed(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",)
+    )
+    TestingSessionLocal = _session_factory()
+    now = datetime.fromisoformat("2026-09-19T09:00:00+08:00")
+    status_path = tmp_path / ".run" / "weekly-audit-status.json"
+
+    with TestingSessionLocal() as session:
+        disabled = build_runtime_health(
+            session, redis_factory=lambda: FakeRedis(), now=now,
+            after_market_status_path=None, weekly_audit_status_path=status_path,
+        )
+        marker = tmp_path / ".run" / "weekly-audit-enabled"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("enabled\n", encoding="utf-8")
+        missed = build_runtime_health(
+            session, redis_factory=lambda: FakeRedis(), now=now,
+            after_market_status_path=None, weekly_audit_status_path=status_path,
+        )
+
+    assert disabled["components"]["weekly_audit"]["status"] == "disabled"
+    assert missed["components"]["weekly_audit"]["status"] == "missed"
+    assert missed["status"] == disabled["status"]
+
+
 def test_enabled_after_market_is_pending_before_its_first_runtime_run(
     monkeypatch, tmp_path
 ) -> None:

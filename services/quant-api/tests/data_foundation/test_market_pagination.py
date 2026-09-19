@@ -23,6 +23,7 @@ from app.market_data.market_data_service import (
     MarketDataError,
     MarketDataService,
 )
+from app.market_data.source_quality import PriceUnavailableFact
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
 
@@ -100,6 +101,62 @@ def _publish(
     catalog.register_partition(partition)
 
 
+def _quality(day: int, *, month: int = 1) -> PriceUnavailableFact:
+    bar = _bar(day, 100, month=month)
+    return PriceUnavailableFact(
+        bar_end=bar.bar_end,
+        trading_day=bar.trading_day,
+        open=Decimal(0),
+        high=Decimal(0),
+        low=Decimal(0),
+        close=bar.close,
+        volume=Decimal(1),
+        turnover=Decimal(10),
+        open_interest=Decimal(20),
+        request_sha256="a" * 64,
+        response_sha256="b" * 64,
+        observed_at=datetime(2026, 9, 19, tzinfo=UTC),
+    )
+
+
+def _publish_quality(
+    catalog: MarketCatalog,
+    store: CanonicalMonthlyStore,
+    key: DatasetKey,
+    bars: tuple[CanonicalBar, ...],
+    facts: tuple[PriceUnavailableFact, ...],
+) -> None:
+    if key.kind.value == "contract" and catalog.session.scalar(
+        select(Contract).where(Contract.contract_code == key.series_or_contract)
+    ) is None:
+        catalog.session.add(Contract(
+            contract_code=key.series_or_contract,
+            instrument_symbol=key.symbol,
+            exchange_code="DCE",
+            listed_date=date(2025, 1, 1),
+            expired_date=date(2026, 1, 1),
+        ))
+    for day in {item.trading_day for item in (*bars, *facts)}:
+        if catalog.session.scalar(select(TradingCalendar).where(
+            TradingCalendar.exchange_code == "DCE",
+            TradingCalendar.trade_date == day,
+        )) is None:
+            catalog.session.add(TradingCalendar(
+                exchange_code="DCE", trade_date=day, is_trading_day=True,
+            ))
+    expected = tuple(sorted(
+        (*[bar.bar_end for bar in bars], *[fact.bar_end for fact in facts])
+    ))
+    catalog.register_partition(store.publish(PublishRequest(
+        dataset=key,
+        year=(bars[0].trading_day if bars else facts[0].trading_day).year,
+        month=(bars[0].trading_day if bars else facts[0].trading_day).month,
+        bars=bars,
+        expected_bar_ends=expected,
+        price_unavailable=facts,
+    )))
+
+
 def _service(session: Session, tmp_path) -> tuple[MarketCatalog, MarketDataService, CanonicalMonthlyStore]:
     store = CanonicalMonthlyStore(tmp_path)
     catalog = MarketCatalog(session, tmp_path)
@@ -142,6 +199,114 @@ def test_query_page_returns_latest_physical_bars_ascending(session, tmp_path) ->
     assert result.has_more_before is True
     assert result.next_before == result.bars[0].bar_end
     assert result.canonical_coverage == (result.bars[0].bar_end, result.bars[-1].bar_end)
+
+
+def test_daily_physical_page_ignores_old_quality_outside_visible_window_and_fails_when_entered(
+    session, tmp_path,
+) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    key = DatasetKey("contract", "jm", "JM2505", "1d")
+    _publish_quality(
+        catalog,
+        store,
+        key,
+        (_bar(3, 103), _bar(4, 104), _bar(5, 105)),
+        (_quality(2),),
+    )
+    session.commit()
+
+    latest = service.query_page(SeriesPageQuery(
+        "contract", "jm", "1d", contract="JM2505", limit=2,
+    ))
+
+    assert tuple(bar.trading_day.day for bar in latest.bars) == (4, 5)
+    assert latest.has_more_before is True
+    with pytest.raises(MarketDataError, match="PRICE_UNAVAILABLE"):
+        service.query_page(SeriesPageQuery(
+            "contract", "jm", "1d", contract="JM2505",
+            before=latest.next_before, limit=2,
+        ))
+
+
+def test_daily_actual_page_ignores_old_owner_quality_until_later_page(
+    session, tmp_path,
+) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    key = DatasetKey("contract", "jm", "JM2505", "1d")
+    _publish_quality(
+        catalog,
+        store,
+        key,
+        (_bar(3, 103), _bar(4, 104), _bar(5, 105)),
+        (_quality(2),),
+    )
+    _calendar_and_map(session, catalog, tuple((day, "JM2505") for day in range(2, 6)))
+    session.commit()
+
+    latest = service.query_page(SeriesPageQuery(
+        "actual_dominant", "jm", "1d", limit=2,
+    ))
+
+    assert tuple(bar.trading_day.day for bar in latest.bars) == (4, 5)
+    assert latest.has_more_before is True
+    with pytest.raises(MarketDataError, match="PRICE_UNAVAILABLE"):
+        service.query_page(SeriesPageQuery(
+            "actual_dominant", "jm", "1d", before=latest.next_before, limit=2,
+        ))
+
+
+def test_daily_actual_page_ignores_owner_quality_in_older_month(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    key = DatasetKey("contract", "jm", "JM2505", "1d")
+    _publish_quality(catalog, store, key, (), (_quality(31),))
+    _publish_quality(
+        catalog,
+        store,
+        key,
+        (_bar(1, 201, month=2), _bar(2, 202, month=2), _bar(3, 203, month=2)),
+        (),
+    )
+    _calendar_and_map(session, catalog, ((31, "JM2505"),))
+    _calendar_and_map(
+        session, catalog, ((1, "JM2505"), (2, "JM2505"), (3, "JM2505")), month=2,
+    )
+    session.commit()
+
+    result = service.query_page(SeriesPageQuery(
+        "actual_dominant", "jm", "1d", limit=2,
+    ))
+
+    assert tuple(bar.trading_day for bar in result.bars) == (
+        date(2025, 2, 2), date(2025, 2, 3),
+    )
+    assert result.has_more_before is True
+
+
+def test_daily_actual_page_ignores_non_owner_contract_quality(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    _publish_quality(
+        catalog,
+        store,
+        DatasetKey("contract", "jm", "JM2505", "1d"),
+        (_bar(2, 102), _bar(3, 103)),
+        (),
+    )
+    _publish_quality(
+        catalog,
+        store,
+        DatasetKey("contract", "jm", "JM2509", "1d"),
+        (),
+        (_quality(3),),
+    )
+    _calendar_and_map(session, catalog, ((2, "JM2505"), (3, "JM2505")))
+    session.commit()
+
+    result = service.query_page(SeriesPageQuery(
+        "actual_dominant", "jm", "1d", limit=2,
+    ))
+
+    assert tuple(bar.trading_day.day for bar in result.bars) == (2, 3)
+    assert result.has_more_before is False
 
 
 def test_contract_daily_bars_as_of_reads_exact_contract_and_rejects_future(

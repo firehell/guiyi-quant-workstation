@@ -40,6 +40,7 @@ _COMMANDS = {
     "alert": "runtime.alert",
     "after-market": "data.after-market",
     "weekly-audit": "data.weekly-audit",
+    "weekly-audit-scheduled": "data.weekly-audit-scheduled",
 }
 
 
@@ -117,8 +118,12 @@ def main(
             )
         elif service == "alert":
             payload = run_alert(alert_runtime_factory=alert_runtime_factory)
-        elif service == "weekly-audit":
-            payload = run_weekly_audit_service(session_factory=session_factory, manager_factory=manager_factory)
+        elif service in {"weekly-audit", "weekly-audit-scheduled"}:
+            payload = run_weekly_audit_service(
+                session_factory=session_factory,
+                manager_factory=manager_factory,
+                scheduled=service == "weekly-audit-scheduled",
+            )
         else:
             payload = run_after_market(
                 session_factory=session_factory,
@@ -131,25 +136,31 @@ def main(
             exception_error_payload(
                 command=command,
                 exc=exc,
-                readonly=service == "weekly-audit",
+                readonly=service in {"weekly-audit", "weekly-audit-scheduled"},
             ),
             stderr,
         )
         return 1
     print_json(payload, stdout)
-    return 0 if payload.get("status") in {"passed", "skipped", "skipped_busy", "ok"} else 1
+    return 0 if payload.get("status") in {
+        "passed", "skipped", "skipped_busy", "not_due", "already_attempted", "ok",
+    } else 1
 
 
-def run_weekly_audit_service(*, session_factory: SessionFactory, manager_factory: ManagerFactory) -> dict[str, object]:
+def run_weekly_audit_service(
+    *, session_factory: SessionFactory, manager_factory: ManagerFactory,
+    scheduled: bool = False,
+) -> dict[str, object]:
     from datetime import datetime
     from app.core.env import PROJECT_ROOT
     from app.market_data.captured_recovery_runtime import runtime_heartbeat_identity
     from app.market_data.operational_universe import load_operational_products
     from app.market_data.session_clock import SHANGHAI
-    from app.market_data.weekly_audit import run_weekly_audit
+    from app.market_data.weekly_audit import run_scheduled_weekly_audit, run_weekly_audit
 
     with session_factory() as session:
-        return run_weekly_audit(manager_factory(session),
+        runner = run_scheduled_weekly_audit if scheduled else run_weekly_audit
+        return runner(manager_factory(session),
             status_path=PROJECT_ROOT / ".run" / "weekly-audit-status.json",
             products=load_operational_products(), identity=runtime_heartbeat_identity(),
             now=lambda: datetime.now(SHANGHAI))
@@ -157,7 +168,9 @@ def run_weekly_audit_service(*, session_factory: SessionFactory, manager_factory
 
 def entrypoint() -> None:
     handler = None
-    if len(sys.argv) == 2 and sys.argv[1] in {"live", "alert", "after-market", "weekly-audit"}:
+    if len(sys.argv) == 2 and sys.argv[1] in {
+        "live", "alert", "after-market", "weekly-audit", "weekly-audit-scheduled",
+    }:
         from app.runtime_logging import install_runtime_diagnostics
 
         try:

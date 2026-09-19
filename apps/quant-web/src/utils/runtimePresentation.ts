@@ -123,7 +123,7 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
       key: 'weekly_audit', label: '每周历史审计', state: weeklyAuditLabel(audit.status),
       detail: weeklyAuditDetail(audit),
       timestamp: `更新 ${formatRuntimeTimestamp(audit.updated_at)}`,
-      tone: audit.status === 'passed' ? 'normal' : ['not_run', 'running', 'skipped_busy'].includes(audit.status) ? 'neutral' : 'warning',
+      tone: audit.status === 'passed' ? 'normal' : ['disabled', 'not_run', 'running', 'skipped_busy'].includes(audit.status) ? 'neutral' : 'warning',
     })
   }
   return items
@@ -131,7 +131,7 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
 
 export function weeklyAuditLabel(status: string): string {
   const labels: Record<string, string> = {
-    not_run: '尚未审计', running: '审计中', passed: '审计通过', findings: '发现历史问题',
+    disabled: '未启用', not_run: '尚未到期', missed: '本周审计漏跑', running: '审计中', passed: '审计通过', findings: '发现历史问题',
     failed: '审计失败', skipped_busy: '维护忙，已跳过', stuck: '审计卡住', stale: '审计已过期', invalid: '审计身份或状态无效',
   }
   return labels[status] ?? '状态未知'
