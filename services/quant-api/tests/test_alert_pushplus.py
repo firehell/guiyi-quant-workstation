@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from perk_pushplus import PushPlusError
 
 from app.alerts.notification import (
     ALERT_AUDIENCE_HTDY_OBSERVERS,
     ALERT_AUDIENCE_OWNER,
+    AlertNotificationDispatcher,
+    AlertNotificationMessage,
     NotificationDelivery,
     NotificationTransportError,
 )
@@ -71,6 +75,30 @@ def test_htdy_observers_uses_exact_dedicated_topic_once() -> None:
 
     assert len(client.requests) == 1
     assert client.requests[0].topic == HTDY_TOPIC
+    assert client.requests[0].to is None
+
+
+@pytest.mark.parametrize(
+    ("rule_code", "expected_topic"),
+    [("subing_ths_alert_15m_v1", None), ("htdy_original_15m", HTDY_TOPIC)],
+)
+def test_rule_dispatch_preserves_owner_and_topic_isolation(
+    rule_code: str, expected_topic: str | None,
+) -> None:
+    client = RecordingClient()
+    dispatcher = AlertNotificationDispatcher(_transport(client))
+    dispatcher.send(AlertNotificationMessage(
+        rule_code=rule_code,
+        symbol="jm",
+        product_name="焦煤",
+        contract="JM2609",
+        frequency="15m",
+        bar_end=datetime(2026, 9, 18, 7, tzinfo=UTC),
+        detected_at=datetime(2026, 9, 18, 7, 0, 1, tzinfo=UTC),
+        result_codes=("buy",),
+    ))
+    assert len(client.requests) == 1
+    assert client.requests[0].topic == expected_topic
     assert client.requests[0].to is None
 
 

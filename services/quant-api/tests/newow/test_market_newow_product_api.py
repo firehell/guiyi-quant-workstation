@@ -69,17 +69,22 @@ def _initial_clear_service_result(product_cases):
     )
 
 
-def test_daily_release_capabilities_are_public_without_database_access():
+def test_daily_weekly_release_capabilities_are_public_without_database_access():
     with TestClient(app) as client:
         response = client.get("/api/v1/market/newow/product-capabilities")
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v3",
-        "release_stage": "daily",
-        "open_frequencies": ["1d"],
+        "schema_version": "newow_product_capabilities_v8",
+        "release_stage": "daily_weekly",
+        "open_frequencies": ["1d", "1w"],
+        "weekly_products": [
+            "a", "ag", "al", "ao", "ap", "au", "bu", "c", "cf", "cu", "ec", "fg",
+            "fu", "hc", "i", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "p", "pb",
+            "pd", "pp", "ps", "pt", "rb", "rm", "ru", "sa", "sc", "sn", "ss", "ta", "ur",
+            "v", "y", "zn",
+        ],
         "deferred_frequencies": [
-            {"frequency": "1w", "reason_code": "NEWOW_WEEKLY_RELEASE_PENDING"},
             {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"},
         ],
         "open_sections": ["chart", "auxiliary", "reference", "comparator"],
@@ -140,7 +145,6 @@ def test_weekly_snapshot_endpoint_returns_shared_cutoff_and_separate_current_own
                 "pending_update", {"status": "unknown", "physical_contract": None},
             )
 
-    monkeypatch.setattr(market_newow, "_enforce_product_frequency", lambda *_args: None)
     monkeypatch.setattr(market_newow, "_build_weekly_resolver", lambda *_args: Resolver(), raising=False)
     app.dependency_overrides[get_db] = lambda: object()
     try:
@@ -163,7 +167,7 @@ def test_weekly_snapshot_endpoint_returns_shared_cutoff_and_separate_current_own
     }
 
 
-@pytest.mark.parametrize("frequency", ["1w", "60m"])
+@pytest.mark.parametrize("frequency", ["60m"])
 def test_daily_release_rejects_deferred_product_frequencies_before_service(
     monkeypatch, frequency
 ):
@@ -192,7 +196,7 @@ def test_daily_release_rejects_deferred_product_frequencies_before_service(
     assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
 
 
-@pytest.mark.parametrize("frequency", ["1w", "60m"])
+@pytest.mark.parametrize("frequency", ["60m"])
 def test_daily_release_rejects_deferred_historical_frequencies_before_resolver(
     monkeypatch, frequency
 ):
@@ -219,6 +223,31 @@ def test_daily_release_rejects_deferred_historical_frequencies_before_resolver(
 
     assert response.status_code == 409
     assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
+
+
+def test_formal_weekly_release_rejects_product_outside_first_41_before_resolver(monkeypatch):
+    monkeypatch.setattr(
+        market_newow,
+        "_build_weekly_resolver",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("out-of-scope product reached weekly resolver")
+        ),
+        raising=False,
+    )
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/market/newow/weekly-snapshot",
+                params={"product": "b", "strategy": "trend", "frequency": "1w"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {"code": "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"}
+    }
 
 
 def test_daily_release_admits_daily_product_frequency_to_service(monkeypatch):

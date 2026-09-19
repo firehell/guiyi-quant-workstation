@@ -150,7 +150,7 @@ ALERT_NOTIFICATION_POLICIES: Final = {
     SUBING_THS_ALERT_RULE_CODE: AlertNotificationPolicy(
         rule_code=SUBING_THS_ALERT_RULE_CODE,
         title="归一量化 · 苏冰预警",
-        audience=ALERT_AUDIENCE_HTDY_OBSERVERS,
+        audience=ALERT_AUDIENCE_OWNER,
         formatter=_format_subing_message,
     ),
 }
@@ -163,7 +163,7 @@ _EXPECTED_POLICY_BINDINGS: Final = {
     ),
     SUBING_THS_ALERT_RULE_CODE: (
         "归一量化 · 苏冰预警",
-        ALERT_AUDIENCE_HTDY_OBSERVERS,
+        ALERT_AUDIENCE_OWNER,
         _format_subing_message,
     ),
 }

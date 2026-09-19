@@ -27,6 +27,7 @@ const UNAVAILABLE_CODES = new Set([
   'NEWOW_FREQUENCY_NOT_OPEN', 'NEWOW_SECTION_NOT_OPEN',
   'NEWOW_WEEKLY_UNKNOWN', 'NEWOW_WEEKLY_FAILED', 'NEWOW_WEEKLY_STALE',
 ])
+const WEEKLY_PRODUCTS = 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' ')
 
 export class NewowProductRequestError extends Error {
   readonly code: string
@@ -70,9 +71,12 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const candidate = value.schema_version === 'newow_product_capabilities_v4'
     && value.release_stage === 'daily_weekly_candidate'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeekly = value.schema_version === 'newow_product_capabilities_v8'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
   const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
-    'release_stage', 'schema_version', ...(candidate ? ['weekly_products'] : []),
+    'release_stage', 'schema_version', ...(candidate || formalWeekly ? ['weekly_products'] : []),
   ]
   if (Object.keys(value).sort().join(',') !== expectedKeys.join(',')) return false
   const auPreview = value.schema_version === 'newow_product_capabilities_v5'
@@ -83,20 +87,18 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
     || (value.schema_version === 'newow_product_capabilities_v7' && value.release_stage === 'ap_hourly_candidate')
   )
     && sameLiteralArray(value.open_frequencies, ['1d', '60m'])
-  if ((!daily && !candidate && !auPreview && !hourlyPreview)
+  if ((!daily && !candidate && !formalWeekly && !auPreview && !hourlyPreview)
     || !sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])
   ) return false
-  if (candidate && (!Array.isArray(value.weekly_products)
-    || value.weekly_products.some(item => typeof item !== 'string' || !/^[a-z]{1,8}$/.test(item))
-    || new Set(value.weekly_products).size !== value.weekly_products.length
-    || value.weekly_products.length !== 41)) return false
+  if ((candidate || formalWeekly)
+    && !sameLiteralArray(value.weekly_products, WEEKLY_PRODUCTS)) return false
   if (!Array.isArray(value.deferred_frequencies)
-    || value.deferred_frequencies.length !== (daily ? 2 : (candidate || hourlyPreview) ? 1 : 0)) return false
+    || value.deferred_frequencies.length !== (daily ? 2 : (candidate || formalWeekly || hourlyPreview) ? 1 : 0)) return false
   if (!Array.isArray(value.deferred_sections) || value.deferred_sections.length !== 1) return false
   return (daily
     ? isDeferred(value.deferred_frequencies[0], '1w', 'NEWOW_WEEKLY_RELEASE_PENDING')
       && isDeferred(value.deferred_frequencies[1], '60m', 'NEWOW_HOURLY_RELEASE_PENDING')
-    : candidate ? isDeferred(value.deferred_frequencies[0], '60m', 'NEWOW_HOURLY_RELEASE_PENDING')
+    : candidate || formalWeekly ? isDeferred(value.deferred_frequencies[0], '60m', 'NEWOW_HOURLY_RELEASE_PENDING')
     : hourlyPreview ? isDeferred(value.deferred_frequencies[0], '1w', 'NEWOW_WEEKLY_RELEASE_PENDING')
     : true)
     && isDeferred(value.deferred_sections[0], 'explanation', 'NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN')

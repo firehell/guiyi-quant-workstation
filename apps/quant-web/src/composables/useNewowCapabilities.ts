@@ -39,7 +39,8 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
   const openFrequenciesFor = (symbol: string): readonly NewowProductFrequency[] => {
     const current = capabilities.value
     const normalized = symbol.toLowerCase()
-    if (current?.schema_version === 'newow_product_capabilities_v4') {
+    if (current?.schema_version === 'newow_product_capabilities_v4'
+      || current?.schema_version === 'newow_product_capabilities_v8') {
       return current.open_frequencies.filter(item => item !== '1w' || current.weekly_products?.includes(normalized) === true)
     }
     if (current?.schema_version === 'newow_product_capabilities_v5' && normalized !== 'au') return []

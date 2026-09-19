@@ -152,7 +152,7 @@ test('main chart exposes same-as_of retry and explicit refresh-current without c
   await expect.poll(() => productRequests(fixture, 'chart').length).toBe(3)
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   await expect(page.locator('.quote-header__price strong')).toHaveText('106.3')
-  expect(fixture.requests.filter(item => item.url.pathname === '/api/v1/market/bars/page')).toHaveLength(2)
+  expect(fixture.requests.filter(item => item.url.pathname === '/api/v1/market/bars/page')).toHaveLength(3)
   expect(productRequests(fixture, 'chart').at(-1).url.searchParams.get('as_of')).toBe(NEWOW_AS_OF)
   assertNoUnexpectedRequests(fixture)
 })
@@ -550,8 +550,8 @@ test('daily deep link opens while weekly and hourly remain closed', async ({ pag
   assertNoUnexpectedRequests(fixture)
 })
 
-test('isolated weekly candidate opens three W1 strategies and keeps 60m closed', async ({ page }) => {
-  const fixture = await installNewowProductFixtures(page, { weeklyCandidate: true })
+test('formal weekly release opens three W1 strategies for RB and keeps 60m closed', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { weeklyFormal: true })
   for (const strategy of ['trend', 'oscillation', 'main_rise']) {
     await page.goto(newowRoute(strategy, '1w'))
     await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')

@@ -123,7 +123,7 @@ export async function installNewowProductFixtures(page, options = {}) {
     if (request.method() !== 'GET') return unexpected(route, state, `non-GET ${request.method()} ${url.pathname}`)
 
     if (url.pathname === '/api/v1/market/newow/product-capabilities') {
-      return route.fulfill({ json: options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities() })
+      return route.fulfill({ json: options.weeklyFormal ? formalWeeklyCapabilities() : options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities() })
     }
 
     if (url.pathname === '/api/v1/market/newow/daily-snapshot') {
@@ -138,6 +138,23 @@ export async function installNewowProductFixtures(page, options = {}) {
         expected_trading_day: '2026-09-03', available_trading_day: '2026-09-03',
         as_of: options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
         freshness: 'current',
+      } })
+    }
+
+    if (url.pathname === '/api/v1/market/newow/weekly-snapshot') {
+      const strategy = url.searchParams.get('strategy')
+      if (url.searchParams.get('product') !== 'rb' || !NEWOW_STRATEGIES.includes(strategy) || url.searchParams.get('frequency') !== '1w') {
+        return unexpected(route, state, `invalid weekly snapshot ${url.href}`)
+      }
+      return route.fulfill({ json: {
+        schema_version: 'newow_weekly_snapshot_v1', product: 'rb', strategy,
+        frequency: '1w', series_kind: 'actual_dominant',
+        requested_at: options.frozenNow ?? NEWOW_AS_OF,
+        expected_period_end: options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
+        available_period_end: options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
+        as_of: options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
+        freshness: 'current',
+        current_context: { status: 'known', physical_contract: CONTRACT },
       } })
     }
 
@@ -237,6 +254,19 @@ function weeklyCandidateCapabilities() {
     schema_version: 'newow_product_capabilities_v4',
     release_stage: 'daily_weekly_candidate',
     open_frequencies: ['1d', '1w'],
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }
+}
+
+function formalWeeklyCapabilities() {
+  return {
+    ...dailyCapabilities(),
+    schema_version: 'newow_product_capabilities_v8',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' '),
     deferred_frequencies: [
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
