@@ -3,20 +3,20 @@
 文档整理：2026-09-19。正式 Release 为
 `v1.10.17@305cf36b94121dff37d6ce280f98869d979a2b8b`；annotated tag、origin/main、
 GitHub Release target 与发布树已读回一致。本机 Runtime 仍为
-`v1.10.16@1877bca3987374d28a07aff9a4008c1561c16e29`，root 为
-`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.16-r1`，旧 v1.10.15 root 保留为恢复候选。
+`v1.10.17@305cf36b94121dff37d6ce280f98869d979a2b8b`，root 为
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.17-r1`，旧 v1.10.16 root 保留为恢复候选。
 牛哇 D1 在发布合并提交上以固定截点 `2026-09-16T07:00:00.000001+00:00` 完成
 60 品种 × 3 策略自然首次加载 180/180；v1.10.17 已发布首批 41 品种 W1 正式能力，
-但本机 Runtime 尚未 promotion，不能声明现场已开放。60m 继续关闭。v1.10.12 发布候选的
+且本机 Runtime 已完成 promotion 与即时服务读回。60m 继续关闭。v1.10.12 发布候选的
 Market Home 为 57/60；后续首页质量修复候选与受控补数验收为 60/60，BZ/EB/PG 历史源价
-不可用仍保留计算边界。v1.10.16 即时 Live 与总 health 已为 ok；新版本自然 Live、
+不可用仍保留计算边界。v1.10.17 即时 Live 与总 health 已为 ok；新版本自然 Live、
 自然盘后与 weekly audit 证据仍待取得，因此不能声明 `RUNTIME_READY`。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
-## v1.10.17 Release 当前读回与 Runtime 候选
+## v1.10.17 Release 与 Runtime 当前读回
 
 PR #380 已合入 main；annotated tag `v1.10.17` 的 tag object 为
 `6f2689fad86e02d68788419d7dcfc280438dc542`，peeled commit、origin/main 与 GitHub Release target
@@ -31,11 +31,24 @@ production build、后端候选定向 112 passed、repository hygiene/canonical 
 secret scan、Ruff、diff check 与双轴独立 Review 均通过。Catalog 只读矩阵 D1 180/180、W1 123/123
 均 audited；本次发布没有 provider、Canonical/Catalog、生产 DB、通知或 Runtime 写入。
 
-detached exact-tag 候选 root `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.17-r1` 已完成离线 locked
+detached exact-tag Runtime root `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.17-r1` 已完成离线 locked
 依赖安装、Web production build、107 项 release/canonical/health 测试与 launchd render-only；API/Web
 version 均为 1.10.17。只读 Market preflight 为
-`passed / non_trading_interval / operational_count=60 / snapshot_count=0`。尚未安装、重载、kickstart
-或切换任何服务；Runtime promotion 仍是独立 owner Gate，现役六项服务继续绑定 v1.10.16 root。
+`passed / non_trading_interval / operational_count=60 / snapshot_count=0`。
+
+2026-09-19 owner 批准 exact v1.10.17 本机 Runtime promotion 后，按 Market、API/Web/日志轮转、
+Alert、weekly audit 四阶段各安装一次，无安装重试或回退。最终只读回读显示六项 installed/loaded
+服务均绑定新 root 与 exact commit；API、Web、Live、Alert 运行中，after-market 为正常 schedule-only
+未运行，weekly audit 已加载。API version=1.10.17，API/Web=200，detached checkout 干净；本机 FRPC、
+5173/8000 监听与本地 HTTP 检查通过，`local-services-status` 为 `overall=passed`，
+`/api/runtime/health` 总状态为 `ok`。
+
+切换处于非交易时段，Live 60 品种均 CLOSED、coverage 为 unverified；after-market 为 pending，
+weekly audit 为 missed，Alert 保留切换前的独立通知诊断，但均未进入当前总健康降级。未手工运行盘后或
+周审计，未补发通知，未执行 provider、Canonical、生产 DB 或 migration 写入。旧 v1.10.16 root 保留为
+恢复候选。附加的本地 W1 页面批次因验收工具双并发触发 reference 429 而停止，不计作 123/123 新版
+Runtime 自然首载证据；公网 123 页、新版本自然 Live、自然盘后与下一次 weekly audit 仍待后续证据，
+因此当前完成 `RELEASED` 与 Runtime promotion，尚不声明 `RUNTIME_READY`。
 
 ## v1.10.16 Release 与 Runtime 当前读回
 
@@ -156,12 +169,12 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 | 项目 | 阶段 | 说明 |
 |---|---|---|
 | 正式 Release | `RELEASED` | `v1.10.17@305cf36b9`，annotated tag、GitHub Release 与 origin/main 已读回；Runtime 另见下行 |
-| 现役 Runtime | v1.10.16 `RUNTIME_PROMOTED / SERVICE_READBACK / HEALTH_OK`，未声明 `RUNTIME_READY` | 六项服务仍绑定 v1.10.16 exact root/commit；v1.10.17 detached 候选已准备且 preflight 通过，但未获授权切换 |
+| 现役 Runtime | v1.10.17 `RUNTIME_PROMOTED / SERVICE_READBACK / HEALTH_OK`，未声明 `RUNTIME_READY` | 六项服务绑定 v1.10.17 exact root/commit；API/Web 与总 health 通过，公网及自然业务证据仍待验 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
-| Weekly audit | `ENABLED / NATURAL_RUN_PENDING` | exact v1.10.16 root 已安装，保留周六 09:00，当前 missed；旧版本 840/840 endpoint 与 120/120 周线归属只作历史证据，首次自然及全历史周检待验 |
+| Weekly audit | `ENABLED / NATURAL_RUN_PENDING` | exact v1.10.17 root 已安装，保留周六 09:00，当前 missed；旧版本 840/840 endpoint 与 120/120 周线归属只作历史证据，首次自然及全历史周检待验 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 已进入现役 v1.10.8 Runtime；仅自然盘后及后续交易日增量验收未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
