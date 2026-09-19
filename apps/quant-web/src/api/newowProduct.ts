@@ -67,9 +67,13 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const daily = value.schema_version === 'newow_product_capabilities_v3'
     && value.release_stage === 'daily'
     && sameLiteralArray(value.open_frequencies, ['1d'])
-  const candidate = value.schema_version === 'newow_product_capabilities_v4'
+  const legacyCandidate = value.schema_version === 'newow_product_capabilities_v4'
     && value.release_stage === 'daily_weekly_candidate'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const remaining19Candidate = value.schema_version === 'newow_product_capabilities_v9'
+    && value.release_stage === 'daily_weekly_candidate'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const candidate = legacyCandidate || remaining19Candidate
   const formalWeekly = value.schema_version === 'newow_product_capabilities_v8'
     && value.release_stage === 'daily_weekly'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
@@ -89,10 +93,11 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   if ((!daily && !candidate && !formalWeekly && !auPreview && !hourlyPreview)
     || !sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])
   ) return false
+  const expectedWeeklyProductCount = remaining19Candidate ? 60 : 41
   if ((candidate || formalWeekly) && (!Array.isArray(value.weekly_products)
     || value.weekly_products.some(item => typeof item !== 'string' || !/^[a-z]{1,8}$/.test(item))
     || new Set(value.weekly_products).size !== value.weekly_products.length
-    || value.weekly_products.length !== 41)) return false
+    || value.weekly_products.length !== expectedWeeklyProductCount)) return false
   if (!Array.isArray(value.deferred_frequencies)
     || value.deferred_frequencies.length !== (daily ? 2 : (candidate || formalWeekly || hourlyPreview) ? 1 : 0)) return false
   if (!Array.isArray(value.deferred_sections) || value.deferred_sections.length !== 1) return false

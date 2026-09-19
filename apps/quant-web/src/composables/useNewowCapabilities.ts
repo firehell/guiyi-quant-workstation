@@ -40,6 +40,7 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
     const current = capabilities.value
     const normalized = symbol.toLowerCase()
     if (current?.schema_version === 'newow_product_capabilities_v4'
+      || current?.schema_version === 'newow_product_capabilities_v9'
       || current?.schema_version === 'newow_product_capabilities_v8') {
       return current.open_frequencies.filter(item => item !== '1w' || current.weekly_products?.includes(normalized) === true)
     }
