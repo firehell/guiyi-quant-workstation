@@ -340,6 +340,45 @@ def test_initial_clear_checkpoint_carries_verified_lifecycle_without_frame_histo
     )
     assert empty_projection.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
 
+    replayed, duplicate_projection = projector.advance(
+        resumed, tail, (), clear_frame.bar.bar.bar_end,
+    )
+    assert replayed is resumed
+    assert duplicate_projection.trades == ()
+    assert duplicate_projection.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+
+
+def test_initial_clear_seed_is_bound_to_the_consumed_frame_prefix(product_cases):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,),
+    )
+    projector = ReferenceTradeProjector()
+    seeded = projector.seed(replay)
+    prefix_frames = replay.frames[:-1]
+    damaged_first = replace(
+        prefix_frames[0],
+        main_values=(("ma35", Decimal("0")), ("ma45", Decimal("1"))),
+    )
+    damaged_frames = (damaged_first, *prefix_frames[1:])
+    damaged_prefix = replace(
+        replay,
+        frames=damaged_frames,
+        actions=(),
+        hints=tuple(hint for frame in damaged_frames for hint in frame.hints),
+        lifecycle_input_bars=tuple(frame.bar for frame in damaged_frames),
+        lifecycle_evidence=(),
+        diagnostics=(),
+    )
+
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        projector.advance(
+            seeded, damaged_prefix, (), damaged_frames[-1].bar.bar.bar_end,
+        )
+
 
 def test_weekly_quality_adaptation_has_its_own_version_without_changing_daily(
     product_cases,

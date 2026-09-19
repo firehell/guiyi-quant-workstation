@@ -333,6 +333,36 @@ def _validate_strategy_state(
         }
         if len(owned_states) != len(state.reference_states):
             raise ValueError("strategy checkpoint Newow reference owners are duplicated")
+        verified_inputs = {
+            (contract, segment): values
+            for contract, segment, values in state.verified_lifecycle_inputs
+        }
+        consumed = {
+            (contract, segment): count
+            for contract, segment, count in state.lifecycle_consumed
+        }
+        verified_owners = set(state.verified_lifecycle_owners)
+        if (
+            len(verified_inputs) != len(state.verified_lifecycle_inputs)
+            or len(consumed) != len(state.lifecycle_consumed)
+            or set(verified_inputs) != verified_owners
+            or set(consumed) != verified_owners
+        ):
+            raise ValueError("strategy checkpoint Newow lifecycle owners are inconsistent")
+        for owner, values in verified_inputs.items():
+            count = consumed[owner]
+            if (
+                not values
+                or type(count) is not int
+                or not 0 <= count <= len(values)
+                or len({instant for instant, _digest in values}) != len(values)
+                or any(
+                    len(digest) != 64
+                    or any(character not in "0123456789abcdef" for character in digest)
+                    for _instant, digest in values
+                )
+            ):
+                raise ValueError("strategy checkpoint Newow lifecycle progress is invalid")
         if reference_state not in owned_states.values():
             raise ValueError("strategy checkpoint Newow outer reference state is inconsistent")
         open_by_entry = {

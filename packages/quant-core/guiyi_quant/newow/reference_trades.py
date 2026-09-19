@@ -21,6 +21,7 @@ from ..reference_trading.contracts import (
     TradeStatus as UnifiedTradeStatus,
 )
 from ..reference_trading.reducer import reduce_reference
+from ..reference_trading.adapters import strategy_input_fingerprint
 
 from .product_contracts import (
     ActionKind,
@@ -35,6 +36,7 @@ from .product_contracts import (
     StrategyHint,
     StrategyReplay,
     TradeEligibility,
+    lifecycle_input_sha256,
     validate_lifecycle_replay_evidence,
 )
 from .product_identity import (
@@ -229,6 +231,10 @@ class NewowReferenceReplayState:
     pending_hints: tuple[StrategyHint, ...] = ()
     processed_event_ids: tuple[str, ...] = ()
     verified_lifecycle_owners: tuple[tuple[str, str], ...] = ()
+    verified_lifecycle_inputs: tuple[
+        tuple[str, str, tuple[tuple[datetime, str], ...]], ...
+    ] = ()
+    lifecycle_consumed: tuple[tuple[str, str, int], ...] = ()
     diagnostics: tuple[str, ...] = ()
 
 
@@ -255,6 +261,24 @@ def _stream_for(replay: StrategyReplay) -> StreamIdentity:
         recording_mode="historical_replay",
         observation_policy_version=None,
     )
+
+
+def _lifecycle_frame_fingerprint(frame: StrategyFrame) -> str:
+    return strategy_input_fingerprint({
+        "source_bar": lifecycle_input_sha256((frame.bar,)),
+        "main_state": frame.main_state,
+        "main_values": frame.main_values,
+        "availability_status": frame.availability.status,
+        "availability_evidence": frame.availability.evidence_status,
+        "availability_reason": frame.availability.reason_code,
+        "actions": tuple((
+            action.signal_id, action.kind, action.reference_price,
+            action.anchor_price, action.sequence, action.related_build_id,
+            action.source_marker_id, action.source_related_marker_ids,
+            action.trade_eligibility, action.calculation_segment_id,
+        ) for action in frame.actions),
+        "hints": tuple(hint.hint_id for hint in frame.hints),
+    })
 
 
 def _reference_return(entry: Decimal, exit_: Decimal) -> Decimal:
@@ -677,9 +701,26 @@ class ReferenceTradeProjector:
                 _validate_initial_clear_no_entry(
                     replay, action, positions, frames_by_owner, verified, has_prior,
                 )
+        lifecycle_inputs: list[
+            tuple[str, str, tuple[tuple[datetime, str], ...]]
+        ] = []
+        for owner in sorted(verified):
+            values = tuple(
+                (frame.bar.bar.bar_end, _lifecycle_frame_fingerprint(frame))
+                for frame in replay.frames
+                if (
+                    frame.bar.bar.physical_contract,
+                    frame.bar.bar.segment_id,
+                ) == owner
+            )
+            lifecycle_inputs.append((owner[0], owner[1], values))
         return NewowReferenceReplayState(
             stream=_stream_for(replay),
             verified_lifecycle_owners=tuple(sorted(verified)),
+            verified_lifecycle_inputs=tuple(lifecycle_inputs),
+            lifecycle_consumed=tuple(
+                (owner[0], owner[1], 0) for owner in sorted(verified)
+            ),
         )
 
     def advance(
@@ -769,6 +810,47 @@ class ReferenceTradeProjector:
                 continue
             owner = (frame.bar.bar.physical_contract, frame.bar.bar.segment_id)
             frames_by_owner.setdefault(owner, []).append(frame)
+        expected_lifecycle_inputs = {
+            (contract, segment): values
+            for contract, segment, values in (
+                () if state is None else state.verified_lifecycle_inputs
+            )
+        }
+        lifecycle_consumed = {
+            (contract, segment): count
+            for contract, segment, count in (
+                () if state is None else state.lifecycle_consumed
+            )
+        }
+        lifecycle_replay_only = bool(replay.frames)
+        lifecycle_has_new = False
+        for owner, frames in frames_by_owner.items():
+            expected = expected_lifecycle_inputs.get(owner)
+            if expected is None:
+                lifecycle_replay_only = False
+                continue
+            consumed = lifecycle_consumed.get(owner, 0)
+            actual = tuple(
+                (frame.bar.bar.bar_end, _lifecycle_frame_fingerprint(frame))
+                for frame in frames
+            )
+            if actual == expected[consumed:consumed + len(actual)]:
+                lifecycle_consumed[owner] = consumed + len(actual)
+                lifecycle_has_new = lifecycle_has_new or bool(actual)
+                lifecycle_replay_only = False
+                continue
+            expected_positions = {item: index for index, item in enumerate(expected)}
+            positions_found = tuple(expected_positions.get(item) for item in actual)
+            if (
+                any(index is None for index in positions_found)
+                or tuple(index for index in positions_found if index is not None)
+                != tuple(sorted(index for index in positions_found if index is not None))
+                or any(
+                    index is not None and index >= consumed
+                    for index in positions_found
+                )
+            ):
+                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
         diagnostics = list(dict.fromkeys((
             *(() if state is None else state.diagnostics),
             *(
@@ -779,6 +861,26 @@ class ReferenceTradeProjector:
         stream = _stream_for(replay)
         if state is not None and state.stream != stream:
             raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+        if (
+            lifecycle_replay_only
+            and not lifecycle_has_new
+            and initial_actions
+            and all(
+                action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+                for action in actions
+            )
+            and "INITIAL_CLEAR_NO_ENTRY" in (() if state is None else state.diagnostics)
+            and not effective_boundaries
+            and not data_interruptions
+        ):
+            assert state is not None
+            return state, ReferenceProjection(
+                trades=state.active_trades,
+                bar_level_hints=(),
+                unassigned_hints=(),
+                diagnostics=state.diagnostics,
+                as_of=as_of,
+            )
         reference_states: dict[tuple[str, str], UnifiedReferenceState] = {
             (contract, segment): reference_state
             for contract, segment, reference_state in (
@@ -1182,6 +1284,13 @@ class ReferenceTradeProjector:
             ),
             processed_event_ids=tuple(sorted(processed_event_ids)),
             verified_lifecycle_owners=tuple(sorted(verified_owners)),
+            verified_lifecycle_inputs=(
+                () if state is None else state.verified_lifecycle_inputs
+            ),
+            lifecycle_consumed=tuple(
+                (owner[0], owner[1], count)
+                for owner, count in sorted(lifecycle_consumed.items())
+            ),
             diagnostics=projection.diagnostics,
         )
         return next_state, projection
