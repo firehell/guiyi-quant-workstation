@@ -74,7 +74,9 @@ class RuntimeAfterMarketCurrentRun(BaseModel):
 class RuntimeWeeklyAuditHealth(BaseModel):
     """Optional full-history observation; independent of operational service health."""
 
-    status: Literal["not_run", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"]
+    status: Literal["disabled", "not_run", "missed", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"]
+    configured_enabled: bool = False
+    scheduled_for: str | None = None
     readonly: bool = True
     scope: Literal["operational_full_history"] = "operational_full_history"
     through: str | None = None

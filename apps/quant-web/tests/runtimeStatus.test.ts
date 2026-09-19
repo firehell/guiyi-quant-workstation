@@ -99,8 +99,12 @@ test('optional weekly history audit shows unknown and the audited cutoff indepen
   const { runtimeStatusPresentation } = await import('../src/utils/runtimePresentation.ts')
   const payload = runtimeHealth()
   payload.components.weekly_audit = { status: 'not_run', through: null, finding_count: null,
-    updated_at: null, readonly: true, scope: 'operational_full_history' }
-  assert.equal(runtimeStatusPresentation(payload).at(-1)!.state, '尚未审计')
+    updated_at: null, readonly: true, scope: 'operational_full_history',
+    configured_enabled: true, scheduled_for: '2026-08-22T09:00:00+08:00' }
+  assert.equal(runtimeStatusPresentation(payload).at(-1)!.state, '尚未到期')
+  Object.assign(payload.components.weekly_audit, { status: 'missed' })
+  assert.equal(runtimeStatusPresentation(payload).at(-1)!.state, '本周审计漏跑')
+  assert.equal(runtimeStatusPresentation(payload).at(-1)!.tone, 'warning')
   Object.assign(payload.components.weekly_audit, { status: 'passed', through: '2026-08-21', finding_count: 0 })
   const audit = runtimeStatusPresentation(payload).at(-1)!
   assert.equal(audit.state, '审计通过')
