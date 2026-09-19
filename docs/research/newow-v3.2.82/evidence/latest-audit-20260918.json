@@ -1,0 +1,72 @@
+{
+  "schema": "newow_public_documentation_audit_v1",
+  "observed_date": "2026-09-18",
+  "timezone": "Asia/Shanghai",
+  "capture_window": "23:09-23:26 (approximate; sequential, non-atomic)",
+  "repository_baseline": "4c01d2e551649a46cbbb0696218077b6686b23fd",
+  "home_title_version": "3.3.25",
+  "detail_title_version": "3.3.46",
+  "composite_kernel_version": "1.2.0",
+  "trend_reversal_kernel_version": "1.0.0",
+  "method": "in-app browser visible interaction plus anonymous GET and static inspection of observed public HTML/JS; no downloaded script execution",
+  "raw_source_directory": "/private/tmp/newow-public-audit-20260918-Is7Ek2",
+  "raw_retention": "local temporary directory only; may be removed by OS; not included in Git",
+  "sources": [
+    {
+      "file": "stock-detail.html",
+      "url": "https://www.v8848.cn/stock_detail.html?code=600519.SH&period=day&strategy=huanglantai",
+      "sha256": "4c44ae93ab5d66c361a787f94954ca170daa7e31ecb5e04a19400f51912fdf0f",
+      "anchors": ["scoreCombos", "computeAiRecommendation", "runOscBacktest", "runTrendBacktest", "TREND_AI_MATRIX", "computeAiAdvice", "syncAiPositionText", "renderAI", "calcYellowBlueBand", "calcMainRiseBand"]
+    },
+    {
+      "file": "composite.js",
+      "url": "https://www.v8848.cn/composite-decision-v2.js?v=3.3.46",
+      "sha256": "68c634c05bddc7191de884a37ae5c8877dfd8416a43e53d93c66838ea8585fbb",
+      "matches_20260910_documented_hash": true
+    },
+    {
+      "file": "strategy.js",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.3.46",
+      "sha256": "bb9e630aa322464a535ccf4951a9c4728bff40e101bdb2a35dddc5d602536fbd",
+      "scope": "captured supporting resource; not a full latest algorithm parity certification"
+    },
+    {
+      "file": "trend-reversal.js",
+      "url": "https://www.v8848.cn/js/trend-reversal-core.js?v=3.3.46",
+      "sha256": "85a72b64ca9b9a84ee04338cfffeb28b67dfae923699498a80eb71a22faf6f80"
+    }
+  ],
+  "screenshots": [
+    {"file": "screenshots/20260918/600519-ai-recommendation.png", "sha256": "359441e10740245fb1ac393dabef3a3fd983e6b0ab6a5ac3eb3091199208d731"},
+    {"file": "screenshots/20260918/600519-composite.png", "sha256": "08b1b131743940bba79fa16ac9c011ef62aed49a5fcf251f6e1a8f011b868ce1"},
+    {"file": "screenshots/20260918/600036-ai-recommendation.png", "sha256": "ed68da4af4a31276bbb7b052bc58312f072b7440689400e75093931ec0b5d4ae"},
+    {"file": "screenshots/20260918/600036-composite-ai-copy.png", "sha256": "d6b32b520052da3706d35fd70a9d502c7afa76703c2ff12d744a6e45702d1897"},
+    {"file": "screenshots/20260918/trend-reversal-help.png", "sha256": "b5c0ed797a9d6cc9ad93a8a15face140cf7f6d45322d52585600708f70b2c524"}
+  ],
+  "ui_samples": [
+    {"symbol": "600519.SH", "name": "贵州茅台", "composite_total": 76, "resonance": "R1", "visible_components": [30,30,4,12,0], "recommendation": "oscillation_weekly", "recommendation_display_score": 74.8},
+    {"symbol": "600036.SH", "name": "招商银行", "composite_total": 76, "resonance": "R2", "visible_components": [30,30,10,6,0], "visible_trend_cross_age": 1, "recommendation": "trend_weekly", "recommendation_display_score": 76.3}
+  ],
+  "unfinished_ui_sample": {"symbol": "000001.SH", "status": "navigation_only_final_result_not_verified", "reason": "browser timeout followed by locked-Mac readback"},
+  "existing_contract_tests": {
+    "command": "PYTHONPATH=services/quant-api:packages/quant-core /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/pytest -q services/quant-api/tests/newow/test_trend_band_page_v2.py services/quant-api/tests/newow/test_main_rise_page_v1.py services/quant-api/tests/newow/test_escape_d123_page_v2.py services/quant-api/tests/newow/test_magic11.py services/quant-api/tests/newow/test_subplots_page_v1.py services/quant-api/tests/newow/test_composite_explanation.py services/quant-api/tests/newow/test_page_comparator.py services/quant-api/tests/newow/test_target_absorb_display.py services/quant-api/tests/newow/test_reference_statistics.py",
+    "cwd": "isolated task worktree at repository_baseline plus documentation-only changes",
+    "passed": 247,
+    "skipped": 1,
+    "skip_reason": "test_page_comparator.py:691 requires GUIYI_NEWOW_TASK13_EVIDENCE_ROOT for frozen local evidence",
+    "skip_followup_command": "PYTHONPATH=services/quant-api:packages/quant-core /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/pytest -q -rs services/quant-api/tests/newow/test_page_comparator.py",
+    "followup_result": "26 passed, 1 skipped",
+    "latest_page_parity_proven": false,
+    "supplement_command": "PYTHONPATH=services/quant-api:packages/quant-core /Volumes/扩展盘/guiyi-quant-workstation/services/quant-api/.venv/bin/pytest -q services/quant-api/tests/newow/test_oscillation_channel.py services/quant-api/tests/newow/test_product_adapters.py services/quant-api/tests/newow/test_reference_trades.py",
+    "supplement_result": "101 passed",
+    "unique_total_passed": 348,
+    "unique_total_skipped": 1
+  },
+  "limits": [
+    "No new complete OHLCV capture or latest-version exact input/output replay",
+    "Rounded UI metrics are observations, not exact scoring oracle inputs",
+    "Server-generated analysisText origin remains unknown",
+    "No production data mutation, provider download, formula change, promotion or notification",
+    "Historical evidence is not current release or Runtime proof"
+  ]
+}

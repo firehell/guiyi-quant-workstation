@@ -564,7 +564,7 @@ def test_alert_health_acknowledges_failure_without_erasing_failure_facts() -> No
         )
 
     alert = health["components"]["alert"]
-    assert health["status"] == "degraded"
+    assert health["status"] == "ok"
     assert alert["status"] == "degraded"
     assert alert["notification_state"] == "acknowledged"
     assert alert["last_notification_failure_at"] == failure_at.isoformat()
@@ -657,7 +657,7 @@ def test_notification_delivery_failure_does_not_change_passed_data_health(monkey
                 after_market_status_path=None,
             )
         assert malformed_notification["components"]["alert"]["status"] == "degraded"
-        assert malformed_notification["status"] == "degraded"
+        assert malformed_notification["status"] == "ok"
 
     status["notification_error_type"] = "notification_transport_failed"
     status["last_processing_failure_at"] = now.isoformat()
@@ -675,7 +675,7 @@ def test_notification_delivery_failure_does_not_change_passed_data_health(monkey
             after_market_status_path=None,
         )
     assert processing_failed["components"]["alert"]["status"] == "degraded"
-    assert processing_failed["status"] == "degraded"
+    assert processing_failed["status"] == "ok"
 
 
 def test_alert_health_new_failure_after_acknowledgement_is_failed_again() -> None:
@@ -969,6 +969,63 @@ def test_runtime_health_marks_fresh_live_heartbeat_ok() -> None:
     assert live["coverage_state"] == "ok"
 
 
+@pytest.mark.parametrize(
+    "phases,available,age,coverage_state,expected",
+    [
+        ({"CLOSED": 2}, True, 0, "unverified", "ok"),
+        ({"CLOSED": 1, "TRADING": 1}, True, 0, "unverified", "degraded"),
+        ({"UNKNOWN": 2}, True, 0, "unverified", "degraded"),
+        ({"CLOSED": 1}, True, 0, "unverified", "degraded"),
+        ({"CLOSED": 2, "UNKNOWN": 1}, True, 0, "unverified", "degraded"),
+        ({"CLOSED": 2}, False, 0, "unverified", "degraded"),
+        ({"CLOSED": 2}, True, 301, "unverified", "degraded"),
+        ({"CLOSED": 2}, True, -1, "unverified", "degraded"),
+        ({"CLOSED": 2}, True, 0, "lagging", "degraded"),
+    ],
+)
+def test_closed_live_health_preserves_coverage_and_real_failures(
+    phases, available, age, coverage_state, expected,
+) -> None:
+    from app.services.runtime_health import _collect_live_market_health
+
+    now = datetime(2026, 9, 18, 11, 46, tzinfo=UTC)
+    heartbeat = {
+        "generated_at": (now - timedelta(seconds=age)).isoformat(),
+        "operational_count": 2, "subscribed_count": 0, "last_bar_at": None,
+        "phase_counts": phases, "available": available, "coverage_schema_version": 1,
+        "coverage": {s: {"state": coverage_state, "contract": None, "sessions": []}
+                     for s in ("a", "ag")},
+    }
+    live = _collect_live_market_health(
+        FakeRedis(values={"live:heartbeat": json.dumps(heartbeat)}), now=now,
+        configured_enabled=True, freshness_seconds=300,
+    )
+    assert live["status"] == expected
+    assert live["coverage_state"] == coverage_state
+    assert live["coverage"]["a"]["contract"] is None
+
+
+@pytest.mark.parametrize("market_failure", [None, "db", "redis", "live_market", "after_market"])
+@pytest.mark.parametrize("alert_status", ["ok", "degraded", "failed"])
+def test_overall_health_only_depends_on_market_path(monkeypatch, market_failure, alert_status):
+    import app.services.runtime_health as health_module
+
+    statuses = {name: {"status": "failed" if name == market_failure else "ok"}
+                for name in ("db", "redis", "live_market", "after_market")}
+    monkeypatch.setattr(health_module, "_collect_db_health", lambda _: statuses["db"])
+    monkeypatch.setattr(health_module, "_collect_redis_health", lambda _: (None, statuses["redis"]))
+    monkeypatch.setattr(health_module, "_collect_live_market_health", lambda *a, **kw: statuses["live_market"])
+    monkeypatch.setattr(health_module, "_collect_after_market_health", lambda *a, **kw: statuses["after_market"])
+    alert = {"status": alert_status, "notification_error_type": "notification_transport_failed",
+             "coverage_state": "unverified", "processing_state": "failed"}
+    monkeypatch.setattr(health_module, "_collect_alert_health", lambda *a, **kw: alert)
+    payload = build_runtime_health(None, notification_transport_configured=False, weekly_audit_status_path=None)
+    assert payload["status"] == ("failed" if market_failure else "ok")
+    assert payload["components"]["alert"] == alert
+    assert payload["readonly"] is True
+    assert not any(payload[key] for key in ("would_start_services", "would_enqueue_jobs", "would_send_notifications"))
+
+
 def test_runtime_health_exposes_one_stalled_live_product() -> None:
     now = datetime(2026, 8, 10, 1, 2, tzinfo=UTC)
     heartbeat = {
@@ -1091,6 +1148,33 @@ def test_runtime_health_uses_local_activation_marker_not_process_environment(
     assert live["configured_enabled"] is True
     assert live["status"] == "degraded"
     assert live["error_type"] == "live_heartbeat_missing"
+
+
+def test_weekly_audit_marker_distinguishes_disabled_and_missed(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("app.services.runtime_health.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",)
+    )
+    TestingSessionLocal = _session_factory()
+    now = datetime.fromisoformat("2026-09-19T09:00:00+08:00")
+    status_path = tmp_path / ".run" / "weekly-audit-status.json"
+
+    with TestingSessionLocal() as session:
+        disabled = build_runtime_health(
+            session, redis_factory=lambda: FakeRedis(), now=now,
+            after_market_status_path=None, weekly_audit_status_path=status_path,
+        )
+        marker = tmp_path / ".run" / "weekly-audit-enabled"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("enabled\n", encoding="utf-8")
+        missed = build_runtime_health(
+            session, redis_factory=lambda: FakeRedis(), now=now,
+            after_market_status_path=None, weekly_audit_status_path=status_path,
+        )
+
+    assert disabled["components"]["weekly_audit"]["status"] == "disabled"
+    assert missed["components"]["weekly_audit"]["status"] == "missed"
+    assert missed["status"] == disabled["status"]
 
 
 def test_enabled_after_market_is_pending_before_its_first_runtime_run(

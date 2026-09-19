@@ -33,9 +33,12 @@ def test_weekly_render_is_saturday_and_install_only_loads_weekly_without_shared_
     _run_installer(repo, home, fake_bin, "--render-only")
     rendered = repo / ".run/launchd/com.guiyi.quant-weekly-audit.plist"
     payload = plistlib.loads(rendered.read_bytes())
-    assert payload["StartCalendarInterval"] == {"Weekday": 6, "Hour": 9, "Minute": 0}
+    assert payload["StartCalendarInterval"] == [
+        {"Weekday": 6, "Hour": hour, "Minute": 0}
+        for hour in range(9, 24)
+    ]
     assert not payload.get("RunAtLoad") and not payload.get("KeepAlive")
-    assert payload["ProgramArguments"][-1] == "weekly-audit"
+    assert payload["ProgramArguments"][-1] == "weekly-audit-scheduled"
     assert not (home / "calls").exists()
     agents = home / "Library/LaunchAgents"
     agents.mkdir(parents=True)
@@ -51,6 +54,7 @@ def test_weekly_render_is_saturday_and_install_only_loads_weekly_without_shared_
     assert all("quant-weekly-audit" in call for call in calls)
     assert not any("kickstart" in call for call in calls)
     assert not (repo / ".run/market-runtime-enabled").exists()
+    assert (repo / ".run/weekly-audit-enabled").read_text() == "enabled\n"
 
 
 def test_weekly_install_rejects_different_runtime_identity_before_launchctl(tmp_path):
@@ -66,6 +70,32 @@ def test_weekly_install_rejects_different_runtime_identity_before_launchctl(tmp_
     assert result.returncode != 0
     assert "weekly audit runtime identity mismatch" in result.stderr
     assert not (agents / "com.guiyi.quant-weekly-audit.plist").exists()
+
+
+def test_failed_weekly_install_rolls_back_activation_marker(tmp_path):
+    repo = _copy_launchd_fixture(tmp_path / "repo")
+    home, fake_bin = tmp_path / "home", tmp_path / "bin"
+    fake_bin.mkdir()
+    (fake_bin / "sleep").write_text("#!/bin/sh\nexit 0\n")
+    (fake_bin / "sleep").chmod(0o755)
+    launchctl = fake_bin / "launchctl"
+    launchctl.write_text(
+        "#!/bin/sh\n"
+        'if [ "${1:-}" = "print" ] && [ "${2:-}" = "gui/$UID" ]; then exit 0; fi\n'
+        'if [ "${1:-}" = "print" ]; then exit 113; fi\n'
+        'if [ "${1:-}" = "bootstrap" ]; then exit 81; fi\n'
+        "exit 0\n"
+    )
+    launchctl.chmod(0o755)
+    agents = home / "Library/LaunchAgents"
+    agents.mkdir(parents=True)
+    (agents / "com.guiyi.quant-api.plist").write_bytes(plistlib.dumps({"EnvironmentVariables": {
+        "GUIYI_PROJECT_ROOT": str(repo), "GUIYI_RUNTIME_COMMIT": "1" * 40}}))
+
+    result = _run_installer_result(repo, home, fake_bin, "--confirm-weekly-audit")
+
+    assert result.returncode == 1
+    assert not (repo / ".run/weekly-audit-enabled").exists()
 
 
 def test_preflight_delegates_status_authority_to_the_single_python_process(

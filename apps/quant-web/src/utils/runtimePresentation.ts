@@ -53,6 +53,9 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
   const live = snapshot.components.live_market
   const alert = snapshot.components.alert
   const afterMarket = snapshot.components.after_market
+  const liveClosed = live.operational_count > 0
+    && live.phase_counts.CLOSED === live.operational_count
+    && Object.values(live.phase_counts).reduce((sum, count) => sum + count, 0) === live.operational_count
   const alertDisabled = !alert.configured_enabled || alert.status === 'disabled'
   const processingState = alertDisabled
     ? '提醒未启用'
@@ -73,14 +76,14 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
       key: 'overall',
       label: '运行概况',
       state: overallLabel(snapshot.status),
-      detail: '只读健康快照',
+      detail: '实时行情与盘后增量（含 DB/Redis）；提醒和通知独立诊断',
       timestamp: `生成 ${formatRuntimeTimestamp(snapshot.generated_at)}`,
       tone: statusTone(snapshot.status),
     },
     {
       key: 'live',
       label: '实时行情',
-      state: liveLabel(live.status),
+      state: live.status === 'ok' && liveClosed ? '休市正常' : liveLabel(live.status),
       detail: liveIssues.length ? `${live.subscribed_count} / ${live.operational_count} 品种；待核 ${liveIssues.slice(0, 3).join('、')}${liveIssues.length > 3 ? ` 等 ${liveIssues.length} 项` : ''}` : `${live.subscribed_count} / ${live.operational_count} 品种`,
       timestamp: live.last_bar_at
         ? `最近 K 线 ${formatRuntimeTimestamp(live.last_bar_at)}`
@@ -120,7 +123,7 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
       key: 'weekly_audit', label: '每周历史审计', state: weeklyAuditLabel(audit.status),
       detail: weeklyAuditDetail(audit),
       timestamp: `更新 ${formatRuntimeTimestamp(audit.updated_at)}`,
-      tone: audit.status === 'passed' ? 'normal' : ['not_run', 'running', 'skipped_busy'].includes(audit.status) ? 'neutral' : 'warning',
+      tone: audit.status === 'passed' ? 'normal' : ['disabled', 'not_run', 'running', 'skipped_busy'].includes(audit.status) ? 'neutral' : 'warning',
     })
   }
   return items
@@ -128,7 +131,7 @@ export function runtimeStatusPresentation(snapshot: RuntimeHealthResponse): Runt
 
 export function weeklyAuditLabel(status: string): string {
   const labels: Record<string, string> = {
-    not_run: '尚未审计', running: '审计中', passed: '审计通过', findings: '发现历史问题',
+    disabled: '未启用', not_run: '尚未到期', missed: '本周审计漏跑', running: '审计中', passed: '审计通过', findings: '发现历史问题',
     failed: '审计失败', skipped_busy: '维护忙，已跳过', stuck: '审计卡住', stale: '审计已过期', invalid: '审计身份或状态无效',
   }
   return labels[status] ?? '状态未知'

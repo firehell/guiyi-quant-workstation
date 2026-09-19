@@ -50,6 +50,7 @@ RUNTIME_STATUS_PENDING = "pending"
 DEFAULT_AFTER_MARKET_STATUS_PATH = PROJECT_ROOT / ".run" / "after-market-status.json"
 MARKET_RUNTIME_ACTIVATION_MARKER_NAME = "market-runtime-enabled"
 ALERT_RUNTIME_ACTIVATION_MARKER_NAME = "alert-runtime-enabled"
+WEEKLY_AUDIT_ACTIVATION_MARKER_NAME = "weekly-audit-enabled"
 
 
 def build_runtime_health(
@@ -61,6 +62,7 @@ def build_runtime_health(
     live_freshness_seconds: int | None = None,
     after_market_automation_enabled: bool | None = None,
     alert_runtime_enabled: bool | None = None,
+    weekly_audit_enabled: bool | None = None,
     notification_transport_configured: bool | None = None,
     alert_freshness_seconds: int = 30,
     after_market_status_path: Path | None = DEFAULT_AFTER_MARKET_STATUS_PATH,
@@ -89,6 +91,11 @@ def build_runtime_health(
         _alert_runtime_activation_enabled()
         if alert_runtime_enabled is None
         else alert_runtime_enabled
+    )
+    weekly_enabled = (
+        _weekly_audit_activation_enabled()
+        if weekly_audit_enabled is None
+        else weekly_audit_enabled
     )
     if notification_transport_configured is None:
         transport_present = bool(os.getenv(NOTIFICATION_CONFIG_ENV, ""))
@@ -143,10 +150,15 @@ def build_runtime_health(
         after_market=components["after_market"],
     )
 
-    overall = _overall_status(components.values())
+    # Operational health follows the market-data path. Alert processing and
+    # delivery remain visible diagnostics, not prerequisites for healthy data.
+    overall = _overall_status(
+        components[name] for name in ("db", "redis", "live_market", "after_market")
+    )
     # Historical audit is optional and does not redefine operational service health.
     components["weekly_audit"] = weekly_audit_health(weekly_audit_status_path,
-        identity=runtime_heartbeat_identity(), products=load_operational_products(), now=current_time)
+        identity=runtime_heartbeat_identity(), products=load_operational_products(), now=current_time,
+        configured_enabled=weekly_enabled)
     return {
         "status": overall,
         "generated_at": _iso(current_time),
@@ -170,6 +182,15 @@ def _market_runtime_activation_enabled() -> bool:
 def _alert_runtime_activation_enabled() -> bool:
     """Alert activation 与 Market marker 严格分离，读取异常时保持关闭。"""
     marker_path = PROJECT_ROOT / ".run" / ALERT_RUNTIME_ACTIVATION_MARKER_NAME
+    try:
+        return marker_path.read_text(encoding="utf-8") == "enabled\n"
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def _weekly_audit_activation_enabled() -> bool:
+    """Weekly audit installation is explicit and independent of Market/Alert."""
+    marker_path = PROJECT_ROOT / ".run" / WEEKLY_AUDIT_ACTIVATION_MARKER_NAME
     try:
         return marker_path.read_text(encoding="utf-8") == "enabled\n"
     except (OSError, UnicodeDecodeError):
@@ -649,9 +670,20 @@ def _collect_live_market_health(
             **payload,
             "error_type": "live_unavailable",
         }
+    all_closed = (
+        operational_count > 0
+        and phase_counts.get("CLOSED", 0) == operational_count
+        and sum(phase_counts.values()) == operational_count
+    )
+    # After cleanup or a closed-session restart, coverage remains unverified.
+    # That is not an operational failure while every product is known closed.
+    # Preserve actual lagging evidence and all heartbeat/availability failures.
+    coverage_unhealthy = payload["coverage_state"] == "lagging" or (
+        payload["coverage_state"] == "unverified" and not all_closed
+    )
     return {
         "status": RUNTIME_STATUS_DEGRADED
-        if payload["coverage_state"] in {"lagging", "unverified"}
+        if coverage_unhealthy
         else RUNTIME_STATUS_OK,
         **payload,
     }

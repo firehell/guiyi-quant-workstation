@@ -82,7 +82,9 @@ export interface RuntimeAfterMarketHealth {
 }
 
 export interface RuntimeWeeklyAuditHealth {
-  status: 'not_run' | 'running' | 'passed' | 'findings' | 'failed' | 'skipped_busy' | 'stuck' | 'stale' | 'invalid'
+  status: 'disabled' | 'not_run' | 'missed' | 'running' | 'passed' | 'findings' | 'failed' | 'skipped_busy' | 'stuck' | 'stale' | 'invalid'
+  configured_enabled: boolean
+  scheduled_for: string | null
   readonly: true
   scope: 'operational_full_history'
   through: string | null

@@ -217,7 +217,7 @@ def test_write_failure_is_not_guard_busy_and_releases_leases(tmp_path, monkeypat
             else:
                 with pytest.raises(BlockingIOError):
                     _run(manager, path)
-                assert _health(path) == ("not_run" if failed_write == 1 else "running")
+                    assert _health(path) == ("missed" if failed_write == 1 else "running")
         assert released == ([] if failed_write == 1 else [True])
         assert not session.in_transaction()
         inode = (tmp_path / "status.json.lock").stat().st_ino
@@ -249,7 +249,7 @@ def test_process_death_releases_guard_without_relabeling_unfinished_run(tmp_path
         parent.close()
 
 
-@pytest.mark.parametrize("state", ["not_run", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"])
+@pytest.mark.parametrize("state", ["missed", "running", "passed", "findings", "failed", "skipped_busy", "stuck", "stale", "invalid"])
 def test_actual_weekly_state_never_changes_operational_overall(tmp_path, monkeypatch, state):
     from app.services import runtime_health
     from tests.test_runtime_health import FakeRedis, _session_factory
@@ -257,7 +257,7 @@ def test_actual_weekly_state_never_changes_operational_overall(tmp_path, monkeyp
     monkeypatch.setattr(runtime_health, "runtime_heartbeat_identity", lambda: IDENTITY)
     monkeypatch.setattr(runtime_health, "load_operational_products", lambda: ("au",))
     with _session_factory()() as session:
-        if state != "not_run":
+        if state != "missed":
             _run(_manager(session), path)
             payload = json.loads(path.read_text())
             payload["status"] = {"stuck": "running", "stale": "passed", "invalid": "passed"}.get(state, state)
@@ -275,6 +275,7 @@ def test_actual_weekly_state_never_changes_operational_overall(tmp_path, monkeyp
         now = NOW + (timedelta(hours=3) if state == "stuck" else timedelta(days=9) if state == "stale" else timedelta())
         result = runtime_health.build_runtime_health(session, redis_factory=FakeRedis, now=now,
             live_runtime_enabled=False, after_market_automation_enabled=False, alert_runtime_enabled=False,
+            weekly_audit_enabled=True,
             notification_transport_configured=False, after_market_status_path=None, weekly_audit_status_path=path)
         assert result["components"]["weekly_audit"]["status"] == state
         assert result["status"] == "ok"

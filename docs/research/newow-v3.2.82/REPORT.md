@@ -1,5 +1,7 @@
 # 牛哇 v3.2.82 策略与指标复刻总结
 
+> 最新状态与v3.3.46详情审计见[2026-09-18算法与AI分析](CURRENT_AUDIT.md)。下文是冻结历史报告，不能用其完成状态、旧13格评分或下一步替代最新项目事实。
+
 > 仓库分发说明：这是 2026-09-04 研究现场的报告副本。当前项目范围已经将六种私有服务端选股公式明确设为 `UNKNOWN / OUT_OF_SCOPE`，不再继续反推；报告中与“继续采集第二截面”相关的历史下一步不代表当前计划。原始网页、逐 Bar 输入和 RQData/Canonical 原文未随 GitHub 资料包分发，详见 [README](README.md#github-分发边界)。
 
 状态：`PARTIAL / REAL_OOS_REPLAY_BUNDLE_PENDING / REAL_WEEKLY_OOS_GATE_PENDING / FINAL_REVIEW_BLOCKED`

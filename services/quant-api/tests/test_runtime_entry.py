@@ -61,6 +61,32 @@ def test_weekly_failure_payload_stays_readonly_and_sanitized():
     assert "private" not in stderr.getvalue()
 
 
+def test_scheduled_weekly_noop_is_success(monkeypatch):
+    from contextlib import nullcontext
+    from app import runtime_entry
+    from app.market_data import weekly_audit
+    monkeypatch.setattr(
+        weekly_audit,
+        "run_scheduled_weekly_audit",
+        lambda *args, **kwargs: {
+            "schema_version": 1,
+            "command": "data.weekly-audit-scheduled",
+            "status": "already_attempted",
+            "readonly": True,
+        },
+    )
+    output = io.StringIO()
+    result = runtime_entry.main(
+        ["weekly-audit-scheduled"],
+        session_factory=lambda: nullcontext(object()),
+        manager_factory=lambda _: object(),
+        stdout=output,
+        stderr=io.StringIO(),
+    )
+    assert result == 0
+    assert json.loads(output.getvalue())["status"] == "already_attempted"
+
+
 def test_maintenance_logging_failure_with_closed_stderr_does_not_skip_business(monkeypatch):
     import io
     import pytest
