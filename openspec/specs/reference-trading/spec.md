@@ -77,9 +77,15 @@ No row may infer enabled Runtime from tests, a page, a script or a historical re
 
 | Strategy family | Frequencies | Historical code support | Independently verified evidence | Forward code support | Runtime enablement |
 |---|---|---|---|---|---|
-| Newow trend / oscillation / main-rise | 1w, 1d, 60m | Existing pure projector; P2 adapter required | Per-strategy/per-frequency evidence remains separate | Not implemented | Disabled / no worker |
-| SuBing reference | 15m, 30m, 60m, 1d | Existing pure projector; P2 adapter required | D1 quality/readiness remains separately gated | Not implemented | Disabled / no worker |
+| Newow trend / oscillation / main-rise | 1w, 1d, 60m | P2 pure per-Bar replay/checkpoint and shared reference reducer implemented | Fixture parity is verified in isolation; real per-product/per-frequency data evidence remains separate | Not implemented | Disabled / no worker |
+| SuBing reference | 15m, 30m, 60m, 1d | P2 pure per-Bar replay/checkpoint and shared reference reducer implemented | Formula fixtures are verified; D1 quality/readiness remains separately gated | Not implemented | Disabled / no worker |
 | HTDY first-seen | observation policy frequencies | Not approved; repainting boundary | `MODEL_NOT_APPROVED`; P7 owner decision required | Proposed only | Disabled / no worker |
 
 All rows are disabled by default. This matrix neither opens a Scope nor authorizes Canonical, database, notification,
 release or Runtime work.
+
+#### Scenario: Historical adapter tests pass
+
+- **WHEN** a strategy/frequency adapter passes its isolated fixture and checkpoint tests
+- **THEN** only that row's historical code support and fixture evidence may be recorded
+- **AND** its Runtime remains disabled until a separate Runtime authorization and readback exist

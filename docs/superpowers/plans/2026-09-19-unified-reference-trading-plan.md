@@ -129,11 +129,15 @@ P1 只实现下列类型中纯域迁移实际需要的部分；应用 DTO 和仓
 文件：原 `subing_reference.py`、`newow/reference_trades.py`、`newow/product_adapters.py` 及相应指标状态入口；
 新增 `tests/reference_trading/test_strategy_parity.py`、`test_checkpoint_parity.py`。
 
-- [ ] 固定现有苏冰四周期、牛哇三策略真实实现 golden，记录现有 ID/价格/收益/Hint/期初归属。
-- [ ] 将旧全量入口改为同一 transition 的 fold；测试和正式实现不复制一套公式。
-- [ ] 提供状态 schema、seed/advance；窗口型算法明确完整回看需求，不能随意截取预热。
-- [ ] 对同一有效输入验证全量、单 Bar、随机切批、序列化重启一致；增加无信号推进和 34/35 Bar 等实际预热边界。
-- [ ] 验证 old/new owner、D1缺价、同 Bar 多动作、完整生命周期初始 CLEAR 与各统计窗口兼容。
+- [x] 固定现有苏冰四周期、牛哇三策略真实实现 golden，记录现有 ID/价格/收益/Hint/期初归属。
+- [x] 将旧全量入口改为同一 transition 的 fold；测试和正式实现不复制一套公式。
+- [x] 提供状态 schema、seed/advance；窗口型算法明确完整回看需求，不能随意截取预热。
+- [x] 对同一有效输入验证全量、单 Bar、随机切批、序列化重启一致；增加无信号推进和 34/35 Bar 等实际预热边界。
+- [x] 验证 old/new owner、D1缺价、同 Bar 多动作、完整生命周期初始 CLEAR 与各统计窗口兼容。
+
+P2于2026-09-19完成纯内存历史计算适配：公共typed input gate、严格JSON checkpoint、苏冰/Newow
+公开投影的公共reducer唯一开平仓路径及相关回归均已落地。该状态不包含P3持久化、P4构建CLI、后台worker、
+真实数据验收或任何Runtime启用。
 
 核心测试形态（由具体 fixture 提供 `bars` 与原实现输出）：
 

@@ -92,6 +92,54 @@ def test_full_subing_strategy_checkpoint_round_trips_after_indicator_warmup() ->
     assert restored == checkpoint
 
 
+@pytest.mark.parametrize("cut", (1, 34, 35, 52))
+def test_subing_checkpoint_restore_continues_with_exact_tail_parity(cut) -> None:
+    at = datetime(2026, 1, 1, 15, tzinfo=UTC)
+    prices = [100] * 50 + [120, 80, 120, 80]
+    bars = tuple(
+        ReferenceBar(at + timedelta(hours=index), (at + timedelta(hours=index)).date(), Decimal(price))
+        for index, price in enumerate(prices)
+    )
+    segment = ReferenceSegment("RB2601", "owner", bars, bars[0].trading_day, bars[-1].trading_day)
+
+    uninterrupted = seed_subing_replay_state()
+    expected_tail = []
+    for index, bar in enumerate(bars):
+        uninterrupted, signal, closed, indicator = replay_subing_step(
+            "RB", segment, "1d", False, uninterrupted, bar,
+            since=bars[0].trading_day, through=bars[-1].trading_day,
+        )
+        if index >= cut:
+            expected_tail.append((signal, closed, indicator, uninterrupted.current))
+
+    prefix = seed_subing_replay_state()
+    for bar in bars[:cut]:
+        prefix, *_ = replay_subing_step(
+            "RB", segment, "1d", False, prefix, bar,
+            since=bars[0].trading_day, through=bars[-1].trading_day,
+        )
+    assert prefix.reference_state is not None
+    stream = prefix.reference_state.stream
+    checkpoint = AdapterCheckpoint(
+        prefix, bars[cut - 1].bar_end, "prefix", "RB2601", "owner", "owner",
+        stream, prefix.reference_state,
+    )
+    restored = adapter_checkpoint_from_json(
+        adapter_checkpoint_to_json(checkpoint, strategy_schema="subing_replay_v1"),
+        expected_stream=stream, expected_strategy_schema="subing_replay_v1",
+    )
+    state = restored.strategy_state
+    actual_tail = []
+    for bar in bars[cut:]:
+        state, signal, closed, indicator = replay_subing_step(
+            "RB", segment, "1d", False, state, bar,
+            since=bars[0].trading_day, through=bars[-1].trading_day,
+        )
+        actual_tail.append((signal, closed, indicator, state.current))
+
+    assert actual_tail == expected_tail
+
+
 @pytest.mark.parametrize("cut_fraction", (1, 2, 3))
 def test_newow_checkpoint_restore_continues_with_exact_tail_parity(
     product_cases, cut_fraction,
@@ -169,5 +217,66 @@ def test_adapter_checkpoint_rejects_bool_disguised_as_integer() -> None:
     with pytest.raises(ValueError, match="integer"):
         adapter_checkpoint_from_json(
             encoded, expected_stream=stream,
+            expected_strategy_schema="subing_replay_v1",
+        )
+
+
+def _with_checksum(payload: dict[str, object]) -> str:
+    body = {key: value for key, value in payload.items() if key != "checksum_sha256"}
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    payload["checksum_sha256"] = sha256(canonical.encode()).hexdigest()
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def test_adapter_checkpoint_rejects_divergent_embedded_reference_state() -> None:
+    stream = _stream("subing")
+    state = seed_subing_replay_state()
+    state.reference_state = ReferenceState.flat(stream)
+    checkpoint = AdapterCheckpoint(
+        state, stream=stream, reference_state=ReferenceState.flat(stream),
+    )
+    payload = json.loads(
+        adapter_checkpoint_to_json(checkpoint, strategy_schema="subing_replay_v1")
+    )
+    payload["strategy_state"]["fields"]["reference_state"]["fields"][
+        "last_input_hash"
+    ] = "different"
+
+    with pytest.raises(ValueError, match="embedded reference state"):
+        adapter_checkpoint_from_json(
+            _with_checksum(payload), expected_stream=stream,
+            expected_strategy_schema="subing_replay_v1",
+        )
+
+
+def test_adapter_checkpoint_rejects_open_trade_owner_mismatch() -> None:
+    at = datetime(2026, 1, 1, 15, tzinfo=UTC)
+    prices = [100] * 50 + [120]
+    bars = tuple(
+        ReferenceBar(at + timedelta(hours=index), (at + timedelta(hours=index)).date(), Decimal(price))
+        for index, price in enumerate(prices)
+    )
+    segment = ReferenceSegment("RB2601", "owner", bars, bars[0].trading_day, bars[-1].trading_day)
+    state = seed_subing_replay_state()
+    for bar in bars:
+        state, *_ = replay_subing_step(
+            "RB", segment, "1d", False, state, bar,
+            since=bars[0].trading_day, through=bars[-1].trading_day,
+        )
+    assert state.reference_state is not None
+    assert state.reference_state.open_trade is not None
+    stream = state.reference_state.stream
+    checkpoint = AdapterCheckpoint(
+        state, bars[-1].bar_end, "abc", "RB2601", "owner", "owner",
+        stream, state.reference_state,
+    )
+    payload = json.loads(
+        adapter_checkpoint_to_json(checkpoint, strategy_schema="subing_replay_v1")
+    )
+    payload["physical_contract"] = "RB2605"
+
+    with pytest.raises(ValueError, match="open trade owner"):
+        adapter_checkpoint_from_json(
+            _with_checksum(payload), expected_stream=stream,
             expected_strategy_schema="subing_replay_v1",
         )

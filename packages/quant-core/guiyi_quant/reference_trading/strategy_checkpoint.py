@@ -344,10 +344,22 @@ def adapter_checkpoint_from_json(
         "physical_contract", "owner_segment_id", "calculation_segment_id",
     )):
         raise ValueError("strategy checkpoint owner progress is inconsistent")
-    if reference_state.computed_through is not None and computed is not None and reference_state.computed_through > computed:
-        raise ValueError("strategy checkpoint watermarks are inconsistent")
+    if reference_state.computed_through is not None:
+        if computed is None or reference_state.computed_through > computed:
+            raise ValueError("strategy checkpoint watermarks are inconsistent")
+    strategy_state = _restore(payload["strategy_state"])
+    embedded_reference_state = getattr(strategy_state, "reference_state", None)
+    if embedded_reference_state is not None and embedded_reference_state != reference_state:
+        raise ValueError("strategy checkpoint embedded reference state is inconsistent")
+    if reference_state.open_trade is not None and (
+        payload["physical_contract"] != reference_state.open_trade.physical_contract
+        or payload["owner_segment_id"] != reference_state.open_trade.owner_segment_id
+        or payload["calculation_segment_id"]
+        != reference_state.open_trade.calculation_segment_id
+    ):
+        raise ValueError("strategy checkpoint open trade owner is inconsistent")
     return AdapterCheckpoint(
-        strategy_state=_restore(payload["strategy_state"]),
+        strategy_state=strategy_state,
         computed_through=computed,
         last_fingerprint=payload["last_fingerprint"],
         physical_contract=payload["physical_contract"],
