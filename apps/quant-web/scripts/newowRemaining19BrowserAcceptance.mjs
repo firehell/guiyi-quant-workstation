@@ -44,8 +44,9 @@ try {
     })
     page.on('request', request => {
       const url = new URL(request.url())
-      if (url.pathname.endsWith('/strategy-detail')) {
+      if (url.pathname.endsWith('/strategy-detail') || url.pathname.endsWith('/weekly-snapshot')) {
         requests.push({
+          endpoint: url.pathname.endsWith('/weekly-snapshot') ? 'weekly_snapshot' : 'strategy_detail',
           section: url.searchParams.get('section'),
           asOf: url.searchParams.get('as_of'),
           url: request.url(),
@@ -54,11 +55,12 @@ try {
     })
     page.on('response', response => {
       const url = new URL(response.url())
-      if (!url.pathname.endsWith('/strategy-detail')) return
+      if (!url.pathname.endsWith('/strategy-detail') && !url.pathname.endsWith('/weekly-snapshot')) return
       responseTasks.push((async () => {
         let body = null
         try { body = await response.json() } catch { /* bounded non-JSON evidence */ }
         responses.push({
+          endpoint: url.pathname.endsWith('/weekly-snapshot') ? 'weekly_snapshot' : 'strategy_detail',
           section: url.searchParams.get('section'),
           status: response.status(),
           body,
@@ -82,9 +84,11 @@ try {
       const bannerText = await banner.innerText()
       const chartState = await workspace.getAttribute('data-chart-state')
       const unavailableVisible = await page.getByText('主图事实不可用', { exact: true }).isVisible()
-      const chartResponse = responses.find(item => item.section === 'chart')
-      const apiReason = chartResponse?.body?.detail?.diagnostic?.reason ?? null
-      const apiCode = chartResponse?.body?.detail?.code ?? null
+      const chartResponse = responses.find(item => item.endpoint === 'strategy_detail' && item.section === 'chart')
+      const snapshotResponse = responses.find(item => item.endpoint === 'weekly_snapshot')
+      const stateResponse = chartResponse ?? snapshotResponse
+      const apiReason = stateResponse?.body?.detail?.diagnostic?.reason ?? null
+      const apiCode = stateResponse?.body?.detail?.code ?? null
       const defaultAsOfAbsent = requests.length > 0 && requests.every(item => item.asOf === null)
       const pagePass = navigation?.status() === 200
         && bannerText.includes('身份已核对')
@@ -92,7 +96,7 @@ try {
         && bannerText.includes('127.0.0.1:8010')
         && chartState !== null && !['loading', 'not_requested'].includes(chartState)
         && unavailableVisible
-        && chartResponse !== undefined
+        && stateResponse !== undefined
         && apiReason === expectation.reason
         && defaultAsOfAbsent
         && pageErrors.length === 0
@@ -105,7 +109,8 @@ try {
         navigationStatus: navigation?.status() ?? null,
         chartState,
         unavailableVisible,
-        apiStatus: chartResponse?.status ?? null,
+        pageStateSource: chartResponse !== undefined ? 'strategy_detail' : 'weekly_snapshot',
+        apiStatus: stateResponse?.status ?? null,
         apiCode,
         apiReason,
         expectedStatus: expectation.status,
