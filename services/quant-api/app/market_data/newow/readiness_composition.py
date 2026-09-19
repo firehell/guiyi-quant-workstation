@@ -13,10 +13,12 @@ from app.market_data.historical_data_manager import (
     ContractWarmupRequest,
 )
 from app.market_data.operational_universe import load_active_products
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 
 from .product_reader import NewowProductReader
 from .product_service import NewowProductService
 from .readiness import AuditBudget, NewowReadinessAudit, ReadinessRequest
+from .product_release import REMAINING_WEEKLY_V2_PRODUCTS
 
 
 def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dict:
@@ -30,6 +32,14 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
         PROJECT_ROOT / "data/universe/product_window_starts.csv",
         now=lambda: request.as_of,
     )
+    remaining = set(request.products) & set(REMAINING_WEEKLY_V2_PRODUCTS)
+    if request.candidate_weekly and remaining and remaining != set(request.products):
+        raise ValueError("NEWOW_READINESS_QUALITY_POLICY_MIXED")
+    quality_policy = (
+        InputQualityPolicy.WEEKLY_V2
+        if request.candidate_weekly and remaining
+        else InputQualityPolicy.V1
+    )
 
     def reader_factory(context, cancelled):
         return NewowProductReader(
@@ -41,6 +51,7 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
             cancelled=lambda: (
                 budget.expired() or (cancelled is not None and cancelled())
             ),
+            input_quality_policy=quality_policy,
         )
 
     planner = ContractWarmupPlanner(
@@ -62,6 +73,7 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
             now=lambda: request.as_of,
             cancelled=budget.expired,
             reuse_read_inputs=True,
+            quality_policy=quality_policy,
         ),
     )
     report = audit.run(request)

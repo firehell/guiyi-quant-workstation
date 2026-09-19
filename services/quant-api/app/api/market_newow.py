@@ -16,6 +16,7 @@ from anyio import from_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from guiyi_quant.newow.models import CupPivot, NewowCupHandleOverlay, NewowMainMarker
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -59,6 +60,7 @@ from app.market_data.newow.product_release import (
     PD_PT_HOURLY_PREVIEW_SYMBOLS,
     OPEN_FREQUENCIES,
     OPEN_WEEKLY_PRODUCTS,
+    REMAINING_WEEKLY_V2_PRODUCTS,
     OPEN_SECTIONS,
     RELEASE_STAGE,
     require_open_frequency,
@@ -163,6 +165,19 @@ def _normalize_public_product(product: str) -> str:
 
 def _hourly_preview_products(request: Request) -> frozenset[str] | None:
     return getattr(request.state, "hourly_preview_products", None)
+
+
+def _input_quality_policy(
+    request: Request, product: str, frequency: ProductFrequency | str,
+) -> InputQualityPolicy:
+    selected = ProductFrequency(frequency)
+    if (
+        getattr(request.state, "candidate_preview_as_of", None) is not None
+        and selected is ProductFrequency.WEEKLY
+        and product in REMAINING_WEEKLY_V2_PRODUCTS
+    ):
+        return InputQualityPolicy.WEEKLY_V2
+    return InputQualityPolicy.V1
 
 
 def _enforce_product_frequency(request: Request, product: str, frequency: str) -> None:
@@ -275,7 +290,9 @@ def newow_trend_detail(
 
 
 def _build_product_service(
-    session: Session, cancelled: Callable[[], bool] | None = None
+    session: Session,
+    cancelled: Callable[[], bool] | None = None,
+    quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
 ) -> NewowProductService:
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(session)
@@ -288,6 +305,7 @@ def _build_product_service(
             active_products=active,
             context_frequencies=context,
             cancelled=cancelled,
+            input_quality_policy=quality_policy,
         )
 
     return NewowProductService(
@@ -296,11 +314,15 @@ def _build_product_service(
         heavy_gate=_PRODUCT_GATE,
         inflight=_PRODUCT_INFLIGHT,
         cancelled=cancelled,
+        quality_policy=quality_policy,
     )
 
 
 def _build_snapshot_inputs(
-    session: Session, cancelled: Callable[[], bool], now: Callable[[], datetime]
+    session: Session,
+    cancelled: Callable[[], bool],
+    now: Callable[[], datetime],
+    quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
 ):
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(session)
@@ -311,6 +333,7 @@ def _build_snapshot_inputs(
         active_products=active,
         cancelled=cancelled,
         now=now,
+        input_quality_policy=quality_policy,
     )
 
     def service_factory(deadline_cancelled: Callable[[], bool]) -> NewowProductService:
@@ -322,6 +345,7 @@ def _build_snapshot_inputs(
                 context_frequencies=context,
                 cancelled=inner_cancelled,
                 now=now,
+                input_quality_policy=quality_policy,
             )
 
         return NewowProductService(
@@ -331,15 +355,21 @@ def _build_snapshot_inputs(
             inflight=_PRODUCT_INFLIGHT,
             cancelled=deadline_cancelled,
             now=now,
+            quality_policy=quality_policy,
         )
 
     return reader, service_factory
 
 
 def _build_historical_resolver(
-    session: Session, cancelled: Callable[[], bool], now: Callable[[], datetime]
+    session: Session,
+    cancelled: Callable[[], bool],
+    now: Callable[[], datetime],
+    quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
 ) -> NewowHistoricalSnapshotResolver:
-    reader, service_factory = _build_snapshot_inputs(session, cancelled, now)
+    reader, service_factory = _build_snapshot_inputs(
+        session, cancelled, now, quality_policy
+    )
     return NewowHistoricalSnapshotResolver(reader, service_factory, now=now, cancelled=cancelled)
 
 
@@ -351,9 +381,14 @@ def _build_daily_resolver(
 
 
 def _build_weekly_resolver(
-    session: Session, cancelled: Callable[[], bool], now: Callable[[], datetime]
+    session: Session,
+    cancelled: Callable[[], bool],
+    now: Callable[[], datetime],
+    quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
 ) -> NewowWeeklySnapshotResolver:
-    reader, service_factory = _build_snapshot_inputs(session, cancelled, now)
+    reader, service_factory = _build_snapshot_inputs(
+        session, cancelled, now, quality_policy
+    )
     status = public_after_market_status(_load_status(
         PROJECT_ROOT / ".run" / "after-market-status.json"
     ))
@@ -392,7 +427,13 @@ def newow_historical_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         _enforce_product_frequency(request, product, frequency)
-        result = _build_historical_resolver(session, cancelled, lambda: now).resolve(
+        policy = _input_quality_policy(request, product, frequency)
+        resolver = (
+            _build_historical_resolver(session, cancelled, lambda: now)
+            if policy is InputQualityPolicy.V1
+            else _build_historical_resolver(session, cancelled, lambda: now, policy)
+        )
+        result = resolver.resolve(
             product, ProductStrategy(strategy), ProductFrequency(frequency)
         )
         return NewowHistoricalSnapshotResponse(
@@ -482,7 +523,13 @@ def newow_weekly_snapshot(
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     try:
         _enforce_product_frequency(request, product, frequency)
-        result = _build_weekly_resolver(session, cancelled, lambda: now).resolve(
+        policy = _input_quality_policy(request, product, frequency)
+        resolver = (
+            _build_weekly_resolver(session, cancelled, lambda: now)
+            if policy is InputQualityPolicy.V1
+            else _build_weekly_resolver(session, cancelled, lambda: now, policy)
+        )
+        result = resolver.resolve(
             product, ProductStrategy(strategy), ProductFrequency(frequency),
         )
         return NewowWeeklySnapshotResponse(
@@ -572,7 +619,13 @@ def newow_strategy_detail(
             history_before=history_before,
             snapshot_token=snapshot_token,
         )
-        result = _build_product_service(session, cancelled).query(product_query)
+        policy = _input_quality_policy(request, product, frequency)
+        service = (
+            _build_product_service(session, cancelled)
+            if policy is InputQualityPolicy.V1
+            else _build_product_service(session, cancelled, policy)
+        )
+        result = service.query(product_query)
         return _product_response(result)
     except (ActiveUniverseError, ProductTaxonomyError) as exc:
         raise HTTPException(
@@ -680,6 +733,8 @@ def _trade(item, entry_sequence: int) -> dict[str, object]:
             "statistics_membership",
         }
     }
+    if payload.get("input_quality_policy") == "newow_input_quality_v1":
+        payload.pop("input_quality_policy")
     payload["entry_sequence"] = entry_sequence
     return payload
 
@@ -923,6 +978,10 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
         "explanation": explanation,
         "comparator": comparator,
     }
+    if identity.input_quality_policy.value != "newow_input_quality_v1":
+        payload["meta"]["identity"]["input_quality_policy"] = (
+            identity.input_quality_policy.value
+        )
     return NewowProductResponse.model_validate(payload)
 
 

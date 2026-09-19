@@ -24,7 +24,11 @@ from guiyi_quant.newow.product_contracts import (
 )
 from guiyi_quant.newow.product_identity import (
     FUTURES_INPUT_POLICY_VERSION,
+    InputQualityPolicy,
     build_segment_id,
+    input_policy_version,
+    input_quality_policy,
+    source_classification_version,
     utc_timestamp,
 )
 
@@ -81,7 +85,11 @@ def _quality_source_identity(
             f"{gap.request_sha256}:{gap.response_sha256}"
         )
     if frequency is ProductFrequency.WEEKLY and isinstance(gap, WeeklySourceInterruption):
-        return f"market_data_service:weekly_quality:v1:{gap.source_identity}"
+        return (
+            "market_data_service:weekly_quality:"
+            f"{gap.classification_version.removeprefix('weekly-d1-quality-')}:"
+            f"{gap.source_identity}"
+        )
     raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
 
 
@@ -126,6 +134,7 @@ class ProductReadSet:
     performance_window: ProductReadWindow
     sources: Mapping[ProductFrequency, ProductReadSource]
     as_of: datetime
+    input_quality_policy: InputQualityPolicy = InputQualityPolicy.V1
     lifecycle_evidence_by_frequency: Mapping[
         ProductFrequency, tuple[LifecycleReplayEvidence, ...]
     ] = field(default_factory=lambda: MappingProxyType({}))
@@ -156,11 +165,13 @@ class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
         through: date,
         as_of: datetime,
         check_cancelled: Callable[[], None],
+        quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
     ) -> None:
         super().__init__(market_data)
         self._through = through
         self._as_of = as_of
         self._check_cancelled = check_cancelled
+        self._quality_policy = InputQualityPolicy(quality_policy)
         self.price_unavailable_by_frequency: dict[
             BarFrequency,
             tuple[tuple[str, PriceUnavailableFact | WeeklySourceInterruption], ...],
@@ -173,7 +184,21 @@ class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
         bounded = replace(request, through=min(request.through, self._through))
         quality_query = getattr(self._market_data, "query_actual_dominant_trading_days_quality", None)
         if bounded.frequency in (BarFrequency.D1, BarFrequency.W1) and quality_query is not None:
-            result, gaps = quality_query(bounded)
+            policy = (
+                self._quality_policy
+                if bounded.frequency is BarFrequency.W1
+                else InputQualityPolicy.V1
+            )
+            result, gaps = (
+                quality_query(bounded)
+                if policy is InputQualityPolicy.V1
+                else quality_query(
+                    bounded,
+                    weekly_classification_version=source_classification_version(
+                        bounded.frequency.value, policy
+                    ),
+                )
+            )
             self.price_unavailable_by_frequency[bounded.frequency] = tuple(
                 (contract, gap) for contract, gap in gaps if gap.bar_end <= self._as_of
             )
@@ -232,6 +257,7 @@ class NewowProductReader:
         context_frequencies: Sequence[ProductFrequency] = (),
         now: Callable[[], datetime] | None = None,
         cancelled: Callable[[], bool] | None = None,
+        input_quality_policy: InputQualityPolicy | str = InputQualityPolicy.V1,
     ) -> None:
         self._market_data = market_data
         self._coverage = coverage
@@ -241,6 +267,7 @@ class NewowProductReader:
         )
         self._now = now or (lambda: datetime.now(UTC))
         self._cancelled = cancelled
+        self._input_quality_policy = InputQualityPolicy(input_quality_policy)
 
     def historical_snapshot_candidates(
         self,
@@ -513,6 +540,9 @@ class NewowProductReader:
             raise NewowProductReadError("NEWOW_INVALID_AS_OF")
         if query.product not in self._active_products:
             raise NewowProductReadError("NEWOW_INVALID_PRODUCT")
+        policy = input_quality_policy(
+            query.frequency.value, self._input_quality_policy
+        )
         self._check_cancelled()
         performance_since = query.performance_since
         if performance_since is None:
@@ -573,6 +603,7 @@ class NewowProductReader:
             replay_through,
             cutoff,
             self._check_cancelled,
+            policy,
         )
         def load_segments(through: date):
             return segment_loader.load(
@@ -721,9 +752,23 @@ class NewowProductReader:
                             through=end.astimezone(_SHANGHAI).date(), cutoff=end,
                         )
                     else:
-                        physical, weekly_gaps = self._market_data.query_contract_weekly_replay_quality(
-                            symbol=query.product, contract=contract,
-                            through=end.astimezone(_SHANGHAI).date(), cutoff=end,
+                        quality_args = {
+                            "symbol": query.product,
+                            "contract": contract,
+                            "through": end.astimezone(_SHANGHAI).date(),
+                            "cutoff": end,
+                        }
+                        physical, weekly_gaps = (
+                            self._market_data.query_contract_weekly_replay_quality(
+                                **quality_args
+                            )
+                            if policy is InputQualityPolicy.V1
+                            else self._market_data.query_contract_weekly_replay_quality(
+                                **quality_args,
+                                classification_version=source_classification_version(
+                                    frequency.value, policy
+                                ),
+                            )
                         )
                     prefixes[contract] = physical
                     prefix_gaps[contract] = (
@@ -819,7 +864,11 @@ class NewowProductReader:
                 _CANONICAL_SOURCE,
                 actual[-1].bar_end if actual else None,
                 cutoff,
-                FUTURES_INPUT_POLICY_VERSION,
+                input_policy_version(
+                    frequency.value,
+                    policy if frequency is ProductFrequency.WEEKLY
+                    else InputQualityPolicy.V1,
+                ),
                 raw_bar_count,
                 len(output),
                 no_trade_bar_count,
@@ -835,6 +884,7 @@ class NewowProductReader:
             performance,
             MappingProxyType(sources),
             cutoff,
+            policy,
             MappingProxyType(lifecycle_evidence),
             MappingProxyType(interruptions_by_frequency),
         )

@@ -29,8 +29,8 @@ DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = (
     ("explanation", "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"),
 )
 
-CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v4"] = (
-    "newow_product_capabilities_v4"
+CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v9"] = (
+    "newow_product_capabilities_v9"
 )
 CANDIDATE_RELEASE_STAGE: Literal["daily_weekly_candidate"] = "daily_weekly_candidate"
 CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
@@ -40,7 +40,11 @@ OPEN_WEEKLY_PRODUCTS = (
     "pd", "pp", "ps", "pt", "rb", "rm", "ru", "sa", "sc", "sn", "ss", "ta", "ur",
     "v", "y", "zn",
 )
-CANDIDATE_WEEKLY_PRODUCTS = OPEN_WEEKLY_PRODUCTS
+REMAINING_WEEKLY_V2_PRODUCTS = (
+    "b", "bz", "cj", "eb", "eg", "j", "oi", "pf", "pg", "pk", "pl", "pr",
+    "px", "rs", "sf", "sh", "si", "sm", "sr",
+)
+CANDIDATE_WEEKLY_PRODUCTS = OPEN_WEEKLY_PRODUCTS + REMAINING_WEEKLY_V2_PRODUCTS
 CANDIDATE_DEFERRED_FREQUENCIES = (
     (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
 )

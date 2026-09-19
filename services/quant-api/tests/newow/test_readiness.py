@@ -163,7 +163,7 @@ def test_weekly_scope_preserves_complete_planned_matrix_without_deferred_depende
     assert sum(item["main"]["status"] == "UNOPENED" for item in report["cases"]) == 6
 
 
-def test_candidate_weekly_scope_opens_only_the_versioned_first_41_products():
+def test_candidate_weekly_scope_opens_the_versioned_60_products_only():
     module = _audit_module()
     from guiyi_quant.newow.product_contracts import ProductFrequency
 
@@ -184,11 +184,33 @@ def test_candidate_weekly_scope_opens_only_the_versioned_first_41_products():
 
     with pytest.raises(ValueError, match="NEWOW_READINESS_ARGUMENT_INVALID"):
         module.ReadinessRequest(
-            ("bz",),
+            ("zz",),
             datetime(2026, 9, 4, 8, tzinfo=UTC),
             frequencies=(ProductFrequency.WEEKLY,),
             candidate_weekly=True,
         )
+
+
+def test_remaining19_weekly_matrix_declares_v2_policy_per_combination():
+    module = _audit_module()
+    from guiyi_quant.newow.product_contracts import ProductFrequency
+
+    report = module.NewowReadinessAudit(reader=AuditReader()).run(
+        module.ReadinessRequest(
+            ("b",),
+            datetime(2026, 9, 4, 8, tzinfo=UTC),
+            matrix=True,
+            frequencies=(ProductFrequency.WEEKLY,),
+            candidate_weekly=True,
+            consumer_only=True,
+            max_work=1,
+        )
+    )
+
+    assert len(report["cases"]) == 3
+    assert {
+        case["input_quality_policy"] for case in report["cases"]
+    } == {"newow_weekly_input_quality_v2"}
 
 
 def test_daily_readonly_scope_and_public_daily_matrix_are_distinct():

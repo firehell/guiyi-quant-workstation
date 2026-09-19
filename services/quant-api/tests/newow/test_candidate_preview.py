@@ -128,12 +128,12 @@ def test_daily_weekly_candidate_capabilities_are_available_without_database(prev
     response = TestClient(app).get("/api/v1/market/newow/product-capabilities")
 
     assert response.status_code == 200
-    assert response.json()["schema_version"] == "newow_product_capabilities_v4"
+    assert response.json()["schema_version"] == "newow_product_capabilities_v9"
     assert response.json()["release_stage"] == "daily_weekly_candidate"
     assert response.json()["open_frequencies"] == ["1d", "1w"]
-    assert len(response.json()["weekly_products"]) == 41
+    assert len(response.json()["weekly_products"]) == 60
     assert "au" in response.json()["weekly_products"]
-    assert "b" not in response.json()["weekly_products"]
+    assert "b" in response.json()["weekly_products"]
     assert response.json()["deferred_frequencies"] == [
         {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"}
     ]
@@ -149,15 +149,31 @@ def test_daily_weekly_candidate_capabilities_are_available_without_database(prev
         "/api/v1/market/newow/strategy-detail",
         params={"product": "b", "strategy": "trend", "frequency": "1w"},
     )
-    assert blocked.status_code == 409
-    assert blocked.json()["detail"]["code"] == "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    assert blocked.status_code != 403
+    assert blocked.json().get("detail", {}).get("code") != "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
     history = TestClient(app).get(
         "/api/v1/market/newow/historical-snapshot",
         params={"product": "b", "strategy": "trend", "frequency": "1w"},
     )
-    assert history.status_code == 409
-    assert history.json()["detail"]["code"] == "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
+    assert history.status_code != 403
+    assert history.json().get("detail", {}).get("code") != "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
     assert len(sessions) == 2
+
+
+def test_preview_selects_v2_only_for_remaining19_weekly():
+    from types import SimpleNamespace
+    from app.api.market_newow import _input_quality_policy
+    from guiyi_quant.newow.product_identity import InputQualityPolicy
+
+    preview = SimpleNamespace(
+        state=SimpleNamespace(candidate_preview_as_of=datetime(2026, 9, 3, tzinfo=UTC))
+    )
+    production = SimpleNamespace(state=SimpleNamespace())
+
+    assert _input_quality_policy(preview, "b", "1w") is InputQualityPolicy.WEEKLY_V2
+    assert _input_quality_policy(preview, "au", "1w") is InputQualityPolicy.V1
+    assert _input_quality_policy(preview, "b", "1d") is InputQualityPolicy.V1
+    assert _input_quality_policy(production, "b", "1w") is InputQualityPolicy.V1
 
 
 def test_au_period_preview_opens_only_au_without_database(preview, monkeypatch):

@@ -8,6 +8,7 @@ import pytest
 
 from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
 from guiyi_quant.newow.product_contracts import ProductFrequency
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 
 from app.market_data.actual_dominant_research import (
     ActualDominantResearchSegmentIdentityError,
@@ -98,6 +99,80 @@ def test_weekly_reader_keeps_proven_gap_even_without_a_following_bar(
     assert dependency["status"] == "DATA_READY"
     assert dependency["source_quality"] == "WEEKLY_INTERRUPTED"
     assert dependency["price_unavailable_count"] == 1
+
+
+def test_weekly_v2_reader_pins_mds_classification_and_source_identity(
+    product_cases, monkeypatch,
+):
+    _reader, query, fake = product_cases.paged_reader(
+        prefix_bars=12, page_size=20, frequency="1w",
+    )
+    removed = fake.physical[("RB2605", BarFrequency.W1)][5]
+    kept = tuple(
+        bar for bar in fake.physical[("RB2605", BarFrequency.W1)]
+        if bar != removed
+    )
+    fake.physical[("RB2605", BarFrequency.W1)] = kept
+    fake.actual[BarFrequency.W1] = tuple(
+        bar for bar in fake.actual[BarFrequency.W1] if bar != removed
+    )
+    fact = PriceUnavailableFact(
+        removed.bar_end, removed.trading_day,
+        Decimal(0), Decimal(0), Decimal(0), removed.close,
+        Decimal(1), Decimal(0), removed.open_interest,
+        "a" * 64, "b" * 64, fake.as_of,
+    )
+    gap = classify_weekly_source(
+        product="rb",
+        physical_contract="RB2605",
+        expected_daily_endpoints=((removed.bar_end, removed.trading_day),),
+        daily_bars=(),
+        price_unavailable=(fact,),
+        daily_revision_sha256="c" * 64,
+        classification_version="weekly-d1-quality-v2",
+    ).interruption
+    assert gap is not None
+    observed = []
+
+    def ranked_quality(request, *, weekly_classification_version):
+        observed.append(("ranked", weekly_classification_version))
+        return fake.query_actual_dominant_trading_days(request), (("RB2605", gap),)
+
+    def prefix_quality(*, classification_version, **kwargs):
+        observed.append(("prefix", classification_version))
+        return (
+            tuple(bar for bar in kept if bar.bar_end <= kwargs["cutoff"]),
+            (gap,) if gap.week_end <= kwargs["cutoff"] else (),
+        )
+
+    monkeypatch.setattr(
+        fake, "query_actual_dominant_trading_days_quality", ranked_quality,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        fake, "query_contract_weekly_replay_quality", prefix_quality, raising=False,
+    )
+    reader = NewowProductReader(
+        fake,
+        coverage=fake.coverage,
+        active_products=("rb",),
+        now=lambda: fake.as_of,
+        input_quality_policy=InputQualityPolicy.WEEKLY_V2,
+    )
+
+    read = reader.load(query, fake.as_of)
+
+    assert observed == [
+        ("ranked", "weekly-d1-quality-v2"),
+        ("prefix", "weekly-d1-quality-v2"),
+    ]
+    assert read.input_quality_policy is InputQualityPolicy.WEEKLY_V2
+    assert read.sources[ProductFrequency.WEEKLY].input_policy_version == (
+        "newow_futures_weekly_quality_observation_v2"
+    )
+    assert read.data_interruptions[0].source_identity.startswith(
+        "market_data_service:weekly_quality:v2:"
+    )
 
 
 def test_reader_consumes_all_prefix_pages(product_cases):
