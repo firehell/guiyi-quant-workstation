@@ -37,7 +37,9 @@ from guiyi_quant.newow.product_contracts import (
     ProductIdentity,
     ProductStrategy,
     StrategyReplay,
+    lifecycle_input_sha256,
 )
+from guiyi_quant.newow.chart_price_reference import ChartPriceReference, project_chart_price_reference
 from guiyi_quant.newow.product_identity import (
     FUTURES_ADAPTATION_VERSION,
     FUTURES_INPUT_POLICY_VERSION,
@@ -193,6 +195,7 @@ class ChartSectionValue:
     actual_window: ProductReadWindow
     page_identity: str
     trend_channel: TrendChannelLayer | None
+    price_reference: ChartPriceReference | None
     next_older_window: str | None = None
     price_unavailable_days: tuple[tuple[date, str, str], ...] = ()
 
@@ -1121,6 +1124,11 @@ class NewowProductService:
                 EvidenceStatus.ACTIVE_CODE_VERIFIED,
                 "NEWOW_SOURCE_PRICE_UNAVAILABLE_REWARMING",
             )
+        channel = build_trend_channel_layer(read.replay_bars, tuple(frame.bar for frame in selected))
+        price_reference = project_chart_price_reference(
+            channel, selected[-1].bar, as_of=read.replay_bars[-1].bar.bar_end,
+            input_sha256=lifecycle_input_sha256(read.replay_bars),
+        ) if selected else None
         return SectionDelivery(
             "delivered",
             status,
@@ -1131,11 +1139,8 @@ class NewowProductService:
                 replay.diagnostics,
                 read.display_window,
                 page_identity,
-                build_trend_channel_layer(
-                    read.replay_bars, tuple(frame.bar for frame in selected)
-                )
-                if identity.strategy is ProductStrategy.TREND
-                else None,
+                channel if identity.strategy is ProductStrategy.TREND else None,
+                price_reference,
                 price_unavailable_days=tuple(
                     (gap.trading_day, gap.physical_contract, gap.segment_id)
                     for gap in read.data_interruptions

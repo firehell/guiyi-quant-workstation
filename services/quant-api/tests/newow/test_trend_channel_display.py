@@ -63,6 +63,28 @@ def test_owner_change_restarts_without_borrowing_previous_extrema() -> None:
     assert layer.points[10].segment_id == "rb:RB0001:research-2"
 
 
+def test_calculation_segment_change_restarts_channel_without_changing_owner() -> None:
+    bars = _bars()[:11]
+    restarted = replace(
+        bars[10],
+        calculation_segment_id="rb:RB9999:research|price-gap:2025-09-11T00:00:00+00:00",
+        bar=replace(
+            bars[10].bar,
+            open=Decimal("100"),
+            high=Decimal("100"),
+            low=Decimal("99"),
+            close=Decimal("100"),
+        ),
+    )
+
+    layer = build_trend_channel_layer((*bars[:10], restarted), (*bars[:10], restarted))
+
+    assert layer.points[9].upper == Decimal("15.4")
+    assert layer.points[10].upper == Decimal("100")
+    assert layer.points[10].lower == Decimal("99")
+    assert layer.points[10].calculation_segment_id == restarted.calculation_segment_id
+
+
 def test_visible_pagination_uses_full_prefix_and_is_prefix_invariant() -> None:
     bars = _bars()
     full = build_trend_channel_layer(bars, bars)

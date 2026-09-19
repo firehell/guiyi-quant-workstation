@@ -1,5 +1,14 @@
 # 牛哇新版功能差异与后续任务
 
+## 2026-09-19 算法与显示一致性实施冻结
+
+本轮从 `v3.3.46` 公共页面/脚本哈希出发，将图表、价格卡、震荡图表同根语义、趋势转折、CDV2、页面统计和六组合推荐的最小 source witness 固定在
+`services/quant-api/tests/newow/fixtures/page-parity-20260919/`。该目录只保存最小输入、公开函数名、原始字节哈希和 source-derived expected；不提交第三方整页源码，也不将本地实现输出反写为 expected。
+
+已冻结的来源是详情 `4c44ae93…df0f`、策略计算 `bb9e630a…536fbd`、CDV2 `68c634c0…5fbb`、趋势转折 `85a72b64…f80`。Futures `ProductReader` 到 `target_daily/weekly`、`cost_daily/weekly`、`cross_weekly_buy` 和同物理昨收的精确适配仍为 **EVIDENCE_REQUIRED**；Task 4 必须以 typed source facts 关闭，不能凭字段名称猜测。
+
+此次 active 震荡图表及其 ReferenceTrade projection 采用“CLEAR 当根禁止 BUILD”的新版本；普通统计保留原 `runOscBacktest` 先清后建，ideal 保留独立顺序。三种 surface/model 身份分离，期末 statistics forceClose 绝不生成 CLEAR Marker。
+
 ## 最新入口（2026-09-18）
 
 最新实查已更新到[算法与 AI 分析审计](newow-v3.2.82/CURRENT_AUDIT.md)：内部浏览器首页v3.3.25、详情v3.3.46。

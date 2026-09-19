@@ -739,9 +739,19 @@ def _product_response(result: NewowProductResult) -> NewowProductResponse:
                         "physical_contract": point.physical_contract,
                         "segment_id": point.segment_id,
                         "source_identity": point.source_identity,
+                        "calculation_segment_id": point.calculation_segment_id,
                     }
                     for point in value.trend_channel.points
                 ],
+            },
+            "price_reference": None if value.price_reference is None else {
+                "surface": value.price_reference.surface, "frequency": value.price_reference.frequency.value,
+                "as_of": value.price_reference.as_of, "anchor_bar_end": value.price_reference.anchor_bar_end,
+                "physical_contract": value.price_reference.physical_contract, "segment_id": value.price_reference.segment_id,
+                "calculation_segment_id": value.price_reference.calculation_segment_id, "input_sha256": value.price_reference.input_sha256,
+                "formula_version": value.price_reference.formula_version, "adapter_version": value.price_reference.adapter_version,
+                "target": {"raw": _decimal(value.price_reference.target.raw), "display": value.price_reference.target.display, "status": _status(value.price_reference.target.status)},
+                "absorb": {"raw": _decimal(value.price_reference.absorb.raw), "display": value.price_reference.absorb.display, "status": _status(value.price_reference.absorb.status)},
             },
             "actions": [
                 {

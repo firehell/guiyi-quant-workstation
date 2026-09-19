@@ -135,6 +135,28 @@ class TrendChannelPointOut(_Out):
     physical_contract: str
     segment_id: str
     source_identity: str
+    calculation_segment_id: str
+
+
+class ChartPriceValueOut(_Out):
+    raw: str | None
+    display: str | None
+    status: ProductFeatureStatusOut
+
+
+class ChartPriceReferenceOut(_Out):
+    surface: Literal["chart_legend"]
+    frequency: ProductFrequencyValue
+    as_of: datetime
+    anchor_bar_end: datetime
+    physical_contract: str
+    segment_id: str
+    calculation_segment_id: str
+    input_sha256: str
+    formula_version: Literal["newow_chart_legend_hhv_llv10_page_v1"]
+    adapter_version: Literal["newow_chart_price_projection_v1"]
+    target: ChartPriceValueOut
+    absorb: ChartPriceValueOut
 
 
 class TrendChannelLayerOut(_Out):
@@ -158,6 +180,7 @@ class ChartValueOut(_Out):
     bars: list[ProductBarOut]
     frames: list[ProductFrameOut]
     trend_channel: TrendChannelLayerOut | None
+    price_reference: ChartPriceReferenceOut | None
     actions: list[ProductActionOut]
     hints: list[ProductHintOut]
     diagnostics: list[str]
