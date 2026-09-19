@@ -701,6 +701,56 @@ def test_contract_weekly_quality_read_has_no_bar_for_proven_price_gap(session, t
         )
 
 
+def test_contract_weekly_quality_v2_opt_in_accepts_proven_nonpositive_close(session, tmp_path):
+    session.scalar(select(TradingSession)).is_active = False
+    session.add(Contract(
+        contract_code="JM2509", instrument_symbol="jm", exchange_code="DCE",
+        listed_date=date(2025, 1, 1), expired_date=date(2025, 12, 1),
+        provider="rqdata",
+    ))
+    session.add(TradingCalendar(
+        exchange_code="DCE", trade_date=date(2025, 1, 1), is_trading_day=False,
+    ))
+    for day in (2, 3):
+        session.add(TradingSession(
+            exchange_code="DCE", instrument_symbol="jm", session_name="day",
+            start_time=time(9), end_time=time(15),
+            effective_from=date(2025, 1, day), effective_to=date(2025, 1, day),
+            is_active=True, provider="rqdata",
+        ))
+        session.add(TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
+        ))
+    session.commit()
+    gap_end = datetime(2025, 1, 3, 7, tzinfo=UTC)
+    fact = NonpositiveCloseFact(
+        gap_end, date(2025, 1, 3), Decimal(100), Decimal(100), Decimal(0),
+        Decimal(0), Decimal(2), Decimal(200), Decimal(10), "a" * 64, "b" * 64,
+        datetime(2026, 9, 15, tzinfo=UTC),
+    )
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    catalog.register_partition(store.publish(PublishRequest(
+        key, 2025, 1, (_bar(2, 100),), (_bar(2, 100).bar_end, gap_end),
+        nonpositive_close=(fact,),
+    )))
+    session.commit()
+    market = MarketDataService(catalog, store)
+
+    with pytest.raises(MarketDataError, match="SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED"):
+        market.query_contract_weekly_replay_quality(
+            symbol="jm", contract="JM2509", through=date(2025, 1, 3), cutoff=gap_end,
+        )
+    bars, interruptions = market.query_contract_weekly_replay_quality(
+        symbol="jm", contract="JM2509", through=date(2025, 1, 3), cutoff=gap_end,
+        classification_version="weekly-d1-quality-v2",
+    )
+    assert bars == ()
+    assert len(interruptions) == 1
+    assert interruptions[0].quality_classifications == ("NONPOSITIVE_CLOSE",)
+
+
 @pytest.mark.parametrize("mismatch", [None, "close", "turnover", "mixed_no_trade"])
 def test_contract_weekly_quality_read_validates_stored_normal_week(
     session, tmp_path, mismatch,

@@ -1,0 +1,31 @@
+{
+  "code_sha": "305cf36b94121dff37d6ce280f98869d979a2b8b",
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "started_at": "2026-09-19T11:13:54.580469+00:00",
+  "products": [
+    "b",
+    "bz",
+    "cj",
+    "eb",
+    "eg",
+    "j",
+    "oi",
+    "pf",
+    "pg",
+    "pk",
+    "pl",
+    "pr",
+    "px",
+    "rs",
+    "sf",
+    "sh",
+    "si",
+    "sm",
+    "sr"
+  ],
+  "input_revision_before": "e8450448b08f833ee7f4990856dc9f9937c35aa3fad040c89e172526e3ffa64c",
+  "input_revision_transaction_end": "e8450448b08f833ee7f4990856dc9f9937c35aa3fad040c89e172526e3ffa64c",
+  "input_revision_after": "e8450448b08f833ee7f4990856dc9f9937c35aa3fad040c89e172526e3ffa64c",
+  "input_revision_stable": true,
+  "finished_at": "2026-09-19T11:18:24.252150+00:00"
+}
