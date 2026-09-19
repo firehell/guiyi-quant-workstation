@@ -20,6 +20,33 @@ from guiyi_quant.reference_trading import (
 )
 
 
+def test_subing_return_policy_preserves_delta_over_entry_operation_order() -> None:
+    identity = stream()
+    opened_at = datetime(2026, 9, 18, 15, tzinfo=UTC)
+    closed_at = datetime(2026, 9, 19, 15, tzinfo=UTC)
+    opened = ReferenceAction(
+        stream=identity, source_action_id="open", physical_contract="RB2601",
+        owner_segment_id="owner-1", calculation_segment_id="calc-1",
+        bar_end=opened_at, trading_day=opened_at.date(), sequence=0,
+        kind=ActionKind.OPEN_LONG, reference_price=Decimal("3"),
+    )
+    state = reduce_reference(ReferenceState.flat(identity), actions=(opened,)).state
+    closed = ReferenceAction(
+        stream=identity, source_action_id="close", physical_contract="RB2601",
+        owner_segment_id="owner-1", calculation_segment_id="calc-1",
+        bar_end=closed_at, trading_day=closed_at.date(), sequence=0,
+        kind=ActionKind.CLOSE, reference_price=Decimal("10"), entry_action_id="open",
+    )
+
+    transition = reduce_reference(
+        state, actions=(closed,), return_policy="delta_over_entry",
+    )
+
+    assert transition.changed_trades[-1].reference_return == (
+        (Decimal("10") - Decimal("3")) / Decimal("3") * Decimal("100")
+    )
+
+
 def stream(mode: RecordingMode = RecordingMode.HISTORICAL_REPLAY) -> StreamIdentity:
     return StreamIdentity(
         strategy_code="test_strategy", formula_versions=("formula_v1",), profile_id="default",

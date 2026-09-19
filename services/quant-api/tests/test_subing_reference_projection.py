@@ -100,6 +100,24 @@ def test_public_projection_and_bounded_per_bar_state_share_one_step(frequency):
     assert tuple(indicators) == expected.indicators
 
 
+def test_public_projection_routes_trade_transitions_through_shared_reducer(monkeypatch):
+    import guiyi_quant.subing_reference as module
+
+    actual = module.reduce_reference
+    calls = []
+
+    def observed(*args, **kwargs):
+        calls.append((args, kwargs))
+        return actual(*args, **kwargs)
+
+    monkeypatch.setattr(module, "reduce_reference", observed, raising=False)
+
+    result = project(segment())
+
+    assert result.trades
+    assert calls
+
+
 def test_per_bar_replay_freezes_decimal_policy_like_public_projection():
     seg = segment()
     state = seed_subing_replay_state()

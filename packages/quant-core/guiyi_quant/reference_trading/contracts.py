@@ -28,6 +28,11 @@ class Side(StrEnum):
     SHORT = "SHORT"
 
 
+class ReturnPolicy(StrEnum):
+    RATIO_MINUS_ONE = "ratio_minus_one"
+    DELTA_OVER_ENTRY = "delta_over_entry"
+
+
 class TradeStatus(StrEnum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"

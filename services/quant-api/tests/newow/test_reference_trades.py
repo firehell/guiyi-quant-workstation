@@ -76,6 +76,29 @@ def test_closed_trade_covers_the_reference_contract_and_uses_action_prices(
     assert trade.hint_ids == ()
 
 
+def test_public_projector_routes_trade_transitions_through_shared_reducer(
+    product_cases, monkeypatch,
+):
+    import guiyi_quant.newow.reference_trades as module
+
+    case = product_cases.closed(entry="100", exit="110")
+    actual = module.reduce_reference
+    calls = []
+
+    def observed(*args, **kwargs):
+        calls.append((args, kwargs))
+        return actual(*args, **kwargs)
+
+    monkeypatch.setattr(module, "reduce_reference", observed, raising=False)
+
+    result = module.ReferenceTradeProjector().project(
+        case.replay, case.boundaries, case.as_of,
+    )
+
+    assert result.trades[0].status == "CLOSED"
+    assert calls
+
+
 def test_weekly_quality_adaptation_has_its_own_version_without_changing_daily(
     product_cases,
 ):
