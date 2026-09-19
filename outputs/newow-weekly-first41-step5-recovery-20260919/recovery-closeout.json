@@ -1,0 +1,117 @@
+{
+  "schema_version": "newow_first41_step5_recovery_closeout_v1",
+  "code_sha": "f0b567823210c8c0e984f96742a0db9ef433cd65",
+  "through": "2026-09-18",
+  "completed_at": "2026-09-19T03:27:34.400210+00:00",
+  "status": "COMPLETED",
+  "authorized_mutation": true,
+  "products": [
+    {
+      "symbol": "al",
+      "contract": "AL2611",
+      "plan_sha256": "722e7bf95aba6cea8f25f3ec947b699a421c8c73e75ca63072e38341a715a4a6",
+      "targets": 22,
+      "provider_request_budget": 22,
+      "provider_requests": 22,
+      "applied": 22,
+      "d1_rows": 206,
+      "w1_rows": 43,
+      "d1_partitions": 11,
+      "w1_partitions": 11,
+      "d1_hash_changes": 0,
+      "w1_hash_changes": 11,
+      "source_quality_facts": 0,
+      "weekly_snapshot_200": 3,
+      "section_pairs_200": 3,
+      "browser_firstloads_passed": 3
+    },
+    {
+      "symbol": "sc",
+      "contract": "SC2611",
+      "plan_sha256": "ba8c80dbfcea612eb95b3ef7733d5e089bf70c0df98110dc57612a905535d4ad",
+      "targets": 22,
+      "provider_request_budget": 22,
+      "provider_requests": 22,
+      "applied": 22,
+      "d1_rows": 217,
+      "w1_rows": 45,
+      "d1_partitions": 11,
+      "w1_partitions": 11,
+      "d1_hash_changes": 0,
+      "w1_hash_changes": 11,
+      "source_quality_facts": 0,
+      "weekly_snapshot_200": 3,
+      "section_pairs_200": 3,
+      "browser_firstloads_passed": 3
+    },
+    {
+      "symbol": "ss",
+      "contract": "SS2611",
+      "plan_sha256": "fd14e520be08eabd4eed33f6e16e262f49424a199cf4f8fd96869dd6fe91c695",
+      "targets": 22,
+      "provider_request_budget": 22,
+      "provider_requests": 22,
+      "applied": 22,
+      "d1_rows": 206,
+      "w1_rows": 43,
+      "d1_partitions": 11,
+      "w1_partitions": 11,
+      "d1_hash_changes": 0,
+      "w1_hash_changes": 11,
+      "source_quality_facts": 0,
+      "weekly_snapshot_200": 3,
+      "section_pairs_200": 3,
+      "browser_firstloads_passed": 3
+    },
+    {
+      "symbol": "zn",
+      "contract": "ZN2611",
+      "plan_sha256": "53b8c27adc927d3ef4d1489996e21a65161ec0b3de0b5b9ee4a1aec09a974a4d",
+      "targets": 22,
+      "provider_request_budget": 22,
+      "provider_requests": 22,
+      "applied": 22,
+      "d1_rows": 206,
+      "w1_rows": 43,
+      "d1_partitions": 11,
+      "w1_partitions": 11,
+      "d1_hash_changes": 0,
+      "w1_hash_changes": 11,
+      "source_quality_facts": 0,
+      "weekly_snapshot_200": 3,
+      "section_pairs_200": 3,
+      "browser_firstloads_passed": 3
+    }
+  ],
+  "totals": {
+    "contracts": 4,
+    "targets": 88,
+    "provider_requests": 88,
+    "blocked": 0,
+    "failed": 0,
+    "d1_hash_changes": 0,
+    "w1_hash_changes": 44,
+    "source_quality_facts": 0,
+    "readiness_dependency_states": {
+      "DATA_READY": 356,
+      "NOT_APPLICABLE": 2
+    },
+    "weekly_snapshots_200": 12,
+    "section_pairs_200": 12,
+    "browser_firstloads_passed": 12
+  },
+  "preserved_non_success_evidence": {
+    "initial_al_apply": "maintenance_locked, provider_requests=0, applied=0",
+    "concurrent_section_probe": "9 NEWOW_RESOURCE_BUSY and 3 NEWOW_SNAPSHOT_GENERATION_CONFLICT",
+    "early_browser_probe": "settle condition invalid and Chrome process exit; not counted as acceptance"
+  },
+  "combined_step5": {
+    "weekly_pages_readable": 123,
+    "weekly_pages_total": 123,
+    "d1_latest_states": {
+      "READY": 179,
+      "WARMING": 1
+    },
+    "other_19_w1_60m_denied": 38
+  }
+}

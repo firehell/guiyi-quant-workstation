@@ -92,3 +92,14 @@ AL、ZN 的最新 W1 快照阻塞为 2611 合约 REPLAY_ENDPOINTS_MISSING，早�
 38/38 被拒绝。未执行 provider、Canonical、Catalog 写入或 Runtime 变更。
 步骤 5 状态仍为 PARTIAL：12 个 W1 组合有来源阻断；
 原始浏览器首次故障与独立后续首载分别保留，不将后者覆盖前者。
+
+2026-09-19 owner 授权对 AL2611、SC2611、SS2611、ZN2611 做精确 W1
+前缀恢复。四份原生只读计划在现有全品种 audit 自然释放维护锁后再次生成，
+哈希与步骤 5 readiness 完全一致。随后串行执行 88 个 D1/W1 目标，RQData
+请求 88 次，`applied=88`、`blocked=failed=0`；写入前后 44 个 D1 活动文件
+SHA-256 全部不变，44 个 W1 月分区完成发布，缺价质量事实为 0。
+补数后 358 个 W1 依赖为 356 DATA_READY、2 合法 NOT_APPLICABLE；12 个默认
+周快照、12 组主图/参考交易同快照读回及 12 个独立 Chrome 单次导航全部通过。
+固定 41 品种当前合并为 123/123 页面可读；其余 19 品种 W1/60m 的关闭范围未改。
+完整回执见
+[`../newow-weekly-first41-step5-recovery-20260919/recovery-closeout.md`](../newow-weekly-first41-step5-recovery-20260919/recovery-closeout.md)。

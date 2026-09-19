@@ -1377,5 +1377,25 @@
       "reason": "REPLAY_ENDPOINTS_MISSING",
       "first_missing_day": "2025-11-21"
     }
-  ]
+  ],
+  "post_recovery": {
+    "date": "2026-09-19",
+    "evidence": "../newow-weekly-first41-step5-recovery-20260919/recovery-closeout.json",
+    "status": "COMPLETED",
+    "page_states": {
+      "readable": 123,
+      "blocked": 0
+    },
+    "recovered_products": [
+      "al",
+      "sc",
+      "ss",
+      "zn"
+    ],
+    "d1_states": {
+      "READY": 179,
+      "WARMING": 1
+    },
+    "other_19_w1_60m_denied": 38
+  }
 }
