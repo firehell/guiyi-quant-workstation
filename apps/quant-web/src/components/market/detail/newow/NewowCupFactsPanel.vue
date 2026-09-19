@@ -2,9 +2,11 @@
 import type { NewowCupWitness } from '@/types/newowProduct'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { shortNewowTime } from '@/utils/newowDetailPresentation'
+import { projectNewowCupPoints } from './newowCupFactsPresentation'
 
 defineProps<{ witnesses: readonly NewowCupWitness[]; physicalContract: string; segmentId: string }>()
-const points = (witness: NewowCupWitness) => [witness.left_rim, witness.bottom, witness.right_rim, witness.handle_extreme]
+const facts = (witness: NewowCupWitness) => [witness.left_rim, witness.bottom, witness.right_rim, witness.handle_extreme]
+const points = (witness: NewowCupWitness) => projectNewowCupPoints(witness)
 </script>
 
 <template>
@@ -14,9 +16,10 @@ const points = (witness: NewowCupWitness) => [witness.left_rim, witness.bottom, 
     <p v-if="witnesses.length === 0" role="status">当前区段没有已确认杯柄事实；这不表示策略看空。</p>
     <article v-for="witness in witnesses" :key="witness.witness_id" class="newow-cup-facts__card">
       <svg viewBox="0 0 240 70" role="img" :aria-label="`杯柄候选 ${witness.candidate_id} 的四个已确认拐点`">
-        <polyline :points="points(witness).map((point, index) => `${20 + index * 65},${55 - Math.min(42, Math.max(0, Number(point.price) || 0) % 42)}`).join(' ')" fill="none" stroke="#ff6b2c" stroke-width="3" />
+        <polyline v-if="points(witness).every(point => point.available)" :points="points(witness).map(point => `${point.x},${point.y}`).join(' ')" fill="none" stroke="#ff6b2c" stroke-width="3" />
+        <text v-else x="12" y="36">拐点价格不可用</text>
       </svg>
-      <dl><div v-for="(point, index) in points(witness)" :key="point.kind"><dt>{{ ['左杯沿', '杯底', '右杯沿', '柄极值'][index] }}</dt><dd>{{ formatMarketDecimal(point.price) }} · {{ shortNewowTime(point.pivot_at) }}</dd><small>确认 {{ shortNewowTime(point.confirmed_at) }}</small></div></dl>
+      <dl><div v-for="(point, index) in facts(witness)" :key="point.kind"><dt>{{ ['左杯沿', '杯底', '右杯沿', '柄极值'][index] }}</dt><dd>{{ formatMarketDecimal(point.price) }} · {{ shortNewowTime(point.pivot_at) }}</dd><small>确认 {{ shortNewowTime(point.confirmed_at) }}</small></div></dl>
       <p>Pivot {{ formatMarketDecimal(witness.pivot_price) }} · 确认 {{ shortNewowTime(witness.confirmed_at) }} · score {{ witness.score }}</p>
       <details><summary>评分与可审计事实</summary><p>{{ witness.candidate_id }} · {{ witness.witness_id }}</p><p>{{ witness.score_breakdown.map(([key, value]) => `${key}: ${value}`).join(' / ') || '无评分拆分' }}</p><p>{{ witness.formula_version }} · {{ witness.profile_identity }}</p></details>
     </article>

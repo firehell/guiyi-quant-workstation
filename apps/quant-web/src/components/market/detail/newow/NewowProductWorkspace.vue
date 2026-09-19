@@ -71,22 +71,23 @@ const retainedPane = shallowRef<{ response: NewowProductSectionResponse<'auxilia
 const retainedPaneCompatible = computed(() => dialogKind.value === 'cup_handle' && retainedPane.value !== null
   && retainedPane.value.proof !== null && retainedPane.value.proof === chartWindowProof(chartResponse.value)
   && retainedPane.value.component === selectedAuxiliary.value)
+const requiredAuxiliaryComponent = computed<NewowAuxiliaryComponent>(() => dialogKind.value === 'cup_handle' ? 'cup_handle' : selectedAuxiliary.value)
 const currentAuxiliaryResponse = computed(() => {
-  const response = retainedPaneCompatible.value ? retainedPane.value!.response : auxiliaryResponse.value
-  const lifecycle = retainedPaneCompatible.value ? retainedPane.value!.lifecycle : loader.sections.auxiliary.state.value
+  const response = dialogKind.value === 'cup_handle' ? auxiliaryResponse.value : retainedPaneCompatible.value ? retainedPane.value!.response : auxiliaryResponse.value
+  const lifecycle = dialogKind.value === 'cup_handle' ? loader.sections.auxiliary.state.value : retainedPaneCompatible.value ? retainedPane.value!.lifecycle : loader.sections.auxiliary.state.value
   const acceptedWindow = loader.acceptedAuxiliaryWindow.value
   return (lifecycle === 'ready' || lifecycle === 'warming')
     && acceptedWindow !== null && auxiliaryChartWindow.value !== null
     && acceptedWindow.from === auxiliaryChartWindow.value.from && acceptedWindow.through === auxiliaryChartWindow.value.through
-    && response?.value?.component === selectedAuxiliary.value && newowChartSnapshotKey(response) !== null
+    && response?.value?.component === requiredAuxiliaryComponent.value && newowChartSnapshotKey(response) !== null
     && newowChartSnapshotKey(response) === newowChartSnapshotKey(chartResponse.value) ? response : null
 })
 const currentAuxiliaryLifecycle = computed(() => loader.sections.auxiliary.state.value === 'input_conflict' ? 'input_conflict'
-  : retainedPaneCompatible.value ? retainedPane.value!.lifecycle
-  : dialogKind.value === 'cup_handle' ? 'not_requested' : loader.sections.auxiliary.state.value)
+  : dialogKind.value === 'cup_handle' ? loader.sections.auxiliary.state.value
+  : retainedPaneCompatible.value ? retainedPane.value!.lifecycle : loader.sections.auxiliary.state.value)
 const currentAuxiliaryError = computed(() => loader.sections.auxiliary.state.value === 'input_conflict' ? loader.sections.auxiliary.error.value
-  : retainedPaneCompatible.value ? retainedPane.value!.error
-  : dialogKind.value === 'cup_handle' ? null : loader.sections.auxiliary.error.value)
+  : dialogKind.value === 'cup_handle' ? loader.sections.auxiliary.error.value
+  : retainedPaneCompatible.value ? retainedPane.value!.error : loader.sections.auxiliary.error.value)
 const auxiliaryChartWindow = computed(() => chartResponse.value?.value === null || chartResponse.value === null
   ? null
   : { from: chartResponse.value.value.chart_from, through: chartResponse.value.value.chart_through })
@@ -99,6 +100,10 @@ const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selecte
 const auxiliaryOptions = [{ id: 'macd', label: 'MACD' }, { id: 'zhaoyao_mirror', label: '照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }] as const
 const historicalAsOfLabel = computed(() => loader.historicalSnapshot.value ? formatChartTimeInShanghai(loader.historicalSnapshot.value.as_of) : '')
 const dialogTitle = computed(() => ({ explanation: '策略解释', action: '历史主动作事实', hint: '历史过程提示', indicator: '指标解读', comparator: '页面比较说明', cup_handle: '杯柄说明' }[dialogKind.value ?? 'explanation']))
+const summaryContract = computed(() => chartResponse.value?.value?.bars.at(-1)?.physical_contract ?? '物理合约不可用')
+const summaryAsOf = computed(() => shortNewowTime(chartResponse.value?.meta.as_of))
+const openReferenceText = computed(() => summary.value.openReference ? '未清仓页面参考交易' : loader.sections.reference.state.value === 'ready' ? '当前无未清仓页面参考交易' : loader.sections.reference.state.value === 'not_requested' ? '参考交易尚未读取' : '参考交易当前不可用')
+const featureStateText = (section: NewowProductSection) => !sectionOpen(section) ? '当前发布阶段未开放' : loader.sections[section].state.value === 'loading' ? '正在读取' : '证据不足或当前不可用'
 async function loadExplanation() { if (sectionOpen('explanation') && loader.sections.explanation.state.value === 'not_requested') await loader.loadExplanation() }
 async function loadAuxiliaryForChart(component: NewowAuxiliaryComponent = selectedAuxiliary.value) {
   if (!sectionOpen('auxiliary') || auxiliaryChartWindow.value === null || !chartResponse.value?.meta.snapshot_token) return
@@ -213,13 +218,14 @@ onBeforeUnmount(() => loader.dispose())
       <div class="newow-summary__main">
         <strong>策略概览</strong>
         <span class="newow-status" :data-state="summary.status.state"><span>{{ ({ BUILD: '▲', HOLD: '✓', CLEAR: '▼', FLAT: '×', UNAVAILABLE: '?' })[summary.status.state] }}</span>{{ summary.status.label }}</span>
+        <span class="newow-summary__identity">{{ summaryContract }} · 截至 {{ summaryAsOf }}</span>
         <span class="newow-price newow-price--target" :title="summary.target?.bar_end">目标参考 {{ formatMarketDecimal(summary.target?.display_value) }}<small v-if="summary.target"> · {{ shortNewowTime(summary.target.bar_end) }}</small><small v-else> · {{ !sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足' }}</small></span>
         <span class="newow-price newow-price--absorb" :title="summary.absorb?.bar_end">吸筹参考 {{ formatMarketDecimal(summary.absorb?.display_value) }}<small v-if="summary.absorb"> · {{ shortNewowTime(summary.absorb.bar_end) }}</small><small v-else> · {{ !sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足' }}</small></span>
         <button class="newow-summary__evidence" @click="openDialog('explanation')">查看依据</button>
       </div>
       <div class="newow-summary__facts">
         <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口最近主动作' : '已读取窗口最近主动作' }} <button v-if="summary.latestAction" :title="summary.latestAction.bar_end" @click="selectSignal(summary.latestAction.signal_id)">{{ summaryActionLabel(summary.latestAction) }} · {{ formatMarketDecimal(summary.latestAction.reference_price) }} · {{ shortNewowTime(summary.latestAction.bar_end) }}</button><template v-else>—</template></span>
-        <span>当前参考交易 {{ summary.openReference ? '未清仓' : '—' }} <small v-if="!summary.openReference">{{ loader.sections.reference.state.value === 'not_requested' ? '未读取' : '当前窗口不可用' }}</small></span>
+        <span>当前参考交易 {{ openReferenceText }}</span>
         <span>参考浮动 <span class="newow-return-badge" :data-direction="referencePercentDisplay(summary.openReference?.mark_change_pct).direction">{{ referencePercentDisplay(summary.openReference?.mark_change_pct).text }}</span> · {{ shortNewowTime(summary.openReference?.mark_bar_end) }}</span>
         <span :title="summary.status.barEnd ?? undefined">{{ summary.status.historical ? '历史窗口状态截至' : '已读取状态截至' }} {{ shortNewowTime(summary.status.barEnd) }}</span>
       </div>
@@ -271,8 +277,8 @@ onBeforeUnmount(() => loader.dispose())
         <p>{{ selectedActionDescription?.explanation ?? '仅为所选历史主动作事实，不代表账户成交。' }}</p>
         <details><summary>来源与关联 Hint</summary><p>{{ selectedSignalId }} · {{ selectedAction?.barEnd }}</p><p v-for="hint in chartResponse?.value?.hints.filter(hint => chartResponse?.value?.frames.find(frame => frame.bar_end === selectedAction?.barEnd)?.hint_ids.includes(hint.hint_id)) ?? []" :key="hint.hint_id">{{ hint.kind }} · {{ hint.hint_id }} · known_at {{ hint.known_at }} · {{ hint.anchor_price ?? '—' }}</p></details>
       </template>
-      <template v-else-if="dialogKind === 'indicator'"><p>{{ auxiliaryDisclosure.title }}</p><p>{{ auxiliaryDisclosure.disclosure }}</p><p>{{ currentAuxiliaryLifecycle }} · {{ currentAuxiliaryError ?? '—' }}</p><details><summary>来源</summary><p>{{ currentAuxiliaryResponse?.value?.formula_version ?? '未读取' }}</p><p>截至 {{ currentAuxiliaryResponse?.meta.as_of ?? '—' }}</p></details></template>
-      <template v-else-if="dialogKind === 'cup_handle'"><p v-if="identity.frequency !== '1d'">杯柄仅适用于 1d。</p><p v-else-if="loader.sections.auxiliary.error.value">{{ newowErrorDisplay(loader.sections.auxiliary.error.value) }}</p><template v-else-if="currentAuxiliaryResponse?.value?.component === 'cup_handle'"><NewowCupFactsPanel v-for="segment in currentAuxiliaryResponse.value.segments" :key="segment.segment_id" :witnesses="Array.isArray(segment.data) ? segment.data : []" :physical-contract="segment.physical_contract" :segment-id="segment.segment_id" /></template><p v-else role="status">正在读取已确认杯柄事实…</p></template>
+      <template v-else-if="dialogKind === 'indicator'"><h3>{{ auxiliaryDisclosure.title }}</h3><p>当前读数：{{ currentAuxiliaryResponse?.value?.component ?? '尚未取得' }}</p><p>含义与边界：{{ auxiliaryDisclosure.disclosure }}</p><p v-if="currentAuxiliaryLifecycle !== 'ready'" role="status">{{ featureStateText('auxiliary') }}</p><details><summary>来源与原始事实</summary><p>{{ currentAuxiliaryResponse?.value?.formula_version ?? '暂无经确认的解释' }}</p><p>截至 {{ currentAuxiliaryResponse?.meta.as_of ?? '—' }}</p><p v-if="currentAuxiliaryError">技术原因 {{ newowErrorDisplay(currentAuxiliaryError) }}</p></details><button v-if="currentAuxiliaryError" @click="loadAuxiliaryForChart()">重试指标</button></template>
+      <template v-else-if="dialogKind === 'cup_handle'"><p v-if="identity.frequency !== '1d'">杯柄仅适用于 1d。</p><p v-else-if="currentAuxiliaryError" role="status">杯柄事实读取失败：{{ newowErrorDisplay(currentAuxiliaryError) }}</p><template v-else-if="currentAuxiliaryResponse?.value?.component === 'cup_handle'"><template v-for="segment in currentAuxiliaryResponse.value.segments" :key="segment.segment_id"><NewowCupFactsPanel v-if="segment.status.status === 'ready'" :witnesses="Array.isArray(segment.data) ? segment.data : []" :physical-contract="segment.physical_contract" :segment-id="segment.segment_id" /><p v-else role="status">{{ segment.physical_contract }} · {{ segment.status.reason_code ?? '该区段杯柄事实暂不可用' }}</p></template></template><p v-else role="status">正在读取已确认杯柄事实…</p><button v-if="currentAuxiliaryError" @click="loadAuxiliaryForChart('cup_handle')">重试杯柄事实</button></template>
       <template v-else-if="dialogKind === 'explanation' && !sectionOpen('explanation')">
         <section class="newow-window-state" data-testid="newow-window-state" :aria-label="summary.status.historical ? '所示历史窗口状态' : '所示图表状态'">
           <h3>{{ summary.status.historical ? '所示历史窗口状态' : '所示图表状态' }}</h3>
@@ -290,16 +296,17 @@ onBeforeUnmount(() => loader.dispose())
   </section>
 </template>
 <style scoped>
-.newow-product-workspace { display:grid; min-width:0; gap:12px; }
-.newow-summary { display:grid; gap:12px; padding:16px; border:1px solid #e9edf2; border-radius:12px; background:#fff; box-shadow:0 8px 24px #15223808; }
+.newow-product-workspace { display:grid; min-width:0; gap:3px; }
+.newow-summary { display:grid; gap:8px; padding:8px; border:1px solid #e9edf2; border-radius:12px; background:#fff; box-shadow:0 8px 24px #15223808; }
 .newow-product-workspace__snapshot-controls { display:flex; align-items:center; gap:12px; color:#667085; font-size:12px; }
 .newow-summary__main,.newow-summary__facts { display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px; }
-.newow-summary__facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); font-size:12px; color:#667085; }.newow-summary__facts > span { min-width:0; padding:9px; border-radius:8px; background:#f8fafc; }
+.newow-summary__identity { color:#667085; font-size:12px; }
+.newow-summary__facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); font-size:12px; color:#667085; }.newow-summary__facts > span { min-width:0; padding:4px 8px; border-radius:8px; background:#f8fafc; }
 .newow-summary button,.newow-product-workspace__auxiliary-controls button,.newow-product-workspace__research > button { border:0; background:#fff; color:inherit; padding:4px 12px; }
 .newow-status { display:flex; align-items:center; gap:8px; }
 .newow-status span { border-radius:50%; width:24px; height:24px; display:grid; place-items:center; background:#f3f4f6; }
 .newow-status[data-state="BUILD"] { color:#ff403a; }.newow-status[data-state="HOLD"] { color:#ff6b2c; }.newow-status[data-state="CLEAR"] { color:#22b95d; }.newow-status[data-state="FLAT"] { color:#365af5; }
-.newow-price { padding:8px 12px; border-radius:7px; }.newow-price--target { color:#dd4c15; background:#fff4ee; }.newow-price--absorb { color:#365af5; background:#eef3ff; }
+.newow-price { padding:3px 8px; border-radius:7px; }.newow-price--target { color:#dd4c15; background:#fff4ee; }.newow-price--absorb { color:#365af5; background:#eef3ff; }
 .newow-price small { font-size:11px; }.newow-summary__evidence { margin-left:auto; border:1px solid var(--gy-border) !important; border-radius:var(--gy-radius-md); min-height:36px; }
 .newow-product-workspace__auxiliary-controls { display:flex; flex-wrap:nowrap; overflow-x:auto; white-space:nowrap; align-items:center; border-top:1px solid #ebedf0; gap:0; font-size:12px; }
 .newow-product-workspace__auxiliary-controls button { min-height:36px; padding:0 10px; }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { newowReferenceWindow } from '../src/utils/newowReferenceWindows.ts'
+import { acceptedNewowReferencePreset, newowReferenceWindow } from '../src/utils/newowReferenceWindows.ts'
 
 test('reference presets use accepted cutoff and clamp month ends without local-time drift', () => {
   assert.deepEqual(newowReferenceWindow('2026-09-18', 'three_months'), { performanceSince: '2026-06-18', performanceThrough: '2026-09-18' })
@@ -12,4 +12,11 @@ test('reference presets use accepted cutoff and clamp month ends without local-t
 
 test('reference presets reject an impossible accepted cutoff', () => {
   assert.throws(() => newowReferenceWindow('2026-02-29', 'ytd'), /ANCHOR_INVALID/)
+})
+
+test('preset is highlighted only after the matching request is accepted', () => {
+  const pending = { kind: 'one_year' as const, since: '2025-09-18', through: '2026-09-18' }
+  assert.equal(acceptedNewowReferencePreset(pending, { performanceSince: '2026-01-01', performanceThrough: '2026-09-18' }), null)
+  assert.equal(acceptedNewowReferencePreset(pending, { performanceSince: pending.since, performanceThrough: pending.through }), 'one_year')
+  assert.equal(acceptedNewowReferencePreset(null, { performanceSince: pending.since, performanceThrough: pending.through }), null)
 })

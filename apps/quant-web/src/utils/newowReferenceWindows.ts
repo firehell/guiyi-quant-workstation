@@ -5,6 +5,10 @@ export interface NewowReferenceWindow {
   readonly performanceThrough: string
 }
 
+export function acceptedNewowReferencePreset<T extends string>(pending: { readonly kind: T; readonly since: string; readonly through: string } | null, accepted: NewowReferenceWindow | null): T | null {
+  return pending !== null && accepted !== null && pending.since === accepted.performanceSince && pending.through === accepted.performanceThrough ? pending.kind : null
+}
+
 /**
  * Calendar-only convenience windows.  The accepted server cutoff is the sole
  * anchor: this helper deliberately does not inspect the browser clock or data

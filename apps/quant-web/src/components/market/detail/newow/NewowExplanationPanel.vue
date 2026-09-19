@@ -113,10 +113,10 @@ const sortedWindows = computed(() => comparator.value === null ? [] : [...compar
       </p>
       <template v-if="comparator">
         <p>当前 Segment：{{ comparator.physicalContract }} / {{ comparator.segmentId }}</p>
-        <p>{{ comparator.disclosure }}</p>
+        <p>{{ comparator.disclosure }} 排序首位仅表示当前展示排序，不构成推荐或策略采纳。</p>
         <p v-if="comparator.reason !== '—'">Evidence {{ comparator.reason }}</p>
         <div class="newow-comparator__sort" aria-label="五窗口排序"><button v-for="item in ([['default', '默认'], ['return', '收益'], ['drawdown', '回撤'], ['winRate', '胜率']] as const)" :key="item[0]" :aria-pressed="comparatorSort === item[0]" @click="comparatorSort = item[0]">{{ item[1] }}</button></div>
-        <div class="newow-comparator__cards"><article v-for="(row, index) in sortedWindows" :key="row.window" :data-leading="index === 0"><strong>{{ row.window }} 窗口</strong><span>累计 {{ row.returnText }}</span><span>回撤 {{ row.drawdownText }}</span><span>胜率 {{ row.winRateText }}</span><small>{{ row.tradeCount }} 笔 · {{ row.syntheticTerminal ? '理论平仓' : '无理论平仓' }}</small></article></div>
+        <div class="newow-comparator__cards"><article v-for="(row, index) in sortedWindows" :key="row.window" :data-leading="index === 0"><strong>{{ row.window }} 窗口</strong><span>累计 {{ row.returnText }}</span><span>回撤 {{ row.drawdownText }}</span><span>胜率 {{ row.winRateText }}</span><small>{{ row.tradeCount }} 笔 · 服务端评分 {{ row.score }} · {{ row.syntheticTerminal ? '理论平仓' : '无理论平仓' }}</small></article></div>
         <table>
           <caption>样本内五窗口理论结果</caption>
           <thead><tr><th>窗口</th><th>累计</th><th>最大回撤</th><th>胜率</th><th>样本末</th></tr></thead>
@@ -143,6 +143,6 @@ const sortedWindows = computed(() => comparator.value === null ? [] : [...compar
 .newow-explanation header p { margin-top:8px; color:var(--gy-text-secondary); }
 .newow-explanation__sources { color:var(--gy-text-secondary); }
 .newow-explanation__facts dd { margin: 4px 0 0; }
-.newow-comparator__sort { display:flex; flex-wrap:wrap; gap:8px; }.newow-comparator__sort button { min-height:32px; border:1px solid var(--gy-border); border-radius:999px; padding:0 10px; background:#fff; }.newow-comparator__sort button[aria-pressed="true"] { color:#c2410c; border-color:#ff6b2c; background:#fff4ee; }.newow-comparator__cards { display:grid; grid-template-columns:repeat(5,minmax(130px,1fr)); overflow-x:auto; gap:8px; }.newow-comparator__cards article { display:grid; gap:5px; min-width:130px; padding:10px; border:1px solid var(--gy-border); border-radius:8px; background:var(--gy-bg-elevated); font-variant-numeric:tabular-nums; }.newow-comparator__cards article[data-leading="true"] { border-color:#ff6b2c; box-shadow:inset 0 3px #ff6b2c; }.newow-comparator__cards small { color:var(--gy-text-muted); }
+.newow-comparator__sort { display:flex; flex-wrap:wrap; gap:8px; }.newow-comparator__sort button { min-height:32px; border:1px solid var(--gy-border); border-radius:999px; padding:0 10px; background:#fff; }.newow-comparator__sort button[aria-pressed="true"] { color:#c2410c; border-color:#ff6b2c; background:#fff4ee; }.newow-comparator__cards { display:grid; grid-template-columns:repeat(5,minmax(130px,1fr)); gap:8px; }.newow-comparator__cards article { display:grid; gap:5px; min-width:0; padding:10px; border:1px solid var(--gy-border); border-radius:8px; background:var(--gy-bg-elevated); font-variant-numeric:tabular-nums; }.newow-comparator__cards article[data-leading="true"] { border-color:#ff6b2c; box-shadow:inset 0 3px #ff6b2c; }.newow-comparator__cards small { color:var(--gy-text-muted); } @media (max-width: 640px) { .newow-comparator__cards { grid-template-columns:repeat(2,minmax(0,1fr)); }.newow-comparator table { font-size:12px; } } @media (max-width: 390px) { .newow-comparator__cards { grid-template-columns:1fr; } }
 @media (max-width: 900px) { .newow-explanation-layout { grid-template-columns: 1fr; } }
 </style>

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
-import { newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
+import { acceptedNewowReferencePreset, newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
 
 import type {
   NewowProductSectionResponse,
@@ -47,7 +47,8 @@ const model = computed(() => (
     : null
 ))
 const visibleModel = computed(() => model.value === null ? null : filterNewowReferenceRows(model.value, filter.value))
-const selectedPreset = ref<NewowReferencePreset | 'complete' | null>(null)
+const pendingPreset = ref<{ kind: NewowReferencePreset | 'complete'; since: string; through: string } | null>(null)
+const acceptedPreset = ref<NewowReferencePreset | 'complete' | null>(null)
 const acceptedAnchor = computed(() => model.value?.actualAvailableThrough ?? null)
 
 // Current FLAT is a chart fact, never a synthetic trade or a guess from a history page.
@@ -79,7 +80,20 @@ watch(() => props.response?.value, (value) => {
   }
   performanceSince.value = value.performance_since
   performanceThrough.value = value.performance_through
+  const pending = pendingPreset.value
+  acceptedPreset.value = acceptedNewowReferencePreset(pending, { performanceSince: value.performance_since, performanceThrough: value.performance_through })
+  pendingPreset.value = null
 }, { immediate: true })
+
+// A failed request has not accepted the requested window. Keeping a selected
+// pill in that case would mislabel the older response that remains on screen.
+watch(() => [props.lifecycle, props.error] as const, ([lifecycle, error]) => {
+  if (pendingPreset.value !== null && (lifecycle === 'unavailable' || lifecycle === 'input_conflict'
+    || lifecycle === 'cancelled' || (lifecycle === 'stale' && error !== null))) {
+    pendingPreset.value = null
+    acceptedPreset.value = null
+  }
+})
 
 function toggle(id: string): void {
   expanded.value = expanded.value.includes(id)
@@ -95,23 +109,20 @@ function reload(): void {
 function useCompleteWindow(): void {
   const target = model.value?.completeWindowAction
   if (!target || props.loadingPage) return
-  performanceSince.value = target.since
-  performanceThrough.value = target.through
+  pendingPreset.value = { kind: 'complete', ...target }
   emit('reload', { performanceSince: target.since, performanceThrough: target.through })
 }
 function usePreset(preset: NewowReferencePreset): void {
   if (!acceptedAnchor.value || props.loadingPage) return
   try {
     const target = newowReferenceWindow(acceptedAnchor.value, preset)
-    performanceSince.value = target.performanceSince
-    performanceThrough.value = target.performanceThrough
-    selectedPreset.value = preset
+    pendingPreset.value = { kind: preset, since: target.performanceSince, through: target.performanceThrough }
     emit('reload', target)
-  } catch { selectedPreset.value = null }
+  } catch { pendingPreset.value = null }
 }
 
-function updateSince(event: Event): void { performanceSince.value = (event.target as HTMLInputElement).value }
-function updateThrough(event: Event): void { performanceThrough.value = (event.target as HTMLInputElement).value }
+function updateSince(event: Event): void { performanceSince.value = (event.target as HTMLInputElement).value; pendingPreset.value = null; acceptedPreset.value = null }
+function updateThrough(event: Event): void { performanceThrough.value = (event.target as HTMLInputElement).value; pendingPreset.value = null; acceptedPreset.value = null }
 function updateFilter(event: Event): void { filter.value = (event.target as HTMLSelectElement).value as typeof filter.value }
 </script>
 
@@ -125,8 +136,8 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
       </div>
       <form class="newow-reference__window" @submit.prevent="reload">
         <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
-          <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="selectedPreset === preset[0]" @click="usePreset(preset[0])">{{ preset[1] }}</button>
-          <button type="button" :disabled="loadingPage || !model?.completeWindowAction" :aria-pressed="selectedPreset === 'complete'" @click="selectedPreset = 'complete'; useCompleteWindow()">完整窗口</button>
+          <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="acceptedPreset === preset[0]" :data-pending="pendingPreset?.kind === preset[0]" @click="usePreset(preset[0])">{{ pendingPreset?.kind === preset[0] ? '读取中…' : preset[1] }}</button>
+          <button type="button" :disabled="loadingPage || !model?.completeWindowAction" :aria-pressed="acceptedPreset === 'complete'" :data-pending="pendingPreset?.kind === 'complete'" @click="useCompleteWindow">{{ pendingPreset?.kind === 'complete' ? '读取中…' : '完整窗口' }}</button>
         </div>
         <label>统计起点 <input :value="performanceSince" type="date" @input="updateSince" /></label>
         <label>统计终点 <input :value="performanceThrough" type="date" @input="updateThrough" /></label>

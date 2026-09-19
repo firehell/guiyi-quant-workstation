@@ -152,7 +152,9 @@ test('main chart exposes same-as_of retry and explicit refresh-current without c
   await expect.poll(() => productRequests(fixture, 'chart').length).toBe(3)
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   await expect(page.locator('.quote-header__price strong')).toHaveText('106.3')
-  expect(fixture.requests.filter(item => item.url.pathname === '/api/v1/market/bars/page')).toHaveLength(2)
+  // Initial quote failure, the explicit daily retry, and refresh-current each
+  // preserve their own bounded quote request; no hidden polling is permitted.
+  expect(fixture.requests.filter(item => item.url.pathname === '/api/v1/market/bars/page')).toHaveLength(3)
   expect(productRequests(fixture, 'chart').at(-1).url.searchParams.get('as_of')).toBe(NEWOW_AS_OF)
   assertNoUnexpectedRequests(fixture)
 })
@@ -230,6 +232,22 @@ test('same-Bar CLEAR then BUILD actions remain separately locatable', async ({ p
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await page.mouse.move(0, 0)
   await expect(page).toHaveScreenshot('newow-oscillation-same-bar.png', { animations: 'disabled', caret: 'hide', maxDiffPixels: 500 })
+  assertNoUnexpectedRequests(fixture)
+})
+
+test('cup dialog renders the accepted cup response and restores the prior auxiliary pane', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page)
+  await page.goto(newowRoute())
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-auxiliary-state', 'ready')
+  await page.getByRole('button', { name: '杯柄说明', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('归一杯柄候选')
+  await expect(dialog).toContainText('fixture-cup-1')
+  await expect(dialog).toContainText('fixture-cup-2')
+  expect(productRequests(fixture, 'auxiliary').map(item => item.url.searchParams.get('component'))).toContain('cup_handle')
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-auxiliary-state', 'ready')
   assertNoUnexpectedRequests(fixture)
 })
 

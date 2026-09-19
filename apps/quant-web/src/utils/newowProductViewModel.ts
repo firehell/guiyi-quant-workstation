@@ -295,6 +295,7 @@ export interface NewowComparatorPanelViewModel {
     readonly drawdownSort: string | null
     readonly winRateSort: string | null
     readonly tradeCount: number
+    readonly score: string
     readonly originalIndex: number
     readonly syntheticTerminal: boolean
   }>
@@ -333,6 +334,7 @@ export function buildNewowComparatorPanelViewModel(
         drawdownSort: item?.page_display.max_drawdown_pct ?? null,
         winRateSort: item?.page_display.win_rate_pct ?? null,
         tradeCount: item?.trade_count ?? 0,
+        score: item?.score ?? '—',
         originalIndex,
         syntheticTerminal: item?.force_closed_at_end === true || item?.trades.some((trade) => trade.synthetic_terminal) === true,
       }
