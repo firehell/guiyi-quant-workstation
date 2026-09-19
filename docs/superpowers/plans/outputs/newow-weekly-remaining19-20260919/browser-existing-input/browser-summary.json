@@ -1,0 +1,527 @@
+{
+  "schemaVersion": "newow_remaining19_browser_acceptance_v1",
+  "baseURL": "http://127.0.0.1:5174",
+  "denominator": 57,
+  "completed": 14,
+  "pagePass": 0,
+  "interrupted": 1,
+  "untested": 43,
+  "fatal": "Error: browser.newContext: Target page, context or browser has been closed",
+  "untestedCases": [
+    {
+      "product": "eg",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "j",
+      "strategy": "trend"
+    },
+    {
+      "product": "j",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "j",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "oi",
+      "strategy": "trend"
+    },
+    {
+      "product": "oi",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "oi",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "pf",
+      "strategy": "trend"
+    },
+    {
+      "product": "pf",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "pf",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "pg",
+      "strategy": "trend"
+    },
+    {
+      "product": "pg",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "pg",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "pk",
+      "strategy": "trend"
+    },
+    {
+      "product": "pk",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "pk",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "pl",
+      "strategy": "trend"
+    },
+    {
+      "product": "pl",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "pl",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "pr",
+      "strategy": "trend"
+    },
+    {
+      "product": "pr",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "pr",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "px",
+      "strategy": "trend"
+    },
+    {
+      "product": "px",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "px",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "rs",
+      "strategy": "trend"
+    },
+    {
+      "product": "rs",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "rs",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "sf",
+      "strategy": "trend"
+    },
+    {
+      "product": "sf",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "sf",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "sh",
+      "strategy": "trend"
+    },
+    {
+      "product": "sh",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "sh",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "si",
+      "strategy": "trend"
+    },
+    {
+      "product": "si",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "si",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "sm",
+      "strategy": "trend"
+    },
+    {
+      "product": "sm",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "sm",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "sr",
+      "strategy": "trend"
+    },
+    {
+      "product": "sr",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "sr",
+      "strategy": "main_rise"
+    }
+  ],
+  "results": [
+    {
+      "index": 0,
+      "product": "b",
+      "strategy": "trend",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "INTEGRITY_ERROR",
+      "expectedReason": "DATA_INTEGRITY_INVALID",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=3522ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 4453
+    },
+    {
+      "index": 1,
+      "product": "b",
+      "strategy": "oscillation",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "INTEGRITY_ERROR",
+      "expectedReason": "DATA_INTEGRITY_INVALID",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=3497ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 4352
+    },
+    {
+      "index": 2,
+      "product": "b",
+      "strategy": "main_rise",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "INTEGRITY_ERROR",
+      "expectedReason": "DATA_INTEGRITY_INVALID",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=3427ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 4340
+    },
+    {
+      "index": 3,
+      "product": "bz",
+      "strategy": "trend",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "DATA_UNAVAILABLE",
+      "expectedReason": "REPLAY_ENDPOINTS_MISSING",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=970ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 1844
+    },
+    {
+      "index": 4,
+      "product": "bz",
+      "strategy": "oscillation",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "DATA_UNAVAILABLE",
+      "expectedReason": "REPLAY_ENDPOINTS_MISSING",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=950ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 1842
+    },
+    {
+      "index": 5,
+      "product": "bz",
+      "strategy": "main_rise",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "DATA_UNAVAILABLE",
+      "expectedReason": "REPLAY_ENDPOINTS_MISSING",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=957ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 1841
+    },
+    {
+      "index": 6,
+      "product": "cj",
+      "strategy": "trend",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "INTEGRITY_ERROR",
+      "expectedReason": "DATA_INTEGRITY_INVALID",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=2159ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 2853
+    },
+    {
+      "index": 7,
+      "product": "cj",
+      "strategy": "oscillation",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "INTEGRITY_ERROR",
+      "expectedReason": "DATA_INTEGRITY_INVALID",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=2177ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 2843
+    },
+    {
+      "index": 8,
+      "product": "cj",
+      "strategy": "main_rise",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "INTEGRITY_ERROR",
+      "expectedReason": "DATA_INTEGRITY_INVALID",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=2207ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 2832
+    },
+    {
+      "index": 9,
+      "product": "eb",
+      "strategy": "trend",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "DATA_UNAVAILABLE",
+      "expectedReason": "REPLAY_ENDPOINTS_MISSING",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=3174ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 3845
+    },
+    {
+      "index": 10,
+      "product": "eb",
+      "strategy": "oscillation",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "DATA_UNAVAILABLE",
+      "expectedReason": "REPLAY_ENDPOINTS_MISSING",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=3222ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 3844
+    },
+    {
+      "index": 11,
+      "product": "eb",
+      "strategy": "main_rise",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "DATA_UNAVAILABLE",
+      "expectedReason": "REPLAY_ENDPOINTS_MISSING",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=3162ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 3846
+    },
+    {
+      "index": 12,
+      "product": "eg",
+      "strategy": "trend",
+      "terminal": "completed",
+      "pagePass": false,
+      "navigationStatus": 200,
+      "chartState": "unavailable",
+      "unavailableVisible": true,
+      "apiStatus": null,
+      "apiCode": null,
+      "apiReason": null,
+      "expectedStatus": "INTEGRITY_ERROR",
+      "expectedReason": "DATA_INTEGRITY_INVALID",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "defaultAsOfAbsent": false,
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        "[API] GET /market/newow/weekly-snapshot duration=2787ms status=error type=HTTP_409"
+      ],
+      "elapsedMs": 3355
+    },
+    {
+      "index": 13,
+      "product": "eg",
+      "strategy": "oscillation",
+      "terminal": "interrupted",
+      "pagePass": false,
+      "error": "Error: locator.waitFor: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for locator('[data-detail-workspace=\"newow\"]:not([data-chart-state=\"loading\"]):not([data-chart-state=\"not_requested\"])') to be visible\u001b[22m\n",
+      "expectedStatus": "INTEGRITY_ERROR",
+      "expectedReason": "DATA_INTEGRITY_INVALID",
+      "inputQualityPolicy": "newow_weekly_input_quality_v2",
+      "requestCount": 0,
+      "responseCount": 0,
+      "pageErrors": [],
+      "consoleErrors": [],
+      "elapsedMs": 1283
+    }
+  ]
+}
