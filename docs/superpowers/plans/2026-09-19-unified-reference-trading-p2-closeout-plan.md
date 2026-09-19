@@ -110,11 +110,15 @@
 
 ## 8. R5：集成与收尾
 
-- [ ] 新分支commit/push，保护原分支历史；不force，不改原任务worktree。
-- [ ] 当前主树领先origin且存在他人文件，集成时核对提交归属与最新develop；不能顺带push不属于本任务且授权不明的提交。
-- [ ] 可安全集成时按仓库流程集成并对合并结果复验；确有共享状态冲突则保持已完成候选，明确集成剩余事项，不自行覆盖。
-- [ ] 处理主树同名未跟踪计划时先逐字比较，内容一致可按既有任务文档流程纳入；不删除/覆盖周线计划或outputs。
-- [ ] 更新P2实际完成状态；不宣称P3持久化、后台worker、API迁移、生产启用或HTDY模型完成。
+- [x] 新分支commit/push，保护原分支历史；不force，不改原任务worktree。
+- [x] 当前主树领先origin且存在他人文件，集成时核对提交归属与最新develop；不能顺带push不属于本任务且授权不明的提交。
+- [x] 可安全集成时按仓库流程集成并对合并结果复验；确有共享状态冲突则保持已完成候选，明确集成剩余事项，不自行覆盖。
+- [x] 处理主树同名未跟踪计划时先逐字比较，内容一致可按既有任务文档流程纳入；不删除/覆盖周线计划或outputs。
+- [x] 更新P2实际完成状态；不宣称P3持久化、后台worker、API迁移、生产启用或HTDY模型完成。
+
+完成证据：候选分支和本地develop合并结果均通过545项联合回归、Ruff、OpenSpec 10/10、secret scan与
+diff check；独立Review关闭全部Critical/Important后给出允许集成develop。develop因原有4个非本任务
+提交尚未推送，仅完成本地集成；本任务没有顺带push develop。
 
 P2完整出口是R1–R4和独立审查通过，不能在仅补checkpoint/推送分支后主动结束为“剩余以后再做”。
 本轮只允许普通开发、测试、Review及条件满足的develop集成；不含生产RQData/Canonical/DB/Redis/通知、main/tag/release/Runtime。
