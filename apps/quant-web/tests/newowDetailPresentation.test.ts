@@ -59,6 +59,20 @@ test('target requires compatible snapshot, status and source identity', () => {
   e.meta.as_of = '2020-01-01T00:00:00Z'
   assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target, null)
 })
+test('chart price remains visible when explanation is unopened and FLAT', () => {
+  const c = chart(); const latest = c.value.bars.at(-1)
+  c.value.frames.at(-1).main_state = 'FLAT'
+  c.value.price_reference = {
+    surface: 'chart_legend', frequency: '1d', as_of: c.meta.as_of,
+    anchor_bar_end: latest.bar_end, physical_contract: latest.physical_contract,
+    segment_id: latest.segment_id, calculation_segment_id: latest.calculation_segment_id,
+    input_sha256: 'a'.repeat(64), formula_version: 'newow_chart_legend_hhv_llv10_page_v1',
+    adapter_version: 'newow_chart_price_projection_v1',
+    target: { raw: '110', display: '110.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
+    absorb: { raw: '90', display: '90.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
+  }
+  assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, true).target?.display, '110.00')
+})
 test('price badge preserves neutral zero and rejects missing values', () => {
   assert.deepEqual([null, 0, 1, -1].map(priceDirection), ['neutral', 'neutral', 'up', 'down'])
 })

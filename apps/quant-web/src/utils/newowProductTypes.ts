@@ -212,9 +212,9 @@ function normalizeSectionValue(section: NewowProductSection, payload: unknown, m
 
 function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartValue {
   const source = record(payload, 'chart.value')
-  const value = exactRecord({ next_older_window: null, ...source }, 'chart.value', [
+  const value = exactRecord({ next_older_window: null, price_reference: null, ...source }, 'chart.value', [
     'chart_from', 'chart_through', 'page_identity', 'price_unavailable_days', 'bars', 'frames', 'actions', 'hints',
-    'trend_channel', 'diagnostics', 'next_before', 'next_older_window', 'repainting', 'formal_signal_eligible', 'allowed_uses',
+    'trend_channel', 'price_reference', 'diagnostics', 'next_before', 'next_older_window', 'repainting', 'formal_signal_eligible', 'allowed_uses',
   ])
   const chartFrom = day(value.chart_from, 'chart_from')
   const chartThrough = day(value.chart_through, 'chart_through')
@@ -241,6 +241,7 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
   requireTimelineOrder(hints, 'hints')
   validateChartRelationships(bars, frames, actions, hints, meta.identity.strategy)
   const trendChannel = normalizeTrendChannel(value.trend_channel, bars, meta)
+  const priceReference = normalizeChartPriceReference(value.price_reference, bars, meta)
   requireExact(value.repainting, false, 'chart.repainting')
   requireExact(value.formal_signal_eligible, true, 'chart.formal_signal_eligible')
   const allowed = exactStringArray(value.allowed_uses, ['product_chart', 'reference_input'] as const, 'chart.allowed_uses')
@@ -248,7 +249,7 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
   if (older !== null && (older.length > 256 || meta.snapshot_token === null || value.next_before !== null)) throw new Error('older window requires an exhausted snapshot window')
   return {
     chart_from: chartFrom, chart_through: chartThrough, page_identity: sha256(value.page_identity, 'chart.page_identity'), price_unavailable_days: priceUnavailableDays,
-    bars, frames, trend_channel: trendChannel, actions, hints, diagnostics: stringArray(value.diagnostics, 'chart.diagnostics'),
+    bars, frames, trend_channel: trendChannel, price_reference: priceReference, actions, hints, diagnostics: stringArray(value.diagnostics, 'chart.diagnostics'),
     next_before: nullableText(value.next_before, 'chart.next_before'), repainting: false,
     next_older_window: older,
     formal_signal_eligible: true, allowed_uses: allowed,
@@ -271,9 +272,9 @@ function normalizeTrendChannel(
   requireExact(value.formula_version, 'newow_hhv_llv_channel_page_v1', 'trend_channel.formula_version')
   const points = array(value.points, 'trend_channel.points').map((payloadPoint, index) => {
     const field = `trend_channel.points[${index}]`
-    const point = exactRecord(payloadPoint, field, [
+    const point = exactRecord({ calculation_segment_id: bars[index]?.calculation_segment_id, ...record(payloadPoint, field) }, field, [
       'bar_end', 'upper', 'lower', 'formula_version', 'status',
-      'physical_contract', 'segment_id', 'source_identity',
+      'physical_contract', 'segment_id', 'source_identity', 'calculation_segment_id',
     ])
     const barEnd = instant(point.bar_end, `${field}.bar_end`)
     requireNotAfter(barEnd, meta.as_of, `${field}.bar_end`, 'meta.as_of')
@@ -296,6 +297,7 @@ function normalizeTrendChannel(
       physical_contract: contract(point.physical_contract, `${field}.physical_contract`),
       segment_id: text(point.segment_id, `${field}.segment_id`),
       source_identity: text(point.source_identity, `${field}.source_identity`),
+      calculation_segment_id: text(point.calculation_segment_id, `${field}.calculation_segment_id`),
     }
   })
   if (points.length !== bars.length) throw new Error('trend_channel points must align exactly with bars')
@@ -303,7 +305,7 @@ function normalizeTrendChannel(
     const point = points[index]!
     const bar = bars[index]!
     if (point.bar_end !== bar.bar_end) throw new Error('trend_channel points must align exactly with bars')
-    if (point.physical_contract !== bar.physical_contract || point.segment_id !== bar.segment_id || point.source_identity !== bar.source_identity) throw new Error('trend_channel point owner conflicts with its Bar')
+    if (point.physical_contract !== bar.physical_contract || point.segment_id !== bar.segment_id || point.source_identity !== bar.source_identity || point.calculation_segment_id !== bar.calculation_segment_id) throw new Error('trend_channel point owner conflicts with its Bar')
   }
   return {
     kind: 'trend_channel',
@@ -311,6 +313,20 @@ function normalizeTrendChannel(
     formula_version: 'newow_hhv_llv_channel_page_v1',
     points,
   }
+}
+
+function normalizeChartPriceReference(payload: unknown, bars: readonly NewowProductBar[], meta: NewowProductMeta): NewowChartValue['price_reference'] {
+  if (payload === null) return null
+  const value = exactRecord(payload, 'chart.price_reference', ['surface', 'frequency', 'as_of', 'anchor_bar_end', 'physical_contract', 'segment_id', 'calculation_segment_id', 'input_sha256', 'formula_version', 'adapter_version', 'target', 'absorb'])
+  requireExact(value.surface, 'chart_legend', 'chart.price_reference.surface')
+  requireExact(value.frequency, meta.identity.frequency, 'chart.price_reference.frequency')
+  requireExact(value.as_of, meta.as_of, 'chart.price_reference.as_of')
+  requireExact(value.formula_version, 'newow_chart_legend_hhv_llv10_page_v1', 'chart.price_reference.formula_version')
+  requireExact(value.adapter_version, 'newow_chart_price_projection_v1', 'chart.price_reference.adapter_version')
+  const anchor = bars.find(bar => bar.bar_end === instant(value.anchor_bar_end, 'chart.price_reference.anchor_bar_end'))
+  if (!anchor || anchor.physical_contract !== contract(value.physical_contract, 'chart.price_reference.physical_contract') || anchor.segment_id !== text(value.segment_id, 'chart.price_reference.segment_id') || anchor.calculation_segment_id !== text(value.calculation_segment_id, 'chart.price_reference.calculation_segment_id')) throw new Error('chart.price_reference anchor conflicts with Bar')
+  const price = (item: unknown, field: string) => { const point = exactRecord(item, field, ['raw', 'display', 'status']); const status = normalizeStatus(point.status, `${field}.status`); const raw = point.raw === null ? null : decimal(point.raw, `${field}.raw`); const display = point.display === null ? null : decimal(point.display, `${field}.display`); if ((status.status === 'ready') !== (raw !== null && display !== null)) throw new Error(`${field} status conflicts with values`); return { raw, display, status } }
+  return { surface: 'chart_legend', frequency: meta.identity.frequency, as_of: meta.as_of, anchor_bar_end: anchor.bar_end, physical_contract: anchor.physical_contract, segment_id: anchor.segment_id, calculation_segment_id: anchor.calculation_segment_id, input_sha256: sha256(value.input_sha256, 'chart.price_reference.input_sha256'), formula_version: 'newow_chart_legend_hhv_llv10_page_v1', adapter_version: 'newow_chart_price_projection_v1', target: price(value.target, 'chart.price_reference.target'), absorb: price(value.absorb, 'chart.price_reference.absorb') }
 }
 
 function validateChartRelationships(
