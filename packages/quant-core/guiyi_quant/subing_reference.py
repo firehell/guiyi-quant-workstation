@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
 from decimal import (
@@ -29,6 +30,7 @@ from .reference_trading.contracts import (
     TradeStatus as UnifiedTradeStatus,
 )
 from .reference_trading.reducer import reduce_reference
+from .reference_trading.adapters import strategy_input_fingerprint
 
 from .indicators.subing_ths import (
     SUBING_THS_FORMULA_VERSION,
@@ -181,6 +183,8 @@ class SubingReplayState:
     processed_count: int = 0
     ready_in_window: bool = False
     reference_state: UnifiedReferenceState | None = None
+    computed_through: datetime | None = None
+    last_input_fingerprint: str | None = None
 
 
 def seed_subing_replay_state() -> SubingReplayState:
@@ -434,6 +438,34 @@ def replay_subing_step(
 ) -> tuple[SubingReplayState, ReferenceSignal | None, ReferenceTrade | None, ReferenceIndicator | None]:
     """Advance one bar with the projection's fixed Decimal arithmetic policy."""
 
+    fingerprint = strategy_input_fingerprint({
+        "symbol": symbol,
+        "frequency": frequency,
+        "quality_segmented": quality_segmented,
+        "physical_contract": segment.physical_contract,
+        "owner_segment_id": segment.segment_id,
+        "calculation_segment_id": segment.calculation_segment_id or segment.segment_id,
+        "owner_since": segment.owner_since,
+        "owner_through": segment.owner_through,
+        "interrupted_at": segment.interrupted_at,
+        "quality_interrupted_at": segment.quality_interrupted_at,
+        "quality_interruption_trading_day": segment.quality_interruption_trading_day,
+        "quality_classification": segment.quality_classification,
+        "bar_end": bar.bar_end,
+        "trading_day": bar.trading_day,
+        "close": bar.close,
+        "since": since,
+        "through": through,
+    })
+    if state.computed_through is not None:
+        if bar.bar_end < state.computed_through:
+            raise ValueError("input is older than computed_through")
+        if bar.bar_end == state.computed_through:
+            if fingerprint == state.last_input_fingerprint:
+                return state, None, None, None
+            raise ValueError("input conflicts with computed_through")
+    working = deepcopy(state)
+
     with localcontext(
         Context(
             prec=28,
@@ -446,10 +478,13 @@ def replay_subing_step(
             traps=[InvalidOperation, DivisionByZero, Overflow],
         )
     ):
-        return _replay_subing_step(
-            symbol, segment, frequency, quality_segmented, state, bar,
+        result = _replay_subing_step(
+            symbol, segment, frequency, quality_segmented, working, bar,
             since=since, through=through,
         )
+    working.computed_through = bar.bar_end
+    working.last_input_fingerprint = fingerprint
+    return working, *result[1:]
 
 
 def _validate(

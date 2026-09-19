@@ -100,6 +100,40 @@ def test_public_projection_and_bounded_per_bar_state_share_one_step(frequency):
     assert tuple(indicators) == expected.indicators
 
 
+def test_subing_step_exact_replay_is_noop_and_conflict_is_atomic():
+    seg = segment()
+    kwargs = {"since": date(2026, 1, 1), "through": date(2026, 1, 9)}
+    state = seed_subing_replay_state()
+    state, *_ = replay_subing_step("RB", seg, "1d", False, state, seg.bars[0], **kwargs)
+    snapshot = repr(state)
+
+    replayed, signal, trade, indicator = replay_subing_step(
+        "RB", seg, "1d", False, state, seg.bars[0], **kwargs,
+    )
+    assert replayed is state
+    assert (signal, trade, indicator) == (None, None, None)
+    assert state.processed_count == 1
+
+    conflicting = replace(seg.bars[0], close=Decimal("101"))
+    with pytest.raises(ValueError, match="conflicts"):
+        replay_subing_step("RB", seg, "1d", False, state, conflicting, **kwargs)
+    assert repr(state) == snapshot
+
+
+def test_subing_step_older_failure_does_not_mutate_kernel_state():
+    seg = segment()
+    kwargs = {"since": date(2026, 1, 1), "through": date(2026, 1, 9)}
+    state = seed_subing_replay_state()
+    for bar in seg.bars[:51]:
+        state, *_ = replay_subing_step("RB", seg, "1d", False, state, bar, **kwargs)
+    snapshot = repr(state)
+
+    with pytest.raises(ValueError, match="older"):
+        replay_subing_step("RB", seg, "1d", False, state, seg.bars[0], **kwargs)
+    assert repr(state) == snapshot
+    assert state.processed_count == 51
+
+
 def test_public_projection_routes_trade_transitions_through_shared_reducer(monkeypatch):
     import guiyi_quant.subing_reference as module
 

@@ -26,7 +26,13 @@ from ..newow.product_contracts import (
     ProductIdentity,
     ProductStrategy,
     StrategyAction,
+    StrategyHint,
     TradeEligibility,
+)
+from ..newow.reference_trades import (
+    NewowReferenceReplayState,
+    ReferenceTrade as NewowReferenceTrade,
+    ReferenceTradeStatus as NewowReferenceTradeStatus,
 )
 from ..newow.trend_band import TrendBandStateValue
 from ..subing_reference import ReferenceTrade as SubingReferenceTrade, SubingReplayState
@@ -43,6 +49,7 @@ _DATACLASSES = {
         EmaState, MacdState, SubingThs15mState, SubingReplayState, SubingReferenceTrade,
         ProductReplayState, _PairingState, TrendBandStateValue, EscapeState,
         OscillationState, MainRiseState, Magic11State, ProductIdentity, StrategyAction,
+        StrategyHint, NewowReferenceReplayState, NewowReferenceTrade,
         StreamIdentity, ReferenceState, ReferenceTrade,
     )
 }
@@ -52,9 +59,15 @@ _ENUMS = {
     for cls in (
         TrendBandState, NewowActionKind, ProductFrequency, ProductStrategy, TradeEligibility,
         RecordingMode, Side, TradeStatus,
+        NewowReferenceTradeStatus,
     )
 }
 _ENUM_TAGS = {cls: tag for tag, cls in _ENUMS.items()}
+_STRATEGY_STATE_TYPES = {
+    "subing_replay_v1": SubingReplayState,
+    "newow_product_replay_v1": ProductReplayState,
+    "newow_reference_replay_v1": NewowReferenceReplayState,
+}
 
 
 def _pairs(values: list[tuple[str, object]]) -> dict[str, object]:
@@ -269,6 +282,69 @@ def _canonical(payload: dict[str, object]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
+def _validate_subing_state(
+    state: SubingReplayState, reference_state: ReferenceState,
+) -> None:
+    if state.processed_count < 0 or state.entry_index < 0:
+        raise ValueError("strategy checkpoint Subing progress is invalid")
+    if state.entry_index > state.processed_count:
+        raise ValueError("strategy checkpoint Subing progress is invalid")
+    kernel = state.kernel_state
+    if any(count != state.processed_count for count in (
+        kernel.macd.fast.count, kernel.macd.slow.count, kernel.ema21.count,
+    )):
+        raise ValueError("strategy checkpoint Subing kernel progress is inconsistent")
+    current = state.current
+    unified = reference_state.open_trade
+    if (current is None) != (unified is None):
+        raise ValueError("strategy checkpoint Subing current trade is inconsistent")
+    if current is None or unified is None:
+        return
+    if (
+        current.side != unified.side.value
+        or current.physical_contract != unified.physical_contract
+        or current.segment_id != unified.owner_segment_id
+        or current.calculation_segment_id != unified.calculation_segment_id
+        or current.entry_bar_end != unified.entry_bar_end
+        or current.entry_trading_day != unified.entry_trading_day
+        or current.entry_reference_price != unified.entry_reference_price
+        or current.holding_bars != unified.holding_bars
+        or current.mark_bar_end != unified.mark_bar_end
+        or current.mark_reference_price != unified.mark_reference_price
+        or current.mark_change_pct != unified.mark_return
+    ):
+        raise ValueError("strategy checkpoint Subing current trade is inconsistent")
+
+
+def _validate_strategy_state(
+    state: object, strategy_schema: str, reference_state: ReferenceState,
+) -> None:
+    expected_type = _STRATEGY_STATE_TYPES.get(strategy_schema)
+    if expected_type is None or type(state) is not expected_type:
+        raise ValueError("strategy checkpoint strategy state type is invalid")
+    if isinstance(state, SubingReplayState):
+        _validate_subing_state(state, reference_state)
+    if isinstance(state, NewowReferenceReplayState):
+        if state.stream != reference_state.stream:
+            raise ValueError("strategy checkpoint Newow reference stream is inconsistent")
+        owned_states = {
+            (contract, segment): owned
+            for contract, segment, owned in state.reference_states
+        }
+        if len(owned_states) != len(state.reference_states):
+            raise ValueError("strategy checkpoint Newow reference owners are duplicated")
+        if reference_state not in owned_states.values():
+            raise ValueError("strategy checkpoint Newow outer reference state is inconsistent")
+        open_by_entry = {
+            owned.open_trade.entry_action_id: owned.open_trade
+            for owned in owned_states.values() if owned.open_trade is not None
+        }
+        if set(open_by_entry) != {trade.entry_signal_id for trade in state.active_trades}:
+            raise ValueError("strategy checkpoint Newow active trades are inconsistent")
+        if set(open_by_entry) != {action.signal_id for action in state.active_actions}:
+            raise ValueError("strategy checkpoint Newow active actions are inconsistent")
+
+
 def adapter_checkpoint_to_json(
     checkpoint: AdapterCheckpoint[Any], *, strategy_schema: str,
 ) -> str:
@@ -348,6 +424,7 @@ def adapter_checkpoint_from_json(
         if computed is None or reference_state.computed_through > computed:
             raise ValueError("strategy checkpoint watermarks are inconsistent")
     strategy_state = _restore(payload["strategy_state"])
+    _validate_strategy_state(strategy_state, expected_strategy_schema, reference_state)
     embedded_reference_state = getattr(strategy_state, "reference_state", None)
     if embedded_reference_state is not None and embedded_reference_state != reference_state:
         raise ValueError("strategy checkpoint embedded reference state is inconsistent")

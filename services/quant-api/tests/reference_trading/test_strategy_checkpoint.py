@@ -280,3 +280,70 @@ def test_adapter_checkpoint_rejects_open_trade_owner_mismatch() -> None:
             _with_checksum(payload), expected_stream=stream,
             expected_strategy_schema="subing_replay_v1",
         )
+
+
+def test_adapter_checkpoint_rejects_state_type_not_bound_to_schema() -> None:
+    stream = _stream("subing")
+    checkpoint = AdapterCheckpoint(
+        seed_subing_replay_state(), stream=stream,
+        reference_state=ReferenceState.flat(stream),
+    )
+    payload = json.loads(
+        adapter_checkpoint_to_json(checkpoint, strategy_schema="subing_replay_v1")
+    )
+    payload["strategy_state"] = "arbitrary string"
+
+    with pytest.raises(ValueError, match="strategy state type"):
+        adapter_checkpoint_from_json(
+            _with_checksum(payload), expected_stream=stream,
+            expected_strategy_schema="subing_replay_v1",
+        )
+
+
+def test_adapter_checkpoint_rejects_negative_subing_progress() -> None:
+    stream = _stream("subing")
+    checkpoint = AdapterCheckpoint(
+        seed_subing_replay_state(), stream=stream,
+        reference_state=ReferenceState.flat(stream),
+    )
+    payload = json.loads(
+        adapter_checkpoint_to_json(checkpoint, strategy_schema="subing_replay_v1")
+    )
+    payload["strategy_state"]["fields"]["processed_count"] = -500
+
+    with pytest.raises(ValueError, match="progress"):
+        adapter_checkpoint_from_json(
+            _with_checksum(payload), expected_stream=stream,
+            expected_strategy_schema="subing_replay_v1",
+        )
+
+
+def test_adapter_checkpoint_rejects_subing_current_open_divergence() -> None:
+    at = datetime(2026, 1, 1, 15, tzinfo=UTC)
+    prices = [100] * 50 + [120]
+    bars = tuple(
+        ReferenceBar(at + timedelta(hours=index), (at + timedelta(hours=index)).date(), Decimal(price))
+        for index, price in enumerate(prices)
+    )
+    segment = ReferenceSegment("RB2601", "owner", bars, bars[0].trading_day, bars[-1].trading_day)
+    state = seed_subing_replay_state()
+    for bar in bars:
+        state, *_ = replay_subing_step(
+            "RB", segment, "1d", False, state, bar,
+            since=bars[0].trading_day, through=bars[-1].trading_day,
+        )
+    assert state.reference_state is not None and state.current is not None
+    checkpoint = AdapterCheckpoint(
+        state, bars[-1].bar_end, "abc", "RB2601", "owner", "owner",
+        state.reference_state.stream, state.reference_state,
+    )
+    payload = json.loads(
+        adapter_checkpoint_to_json(checkpoint, strategy_schema="subing_replay_v1")
+    )
+    payload["strategy_state"]["fields"]["current"] = None
+
+    with pytest.raises(ValueError, match="current trade"):
+        adapter_checkpoint_from_json(
+            _with_checksum(payload), expected_stream=state.reference_state.stream,
+            expected_strategy_schema="subing_replay_v1",
+        )

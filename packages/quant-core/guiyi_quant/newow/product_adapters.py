@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
+
+from ..reference_trading.adapters import strategy_input_fingerprint
 
 from .escape_d123 import EscapeState, initial_escape_state, step_escape_d123
 from .main_rise import (
@@ -100,6 +103,7 @@ class ProductReplayState:
     escape_state: EscapeState = field(default_factory=initial_escape_state)
     oscillation_state: OscillationState = field(default_factory=OscillationState)
     main_rise_state: MainRiseState = field(default_factory=initial_main_rise_state)
+    input_progress: dict[str, tuple[datetime, str]] = field(default_factory=dict)
 
 
 def build_product_identity(
@@ -769,7 +773,7 @@ def seed_replay_state() -> ProductReplayState:
     return ProductReplayState()
 
 
-def replay_step(
+def _replay_step_mutating(
     identity: ProductIdentity,
     state: ProductReplayState,
     product_bar: ProductBar,
@@ -786,7 +790,10 @@ def replay_step(
     if not isinstance(state, ProductReplayState):
         raise TypeError("state must be ProductReplayState")
     if product_bar.calculation_segment_id != state.calculation_segment_id:
-        state = ProductReplayState(calculation_segment_id=product_bar.calculation_segment_id)
+        state = ProductReplayState(
+            calculation_segment_id=product_bar.calculation_segment_id,
+            input_progress=state.input_progress,
+        )
     if identity.strategy is ProductStrategy.TREND:
         frame, trend_state, escape_state, diagnostics = _trend_frame(
             identity, product_bar, state.trend_state, state.escape_state, state.pairing
@@ -808,6 +815,64 @@ def replay_step(
         )
         state.main_rise_state = main_rise_state
     return state, frame, tuple(diagnostics)
+
+
+def replay_step(
+    identity: ProductIdentity,
+    state: ProductReplayState,
+    product_bar: ProductBar,
+    *,
+    verified_lifecycle: bool = False,
+) -> tuple[ProductReplayState, StrategyFrame | None, tuple[str, ...]]:
+    """Atomically advance one completed input; an exact replay is a no-op."""
+
+    if not isinstance(state, ProductReplayState):
+        raise TypeError("state must be ProductReplayState")
+    bar = product_bar.bar
+    calculation_segment_id = product_bar.calculation_segment_id or bar.segment_id
+    progress_key = strategy_input_fingerprint({
+        "physical_contract": bar.physical_contract,
+        "owner_segment_id": bar.segment_id,
+        "calculation_segment_id": calculation_segment_id,
+    })
+    fingerprint = strategy_input_fingerprint({
+        "product": identity.product,
+        "strategy": identity.strategy,
+        "frequency": identity.frequency,
+        "formula_versions": identity.formula_versions,
+        "series_kind": identity.series_kind,
+        "profile_id": identity.profile_id,
+        "physical_contract": bar.physical_contract,
+        "owner_segment_id": bar.segment_id,
+        "calculation_segment_id": calculation_segment_id,
+        "bar_end": bar.bar_end,
+        "trading_day": bar.trading_day,
+        "open": bar.open,
+        "high": bar.high,
+        "low": bar.low,
+        "close": bar.close,
+        "volume": bar.volume,
+        "open_interest": bar.open_interest,
+        "source_identity": bar.source_identity,
+        "observation_eligible": bar.observation_eligible,
+        "completed": bar.completed,
+        "source_bar_sha256": product_bar.source_bar_sha256,
+        "verified_lifecycle": verified_lifecycle,
+    })
+    previous = state.input_progress.get(progress_key)
+    if previous is not None:
+        if bar.bar_end < previous[0]:
+            raise ValueError("input is older than computed_through")
+        if bar.bar_end == previous[0]:
+            if fingerprint == previous[1]:
+                return state, None, ()
+            raise ValueError("input conflicts with computed_through")
+    working = deepcopy(state)
+    working, frame, diagnostics = _replay_step_mutating(
+        identity, working, product_bar, verified_lifecycle=verified_lifecycle,
+    )
+    working.input_progress[progress_key] = (bar.bar_end, fingerprint)
+    return working, frame, diagnostics
 
 
 def replay_strategy(
@@ -842,6 +907,7 @@ def replay_strategy(
                 )
             ),
         )
+        assert frame is not None
         frames.append(frame)
         diagnostics.extend(found)
 

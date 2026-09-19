@@ -6,6 +6,8 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_EVEN, localcontext
 from enum import StrEnum
+from hashlib import sha256
+import json
 
 from ..reference_trading.contracts import (
     ActionKind as UnifiedActionKind,
@@ -211,6 +213,32 @@ class ReferenceProjection:
             raise ValueError("NEWOW_REFERENCE_INVALID_HINT")
         for diagnostic in self.diagnostics:
             _text(diagnostic)
+
+
+@dataclass(frozen=True, slots=True)
+class NewowReferenceReplayState:
+    """Bounded restart state for the public reference projection fold."""
+
+    stream: StreamIdentity
+    reference_states: tuple[tuple[str, str, UnifiedReferenceState], ...] = ()
+    active_trades: tuple[ReferenceTrade, ...] = ()
+    active_actions: tuple[StrategyAction, ...] = ()
+    warmup_witnesses: tuple[StrategyAction, ...] = ()
+    owners_with_prior_actions: tuple[tuple[str, str], ...] = ()
+    interrupted_entries: tuple[tuple[str, str, str], ...] = ()
+    pending_hints: tuple[StrategyHint, ...] = ()
+    processed_event_ids: tuple[str, ...] = ()
+    diagnostics: tuple[str, ...] = ()
+
+
+def _event_id(boundary: ReferenceBoundary) -> str:
+    wire = (
+        boundary.stream.stream_id, boundary.reason.value,
+        boundary.physical_contract, boundary.owner_segment_id,
+        boundary.calculation_segment_id, boundary.bar_end.isoformat(),
+        boundary.trading_day.isoformat(),
+    )
+    return sha256(json.dumps(wire, separators=(",", ":")).encode()).hexdigest()
 
 
 def _reference_return(entry: Decimal, exit_: Decimal) -> Decimal:
@@ -541,6 +569,20 @@ class ReferenceTradeProjector:
         *,
         data_interruptions: tuple[DataInterruption, ...] = (),
     ) -> ReferenceProjection:
+        _state, projection = self.advance(
+            None, replay, boundaries, as_of, data_interruptions=data_interruptions,
+        )
+        return projection
+
+    def advance(
+        self,
+        state: NewowReferenceReplayState | None,
+        replay: StrategyReplay,
+        boundaries: tuple[OwnerBoundary, ...],
+        as_of: datetime,
+        *,
+        data_interruptions: tuple[DataInterruption, ...] = (),
+    ) -> tuple[NewowReferenceReplayState, ReferenceProjection]:
         if not isinstance(replay, StrategyReplay):
             raise ValueError("NEWOW_REFERENCE_INVALID_REPLAY")
         as_of = utc_timestamp(as_of)
@@ -606,7 +648,10 @@ class ReferenceTradeProjector:
             owner = (frame.bar.bar.physical_contract, frame.bar.bar.segment_id)
             frames_by_owner.setdefault(owner, []).append(frame)
         diagnostics = [
-            diagnostic for diagnostic in dict.fromkeys(replay.diagnostics)
+            diagnostic for diagnostic in dict.fromkeys((
+                *(() if state is None else state.diagnostics),
+                *replay.diagnostics,
+            ))
             if diagnostic not in {"NO_ELIGIBLE_ENTRY", "INITIAL_CLEAR_NO_ENTRY"}
         ]
         stream = StreamIdentity(
@@ -621,18 +666,46 @@ class ReferenceTradeProjector:
             recording_mode="historical_replay",
             observation_policy_version=None,
         )
-        reference_states: dict[tuple[str, str], UnifiedReferenceState] = {}
-        trades: list[ReferenceTrade] = []
-        trade_positions: dict[str, int] = {}
-        actions_by_id = {action.signal_id: action for action in actions}
+        if state is not None and state.stream != stream:
+            raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+        reference_states: dict[tuple[str, str], UnifiedReferenceState] = {
+            (contract, segment): reference_state
+            for contract, segment, reference_state in (
+                () if state is None else state.reference_states
+            )
+        }
+        trades: list[ReferenceTrade] = list(
+            () if state is None else state.active_trades
+        )
+        trade_positions: dict[str, int] = {
+            trade.entry_signal_id: index for index, trade in enumerate(trades)
+        }
+        actions_by_id = {
+            action.signal_id: action
+            for action in (() if state is None else state.active_actions)
+        }
+        actions_by_id.update({action.signal_id: action for action in actions})
         actions_by_bar: dict[tuple[str, str, datetime], list[StrategyAction]] = {}
         for action in actions:
             actions_by_bar.setdefault(
                 (action.physical_contract, action.segment_id, action.bar_end), [],
             ).append(action)
-        warmup_witnesses: dict[str, StrategyAction] = {}
-        owners_with_prior_actions: set[tuple[str, str]] = set()
-        interrupted_entries: dict[tuple[str, str], str] = {}
+        warmup_witnesses: dict[str, StrategyAction] = {
+            action.signal_id: action
+            for action in (() if state is None else state.warmup_witnesses)
+        }
+        owners_with_prior_actions: set[tuple[str, str]] = set(
+            () if state is None else state.owners_with_prior_actions
+        )
+        interrupted_entries: dict[tuple[str, str], str] = {
+            (contract, segment): entry
+            for contract, segment, entry in (
+                () if state is None else state.interrupted_entries
+            )
+        }
+        processed_event_ids = set(
+            () if state is None else state.processed_event_ids
+        )
 
         events: list[tuple[datetime, ReferenceBoundary, str]] = []
         for boundary in effective_boundaries.values():
@@ -663,6 +736,7 @@ class ReferenceTradeProjector:
                     "SOURCE_PRICE_UNAVAILABLE",
                 ))
         events.sort(key=lambda item: item[0])
+        events = [event for event in events if _event_id(event[1]) not in processed_event_ids]
         event_index = 0
 
         def sync_transition(
@@ -753,6 +827,7 @@ class ReferenceTradeProjector:
             for witness_id, witness in tuple(warmup_witnesses.items()):
                 if (witness.physical_contract, witness.segment_id) == owner:
                     del warmup_witnesses[witness_id]
+            processed_event_ids.add(_event_id(event[1]))
 
         for frame in replay.frames:
             bar = frame.bar.bar
@@ -834,6 +909,7 @@ class ReferenceTradeProjector:
                         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
                     if interrupted_entries.get(owner) != action.related_build_id:
                         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                    del interrupted_entries[owner]
                     continue
                 unified_actions.append(UnifiedReferenceAction(
                     stream=stream,
@@ -919,6 +995,7 @@ class ReferenceTradeProjector:
                 raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
             prior_open = reference_state.open_trade
             sync_transition(bar_owner, transition)
+            processed_event_ids.update(_event_id(event[1]) for event in same_bar_events)
             if same_bar_events and prior_open is not None and transition.state.open_trade is None:
                 interrupted_entries[bar_owner] = prior_open.entry_action_id
                 event = same_bar_events[-1]
@@ -947,14 +1024,51 @@ class ReferenceTradeProjector:
             if "OPEN_MARK_UNAVAILABLE" not in diagnostics:
                 diagnostics.append("OPEN_MARK_UNAVAILABLE")
 
-        visible_hints = _visible_hints(replay, as_of)
+        visible_hints = tuple(dict.fromkeys((
+            *(() if state is None else state.pending_hints),
+            *_visible_hints(replay, as_of),
+        )))
         trades, bar_level_hints, unassigned_hints = _attach_hints(
-            trades, actions, visible_hints, as_of
+            trades, tuple(actions_by_id.values()), visible_hints, as_of
         )
-        return ReferenceProjection(
+        projection = ReferenceProjection(
             trades=tuple(trades),
             bar_level_hints=bar_level_hints,
             unassigned_hints=unassigned_hints,
             diagnostics=tuple(diagnostics),
             as_of=as_of,
         )
+        active_trades = tuple(
+            trade for trade in projection.trades
+            if trade.status is ReferenceTradeStatus.OPEN
+        )
+        active_ids = {trade.entry_signal_id for trade in active_trades}
+        active_actions = tuple(
+            actions_by_id[entry_id] for entry_id in sorted(active_ids)
+        )
+        active_hint_ids = {
+            hint_id for trade in active_trades for hint_id in trade.hint_ids
+        }
+        next_state = NewowReferenceReplayState(
+            stream=stream,
+            reference_states=tuple(
+                (owner[0], owner[1], reference_state)
+                for owner, reference_state in sorted(reference_states.items())
+            ),
+            active_trades=active_trades,
+            active_actions=active_actions,
+            warmup_witnesses=tuple(
+                warmup_witnesses[key] for key in sorted(warmup_witnesses)
+            ),
+            owners_with_prior_actions=tuple(sorted(owners_with_prior_actions)),
+            interrupted_entries=tuple(
+                (owner[0], owner[1], entry)
+                for owner, entry in sorted(interrupted_entries.items())
+            ),
+            pending_hints=tuple(
+                hint for hint in visible_hints if hint.hint_id in active_hint_ids
+            ),
+            processed_event_ids=tuple(sorted(processed_event_ids)),
+            diagnostics=projection.diagnostics,
+        )
+        return next_state, projection

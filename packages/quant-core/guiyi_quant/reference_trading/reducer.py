@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date, datetime
-from decimal import Decimal, localcontext
+from decimal import Decimal, ROUND_HALF_EVEN, localcontext
 from hashlib import sha256
 import json
 
@@ -22,6 +22,7 @@ def _trade_id(action: ReferenceAction) -> str:
 def _return(entry: Decimal, exit_: Decimal, side: Side, policy: ReturnPolicy) -> Decimal:
     with localcontext() as context:
         context.prec = 28
+        context.rounding = ROUND_HALF_EVEN
         ratio = (
             exit_ / entry - Decimal("1")
             if policy is ReturnPolicy.RATIO_MINUS_ONE
