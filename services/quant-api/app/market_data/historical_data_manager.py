@@ -469,7 +469,7 @@ def _contract_warmup_scope(
     elif frequency is BarFrequency.W1:
         planned = (BarFrequency.D1, BarFrequency.W1)
         dependencies = (BarFrequency.D1.value,)
-    elif frequency in (BarFrequency.M15, BarFrequency.H1):
+    elif frequency in (BarFrequency.M15, BarFrequency.M30, BarFrequency.H1):
         planned = (BarFrequency.M1, frequency)
         dependencies = (BarFrequency.M1.value,)
     else:
@@ -851,7 +851,12 @@ class ContractWarmupPlanner:
             partition = partitions[0]
             normal, unavailable = self.store.read_catalog_partition_quality(partition)
             bars.extend(bar for bar in normal if bar.trading_day in days)
-            gaps.extend(item for item in unavailable if item.trading_day in days)
+            relevant = tuple(item for item in unavailable if item.trading_day in days)
+            if any(not isinstance(item, PriceUnavailableFact) for item in relevant):
+                raise ValueError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+            gaps.extend(
+                item for item in relevant if isinstance(item, PriceUnavailableFact)
+            )
             revisions.append((partition.file_path.name, partition.source_quality_sha256))
         sorted_bars = tuple(sorted(bars, key=lambda bar: bar.bar_end))
         revision_sha256 = weekly_daily_revision_sha256(tuple(revisions), sorted_bars)
@@ -2793,7 +2798,16 @@ class HistoricalDataManager(ContractWarmupPlanner):
             row for row in self.catalog.all_partitions(target.key)
             if (row.year, row.month) == (target.year, target.month)
         )
-        previous = {item.bar_end: item for row in existing for item in row.source_quality}
+        existing_facts = tuple(
+            item for row in existing for item in row.source_quality
+        )
+        if any(not isinstance(item, PriceUnavailableFact) for item in existing_facts):
+            raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+        previous = {
+            item.bar_end: item
+            for item in existing_facts
+            if isinstance(item, PriceUnavailableFact)
+        }
         bars = {bar.bar_end for bar in target.existing}
         for batch in batches:
             fresh_bars = {bar.bar_end for bar in batch.bars}

@@ -28,8 +28,8 @@ from app.market_data.historical_data_manager import (
     UpdateRequest,
     _Target,
 )
-from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.storage import CanonicalMonthlyStore, PublishRequest, StorageError
+from app.market_data.source_quality import NonpositiveCloseFact, PriceUnavailableFact
 from app.models import (
     Contract,
     Exchange,
@@ -100,6 +100,30 @@ def test_manager_publishes_exact_d1_exception_without_a_fabricated_bar(
     )
     assert classification.missing_mapped == ()
     assert classification.expected == (first, last)
+
+
+def test_manager_refuses_to_merge_new_quality_union_into_legacy_provider_batch(
+    session, tmp_path,
+) -> None:
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    end = datetime(2025, 1, 2, 7, tzinfo=UTC)
+    interruption = NonpositiveCloseFact(
+        end, date(2025, 1, 2), Decimal(0), Decimal(0), Decimal(0),
+        Decimal(0), Decimal(0), Decimal(0), Decimal(10),
+        "a" * 64, "b" * 64, datetime(2026, 9, 19, tzinfo=UTC),
+    )
+    manager = _manager(session, tmp_path, FakeCoverage({}), FakeProvider({}))
+    manager.catalog.register_partition(manager.store.publish(PublishRequest(
+        key, 2025, 1, (), (end,), nonpositive_close=(interruption,),
+    )))
+    session.commit()
+
+    with pytest.raises(
+        StorageError, match="SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+    ):
+        manager._merged_price_unavailable(
+            _Target(key, 2025, 1, (end,), (), ()), (),
+        )
 
 
 def test_manager_rejects_duplicate_provider_bar_before_publish(session, tmp_path) -> None:
@@ -2024,14 +2048,14 @@ def test_contract_warmup_empty_plan_hash_isolated_by_every_scope(
                 "pf", "PF2611", date(2025, 1, 2), frequency=frequency
             )
         ).plan
-        for frequency in (None, "1d", "1w", "15m", "60m")
+        for frequency in (None, "1d", "1w", "15m", "30m", "60m")
     }
 
     assert all(plan.target_windows == () for plan in plans.values())
     assert len({plan.plan_sha256 for plan in plans.values()}) == len(plans)
 
 
-@pytest.mark.parametrize("frequency", ("1m", "5m", "30m", "invalid"))
+@pytest.mark.parametrize("frequency", ("1m", "5m", "invalid"))
 def test_contract_warmup_rejects_unsupported_frequency_scope_before_planning(
     session, tmp_path, frequency
 ) -> None:

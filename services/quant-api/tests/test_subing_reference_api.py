@@ -8,7 +8,9 @@ from app.db.session import get_db
 from app.main import app
 from app.market_data.subing_reference import SubingReferenceError, SubingReferenceService
 from app.market_data.market_data_service import MarketDataError
-from test_subing_reference_service import Market, Coverage
+from test_subing_reference_service import (
+    Market, FrequencyMarket, DailyQualityMarket, Coverage,
+)
 
 
 @pytest.fixture
@@ -33,6 +35,10 @@ def test_real_projection_response_has_typed_strings_and_stable_pages(client):
     assert body["summary"]["closed_count"] > 1
     assert isinstance(body["items"][0]["entry_reference_price"], str)
     assert body["signals"][0]["direction"] in {"buy", "sell"}
+    assert "quality_policy_version" not in body
+    assert "calculation_segment_id" not in body["signals"][0]
+    assert "rollover_interrupted_count" not in body["summary"]
+    assert "next_before" in body
     page = client.get(
         "/api/v1/market/rb/subing/reference",
         params={"limit": 2, "before": body["next_before"], "as_of": body["as_of"]},
@@ -40,6 +46,50 @@ def test_real_projection_response_has_typed_strings_and_stable_pages(client):
     assert page.status_code == 200
     assert page.json()["summary"] == body["summary"]
     assert body["items"] != page.json()["items"]
+
+
+@pytest.mark.parametrize("frequency", ("30m", "60m"))
+def test_research_frequency_api_keeps_alert_independent(client, monkeypatch, frequency):
+    service = SubingReferenceService(
+        FrequencyMarket(), coverage=Coverage(), active_products={"rb"},
+        now=lambda: datetime(2026, 7, 25, 7, tzinfo=UTC),
+    )
+    monkeypatch.setattr(market_subing_reference, "_build_service", lambda *_: service)
+    response = client.get("/api/v1/market/rb/subing/reference", params={"frequency": frequency})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["frequency"] == frequency
+    assert body["formula_version"] == f"subing_ths_{frequency}_v1"
+    assert body["signals"][0]["ema21"] is not None
+    assert body["source"] == "historical_replay"
+
+
+def test_daily_quality_api_exposes_v2_coverage_without_changing_formula(monkeypatch):
+    market = DailyQualityMarket()
+    coverage = Coverage()
+    coverage.product_start = lambda _symbol: market.days[0]
+    service = SubingReferenceService(
+        market, coverage=coverage, active_products={"rb"},
+        now=lambda: datetime(2026, 6, 20, 7, tzinfo=UTC),
+    )
+    monkeypatch.setattr(market_subing_reference, "_build_service", lambda *_: service)
+    app.dependency_overrides[get_db] = lambda: object()
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        response = test_client.get(
+            "/api/v1/market/rb/subing/reference",
+            params={"frequency": "1d", "since": market.days[0], "through": market.days[-1]},
+        )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["formula_version"] == "subing_ths_1d_v1"
+    assert body["reference_model_version"] == "subing_reference_reverse_close_quality_segment_v2"
+    assert body["summary"]["data_interrupted_count"] >= 0
+    assert body["coverage_intervals"]
+    assert body["quality_interruptions"][0]["classification"] == "NONPOSITIVE_CLOSE"
+    assert body["quality_chart_bars"]
+    assert body["quality_chart_bars"][0]["calculation_segment_id"]
 
 
 @pytest.mark.parametrize(

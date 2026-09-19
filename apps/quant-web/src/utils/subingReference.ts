@@ -12,33 +12,66 @@ const isTime = (value: unknown) => typeof value === 'string' && /(?:Z|[+-]\d{2}:
 const isMoney = (value: unknown) => typeof value === 'string' && value.length < 100 && decimal.test(value)
 export function normalizeSubingReference(value: unknown, symbol: string): SubingReferenceResponse {
   const root = record(value)
-  requireThat(root.symbol === symbol.toLowerCase() && root.frequency === '15m' && root.series_kind === 'actual_dominant' && root.formula_version === 'subing_ths_15m_v3' && root.reference_model_version === 'subing_reference_reverse_close_v1' && root.executable === false && root.auto_order === false && root.source === 'historical_replay')
+  const versions: Record<string, string> = { '15m': 'subing_ths_15m_v3', '30m': 'subing_ths_30m_v1', '60m': 'subing_ths_60m_v1', '1d': 'subing_ths_1d_v1' }
+  const daily = root.frequency === '1d'
+  requireThat(root.symbol === symbol.toLowerCase() && typeof root.frequency === 'string' && versions[root.frequency] === root.formula_version && root.series_kind === 'actual_dominant' && root.reference_model_version === (daily ? 'subing_reference_reverse_close_quality_segment_v2' : 'subing_reference_reverse_close_v1') && root.executable === false && root.auto_order === false && root.source === 'historical_replay' && (daily ? ['WARMING', 'INDICATOR_READY_CROSS_UNEVALUABLE', 'CROSS_EVALUATED'] : ['ready', 'warming']).includes(root.research_status as string))
   requireThat(isTime(root.as_of) && isTime(root.reference_cutoff) && typeof root.performance_since === 'string' && day.test(root.performance_since) && typeof root.performance_through === 'string' && day.test(root.performance_through) && root.performance_since <= root.performance_through && typeof root.input_snapshot_hash === 'string' && /^[a-f0-9]{64}$/.test(root.input_snapshot_hash))
   const summary = record(root.summary)
   for (const key of ['closed_count', 'win_count', 'loss_count', 'flat_count', 'open_count', 'interrupted_count', 'initial_count']) requireThat(Number.isSafeInteger(summary[key]) && (summary[key] as number) >= 0)
+  if (daily) {
+    for (const key of ['rollover_interrupted_count', 'data_interrupted_count']) requireThat(Number.isSafeInteger(summary[key]) && (summary[key] as number) >= 0)
+    requireThat(summary.interrupted_count === (summary.rollover_interrupted_count as number) + (summary.data_interrupted_count as number))
+  }
   for (const key of ['win_rate_pct', 'mean_return_pct']) requireThat(summary[key] === null || isMoney(summary[key]))
   requireThat(isMoney(summary.sum_return_percentage_points))
-  requireThat(Array.isArray(root.signals) && Array.isArray(root.items) && (root.next_before === null || isText(root.next_before)))
+  requireThat(Array.isArray(root.signals) && Array.isArray(root.indicators) && Array.isArray(root.items) && (root.next_before === null || isText(root.next_before)))
+  for (const raw of root.indicators) {
+    const point = record(raw)
+    requireThat(isTime(point.bar_end) && isText(point.physical_contract) && isText(point.segment_id) && (!daily || isText(point.calculation_segment_id)))
+    for (const key of ['dif', 'dea', 'macd', 'ema21']) requireThat(point[key] === null || isMoney(point[key]))
+  }
   const ids = new Set<string>()
   for (const raw of root.signals) {
     const signal = record(raw)
     requireThat(isText(signal.signal_id) && !ids.has(signal.signal_id as string)); ids.add(signal.signal_id as string)
-    requireThat(isTime(signal.bar_end) && typeof signal.trading_day === 'string' && day.test(signal.trading_day) && isText(signal.physical_contract) && isText(signal.segment_id) && isMoney(signal.reference_price) && ['buy', 'sell'].includes(signal.direction as string) && ['OPEN_LONG', 'OPEN_SHORT', 'REVERSE_TO_LONG', 'REVERSE_TO_SHORT', 'SAME_DIRECTION'].includes(signal.action as string))
+    requireThat(isTime(signal.bar_end) && typeof signal.trading_day === 'string' && day.test(signal.trading_day) && isText(signal.physical_contract) && isText(signal.segment_id) && (!daily || isText(signal.calculation_segment_id)) && isMoney(signal.reference_price) && ['buy', 'sell'].includes(signal.direction as string) && ['OPEN_LONG', 'OPEN_SHORT', 'REVERSE_TO_LONG', 'REVERSE_TO_SHORT', 'SAME_DIRECTION'].includes(signal.action as string))
     requireThat(signal.action === 'SAME_DIRECTION' || (signal.direction === 'buy' ? ['OPEN_LONG', 'REVERSE_TO_LONG'] : ['OPEN_SHORT', 'REVERSE_TO_SHORT']).includes(signal.action as string))
     for (const key of ['entry_trade_id', 'closed_trade_id']) requireThat(signal[key] === null || isText(signal[key]))
     requireThat(signal.closed_return_pct === null || isMoney(signal.closed_return_pct))
+    for (const key of ['dif', 'dea', 'macd', 'ema21']) requireThat(signal[key] === undefined || signal[key] === null || isMoney(signal[key]))
   }
   ids.clear()
   for (const raw of root.items) {
     const trade = record(raw)
     requireThat(isText(trade.reference_trade_id) && !ids.has(trade.reference_trade_id as string)); ids.add(trade.reference_trade_id as string)
     for (const key of ['physical_contract', 'segment_id', 'entry_signal_id']) requireThat(isText(trade[key]))
-    requireThat(['LONG', 'SHORT'].includes(trade.side as string) && ['OPEN', 'CLOSED', 'ROLLOVER_INTERRUPTED'].includes(trade.status as string) && isTime(trade.entry_bar_end) && isMoney(trade.entry_reference_price) && Number.isSafeInteger(trade.holding_bars) && (trade.holding_bars as number) >= 0 && typeof trade.initial === 'boolean')
+    requireThat(!daily || isText(trade.calculation_segment_id))
+    requireThat(['LONG', 'SHORT'].includes(trade.side as string) && ['OPEN', 'CLOSED', 'ROLLOVER_INTERRUPTED', 'DATA_INTERRUPTED'].includes(trade.status as string) && isTime(trade.entry_bar_end) && isMoney(trade.entry_reference_price) && Number.isSafeInteger(trade.holding_bars) && (trade.holding_bars as number) >= 0 && typeof trade.initial === 'boolean')
     for (const key of ['exit_reference_price', 'reference_return_pct', 'mark_reference_price', 'mark_change_pct']) requireThat(trade[key] === null || isMoney(trade[key]))
     for (const key of ['exit_bar_end', 'mark_bar_end', 'interrupted_at']) requireThat(trade[key] === null || isTime(trade[key]))
     requireThat(typeof trade.entry_trading_day === 'string' && day.test(trade.entry_trading_day) && (trade.exit_trading_day === null || typeof trade.exit_trading_day === 'string' && day.test(trade.exit_trading_day)) && (trade.exit_signal_id === null || isText(trade.exit_signal_id)))
     requireThat(trade.status === 'CLOSED' || (trade.exit_signal_id === null && trade.exit_bar_end === null && trade.exit_reference_price === null && trade.reference_return_pct === null))
     requireThat(trade.status !== 'CLOSED' || (trade.exit_signal_id !== null && trade.exit_bar_end !== null && trade.exit_reference_price !== null && trade.reference_return_pct !== null))
+    requireThat(!daily || trade.interruption_reason === null || ['PRICE_UNAVAILABLE', 'NONPOSITIVE_CLOSE'].includes(trade.interruption_reason as string))
+    if (trade.status === 'DATA_INTERRUPTED') requireThat(daily && isTime(trade.interrupted_at) && typeof trade.interruption_trading_day === 'string' && day.test(trade.interruption_trading_day) && ['PRICE_UNAVAILABLE', 'NONPOSITIVE_CLOSE'].includes(trade.interruption_reason as string) && trade.mark_bar_end === null && trade.mark_reference_price === null && trade.mark_change_pct === null)
+    if (trade.status === 'ROLLOVER_INTERRUPTED') requireThat(isTime(trade.interrupted_at) && (trade.interruption_reason === undefined || trade.interruption_reason === null) && (trade.interruption_trading_day === undefined || trade.interruption_trading_day === null) && trade.mark_bar_end === null && trade.mark_reference_price === null && trade.mark_change_pct === null)
+  }
+  if (daily) {
+    requireThat(root.quality_policy_version === 'subing-d1-quality-segment-v1' && Array.isArray(root.coverage_intervals) && Array.isArray(root.quality_interruptions) && Array.isArray(root.quality_chart_bars))
+    for (const raw of root.coverage_intervals) {
+      const interval = record(raw)
+      requireThat(typeof interval.since === 'string' && day.test(interval.since) && typeof interval.through === 'string' && day.test(interval.through) && interval.since <= interval.through && ['WARMING', 'INDICATOR_READY_CROSS_UNEVALUABLE', 'CROSS_EVALUATED', 'PRICE_UNAVAILABLE', 'NONPOSITIVE_CLOSE'].includes(interval.status as string) && isText(interval.physical_contract) && isText(interval.segment_id) && (interval.calculation_segment_id === null || isText(interval.calculation_segment_id)))
+    }
+    for (const raw of root.quality_interruptions) {
+      const item = record(raw)
+      requireThat(isTime(item.bar_end) && typeof item.trading_day === 'string' && day.test(item.trading_day) && isText(item.physical_contract) && isText(item.segment_id) && ['PRICE_UNAVAILABLE', 'NONPOSITIVE_CLOSE'].includes(item.classification as string) && ['rqdata-d1-zero-ohl-v1', 'rqdata-d1-nonpositive-close-v1'].includes(item.classification_version as string) && typeof item.request_sha256 === 'string' && /^[a-f0-9]{64}$/.test(item.request_sha256) && typeof item.response_sha256 === 'string' && /^[a-f0-9]{64}$/.test(item.response_sha256))
+    }
+    for (const raw of root.quality_chart_bars) {
+      const bar = record(raw)
+      requireThat(isTime(bar.bar_end) && typeof bar.trading_day === 'string' && day.test(bar.trading_day) && isText(bar.physical_contract) && isText(bar.segment_id) && isText(bar.calculation_segment_id))
+      for (const key of ['open', 'high', 'low', 'close', 'volume']) requireThat(isMoney(bar[key]))
+      for (const key of ['turnover', 'open_interest']) requireThat(bar[key] === null || isMoney(bar[key]))
+    }
   }
   return value as SubingReferenceResponse
 }

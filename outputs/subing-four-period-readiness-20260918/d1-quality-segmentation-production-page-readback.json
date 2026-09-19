@@ -1,0 +1,37 @@
+{
+  "schema": "subing-d1-quality-production-page-readback-v1",
+  "code_commit": "3a4f37f08e2ac38979204d4e02601f818ede30ea",
+  "as_of": "2026-09-18T18:30:00+08:00",
+  "browser": "Chromium via Playwright CLI",
+  "candidate_origin": "http://127.0.0.1:8011",
+  "page_origin": "http://127.0.0.1:5175",
+  "summary": {
+    "total": 240,
+    "passed": 240,
+    "failed": 0,
+    "by_frequency": {
+      "15m": {"passed": 60, "failed": 0},
+      "30m": {"passed": 60, "failed": 0},
+      "60m": {"passed": 60, "failed": 0},
+      "1d": {"passed": 60, "failed": 0}
+    }
+  },
+  "checks": [
+    "reference HTTP 200 with exact fixed as_of",
+    "chart canvas rendered",
+    "reference-trade region rendered",
+    "no unavailable or page-error state",
+    "non-15m periods explicitly state that formal alerts are disabled"
+  ],
+  "research_status_readback": {
+    "15m": {"ready": 60},
+    "30m": {"ready": 59, "warming": 1},
+    "60m": {"ready": 59, "warming": 1},
+    "1d": {"CROSS_EVALUATED": 59, "WARMING": 1}
+  },
+  "notes": [
+    "The first pass rendered all 240 pages; 12 response captures raced asynchronous body parsing and were rechecked with waitForResponse, all 12 passed.",
+    "RS 1d remains explicitly WARMING with insufficient valid bars and is not represented as strategy-ready.",
+    "This is candidate page evidence, not release, Runtime promotion, or natural alert evidence."
+  ]
+}

@@ -30,6 +30,12 @@ Dataset。
 隔离候选的 Newow W1 质量读取可把已完成周内的 D1 合法 Bar 与 `PRICE_UNAVAILABLE` 事实逐端点证明为完整互斥集合：
 有缺价的周只形成 `weekly-d1-quality-v1` 计算中断，不返回 W1 价格 Bar；普通 MDS W1 查询仍严格失败。
 同周还有未解释缺日、重复或身份冲突时不得豁免。现有正常 W1 必须与同一 D1 来源聚合数值一致；
+
+苏冰 D1 候选合同新增显式 opt-in 的 source-quality union：正常 Bar、既有 `PRICE_UNAVAILABLE` 与版本化
+`NONPOSITIVE_CLOSE` 必须精确覆盖 expected endpoints。全零行归入后者，不得称为 `NO_TRADE`。普通 strict
+reader 和既有 Newow reader 的接受范围不变；未知、缺失、重复、Session/Map/owner 或证据身份冲突继续
+fail closed。生产发布须使用不可变文件、旧 pointer/hash compare、维护锁、原子 Catalog commit、严格读回和
+可恢复旧 pointer；候选代码与 prepare-only plan 不构成生产写入授权。
 分区写入、正式数据恢复及 Runtime 切换分别受各自 Gate 约束。
 不得用 `get_price` 的期货日/周 `close` 或 `settlement` 互相替代。
 

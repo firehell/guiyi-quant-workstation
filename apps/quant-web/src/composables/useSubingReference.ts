@@ -14,7 +14,7 @@ export function useSubingReference(fetch: (symbol: string, query: SubingReferenc
     data.value = null; error.value = null; loading.value = true
     try {
       const result = normalizeSubingReference(await fetch(expected, query), expected)
-      if (query.since && result.performance_since !== query.since || query.through && result.performance_through !== query.through || query.as_of && Date.parse(result.as_of) !== Date.parse(query.as_of)) throw new Error('identity')
+      if (query.frequency && result.frequency !== query.frequency || query.since && result.performance_since !== query.since || query.through && result.performance_through !== query.through || query.as_of && Date.parse(result.as_of) !== Date.parse(query.as_of)) throw new Error('identity')
       if (current === generation) data.value = result
     } catch (reason) { if (current === generation) error.value = referenceReadError(reason) }
     finally { if (current === generation) loading.value = false }
@@ -25,9 +25,9 @@ export function useSubingReference(fetch: (symbol: string, query: SubingReferenc
     const current = generation; const expected = symbol
     loading.value = true; error.value = null
     try {
-      const result = normalizeSubingReference(await fetch(expected, { since: previous.performance_since, through: previous.performance_through, as_of: previous.as_of, before: previous.next_before }), expected)
+      const result = normalizeSubingReference(await fetch(expected, { ...(previous.frequency === '15m' ? {} : { frequency: previous.frequency }), since: previous.performance_since, through: previous.performance_through, as_of: previous.as_of, before: previous.next_before }), expected)
       if (current !== generation) return
-      if (result.input_snapshot_hash !== previous.input_snapshot_hash || result.as_of !== previous.as_of || result.performance_since !== previous.performance_since || result.performance_through !== previous.performance_through || JSON.stringify(result.summary) !== JSON.stringify(previous.summary) || JSON.stringify(result.signals) !== JSON.stringify(previous.signals)) throw new Error('snapshot')
+      if (result.frequency !== previous.frequency || result.input_snapshot_hash !== previous.input_snapshot_hash || result.as_of !== previous.as_of || result.performance_since !== previous.performance_since || result.performance_through !== previous.performance_through || JSON.stringify(result.summary) !== JSON.stringify(previous.summary) || JSON.stringify(result.signals) !== JSON.stringify(previous.signals) || JSON.stringify(result.indicators) !== JSON.stringify(previous.indicators)) throw new Error('snapshot')
       const ids = new Set(previous.items.map((item) => item.reference_trade_id))
       if (result.items.some((item) => ids.has(item.reference_trade_id))) throw new Error('duplicate')
       data.value = { ...result, items: [...previous.items, ...result.items] }

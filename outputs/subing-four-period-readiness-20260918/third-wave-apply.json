@@ -1,0 +1,14 @@
+{
+  "schema": "subing-third-wave-rs-apply-v1",
+  "symbol": "rs",
+  "contract": "RS2701",
+  "frequency": "30m",
+  "status": "passed",
+  "plan_sha256": "1a31fe15c3a184c41cd4dd6739278fe599a9f1d50dec44cfb5f33d16b9c8b517",
+  "provider_requests": 0,
+  "applied_partitions": 1,
+  "failed": 0,
+  "blocked": 0,
+  "failure_codes": [],
+  "remaining_targets": []
+}

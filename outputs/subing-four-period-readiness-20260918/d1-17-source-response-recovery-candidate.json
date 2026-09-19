@@ -1,0 +1,466 @@
+{
+  "schema": "subing-d1-source-response-recovery-candidate-v1",
+  "execute": false,
+  "fixed_cutoff": "2026-09-18T18:30:00+08:00",
+  "provider": "rqdata",
+  "method": "futures.get_exchange_daily",
+  "requests": [
+    {
+      "symbol": "oi",
+      "contract": "OI2609",
+      "frequency": "1d",
+      "month": "2026-09",
+      "start": "2026-09-01",
+      "end": "2026-09-11",
+      "target_dates": [
+        "2026-09-01",
+        "2026-09-02",
+        "2026-09-03",
+        "2026-09-04",
+        "2026-09-07",
+        "2026-09-08",
+        "2026-09-09",
+        "2026-09-10",
+        "2026-09-11"
+      ],
+      "allowed_response_dates": [
+        "2026-09-01",
+        "2026-09-02",
+        "2026-09-03",
+        "2026-09-04",
+        "2026-09-07",
+        "2026-09-08",
+        "2026-09-09",
+        "2026-09-10",
+        "2026-09-11"
+      ],
+      "calendar_authority": {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "oi",
+        "contract": "OI2609",
+        "exchange": "CZCE",
+        "listed_date": "2025-09-15",
+        "expired_date_exclusive": "2026-09-14",
+        "allowed_response_dates_sha256": "167367a86f50c5b824e966ef39da3877fc96ef564a4ac03d574a9780d6474f67",
+        "authority_sha256": "099c5e4f3baae7f05d06519139a5cacfe479d3eab79311b3351c875a40dddfa6"
+      },
+      "reason_codes": [
+        "owner_authorized_missing_raw_response_recovery"
+      ],
+      "request_sha256": "b0c1fc32658402bed1004eb5bec07062d76f46d3ea3119f0ba27b2439c638319"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2609",
+      "frequency": "1d",
+      "month": "2026-09",
+      "start": "2026-09-01",
+      "end": "2026-09-11",
+      "target_dates": [
+        "2026-09-01",
+        "2026-09-02",
+        "2026-09-03",
+        "2026-09-04",
+        "2026-09-07",
+        "2026-09-08",
+        "2026-09-09",
+        "2026-09-10",
+        "2026-09-11"
+      ],
+      "allowed_response_dates": [
+        "2026-09-01",
+        "2026-09-02",
+        "2026-09-03",
+        "2026-09-04",
+        "2026-09-07",
+        "2026-09-08",
+        "2026-09-09",
+        "2026-09-10",
+        "2026-09-11"
+      ],
+      "calendar_authority": {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "pf",
+        "contract": "PF2609",
+        "exchange": "CZCE",
+        "listed_date": "2025-09-15",
+        "expired_date_exclusive": "2026-09-14",
+        "allowed_response_dates_sha256": "167367a86f50c5b824e966ef39da3877fc96ef564a4ac03d574a9780d6474f67",
+        "authority_sha256": "de9a23aece14736f818bd3e3ada4d38c08cd9e3a1d62d509d2232a7c6dab41c9"
+      },
+      "reason_codes": [
+        "owner_authorized_missing_raw_response_recovery"
+      ],
+      "request_sha256": "58d5d68c5b4420acc6b18a49057dfcae046199f5a7815ff3b503c413452a8671"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1d",
+      "month": "2025-11",
+      "start": "2025-11-17",
+      "end": "2025-11-28",
+      "target_dates": [
+        "2025-11-17",
+        "2025-11-18",
+        "2025-11-19",
+        "2025-11-20",
+        "2025-11-21",
+        "2025-11-24",
+        "2025-11-25",
+        "2025-11-26",
+        "2025-11-27",
+        "2025-11-28"
+      ],
+      "allowed_response_dates": [
+        "2025-11-17",
+        "2025-11-18",
+        "2025-11-19",
+        "2025-11-20",
+        "2025-11-21",
+        "2025-11-24",
+        "2025-11-25",
+        "2025-11-26",
+        "2025-11-27",
+        "2025-11-28"
+      ],
+      "calendar_authority": {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "pf",
+        "contract": "PF2611",
+        "exchange": "CZCE",
+        "listed_date": "2025-11-17",
+        "expired_date_exclusive": "2026-11-13",
+        "allowed_response_dates_sha256": "96c41d9451e6d0b7e70d0ee27cbeb773c7c824e9d2f988251da8ccf943a5a52d",
+        "authority_sha256": "01700cdfb72085b0357c3930067a7da5ec16bad2d2723d2f7ecfd145eaf7bc74"
+      },
+      "reason_codes": [
+        "owner_authorized_missing_raw_response_recovery"
+      ],
+      "request_sha256": "79f7b14a540b711eaeed9eddb6ab855e7cc59a780a3ed2a9deec8dae433bb71b"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1d",
+      "month": "2025-12",
+      "start": "2025-12-01",
+      "end": "2025-12-30",
+      "target_dates": [
+        "2025-12-01",
+        "2025-12-02",
+        "2025-12-03",
+        "2025-12-04",
+        "2025-12-05",
+        "2025-12-08",
+        "2025-12-09",
+        "2025-12-10",
+        "2025-12-11",
+        "2025-12-15",
+        "2025-12-16",
+        "2025-12-30"
+      ],
+      "allowed_response_dates": [
+        "2025-12-01",
+        "2025-12-02",
+        "2025-12-03",
+        "2025-12-04",
+        "2025-12-05",
+        "2025-12-08",
+        "2025-12-09",
+        "2025-12-10",
+        "2025-12-11",
+        "2025-12-12",
+        "2025-12-15",
+        "2025-12-16",
+        "2025-12-17",
+        "2025-12-18",
+        "2025-12-19",
+        "2025-12-22",
+        "2025-12-23",
+        "2025-12-24",
+        "2025-12-25",
+        "2025-12-26",
+        "2025-12-29",
+        "2025-12-30"
+      ],
+      "calendar_authority": {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "pf",
+        "contract": "PF2611",
+        "exchange": "CZCE",
+        "listed_date": "2025-11-17",
+        "expired_date_exclusive": "2026-11-13",
+        "allowed_response_dates_sha256": "a79ae42029dd9514bde5066982d0ea27f06704dab3a240d5f970dee9a763b3b7",
+        "authority_sha256": "56aea84b294de15a006d57965012ef536560a1c39eedd71922c1f282954ef724"
+      },
+      "reason_codes": [
+        "owner_authorized_missing_raw_response_recovery"
+      ],
+      "request_sha256": "c1aa441868edfec6295a0644bc0d9e69c46b821d667a3a9d59e5567530ebb995"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1d",
+      "month": "2026-01",
+      "start": "2026-01-19",
+      "end": "2026-01-30",
+      "target_dates": [
+        "2026-01-19",
+        "2026-01-27",
+        "2026-01-28",
+        "2026-01-30"
+      ],
+      "allowed_response_dates": [
+        "2026-01-19",
+        "2026-01-20",
+        "2026-01-21",
+        "2026-01-22",
+        "2026-01-23",
+        "2026-01-26",
+        "2026-01-27",
+        "2026-01-28",
+        "2026-01-29",
+        "2026-01-30"
+      ],
+      "calendar_authority": {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "pf",
+        "contract": "PF2611",
+        "exchange": "CZCE",
+        "listed_date": "2025-11-17",
+        "expired_date_exclusive": "2026-11-13",
+        "allowed_response_dates_sha256": "315d7eb5bef10dd308810d6c6083ee03dc82f2f21d7d7640d648e2ef36c9ba21",
+        "authority_sha256": "9eb0940a63ef7b18e961ad1bf224e83f74eab063bec16c190ad7126aa4d61901"
+      },
+      "reason_codes": [
+        "owner_authorized_missing_raw_response_recovery"
+      ],
+      "request_sha256": "5a27be15be8063ef7936a1c863a78606f93fa768b3993ca77329744b99907797"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1d",
+      "month": "2026-02",
+      "start": "2026-02-03",
+      "end": "2026-02-27",
+      "target_dates": [
+        "2026-02-03",
+        "2026-02-04",
+        "2026-02-06",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-27"
+      ],
+      "allowed_response_dates": [
+        "2026-02-03",
+        "2026-02-04",
+        "2026-02-05",
+        "2026-02-06",
+        "2026-02-09",
+        "2026-02-10",
+        "2026-02-11",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-24",
+        "2026-02-25",
+        "2026-02-26",
+        "2026-02-27"
+      ],
+      "calendar_authority": {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "pf",
+        "contract": "PF2611",
+        "exchange": "CZCE",
+        "listed_date": "2025-11-17",
+        "expired_date_exclusive": "2026-11-13",
+        "allowed_response_dates_sha256": "157a21090e0579f5f3aa77d035e5e1f7631beaf6614fb2a8cea4769c68b4af38",
+        "authority_sha256": "a324d2c9c5982ee38074fcaf5a2b581e2a9055226cc2ef1e984052bcb37aa52d"
+      },
+      "reason_codes": [
+        "owner_authorized_missing_raw_response_recovery"
+      ],
+      "request_sha256": "4a59e752084deadc6b983d0912fa871b9c09d759f03bfb63243338639b85e1c4"
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "frequency": "1d",
+      "month": "2025-11",
+      "start": "2025-11-24",
+      "end": "2025-11-28",
+      "target_dates": [
+        "2025-11-24",
+        "2025-11-26",
+        "2025-11-28"
+      ],
+      "allowed_response_dates": [
+        "2025-11-24",
+        "2025-11-25",
+        "2025-11-26",
+        "2025-11-27",
+        "2025-11-28"
+      ],
+      "calendar_authority": {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "rs",
+        "contract": "RS2609",
+        "exchange": "CZCE",
+        "listed_date": "2025-09-15",
+        "expired_date_exclusive": "2026-09-14",
+        "allowed_response_dates_sha256": "c0e8908c52ce3bae71820b3a8350bd74613d933773f6a263cb267f3b0ffe9df6",
+        "authority_sha256": "c6ebb8facff317776555a59cbf5ba25c72b1c0bd7e1b103a40cfc05b803de18e"
+      },
+      "reason_codes": [
+        "owner_authorized_missing_raw_response_recovery"
+      ],
+      "request_sha256": "b0b7b00b0ab978157ca34a1e171efc56e24c792a77a3f61ca34f0547090fe5bb"
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "frequency": "1d",
+      "month": "2025-12",
+      "start": "2025-12-02",
+      "end": "2025-12-04",
+      "target_dates": [
+        "2025-12-02",
+        "2025-12-04"
+      ],
+      "allowed_response_dates": [
+        "2025-12-02",
+        "2025-12-03",
+        "2025-12-04"
+      ],
+      "calendar_authority": {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "rs",
+        "contract": "RS2609",
+        "exchange": "CZCE",
+        "listed_date": "2025-09-15",
+        "expired_date_exclusive": "2026-09-14",
+        "allowed_response_dates_sha256": "ae0b468235949331cda73e571664d96f0de610ab377a6264d2c2ba36998550ba",
+        "authority_sha256": "e13489e2315ed30702b9e42e358a1ef81974eb90ef77d184545289bf2b200069"
+      },
+      "reason_codes": [
+        "owner_authorized_missing_raw_response_recovery"
+      ],
+      "request_sha256": "5fd3a7cb1d72a5b4fac0d47fa0eef0e711ca6e1a24dcfe46199074f1d6665545"
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "frequency": "1d",
+      "month": "2026-08",
+      "start": "2026-08-12",
+      "end": "2026-08-12",
+      "target_dates": [
+        "2026-08-12"
+      ],
+      "allowed_response_dates": [
+        "2026-08-12"
+      ],
+      "calendar_authority": {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "rs",
+        "contract": "RS2609",
+        "exchange": "CZCE",
+        "listed_date": "2025-09-15",
+        "expired_date_exclusive": "2026-09-14",
+        "allowed_response_dates_sha256": "cb3ed765a3e7505e053c4b64b174f85b236d5664effc6ecb94e1d7ab34beded8",
+        "authority_sha256": "c9d7bffaff76e00dab1a9b229017d5baebd11d016b4cac578bbdda3346166859"
+      },
+      "reason_codes": [
+        "owner_authorized_missing_raw_response_recovery"
+      ],
+      "request_sha256": "77cc3703b8ca1f5ad39b8f3d6890b563ed4494ee396454c3c257dd3e426bc2a9"
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "frequency": "1d",
+      "month": "2026-09",
+      "start": "2026-09-02",
+      "end": "2026-09-09",
+      "target_dates": [
+        "2026-09-02",
+        "2026-09-04",
+        "2026-09-08",
+        "2026-09-09"
+      ],
+      "allowed_response_dates": [
+        "2026-09-02",
+        "2026-09-03",
+        "2026-09-04",
+        "2026-09-07",
+        "2026-09-08",
+        "2026-09-09"
+      ],
+      "calendar_authority": {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "rs",
+        "contract": "RS2609",
+        "exchange": "CZCE",
+        "listed_date": "2025-09-15",
+        "expired_date_exclusive": "2026-09-14",
+        "allowed_response_dates_sha256": "edd61e18f483442809a8c9511c5eccf254f79f4bd554207668a203fd2d346ba5",
+        "authority_sha256": "aaa2389f2bc031450e420b7349e725ff6bcc00e54df7dec2de123fe724d18086"
+      },
+      "reason_codes": [
+        "owner_authorized_missing_raw_response_recovery"
+      ],
+      "request_sha256": "513bcf7b7a91d890b592b3c5ca1b196f6d6960f02f29790b4e421aaf657b9351"
+    }
+  ],
+  "budget": {
+    "max_provider_requests": 10,
+    "expected_date_identities": 60,
+    "allowed_response_context_dates": 28,
+    "concurrency": 1,
+    "retries": 0,
+    "canonical_writes": 0,
+    "database_writes": 0
+  },
+  "execution_contract": {
+    "exclusive_attempt_directory": true,
+    "save_raw_response_before_classification": true,
+    "journal_each_request": true,
+    "verify_contract_and_date_identity": true,
+    "target_and_context_counts_are_isolated": true,
+    "automatic_retry": false,
+    "production_publish": false,
+    "fail_stop_codes": [
+      "UNKNOWN",
+      "CONTRACT_MISMATCH",
+      "DATE_MISMATCH",
+      "DUPLICATE",
+      "ARTIFACT_WRITE_UNCERTAIN",
+      "PLAN_DRIFT"
+    ],
+    "authorization_scope": "MISSING_RAW_RESPONSE_RECOVERY_ONLY",
+    "recovery_target_count": 10,
+    "recovery_date_identity_count": 60,
+    "parent_plan_sha256": "5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c",
+    "parent_plan_file_sha256": "ad70a8c616fb5138d10959a3bf8f9dee9e5d4d7ebb959e316284842a2566424d",
+    "parent_manifest_sha256": "079f54db00b211509049456806fa59a60a45fb47b5e221835ed25c09364cd4ab",
+    "parent_manifest_file_sha256": "a827678c1dc0602aadfd0757314c08b5325f0141795a225a7505602973871c63",
+    "offline_verdict_file_sha256": "3e53ad63c72595a912cb129bc2310ff6c632dbbede3bad376debc4f7e26e40e5",
+    "continuation_candidate_file_sha256": "3aead0f60d716267af35403244db707c316e70bb3355a198a507c1710b69ee99",
+    "source_complete_file_sha256": "1c082858a552bbefb4e83a3750739405f951e1a9de8e4de347118e859fea8615",
+    "output_root": "outputs/subing-four-period-readiness-20260918",
+    "attempt_id": "d1-source-response-recovery-20260919-001"
+  },
+  "plan_sha256": "3797e61a8657facc1dc2fb47bf8557cc9dce45000ce302f3d3110d570264e9df"
+}

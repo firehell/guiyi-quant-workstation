@@ -565,7 +565,7 @@ def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
 
         class EmptyHistory:
             @staticmethod
-            def query_page(request):
+            def query_alert_history_prefix(request):
                 return MarketSeriesPageResult(
                     request_identity={"symbol": request.symbol},
                     bars=(),

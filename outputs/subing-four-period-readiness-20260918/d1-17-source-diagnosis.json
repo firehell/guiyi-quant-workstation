@@ -1,0 +1,1158 @@
+{
+  "schema": "subing-d1-17-source-diagnosis-v1",
+  "as_of": "2026-09-18T18:30:00+08:00",
+  "candidate_code_commit": "ad2c48fff8f505c85c0b0aeb2eb2a2f03c15af1f",
+  "scope": "17 previously blocked D1 products only",
+  "method": "Production Catalog/MainContractMap and Canonical reads in PostgreSQL read-only transactions; same-cutoff SubingReferenceService; candidate-only loopback API/Web and real Chromium.",
+  "summary": {
+    "items": 17,
+    "blocked_price_unavailable": 7,
+    "blocked_reference_conflict": 10,
+    "page_fail_closed": 17,
+    "production_mutations": 0
+  },
+  "items": [
+    {
+      "symbol": "bz",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "PRICE_UNAVAILABLE",
+      "recheck_code": "PRICE_UNAVAILABLE",
+      "page": {
+        "symbol": "bz",
+        "navigation": "ok",
+        "api": null,
+        "apiCode": null,
+        "heading": 1,
+        "summary": 0,
+        "canvas": 0,
+        "workspace": 0
+      },
+      "owner_segments": [
+        {
+          "contract": "BZ2605",
+          "since": "2026-03-20",
+          "through": "2026-04-20"
+        },
+        {
+          "contract": "BZ2606",
+          "since": "2026-04-21",
+          "through": "2026-05-22"
+        },
+        {
+          "contract": "BZ2607",
+          "since": "2026-05-25",
+          "through": "2026-06-23"
+        },
+        {
+          "contract": "BZ2608",
+          "since": "2026-06-24",
+          "through": "2026-07-20"
+        },
+        {
+          "contract": "BZ2609",
+          "since": "2026-07-21",
+          "through": "2026-08-21"
+        },
+        {
+          "contract": "BZ2610",
+          "since": "2026-08-24",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "source_quality_in_physical_prefix",
+      "triggered_contract": "BZ2610",
+      "requested_prefix_window": {
+        "start": "2026-03-19T13:00:00+00:00",
+        "end": "2026-09-18T07:00:00+00:00"
+      },
+      "source_facts": [
+        {
+          "contract": "BZ2610",
+          "day": "2026-03-20",
+          "month": "2026-03",
+          "inside_requested_endpoint_window": true,
+          "request_sha256": "aa27dae30f79c5a98d8ca1b1faf38d7815a7da9abd85a037258eb5eef74eea05",
+          "response_sha256": "35a87d9cdf130e8d591fc73f9310daf936fe2e32aa29d8cfff863ab3113e6652"
+        }
+      ]
+    },
+    {
+      "symbol": "c",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "PRICE_UNAVAILABLE",
+      "recheck_code": "PRICE_UNAVAILABLE",
+      "page": {
+        "symbol": "c",
+        "navigation": "ok",
+        "api": null,
+        "apiCode": null,
+        "heading": 1,
+        "summary": 0,
+        "canvas": 0,
+        "workspace": 0
+      },
+      "owner_segments": [
+        {
+          "contract": "C2605",
+          "since": "2026-02-10",
+          "through": "2026-04-16"
+        },
+        {
+          "contract": "C2607",
+          "since": "2026-04-17",
+          "through": "2026-06-17"
+        },
+        {
+          "contract": "C2609",
+          "since": "2026-06-18",
+          "through": "2026-08-14"
+        },
+        {
+          "contract": "C2611",
+          "since": "2026-08-17",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "source_quality_in_physical_prefix",
+      "triggered_contract": "C2609",
+      "requested_prefix_window": {
+        "start": "2026-02-09T13:00:00+00:00",
+        "end": "2026-09-18T07:00:00+00:00"
+      },
+      "source_facts": [
+        {
+          "contract": "C2609",
+          "day": "2026-09-10",
+          "month": "2026-09",
+          "inside_requested_endpoint_window": true,
+          "request_sha256": "4e66d400353a6fe58427e6aba85ac99ba2c5cf03ef22f3346debd4246293ce3b",
+          "response_sha256": "783630e858ebe5322975421daf8e31e7d25cca938c10264472d2125d41868e75"
+        }
+      ]
+    },
+    {
+      "symbol": "eb",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "PRICE_UNAVAILABLE",
+      "recheck_code": "PRICE_UNAVAILABLE",
+      "page": {
+        "symbol": "eb",
+        "navigation": "ok",
+        "api": null,
+        "apiCode": null,
+        "heading": 1,
+        "summary": 0,
+        "canvas": 0,
+        "workspace": 0
+      },
+      "owner_segments": [
+        {
+          "contract": "EB2605",
+          "since": "2026-03-23",
+          "through": "2026-04-22"
+        },
+        {
+          "contract": "EB2606",
+          "since": "2026-04-23",
+          "through": "2026-05-12"
+        },
+        {
+          "contract": "EB2607",
+          "since": "2026-05-13",
+          "through": "2026-06-22"
+        },
+        {
+          "contract": "EB2608",
+          "since": "2026-06-23",
+          "through": "2026-07-22"
+        },
+        {
+          "contract": "EB2609",
+          "since": "2026-07-23",
+          "through": "2026-08-13"
+        },
+        {
+          "contract": "EB2610",
+          "since": "2026-08-14",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "source_quality_in_physical_prefix",
+      "triggered_contract": "EB2606",
+      "requested_prefix_window": {
+        "start": "2025-06-25T13:00:00+00:00",
+        "end": "2026-05-12T07:00:00+00:00"
+      },
+      "source_facts": [
+        {
+          "contract": "EB2606",
+          "day": "2025-07-03",
+          "month": "2025-07",
+          "inside_requested_endpoint_window": true,
+          "request_sha256": "7dd3307038a38424e7aa8ace03c3127ca6a337869ec3e64be02361137e6cd47c",
+          "response_sha256": "1afe072763446ebd11e3fa05fb311ce25844ef1ebfbb594677d380ebf9afd342"
+        },
+        {
+          "contract": "EB2606",
+          "day": "2025-08-29",
+          "month": "2025-08",
+          "inside_requested_endpoint_window": true,
+          "request_sha256": "31e6ee421ed41bb1fa3ca6da5bc182f4aa7dd65d5b1c1025dd98dd2deddc8ec7",
+          "response_sha256": "51aff0e7c68fd570ac333f54bb6f5de255dd701ca92c081c4d24682f09280806"
+        },
+        {
+          "contract": "EB2606",
+          "day": "2025-09-19",
+          "month": "2025-09",
+          "inside_requested_endpoint_window": true,
+          "request_sha256": "f3e4283440fffe25e8a8e280e70fd35d7ff284d26ece9ac5944aafb9c5c8f28a",
+          "response_sha256": "a8aedeaec06e844dcd97e4e44503a45c354f770cbd74e83293add0640d53300a"
+        }
+      ]
+    },
+    {
+      "symbol": "i",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "PRICE_UNAVAILABLE",
+      "recheck_code": "PRICE_UNAVAILABLE",
+      "page": {
+        "symbol": "i",
+        "navigation": "ok",
+        "api": null,
+        "apiCode": null,
+        "heading": 1,
+        "summary": 0,
+        "canvas": 0,
+        "workspace": 0
+      },
+      "owner_segments": [
+        {
+          "contract": "I2605",
+          "since": "2025-12-09",
+          "through": "2026-04-08"
+        },
+        {
+          "contract": "I2609",
+          "since": "2026-04-09",
+          "through": "2026-08-12"
+        },
+        {
+          "contract": "I2701",
+          "since": "2026-08-13",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "source_quality_in_physical_prefix",
+      "triggered_contract": "I2609",
+      "requested_prefix_window": {
+        "start": "2025-12-08T13:00:00+00:00",
+        "end": "2026-09-18T07:00:00+00:00"
+      },
+      "source_facts": [
+        {
+          "contract": "I2609",
+          "day": "2026-09-09",
+          "month": "2026-09",
+          "inside_requested_endpoint_window": true,
+          "request_sha256": "b5072f3f15de1664caf7330ccd47a79f3ff5d9614a1d4377140f480a79614def",
+          "response_sha256": "aa8d19413e42454beacd43553d37e528b27a12479cd388272e0122214518e34a"
+        }
+      ]
+    },
+    {
+      "symbol": "p",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "PRICE_UNAVAILABLE",
+      "recheck_code": "PRICE_UNAVAILABLE",
+      "page": {
+        "symbol": "p",
+        "navigation": "ok",
+        "api": null,
+        "apiCode": null,
+        "heading": 1,
+        "summary": 0,
+        "canvas": 0,
+        "workspace": 0
+      },
+      "owner_segments": [
+        {
+          "contract": "P2605",
+          "since": "2025-12-11",
+          "through": "2026-04-07"
+        },
+        {
+          "contract": "P2609",
+          "since": "2026-04-08",
+          "through": "2026-08-11"
+        },
+        {
+          "contract": "P2701",
+          "since": "2026-08-12",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "source_quality_in_physical_prefix",
+      "triggered_contract": "P2609",
+      "requested_prefix_window": {
+        "start": "2025-12-10T13:00:00+00:00",
+        "end": "2026-09-18T07:00:00+00:00"
+      },
+      "source_facts": [
+        {
+          "contract": "P2609",
+          "day": "2026-09-09",
+          "month": "2026-09",
+          "inside_requested_endpoint_window": true,
+          "request_sha256": "991bdc4084c10a0f85dd4eabbeac2bbdce83a85836b67b3e71ad77bc6587c391",
+          "response_sha256": "3b3ea2fbdfaf541c11a3e9c9322d8929c0c5fd8e70444ce99f9cea951f4e58db"
+        }
+      ]
+    },
+    {
+      "symbol": "pg",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "PRICE_UNAVAILABLE",
+      "recheck_code": "PRICE_UNAVAILABLE",
+      "page": {
+        "symbol": "pg",
+        "navigation": "ok",
+        "api": null,
+        "apiCode": null,
+        "heading": 1,
+        "summary": 0,
+        "canvas": 0,
+        "workspace": 0
+      },
+      "owner_segments": [
+        {
+          "contract": "PG2605",
+          "since": "2026-03-24",
+          "through": "2026-04-15"
+        },
+        {
+          "contract": "PG2607",
+          "since": "2026-04-16",
+          "through": "2026-06-23"
+        },
+        {
+          "contract": "PG2608",
+          "since": "2026-06-24",
+          "through": "2026-07-23"
+        },
+        {
+          "contract": "PG2610",
+          "since": "2026-07-24",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "source_quality_in_physical_prefix",
+      "triggered_contract": "PG2605",
+      "requested_prefix_window": {
+        "start": "2025-05-27T13:00:00+00:00",
+        "end": "2026-04-15T07:00:00+00:00"
+      },
+      "source_facts": [
+        {
+          "contract": "PG2605",
+          "day": "2025-06-04",
+          "month": "2025-06",
+          "inside_requested_endpoint_window": true,
+          "request_sha256": "197e08a9f33902bee1ae651d9f9618e856ffe5b06db980ee8d43a85fa81e0794",
+          "response_sha256": "650e6245f383524e3895d6022413a65294ac07c6c981b3bdb08e9741dca17791"
+        }
+      ]
+    },
+    {
+      "symbol": "y",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "PRICE_UNAVAILABLE",
+      "recheck_code": "PRICE_UNAVAILABLE",
+      "page": {
+        "symbol": "y",
+        "navigation": "ok",
+        "api": null,
+        "apiCode": null,
+        "heading": 1,
+        "summary": 0,
+        "canvas": 0,
+        "workspace": 0
+      },
+      "owner_segments": [
+        {
+          "contract": "Y2605",
+          "since": "2025-12-09",
+          "through": "2026-04-03"
+        },
+        {
+          "contract": "Y2609",
+          "since": "2026-04-07",
+          "through": "2026-08-04"
+        },
+        {
+          "contract": "Y2701",
+          "since": "2026-08-05",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "source_quality_in_physical_prefix",
+      "triggered_contract": "Y2609",
+      "requested_prefix_window": {
+        "start": "2025-12-08T13:00:00+00:00",
+        "end": "2026-09-18T07:00:00+00:00"
+      },
+      "source_facts": [
+        {
+          "contract": "Y2609",
+          "day": "2026-09-09",
+          "month": "2026-09",
+          "inside_requested_endpoint_window": true,
+          "request_sha256": "c1df8d199e0bf96dfb2afab131ae6f43488b7407452836b583e23cf5852bf074",
+          "response_sha256": "478cd42bb720c61eea7d769eb48e2755cebef54120ee719e39a2a5a5157bc8bf"
+        }
+      ]
+    },
+    {
+      "symbol": "oi",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "recheck_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "page": {
+        "symbol": "oi",
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "heading": 0,
+        "summary": 0,
+        "canvas": 15,
+        "workspace": 1
+      },
+      "owner_segments": [
+        {
+          "contract": "OI2605",
+          "since": "2025-12-12",
+          "through": "2026-04-14"
+        },
+        {
+          "contract": "OI2609",
+          "since": "2026-04-15",
+          "through": "2026-08-18"
+        },
+        {
+          "contract": "OI2611",
+          "since": "2026-08-19",
+          "through": "2026-09-08"
+        },
+        {
+          "contract": "OI2701",
+          "since": "2026-09-09",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "nonpositive_close_in_physical_prefix",
+      "nonpositive_count": 3,
+      "nonpositive_by_contract": [
+        {
+          "contract": "OI2611",
+          "count": 3,
+          "first_day": "2025-11-17",
+          "last_day": "2025-11-21"
+        }
+      ],
+      "owned_nonpositive_days": [],
+      "projection_error": {
+        "type": "ReferenceProjectionError",
+        "message": "SUBING_REFERENCE_DATA_CONFLICT"
+      }
+    },
+    {
+      "symbol": "pf",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "recheck_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "page": {
+        "symbol": "pf",
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "heading": 0,
+        "summary": 0,
+        "canvas": 15,
+        "workspace": 1
+      },
+      "owner_segments": [
+        {
+          "contract": "PF2606",
+          "since": "2026-03-16",
+          "through": "2026-04-30"
+        },
+        {
+          "contract": "PF2607",
+          "since": "2026-05-06",
+          "through": "2026-06-03"
+        },
+        {
+          "contract": "PF2608",
+          "since": "2026-06-04",
+          "through": "2026-07-03"
+        },
+        {
+          "contract": "PF2609",
+          "since": "2026-07-06",
+          "through": "2026-08-04"
+        },
+        {
+          "contract": "PF2610",
+          "since": "2026-08-05",
+          "through": "2026-09-03"
+        },
+        {
+          "contract": "PF2611",
+          "since": "2026-09-04",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "nonpositive_close_in_physical_prefix",
+      "nonpositive_count": 180,
+      "nonpositive_by_contract": [
+        {
+          "contract": "PF2606",
+          "count": 37,
+          "first_day": "2025-06-17",
+          "last_day": "2025-11-18"
+        },
+        {
+          "contract": "PF2607",
+          "count": 27,
+          "first_day": "2025-07-15",
+          "last_day": "2025-11-24"
+        },
+        {
+          "contract": "PF2608",
+          "count": 45,
+          "first_day": "2025-08-15",
+          "last_day": "2026-02-09"
+        },
+        {
+          "contract": "PF2609",
+          "count": 8,
+          "first_day": "2025-09-15",
+          "last_day": "2025-12-11"
+        },
+        {
+          "contract": "PF2610",
+          "count": 31,
+          "first_day": "2025-10-24",
+          "last_day": "2026-02-27"
+        },
+        {
+          "contract": "PF2611",
+          "count": 32,
+          "first_day": "2025-11-17",
+          "last_day": "2026-02-27"
+        }
+      ],
+      "owned_nonpositive_days": [],
+      "projection_error": {
+        "type": "ReferenceProjectionError",
+        "message": "SUBING_REFERENCE_DATA_CONFLICT"
+      }
+    },
+    {
+      "symbol": "pk",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "recheck_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "page": {
+        "symbol": "pk",
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "heading": 0,
+        "summary": 0,
+        "canvas": 15,
+        "workspace": 1
+      },
+      "owner_segments": [
+        {
+          "contract": "PK2605",
+          "since": "2026-02-11",
+          "through": "2026-04-09"
+        },
+        {
+          "contract": "PK2610",
+          "since": "2026-04-10",
+          "through": "2026-07-16"
+        },
+        {
+          "contract": "PK2611",
+          "since": "2026-07-17",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "nonpositive_close_in_physical_prefix",
+      "nonpositive_count": 1,
+      "nonpositive_by_contract": [
+        {
+          "contract": "PK2611",
+          "count": 1,
+          "first_day": "2025-12-19",
+          "last_day": "2025-12-19"
+        }
+      ],
+      "owned_nonpositive_days": [],
+      "projection_error": {
+        "type": "ReferenceProjectionError",
+        "message": "SUBING_REFERENCE_DATA_CONFLICT"
+      }
+    },
+    {
+      "symbol": "pl",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "recheck_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "page": {
+        "symbol": "pl",
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "heading": 0,
+        "summary": 0,
+        "canvas": 15,
+        "workspace": 1
+      },
+      "owner_segments": [
+        {
+          "contract": "PL2605",
+          "since": "2026-02-04",
+          "through": "2026-04-13"
+        },
+        {
+          "contract": "PL2607",
+          "since": "2026-04-14",
+          "through": "2026-06-01"
+        },
+        {
+          "contract": "PL2609",
+          "since": "2026-06-02",
+          "through": "2026-08-03"
+        },
+        {
+          "contract": "PL2611",
+          "since": "2026-08-04",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "nonpositive_close_in_physical_prefix",
+      "nonpositive_count": 328,
+      "nonpositive_by_contract": [
+        {
+          "contract": "PL2605",
+          "count": 10,
+          "first_day": "2025-07-29",
+          "last_day": "2025-10-29"
+        },
+        {
+          "contract": "PL2607",
+          "count": 99,
+          "first_day": "2025-07-23",
+          "last_day": "2026-02-26"
+        },
+        {
+          "contract": "PL2609",
+          "count": 107,
+          "first_day": "2025-09-15",
+          "last_day": "2026-04-24"
+        },
+        {
+          "contract": "PL2611",
+          "count": 112,
+          "first_day": "2025-11-17",
+          "last_day": "2026-05-22"
+        }
+      ],
+      "owned_nonpositive_days": [],
+      "projection_error": {
+        "type": "ReferenceProjectionError",
+        "message": "SUBING_REFERENCE_DATA_CONFLICT"
+      }
+    },
+    {
+      "symbol": "pr",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "recheck_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "page": {
+        "symbol": "pr",
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "heading": 0,
+        "summary": 0,
+        "canvas": 15,
+        "workspace": 1
+      },
+      "owner_segments": [
+        {
+          "contract": "PR2605",
+          "since": "2026-02-04",
+          "through": "2026-04-09"
+        },
+        {
+          "contract": "PR2606",
+          "since": "2026-04-10",
+          "through": "2026-04-29"
+        },
+        {
+          "contract": "PR2607",
+          "since": "2026-04-30",
+          "through": "2026-06-03"
+        },
+        {
+          "contract": "PR2609",
+          "since": "2026-06-04",
+          "through": "2026-08-05"
+        },
+        {
+          "contract": "PR2610",
+          "since": "2026-08-06",
+          "through": "2026-08-20"
+        },
+        {
+          "contract": "PR2611",
+          "since": "2026-08-21",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "nonpositive_close_in_physical_prefix",
+      "nonpositive_count": 292,
+      "nonpositive_by_contract": [
+        {
+          "contract": "PR2605",
+          "count": 25,
+          "first_day": "2025-05-21",
+          "last_day": "2025-09-16"
+        },
+        {
+          "contract": "PR2606",
+          "count": 64,
+          "first_day": "2025-06-17",
+          "last_day": "2025-11-18"
+        },
+        {
+          "contract": "PR2607",
+          "count": 59,
+          "first_day": "2025-07-15",
+          "last_day": "2026-02-11"
+        },
+        {
+          "contract": "PR2609",
+          "count": 39,
+          "first_day": "2025-09-15",
+          "last_day": "2026-04-07"
+        },
+        {
+          "contract": "PR2610",
+          "count": 57,
+          "first_day": "2025-10-23",
+          "last_day": "2026-02-09"
+        },
+        {
+          "contract": "PR2611",
+          "count": 48,
+          "first_day": "2025-11-17",
+          "last_day": "2026-03-11"
+        }
+      ],
+      "owned_nonpositive_days": [],
+      "projection_error": {
+        "type": "ReferenceProjectionError",
+        "message": "SUBING_REFERENCE_DATA_CONFLICT"
+      }
+    },
+    {
+      "symbol": "px",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "recheck_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "page": {
+        "symbol": "px",
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "heading": 0,
+        "summary": 0,
+        "canvas": 15,
+        "workspace": 1
+      },
+      "owner_segments": [
+        {
+          "contract": "PX2605",
+          "since": "2026-02-02",
+          "through": "2026-04-20"
+        },
+        {
+          "contract": "PX2607",
+          "since": "2026-04-21",
+          "through": "2026-06-03"
+        },
+        {
+          "contract": "PX2610",
+          "since": "2026-06-04",
+          "through": "2026-06-04"
+        },
+        {
+          "contract": "PX2609",
+          "since": "2026-06-05",
+          "through": "2026-08-06"
+        },
+        {
+          "contract": "PX2611",
+          "since": "2026-08-07",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "nonpositive_close_in_physical_prefix",
+      "nonpositive_count": 101,
+      "nonpositive_by_contract": [
+        {
+          "contract": "PX2607",
+          "count": 50,
+          "first_day": "2025-07-15",
+          "last_day": "2026-01-22"
+        },
+        {
+          "contract": "PX2609",
+          "count": 1,
+          "first_day": "2025-10-29",
+          "last_day": "2025-10-29"
+        },
+        {
+          "contract": "PX2610",
+          "count": 30,
+          "first_day": "2025-10-23",
+          "last_day": "2026-02-27"
+        },
+        {
+          "contract": "PX2611",
+          "count": 20,
+          "first_day": "2025-11-25",
+          "last_day": "2026-02-27"
+        }
+      ],
+      "owned_nonpositive_days": [],
+      "projection_error": {
+        "type": "ReferenceProjectionError",
+        "message": "SUBING_REFERENCE_DATA_CONFLICT"
+      }
+    },
+    {
+      "symbol": "rs",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "recheck_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "page": {
+        "symbol": "rs",
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "heading": 0,
+        "summary": 0,
+        "canvas": 15,
+        "workspace": 1
+      },
+      "owner_segments": [
+        {
+          "contract": "RS2609",
+          "since": "2026-01-30",
+          "through": "2026-09-11"
+        },
+        {
+          "contract": "RS2611",
+          "since": "2026-09-14",
+          "through": "2026-09-17"
+        },
+        {
+          "contract": "RS2701",
+          "since": "2026-09-18",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "nonpositive_close_in_physical_prefix",
+      "nonpositive_count": 229,
+      "nonpositive_by_contract": [
+        {
+          "contract": "RS2609",
+          "count": 56,
+          "first_day": "2025-09-15",
+          "last_day": "2026-09-09"
+        },
+        {
+          "contract": "RS2611",
+          "count": 173,
+          "first_day": "2025-11-17",
+          "last_day": "2026-08-20"
+        }
+      ],
+      "owned_nonpositive_days": [
+        {
+          "contract": "RS2609",
+          "day": "2026-08-12"
+        },
+        {
+          "contract": "RS2609",
+          "day": "2026-09-02"
+        },
+        {
+          "contract": "RS2609",
+          "day": "2026-09-04"
+        },
+        {
+          "contract": "RS2609",
+          "day": "2026-09-08"
+        },
+        {
+          "contract": "RS2609",
+          "day": "2026-09-09"
+        }
+      ],
+      "projection_error": {
+        "type": "ReferenceProjectionError",
+        "message": "SUBING_REFERENCE_DATA_CONFLICT"
+      }
+    },
+    {
+      "symbol": "sf",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "recheck_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "page": {
+        "symbol": "sf",
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "heading": 0,
+        "summary": 0,
+        "canvas": 15,
+        "workspace": 1
+      },
+      "owner_segments": [
+        {
+          "contract": "SF2605",
+          "since": "2026-02-06",
+          "through": "2026-04-07"
+        },
+        {
+          "contract": "SF2607",
+          "since": "2026-04-08",
+          "through": "2026-06-11"
+        },
+        {
+          "contract": "SF2609",
+          "since": "2026-06-12",
+          "through": "2026-08-03"
+        },
+        {
+          "contract": "SF2611",
+          "since": "2026-08-04",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "nonpositive_close_in_physical_prefix",
+      "nonpositive_count": 15,
+      "nonpositive_by_contract": [
+        {
+          "contract": "SF2605",
+          "count": 1,
+          "first_day": "2025-05-20",
+          "last_day": "2025-05-20"
+        },
+        {
+          "contract": "SF2607",
+          "count": 7,
+          "first_day": "2025-07-15",
+          "last_day": "2025-12-19"
+        },
+        {
+          "contract": "SF2611",
+          "count": 7,
+          "first_day": "2025-11-19",
+          "last_day": "2025-12-24"
+        }
+      ],
+      "owned_nonpositive_days": [],
+      "projection_error": {
+        "type": "ReferenceProjectionError",
+        "message": "SUBING_REFERENCE_DATA_CONFLICT"
+      }
+    },
+    {
+      "symbol": "sh",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "recheck_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "page": {
+        "symbol": "sh",
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "heading": 0,
+        "summary": 0,
+        "canvas": 15,
+        "workspace": 1
+      },
+      "owner_segments": [
+        {
+          "contract": "SH2605",
+          "since": "2026-02-25",
+          "through": "2026-04-15"
+        },
+        {
+          "contract": "SH2607",
+          "since": "2026-04-16",
+          "through": "2026-06-16"
+        },
+        {
+          "contract": "SH2609",
+          "since": "2026-06-17",
+          "through": "2026-08-13"
+        },
+        {
+          "contract": "SH2611",
+          "since": "2026-08-14",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "nonpositive_close_in_physical_prefix",
+      "nonpositive_count": 6,
+      "nonpositive_by_contract": [
+        {
+          "contract": "SH2607",
+          "count": 3,
+          "first_day": "2025-07-15",
+          "last_day": "2025-07-30"
+        },
+        {
+          "contract": "SH2611",
+          "count": 3,
+          "first_day": "2025-11-19",
+          "last_day": "2025-12-25"
+        }
+      ],
+      "owned_nonpositive_days": [],
+      "projection_error": {
+        "type": "ReferenceProjectionError",
+        "message": "SUBING_REFERENCE_DATA_CONFLICT"
+      }
+    },
+    {
+      "symbol": "sm",
+      "frequency": "1d",
+      "since": "2026-03-30",
+      "through": "2026-09-18",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "previous_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "recheck_code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "page": {
+        "symbol": "sm",
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "heading": 0,
+        "summary": 0,
+        "canvas": 15,
+        "workspace": 1
+      },
+      "owner_segments": [
+        {
+          "contract": "SM2605",
+          "since": "2026-01-21",
+          "through": "2026-04-15"
+        },
+        {
+          "contract": "SM2607",
+          "since": "2026-04-16",
+          "through": "2026-06-03"
+        },
+        {
+          "contract": "SM2609",
+          "since": "2026-06-04",
+          "through": "2026-08-07"
+        },
+        {
+          "contract": "SM2611",
+          "since": "2026-08-10",
+          "through": "2026-09-18"
+        }
+      ],
+      "cause": "nonpositive_close_in_physical_prefix",
+      "nonpositive_count": 43,
+      "nonpositive_by_contract": [
+        {
+          "contract": "SM2607",
+          "count": 20,
+          "first_day": "2025-07-15",
+          "last_day": "2025-12-25"
+        },
+        {
+          "contract": "SM2611",
+          "count": 23,
+          "first_day": "2025-11-17",
+          "last_day": "2026-04-15"
+        }
+      ],
+      "owned_nonpositive_days": [],
+      "projection_error": {
+        "type": "ReferenceProjectionError",
+        "message": "SUBING_REFERENCE_DATA_CONFLICT"
+      }
+    }
+  ]
+}

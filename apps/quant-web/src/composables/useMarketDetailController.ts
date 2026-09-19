@@ -173,6 +173,7 @@ export function useMarketDetailController(
     const previousIdentity = state.value.identity
     const retainedHeader = canKeepHeader(previousIdentity, identity) ? state.value.header : null
     const usesGenericSeries = identity.view !== 'newow'
+    const referenceBackedDaily = identity.view === 'subing' && identity.frequency === '1d'
     const nextSeriesKey = seriesKey(identity)
     const reuseSeries = usesGenericSeries && activeSeriesKey === nextSeriesKey
     const nextResearchKey = researchKey(identity)
@@ -232,14 +233,15 @@ export function useMarketDetailController(
         state.value.error = '品种元数据不可用'
         return
       }
-      if (!seriesResult.ok) {
+      if (!seriesResult.ok && !referenceBackedDaily) {
         activeSeriesKey = null
         state.value.header = null
         state.value.loading = false
         state.value.error = '详情行情加载失败'
         return
       }
-      activeSeriesKey = usesGenericSeries ? nextSeriesKey : null
+      if (!seriesResult.ok) series.clearSeries()
+      activeSeriesKey = usesGenericSeries && seriesResult.ok ? nextSeriesKey : null
       headerGeneration = generation
       rebuildHeader(identity)
       state.value.loading = false
