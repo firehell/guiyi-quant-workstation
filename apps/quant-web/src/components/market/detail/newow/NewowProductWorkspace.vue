@@ -27,7 +27,8 @@ const selectedAuxiliary = ref<NewowAuxiliaryComponent>('macd')
 const dialogKind = ref<'explanation' | 'action' | 'hint' | 'indicator' | 'comparator' | 'cup_handle' | null>(null)
 const locateMessage = ref<string | null>(null)
 const locateRequest = ref(0)
-const pendingLocate = ref<{ signalId: string; barEnd: string; endpoint: 'entry' | 'exit'; tradeId: string; identity: string; snapshot: string | null } | null>(null)
+const chartFocusRequestId = ref(0)
+const pendingLocate = ref<{ request: number; signalId: string; barEnd: string; endpoint: 'entry' | 'exit'; tradeId: string; identity: string; snapshot: string } | null>(null)
 const locatedTradeId = ref<string | null>(null)
 const chartRegion = ref<HTMLElement | null>(null)
 const referenceRegion = ref<HTMLElement | null>(null)
@@ -69,6 +70,7 @@ function chartWindowProof(response: NewowProductSectionResponse<'chart'> | null)
     ? null
     : JSON.stringify([snapshot, response.value.chart_from, response.value.chart_through])
 }
+function locateSnapshotProof(): string | null { return newowChartSnapshotKey(chartResponse.value) }
 // A display-only retention of the accepted selected pane while the same loader serves the cup dialog.
 const retainedPane = shallowRef<{ response: NewowProductSectionResponse<'auxiliary'> | null; lifecycle: NewowResourceLifecycle; error: string | null; proof: string | null; component: NewowAuxiliaryComponent } | null>(null)
 const retainedPaneCompatible = computed(() => dialogKind.value === 'cup_handle' && retainedPane.value !== null
@@ -154,28 +156,42 @@ async function openHistory(): Promise<void> {
 }
 async function locateReferenceTrade(trade: NewowReferenceTrade, endpoint: 'entry' | 'exit' = 'entry'): Promise<void> {
   const request = ++locateRequest.value
-  const context = { identity: identityKey.value, snapshot: chartResponse.value?.meta.as_of ?? null }
+  pendingLocate.value = null
+  const snapshot = locateSnapshotProof()
+  if (snapshot === null) {
+    locateMessage.value = '当前图表缺少完整快照证明，未定位参考信号。'
+    return
+  }
+  const context = { identity: identityKey.value, snapshot }
   locateMessage.value = `正在定位${endpoint === 'entry' ? '建仓' : '清仓'}…`
   let target = resolveNewowReferenceLocate(trade, chartResponse.value, loader.referenceChartCompatible.value, endpoint)
   if (target.kind === 'request_display_window') {
     await loader.loadChart(target.displayWindow)
-    if (request !== locateRequest.value || context.identity !== identityKey.value || context.snapshot !== (chartResponse.value?.meta.as_of ?? null)) return
+    if (request !== locateRequest.value || context.identity !== identityKey.value || context.snapshot !== locateSnapshotProof()) {
+      if (request === locateRequest.value) locateMessage.value = '图表身份或快照已刷新，未使用旧定位结果。'
+      return
+    }
     target = resolveNewowReferenceLocate(trade, chartResponse.value, loader.referenceChartCompatible.value, endpoint)
   }
   if (target.kind !== 'loaded') {
     locateMessage.value = `无法按精确信号 ${target.signalId ?? '—'} / ${target.barEnd ?? '—'} 定位；没有跳转到邻近日期。`
     return
   }
-  pendingLocate.value = { signalId: target.signalId, barEnd: target.barEnd, endpoint, tradeId: trade.reference_trade_id, ...context }
+  pendingLocate.value = { request, signalId: target.signalId, barEnd: target.barEnd, endpoint, tradeId: trade.reference_trade_id, ...context }
+  chartFocusRequestId.value = request
   selectedSignalId.value = target.signalId
   await nextTick()
-  if (request !== locateRequest.value || context.identity !== identityKey.value || context.snapshot !== (chartResponse.value?.meta.as_of ?? null)) return
+  if (request !== locateRequest.value || context.identity !== identityKey.value || context.snapshot !== locateSnapshotProof()) {
+    if (request === locateRequest.value) { pendingLocate.value = null; locateMessage.value = '图表身份或快照已刷新，未使用旧定位结果。' }
+    return
+  }
   chartRegion.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function resolveSignalFocus(signalId: string): void {
+function resolveSignalFocus(signalId: string, request: number): void {
   const pending = pendingLocate.value
-  if (pending !== null && pending.signalId === signalId && pending.identity === identityKey.value && pending.snapshot === (chartResponse.value?.meta.as_of ?? null)) {
+  const snapshot = locateSnapshotProof()
+  if (pending !== null && pending.request === request && pending.signalId === signalId && pending.identity === identityKey.value && pending.snapshot === snapshot) {
     locateMessage.value = `已定位 ${pending.endpoint === 'entry' ? '建仓' : '清仓'}信号 ${signalId} / ${pending.barEnd}。`
     locatedTradeId.value = pending.tradeId
     pendingLocate.value = null
@@ -189,6 +205,8 @@ async function returnToReferenceTrade(): Promise<void> {
   const record = document.getElementById(`reference-trade-${locatedTradeId.value}`)
   if (record === null) {
     locateMessage.value = '原记录不在当前筛选或已加载页，未修改筛选、统计窗口或分页。'
+    referenceRegion.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    referenceRegion.value?.focus({ preventScroll: true })
     return
   }
   record.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -198,11 +216,11 @@ function refreshCurrent(): void { loader.refreshCurrent(); emit('refresh-current
 
 
 watch(identityKey, async () => {
-  ++locateRequest.value; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null; selectedAuxiliary.value = 'macd'; dialogKind.value = null; locateMessage.value = null
+  ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null; selectedAuxiliary.value = 'macd'; dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
 watch(loader.historicalSnapshot, async () => {
   emit('snapshot-mode', loader.historicalSnapshot.value?.as_of ?? null)
-  ++locateRequest.value; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
+  ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
   dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
 watch(loader.dailySnapshot, snapshot => emit('daily-snapshot-as-of', snapshot?.as_of ?? null), { immediate: true, flush: 'sync' })
@@ -255,7 +273,7 @@ onBeforeUnmount(() => loader.dispose())
       </div>
     </section>
     <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="刷新日线" :can-recover="true" :can-return-market="false" @recover="loader.refreshCurrent()" />
-    <div v-else ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :loading="loader.sections.chart.state.value === 'loading'" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @explain-main="openDialog('explanation')" @explain-auxiliary="openDialog('indicator')">
+    <div v-else ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :response="chartResponse" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.sections.chart.state.value === 'loading'" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @select-signal="selectSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @explain-main="openDialog('explanation')" @explain-auxiliary="openDialog('indicator')">
     <template #auxiliary-controls>
     <section class="newow-product-workspace__auxiliary" aria-label="Newow 辅助图层">
       <div class="newow-product-workspace__auxiliary-controls">
@@ -287,7 +305,8 @@ onBeforeUnmount(() => loader.dispose())
     </div>
     <section ref="referenceRegion" class="newow-product-workspace__research" aria-label="Newow 参考与解释" tabindex="-1">
       <button @click="openDialog('comparator')">页面比较说明</button>
-      <NewowReferencePanel :key="identityKey" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="locateMessage" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="loader.loadNextReferencePage" @locate="locateReferenceTrade" />
+      <p v-if="locateMessage" class="newow-product-workspace__reference-message" data-testid="newow-reference-locate-status" role="status">{{ locateMessage }}</p>
+      <NewowReferencePanel :key="identityKey" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="null" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="loader.loadNextReferencePage" @locate="locateReferenceTrade" />
     </section>
     <NewowDetailDialog :open="dialogKind !== null" :wide="dialogKind === 'explanation' || dialogKind === 'comparator' || dialogKind === 'cup_handle'" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">
       <p>{{ identity.symbol.toUpperCase() }} · {{ newowDisplayLabel(identity.strategy ?? 'UNAVAILABLE') }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : dialogKind === 'hint' ? selectedHint?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
@@ -337,6 +356,7 @@ onBeforeUnmount(() => loader.dispose())
 .newow-product-workspace__auxiliary-controls button[aria-pressed="true"] { color:#ff6b2c; border-bottom:2px solid #ff6b2c; }
 .newow-macd-legend { padding:0 6px; color:#667085; }.newow-macd-legend span:first-child { color:#ff6b2c; }.newow-macd-legend span:last-child { color:#365af5; }
 .newow-product-workspace__notice { color:#b45309; }
+.newow-product-workspace__reference-message { margin:0; padding:8px; color:#b45309; border:1px solid var(--gy-border); border-radius:7px; background:#fff; }
 .newow-window-state { display:grid; gap:6px; padding:12px; border:1px solid var(--gy-border); border-radius:7px; }
 .newow-window-state h3,.newow-window-state p { margin:0; }
 .newow-window-state h3 { font-size:14px; }
