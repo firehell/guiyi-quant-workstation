@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 import fcntl
 import json
 import os
@@ -104,22 +104,112 @@ def run_weekly_audit(
         re.fullmatch(r"[a-z]{1,4}", symbol) is None for symbol in products
     ):
         raise ValueError("WEEKLY_AUDIT_IDENTITY_INVALID")
-    started = _local_timestamp(now()).isoformat()
-    payload: dict[str, Any] = {
-        "schema_version": 1, "command": "data.weekly-audit", "readonly": True,
+    payload = _new_payload(
+        products=products, identity=identity, started=_local_timestamp(now()),
+        trigger="manual", scheduled_for=None,
+    )
+    with _status_writer_guard(status_path) as owned:
+        if not owned:
+            # This invocation is observable only to its caller, not in the owner's file.
+            payload.update(status="skipped_busy", finished_at=payload["started_at"])
+            return payload
+        return _run_owned_audit(manager, status_path=status_path, products=products, now=now, payload=payload)
+
+
+def run_scheduled_weekly_audit(
+    manager: HistoricalDataManager, *, status_path: Path, products: tuple[str, ...],
+    identity: Mapping[str, object], now: Callable[[], datetime],
+) -> dict[str, Any]:
+    """Run at most one read-only audit attempt in the current Saturday window."""
+    if not _identity_valid(identity) or not products or len(set(products)) != len(products) or any(
+        re.fullmatch(r"[a-z]{1,4}", symbol) is None for symbol in products
+    ):
+        raise ValueError("WEEKLY_AUDIT_IDENTITY_INVALID")
+    started = _local_timestamp(now())
+    scheduled_for = _current_week_schedule(started)
+    if started < scheduled_for or started.date() != scheduled_for.date():
+        return _schedule_noop("not_due", scheduled_for)
+    with _status_writer_guard(status_path) as owned:
+        if not owned:
+            return _schedule_noop("skipped_busy", scheduled_for)
+        if _has_scheduled_attempt(
+            status_path, identity=identity, products=products, scheduled_for=scheduled_for,
+        ):
+            return _schedule_noop("already_attempted", scheduled_for)
+        payload = _new_payload(
+            products=products, identity=identity, started=started,
+            trigger="scheduled", scheduled_for=scheduled_for,
+        )
+        return _run_owned_audit(
+            manager, status_path=status_path, products=products, now=now, payload=payload,
+        )
+
+
+def _new_payload(
+    *, products: tuple[str, ...], identity: Mapping[str, object], started: datetime,
+    trigger: str, scheduled_for: datetime | None,
+) -> dict[str, Any]:
+    started_at = started.isoformat()
+    return {
+        "schema_version": 2, "command": "data.weekly-audit", "readonly": True,
         "runtime_root": identity["runtime_root"], "runtime_commit": identity["runtime_commit"],
         "products": list(products), "scope": "operational_full_history", "status": "running",
-        "started_at": started, "updated_at": started, "finished_at": None,
+        "trigger": trigger,
+        "scheduled_for": scheduled_for.isoformat() if scheduled_for is not None else None,
+        "started_at": started_at, "updated_at": started_at, "finished_at": None,
         "current_symbol": None, "completed": 0, "total": len(products),
         "through": None, "finding_count": 0, "findings": [], "error_code": None,
         "provider_requests": 0, "data_writes": 0,
     }
-    with _status_writer_guard(status_path) as owned:
-        if not owned:
-            # This invocation is observable only to its caller, not in the owner's file.
-            payload.update(status="skipped_busy", finished_at=started)
-            return payload
-        return _run_owned_audit(manager, status_path=status_path, products=products, now=now, payload=payload)
+
+
+def _current_week_schedule(now: datetime) -> datetime:
+    local = _local_timestamp(now)
+    monday = local.date() - timedelta(days=local.weekday())
+    return datetime.combine(monday + timedelta(days=5), time(9), tzinfo=local.tzinfo)
+
+
+def _schedule_noop(status: str, scheduled_for: datetime) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "command": "data.weekly-audit-scheduled",
+        "status": status,
+        "readonly": True,
+        "scheduled_for": scheduled_for.isoformat(),
+        "provider_requests": 0,
+        "data_writes": 0,
+    }
+
+
+def _has_scheduled_attempt(
+    path: Path, *, identity: Mapping[str, object], products: tuple[str, ...],
+    scheduled_for: datetime,
+) -> bool:
+    if not path.exists() or path.is_symlink():
+        return False
+    try:
+        with path.open("rb") as source:
+            content = source.read(16 * 1024 * 1024 + 1)
+        if len(content) > 16 * 1024 * 1024:
+            raise ValueError
+        raw = json.loads(content)
+        if (
+            not isinstance(raw, Mapping)
+            or raw.get("command") != "data.weekly-audit"
+            or raw.get("readonly") is not True
+            or raw.get("products") != list(products)
+            or any(raw.get(key) != identity[key] for key in ("runtime_root", "runtime_commit"))
+            or raw.get("provider_requests") != 0
+            or raw.get("data_writes") != 0
+        ):
+            raise ValueError
+        started = _public_timestamp(raw.get("started_at"))
+        return (
+            raw.get("scheduled_for") == scheduled_for.isoformat()
+            or started is not None and datetime.fromisoformat(started) >= scheduled_for
+        )
+    except (OSError, ValueError, TypeError, KeyError):
+        raise RuntimeError("WEEKLY_AUDIT_FAILED") from None
 
 
 def _run_owned_audit(
@@ -166,12 +256,20 @@ def _run_owned_audit(
 
 def weekly_audit_health(
     path: Path | None, *, identity: Mapping[str, object], products: tuple[str, ...], now: datetime,
+    configured_enabled: bool = True,
 ) -> dict[str, object]:
     """Independent optional summary; never promotes service or historical readiness."""
-    empty = {"status": "not_run", "readonly": True, "finding_count": None,
+    local_now = _local_timestamp(now)
+    scheduled_for = _current_week_schedule(local_now)
+    pending_status = "missed" if local_now >= scheduled_for else "not_run"
+    empty = {"status": pending_status, "configured_enabled": configured_enabled,
+             "scheduled_for": scheduled_for.isoformat(),
+             "readonly": True, "finding_count": None,
              "started_at": None, "updated_at": None, "finished_at": None,
              "completed": None, "total": None, "current_symbol": None,
              "through": None, "scope": "operational_full_history"}
+    if not configured_enabled:
+        return {**empty, "status": "disabled"}
     if path is None or not path.exists():
         return empty
     try:
@@ -183,13 +281,28 @@ def weekly_audit_health(
             raise ValueError
         raw = json.loads(content)
         if (not isinstance(raw, Mapping) or not _identity_valid(identity)
-                or type(raw.get("schema_version")) is not int or raw["schema_version"] != 1
+                or type(raw.get("schema_version")) is not int or raw["schema_version"] not in {1, 2}
                 or raw.get("command") != "data.weekly-audit" or raw.get("readonly") is not True
                 or raw.get("scope") != "operational_full_history" or raw.get("products") != list(products)
                 or any(raw.get(key) != identity[key] for key in ("runtime_root", "runtime_commit"))
                 or type(raw.get("provider_requests")) is not int or raw["provider_requests"] != 0
                 or type(raw.get("data_writes")) is not int or raw["data_writes"] != 0):
             raise ValueError
+        if raw["schema_version"] == 2:
+            trigger = raw.get("trigger")
+            scheduled = raw.get("scheduled_for")
+            if trigger not in {"manual", "scheduled"} or (
+                trigger == "manual" and scheduled is not None
+            ) or (
+                trigger == "scheduled"
+                and (
+                    not isinstance(scheduled, str)
+                    or _public_timestamp(scheduled) is None
+                    or _current_week_schedule(datetime.fromisoformat(scheduled))
+                    != datetime.fromisoformat(scheduled)
+                )
+            ):
+                raise ValueError
         status = raw.get("status")
         if status not in {"passed", "findings", "failed", "running", "skipped_busy"}:
             raise ValueError
@@ -217,6 +330,14 @@ def weekly_audit_health(
             raise ValueError
         if now - datetime.fromisoformat(updated) > (timedelta(hours=2) if status == "running" else timedelta(days=8)):
             status = "stuck" if status == "running" else "stale"
+        started_value = datetime.fromisoformat(started)
+        scheduled_value = raw.get("scheduled_for")
+        current_attempt = (
+            scheduled_value == scheduled_for.isoformat()
+            or started_value >= scheduled_for
+        )
+        if local_now >= scheduled_for and not current_attempt:
+            return empty
         return {**empty, "status": status, "finding_count": count, "started_at": started,
                 "updated_at": updated, "finished_at": finished, "completed": completed,
                 "total": total, "current_symbol": raw.get("current_symbol"), "through": through}

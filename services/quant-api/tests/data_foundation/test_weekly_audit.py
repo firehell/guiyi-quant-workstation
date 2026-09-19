@@ -57,7 +57,18 @@ def test_busy_weekly_does_not_open_transaction_or_audit(tmp_path, session):
 def test_weekly_result_and_health_identity_age_and_progress(tmp_path, session):
     from app.market_data.weekly_audit import run_weekly_audit, weekly_audit_health
     path = tmp_path / "status.json"
-    assert weekly_audit_health(path, identity=IDENTITY, products=("au",), now=NOW)["status"] == "not_run"
+    assert weekly_audit_health(
+        path, identity=IDENTITY, products=("au",),
+        now=NOW - timedelta(minutes=1), configured_enabled=True,
+    )["status"] == "not_run"
+    assert weekly_audit_health(
+        path, identity=IDENTITY, products=("au",),
+        now=NOW, configured_enabled=True,
+    )["status"] == "missed"
+    assert weekly_audit_health(
+        path, identity=IDENTITY, products=("au",),
+        now=NOW, configured_enabled=False,
+    )["status"] == "disabled"
     def audit(request, *, observer):
         assert session.scalar(text("PRAGMA query_only")) == 1
         observer(AuditProgressEvent("completed", 1, 1, "au", 0))
@@ -70,6 +81,129 @@ def test_weekly_result_and_health_identity_age_and_progress(tmp_path, session):
     assert weekly_audit_health(path, identity=IDENTITY, products=("au",), now=NOW)["status"] == "passed"
     assert weekly_audit_health(path, identity={**IDENTITY, "runtime_commit": "b" * 40}, products=("au",), now=NOW)["status"] == "invalid"
     assert weekly_audit_health(path, identity=IDENTITY, products=("au",), now=NOW + timedelta(days=9))["status"] == "stale"
+
+
+def test_scheduled_weekly_runs_once_per_due_week_without_retry(tmp_path, session):
+    from app.market_data.weekly_audit import run_scheduled_weekly_audit
+    path = tmp_path / "status.json"
+    calls = []
+    def audit(request, *, observer):
+        calls.append(request.products)
+        return MaintenanceResult("audit", "passed", NOW.date(), 0, 0, 0, 0, 0)
+    manager = SimpleNamespace(catalog=SimpleNamespace(
+        session=session,
+        acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None),
+    ), audit=audit)
+
+    first = run_scheduled_weekly_audit(
+        manager, status_path=path, products=("au",), identity=IDENTITY, now=lambda: NOW,
+    )
+    before = path.read_bytes()
+    second = run_scheduled_weekly_audit(
+        manager, status_path=path, products=("au",), identity=IDENTITY,
+        now=lambda: NOW + timedelta(hours=1),
+    )
+
+    assert first["status"] == "passed"
+    assert first["trigger"] == "scheduled"
+    assert first["scheduled_for"] == NOW.isoformat()
+    assert second["status"] == "already_attempted"
+    assert calls == [("au",)]
+    assert path.read_bytes() == before
+
+
+def test_scheduled_weekly_is_noop_before_due_and_busy_attempt_is_terminal(tmp_path, session):
+    from app.market_data.weekly_audit import run_scheduled_weekly_audit
+    path = tmp_path / "status.json"
+    manager = SimpleNamespace(catalog=SimpleNamespace(
+        session=session, acquire_maintenance_lock=lambda: None,
+    ), audit=lambda *args, **kwargs: pytest.fail("busy audit must not run"))
+
+    early = run_scheduled_weekly_audit(
+        manager, status_path=path, products=("au",), identity=IDENTITY,
+        now=lambda: NOW - timedelta(minutes=1),
+    )
+    first = run_scheduled_weekly_audit(
+        manager, status_path=path, products=("au",), identity=IDENTITY, now=lambda: NOW,
+    )
+    second = run_scheduled_weekly_audit(
+        manager, status_path=path, products=("au",), identity=IDENTITY,
+        now=lambda: NOW + timedelta(hours=1),
+    )
+
+    assert early["status"] == "not_due"
+    assert first["status"] == "skipped_busy"
+    assert second["status"] == "already_attempted"
+
+
+def test_scheduled_weekly_failed_attempt_is_not_retried(tmp_path, session):
+    from app.market_data.weekly_audit import run_scheduled_weekly_audit
+    path = tmp_path / "status.json"
+    calls = []
+    def acquire():
+        calls.append("acquire")
+        raise OSError("private failure")
+    manager = SimpleNamespace(catalog=SimpleNamespace(session=session, acquire_maintenance_lock=acquire))
+
+    first = run_scheduled_weekly_audit(
+        manager, status_path=path, products=("au",), identity=IDENTITY, now=lambda: NOW,
+    )
+    second = run_scheduled_weekly_audit(
+        manager, status_path=path, products=("au",), identity=IDENTITY,
+        now=lambda: NOW + timedelta(hours=1),
+    )
+
+    assert first["status"] == "failed"
+    assert second["status"] == "already_attempted"
+    assert calls == ["acquire"]
+
+
+def test_scheduled_weekly_does_not_repeat_current_schema_v1_attempt(tmp_path, session):
+    from app.market_data.weekly_audit import run_scheduled_weekly_audit, run_weekly_audit
+    path = tmp_path / "status.json"
+    calls = []
+    manager = SimpleNamespace(catalog=SimpleNamespace(
+        session=session,
+        acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None),
+    ), audit=lambda *args, **kwargs: (
+        calls.append("audit")
+        or MaintenanceResult("audit", "passed", NOW.date(), 0, 0, 0, 0, 0)
+    ))
+    run_weekly_audit(
+        manager, status_path=path, products=("au",), identity=IDENTITY, now=lambda: NOW,
+    )
+    payload = json.loads(path.read_text())
+    payload.pop("trigger")
+    payload.pop("scheduled_for")
+    payload["schema_version"] = 1
+    path.write_text(json.dumps(payload))
+
+    result = run_scheduled_weekly_audit(
+        manager, status_path=path, products=("au",), identity=IDENTITY,
+        now=lambda: NOW + timedelta(hours=1),
+    )
+
+    assert result["status"] == "already_attempted"
+    assert calls == ["audit"]
+
+
+def test_scheduled_weekly_writer_contention_is_observable_but_not_persisted(
+    tmp_path, session, monkeypatch,
+):
+    from contextlib import nullcontext
+    from app.market_data import weekly_audit
+    path = tmp_path / "status.json"
+    monkeypatch.setattr(
+        weekly_audit, "_status_writer_guard", lambda _: nullcontext(False),
+    )
+    manager = SimpleNamespace(catalog=SimpleNamespace(session=session))
+
+    result = weekly_audit.run_scheduled_weekly_audit(
+        manager, status_path=path, products=("au",), identity=IDENTITY, now=lambda: NOW,
+    )
+
+    assert result["status"] == "skipped_busy"
+    assert not path.exists()
 
 
 def test_real_audit_composition_never_initializes_provider(tmp_path, session, monkeypatch):

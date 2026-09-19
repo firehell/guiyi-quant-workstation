@@ -472,12 +472,17 @@ promotion 的通过条件不改变，interrupted 不能成为 after_market_compl
 释放完成。竞争者未取得写入权时只向调用方返回 `skipped_busy`，不改写持有者的状态、不获取 maintenance lock。
 独占的新尝试若遇到 maintenance lock 忙，持久化本次 `skipped_busy`；取锁异常则持久化脱敏的 `failed`，不沿用旧成功。
 写入锁无法安全建立时拒绝启动，不无锁改写状态或声称本次状态已持久化。中断仍保留未完成 running，进程退出释放锁。
-不等待、抢占或重试；审计不调用 provider/
+计划入口只在周六 09:00–23:00 的有限 launchd 触发窗口内工作，并在状态写入锁内以本周六 09:00
+作为 `scheduled_for` 身份去重。整周只有首次触发可建立尝试；`running/passed/findings/failed/skipped_busy`
+均终止本周后续触发，后续只返回无副作用的 `already_attempted`。手工入口保留 `trigger=manual`，计划入口记录
+`trigger=scheduled`。不等待、抢占或对已建立的尝试重试；审计不调用 provider/
 metadata writer/Redis，`provider_requests=0`、`data_writes=0`，只报告 finding，不修复、不通知。
 
 `.run/weekly-audit-status.json` 是单份原子替换的、最近取得写入权并建立运行的审计状态，不是所有调用的尝试日志、checkpoint 或 active data selector。
 它绑定 exact Runtime root/40 位 commit、operational 顺序、scope 和 `through`；运行超过 2h 映射 `stuck`，终态超过 8 天映射
-`stale`，身份、计数、时序或只读计数不符合合同则映射 `invalid`，缺文件是 `not_run`。`passed` 必须有已审计 cutoff、全部品种完成且 finding 为零。
+`stale`，身份、计数、时序或只读计数不符合合同则映射 `invalid`。独立 `weekly-audit-enabled` marker 缺失时为
+`disabled`；已启用但本周时点未到且无本周尝试为 `not_run`；已过本周时点仍无本周尝试为 `missed`。
+`missed` 只诊断漏跑，不授权补数、重跑或通知。`passed` 必须有已审计 cutoff、全部品种完成且 finding 为零。
 Runtime health 先独立计算现有服务 overall，再附加可选 `components.weekly_audit`摘要；旧状态缺字段不得推导历史健康，
 历史 finding 也不改写当前数据新鲜度或 Runtime overall。
 

@@ -6,6 +6,7 @@ TEMPLATE_DIR="$PROJECT_ROOT/deploy/launchd"
 RENDER_DIR="$PROJECT_ROOT/.run/launchd"
 MARKET_RUNTIME_MARKER="$PROJECT_ROOT/.run/market-runtime-enabled"
 ALERT_RUNTIME_MARKER="$PROJECT_ROOT/.run/alert-runtime-enabled"
+WEEKLY_AUDIT_MARKER="$PROJECT_ROOT/.run/weekly-audit-enabled"
 AGENT_DIR="$HOME/Library/LaunchAgents"
 RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
@@ -328,6 +329,10 @@ write_alert_runtime_activation_marker() {
   write_runtime_activation_marker "$ALERT_RUNTIME_MARKER"
 }
 
+write_weekly_audit_activation_marker() {
+  write_runtime_activation_marker "$WEEKLY_AUDIT_MARKER"
+}
+
 activation_marker=""
 activation_marker_backup=""
 activation_marker_existed=0
@@ -341,6 +346,9 @@ prepare_runtime_activation_marker() {
   elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
     activation_marker="$ALERT_RUNTIME_MARKER"
     writer=write_alert_runtime_activation_marker
+  elif [[ "$MODE" == "--confirm-weekly-audit" ]]; then
+    activation_marker="$WEEKLY_AUDIT_MARKER"
+    writer=write_weekly_audit_activation_marker
   else
     return 0
   fi

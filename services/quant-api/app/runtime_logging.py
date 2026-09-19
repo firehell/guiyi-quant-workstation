@@ -109,7 +109,8 @@ def runtime_diagnostic_handler(path: Path) -> logging.Handler:
 
 def install_runtime_diagnostics(service: str) -> logging.Handler:
     filename = {"live": "live-market.log", "alert": "alert-runtime.log",
-                "after-market": "after-market.log", "weekly-audit": "weekly-audit.log"}[service]
+                "after-market": "after-market.log", "weekly-audit": "weekly-audit.log",
+                "weekly-audit-scheduled": "weekly-audit.log"}[service]
     root = Path(os.environ.get("GUIYI_LOG_DIR", str(Path.home() / "Library/Logs/GuiyiQuant")))
     handler = runtime_diagnostic_handler(root / filename)
     logger = logging.getLogger("app")
