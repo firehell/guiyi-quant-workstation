@@ -2,17 +2,17 @@
 
 固定截止：`2026-09-18 18:30 +08:00`。候选分支取证提交基线：`b09df42e4`。
 
-## 决定
+## 当前决定
 
 17 项继续阻塞。现有证据不支持补造价格、跳过物理预热前缀、缩短 warm-up、接受非正 Close，或直接覆盖已有 Canonical 分区。
 
-下一步只允许先执行 [16 个来源验证请求](d1-17-source-verification-candidate.json)，冻结计划 hash 为：
+冻结计划 hash 为：
 
 `2c764158c097919fdb7a87ec3935c364905a122ff95d10cc96bf82b1c1c785bb`
 
-该批次为 source-only：最多 16 次 RQData 请求、66 个精确日期身份、串行、零重试、零 Canonical 写入、零生产数据库写入。当前只生成计划，**未执行 provider 请求**。
+该 source-only 批次已按授权执行，并在第 9 个请求因日期身份不相等而停止：完成 8、失败 1、未执行 7，零重试，零 Canonical/数据库写入。当前没有完整 contract-month 具备生产修复条件；剩余 21 个未执行日期需要新的精确计划和新授权，不能复用或重试本 plan。逐项结算见文末及 [执行说明](D1_17_SOURCE_VERIFICATION_EXECUTION.md)。
 
-## 已核定事实
+## 执行前基线事实（历史）
 
 - 7 个 `PRICE_UNAVAILABLE` 品种共有 9 个来源质量日。Catalog 均保存分类版本、请求 hash 与响应 hash；其中 BZ、EB 的 1 日和 PG 共 3 日另找到 journal 绑定的原始响应，均为零 O/H/L、正 Close，和 Catalog 质量记录一致。其余 6 日缺少可独立重放的原始响应文件。
 - 10 个 `SUBING_REFERENCE_DATA_CONFLICT` 品种的苏冰实际物理前缀共有 1,198 个非正 Close 日。1,156 日在已有 journal 绑定的原始 provider 响应中同样为零 O/H/L/C/V，且重复证据没有行级漂移；这些日期证明 Canonical 保留了来源零值，不是已证明的发布破坏。剩余 42 日只有 Canonical 事实，来源仍未证明。
@@ -44,7 +44,7 @@
 
 完整日期、分区文件 hash、来源 artifact/journal hash 和归因边界见 [来源证据刷新](d1-17-source-evidence-refresh.json)。
 
-## 下一批 16 个 source-only 请求
+## 已批准并部分执行的 16 个 source-only 请求
 
 | 合约 | 月份 | 日期数 | 目的 |
 |---|---|---:|---|
@@ -64,7 +64,7 @@
 
 - 对 39 个相关物理合约运行了正式 `contract-warmup --frequency 1d` [完整只读规划](d1-17-contract-warmup-dryrun.json)。苏冰固定截止实际消费的 owner/prefix 内 **0 个缺分区目标**。全生命周期规划另有 42 个目标：OI2609/PF2609 九月 2 项保留为独立缺失分区 Gate；其余 40 项、20 个合约不属于本次 17 项精确修复范围。
 - OI2609/2026-09 当前精确 warm-up plan hash：`5bb8d4474e2f51690516f5b480721ad9937ae0c126600e2982fe9857dd4f9aa5`；PF2609/2026-09 为 `9945f01c4456c411ae45db1d90edd629ed2c5fdc8f18e55b7cbf1a6eee74c4b3`。两者各 1 个分区、9 个端点、1 次 provider 请求；本轮未 apply。
-- 现有 `contract-warmup` 能表达 OI/PF 缺失分区，但不能替换“分区存在、值异常”的月份。现有 source-only 工具是 W1 专用，D1 合同明确拒绝复用。执行 16 请求前，需要新增或批准一个消费冻结 request hash、只保存响应且绝不发布的 D1 source-only 入口。
+- 现有 `contract-warmup` 能表达 OI/PF 缺失分区，但不能替换“分区存在、值异常”的月份。执行前仅有 W1 专用 source-only 工具；本任务随后新增了消费冻结 request hash、只保存响应且绝不发布的 D1 source-only 入口，并在独立 Review 后执行。结果见文末结算。
 - 若 fresh 响应仍为相同异常，对应项继续阻塞，不进行生产写入。只有 fresh 响应提供完整、正值且身份一致的事实，才为对应 contract-month 另行生成 staging、硬校验、原子发布计划和新授权包。
 
 ## 未来写入与复验合同
@@ -72,3 +72,16 @@
 任何后续写入只允许覆盖 fresh 来源已证明有效的精确 contract-month。先写新的 immutable staging 文件，校验端点、身份、顺序、重复冲突和来源 hash；维护锁内重核 plan 与 active partition 身份后，逐分区原子更新文件和 Catalog 指针。结果未知或部分失败立即停止并只读回查，旧 immutable 文件保留用于恢复，不自动重试。
 
 每次批准写入后，依次执行：精确物理分区 MDS 读回 → 同截止 17 个 D1 数据复验 → 17 个真实 Chromium 页面复验 → 240 组合数据与页面复验。全部通过前，PR #378 保持草稿，不集成 develop。
+
+## 2026-09-19 source-only 执行结算
+
+owner 随后授权冻结 plan `2c764158c097919fdb7a87ec3935c364905a122ff95d10cc96bf82b1c1c785bb` 的真实来源核验。新增 D1 source-only 工具经 25 项新旧定向测试、Ruff 与独立 Review 后，在 exact commit `0483afcbdbe9352a55ba72fe38c70078a86da64a` 上执行。
+
+- 计划 16 请求、66 日期；实际 started 9、saved 9、完成 8、失败 1、未执行 7，零重试。
+- 第 9 项 PF2611/2025-12 返回全部 12 个目标日及区间内 10 个额外交易日，触发 `SOURCE_RESPONSE_IDENTITY_INVALID`；批次按冻结合同停止，plan claim 禁止换 attempt-id 重跑。
+- 保存 55 行 raw，其中目标日 45、额外日 10。45 个目标日为：零 OHL 正 Close 5 日、非正 Close 32 日、正 OHLC 8 日。
+- 原 1,207 个异常日期已有来源证据由 1,159 日增至 1,186 日；PF2611 10 日、RS2609 10 日、Y2609 1 日仍未执行。RS 五个 rank1 日全部仍为 unknown。
+- OI2609/PF2609 九月 18 日均已观察：8 日正 OHLC、10 日非正 Close；两个完整分区均继续阻塞。当前可准备生产修复的完整分区为 0。
+- Canonical、PostgreSQL、Redis 写入均为 0；未做页面或 240 矩阵复验。
+
+逐请求、逐日期及文件 hash 见 [执行结算](d1-17-source-verification-execution.json) 与 [说明](D1_17_SOURCE_VERIFICATION_EXECUTION.md)。

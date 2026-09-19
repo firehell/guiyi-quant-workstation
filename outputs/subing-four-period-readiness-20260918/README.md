@@ -1,7 +1,7 @@
 # 苏冰四周期候选只读验收（2026-09-18）
 
 - 候选代码：`9048f788a`；固定查询时间：`2026-09-18 18:30 +08:00`。
-- 生产 Catalog/Canonical 只读，候选 API/Web 使用隔离 loopback；PostgreSQL 强制只读事务/连接，未请求 RQData、写入数据、改变 Scope/通知或切换 Runtime。
+- 初始页面验收阶段生产 Catalog/Canonical 只读，候选 API/Web 使用隔离 loopback；PostgreSQL 强制只读事务/连接，当时未请求 RQData、写入数据、改变 Scope/通知或切换 Runtime。后续经独立授权执行的 source-only 查询另见文末结算，仍未写入生产数据。
 - 60 品种 × 4 周期共 240 项：**89 ready、0 warming、151 blocked**。浏览器 89 项 ready 均有图表、参考统计且输入 hash 与固定查询一致；148 项参考 API 409 并清空参考统计；BZ/EB/PG 的 1d 在普通行情图表前置层停止。
 - 浏览器页面请求的 `as_of` 为当时页面首载时间；其 `input_snapshot_hash` 与固定查询相同，证明使用相同的完整交易日截止与输入。此次是候选页面验收，不是 release、Runtime 或自然预警验收。
 
@@ -84,3 +84,5 @@ owner 后续明确授权处理上述 144 项。先按原诊断的物理合约、
 同截止重读结果仍为 **7 个 `PRICE_UNAVAILABLE`、10 个 `SUBING_REFERENCE_DATA_CONFLICT`**。浏览器 7 个缺价页均显示“行情事实不可用”，无工作区或参考统计；另 10 个页面有图表，参考 API 均为 409 且无参考统计。17/17 保持 fail closed，未进入 ready。OI/PF 的 9 月硬无效源分区仍是另外两项未关闭的来源缺口；解决前缀异常后也须独立读回。当前没有依据跳过物理预热前缀、替换零价或宣布 240/240 ready；PR #378 保持草稿，develop 集成 Gate 仍未关闭。
 
 随后继续核对本机已有 source-response、journal、Catalog 质量 hash、Canonical 文件 hash 与当前[正式 warm-up dry-run](d1-17-contract-warmup-dryrun.json)，形成 [17 项来源证据刷新](d1-17-source-evidence-refresh.json)、[16 请求 source-only 候选](d1-17-source-verification-candidate.json)、[机器可读修复范围](d1-17-repair-scope.json)及[修复决定](D1_17_REPAIR_DECISION.md)。1,207 个既有异常日期中，1,159 个有已保存原始来源响应，48 个尚缺 raw replay；OI/PF 九月另有 18 个硬校验失败日期无保存响应。下一批仅为 16 次、66 日期、零写入的来源验证候选，当前未请求 provider。正式 dry-run 证明苏冰实际消费前缀内没有缺分区目标；全生命周期规划的 42 个目标中，OI2609/PF2609 九月 2 项保留为独立缺失分区 Gate，其余 40 项、20 个合约明确排除在本任务之外。
+
+owner 后续授权并执行上述冻结 source-only 候选，详见 [执行说明](D1_17_SOURCE_VERIFICATION_EXECUTION.md)与[机器结算](d1-17-source-verification-execution.json)。批次在第 9 个请求因 PF2611/2025-12 返回 10 个额外区间交易日而按合同停止：started/saved 9、完成 8、失败 1、未执行 7，零重试。共保存 55 行 raw，其中目标 45 日、额外 10 日；原 1,207 个异常日已有来源证据增加到 1,186 日，PF2611 10 日、RS2609 10 日、Y2609 1 日仍未执行。OI/PF 九月 18 日均已观察，但含 10 个非正 Close；当前零个完整分区具备生产修复条件。未执行 Canonical、数据库、页面、release 或 Runtime 操作。
