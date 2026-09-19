@@ -13,7 +13,6 @@ import NewowProductChartStage from './NewowProductChartStage.vue'
 import NewowExplanationPanel from './NewowExplanationPanel.vue'
 import NewowReferencePanel from './NewowReferencePanel.vue'
 import NewowDetailDialog from './NewowDetailDialog.vue'
-import NewowCupFactsPanel from './NewowCupFactsPanel.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 const props = defineProps<{ identity: MarketDetailIdentity; capabilities: NewowProductCapabilities }>()
 const emit = defineEmits<{ 'focus-resolved': [barEnd: string]; 'snapshot-mode': [asOf: string | null]; 'daily-snapshot-as-of': [asOf: string | null]; 'weekly-quote-context': [context: { asOf: string | null; physicalContract: string | null }]; 'refresh-current': [] }>()
@@ -259,7 +258,7 @@ onBeforeUnmount(() => loader.dispose())
       <button @click="openDialog('comparator')">页面比较说明</button>
       <NewowReferencePanel :key="identityKey" :chart-lifecycle="loader.sections.chart.state.value" :current-chart-window="loader.currentChartWindow.value" :response="referenceResponse" :chart-response="chartResponse" :cross-section-compatible="loader.referenceChartCompatible.value" :lifecycle="loader.sections.reference.state.value" :error="loader.sections.reference.error.value" :selected-signal-id="selectedSignalId" :locate-message="locateMessage" :loading-page="loader.sections.reference.state.value === 'loading'" @reload="loader.loadReference" @retry="loader.loadReference()" @load-more="loader.loadNextReferencePage" @locate="locateReferenceTrade" />
     </section>
-    <NewowDetailDialog :open="dialogKind !== null" :wide="dialogKind === 'explanation' || dialogKind === 'comparator' || dialogKind === 'cup_handle'" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">
+    <NewowDetailDialog :open="dialogKind !== null" :title="dialogTitle" :identity-key="identityKey" @close="closeDialog">
       <p>{{ identity.symbol.toUpperCase() }} · {{ newowDisplayLabel(identity.strategy ?? 'UNAVAILABLE') }} · {{ identity.frequency }} · {{ dialogKind === 'action' ? selectedAction?.physicalContract : dialogKind === 'hint' ? selectedHint?.physicalContract : chartResponse?.value?.bars.at(-1)?.physical_contract ?? '—' }}</p>
       <template v-if="dialogKind === 'hint'">
         <p v-if="selectedHint">{{ newowDisplayLabel(selectedHint.kind) }} · {{ formatMarketDecimal(selectedHint.anchorPrice) }} · {{ shortNewowTime(selectedHint.barEnd) }}</p>
@@ -272,7 +271,7 @@ onBeforeUnmount(() => loader.dispose())
         <details><summary>来源与关联 Hint</summary><p>{{ selectedSignalId }} · {{ selectedAction?.barEnd }}</p><p v-for="hint in chartResponse?.value?.hints.filter(hint => chartResponse?.value?.frames.find(frame => frame.bar_end === selectedAction?.barEnd)?.hint_ids.includes(hint.hint_id)) ?? []" :key="hint.hint_id">{{ hint.kind }} · {{ hint.hint_id }} · known_at {{ hint.known_at }} · {{ hint.anchor_price ?? '—' }}</p></details>
       </template>
       <template v-else-if="dialogKind === 'indicator'"><p>{{ auxiliaryDisclosure.title }}</p><p>{{ auxiliaryDisclosure.disclosure }}</p><p>{{ currentAuxiliaryLifecycle }} · {{ currentAuxiliaryError ?? '—' }}</p><details><summary>来源</summary><p>{{ currentAuxiliaryResponse?.value?.formula_version ?? '未读取' }}</p><p>截至 {{ currentAuxiliaryResponse?.meta.as_of ?? '—' }}</p></details></template>
-      <template v-else-if="dialogKind === 'cup_handle'"><p v-if="identity.frequency !== '1d'">杯柄仅适用于 1d。</p><p v-else-if="loader.sections.auxiliary.error.value">{{ newowErrorDisplay(loader.sections.auxiliary.error.value) }}</p><template v-else-if="currentAuxiliaryResponse?.value?.component === 'cup_handle'"><NewowCupFactsPanel v-for="segment in currentAuxiliaryResponse.value.segments" :key="segment.segment_id" :witnesses="Array.isArray(segment.data) ? segment.data : []" :physical-contract="segment.physical_contract" :segment-id="segment.segment_id" /></template><p v-else role="status">正在读取已确认杯柄事实…</p></template>
+      <template v-else-if="dialogKind === 'cup_handle'"><p>{{ identity.frequency !== '1d' ? '杯柄仅适用于 1d' : loader.sections.auxiliary.state.value }}</p><p v-if="loader.sections.auxiliary.error.value">{{ loader.sections.auxiliary.error.value }}</p><template v-if="auxiliaryResponse?.value?.component === 'cup_handle'"><p v-for="segment in auxiliaryResponse.value.segments" :key="segment.segment_id">{{ segment.physical_contract }} · {{ segment.status.reason_code ?? segment.status.status }}</p><details><summary>服务端杯柄事实</summary><pre>{{ auxiliaryResponse.value.segments }}</pre></details></template></template>
       <template v-else-if="dialogKind === 'explanation' && !sectionOpen('explanation')">
         <section class="newow-window-state" data-testid="newow-window-state" :aria-label="summary.status.historical ? '所示历史窗口状态' : '所示图表状态'">
           <h3>{{ summary.status.historical ? '所示历史窗口状态' : '所示图表状态' }}</h3>
@@ -291,10 +290,10 @@ onBeforeUnmount(() => loader.dispose())
 </template>
 <style scoped>
 .newow-product-workspace { display:grid; min-width:0; gap:12px; }
-.newow-summary { display:grid; gap:12px; padding:16px; border:1px solid #e9edf2; border-radius:12px; background:#fff; box-shadow:0 8px 24px #15223808; }
+.newow-summary { padding:16px 0; border-bottom:1px solid #ebedf0; }
 .newow-product-workspace__snapshot-controls { display:flex; align-items:center; gap:12px; color:#667085; font-size:12px; }
 .newow-summary__main,.newow-summary__facts { display:flex; align-items:center; flex-wrap:wrap; gap:12px 20px; }
-.newow-summary__facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); font-size:12px; color:#667085; }.newow-summary__facts > span { min-width:0; padding:9px; border-radius:8px; background:#f8fafc; }
+.newow-summary__facts { font-size:12px; color:#667085; }
 .newow-summary button,.newow-product-workspace__auxiliary-controls button,.newow-product-workspace__research > button { border:0; background:#fff; color:inherit; padding:4px 12px; }
 .newow-status { display:flex; align-items:center; gap:8px; }
 .newow-status span { border-radius:50%; width:24px; height:24px; display:grid; place-items:center; background:#f3f4f6; }
@@ -310,5 +309,5 @@ onBeforeUnmount(() => loader.dispose())
 .newow-window-state h3,.newow-window-state p { margin:0; }
 .newow-window-state h3 { font-size:14px; }
 pre { white-space:pre-wrap; overflow-wrap:anywhere; }
-@media(max-width:640px) { .newow-product-workspace__auxiliary-controls button,.newow-summary__evidence { min-height:44px; }.newow-summary { padding:12px; }.newow-summary__facts { grid-template-columns:1fr 1fr; }.newow-summary__evidence { margin-left:0; } }
+@media(max-width:640px) { .newow-product-workspace__auxiliary-controls button,.newow-summary__evidence { min-height:44px; } }
 </style>

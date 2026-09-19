@@ -291,11 +291,6 @@ export interface NewowComparatorPanelViewModel {
     readonly returnText: string
     readonly drawdownText: string
     readonly winRateText: string
-    readonly returnSort: string | null
-    readonly drawdownSort: string | null
-    readonly winRateSort: string | null
-    readonly tradeCount: number
-    readonly originalIndex: number
     readonly syntheticTerminal: boolean
   }>
   readonly syntheticTerminalIsReferenceExit: false
@@ -322,18 +317,13 @@ export function buildNewowComparatorPanelViewModel(
     label: '五窗口页面比较器（独立理论结果）',
     physicalContract: selectedSegment?.physical_contract ?? '—',
     segmentId: selectedSegment?.segment_id ?? '—',
-    windows: candidateWindows.map((window, originalIndex) => {
+    windows: candidateWindows.map((window) => {
       const item = byWindow.get(window)
       return {
         window,
         returnText: percentageText(item?.page_display.cumulative_return_pct ?? null),
         drawdownText: percentageText(item?.page_display.max_drawdown_pct ?? null),
         winRateText: percentageText(item?.page_display.win_rate_pct ?? null),
-        returnSort: item?.page_display.cumulative_return_pct ?? null,
-        drawdownSort: item?.page_display.max_drawdown_pct ?? null,
-        winRateSort: item?.page_display.win_rate_pct ?? null,
-        tradeCount: item?.trade_count ?? 0,
-        originalIndex,
         syntheticTerminal: item?.force_closed_at_end === true || item?.trades.some((trade) => trade.synthetic_terminal) === true,
       }
     }),
@@ -341,24 +331,6 @@ export function buildNewowComparatorPanelViewModel(
     disclosure: '样本内、零成本、样本末理论平仓仅属于比较器；不改变 ReferenceTrade 的 OPEN/CLEAR，不新增 CLEAR，也不自动选择策略参数。',
     reason: value === null ? result?.reason_code ?? response.status.reason_code ?? 'EVIDENCE_UNAVAILABLE' : '—',
   }
-}
-
-/** Exact decimal lexeme ordering for presentation. Never turns research values into JS floats. */
-export function compareNewowDecimalText(left: string, right: string): number {
-  const parse = (value: string) => {
-    const negative = value.startsWith('-')
-    const [wholeRaw, fraction = ''] = (negative ? value.slice(1) : value).split('.')
-    const whole = (wholeRaw ?? '0').replace(/^0+(?=\d)/, '')
-    return { negative, whole, fraction: fraction.replace(/0+$/, '') }
-  }
-  const a = parse(left); const b = parse(right)
-  if (a.negative !== b.negative) return a.negative ? -1 : 1
-  const sign = a.negative ? -1 : 1
-  if (a.whole.length !== b.whole.length) return (a.whole.length - b.whole.length) * sign
-  if (a.whole !== b.whole) return (a.whole < b.whole ? -1 : 1) * sign
-  const width = Math.max(a.fraction.length, b.fraction.length)
-  const af = a.fraction.padEnd(width, '0'); const bf = b.fraction.padEnd(width, '0')
-  return af === bf ? 0 : (af < bf ? -1 : 1) * sign
 }
 
 export interface NewowPanelRenderState {

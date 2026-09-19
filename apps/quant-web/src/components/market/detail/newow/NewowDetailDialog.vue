@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
-const props = defineProps<{ open: boolean; title: string; identityKey: string; wide?: boolean }>()
+const props = defineProps<{ open: boolean; title: string; identityKey: string }>()
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 let opener: HTMLElement | null = null
@@ -57,7 +57,7 @@ function backdrop(event: MouseEvent) {
 onBeforeUnmount(() => { ++generation; closing = true; dialog.value?.close(); unlockScroll(); opener = null })
 </script>
 <template>
-  <dialog ref="dialog" class="newow-detail-dialog" :class="{ 'newow-detail-dialog--wide': wide }" aria-labelledby="newow-dialog-title" @cancel.prevent="close" @close="!closing && open && close()" @click="backdrop" @keydown="trapTab">
+  <dialog ref="dialog" class="newow-detail-dialog" aria-labelledby="newow-dialog-title" @cancel.prevent="close" @close="!closing && open && close()" @click="backdrop" @keydown="trapTab">
     <header><h2 id="newow-dialog-title">{{ title }}</h2><button type="button" aria-label="关闭解释" autofocus @click="close">×</button></header>
     <div class="newow-detail-dialog__body"><slot /></div>
     <footer><button type="button" @click="close">知道了</button></footer>
@@ -65,7 +65,6 @@ onBeforeUnmount(() => { ++generation; closing = true; dialog.value?.close(); unl
 </template>
 <style scoped>
 .newow-detail-dialog { width:min(480px, calc(100vw - 32px)); box-sizing:border-box; margin:auto; max-height:calc(100dvh - 48px); padding:0; border:1px solid #ebedf0; border-radius:12px; background:#fff; color:#20242b; box-shadow:0 24px 70px #0003; }
-.newow-detail-dialog--wide { width:min(920px, calc(100vw - 32px)); }
 .newow-detail-dialog[open] { display:flex; flex-direction:column; overflow:hidden; }
 .newow-detail-dialog::backdrop { background:#17202c66; }
 header, footer { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; flex-shrink:0; }

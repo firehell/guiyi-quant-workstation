@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import { referenceTimeDisplay, referencePercentDisplay, referenceInterruptionLabel } from '@/utils/newowDetailPresentation'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
-import { newowReferenceWindow, type NewowReferencePreset } from '@/utils/newowReferenceWindows'
 
 import type {
   NewowProductSectionResponse,
@@ -47,8 +46,6 @@ const model = computed(() => (
     : null
 ))
 const visibleModel = computed(() => model.value === null ? null : filterNewowReferenceRows(model.value, filter.value))
-const selectedPreset = ref<NewowReferencePreset | 'complete' | null>(null)
-const acceptedAnchor = computed(() => model.value?.actualAvailableThrough ?? null)
 
 // Current FLAT is a chart fact, never a synthetic trade or a guess from a history page.
 const waiting = computed(() => {
@@ -99,16 +96,6 @@ function useCompleteWindow(): void {
   performanceThrough.value = target.through
   emit('reload', { performanceSince: target.since, performanceThrough: target.through })
 }
-function usePreset(preset: NewowReferencePreset): void {
-  if (!acceptedAnchor.value || props.loadingPage) return
-  try {
-    const target = newowReferenceWindow(acceptedAnchor.value, preset)
-    performanceSince.value = target.performanceSince
-    performanceThrough.value = target.performanceThrough
-    selectedPreset.value = preset
-    emit('reload', target)
-  } catch { selectedPreset.value = null }
-}
 
 function updateSince(event: Event): void { performanceSince.value = (event.target as HTMLInputElement).value }
 function updateThrough(event: Event): void { performanceThrough.value = (event.target as HTMLInputElement).value }
@@ -124,10 +111,6 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
         <details><summary>参考口径说明</summary><p>只表达 long/flat；使用趋势 B、震荡 Low/High、主升浪 MA45 的 API reference_price；不计资金占用与真实成交限制，不推断手数、不推断空单、不推断账户净值、不推断真实收益。Reference 非因果回测、非模拟账户、非真实成交，不使用同 Bar Close；同 Bar Close 仅属于独立 comparator。</p></details>
       </div>
       <form class="newow-reference__window" @submit.prevent="reload">
-        <div class="newow-reference__presets" aria-label="参考统计快捷窗口">
-          <button v-for="preset in ([['three_months', '近3月'], ['one_year', '近1年'], ['ytd', '今年']] as const)" :key="preset[0]" type="button" :disabled="loadingPage || !acceptedAnchor" :aria-pressed="selectedPreset === preset[0]" @click="usePreset(preset[0])">{{ preset[1] }}</button>
-          <button type="button" :disabled="loadingPage || !model?.completeWindowAction" :aria-pressed="selectedPreset === 'complete'" @click="selectedPreset = 'complete'; useCompleteWindow()">完整窗口</button>
-        </div>
         <label>统计起点 <input :value="performanceSince" type="date" @input="updateSince" /></label>
         <label>统计终点 <input :value="performanceThrough" type="date" @input="updateThrough" /></label>
         <button type="submit" :disabled="loadingPage || invalidWindow">{{ loadingPage ? '读取中…' : '应用统计窗口' }}</button>
@@ -214,8 +197,7 @@ function updateFilter(event: Event): void { filter.value = (event.target as HTML
 .newow-reference__header { display: flex; justify-content: space-between; gap: var(--gy-space-3); }
 .newow-reference h3, .newow-reference p, .newow-reference dl { margin: 0; }
 .newow-reference__header p, .newow-reference__tools span, small { color: var(--gy-text-muted); }
-.newow-reference__window, .newow-reference__tools, .newow-reference__presets { display: flex; flex-wrap: wrap; align-items: end; gap: var(--gy-space-2); }
-.newow-reference__presets button { min-height:32px; border-radius:999px; font-size:12px; }.newow-reference__presets button[aria-pressed="true"] { background:#fff1e8; border-color:#ff6b2c; color:#c2410c; }
+.newow-reference__window, .newow-reference__tools { display: flex; flex-wrap: wrap; align-items: end; gap: var(--gy-space-2); }
 .newow-reference__window label { display: grid; gap: 4px; }
 .newow-reference button, .newow-reference input, .newow-reference select { min-height: 44px; padding: 0 var(--gy-space-2); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); color: var(--gy-text-primary); background: var(--gy-bg-panel); }
 .newow-reference__summary dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--gy-space-2); }
