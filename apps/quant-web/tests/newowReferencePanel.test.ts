@@ -29,7 +29,8 @@ const resolveLocate = (viewModels as unknown as {
     trade: NewowReferenceTrade,
     chart: NewowProductSectionResponse<'chart'> | null,
     crossSectionCompatible?: boolean,
-  ) => { kind: string; signalId: string; barEnd: string; displayWindow?: { from: string; through: string } }
+    endpoint?: 'entry' | 'exit',
+  ) => { kind: string; signalId: string | null; barEnd: string | null; displayWindow?: { from: string; through: string } }
 }).resolveNewowReferenceLocate
 const componentUrl = new URL('../src/components/market/detail/newow/NewowReferencePanel.vue', import.meta.url)
 const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url))
@@ -147,6 +148,26 @@ test('history locate requires exact signal ID plus bar_end and requests display 
   })
 })
 
+test('reference locate only accepts the requested endpoint in the same physical contract and segment', () => {
+  const response = referenceResponse()
+  const closed = response.value!.items.find((trade) => trade.reference_trade_id === 'initial')!
+  const chart = chartResponse()
+  const exit = { ...closed, exit_signal_id: 'exit-initial', exit_bar_end: '2025-12-21T07:00:00Z', exit_trading_day: '2025-12-21' }
+
+  assert.deepEqual(resolveLocate(exit, chart, true, 'exit'), {
+    kind: 'request_display_window', signalId: 'exit-initial', barEnd: '2025-12-21T07:00:00Z',
+    displayWindow: { from: '2025-12-21', through: '2025-12-21' },
+  })
+  assert.deepEqual(resolveLocate({ ...exit, exit_signal_id: null }, chart, true, 'exit'), {
+    kind: 'unavailable', signalId: null, barEnd: '2025-12-21T07:00:00Z',
+  })
+  chart.value!.actions.push({ ...chart.value!.actions[0]!, signal_id: 'exit-initial', bar_end: '2025-12-21T07:00:00Z', physical_contract: 'OTHER', segment_id: 'other' })
+  chart.value!.bars.push({ ...chart.value!.bars[0]!, bar_end: '2025-12-21T07:00:00Z', physical_contract: 'OTHER', segment_id: 'other' })
+  assert.deepEqual(resolveLocate(exit, chart, true, 'exit'), {
+    kind: 'unavailable', signalId: 'exit-initial', barEnd: '2025-12-21T07:00:00Z',
+  })
+})
+
 test('cross-section Hint and locate stay unavailable without a shared snapshot proof', () => {
   const response = referenceResponse()
   const chart = chartResponse()
@@ -195,7 +216,7 @@ test('reference panel keeps the server summary while native controls filter, exp
     assert.match(fullText, new RegExp(phrase))
   }
   assert.match(fullText, /同 Bar Close 仅属于独立 comparator/)
-  for (const label of ['已清仓', '未清仓', '换月中断', '期初已有', '定位图表', '查看详情']) assert.match(fullText, new RegExp(label))
+  for (const label of ['已清仓', '未清仓', '换月中断', '期初已有', '定位建仓', '查看详情']) assert.match(fullText, new RegExp(label))
   assert.match(readFileSync(componentUrl, 'utf8'), /<option value="all">全部<\/option>/)
   assert.doesNotMatch(fullText, /Reference[^。]*采用同 Bar Close/)
   const expand = findNode(root, (node) => node.props['aria-label'] === '展开参考记录 open')!
@@ -208,7 +229,7 @@ test('reference panel keeps the server summary while native controls filter, exp
 
   const locate = findNode(root, (node) => node.props['aria-label'] === '定位参考记录 open 的建仓信号')!
   assert.equal(locate.type, 'button')
-  assert.equal(nodeText(locate), '定位图表')
+  assert.equal(nodeText(locate), '定位建仓')
   ;(locate.props.onClick as () => void)()
   assert.deepEqual(located.map(({ reference_trade_id, entry_signal_id, entry_bar_end }) => ({ reference_trade_id, entry_signal_id, entry_bar_end })), [
     { reference_trade_id: 'open', entry_signal_id: 'entry-open', entry_bar_end: '2026-08-14T07:00:00Z' },
@@ -221,6 +242,24 @@ test('reference panel keeps the server summary while native controls filter, exp
   assert.ok(findNode(root, node => node.type === 'article' && node.props['data-reference-category'] === 'interrupted'))
   assert.equal(findNode(root, node => node.type === 'table'), undefined)
   assert.match(nodeText(summary), /胜率\s*—/, 'filter must not change the server-owned summary')
+  app.unmount()
+})
+
+test('reference records present entry, exit, valuation and interruption as separate factual groups', async () => {
+  const Panel = await loadComponent()
+  const Host = defineComponent({ setup: () => () => h(Panel, {
+    response: referenceResponse(), chartResponse: chartResponse(), crossSectionCompatible: true, lifecycle: 'ready', error: null,
+    selectedSignalId: null, locateMessage: null, loadingPage: false,
+  }) })
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Host)
+  app.mount(root)
+  await nextTick()
+  const fullText = nodeText(root)
+  assert.match(fullText, /参考建仓/)
+  assert.match(fullText, /参考清仓/)
+  assert.match(fullText, /参考估值/)
+  assert.match(fullText, /中断说明/)
   app.unmount()
 })
 

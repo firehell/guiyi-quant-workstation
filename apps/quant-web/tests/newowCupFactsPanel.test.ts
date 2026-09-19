@@ -16,3 +16,16 @@ test('cup geometry preserves price ordering across modulo boundaries and equal p
   assert.deepEqual(projectNewowCupPoints(witness(['42', '42', '42', '42'])).map(point => point.y), [35, 35, 35, 35])
   assert.equal(projectNewowCupPoints(witness(['x', '80', '100', '90'])).every(point => !point.available), true)
 })
+
+test('cup geometry retains order for Decimal values beyond JavaScript Number precision', () => {
+  const points = projectNewowCupPoints(witness([
+    '100000000000000000000000000000000000000000000000000.2',
+    '100000000000000000000000000000000000000000000000000.1',
+    '100000000000000000000000000000000000000000000000000.3',
+    '100000000000000000000000000000000000000000000000000.15',
+  ]))
+  assert.equal(points.every(point => point.available), true)
+  assert.ok(points[2]!.y < points[0]!.y)
+  assert.ok(points[0]!.y < points[3]!.y)
+  assert.ok(points[3]!.y < points[1]!.y)
+})

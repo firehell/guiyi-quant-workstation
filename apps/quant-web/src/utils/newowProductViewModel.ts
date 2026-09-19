@@ -154,24 +154,33 @@ export function filterNewowReferenceRows(
 export type NewowReferenceLocate =
   | { readonly kind: 'loaded'; readonly signalId: string; readonly barEnd: string }
   | { readonly kind: 'request_display_window'; readonly signalId: string; readonly barEnd: string; readonly displayWindow: { readonly from: string; readonly through: string } }
-  | { readonly kind: 'unavailable'; readonly signalId: string; readonly barEnd: string }
+  | { readonly kind: 'unavailable'; readonly signalId: string | null; readonly barEnd: string | null }
 
 /** Resolves exact historical focus without choosing a nearby Bar or touching a performance window. */
 export function resolveNewowReferenceLocate(
   trade: NewowReferenceTrade,
   chart: NewowProductSectionResponse<'chart'> | null,
   crossSectionCompatible = false,
+  endpoint: 'entry' | 'exit' = 'entry',
 ): NewowReferenceLocate {
-  const signalId = trade.entry_signal_id
-  const barEnd = trade.entry_bar_end
+  const signalId = endpoint === 'entry' ? trade.entry_signal_id : trade.exit_signal_id
+  const barEnd = endpoint === 'entry' ? trade.entry_bar_end : trade.exit_bar_end
+  const tradingDay = endpoint === 'entry' ? trade.entry_trading_day : trade.exit_trading_day
+  if (signalId === null || barEnd === null || tradingDay === null) return { kind: 'unavailable', signalId, barEnd }
   if (!crossSectionCompatible) return { kind: 'unavailable', signalId, barEnd }
-  const exact = chart?.value?.actions.some((action) => action.signal_id === signalId && action.bar_end === barEnd) ?? false
+  const sameOwner = (value: { physical_contract: string; segment_id: string }) => (
+    value.physical_contract === trade.physical_contract
+    && value.segment_id === trade.segment_id
+  )
+  const exact = chart?.value?.actions.some((action) => (
+    action.signal_id === signalId && action.bar_end === barEnd && sameOwner(action)
+  )) ?? false
   if (exact) return { kind: 'loaded', signalId, barEnd }
   const targetBarLoaded = chart?.value?.bars.some((bar) => bar.bar_end === barEnd) ?? false
   if (targetBarLoaded) return { kind: 'unavailable', signalId, barEnd }
   return {
     kind: 'request_display_window', signalId, barEnd,
-    displayWindow: { from: trade.entry_trading_day, through: trade.entry_trading_day },
+    displayWindow: { from: tradingDay, through: tradingDay },
   }
 }
 

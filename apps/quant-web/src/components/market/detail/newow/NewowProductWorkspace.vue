@@ -26,6 +26,9 @@ const selectedHintId = ref<string | null>(null)
 const selectedAuxiliary = ref<NewowAuxiliaryComponent>('macd')
 const dialogKind = ref<'explanation' | 'action' | 'hint' | 'indicator' | 'comparator' | 'cup_handle' | null>(null)
 const locateMessage = ref<string | null>(null)
+const locateRequest = ref(0)
+const pendingLocate = ref<{ signalId: string; barEnd: string; endpoint: 'entry' | 'exit'; tradeId: string; identity: string; snapshot: string | null } | null>(null)
+const locatedTradeId = ref<string | null>(null)
 const chartRegion = ref<HTMLElement | null>(null)
 const referenceRegion = ref<HTMLElement | null>(null)
 const sectionOpen = (section: NewowProductSection) => (props.capabilities.open_sections as readonly string[]).includes(section)
@@ -149,36 +152,57 @@ async function openHistory(): Promise<void> {
   referenceRegion.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   referenceRegion.value?.focus({ preventScroll: true })
 }
-async function locateReferenceTrade(trade: NewowReferenceTrade): Promise<void> {
-  locateMessage.value = null
-  let target = resolveNewowReferenceLocate(trade, chartResponse.value, loader.referenceChartCompatible.value)
+async function locateReferenceTrade(trade: NewowReferenceTrade, endpoint: 'entry' | 'exit' = 'entry'): Promise<void> {
+  const request = ++locateRequest.value
+  const context = { identity: identityKey.value, snapshot: chartResponse.value?.meta.as_of ?? null }
+  locateMessage.value = `正在定位${endpoint === 'entry' ? '建仓' : '清仓'}…`
+  let target = resolveNewowReferenceLocate(trade, chartResponse.value, loader.referenceChartCompatible.value, endpoint)
   if (target.kind === 'request_display_window') {
     await loader.loadChart(target.displayWindow)
-    target = resolveNewowReferenceLocate(trade, chartResponse.value, loader.referenceChartCompatible.value)
+    if (request !== locateRequest.value || context.identity !== identityKey.value || context.snapshot !== (chartResponse.value?.meta.as_of ?? null)) return
+    target = resolveNewowReferenceLocate(trade, chartResponse.value, loader.referenceChartCompatible.value, endpoint)
   }
   if (target.kind !== 'loaded') {
-    locateMessage.value = `无法按精确信号 ${target.signalId} / ${target.barEnd} 定位；没有跳转到邻近日期。`
+    locateMessage.value = `无法按精确信号 ${target.signalId ?? '—'} / ${target.barEnd ?? '—'} 定位；没有跳转到邻近日期。`
     return
   }
+  pendingLocate.value = { signalId: target.signalId, barEnd: target.barEnd, endpoint, tradeId: trade.reference_trade_id, ...context }
   selectedSignalId.value = target.signalId
-  locateMessage.value = `已按精确信号 ${target.signalId} / ${target.barEnd} 定位。`
   await nextTick()
+  if (request !== locateRequest.value || context.identity !== identityKey.value || context.snapshot !== (chartResponse.value?.meta.as_of ?? null)) return
   chartRegion.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function resolveSignalFocus(signalId: string): void {
+  const pending = pendingLocate.value
+  if (pending !== null && pending.signalId === signalId && pending.identity === identityKey.value && pending.snapshot === (chartResponse.value?.meta.as_of ?? null)) {
+    locateMessage.value = `已定位 ${pending.endpoint === 'entry' ? '建仓' : '清仓'}信号 ${signalId} / ${pending.barEnd}。`
+    locatedTradeId.value = pending.tradeId
+    pendingLocate.value = null
+  }
   const action = chartModel.value?.actions.find((item) => item.id === signalId)
   if (action !== undefined && props.identity.focusBarEnd === action.barEnd) emit('focus-resolved', action.barEnd)
+}
+async function returnToReferenceTrade(): Promise<void> {
+  if (locatedTradeId.value === null) return
+  await nextTick()
+  const record = document.getElementById(`reference-trade-${locatedTradeId.value}`)
+  if (record === null) {
+    locateMessage.value = '原记录不在当前筛选或已加载页，未修改筛选、统计窗口或分页。'
+    return
+  }
+  record.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  record.focus({ preventScroll: true })
 }
 function refreshCurrent(): void { loader.refreshCurrent(); emit('refresh-current') }
 
 
 watch(identityKey, async () => {
-  selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null; selectedAuxiliary.value = 'macd'; dialogKind.value = null; locateMessage.value = null
+  ++locateRequest.value; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null; selectedAuxiliary.value = 'macd'; dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
 watch(loader.historicalSnapshot, async () => {
   emit('snapshot-mode', loader.historicalSnapshot.value?.as_of ?? null)
-  selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
+  ++locateRequest.value; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
   dialogKind.value = null; locateMessage.value = null
 }, { flush: 'sync' })
 watch(loader.dailySnapshot, snapshot => emit('daily-snapshot-as-of', snapshot?.as_of ?? null), { immediate: true, flush: 'sync' })
@@ -243,7 +267,7 @@ onBeforeUnmount(() => loader.dispose())
       <p v-if="currentAuxiliaryError" role="status">{{ currentAuxiliaryError }} · 辅助图层不可用 <button @click="loadAuxiliaryForChart()">重试指标</button></p>
     </section>
     </template>
-    </NewowProductChartStage></div>
+    </NewowProductChartStage><button v-if="locatedTradeId !== null" type="button" class="newow-product-workspace__return" @click="returnToReferenceTrade">返回原记录</button></div>
     <div class="newow-product-workspace__snapshot-controls" :data-as-of="loader.historicalSnapshot.value?.as_of ?? loader.dailySnapshot.value?.as_of ?? loader.weeklySnapshot.value?.as_of">
       <template v-if="loader.historicalSnapshot.value">
         <span :title="loader.historicalSnapshot.value.as_of">历史快照截至 {{ historicalAsOfLabel }}（交易日 {{ loader.historicalSnapshot.value.trading_day }}）</span>
