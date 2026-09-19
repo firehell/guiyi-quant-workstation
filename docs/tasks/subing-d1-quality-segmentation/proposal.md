@@ -1,19 +1,19 @@
 # 苏冰 D1 质量分段与重新预热提案
 
-状态：`ACCEPTED_FOR_CANDIDATE_IMPLEMENTATION / PRODUCTION_APPLY_PENDING`
+状态：`PRODUCTION_APPLIED / FIXED_CUTOFF_ACCEPTED / DEVELOP_INTEGRATION_READY`
 
 固定影响盘点截止：`2026-09-18T18:30:00+08:00`
 
 证据提交：`e45fca24b8691b13314cfecb2559b9251dd823fb`
 
-本文件只提出业务合同和实现边界，不修改 accepted canonical，不改变当前 ready 状态，也不授权
-Canonical、Catalog、数据库、Runtime、Scope、通知、release 或 provider 操作。
+本文件记录已批准的业务合同和实现边界。生产应用已按精确计划单次执行；本文件不授权后续
+Runtime、Scope、通知、release 或 provider 操作。
 
 ## 1. 当前结论
 
-当前正式结论保持 `223/240 ready`、`17/240 blocked`。来源复验已经闭合 66 个目标日和原 1,207 个
-异常日期，但没有一个完整目标分区满足现行生产修复合同。因此不能通过重新下载、覆盖 OHLC、缩短窗口或
-跳过异常把 17 项改成 ready。
+生产应用后的固定截止结论为 `240/240` 数据/API/页面可加载。研究状态独立保持为 15m 60 ready，
+30m 与 60m 各 59 ready + 1 warming，1d 59 `CROSS_EVALUATED` + RS `WARMING`。来源复验闭合的
+异常没有被改写为 OHLC，而是按已批准合同成为显式 calculation break；RS 因有效日线不足仍未进入策略可评价状态。
 
 owner 已批准**方案 2：D1 显式质量分段和重新预热**作为候选版本合同。其核心是：
 
@@ -279,5 +279,6 @@ raw/staging。该发布是独立生产数据授权项；本提案和代码集成
 
 ## 9. 当前 Gate
 
-候选实现、纯计划和 fixture 验收已获授权；生产 Canonical/Catalog 发布仍需绑定精确 plan hash 的单独批准。
-在生产 apply、同截止 240 组合数据/API/页面复验之前，正式结论保持 223/240，草稿 PR 不集成 develop。
+候选实现、生产应用和固定截止 240 组合数据/API/页面验收均已完成；精确回执与读回见
+`outputs/subing-four-period-readiness-20260918/`。该结果允许进入 develop 集成，但不授权 main/tag/release、
+Runtime promotion、Scope/通知修改或自然业务验收。

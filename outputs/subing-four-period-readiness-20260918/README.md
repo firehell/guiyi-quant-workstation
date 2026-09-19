@@ -100,3 +100,19 @@ owner 在候选合同下具有潜在可评价区间，RS2701 仅 3 根连续有�
 `DESIGN_IMPACT_ESTIMATE`，不改变 223/240，也不构成 Canonical 发布、页面验收、develop 集成或 Runtime
 授权。业务合同提案见
 [苏冰 D1 质量分段与重新预热提案](../../docs/tasks/subing-d1-quality-segmentation/proposal.md)。
+
+## D1 质量分段生产应用与固定截止验收（2026-09-19）
+
+owner 批准后按冻结计划执行一次生产应用。计划 hash 为
+`5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c`，manifest hash 为
+`2a15f7aa0fe896804c2ee2b0b19dd5658407cf05eb6e9e96a4fad9e7245371ba`；156 个目标中实际应用
+147 个、既有等价状态 no-op 9 个、旧记录 0 个、provider 请求 0。完整 prepared/applied 回执见
+[生产应用回执](d1-quality-segmentation-production-apply-20260919-001.jsonl)。重复预检返回
+`already_applied`，未再次写入。
+
+应用后以同一截止 `2026-09-18 18:30 +08:00` 完成[生产数据/API 读回](d1-quality-segmentation-production-data-readback.json)
+和[真实 Chromium 页面读回](d1-quality-segmentation-production-page-readback.json)：60 品种 × 4 周期共
+**240/240 可加载**，四个周期各 60/60。研究状态保持独立：15m 为 60 ready；30m、60m 各为
+59 ready + 1 warming；1d 为 59 `CROSS_EVALUATED` + RS `WARMING`。RS 日线页面明确显示有效日线不足，
+未冒充策略可用。候选页代码身份为 `3a4f37f08e2ac38979204d4e02601f818ede30ea`；图表、参考交易区、
+固定 `as_of` 和非 15m 禁用正式预警提示均通过。此证据不等于 main/tag/release、Runtime promotion 或自然预警验收。
