@@ -10,13 +10,14 @@ import json
 import os
 from pathlib import Path
 import stat
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 import uuid
 
 from app.market_data.catalog import CatalogPartition
 from app.market_data.domain import CanonicalBar, DatasetKey
 from app.market_data.source_quality import (
     NonpositiveCloseFact,
+    PriceUnavailableFact,
     SourceQualityFact,
     source_quality_fact_from_record,
 )
@@ -517,8 +518,12 @@ def prepare_replacement_candidate(
         month=partition.month,
         bars=remaining,
         expected_bar_ends=expected,
-        price_unavailable=tuple(fact for fact in facts if fact.classification == "PRICE_UNAVAILABLE"),
-        nonpositive_close=tuple(fact for fact in facts if fact.classification == "NONPOSITIVE_CLOSE"),
+        price_unavailable=tuple(
+            fact for fact in facts if isinstance(fact, PriceUnavailableFact)
+        ),
+        nonpositive_close=tuple(
+            fact for fact in facts if isinstance(fact, NonpositiveCloseFact)
+        ),
     ))
     candidate_bytes = published.parquet_path.read_bytes()
     sidecar_path, sidecar_sha256 = _write_quality_sidecar(
@@ -609,8 +614,10 @@ def prepare_create_candidate(
         ))
         if any(value is None for value in required):
             raise CandidatePreparationError("SOURCE_ROW_MISMATCH")
-        open_, high, low, close, volume, turnover = required
-        assert all(isinstance(value, Decimal) for value in required)
+        open_, high, low, close, volume, turnover = cast(
+            tuple[Decimal, Decimal, Decimal, Decimal, Decimal, Decimal],
+            required,
+        )
         bar_end = bar_ends_by_day[trading_day]
         if proof.classification == "POSITIVE_OHLC_SOURCE_FACT":
             bars.append(CanonicalBar(

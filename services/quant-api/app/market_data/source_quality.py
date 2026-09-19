@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Literal
 
 PRICE_UNAVAILABLE_CLASSIFICATION_VERSION = "rqdata-d1-zero-ohl-v1"
 NONPOSITIVE_CLOSE_CLASSIFICATION_VERSION = "rqdata-d1-nonpositive-close-v1"
@@ -27,7 +28,7 @@ class PriceUnavailableFact:
     classification_version: str = PRICE_UNAVAILABLE_CLASSIFICATION_VERSION
 
     @property
-    def classification(self) -> str:
+    def classification(self) -> Literal["PRICE_UNAVAILABLE"]:
         return "PRICE_UNAVAILABLE"
 
     def __post_init__(self) -> None:
@@ -117,7 +118,7 @@ class NonpositiveCloseFact:
     classification_version: str = NONPOSITIVE_CLOSE_CLASSIFICATION_VERSION
 
     @property
-    def classification(self) -> str:
+    def classification(self) -> Literal["NONPOSITIVE_CLOSE"]:
         return "NONPOSITIVE_CLOSE"
 
     def __post_init__(self) -> None:

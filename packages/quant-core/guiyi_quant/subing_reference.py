@@ -16,7 +16,7 @@ from decimal import (
 from hashlib import sha256
 import json
 import math
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from .indicators.subing_ths import SUBING_THS_FORMULA_VERSION, SubingThs15mKernel
 
@@ -29,6 +29,10 @@ FORMULA_VERSIONS = {
     "60m": "subing_ths_60m_v1",
     "1d": "subing_ths_1d_v1",
 }
+ReferenceReadiness: TypeAlias = Literal[
+    "ready", "warming", "WARMING",
+    "INDICATOR_READY_CROSS_UNEVALUABLE", "CROSS_EVALUATED",
+]
 
 
 class ReferenceProjectionError(ValueError):
@@ -130,10 +134,7 @@ class ReferenceProjection:
     signals: tuple[ReferenceSignal, ...]
     trades: tuple[ReferenceTrade, ...]
     summary: ReferenceSummary
-    readiness: Literal[
-        "ready", "warming", "WARMING",
-        "INDICATOR_READY_CROSS_UNEVALUABLE", "CROSS_EVALUATED",
-    ] = "ready"
+    readiness: ReferenceReadiness = "ready"
     indicators: tuple[ReferenceIndicator, ...] = ()
 
 
@@ -348,7 +349,7 @@ def _project_reference(
         ready_in_window = False
         processed_count = 0
         calculation_segment_id = segment.calculation_segment_id or segment.segment_id
-        base = (
+        base: tuple[str, ...] = (
             symbol,
             segment.physical_contract,
             segment.segment_id,
@@ -548,7 +549,7 @@ def _project_reference(
         total / len(returns) if returns else None,
         total,
     )
-    readiness = "warming" if warming else "ready"
+    readiness: ReferenceReadiness = "warming" if warming else "ready"
     if quality_segmented:
         readiness = (
             "WARMING" if (
