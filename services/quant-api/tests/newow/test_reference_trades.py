@@ -443,6 +443,42 @@ def test_initial_clear_completed_window_accepts_later_new_owner_bar(product_case
     assert delta.diagnostics == expected.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
     assert resumed.lifecycle_consumed == state.lifecycle_consumed
 
+    first_35 = prefix_replay.frames[:-1]
+    partial_replay = replace(
+        prefix_replay,
+        frames=first_35,
+        actions=(),
+        hints=tuple(hint for frame in first_35 for hint in frame.hints),
+        lifecycle_input_bars=tuple(frame.bar for frame in first_35),
+        lifecycle_evidence=(),
+        diagnostics=(),
+    )
+    partial_state, _ = projector.advance(
+        projector.seed(prefix_replay), partial_replay, (),
+        first_35[-1].bar.bar.bar_end,
+    )
+    cross_boundary_frames = extended_replay.frames[-2:]
+    cross_boundary = replace(
+        extended_replay,
+        frames=cross_boundary_frames,
+        actions=tuple(
+            action for frame in cross_boundary_frames for action in frame.actions
+        ),
+        hints=tuple(
+            hint for frame in cross_boundary_frames for hint in frame.hints
+        ),
+        lifecycle_input_bars=tuple(frame.bar for frame in cross_boundary_frames),
+        lifecycle_evidence=(),
+        diagnostics=("INITIAL_CLEAR_NO_ENTRY",),
+    )
+    batched_state, batched_delta = projector.advance(
+        partial_state, cross_boundary, (), last_frame.bar.bar.bar_end,
+    )
+
+    assert batched_state.active_trades == resumed.active_trades
+    assert batched_delta.trades == delta.trades
+    assert batched_delta.diagnostics == delta.diagnostics
+
 
 def test_weekly_quality_adaptation_has_its_own_version_without_changing_daily(
     product_cases,

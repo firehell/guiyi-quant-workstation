@@ -834,15 +834,18 @@ class ReferenceTradeProjector:
                 (frame.bar.bar.bar_end, _lifecycle_frame_fingerprint(frame))
                 for frame in frames
             )
+            remaining = len(expected) - consumed
+            verified_part = actual[:remaining]
+            suffix = actual[remaining:]
             if (
-                consumed == len(expected)
-                and actual
-                and all(instant > expected[-1][0] for instant, _digest in actual)
+                verified_part
+                == expected[consumed:consumed + len(verified_part)]
+                and (
+                    not suffix
+                    or all(instant > expected[-1][0] for instant, _digest in suffix)
+                )
             ):
-                lifecycle_replay_only = False
-                continue
-            if actual == expected[consumed:consumed + len(actual)]:
-                lifecycle_consumed[owner] = consumed + len(actual)
+                lifecycle_consumed[owner] = consumed + len(verified_part)
                 lifecycle_has_new = lifecycle_has_new or bool(actual)
                 lifecycle_replay_only = False
                 continue
