@@ -222,6 +222,16 @@ heartbeat/Rule 评估异常、到期 coverage 缺口，以及盘后行情和质�
 
 ### Requirement: Shared Alert transport and configuration stay bounded
 
+SuBing 的固定通知 audience SHALL 为 `owner`，通过既有 PushPlus transport 不带 `topic` 或 `to` 发送，
+仅面向配置 message token 的 owner。HTDY SHALL 继续使用既有 Topic audience；不得通过删减共享 Topic
+成员实现 SuBing owner-only。此受众变更不改变 15m Rule/Scope、Event identity 或 one-shot 语义，
+不补发历史 Event，也不自动发送测试通知。
+
+#### Scenario: SuBing and HTDY dispatch through the shared transport
+
+- **WHEN** 两条 Rule 各自提交新的合法 Event 并准备一次通知
+- **THEN** SuBing 请求不带 topic/to，HTDY 请求仍带既有配置的 topic，两个请求均不新增好友收件列表
+
 HTDY Topic audience SHALL 由 PushPlus 外部人工维护，范围不得超过 owner + 三位朋友；系统 MUST NOT 读取成员
 清单或声明精确送达人数。Git 外通知配置 SHALL 只包含 message token 与 HTDY Topic code；父目录 MUST 是当前
 用户所有的 `0700` 目录，配置文件 MUST 是当前用户所有的 `0600` 普通文件。结构 health MUST NOT 联网或发送。
