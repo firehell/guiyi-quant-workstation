@@ -7,8 +7,8 @@ GitHub Release target 与 detached Runtime root 已读回一致。本机 Runtime
 牛哇 D1 在发布合并提交上以固定截点 `2026-09-16T07:00:00.000001+00:00` 完成
 60 品种 × 3 策略自然首次加载 180/180；W1/60m 继续关闭。v1.10.12 发布候选的
 Market Home 为 57/60；后续首页质量修复候选与受控补数验收为 60/60，BZ/EB/PG 历史源价
-不可用仍保留计算边界。v1.10.15 Live health 已为 ok；新 root 尚无自然盘后状态，
-总 health 因 `after_market_run_missed` 降级，不能声明 `RUNTIME_READY`。
+不可用仍保留计算边界。v1.10.16 即时 Live 与总 health 已为 ok；新 root 的自然 Live、
+自然盘后与 weekly audit 证据仍待取得，因此不能声明 `RUNTIME_READY`。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。

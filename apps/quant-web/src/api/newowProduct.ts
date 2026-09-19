@@ -27,6 +27,7 @@ const UNAVAILABLE_CODES = new Set([
   'NEWOW_FREQUENCY_NOT_OPEN', 'NEWOW_SECTION_NOT_OPEN',
   'NEWOW_WEEKLY_UNKNOWN', 'NEWOW_WEEKLY_FAILED', 'NEWOW_WEEKLY_STALE',
 ])
+const WEEKLY_PRODUCTS = 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' ')
 
 export class NewowProductRequestError extends Error {
   readonly code: string
@@ -89,10 +90,8 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   if ((!daily && !candidate && !formalWeekly && !auPreview && !hourlyPreview)
     || !sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])
   ) return false
-  if ((candidate || formalWeekly) && (!Array.isArray(value.weekly_products)
-    || value.weekly_products.some(item => typeof item !== 'string' || !/^[a-z]{1,8}$/.test(item))
-    || new Set(value.weekly_products).size !== value.weekly_products.length
-    || value.weekly_products.length !== 41)) return false
+  if ((candidate || formalWeekly)
+    && !sameLiteralArray(value.weekly_products, WEEKLY_PRODUCTS)) return false
   if (!Array.isArray(value.deferred_frequencies)
     || value.deferred_frequencies.length !== (daily ? 2 : (candidate || formalWeekly || hourlyPreview) ? 1 : 0)) return false
   if (!Array.isArray(value.deferred_sections) || value.deferred_sections.length !== 1) return false

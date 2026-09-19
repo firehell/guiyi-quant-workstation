@@ -241,6 +241,17 @@ test('loads the server-owned daily release capability and rejects widened or leg
   assert.deepEqual(await getNewowProductCapabilities({
     request: async () => formalWeekly,
   }), formalWeekly)
+  await assert.rejects(
+    getNewowProductCapabilities({
+      request: async () => ({
+        ...formalWeekly,
+        weekly_products: [...formalWeekly.weekly_products.slice(0, -1), 'b'],
+      }),
+    }),
+    (error: unknown) =>
+      error instanceof NewowProductRequestError
+      && error.code === 'NEWOW_RESPONSE_INVALID',
+  )
 
   const hourly = {
     ...payload,
