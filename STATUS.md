@@ -1,8 +1,9 @@
 # 当前状态
 
-文档整理：2026-09-18。正式 Release 为 `v1.10.15@bfebd7ea0e99a9af051d408173c242d14bf3e985`，
-annotated tag、origin/main 与 GitHub Release target 已读回一致；本机六项服务均绑定
-`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.15-r1` 与同一 exact commit。
+文档整理：2026-09-19。正式 Release 为 `v1.10.16@1877bca3987374d28a07aff9a4008c1561c16e29`，
+annotated tag、origin/main 与 GitHub Release target 已读回一致；Runtime promotion 未包含在本次授权，
+本机六项服务仍绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.15-r1` 与
+`v1.10.15@bfebd7ea0e99a9af051d408173c242d14bf3e985`。
 牛哇 D1 在发布合并提交上以固定截点 `2026-09-16T07:00:00.000001+00:00` 完成
 60 品种 × 3 策略自然首次加载 180/180；W1/60m 继续关闭。v1.10.12 发布候选的
 Market Home 为 57/60；后续首页质量修复候选与受控补数验收为 60/60，BZ/EB/PG 历史源价
@@ -12,6 +13,24 @@ JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixtu
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
+
+## v1.10.16 Release 当前读回（Runtime 未切换）
+
+PR #379 已合入 main；annotated tag `v1.10.16` 的 tag object 为 `babd0c8ab599fc09047e4360be849af19fa18d47`，
+peeled commit、origin/main 均为 `1877bca3987374d28a07aff9a4008c1561c16e29`。非草稿、非预发布的
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.16)
+以 main 为 target，发布树 `bb38b090c507a420ef4a601ffda9d70eae73da5d` 与已验证候选一致。
+
+本版包含 Newow 首批 41 品种 W1 隔离候选、完整周快照与质量链、盘后 D1/W1 消费者检查、
+weekly audit/page quality 修复及已有 60m 隔离预览；没有 Alembic migration。正式能力仍保持 D1，
+W1 只在身份校验的只读 candidate preview 中开放。后端相关组 2029 passed、1 skipped，
+两项 loopback socket 独立复验 2 passed；Web 641 passed、1 skipped，production build 通过；
+release/health/canonical consistency 23 passed，weekly audit/after-market/Runtime/launchd 233 passed，
+OpenSpec 9/9、secret scan 0、Ruff 与 diff check 通过。当前 Catalog 精确只读矩阵 D1 180/180、
+W1 123/123 均 audited，无预算耗尽、未检品种、失败或预热提案。
+
+本次授权不含 Runtime promotion，未安装、切换或重启服务，未修改生产配置、Runtime 状态或行情数据。
+现役 Runtime 仍为 v1.10.15；v1.10.16 的服务身份、候选页面、本机/公网验收及下一完整周自然接续均待独立 Gate。
 
 ## v1.10.15 Release 与 Runtime 当前读回
 
@@ -99,8 +118,8 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.15@bfebd7ea0`，annotated tag、GitHub Release 与 origin/main 已读回；Runtime 另见下行 |
-| 现役 Runtime | v1.10.15 `RUNTIME_PROMOTED / SERVICE_READBACK / HEALTH_DEGRADED`，未声明 `RUNTIME_READY` | 六项服务绑定 exact root/commit；API/Web 200，Live ok/CLOSED=60；总降级仅为新 root 无盘后状态而报告 missed，旧 root 当日自然 passed 保留；Alert 独立诊断不影响总健康 |
+| 正式 Release | `RELEASED` | `v1.10.16@1877bca39`，annotated tag、GitHub Release 与 origin/main 已读回；Runtime 另见下行 |
+| 现役 Runtime | v1.10.15 `RUNTIME_PROMOTED / SERVICE_READBACK / HEALTH_DEGRADED`，未声明 `RUNTIME_READY` | 本次发布未授权 Runtime promotion；六项服务仍绑定 v1.10.15 exact root/commit，既有健康事实不由 v1.10.16 发布改变 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
