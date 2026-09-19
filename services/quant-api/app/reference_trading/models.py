@@ -254,6 +254,12 @@ class ReferenceTradeRow(Base):
             "uq_reference_trades_current", "stream_id", "revision_id", "trade_id",
             unique=True, postgresql_where=text("valid_to_seq IS NULL"), sqlite_where=text("valid_to_seq IS NULL"),
         ),
+        Index(
+            "uq_reference_trades_single_open", "stream_id", "revision_id",
+            unique=True,
+            postgresql_where=text("valid_to_seq IS NULL AND status = 'OPEN'"),
+            sqlite_where=text("valid_to_seq IS NULL AND status = 'OPEN'"),
+        ),
         Index("ix_reference_trades_entry", "stream_id", "revision_id", "entry_bar_end", "trade_id"),
     )
 
@@ -277,6 +283,8 @@ class ReferenceTradeRow(Base):
     exit_reference_price: Mapped[Decimal | None] = mapped_column(Numeric())
     reference_return: Mapped[Decimal | None] = mapped_column(Numeric())
     holding_bars: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    effective_bar_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ReferenceMarkRow(Base):
@@ -305,3 +313,4 @@ class ReferenceMarkRow(Base):
     reference_price: Mapped[Decimal] = mapped_column(Numeric(), nullable=False)
     holding_bars: Mapped[int] = mapped_column(BigInteger, nullable=False)
     reference_return: Mapped[Decimal] = mapped_column(Numeric(), nullable=False)
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -86,8 +86,20 @@ def test_reference_migration_creates_six_empty_tables_and_preserves_existing_row
         action_indexes = {
             index["name"] for index in inspector.get_indexes("reference_actions", schema=schema)
         }
+        trade_indexes = {
+            index["name"] for index in inspector.get_indexes("reference_trades", schema=schema)
+        }
+        trade_columns = {
+            column["name"] for column in inspector.get_columns("reference_trades", schema=schema)
+        }
+        mark_columns = {
+            column["name"] for column in inspector.get_columns("reference_marks", schema=schema)
+        }
         assert "ck_reference_trades_exit_complete" in trade_checks
         assert "uq_reference_actions_forward_source" in action_indexes
+        assert "uq_reference_trades_single_open" in trade_indexes
+        assert {"effective_bar_end", "observed_at"} <= trade_columns
+        assert "observed_at" in mark_columns
     finally:
         with isolated_postgres_engine.begin() as connection:
             connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')

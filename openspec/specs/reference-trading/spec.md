@@ -98,7 +98,9 @@ Each calculation batch MUST atomically persist its source-action references, tra
 adapter checkpoint and evidence. A repeated `(stream, revision, batch_key)` with the same payload MUST return the
 durable receipt before checking a stale checkpoint; the same identity with different content MUST fail closed. A new
 batch MUST compare revision, sequence, stream row version and checkpoint hash under a fixed stream-to-revision lock
-order. Diagnostics and seed chunks MUST NOT advance valid calculation sequence.
+order. Before advancing the checkpoint, the repository MUST verify monotonic watermarks and reconcile the durable
+unique OPEN projection with both the stored pre-state and proposed post-state. Diagnostics and seed chunks MUST NOT
+advance valid calculation sequence.
 
 #### Scenario: Two writers submit the same prepared batch
 
@@ -132,7 +134,9 @@ An internal snapshot SHALL bind stream, published revision and commit sequence. 
 `[valid_from_seq, valid_to_seq)` intervals; an old snapshot MUST remain stable after later commits. A cutoff before a
 close MUST return the prior OPEN version and its latest eligible mark, never the future exit or realized return.
 Forward reads MUST additionally require each action's actual `observed_at` not to exceed the cutoff. Candidate and
-invalid revisions MUST fail explicitly rather than switching to another revision.
+invalid revisions MUST fail explicitly rather than switching to another revision. Forward marks and non-action
+interruptions MUST persist their own input observation time; interruption versions MUST also persist their effective
+event Bar, so neither a later mark nor an unsealed future boundary can leak into an earlier cutoff.
 
 #### Scenario: A trade closes after a captured snapshot
 

@@ -209,6 +209,8 @@ def upgrade() -> None:
         sa.Column("exit_reference_price", sa.Numeric()),
         sa.Column("reference_return", sa.Numeric()),
         sa.Column("holding_bars", sa.BigInteger(), nullable=False),
+        sa.Column("effective_bar_end", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("observed_at", sa.DateTime(timezone=True)),
         sa.PrimaryKeyConstraint(
             "stream_id", "revision_id", "trade_id", "valid_from_seq", name="pk_reference_trades",
         ),
@@ -246,6 +248,11 @@ def upgrade() -> None:
         postgresql_where=sa.text("valid_to_seq IS NULL"),
     )
     op.create_index(
+        "uq_reference_trades_single_open", "reference_trades",
+        ["stream_id", "revision_id"], unique=True,
+        postgresql_where=sa.text("valid_to_seq IS NULL AND status = 'OPEN'"),
+    )
+    op.create_index(
         "ix_reference_trades_entry", "reference_trades",
         ["stream_id", "revision_id", "entry_bar_end", "trade_id"],
     )
@@ -262,6 +269,7 @@ def upgrade() -> None:
         sa.Column("reference_price", sa.Numeric(), nullable=False),
         sa.Column("holding_bars", sa.BigInteger(), nullable=False),
         sa.Column("reference_return", sa.Numeric(), nullable=False),
+        sa.Column("observed_at", sa.DateTime(timezone=True)),
         sa.PrimaryKeyConstraint(
             "stream_id", "revision_id", "trade_id", "batch_seq", "bar_end", name="pk_reference_marks",
         ),

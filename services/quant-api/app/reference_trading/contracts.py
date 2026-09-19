@@ -118,6 +118,7 @@ class PreparedBatch:
     checkpoint: AdapterCheckpoint[object]
     strategy_schema: str
     source_evidence: dict[str, object]
+    input_observed_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for name in ("stream_id", "revision_id", "batch_key", "strategy_schema"):
@@ -141,6 +142,15 @@ class PreparedBatch:
             raise ValueError("checkpoint must include stream and reference_state")
         if self.checkpoint.stream.stream_id != self.stream_id:
             raise ValueError("checkpoint stream does not match batch")
+        if self.checkpoint.stream.recording_mode is RecordingMode.FORWARD_OBSERVATION:
+            if (
+                not isinstance(self.input_observed_at, datetime)
+                or self.input_observed_at.tzinfo is None
+                or self.input_observed_at.utcoffset() is None
+            ):
+                raise ValueError("forward batch requires timezone-aware input_observed_at")
+        elif self.input_observed_at is not None:
+            raise ValueError("historical batch must not set input_observed_at")
         if self.transitions[-1].state != self.checkpoint.reference_state:
             raise ValueError("checkpoint reference state does not match final transition")
 

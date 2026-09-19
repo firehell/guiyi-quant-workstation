@@ -126,3 +126,57 @@ def test_postgresql_numeric_round_trip_keeps_decimal_precision(reference_postgre
     trade = repository.read_trades(snapshot, cutoff=None, limit=20).items[0]
     assert str(action.reference_price) == "3500.123456789"
     assert str(trade.mark_reference_price) == "3501.123456789"
+
+
+def test_postgresql_seed_seal_and_publish_share_stream_then_revision_lock_order(
+    reference_postgresql,
+) -> None:
+    factory = sessionmaker(reference_postgresql, expire_on_commit=False)
+    repository = ReferenceRepository(factory)
+    stream = _stream()
+    stored = repository.ensure_stream(stream)
+    manifest = {"dataset_revision": "lock-order-v1"}
+    revision = repository.create_revision(
+        stream.stream_id, stored.row_version, _digest(manifest),
+    )
+    root = sha256(b"seed").hexdigest()
+    repository.stage_seed_chunk(revision, SeedChunk("seed", 0, 1, root, "seed"))
+    checkpoint = AdapterCheckpoint(
+        seed_replay_state(), stream=stream, reference_state=ReferenceState.flat(stream),
+    )
+    stream_locked = threading.Event()
+    release_seal = threading.Event()
+    publish_started = threading.Event()
+
+    def pause_after_stream_lock(stage: str) -> None:
+        if stage == "after_stream_lock":
+            stream_locked.set()
+            assert release_seal.wait(timeout=5)
+
+    sealing_repository = ReferenceRepository(
+        factory, fault_injector=pause_after_stream_lock,
+    )
+
+    def seal():
+        return sealing_repository.seal_seed(
+            revision, manifest, checkpoint, "newow_product_replay_v1",
+        )
+
+    def publish():
+        publish_started.set()
+        return repository.publish_revision(
+            stream.stream_id, revision, stored.row_version, _digest(manifest),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        seal_future = pool.submit(seal)
+        assert stream_locked.wait(timeout=5)
+        publish_future = pool.submit(publish)
+        assert publish_started.wait(timeout=5)
+        release_seal.set()
+        token = seal_future.result(timeout=5)
+        snapshot = publish_future.result(timeout=5)
+
+    assert token.seq == 1
+    assert snapshot.revision_id == revision
+    assert snapshot.seq == 1

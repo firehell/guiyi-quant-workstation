@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from hashlib import sha256
@@ -15,6 +16,7 @@ from guiyi_quant.reference_trading import (
     CompletedReferenceBar,
     ReferenceAction,
     ReferenceState,
+    ReferenceTransition,
     StreamIdentity,
     reduce_reference,
 )
@@ -121,6 +123,22 @@ def test_same_batch_identity_with_changed_payload_conflicts() -> None:
         )
 
 
+def test_same_batch_identity_cannot_hide_changed_source_fact() -> None:
+    repository, _factory, stream, revision, manifest, token = _seed_repository()
+    prepared = _open_batch(stream, revision, manifest, token)
+    repository.commit_batch(token, prepared)
+    changed_action = replace(
+        prepared.source_actions[0].action, physical_contract="RB2611",
+    )
+    changed = replace(
+        prepared,
+        source_actions=(replace(prepared.source_actions[0], action=changed_action),),
+    )
+
+    with pytest.raises(RepositoryConflict, match="BATCH_CONTENT_CONFLICT"):
+        repository.commit_batch(token, changed)
+
+
 def test_different_batch_with_stale_expected_fails_without_implicit_retry() -> None:
     repository, _factory, stream, revision, manifest, token = _seed_repository()
     repository.commit_batch(token, _open_batch(stream, revision, manifest, token))
@@ -217,3 +235,55 @@ def test_same_bar_unsealed_action_then_seal_is_two_legal_atomic_batches() -> Non
     assert final_token.seq == 3
     assert checkpoint.reference_state.computed_through == AT
     assert checkpoint.reference_state.open_trade is not None
+
+
+def test_checkpoint_cannot_diverge_from_the_durable_open_projection() -> None:
+    repository, _factory, stream, revision, manifest, seed = _seed_repository()
+    repository.commit_batch(seed, _open_batch(stream, revision, manifest, seed))
+    token, loaded = repository.load_checkpoint(stream.stream_id, revision)
+    assert loaded.reference_state is not None
+    divergent_state = replace(loaded.reference_state, open_trade=None)
+    divergent = ReferenceTransition(
+        state=divergent_state, changed_trades=(), marks=(), diagnostics=(),
+    )
+    prepared = PreparedBatch(
+        stream.stream_id, revision, "divergent-flat", token, manifest, (),
+        (divergent,),
+        AdapterCheckpoint(
+            seed_replay_state(), AT, "divergent", "RB2610", "owner-1", "calc-1",
+            stream, divergent_state,
+        ),
+        "newow_product_replay_v1", {"bar": "divergent"},
+    )
+
+    with pytest.raises(RepositoryConflict, match="CHECKPOINT_OPEN_DIVERGENCE"):
+        repository.commit_batch(token, prepared)
+
+    restored_token, restored = repository.load_checkpoint(stream.stream_id, revision)
+    assert restored_token == token
+    assert restored.reference_state is not None
+    assert restored.reference_state.open_trade is not None
+
+
+def test_checkpoint_watermark_cannot_move_backwards() -> None:
+    repository, _factory, stream, revision, manifest, seed = _seed_repository()
+    repository.commit_batch(seed, _open_batch(stream, revision, manifest, seed))
+    token, _ = repository.load_checkpoint(stream.stream_id, revision)
+    earlier = AT.replace(day=18)
+    regressed = reduce_reference(
+        ReferenceState.flat(stream),
+        completed_bar=CompletedReferenceBar(
+            "RB2610", "owner-1", "calc-1", earlier, date(2026, 9, 18), Decimal("3490"),
+        ),
+    )
+    prepared = PreparedBatch(
+        stream.stream_id, revision, "regressed", token, manifest, (), (regressed,),
+        AdapterCheckpoint(
+            seed_replay_state(), earlier, "regressed", "RB2610", "owner-1", "calc-1",
+            stream, regressed.state,
+        ),
+        "newow_product_replay_v1", {"bar": "regressed"},
+    )
+
+    with pytest.raises(RepositoryConflict, match="CHECKPOINT_WATERMARK_REGRESSION"):
+        repository.commit_batch(token, prepared)

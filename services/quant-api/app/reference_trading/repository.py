@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from enum import Enum
 from hashlib import sha256
 import json
 from uuid import uuid4
 
-from dataclasses import replace
+from dataclasses import fields, is_dataclass, replace
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -18,6 +20,7 @@ from guiyi_quant.reference_trading import (
     RecordingMode,
     ReferenceAction,
     ReferenceMark,
+    ReferenceState,
     ReferenceTrade,
     Side,
     StreamIdentity,
@@ -67,6 +70,30 @@ def _canonical(value: object) -> str:
 
 def _digest(value: object) -> str:
     return sha256(_canonical(value).encode()).hexdigest()
+
+
+def _wire(value: object) -> object:
+    """Return a complete deterministic representation for idempotency hashing."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return _wire(value.value)
+    if is_dataclass(value) and not isinstance(value, type):
+        return {
+            field.name: _wire(getattr(value, field.name))
+            for field in fields(value)
+        }
+    if isinstance(value, dict):
+        return {str(key): _wire(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_wire(item) for item in value]
+    raise TypeError(f"unsupported canonical value: {type(value).__name__}")
 
 
 def _checkpoint_hash(value: str) -> str:
@@ -171,7 +198,9 @@ class ReferenceRepository:
             raise TypeError("chunk must be SeedChunk")
         payload_hash = sha256(chunk.content.encode()).hexdigest()
         with self._session_factory() as session, session.begin():
-            revision = self._revision_by_id(session, revision_id, lock=True)
+            _stream, revision = self._lock_stream_revision_by_revision_id(
+                session, revision_id,
+            )
             if revision.status != "candidate" or revision.checkpoint_batch_id is not None:
                 raise RepositoryConflict("REVISION_NOT_SEEDABLE")
             existing = session.execute(select(ReferenceBatch).where(
@@ -228,10 +257,9 @@ class ReferenceRepository:
         )
         state_hash = _checkpoint_hash(checkpoint_text)
         with self._session_factory() as session, session.begin():
-            revision = self._revision_by_id(session, revision_id, lock=True)
-            stream = session.execute(
-                select(ReferenceStream).where(ReferenceStream.stream_id == revision.stream_id).with_for_update()
-            ).scalar_one()
+            stream, revision = self._lock_stream_revision_by_revision_id(
+                session, revision_id,
+            )
             if revision.checkpoint_batch_id is not None:
                 sealed = session.get(ReferenceBatch, revision.checkpoint_batch_id)
                 if (
@@ -417,9 +445,24 @@ class ReferenceRepository:
             if (
                 checkpoint_batch is None
                 or checkpoint_batch.checkpoint_text is None
+                or checkpoint_batch.strategy_schema is None
                 or _checkpoint_hash(checkpoint_batch.checkpoint_text) != expected.state_hash
             ):
                 raise RepositoryConflict("STALE_CHECKPOINT")
+            persisted_checkpoint = adapter_checkpoint_from_json(
+                checkpoint_batch.checkpoint_text,
+                expected_stream=_identity_from_row(stream),
+                expected_strategy_schema=checkpoint_batch.strategy_schema,
+            )
+            prior_state = persisted_checkpoint.reference_state
+            final_state = prepared.checkpoint.reference_state
+            if prior_state is None or final_state is None:
+                raise RepositoryConflict("CHECKPOINT_STATE_CONFLICT")
+            self._validate_state_progress(prior_state, final_state)
+            self._validate_action_progress(prior_state, final_state, prepared)
+            self._validate_open_projection(
+                session, prepared.stream_id, prepared.revision_id, prior_state.open_trade,
+            )
             if revision.dependency_digest != _digest(prepared.dependency_manifest):
                 raise RepositoryConflict("DEPENDENCY_CONFLICT")
             if prepared.transitions[-1].state != prepared.checkpoint.reference_state:
@@ -461,10 +504,7 @@ class ReferenceRepository:
                     for transition in prepared.transitions
                     for diagnostic in transition.diagnostics
                 ],
-                observed_at=max(
-                    (item.observed_at for item in prepared.source_actions if item.observed_at is not None),
-                    default=None,
-                ),
+                observed_at=prepared.input_observed_at,
                 processed_at=datetime.now(UTC),
             )
             session.add(batch)
@@ -480,6 +520,10 @@ class ReferenceRepository:
             self._fault_injector("after_trades")
             self._insert_marks(
                 session, prepared, action_pks=action_pks, births=births, seq=seq,
+            )
+            session.flush()
+            self._validate_open_projection(
+                session, prepared.stream_id, prepared.revision_id, final_state.open_trade,
             )
             self._fault_injector("before_checkpoint")
             revision.last_seq = seq
@@ -609,13 +653,21 @@ class ReferenceRepository:
                     chosen = opens[0]
                 trade = self._trade_domain(session, identity, chosen)
                 if trade.status is TradeStatus.OPEN:
-                    mark = session.execute(select(ReferenceMarkRow).where(
+                    mark_statement = select(ReferenceMarkRow).where(
                         ReferenceMarkRow.stream_id == snapshot.stream_id,
                         ReferenceMarkRow.revision_id == snapshot.revision_id,
                         ReferenceMarkRow.trade_id == trade.reference_trade_id,
                         ReferenceMarkRow.batch_seq <= snapshot.seq,
                         *(() if cutoff is None else (ReferenceMarkRow.bar_end <= cutoff,)),
-                    ).order_by(
+                    )
+                    if (
+                        cutoff is not None
+                        and stream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value
+                    ):
+                        mark_statement = mark_statement.where(
+                            ReferenceMarkRow.observed_at <= cutoff,
+                        )
+                    mark = session.execute(mark_statement.order_by(
                         ReferenceMarkRow.bar_end.desc(), ReferenceMarkRow.batch_seq.desc(),
                     )).scalars().first()
                     if mark is not None:
@@ -656,7 +708,7 @@ class ReferenceRepository:
     ) -> StoredPage[ReferenceMark]:
         self._validate_page(limit, cutoff)
         with self._session_factory() as session:
-            self._validate_snapshot(session, snapshot)
+            stream, _revision = self._validate_snapshot(session, snapshot)
             statement = select(ReferenceMarkRow).where(
                 ReferenceMarkRow.stream_id == snapshot.stream_id,
                 ReferenceMarkRow.revision_id == snapshot.revision_id,
@@ -664,6 +716,8 @@ class ReferenceRepository:
             )
             if cutoff is not None:
                 statement = statement.where(ReferenceMarkRow.bar_end <= cutoff)
+                if stream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value:
+                    statement = statement.where(ReferenceMarkRow.observed_at <= cutoff)
             rows = session.execute(statement.order_by(
                 ReferenceMarkRow.bar_end,
                 ReferenceMarkRow.trade_id,
@@ -831,6 +885,13 @@ class ReferenceRepository:
     ) -> bool:
         if cutoff is None:
             return True
+        if _required_aware(row.effective_bar_end, "TRADE_EFFECTIVE_BAR_END") > cutoff:
+            return False
+        if (
+            row.observed_at is not None
+            and _required_aware(row.observed_at, "TRADE_OBSERVED_AT") > cutoff
+        ):
+            return False
         if row.status == TradeStatus.CLOSED.value:
             if row.exit_bar_end is None or _required_aware(
                 row.exit_bar_end, "TRADE_EXIT_BAR_END",
@@ -852,55 +913,21 @@ class ReferenceRepository:
             )
         if row.status == TradeStatus.OPEN.value:
             return True
-        batch = session.execute(select(ReferenceBatch).where(
-            ReferenceBatch.stream_id == row.stream_id,
-            ReferenceBatch.revision_id == row.revision_id,
-            ReferenceBatch.seq == row.valid_from_seq,
-        )).scalar_one_or_none()
-        return (
-            batch is not None
-            and batch.computed_through is not None
-            and _required_aware(
-                batch.computed_through, "BATCH_COMPUTED_THROUGH",
-            ) <= cutoff
-        )
+        return True
 
     @staticmethod
     def _prepared_hash(prepared: PreparedBatch, checkpoint_text: str) -> str:
-        actions = [(
-            item.action.source_action_id,
-            item.action.kind.value,
-            item.action.bar_end.isoformat(),
-            item.action.sequence,
-            str(item.action.reference_price),
-            item.action.entry_action_id,
-            None if item.observed_at is None else item.observed_at.isoformat(),
-            item.origin_revision_id,
-        ) for item in prepared.source_actions]
-        transitions = [(
-            [
-                (trade.reference_trade_id, trade.status.value, trade.exit_action_id,
-                 None if trade.exit_reference_price is None else str(trade.exit_reference_price),
-                 None if trade.reference_return is None else str(trade.reference_return))
-                for trade in transition.changed_trades
-            ],
-            [
-                (mark.reference_trade_id, mark.bar_end.isoformat(), str(mark.reference_price),
-                 mark.holding_bars, str(mark.reference_return))
-                for mark in transition.marks
-            ],
-            list(transition.diagnostics),
-        ) for transition in prepared.transitions]
         return _digest({
             "stream_id": prepared.stream_id,
             "revision_id": prepared.revision_id,
             "batch_key": prepared.batch_key,
-            "dependency_manifest": prepared.dependency_manifest,
-            "source_actions": actions,
-            "transitions": transitions,
+            "dependency_manifest": _wire(prepared.dependency_manifest),
+            "source_actions": _wire(prepared.source_actions),
+            "transitions": _wire(prepared.transitions),
             "checkpoint": checkpoint_text,
             "strategy_schema": prepared.strategy_schema,
-            "source_evidence": prepared.source_evidence,
+            "source_evidence": _wire(prepared.source_evidence),
+            "input_observed_at": _wire(prepared.input_observed_at),
         })
 
     @staticmethod
@@ -922,6 +949,80 @@ class ReferenceRepository:
         if len(mark_keys) != len(set(mark_keys)):
             raise RepositoryConflict("DUPLICATE_MARK")
 
+    @staticmethod
+    def _validate_state_progress(prior: ReferenceState, final: ReferenceState) -> None:
+        if prior.stream != final.stream or prior.recording_start != final.recording_start:
+            raise RepositoryConflict("CHECKPOINT_STATE_CONFLICT")
+        if prior.computed_through is not None and (
+            final.computed_through is None
+            or final.computed_through < prior.computed_through
+        ):
+            raise RepositoryConflict("CHECKPOINT_WATERMARK_REGRESSION")
+        if prior.last_event_key is not None and (
+            final.last_event_key is None
+            or final.last_event_key < prior.last_event_key
+        ):
+            raise RepositoryConflict("CHECKPOINT_EVENT_REGRESSION")
+
+    @staticmethod
+    def _validate_action_progress(
+        prior: ReferenceState, final: ReferenceState, prepared: PreparedBatch,
+    ) -> None:
+        keys = [
+            (item.action.bar_end, 0, item.action.sequence)
+            for item in prepared.source_actions
+        ]
+        if prior.last_event_key is not None and any(
+            key <= prior.last_event_key for key in keys
+        ):
+            raise RepositoryConflict("ACTION_WATERMARK_CONFLICT")
+        if keys and (
+            final.last_event_key is None
+            or final.last_event_key < max(keys)
+        ):
+            raise RepositoryConflict("CHECKPOINT_EVENT_CONFLICT")
+
+    @staticmethod
+    def _validate_open_projection(
+        session: Session,
+        stream_id: str,
+        revision_id: str,
+        expected: ReferenceTrade | None,
+    ) -> None:
+        rows = session.execute(select(ReferenceTradeRow).where(
+            ReferenceTradeRow.stream_id == stream_id,
+            ReferenceTradeRow.revision_id == revision_id,
+            ReferenceTradeRow.status == TradeStatus.OPEN.value,
+            ReferenceTradeRow.valid_to_seq.is_(None),
+        )).scalars().all()
+        if expected is None:
+            if rows:
+                raise RepositoryConflict("CHECKPOINT_OPEN_DIVERGENCE")
+            return
+        if len(rows) != 1:
+            raise RepositoryConflict("CHECKPOINT_OPEN_DIVERGENCE")
+        row = rows[0]
+        if (
+            row.trade_id,
+            row.side,
+            row.physical_contract,
+            row.owner_segment_id,
+            row.calculation_segment_id,
+            _aware(row.entry_bar_end),
+            row.entry_trading_day,
+            row.entry_reference_price,
+        ) != (
+            expected.reference_trade_id,
+            expected.side.value,
+            expected.physical_contract,
+            expected.owner_segment_id,
+            expected.calculation_segment_id,
+            expected.entry_bar_end,
+            expected.entry_trading_day,
+            expected.entry_reference_price,
+        ):
+            raise RepositoryConflict("CHECKPOINT_OPEN_DIVERGENCE")
+
     def _insert_actions(
         self, session: Session, prepared: PreparedBatch, *, batch_id: str, batch_seq: int,
     ) -> dict[str, str]:
@@ -936,6 +1037,7 @@ class ReferenceRepository:
                 if (
                     origin_row is None
                     or origin == prepared.revision_id
+                    or origin_row.status not in {"active", "superseded"}
                     or action.stream.recording_mode is not RecordingMode.FORWARD_OBSERVATION
                 ):
                     raise RepositoryConflict("ACTION_ORIGIN_CONFLICT")
@@ -1018,14 +1120,19 @@ class ReferenceRepository:
     def _apply_trade_changes(
         self, session: Session, prepared: PreparedBatch, *, action_pks: dict[str, str], seq: int,
     ) -> dict[str, int]:
-        final: dict[str, ReferenceTrade] = {}
+        final: dict[str, tuple[ReferenceTrade, datetime | None]] = {}
         for transition in prepared.transitions:
             for trade in transition.changed_trades:
                 if trade.stream.stream_id != prepared.stream_id:
                     raise RepositoryConflict("TRADE_STREAM_CONFLICT")
-                final[trade.reference_trade_id] = trade
+                effective_event = (
+                    None
+                    if transition.state.last_event_key is None
+                    else transition.state.last_event_key[0]
+                )
+                final[trade.reference_trade_id] = (trade, effective_event)
         births: dict[str, int] = {}
-        for trade_id, trade in final.items():
+        for trade_id, (trade, transition_event) in final.items():
             current = session.execute(select(ReferenceTradeRow).where(
                 ReferenceTradeRow.stream_id == prepared.stream_id,
                 ReferenceTradeRow.revision_id == prepared.revision_id,
@@ -1066,6 +1173,16 @@ class ReferenceRepository:
                 if current.status != "OPEN" or trade.status.value == "OPEN":
                     raise RepositoryConflict("TRADE_LIFECYCLE_CONFLICT")
                 current.valid_to_seq = seq
+                session.flush()
+            elif trade.status is TradeStatus.OPEN:
+                other_open = session.execute(select(ReferenceTradeRow).where(
+                    ReferenceTradeRow.stream_id == prepared.stream_id,
+                    ReferenceTradeRow.revision_id == prepared.revision_id,
+                    ReferenceTradeRow.status == TradeStatus.OPEN.value,
+                    ReferenceTradeRow.valid_to_seq.is_(None),
+                )).scalars().first()
+                if other_open is not None:
+                    raise RepositoryConflict("TRADE_LIFECYCLE_CONFLICT")
             entry_pk = self._action_pk(
                 session, prepared, action_pks, trade.entry_action_id,
             )
@@ -1108,6 +1225,19 @@ class ReferenceRepository:
                     trade.exit_reference_price,
                 ):
                     raise RepositoryConflict("TRADE_EXIT_CONFLICT")
+            if trade.status is TradeStatus.OPEN:
+                effective_bar_end = trade.entry_bar_end
+                observation_time = entry_action.observed_at
+            elif trade.status is TradeStatus.CLOSED:
+                if trade.exit_bar_end is None or exit_action is None:
+                    raise RepositoryConflict("TRADE_EXIT_CONFLICT")
+                effective_bar_end = trade.exit_bar_end
+                observation_time = exit_action.observed_at
+            else:
+                if transition_event is None:
+                    raise RepositoryConflict("TRADE_EVENT_TIME_MISSING")
+                effective_bar_end = transition_event
+                observation_time = prepared.input_observed_at
             row = ReferenceTradeRow(
                 stream_id=prepared.stream_id,
                 revision_id=prepared.revision_id,
@@ -1129,6 +1259,8 @@ class ReferenceRepository:
                 exit_reference_price=trade.exit_reference_price,
                 reference_return=trade.reference_return,
                 holding_bars=trade.holding_bars,
+                effective_bar_end=effective_bar_end,
+                observed_at=observation_time,
             )
             session.add(row)
             births[trade_id] = seq
@@ -1174,6 +1306,7 @@ class ReferenceRepository:
                     reference_price=mark.reference_price,
                     holding_bars=mark.holding_bars,
                     reference_return=mark.reference_return,
+                    observed_at=prepared.input_observed_at,
                 ))
 
     def _revision_by_id(self, session: Session, revision_id: str, *, lock: bool) -> ReferenceRevision:
@@ -1184,6 +1317,24 @@ class ReferenceRepository:
         if len(rows) != 1:
             raise RepositoryConflict("REVISION_NOT_FOUND")
         return rows[0]
+
+    def _lock_stream_revision_by_revision_id(
+        self, session: Session, revision_id: str,
+    ) -> tuple[ReferenceStream, ReferenceRevision]:
+        located = self._revision_by_id(session, revision_id, lock=False)
+        stream = session.execute(select(ReferenceStream).where(
+            ReferenceStream.stream_id == located.stream_id,
+        ).with_for_update()).scalar_one_or_none()
+        if stream is None:
+            raise RepositoryConflict("STREAM_NOT_FOUND")
+        self._fault_injector("after_stream_lock")
+        revision = session.execute(select(ReferenceRevision).where(
+            ReferenceRevision.stream_id == located.stream_id,
+            ReferenceRevision.revision_id == revision_id,
+        ).with_for_update()).scalar_one_or_none()
+        if revision is None:
+            raise RepositoryConflict("REVISION_NOT_FOUND")
+        return stream, revision
 
     @staticmethod
     def _validate_chunks(chunks: Sequence[ReferenceBatch]) -> None:

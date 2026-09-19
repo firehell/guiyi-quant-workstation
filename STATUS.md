@@ -171,6 +171,7 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 | 正式 Release | `RELEASED` | `v1.10.17@305cf36b9`，annotated tag、GitHub Release 与 origin/main 已读回；Runtime 另见下行 |
 | 现役 Runtime | v1.10.17 `RUNTIME_PROMOTED / SERVICE_READBACK / HEALTH_OK`，未声明 `RUNTIME_READY` | 六项服务绑定 v1.10.17 exact root/commit；API/Web 与总 health 通过，公网及自然业务证据仍待验 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
+| Unified Reference Trading P3 仓储候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | 六表、0047 migration、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；82 项 P3（含 9 项隔离 PG）及 365 项 P0–P3/Newow/SuBing 回归通过，Review 的 5 项 Important 已修复。仍默认 disabled，未执行生产 migration、P4 构建、P5 HTTP/Web、P6 worker 或 Runtime enable |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |

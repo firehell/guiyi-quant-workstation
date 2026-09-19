@@ -10,7 +10,10 @@ from sqlalchemy import func, select
 from guiyi_quant.newow.product_adapters import seed_replay_state
 from guiyi_quant.reference_trading import (
     ActionKind,
+    BoundaryReason,
+    CompletedReferenceBar,
     ReferenceAction,
+    ReferenceBoundary,
     ReferenceState,
     reduce_reference,
 )
@@ -144,9 +147,15 @@ def test_forward_trade_requires_observed_at_before_cutoff() -> None:
         bar_end=AT, trading_day=date(2026, 9, 19), sequence=0,
         kind=ActionKind.OPEN_LONG, reference_price=Decimal("3500"),
     )
-    transition = reduce_reference(initial, actions=(action,))
+    transition = reduce_reference(
+        initial,
+        actions=(action,),
+        completed_bar=CompletedReferenceBar(
+            "RB2610", "owner-1", "calc-1", AT, date(2026, 9, 19), Decimal("3501"),
+        ),
+    )
     next_checkpoint = AdapterCheckpoint(
-        seed_replay_state(), None, None, "RB2610", "owner-1", "calc-1",
+        seed_replay_state(), AT, "observed-fingerprint", "RB2610", "owner-1", "calc-1",
         stream, transition.state,
     )
     observed_at = AT + timedelta(hours=1)
@@ -154,6 +163,7 @@ def test_forward_trade_requires_observed_at_before_cutoff() -> None:
         stream.stream_id, revision, "observed-bar", token, manifest,
         (SourceAction(action, observed_at=observed_at),), (transition,), next_checkpoint,
         "newow_product_replay_v1", {"live": "fixture"},
+        input_observed_at=observed_at,
     )
     repository.commit_batch(token, prepared)
     token, _ = repository.load_checkpoint(stream.stream_id, revision)
@@ -164,7 +174,13 @@ def test_forward_trade_requires_observed_at_before_cutoff() -> None:
     assert repository.read_trades(
         snapshot, cutoff=AT + timedelta(minutes=30), limit=20
     ).items == ()
+    assert repository.read_marks(
+        snapshot, cutoff=AT + timedelta(minutes=30), limit=20
+    ).items == ()
     assert len(repository.read_trades(
+        snapshot, cutoff=AT + timedelta(hours=2), limit=20
+    ).items) == 1
+    assert len(repository.read_marks(
         snapshot, cutoff=AT + timedelta(hours=2), limit=20
     ).items) == 1
 
@@ -252,6 +268,7 @@ def test_forward_reprojection_reuses_the_immutable_source_action() -> None:
             stream, transition.state,
         ),
         "newow_product_replay_v1", {"live": "first-projection"},
+        input_observed_at=observed_at,
     )
     repository.commit_batch(token, first_batch)
     token, _ = repository.load_checkpoint(stream.stream_id, first_revision)
@@ -279,6 +296,7 @@ def test_forward_reprojection_reuses_the_immutable_source_action() -> None:
             stream, second_transition.state,
         ),
         "newow_product_replay_v1", {"live": "second-projection"},
+        input_observed_at=observed_at,
     )
     repository.commit_batch(second_seed, second_batch)
     second_token, _ = repository.load_checkpoint(stream.stream_id, second_revision)
@@ -292,3 +310,42 @@ def test_forward_reprojection_reuses_the_immutable_source_action() -> None:
 
     assert action_count == 1
     assert [item.source_action_id for item in projected.items] == ["observed-build"]
+
+
+def test_cutoff_before_an_unsealed_boundary_keeps_the_prior_open_version() -> None:
+    repository, _factory, stream, revision, manifest, seed = _seed_repository()
+    repository.commit_batch(seed, _open_batch(stream, revision, manifest, seed))
+    token, opened = repository.load_checkpoint(stream.stream_id, revision)
+    repository.publish_revision(
+        stream.stream_id, revision, token.row_version, _digest(manifest),
+    )
+    token, opened = repository.load_checkpoint(stream.stream_id, revision)
+    boundary_at = AT + timedelta(days=1)
+    boundary = ReferenceBoundary(
+        stream=stream, reason=BoundaryReason.ROLLOVER, physical_contract="RB2610",
+        owner_segment_id="owner-1", calculation_segment_id="calc-1",
+        bar_end=boundary_at, trading_day=date(2026, 9, 20),
+    )
+    assert opened.reference_state is not None
+    interrupted = reduce_reference(opened.reference_state, boundaries=(boundary,))
+    prepared = PreparedBatch(
+        stream.stream_id, revision, "future-boundary", token, manifest, (),
+        (interrupted,),
+        AdapterCheckpoint(
+            seed_replay_state(), opened.computed_through, opened.last_fingerprint,
+            "RB2610", "owner-1", "calc-1", stream, interrupted.state,
+        ),
+        "newow_product_replay_v1", {"boundary": "rollover"},
+    )
+    committed = repository.commit_batch(token, prepared)
+    snapshot = SnapshotIdentity(stream.stream_id, revision, committed.seq)
+
+    before = repository.read_trades(
+        snapshot, cutoff=AT + timedelta(hours=1), limit=20,
+    )
+    after = repository.read_trades(
+        snapshot, cutoff=boundary_at + timedelta(minutes=1), limit=20,
+    )
+
+    assert before.items[0].status.value == "OPEN"
+    assert after.items[0].status.value == "ROLLOVER_INTERRUPTED"
