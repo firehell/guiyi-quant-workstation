@@ -28,6 +28,7 @@ from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
     CANDIDATE_RELEASE_STAGE,
     CANDIDATE_WEEKLY_PRODUCTS,
+    OPEN_WEEKLY_PRODUCTS,
     RELEASE_STAGE,
     deferred_frequency_reason,
     deferred_section_reason,
@@ -449,11 +450,14 @@ class NewowReadinessAudit:
                     case["main"] = state
                 selected_frequency = ProductFrequency(case["frequency"])
                 deferred_reason = (
-                    None
+                    "NEWOW_PRODUCT_FREQUENCY_NOT_OPEN"
                     if (
-                        request.candidate_weekly
-                        and selected_frequency is ProductFrequency.WEEKLY
-                        and case["symbol"] in CANDIDATE_WEEKLY_PRODUCTS
+                        selected_frequency is ProductFrequency.WEEKLY
+                        and case["symbol"] not in (
+                            CANDIDATE_WEEKLY_PRODUCTS
+                            if request.candidate_weekly
+                            else OPEN_WEEKLY_PRODUCTS
+                        )
                     )
                     else deferred_frequency_reason(selected_frequency)
                 ) or deferred_section_reason(section.value)

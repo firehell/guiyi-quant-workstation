@@ -233,6 +233,15 @@ test('loads the server-owned daily release capability and rejects widened or leg
     request: async () => candidate,
   }), candidate)
 
+  const formalWeekly = {
+    ...candidate,
+    schema_version: 'newow_product_capabilities_v8',
+    release_stage: 'daily_weekly',
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeekly,
+  }), formalWeekly)
+
   const hourly = {
     ...payload,
     schema_version: 'newow_product_capabilities_v7',

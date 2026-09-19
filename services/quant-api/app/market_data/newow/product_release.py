@@ -11,11 +11,11 @@ ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v3"] = (
-    "newow_product_capabilities_v3"
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v8"] = (
+    "newow_product_capabilities_v8"
 )
-RELEASE_STAGE: Literal["daily"] = "daily"
-OPEN_FREQUENCIES = (ProductFrequency.DAILY,)
+RELEASE_STAGE: Literal["daily_weekly"] = "daily_weekly"
+OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
 OPEN_SECTIONS: tuple[ProductSectionName, ...] = (
     "chart",
     "auxiliary",
@@ -23,7 +23,6 @@ OPEN_SECTIONS: tuple[ProductSectionName, ...] = (
     "comparator",
 )
 DEFERRED_FREQUENCIES = (
-    (ProductFrequency.WEEKLY, "NEWOW_WEEKLY_RELEASE_PENDING"),
     (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
 )
 DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = (
@@ -35,12 +34,13 @@ CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v4"] = 
 )
 CANDIDATE_RELEASE_STAGE: Literal["daily_weekly_candidate"] = "daily_weekly_candidate"
 CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
-CANDIDATE_WEEKLY_PRODUCTS = (
+OPEN_WEEKLY_PRODUCTS = (
     "a", "ag", "al", "ao", "ap", "au", "bu", "c", "cf", "cu", "ec", "fg",
     "fu", "hc", "i", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "p", "pb",
     "pd", "pp", "ps", "pt", "rb", "rm", "ru", "sa", "sc", "sn", "ss", "ta", "ur",
     "v", "y", "zn",
 )
+CANDIDATE_WEEKLY_PRODUCTS = OPEN_WEEKLY_PRODUCTS
 CANDIDATE_DEFERRED_FREQUENCIES = (
     (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
 )
@@ -82,6 +82,11 @@ def require_open_frequency(
 
 def require_candidate_weekly_product(product: str) -> None:
     if product not in CANDIDATE_WEEKLY_PRODUCTS:
+        raise ValueError("NEWOW_PRODUCT_FREQUENCY_NOT_OPEN")
+
+
+def require_open_weekly_product(product: str) -> None:
+    if product not in OPEN_WEEKLY_PRODUCTS:
         raise ValueError("NEWOW_PRODUCT_FREQUENCY_NOT_OPEN")
 
 

@@ -60,6 +60,25 @@ test('weekly candidate capability opens W1 only in a candidate response', async 
   assert.equal(state.isFrequencyOpen('60m'), false)
 })
 
+test('formal daily weekly capability opens W1 only for the released 41 products', async () => {
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v8',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: weeklyProducts,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'au'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'b'), false)
+  assert.deepEqual(state.openFrequenciesFor('au'), ['1d', '1w'])
+  assert.deepEqual(state.openFrequenciesFor('b'), ['1d'])
+  assert.equal(state.isFrequencyOpen('60m', 'au'), false)
+})
+
 test('AU period preview accepts its exact all-period capability', async () => {
   const payload = {
     ...daily(),
