@@ -93,3 +93,10 @@ owner 批准的 7 请求/21 目标日续行计划随后 7/7 完成，另保存 1
 source-invalid，OI/PF 九月仍为混合异常分区，因此可修复完整分区仍为 0，最终 223/240 与 17 个 D1 阻塞
 均不变。见[续行合同与结算](D1_17_DATE_CONTRACT_AND_CONTINUATION.md)和
 [最终机器结算](d1-17-source-verification-complete.json)。
+
+在来源证据闭合后，按固定截止完成了 17 品种 D1 质量分段的只读设计影响盘点。机器结果见
+[d1-quality-segmentation-impact-proposal.json](d1-quality-segmentation-impact-proposal.json)：16 个品种的最新
+owner 在候选合同下具有潜在可评价区间，RS2701 仅 3 根连续有效 D1、仍在预热。该结果仅为
+`DESIGN_IMPACT_ESTIMATE`，不改变 223/240，也不构成 Canonical 发布、页面验收、develop 集成或 Runtime
+授权。业务合同提案见
+[苏冰 D1 质量分段与重新预热提案](../../docs/tasks/subing-d1-quality-segmentation/proposal.md)。
