@@ -1,9 +1,9 @@
 # 当前状态
 
-文档整理：2026-09-19。正式 Release 为 `v1.10.16@1877bca3987374d28a07aff9a4008c1561c16e29`，
-annotated tag、origin/main 与 GitHub Release target 已读回一致；Runtime promotion 未包含在本次授权，
-本机六项服务仍绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.15-r1` 与
-`v1.10.15@bfebd7ea0e99a9af051d408173c242d14bf3e985`。
+文档整理：2026-09-19。正式 Release 与本机 Runtime 均为
+`v1.10.16@1877bca3987374d28a07aff9a4008c1561c16e29`；annotated tag、origin/main、
+GitHub Release target 与 detached Runtime root 已读回一致。本机 Runtime root 为
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.16-r1`，旧 v1.10.15 root 保留为恢复候选。
 牛哇 D1 在发布合并提交上以固定截点 `2026-09-16T07:00:00.000001+00:00` 完成
 60 品种 × 3 策略自然首次加载 180/180；W1/60m 继续关闭。v1.10.12 发布候选的
 Market Home 为 57/60；后续首页质量修复候选与受控补数验收为 60/60，BZ/EB/PG 历史源价
@@ -14,7 +14,7 @@ JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixtu
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
-## v1.10.16 Release 当前读回（Runtime 未切换）
+## v1.10.16 Release 与 Runtime 当前读回
 
 PR #379 已合入 main；annotated tag `v1.10.16` 的 tag object 为 `babd0c8ab599fc09047e4360be849af19fa18d47`，
 peeled commit、origin/main 均为 `1877bca3987374d28a07aff9a4008c1561c16e29`。非草稿、非预发布的
@@ -29,8 +29,22 @@ release/health/canonical consistency 23 passed，weekly audit/after-market/Runti
 OpenSpec 9/9、secret scan 0、Ruff 与 diff check 通过。当前 Catalog 精确只读矩阵 D1 180/180、
 W1 123/123 均 audited，无预算耗尽、未检品种、失败或预热提案。
 
-本次授权不含 Runtime promotion，未安装、切换或重启服务，未修改生产配置、Runtime 状态或行情数据。
-现役 Runtime 仍为 v1.10.15；v1.10.16 的服务身份、候选页面、本机/公网验收及下一完整周自然接续均待独立 Gate。
+2026-09-19 15:27–15:35 北京时间，owner 对 exact
+`v1.10.16@1877bca3987374d28a07aff9a4008c1561c16e29` 的 Runtime promotion 授权后，
+新 detached root 完成离线 locked 依赖安装、Web production build、23 项 release/health/canonical
+consistency 测试与 launchd render-only。Market preflight 为
+`passed / non_trading_interval / operational_count=60 / snapshot_count=0`。随后按 Market、
+API/Web/日志轮转、Alert、weekly audit 四阶段各安装一次，无安装重试或回退。
+
+最终只读回读显示 API、Web、Live、after-market、Alert 与 weekly audit 均绑定新 root 和 exact commit；
+API version=1.10.16，API/Web=200，detached checkout 干净。本机 FRPC、5173/8000 监听及本地 HTTP
+检查全部通过，`local-services-status` 为 `overall=passed`，`/api/runtime/health` 总状态为 `ok`。
+切换发生在非交易时段，Live 60 品种均 CLOSED 且新版 coverage 尚为 unverified；新 root 的
+after-market 为 pending，weekly audit 为 missed，Alert 保留切换前的独立 degraded 诊断，但均未进入
+当前总健康降级。未手工运行盘后或周审计，未补发通知，未写行情或生产业务数据。旧 v1.10.15 root
+保留为恢复候选；公网 HTTPS/Basic Auth 与腾讯云隧道端未在本机取得凭据或远端执行面，且新版自然 Live、
+自然盘后及下一次 weekly audit 仍待后续证据，因此当前完成 `RELEASED` 与 Runtime promotion，尚不声明
+`RUNTIME_READY`。
 
 ## v1.10.15 Release 与 Runtime 当前读回
 
