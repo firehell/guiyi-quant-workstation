@@ -46,14 +46,15 @@ const props = withDefaults(defineProps<{
   auxiliaryLifecycle?: import('@/types/newowProduct').NewowResourceLifecycle
   auxiliaryError?: string | null
   selectedSignalId: string | null
+  focusRequestId?: number
   loading?: boolean
   hasMoreBefore?: boolean
-}>(), { loading: false, hasMoreBefore: false })
+}>(), { loading: false, hasMoreBefore: false, focusRequestId: 0 })
 
 const emit = defineEmits<{
   loadEarlier: []
   'select-signal': [signalId: string]
-  'focus-resolved': [signalId: string]
+  'focus-resolved': [signalId: string, focusRequestId: number]
   'select-hint': [hintId: string]
   'explain-main': []
   'explain-auxiliary': []
@@ -106,6 +107,7 @@ let actionProjectionFrame: number | null = null
 let actionProjectionScheduled = false
 let programmaticRange: { from: number; to: number } | null = null
 let resolvedSignalKey: string | null = null
+let resolvedFocusRequestKey: string | null = null
 const mainLines = new Map<string, ISeriesApi<'Line'>>()
 
 onMounted(async () => {
@@ -165,8 +167,7 @@ onUnmounted(createNewowProductChartDisposer({
 
 watch(model, (value) => renderModel(value))
 watch([auxiliaryModel, auxiliaryPresentation], renderAuxiliary)
-watch(() => props.selectedSignalId, () => {
-  resolvedSignalKey = null
+watch([() => props.selectedSignalId, () => props.focusRequestId], () => {
   renderMarkers(model.value)
   resolveSelectedSignal()
   scheduleActionProjection()
@@ -196,6 +197,7 @@ function renderModel(value: NewowProductChartModel | null): void {
     positionedActions.value = []
     activeActionLabel.value = null
     resolvedSignalKey = null
+    resolvedFocusRequestKey = null
     return
   }
   const previousModel = renderedIdentity === null ? null : { identity: renderedIdentity, bars: renderedBars }
@@ -235,6 +237,7 @@ function renderModel(value: NewowProductChartModel | null): void {
   if (resetViewport || previousModel === null || renderedBars.length === 0) {
     followLatest.value = true
     resolvedSignalKey = null
+    resolvedFocusRequestKey = null
     const range = initialChartLogicalRange(value.bars.length)
     if (range === null) chart.timeScale().fitContent()
     else setRange(range)
@@ -338,7 +341,8 @@ function revealSignal(signalId: string): boolean {
   const index = value.actions.findIndex((action) => action.id === signalId)
   if (index < 0) return false
   const key = `${identityKey(value)}:${signalId}`
-  if (resolvedSignalKey === key) return true
+  const requestKey = `${key}:${props.focusRequestId}`
+  if (resolvedSignalKey === key && resolvedFocusRequestKey === requestKey) return true
   const barEnd = value.actions[index]!.barEnd
   const barIndex = value.bars.findIndex((bar) => bar.barEnd === barEnd)
   if (barIndex < 0) return false
@@ -349,7 +353,8 @@ function revealSignal(signalId: string): boolean {
   setRange({ from: barIndex - width / 2, to: barIndex + width / 2 })
   rendering = false
   resolvedSignalKey = key
-  emit('focus-resolved', signalId)
+  resolvedFocusRequestKey = requestKey
+  emit('focus-resolved', signalId, props.focusRequestId)
   return true
 }
 

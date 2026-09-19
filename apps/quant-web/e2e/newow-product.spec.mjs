@@ -426,13 +426,51 @@ test('exact locate loads an unloaded window and never falls back to nearest mark
   const referenceRequestsBefore = productRequests(fixture, 'reference').length
   await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
   await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-bi')
+  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-bi')
+  await expect(page.getByRole('button', { name: '返回原记录' })).toBeVisible()
+  await showReference(page)
+  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
+  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-bi')
   const locate = productRequests(fixture, 'chart').at(-1).url.searchParams
   expect(locate.get('from')).toBe('2026-01-05')
   expect(locate.has('performance_since')).toBe(false)
   await showReference(page)
   expect(await page.getByTestId('newow-reference-summary').innerText()).toBe(summaryBefore)
   await expect(page.locator('article[data-reference-category]')).toHaveCount(rowCountBefore)
+  await page.getByLabel('筛选参考历史').selectOption('closed')
+  await page.getByRole('button', { name: '返回原记录' }).click()
+  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('原记录不在当前筛选或已加载页')
+  await expect(page.locator('.newow-product-workspace__research')).toBeFocused()
+  expect(await page.getByTestId('newow-reference-summary').innerText()).toBe(summaryBefore)
+  await expect(page.locator('article[data-reference-category]')).toHaveCount(2)
   expect(productRequests(fixture, 'reference')).toHaveLength(referenceRequestsBefore)
+  assertNoUnexpectedRequests(fixture)
+})
+
+test('rapid reference locates accept only the current request when chart windows resolve out of order', async ({ page }) => {
+  const delayed = []
+  const fixture = await installNewowProductFixtures(page, {
+    onProductRequest: async ({ route, url, section }) => {
+      if (section !== 'chart' || !url.searchParams.has('from')) return undefined
+      delayed.push({ route, from: url.searchParams.get('from') })
+      return 'handled'
+    },
+  })
+  await page.goto(newowRoute())
+  await showReference(page)
+  await page.getByRole('button', { name: '加载更多参考历史' }).click()
+  await page.getByRole('button', { name: /定位参考记录 trend-1d-interrupted/ }).click()
+  await page.getByRole('button', { name: '定位参考记录 trend-1d-initial 的建仓信号' }).click()
+  await expect.poll(() => delayed.length).toBe(2)
+  expect(delayed.map(({ from }) => from)).toEqual(['2026-01-05', '2025-12-15'])
+
+  await delayed[1].route.fulfill({ json: buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, delayed[1].from) })
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-b0')
+  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-b0')
+
+  await delayed[0].route.fulfill({ json: buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d', false, delayed[0].from) }).catch(() => {})
+  await expect(page.getByTestId('newow-product-chart-stage')).toHaveAttribute('data-selected-signal-id', 'trend-1d-b0')
+  await expect(page.getByTestId('newow-reference-locate-status')).toContainText('已定位 建仓信号 trend-1d-b0')
   assertNoUnexpectedRequests(fixture)
 })
 
