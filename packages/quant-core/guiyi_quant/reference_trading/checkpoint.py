@@ -11,6 +11,28 @@ from .contracts import ReferenceState, ReferenceTrade, Side, StreamIdentity, Tra
 _SCHEMA = "reference_state_v1"
 
 
+def _object_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Reject duplicate JSON keys instead of accepting last-write-wins input."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("checkpoint JSON contains duplicate field")
+        result[key] = value
+    return result
+
+
+def _fields(payload: object, expected: set[str], name: str) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        raise ValueError(f"checkpoint {name} is invalid")
+    unknown = set(payload) - expected
+    missing = expected - set(payload)
+    if unknown:
+        raise ValueError(f"checkpoint {name} contains unknown fields")
+    if missing:
+        raise ValueError(f"checkpoint {name} is missing fields")
+    return payload
+
+
 def _decimal(value: object) -> Decimal:
     if not isinstance(value, str):
         raise ValueError("checkpoint Decimal must be a string")
@@ -49,8 +71,7 @@ def _day(value: object) -> date | None:
 
 
 def _stream(payload: object) -> StreamIdentity:
-    if not isinstance(payload, dict):
-        raise ValueError("checkpoint stream is invalid")
+    payload = _fields(payload, set(StreamIdentity.__dataclass_fields__), "stream")
     try:
         return StreamIdentity(
             strategy_code=payload["strategy_code"], formula_versions=tuple(payload["formula_versions"]),
@@ -66,8 +87,12 @@ def _stream(payload: object) -> StreamIdentity:
 def _trade(payload: object, stream: StreamIdentity) -> ReferenceTrade | None:
     if payload is None:
         return None
-    if not isinstance(payload, dict):
-        raise ValueError("checkpoint open_trade is invalid")
+    payload = _fields(payload, {
+        "reference_trade_id", "side", "physical_contract", "owner_segment_id",
+        "calculation_segment_id", "entry_action_id", "entry_bar_end", "entry_trading_day",
+        "entry_reference_price", "status", "holding_bars", "mark_bar_end",
+        "mark_trading_day", "mark_reference_price", "mark_return",
+    }, "open_trade")
     try:
         return ReferenceTrade(
             reference_trade_id=payload["reference_trade_id"], stream=stream, side=Side(payload["side"]),
@@ -120,11 +145,15 @@ def checkpoint_to_json(state: ReferenceState) -> str:
 
 def checkpoint_from_json(value: str) -> ReferenceState:
     try:
-        payload = json.loads(value)
+        payload = json.loads(value, object_pairs_hook=_object_pairs)
     except (TypeError, json.JSONDecodeError) as error:
         raise ValueError("checkpoint JSON is invalid") from error
     if not isinstance(payload, dict) or payload.get("schema_version") != _SCHEMA:
         raise ValueError("checkpoint schema is invalid")
+    payload = _fields(payload, {
+        "schema_version", "stream", "recording_start", "computed_through", "last_input_hash",
+        "last_event_key", "open_trade",
+    }, "state")
     stream = _stream(payload.get("stream"))
     key = payload.get("last_event_key")
     if key is not None and (not isinstance(key, list) or len(key) != 3 or type(key[1]) is not int or type(key[2]) is not int):

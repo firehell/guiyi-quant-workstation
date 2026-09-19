@@ -53,3 +53,21 @@ def test_reference_checkpoint_rejects_wrong_schema_and_nonfinite_decimal() -> No
     state = reduce_reference(ReferenceState.flat(_stream()), actions=(action,)).state
     with pytest.raises(ValueError, match="finite"):
         checkpoint_from_json(checkpoint_to_json(state).replace('"100"', '"NaN"', 1))
+
+
+def test_reference_checkpoint_rejects_unknown_and_duplicate_json_fields() -> None:
+    """A permissive decoder could silently accept a corrupted checkpoint."""
+    instant = datetime(2026, 9, 19, 15, tzinfo=UTC)
+    action = ReferenceAction(
+        stream=_stream(), source_action_id="open", physical_contract="RB2601",
+        owner_segment_id="owner", calculation_segment_id="calc", bar_end=instant,
+        trading_day=instant.date(), sequence=0, kind=ActionKind.OPEN_LONG,
+        reference_price=Decimal("100"),
+    )
+    state = reduce_reference(ReferenceState.flat(_stream()), actions=(action,)).state
+    encoded = checkpoint_to_json(state)
+
+    with pytest.raises(ValueError, match="unknown"):
+        checkpoint_from_json(encoded[:-1] + ',"unexpected":true}')
+    with pytest.raises(ValueError, match="duplicate"):
+        checkpoint_from_json(encoded[:-1] + ',"schema_version":"reference_state_v1"}')
