@@ -41,7 +41,11 @@ def _build_service(
     )
 
 
-@router.get("/{symbol}/subing/reference", response_model=SubingReferenceResponse)
+@router.get(
+    "/{symbol}/subing/reference",
+    response_model=SubingReferenceResponse,
+    response_model_exclude_unset=True,
+)
 def subing_reference(
     request: Request,
     symbol: str,

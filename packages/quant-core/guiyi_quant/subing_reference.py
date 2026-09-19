@@ -22,6 +22,7 @@ from .indicators.subing_ths import SUBING_THS_FORMULA_VERSION, SubingThs15mKerne
 
 FORMULA_VERSION = SUBING_THS_FORMULA_VERSION
 REFERENCE_MODEL_VERSION = "subing_reference_reverse_close_v1"
+REFERENCE_MODEL_VERSION_V2 = "subing_reference_reverse_close_quality_segment_v2"
 FORMULA_VERSIONS = {
     "15m": FORMULA_VERSION,
     "30m": "subing_ths_30m_v1",
@@ -49,6 +50,10 @@ class ReferenceSegment:
     owner_since: date
     owner_through: date
     interrupted_at: datetime | None = None
+    calculation_segment_id: str | None = None
+    quality_interrupted_at: datetime | None = None
+    quality_interruption_trading_day: date | None = None
+    quality_classification: Literal["PRICE_UNAVAILABLE", "NONPOSITIVE_CLOSE"] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +63,7 @@ class ReferenceSignal:
     trading_day: date
     physical_contract: str
     segment_id: str
+    calculation_segment_id: str
     direction: Literal["buy", "sell"]
     reference_price: Decimal
     action: Literal[
@@ -82,6 +88,7 @@ class ReferenceTrade:
     side: Literal["LONG", "SHORT"]
     physical_contract: str
     segment_id: str
+    calculation_segment_id: str
     entry_signal_id: str
     entry_bar_end: datetime
     entry_trading_day: date
@@ -90,13 +97,15 @@ class ReferenceTrade:
     exit_bar_end: datetime | None = None
     exit_trading_day: date | None = None
     exit_reference_price: Decimal | None = None
-    status: Literal["OPEN", "CLOSED", "ROLLOVER_INTERRUPTED"] = "OPEN"
+    status: Literal["OPEN", "CLOSED", "ROLLOVER_INTERRUPTED", "DATA_INTERRUPTED"] = "OPEN"
     holding_bars: int = 0
     reference_return_pct: Decimal | None = None
     mark_bar_end: datetime | None = None
     mark_reference_price: Decimal | None = None
     mark_change_pct: Decimal | None = None
     interrupted_at: datetime | None = None
+    interruption_reason: Literal["PRICE_UNAVAILABLE", "NONPOSITIVE_CLOSE"] | None = None
+    interruption_trading_day: date | None = None
     initial: bool = False
 
 
@@ -108,6 +117,8 @@ class ReferenceSummary:
     flat_count: int
     open_count: int
     interrupted_count: int
+    rollover_interrupted_count: int
+    data_interrupted_count: int
     initial_count: int
     win_rate_pct: Decimal | None
     mean_return_pct: Decimal | None
@@ -119,7 +130,10 @@ class ReferenceProjection:
     signals: tuple[ReferenceSignal, ...]
     trades: tuple[ReferenceTrade, ...]
     summary: ReferenceSummary
-    readiness: Literal["ready", "warming"] = "ready"
+    readiness: Literal[
+        "ready", "warming", "WARMING",
+        "INDICATOR_READY_CROSS_UNEVALUABLE", "CROSS_EVALUATED",
+    ] = "ready"
     indicators: tuple[ReferenceIndicator, ...] = ()
 
 
@@ -128,6 +142,7 @@ class ReferenceIndicator:
     bar_end: datetime
     physical_contract: str
     segment_id: str
+    calculation_segment_id: str
     dif: Decimal | None
     dea: Decimal | None
     macd: Decimal | None
@@ -178,20 +193,32 @@ def _validate(
     previous: ReferenceSegment | None = None
     identities = set()
     for segment in segments:
+        calculation_id = segment.calculation_segment_id or segment.segment_id
         if (
             not segment.physical_contract
             or not segment.segment_id
+            or not calculation_id
             or not segment.bars
             or type(segment.owner_since) is not date
             or type(segment.owner_through) is not date
             or segment.owner_since > segment.owner_through
-            or segment.segment_id in identities
+            or calculation_id in identities
         ):
             _conflict()
-        identities.add(segment.segment_id)
-        if previous is not None and previous.owner_through >= segment.owner_since:
-            _conflict()
+        identities.add(calculation_id)
         if segment.interrupted_at is not None and not _aware(segment.interrupted_at):
+            _conflict()
+        if segment.quality_interrupted_at is not None and (
+            not _aware(segment.quality_interrupted_at)
+            or segment.quality_classification not in ("PRICE_UNAVAILABLE", "NONPOSITIVE_CLOSE")
+        ):
+            _conflict()
+        if (
+            (segment.quality_interrupted_at is None)
+            != (segment.quality_classification is None)
+            or (segment.quality_interrupted_at is None)
+            != (segment.quality_interruption_trading_day is None)
+        ):
             _conflict()
         last = None
         own_seen = False
@@ -218,6 +245,11 @@ def _validate(
                     and bar.bar_end >= segment.interrupted_at
                 ):
                     _conflict()
+                if (
+                    segment.quality_interrupted_at is not None
+                    and bar.bar_end >= segment.quality_interrupted_at
+                ):
+                    _conflict()
             last = bar
         if not own_seen:
             _conflict()
@@ -225,8 +257,21 @@ def _validate(
             first_own = next(
                 b for b in segment.bars if b.trading_day >= segment.owner_since
             )
-            if (
-                previous.interrupted_at is None
+            same_owner = (
+                previous.physical_contract == segment.physical_contract
+                and previous.segment_id == segment.segment_id
+                and previous.owner_since == segment.owner_since
+            )
+            if same_owner:
+                if (
+                    previous.quality_interrupted_at is None
+                    or previous.quality_interrupted_at > first_own.bar_end
+                    or previous.bars[-1].bar_end >= segment.bars[0].bar_end
+                ):
+                    _conflict()
+            elif (
+                previous.owner_through >= segment.owner_since
+                or previous.interrupted_at is None
                 or previous.interrupted_at > first_own.bar_end
             ):
                 _conflict()
@@ -241,6 +286,7 @@ def project_reference(
     through: date,
     as_of: datetime,
     frequency: str = "15m",
+    quality_segmented: bool = False,
 ) -> ReferenceProjection:
     """Replay physical prefixes, then project each rank1 ownership independently.
 
@@ -264,7 +310,7 @@ def project_reference(
     ):
         return _project_reference(
             symbol, segments, since=since, through=through, as_of=as_of,
-            frequency=frequency,
+            frequency=frequency, quality_segmented=quality_segmented,
         )
 
 
@@ -276,6 +322,7 @@ def _project_reference(
     through: date,
     as_of: datetime,
     frequency: str,
+    quality_segmented: bool,
 ) -> ReferenceProjection:
     """Replay physical prefixes, then project each rank1 ownership independently.
 
@@ -286,28 +333,36 @@ def _project_reference(
     _validate(symbol, segments, since, through, as_of)
     if frequency not in FORMULA_VERSIONS:
         _conflict()
+    if quality_segmented and frequency != "1d":
+        _conflict()
     signals: list[ReferenceSignal] = []
     trades: list[ReferenceTrade] = []
     indicators: list[ReferenceIndicator] = []
     warming = False
+    latest_processed_count = 0
     for segment in segments:
         kernel = SubingThs15mKernel()
         state = kernel.initial_state()
         current: ReferenceTrade | None = None
         entry_index = 0
         ready_in_window = False
+        processed_count = 0
+        calculation_segment_id = segment.calculation_segment_id or segment.segment_id
         base = (
             symbol,
             segment.physical_contract,
             segment.segment_id,
             FORMULA_VERSIONS[frequency],
-            REFERENCE_MODEL_VERSION,
+            REFERENCE_MODEL_VERSION_V2 if quality_segmented else REFERENCE_MODEL_VERSION,
         )
+        if quality_segmented:
+            base += (calculation_segment_id,)
         if frequency != "15m":
             base += (frequency,)
         for index, bar in enumerate(segment.bars):
             if bar.bar_end > as_of or bar.trading_day > through:
                 break
+            processed_count += 1
             state, result = kernel.step(
                 state, float(bar.close), bar_end=bar.bar_end.isoformat()
             )
@@ -318,6 +373,7 @@ def _project_reference(
             if segment.owner_since <= bar.trading_day <= segment.owner_through and since <= bar.trading_day <= through:
                 indicators.append(ReferenceIndicator(
                     bar.bar_end, segment.physical_contract, segment.segment_id,
+                    calculation_segment_id,
                     Decimal(str(result.dif)) if result.dif is not None else None,
                     Decimal(str(result.dea)) if result.dea is not None else None,
                     Decimal(str(result.macd)) if result.macd is not None else None,
@@ -380,6 +436,7 @@ def _project_reference(
                         side=side,
                         physical_contract=segment.physical_contract,
                         segment_id=segment.segment_id,
+                        calculation_segment_id=calculation_segment_id,
                         entry_signal_id=signal_id,
                         entry_bar_end=bar.bar_end,
                         entry_trading_day=bar.trading_day,
@@ -398,6 +455,7 @@ def _project_reference(
                             bar.trading_day,
                             segment.physical_contract,
                             segment.segment_id,
+                            calculation_segment_id,
                             direction,
                             bar.close,
                             action,
@@ -411,9 +469,25 @@ def _project_reference(
                         )
                     )
         if current is not None:
+            quality_interruption = segment.quality_interrupted_at
             interruption = segment.interrupted_at
             # Future ownership metadata must not change a historical prefix.
             if (
+                quality_segmented
+                and quality_interruption is not None
+                and quality_interruption <= as_of
+            ):
+                current = replace(
+                    current,
+                    status="DATA_INTERRUPTED",
+                    interrupted_at=quality_interruption,
+                    interruption_reason=segment.quality_classification,
+                    interruption_trading_day=segment.quality_interruption_trading_day,
+                    mark_bar_end=None,
+                    mark_reference_price=None,
+                    mark_change_pct=None,
+                )
+            elif (
                 interruption is not None
                 and interruption <= as_of
                 and segment.owner_through < through
@@ -429,13 +503,28 @@ def _project_reference(
             trades.append(current)
         if not ready_in_window:
             warming = True
-    owner_ends = {segment.segment_id: segment.owner_through for segment in segments}
+        latest_processed_count = processed_count
+    owner_ends = {
+        (segment.calculation_segment_id or segment.segment_id): segment.owner_through
+        for segment in segments
+    }
     selected = tuple(
         t
         for t in trades
         if t.entry_trading_day <= through
         and (t.exit_trading_day is None or t.exit_trading_day >= since)
-        and (t.status != "ROLLOVER_INTERRUPTED" or owner_ends[t.segment_id] >= since)
+        and (
+            t.status not in ("ROLLOVER_INTERRUPTED", "DATA_INTERRUPTED")
+            or (
+                t.status == "DATA_INTERRUPTED"
+                and t.interruption_trading_day is not None
+                and t.interruption_trading_day >= since
+            )
+            or (
+                t.status == "ROLLOVER_INTERRUPTED"
+                and owner_ends[t.calculation_segment_id] >= since
+            )
+        )
     )
     regular = tuple(t for t in selected if not t.initial)
     returns = tuple(
@@ -451,10 +540,25 @@ def _project_reference(
         sum(r < 0 for r in returns),
         sum(r == 0 for r in returns),
         sum(t.status == "OPEN" for t in regular),
+        sum(t.status in ("ROLLOVER_INTERRUPTED", "DATA_INTERRUPTED") for t in regular),
         sum(t.status == "ROLLOVER_INTERRUPTED" for t in regular),
+        sum(t.status == "DATA_INTERRUPTED" for t in regular),
         sum(t.initial for t in selected),
         Decimal(wins) / len(returns) * 100 if returns else None,
         total / len(returns) if returns else None,
         total,
     )
-    return ReferenceProjection(tuple(signals), selected, summary, "warming" if warming else "ready", tuple(indicators))
+    readiness = "warming" if warming else "ready"
+    if quality_segmented:
+        readiness = (
+            "WARMING" if (
+                latest_processed_count < 34
+                or (
+                    segments[-1].quality_interrupted_at is not None
+                    and segments[-1].quality_interrupted_at <= as_of
+                )
+            )
+            else "INDICATOR_READY_CROSS_UNEVALUABLE" if latest_processed_count == 34
+            else "CROSS_EVALUATED"
+        )
+    return ReferenceProjection(tuple(signals), selected, summary, readiness, tuple(indicators))

@@ -100,6 +100,7 @@ export interface BarData {
   time: string
   trading_day?: string
   physicalContract?: string
+  calculationSegmentId?: string
   open: number
   high: number
   low: number

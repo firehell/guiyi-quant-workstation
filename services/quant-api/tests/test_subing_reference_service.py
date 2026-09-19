@@ -16,6 +16,7 @@ from app.market_data.subing_reference import (
     SubingReferenceService,
 )
 from app.market_data.market_data_service import MarketDataError
+from app.market_data.source_quality import NonpositiveCloseFact
 
 
 class Market:
@@ -152,7 +153,7 @@ def test_defaults_twenty_complete_days_and_explicit_identity(case):
     assert market.requests[-1].since == market.days[0]
 
 
-@pytest.mark.parametrize("frequency", ("30m", "60m", "1d"))
+@pytest.mark.parametrize("frequency", ("30m", "60m"))
 def test_new_frequency_uses_same_physical_replay_with_separate_identity(frequency):
     market = FrequencyMarket()
     service = SubingReferenceService(
@@ -164,6 +165,94 @@ def test_new_frequency_uses_same_physical_replay_with_separate_identity(frequenc
     assert result["formula_version"] == f"subing_ths_{frequency}_v1"
     assert result["signals"] and result["items"]
     assert all(request.frequency.value == frequency for request in market.requests)
+
+
+class DailyQualityMarket(Market):
+    def __init__(self):
+        super().__init__()
+        self.days = tuple(date(2026, 5, 1) + timedelta(days=n) for n in range(50))
+        self.owner = ResolvedContractSegment("RB2610", self.days[0], self.days[-1])
+        self.break_day = self.days[10]
+        self.bars = tuple(
+            CanonicalBar(
+                datetime.combine(day, time(6), UTC), day,
+                Decimal(100), Decimal(101), Decimal(99), Decimal(100),
+                Decimal(1), Decimal(100), Decimal(20),
+            )
+            for day in self.days if day != self.break_day
+        )
+        self.physical = self.bars
+        self.break_fact = NonpositiveCloseFact(
+            datetime.combine(self.break_day, time(6), UTC), self.break_day,
+            Decimal(0), Decimal(0), Decimal(0), Decimal(0), Decimal(0),
+            Decimal(0), Decimal(0), "c" * 64, "d" * 64,
+            datetime(2026, 9, 19, tzinfo=UTC),
+        )
+
+    def query_contract_replay_quality_union(self, **kwargs):
+        through = kwargs["through"]
+        return (
+            tuple(bar for bar in self.bars if bar.trading_day <= through),
+            tuple(fact for fact in (self.break_fact,) if fact.trading_day <= through),
+        )
+
+
+def test_daily_quality_segments_rewarm_and_keep_prefix_stable_identity():
+    market = DailyQualityMarket()
+    coverage = Coverage()
+    coverage.product_start = lambda _symbol: market.days[0]
+    service = SubingReferenceService(
+        market, coverage=coverage, active_products={"rb"},
+        now=lambda: datetime(2026, 6, 20, 7, tzinfo=UTC),
+    )
+    short = service.query(SubingReferenceQuery(
+        "rb", frequency="1d", since=market.days[0], through=market.days[44],
+    ))
+    full = service.query(SubingReferenceQuery(
+        "rb", frequency="1d", since=market.days[0], through=market.days[-1],
+    ))
+
+    assert short["reference_model_version"] == "subing_reference_reverse_close_quality_segment_v2"
+    assert short["quality_policy_version"] == "subing-d1-quality-segment-v1"
+    assert [item["classification"] for item in short["quality_interruptions"]] == [
+        "NONPOSITIVE_CLOSE"
+    ]
+    short_ids = {item["calculation_segment_id"] for item in short["indicators"]}
+    full_prefix_ids = {
+        item["calculation_segment_id"]
+        for item in full["indicators"]
+        if item["bar_end"] <= short["reference_cutoff"]
+    }
+    assert short_ids == full_prefix_ids
+    assert len(short_ids) == 2
+    assert short["research_status"] == "INDICATOR_READY_CROSS_UNEVALUABLE"
+    assert full["research_status"] == "CROSS_EVALUATED"
+
+
+def test_daily_quality_break_at_cutoff_is_warming_not_no_trade():
+    market = DailyQualityMarket()
+    market.break_day = market.days[-1]
+    market.bars = tuple(
+        bar for bar in market.bars if bar.trading_day != market.break_day
+    )
+    market.break_fact = replace(
+        market.break_fact,
+        bar_end=datetime.combine(market.break_day, time(6), UTC),
+        trading_day=market.break_day,
+    )
+    coverage = Coverage()
+    coverage.product_start = lambda _symbol: market.days[0]
+    service = SubingReferenceService(
+        market, coverage=coverage, active_products={"rb"},
+        now=lambda: datetime(2026, 6, 20, 7, tzinfo=UTC),
+    )
+
+    result = service.query(SubingReferenceQuery(
+        "rb", frequency="1d", since=market.days[0], through=market.days[-1],
+    ))
+
+    assert result["research_status"] == "WARMING"
+    assert result["coverage_intervals"][-1]["status"] == "NONPOSITIVE_CLOSE"
 
 
 def test_paging_keeps_summary_signals_and_snapshot_stable(case):

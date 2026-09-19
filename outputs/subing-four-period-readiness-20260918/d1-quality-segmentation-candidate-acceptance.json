@@ -1,0 +1,36 @@
+{
+  "schema": "subing-d1-quality-candidate-acceptance-v1",
+  "status": "ISOLATED_FIXTURE_ACCEPTANCE",
+  "fixed_cutoff": "2026-09-18T18:30:00+08:00",
+  "production": {
+    "ready": 223,
+    "total": 240,
+    "blocked_d1": 17,
+    "mutations": 0,
+    "provider_requests": 0
+  },
+  "candidate": {
+    "market_fact_union": "PASS",
+    "strict_reader_regression": "PASS",
+    "d1_rewarm_states": {
+      "1-33": "WARMING",
+      "34": "INDICATOR_READY_CROSS_UNEVALUABLE",
+      "35+": "CROSS_EVALUATED"
+    },
+    "reference_v2_data_interrupted": "PASS",
+    "prefix_identity": "PASS",
+    "rs_expected_status": "WARMING",
+    "oi_pf_mixed_union_fixture": "PASS",
+    "quality_chart_union_path": "PASS",
+    "oi_pf_create_targets": [
+      "oi/OI2609/2026-09",
+      "pf/PF2609/2026-09"
+    ]
+  },
+  "limitations": [
+    "No production Canonical or Catalog publication was authorized or executed.",
+    "The 240-combination production API and browser matrix remains 223/240 until an exact production apply and same-cutoff readback.",
+    "This receipt is fixture and pure-plan evidence, not natural first-load evidence."
+  ],
+  "plan_sha256": "5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c"
+}

@@ -522,3 +522,29 @@ OPEN 只用本合约已完成 Bar 标记浮动；中断记录不生成退出价�
 
 - **WHEN** 历史参考查询失败而 Event API 有已保存预警
 - **THEN** 历史面明确显示不可用，日期仍可编辑；实际预警入口保留，不伪造历史参考或 Event
+
+### Requirement: D1 quality segments are versioned and re-warm independently
+
+仅 D1 历史参考 SHALL 通过显式 opt-in MarketDataService seam 消费
+`ValidCanonicalBar | PRICE_UNAVAILABLE | NONPOSITIVE_CLOSE` 的完整端点互斥集合，并使用
+`subing_reference_reverse_close_quality_segment_v2`。未知缺口、重复端点、Session/Map/owner/identity 冲突
+或未知分类 MUST 整体 fail closed。全零价格属于 `NONPOSITIVE_CLOSE`，不得推导为 `NO_TRADE`。
+
+owner segment 身份 SHALL 绑定物理合约与权威 owner 起点；calculation segment 身份 SHALL 绑定 1d、品种、
+物理合约、owner 起点、质量策略版本、前置不可变 break 身份及首根有效 Bar。owner 终点、未来追加映射和
+全局变化 revision MUST NOT 改写已有前缀身份。break 后不得继承指标、previous CROSS 状态或未平参考。
+
+第 1–33 根有效 Bar SHALL 为 `WARMING`，第 34 根为
+`INDICATOR_READY_CROSS_UNEVALUABLE`，第 35 根起为 `CROSS_EVALUATED`。质量 break 处未平交易 SHALL
+成为 `DATA_INTERRUPTED`，且无退出信号、退出价、收益或当前浮动；统计须与 `ROLLOVER_INTERRUPTED` 分列。
+15m/30m/60m、正式 15m Rule/Event/Scope/通知/Runtime 继续使用既有合同。
+
+#### Scenario: A proven quality break follows an open D1 reference
+
+- **WHEN** 当前 D1 calculation segment 有未平参考，随后出现已证实的质量 break
+- **THEN** 该参考成为 DATA_INTERRUPTED 且清空退出和当前浮动字段；下一有效 Bar 从全新状态重新预热
+
+#### Scenario: Future mapping data is appended
+
+- **WHEN** 同一历史前缀之后追加 owner 终点、后续 owner 或有效 Bar
+- **THEN** 已完成 owner/calculation segment、信号和交易身份保持不变

@@ -72,7 +72,7 @@ HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m
 
 苏冰持久 Event 使用 `exact` identity：同一 Rule、symbol、frequency、bar_end 的事实完全一致才幂等，冲突 fail-closed。正式预警 Web 和通知只消费 Event，不复制公式；Event-backed `S↑/S↓` 不拥有 Overlay 或订单语义。
 
-苏冰历史参考复用同一公式 Kernel，从 Canonical 同物理合约生命周期预热，仅在 rank1 有效区间生成历史参考信号；15m 沿用 `subing_ths_15m_v3`，30m/60m/1d 使用各自版本身份、仅供历史研究，不扩正式 15m Alert Rule。它不创建或补发 AlertEvent。参考模型 `subing_reference_reverse_close_v1` 使用已完成信号 Bar 收盘价，多空双向反手、同向不加仓、零费用和零滑点，独立展示已平、未平、换月中断及期初已有交易。页面明确标注“历史重算·乐观参考”，不是牛哇公式一致性、因果回测或账户收益；`executable=false`、`auto_order=false`。收益统计按显式交易日窗口固定，简单相加以百分点展示，不随缩放或分页变化。
+苏冰历史参考复用同一公式 Kernel，从 Canonical 同物理合约生命周期预热，仅在 rank1 有效区间生成历史参考信号；15m 沿用 `subing_ths_15m_v3`，30m/60m/1d 使用各自版本身份、仅供历史研究，不扩正式 15m Alert Rule。它不创建或补发 AlertEvent。15m/30m/60m 参考模型保持 `subing_reference_reverse_close_v1`；D1 候选合同使用 `subing_reference_reverse_close_quality_segment_v2`，只接受 Market Fact 权威的有效 Bar 与 typed quality break，每个 break 后重新预热，质量中断单列为 `DATA_INTERRUPTED`，不制造退出价、收益或当前浮动。第 1–33 根有效日线为预热，第 34 根指标已就绪但不可评价 exact CROSS，第 35 根起才可评价。公式仍为 `subing_ths_1d_v1`。页面明确标注“历史重算·乐观参考”，不是牛哇公式一致性、因果回测或账户收益；`executable=false`、`auto_order=false`。收益统计按显式交易日窗口固定，简单相加以百分点展示，不随缩放或分页变化。
 
 Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。通用 Scope 写入拒绝 disabled Rule；首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
 

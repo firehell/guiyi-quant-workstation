@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from hashlib import sha256
@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from guiyi_quant.subing_reference import (
     FORMULA_VERSIONS,
     REFERENCE_MODEL_VERSION,
+    REFERENCE_MODEL_VERSION_V2,
     ReferenceBar,
     ReferenceSegment,
     ReferenceProjectionError,
@@ -28,8 +29,10 @@ from app.market_data.domain import (
     MarketSeriesResult,
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
+from app.market_data.source_quality import SourceQualityFact
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+D1_QUALITY_POLICY_VERSION = "subing-d1-quality-segment-v1"
 
 
 class SubingReferenceError(ValueError):
@@ -80,12 +83,15 @@ class SubingReferenceService:
         since, through, cutoff = self._window(query, as_of)
         frequency = BarFrequency(query.frequency)
         self.check_cancelled()
-        segments, inputs = self._inputs(query.symbol, since, through, cutoff, frequency)
+        segments, inputs, quality = self._inputs(
+            query.symbol, since, through, cutoff, frequency,
+        )
         self.check_cancelled()
         try:
             projection = project_reference(
                 query.symbol, segments, since=since, through=through, as_of=cutoff,
                 frequency=query.frequency,
+                quality_segmented=frequency is BarFrequency.D1,
             )
         except ReferenceProjectionError as exc:
             raise SubingReferenceError("SUBING_REFERENCE_DATA_CONFLICT") from exc
@@ -95,7 +101,10 @@ class SubingReferenceService:
                 "symbol": query.symbol,
                 "frequency": query.frequency,
                 "formula_version": FORMULA_VERSIONS[query.frequency],
-                "reference_model_version": REFERENCE_MODEL_VERSION,
+                "reference_model_version": (
+                    REFERENCE_MODEL_VERSION_V2
+                    if frequency is BarFrequency.D1 else REFERENCE_MODEL_VERSION
+                ),
                 "since": since,
                 "through": through,
                 "cutoff": cutoff,
@@ -128,13 +137,28 @@ class SubingReferenceService:
             if items and offset + len(items) < len(trades)
             else None
         )
+        summary = asdict(projection.summary)
+        signals = [asdict(item) for item in projection.signals]
+        indicators = [asdict(item) for item in projection.indicators]
+        wire_items = [asdict(item) for item in items]
+        if frequency is not BarFrequency.D1:
+            summary.pop("rollover_interrupted_count")
+            summary.pop("data_interrupted_count")
+            for item in (*signals, *indicators, *wire_items):
+                item.pop("calculation_segment_id")
+            for item in wire_items:
+                item.pop("interruption_reason")
+                item.pop("interruption_trading_day")
         return _wire(
             {
                 "symbol": query.symbol,
                 "frequency": query.frequency,
                 "series_kind": "actual_dominant",
                 "formula_version": FORMULA_VERSIONS[query.frequency],
-                "reference_model_version": REFERENCE_MODEL_VERSION,
+                "reference_model_version": (
+                    REFERENCE_MODEL_VERSION_V2
+                    if frequency is BarFrequency.D1 else REFERENCE_MODEL_VERSION
+                ),
                 "as_of": as_of,
                 "performance_since": since,
                 "performance_through": through,
@@ -144,11 +168,12 @@ class SubingReferenceService:
                 "auto_order": False,
                 "source": "historical_replay",
                 "research_status": projection.readiness,
-                "summary": asdict(projection.summary),
-                "signals": [asdict(item) for item in projection.signals],
-                "indicators": [asdict(item) for item in projection.indicators],
-                "items": [asdict(item) for item in items],
+                "summary": summary,
+                "signals": signals,
+                "indicators": indicators,
+                "items": wire_items,
                 "next_before": next_before,
+                **quality,
             }
         )
 
@@ -237,7 +262,11 @@ class SubingReferenceService:
     def _inputs(
         self, symbol: str, since: date, through: date, cutoff: datetime,
         frequency: BarFrequency,
-    ) -> tuple[tuple[ReferenceSegment, ...], list[dict[str, Any]]]:
+    ) -> tuple[
+        tuple[ReferenceSegment, ...], list[dict[str, Any]], dict[str, Any]
+    ]:
+        if frequency is BarFrequency.D1:
+            return self._daily_quality_inputs(symbol, since, through, cutoff)
         try:
             loaded = ActualDominantResearchSegmentLoader(self.market_data).load(
                 symbol=symbol,
@@ -370,7 +399,222 @@ class SubingReferenceService:
             )
         if actual.bars[-1].trading_day != through or actual.bars[-1].bar_end != cutoff:
             raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
-        return tuple(result), inputs
+        return tuple(result), inputs, {}
+
+    def _daily_quality_inputs(
+        self, symbol: str, since: date, through: date, cutoff: datetime,
+    ) -> tuple[
+        tuple[ReferenceSegment, ...], list[dict[str, Any]], dict[str, Any]
+    ]:
+        try:
+            owners = self.market_data.actual_dominant_segments(symbol, since, through)
+        except MarketDataError as exc:
+            self._raise_data_unavailable(exc, "actual_dominant_replay", symbol, BarFrequency.D1)
+        if not owners or owners[0].start_trading_day > since or owners[-1].end_trading_day < through:
+            raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
+        result: list[ReferenceSegment] = []
+        inputs: list[dict[str, Any]] = []
+        interruptions: list[dict[str, Any]] = []
+        coverage_events: list[dict[str, Any]] = []
+        chart_bars: list[dict[str, Any]] = []
+        for owner_index, owner in enumerate(owners):
+            self.check_cancelled()
+            own_through = min(owner.end_trading_day, through)
+            if own_through < since:
+                continue
+            end = max(
+                window.end for window in self._session_windows(symbol, own_through)
+            )
+            if end > cutoff:
+                raise SubingReferenceError("SUBING_REFERENCE_DATA_CONFLICT")
+            try:
+                bars, facts = self.market_data.query_contract_replay_quality_union(
+                    symbol=symbol, contract=owner.contract,
+                    through=own_through, cutoff=end,
+                )
+            except MarketDataError as exc:
+                self._raise_data_unavailable(
+                    exc, "physical_contract_replay", symbol, BarFrequency.D1,
+                )
+            ordered: list[tuple[datetime, ReferenceBar | SourceQualityFact]] = [
+                (bar.bar_end, ReferenceBar(bar.bar_end, bar.trading_day, bar.close))
+                for bar in bars
+            ] + [(fact.bar_end, fact) for fact in facts]
+            ordered.sort(key=lambda item: item[0])
+            if not ordered or len({item[0] for item in ordered}) != len(ordered):
+                raise SubingReferenceError("SUBING_REFERENCE_DATA_CONFLICT")
+            owned = [
+                item for _, item in ordered
+                if owner.start_trading_day <= item.trading_day <= own_through
+            ]
+            if not owned or owned[-1].trading_day != own_through:
+                raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
+            owner_segment_id = _hash([
+                "subing-owner-segment-v1", symbol, owner.contract,
+                owner.start_trading_day,
+            ])
+            first_end, first_item = ordered[0]
+            boundary: list[object] = [
+                "LIFECYCLE_START", first_end, first_item.trading_day,
+            ]
+            current: list[ReferenceBar] = []
+            owner_segments: list[ReferenceSegment] = []
+
+            def append_segment(
+                quality_fact: SourceQualityFact | None = None,
+            ) -> None:
+                nonlocal current
+                if not current or not any(
+                    owner.start_trading_day <= bar.trading_day <= own_through
+                    for bar in current
+                ):
+                    current = []
+                    return
+                calculation_id = _hash([
+                    "subing-d1-calculation-segment-v1",
+                    D1_QUALITY_POLICY_VERSION,
+                    symbol,
+                    BarFrequency.D1.value,
+                    owner.contract,
+                    owner.start_trading_day,
+                    boundary,
+                    current[0].bar_end,
+                ])
+                owner_segments.append(ReferenceSegment(
+                    physical_contract=owner.contract,
+                    segment_id=owner_segment_id,
+                    bars=tuple(current),
+                    owner_since=owner.start_trading_day,
+                    owner_through=own_through,
+                    calculation_segment_id=calculation_id,
+                    quality_interrupted_at=(
+                        quality_fact.bar_end if quality_fact is not None else None
+                    ),
+                    quality_interruption_trading_day=(
+                        quality_fact.trading_day if quality_fact is not None else None
+                    ),
+                    quality_classification=(
+                        quality_fact.classification if quality_fact is not None else None
+                    ),
+                ))
+                current = []
+
+            for _, item in ordered:
+                if isinstance(item, ReferenceBar):
+                    current.append(item)
+                    continue
+                append_segment(item)
+                interruptions.append({
+                    "bar_end": item.bar_end,
+                    "trading_day": item.trading_day,
+                    "physical_contract": owner.contract,
+                    "segment_id": owner_segment_id,
+                    "classification": item.classification,
+                    "classification_version": item.classification_version,
+                    "request_sha256": item.request_sha256,
+                    "response_sha256": item.response_sha256,
+                })
+                boundary = [
+                    item.classification,
+                    item.classification_version,
+                    item.bar_end,
+                    item.response_sha256,
+                ]
+                if since <= item.trading_day <= through and (
+                    owner.start_trading_day <= item.trading_day <= own_through
+                ):
+                    coverage_events.append({
+                        "since": item.trading_day,
+                        "through": item.trading_day,
+                        "status": item.classification,
+                        "physical_contract": owner.contract,
+                        "segment_id": owner_segment_id,
+                        "calculation_segment_id": None,
+                    })
+            append_segment()
+            if not owner_segments:
+                raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
+            if owner_index + 1 < len(owners):
+                next_owner = owners[owner_index + 1]
+                rollover_at = min(
+                    window.start for window in self._session_windows(
+                        symbol, next_owner.start_trading_day,
+                    )
+                )
+                owner_segments[-1] = replace(
+                    owner_segments[-1], interrupted_at=rollover_at,
+                )
+            for segment in owner_segments:
+                ordinal = 0
+                canonical_by_end = {bar.bar_end: bar for bar in bars}
+                for bar in segment.bars:
+                    ordinal += 1
+                    if not (
+                        owner.start_trading_day <= bar.trading_day <= own_through
+                        and since <= bar.trading_day <= through
+                    ):
+                        continue
+                    status = (
+                        "WARMING" if ordinal < 34
+                        else "INDICATOR_READY_CROSS_UNEVALUABLE" if ordinal == 34
+                        else "CROSS_EVALUATED"
+                    )
+                    coverage_events.append({
+                        "since": bar.trading_day,
+                        "through": bar.trading_day,
+                        "status": status,
+                        "physical_contract": owner.contract,
+                        "segment_id": owner_segment_id,
+                        "calculation_segment_id": segment.calculation_segment_id,
+                    })
+                    canonical = canonical_by_end[bar.bar_end]
+                    chart_bars.append({
+                        **canonical.as_record(),
+                        "physical_contract": owner.contract,
+                        "segment_id": owner_segment_id,
+                        "calculation_segment_id": segment.calculation_segment_id,
+                    })
+            result.extend(owner_segments)
+            inputs.append({
+                "contract": owner.contract,
+                "segment_id": owner_segment_id,
+                "owner_since": owner.start_trading_day,
+                "owner_through": own_through,
+                "calculation_segments": [
+                    {
+                        "calculation_segment_id": item.calculation_segment_id,
+                        "quality_interrupted_at": item.quality_interrupted_at,
+                        "quality_classification": item.quality_classification,
+                        "bars": [asdict(bar) for bar in item.bars],
+                    }
+                    for item in owner_segments
+                ],
+                "quality_facts": [
+                    item.to_record() for item in facts
+                ],
+            })
+        coverage_events.sort(key=lambda item: (item["since"], item["status"]))
+        intervals: list[dict[str, Any]] = []
+        for event in coverage_events:
+            identity = (
+                event["status"], event["physical_contract"], event["segment_id"],
+                event["calculation_segment_id"],
+            )
+            if intervals and (
+                intervals[-1]["status"],
+                intervals[-1]["physical_contract"],
+                intervals[-1]["segment_id"],
+                intervals[-1]["calculation_segment_id"],
+            ) == identity:
+                intervals[-1]["through"] = event["through"]
+            else:
+                intervals.append(dict(event))
+        return tuple(result), inputs, {
+            "quality_policy_version": D1_QUALITY_POLICY_VERSION,
+            "coverage_intervals": intervals,
+            "quality_interruptions": interruptions,
+            "quality_chart_bars": sorted(chart_bars, key=lambda item: item["bar_end"]),
+        }
 
     def _session_windows(self, symbol: str, trading_day: date):
         try:

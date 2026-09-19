@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { KlineReferenceCallout, KlineReferenceSelection } from '@/types/referenceCallout'
+import type { KlineQualityBreak, KlineReferenceCallout, KlineReferenceSelection } from '@/types/referenceCallout'
 import { computed } from 'vue'
 
 import MarketKlineStage from '@/components/market/detail/MarketKlineStage.vue'
@@ -13,6 +13,7 @@ const props = defineProps<{
   referenceCallouts?: KlineReferenceCallout[]
   referenceIndicators?: SubingReferenceIndicator[]
   referenceSelection?: KlineReferenceSelection[]
+  qualityBreaks?: KlineQualityBreak[]
   focusRequestId?: number
   identityKey: string; focusBarEnd?: string | null; markers: readonly KlineMarker[]; visibleMainIndicators: MainIndicatorId[]
 }>()
@@ -25,7 +26,7 @@ const subingMarkers = computed(() => markersForDetailView('subing', props.marker
     :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="period" :series-kind="seriesKind"
     :visible-main-indicators="visibleMainIndicators" range-detector-source-identity="" :range-detector-anchor-time="null"
     :reference-callouts="referenceCallouts" :reference-selection="referenceSelection" :focus-request-id="focusRequestId" :marker-selection-enabled="false"
-    :reference-indicators="referenceIndicators"
+    :reference-indicators="referenceIndicators" :quality-breaks="qualityBreaks"
     :identity-key="identityKey" :focus-bar-end="focusBarEnd" :markers="subingMarkers"
     @load-earlier="emit('load-earlier')" @focus-resolved="emit('focus-resolved', $event)"
   />

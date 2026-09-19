@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import type { KlineReferenceCallout, KlineReferenceSelection } from '@/types/referenceCallout'
+import type { KlineQualityBreak, KlineReferenceCallout, KlineReferenceIndicator, KlineReferenceSelection } from '@/types/referenceCallout'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import MarketDetailIcon from '@/components/market/detail/MarketDetailIcon.vue'
 import type { BarData, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/market'
-import type { SubingReferenceIndicator } from '@/types/subingReference'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 
 const props = withDefaults(defineProps<{
@@ -23,8 +22,9 @@ const props = withDefaults(defineProps<{
   markers?: KlineMarker[]
   markerSelectionEnabled?: boolean
   referenceCallouts?: KlineReferenceCallout[]
-  referenceIndicators?: SubingReferenceIndicator[]
+  referenceIndicators?: KlineReferenceIndicator[]
   referenceSelection?: KlineReferenceSelection[]
+  qualityBreaks?: KlineQualityBreak[]
   focusRequestId?: number
 }>(), { markers: () => [], markerSelectionEnabled: true })
 
@@ -111,6 +111,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :reference-callouts="referenceCallouts"
       :reference-indicators="referenceIndicators"
       :reference-selection="referenceSelection"
+      :quality-breaks="qualityBreaks"
       @need-more-before="emit('loadEarlier')"
       @follow-latest-change="followLatest = $event"
       @marker-select="emit('marker-select', $event)"

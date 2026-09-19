@@ -58,7 +58,7 @@ from app.market_data.session_clock import (
     session_windows_for_trading_day,
 )
 from app.market_data.storage import CanonicalMonthlyStore, StorageError
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import PriceUnavailableFact, SourceQualityFact
 from app.market_data.weekly_quality import (
     WeeklySourceInterruption,
     classify_weekly_source,
@@ -172,7 +172,18 @@ class MarketDataService:
     def read_physical_daily_quality(
         self, request: SeriesQuery, *, require_window_coverage: bool = True,
     ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...]]:
-        """Read exactly the Catalog-selected physical D1 facts and date exceptions."""
+        """Existing quality seam: accept only the original PRICE_UNAVAILABLE type."""
+        bars, facts = self.read_physical_daily_quality_union(
+            request, require_window_coverage=require_window_coverage,
+        )
+        if any(not isinstance(item, PriceUnavailableFact) for item in facts):
+            raise MarketDataError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+        return bars, tuple(item for item in facts if isinstance(item, PriceUnavailableFact))
+
+    def read_physical_daily_quality_union(
+        self, request: SeriesQuery, *, require_window_coverage: bool = True,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]:
+        """Opt-in D1 seam returning the approved typed source-quality union."""
         if request.frequency is not BarFrequency.D1 or request.series_kind is SeriesKind.ACTUAL_DOMINANT:
             raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
         key = request.physical_key
@@ -190,7 +201,7 @@ class MarketDataService:
         ):
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
         bars: list[CanonicalBar] = []
-        exceptions: list[PriceUnavailableFact] = []
+        exceptions: list[SourceQualityFact] = []
         try:
             for partition in partitions:
                 valid, unavailable = self.store.read_catalog_partition_quality(partition)
@@ -681,7 +692,26 @@ class MarketDataService:
     def query_contract_replay_quality(
         self, *, symbol: str, contract: str, through: date, cutoff: datetime,
     ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...]]:
-        """Validate the whole D1 physical lifecycle as Bars plus exact source gaps."""
+        """Existing replay seam; new quality classifications remain unsupported."""
+        bars, facts = self._query_contract_replay_quality_union(
+            symbol=symbol, contract=contract, through=through, cutoff=cutoff,
+            union=False,
+        )
+        return bars, tuple(item for item in facts if isinstance(item, PriceUnavailableFact))
+
+    def query_contract_replay_quality_union(
+        self, *, symbol: str, contract: str, through: date, cutoff: datetime,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]:
+        """SuBing D1 opt-in replay over ValidBar or a proved typed break."""
+        return self._query_contract_replay_quality_union(
+            symbol=symbol, contract=contract, through=through, cutoff=cutoff,
+            union=True,
+        )
+
+    def _query_contract_replay_quality_union(
+        self, *, symbol: str, contract: str, through: date, cutoff: datetime,
+        union: bool,
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]:
         try:
             fact = self.catalog.contract_fact(symbol, contract)
         except CatalogError as exc:
@@ -693,7 +723,11 @@ class MarketDataService:
         )
         if cutoff > end or cutoff.tzinfo is None or cutoff.utcoffset() is None:
             raise MarketDataError("CONTRACT_REPLAY_CUTOFF_INVALID")
-        bars, exceptions = self.read_physical_daily_quality(SeriesQuery(
+        reader = (
+            self.read_physical_daily_quality_union
+            if union else self.read_physical_daily_quality
+        )
+        bars, exceptions = reader(SeriesQuery(
             SeriesKind.CONTRACT, symbol, BarFrequency.D1,
             start, end, contract=contract,
         ), require_window_coverage=False)

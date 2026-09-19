@@ -15,9 +15,10 @@ import {
   type TickMarkType,
   type Time,
   type UTCTimestamp,
+  type SingleValueData,
+  type WhitespaceData,
 } from 'lightweight-charts'
-import type { KlineReferenceCallout, KlineReferenceSelection } from '@/types/referenceCallout'
-import type { SubingReferenceIndicator } from '@/types/subingReference'
+import type { KlineQualityBreak, KlineReferenceCallout, KlineReferenceIndicator, KlineReferenceSelection } from '@/types/referenceCallout'
 import { layoutReferenceCallouts, matchesReferenceBar, REFERENCE_CALLOUT_BOX, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import KlineHoverLegend from '@/components/kline/KlineHoverLegend.vue'
 import type {
@@ -56,8 +57,9 @@ const props = withDefaults(defineProps<{
   researchMarkers?: KlineMarker[]
   markerSelectionEnabled?: boolean
   referenceCallouts?: KlineReferenceCallout[]
-  referenceIndicators?: SubingReferenceIndicator[]
+  referenceIndicators?: KlineReferenceIndicator[]
   referenceSelection?: KlineReferenceSelection[]
+  qualityBreaks?: KlineQualityBreak[]
 }>(), {
   loading: false,
   error: null,
@@ -70,6 +72,7 @@ const props = withDefaults(defineProps<{
   markerSelectionEnabled: true,
   referenceCallouts: () => [],
   referenceSelection: () => [],
+  qualityBreaks: () => [],
 })
 
 const emit = defineEmits<{
@@ -246,6 +249,7 @@ watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
 }, { deep: true })
 watch(() => props.referenceIndicators, () => { renderDerivedSeries() }, { deep: true })
+watch(() => props.qualityBreaks, () => { renderAllSeries() }, { deep: true })
 
 watch(
   () => [props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime],
@@ -261,13 +265,23 @@ watch(() => props.researchMarkers, () => {
 }, { deep: true })
 
 function barValues(bars: BarData[]) {
-  return bars.map((bar) => ({
+  const values: Array<{ time: Time; open: number; high: number; low: number; close: number } | WhitespaceData<Time>> = bars.map((bar) => ({
     time: chartTime(bar),
     open: bar.open,
     high: bar.high,
     low: bar.low,
     close: bar.close,
   }))
+  const occupied = new Set(values.map(item => String(item.time)))
+  for (const item of props.qualityBreaks) {
+    const time = ribbonTime(item.time)
+    if (time !== null && !occupied.has(String(time))) values.push({ time })
+  }
+  return props.qualityBreaks.length
+    ? values.sort((left, right) => typeof left.time === 'number' && typeof right.time === 'number'
+        ? left.time - right.time
+        : String(left.time).localeCompare(String(right.time)))
+    : values
 }
 
 function volumeValues(bars: BarData[]) {
@@ -460,10 +474,9 @@ function renderDerivedSeries(): void {
       const point = byIdentity.get(`${Date.parse(bar.time)}:${bar.physicalContract ?? ''}`)
       return point ? [{ time: bar.time, point }] : []
     })
-    const values = (key: 'dif' | 'dea' | 'macd' | 'ema21') => exact.flatMap(({ time, point }) => {
-      const value = point[key] === null ? NaN : Number(point[key])
-      return Number.isFinite(value) ? [{ time, value }] : []
-    })
+    const values = (key: 'dif' | 'dea' | 'macd' | 'ema21') => exact.map(({ time, point }) => ({
+      time, value: point[key] === null ? Number.NaN : Number(point[key]),
+    }))
     derivedData.ema.ema_21 = values('ema21')
     derivedData.macd.dif = values('dif')
     derivedData.macd.dea = values('dea')
@@ -493,10 +506,9 @@ function renderDerivedSeries(): void {
 
   macdDif.setData(chartValues(derivedData.macd.dif))
   macdDea.setData(chartValues(derivedData.macd.dea))
-  macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => ({
-    ...point,
-    color: point.value >= 0 ? theme.volumeUp : theme.volumeDown,
-  })))
+  macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => (
+    'value' in point ? { ...point, color: point.value >= 0 ? theme.volumeUp : theme.volumeDown } : point
+  )))
 
   htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
   htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
@@ -521,19 +533,21 @@ function markersForHoverContext(): KlineMarker[] {
   )
 }
 
-function chartValues(points: KlineValuePoint[] | undefined): Array<{ time: Time; value: number }> {
+function chartValues(points: KlineValuePoint[] | undefined): Array<SingleValueData<Time> | WhitespaceData<Time>> {
   if (!points?.length) return []
   const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
   return points.flatMap((point) => {
     const bar = barsByTime.get(point.time)
-    return bar ? [{ time: chartTime(bar), value: point.value }] : []
+    return bar ? [Number.isFinite(point.value)
+      ? { time: chartTime(bar), value: point.value }
+      : { time: chartTime(bar) }] : []
   })
 }
 
 function chartMarkers(markers: KlineMarker[]) {
   const barsByTime = new Map(renderedBars.map((bar) => [markerTimeKey(bar.time), bar]))
   const theme = resolveChartTheme()
-  return markers.flatMap((marker) => {
+  const ordinary = markers.flatMap((marker) => {
     const bar = barsByTime.get(markerTimeKey(marker.time))
     return bar ? [{
       id: marker.id,
@@ -549,6 +563,14 @@ function chartMarkers(markers: KlineMarker[]) {
       size: marker.tone === 'htdy' ? 1.5 : 1,
     }] : []
   })
+  const quality = props.qualityBreaks.flatMap(item => {
+    const time = ribbonTime(item.time)
+    return time === null ? [] : [{
+      id: item.id, time, position: 'aboveBar' as const, shape: 'square' as const,
+      color: theme.textMuted, text: item.label, size: 1,
+    }]
+  })
+  return [...ordinary, ...quality]
 }
 
 function markerTimeKey(value: string): string {

@@ -22,7 +22,11 @@ from app.market_data.domain import (
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import (
+    NonpositiveCloseFact,
+    PriceUnavailableFact,
+    source_quality_fact_from_record,
+)
 from app.models import (
     Contract,
     Exchange,
@@ -391,6 +395,63 @@ def test_source_exception_cannot_cover_unknown_or_overlapping_bar(session, tmp_p
             key, 2025, 1, (valid,), (valid.bar_end,),
             price_unavailable=(exception,),
         ))
+
+
+def test_nonpositive_close_fact_is_typed_and_round_trips_without_becoming_no_trade():
+    fact = NonpositiveCloseFact(
+        bar_end=datetime(2025, 1, 3, 7, tzinfo=UTC),
+        trading_day=date(2025, 1, 3),
+        open=Decimal(0), high=Decimal(0), low=Decimal(0), close=Decimal(0),
+        volume=Decimal(0), turnover=Decimal(0), open_interest=Decimal(0),
+        request_sha256="a" * 64, response_sha256="b" * 64,
+        observed_at=datetime(2026, 9, 19, tzinfo=UTC),
+    )
+
+    assert source_quality_fact_from_record(fact.to_record()) == fact
+    assert fact.classification == "NONPOSITIVE_CLOSE"
+    assert "NO_TRADE" not in fact.to_record().values()
+    with pytest.raises(ValueError, match="SOURCE_QUALITY_PRICE_INVALID"):
+        NonpositiveCloseFact(
+            bar_end=fact.bar_end, trading_day=fact.trading_day,
+            open=Decimal(1), high=Decimal(1), low=Decimal(1), close=Decimal(1),
+            volume=Decimal(0), turnover=Decimal(0), open_interest=Decimal(0),
+            request_sha256="a" * 64, response_sha256="b" * 64,
+            observed_at=fact.observed_at,
+        )
+
+
+def test_subing_d1_quality_union_is_exact_and_existing_quality_reader_rejects_new_type(
+    session, tmp_path,
+):
+    key = DatasetKey("contract", "jm", "JM2509", "1d")
+    valid = _bar(2, 100)
+    break_at = datetime(2025, 1, 3, 7, tzinfo=UTC)
+    interruption = NonpositiveCloseFact(
+        bar_end=break_at, trading_day=date(2025, 1, 3),
+        open=Decimal(0), high=Decimal(0), low=Decimal(0), close=Decimal(0),
+        volume=Decimal(0), turnover=Decimal(0), open_interest=Decimal(10),
+        request_sha256="c" * 64, response_sha256="d" * 64,
+        observed_at=datetime(2026, 9, 19, tzinfo=UTC),
+    )
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    catalog.register_partition(store.publish(PublishRequest(
+        key, 2025, 1, (valid,), (valid.bar_end, break_at),
+        nonpositive_close=(interruption,),
+    )))
+    session.commit()
+    market = MarketDataService(catalog, store)
+    query = SeriesQuery(
+        "contract", "jm", "1d",
+        datetime(2025, 1, 1, 7, tzinfo=UTC), break_at,
+        contract="JM2509",
+    )
+
+    with pytest.raises(MarketDataError, match="SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED"):
+        market.read_physical_daily_quality(query)
+    bars, facts = market.read_physical_daily_quality_union(query)
+    assert bars == (valid,)
+    assert facts == (interruption,)
 
 
 def test_all_price_unavailable_month_has_no_fake_price_coverage(session, tmp_path):

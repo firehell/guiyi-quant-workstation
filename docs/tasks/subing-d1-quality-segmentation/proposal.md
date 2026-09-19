@@ -1,6 +1,6 @@
 # 苏冰 D1 质量分段与重新预热提案
 
-状态：`PROPOSAL / OWNER_DECISION_REQUIRED`
+状态：`ACCEPTED_FOR_CANDIDATE_IMPLEMENTATION / PRODUCTION_APPLY_PENDING`
 
 固定影响盘点截止：`2026-09-18T18:30:00+08:00`
 
@@ -15,7 +15,7 @@ Canonical、Catalog、数据库、Runtime、Scope、通知、release 或 provide
 异常日期，但没有一个完整目标分区满足现行生产修复合同。因此不能通过重新下载、覆盖 OHLC、缩短窗口或
 跳过异常把 17 项改成 ready。
 
-建议 owner 批准**方案 2：D1 显式质量分段和重新预热**作为新版本合同，再分阶段实现。其核心是：
+owner 已批准**方案 2：D1 显式质量分段和重新预热**作为候选版本合同。其核心是：
 
 1. Market Fact 保存来源异常以及完整端点身份，不把异常行变成价格 Bar；
 2. 已由唯一质量权威分类的异常端点成为显式 calculation break；
@@ -110,14 +110,14 @@ Market Fact 边界。苏冰 reader、Kernel、API 和 Web 不得自行检查数�
 计算段是同一物理合约内、两个 break 之间的最大连续 Valid Bar 序列：
 
 ```text
-physical_contract + lifecycle_revision
+physical_contract + authoritative_owner_start
   -> owner_segment_id
-  -> calculation_segment_id = hash(frequency, contract, lifecycle_revision, break boundary, quality policy version)
+  -> calculation_segment_id = hash(frequency, contract, authoritative_owner_start, preceding break boundary, quality policy version, first valid Bar)
 ```
 
 - rank1 owner segment 与 calculation segment 是两个身份；同一 owner 可以包含多个 calculation segment。
-- 本提案的 `frequency` 固定为 `1d`；`lifecycle_revision` 必须来自绑定的 MainContractMap 生命周期快照，
-  不能用产品、合约和日期近似。任一输入变化必须生成新的 calculation segment id。
+- 本合同的 `frequency` 固定为 `1d`。owner 身份绑定权威 owner 起点；calculation 身份绑定其前置不可变 break
+  及首根有效 Bar。owner 终点、未来追加映射和全局变化 revision 不进入历史段身份，确保 prefix invariance。
 - break 后不得继承 EMA12、EMA26、DEA9、EMA21、previous DIF/DEA 或未平参考。
 - 物理换月始终重置，即使前后都没有质量 break。
 - 同一合约以后再次成为 rank1，只能使用该合约最近 break 后的连续有效前缀；新的 owner segment 不继承旧
@@ -269,18 +269,15 @@ raw/staging。该发布是独立生产数据授权项；本提案和代码集成
 - break 前后指标、CROSS previous-state、交易和 segment identity 均不继承。
 - 第 1–33 根 `WARMING`、第 34 根 `INDICATOR_READY_CROSS_UNEVALUABLE`、第 35 根起
   `CROSS_EVALUATED` 的边界由纯 Kernel fixture 和实际 Calendar 端点共同证明。
-- calculation segment id 明确绑定 `1d`、物理合约、lifecycle revision、break boundary 和质量策略版本；
-  任一输入变化都不得复用身份。
+- calculation segment id 明确绑定 `1d`、物理合约、权威 owner 起点、前置 break boundary、首根有效 Bar 和
+  质量策略版本；owner 终点、未来追加映射或全局变化 revision 不得改写历史身份。
 - batch、incremental、restart、prefix 结果一致；同输入 hash 结果确定。
 - 质量中断与 rollover 中断可区分，无虚构退出价、收益或当前浮动。
 - 15m Rule、Scope、Event、通知、Runtime 以及 15m/30m/60m 历史 reference 回归完全不变。
 - 17 项只读影响结果只能称 `DESIGN_IMPACT_ESTIMATE`；在生产数据发布、同截止 API 与页面验收前，
   `223/240` 和 17 blocked 不变。
 
-## 9. Owner 决策包
+## 9. 当前 Gate
 
-请在后续 Gate 中二选一：
-
-1. **接受方案 2（推荐）**：批准上述 D1 质量分类、分段计算和 Reference v2 合同，随后进入隔离实现；仍不
-   授权生产数据发布、Runtime、Scope、通知、release 或 develop 集成。
-2. **维持方案 1**：17 项继续硬阻塞，保留 223 项既有验收；另行决定草稿 PR 是否只按已完成范围集成。
+候选实现、纯计划和 fixture 验收已获授权；生产 Canonical/Catalog 发布仍需绑定精确 plan hash 的单独批准。
+在生产 apply、同截止 240 组合数据/API/页面复验之前，正式结论保持 223/240，草稿 PR 不集成 develop。
