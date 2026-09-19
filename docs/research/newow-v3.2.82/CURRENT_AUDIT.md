@@ -43,6 +43,10 @@ Git 保留本审计、采样截图和[哈希登记](evidence/latest-audit-202609
 
 ## 3. 策略和算法逐项对照
 
+### 2026-09-19 实施证据边界
+
+`page-parity-20260919` fixture contract 已把本轮 A–E 的公开函数/哈希/最小见证冻结为可测试输入；它证明 fixture provenance，不单独证明任意期货品种、生产数据、发布或 Runtime 一致。无完整公开输入/输出重放的 adapter 角色保持 **EVIDENCE_REQUIRED**，生产频率/Scope 不因离线见证开放。
+
 “已有”均指代码，不包含任意品种、任意周期、任意数据条件下都可用。下列代码文件位于
 [`packages/quant-core/guiyi_quant/newow`](../../../packages/quant-core/guiyi_quant/newow)。
 历史精确公式及参数详见手册；本表补齐身份、现状和最新差异，不覆盖历史版本。
