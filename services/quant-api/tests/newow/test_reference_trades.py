@@ -10,8 +10,10 @@ import json
 import pytest
 
 from guiyi_quant.newow.product_contracts import (
+    ActionKind,
     DataInterruption,
     FeatureRuntimeStatus,
+    StrategyAction,
     StrategyHint,
     TradeEligibility,
 )
@@ -378,6 +380,68 @@ def test_initial_clear_seed_is_bound_to_the_consumed_frame_prefix(product_cases)
         projector.advance(
             seeded, damaged_prefix, (), damaged_frames[-1].bar.bar.bar_end,
         )
+
+
+def test_initial_clear_completed_window_accepts_later_new_owner_bar(product_cases):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    prefix_case = product_cases.initial_clear_input()
+    prefix_evidence = product_cases.synthetic_lifecycle_evidence(prefix_case.bars)
+    prefix_replay = replay_strategy(
+        prefix_case.identity, prefix_case.bars,
+        lifecycle_evidence=(prefix_evidence,),
+    )
+    projector = ReferenceTradeProjector()
+    state, prefix = projector.advance(
+        projector.seed(prefix_replay), prefix_replay, (),
+        prefix_case.bars[-1].bar.bar_end,
+    )
+
+    extended_case = product_cases.main_rise_lifecycle_input(
+        (*([Decimal("100")] * 35), Decimal("90"), Decimal("91"))
+    )
+    extended_evidence = product_cases.synthetic_lifecycle_evidence(extended_case.bars)
+    extended_replay = replay_strategy(
+        extended_case.identity, extended_case.bars,
+        lifecycle_evidence=(extended_evidence,),
+    )
+    raw_last_frame = extended_replay.frames[-1]
+    build = StrategyAction(
+        identity=extended_replay.identity,
+        physical_contract=raw_last_frame.bar.bar.physical_contract,
+        segment_id=raw_last_frame.bar.bar.segment_id,
+        bar_end=raw_last_frame.bar.bar.bar_end,
+        trading_day=raw_last_frame.bar.bar.trading_day,
+        kind=ActionKind.BUILD,
+        reference_price=raw_last_frame.bar.bar.close,
+        anchor_price=raw_last_frame.bar.bar.close,
+        source_marker_id="owned:post-lifecycle-build",
+    )
+    last_frame = replace(raw_last_frame, main_state="BUILD", actions=(build,))
+    extended_replay = replace(
+        extended_replay,
+        frames=(*extended_replay.frames[:-1], last_frame),
+        actions=(*extended_replay.actions, build),
+    )
+    tail = replace(
+        extended_replay,
+        frames=(last_frame,), actions=last_frame.actions, hints=last_frame.hints,
+        lifecycle_input_bars=(last_frame.bar,), lifecycle_evidence=(), diagnostics=(),
+    )
+
+    resumed, delta = projector.advance(
+        state, tail, (), last_frame.bar.bar.bar_end,
+    )
+    expected = projector.project(
+        extended_replay, (), last_frame.bar.bar.bar_end,
+    )
+
+    assert prefix.trades == ()
+    assert delta.trades == expected.trades
+    assert len(delta.trades) == 1
+    assert delta.trades[0].status.value == "OPEN"
+    assert delta.diagnostics == expected.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+    assert resumed.lifecycle_consumed == state.lifecycle_consumed
 
 
 def test_weekly_quality_adaptation_has_its_own_version_without_changing_daily(
