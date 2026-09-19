@@ -74,6 +74,90 @@ def _candidate(*, requests: list[dict[str, object]] | None = None) -> dict[str, 
     return value
 
 
+def _candidate_v2(
+    *, allowed: list[str] | None = None, targets: list[str] | None = None
+) -> dict[str, object]:
+    target_dates = targets or ["2026-09-02", "2026-09-04"]
+    allowed_dates = allowed or ["2026-09-02", "2026-09-03", "2026-09-04"]
+    authority_body = {
+        "schema": "rqdata-catalog-calendar-session-v1",
+        "provider": "rqdata",
+        "symbol": "rs",
+        "contract": "RS2609",
+        "exchange": "CZCE",
+        "listed_date": "2025-09-01",
+        "expired_date_exclusive": "2026-09-16",
+        "allowed_response_dates_sha256": hashlib.sha256(
+            _canonical(allowed_dates).encode()
+        ).hexdigest(),
+    }
+    authority = {
+        **authority_body,
+        "authority_sha256": hashlib.sha256(
+            _canonical(authority_body).encode()
+        ).hexdigest(),
+    }
+    raw: dict[str, object] = {
+        "symbol": "rs",
+        "contract": "RS2609",
+        "frequency": "1d",
+        "month": "2026-09",
+        "start": "2026-09-02",
+        "end": "2026-09-04",
+        "target_dates": target_dates,
+        "allowed_response_dates": allowed_dates,
+        "calendar_authority": authority,
+        "reason_codes": ["continuation_after_fail_stop"],
+    }
+    digest_body = {
+        key: raw[key]
+        for key in (
+            "contract", "start", "end", "target_dates",
+            "allowed_response_dates", "calendar_authority",
+        )
+    }
+    raw["request_sha256"] = hashlib.sha256(
+        _canonical(digest_body).encode()
+    ).hexdigest()
+    value: dict[str, object] = {
+        "schema": "subing-d1-source-verification-candidate-v2",
+        "execute": False,
+        "fixed_cutoff": "2026-09-18T18:30:00+08:00",
+        "provider": "rqdata",
+        "method": "futures.get_exchange_daily",
+        "requests": [raw],
+        "budget": {
+            "max_provider_requests": 1,
+            "expected_date_identities": len(target_dates),
+            "allowed_response_context_dates": len(allowed_dates) - len(target_dates),
+            "concurrency": 1,
+            "retries": 0,
+            "canonical_writes": 0,
+            "database_writes": 0,
+        },
+        "execution_contract": {
+            **_candidate()["execution_contract"],  # type: ignore[dict-item]
+            "target_and_context_counts_are_isolated": True,
+            "output_root": "outputs/subing-four-period-readiness-20260918",
+            "attempt_id": "attempt-001",
+        },
+    }
+    value["plan_sha256"] = hashlib.sha256(_canonical(value).encode()).hexdigest()
+    return value
+
+
+def _row(day: date, *, contract: str = "RS2609") -> dict[str, object]:
+    return {
+        "order_book_id": contract,
+        "date": day,
+        "open": 1,
+        "high": 1,
+        "low": 1,
+        "close": 1,
+        "volume": 1,
+    }
+
+
 def _batch(candidate: dict[str, object] | None = None) -> source_verify.FrozenBatch:
     value = candidate or _candidate()
     return source_verify.validate_candidate(value, str(value["plan_sha256"]))
@@ -332,16 +416,19 @@ def test_contract_or_date_identity_failure_saves_raw_then_stops(tmp_path: Path) 
 
 
 @pytest.mark.parametrize(
-    "dates",
+    ("dates", "error_code"),
     [
-        [date(2026, 9, 2)],
-        [date(2026, 9, 2), date(2026, 9, 3), date(2026, 9, 4)],
-        [date(2026, 9, 4), date(2026, 9, 2)],
-        [date(2026, 9, 2), date(2026, 9, 2)],
+        ([date(2026, 9, 2)], "SOURCE_RESPONSE_TARGET_MISSING"),
+        (
+            [date(2026, 9, 2), date(2026, 9, 3), date(2026, 9, 4)],
+            "SOURCE_RESPONSE_DATE_UNPROVEN",
+        ),
+        ([date(2026, 9, 4), date(2026, 9, 2)], "SOURCE_RESPONSE_DATE_ORDER_INVALID"),
+        ([date(2026, 9, 2), date(2026, 9, 2)], "SOURCE_RESPONSE_DUPLICATE"),
     ],
 )
 def test_date_identity_failures_save_raw_and_stop(
-    tmp_path: Path, dates: list[date]
+    tmp_path: Path, dates: list[date], error_code: str
 ) -> None:
     client = _Client(
         [
@@ -352,6 +439,7 @@ def test_date_identity_failures_save_raw_and_stop(
                 "high": 1,
                 "low": 1,
                 "close": 1,
+                "volume": 1,
             }
             for day in dates
         ]
@@ -364,7 +452,7 @@ def test_date_identity_failures_save_raw_and_stop(
         client_factory=lambda _settings: client,
     )
     assert result["status"] == "failed"
-    assert result["failed"]["error_code"] == "SOURCE_RESPONSE_IDENTITY_INVALID"
+    assert result["failed"]["error_code"] == error_code
     assert result["attempt"]["responses_saved"] == 1
 
 
@@ -500,3 +588,198 @@ def test_existing_attempt_and_plan_claim_prevent_repeat_before_provider(
             args, _batch(), {}, _identity(), client_factory=lambda _settings: client
         )
     assert client.calls == 1
+
+
+def test_v2_sparse_targets_accept_proven_context_and_keep_counts_isolated(
+    tmp_path: Path,
+) -> None:
+    candidate = _candidate_v2()
+    args = _args(tmp_path)
+    args.expected_plan_sha256 = candidate["plan_sha256"]
+    client = _Client(
+        [_row(date(2026, 9, 2)), _row(date(2026, 9, 3)), _row(date(2026, 9, 4))]
+    )
+    result = source_verify.execute_batch(
+        args,
+        _batch(candidate),
+        {},
+        _identity(),
+        client_factory=lambda _settings: client,
+    )
+    assert result["status"] == "completed"
+    assert result["summary"] == {
+        "requests_planned": 1,
+        "requests_started": 1,
+        "responses_saved": 1,
+        "requests_failed": 0,
+        "requests_unexecuted": 0,
+        "target_dates_planned": 2,
+        "target_rows_saved": 2,
+        "context_rows_saved": 1,
+        "rows_saved": 3,
+    }
+    assert [item["date"] for item in result["row_classifications"]] == [
+        "2026-09-02", "2026-09-04"
+    ]
+    assert result["response_context"] == [
+        {"contract": "RS2609", "date": "2026-09-03"}
+    ]
+
+
+def test_v2_rejects_context_budget_drift() -> None:
+    candidate = _candidate_v2()
+    candidate["budget"]["allowed_response_context_dates"] = 0  # type: ignore[index]
+    candidate.pop("plan_sha256")
+    candidate["plan_sha256"] = hashlib.sha256(
+        _canonical(candidate).encode()
+    ).hexdigest()
+    with pytest.raises(native.RecoveryError, match="SOURCE_CANDIDATE_INVALID"):
+        _batch(candidate)
+
+
+@pytest.mark.parametrize(
+    ("rows", "error_code"),
+    [
+        ([_row(date(2026, 9, 2))], "SOURCE_RESPONSE_TARGET_MISSING"),
+        (
+            [_row(date(2026, 9, 2)), _row(date(2026, 9, 4)), _row(date(2026, 9, 5))],
+            "SOURCE_RESPONSE_DATE_OUT_OF_RANGE",
+        ),
+        (
+            [_row(date(2026, 9, 2)), _row(date(2026, 9, 3)), _row(date(2026, 9, 4))],
+            "SOURCE_RESPONSE_DATE_UNPROVEN",
+        ),
+        (
+            [_row(date(2026, 9, 2), contract="WRONG"), _row(date(2026, 9, 4))],
+            "SOURCE_RESPONSE_CONTRACT_MISMATCH",
+        ),
+        (
+            [_row(date(2026, 9, 2)), _row(date(2026, 9, 2)), _row(date(2026, 9, 4))],
+            "SOURCE_RESPONSE_DUPLICATE",
+        ),
+    ],
+)
+def test_v2_response_identity_fail_closed(
+    tmp_path: Path, rows: list[dict[str, object]], error_code: str
+) -> None:
+    candidate = (
+        _candidate_v2(allowed=["2026-09-02", "2026-09-04"])
+        if error_code == "SOURCE_RESPONSE_DATE_UNPROVEN"
+        else _candidate_v2()
+    )
+    args = _args(tmp_path)
+    args.expected_plan_sha256 = candidate["plan_sha256"]
+    result = source_verify.execute_batch(
+        args,
+        _batch(candidate),
+        {},
+        _identity(),
+        client_factory=lambda _settings: _Client(rows),
+    )
+    assert result["status"] == "failed"
+    assert result["failed"]["error_code"] == error_code
+    assert result["attempt"]["responses_saved"] == 1
+
+
+def test_continuation_order_is_disjoint_from_every_started_request() -> None:
+    order = source_verify._continuation_order(tuple(range(9)), 16)
+    assert order == (13, 14, 11, 12, 9, 10, 15)
+    assert set(order).isdisjoint(range(9))
+    with pytest.raises(native.RecoveryError, match="SOURCE_CONTINUATION_OVERLAP"):
+        source_verify._continuation_order(tuple(range(8)), 16)
+
+
+def test_offline_validator_uses_saved_bytes_and_keeps_old_receipts_immutable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    batch = _batch()
+    attempt = native.create_attempt_directory(tmp_path, "old-failed-attempt")
+    journal = source_verify.D1SourceAttemptJournal(attempt, batch.requests)
+    journal.before_request(batch.requests[0])
+    journal.after_response(
+        batch.requests[0],
+        tuple(
+            [_row(date(2026, 9, 2)), _row(date(2026, 9, 3)), _row(date(2026, 9, 4))]
+        ),
+    )
+    journal.mark_failed("SOURCE_RESPONSE_IDENTITY_INVALID", sequence=1)
+    (attempt / "invocation-receipt.json").write_text('{"status":"old"}\n')
+    (attempt / "source-only-result.json").write_text('{"status":"failed"}\n')
+    authority_batch = _batch(_candidate_v2())
+    monkeypatch.setattr(
+        source_verify,
+        "_authority_selections",
+        lambda _settings, _selections: authority_batch.selections,
+    )
+    before = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in attempt.iterdir()
+    }
+    verdict = source_verify.offline_validate_attempt(batch, attempt, {})
+    after = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in attempt.iterdir()
+    }
+    assert verdict["status"] == "offline_validation_passed"
+    assert verdict["provider_requests"] == verdict["data_writes"] == 0
+    assert verdict["summary"] == {
+        "responses_validated": 1,
+        "response_rows": 3,
+        "target_rows": 2,
+        "context_rows": 1,
+    }
+    assert verdict["original_raw_hashes_before"] == verdict["original_raw_hashes_after"]
+    assert before == after
+
+
+def test_v2_cli_scope_rejects_different_output_root_before_execution(
+    tmp_path: Path,
+) -> None:
+    candidate = _candidate_v2()
+    args = SimpleNamespace(output_root=str(tmp_path.resolve()), attempt_id="attempt-001")
+    with pytest.raises(native.RecoveryError, match="SOURCE_EXECUTION_SCOPE_MISMATCH"):
+        source_verify._validate_v2_cli_scope(args, _batch(candidate))
+
+
+def test_readonly_output_is_restricted_to_exact_evidence_name(tmp_path: Path) -> None:
+    attempt = tmp_path / "attempt"
+    attempt.mkdir()
+    with pytest.raises(native.RecoveryError, match="SOURCE_EVIDENCE_PATH_INVALID"):
+        source_verify._validated_evidence_output(
+            tmp_path / "arbitrary.json",
+            attempt,
+            "offline-validate",
+            tmp_path / "canonical",
+        )
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["invocation-receipt.json", "journal.jsonl", "source-only-result.json"],
+)
+def test_continuation_gate_rejects_changed_old_artifact(
+    tmp_path: Path, name: str
+) -> None:
+    values = {
+        "invocation-receipt.json": b"receipt\n",
+        "journal.jsonl": b"journal\n",
+        "source-only-result.json": b"result\n",
+    }
+    hashes: dict[str, str] = {}
+    for filename, content in values.items():
+        (tmp_path / filename).write_bytes(content)
+        hashes[filename] = hashlib.sha256(content).hexdigest()
+    contract = {
+        "continuation_of_journal_sha256": hashes["journal.jsonl"],
+        "continuation_of_result_sha256": hashes["source-only-result.json"],
+    }
+    source_verify._validate_current_artifact_hashes(
+        tmp_path, {"original_artifact_hashes_after": hashes}, contract
+    )
+    (tmp_path / name).write_bytes(b"changed\n")
+    with pytest.raises(
+        native.RecoveryError, match="SOURCE_CONTINUATION_EVIDENCE_INVALID"
+    ):
+        source_verify._validate_current_artifact_hashes(
+            tmp_path, {"original_artifact_hashes_after": hashes}, contract
+        )
