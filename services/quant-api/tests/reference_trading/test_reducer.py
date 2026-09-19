@@ -8,6 +8,7 @@ import pytest
 from guiyi_quant.reference_trading import (
     ActionKind,
     BoundaryReason,
+    CompletedReferenceBar,
     RecordingMode,
     ReferenceAction,
     ReferenceBoundary,
@@ -17,6 +18,33 @@ from guiyi_quant.reference_trading import (
     TradeStatus,
     reduce_reference,
 )
+
+
+def test_subing_return_policy_preserves_delta_over_entry_operation_order() -> None:
+    identity = stream()
+    opened_at = datetime(2026, 9, 18, 15, tzinfo=UTC)
+    closed_at = datetime(2026, 9, 19, 15, tzinfo=UTC)
+    opened = ReferenceAction(
+        stream=identity, source_action_id="open", physical_contract="RB2601",
+        owner_segment_id="owner-1", calculation_segment_id="calc-1",
+        bar_end=opened_at, trading_day=opened_at.date(), sequence=0,
+        kind=ActionKind.OPEN_LONG, reference_price=Decimal("3"),
+    )
+    state = reduce_reference(ReferenceState.flat(identity), actions=(opened,)).state
+    closed = ReferenceAction(
+        stream=identity, source_action_id="close", physical_contract="RB2601",
+        owner_segment_id="owner-1", calculation_segment_id="calc-1",
+        bar_end=closed_at, trading_day=closed_at.date(), sequence=0,
+        kind=ActionKind.CLOSE, reference_price=Decimal("10"), entry_action_id="open",
+    )
+
+    transition = reduce_reference(
+        state, actions=(closed,), return_policy="delta_over_entry",
+    )
+
+    assert transition.changed_trades[-1].reference_return == (
+        (Decimal("10") - Decimal("3")) / Decimal("3") * Decimal("100")
+    )
 
 
 def stream(mode: RecordingMode = RecordingMode.HISTORICAL_REPLAY) -> StreamIdentity:
@@ -295,6 +323,22 @@ def test_open_completed_bar_requires_explicit_mark_price() -> None:
             opened.state, completed_bar_end=start + timedelta(days=1),
             completed_trading_day=date(2026, 9, 20),
         )
+
+
+def test_same_completed_watermark_with_different_owner_mark_is_a_conflict() -> None:
+    start = datetime(2026, 9, 19, 15, tzinfo=UTC)
+    opened = reduce_reference(ReferenceState.flat(stream()), actions=(action(ActionKind.OPEN_LONG, "open-1", at=start),))
+    completed = CompletedReferenceBar(
+        physical_contract="RB2601", owner_segment_id="owner-1", calculation_segment_id="calc-1",
+        bar_end=start + timedelta(days=1), trading_day=date(2026, 9, 20), reference_price=Decimal("100"),
+    )
+    first = reduce_reference(opened.state, completed_bar=completed)
+    conflicting = CompletedReferenceBar(
+        physical_contract="RB2602", owner_segment_id="owner-2", calculation_segment_id="calc-2",
+        bar_end=completed.bar_end, trading_day=completed.trading_day, reference_price=Decimal("100"),
+    )
+    with pytest.raises(ValueError, match="computed_through"):
+        reduce_reference(first.state, completed_bar=conflicting)
 
 
 def test_batch_rejects_conflicting_boundaries_for_one_segment_at_one_bar() -> None:

@@ -28,6 +28,11 @@ class Side(StrEnum):
     SHORT = "SHORT"
 
 
+class ReturnPolicy(StrEnum):
+    RATIO_MINUS_ONE = "ratio_minus_one"
+    DELTA_OVER_ENTRY = "delta_over_entry"
+
+
 class TradeStatus(StrEnum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"
@@ -175,6 +180,25 @@ class ReferenceBoundary:
         _day(self.trading_day, "trading_day")
         if self.reason is BoundaryReason.OBSERVATION_INTERRUPTED and self.stream.recording_mode is not RecordingMode.FORWARD_OBSERVATION:
             raise ValueError("OBSERVATION_INTERRUPTED requires forward_observation")
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedReferenceBar:
+    """Authoritative completed mark, including the owner identity that produced it."""
+
+    physical_contract: str
+    owner_segment_id: str
+    calculation_segment_id: str
+    bar_end: datetime
+    trading_day: date
+    reference_price: Decimal
+
+    def __post_init__(self) -> None:
+        for name in ("physical_contract", "owner_segment_id", "calculation_segment_id"):
+            _text(getattr(self, name), name)
+        _instant(self.bar_end, "bar_end")
+        _day(self.trading_day, "trading_day")
+        _price(self.reference_price, "reference_price")
 
 
 @dataclass(frozen=True, slots=True)

@@ -6,6 +6,22 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_EVEN, localcontext
 from enum import StrEnum
+from hashlib import sha256
+import json
+
+from ..reference_trading.contracts import (
+    ActionKind as UnifiedActionKind,
+    BoundaryReason,
+    CompletedReferenceBar,
+    ReferenceAction as UnifiedReferenceAction,
+    ReferenceBoundary,
+    ReferenceState as UnifiedReferenceState,
+    ReferenceTrade as UnifiedReferenceTrade,
+    StreamIdentity,
+    TradeStatus as UnifiedTradeStatus,
+)
+from ..reference_trading.reducer import reduce_reference
+from ..reference_trading.adapters import strategy_input_fingerprint
 
 from .product_contracts import (
     ActionKind,
@@ -20,6 +36,7 @@ from .product_contracts import (
     StrategyHint,
     StrategyReplay,
     TradeEligibility,
+    lifecycle_input_sha256,
     validate_lifecycle_replay_evidence,
 )
 from .product_identity import (
@@ -200,6 +217,70 @@ class ReferenceProjection:
             _text(diagnostic)
 
 
+@dataclass(frozen=True, slots=True)
+class NewowReferenceReplayState:
+    """Bounded restart state for the public reference projection fold."""
+
+    stream: StreamIdentity
+    reference_states: tuple[tuple[str, str, UnifiedReferenceState], ...] = ()
+    active_trades: tuple[ReferenceTrade, ...] = ()
+    active_actions: tuple[StrategyAction, ...] = ()
+    warmup_witnesses: tuple[StrategyAction, ...] = ()
+    owners_with_prior_actions: tuple[tuple[str, str], ...] = ()
+    interrupted_entries: tuple[tuple[str, str, str], ...] = ()
+    pending_hints: tuple[StrategyHint, ...] = ()
+    processed_event_ids: tuple[str, ...] = ()
+    verified_lifecycle_owners: tuple[tuple[str, str], ...] = ()
+    verified_lifecycle_inputs: tuple[
+        tuple[str, str, tuple[tuple[datetime, str], ...]], ...
+    ] = ()
+    lifecycle_consumed: tuple[tuple[str, str, int], ...] = ()
+    diagnostics: tuple[str, ...] = ()
+
+
+def _event_id(boundary: ReferenceBoundary) -> str:
+    wire = (
+        boundary.stream.stream_id, boundary.reason.value,
+        boundary.physical_contract, boundary.owner_segment_id,
+        boundary.calculation_segment_id, boundary.bar_end.isoformat(),
+        boundary.trading_day.isoformat(),
+    )
+    return sha256(json.dumps(wire, separators=(",", ":")).encode()).hexdigest()
+
+
+def _stream_for(replay: StrategyReplay) -> StreamIdentity:
+    return StreamIdentity(
+        strategy_code=f"newow_{replay.identity.strategy.value}",
+        formula_versions=replay.identity.formula_versions,
+        profile_id=replay.identity.profile_id,
+        reference_model_version=REFERENCE_MODEL_VERSION,
+        futures_adaptation_version=futures_adaptation_version(replay.identity.frequency),
+        product=replay.identity.product,
+        frequency=replay.identity.frequency.value,
+        series_kind=replay.identity.series_kind,
+        recording_mode="historical_replay",
+        observation_policy_version=None,
+    )
+
+
+def _lifecycle_frame_fingerprint(frame: StrategyFrame) -> str:
+    return strategy_input_fingerprint({
+        "source_bar": lifecycle_input_sha256((frame.bar,)),
+        "main_state": frame.main_state,
+        "main_values": frame.main_values,
+        "availability_status": frame.availability.status,
+        "availability_evidence": frame.availability.evidence_status,
+        "availability_reason": frame.availability.reason_code,
+        "actions": tuple((
+            action.signal_id, action.kind, action.reference_price,
+            action.anchor_price, action.sequence, action.related_build_id,
+            action.source_marker_id, action.source_related_marker_ids,
+            action.trade_eligibility, action.calculation_segment_id,
+        ) for action in frame.actions),
+        "hints": tuple(hint.hint_id for hint in frame.hints),
+    })
+
+
 def _reference_return(entry: Decimal, exit_: Decimal) -> Decimal:
     _price(entry)
     _price(exit_)
@@ -347,6 +428,54 @@ def _validate_initial_clear_no_entry(
             or frame.actions
         ):
             raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+    return positions[key]
+
+
+def _validate_checkpointed_initial_clear(
+    replay: StrategyReplay,
+    action: StrategyAction,
+    positions: dict[tuple[str, str, datetime], int],
+    frames_by_owner: dict[tuple[str, str], list[StrategyFrame]],
+    verified_owners: set[tuple[str, str]],
+    has_prior_actions: bool,
+) -> int:
+    """Validate the current CLEAR using a previously verified owner lifecycle."""
+
+    owner = (action.physical_contract, action.segment_id)
+    key = (*owner, action.bar_end)
+    matching = tuple(
+        frame for frame in frames_by_owner.get(owner, ())
+        if frame.bar.bar.bar_end == action.bar_end
+    )
+    if (
+        action.identity != replay.identity
+        or replay.identity.strategy is not ProductStrategy.MAIN_RISE
+        or action.kind is not ActionKind.CLEAR
+        or action.related_build_id is not None
+        or action.sequence != 0
+        or action.source_marker_id is not None
+        or action.source_related_marker_ids
+        or owner not in verified_owners
+        or key not in positions
+        or has_prior_actions
+        or len(matching) != 1
+    ):
+        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+    current = matching[0]
+    values = dict(current.main_values)
+    ma35 = values.get("ma35")
+    ma45 = values.get("ma45")
+    if (
+        current.availability.status is not FeatureRuntimeStatus.READY
+        or not current.bar.bar.observation_eligible
+        or current.main_state is not MainState.CLEAR
+        or current.actions != (action,)
+        or ma35 is None
+        or ma45 is None
+        or ma35 >= ma45
+        or action.reference_price != ma45
+    ):
+        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     return positions[key]
 
 
@@ -528,6 +657,81 @@ class ReferenceTradeProjector:
         *,
         data_interruptions: tuple[DataInterruption, ...] = (),
     ) -> ReferenceProjection:
+        _state, projection = self.advance(
+            None, replay, boundaries, as_of, data_interruptions=data_interruptions,
+        )
+        return projection
+
+    def seed(self, replay: StrategyReplay) -> NewowReferenceReplayState:
+        """Verify immutable lifecycle evidence once, without retaining its frames."""
+
+        if not isinstance(replay, StrategyReplay):
+            raise ValueError("NEWOW_REFERENCE_INVALID_REPLAY")
+        actions = _dedupe_actions(tuple(replay.actions))
+        initial_actions = tuple(
+            action for action in actions
+            if action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+        )
+        verified: frozenset[tuple[str, str]] = frozenset()
+        if replay.lifecycle_evidence and initial_actions:
+            try:
+                verified = validate_lifecycle_replay_evidence(
+                    replay.identity, replay.lifecycle_input_bars,
+                    replay.lifecycle_evidence,
+                )
+            except ValueError as error:
+                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT") from error
+        if initial_actions:
+            positions, _ = _effective_bar_positions(
+                replay, max(frame.bar.bar.bar_end for frame in replay.frames),
+            )
+            frames_by_owner: dict[tuple[str, str], list[StrategyFrame]] = {}
+            for frame in replay.frames:
+                owner = (frame.bar.bar.physical_contract, frame.bar.bar.segment_id)
+                frames_by_owner.setdefault(owner, []).append(frame)
+            for action in initial_actions:
+                owner = (action.physical_contract, action.segment_id)
+                has_prior = any(
+                    candidate is not action
+                    and (candidate.physical_contract, candidate.segment_id) == owner
+                    and (candidate.bar_end, candidate.sequence)
+                    < (action.bar_end, action.sequence)
+                    for candidate in actions
+                )
+                _validate_initial_clear_no_entry(
+                    replay, action, positions, frames_by_owner, verified, has_prior,
+                )
+        lifecycle_inputs: list[
+            tuple[str, str, tuple[tuple[datetime, str], ...]]
+        ] = []
+        for owner in sorted(verified):
+            values = tuple(
+                (frame.bar.bar.bar_end, _lifecycle_frame_fingerprint(frame))
+                for frame in replay.frames
+                if (
+                    frame.bar.bar.physical_contract,
+                    frame.bar.bar.segment_id,
+                ) == owner
+            )
+            lifecycle_inputs.append((owner[0], owner[1], values))
+        return NewowReferenceReplayState(
+            stream=_stream_for(replay),
+            verified_lifecycle_owners=tuple(sorted(verified)),
+            verified_lifecycle_inputs=tuple(lifecycle_inputs),
+            lifecycle_consumed=tuple(
+                (owner[0], owner[1], 0) for owner in sorted(verified)
+            ),
+        )
+
+    def advance(
+        self,
+        state: NewowReferenceReplayState | None,
+        replay: StrategyReplay,
+        boundaries: tuple[OwnerBoundary, ...],
+        as_of: datetime,
+        *,
+        data_interruptions: tuple[DataInterruption, ...] = (),
+    ) -> tuple[NewowReferenceReplayState, ReferenceProjection]:
         if not isinstance(replay, StrategyReplay):
             raise ValueError("NEWOW_REFERENCE_INVALID_REPLAY")
         as_of = utc_timestamp(as_of)
@@ -563,7 +767,19 @@ class ReferenceTradeProjector:
             if action.bar_end <= as_of
             and action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
         )
-        verified_owners: frozenset[tuple[str, str]] = frozenset()
+        checkpoint_verified_owners = set(
+            () if state is None else state.verified_lifecycle_owners
+        )
+        verified_owners = set(checkpoint_verified_owners)
+        if replay.lifecycle_evidence and initial_actions:
+            try:
+                verified_owners.update(validate_lifecycle_replay_evidence(
+                    replay.identity,
+                    replay.lifecycle_input_bars,
+                    replay.lifecycle_evidence,
+                ))
+            except ValueError as error:
+                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT") from error
         if initial_actions:
             try:
                 effective_frames = tuple(
@@ -572,17 +788,19 @@ class ReferenceTradeProjector:
                     if frame.bar.bar.bar_end <= as_of
                 )
                 effective_bars = tuple(frame.bar for frame in effective_frames)
-                verified_owners = validate_lifecycle_replay_evidence(
-                    replay.identity,
-                    replay.lifecycle_input_bars,
-                    replay.lifecycle_evidence,
-                )
                 lifecycle_prefix = tuple(
                     bar
                     for bar in replay.lifecycle_input_bars
                     if bar.bar.bar_end <= as_of
                 )
-                if effective_bars != lifecycle_prefix:
+                if (
+                    any(
+                        (action.physical_contract, action.segment_id)
+                        not in checkpoint_verified_owners
+                        for action in initial_actions
+                    )
+                    and effective_bars != lifecycle_prefix
+                ):
                     raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
             except ValueError as error:
                 raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT") from error
@@ -592,219 +810,497 @@ class ReferenceTradeProjector:
                 continue
             owner = (frame.bar.bar.physical_contract, frame.bar.bar.segment_id)
             frames_by_owner.setdefault(owner, []).append(frame)
-        diagnostics = [
-            diagnostic
-            for diagnostic in dict.fromkeys(replay.diagnostics)
-            if diagnostic not in {"NO_ELIGIBLE_ENTRY", "INITIAL_CLEAR_NO_ENTRY"}
-        ]
-        trades: list[ReferenceTrade] = []
-        open_by_owner: dict[tuple[str, str], tuple[int, StrategyAction, int]] = {}
-        warmup_witnesses: dict[str, StrategyAction] = {}
-        owners_with_prior_actions: set[tuple[str, str]] = set()
-        ordered_gaps = tuple(sorted(
-            (gap for gap in data_interruptions if gap.effective_at <= as_of),
-            key=lambda gap: gap.effective_at,
-        ))
-        gap_index = 0
+        expected_lifecycle_inputs = {
+            (contract, segment): values
+            for contract, segment, values in (
+                () if state is None else state.verified_lifecycle_inputs
+            )
+        }
+        lifecycle_consumed = {
+            (contract, segment): count
+            for contract, segment, count in (
+                () if state is None else state.lifecycle_consumed
+            )
+        }
+        lifecycle_replay_only = bool(replay.frames)
+        lifecycle_has_new = False
+        for owner, frames in frames_by_owner.items():
+            expected = expected_lifecycle_inputs.get(owner)
+            if expected is None:
+                lifecycle_replay_only = False
+                continue
+            consumed = lifecycle_consumed.get(owner, 0)
+            actual = tuple(
+                (frame.bar.bar.bar_end, _lifecycle_frame_fingerprint(frame))
+                for frame in frames
+            )
+            remaining = len(expected) - consumed
+            verified_part = actual[:remaining]
+            suffix = actual[remaining:]
+            if (
+                verified_part
+                == expected[consumed:consumed + len(verified_part)]
+                and (
+                    not suffix
+                    or all(instant > expected[-1][0] for instant, _digest in suffix)
+                )
+            ):
+                lifecycle_consumed[owner] = consumed + len(verified_part)
+                lifecycle_has_new = lifecycle_has_new or bool(actual)
+                lifecycle_replay_only = False
+                continue
+            expected_positions = {item: index for index, item in enumerate(expected)}
+            positions_found = tuple(expected_positions.get(item) for item in actual)
+            if (
+                any(index is None for index in positions_found)
+                or tuple(index for index in positions_found if index is not None)
+                != tuple(sorted(index for index in positions_found if index is not None))
+                or any(
+                    index is not None and index >= consumed
+                    for index in positions_found
+                )
+            ):
+                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+        diagnostics = list(dict.fromkeys((
+            *(() if state is None else state.diagnostics),
+            *(
+                diagnostic for diagnostic in replay.diagnostics
+                if diagnostic not in {"NO_ELIGIBLE_ENTRY", "INITIAL_CLEAR_NO_ENTRY"}
+            ),
+        )))
+        stream = _stream_for(replay)
+        if state is not None and state.stream != stream:
+            raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+        if (
+            lifecycle_replay_only
+            and not lifecycle_has_new
+            and initial_actions
+            and all(
+                action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+                for action in actions
+            )
+            and "INITIAL_CLEAR_NO_ENTRY" in (() if state is None else state.diagnostics)
+            and not effective_boundaries
+            and not data_interruptions
+        ):
+            assert state is not None
+            return state, ReferenceProjection(
+                trades=state.active_trades,
+                bar_level_hints=(),
+                unassigned_hints=(),
+                diagnostics=state.diagnostics,
+                as_of=as_of,
+            )
+        reference_states: dict[tuple[str, str], UnifiedReferenceState] = {
+            (contract, segment): reference_state
+            for contract, segment, reference_state in (
+                () if state is None else state.reference_states
+            )
+        }
+        trades: list[ReferenceTrade] = list(
+            () if state is None else state.active_trades
+        )
+        trade_positions: dict[str, int] = {
+            trade.entry_signal_id: index for index, trade in enumerate(trades)
+        }
+        actions_by_id = {
+            action.signal_id: action
+            for action in (() if state is None else state.active_actions)
+        }
+        actions_by_id.update({action.signal_id: action for action in actions})
+        actions_by_bar: dict[tuple[str, str, datetime], list[StrategyAction]] = {}
+        for action in actions:
+            actions_by_bar.setdefault(
+                (action.physical_contract, action.segment_id, action.bar_end), [],
+            ).append(action)
+        warmup_witnesses: dict[str, StrategyAction] = {
+            action.signal_id: action
+            for action in (() if state is None else state.warmup_witnesses)
+        }
+        owners_with_prior_actions: set[tuple[str, str]] = set(
+            () if state is None else state.owners_with_prior_actions
+        )
+        interrupted_entries: dict[tuple[str, str], str] = {
+            (contract, segment): entry
+            for contract, segment, entry in (
+                () if state is None else state.interrupted_entries
+            )
+        }
+        processed_event_ids = set(
+            () if state is None else state.processed_event_ids
+        )
 
-        def consume_price_gaps(through: datetime) -> None:
-            nonlocal gap_index
-            while gap_index < len(ordered_gaps) and ordered_gaps[gap_index].effective_at <= through:
-                gap = ordered_gaps[gap_index]
-                owner = (gap.physical_contract, gap.segment_id)
-                current = open_by_owner.pop(owner, None)
-                if current is not None:
-                    trade_position, _entry, _entry_index = current
-                    trades[trade_position] = replace(
-                        trades[trade_position],
-                        status=ReferenceTradeStatus.DATA_INTERRUPTED,
-                        interrupted_at=gap.effective_at,
-                        interruption_reason="SOURCE_PRICE_UNAVAILABLE",
+        events: list[tuple[datetime, ReferenceBoundary, str]] = []
+        for boundary in effective_boundaries.values():
+            events.append((
+                boundary.effective_at,
+                ReferenceBoundary(
+                    stream=stream, reason=BoundaryReason.ROLLOVER,
+                    physical_contract=boundary.old_contract,
+                    owner_segment_id=boundary.old_segment_id,
+                    calculation_segment_id=boundary.old_segment_id,
+                    bar_end=boundary.effective_at,
+                    trading_day=boundary.effective_at.date(),
+                ),
+                "OWNER_BOUNDARY",
+            ))
+        for gap in data_interruptions:
+            if gap.effective_at <= as_of:
+                events.append((
+                    gap.effective_at,
+                    ReferenceBoundary(
+                        stream=stream, reason=BoundaryReason.DATA_INTERRUPTED,
+                        physical_contract=gap.physical_contract,
+                        owner_segment_id=gap.segment_id,
+                        calculation_segment_id=gap.segment_id,
+                        bar_end=gap.effective_at,
+                        trading_day=gap.trading_day,
+                    ),
+                    "SOURCE_PRICE_UNAVAILABLE",
+                ))
+        events.sort(key=lambda item: item[0])
+        events = [event for event in events if _event_id(event[1]) not in processed_event_ids]
+        event_index = 0
+
+        def sync_transition(
+            owner: tuple[str, str], transition, *, interrupted_at: datetime | None = None,
+            interruption_reason: str | None = None,
+            prior_open: UnifiedReferenceTrade | None = None,
+        ) -> None:
+            reference_states[owner] = transition.state
+            for changed in transition.changed_trades:
+                entry_signal_id = changed.entry_action_id
+                entry = actions_by_id[entry_signal_id]
+                position = trade_positions.get(entry_signal_id)
+                if position is None:
+                    public = _open_trade(entry)
+                    trades.append(public)
+                    position = len(trades) - 1
+                    trade_positions[entry_signal_id] = position
+                public = trades[position]
+                if changed.status is UnifiedTradeStatus.CLOSED:
+                    trades[position] = replace(
+                        public,
+                        exit_signal_id=changed.exit_action_id,
+                        exit_bar_end=changed.exit_bar_end,
+                        exit_trading_day=changed.exit_trading_day,
+                        exit_reference_price=changed.exit_reference_price,
+                        status=ReferenceTradeStatus.CLOSED,
+                        holding_bars=changed.holding_bars,
+                        reference_return_pct=changed.reference_return,
+                        mark_bar_end=None,
+                        mark_reference_price=None,
+                        mark_change_pct=None,
                     )
-                for witness_id, witness in tuple(warmup_witnesses.items()):
-                    if (witness.physical_contract, witness.segment_id) == owner:
-                        del warmup_witnesses[witness_id]
-                gap_index += 1
+                elif changed.status in (
+                    UnifiedTradeStatus.ROLLOVER_INTERRUPTED,
+                    UnifiedTradeStatus.DATA_INTERRUPTED,
+                ):
+                    source = prior_open or changed
+                    trades[position] = replace(
+                        public,
+                        status=(
+                            ReferenceTradeStatus.ROLLOVER_INTERRUPTED
+                            if changed.status is UnifiedTradeStatus.ROLLOVER_INTERRUPTED
+                            else ReferenceTradeStatus.DATA_INTERRUPTED
+                        ),
+                        holding_bars=source.holding_bars,
+                        mark_bar_end=source.mark_bar_end,
+                        mark_reference_price=source.mark_reference_price,
+                        mark_change_pct=source.mark_return,
+                        interrupted_at=interrupted_at,
+                        interruption_reason=(
+                            interruption_reason
+                            if source.mark_bar_end is not None
+                            else "OWNER_BOUNDARY_MARK_UNAVAILABLE"
+                        ),
+                    )
+            current = transition.state.open_trade
+            if current is not None:
+                position = trade_positions[current.entry_action_id]
+                trades[position] = replace(
+                    trades[position],
+                    holding_bars=current.holding_bars,
+                    mark_bar_end=current.mark_bar_end,
+                    mark_reference_price=current.mark_reference_price,
+                    mark_change_pct=current.mark_return,
+                )
+
+        def apply_event(event: tuple[datetime, ReferenceBoundary, str]) -> None:
+            owner = (event[1].physical_contract, event[1].owner_segment_id)
+            reference_state = reference_states.get(owner, UnifiedReferenceState.flat(stream))
+            prior_open = reference_state.open_trade
+            boundary = event[1]
+            if prior_open is not None and (
+                prior_open.physical_contract,
+                prior_open.owner_segment_id,
+            ) == (boundary.physical_contract, boundary.owner_segment_id):
+                boundary = replace(
+                    boundary,
+                    calculation_segment_id=prior_open.calculation_segment_id,
+                )
+                interrupted_entries[
+                    (prior_open.physical_contract, prior_open.owner_segment_id)
+                ] = prior_open.entry_action_id
+            transition = reduce_reference(reference_state, boundaries=(boundary,))
+            sync_transition(
+                owner, transition, interrupted_at=event[0],
+                interruption_reason=event[2], prior_open=prior_open,
+            )
+            for witness_id, witness in tuple(warmup_witnesses.items()):
+                if (witness.physical_contract, witness.segment_id) == owner:
+                    del warmup_witnesses[witness_id]
+            processed_event_ids.add(_event_id(event[1]))
+
+        for frame in replay.frames:
+            bar = frame.bar.bar
+            if bar.bar_end > as_of or frame.bar.frequency is not replay.identity.frequency:
+                continue
+            while event_index < len(events) and events[event_index][0] < bar.bar_end:
+                apply_event(events[event_index])
+                event_index += 1
+            same_bar_events: list[tuple[datetime, ReferenceBoundary, str]] = []
+            while event_index < len(events) and events[event_index][0] == bar.bar_end:
+                same_bar_events.append(events[event_index])
+                event_index += 1
+
+            bar_owner = (bar.physical_contract, bar.segment_id)
+            unrelated_events = [
+                event for event in same_bar_events
+                if (event[1].physical_contract, event[1].owner_segment_id) != bar_owner
+            ]
+            for event in unrelated_events:
+                apply_event(event)
+            same_bar_events = [event for event in same_bar_events if event not in unrelated_events]
+            reference_state = reference_states.get(
+                bar_owner, UnifiedReferenceState.flat(stream),
+            )
+            unified_actions: list[UnifiedReferenceAction] = []
+            for action in sorted(
+                actions_by_bar.get((bar.physical_contract, bar.segment_id, bar.bar_end), ()),
+                key=lambda item: item.sequence,
+            ):
+                owner = (action.physical_contract, action.segment_id)
+                action_boundary = effective_boundaries.get(owner)
+                if any(
+                    event[1].reason is BoundaryReason.DATA_INTERRUPTED
+                    and (event[1].physical_contract, event[1].owner_segment_id) == owner
+                    for event in same_bar_events
+                ):
+                    raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                if action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY:
+                    if reference_state.open_trade is not None or (
+                        action_boundary is not None and action.bar_end >= action_boundary.effective_at
+                    ):
+                        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                    if owner in checkpoint_verified_owners:
+                        _validate_checkpointed_initial_clear(
+                            replay, action, positions, frames_by_owner, verified_owners,
+                            owner in owners_with_prior_actions,
+                        )
+                    else:
+                        _validate_initial_clear_no_entry(
+                            replay, action, positions, frames_by_owner,
+                            frozenset(verified_owners),
+                            owner in owners_with_prior_actions,
+                        )
+                    owners_with_prior_actions.add(owner)
+                    if "INITIAL_CLEAR_NO_ENTRY" not in diagnostics:
+                        diagnostics.append("INITIAL_CLEAR_NO_ENTRY")
+                    continue
+                _validate_action(replay, action, positions)
+                if action.trade_eligibility is TradeEligibility.WARMUP_ONLY:
+                    if action.kind is not ActionKind.BUILD or action.related_build_id is not None:
+                        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                    warmup_witnesses[action.signal_id] = action
+                    owners_with_prior_actions.add(owner)
+                    continue
+                if action.trade_eligibility is TradeEligibility.NO_ELIGIBLE_ENTRY:
+                    witness = warmup_witnesses.get(action.related_build_id or "")
+                    if (
+                        action.kind is not ActionKind.CLEAR or witness is None
+                        or reference_state.open_trade is not None
+                        or witness.identity != action.identity
+                        or witness.physical_contract != action.physical_contract
+                        or witness.segment_id != action.segment_id
+                        or witness.calculation_segment_id != action.calculation_segment_id
+                    ):
+                        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                    if "NO_ELIGIBLE_ENTRY" not in diagnostics:
+                        diagnostics.append("NO_ELIGIBLE_ENTRY")
+                    owners_with_prior_actions.add(owner)
+                    continue
+                if action.trade_eligibility is not TradeEligibility.ELIGIBLE:
+                    raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                if action.kind is ActionKind.CLEAR and not action.related_build_id:
+                    raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                if action_boundary is not None and action.bar_end >= action_boundary.effective_at:
+                    if action.kind is ActionKind.BUILD:
+                        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                    if interrupted_entries.get(owner) != action.related_build_id:
+                        raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                    del interrupted_entries[owner]
+                    continue
+                unified_actions.append(UnifiedReferenceAction(
+                    stream=stream,
+                    source_action_id=action.signal_id,
+                    physical_contract=action.physical_contract,
+                    owner_segment_id=action.segment_id,
+                    calculation_segment_id=action.calculation_segment_id,
+                    bar_end=action.bar_end,
+                    trading_day=action.trading_day,
+                    sequence=action.sequence,
+                    kind=(
+                        UnifiedActionKind.OPEN_LONG
+                        if action.kind is ActionKind.BUILD else UnifiedActionKind.CLOSE
+                    ),
+                    reference_price=action.reference_price,
+                    entry_action_id=(
+                        action.related_build_id if action.kind is ActionKind.CLEAR else None
+                    ),
+                    reference_price_type="newow_strategy_reference",
+                ))
+                owners_with_prior_actions.add(owner)
+
+            boundaries_for_bar = tuple(
+                replace(
+                    event[1],
+                    calculation_segment_id=(
+                        reference_state.open_trade.calculation_segment_id
+                        if reference_state.open_trade is not None
+                        else frame.bar.calculation_segment_id
+                    ),
+                )
+                for event in same_bar_events
+            )
+            if not bar.observation_eligible:
+                if unified_actions:
+                    raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                for event in same_bar_events:
+                    apply_event(event)
+                continue
+            try:
+                opening = next(
+                    (
+                        action for action in reversed(unified_actions)
+                        if action.kind in (
+                            UnifiedActionKind.OPEN_LONG, UnifiedActionKind.OPEN_SHORT,
+                        )
+                    ),
+                    None,
+                )
+                completed_calculation_segment = (
+                    opening.calculation_segment_id
+                    if opening is not None
+                    else (
+                        reference_state.open_trade.calculation_segment_id
+                        if reference_state.open_trade is not None
+                        else frame.bar.calculation_segment_id
+                    )
+                )
+                transition = reduce_reference(
+                    reference_state,
+                    actions=tuple(unified_actions),
+                    boundaries=boundaries_for_bar,
+                    completed_bar=CompletedReferenceBar(
+                        physical_contract=bar.physical_contract,
+                        owner_segment_id=bar.segment_id,
+                        calculation_segment_id=completed_calculation_segment,
+                        bar_end=bar.bar_end,
+                        trading_day=bar.trading_day,
+                        reference_price=bar.close,
+                    ),
+                )
+            except ValueError as error:
+                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT") from error
+            if transition.diagnostics and any(
+                action.kind is UnifiedActionKind.CLOSE for action in unified_actions
+            ):
+                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+            prior_open = reference_state.open_trade
+            sync_transition(bar_owner, transition)
+            processed_event_ids.update(_event_id(event[1]) for event in same_bar_events)
+            if same_bar_events and prior_open is not None and transition.state.open_trade is None:
+                interrupted_entries[bar_owner] = prior_open.entry_action_id
+                event = same_bar_events[-1]
+                position = trade_positions[prior_open.entry_action_id]
+                trades[position] = replace(
+                    trades[position],
+                    holding_bars=prior_open.holding_bars,
+                    mark_bar_end=prior_open.mark_bar_end,
+                    mark_reference_price=prior_open.mark_reference_price,
+                    mark_change_pct=prior_open.mark_return,
+                    interrupted_at=event[0],
+                    interruption_reason=event[2],
+                )
 
         for action in actions:
             if action.bar_end > as_of:
                 _validate_action(replay, action, positions, require_position=False)
-                continue
-            consume_price_gaps(action.bar_end)
-            owner = (action.physical_contract, action.segment_id)
-            if any(gap.effective_at == action.bar_end and
-                   (gap.physical_contract, gap.segment_id) == owner for gap in ordered_gaps):
-                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
-            action_boundary = effective_boundaries.get(owner)
-            if action.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY:
-                if (
-                    action_boundary is not None
-                    and action.bar_end >= action_boundary.effective_at
-                ) or open_by_owner.get(owner) is not None:
-                    raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
-                _validate_initial_clear_no_entry(
-                    replay,
-                    action,
-                    positions,
-                    frames_by_owner,
-                    verified_owners,
-                    owner in owners_with_prior_actions,
-                )
-                owners_with_prior_actions.add(owner)
-                if "INITIAL_CLEAR_NO_ENTRY" not in diagnostics:
-                    diagnostics.append("INITIAL_CLEAR_NO_ENTRY")
-                continue
-            if (
-                action_boundary is not None
-                and action.kind is ActionKind.CLEAR
-                and action.bar_end >= action_boundary.effective_at
-            ):
-                _validate_action(replay, action, positions)
-                current = open_by_owner.get(owner)
-                if (
-                    action.trade_eligibility is not TradeEligibility.ELIGIBLE
-                    or current is None
-                    or action.related_build_id != current[1].signal_id
-                ):
-                    raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
-                continue
-            action_index = _validate_action(replay, action, positions)
+        while event_index < len(events) and events[event_index][0] <= as_of:
+            apply_event(events[event_index])
+            event_index += 1
 
-            if action.trade_eligibility is TradeEligibility.WARMUP_ONLY:
-                if (
-                    action.kind is not ActionKind.BUILD
-                    or action.related_build_id is not None
-                ):
-                    raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
-                warmup_witnesses[action.signal_id] = action
-                owners_with_prior_actions.add(owner)
-                continue
+        if any(
+            state.open_trade is not None and state.open_trade.mark_bar_end is None
+            for state in reference_states.values()
+        ):
+            if "OPEN_MARK_UNAVAILABLE" not in diagnostics:
+                diagnostics.append("OPEN_MARK_UNAVAILABLE")
 
-            if action.trade_eligibility is TradeEligibility.NO_ELIGIBLE_ENTRY:
-                witness = warmup_witnesses.get(action.related_build_id or "")
-                if (
-                    action.kind is not ActionKind.CLEAR
-                    or witness is None
-                    or open_by_owner.get(owner) is not None
-                    or witness.identity != action.identity
-                    or witness.physical_contract != action.physical_contract
-                    or witness.segment_id != action.segment_id
-                    or witness.calculation_segment_id != action.calculation_segment_id
-                ):
-                    raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
-                if "NO_ELIGIBLE_ENTRY" not in diagnostics:
-                    diagnostics.append("NO_ELIGIBLE_ENTRY")
-                owners_with_prior_actions.add(owner)
-                continue
-
-            if action.trade_eligibility is not TradeEligibility.ELIGIBLE:
-                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
-
-            if action.kind is ActionKind.BUILD:
-                if (
-                    action.related_build_id is not None
-                    or owner in open_by_owner
-                    or (
-                        action_boundary is not None
-                        and action.bar_end >= action_boundary.effective_at
-                    )
-                ):
-                    raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
-                trade = _open_trade(action)
-                trades.append(trade)
-                open_by_owner[owner] = (len(trades) - 1, action, action_index)
-                owners_with_prior_actions.add(owner)
-                continue
-
-            current = open_by_owner.get(owner)
-            if (
-                action.kind is not ActionKind.CLEAR
-                or current is None
-                or action.related_build_id != current[1].signal_id
-                or action.calculation_segment_id != current[1].calculation_segment_id
-            ):
-                raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
-            trade_position, entry, entry_index = current
-            trades[trade_position] = replace(
-                trades[trade_position],
-                exit_signal_id=action.signal_id,
-                exit_bar_end=action.bar_end,
-                exit_trading_day=action.trading_day,
-                exit_reference_price=action.reference_price,
-                status=ReferenceTradeStatus.CLOSED,
-                holding_bars=action_index - entry_index,
-                reference_return_pct=_reference_return(
-                    entry.reference_price, action.reference_price
-                ),
-            )
-            del open_by_owner[owner]
-            owners_with_prior_actions.add(owner)
-
-        consume_price_gaps(as_of)
-        for owner, (trade_position, _entry, entry_index) in open_by_owner.items():
-            owner_boundary = effective_boundaries.get(owner)
-            if owner_boundary is None:
-                last_index = last_positions.get(owner, entry_index)
-                mark = _latest_owner_mark(
-                    replay,
-                    owner,
-                    _entry,
-                    as_of,
-                    as_of,
-                )
-                if mark is None:
-                    if "OPEN_MARK_UNAVAILABLE" not in diagnostics:
-                        diagnostics.append("OPEN_MARK_UNAVAILABLE")
-                    trades[trade_position] = replace(
-                        trades[trade_position], holding_bars=last_index - entry_index
-                    )
-                else:
-                    mark_bar_end, mark_price, _mark_index = mark
-                    trades[trade_position] = replace(
-                        trades[trade_position],
-                        holding_bars=last_index - entry_index,
-                        mark_bar_end=mark_bar_end,
-                        mark_reference_price=mark_price,
-                        mark_change_pct=_reference_return(
-                            _entry.reference_price, mark_price
-                        ),
-                    )
-                continue
-            mark = _latest_owner_mark(
-                replay,
-                owner,
-                _entry,
-                owner_boundary.effective_at,
-                as_of,
-            )
-            if mark is None:
-                trades[trade_position] = replace(
-                    trades[trade_position],
-                    status=ReferenceTradeStatus.ROLLOVER_INTERRUPTED,
-                    interrupted_at=owner_boundary.effective_at,
-                    interruption_reason="OWNER_BOUNDARY_MARK_UNAVAILABLE",
-                )
-                continue
-            mark_bar_end, mark_price, mark_index = mark
-            trades[trade_position] = replace(
-                trades[trade_position],
-                status=ReferenceTradeStatus.ROLLOVER_INTERRUPTED,
-                holding_bars=mark_index - entry_index,
-                mark_bar_end=mark_bar_end,
-                mark_reference_price=mark_price,
-                mark_change_pct=_reference_return(_entry.reference_price, mark_price),
-                interrupted_at=owner_boundary.effective_at,
-                interruption_reason="OWNER_BOUNDARY",
-            )
-
-        visible_hints = _visible_hints(replay, as_of)
+        visible_hints = tuple(dict.fromkeys((
+            *(() if state is None else state.pending_hints),
+            *_visible_hints(replay, as_of),
+        )))
         trades, bar_level_hints, unassigned_hints = _attach_hints(
-            trades, actions, visible_hints, as_of
+            trades, tuple(actions_by_id.values()), visible_hints, as_of
         )
-        return ReferenceProjection(
+        projection = ReferenceProjection(
             trades=tuple(trades),
             bar_level_hints=bar_level_hints,
             unassigned_hints=unassigned_hints,
             diagnostics=tuple(diagnostics),
             as_of=as_of,
         )
+        active_trades = tuple(
+            trade for trade in projection.trades
+            if trade.status is ReferenceTradeStatus.OPEN
+        )
+        active_ids = {trade.entry_signal_id for trade in active_trades}
+        active_actions = tuple(
+            actions_by_id[entry_id] for entry_id in sorted(active_ids)
+        )
+        active_hint_ids = {
+            hint_id for trade in active_trades for hint_id in trade.hint_ids
+        }
+        next_state = NewowReferenceReplayState(
+            stream=stream,
+            reference_states=tuple(
+                (owner[0], owner[1], reference_state)
+                for owner, reference_state in sorted(reference_states.items())
+            ),
+            active_trades=active_trades,
+            active_actions=active_actions,
+            warmup_witnesses=tuple(
+                warmup_witnesses[key] for key in sorted(warmup_witnesses)
+            ),
+            owners_with_prior_actions=tuple(sorted(owners_with_prior_actions)),
+            interrupted_entries=tuple(
+                (owner[0], owner[1], entry)
+                for owner, entry in sorted(interrupted_entries.items())
+            ),
+            pending_hints=tuple(
+                hint for hint in visible_hints if hint.hint_id in active_hint_ids
+            ),
+            processed_event_ids=tuple(sorted(processed_event_ids)),
+            verified_lifecycle_owners=tuple(sorted(verified_owners)),
+            verified_lifecycle_inputs=(
+                () if state is None else state.verified_lifecycle_inputs
+            ),
+            lifecycle_consumed=tuple(
+                (owner[0], owner[1], count)
+                for owner, count in sorted(lifecycle_consumed.items())
+            ),
+            diagnostics=projection.diagnostics,
+        )
+        return next_state, projection

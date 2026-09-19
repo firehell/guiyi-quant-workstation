@@ -16,7 +16,7 @@ from guiyi_quant.newow.oscillation_channel import (
     OscillationStepResult,
     step_oscillation,
 )
-from guiyi_quant.newow.product_adapters import replay_strategy
+from guiyi_quant.newow.product_adapters import replay_step, replay_strategy, seed_replay_state
 from guiyi_quant.newow.product_contracts import (
     ActionKind,
     DataInterruption,
@@ -589,3 +589,38 @@ def test_adapter_rejects_formula_or_input_identity_substitution(product_cases):
     ):
         with pytest.raises(ValueError, match="IDENTITY"):
             replay_strategy(identity, bars)
+
+
+def test_newow_step_exact_replay_is_noop_and_conflict_is_atomic(product_cases):
+    case = product_cases.primitive_input("trend", "1d")
+    state = seed_replay_state()
+    state, frame, _ = replay_step(case.identity, state, case.bars[0])
+    assert frame is not None
+    snapshot = repr(state)
+
+    replayed, duplicate_frame, diagnostics = replay_step(
+        case.identity, state, case.bars[0],
+    )
+    assert replayed is state
+    assert duplicate_frame is None
+    assert diagnostics == ()
+
+    conflicting = replace(
+        case.bars[0], bar=replace(case.bars[0].bar, close=case.bars[0].bar.close + 1),
+    )
+    with pytest.raises(ValueError, match="conflicts"):
+        replay_step(case.identity, state, conflicting)
+    assert repr(state) == snapshot
+
+
+def test_newow_step_older_failure_does_not_mutate_state(product_cases):
+    case = product_cases.primitive_input("trend", "1d")
+    state = seed_replay_state()
+    for bar in case.bars[:3]:
+        state, frame, _ = replay_step(case.identity, state, bar)
+        assert frame is not None
+    snapshot = repr(state)
+
+    with pytest.raises(ValueError, match="older"):
+        replay_step(case.identity, state, case.bars[0])
+    assert repr(state) == snapshot

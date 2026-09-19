@@ -1,6 +1,6 @@
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Context, Decimal, Inexact, ROUND_DOWN, localcontext
 
 import pytest
 
@@ -9,6 +9,8 @@ from guiyi_quant.subing_reference import (
     ReferenceSegment,
     ReferenceProjectionError,
     project_reference,
+    replay_subing_step,
+    seed_subing_replay_state,
 )
 from guiyi_quant.indicators.subing_ths import SubingThs15mKernel
 
@@ -69,6 +71,98 @@ def test_real_kernel_reversals_preserve_decimal_prices_and_explicit_links():
     assert result.summary.loss_count == 3
     assert result.summary.win_rate_pct == 0
     assert result.trades[-1].mark_reference_price == Decimal(80)
+
+
+@pytest.mark.parametrize("frequency", ("15m", "30m", "60m", "1d"))
+def test_public_projection_and_bounded_per_bar_state_share_one_step(frequency):
+    seg = segment()
+    expected = project_reference(
+        "RB", (seg,), since=date(2026, 1, 1), through=date(2026, 1, 9),
+        as_of=START + timedelta(days=9), frequency=frequency,
+    )
+    state = seed_subing_replay_state()
+    signals = []
+    closed = []
+    indicators = []
+    for bar in seg.bars:
+        state, signal, trade, indicator = replay_subing_step(
+            "RB", seg, frequency, False, state, bar,
+            since=date(2026, 1, 1), through=date(2026, 1, 9),
+        )
+        if signal is not None:
+            signals.append(signal)
+        if trade is not None:
+            closed.append(trade)
+        if indicator is not None:
+            indicators.append(indicator)
+    assert tuple(signals) == expected.signals
+    assert tuple((*closed, state.current)) == expected.trades
+    assert tuple(indicators) == expected.indicators
+
+
+def test_subing_step_exact_replay_is_noop_and_conflict_is_atomic():
+    seg = segment()
+    kwargs = {"since": date(2026, 1, 1), "through": date(2026, 1, 9)}
+    state = seed_subing_replay_state()
+    state, *_ = replay_subing_step("RB", seg, "1d", False, state, seg.bars[0], **kwargs)
+    snapshot = repr(state)
+
+    replayed, signal, trade, indicator = replay_subing_step(
+        "RB", seg, "1d", False, state, seg.bars[0], **kwargs,
+    )
+    assert replayed is state
+    assert (signal, trade, indicator) == (None, None, None)
+    assert state.processed_count == 1
+
+    conflicting = replace(seg.bars[0], close=Decimal("101"))
+    with pytest.raises(ValueError, match="conflicts"):
+        replay_subing_step("RB", seg, "1d", False, state, conflicting, **kwargs)
+    assert repr(state) == snapshot
+
+
+def test_subing_step_older_failure_does_not_mutate_kernel_state():
+    seg = segment()
+    kwargs = {"since": date(2026, 1, 1), "through": date(2026, 1, 9)}
+    state = seed_subing_replay_state()
+    for bar in seg.bars[:51]:
+        state, *_ = replay_subing_step("RB", seg, "1d", False, state, bar, **kwargs)
+    snapshot = repr(state)
+
+    with pytest.raises(ValueError, match="older"):
+        replay_subing_step("RB", seg, "1d", False, state, seg.bars[0], **kwargs)
+    assert repr(state) == snapshot
+    assert state.processed_count == 51
+
+
+def test_public_projection_routes_trade_transitions_through_shared_reducer(monkeypatch):
+    import guiyi_quant.subing_reference as module
+
+    actual = module.reduce_reference
+    calls = []
+
+    def observed(*args, **kwargs):
+        calls.append((args, kwargs))
+        return actual(*args, **kwargs)
+
+    monkeypatch.setattr(module, "reduce_reference", observed, raising=False)
+
+    result = project(segment())
+
+    assert result.trades
+    assert calls
+
+
+def test_per_bar_replay_freezes_decimal_policy_like_public_projection():
+    seg = segment()
+    state = seed_subing_replay_state()
+    with localcontext(Context(prec=6, rounding=ROUND_DOWN, traps=[Inexact])):
+        for bar in seg.bars:
+            state, _signal, _closed, _indicator = replay_subing_step(
+                "RB", seg, "15m", False, state, bar,
+                since=date(2026, 1, 1), through=date(2026, 1, 9),
+            )
+    assert state.current is not None
+    assert state.current.mark_change_pct == Decimal(0)
 
 
 def test_15m_v1_reference_identity_golden_is_unchanged():

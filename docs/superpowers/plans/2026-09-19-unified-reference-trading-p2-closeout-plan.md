@@ -32,10 +32,10 @@
 
 ## 3. R0：接收基线和验证清单
 
-- [ ] 新树检查AGENTS、HEAD/dirty、最新develop和并发任务；复制本文件到同相对路径并提交，原主树文件保留。
-- [ ] 确认上述两提交已包含，检查现有P2原计划与主树未跟踪版本一致再决定是否复制，不能覆盖任务已有更改。
-- [ ] 跑原P2计划测试入口，固定旧基线fixture oracle，输出差异清单；不重录golden掩盖行为变化。
-- [ ] 逐项核对实际source ID、Decimal政策、计龄、缺价/换月与原公共reducer衔接问题，已修项只补缺失验证，不重复改造。
+- [x] 新树检查AGENTS、HEAD/dirty、最新develop和并发任务；复制本文件到同相对路径并提交，原主树文件保留。
+- [x] 确认上述两提交已包含，检查现有P2原计划与主树未跟踪版本一致再决定是否复制，不能覆盖任务已有更改。
+- [x] 跑原P2计划测试入口，固定旧基线fixture oracle，输出差异清单；不重录golden掩盖行为变化。
+- [x] 逐项核对实际source ID、Decimal政策、计龄、缺价/换月与原公共reducer衔接问题，已修项只补缺失验证，不重复改造。
 
 出口：新工作从已验证部分成果起步，未触碰其他任务文件。
 
@@ -70,22 +70,22 @@
 
 ## 5. R2：苏冰实际接公共 reducer
 
-- [ ] 保留现有Subing kernel step与state，适配它的信号为稳定、显式关联的OPEN/CLOSE动作；同一反手signal允许两个不同action身份。
-- [ ] reducer成为开/平/中断/估值状态的唯一计算入口；旧projection仅累积delta并转换旧字段/ID/summary，不再独立配对交易。
-- [ ] SAME_DIRECTION旧信号仍可展示，但不能再次OPEN；无信号Bar仍推进状态和持有计龄。
-- [ ] 保留苏冰`(exit-entry)/entry`政策、四周期formula identity和D1质量v2，保持既有信号/交易ID。
-- [ ] 验证entry/close/反手Bar计龄、最后OPEN mark、中断null、期初归属、指标readiness与固定窗口统计。
+- [x] 保留现有Subing kernel step与state，适配它的信号为稳定、显式关联的OPEN/CLOSE动作；同一反手signal允许两个不同action身份。
+- [x] reducer成为开/平/中断/估值状态的唯一计算入口；旧projection仅累积delta并转换旧字段/ID/summary，不再独立配对交易。
+- [x] SAME_DIRECTION旧信号仍可展示，但不能再次OPEN；无信号Bar仍推进状态和持有计龄。
+- [x] 保留苏冰`(exit-entry)/entry`政策、四周期formula identity和D1质量v2，保持既有信号/交易ID。
+- [x] 验证entry/close/反手Bar计龄、最后OPEN mark、中断null、期初归属、指标readiness与固定窗口统计。
 
 出口：四周期旧oracle逐值一致；测试spy证明旧public projector实际经过公共reducer，而非只保留一个未使用的适配入口。
 
 ## 6. R3：牛哇三策略实际接公共 reducer
 
-- [ ] 复用已抽取replay_step，保留chart/replay的底层依赖方向，避免chart依赖reference应用层。
-- [ ] 将BUILD/CLEAR映射到公共动作，价型保持趋势慢线B/震荡Low-High/主升浪MA45；保留Newow `exit/entry-1`政策。
-- [ ] 生命周期证据约束INITIAL_CLEAR_NO_ENTRY；HINT关联和未分配Hint仍输出，但不影响交易数量。
-- [ ] 正确组织owner/warmup/quality边界的Bar级fold，保持同Bar动作与边界顺序以及换月中断。
-- [ ] 原ReferenceTradeProjector.project改为同一适配/reducer的全量组合与旧DTO转换，删除重复配对状态机。
-- [ ] 保留summary统计算法与公开trade/signal ID；不把新内部ID泄漏到旧页面。
+- [x] 复用已抽取replay_step，保留chart/replay的底层依赖方向，避免chart依赖reference应用层。
+- [x] 将BUILD/CLEAR映射到公共动作，价型保持趋势慢线B/震荡Low-High/主升浪MA45；保留Newow `exit/entry-1`政策。
+- [x] 生命周期证据约束INITIAL_CLEAR_NO_ENTRY；HINT关联和未分配Hint仍输出，但不影响交易数量。
+- [x] 正确组织owner/warmup/quality边界的Bar级fold，保持同Bar动作与边界顺序以及换月中断。
+- [x] 原ReferenceTradeProjector.project改为同一适配/reducer的全量组合与旧DTO转换，删除重复配对状态机。
+- [x] 保留summary统计算法与公开trade/signal ID；不把新内部ID泄漏到旧页面。
 
 出口：三策略×现有允许周期的fixture parity；chart相关回归不变；未开放周期不自动开放。
 

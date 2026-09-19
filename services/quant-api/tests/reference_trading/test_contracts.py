@@ -7,6 +7,7 @@ import pytest
 
 from guiyi_quant.reference_trading import (
     ActionKind,
+    CompletedReferenceBar,
     RecordingMode,
     ReferenceAction,
     StreamIdentity,
@@ -75,4 +76,18 @@ def test_action_rejects_close_without_explicit_entry_and_invalid_forward_boundar
             owner_segment_id="owner-1", calculation_segment_id="calc-1", bar_end=at,
             trading_day=date(2026, 9, 19), sequence=1, kind=ActionKind.CLOSE,
             reference_price=Decimal("10"),
+        )
+
+
+def test_completed_reference_bar_requires_the_full_owner_identity() -> None:
+    at = datetime(2026, 9, 19, 15, tzinfo=UTC)
+    completed = CompletedReferenceBar(
+        physical_contract="RB2601", owner_segment_id="owner-1", calculation_segment_id="calc-1",
+        bar_end=at, trading_day=date(2026, 9, 19), reference_price=Decimal("100"),
+    )
+    assert completed.reference_price == Decimal("100")
+    with pytest.raises(ValueError, match="owner_segment_id"):
+        CompletedReferenceBar(
+            physical_contract="RB2601", owner_segment_id="", calculation_segment_id="calc-1",
+            bar_end=at, trading_day=date(2026, 9, 19), reference_price=Decimal("100"),
         )

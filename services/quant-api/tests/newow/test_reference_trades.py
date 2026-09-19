@@ -3,18 +3,27 @@
 from copy import copy
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN, ROUND_UP, localcontext
+from hashlib import sha256
+import json
 
 import pytest
 
 from guiyi_quant.newow.product_contracts import (
+    ActionKind,
     DataInterruption,
     FeatureRuntimeStatus,
+    StrategyAction,
     StrategyHint,
     TradeEligibility,
 )
 from guiyi_quant.newow.reference_trades import ReferenceTradeProjector
 from guiyi_quant.newow.product_identity import futures_adaptation_version
+from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
+from guiyi_quant.reference_trading.strategy_checkpoint import (
+    adapter_checkpoint_from_json,
+    adapter_checkpoint_to_json,
+)
 
 
 def _forged_actions(replay, actions):
@@ -74,6 +83,401 @@ def test_closed_trade_covers_the_reference_contract_and_uses_action_prices(
     assert trade.interruption_reason is None
     assert trade.statistics_membership is None
     assert trade.hint_ids == ()
+
+
+def test_public_projector_return_is_independent_of_caller_decimal_rounding(product_cases):
+    case = product_cases.closed(entry="3", exit="4")
+
+    values = []
+    for rounding in (ROUND_DOWN, ROUND_UP):
+        with localcontext() as context:
+            context.rounding = rounding
+            values.append(ReferenceTradeProjector().project(
+                case.replay, case.boundaries, case.as_of,
+            ).trades[0].reference_return_pct)
+
+    assert values == [
+        Decimal("33.33333333333333333333333330"),
+        Decimal("33.33333333333333333333333330"),
+    ]
+
+
+def test_public_projector_routes_trade_transitions_through_shared_reducer(
+    product_cases, monkeypatch,
+):
+    import guiyi_quant.newow.reference_trades as module
+
+    case = product_cases.closed(entry="100", exit="110")
+    actual = module.reduce_reference
+    calls = []
+
+    def observed(*args, **kwargs):
+        calls.append((args, kwargs))
+        return actual(*args, **kwargs)
+
+    monkeypatch.setattr(module, "reduce_reference", observed, raising=False)
+
+    result = module.ReferenceTradeProjector().project(
+        case.replay, case.boundaries, case.as_of,
+    )
+
+    assert result.trades[0].status == "CLOSED"
+    assert calls
+
+
+@pytest.mark.parametrize("strategy", ("trend", "oscillation", "main_rise"))
+def test_public_projector_checkpoint_resumes_open_trade_without_prefix_replay(
+    product_cases, strategy,
+):
+    case = product_cases.closed(strategy=strategy, entry="100", exit="110")
+    hint = StrategyHint(
+        identity=case.identity,
+        physical_contract=case.entry.physical_contract,
+        segment_id=case.entry.segment_id,
+        bar_end=case.entry.bar_end,
+        trading_day=case.entry.trading_day,
+        kind="D1",
+        known_at=case.entry.bar_end,
+        anchor_price=case.entry.reference_price,
+        sequence=1,
+        source_marker_id="owned:checkpoint-hint",
+    )
+    first_frame = replace(case.replay.frames[0], hints=(hint,))
+    case = replace(
+        case,
+        replay=replace(
+            case.replay,
+            frames=(first_frame, *case.replay.frames[1:]),
+            hints=(hint,),
+        ),
+    )
+    entry_index = next(
+        index for index, frame in enumerate(case.replay.frames)
+        if any(action.kind.value == "BUILD" for action in frame.actions)
+    )
+    prefix_frames = case.replay.frames[:entry_index + 1]
+    tail_frames = case.replay.frames[entry_index + 1:]
+
+    def sliced(frames):
+        return replace(
+            case.replay,
+            frames=frames,
+            actions=tuple(action for frame in frames for action in frame.actions),
+            hints=tuple(hint for frame in frames for hint in frame.hints),
+            lifecycle_input_bars=tuple(frame.bar for frame in frames),
+            lifecycle_evidence=(),
+        )
+
+    projector = ReferenceTradeProjector()
+    prefix_as_of = prefix_frames[-1].bar.bar.bar_end
+    state, prefix = projector.advance(
+        None, sliced(prefix_frames), case.boundaries, prefix_as_of,
+    )
+    assert len(state.active_trades) == 1
+    contract, segment, unified = next(
+        item for item in state.reference_states if item[2].open_trade is not None
+    )
+    checkpoint = AdapterCheckpoint(
+        state, prefix_as_of, "prefix", contract, segment,
+        unified.open_trade.calculation_segment_id, state.stream, unified,
+    )
+    encoded = adapter_checkpoint_to_json(
+        checkpoint, strategy_schema="newow_reference_replay_v1",
+    )
+    restored = adapter_checkpoint_from_json(
+        encoded, expected_stream=state.stream,
+        expected_strategy_schema="newow_reference_replay_v1",
+    )
+
+    resumed, tail = projector.advance(
+        restored.strategy_state, sliced(tail_frames), case.boundaries, case.as_of,
+    )
+    merged = {trade.reference_trade_id: trade for trade in prefix.trades}
+    merged.update({trade.reference_trade_id: trade for trade in tail.trades})
+    expected = projector.project(case.replay, case.boundaries, case.as_of)
+
+    assert tuple(merged.values()) == expected.trades
+    assert tail.bar_level_hints == expected.bar_level_hints
+    assert tail.unassigned_hints == expected.unassigned_hints
+    assert tail.diagnostics == expected.diagnostics
+    assert resumed.active_trades == ()
+    assert '"frames"' not in encoded
+
+
+def test_public_projector_checkpoint_resumes_into_rollover_interruption(product_cases):
+    case = product_cases.interrupted(mark="90")
+    projector = ReferenceTradeProjector()
+    prefix_as_of = case.replay.frames[-1].bar.bar.bar_end
+    state, prefix = projector.advance(
+        None, case.replay, case.boundaries, prefix_as_of,
+    )
+    empty_tail = replace(
+        case.replay, frames=(), actions=(), hints=(), lifecycle_input_bars=(),
+        lifecycle_evidence=(),
+    )
+
+    resumed, tail = projector.advance(
+        state, empty_tail, case.boundaries, case.as_of,
+    )
+    merged = {trade.reference_trade_id: trade for trade in prefix.trades}
+    merged.update({trade.reference_trade_id: trade for trade in tail.trades})
+    expected = projector.project(case.replay, case.boundaries, case.as_of)
+
+    assert tuple(merged.values()) == expected.trades
+    assert resumed.active_trades == ()
+    assert len(resumed.processed_event_ids) == 1
+
+
+def test_incremental_projector_rejects_older_owner_frame_after_close(product_cases):
+    case = product_cases.closed()
+    projector = ReferenceTradeProjector()
+    state, _ = projector.advance(None, case.replay, (), case.as_of)
+    snapshot = repr(state)
+    entry_only = replace(
+        case.replay,
+        frames=case.replay.frames[:1],
+        actions=(case.entry,),
+        hints=(),
+        lifecycle_input_bars=case.replay.lifecycle_input_bars[:1],
+        lifecycle_evidence=(),
+    )
+
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        projector.advance(state, entry_only, (), case.entry.bar_end)
+    assert repr(state) == snapshot
+
+
+def test_newow_checkpoint_rejects_public_open_price_divergence(product_cases):
+    case = product_cases.open()
+    state, _ = ReferenceTradeProjector().advance(
+        None, case.replay, (), case.as_of,
+    )
+    contract, segment, unified = next(
+        item for item in state.reference_states if item[2].open_trade is not None
+    )
+    checkpoint = AdapterCheckpoint(
+        state, case.bars[-1].bar.bar_end, "prefix", contract, segment,
+        unified.open_trade.calculation_segment_id, state.stream, unified,
+    )
+    payload = json.loads(adapter_checkpoint_to_json(
+        checkpoint, strategy_schema="newow_reference_replay_v1",
+    ))
+    payload["strategy_state"]["fields"]["active_trades"]["$tuple"][0][
+        "fields"
+    ]["entry_reference_price"] = {"$decimal": "999"}
+    body = {key: value for key, value in payload.items() if key != "checksum_sha256"}
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    payload["checksum_sha256"] = sha256(canonical.encode()).hexdigest()
+
+    with pytest.raises(ValueError, match="active trades"):
+        adapter_checkpoint_from_json(
+            json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True),
+            expected_stream=state.stream,
+            expected_strategy_schema="newow_reference_replay_v1",
+        )
+
+
+def test_initial_clear_checkpoint_carries_verified_lifecycle_without_frame_history(
+    product_cases,
+):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,),
+    )
+    projector = ReferenceTradeProjector()
+    seeded = projector.seed(replay)
+    prefix_frames = replay.frames[:-1]
+    prefix = replace(
+        replay,
+        frames=prefix_frames,
+        actions=(),
+        hints=tuple(hint for frame in prefix_frames for hint in frame.hints),
+        lifecycle_input_bars=tuple(frame.bar for frame in prefix_frames),
+        lifecycle_evidence=(),
+        diagnostics=(),
+    )
+    prefix_as_of = prefix_frames[-1].bar.bar.bar_end
+    state, prefix_projection = projector.advance(seeded, prefix, (), prefix_as_of)
+    assert prefix_projection.diagnostics == ()
+    assert state.verified_lifecycle_owners == ((
+        case.bars[0].bar.physical_contract, case.bars[0].bar.segment_id,
+    ),)
+    contract, segment, unified = state.reference_states[0]
+    checkpoint = AdapterCheckpoint(
+        state, prefix_as_of, "prefix", contract, segment,
+        prefix_frames[-1].bar.calculation_segment_id, state.stream, unified,
+    )
+    restored = adapter_checkpoint_from_json(
+        adapter_checkpoint_to_json(
+            checkpoint, strategy_schema="newow_reference_replay_v1",
+        ),
+        expected_stream=state.stream,
+        expected_strategy_schema="newow_reference_replay_v1",
+    )
+    clear_frame = replay.frames[-1]
+    tail = replace(
+        replay,
+        frames=(clear_frame,),
+        actions=clear_frame.actions,
+        hints=clear_frame.hints,
+        lifecycle_input_bars=(clear_frame.bar,),
+        lifecycle_evidence=(),
+        diagnostics=("INITIAL_CLEAR_NO_ENTRY",),
+    )
+
+    resumed, projection = projector.advance(
+        restored.strategy_state, tail, (), clear_frame.bar.bar.bar_end,
+    )
+    assert projection.trades == ()
+    assert projection.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+
+    empty_tail = replace(
+        tail, frames=(), actions=(), hints=(), lifecycle_input_bars=(), diagnostics=(),
+    )
+    _, empty_projection = projector.advance(
+        resumed, empty_tail, (), clear_frame.bar.bar.bar_end,
+    )
+    assert empty_projection.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+
+    replayed, duplicate_projection = projector.advance(
+        resumed, tail, (), clear_frame.bar.bar.bar_end,
+    )
+    assert replayed is resumed
+    assert duplicate_projection.trades == ()
+    assert duplicate_projection.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+
+
+def test_initial_clear_seed_is_bound_to_the_consumed_frame_prefix(product_cases):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    case = product_cases.initial_clear_input()
+    evidence = product_cases.synthetic_lifecycle_evidence(case.bars)
+    replay = replay_strategy(
+        case.identity, case.bars, lifecycle_evidence=(evidence,),
+    )
+    projector = ReferenceTradeProjector()
+    seeded = projector.seed(replay)
+    prefix_frames = replay.frames[:-1]
+    damaged_first = replace(
+        prefix_frames[0],
+        main_values=(("ma35", Decimal("0")), ("ma45", Decimal("1"))),
+    )
+    damaged_frames = (damaged_first, *prefix_frames[1:])
+    damaged_prefix = replace(
+        replay,
+        frames=damaged_frames,
+        actions=(),
+        hints=tuple(hint for frame in damaged_frames for hint in frame.hints),
+        lifecycle_input_bars=tuple(frame.bar for frame in damaged_frames),
+        lifecycle_evidence=(),
+        diagnostics=(),
+    )
+
+    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
+        projector.advance(
+            seeded, damaged_prefix, (), damaged_frames[-1].bar.bar.bar_end,
+        )
+
+
+def test_initial_clear_completed_window_accepts_later_new_owner_bar(product_cases):
+    from guiyi_quant.newow.product_adapters import replay_strategy
+
+    prefix_case = product_cases.initial_clear_input()
+    prefix_evidence = product_cases.synthetic_lifecycle_evidence(prefix_case.bars)
+    prefix_replay = replay_strategy(
+        prefix_case.identity, prefix_case.bars,
+        lifecycle_evidence=(prefix_evidence,),
+    )
+    projector = ReferenceTradeProjector()
+    state, prefix = projector.advance(
+        projector.seed(prefix_replay), prefix_replay, (),
+        prefix_case.bars[-1].bar.bar_end,
+    )
+
+    extended_case = product_cases.main_rise_lifecycle_input(
+        (*([Decimal("100")] * 35), Decimal("90"), Decimal("91"))
+    )
+    extended_evidence = product_cases.synthetic_lifecycle_evidence(extended_case.bars)
+    extended_replay = replay_strategy(
+        extended_case.identity, extended_case.bars,
+        lifecycle_evidence=(extended_evidence,),
+    )
+    raw_last_frame = extended_replay.frames[-1]
+    build = StrategyAction(
+        identity=extended_replay.identity,
+        physical_contract=raw_last_frame.bar.bar.physical_contract,
+        segment_id=raw_last_frame.bar.bar.segment_id,
+        bar_end=raw_last_frame.bar.bar.bar_end,
+        trading_day=raw_last_frame.bar.bar.trading_day,
+        kind=ActionKind.BUILD,
+        reference_price=raw_last_frame.bar.bar.close,
+        anchor_price=raw_last_frame.bar.bar.close,
+        source_marker_id="owned:post-lifecycle-build",
+    )
+    last_frame = replace(raw_last_frame, main_state="BUILD", actions=(build,))
+    extended_replay = replace(
+        extended_replay,
+        frames=(*extended_replay.frames[:-1], last_frame),
+        actions=(*extended_replay.actions, build),
+    )
+    tail = replace(
+        extended_replay,
+        frames=(last_frame,), actions=last_frame.actions, hints=last_frame.hints,
+        lifecycle_input_bars=(last_frame.bar,), lifecycle_evidence=(), diagnostics=(),
+    )
+
+    resumed, delta = projector.advance(
+        state, tail, (), last_frame.bar.bar.bar_end,
+    )
+    expected = projector.project(
+        extended_replay, (), last_frame.bar.bar.bar_end,
+    )
+
+    assert prefix.trades == ()
+    assert delta.trades == expected.trades
+    assert len(delta.trades) == 1
+    assert delta.trades[0].status.value == "OPEN"
+    assert delta.diagnostics == expected.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
+    assert resumed.lifecycle_consumed == state.lifecycle_consumed
+
+    first_35 = prefix_replay.frames[:-1]
+    partial_replay = replace(
+        prefix_replay,
+        frames=first_35,
+        actions=(),
+        hints=tuple(hint for frame in first_35 for hint in frame.hints),
+        lifecycle_input_bars=tuple(frame.bar for frame in first_35),
+        lifecycle_evidence=(),
+        diagnostics=(),
+    )
+    partial_state, _ = projector.advance(
+        projector.seed(prefix_replay), partial_replay, (),
+        first_35[-1].bar.bar.bar_end,
+    )
+    cross_boundary_frames = extended_replay.frames[-2:]
+    cross_boundary = replace(
+        extended_replay,
+        frames=cross_boundary_frames,
+        actions=tuple(
+            action for frame in cross_boundary_frames for action in frame.actions
+        ),
+        hints=tuple(
+            hint for frame in cross_boundary_frames for hint in frame.hints
+        ),
+        lifecycle_input_bars=tuple(frame.bar for frame in cross_boundary_frames),
+        lifecycle_evidence=(),
+        diagnostics=("INITIAL_CLEAR_NO_ENTRY",),
+    )
+    batched_state, batched_delta = projector.advance(
+        partial_state, cross_boundary, (), last_frame.bar.bar.bar_end,
+    )
+
+    assert batched_state.active_trades == resumed.active_trades
+    assert batched_delta.trades == delta.trades
+    assert batched_delta.diagnostics == delta.diagnostics
 
 
 def test_weekly_quality_adaptation_has_its_own_version_without_changing_daily(
