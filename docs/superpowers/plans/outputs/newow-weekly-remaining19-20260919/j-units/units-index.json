@@ -1,0 +1,14 @@
+{
+  "schema_version": "newow_remaining19_prepare_units_v1",
+  "report_path": "docs/superpowers/plans/outputs/newow-weekly-remaining19-20260919/j-readiness.json",
+  "report_sha256": "ed6144f07b9012c1c4b8e5c3608fbefcca5215c1d0476ca0af25ff0ee0c47beb",
+  "batch_count": 1,
+  "unit_count": 5,
+  "batches": [
+    {
+      "path": "docs/superpowers/plans/outputs/newow-weekly-remaining19-20260919/j-units/units-001.json",
+      "sha256": "1f57aadba253f60bb66b2b99802f51342c528977fa28b1aaf10ee6da93eb0b58",
+      "unit_count": 5
+    }
+  ]
+}
