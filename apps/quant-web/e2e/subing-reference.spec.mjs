@@ -93,6 +93,41 @@ test('historical unavailable keeps immutable events and Rule facts visible', asy
   await expect(page.locator('.detail-section-tabs__history')).toContainText('Bar 2026-09-03 12:30 北京时间')
 })
 
+test('daily quality interruptions sharing or preceding chart days keep first load ordered', async ({ page }) => {
+  const days = ['2026-09-16', '2026-09-17', '2026-09-18']
+  const dailyBars = days.map((day, index) => ({ ...referenceBars[index], bar_end: `${day}T15:00:00+08:00`, trading_day: day }))
+  await mockSubingReference(page, { bars: dailyBars, response() {
+    const base = subingReferenceFixture()
+    const qualityBars = days.map((day, index) => ({
+      bar_end: `${day}T15:00:00+08:00`, trading_day: day,
+      open: String(100 + index), high: String(102 + index), low: String(99 + index), close: String(101 + index),
+      volume: '10', turnover: '1000', open_interest: '20', physical_contract: 'JM2601',
+      segment_id: 'owner', calculation_segment_id: 'calculation',
+    }))
+    const interruption = (day, contract) => ({
+      bar_end: `${day}T15:00:00+08:00`, trading_day: day, physical_contract: contract,
+      segment_id: `owner-${contract}`, classification: 'NONPOSITIVE_CLOSE',
+      classification_version: 'rqdata-d1-nonpositive-close-v1', request_sha256: 'b'.repeat(64), response_sha256: 'c'.repeat(64),
+    })
+    return {
+      ...base, frequency: '1d', formula_version: 'subing_ths_1d_v1',
+      reference_model_version: 'subing_reference_reverse_close_quality_segment_v2', research_status: 'WARMING',
+      as_of: '2026-09-18T16:00:00+08:00', performance_since: '2026-09-16', performance_through: '2026-09-18',
+      reference_cutoff: '2026-09-18T15:00:00+08:00',
+      summary: { ...base.summary, closed_count: 0, win_count: 0, loss_count: 0, open_count: 0, interrupted_count: 0, rollover_interrupted_count: 0, data_interrupted_count: 0, win_rate_pct: null, mean_return_pct: null, sum_return_percentage_points: '0' },
+      signals: [], indicators: [], items: [], quality_policy_version: 'subing-d1-quality-segment-v1',
+      coverage_intervals: [{ since: '2026-09-16', through: '2026-09-18', status: 'WARMING', physical_contract: 'JM2601', segment_id: 'owner', calculation_segment_id: 'calculation' }],
+      quality_interruptions: [interruption('2026-08-01', 'JM2509'), interruption('2026-09-16', 'JM2601'), interruption('2026-09-16', 'JM2605')],
+      quality_chart_bars: qualityBars,
+    }
+  } })
+  await page.goto('/market/chart?symbol=jm&view=subing&series_kind=actual_dominant&frequency=1d')
+  await expect(page.locator('[data-detail-workspace="subing"]')).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toBeVisible()
+  await expect(page.getByText('日线质量状态：预热中（不足 34 根有效日线）；质量中断 3 项。')).toBeVisible()
+  await expect(page.getByText('页面加载失败')).toHaveCount(0)
+})
+
 test('date range and cursor keep a fixed summary and row selects its reference record', async ({ page }) => {
   const requests = []
   await mockSubingReference(page, { response(url) {

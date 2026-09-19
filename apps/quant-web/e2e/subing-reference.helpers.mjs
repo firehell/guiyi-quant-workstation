@@ -20,8 +20,8 @@ export function subingReferenceFixture() {
   }
   return fixture
 }
-export async function mockSubingReference(page, { unavailable = false, response } = {}) {
-  const facts = await mockMarketDetail(page, { barsPage: ({ url }) => ['15m', '30m', '60m', '1d'].includes(url.searchParams.get('frequency')) ? { bars: referenceBars } : undefined, alertEvents: () => [{ ...subingEvent('jm'), bar_end: referenceBars[8].bar_end }], alertRules: [subingRule()] })
+export async function mockSubingReference(page, { unavailable = false, response, bars = referenceBars } = {}) {
+  const facts = await mockMarketDetail(page, { barsPage: ({ url }) => ['15m', '30m', '60m', '1d'].includes(url.searchParams.get('frequency')) ? { bars } : undefined, alertEvents: () => [{ ...subingEvent('jm'), bar_end: referenceBars[8].bar_end }], alertRules: [subingRule()] })
   await page.route('**/api/v1/market/jm/subing/reference*', (route) => unavailable ? route.fulfill({ status: 409, json: { detail: { code: 'SUBING_REFERENCE_DATA_UNAVAILABLE' } } }) : route.fulfill({ json: response ? response(new URL(route.request().url())) : subingReferenceFixture() }))
   return facts
 }

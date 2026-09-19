@@ -59,6 +59,9 @@ test('daily quality breaks use an independent marker identity and whitespace anc
   assert.match(workspace, /:quality-breaks="qualityBreaks"/)
   assert.match(chart, /props\.qualityBreaks/)
   assert.match(chart, /values\.push\(\{ time \}\)/)
+  assert.match(chart, /occupied\.add\(key\)/)
+  assert.match(chart, /\[\.\.\.ordinary, \.\.\.quality\]\.sort\(\(left, right\) => compareChartTimes\(left\.time, right\.time\)\)/)
+  assert.match(chart, /chartTimeKey\(left\)\.localeCompare\(chartTimeKey\(right\)\)/)
 })
 
 test('late response from an earlier period cannot replace the selected period', async () => {

@@ -272,15 +272,17 @@ function barValues(bars: BarData[]) {
     low: bar.low,
     close: bar.close,
   }))
-  const occupied = new Set(values.map(item => String(item.time)))
+  const occupied = new Set(values.map(item => chartTimeKey(item.time)))
   for (const item of props.qualityBreaks) {
     const time = ribbonTime(item.time)
-    if (time !== null && !occupied.has(String(time))) values.push({ time })
+    const key = time === null ? null : chartTimeKey(time)
+    if (time !== null && key !== null && !occupied.has(key)) {
+      values.push({ time })
+      occupied.add(key)
+    }
   }
   return props.qualityBreaks.length
-    ? values.sort((left, right) => typeof left.time === 'number' && typeof right.time === 'number'
-        ? left.time - right.time
-        : String(left.time).localeCompare(String(right.time)))
+    ? values.sort((left, right) => compareChartTimes(left.time, right.time))
     : values
 }
 
@@ -570,7 +572,7 @@ function chartMarkers(markers: KlineMarker[]) {
       color: theme.textMuted, text: item.label, size: 1,
     }]
   })
-  return [...ordinary, ...quality]
+  return [...ordinary, ...quality].sort((left, right) => compareChartTimes(left.time, right.time))
 }
 
 function markerTimeKey(value: string): string {
@@ -593,6 +595,11 @@ function ribbonTime(iso: string): Time | null {
 
 function sameChartTime(left: Time, right: Time): boolean {
   return chartTimeKey(left) === chartTimeKey(right)
+}
+
+function compareChartTimes(left: Time, right: Time): number {
+  if (typeof left === 'number' && typeof right === 'number') return left - right
+  return chartTimeKey(left).localeCompare(chartTimeKey(right))
 }
 
 function chartTimeKey(time: Time): string {
