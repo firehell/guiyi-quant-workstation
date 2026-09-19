@@ -1,0 +1,241 @@
+{
+  "schemaVersion": "newow_remaining19_browser_acceptance_v1",
+  "baseURL": "http://127.0.0.1:5174",
+  "denominator": 57,
+  "completed": 0,
+  "pagePass": 0,
+  "interrupted": 0,
+  "untested": 57,
+  "fatal": "Error: browserType.launch: Target page, context or browser has been closed\nBrowser logs:\n\n<launching> /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,Translate,AutoDeElevate,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/var/folders/5f/3h8_rqbd2nnf_yz0rg3zhhym0000gn/T/playwright_chromiumdev_profile-qyVXDu --remote-debugging-pipe --no-startup-window\n<launched> pid=34328\nCall log:\n\u001b[2m  - <launching> /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,Translate,AutoDeElevate,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/var/folders/5f/3h8_rqbd2nnf_yz0rg3zhhym0000gn/T/playwright_chromiumdev_profile-qyVXDu --remote-debugging-pipe --no-startup-window\u001b[22m\n\u001b[2m  - <launched> pid=34328\u001b[22m\n\u001b[2m  - [pid=34328] <gracefully close start>\u001b[22m\n\u001b[2m  - [pid=34328] <kill>\u001b[22m\n\u001b[2m  - [pid=34328] <will force kill>\u001b[22m\n\u001b[2m  - [pid=34328] exception while trying to kill process: Error: kill EPERM\u001b[22m\n\u001b[2m  - [pid=34328] <process did exit: exitCode=null, signal=SIGABRT>\u001b[22m\n\u001b[2m  - [pid=34328] starting temporary directories cleanup\u001b[22m\n\u001b[2m  - [pid=34328] finished temporary directories cleanup\u001b[22m\n\u001b[2m  - [pid=34328] <gracefully close end>\u001b[22m\n",
+  "untestedCases": [
+    {
+      "product": "b",
+      "strategy": "trend"
+    },
+    {
+      "product": "b",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "b",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "bz",
+      "strategy": "trend"
+    },
+    {
+      "product": "bz",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "bz",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "cj",
+      "strategy": "trend"
+    },
+    {
+      "product": "cj",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "cj",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "eb",
+      "strategy": "trend"
+    },
+    {
+      "product": "eb",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "eb",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "eg",
+      "strategy": "trend"
+    },
+    {
+      "product": "eg",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "eg",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "j",
+      "strategy": "trend"
+    },
+    {
+      "product": "j",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "j",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "oi",
+      "strategy": "trend"
+    },
+    {
+      "product": "oi",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "oi",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "pf",
+      "strategy": "trend"
+    },
+    {
+      "product": "pf",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "pf",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "pg",
+      "strategy": "trend"
+    },
+    {
+      "product": "pg",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "pg",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "pk",
+      "strategy": "trend"
+    },
+    {
+      "product": "pk",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "pk",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "pl",
+      "strategy": "trend"
+    },
+    {
+      "product": "pl",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "pl",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "pr",
+      "strategy": "trend"
+    },
+    {
+      "product": "pr",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "pr",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "px",
+      "strategy": "trend"
+    },
+    {
+      "product": "px",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "px",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "rs",
+      "strategy": "trend"
+    },
+    {
+      "product": "rs",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "rs",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "sf",
+      "strategy": "trend"
+    },
+    {
+      "product": "sf",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "sf",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "sh",
+      "strategy": "trend"
+    },
+    {
+      "product": "sh",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "sh",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "si",
+      "strategy": "trend"
+    },
+    {
+      "product": "si",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "si",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "sm",
+      "strategy": "trend"
+    },
+    {
+      "product": "sm",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "sm",
+      "strategy": "main_rise"
+    },
+    {
+      "product": "sr",
+      "strategy": "trend"
+    },
+    {
+      "product": "sr",
+      "strategy": "oscillation"
+    },
+    {
+      "product": "sr",
+      "strategy": "main_rise"
+    }
+  ],
+  "results": []
+}

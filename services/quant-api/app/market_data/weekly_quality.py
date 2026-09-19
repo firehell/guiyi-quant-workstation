@@ -12,10 +12,15 @@ import hashlib
 import json
 
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import (
+    NonpositiveCloseFact,
+    PriceUnavailableFact,
+    SourceQualityFact,
+)
 
 
 WEEKLY_SOURCE_CLASSIFICATION_VERSION = "weekly-d1-quality-v1"
+WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2 = "weekly-d1-quality-v2"
 
 
 def weekly_daily_revision_sha256(
@@ -54,6 +59,7 @@ class WeeklySourceInterruption:
     daily_revision_sha256: str
     source_identity: str
     classification_version: str = WEEKLY_SOURCE_CLASSIFICATION_VERSION
+    quality_classifications: tuple[str, ...] = ()
 
     @property
     def bar_end(self) -> datetime:
@@ -78,12 +84,18 @@ def classify_weekly_source(
     physical_contract: str,
     expected_daily_endpoints: tuple[tuple[datetime, date], ...],
     daily_bars: tuple[CanonicalBar, ...],
-    price_unavailable: tuple[PriceUnavailableFact, ...],
+    price_unavailable: tuple[SourceQualityFact, ...],
     daily_revision_sha256: str,
+    classification_version: str = WEEKLY_SOURCE_CLASSIFICATION_VERSION,
 ) -> WeeklySourceCoverage:
     """Require a disjoint, exhaustive explanation for every completed D1 endpoint."""
 
     DatasetKey(DatasetKind.CONTRACT, product, physical_contract, BarFrequency.D1)
+    if classification_version not in {
+        WEEKLY_SOURCE_CLASSIFICATION_VERSION,
+        WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2,
+    }:
+        raise ValueError("WEEKLY_SOURCE_CLASSIFICATION_INVALID")
     if not _digest(daily_revision_sha256):
         raise ValueError("WEEKLY_SOURCE_REVISION_INVALID")
     expected = tuple(expected_daily_endpoints)
@@ -104,8 +116,13 @@ def classify_weekly_source(
 
     bars = tuple(daily_bars)
     gaps = tuple(price_unavailable)
+    allowed_facts = (
+        (PriceUnavailableFact, NonpositiveCloseFact)
+        if classification_version == WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2
+        else (PriceUnavailableFact,)
+    )
     if any(not isinstance(bar, CanonicalBar) for bar in bars) or any(
-        not isinstance(gap, PriceUnavailableFact) for gap in gaps
+        not isinstance(gap, allowed_facts) for gap in gaps
     ):
         raise ValueError("WEEKLY_SOURCE_FACT_INVALID")
     bar_points = tuple((bar.bar_end, bar.trading_day) for bar in bars)
@@ -130,12 +147,14 @@ def classify_weekly_source(
         (gap.request_sha256, gap.response_sha256) for gap in ordered_gaps
     )
     identity_input = {
-        "version": WEEKLY_SOURCE_CLASSIFICATION_VERSION,
+        "version": classification_version,
         "product": product,
         "contract": physical_contract,
         "expected": [(end.isoformat(), day.isoformat()) for end, day in expected],
         "quality": [
-            (gap.bar_end.isoformat(), gap.trading_day.isoformat(), *hashes)
+            ((gap.classification,) if classification_version
+             == WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2 else ())
+            + (gap.bar_end.isoformat(), gap.trading_day.isoformat(), *hashes)
             for gap, hashes in zip(ordered_gaps, quality_hashes, strict=True)
         ],
         "daily_revision_sha256": daily_revision_sha256,
@@ -154,6 +173,8 @@ def classify_weekly_source(
         quality_source_hashes=quality_hashes,
         daily_revision_sha256=daily_revision_sha256,
         source_identity=source_identity,
+        classification_version=classification_version,
+        quality_classifications=tuple(gap.classification for gap in ordered_gaps),
     ))
 
 

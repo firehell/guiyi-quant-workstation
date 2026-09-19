@@ -40,6 +40,7 @@ from .product_contracts import (
     validate_lifecycle_replay_evidence,
 )
 from .product_identity import (
+    InputQualityPolicy,
     REFERENCE_MODEL_VERSION,
     build_reference_trade_id,
     futures_adaptation_version,
@@ -104,6 +105,7 @@ class ReferenceTrade:
     statistics_membership: str | None = None
     hint_ids: tuple[str, ...] = ()
     calculation_segment_id: str | None = None
+    input_quality_policy: InputQualityPolicy = InputQualityPolicy.V1
 
     def __post_init__(self) -> None:
         for value in (
@@ -122,6 +124,9 @@ class ReferenceTrade:
             _text(self.calculation_segment_id)
         object.__setattr__(self, "strategy_code", ProductStrategy(self.strategy_code))
         object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
+        object.__setattr__(
+            self, "input_quality_policy", InputQualityPolicy(self.input_quality_policy)
+        )
         object.__setattr__(self, "status", ReferenceTradeStatus(self.status))
         formulas = tuple(self.formula_versions)
         if not formulas:
@@ -254,7 +259,10 @@ def _stream_for(replay: StrategyReplay) -> StreamIdentity:
         formula_versions=replay.identity.formula_versions,
         profile_id=replay.identity.profile_id,
         reference_model_version=REFERENCE_MODEL_VERSION,
-        futures_adaptation_version=futures_adaptation_version(replay.identity.frequency),
+        futures_adaptation_version=futures_adaptation_version(
+            replay.identity.frequency,
+            replay.identity.input_quality_policy,
+        ),
         product=replay.identity.product,
         frequency=replay.identity.frequency.value,
         series_kind=replay.identity.series_kind,
@@ -491,7 +499,9 @@ def _open_trade(entry: StrategyAction, holding_bars: int = 0) -> ReferenceTrade:
         calculation_segment_id=entry.calculation_segment_id,
         formula_versions=identity.formula_versions,
         reference_model_version=REFERENCE_MODEL_VERSION,
-        futures_adaptation_version=futures_adaptation_version(identity.frequency),
+        futures_adaptation_version=futures_adaptation_version(
+            identity.frequency, identity.input_quality_policy
+        ),
         entry_signal_id=entry.signal_id,
         entry_bar_end=entry.bar_end,
         entry_trading_day=entry.trading_day,
@@ -503,6 +513,7 @@ def _open_trade(entry: StrategyAction, holding_bars: int = 0) -> ReferenceTrade:
         status=ReferenceTradeStatus.OPEN,
         holding_bars=holding_bars,
         reference_return_pct=None,
+        input_quality_policy=identity.input_quality_policy,
     )
 
 

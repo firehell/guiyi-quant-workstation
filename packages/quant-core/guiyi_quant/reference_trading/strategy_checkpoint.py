@@ -29,6 +29,7 @@ from ..newow.product_contracts import (
     StrategyHint,
     TradeEligibility,
 )
+from ..newow.product_identity import InputQualityPolicy
 from ..newow.reference_trades import (
     NewowReferenceReplayState,
     ReferenceTrade as NewowReferenceTrade,
@@ -58,6 +59,7 @@ _ENUMS = {
     f"{cls.__module__}:{cls.__qualname__}": cls
     for cls in (
         TrendBandState, NewowActionKind, ProductFrequency, ProductStrategy, TradeEligibility,
+        InputQualityPolicy,
         RecordingMode, Side, TradeStatus,
         NewowReferenceTradeStatus,
     )

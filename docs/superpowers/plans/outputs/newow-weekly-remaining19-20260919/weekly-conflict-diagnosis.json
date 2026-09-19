@@ -1,0 +1,2245 @@
+{
+  "schema_version": "newow_weekly_conflict_diagnosis_v1",
+  "readonly": true,
+  "provider_requests": 0,
+  "writes": 0,
+  "code_sha": "d5bf6382b5c227a4d03dab467e90033b449efbfc",
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "input_sha256": "6075ae49680fdc676554cf78fedc2a3e463dd5b748fa69d3a99f9525110cee78",
+  "catalog_revision_before": "fa01809910bfda3d93de9fe6e213cc46ee4c5463e81db7c5bf49fe56d4b1a8a7",
+  "catalog_revision_after": "fa01809910bfda3d93de9fe6e213cc46ee4c5463e81db7c5bf49fe56d4b1a8a7",
+  "catalog_revision_stable": true,
+  "contract_count": 20,
+  "classification_counts": {
+    "SOURCE_VERIFICATION_REQUIRED": 20
+  },
+  "contracts": [
+    {
+      "symbol": "b",
+      "contract": "B2501",
+      "requested_through": "2024-12-19",
+      "first_conflict_week": {
+        "iso_year": 2024,
+        "iso_week": 43,
+        "week_end": "2024-10-25T07:00:00+00:00",
+        "trading_day": "2024-10-25",
+        "first_daily_endpoint": "2024-10-21T07:00:00+00:00",
+        "last_daily_endpoint": "2024-10-25T07:00:00+00:00",
+        "daily_trading_days": [
+          "2024-10-21",
+          "2024-10-22",
+          "2024-10-23",
+          "2024-10-24",
+          "2024-10-25"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2024-10-25T07:00:00+00:00",
+        "stored_weekly_trading_day": "2024-10-25",
+        "d1_aggregate_bar_end": "2024-10-25T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2024-10-25",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "3627.000000000000000000",
+          "d1_aggregate": "3627.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "3773.000000000000000000",
+          "d1_aggregate": "3773.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "3571.000000000000000000",
+          "d1_aggregate": "3571.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "3686.000000000000000000",
+          "d1_aggregate": "3686.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "385244.000000000000000000",
+          "d1_aggregate": "385244.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "14200597950.000000000000000000",
+          "d1_aggregate": "14200598010.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "71893.000000000000000000",
+          "d1_aggregate": "71893.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 10,
+        "file_name": "part.ede7356e02a3965ca8198b80040d560cc8b9f8879ea49de7271c35f6b3bdaa53.parquet",
+        "row_count": 3,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 10,
+          "file_name": "part.86d6574c64879aae726f5e9de0bcf35b9ccd67f23168fe8098da14913d62d8b4.parquet",
+          "row_count": 18,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "26216ce87e00855d037d0361bf51cd658c0065f84e3ed71a739317c4f1a3b1d5",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "b",
+      "contract": "B2505",
+      "requested_through": "2025-04-18",
+      "first_conflict_week": {
+        "iso_year": 2024,
+        "iso_week": 51,
+        "week_end": "2024-12-20T07:00:00+00:00",
+        "trading_day": "2024-12-20",
+        "first_daily_endpoint": "2024-12-16T07:00:00+00:00",
+        "last_daily_endpoint": "2024-12-20T07:00:00+00:00",
+        "daily_trading_days": [
+          "2024-12-16",
+          "2024-12-17",
+          "2024-12-18",
+          "2024-12-19",
+          "2024-12-20"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2024-12-20T07:00:00+00:00",
+        "stored_weekly_trading_day": "2024-12-20",
+        "d1_aggregate_bar_end": "2024-12-20T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2024-12-20",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "3320.000000000000000000",
+          "d1_aggregate": "3320.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "3346.000000000000000000",
+          "d1_aggregate": "3346.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "3137.000000000000000000",
+          "d1_aggregate": "3137.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "3237.000000000000000000",
+          "d1_aggregate": "3237.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "500480.000000000000000000",
+          "d1_aggregate": "500480.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "16142790030.000000000000000000",
+          "d1_aggregate": "16142789970.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "124234.000000000000000000",
+          "d1_aggregate": "124234.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 12,
+        "file_name": "part.d00f54581cf7d0a2dd3d9c72d514e506a95c59e8b8a660c809bd717174f551d2.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 12,
+          "file_name": "part.3373f690ae5bf1b0ad513fd0bc1f204a59409346944c1e578833ebe79156b26e.parquet",
+          "row_count": 22,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "43e560356fe70b6fb4d5574121aa782b5ebdd006c46936dbfcbe619bd0f0a971",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "b",
+      "contract": "B2511",
+      "requested_through": "2025-10-27",
+      "first_conflict_week": {
+        "iso_year": 2025,
+        "iso_week": 34,
+        "week_end": "2025-08-22T07:00:00+00:00",
+        "trading_day": "2025-08-22",
+        "first_daily_endpoint": "2025-08-18T07:00:00+00:00",
+        "last_daily_endpoint": "2025-08-22T07:00:00+00:00",
+        "daily_trading_days": [
+          "2025-08-18",
+          "2025-08-19",
+          "2025-08-20",
+          "2025-08-21",
+          "2025-08-22"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2025-08-22T07:00:00+00:00",
+        "stored_weekly_trading_day": "2025-08-22",
+        "d1_aggregate_bar_end": "2025-08-22T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2025-08-22",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "3885.000000000000000000",
+          "d1_aggregate": "3885.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "3925.000000000000000000",
+          "d1_aggregate": "3925.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "3788.000000000000000000",
+          "d1_aggregate": "3788.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "3798.000000000000000000",
+          "d1_aggregate": "3798.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "409822.000000000000000000",
+          "d1_aggregate": "409822.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "15793187840.000000000000000000",
+          "d1_aggregate": "15793187910.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "115172.000000000000000000",
+          "d1_aggregate": "115172.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 8,
+        "file_name": "part.50cbb515ccf775b41c08eddb18bb47a2f8affcfbfc222d49a16e0a35e8106287.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file_name": "part.2079f0e5379c6bcfedc2617c73e98291c78ba7b8b2206632623c7de2beccf694.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "e158bf55b67e6f591165c091aa5caf3ea635e486eb4a673600c9b81d82e61eb1",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "b",
+      "contract": "B2601",
+      "requested_through": "2025-12-22",
+      "first_conflict_week": {
+        "iso_year": 2025,
+        "iso_week": 44,
+        "week_end": "2025-10-31T07:00:00+00:00",
+        "trading_day": "2025-10-31",
+        "first_daily_endpoint": "2025-10-27T07:00:00+00:00",
+        "last_daily_endpoint": "2025-10-31T07:00:00+00:00",
+        "daily_trading_days": [
+          "2025-10-27",
+          "2025-10-28",
+          "2025-10-29",
+          "2025-10-30",
+          "2025-10-31"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2025-10-31T07:00:00+00:00",
+        "stored_weekly_trading_day": "2025-10-31",
+        "d1_aggregate_bar_end": "2025-10-31T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2025-10-31",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "3645.000000000000000000",
+          "d1_aggregate": "3645.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "3733.000000000000000000",
+          "d1_aggregate": "3733.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "3640.000000000000000000",
+          "d1_aggregate": "3640.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "3720.000000000000000000",
+          "d1_aggregate": "3720.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "608608.000000000000000000",
+          "d1_aggregate": "608608.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "22422453810.000000000000000000",
+          "d1_aggregate": "22422453820.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "128150.000000000000000000",
+          "d1_aggregate": "128150.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 10,
+        "file_name": "part.6530afd224852ae4455604c2756cee53b97213b034be481c45f2f3cf7156b447.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 10,
+          "file_name": "part.48932247fb9ed0b152db629b54331206493cfe6ea0251438da0dc8ccbd4b8cec.parquet",
+          "row_count": 17,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "0c4d7017f931e1fa75a3fc1fb9c5e31bf7ea2992c5ae25c0c3de74c65bab2b7c",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "b",
+      "contract": "B2605",
+      "requested_through": "2026-04-16",
+      "first_conflict_week": {
+        "iso_year": 2025,
+        "iso_week": 52,
+        "week_end": "2025-12-26T07:00:00+00:00",
+        "trading_day": "2025-12-26",
+        "first_daily_endpoint": "2025-12-22T07:00:00+00:00",
+        "last_daily_endpoint": "2025-12-26T07:00:00+00:00",
+        "daily_trading_days": [
+          "2025-12-22",
+          "2025-12-23",
+          "2025-12-24",
+          "2025-12-25",
+          "2025-12-26"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2025-12-26T07:00:00+00:00",
+        "stored_weekly_trading_day": "2025-12-26",
+        "d1_aggregate_bar_end": "2025-12-26T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2025-12-26",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "3414.000000000000000000",
+          "d1_aggregate": "3414.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "3505.000000000000000000",
+          "d1_aggregate": "3505.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "3409.000000000000000000",
+          "d1_aggregate": "3409.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "3491.000000000000000000",
+          "d1_aggregate": "3491.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "426804.000000000000000000",
+          "d1_aggregate": "426804.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "14695292850.000000000000000000",
+          "d1_aggregate": "14695292810.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "136262.000000000000000000",
+          "d1_aggregate": "136262.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 12,
+        "file_name": "part.f447230568a55810563305f999edfe39d107801bad70d574131d416c404ff549.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 12,
+          "file_name": "part.421bfaf037af54fb7cef2a710ca071aa287396e3b90378bd74bd0d5aa045f26c.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "56a9bc9fc8acfca47b0198ca41040aff4b450f0cca0397211e62f4506941ce2d",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "b",
+      "contract": "B2607",
+      "requested_through": "2026-06-23",
+      "first_conflict_week": {
+        "iso_year": 2026,
+        "iso_week": 16,
+        "week_end": "2026-04-17T07:00:00+00:00",
+        "trading_day": "2026-04-17",
+        "first_daily_endpoint": "2026-04-13T07:00:00+00:00",
+        "last_daily_endpoint": "2026-04-17T07:00:00+00:00",
+        "daily_trading_days": [
+          "2026-04-13",
+          "2026-04-14",
+          "2026-04-15",
+          "2026-04-16",
+          "2026-04-17"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2026-04-17T07:00:00+00:00",
+        "stored_weekly_trading_day": "2026-04-17",
+        "d1_aggregate_bar_end": "2026-04-17T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2026-04-17",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "3639.000000000000000000",
+          "d1_aggregate": "3639.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "3662.000000000000000000",
+          "d1_aggregate": "3662.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "3591.000000000000000000",
+          "d1_aggregate": "3591.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "3604.000000000000000000",
+          "d1_aggregate": "3604.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "378305.000000000000000000",
+          "d1_aggregate": "378305.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "13705003200.000000000000000000",
+          "d1_aggregate": "13705003250.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "139157.000000000000000000",
+          "d1_aggregate": "139157.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 4,
+        "file_name": "part.636cf3f17d74ee5db12fccbde67331b25989476122edf95754002aba3d2033ff.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file_name": "part.d514af4751df66114e2c1b378ffc0933dc2dd2ac82eb98ab1e55d2d1b4983e9a.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "5317d0d5eb61a8103684b3561d67bff089eb9a2768ea0a083a429bde1b4cf01b",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "b",
+      "contract": "B2609",
+      "requested_through": "2026-08-14",
+      "first_conflict_week": {
+        "iso_year": 2026,
+        "iso_week": 26,
+        "week_end": "2026-06-26T07:00:00+00:00",
+        "trading_day": "2026-06-26",
+        "first_daily_endpoint": "2026-06-22T07:00:00+00:00",
+        "last_daily_endpoint": "2026-06-26T07:00:00+00:00",
+        "daily_trading_days": [
+          "2026-06-22",
+          "2026-06-23",
+          "2026-06-24",
+          "2026-06-25",
+          "2026-06-26"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2026-06-26T07:00:00+00:00",
+        "stored_weekly_trading_day": "2026-06-26",
+        "d1_aggregate_bar_end": "2026-06-26T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2026-06-26",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "3659.000000000000000000",
+          "d1_aggregate": "3659.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "3729.000000000000000000",
+          "d1_aggregate": "3729.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "3635.000000000000000000",
+          "d1_aggregate": "3635.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "3721.000000000000000000",
+          "d1_aggregate": "3721.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "632666.000000000000000000",
+          "d1_aggregate": "632666.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "23264411820.000000000000000000",
+          "d1_aggregate": "23264411840.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "151750.000000000000000000",
+          "d1_aggregate": "151750.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 6,
+        "file_name": "part.32bee24837cc753099df179ef658a9d35a1208bc854417b1c2d2064ea6110b04.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 6,
+          "file_name": "part.22c90a7dcc78d88da083895062eed013af2fde9cd11551156b0192800d568aa4.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "cda20f6949fd6c3c45fe544545406fb61abb9e23e6d1982f87f6470b4f99baf0",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2606",
+      "requested_through": "2026-05-22",
+      "first_conflict_week": {
+        "iso_year": 2026,
+        "iso_week": 17,
+        "week_end": "2026-04-24T07:00:00+00:00",
+        "trading_day": "2026-04-24",
+        "first_daily_endpoint": "2026-04-20T07:00:00+00:00",
+        "last_daily_endpoint": "2026-04-24T07:00:00+00:00",
+        "daily_trading_days": [
+          "2026-04-20",
+          "2026-04-21",
+          "2026-04-22",
+          "2026-04-23",
+          "2026-04-24"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2026-04-24T07:00:00+00:00",
+        "stored_weekly_trading_day": "2026-04-24",
+        "d1_aggregate_bar_end": "2026-04-24T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2026-04-24",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "8365.000000000000000000",
+          "d1_aggregate": "8365.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "8563.000000000000000000",
+          "d1_aggregate": "8563.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "8186.000000000000000000",
+          "d1_aggregate": "8186.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "8406.000000000000000000",
+          "d1_aggregate": "8406.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "78739.000000000000000000",
+          "d1_aggregate": "78739.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "19694346120.000000000000000000",
+          "d1_aggregate": "19694346070.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "20941.000000000000000000",
+          "d1_aggregate": "20941.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 4,
+        "file_name": "part.0fc2efa0978a29a6b39d1fa9917a9e372dfd42602b8aaabfb72ef6d0e7e00ddd.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file_name": "part.cd10c04649962e9ca840da8dfe26d8bc88e098dbcc2c98ad9770873b977c9856.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "f9a793a6e6e88c330da9e03a11cbc6195b026dabee6da428b2ebea6324b47ef4",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2608",
+      "requested_through": "2026-07-20",
+      "first_conflict_week": {
+        "iso_year": 2026,
+        "iso_week": 26,
+        "week_end": "2026-06-26T07:00:00+00:00",
+        "trading_day": "2026-06-26",
+        "first_daily_endpoint": "2026-06-22T07:00:00+00:00",
+        "last_daily_endpoint": "2026-06-26T07:00:00+00:00",
+        "daily_trading_days": [
+          "2026-06-22",
+          "2026-06-23",
+          "2026-06-24",
+          "2026-06-25",
+          "2026-06-26"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2026-06-26T07:00:00+00:00",
+        "stored_weekly_trading_day": "2026-06-26",
+        "d1_aggregate_bar_end": "2026-06-26T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2026-06-26",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "6822.000000000000000000",
+          "d1_aggregate": "6822.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "6866.000000000000000000",
+          "d1_aggregate": "6866.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "6125.000000000000000000",
+          "d1_aggregate": "6125.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "6170.000000000000000000",
+          "d1_aggregate": "6170.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "54670.000000000000000000",
+          "d1_aggregate": "54670.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "10568534850.000000000000000000",
+          "d1_aggregate": "10568534870.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "16012.000000000000000000",
+          "d1_aggregate": "16012.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 6,
+        "file_name": "part.6a8fc17b3ba5f0375fb36c4b145c2a1b57ba341f394824ff8ab171e3ba5b5e03.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 6,
+          "file_name": "part.25a40bd63ab01634438defd6a4c88290400135b8a741d012202a752a44df0847.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "955b1b3932bc0df468bb881a72c3b78fbebae438b7ddbcb2b499c1c6bd87d0a1",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2609",
+      "requested_through": "2026-08-21",
+      "first_conflict_week": {
+        "iso_year": 2026,
+        "iso_week": 30,
+        "week_end": "2026-07-24T07:00:00+00:00",
+        "trading_day": "2026-07-24",
+        "first_daily_endpoint": "2026-07-20T07:00:00+00:00",
+        "last_daily_endpoint": "2026-07-24T07:00:00+00:00",
+        "daily_trading_days": [
+          "2026-07-20",
+          "2026-07-21",
+          "2026-07-22",
+          "2026-07-23",
+          "2026-07-24"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2026-07-24T07:00:00+00:00",
+        "stored_weekly_trading_day": "2026-07-24",
+        "d1_aggregate_bar_end": "2026-07-24T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2026-07-24",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "7370.000000000000000000",
+          "d1_aggregate": "7370.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "7906.000000000000000000",
+          "d1_aggregate": "7906.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "7333.000000000000000000",
+          "d1_aggregate": "7333.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "7707.000000000000000000",
+          "d1_aggregate": "7707.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "145180.000000000000000000",
+          "d1_aggregate": "145180.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "33382436970.000000000000000000",
+          "d1_aggregate": "33382436930.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "24232.000000000000000000",
+          "d1_aggregate": "24232.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 7,
+        "file_name": "part.559e4f7c14e26647f59b9993981d1ade610544e9299df7e79104efead40e47c4.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 7,
+          "file_name": "part.1e45849d5882992cc19793aba55d2fd5381e2e611d18699d65983f6872e2c3b7.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "f99183c0dfefa23fe2e60634fa0c0434fb5c764e2a71b8e8d44bedf04ed6f933",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2309",
+      "requested_through": "2023-08-07",
+      "first_conflict_week": {
+        "iso_year": 2023,
+        "iso_week": 16,
+        "week_end": "2023-04-21T07:00:00+00:00",
+        "trading_day": "2023-04-21",
+        "first_daily_endpoint": "2023-04-17T07:00:00+00:00",
+        "last_daily_endpoint": "2023-04-21T07:00:00+00:00",
+        "daily_trading_days": [
+          "2023-04-17",
+          "2023-04-18",
+          "2023-04-19",
+          "2023-04-20",
+          "2023-04-21"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2023-04-21T07:00:00+00:00",
+        "stored_weekly_trading_day": "2023-04-21",
+        "d1_aggregate_bar_end": "2023-04-21T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2023-04-21",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "10085.000000000000000000",
+          "d1_aggregate": "10085.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "10410.000000000000000000",
+          "d1_aggregate": "10410.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "10000.000000000000000000",
+          "d1_aggregate": "10000.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "10060.000000000000000000",
+          "d1_aggregate": "10060.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "143886.000000000000000000",
+          "d1_aggregate": "143886.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "7381671475.000000000000000000",
+          "d1_aggregate": "7381512325.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "43413.000000000000000000",
+          "d1_aggregate": "43413.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2023,
+        "month": 4,
+        "file_name": "part.441954a11a7185a4d4986bf59eb66f362bec1457f03a07a49b30a349ca87aae0.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2023,
+          "month": 4,
+          "file_name": "part.bf7d8f66179e867d46cc78ce5bd241b443ea054a64917a6ba166da5ed1fb6597.parquet",
+          "row_count": 19,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "52a9f16b3d13fa7dc2728ff3109b27a2c96b5f259c3b6bb7c8530d8262059d3e",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2401",
+      "requested_through": "2023-12-01",
+      "first_conflict_week": {
+        "iso_year": 2023,
+        "iso_week": 32,
+        "week_end": "2023-08-11T07:00:00+00:00",
+        "trading_day": "2023-08-11",
+        "first_daily_endpoint": "2023-08-07T07:00:00+00:00",
+        "last_daily_endpoint": "2023-08-11T07:00:00+00:00",
+        "daily_trading_days": [
+          "2023-08-07",
+          "2023-08-08",
+          "2023-08-09",
+          "2023-08-10",
+          "2023-08-11"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2023-08-11T07:00:00+00:00",
+        "stored_weekly_trading_day": "2023-08-11",
+        "d1_aggregate_bar_end": "2023-08-11T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2023-08-11",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "13645.000000000000000000",
+          "d1_aggregate": "13645.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "13670.000000000000000000",
+          "d1_aggregate": "13670.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "13325.000000000000000000",
+          "d1_aggregate": "13325.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "13575.000000000000000000",
+          "d1_aggregate": "13575.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "185633.000000000000000000",
+          "d1_aggregate": "185633.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "12534924100.000000000000000000",
+          "d1_aggregate": "12534694000.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "46516.000000000000000000",
+          "d1_aggregate": "46516.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2023,
+        "month": 8,
+        "file_name": "part.c4e292ba536ba5fffc2e5a27d26ec956cc7c723951957a57ea7b73d1dcca2d0b.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2023,
+          "month": 8,
+          "file_name": "part.ba973143e564b5747e19e97ff8f4db2a03523f4d6c0b1c472642445465ec80b5.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "4913cd88dbc705599883e9fe41cddaeb6cc8f9c97110098a954cdd4d28ecf267",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2409",
+      "requested_through": "2024-07-25",
+      "first_conflict_week": {
+        "iso_year": 2024,
+        "iso_week": 15,
+        "week_end": "2024-04-12T07:00:00+00:00",
+        "trading_day": "2024-04-12",
+        "first_daily_endpoint": "2024-04-08T07:00:00+00:00",
+        "last_daily_endpoint": "2024-04-12T07:00:00+00:00",
+        "daily_trading_days": [
+          "2024-04-08",
+          "2024-04-09",
+          "2024-04-10",
+          "2024-04-11",
+          "2024-04-12"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2024-04-12T07:00:00+00:00",
+        "stored_weekly_trading_day": "2024-04-12",
+        "d1_aggregate_bar_end": "2024-04-12T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2024-04-12",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "12145.000000000000000000",
+          "d1_aggregate": "12145.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "12830.000000000000000000",
+          "d1_aggregate": "12830.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "12035.000000000000000000",
+          "d1_aggregate": "12035.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "12655.000000000000000000",
+          "d1_aggregate": "12655.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "125310.000000000000000000",
+          "d1_aggregate": "125310.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "7857102350.000000000000000000",
+          "d1_aggregate": "7856991925.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "45689.000000000000000000",
+          "d1_aggregate": "45689.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 4,
+        "file_name": "part.4c09a6472c9589cfa62d32824ba051bbf3a418155ef1b19a4155f7c4c90be914.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 4,
+          "file_name": "part.dca73e3f839a67515b67f80cf4ffb63f995a8976ad4f5fa28c692f997251f15d.parquet",
+          "row_count": 20,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "e614177699dcf7f18b3fe5d4cf98bd9adaef723f0b675605696579876d77d7b8",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2501",
+      "requested_through": "2024-12-03",
+      "first_conflict_week": {
+        "iso_year": 2024,
+        "iso_week": 30,
+        "week_end": "2024-07-26T07:00:00+00:00",
+        "trading_day": "2024-07-26",
+        "first_daily_endpoint": "2024-07-22T07:00:00+00:00",
+        "last_daily_endpoint": "2024-07-26T07:00:00+00:00",
+        "daily_trading_days": [
+          "2024-07-22",
+          "2024-07-23",
+          "2024-07-24",
+          "2024-07-25",
+          "2024-07-26"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2024-07-26T07:00:00+00:00",
+        "stored_weekly_trading_day": "2024-07-26",
+        "d1_aggregate_bar_end": "2024-07-26T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2024-07-26",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "10750.000000000000000000",
+          "d1_aggregate": "10750.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "11035.000000000000000000",
+          "d1_aggregate": "11035.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "10670.000000000000000000",
+          "d1_aggregate": "10670.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "10715.000000000000000000",
+          "d1_aggregate": "10715.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "127328.000000000000000000",
+          "d1_aggregate": "127328.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "6894761700.000000000000000000",
+          "d1_aggregate": "6894830250.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "57897.000000000000000000",
+          "d1_aggregate": "57897.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 7,
+        "file_name": "part.85dec291eeb22c710a5e900ab6be137da2ca0400ff3e018ef9ddabfba052f21e.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 7,
+          "file_name": "part.9de2f22ad5171cf6b81defcfb8bca0a1db4d7ca96fd497ed1c29fd4286d30e7c.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "62abc51d8d0e66ce59ec0eab8c8db7f29adc6661f38accb4cb630d0989753606",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2505",
+      "requested_through": "2025-04-15",
+      "first_conflict_week": {
+        "iso_year": 2024,
+        "iso_week": 49,
+        "week_end": "2024-12-06T07:00:00+00:00",
+        "trading_day": "2024-12-06",
+        "first_daily_endpoint": "2024-12-02T07:00:00+00:00",
+        "last_daily_endpoint": "2024-12-06T07:00:00+00:00",
+        "daily_trading_days": [
+          "2024-12-02",
+          "2024-12-03",
+          "2024-12-04",
+          "2024-12-05",
+          "2024-12-06"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2024-12-06T07:00:00+00:00",
+        "stored_weekly_trading_day": "2024-12-06",
+        "d1_aggregate_bar_end": "2024-12-06T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2024-12-06",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "9530.000000000000000000",
+          "d1_aggregate": "9530.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "9680.000000000000000000",
+          "d1_aggregate": "9680.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "9370.000000000000000000",
+          "d1_aggregate": "9370.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "9430.000000000000000000",
+          "d1_aggregate": "9430.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "271230.000000000000000000",
+          "d1_aggregate": "271230.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "12918978925.000000000000000000",
+          "d1_aggregate": "12918762225.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "105249.000000000000000000",
+          "d1_aggregate": "105249.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 12,
+        "file_name": "part.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 12,
+          "file_name": "part.cb87bbd77cb49cbb04eca2d1f4f23977085d2a828e5e0466e760c09f817b6203.parquet",
+          "row_count": 22,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "982fba853c21d42bdaca8f8c3230c8d938c605a52fc400592bf8f0ae332650c6",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2509",
+      "requested_through": "2025-07-02",
+      "first_conflict_week": {
+        "iso_year": 2025,
+        "iso_week": 16,
+        "week_end": "2025-04-18T07:00:00+00:00",
+        "trading_day": "2025-04-18",
+        "first_daily_endpoint": "2025-04-14T07:00:00+00:00",
+        "last_daily_endpoint": "2025-04-18T07:00:00+00:00",
+        "daily_trading_days": [
+          "2025-04-14",
+          "2025-04-15",
+          "2025-04-16",
+          "2025-04-17",
+          "2025-04-18"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2025-04-18T07:00:00+00:00",
+        "stored_weekly_trading_day": "2025-04-18",
+        "d1_aggregate_bar_end": "2025-04-18T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2025-04-18",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "9400.000000000000000000",
+          "d1_aggregate": "9400.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "9555.000000000000000000",
+          "d1_aggregate": "9555.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "9365.000000000000000000",
+          "d1_aggregate": "9365.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "9450.000000000000000000",
+          "d1_aggregate": "9450.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "239259.000000000000000000",
+          "d1_aggregate": "239259.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "11324631100.000000000000000000",
+          "d1_aggregate": "11324549625.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "85835.000000000000000000",
+          "d1_aggregate": "85835.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 4,
+        "file_name": "part.99717a987a0de80e5a77b0f3584359fbf674be1fdadd997c1d3d396b31aadc7c.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 4,
+          "file_name": "part.e43a8fcaac84932bf5677a74a707a6fe66a86bcb7c1be6b3e99f90d80c13b028.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "cc5cee5dd536c28833408a6db80720589d2c0e7994eabd59bca3a12304011c1f",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2601",
+      "requested_through": "2025-12-09",
+      "first_conflict_week": {
+        "iso_year": 2025,
+        "iso_week": 27,
+        "week_end": "2025-07-04T07:00:00+00:00",
+        "trading_day": "2025-07-04",
+        "first_daily_endpoint": "2025-06-30T07:00:00+00:00",
+        "last_daily_endpoint": "2025-07-04T07:00:00+00:00",
+        "daily_trading_days": [
+          "2025-06-30",
+          "2025-07-01",
+          "2025-07-02",
+          "2025-07-03",
+          "2025-07-04"
+        ],
+        "cross_month": true
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2025-07-04T07:00:00+00:00",
+        "stored_weekly_trading_day": "2025-07-04",
+        "d1_aggregate_bar_end": "2025-07-04T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2025-07-04",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "10700.000000000000000000",
+          "d1_aggregate": "10700.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "11325.000000000000000000",
+          "d1_aggregate": "11325.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "10345.000000000000000000",
+          "d1_aggregate": "10345.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "10415.000000000000000000",
+          "d1_aggregate": "10415.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "1200761.000000000000000000",
+          "d1_aggregate": "1200761.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "65062792425.000000000000000000",
+          "d1_aggregate": "65064640675.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "135374.000000000000000000",
+          "d1_aggregate": "135374.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 7,
+        "file_name": "part.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 6,
+          "file_name": "part.e3a4959a3b19fd77e8280199bc237cdc235c1b2249cbd3a90e9df9aba6ea026c.parquet",
+          "row_count": 20,
+          "source_quality_sha256": null
+        },
+        {
+          "year": 2025,
+          "month": 7,
+          "file_name": "part.c8b9e67666ee854810257a20f7e9f42b91f7d1eeadb9ccb406a5ca9ae809da28.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "4088d03fe32a2a2e52c3d582dcccbcdbf806160cfb681a3120e4912984313fcf",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2605",
+      "requested_through": "2026-04-10",
+      "first_conflict_week": {
+        "iso_year": 2025,
+        "iso_week": 50,
+        "week_end": "2025-12-12T07:00:00+00:00",
+        "trading_day": "2025-12-12",
+        "first_daily_endpoint": "2025-12-08T07:00:00+00:00",
+        "last_daily_endpoint": "2025-12-12T07:00:00+00:00",
+        "daily_trading_days": [
+          "2025-12-08",
+          "2025-12-09",
+          "2025-12-10",
+          "2025-12-11",
+          "2025-12-12"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2025-12-12T07:00:00+00:00",
+        "stored_weekly_trading_day": "2025-12-12",
+        "d1_aggregate_bar_end": "2025-12-12T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2025-12-12",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "9400.000000000000000000",
+          "d1_aggregate": "9400.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "9525.000000000000000000",
+          "d1_aggregate": "9525.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "8885.000000000000000000",
+          "d1_aggregate": "8885.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "8925.000000000000000000",
+          "d1_aggregate": "8925.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "623397.000000000000000000",
+          "d1_aggregate": "623397.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "28770722700.000000000000000000",
+          "d1_aggregate": "28770457675.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "125305.000000000000000000",
+          "d1_aggregate": "125305.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 12,
+        "file_name": "part.ac63cbd6d1500a5abdee9cdd69503f3cffdf00b2b387102e82a571a95e9de052.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 12,
+          "file_name": "part.a13902ebed92c952723dc4e379d4aacb896afd653d5e430fa679bcdc00ee7259.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "3c34be95b2e1d76496a2b8603f28e10a3b85a69c63e529e9a2016e58f333b1e2",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "eb",
+      "contract": "EB2405",
+      "requested_through": "2024-04-22",
+      "first_conflict_week": {
+        "iso_year": 2024,
+        "iso_week": 12,
+        "week_end": "2024-03-22T07:00:00+00:00",
+        "trading_day": "2024-03-22",
+        "first_daily_endpoint": "2024-03-18T07:00:00+00:00",
+        "last_daily_endpoint": "2024-03-22T07:00:00+00:00",
+        "daily_trading_days": [
+          "2024-03-18",
+          "2024-03-19",
+          "2024-03-20",
+          "2024-03-21",
+          "2024-03-22"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2024-03-22T07:00:00+00:00",
+        "stored_weekly_trading_day": "2024-03-22",
+        "d1_aggregate_bar_end": "2024-03-22T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2024-03-22",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "9388.000000000000000000",
+          "d1_aggregate": "9388.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "9444.000000000000000000",
+          "d1_aggregate": "9444.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "9104.000000000000000000",
+          "d1_aggregate": "9104.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "9188.000000000000000000",
+          "d1_aggregate": "9188.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "1791448.000000000000000000",
+          "d1_aggregate": "1791448.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "83026074305.000000000000000000",
+          "d1_aggregate": "83026074325.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "338645.000000000000000000",
+          "d1_aggregate": "338645.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 3,
+        "file_name": "part.1e46dbe0455d3045d8f8a7dcec3f00fb71e3316f4561f23d03db0102fdaceb58.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 3,
+          "file_name": "part.99cb214363d8f906a0a0663ede6b692d096d67d55a2916aa4c833e347352298f.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "89ff2b10f2fa11303d60b695b11913fe55171d6b24a608aa34ab8560f0170d5a",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    },
+    {
+      "symbol": "eg",
+      "contract": "EG2601",
+      "requested_through": "2025-12-16",
+      "first_conflict_week": {
+        "iso_year": 2025,
+        "iso_week": 34,
+        "week_end": "2025-08-22T07:00:00+00:00",
+        "trading_day": "2025-08-22",
+        "first_daily_endpoint": "2025-08-18T07:00:00+00:00",
+        "last_daily_endpoint": "2025-08-22T07:00:00+00:00",
+        "daily_trading_days": [
+          "2025-08-18",
+          "2025-08-19",
+          "2025-08-20",
+          "2025-08-21",
+          "2025-08-22"
+        ],
+        "cross_month": false
+      },
+      "identity": {
+        "stored_weekly_bar_end": "2025-08-22T07:00:00+00:00",
+        "stored_weekly_trading_day": "2025-08-22",
+        "d1_aggregate_bar_end": "2025-08-22T07:00:00+00:00",
+        "d1_aggregate_trading_day": "2025-08-22",
+        "contract_owner_equal": true,
+        "session_endpoint_equal": true
+      },
+      "fields": {
+        "open": {
+          "stored": "4408.000000000000000000",
+          "d1_aggregate": "4408.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "high": {
+          "stored": "4536.000000000000000000",
+          "d1_aggregate": "4536.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "low": {
+          "stored": "4374.000000000000000000",
+          "d1_aggregate": "4374.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "close": {
+          "stored": "4474.000000000000000000",
+          "d1_aggregate": "4474.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "volume": {
+          "stored": "877318.000000000000000000",
+          "d1_aggregate": "877318.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        },
+        "turnover": {
+          "stored": "39028187780.000000000000000000",
+          "d1_aggregate": "39028187860.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": false,
+          "precision_equal": true
+        },
+        "open_interest": {
+          "stored": "249567.000000000000000000",
+          "d1_aggregate": "249567.000000000000000000",
+          "stored_exponent": -18,
+          "d1_aggregate_exponent": -18,
+          "numeric_equal": true,
+          "precision_equal": true
+        }
+      },
+      "numeric_conflict_fields": [
+        "turnover"
+      ],
+      "precision_only_fields": [],
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 8,
+        "file_name": "part.1fc6135ea679a19531270d16f1b152edadd480b0798b7678743d87bf4edf9a47.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file_name": "part.6fbc1a4213deca35fbd378cc8c5e43038da2469a68b2a89170bed561f1039d33.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "d1_revision_sha256": "dc459808c2b9f0db9c3bf3eb64b3539e64879df9d339d3e12e38faa64e0f61cf",
+      "classification": "SOURCE_VERIFICATION_REQUIRED",
+      "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+      "provider_query_required": true
+    }
+  ]
+}

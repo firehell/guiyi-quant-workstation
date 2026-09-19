@@ -2,11 +2,13 @@
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+import hashlib
+import json
 
 import pytest
 
 from app.market_data.domain import CanonicalBar
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import NonpositiveCloseFact, PriceUnavailableFact
 from app.market_data.weekly_quality import classify_weekly_source
 
 
@@ -29,17 +31,26 @@ def _unavailable(day: int) -> PriceUnavailableFact:
     )
 
 
+def _nonpositive(day: int) -> NonpositiveCloseFact:
+    return NonpositiveCloseFact(
+        _end(day), date(2026, 9, day), Decimal(10), Decimal(11),
+        Decimal(0), Decimal(0), Decimal(1), Decimal(10), None,
+        "a" * 64, "b" * 64, _end(day),
+    )
+
+
 def _expected(*days: int) -> tuple[tuple[datetime, date], ...]:
     return tuple((_end(day), date(2026, 9, day)) for day in days)
 
 
-def _classify(*, expected=None, bars=None, gaps=()):
+def _classify(*, expected=None, bars=None, gaps=(), quality_facts=None, **kwargs):
     return classify_weekly_source(
         product="au", physical_contract="AU2612",
         expected_daily_endpoints=expected or _expected(7, 8, 9, 10, 11),
         daily_bars=bars if bars is not None else tuple(_bar(day) for day in (7, 8, 10, 11)),
-        price_unavailable=gaps,
+        price_unavailable=gaps if quality_facts is None else quality_facts,
         daily_revision_sha256="c" * 64,
+        **kwargs,
     )
 
 
@@ -75,6 +86,40 @@ def test_one_or_multiple_proven_price_gaps_make_one_weekly_interruption():
     )
     assert multiple.interruption is not None
     assert multiple.interruption.unavailable_days == (date(2026, 9, 8), date(2026, 9, 9))
+
+
+def test_nonpositive_close_requires_explicit_v2_policy_for_a_weekly_interruption():
+    facts = (_nonpositive(9),)
+    with pytest.raises(ValueError, match="WEEKLY_SOURCE_FACT_INVALID"):
+        _classify(quality_facts=facts)
+
+    result = _classify(
+        quality_facts=facts,
+        classification_version="weekly-d1-quality-v2",
+    )
+
+    assert result.daily_bars == ()
+    assert result.interruption is not None
+    assert result.interruption.classification_version == "weekly-d1-quality-v2"
+    assert result.interruption.unavailable_days == (date(2026, 9, 9),)
+
+
+def test_v1_price_unavailable_identity_remains_the_pre_v2_identity():
+    gap = _unavailable(9)
+    result = _classify(gaps=(gap,)).interruption
+    assert result is not None
+    legacy_payload = {
+        "version": "weekly-d1-quality-v1",
+        "product": "au",
+        "contract": "AU2612",
+        "expected": [(end.isoformat(), day.isoformat()) for end, day in _expected(7, 8, 9, 10, 11)],
+        "quality": [(gap.bar_end.isoformat(), gap.trading_day.isoformat(), "a" * 64, "b" * 64)],
+        "daily_revision_sha256": "c" * 64,
+    }
+    expected = hashlib.sha256(json.dumps(
+        legacy_payload, sort_keys=True, separators=(",", ":"),
+    ).encode()).hexdigest()
+    assert result.source_identity == expected
 
 
 def test_full_price_gap_and_calendar_short_week():

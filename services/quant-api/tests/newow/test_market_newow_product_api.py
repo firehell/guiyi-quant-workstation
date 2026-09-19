@@ -10,6 +10,7 @@ from guiyi_quant.newow.product_contracts import (
     FeatureStatus,
     ProductFrequency,
 )
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 from app.market_data.domain import BarFrequency
 
 from app.api import market_newow
@@ -352,6 +353,7 @@ def test_strategy_detail_returns_only_requested_typed_section(
     )
     assert len(body["chart"]["value"]["page_identity"]) == 64
     assert body["meta"]["schema_version"] == "newow_product_detail_v3"
+    assert "input_quality_policy" not in body["meta"]["identity"]
     assert (
         body["meta"]["reference_model_version"]
         == "newow_marker_reference_zero_cost_v3"
@@ -492,6 +494,39 @@ def test_typed_api_serializes_verified_initial_clear_without_entry(product_cases
             "sequence": 0,
         }
     ]
+
+
+def test_quality_policy_is_omitted_for_v1_and_explicit_for_weekly_v2(product_cases):
+    from newow.test_product_service import _service
+
+    service, _reader, build, clear = _service(product_cases)
+    reference = service.query(
+        ProductServiceQuery(
+            "rb", "trend", "1d", section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+        )
+    )
+    trade = reference.reference.value.items[0]
+
+    legacy_payload = market_newow._trade(trade, 0)
+    assert "input_quality_policy" not in legacy_payload
+    assert "input_quality_policy" not in ReferenceTradeOut.model_validate(
+        legacy_payload
+    ).model_dump(mode="json")
+    candidate = replace(
+        trade,
+        input_quality_policy=InputQualityPolicy.WEEKLY_V2,
+        futures_adaptation_version="newow_futures_weekly_quality_segment_v2",
+    )
+    candidate_payload = market_newow._trade(candidate, 0)
+    assert candidate_payload["input_quality_policy"] == (
+        "newow_weekly_input_quality_v2"
+    )
+    assert ReferenceTradeOut.model_validate(candidate_payload).model_dump(mode="json")[
+        "input_quality_policy"
+    ] == "newow_weekly_input_quality_v2"
 
 
 @pytest.mark.parametrize(

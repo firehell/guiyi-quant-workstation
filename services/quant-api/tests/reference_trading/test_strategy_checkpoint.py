@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from hashlib import sha256
@@ -8,6 +9,7 @@ import json
 import pytest
 
 from guiyi_quant.newow.product_adapters import replay_step, seed_replay_state
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 from guiyi_quant.reference_trading import ReferenceState, StreamIdentity
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 from guiyi_quant.reference_trading.strategy_checkpoint import (
@@ -61,6 +63,51 @@ def test_full_newow_strategy_checkpoint_round_trips_and_rejects_wrong_stream(pro
             encoded, expected_stream=_stream("other"),
             expected_strategy_schema="newow_product_replay_v1",
         )
+
+
+def test_full_newow_weekly_v2_checkpoint_preserves_quality_policy(product_cases) -> None:
+    case = product_cases.primitive_input("trend", "1w")
+    identity = replace(
+        case.identity,
+        input_quality_policy=InputQualityPolicy.WEEKLY_V2,
+    )
+    state = seed_replay_state()
+    for bar in case.bars:
+        state, frame, _diagnostics = replay_step(identity, state, bar)
+        if any(action.kind.value == "BUILD" for action in frame.actions):
+            checkpoint_bar = bar
+            break
+    else:  # pragma: no cover - the deterministic fixture must contain a BUILD
+        raise AssertionError("weekly v2 fixture did not produce a BUILD")
+    assert state.pairing.eligible_build is not None
+    assert (
+        state.pairing.eligible_build.identity.input_quality_policy
+        is InputQualityPolicy.WEEKLY_V2
+    )
+    stream = _stream("newow-trend-weekly-v2")
+    checkpoint = AdapterCheckpoint(
+        state,
+        checkpoint_bar.bar.bar_end,
+        "weekly-v2",
+        "RB2710",
+        checkpoint_bar.bar.segment_id,
+        checkpoint_bar.calculation_segment_id,
+        stream,
+        ReferenceState.flat(stream),
+    )
+
+    encoded = adapter_checkpoint_to_json(
+        checkpoint,
+        strategy_schema="newow_product_replay_v1",
+    )
+    restored = adapter_checkpoint_from_json(
+        encoded,
+        expected_stream=stream,
+        expected_strategy_schema="newow_product_replay_v1",
+    )
+
+    assert restored == checkpoint
+    assert InputQualityPolicy.WEEKLY_V2.value in encoded
 
 
 def test_full_subing_strategy_checkpoint_round_trips_after_indicator_warmup() -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 ProductFrequencyValue = Literal["1w", "1d", "60m"]
@@ -22,7 +22,12 @@ EvidenceStatusValue = Literal[
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
 ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v3"]
 FuturesAdaptationVersionValue = Literal[
-    "newow_futures_quality_segment_v3", "newow_futures_weekly_quality_segment_v1"
+    "newow_futures_quality_segment_v3",
+    "newow_futures_weekly_quality_segment_v1",
+    "newow_futures_weekly_quality_segment_v2",
+]
+InputQualityPolicyValue = Literal[
+    "newow_input_quality_v1", "newow_weekly_input_quality_v2"
 ]
 
 
@@ -43,6 +48,10 @@ class ProductIdentityOut(_Out):
     series_kind: Literal["actual_dominant"]
     profile_id: str
     formula_versions: list[str]
+    input_quality_policy: InputQualityPolicyValue | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class ProductMetaOut(_Out):
@@ -202,6 +211,10 @@ class ReferenceTradeOut(_Out):
     formula_versions: list[str]
     reference_model_version: ReferenceModelVersionValue
     futures_adaptation_version: FuturesAdaptationVersionValue
+    input_quality_policy: InputQualityPolicyValue | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     entry_signal_id: str
     entry_sequence: int
     entry_bar_end: datetime
@@ -814,6 +827,7 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v6",
         "newow_product_capabilities_v7",
         "newow_product_capabilities_v8",
+        "newow_product_capabilities_v9",
     ]
     release_stage: Literal[
         "daily",

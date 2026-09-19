@@ -18,7 +18,10 @@ from guiyi_quant.newow.product_contracts import (
     TradeEligibility,
 )
 from guiyi_quant.newow.reference_trades import ReferenceTradeProjector
-from guiyi_quant.newow.product_identity import futures_adaptation_version
+from guiyi_quant.newow.product_identity import (
+    InputQualityPolicy,
+    futures_adaptation_version,
+)
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 from guiyi_quant.reference_trading.strategy_checkpoint import (
     adapter_checkpoint_from_json,
@@ -491,6 +494,74 @@ def test_weekly_quality_adaptation_has_its_own_version_without_changing_daily(
             case.replay, case.boundaries, case.as_of,
         ).trades[0]
         assert trade.futures_adaptation_version == futures_adaptation_version(frequency)
+
+
+def test_weekly_v2_reference_identity_isolated_even_without_a_break(product_cases):
+    legacy = product_cases.closed(frequency="1w")
+    candidate_identity = replace(
+        legacy.identity,
+        input_quality_policy=InputQualityPolicy.WEEKLY_V2,
+    )
+    raw_candidate_actions = tuple(
+        replace(action, identity=candidate_identity) for action in legacy.replay.actions
+    )
+    translated = {
+        old.signal_id: new.signal_id
+        for old, new in zip(legacy.replay.actions, raw_candidate_actions, strict=True)
+    }
+    candidate_actions = tuple(
+        replace(
+            action,
+            related_build_id=(
+                translated[action.related_build_id]
+                if action.related_build_id is not None
+                else None
+            ),
+        )
+        for action in raw_candidate_actions
+    )
+    actions_by_id = {action.signal_id: action for action in candidate_actions}
+    candidate_replay = replace(
+        legacy.replay,
+        identity=candidate_identity,
+        frames=tuple(
+            replace(
+                frame,
+                actions=tuple(
+                    actions_by_id[
+                        replace(action, identity=candidate_identity).signal_id
+                    ]
+                    for action in frame.actions
+                ),
+                hints=tuple(
+                    replace(hint, identity=candidate_identity) for hint in frame.hints
+                ),
+            )
+            for frame in legacy.replay.frames
+        ),
+        actions=candidate_actions,
+        hints=tuple(
+            replace(hint, identity=candidate_identity) for hint in legacy.replay.hints
+        ),
+    )
+
+    projector = ReferenceTradeProjector()
+    legacy_stream = projector.seed(legacy.replay).stream
+    candidate_stream = projector.seed(candidate_replay).stream
+    legacy_trade = projector.project(
+        legacy.replay, legacy.boundaries, legacy.as_of,
+    ).trades[0]
+    candidate_trade = projector.project(
+        candidate_replay, legacy.boundaries, legacy.as_of,
+    ).trades[0]
+
+    assert legacy_stream.futures_adaptation_version == "newow_futures_weekly_quality_segment_v1"
+    assert candidate_stream.futures_adaptation_version == "newow_futures_weekly_quality_segment_v2"
+    assert candidate_stream.stream_id != legacy_stream.stream_id
+    assert legacy_trade.futures_adaptation_version == "newow_futures_weekly_quality_segment_v1"
+    assert candidate_trade.futures_adaptation_version == "newow_futures_weekly_quality_segment_v2"
+    assert candidate_trade.input_quality_policy is InputQualityPolicy.WEEKLY_V2
+    assert candidate_trade.reference_trade_id != legacy_trade.reference_trade_id
 
 
 def test_daily_reference_identity_and_values_remain_fixed_after_weekly_quality(product_cases):

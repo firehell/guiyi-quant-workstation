@@ -11,7 +11,13 @@ from enum import StrEnum
 from typing import TypeVar
 
 from .models import NewowDailyBar
-from .product_identity import build_hint_id, build_signal_id, utc_timestamp
+from .product_identity import (
+    InputQualityPolicy,
+    build_hint_id,
+    build_signal_id,
+    input_quality_policy,
+    utc_timestamp,
+)
 
 
 class ProductStrategy(StrEnum):
@@ -101,6 +107,7 @@ class ProductIdentity:
     formula_versions: tuple[str, ...]
     series_kind: str = "actual_dominant"
     profile_id: str = ""
+    input_quality_policy: InputQualityPolicy = InputQualityPolicy.V1
 
     def __post_init__(self) -> None:
         _text(self.product)
@@ -111,6 +118,11 @@ class ProductIdentity:
             raise ValueError("NEWOW_PRODUCT_INVALID_IDENTITY")
         object.__setattr__(self, "strategy", ProductStrategy(self.strategy))
         object.__setattr__(self, "frequency", ProductFrequency(self.frequency))
+        object.__setattr__(
+            self,
+            "input_quality_policy",
+            input_quality_policy(self.frequency.value, self.input_quality_policy),
+        )
         formulas = tuple(sorted(set(_strings(self.formula_versions))))
         if not formulas:
             raise ValueError("NEWOW_PRODUCT_EMPTY_FORMULAS")

@@ -42,9 +42,11 @@ from guiyi_quant.newow.product_contracts import (
 from guiyi_quant.newow.chart_price_reference import ChartPriceReference, project_chart_price_reference
 from guiyi_quant.newow.product_identity import (
     FUTURES_ADAPTATION_VERSION,
-    FUTURES_INPUT_POLICY_VERSION,
+    InputQualityPolicy,
     REFERENCE_MODEL_VERSION,
     futures_adaptation_version,
+    input_policy_version,
+    input_quality_policy,
     utc_timestamp,
 )
 from guiyi_quant.newow.trend_channel_display import (
@@ -439,15 +441,18 @@ def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
         )
         for item in values
     )
+    identity_fields: tuple[object, ...] = (
+        identity.product,
+        identity.strategy.value,
+        identity.frequency.value,
+        identity.formula_versions,
+        identity.profile_id,
+    )
+    if identity.input_quality_policy is not InputQualityPolicy.V1:
+        identity_fields = (*identity_fields, identity.input_quality_policy.value)
     payload = json.dumps(
         {
-            "identity": (
-                identity.product,
-                identity.strategy.value,
-                identity.frequency.value,
-                identity.formula_versions,
-                identity.profile_id,
-            ),
+            "identity": identity_fields,
             "as_of": read.as_of.isoformat(),
             "bars": bars,
             "owners": owners,
@@ -496,20 +501,27 @@ def _reference_cursor_marker(item: ReferenceTrade, entry_sequence: int) -> str:
 
 
 def _snapshot_namespace(identity: ProductIdentity, as_of: datetime) -> str:
+    identity_fields: tuple[object, ...] = (
+        identity.product,
+        identity.strategy.value,
+        identity.frequency.value,
+        identity.profile_id,
+        identity.formula_versions,
+    )
+    contract: tuple[object, ...] = (
+        SCHEMA_VERSION,
+        REFERENCE_MODEL_VERSION,
+        futures_adaptation_version(
+            identity.frequency, identity.input_quality_policy
+        ),
+    )
+    if identity.input_quality_policy is not InputQualityPolicy.V1:
+        identity_fields = (*identity_fields, identity.input_quality_policy.value)
+        contract = (*contract, identity.input_quality_policy.value)
     payload = {
-        "identity": (
-            identity.product,
-            identity.strategy.value,
-            identity.frequency.value,
-            identity.profile_id,
-            identity.formula_versions,
-        ),
+        "identity": identity_fields,
         "as_of": as_of.isoformat(),
-        "contract": (
-            SCHEMA_VERSION,
-            REFERENCE_MODEL_VERSION,
-            futures_adaptation_version(identity.frequency),
-        ),
+        "contract": contract,
     }
     return sha256(
         json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
@@ -622,8 +634,12 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
         "|".join(
             (
                 SCHEMA_VERSION,
-                futures_adaptation_version(read.frequency),
-                FUTURES_INPUT_POLICY_VERSION,
+                futures_adaptation_version(
+                    read.frequency, read.input_quality_policy
+                ),
+                input_policy_version(
+                    read.frequency, read.input_quality_policy
+                ),
                 REFERENCE_MODEL_VERSION,
                 SOURCE_FACT_ADAPTER_VERSION,
                 "main_contract_map:rank1:calendar_session_v1",
@@ -645,6 +661,7 @@ class NewowProductService:
         now: Callable[[], datetime] | None = None,
         cancelled: Callable[[], bool] | None = None,
         reuse_read_inputs: bool = False,
+        quality_policy: InputQualityPolicy | str = InputQualityPolicy.V1,
     ) -> None:
         self._reader_factory = reader_factory
         self._cache = cache or SnapshotCache()
@@ -653,6 +670,7 @@ class NewowProductService:
         self._now = now or (lambda: datetime.now(UTC))
         self._cancelled = cancelled
         self._reuse_read_inputs = reuse_read_inputs
+        self._quality_policy = InputQualityPolicy(quality_policy)
         self._read_input_lock = Lock()
         self._chart_windows: dict[
             tuple[str, ProductFrequency, int, datetime], ProductReadWindow
@@ -669,7 +687,7 @@ class NewowProductService:
         as_of = utc_timestamp(request.as_of or self._now())
         if as_of > utc_timestamp(self._now()):
             raise NewowProductServiceError("NEWOW_INVALID_AS_OF")
-        key = (request, as_of)
+        key = (self._quality_policy, request, as_of)
         return self._inflight.execute(
             key,
             lambda shared_cancelled: self._query(request, as_of, shared_cancelled),
@@ -700,7 +718,13 @@ class NewowProductService:
             else ()
         )
         reader = self._reader_factory(context, cancelled)
-        identity = build_product_identity(request.product, request.strategy, request.frequency)
+        policy = input_quality_policy(request.frequency.value, self._quality_policy)
+        identity = build_product_identity(
+            request.product,
+            request.strategy,
+            request.frequency,
+            input_quality_policy=policy,
+        )
         common_key = _snapshot_namespace(identity, as_of)
         prior_navigation: _ChartNavigation | None = None
         anchor_proof: dict[str, str] = {}
@@ -789,9 +813,11 @@ class NewowProductService:
         )
         read = self._cached_read_input(
             self._reads,
-            self._market_read_key(low_query, read_as_of),
+            self._market_read_key(low_query, read_as_of, policy),
             lambda: reader.load(low_query, read_as_of),
         )
+        if read.input_quality_policy is not policy:
+            raise NewowProductServiceError("NEWOW_DATA_IDENTITY_INVALID")
         self._check_cancelled(cancelled)
         if resolved is not None and request.frequency is ProductFrequency.WEEKLY:
             completed = tuple(
@@ -913,7 +939,9 @@ class NewowProductService:
 
     @staticmethod
     def _market_read_key(
-        query: NewowProductQuery, read_as_of: datetime
+        query: NewowProductQuery,
+        read_as_of: datetime,
+        quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
     ) -> tuple[object, ...]:
         # Reader output contains market facts and owner evidence only. Strategy
         # identity is applied later by _calculate, so all three strategies may
@@ -929,6 +957,7 @@ class NewowProductService:
             query.series_kind,
             query.history_limit,
             query.history_before,
+            quality_policy,
         )
 
     @staticmethod
@@ -967,10 +996,10 @@ class NewowProductService:
         resolved: ResolvedPerformanceWindow | None,
         as_of: datetime,
     ) -> str:
-        payload = (
+        payload: tuple[object, ...] = (
             SCHEMA_VERSION,
             REFERENCE_MODEL_VERSION,
-            futures_adaptation_version(request.frequency),
+            futures_adaptation_version(request.frequency, self._quality_policy),
             request.product,
             request.strategy.value,
             request.frequency.value,
@@ -984,6 +1013,8 @@ class NewowProductService:
             request.chart_limit,
             request.history_limit,
         )
+        if self._quality_policy is not InputQualityPolicy.V1:
+            payload = (*payload, self._quality_policy.value)
         return sha256(repr(payload).encode()).hexdigest()
 
     @staticmethod
@@ -1046,7 +1077,9 @@ class NewowProductService:
             fact_key,
             None,
             None,
-            futures_adaptation_version=futures_adaptation_version(request.frequency),
+            futures_adaptation_version=futures_adaptation_version(
+                request.frequency, identity.input_quality_policy
+            ),
         )
         return NewowProductResult(
             meta,
@@ -1284,7 +1317,14 @@ class NewowProductService:
         trend = {
             frequency: replay_strategy(
                 build_product_identity(
-                    identity.product, ProductStrategy.TREND, frequency
+                    identity.product,
+                    ProductStrategy.TREND,
+                    frequency,
+                    input_quality_policy=(
+                        identity.input_quality_policy
+                        if frequency is ProductFrequency.WEEKLY
+                        else InputQualityPolicy.V1
+                    ),
                 ),
                 bars,
                 lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(
@@ -1297,7 +1337,14 @@ class NewowProductService:
         oscillation = {
             frequency: replay_strategy(
                 build_product_identity(
-                    identity.product, ProductStrategy.OSCILLATION, frequency
+                    identity.product,
+                    ProductStrategy.OSCILLATION,
+                    frequency,
+                    input_quality_policy=(
+                        identity.input_quality_policy
+                        if frequency is ProductFrequency.WEEKLY
+                        else InputQualityPolicy.V1
+                    ),
                 ),
                 bars,
                 lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(

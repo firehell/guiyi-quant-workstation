@@ -29,6 +29,7 @@ from app.market_data.newow.product_release import (
     CANDIDATE_RELEASE_STAGE,
     CANDIDATE_WEEKLY_PRODUCTS,
     OPEN_WEEKLY_PRODUCTS,
+    REMAINING_WEEKLY_V2_PRODUCTS,
     RELEASE_STAGE,
     deferred_frequency_reason,
     deferred_section_reason,
@@ -45,6 +46,18 @@ _DOWNLOAD = {
     "REPLAY_ENDPOINTS_MISSING",
     "DATASET_OR_PARTITION_MISSING",
 }
+
+
+def _quality_policy_field(
+    request: ReadinessRequest, symbol: str, frequency: ProductFrequency,
+) -> dict[str, str]:
+    if (
+        request.candidate_weekly
+        and frequency is ProductFrequency.WEEKLY
+        and symbol in REMAINING_WEEKLY_V2_PRODUCTS
+    ):
+        return {"input_quality_policy": "newow_weekly_input_quality_v2"}
+    return {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +181,7 @@ class NewowReadinessAudit:
                     "symbol": symbol,
                     "strategy": strategy.value,
                     "frequency": frequency.value,
+                    **_quality_policy_field(request, symbol, frequency),
                     "main": {"status": "UNSTARTED"},
                     "sections": {},
                 }
@@ -556,6 +570,7 @@ class NewowReadinessAudit:
                         "symbol": symbol,
                         "strategy": strategy.value,
                         "frequency": frequency.value,
+                        **_quality_policy_field(request, symbol, frequency),
                         "main": {"status": "UNSTARTED"},
                         "sections": {},
                     }

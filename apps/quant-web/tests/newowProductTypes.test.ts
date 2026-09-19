@@ -233,6 +233,28 @@ test('loads the server-owned daily release capability and rejects widened or leg
     request: async () => candidate,
   }), candidate)
 
+  const candidateV9 = {
+    ...candidate,
+    schema_version: 'newow_product_capabilities_v9',
+    weekly_products: [
+      ...candidate.weekly_products,
+      ...'b bz cj eb eg j oi pf pg pk pl pr px rs sf sh si sm sr'.split(' '),
+    ],
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => candidateV9,
+  }), candidateV9)
+  await assert.rejects(
+    getNewowProductCapabilities({
+      request: async () => ({
+        ...candidateV9,
+        weekly_products: candidateV9.weekly_products.slice(0, -1),
+      }),
+    }),
+    (error: unknown) => error instanceof NewowProductRequestError
+      && error.code === 'NEWOW_RESPONSE_INVALID',
+  )
+
   const formalWeekly = {
     ...candidate,
     schema_version: 'newow_product_capabilities_v8',

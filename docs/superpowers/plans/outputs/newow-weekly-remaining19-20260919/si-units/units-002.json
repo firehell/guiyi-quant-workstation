@@ -1,0 +1,37 @@
+[
+  {
+    "symbol": "si",
+    "contract": "SI2511",
+    "through": "2025-10-23",
+    "frequency": "1w",
+    "expected_plan_sha256": "94ef7f909d20efca389026ea4009692fcb830a336d2be10cceb2ae554c975160"
+  },
+  {
+    "symbol": "si",
+    "contract": "SI2601",
+    "through": "2025-12-12",
+    "frequency": "1w",
+    "expected_plan_sha256": "52159c32cfd18bc26b16b36e628b2b6674ed0b46dfd953eb02f3af62bba15860"
+  },
+  {
+    "symbol": "si",
+    "contract": "SI2605",
+    "through": "2026-04-17",
+    "frequency": "1w",
+    "expected_plan_sha256": "4b91a4c1c8627a18e9ef77e187a7288a0915d2b819f8edd0c2c3a6b6bfb4bc8e"
+  },
+  {
+    "symbol": "si",
+    "contract": "SI2609",
+    "through": "2026-08-17",
+    "frequency": "1w",
+    "expected_plan_sha256": "3e323bce1d67e2b83b64cc55a6f296a2cd7bb411711f9491562d3d1f802794f5"
+  },
+  {
+    "symbol": "si",
+    "contract": "SI2611",
+    "through": "2026-09-18",
+    "frequency": "1w",
+    "expected_plan_sha256": "7a9b6ed2e7bb68fb5bf0c381d19f3df0460f3e896d0e35c276a94531d26ee996"
+  }
+]

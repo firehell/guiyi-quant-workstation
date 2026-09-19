@@ -44,7 +44,7 @@ from .product_contracts import (
     TradeEligibility,
     validate_lifecycle_replay_evidence,
 )
-from .product_identity import build_calculation_segment_id
+from .product_identity import InputQualityPolicy, build_calculation_segment_id
 from .profile import NEWOW_TREND_D1_PAGE_V2
 from .trend_band import (
     TrendBandStateValue,
@@ -110,6 +110,8 @@ def build_product_identity(
     product: str,
     strategy: ProductStrategy | str,
     frequency: ProductFrequency | str,
+    *,
+    input_quality_policy: InputQualityPolicy | str = InputQualityPolicy.V1,
 ) -> ProductIdentity:
     """Build the one active adapter identity without duplicating formula sets."""
 
@@ -119,6 +121,7 @@ def build_product_identity(
         normalized,
         ProductFrequency(frequency),
         tuple(_EXPECTED_FORMULAS[normalized]),
+        input_quality_policy=input_quality_policy,
     )
 
 
@@ -759,9 +762,8 @@ def label_calculation_segments(
         gap_at = last_gap_by_owner.get(owner)
         labeled.append(replace(
             product_bar,
-            calculation_segment_id=(
-                build_calculation_segment_id(owner[1], gap_at)
-                if gap_at is not None else owner[1]
+            calculation_segment_id=build_calculation_segment_id(
+                owner[1], gap_at, identity.input_quality_policy
             ),
         ))
     return tuple(labeled)

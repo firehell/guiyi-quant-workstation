@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -14,13 +15,62 @@ if TYPE_CHECKING:
 REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v3"
 FUTURES_ADAPTATION_VERSION = "newow_futures_quality_segment_v3"
 WEEKLY_FUTURES_ADAPTATION_VERSION = "newow_futures_weekly_quality_segment_v1"
+WEEKLY_FUTURES_ADAPTATION_VERSION_V2 = "newow_futures_weekly_quality_segment_v2"
 FUTURES_INPUT_POLICY_VERSION = "newow_futures_quality_observation_v2"
+WEEKLY_INPUT_POLICY_VERSION_V2 = "newow_futures_weekly_quality_observation_v2"
+WEEKLY_SOURCE_CLASSIFICATION_VERSION = "weekly-d1-quality-v1"
+WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2 = "weekly-d1-quality-v2"
 
 
-def futures_adaptation_version(frequency: str) -> str:
+class InputQualityPolicy(StrEnum):
+    V1 = "newow_input_quality_v1"
+    WEEKLY_V2 = "newow_weekly_input_quality_v2"
+
+
+def input_quality_policy(
+    frequency: str,
+    policy: InputQualityPolicy | str = InputQualityPolicy.V1,
+) -> InputQualityPolicy:
+    normalized = InputQualityPolicy(policy)
+    if normalized is InputQualityPolicy.WEEKLY_V2 and frequency != "1w":
+        raise ValueError("NEWOW_PRODUCT_INPUT_QUALITY_SCOPE_INVALID")
+    return normalized
+
+
+def futures_adaptation_version(
+    frequency: str,
+    policy: InputQualityPolicy | str = InputQualityPolicy.V1,
+) -> str:
+    normalized = input_quality_policy(frequency, policy)
+    if normalized is InputQualityPolicy.WEEKLY_V2:
+        return WEEKLY_FUTURES_ADAPTATION_VERSION_V2
     return (
         WEEKLY_FUTURES_ADAPTATION_VERSION
         if frequency == "1w" else FUTURES_ADAPTATION_VERSION
+    )
+
+
+def source_classification_version(
+    frequency: str,
+    policy: InputQualityPolicy | str = InputQualityPolicy.V1,
+) -> str:
+    normalized = input_quality_policy(frequency, policy)
+    return (
+        WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2
+        if normalized is InputQualityPolicy.WEEKLY_V2
+        else WEEKLY_SOURCE_CLASSIFICATION_VERSION
+    )
+
+
+def input_policy_version(
+    frequency: str,
+    policy: InputQualityPolicy | str = InputQualityPolicy.V1,
+) -> str:
+    normalized = input_quality_policy(frequency, policy)
+    return (
+        WEEKLY_INPUT_POLICY_VERSION_V2
+        if normalized is InputQualityPolicy.WEEKLY_V2
+        else FUTURES_INPUT_POLICY_VERSION
     )
 
 
@@ -54,9 +104,19 @@ def build_segment_id(product: str, contract: str, owner_start: datetime) -> str:
     return f"{product}:{contract}:{utc_timestamp(owner_start).isoformat()}"
 
 
-def build_calculation_segment_id(owner_segment_id: str, last_gap_at: datetime) -> str:
+def build_calculation_segment_id(
+    owner_segment_id: str,
+    last_gap_at: datetime | None = None,
+    policy: InputQualityPolicy | str = InputQualityPolicy.V1,
+) -> str:
     """A price gap resets calculation without changing the physical owner."""
-    return f"{_text(owner_segment_id)}|price-gap:{utc_timestamp(last_gap_at).isoformat()}"
+    normalized = InputQualityPolicy(policy)
+    result = _text(owner_segment_id)
+    if last_gap_at is not None:
+        result = f"{result}|price-gap:{utc_timestamp(last_gap_at).isoformat()}"
+    if normalized is not InputQualityPolicy.V1:
+        result = f"{result}|input-quality:{normalized.value}"
+    return result
 
 
 def _event_fields(
@@ -71,7 +131,7 @@ def _event_fields(
         raise ValueError("NEWOW_PRODUCT_INVALID_CONTRACT")
     if sequence is not None and (type(sequence) is not int or sequence < 0):
         raise ValueError("NEWOW_PRODUCT_INVALID_SEQUENCE")
-    return {
+    fields: dict[str, object] = {
         "product": identity.product,
         "strategy": identity.strategy,
         "frequency": identity.frequency,
@@ -82,6 +142,9 @@ def _event_fields(
         "action": _text(action),
         "sequence": sequence,
     }
+    if identity.input_quality_policy is not InputQualityPolicy.V1:
+        fields["input_quality_policy"] = identity.input_quality_policy.value
+    return fields
 
 
 def build_signal_id(
@@ -126,6 +189,8 @@ def build_reference_trade_id(entry: StrategyAction) -> str:
         {
             "entry_signal_id": entry.signal_id,
             "reference_model_version": REFERENCE_MODEL_VERSION,
-            "futures_adaptation_version": futures_adaptation_version(entry.identity.frequency),
+            "futures_adaptation_version": futures_adaptation_version(
+                entry.identity.frequency, entry.identity.input_quality_policy
+            ),
         }
     )
