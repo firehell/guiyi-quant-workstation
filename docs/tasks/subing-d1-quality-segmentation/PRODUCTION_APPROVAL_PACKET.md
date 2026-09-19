@@ -1,14 +1,16 @@
 # SuBing D1 Quality Segmentation Production Gate
 
-状态：`CODE_COMPLETE / REVIEW_COMPLETE / PRODUCTION_APPLY_BLOCKED`
+状态：`CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / PRODUCTION_APPLY_BLOCKED`
 
 固定截止：`2026-09-18T18:30:00+08:00`
-
-候选代码提交：`dac63951d8c8a2d4f1b59c2828c1b06a512a2e9a`
 
 prepare-only plan：`outputs/subing-four-period-readiness-20260918/d1-quality-segmentation-production-plan.json`
 
 plan SHA-256：`5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c`
+
+隔离候选 manifest：`outputs/subing-four-period-readiness-20260918/d1-quality-segmentation-raw-verified-candidate-manifest.json`
+
+manifest SHA-256：`079f54db00b211509049456806fa59a60a45fb47b5e221835ed25c09364cd4ab`
 
 ## 已冻结范围
 
@@ -21,6 +23,11 @@ plan SHA-256：`5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c
 - provider request budget=0；本候选执行 production writes=0。
 - 质量策略 `subing-d1-quality-segment-v1`；Reference v2；D1 公式仍为 `subing_ths_1d_v1`。
 - RS 最新 owner 保持 3 根有效 D1、`WARMING`；不能计为 ready。
+- 146 个 replacement 已在 worktree 隔离根生成不可变 Parquet 与质量 sidecar，冻结 file/content/quality/sidecar
+  hash；候选发布后由 strict reader 回读，共承载 1,140 个质量事实。相同输入幂等重跑产生同一 manifest hash。
+- 8 个 replacement（PF2611 的 2025-11 至 2026-02；RS2609 的 2025-11、2025-12、2026-08、
+  2026-09）缺少本地原始响应字节，未生成候选；OI2609、PF2609 的两个 create target 同样保持阻塞。
+- staging 过程只读取 production PostgreSQL/Catalog/Canonical，provider requests=0、production writes=0。
 
 ## 执行合同
 
@@ -37,9 +44,10 @@ plan SHA-256：`5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c
 
 ## 当前不能执行的原因
 
-本机自动审批已拒绝仍缺少新不可变文件 hash 的生产写入。拒绝理由是生产目标必须在写入前绑定精确版本、
-影响范围、回滚和候选内容身份。当前 parent plan 已冻结目标、旧身份和恢复合同，但 OI/PF 两个 create target
-及 154 个 replacement 的新候选文件 hash 尚未产生，因此不能把本文件当作 apply receipt 或写入授权。
+146 个 replacement 已完成候选冻结。另 8 个 replacement 只有汇总分类和响应哈希，缺少本地原始响应字节，
+不能把对应 42 个日期转为可独立复核的质量事实；OI2609、PF2609 的 2026-09 也缺少可重建候选的原始响应
+字节，不能据此还原 8 根正价 OHLC。10 项均标记 `SOURCE_RESPONSE_BYTES_UNAVAILABLE`，因此完整 156 项
+apply Gate 尚未关闭。本文件不是 apply receipt 或写入授权。
 
 ## 独立 Gate
 

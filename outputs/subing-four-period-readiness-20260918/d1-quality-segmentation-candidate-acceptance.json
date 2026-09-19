@@ -1,6 +1,6 @@
 {
   "schema": "subing-d1-quality-candidate-acceptance-v1",
-  "status": "ISOLATED_FIXTURE_ACCEPTANCE",
+  "status": "ISOLATED_CANDIDATE_PREPARATION_PARTIAL",
   "fixed_cutoff": "2026-09-18T18:30:00+08:00",
   "production": {
     "ready": 223,
@@ -10,6 +10,16 @@
     "provider_requests": 0
   },
   "candidate": {
+    "manifest_sha256": "079f54db00b211509049456806fa59a60a45fb47b5e221835ed25c09364cd4ab",
+    "target_partitions": 156,
+    "frozen_replacement_candidates": 146,
+    "blocked_replacement_candidates": 8,
+    "blocked_create_candidates": 2,
+    "frozen_quality_facts": 1140,
+    "candidate_parquet_files": 146,
+    "candidate_quality_sidecars": 146,
+    "candidate_file_hash_errors": 0,
+    "idempotent_prepare_readback": "PASS",
     "market_fact_union": "PASS",
     "strict_reader_regression": "PASS",
     "d1_rewarm_states": {
@@ -29,8 +39,12 @@
   },
   "limitations": [
     "No production Canonical or Catalog publication was authorized or executed.",
+    "Eight PF2611/RS2609 replacement partitions remain blocked because the local raw response bytes for 42 affected dates are unavailable; summary classifications and response hashes are insufficient independent evidence.",
+    "OI2609/PF2609 2026-09 remain blocked because their saved source response bytes are unavailable locally; classifications and response hashes cannot reconstruct eight positive OHLC rows.",
+    "No RQData request or retry was executed while preparing candidates.",
     "The 240-combination production API and browser matrix remains 223/240 until an exact production apply and same-cutoff readback.",
-    "This receipt is fixture and pure-plan evidence, not natural first-load evidence."
+    "The formula and page behavior remain fixture-tested; this receipt is not production apply or natural first-load evidence."
   ],
-  "plan_sha256": "5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c"
+  "plan_sha256": "5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c",
+  "candidate_manifest": "d1-quality-segmentation-raw-verified-candidate-manifest.json"
 }
