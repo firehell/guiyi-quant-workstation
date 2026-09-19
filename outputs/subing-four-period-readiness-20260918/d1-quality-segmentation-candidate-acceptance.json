@@ -1,6 +1,6 @@
 {
   "schema": "subing-d1-quality-candidate-acceptance-v1",
-  "status": "ISOLATED_CANDIDATE_PREPARATION_PARTIAL",
+  "status": "ISOLATED_CANDIDATE_PREPARATION_COMPLETE",
   "fixed_cutoff": "2026-09-18T18:30:00+08:00",
   "production": {
     "ready": 223,
@@ -10,14 +10,14 @@
     "provider_requests": 0
   },
   "candidate": {
-    "manifest_sha256": "079f54db00b211509049456806fa59a60a45fb47b5e221835ed25c09364cd4ab",
+    "manifest_sha256": "2a15f7aa0fe896804c2ee2b0b19dd5658407cf05eb6e9e96a4fad9e7245371ba",
     "target_partitions": 156,
-    "frozen_replacement_candidates": 146,
-    "blocked_replacement_candidates": 8,
-    "blocked_create_candidates": 2,
-    "frozen_quality_facts": 1140,
-    "candidate_parquet_files": 146,
-    "candidate_quality_sidecars": 146,
+    "frozen_replacement_candidates": 154,
+    "frozen_create_candidates": 2,
+    "blocked_candidates": 0,
+    "frozen_quality_facts": 1217,
+    "candidate_parquet_files": 156,
+    "candidate_quality_sidecars": 156,
     "candidate_file_hash_errors": 0,
     "idempotent_prepare_readback": "PASS",
     "market_fact_union": "PASS",
@@ -37,14 +37,24 @@
       "pf/PF2609/2026-09"
     ]
   },
+  "source_recovery": {
+    "plan_sha256": "3797e61a8657facc1dc2fb47bf8557cc9dce45000ce302f3d3110d570264e9df",
+    "attempt_id": "d1-source-response-recovery-20260919-001",
+    "requests_planned": 10,
+    "requests_completed": 10,
+    "target_dates": 60,
+    "context_dates": 28,
+    "retries": 0,
+    "canonical_writes": 0,
+    "database_writes": 0,
+    "manager_apply": false
+  },
   "limitations": [
     "No production Canonical or Catalog publication was authorized or executed.",
-    "Eight PF2611/RS2609 replacement partitions remain blocked because the local raw response bytes for 42 affected dates are unavailable; summary classifications and response hashes are insufficient independent evidence.",
-    "OI2609/PF2609 2026-09 remain blocked because their saved source response bytes are unavailable locally; classifications and response hashes cannot reconstruct eight positive OHLC rows.",
-    "No RQData request or retry was executed while preparing candidates.",
+    "Ten authorized RQData source recovery requests were executed once; no retry or manager apply was executed.",
     "The 240-combination production API and browser matrix remains 223/240 until an exact production apply and same-cutoff readback.",
     "The formula and page behavior remain fixture-tested; this receipt is not production apply or natural first-load evidence."
   ],
   "plan_sha256": "5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c",
-  "candidate_manifest": "d1-quality-segmentation-raw-verified-candidate-manifest.json"
+  "candidate_manifest": "d1-quality-segmentation-complete-candidate-manifest.json"
 }

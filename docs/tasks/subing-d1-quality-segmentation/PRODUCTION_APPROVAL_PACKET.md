@@ -8,9 +8,9 @@ prepare-only plan：`outputs/subing-four-period-readiness-20260918/d1-quality-se
 
 plan SHA-256：`5d5475b0709ea4f6c6464491938e38c4d0867d30d42a6f8366004594a282561c`
 
-隔离候选 manifest：`outputs/subing-four-period-readiness-20260918/d1-quality-segmentation-raw-verified-candidate-manifest.json`
+隔离候选 manifest：`outputs/subing-four-period-readiness-20260918/d1-quality-segmentation-complete-candidate-manifest.json`
 
-manifest SHA-256：`079f54db00b211509049456806fa59a60a45fb47b5e221835ed25c09364cd4ab`
+manifest SHA-256：`2a15f7aa0fe896804c2ee2b0b19dd5658407cf05eb6e9e96a4fad9e7245371ba`
 
 ## 已冻结范围
 
@@ -20,14 +20,15 @@ manifest SHA-256：`079f54db00b211509049456806fa59a60a45fb47b5e221835ed25c09364c
 - OI2609、PF2609 的 2026-09 为两个独立 `CREATE_MIXED_UNION_PARTITION` 目标，各 9 个 expected endpoint；
   合计 8 个 Valid Bar、10 个 `NONPOSITIVE_CLOSE` break。
 - 40 个无关 lifecycle targets 明确排除。
-- provider request budget=0；本候选执行 production writes=0。
+- production apply plan 的 provider request budget=0；独立 source recovery 已完成，本候选执行 production writes=0。
 - 质量策略 `subing-d1-quality-segment-v1`；Reference v2；D1 公式仍为 `subing_ths_1d_v1`。
 - RS 最新 owner 保持 3 根有效 D1、`WARMING`；不能计为 ready。
-- 146 个 replacement 已在 worktree 隔离根生成不可变 Parquet 与质量 sidecar，冻结 file/content/quality/sidecar
-  hash；候选发布后由 strict reader 回读，共承载 1,140 个质量事实。相同输入幂等重跑产生同一 manifest hash。
-- 8 个 replacement（PF2611 的 2025-11 至 2026-02；RS2609 的 2025-11、2025-12、2026-08、
-  2026-09）缺少本地原始响应字节，未生成候选；OI2609、PF2609 的两个 create target 同样保持阻塞。
-- staging 过程只读取 production PostgreSQL/Catalog/Canonical，provider requests=0、production writes=0。
+- 154 个 replacement 与 2 个 create target 已在 worktree 隔离根生成不可变 Parquet 与质量 sidecar，冻结
+  file/content/quality/sidecar hash；候选发布后由 strict reader 回读，共承载 1,217 个质量事实。
+- 缺失原始响应恢复计划 `3797e61a8657facc1dc2fb47bf8557cc9dce45000ce302f3d3110d570264e9df`
+  完成 10/10 provider 请求、60/60 目标日与 28 个上下文日，零重试；raw、journal、result 已落盘并绑定 manifest。
+- 156 个候选共 312 个 Parquet/sidecar 制品哈希回读零错误；相同输入幂等重跑产生同一 manifest hash。
+- 候选生成只读取 production PostgreSQL/Catalog/Canonical，production writes=0；恢复批次不执行 manager apply。
 
 ## 执行合同
 
@@ -44,10 +45,9 @@ manifest SHA-256：`079f54db00b211509049456806fa59a60a45fb47b5e221835ed25c09364c
 
 ## 当前不能执行的原因
 
-146 个 replacement 已完成候选冻结。另 8 个 replacement 只有汇总分类和响应哈希，缺少本地原始响应字节，
-不能把对应 42 个日期转为可独立复核的质量事实；OI2609、PF2609 的 2026-09 也缺少可重建候选的原始响应
-字节，不能据此还原 8 根正价 OHLC。10 项均标记 `SOURCE_RESPONSE_BYTES_UNAVAILABLE`，因此完整 156 项
-apply Gate 尚未关闭。本文件不是 apply receipt 或写入授权。
+完整 156 项候选已冻结，原始响应 Gate 已关闭。production apply 尚未执行；应用前仍须重新核对旧 pointer/hash、
+维护锁、原子提交与失败恢复，应用后再完成同截止 Catalog/MDS、17 个 D1 和 240 组合验收。本文件不是 apply
+receipt 或写入授权。
 
 ## 独立 Gate
 

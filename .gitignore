@@ -61,6 +61,7 @@ data/reports/source_interval_provenance_repair_apply_*/backups/
 /outputs/newow-weekly-recovery-attempts/
 /outputs/newow-weekly-quality-completion-20260917/
 /outputs/subing-four-period-readiness-20260918/d1-source-only-*/
+/outputs/subing-four-period-readiness-20260918/d1-source-response-recovery-*/
 /outputs/subing-four-period-readiness-20260918/source-plan-*.claim.json
 
 # local scheduled research reports (dated observations, not release assets)

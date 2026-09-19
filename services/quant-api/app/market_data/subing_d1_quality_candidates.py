@@ -14,6 +14,7 @@ from typing import Any, Mapping
 import uuid
 
 from app.market_data.catalog import CatalogPartition
+from app.market_data.domain import CanonicalBar, DatasetKey
 from app.market_data.source_quality import (
     NonpositiveCloseFact,
     SourceQualityFact,
@@ -79,41 +80,47 @@ def build_candidate_manifest(
     plan: Mapping[str, Any],
     candidate_root: str,
     candidates: list[Mapping[str, Any]],
+    recovery_evidence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarize frozen replacements and fail closed on unstaged create targets."""
     targets = plan.get("targets")
     if not isinstance(targets, list) or len(targets) != plan.get("target_partition_count"):
         raise CandidatePreparationError("PLAN_SCOPE_INVALID")
-    replacement_ids = {
-        (str(item.get("symbol")), str(item.get("contract")), str(item.get("month")))
-        for item in targets
-        if isinstance(item, Mapping) and item.get("operation") == "REPLACE_EXISTING_PARTITION"
+    target_by_id = {
+        (str(item.get("symbol")), str(item.get("contract")), str(item.get("month"))): item
+        for item in targets if isinstance(item, Mapping)
     }
+    target_ids = set(target_by_id)
     candidate_ids = [
         (str(item.get("symbol")), str(item.get("contract")), str(item.get("month")))
         for item in candidates
     ]
     if (
         len(candidate_ids) != len(set(candidate_ids))
-        or not set(candidate_ids) <= replacement_ids
+        or not set(candidate_ids) <= target_ids
     ):
         raise CandidatePreparationError("CANDIDATE_SCOPE_INVALID")
     required_hashes = (
-        "old_file_sha256",
         "candidate_file_sha256",
         "candidate_content_sha256",
         "candidate_source_quality_sha256",
         "candidate_quality_sidecar_sha256",
     )
     for item in candidates:
+        identity = (str(item.get("symbol")), str(item.get("contract")), str(item.get("month")))
         if (
             item.get("state") != "CANDIDATE_FROZEN"
+            or item.get("operation") != target_by_id[identity].get("operation")
             or any(not isinstance(item.get(name), str) for name in required_hashes)
             or any(len(str(item[name])) != 64 for name in required_hashes)
+            or (
+                item.get("operation") == "REPLACE_EXISTING_PARTITION"
+                and not isinstance(item.get("old_file_sha256"), str)
+            )
             or any(
                 Path(str(item.get(name, ""))).is_absolute()
                 or ".." in Path(str(item.get(name, ""))).parts
-                for name in ("old_file_uri", "candidate_file_uri", "candidate_quality_sidecar_uri")
+                for name in ("candidate_file_uri", "candidate_quality_sidecar_uri")
             )
             or not isinstance(item.get("row_count"), int)
             or not isinstance(item.get("source_quality_count"), int)
@@ -159,6 +166,8 @@ def build_candidate_manifest(
             blocked, key=lambda item: (item["symbol"], item["contract"], item["month"])
         ),
     }
+    if recovery_evidence is not None:
+        body["recovery_evidence"] = dict(recovery_evidence)
     body["manifest_sha256"] = sha256(_canonical_json(body)).hexdigest()
     return body
 
@@ -246,6 +255,178 @@ def build_source_proof_index(
                     source_values=values,
                 ))
     return result
+
+
+def build_recovery_source_proof_index(
+    recovery_candidate: Mapping[str, Any], *, attempt: Path
+) -> dict[tuple[str, str, date], SourceProof]:
+    """Verify a completed recovery attempt and expose only its frozen target rows."""
+    plan_sha256 = recovery_candidate.get("plan_sha256")
+    body = dict(recovery_candidate)
+    body.pop("plan_sha256", None)
+    if (
+        not isinstance(plan_sha256, str)
+        or sha256(_canonical_json(body)).hexdigest() != plan_sha256
+        or recovery_candidate.get("schema")
+        != "subing-d1-source-response-recovery-candidate-v1"
+    ):
+        raise CandidatePreparationError("RECOVERY_PLAN_INVALID")
+    requests = recovery_candidate.get("requests")
+    contract = recovery_candidate.get("execution_contract")
+    if not isinstance(requests, list) or not isinstance(contract, Mapping):
+        raise CandidatePreparationError("RECOVERY_PLAN_INVALID")
+    if attempt.name != contract.get("attempt_id"):
+        raise CandidatePreparationError("RECOVERY_ATTEMPT_INVALID")
+    try:
+        root = attempt.resolve(strict=True)
+        if root != attempt or attempt.is_symlink() or not attempt.is_dir():
+            raise OSError
+        receipt = json.loads((attempt / "invocation-receipt.json").read_bytes())
+        result_body = json.loads((attempt / "source-only-result.json").read_bytes())
+        journal = [
+            json.loads(line)
+            for line in (attempt / "journal.jsonl").read_text().splitlines()
+        ]
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CandidatePreparationError("RECOVERY_ATTEMPT_INVALID") from exc
+    expected_count = len(requests)
+    budget = recovery_candidate.get("budget", {})
+    expected_targets = budget.get("expected_date_identities")
+    expected_context = budget.get("allowed_response_context_dates")
+    summary = result_body.get("summary", {})
+    outcome = result_body.get("attempt", {})
+    if (
+        receipt.get("plan_sha256") != plan_sha256
+        or receipt.get("attempt_id") != attempt.name
+        or receipt.get("provider_request_limit") != expected_count
+        or receipt.get("expected_date_identities") != expected_targets
+        or receipt.get("concurrency") != 1
+        or receipt.get("retries_allowed") != 0
+        or receipt.get("canonical_writes_allowed") is not False
+        or receipt.get("database_writes_allowed") is not False
+        or receipt.get("manager_apply_allowed") is not False
+        or result_body.get("plan_sha256") != plan_sha256
+        or result_body.get("status") != "completed"
+        or result_body.get("failed") is not None
+        or result_body.get("unexecuted") != []
+        or result_body.get("retries") != 0
+        or result_body.get("canonical_writes") != 0
+        or result_body.get("database_writes") != 0
+        or result_body.get("manager_apply") is not False
+        or summary.get("requests_planned") != expected_count
+        or summary.get("requests_started") != expected_count
+        or summary.get("responses_saved") != expected_count
+        or summary.get("requests_failed") != 0
+        or summary.get("requests_unexecuted") != 0
+        or summary.get("target_dates_planned") != expected_targets
+        or summary.get("target_rows_saved") != expected_targets
+        or summary.get("context_rows_saved") != expected_context
+        or summary.get("rows_saved") != expected_targets + expected_context
+        or outcome.get("outcome_unknown") is not False
+        or outcome.get("requests_started") != expected_count
+        or outcome.get("responses_saved") != expected_count
+        or outcome.get("retry_allowed") is not False
+        or outcome.get("state") != "response_saved"
+        or len(journal) != expected_count * 2
+    ):
+        raise CandidatePreparationError("RECOVERY_ATTEMPT_INCOMPLETE")
+
+    proofs: dict[tuple[str, str, date], SourceProof] = {}
+    actual_rows = 0
+    actual_context_rows = 0
+    for sequence, raw_request in enumerate(requests, 1):
+        if not isinstance(raw_request, Mapping):
+            raise CandidatePreparationError("RECOVERY_PLAN_INVALID")
+        transport = {
+            "method": "futures.get_exchange_daily",
+            "contract": raw_request.get("contract"),
+            "start": raw_request.get("start"),
+            "end": raw_request.get("end"),
+            "expected_dates": raw_request.get("target_dates"),
+        }
+        started, saved = journal[(sequence - 1) * 2:sequence * 2]
+        filename = f"source-response-{sequence:04d}.json"
+        if (
+            started != {
+                "schema_version": 1,
+                "sequence": sequence,
+                "state": "started",
+                "request": transport,
+            }
+            or saved.get("schema_version") != 1
+            or saved.get("sequence") != sequence
+            or saved.get("state") != "response_saved"
+            or saved.get("payload_file") != filename
+        ):
+            raise CandidatePreparationError("RECOVERY_JOURNAL_INVALID")
+        raw, observed_at = _read_raw_file(attempt, Path(filename))
+        response_sha256 = sha256(raw).hexdigest()
+        if response_sha256 != saved.get("payload_sha256"):
+            raise CandidatePreparationError("RECOVERY_RAW_HASH_MISMATCH")
+        try:
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise CandidatePreparationError("RECOVERY_RAW_INVALID") from exc
+        if payload.get("request") != transport or not isinstance(payload.get("rows"), list):
+            raise CandidatePreparationError("RECOVERY_RAW_INVALID")
+        if saved.get("row_count") != len(payload["rows"]):
+            raise CandidatePreparationError("RECOVERY_JOURNAL_ROW_COUNT_INVALID")
+        actual_rows += len(payload["rows"])
+        rows_by_day: dict[date, Mapping[str, Any]] = {}
+        allowed_days = {
+            date.fromisoformat(str(value))
+            for value in raw_request.get("allowed_response_dates", ())
+        }
+        ordered_days: list[date] = []
+        for row in payload["rows"]:
+            if not isinstance(row, Mapping):
+                raise CandidatePreparationError("RECOVERY_RAW_INVALID")
+            raw_day = date.fromisoformat(str(row.get("date", ""))[:10])
+            if (
+                row.get("order_book_id") != raw_request.get("contract")
+                or raw_day not in allowed_days
+            ):
+                raise CandidatePreparationError("RECOVERY_RAW_IDENTITY_INVALID")
+            if raw_day in rows_by_day:
+                raise CandidatePreparationError("RECOVERY_RAW_DATE_DUPLICATE")
+            rows_by_day[raw_day] = row
+            ordered_days.append(raw_day)
+        if ordered_days != sorted(ordered_days):
+            raise CandidatePreparationError("RECOVERY_RAW_DATE_ORDER_INVALID")
+        target_days = {
+            date.fromisoformat(str(value))
+            for value in raw_request.get("target_dates", ())
+        }
+        actual_context_rows += len(set(rows_by_day) - target_days)
+        for raw_day in sorted(target_days):
+            row = rows_by_day.get(raw_day)
+            if row is None:
+                raise CandidatePreparationError("RECOVERY_RAW_DATE_MISSING")
+            values = _source_values(row)
+            classification = _classify_source_values(values)
+            if classification not in {
+                "POSITIVE_OHLC_SOURCE_FACT",
+                "NONPOSITIVE_CLOSE_SOURCE_FACT",
+                "ZERO_OHL_POSITIVE_CLOSE_SOURCE_FACT",
+            }:
+                raise CandidatePreparationError("RECOVERY_RAW_CLASSIFICATION_INVALID")
+            key = (str(raw_request.get("symbol")), str(raw_request.get("contract")), raw_day)
+            if key in proofs:
+                raise CandidatePreparationError("RECOVERY_SOURCE_PROOF_DUPLICATE")
+            proofs[key] = SourceProof(
+                request_sha256=str(raw_request.get("request_sha256")),
+                response_sha256=response_sha256,
+                observed_at=observed_at,
+                classification=classification,
+                source_values=values,
+            )
+    if (
+        len(proofs) != expected_targets
+        or actual_context_rows != expected_context
+        or actual_rows != expected_targets + expected_context
+    ):
+        raise CandidatePreparationError("RECOVERY_ATTEMPT_INCOMPLETE")
+    return proofs
 
 
 def prepare_replacement_candidate(
@@ -363,6 +544,7 @@ def prepare_replacement_candidate(
     content = _content_body(verified_bars, verified_facts)
     manifest = {
         "state": "CANDIDATE_FROZEN",
+        "operation": target.get("operation"),
         "symbol": partition.dataset.symbol,
         "contract": partition.dataset.series_or_contract,
         "month": month,
@@ -379,6 +561,131 @@ def prepare_replacement_candidate(
         "row_count": published.row_count,
         "source_quality_count": len(facts),
         "affected_dates": sorted(day.isoformat() for day in affected),
+        "coverage_start": _iso(published.coverage_start),
+        "coverage_end": _iso(published.coverage_end),
+        "source_coverage_start": _iso(published.source_coverage_start),
+        "source_coverage_end": _iso(published.source_coverage_end),
+    }
+    return PreparedCandidate(manifest=manifest, partition=published)
+
+
+def prepare_create_candidate(
+    *,
+    target: Mapping[str, Any],
+    dataset: DatasetKey,
+    candidate_root: Path,
+    proofs: Mapping[tuple[str, str, date], SourceProof],
+    bar_ends_by_day: Mapping[date, datetime],
+) -> PreparedCandidate:
+    """Freeze one previously absent mixed D1 partition from exact source rows."""
+    if target.get("operation") != "CREATE_MIXED_UNION_PARTITION":
+        raise CandidatePreparationError("TARGET_OPERATION_INVALID")
+    month = str(target.get("month", ""))
+    if dataset.symbol != target.get("symbol") or dataset.series_or_contract != target.get("contract"):
+        raise CandidatePreparationError("TARGET_IDENTITY_DRIFT")
+    year, month_number = (int(value) for value in month.split("-"))
+    affected = {date.fromisoformat(str(value)) for value in target.get("affected_dates", ())}
+    if set(bar_ends_by_day) != affected:
+        raise CandidatePreparationError("CREATE_ENDPOINT_SCOPE_INVALID")
+    expected_classifications = {
+        date.fromisoformat(str(item.get("trading_day"))): item.get("source_classification")
+        for item in target.get("expected_endpoint_classifications", ())
+        if isinstance(item, Mapping)
+    }
+    if set(expected_classifications) != affected:
+        raise CandidatePreparationError("CREATE_CLASSIFICATION_SCOPE_INVALID")
+
+    bars: list[CanonicalBar] = []
+    facts: list[NonpositiveCloseFact] = []
+    for trading_day in sorted(affected):
+        proof = proofs.get((dataset.symbol, dataset.series_or_contract, trading_day))
+        if proof is None or proof.source_values is None:
+            raise CandidatePreparationError("SOURCE_PROOF_MISSING")
+        if proof.classification != expected_classifications[trading_day]:
+            raise CandidatePreparationError("SOURCE_PROOF_CLASSIFICATION_MISMATCH")
+        values = proof.source_values
+        required = tuple(values.get(field) for field in (
+            "open", "high", "low", "close", "volume", "turnover",
+        ))
+        if any(value is None for value in required):
+            raise CandidatePreparationError("SOURCE_ROW_MISMATCH")
+        open_, high, low, close, volume, turnover = required
+        assert all(isinstance(value, Decimal) for value in required)
+        bar_end = bar_ends_by_day[trading_day]
+        if proof.classification == "POSITIVE_OHLC_SOURCE_FACT":
+            bars.append(CanonicalBar(
+                bar_end=bar_end,
+                trading_day=trading_day,
+                open=open_, high=high, low=low, close=close, volume=volume,
+                turnover=turnover,
+                open_interest=values.get("open_interest"),
+            ))
+        elif proof.classification == "NONPOSITIVE_CLOSE_SOURCE_FACT":
+            facts.append(NonpositiveCloseFact(
+                bar_end=bar_end,
+                trading_day=trading_day,
+                open=open_, high=high, low=low, close=close, volume=volume,
+                turnover=turnover,
+                open_interest=values.get("open_interest"),
+                request_sha256=proof.request_sha256,
+                response_sha256=proof.response_sha256,
+                observed_at=proof.observed_at,
+            ))
+        else:
+            raise CandidatePreparationError("SOURCE_PROOF_CLASSIFICATION_MISMATCH")
+
+    expected = tuple(bar_ends_by_day[day] for day in sorted(affected))
+    candidate_store = CanonicalMonthlyStore(candidate_root)
+    published = candidate_store.publish(PublishRequest(
+        dataset=dataset,
+        year=year,
+        month=month_number,
+        bars=tuple(bars),
+        expected_bar_ends=expected,
+        nonpositive_close=tuple(facts),
+    ))
+    candidate_bytes = published.parquet_path.read_bytes()
+    sidecar_path, sidecar_sha256 = _write_quality_sidecar(
+        published.parquet_path.parent, tuple(facts)
+    )
+    sidecar_facts = _read_quality_sidecar(sidecar_path, sidecar_sha256)
+    verified_partition = CatalogPartition(
+        dataset=published.dataset,
+        year=published.year,
+        month=published.month,
+        coverage_start=published.coverage_start,
+        coverage_end=published.coverage_end,
+        file_path=published.parquet_path,
+        row_count=published.row_count,
+        source_coverage_start=published.source_coverage_start,
+        source_coverage_end=published.source_coverage_end,
+        source_quality=sidecar_facts,
+        source_quality_sha256=published.source_quality_sha256,
+    )
+    verified_bars, verified_facts = candidate_store.read_catalog_partition_quality(
+        verified_partition
+    )
+    content = _content_body(verified_bars, verified_facts)
+    manifest = {
+        "state": "CANDIDATE_FROZEN",
+        "operation": target.get("operation"),
+        "symbol": dataset.symbol,
+        "contract": dataset.series_or_contract,
+        "month": month,
+        "partition_id": None,
+        "old_file_uri": None,
+        "old_file_sha256": None,
+        "old_source_quality_sha256": None,
+        "candidate_file_uri": published.parquet_path.relative_to(candidate_root).as_posix(),
+        "candidate_file_sha256": sha256(candidate_bytes).hexdigest(),
+        "candidate_content_sha256": sha256(_canonical_json(content)).hexdigest(),
+        "candidate_source_quality_sha256": published.source_quality_sha256,
+        "candidate_quality_sidecar_uri": sidecar_path.relative_to(candidate_root).as_posix(),
+        "candidate_quality_sidecar_sha256": sidecar_sha256,
+        "row_count": published.row_count,
+        "source_quality_count": len(facts),
+        "affected_dates": sorted(day.isoformat() for day in affected),
+        "expected_endpoints_sha256": target.get("expected_endpoints_sha256"),
         "coverage_start": _iso(published.coverage_start),
         "coverage_end": _iso(published.coverage_end),
         "source_coverage_start": _iso(published.source_coverage_start),

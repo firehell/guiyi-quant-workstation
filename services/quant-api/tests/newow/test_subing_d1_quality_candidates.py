@@ -2,6 +2,7 @@ import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from hashlib import sha256
+from pathlib import Path
 
 import pytest
 
@@ -12,7 +13,9 @@ from app.market_data.subing_d1_quality_candidates import (
     CandidatePreparationError,
     SourceProof,
     build_candidate_manifest,
+    build_recovery_source_proof_index,
     build_source_proof_index,
+    prepare_create_candidate,
     prepare_replacement_candidate,
     verify_plan_input_files,
 )
@@ -131,6 +134,264 @@ def test_prepare_replacement_candidate_rejects_old_file_hash_drift(tmp_path):
         )
 
 
+def test_prepare_create_candidate_freezes_mixed_source_union(tmp_path):
+    candidate_root = tmp_path / "candidate"
+    candidate_root.mkdir()
+    key = DatasetKey(DatasetKind.CONTRACT, "oi", "OI2609", BarFrequency.D1)
+    days = (date(2026, 9, 1), date(2026, 9, 2))
+    ends = {day: datetime(2026, 9, day.day, 7, tzinfo=UTC) for day in days}
+    positive = SourceProof(
+        request_sha256="a" * 64,
+        response_sha256="b" * 64,
+        observed_at=datetime(2026, 9, 19, 4, tzinfo=UTC),
+        classification="POSITIVE_OHLC_SOURCE_FACT",
+        source_values={
+            "open": Decimal("10"), "high": Decimal("11"), "low": Decimal("9"),
+            "close": Decimal("10"), "volume": Decimal("1"), "turnover": Decimal("2"),
+            "open_interest": Decimal("3"),
+        },
+    )
+    nonpositive = SourceProof(
+        request_sha256="c" * 64,
+        response_sha256="d" * 64,
+        observed_at=datetime(2026, 9, 19, 4, tzinfo=UTC),
+        classification="NONPOSITIVE_CLOSE_SOURCE_FACT",
+        source_values={
+            "open": Decimal("0"), "high": Decimal("0"), "low": Decimal("0"),
+            "close": Decimal("0"), "volume": Decimal("1"), "turnover": Decimal("2"),
+            "open_interest": Decimal("3"),
+        },
+    )
+    target = {
+        "symbol": "oi", "contract": "OI2609", "month": "2026-09",
+        "partition_id": None, "operation": "CREATE_MIXED_UNION_PARTITION",
+        "affected_dates": [day.isoformat() for day in days],
+        "expected_endpoint_classifications": [
+            {"trading_day": days[0].isoformat(), "source_classification": "POSITIVE_OHLC_SOURCE_FACT"},
+            {"trading_day": days[1].isoformat(), "source_classification": "NONPOSITIVE_CLOSE_SOURCE_FACT"},
+        ],
+        "expected_endpoints_sha256": "e" * 64,
+    }
+
+    prepared = prepare_create_candidate(
+        target=target,
+        dataset=key,
+        candidate_root=candidate_root,
+        proofs={
+            ("oi", "OI2609", days[0]): positive,
+            ("oi", "OI2609", days[1]): nonpositive,
+        },
+        bar_ends_by_day=ends,
+    )
+
+    assert prepared.manifest["operation"] == "CREATE_MIXED_UNION_PARTITION"
+    assert prepared.manifest["row_count"] == 1
+    assert prepared.manifest["source_quality_count"] == 1
+    assert prepared.manifest["old_file_sha256"] is None
+
+
+def _recovery_attempt_fixture(tmp_path: Path) -> tuple[dict, Path]:
+    attempt = (tmp_path / "attempt-001").resolve()
+    attempt.mkdir()
+    request = {
+        "symbol": "oi",
+        "contract": "OI2609",
+        "frequency": "1d",
+        "month": "2026-09",
+        "start": "2026-09-01",
+        "end": "2026-09-01",
+        "target_dates": ["2026-09-01"],
+        "allowed_response_dates": ["2026-08-31", "2026-09-01"],
+        "calendar_authority": {},
+        "request_sha256": "a" * 64,
+        "reason_codes": ["MISSING_RAW_RESPONSE"],
+    }
+    candidate = {
+        "schema": "subing-d1-source-response-recovery-candidate-v1",
+        "execute": False,
+        "fixed_cutoff": "2026-09-18T18:30:00+08:00",
+        "provider": "rqdata",
+        "method": "futures.get_exchange_daily",
+        "requests": [request],
+        "budget": {
+            "expected_date_identities": 1,
+            "allowed_response_context_dates": 1,
+        },
+        "execution_contract": {"attempt_id": attempt.name},
+    }
+    candidate["plan_sha256"] = sha256(
+        json.dumps(
+            candidate, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    transport = {
+        "method": "futures.get_exchange_daily",
+        "contract": "OI2609",
+        "start": "2026-09-01",
+        "end": "2026-09-01",
+        "expected_dates": ["2026-09-01"],
+    }
+    payload = {
+        "schema_version": 1,
+        "request": transport,
+        "rows": [
+            {
+                "order_book_id": "OI2609",
+                "date": "2026-08-31",
+                "open": "8",
+                "high": "9",
+                "low": "7",
+                "close": "8",
+                "volume": "1",
+                "total_turnover": "2",
+                "open_interest": "3",
+            },
+            {
+                "order_book_id": "OI2609",
+                "date": "2026-09-01",
+                "open": "10",
+                "high": "11",
+                "low": "9",
+                "close": "10",
+                "volume": "1",
+                "total_turnover": "2",
+                "open_interest": "3",
+            },
+        ],
+    }
+    raw_path = attempt / "source-response-0001.json"
+    raw_path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
+    raw_sha256 = sha256(raw_path.read_bytes()).hexdigest()
+    journal = [
+        {
+            "schema_version": 1,
+            "sequence": 1,
+            "state": "started",
+            "request": transport,
+        },
+        {
+            "schema_version": 1,
+            "sequence": 1,
+            "state": "response_saved",
+            "payload_file": raw_path.name,
+            "payload_sha256": raw_sha256,
+            "row_count": 2,
+        },
+    ]
+    (attempt / "journal.jsonl").write_text(
+        "".join(json.dumps(item, sort_keys=True) + "\n" for item in journal)
+    )
+    receipt = {
+        "plan_sha256": candidate["plan_sha256"],
+        "attempt_id": attempt.name,
+        "provider_request_limit": 1,
+        "expected_date_identities": 1,
+        "concurrency": 1,
+        "retries_allowed": 0,
+        "canonical_writes_allowed": False,
+        "database_writes_allowed": False,
+        "manager_apply_allowed": False,
+    }
+    result = {
+        "plan_sha256": candidate["plan_sha256"],
+        "status": "completed",
+        "failed": None,
+        "unexecuted": [],
+        "retries": 0,
+        "canonical_writes": 0,
+        "database_writes": 0,
+        "manager_apply": False,
+        "attempt": {
+            "outcome_unknown": False,
+            "requests_started": 1,
+            "responses_saved": 1,
+            "retry_allowed": False,
+            "state": "response_saved",
+        },
+        "summary": {
+            "requests_planned": 1,
+            "requests_started": 1,
+            "responses_saved": 1,
+            "requests_failed": 0,
+            "requests_unexecuted": 0,
+            "target_dates_planned": 1,
+            "target_rows_saved": 1,
+            "context_rows_saved": 1,
+            "rows_saved": 2,
+        },
+    }
+    (attempt / "invocation-receipt.json").write_text(json.dumps(receipt))
+    (attempt / "source-only-result.json").write_text(json.dumps(result))
+    return candidate, attempt
+
+
+def test_recovery_attempt_exposes_verified_target_rows(tmp_path):
+    candidate, attempt = _recovery_attempt_fixture(tmp_path)
+
+    proofs = build_recovery_source_proof_index(candidate, attempt=attempt)
+
+    assert len(proofs) == 1
+    assert proofs[("oi", "OI2609", date(2026, 9, 1))].classification == (
+        "POSITIVE_OHLC_SOURCE_FACT"
+    )
+
+
+@pytest.mark.parametrize(
+    ("filename", "section", "field", "value", "error"),
+    [
+        ("invocation-receipt.json", None, "retries_allowed", 1, "RECOVERY_ATTEMPT_INCOMPLETE"),
+        ("invocation-receipt.json", None, "canonical_writes_allowed", True, "RECOVERY_ATTEMPT_INCOMPLETE"),
+        ("source-only-result.json", None, "retries", 1, "RECOVERY_ATTEMPT_INCOMPLETE"),
+        ("source-only-result.json", None, "database_writes", 1, "RECOVERY_ATTEMPT_INCOMPLETE"),
+        ("source-only-result.json", None, "manager_apply", True, "RECOVERY_ATTEMPT_INCOMPLETE"),
+        ("source-only-result.json", "summary", "context_rows_saved", 0, "RECOVERY_ATTEMPT_INCOMPLETE"),
+        ("source-only-result.json", "summary", "rows_saved", 1, "RECOVERY_ATTEMPT_INCOMPLETE"),
+        ("source-only-result.json", "attempt", "retry_allowed", True, "RECOVERY_ATTEMPT_INCOMPLETE"),
+    ],
+)
+def test_recovery_attempt_rejects_receipt_or_result_drift(
+    tmp_path, filename, section, field, value, error
+):
+    candidate, attempt = _recovery_attempt_fixture(tmp_path)
+    path = attempt / filename
+    body = json.loads(path.read_text())
+    target = body if section is None else body[section]
+    target[field] = value
+    path.write_text(json.dumps(body))
+
+    with pytest.raises(CandidatePreparationError, match=error):
+        build_recovery_source_proof_index(candidate, attempt=attempt)
+
+
+def test_recovery_attempt_rejects_journal_row_count_drift(tmp_path):
+    candidate, attempt = _recovery_attempt_fixture(tmp_path)
+    path = attempt / "journal.jsonl"
+    journal = [json.loads(line) for line in path.read_text().splitlines()]
+    journal[1]["row_count"] = 3
+    path.write_text("".join(json.dumps(item) + "\n" for item in journal))
+
+    with pytest.raises(
+        CandidatePreparationError, match="RECOVERY_JOURNAL_ROW_COUNT_INVALID"
+    ):
+        build_recovery_source_proof_index(candidate, attempt=attempt)
+
+
+def test_recovery_attempt_rejects_missing_context_row(tmp_path):
+    candidate, attempt = _recovery_attempt_fixture(tmp_path)
+    raw_path = attempt / "source-response-0001.json"
+    payload = json.loads(raw_path.read_text())
+    payload["rows"] = payload["rows"][1:]
+    raw_path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
+    journal_path = attempt / "journal.jsonl"
+    journal = [json.loads(line) for line in journal_path.read_text().splitlines()]
+    journal[1]["row_count"] = 1
+    journal[1]["payload_sha256"] = sha256(raw_path.read_bytes()).hexdigest()
+    journal_path.write_text("".join(json.dumps(item) + "\n" for item in journal))
+
+    with pytest.raises(CandidatePreparationError, match="RECOVERY_ATTEMPT_INCOMPLETE"):
+        build_recovery_source_proof_index(candidate, attempt=attempt)
+
+
 def test_source_proof_index_verifies_saved_raw_bytes_and_rows(tmp_path):
     artifact = tmp_path / "batch/source-response-0001.json"
     artifact.parent.mkdir()
@@ -230,6 +491,7 @@ def test_candidate_manifest_keeps_create_targets_blocked_without_source_bytes():
     }
     candidate = {
         "state": "CANDIDATE_FROZEN",
+        "operation": "REPLACE_EXISTING_PARTITION",
         "symbol": "oi",
         "contract": "OI2611",
         "month": "2025-11",
