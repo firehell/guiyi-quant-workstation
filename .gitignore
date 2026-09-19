@@ -60,6 +60,7 @@ data/reports/source_interval_provenance_repair_apply_*/backups/
 # local bounded Newow recovery evidence (hash-bound, never a source tree input)
 /outputs/newow-weekly-recovery-attempts/
 /outputs/newow-weekly-quality-completion-20260917/
+/outputs/newow-weekly-remaining19-20260919/
 /outputs/subing-four-period-readiness-20260918/d1-source-only-*/
 /outputs/subing-four-period-readiness-20260918/d1-source-response-recovery-*/
 /outputs/subing-four-period-readiness-20260918/source-plan-*.claim.json
