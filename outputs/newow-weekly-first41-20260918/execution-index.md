@@ -5,9 +5,8 @@
 `b107f323c` 后继续）。
 本索引只记录本任务的新证据；历史报告仅作定位，不替代本次验证。
 
-2026-09-18 基线接续：原 `33a2` worktree 在完整 dirty 快照保存后从本机消失；
-快照位于本索引同级 `baseline-preservation.tar.gz`，含旧分支已提交差异、
-tracked binary patch、两个 untracked 文件及 SHA-256 manifest。现于
+2026-09-18 基线接续：原 `33a2` worktree 从本机消失后，曾用临时 dirty 快照完成逐文件收敛；
+其中有效增量均已进入本分支 Git 历史，候选收口时按仓库规则删除该临时归档，不保留第二份恢复源。现于
 `codex/newow-first41-baseline-converged@fbee36b776` 接续，原树未被本任务清理。
 逐文件对照后，MDS、reader、identity、ReferenceTrade 与主要回归文件均已在 develop；
 develop 的 `weekly_quality.py` 保留更完整的输入校验，未复制旧版。

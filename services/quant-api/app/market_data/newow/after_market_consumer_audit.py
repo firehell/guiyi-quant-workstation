@@ -150,6 +150,11 @@ def catalog_revision(
 ) -> str:
     """Hash exact Catalog inputs used by one post-maintenance consumer scope."""
     product_symbols = tuple(sorted(products))
+    calendar_through = (
+        day + timedelta(days=7 - day.isoweekday())
+        if "1w" in frequencies
+        else day
+    )
     exchanges = tuple(sorted(set(session.scalars(
         select(Instrument.exchange_code).where(Instrument.symbol.in_(product_symbols))
     ))))
@@ -158,7 +163,8 @@ def catalog_revision(
         ("exchange", select(Exchange.__table__).where(Exchange.code.in_(exchanges))),
         ("contract", select(Contract.__table__).where(Contract.instrument_symbol.in_(product_symbols))),
         ("calendar", select(TradingCalendar.__table__).where(
-            TradingCalendar.exchange_code.in_(exchanges), TradingCalendar.trade_date <= day,
+            TradingCalendar.exchange_code.in_(exchanges),
+            TradingCalendar.trade_date <= calendar_through,
         )),
         ("session", select(TradingSession.__table__).where(
             TradingSession.instrument_symbol.in_(product_symbols)
@@ -326,6 +332,7 @@ def summarize_readiness(
     failures: list[dict[str, str]] = []
     ready = {"chart": 0, "reference": 0, "auxiliary": 0}
     seen: set[tuple[str, str]] = set()
+    invalid_products: set[str] = set()
     structurally_complete = len(cases) == expected_cases
     for case in cases:
         product, strategy = case.get("symbol"), case.get("strategy")
@@ -337,13 +344,18 @@ def summarize_readiness(
             or (product, str(strategy)) in seen
         ):
             structurally_complete = False
+            if isinstance(product, str) and product in products:
+                invalid_products.add(product)
             continue
         seen.add((product, str(strategy)))
+        if set(sections) != _SECTIONS:
+            structurally_complete = False
+            invalid_products.add(product)
+            continue
         for section, state in sections.items():
-            if section not in _SECTIONS:
-                continue
             if not isinstance(state, Mapping) or not isinstance(state.get("status"), str):
                 structurally_complete = False
+                invalid_products.add(product)
                 continue
             status = state["status"]
             family = "auxiliary" if str(section).startswith("auxiliary:") else str(section)
@@ -378,7 +390,8 @@ def summarize_readiness(
         ],
         "unverified_products": [] if structurally_complete else [
             product for product in products
-            if any((product, strategy) not in seen for strategy in _STRATEGIES)
+            if product in invalid_products
+            or any((product, strategy) not in seen for strategy in _STRATEGIES)
         ],
         "case_count": len(cases),
         "main_ready_count": ready["chart"],

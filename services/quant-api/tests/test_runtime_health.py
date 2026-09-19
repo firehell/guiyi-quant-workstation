@@ -1312,6 +1312,53 @@ def test_after_market_health_exposes_weekly_consumer_check_without_promoting_it(
     assert after_market["consumer_checks"]["newow_w1"]["status"] == "incomplete"
 
 
+def test_after_market_health_preserves_consumer_check_on_failed_run(
+    monkeypatch, tmp_path,
+) -> None:
+    status_path = tmp_path / "after-market-status.json"
+    check = {
+        "status": "incomplete", "frequency": "1w",
+        "trading_day": "2026-08-10", "checked_at": "2026-08-10T18:01:00+08:00",
+        "case_count": 123, "main_ready_count": 120, "reference_ready_count": 120,
+        "auxiliary_ready_count": 600, "budget_exhausted": False,
+        "failures": [], "warmup_proposals": [],
+    }
+    status_path.write_text(json.dumps({
+        "schema_version": 3,
+        "current_run": None,
+        "last_run": {
+            "trading_day": "2026-08-10", "status": "failed", "attempts": 1,
+            "started_at": "2026-08-10T17:00:00+08:00",
+            "finished_at": "2026-08-10T18:00:00+08:00",
+            "products": ["jm"], "error_code": "UPDATE_FAILED",
+        },
+        "last_successful_trading_day": "2026-08-09",
+        "last_failure": {
+            "trading_day": "2026-08-10", "error_code": "UPDATE_FAILED",
+        },
+        "consumer_checks": {"newow_w1": check},
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        "app.services.runtime_health.load_operational_products", lambda: ("jm",)
+    )
+    TestingSessionLocal = _session_factory()
+    with TestingSessionLocal() as session:
+        _seed_calendar(
+            session, exchanges={"DCE": ("jm",)},
+            days={"DCE": ((date(2026, 8, 10), True),)},
+        )
+        payload = build_runtime_health(
+            session, redis_factory=lambda: FakeRedis(),
+            now=datetime(2026, 8, 10, 10, 30, tzinfo=UTC),
+            live_runtime_enabled=False, after_market_automation_enabled=True,
+            after_market_status_path=status_path,
+        )
+
+    after_market = payload["components"]["after_market"]
+    assert after_market["status"] == "failed"
+    assert after_market["consumer_checks"]["newow_w1"]["status"] == "incomplete"
+
+
 @pytest.mark.parametrize(
     "legacy_payload",
     (

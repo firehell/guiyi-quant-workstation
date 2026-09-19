@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from app.market_data.newow.after_market_consumer_audit import (
     ConsumerAuditScope,
     run_bounded_consumer_audits,
@@ -22,7 +24,10 @@ def _case(
             "chart": {"status": chart},
             "reference": {"status": reference},
             "auxiliary:macd": {"status": auxiliary, "reason": "NEWOW_MACD_WARMING"},
-            "explanation": {"status": "UNOPENED"},
+            "auxiliary:main_force_control": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
+            "auxiliary:up_down_energy": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
+            "auxiliary:zhaoyao_mirror": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
+            "auxiliary:cup_handle": {"status": auxiliary, "reason": "NEWOW_AUXILIARY_WARMING"},
         },
     }
 
@@ -50,6 +55,41 @@ def test_summarize_readiness_accepts_legal_non_ready_strategy_states():
     assert result["reference_ready_count"] == 3
     assert result["auxiliary_ready_count"] == 0
     assert result["failures"] == []
+
+
+@pytest.mark.parametrize(
+    ("mutation", "section"),
+    (("remove", "chart"), ("remove", "reference"),
+     ("remove", "auxiliary:cup_handle"), ("add", "explanation")),
+)
+def test_summarize_readiness_rejects_missing_or_extra_consumer_section(
+    mutation, section,
+):
+    cases = [
+        _case("au", strategy, "READY", "READY", "READY")
+        for strategy in ("trend", "oscillation", "main_rise")
+    ]
+    if mutation == "remove":
+        cases[0]["sections"].pop(section)
+    else:
+        cases[0]["sections"][section] = {"status": "UNOPENED"}
+    report = {
+        "complete": True,
+        "budget_exhausted": False,
+        "cases": cases,
+        "repair_targets": [],
+        "provider_requests": 0,
+        "writes": 0,
+    }
+
+    result = summarize_readiness(
+        report, products=("au",), frequency="1w",
+        cutoffs={"au": "2026-09-18T07:00:00.000001+00:00"},
+        input_revision="a" * 64,
+    )
+
+    assert result["status"] == "incomplete"
+    assert result["unverified_products"] == ["au"]
 
 
 def test_summarize_readiness_preserves_exact_readonly_warmup_proposal():

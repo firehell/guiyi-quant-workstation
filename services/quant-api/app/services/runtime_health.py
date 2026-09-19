@@ -811,6 +811,8 @@ def _collect_after_market_health(
             "run_state": "degraded",
             "error_type": "after_market_expected_day_invalid" if expected_day_error else "after_market_status_invalid",
         }
+    if isinstance(public.get("consumer_checks"), Mapping):
+        base["consumer_checks"] = public["consumer_checks"]
     if "last_interruption" in public:
         base["last_interruption"] = public["last_interruption"]
     if expected_day_error:
@@ -907,8 +909,6 @@ def _collect_after_market_health(
             "last_failure": public["last_failure"],
             "error_type": "after_market_status_invalid",
         }
-    if isinstance(public.get("consumer_checks"), Mapping):
-        base["consumer_checks"] = public["consumer_checks"]
     status = (
         RUNTIME_STATUS_FAILED if last_run["status"] == "failed" else RUNTIME_STATUS_OK
     )

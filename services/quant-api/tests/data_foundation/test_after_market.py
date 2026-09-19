@@ -359,6 +359,49 @@ def test_newow_d1_catalog_revision_tracks_scoped_map_and_ignores_other_product()
         assert _newow_d1_catalog_revision(session, ("rb",), date(2026, 8, 10)) != baseline
 
 
+def test_newow_w1_catalog_revision_tracks_the_complete_calendar_week():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.db.base import Base
+    from app.market_data.after_market import _newow_catalog_revision
+    from app.models import Exchange, Instrument, TradingCalendar
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Exchange(code="SHFE", name="SHFE"))
+        session.add(Instrument(symbol="rb", name="RB", exchange_code="SHFE"))
+        session.add_all([
+            TradingCalendar(
+                exchange_code="SHFE", trade_date=date(2026, 8, 10),
+                is_trading_day=True, has_night_session=False,
+            ),
+            TradingCalendar(
+                exchange_code="SHFE", trade_date=date(2026, 8, 15),
+                is_trading_day=False, has_night_session=False,
+            ),
+        ])
+        session.commit()
+        daily = _newow_catalog_revision(session, ("rb",), date(2026, 8, 10), ("1d",))
+        weekly = _newow_catalog_revision(
+            session, ("rb",), date(2026, 8, 10), ("1d", "1w"),
+        )
+
+        weekend = session.query(TradingCalendar).filter_by(
+            exchange_code="SHFE", trade_date=date(2026, 8, 15),
+        ).one()
+        weekend.is_trading_day = True
+        session.commit()
+
+        assert _newow_catalog_revision(
+            session, ("rb",), date(2026, 8, 10), ("1d",),
+        ) == daily
+        assert _newow_catalog_revision(
+            session, ("rb",), date(2026, 8, 10), ("1d", "1w"),
+        ) != weekly
+
+
 def test_consumer_audit_marks_input_changed_and_busy_is_not_verified(tmp_path):
     def audit(_products, _day):
         return {
