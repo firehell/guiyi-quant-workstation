@@ -1480,7 +1480,10 @@ def test_post_commit_readback_records_catalog_file_hash_and_mds(
     path.write_bytes(b"immutable-canonical-partition")
     first = datetime(2026, 3, 30, 1, 5, tzinfo=UTC)
     last = datetime(2026, 3, 31, 1, 5, tzinfo=UTC)
-    bars = (SimpleNamespace(bar_end=first), SimpleNamespace(bar_end=last))
+    bars = (
+        SimpleNamespace(bar_end=first, trading_day=first.date()),
+        SimpleNamespace(bar_end=last, trading_day=last.date()),
+    )
     partition = SimpleNamespace(
         year=2026,
         month=3,
@@ -1495,9 +1498,12 @@ def test_post_commit_readback_records_catalog_file_hash_and_mds(
             return (partition,)
 
     class Store:
-        def read_catalog_partition(self, value):
+        def read_catalog_partition_quality(self, value):
             assert value is partition
-            return bars
+            return bars, ()
+
+        def read_catalog_partition(self, value):
+            pytest.fail("weekly D1 companion readback must use the quality reader")
 
     class Service:
         def __init__(self, catalog, store):
@@ -1505,9 +1511,16 @@ def test_post_commit_readback_records_catalog_file_hash_and_mds(
             assert isinstance(store, Store)
 
         def query(self, request):
+            pytest.fail("weekly D1 companion readback must not use bare MDS query")
+
+        def read_physical_daily_quality(self, request, *, require_window_coverage):
             assert request.start == first - timedelta(microseconds=1)
             assert request.end == last
-            return SimpleNamespace(bars=bars)
+            assert require_window_coverage is False
+            return bars, ()
+
+        def expected_contract_replay_endpoints(self, **kwargs):
+            return tuple((bar.bar_end, bar.trading_day) for bar in bars)
 
     monkeypatch.setattr(service_module, "MarketDataService", Service)
     unit = {
@@ -1537,6 +1550,134 @@ def test_post_commit_readback_records_catalog_file_hash_and_mds(
         result["catalog_partitions"][0]["file_sha256"]
         == hashlib.sha256(path.read_bytes()).hexdigest()
     )
+    assert result["catalog_partitions"][0]["mds_price_unavailable_count"] == 0
+
+
+def test_weekly_post_commit_readback_uses_quality_path_for_d1_companions(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Weekly units include D1 companions that may carry PRICE_UNAVAILABLE facts."""
+    from app.market_data import market_data_service as service_module
+    from app.market_data.market_data_service import MarketDataError
+
+    root = tmp_path / "canonical"
+    path = root / "part.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"weekly-d1-companion")
+    ends = tuple(datetime(2026, 3, day, 7, tzinfo=UTC) for day in (30, 31))
+    bars = tuple(SimpleNamespace(bar_end=end, trading_day=end.date()) for end in ends)
+    fact = SimpleNamespace(bar_end=ends[1], trading_day=ends[1].date())
+    partition = SimpleNamespace(year=2026, month=3, file_path=path, row_count=1)
+
+    class Store:
+        def read_catalog_partition_quality(self, value):
+            assert value is partition
+            return bars[:1], (fact,)
+
+        def read_catalog_partition(self, value):
+            raise AssertionError("must not use non-quality reader for D1 companion")
+
+    class Service:
+        def __init__(self, *args):
+            pass
+
+        def query(self, request):
+            raise MarketDataError("PRICE_UNAVAILABLE")
+
+        def read_physical_daily_quality(self, request, *, require_window_coverage):
+            assert require_window_coverage is False
+            return bars[:1], (fact,)
+
+        def expected_contract_replay_endpoints(self, **kwargs):
+            return tuple((item.bar_end, item.trading_day) for item in (*bars[:1], fact))
+
+    monkeypatch.setattr(service_module, "MarketDataService", Service)
+    unit = {
+        "symbol": "pg",
+        "contract": "PG2410",
+        "frequency": "1w",
+        "targets": [{
+            "dataset": ["contract", "pg", "PG2410", "1d"],
+            "year": 2026,
+            "month": 3,
+            "expected_start": ends[0].isoformat(),
+            "expected_end": ends[1].isoformat(),
+            "expected_bar_count": 2,
+        }],
+    }
+    result = _post_commit_readback(
+        SimpleNamespace(
+            catalog=SimpleNamespace(
+                canonical_root=root,
+                all_partitions=lambda key: (partition,),
+            ),
+            store=Store(),
+        ),
+        unit,
+    )
+    assert result["catalog_partitions"][0]["mds_price_unavailable_count"] == 1
+    assert result["catalog_partitions"][0]["mds_endpoint_count"] == 2
+
+
+def test_weekly_post_commit_readback_allows_preserved_hole_week_quality(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Companion expected_bar_count may omit preserved facts from excluded hole weeks."""
+    from app.market_data import market_data_service as service_module
+
+    root = tmp_path / "canonical"
+    path = root / "part.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"preserved-hole-week")
+    ends = tuple(datetime(2023, 11, day, 7, tzinfo=UTC) for day in (1, 2, 3))
+    bars = tuple(SimpleNamespace(bar_end=end, trading_day=end.date()) for end in ends[:2])
+    fact = SimpleNamespace(bar_end=ends[2], trading_day=ends[2].date())
+    partition = SimpleNamespace(year=2023, month=11, file_path=path, row_count=2)
+
+    class Store:
+        def read_catalog_partition_quality(self, value):
+            return bars, (fact,)
+
+    class Service:
+        def __init__(self, *args):
+            pass
+
+        def read_physical_daily_quality(self, request, *, require_window_coverage):
+            return bars, (fact,)
+
+        def expected_contract_replay_endpoints(self, **kwargs):
+            return tuple((item.bar_end, item.trading_day) for item in (*bars, fact))
+
+    monkeypatch.setattr(service_module, "MarketDataService", Service)
+    unit = {
+        "symbol": "pg",
+        "contract": "PG2410",
+        "frequency": "1w",
+        "targets": [{
+            "dataset": ["contract", "pg", "PG2410", "1d"],
+            "year": 2023,
+            "month": 11,
+            "expected_start": ends[0].isoformat(),
+            "expected_end": ends[2].isoformat(),
+            # present∪refresh bar slots only; preserved Nov hole fact is extra.
+            "expected_bar_count": 2,
+        }],
+    }
+    result = _post_commit_readback(
+        SimpleNamespace(
+            catalog=SimpleNamespace(
+                canonical_root=root,
+                all_partitions=lambda key: (partition,),
+            ),
+            store=Store(),
+        ),
+        unit,
+    )
+    assert result["catalog_partitions"][0]["mds_bar_count"] == 2
+    assert result["catalog_partitions"][0]["mds_price_unavailable_count"] == 1
+    assert result["catalog_partitions"][0]["mds_endpoint_count"] == 3
 
 
 def test_prepared_manifest_is_exclusive_hash_locked_and_no_overwrite(tmp_path) -> None:

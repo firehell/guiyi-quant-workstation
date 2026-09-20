@@ -1655,7 +1655,6 @@ def _post_commit_readback(
     root = Path(manager.catalog.canonical_root).resolve()
     service = MarketDataService(manager.catalog, manager.store)
     frequency = _recovery_frequency(unit.get("frequency"))
-    quality_aware = frequency == "1d"
     hourly = frequency == "60m"
     partitions: list[dict[str, object]] = []
     for raw in targets:
@@ -1702,6 +1701,9 @@ def _post_commit_readback(
             )
         ):
             raise RecoveryError("POST_COMMIT_READBACK_INVALID")
+        # D1 targets (including weekly companions) may carry PRICE_UNAVAILABLE
+        # facts; never use the bare physical/query path that rejects quality.
+        quality_aware = key.frequency.value == "1d"
         rows = tuple(
             item
             for item in manager.catalog.all_partitions(key)
@@ -1755,10 +1757,21 @@ def _post_commit_readback(
                 (item.bar_end, item.trading_day) for item in (*bars, *exceptions)
             ))
             if (
-                len(expected) != expected_count
+                not expected
                 or expected[0][0] != expected_start
                 or expected[-1][0] != expected_end
                 or actual != expected
+            ):
+                raise RecoveryError("POST_COMMIT_MDS_INVALID")
+            # Daily recovery counts every explained endpoint. Weekly D1 companions
+            # count present∪refresh bar slots and may omit preserved hole-week
+            # quality days that still explain the calendar window.
+            if frequency == "1d":
+                if len(expected) != expected_count:
+                    raise RecoveryError("POST_COMMIT_MDS_INVALID")
+            elif (
+                len(bars) > expected_count
+                or len(bars) + len(exceptions) < expected_count
             ):
                 raise RecoveryError("POST_COMMIT_MDS_INVALID")
             quality_counts = {
