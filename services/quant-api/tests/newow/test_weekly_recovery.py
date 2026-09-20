@@ -38,6 +38,7 @@ from scripts.newow_weekly_recovery import (
     _post_commit_readback,
     _require_clean_execution_checkout,
     _require_execution_identity,
+    _validate_response_identity,
     _write_json_exclusive,
     create_attempt_directory,
     execute_prepared_batch,
@@ -305,6 +306,92 @@ def test_response_identity_failure_is_saved_then_stops(tmp_path) -> None:
     ]
     assert records[-1]["error_code"] == "SOURCE_RESPONSE_IDENTITY_INVALID"
     assert read_attempt_outcome(attempt)["retry_allowed"] is False
+
+
+def _priced_row(trading_day: date, *, contract: str = "EC2607") -> dict:
+    return {
+        "order_book_id": contract,
+        "date": trading_day,
+        "open": Decimal("100.10"),
+        "high": Decimal("101.20"),
+        "low": Decimal("99.30"),
+        "close": Decimal("100.40"),
+        "volume": Decimal("10"),
+        "total_turnover": Decimal("1004.00"),
+        "open_interest": Decimal("20"),
+        "settlement": Decimal("100.50"),
+        "prev_settlement": Decimal("100.00"),
+    }
+
+
+def _zero_ohl_row(trading_day: date, *, contract: str = "EC2607") -> dict:
+    return {
+        "order_book_id": contract,
+        "date": trading_day,
+        "open": Decimal("0"),
+        "high": Decimal("0"),
+        "low": Decimal("0"),
+        "close": Decimal("100.40"),
+        "volume": Decimal("2"),
+        "total_turnover": Decimal("200.80"),
+        "open_interest": Decimal("20"),
+        "settlement": Decimal("100.40"),
+        "prev_settlement": Decimal("100.00"),
+    }
+
+
+def test_response_identity_allows_in_window_zero_ohl_hole() -> None:
+    expected = (date(2026, 3, 30), date(2026, 3, 31), date(2026, 4, 2), date(2026, 4, 3))
+    request = ExchangeDailySourceRequest(
+        contract="EC2607",
+        start=date(2026, 3, 30),
+        end=date(2026, 4, 3),
+        expected_dates=expected,
+    )
+    response = (
+        _priced_row(date(2026, 3, 30)),
+        _priced_row(date(2026, 3, 31)),
+        _zero_ohl_row(date(2026, 4, 1)),
+        _priced_row(date(2026, 4, 2)),
+        _priced_row(date(2026, 4, 3)),
+    )
+    _validate_response_identity(request, response)
+
+
+def test_response_identity_rejects_in_window_priced_extra() -> None:
+    expected = (date(2026, 3, 30), date(2026, 3, 31), date(2026, 4, 2), date(2026, 4, 3))
+    request = ExchangeDailySourceRequest(
+        contract="EC2607",
+        start=date(2026, 3, 30),
+        end=date(2026, 4, 3),
+        expected_dates=expected,
+    )
+    response = (
+        _priced_row(date(2026, 3, 30)),
+        _priced_row(date(2026, 3, 31)),
+        _priced_row(date(2026, 4, 1)),
+        _priced_row(date(2026, 4, 2)),
+        _priced_row(date(2026, 4, 3)),
+    )
+    with pytest.raises(RecoveryError, match="^SOURCE_RESPONSE_IDENTITY_INVALID$"):
+        _validate_response_identity(request, response)
+
+
+def test_response_identity_rejects_missing_expected_outside_window_and_duplicate() -> None:
+    request = _source_request()
+    missing = tuple(_priced_row(day) for day in request.expected_dates[:-1])
+    with pytest.raises(RecoveryError, match="^SOURCE_RESPONSE_IDENTITY_INVALID$"):
+        _validate_response_identity(request, missing)
+
+    outside = tuple(_rows())
+    outside[-1]["date"] = date(2026, 4, 6)
+    with pytest.raises(RecoveryError, match="^SOURCE_RESPONSE_IDENTITY_INVALID$"):
+        _validate_response_identity(request, tuple(outside))
+
+    duplicate = tuple(_rows())
+    duplicate[-1]["date"] = request.expected_dates[0]
+    with pytest.raises(RecoveryError, match="^SOURCE_RESPONSE_IDENTITY_INVALID$"):
+        _validate_response_identity(request, tuple(duplicate))
 
 
 def test_journal_marks_known_downstream_failure_after_response_saved(tmp_path) -> None:

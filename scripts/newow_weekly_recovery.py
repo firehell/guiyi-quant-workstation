@@ -22,7 +22,10 @@ from app.market_data.historical_data_manager import (
     ContractWarmupRequest,
 )
 from app.market_data.rqdata_adapter import ExchangeDailySourceRequest
-from app.market_data.rqdata_adapter import _normalize_exchange_daily_zero_volume_row
+from app.market_data.rqdata_adapter import (
+    _normalize_exchange_daily_zero_volume_row,
+    classify_exchange_daily_price_unavailable,
+)
 
 
 _ATTEMPT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -1362,30 +1365,45 @@ def _source_scalar(value: Any) -> str | int | None:
     raise RecoveryError("SOURCE_RESPONSE_VALUE_INVALID")
 
 
+def _response_trading_day(row: Mapping[str, Any]) -> date:
+    raw = row["date"]
+    if isinstance(raw, datetime):
+        return raw.date()
+    if isinstance(raw, date):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return date.fromisoformat(raw)
+        except ValueError:
+            return datetime.fromisoformat(raw).date()
+    return raw.to_pydatetime().date()
+
+
 def _validate_response_identity(
     request: ExchangeDailySourceRequest,
     response: tuple[dict[str, Any], ...],
 ) -> None:
-    dates: list[date] = []
+    """Require every expected day once; allow in-window zero-OHL extras only."""
+    expected = request.expected_dates
+    if not expected:
+        raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID")
+    by_day: dict[date, Mapping[str, Any]] = {}
     try:
         for row in response:
-            raw = row["date"]
-            if isinstance(raw, datetime):
-                parsed = raw.date()
-            elif isinstance(raw, date):
-                parsed = raw
-            elif isinstance(raw, str):
-                try:
-                    parsed = date.fromisoformat(raw)
-                except ValueError:
-                    parsed = datetime.fromisoformat(raw).date()
-            else:
-                parsed = raw.to_pydatetime().date()
-            dates.append(parsed)
+            trading_day = _response_trading_day(row)
+            if trading_day in by_day:
+                raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID")
+            if not request.start <= trading_day <= request.end:
+                raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID")
+            by_day[trading_day] = row
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID") from exc
-    if tuple(dates) != request.expected_dates or len(set(dates)) != len(dates):
+    if any(day not in by_day for day in expected):
         raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID")
+    extras = set(by_day) - set(expected)
+    for trading_day in extras:
+        if not classify_exchange_daily_price_unavailable(dict(by_day[trading_day])):
+            raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID")
 
 
 def _canonical_json(value: object) -> str:
