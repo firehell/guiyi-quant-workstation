@@ -79,6 +79,8 @@ export interface NewowProductIdentity {
   readonly seriesKind: 'actual_dominant'
 }
 
+export type NewowInputQualityPolicy = 'newow_input_quality_v1' | 'newow_weekly_input_quality_v2'
+
 export interface NewowProductWireIdentity {
   readonly product: string
   readonly strategy: NewowProductStrategy
@@ -86,6 +88,7 @@ export interface NewowProductWireIdentity {
   readonly series_kind: 'actual_dominant'
   readonly profile_id: string
   readonly formula_versions: readonly string[]
+  readonly input_quality_policy?: NewowInputQualityPolicy
 }
 
 export type NewowRuntimeStatus = 'ready' | 'warming' | 'unavailable' | 'not_applicable' | 'evidence_required'
@@ -106,7 +109,10 @@ export interface NewowProductMeta {
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v3'
-  readonly futures_adaptation_version: 'newow_futures_quality_segment_v3' | 'newow_futures_weekly_quality_segment_v1'
+  readonly futures_adaptation_version:
+    | 'newow_futures_quality_segment_v3'
+    | 'newow_futures_weekly_quality_segment_v1'
+    | 'newow_futures_weekly_quality_segment_v2'
 }
 
 export interface NewowProductBar {
@@ -233,7 +239,11 @@ export interface NewowReferenceTrade {
   readonly calculation_segment_id: string
   readonly formula_versions: readonly string[]
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v3'
-  readonly futures_adaptation_version: 'newow_futures_quality_segment_v3' | 'newow_futures_weekly_quality_segment_v1'
+  readonly futures_adaptation_version:
+    | 'newow_futures_quality_segment_v3'
+    | 'newow_futures_weekly_quality_segment_v1'
+    | 'newow_futures_weekly_quality_segment_v2'
+  readonly input_quality_policy?: NewowInputQualityPolicy
   readonly entry_signal_id: string
   readonly entry_sequence: number
   readonly entry_bar_end: string
