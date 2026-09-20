@@ -220,6 +220,27 @@ def test_weekly_source_bar_conflict_is_a_safe_nonrecoverable_integrity_error():
     assert _failure(error)["status"] == "INTEGRITY_ERROR"
 
 
+def test_product_pairing_conflict_is_public_integrity_error_not_internal():
+    from app.market_data.newow.public_errors import public_product_error
+    from app.market_data.newow.readiness import _failure
+
+    error = ValueError("NEWOW_PRODUCT_PAIRING_CONFLICT")
+    status, detail = public_product_error(error)
+    assert status == 409
+    assert detail == {
+        "code": "NEWOW_PRODUCT_PAIRING_CONFLICT",
+        "diagnostic": {
+            "reason": "DATA_INTEGRITY_INVALID",
+            "context": {},
+            "historical_candidate_recoverable": False,
+        },
+    }
+    failed = _failure(error)
+    assert failed["status"] == "INTEGRITY_ERROR"
+    assert failed["reason"] == "DATA_INTEGRITY_INVALID"
+    assert failed["error"]["code"] == "NEWOW_PRODUCT_PAIRING_CONFLICT"
+
+
 @pytest.mark.parametrize(
     "error,continues",
     [

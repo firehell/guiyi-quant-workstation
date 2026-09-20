@@ -41,6 +41,7 @@ _CONFLICT = frozenset(
         "NEWOW_CURSOR_INVALID",
         "NEWOW_CHART_CURSOR_INVALID",
         "NEWOW_REFERENCE_PAIRING_CONFLICT",
+        "NEWOW_PRODUCT_PAIRING_CONFLICT",
         "NEWOW_PAGE_COMPARATOR_CONFLICTING_FACT",
         "NEWOW_HISTORICAL_SNAPSHOT_INVALID",
         "NEWOW_HISTORICAL_SNAPSHOT_UNAVAILABLE",
@@ -85,6 +86,11 @@ def public_product_error(
         code = str(error)
     if code == "NEWOW_SOURCE_NONPOSITIVE_PRICE":
         reason = "SOURCE_NONPOSITIVE_PRICE"
+    if code in {
+        "NEWOW_PRODUCT_PAIRING_CONFLICT",
+        "NEWOW_REFERENCE_PAIRING_CONFLICT",
+    }:
+        reason = "DATA_INTEGRITY_INVALID"
     if code in _INVALID:
         status = 422
     elif code in _CONFLICT:

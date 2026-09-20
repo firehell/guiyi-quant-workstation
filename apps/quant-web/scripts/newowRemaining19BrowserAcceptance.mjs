@@ -9,6 +9,7 @@ const CASES = PRODUCTS.flatMap(product => STRATEGIES.map(strategy => ({ product,
 const BASE_URL = process.env.NEWOW_BROWSER_BASE_URL || 'http://127.0.0.1:5174'
 const CODE_SHA = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
 const PAGE_STATE_BY_STATUS = new Map([
+  ['READY', 'ready'],
   ['DATA_UNAVAILABLE', 'unavailable'],
   ['INTEGRITY_ERROR', 'unavailable'],
 ])
@@ -25,16 +26,21 @@ const expected = new Map(matrix.cases.map(item => [
   `${item.symbol}:${item.strategy}`,
   {
     status: item.main.status,
-    reason: item.main.reason,
+    reason: item.main.reason ?? null,
     apiCode: item.main.error?.code ?? null,
     pageState: PAGE_STATE_BY_STATUS.get(item.main.status) ?? null,
     qualityPolicy: item.input_quality_policy,
+    ready: item.main.status === 'READY',
   },
 ]))
 if (
   !/^[0-9a-f]{40}$/.test(CODE_SHA)
   || expected.size !== CASES.length
-  || [...expected.values()].some(item => item.pageState === null || item.apiCode === null)
+  || [...expected.values()].some(item => (
+    item.pageState === null
+    || item.qualityPolicy !== 'newow_weekly_input_quality_v2'
+    || (item.ready ? item.apiCode !== null || item.reason !== null : item.apiCode === null || item.reason === null)
+  ))
 ) throw new Error('BROWSER_ACCEPTANCE_MATRIX_INVALID')
 
 const results = []
@@ -107,9 +113,15 @@ try {
       await banner.waitFor({ state: 'visible', timeout: 15_000 })
       const workspace = page.locator('[data-detail-workspace="newow"]')
       await workspace.waitFor({ state: 'visible', timeout: 30_000 })
-      await page.locator(
-        '[data-detail-workspace="newow"]:not([data-chart-state="loading"]):not([data-chart-state="not_requested"])',
-      ).waitFor({ state: 'visible', timeout: 120_000 })
+      if (expectation.ready) {
+        await page.locator(
+          '[data-detail-workspace="newow"][data-chart-state="ready"]',
+        ).waitFor({ state: 'visible', timeout: 120_000 })
+      } else {
+        await page.locator(
+          '[data-detail-workspace="newow"]:not([data-chart-state="loading"]):not([data-chart-state="not_requested"])',
+        ).waitFor({ state: 'visible', timeout: 120_000 })
+      }
       await page.waitForTimeout(250)
       await Promise.allSettled(responseTasks)
       const bannerText = await banner.innerText()
@@ -117,21 +129,39 @@ try {
       const unavailableVisible = await page.getByText('主图事实不可用', { exact: true }).isVisible()
       const chartResponse = responses.find(item => item.endpoint === 'strategy_detail' && item.section === 'chart')
       const snapshotResponse = responses.find(item => item.endpoint === 'weekly_snapshot')
-      const stateResponse = chartResponse ?? snapshotResponse
-      const apiReason = stateResponse?.body?.detail?.diagnostic?.reason ?? null
-      const apiCode = stateResponse?.body?.detail?.code ?? null
-      const defaultAsOfAbsent = requests.length > 0 && requests.every(item => item.asOf === null)
+      const stateResponse = expectation.ready
+        ? chartResponse
+        : (chartResponse ?? snapshotResponse)
+      const apiReason = expectation.ready
+        ? (stateResponse?.body?.status?.reason ?? null)
+        : (stateResponse?.body?.detail?.diagnostic?.reason ?? null)
+      const apiCode = expectation.ready
+        ? (stateResponse?.body?.detail?.code ?? null)
+        : (stateResponse?.body?.detail?.code ?? null)
+      const defaultAsOfAbsent = expectation.ready
+        ? requests
+          .filter(item => item.endpoint === 'weekly_snapshot')
+          .every(item => item.asOf === null)
+          && requests.some(item => item.endpoint === 'weekly_snapshot')
+        : requests.length > 0 && requests.every(item => item.asOf === null)
+      const responseMatches = expectation.ready
+        ? stateResponse !== undefined
+          && stateResponse.status === 200
+          && stateResponse.body?.chart?.status?.status === 'ready'
+          && apiCode === null
+          && !unavailableVisible
+        : stateResponse !== undefined
+          && stateResponse.status === 409
+          && apiCode === expectation.apiCode
+          && apiReason === expectation.reason
+          && unavailableVisible
       const pagePass = navigation?.status() === 200
         && bannerText.includes('身份已核对')
         && bannerText.includes(`代码 ${CODE_SHA}`)
         && bannerText.includes('周线按当前完整周只读解析')
         && bannerText.includes('127.0.0.1:8010')
         && chartState === expectation.pageState
-        && unavailableVisible
-        && stateResponse !== undefined
-        && stateResponse.status === 409
-        && apiCode === expectation.apiCode
-        && apiReason === expectation.reason
+        && responseMatches
         && expectation.qualityPolicy === 'newow_weekly_input_quality_v2'
         && defaultAsOfAbsent
         && pageErrors.length === 0

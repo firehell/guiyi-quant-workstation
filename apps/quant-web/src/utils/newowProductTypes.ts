@@ -161,7 +161,11 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
   const token = nullableText(value.snapshot_token, 'meta.snapshot_token')
   requireExact(value.reference_model_version, 'newow_marker_reference_zero_cost_v3', 'meta.reference_model_version')
   const adaptationVersion = normalizedIdentity.frequency === '1w'
-    ? 'newow_futures_weekly_quality_segment_v1'
+    ? (
+      normalizedIdentity.input_quality_policy === 'newow_weekly_input_quality_v2'
+        ? 'newow_futures_weekly_quality_segment_v2'
+        : 'newow_futures_weekly_quality_segment_v1'
+    )
     : 'newow_futures_quality_segment_v3'
   requireExact(value.futures_adaptation_version, adaptationVersion, 'meta.futures_adaptation_version')
   return {
@@ -178,7 +182,11 @@ function normalizeWireIdentity(
   field: string,
   expected: Pick<NewowProductIdentity, 'product' | 'strategy' | 'frequency'>,
 ): NewowProductMeta['identity'] {
-  const value = exactRecord(payload, field, ['product', 'strategy', 'frequency', 'series_kind', 'profile_id', 'formula_versions'])
+  const raw = record(payload, field)
+  const keys = Object.prototype.hasOwnProperty.call(raw, 'input_quality_policy')
+    ? ['product', 'strategy', 'frequency', 'series_kind', 'profile_id', 'formula_versions', 'input_quality_policy'] as const
+    : ['product', 'strategy', 'frequency', 'series_kind', 'profile_id', 'formula_versions'] as const
+  const value = exactRecord(payload, field, keys)
   const product = productCode(value.product, `${field}.product`)
   const strategy = literal(value.strategy, STRATEGIES, `${field}.strategy`)
   const frequency = literal(value.frequency, FREQUENCIES, `${field}.frequency`)
@@ -190,7 +198,14 @@ function normalizeWireIdentity(
   requireExact(profileId, `newow_product_${strategy}_${frequency}_v1`, `${field}.profile_id`)
   const formulaVersions = stringArray(value.formula_versions, `${field}.formula_versions`)
   if (!sameStrings(formulaVersions, EXPECTED_FORMULAS[strategy])) throw new Error(`${field}.formula_versions is invalid or out of order`)
-  return { product, strategy, frequency, series_kind: 'actual_dominant', profile_id: profileId, formula_versions: formulaVersions }
+  const policy = Object.prototype.hasOwnProperty.call(value, 'input_quality_policy')
+    ? literal(value.input_quality_policy, ['newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
+    : undefined
+  if (policy !== undefined && frequency !== '1w') throw new Error(`${field}.input_quality_policy requires weekly frequency`)
+  return {
+    product, strategy, frequency, series_kind: 'actual_dominant', profile_id: profileId, formula_versions: formulaVersions,
+    ...(policy === undefined ? {} : { input_quality_policy: policy }),
+  }
 }
 
 function normalizeStatus(payload: unknown, field: string): NewowFeatureStatus {
@@ -320,7 +335,7 @@ function normalizeChartPriceReference(payload: unknown, bars: readonly NewowProd
   const value = exactRecord(payload, 'chart.price_reference', ['surface', 'frequency', 'as_of', 'anchor_bar_end', 'physical_contract', 'segment_id', 'calculation_segment_id', 'input_sha256', 'formula_version', 'adapter_version', 'target', 'absorb'])
   requireExact(value.surface, 'chart_legend', 'chart.price_reference.surface')
   requireExact(value.frequency, meta.identity.frequency, 'chart.price_reference.frequency')
-  requireExact(value.as_of, meta.as_of, 'chart.price_reference.as_of')
+  sameInstant(value.as_of, meta.as_of, 'chart.price_reference.as_of')
   requireExact(value.formula_version, 'newow_chart_legend_hhv_llv10_page_v1', 'chart.price_reference.formula_version')
   requireExact(value.adapter_version, 'newow_chart_price_projection_v1', 'chart.price_reference.adapter_version')
   const anchor = bars.find(bar => bar.bar_end === instant(value.anchor_bar_end, 'chart.price_reference.anchor_bar_end'))
@@ -525,19 +540,33 @@ function normalizeSummary(payload: unknown): NewowReferenceSummary {
 
 function normalizeTrade(payload: unknown, index: number, meta: NewowProductMeta, referenceCutoff: string): NewowReferenceTrade {
   const field = `reference.items[${index}]`
-  const value = exactRecord(payload, field, [
-    'reference_trade_id', 'product', 'strategy_code', 'frequency', 'physical_contract', 'segment_id', 'calculation_segment_id', 'formula_versions',
-    'reference_model_version', 'futures_adaptation_version', 'entry_signal_id', 'entry_sequence', 'entry_bar_end', 'entry_trading_day',
-    'entry_reference_price', 'exit_signal_id', 'exit_bar_end', 'exit_trading_day', 'exit_reference_price', 'status', 'holding_bars',
-    'reference_return_pct', 'mark_bar_end', 'mark_reference_price', 'mark_change_pct', 'interrupted_at', 'interruption_reason',
-    'statistics_membership', 'hint_ids',
-  ])
+  const raw = record(payload, field)
+  const tradeKeys = Object.prototype.hasOwnProperty.call(raw, 'input_quality_policy')
+    ? [
+      'reference_trade_id', 'product', 'strategy_code', 'frequency', 'physical_contract', 'segment_id', 'calculation_segment_id', 'formula_versions',
+      'reference_model_version', 'futures_adaptation_version', 'input_quality_policy', 'entry_signal_id', 'entry_sequence', 'entry_bar_end', 'entry_trading_day',
+      'entry_reference_price', 'exit_signal_id', 'exit_bar_end', 'exit_trading_day', 'exit_reference_price', 'status', 'holding_bars',
+      'reference_return_pct', 'mark_bar_end', 'mark_reference_price', 'mark_change_pct', 'interrupted_at', 'interruption_reason',
+      'statistics_membership', 'hint_ids',
+    ] as const
+    : [
+      'reference_trade_id', 'product', 'strategy_code', 'frequency', 'physical_contract', 'segment_id', 'calculation_segment_id', 'formula_versions',
+      'reference_model_version', 'futures_adaptation_version', 'entry_signal_id', 'entry_sequence', 'entry_bar_end', 'entry_trading_day',
+      'entry_reference_price', 'exit_signal_id', 'exit_bar_end', 'exit_trading_day', 'exit_reference_price', 'status', 'holding_bars',
+      'reference_return_pct', 'mark_bar_end', 'mark_reference_price', 'mark_change_pct', 'interrupted_at', 'interruption_reason',
+      'statistics_membership', 'hint_ids',
+    ] as const
+  const value = exactRecord(payload, field, tradeKeys)
   requireExact(value.product, meta.identity.product, `${field}.product`)
   requireExact(value.strategy_code, meta.identity.strategy, `${field}.strategy_code`)
   requireExact(value.frequency, meta.identity.frequency, `${field}.frequency`)
   if (!sameStrings(stringArray(value.formula_versions, `${field}.formula_versions`), meta.identity.formula_versions)) throw new Error(`${field}.formula_versions conflict`)
   requireExact(value.reference_model_version, meta.reference_model_version, `${field}.reference_model_version`)
   requireExact(value.futures_adaptation_version, meta.futures_adaptation_version, `${field}.futures_adaptation_version`)
+  const tradePolicy = Object.prototype.hasOwnProperty.call(value, 'input_quality_policy')
+    ? literal(value.input_quality_policy, ['newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
+    : undefined
+  if (tradePolicy !== meta.identity.input_quality_policy) throw new Error(`${field}.input_quality_policy conflict`)
   const status = literal(value.status, ['OPEN', 'CLOSED', 'ROLLOVER_INTERRUPTED', 'DATA_INTERRUPTED'], `${field}.status`)
   const exitSignal = nullableText(value.exit_signal_id, `${field}.exit_signal_id`)
   const exitBar = nullableInstant(value.exit_bar_end, `${field}.exit_bar_end`)
@@ -561,6 +590,7 @@ function normalizeTrade(payload: unknown, index: number, meta: NewowProductMeta,
     strategy_code: meta.identity.strategy, frequency: meta.identity.frequency, physical_contract: contract(value.physical_contract, `${field}.physical_contract`),
     segment_id: text(value.segment_id, `${field}.segment_id`), calculation_segment_id: text(value.calculation_segment_id, `${field}.calculation_segment_id`), formula_versions: meta.identity.formula_versions,
     reference_model_version: meta.reference_model_version, futures_adaptation_version: meta.futures_adaptation_version,
+    ...(tradePolicy === undefined ? {} : { input_quality_policy: tradePolicy }),
     entry_signal_id: text(value.entry_signal_id, `${field}.entry_signal_id`), entry_sequence: count(value.entry_sequence, `${field}.entry_sequence`),
     entry_bar_end: entryBar, entry_trading_day: day(value.entry_trading_day, `${field}.entry_trading_day`),
     entry_reference_price: decimal(value.entry_reference_price, `${field}.entry_reference_price`), exit_signal_id: exitSignal,
