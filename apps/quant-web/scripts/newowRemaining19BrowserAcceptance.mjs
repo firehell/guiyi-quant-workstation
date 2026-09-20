@@ -12,6 +12,7 @@ const PAGE_STATE_BY_STATUS = new Map([
   ['READY', 'ready'],
   ['DATA_UNAVAILABLE', 'unavailable'],
   ['INTEGRITY_ERROR', 'unavailable'],
+  ['SOURCE_EXCEPTION', 'unavailable'],
 ])
 const outputRoot = process.argv[2]
 const matrixPath = process.argv[3]
