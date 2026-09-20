@@ -1680,6 +1680,70 @@ def test_weekly_post_commit_readback_allows_preserved_hole_week_quality(
     assert result["catalog_partitions"][0]["mds_endpoint_count"] == 3
 
 
+def test_weekly_post_commit_readback_uses_maintenance_expected_for_sparse_w1(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Hole weeks omit middle W1 bars; ordinary MDS query calendar checks must not run."""
+    from app.market_data import market_data_service as service_module
+    from app.market_data.market_data_service import MarketDataError
+
+    root = tmp_path / "canonical"
+    path = root / "part.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"sparse-w1")
+    ends = (
+        datetime(2024, 2, 2, 7, tzinfo=UTC),
+        datetime(2024, 2, 23, 7, tzinfo=UTC),
+    )
+    bars = tuple(SimpleNamespace(bar_end=end, trading_day=end.date()) for end in ends)
+    partition = SimpleNamespace(year=2024, month=2, file_path=path, row_count=2)
+    seen: list[tuple[datetime, ...]] = []
+
+    class Store:
+        def read_catalog_partition(self, value):
+            assert value is partition
+            return bars
+
+    class Service:
+        def __init__(self, *args):
+            pass
+
+        def query(self, request):
+            raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+
+        def query_maintenance_expected(self, request, expected):
+            seen.append(expected)
+            assert expected == ends
+            return SimpleNamespace(bars=bars)
+
+    monkeypatch.setattr(service_module, "MarketDataService", Service)
+    result = _post_commit_readback(
+        SimpleNamespace(
+            catalog=SimpleNamespace(
+                canonical_root=root,
+                all_partitions=lambda key: (partition,),
+            ),
+            store=Store(),
+        ),
+        {
+            "symbol": "pg",
+            "contract": "PG2411",
+            "frequency": "1w",
+            "targets": [{
+                "dataset": ["contract", "pg", "PG2411", "1w"],
+                "year": 2024,
+                "month": 2,
+                "expected_start": ends[0].isoformat(),
+                "expected_end": ends[1].isoformat(),
+                "expected_bar_count": 2,
+            }],
+        },
+    )
+    assert seen == [ends]
+    assert result["catalog_partitions"][0]["mds_bar_count"] == 2
+
+
 def test_prepared_manifest_is_exclusive_hash_locked_and_no_overwrite(tmp_path) -> None:
     manifest = {
         "schema_version": "newow_weekly_recovery_prepare_v1",

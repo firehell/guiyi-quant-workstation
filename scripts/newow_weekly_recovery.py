@@ -1790,12 +1790,28 @@ def _post_commit_readback(
             if tuple(bar.bar_end for bar in bars) != expected_ends:
                 raise RecoveryError("POST_COMMIT_MDS_INVALID")
         else:
-            bars = service.query(request).bars
+            # Weekly recovery may omit proven hole weeks inside the month window.
+            # Ordinary MDS query re-validates the trading calendar and would raise
+            # DATASET_OR_PARTITION_MISSING for those intentional gaps.
+            expected_ends = tuple(
+                bar.bar_end
+                for bar in physical
+                if request.start < bar.bar_end <= request.end
+            )
             if (
-                len(bars) != expected_count
-                or bars[0].bar_end != expected_start
-                or bars[-1].bar_end != expected_end
+                len(expected_ends) != expected_count
+                or not expected_ends
+                or expected_ends[0] != expected_start
+                or expected_ends[-1] != expected_end
             ):
+                raise RecoveryError("POST_COMMIT_MDS_INVALID")
+            try:
+                bars = service.query_maintenance_expected(
+                    request, expected_ends
+                ).bars
+            except MarketDataError as exc:
+                raise RecoveryError("POST_COMMIT_MDS_INVALID") from exc
+            if tuple(bar.bar_end for bar in bars) != expected_ends:
                 raise RecoveryError("POST_COMMIT_MDS_INVALID")
         partitions.append(
             {
