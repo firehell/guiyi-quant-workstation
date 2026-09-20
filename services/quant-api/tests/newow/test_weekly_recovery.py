@@ -358,7 +358,8 @@ def test_response_identity_allows_in_window_zero_ohl_hole() -> None:
     _validate_response_identity(request, response)
 
 
-def test_response_identity_rejects_in_window_priced_extra() -> None:
+def test_response_identity_allows_in_window_priced_extras_from_proven_week() -> None:
+    """Fully proven weeks omit both zero-OHL and already-stored priced days."""
     expected = (date(2026, 3, 30), date(2026, 3, 31), date(2026, 4, 2), date(2026, 4, 3))
     request = ExchangeDailySourceRequest(
         contract="EC2607",
@@ -373,8 +374,7 @@ def test_response_identity_rejects_in_window_priced_extra() -> None:
         _priced_row(date(2026, 4, 2)),
         _priced_row(date(2026, 4, 3)),
     )
-    with pytest.raises(RecoveryError, match="^SOURCE_RESPONSE_IDENTITY_INVALID$"):
-        _validate_response_identity(request, response)
+    _validate_response_identity(request, response)
 
 
 def test_response_identity_rejects_missing_expected_outside_window_and_duplicate() -> None:
