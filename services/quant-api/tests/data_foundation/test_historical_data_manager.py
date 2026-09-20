@@ -1332,6 +1332,59 @@ def test_weekly_apply_ignores_unrelated_daily_price_gap(session, tmp_path):
     assert february_partition.source_quality[0].trading_day == gap_day
 
 
+def test_d1_strict_verify_ignores_adjacent_month_price_quality(session, tmp_path):
+    """Adjacent D1 month quality must not fail a no-quality month's strict readback.
+
+    Real warm-up months share coverage boundaries (next month coverage_start equals
+    prior month last bar_end). query_maintenance_expected/_read_physical then sees
+    the next month's PRICE_UNAVAILABLE and aborts the current month.
+    """
+    _add_contract(
+        session,
+        symbol="pf",
+        contract="PF2611",
+        listed_date=date(2025, 1, 30),
+        expired_date=date(2025, 3, 1),
+    )
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    january_days = (date(2025, 1, 30), date(2025, 1, 31))
+    # Feb 1 makes coverage_start == Jan 31, matching real adjacent-month boundaries.
+    february_days = (date(2025, 2, 1), date(2025, 2, 3), date(2025, 2, 4))
+    january_bars = tuple(_daily_on(day, 100 + day.day, 1) for day in january_days)
+    february_bars = tuple(_daily_on(day, 200 + day.day, 1) for day in february_days)
+    january_ends = tuple(bar.bar_end for bar in january_bars)
+    february_ends = tuple(bar.bar_end for bar in february_bars)
+    manager = _manager(
+        session,
+        tmp_path,
+        FakeCoverage({daily.as_tuple(): january_ends + february_ends}),
+        FakeProvider({}),
+    )
+    january = manager.store.publish(PublishRequest(
+        daily, 2025, 1, january_bars, january_ends,
+    ))
+    manager.catalog.register_partition(january)
+    gap_day = date(2025, 2, 3)
+    exception = PriceUnavailableFact(
+        _daily_on(gap_day, 203, 2).bar_end, gap_day,
+        Decimal(0), Decimal(0), Decimal(0), Decimal(203), Decimal(2), Decimal(20),
+        Decimal(10), "a" * 64, "b" * 64, datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    february = manager.store.publish(PublishRequest(
+        daily, 2025, 2,
+        tuple(bar for bar in february_bars if bar.trading_day != gap_day),
+        february_ends,
+        (exception,),
+    ))
+    manager.catalog.register_partition(february)
+    manager.catalog.session.commit()
+
+    assert january.coverage_end == february.coverage_start == january_ends[-1]
+    manager._strict_verify(_Target(
+        daily, 2025, 1, january_ends, january_ends, january_bars,
+    ))
+
+
 def test_weekly_plan_does_not_excuse_unexplained_day_in_price_gap_week(session, tmp_path):
     _add_contract(session, symbol="pf", contract="PF2611",
                   listed_date=date(2025, 1, 6), expired_date=date(2025, 2, 1))

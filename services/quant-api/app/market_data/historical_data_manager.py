@@ -2968,14 +2968,21 @@ class HistoricalDataManager(ContractWarmupPlanner):
             if target.key.frequency is BarFrequency.D1:
                 partition = next((row for row in self.catalog.all_partitions(target.key)
                                   if (row.year, row.month) == (target.year, target.month)), None)
-                if partition is not None and partition.source_quality:
+                # Always use the D1 quality seam. Adjacent months share coverage
+                # boundaries, so query_maintenance_expected/_read_physical can see
+                # the next month's PRICE_UNAVAILABLE and fail a clean month.
+                if partition is not None:
+                    quality_ends = tuple(item.bar_end for item in partition.source_quality)
+                    window_start = min((target.expected[0], *quality_ends)) - timedelta(
+                        microseconds=1
+                    )
+                    window_end = max((target.expected[-1], *quality_ends))
                     values, exceptions = MarketDataService(self.catalog, self.store).read_physical_daily_quality(
                         SeriesQuery(
                             series_kind=series_kind, symbol=target.key.symbol,
                             contract=contract, frequency=target.key.frequency,
-                            start=min(target.expected[0], *(item.bar_end for item in partition.source_quality))
-                            - timedelta(microseconds=1),
-                            end=max(target.expected[-1], *(item.bar_end for item in partition.source_quality)),
+                            start=window_start,
+                            end=window_end,
                         )
                     )
                     explained = tuple(sorted((*(bar.bar_end for bar in values),
