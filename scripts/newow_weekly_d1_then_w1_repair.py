@@ -216,13 +216,26 @@ def prepare(args: argparse.Namespace) -> int:
                 ),
                 None,
             )
-            if d1_part is None or d1_part.file_path.name != d1_meta["file_name"]:
-                raise RepairError("D1_PREIMAGE_MISMATCH")
+            if d1_part is None:
+                raise RepairError("D1_PARTITION_MISSING")
             month_bars, quality = env.manager.store.read_catalog_partition_quality(d1_part)
             if quality:
                 raise RepairError("D1_SOURCE_QUALITY_PRESENT")
             provider = _align_provider_bar_ends(provider_raw, month_bars)
-            corrected, changed = overlay_provider_turnover(month_bars, provider)
+            try:
+                corrected, changed = overlay_provider_turnover(month_bars, provider)
+                unit_status = "planned"
+            except RepairError as exc:
+                if exc.code != "NO_STALE_TURNOVER_DAY":
+                    raise
+                corrected = month_bars
+                changed = ()
+                unit_status = "already_applied"
+            if (
+                unit_status == "planned"
+                and d1_part.file_path.name != d1_meta["file_name"]
+            ):
+                raise RepairError("D1_PREIMAGE_MISMATCH")
             week_end = datetime.fromisoformat(str(week["week_end"]).replace("Z", "+00:00")).astimezone(UTC)
             w1_part = next(
                 (
@@ -232,7 +245,12 @@ def prepare(args: argparse.Namespace) -> int:
                 ),
                 None,
             )
-            if w1_part is None or w1_part.file_path.name != week["stored_w1_partition"]["file_name"]:
+            if w1_part is None:
+                raise RepairError("W1_PARTITION_MISSING")
+            if (
+                unit_status == "planned"
+                and w1_part.file_path.name != week["stored_w1_partition"]["file_name"]
+            ):
                 raise RepairError("W1_PREIMAGE_MISMATCH")
             w1_bars, w1_quality = env.manager.store.read_catalog_partition_quality(w1_part)
             if w1_quality:
@@ -245,6 +263,7 @@ def prepare(args: argparse.Namespace) -> int:
             units.append({
                 "symbol": symbol,
                 "contract": contract,
+                "status": unit_status,
                 "iso_year": week["iso_year"],
                 "iso_week": week["iso_week"],
                 "week_end": week_end.isoformat(),
@@ -260,8 +279,9 @@ def prepare(args: argparse.Namespace) -> int:
                     "preimage_sha256": _sha256_file(d1_part.file_path),
                     "row_count": len(month_bars),
                     "corrected_turnovers": {
-                        day.isoformat(): str(
-                            next(bar for bar in corrected if bar.trading_day == day).turnover
+                        day.isoformat(): format(
+                            next(bar for bar in corrected if bar.trading_day == day).turnover,
+                            "f",
                         )
                         for day in changed
                     },
@@ -272,9 +292,13 @@ def prepare(args: argparse.Namespace) -> int:
                     "preimage_file_name": w1_part.file_path.name,
                     "preimage_sha256": _sha256_file(w1_part.file_path),
                     "action": "noop_after_d1",
-                    "turnover": str(stored_weekly.turnover),
+                    "turnover": format(stored_weekly.turnover, "f"),
                 },
             })
+        if not any(unit["status"] == "planned" for unit in units):
+            raise RepairError("NO_PLANNED_UNITS")
+        if any(unit["status"] not in {"planned", "already_applied"} for unit in units):
+            raise RepairError("UNIT_STATUS_INVALID")
         prepared = {
             "schema_version": _PREPARE_SCHEMA,
             "code_commit": code_commit,
@@ -329,6 +353,7 @@ def apply(args: argparse.Namespace) -> int:
             market_home_projection_path(env.manager.catalog.canonical_root)
         ).invalidate
         applied: list[dict[str, Any]] = []
+        writes = 0
         for unit in prepared["units"]:
             symbol = unit["symbol"]
             contract = unit["contract"]
@@ -356,9 +381,6 @@ def apply(args: argparse.Namespace) -> int:
                 _provider_bars_from_response(response, expected_days=expected_days),
                 month_bars,
             )
-            corrected, changed = overlay_provider_turnover(month_bars, provider)
-            if tuple(day.isoformat() for day in changed) != tuple(unit["changed_trading_days"]):
-                raise RepairError("CHANGED_DAYS_DRIFT")
             week_end = datetime.fromisoformat(unit["week_end"]).astimezone(UTC)
             w1_part = next(
                 item for item in env.manager.catalog.all_partitions(w1_key)
@@ -371,6 +393,23 @@ def apply(args: argparse.Namespace) -> int:
                 raise RepairError("W1_PREIMAGE_CHANGED")
             w1_bars, _ = env.manager.store.read_catalog_partition_quality(w1_part)
             stored_weekly = next(bar for bar in w1_bars if bar.bar_end == week_end)
+            if unit.get("status") == "already_applied":
+                require_w1_matches_corrected_week(
+                    stored_weekly,
+                    tuple(bar for bar in month_bars if bar.trading_day in set(expected_days)),
+                )
+                applied.append({
+                    "contract": contract,
+                    "d1_file": d1_part.file_path.name,
+                    "d1_sha256": _sha256_file(d1_part.file_path),
+                    "changed_trading_days": [],
+                    "w1_action": "noop",
+                    "status": "already_applied",
+                })
+                continue
+            corrected, changed = overlay_provider_turnover(month_bars, provider)
+            if tuple(day.isoformat() for day in changed) != tuple(unit["changed_trading_days"]):
+                raise RepairError("CHANGED_DAYS_DRIFT")
             corrected_week = tuple(
                 bar for bar in corrected if bar.trading_day in set(expected_days)
             )
@@ -388,7 +427,7 @@ def apply(args: argparse.Namespace) -> int:
             ))
             env.manager.catalog.register_partition(published)
             env.manager.catalog.session.commit()
-            # independent readback
+            writes += 1
             refreshed = next(
                 item for item in env.manager.catalog.all_partitions(d1_key)
                 if item.year == year and item.month == month
@@ -398,10 +437,13 @@ def apply(args: argparse.Namespace) -> int:
                 raise RepairError("POST_COMMIT_D1_READBACK_INVALID")
             for day in changed:
                 got = next(bar for bar in read_bars if bar.trading_day == day)
-                if str(got.turnover) != unit["d1"]["corrected_turnovers"][day.isoformat()]:
+                expected_turnover = Decimal(unit["d1"]["corrected_turnovers"][day.isoformat()])
+                if got.turnover != expected_turnover:
                     raise RepairError("POST_COMMIT_TURNOVER_MISMATCH")
-            # W1 unchanged and still matches
-            w1_again = next(bar for bar in env.manager.store.read_catalog_partition_quality(w1_part)[0] if bar.bar_end == week_end)
+            w1_again = next(
+                bar for bar in env.manager.store.read_catalog_partition_quality(w1_part)[0]
+                if bar.bar_end == week_end
+            )
             require_w1_matches_corrected_week(
                 w1_again,
                 tuple(bar for bar in read_bars if bar.trading_day in set(expected_days)),
@@ -421,8 +463,8 @@ def apply(args: argparse.Namespace) -> int:
             "prepared_sha256": args.expected_prepared_sha256,
             "applied": applied,
             "failed": None,
-            "canonical_writes": len(applied),
-            "catalog_writes": len(applied),
+            "canonical_writes": writes,
+            "catalog_writes": writes,
             "w1_writes": 0,
         }
         _write_json(attempt_dir / "batch-result.json", result)
