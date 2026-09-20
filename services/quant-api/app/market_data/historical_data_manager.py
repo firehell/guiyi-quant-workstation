@@ -2805,9 +2805,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         batches: tuple[BarBatch, ...],
     ) -> tuple[CanonicalBar, ...]:
         """在任何分区写入前验证 provider 批次可构成完整目标窗口。"""
-        bars, _exceptions, publish_expected = self._merged_publish_payload(target, batches)
-        if any(end not in set(publish_expected) for end in target.expected):
-            raise StorageError("TARGET_WINDOW_INCOMPLETE")
+        bars, _exceptions, _publish_expected = self._merged_publish_payload(target, batches)
         return bars
 
     def _merged_price_unavailable(
@@ -2849,7 +2847,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         target: _Target,
         batches: tuple[BarBatch, ...],
     ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...], tuple[datetime, ...]]:
-        """Merge bars/facts and expand publish expected to preserve month quality."""
+        """Merge bars for target.expected and preserve unrelated month quality facts."""
         merged = {bar.bar_end: bar for bar in target.existing}
         seen_fetched: set[datetime] = set()
         allowed = set(target.missing)
@@ -2865,14 +2863,15 @@ class HistoricalDataManager(ContractWarmupPlanner):
                     raise StorageError("PROVIDER_BAR_OUTSIDE_REQUEST")
                 seen_fetched.add(bar.bar_end)
                 merged[bar.bar_end] = bar
-        exceptions = self._merged_price_unavailable(target, batches)
-        exception_ends = {item.bar_end for item in exceptions}
-        if set(merged) & exception_ends:
-            raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
-        publish_expected = tuple(sorted((*merged, *exception_ends)))
+        bars = tuple(merged[item] for item in target.expected if item in merged)
+        bar_ends = {bar.bar_end for bar in bars}
+        exceptions = tuple(
+            item for item in self._merged_price_unavailable(target, batches)
+            if item.bar_end not in bar_ends
+        )
+        publish_expected = tuple(sorted((*bar_ends, *(item.bar_end for item in exceptions))))
         if any(end not in set(publish_expected) for end in target.expected):
             raise StorageError("TARGET_WINDOW_INCOMPLETE")
-        bars = tuple(merged[end] for end in publish_expected if end in merged)
         return bars, exceptions, publish_expected
 
     def _publish_derived(self, target: _Target) -> None:
@@ -2974,12 +2973,17 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         SeriesQuery(
                             series_kind=series_kind, symbol=target.key.symbol,
                             contract=contract, frequency=target.key.frequency,
-                            start=target.expected[0] - timedelta(microseconds=1),
-                            end=target.expected[-1],
+                            start=min(target.expected[0], *(item.bar_end for item in partition.source_quality))
+                            - timedelta(microseconds=1),
+                            end=max(target.expected[-1], *(item.bar_end for item in partition.source_quality)),
                         )
                     )
-                    if tuple(sorted((*tuple(bar.bar_end for bar in values),
-                                     *(item.bar_end for item in exceptions)))) != target.expected:
+                    explained = tuple(sorted((*(bar.bar_end for bar in values),
+                                             *(item.bar_end for item in exceptions))))
+                    if any(end not in set(explained) for end in target.expected):
+                        raise StorageError("STRICT_READ_VERIFICATION_FAILED")
+                    extra = set(explained) - set(target.expected)
+                    if extra - {item.bar_end for item in exceptions}:
                         raise StorageError("STRICT_READ_VERIFICATION_FAILED")
                     return
             result = MarketDataService(self.catalog, self.store).query_maintenance_expected(
