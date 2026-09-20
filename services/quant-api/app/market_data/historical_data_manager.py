@@ -64,8 +64,14 @@ from app.market_data.storage import (
     PublishRequest,
     StorageError,
 )
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import (
+    NonpositiveCloseFact,
+    PriceUnavailableFact,
+    SourceQualityFact,
+)
 from app.market_data.weekly_quality import (
+    WEEKLY_SOURCE_CLASSIFICATION_VERSION,
+    WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2,
     classify_weekly_source,
     weekly_daily_revision_sha256,
 )
@@ -842,7 +848,7 @@ class ContractWarmupPlanner:
             raise ValueError("WEEKLY_SOURCE_WEEK_INVALID")
         expected = tuple(zip(ends, days, strict=True))
         bars: list[CanonicalBar] = []
-        gaps: list[PriceUnavailableFact] = []
+        gaps: list[SourceQualityFact] = []
         revisions: list[tuple[str, str | None]] = []
         for month in sorted(months):
             partitions = by_month.get(month, ())
@@ -852,21 +858,28 @@ class ContractWarmupPlanner:
             normal, unavailable = self.store.read_catalog_partition_quality(partition)
             bars.extend(bar for bar in normal if bar.trading_day in days)
             relevant = tuple(item for item in unavailable if item.trading_day in days)
-            if any(not isinstance(item, PriceUnavailableFact) for item in relevant):
+            if any(
+                not isinstance(item, (PriceUnavailableFact, NonpositiveCloseFact))
+                for item in relevant
+            ):
                 raise ValueError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
-            gaps.extend(
-                item for item in relevant if isinstance(item, PriceUnavailableFact)
-            )
+            gaps.extend(relevant)
             revisions.append((partition.file_path.name, partition.source_quality_sha256))
         sorted_bars = tuple(sorted(bars, key=lambda bar: bar.bar_end))
         revision_sha256 = weekly_daily_revision_sha256(tuple(revisions), sorted_bars)
+        sorted_gaps = tuple(sorted(gaps, key=lambda item: item.bar_end))
         coverage = classify_weekly_source(
             product=key.symbol,
             physical_contract=key.series_or_contract,
             expected_daily_endpoints=expected,
             daily_bars=sorted_bars,
-            price_unavailable=tuple(sorted(gaps, key=lambda item: item.bar_end)),
+            price_unavailable=sorted_gaps,
             daily_revision_sha256=revision_sha256,
+            classification_version=(
+                WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2
+                if any(isinstance(item, NonpositiveCloseFact) for item in sorted_gaps)
+                else WEEKLY_SOURCE_CLASSIFICATION_VERSION
+            ),
         )
         if coverage.interruption is None:
             raise ValueError("WEEKLY_SOURCE_QUALITY_PROOF_INVALID")
@@ -2251,7 +2264,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         for partition in self.catalog.all_partitions(key):
             values, exceptions = self.store.read_catalog_partition_quality(partition)
             for item in exceptions:
-                if not isinstance(item, PriceUnavailableFact):
+                if not isinstance(item, (PriceUnavailableFact, NonpositiveCloseFact)):
                     raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
                 if item.trading_day in unavailable:
                     raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
@@ -2272,7 +2285,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
             bars[bar.trading_day] = bar
             unavailable.discard(bar.trading_day)
         for item in batch.price_unavailable:
-            if not isinstance(item, PriceUnavailableFact):
+            if not isinstance(item, (PriceUnavailableFact, NonpositiveCloseFact)):
                 raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
             unavailable.add(item.trading_day)
             bars.pop(item.trading_day, None)
