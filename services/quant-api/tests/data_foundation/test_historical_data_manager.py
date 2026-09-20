@@ -1324,6 +1324,12 @@ def test_weekly_apply_ignores_unrelated_daily_price_gap(session, tmp_path):
     assert result.applied == 2
     assert result.failed == 0
     assert _read_committed_month(manager, weekly, 2025, 1)
+    february_partition = next(
+        row for row in manager.catalog.all_partitions(daily)
+        if row.year == 2025 and row.month == 2
+    )
+    assert len(february_partition.source_quality) == 1
+    assert february_partition.source_quality[0].trading_day == gap_day
 
 
 def test_weekly_plan_does_not_excuse_unexplained_day_in_price_gap_week(session, tmp_path):

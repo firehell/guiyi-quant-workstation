@@ -2666,11 +2666,12 @@ class HistoricalDataManager(ContractWarmupPlanner):
             candidates = []
             for item, batch in fetched:
                 failure_target = item
-                bars = self._merged_fetched_bars(item, (batch,))
-                exceptions = self._merged_price_unavailable(item, (batch,))
+                bars, exceptions, publish_expected = self._merged_publish_payload(
+                    item, (batch,),
+                )
                 with self._progress("publishing", item.key, item.year, item.month):
                     candidates.append((item, self.store.publish(PublishRequest(
-                        item.key, item.year, item.month, bars, item.expected, exceptions,
+                        item.key, item.year, item.month, bars, publish_expected, exceptions,
                     ))))
             for item, partition in candidates:
                 failure_target = item
@@ -2784,8 +2785,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
             self._publish_fetched_partition(target, batches)
 
     def _publish_fetched_partition(self, target, batches):
-        bars = self._merged_fetched_bars(target, batches)
-        exceptions = self._merged_price_unavailable(target, batches)
+        bars, exceptions, publish_expected = self._merged_publish_payload(target, batches)
         # publish 内部：schema/顺序/月界/会话边界校验 → 临时文件回读 → 不可变候选安装。
         partition = self.store.publish(
             PublishRequest(
@@ -2793,7 +2793,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 target.year,
                 target.month,
                 bars,
-                target.expected,
+                publish_expected,
                 exceptions,
             )
         )
@@ -2805,25 +2805,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
         batches: tuple[BarBatch, ...],
     ) -> tuple[CanonicalBar, ...]:
         """在任何分区写入前验证 provider 批次可构成完整目标窗口。"""
-        merged = {bar.bar_end: bar for bar in target.existing}
-        seen_fetched: set[datetime] = set()
-        allowed = set(target.missing)
-        for batch in batches:
-            if (batch.source_key is not None or batch.requested_ends is not None) and (
-                batch.source_key != target.key or batch.requested_ends != target.missing
-            ):
-                raise StorageError("PROVIDER_BATCH_IDENTITY_MISMATCH")
-            for bar in batch.bars:
-                if bar.bar_end in seen_fetched:
-                    raise StorageError("PROVIDER_BAR_DUPLICATE")
-                if bar.bar_end not in allowed:
-                    raise StorageError("PROVIDER_BAR_OUTSIDE_REQUEST")
-                seen_fetched.add(bar.bar_end)
-                merged[bar.bar_end] = bar
-        bars = tuple(merged[item] for item in target.expected if item in merged)
-        exceptions = self._merged_price_unavailable(target, batches)
-        if tuple(sorted((*tuple(bar.bar_end for bar in bars),
-                         *(item.bar_end for item in exceptions)))) != target.expected:
+        bars, _exceptions, publish_expected = self._merged_publish_payload(target, batches)
+        if any(end not in set(publish_expected) for end in target.expected):
             raise StorageError("TARGET_WINDOW_INCOMPLETE")
         return bars
 
@@ -2858,7 +2841,39 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 if item.bar_end in bars:
                     raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
                 previous[item.bar_end] = item
-        return tuple(previous[end] for end in target.expected if end in previous)
+        # Keep month-local facts even when weekly companion expected omits them.
+        return tuple(previous[end] for end in sorted(previous))
+
+    def _merged_publish_payload(
+        self,
+        target: _Target,
+        batches: tuple[BarBatch, ...],
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...], tuple[datetime, ...]]:
+        """Merge bars/facts and expand publish expected to preserve month quality."""
+        merged = {bar.bar_end: bar for bar in target.existing}
+        seen_fetched: set[datetime] = set()
+        allowed = set(target.missing)
+        for batch in batches:
+            if (batch.source_key is not None or batch.requested_ends is not None) and (
+                batch.source_key != target.key or batch.requested_ends != target.missing
+            ):
+                raise StorageError("PROVIDER_BATCH_IDENTITY_MISMATCH")
+            for bar in batch.bars:
+                if bar.bar_end in seen_fetched:
+                    raise StorageError("PROVIDER_BAR_DUPLICATE")
+                if bar.bar_end not in allowed:
+                    raise StorageError("PROVIDER_BAR_OUTSIDE_REQUEST")
+                seen_fetched.add(bar.bar_end)
+                merged[bar.bar_end] = bar
+        exceptions = self._merged_price_unavailable(target, batches)
+        exception_ends = {item.bar_end for item in exceptions}
+        if set(merged) & exception_ends:
+            raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
+        publish_expected = tuple(sorted((*merged, *exception_ends)))
+        if any(end not in set(publish_expected) for end in target.expected):
+            raise StorageError("TARGET_WINDOW_INCOMPLETE")
+        bars = tuple(merged[end] for end in publish_expected if end in merged)
+        return bars, exceptions, publish_expected
 
     def _publish_derived(self, target: _Target) -> None:
         """从当月 1m 源分区聚合 derived 频度；会话窗口须覆盖 target.expected。"""
