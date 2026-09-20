@@ -2242,6 +2242,47 @@ class HistoricalDataManager(ContractWarmupPlanner):
             weekly_daily_companions=True,
         )
 
+    def _stored_daily_price_facts(
+        self, key: DatasetKey,
+    ) -> tuple[dict[date, CanonicalBar], set[date]]:
+        """Read D1 price bars without treating a price-unavailable day as a bar."""
+        bars: dict[date, CanonicalBar] = {}
+        unavailable: set[date] = set()
+        for partition in self.catalog.all_partitions(key):
+            values, exceptions = self.store.read_catalog_partition_quality(partition)
+            for item in exceptions:
+                if not isinstance(item, PriceUnavailableFact):
+                    raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+                if item.trading_day in unavailable:
+                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+                unavailable.add(item.trading_day)
+            for bar in values:
+                if bar.trading_day in bars:
+                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+                bars[bar.trading_day] = bar
+        return bars, unavailable
+
+    def _overlay_daily_price_facts(
+        self,
+        bars: dict[date, CanonicalBar],
+        unavailable: set[date],
+        batch: BarBatch,
+    ) -> None:
+        for bar in batch.bars:
+            bars[bar.trading_day] = bar
+            unavailable.discard(bar.trading_day)
+        for item in batch.price_unavailable:
+            if not isinstance(item, PriceUnavailableFact):
+                raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+            unavailable.add(item.trading_day)
+            bars.pop(item.trading_day, None)
+
+    def _require_priced_week(
+        self, days: tuple[date, ...], unavailable: set[date],
+    ) -> None:
+        if any(day in unavailable for day in days):
+            raise StorageError("WEEKLY_SOURCE_PRICE_UNAVAILABLE")
+
     def _require_contract_weekly_daily_parity(
         self,
         paired: tuple[tuple[_Target, BarBatch], ...],
@@ -2260,16 +2301,10 @@ class HistoricalDataManager(ContractWarmupPlanner):
         daily_key = DatasetKey(
             DatasetKind.CONTRACT, key.symbol, key.series_or_contract, BarFrequency.D1,
         )
-        by_day: dict[date, CanonicalBar] = {}
-        for partition in self.catalog.all_partitions(daily_key):
-            for bar in self.store.read_catalog_partition(partition):
-                if bar.trading_day in by_day:
-                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
-                by_day[bar.trading_day] = bar
+        by_day, unavailable = self._stored_daily_price_facts(daily_key)
         for target, batch in paired:
             if target.key == daily_key:
-                for bar in batch.bars:
-                    by_day[bar.trading_day] = bar
+                self._overlay_daily_price_facts(by_day, unavailable, batch)
         fact = self.catalog.contract_fact(key.symbol, key.series_or_contract)
         for target, batch in weekly:
             for bar in self._merged_fetched_bars(target, (batch,)):
@@ -2278,6 +2313,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 days = self.coverage.contract_trading_days(
                     fact, monday, monday + timedelta(days=6),
                 )
+                self._require_priced_week(days, unavailable)
                 if not days or days[-1] != last_day or any(day not in by_day for day in days):
                     raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
                 rows = tuple(
@@ -2311,26 +2347,27 @@ class HistoricalDataManager(ContractWarmupPlanner):
                                sample.series_or_contract, BarFrequency.D1)
         weekly_key = DatasetKey(DatasetKind.CONTRACT, sample.symbol,
                                 sample.series_or_contract, BarFrequency.W1)
-        daily: dict[date, CanonicalBar] = {}
+        daily, unavailable = self._stored_daily_price_facts(daily_key)
         weekly: dict[datetime, CanonicalBar] = {}
-        for key, dest in ((daily_key, daily), (weekly_key, weekly)):
-            for partition in self.catalog.all_partitions(key):
-                for bar in self.store.read_catalog_partition(partition):
-                    identity = bar.trading_day if key.frequency is BarFrequency.D1 else bar.bar_end
-                    if identity in dest:
-                        raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
-                    dest[identity] = bar
+        for partition in self.catalog.all_partitions(weekly_key):
+            values, exceptions = self.store.read_catalog_partition_quality(partition)
+            if exceptions:
+                raise StorageError("SOURCE_QUALITY_FREQUENCY_INVALID")
+            for bar in values:
+                if bar.bar_end in weekly:
+                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+                weekly[bar.bar_end] = bar
         touched_days: set[date] = set()
         touched_ends: set[datetime] = set()
         for target, batch in paired:
             if target.key.frequency is BarFrequency.D1:
                 touched_days.update(bar.trading_day for bar in batch.bars)
+                touched_days.update(item.trading_day for item in batch.price_unavailable)
+                self._overlay_daily_price_facts(daily, unavailable, batch)
             elif target.key.frequency is BarFrequency.W1:
                 touched_ends.update(bar.bar_end for bar in batch.bars)
             for bar in self._merged_fetched_bars(target, (batch,)):
-                if target.key.frequency is BarFrequency.D1:
-                    daily[bar.trading_day] = bar
-                elif target.key.frequency is BarFrequency.W1:
+                if target.key.frequency is BarFrequency.W1:
                     weekly[bar.bar_end] = bar
         fact = self.catalog.contract_fact(sample.symbol, sample.series_or_contract)
         for bar in weekly.values():
@@ -2341,6 +2378,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
             ):
                 continue
             days = self.coverage.contract_trading_days(fact, monday, monday + timedelta(days=6))
+            self._require_priced_week(days, unavailable)
             if not days or days[-1] != last_day or any(day not in daily for day in days):
                 raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
             rows = tuple((day, {field: getattr(daily[day], field)

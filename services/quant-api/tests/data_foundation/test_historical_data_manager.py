@@ -1263,6 +1263,69 @@ def test_weekly_plan_excludes_only_fully_proven_price_unavailable_week(
     assert len(proof[0]["source_identity"]) == 64
 
 
+def test_weekly_apply_ignores_unrelated_daily_price_gap(session, tmp_path):
+    listed = date(2025, 1, 6)
+    through = date(2025, 2, 7)
+    _add_contract(session, symbol="pf", contract="PF2611",
+                  listed_date=listed, expired_date=date(2025, 3, 1))
+    daily = DatasetKey("contract", "pf", "PF2611", "1d")
+    weekly = DatasetKey("contract", "pf", "PF2611", "1w")
+    january = tuple(date(2025, 1, day) for day in range(6, 11))
+    february = tuple(date(2025, 2, day) for day in range(3, 8))
+    january_ends = tuple(_daily_on(day, 100 + day.day, 1).bar_end for day in january)
+    february_ends = tuple(_daily_on(day, 200 + day.day, 1).bar_end for day in february)
+    coverage = FakeCoverage({
+        daily.as_tuple(): january_ends + february_ends,
+        weekly.as_tuple(): (january_ends[-1], february_ends[-1]),
+    })
+    coverage.latest_day = through
+    provider = _ChangingSnapshotProvider(daily, weekly)
+    manager = _manager(session, tmp_path, coverage, provider)
+    gap_day = date(2025, 2, 5)
+    exception = PriceUnavailableFact(
+        _daily_on(gap_day, 205, 2).bar_end, gap_day,
+        Decimal(0), Decimal(0), Decimal(0), Decimal(205), Decimal(2), Decimal(20),
+        Decimal(10), "a" * 64, "b" * 64, datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    published = manager.store.publish(PublishRequest(
+        daily, 2025, 2,
+        tuple(_daily_on(day, 200 + day.day, 1) for day in february if day != gap_day),
+        february_ends,
+        (exception,),
+    ))
+    manager.catalog.register_partition(published)
+    manager.catalog.session.commit()
+
+    dry_run = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", through, frequency="1w",
+    ))
+    weekly_targets = [
+        row for row in dry_run.plan.target_windows
+        if row["dataset"] == weekly.as_tuple()
+    ]
+    assert [row["missing_end"] for row in weekly_targets] == [january_ends[-1].isoformat()]
+    assert any(
+        "WEEKLY_SOURCE_PRICE_UNAVAILABLE" in row["reason_codes"]
+        for row in dry_run.plan.scope_diagnostics
+    )
+    with pytest.raises(StorageError, match="^WEEKLY_SOURCE_PRICE_UNAVAILABLE$"):
+        manager._require_contract_weekly_daily_parity((
+            (
+                _Target(weekly, 2025, 2, (february_ends[-1],), (february_ends[-1],), ()),
+                BarBatch((_daily_on(date(2025, 2, 7), 1, 1),)),
+            ),
+        ))
+
+    result = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", through, dry_run.plan.plan_sha256, True, frequency="1w",
+    ))
+
+    assert result.status == "passed", result.failures
+    assert result.applied == 2
+    assert result.failed == 0
+    assert _read_committed_month(manager, weekly, 2025, 1)
+
+
 def test_weekly_plan_does_not_excuse_unexplained_day_in_price_gap_week(session, tmp_path):
     _add_contract(session, symbol="pf", contract="PF2611",
                   listed_date=date(2025, 1, 6), expired_date=date(2025, 2, 1))
