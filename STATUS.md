@@ -1,24 +1,34 @@
 # 当前状态
 
-文档整理：2026-09-19。正式 Release 为
-`v1.10.17@305cf36b94121dff37d6ce280f98869d979a2b8b`；annotated tag、origin/main、
+文档整理：2026-09-21。正式 Release 为
+`v1.10.18@ec1dd21f7bed7b04018350058edd3f2bc94cbabf`；annotated tag、origin/main、
 GitHub Release target 与发布树已读回一致。本机 Runtime 仍为
 `v1.10.17@305cf36b94121dff37d6ce280f98869d979a2b8b`，root 为
 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.17-r1`，旧 v1.10.16 root 保留为恢复候选。
-牛哇 D1 在发布合并提交上以固定截点 `2026-09-16T07:00:00.000001+00:00` 完成
-60 品种 × 3 策略自然首次加载 180/180；v1.10.17 已发布首批 41 品种 W1 正式能力，
-且本机 Runtime 已完成 promotion 与即时服务读回。当前 develop 的正式周线合同已扩到 48 个品种
-（新增 b、bz、eb、eg、j、pg、si，使用 weekly v2），但尚未做精确版本的 main merge、tag、
-GitHub Release 或 Runtime promotion，因此现场仍是 41。60m 继续关闭。v1.10.12 发布候选的
+v1.10.18 正式周线为 48 个品种（新增 b、bz、eb、eg、j、pg、si，使用 weekly v2；原 41 仍用 v1）。
+本版本尚未做 Runtime promotion，因此现场仍是 41。60m 继续关闭。v1.10.12 发布候选的
 Market Home 为 57/60；后续首页质量修复候选与受控补数验收为 60/60，BZ/EB/PG 历史源价
-不可用仍保留计算边界。v1.10.17 即时 Live 与总 health 已为 ok；新版本自然 Live、
+不可用仍保留计算边界。v1.10.17 即时 Live 与总 health 已为 ok；v1.10.18 自然 Live、
 自然盘后与 weekly audit 证据仍待取得，因此不能声明 `RUNTIME_READY`。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
 稳定产品面见 `PROJECT_SOURCE.md`，长期决策见 `DECISIONS.md`，active 依赖见 `docs/ARCHITECTURE.md`。
 
-## v1.10.17 Release 与 Runtime 当前读回
+## v1.10.18 Release 读回
+
+PR #381 已合入 main。annotated tag `v1.10.18` 的 tag object 为
+`b5ce0a805460d25425fb282869b211ef7adccc2e`，peeled commit、origin/main 与 GitHub 上该 tag
+指向的提交均为 `ec1dd21f7bed7b04018350058edd3f2bc94cbabf`。非草稿、非预发布的
+[GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.18)
+发布树为 `7a0a9ff480663001bb641b174ad69631ce1dbb32`。
+
+本版正式开放 48 个品种 W1 的 chart/auxiliary/reference/comparator。新增 b、bz、eb、eg、j、pg、si，
+这 7 个品种使用 weekly v2；原 41 仍用 v1。其余 12 个品种 W1、全部 60m 与 explanation 继续关闭。
+能力合同为 `newow_product_capabilities_v10`。候选包含 Alembic `20260919_0047`，本次发布未执行生产
+migration，也未切换 Runtime。现场服务仍是 v1.10.17。
+
+## v1.10.17 Release 与 Runtime 读回
 
 PR #380 已合入 main；annotated tag `v1.10.17` 的 tag object 为
 `6f2689fad86e02d68788419d7dcfc280438dc542`，peeled commit、origin/main 与 GitHub Release target
@@ -170,7 +180,7 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.17@305cf36b9`，annotated tag、GitHub Release 与 origin/main 已读回；Runtime 另见下行 |
+| 正式 Release | `RELEASED` | `v1.10.18@ec1dd21f7`，annotated tag、GitHub Release 与 origin/main 已读回；Runtime 仍是 v1.10.17，另见下行 |
 | 现役 Runtime | v1.10.17 `RUNTIME_PROMOTED / SERVICE_READBACK / HEALTH_OK`，未声明 `RUNTIME_READY` | 六项服务绑定 v1.10.17 exact root/commit；API/Web 与总 health 通过，公网及自然业务证据仍待验 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | Unified Reference Trading P3 仓储候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | 六表、0047 migration、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；合入最新 develop 后 83 项 P3（含 9 项隔离 PG）及 368 项 P0–P3/Newow/SuBing 回归通过，Review 的 5 项 Important 已修复。仍默认 disabled，未执行生产 migration、P4 构建、P5 HTTP/Web、P6 worker 或 Runtime enable |
