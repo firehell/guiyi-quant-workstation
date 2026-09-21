@@ -859,10 +859,11 @@ def test_initial_clear_projector_independently_rejects_missing_or_stale_evidence
         replace(replay, lifecycle_evidence=()),
         _forged_actions(replace(replay, lifecycle_evidence=()), replay.actions),
     ):
-        with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
-            ReferenceTradeProjector().project(
-                damaged, (), case.bars[-1].bar.bar_end
-            )
+        result = ReferenceTradeProjector().project(
+            damaged, (), case.bars[-1].bar.bar_end
+        )
+        assert result.trades == ()
+        assert result.diagnostics == ("INITIAL_CLEAR_NO_ENTRY",)
 
 
 def test_initial_clear_projector_rejects_an_unavailable_current_frame(product_cases):

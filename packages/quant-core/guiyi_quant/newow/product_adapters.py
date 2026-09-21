@@ -547,16 +547,12 @@ def _main_rise_actions(
     result: MainRiseStepResult,
     pairing: _PairingState,
     previous_state: MainRiseState,
-    *,
-    verified_lifecycle: bool,
 ) -> tuple[StrategyAction, ...]:
     if result.band_signal is None:
         _advance_initial_clear_state(pairing, result)
         return ()
     signal = result.band_signal
-    qualifies = _qualifies_initial_clear(
-        pairing, previous_state, result, verified_lifecycle=verified_lifecycle
-    )
+    qualifies = _qualifies_initial_clear(pairing, previous_state, result)
     _advance_initial_clear_state(pairing, result)
     action = _new_action(
         identity,
@@ -579,13 +575,15 @@ def _qualifies_initial_clear(
     pairing: _PairingState,
     previous_state: MainRiseState,
     result: MainRiseStepResult,
-    *,
-    verified_lifecycle: bool,
 ) -> bool:
+    """A main-rise CLEAR with no BUILD is display-only and does not open a trade.
+
+    Lifecycle evidence is not required. A data gap starts a new calculation
+    segment; that segment may clear from its own initial yellow band.
+    """
     signal = result.band_signal
     return bool(
-        verified_lifecycle
-        and pairing.initial_clear_possible
+        pairing.initial_clear_possible
         and pairing.initial_yellow_seen
         and signal is not None
         and signal.action == ActionKind.CLEAR
@@ -674,8 +672,6 @@ def _main_rise_frame(
     product_bar: ProductBar,
     state: MainRiseState,
     pairing: _PairingState,
-    *,
-    verified_lifecycle: bool,
 ) -> tuple[StrategyFrame, MainRiseState, tuple[str, ...]]:
     result = step_main_rise(state, product_bar.bar, formulas=MAIN_RISE_PAGE_V1)
     actions = (
@@ -685,7 +681,6 @@ def _main_rise_frame(
             result,
             pairing,
             state,
-            verified_lifecycle=verified_lifecycle,
         )
         if product_bar.bar.observation_eligible
         else _main_rise_witnesses(identity, product_bar, state, pairing)
@@ -779,8 +774,6 @@ def _replay_step_mutating(
     identity: ProductIdentity,
     state: ProductReplayState,
     product_bar: ProductBar,
-    *,
-    verified_lifecycle: bool = False,
 ) -> tuple[ProductReplayState, StrategyFrame, tuple[str, ...]]:
     """Advance exactly one already-labelled, completed product bar.
 
@@ -813,7 +806,6 @@ def _replay_step_mutating(
             product_bar,
             state.main_rise_state,
             state.pairing,
-            verified_lifecycle=verified_lifecycle,
         )
         state.main_rise_state = main_rise_state
     return state, frame, tuple(diagnostics)
@@ -871,7 +863,7 @@ def replay_step(
             raise ValueError("input conflicts with computed_through")
     working = deepcopy(state)
     working, frame, diagnostics = _replay_step_mutating(
-        identity, working, product_bar, verified_lifecycle=verified_lifecycle,
+        identity, working, product_bar,
     )
     working.input_progress[progress_key] = (bar.bar_end, fingerprint)
     return working, frame, diagnostics
