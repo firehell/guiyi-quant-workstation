@@ -32,7 +32,7 @@ migration，也未切换 Runtime。现场服务仍是 v1.10.17。
 
 PR #380 已合入 main；annotated tag `v1.10.17` 的 tag object 为
 `6f2689fad86e02d68788419d7dcfc280438dc542`，peeled commit、origin/main 与 GitHub Release target
-均为 `305cf36b94121dff37d6ce280f98869d979a2b8b`。非草稿、非预发布且为 latest 的
+均为 `305cf36b94121dff37d6ce280f98869d979a2b8b`。非草稿、非预发布的
 [GitHub Release](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.10.17)
 发布树 `d72916771cb13c1a279925182eea3e8ba089d76e` 与已验证候选一致。
 
