@@ -7,6 +7,7 @@ from app.market_data.domain import CanonicalBar
 from scripts.newow_weekly_d1_then_w1_repair import (
     RepairError,
     overlay_provider_turnover,
+    realign_weekly_turnover,
     require_w1_matches_corrected_week,
 )
 
@@ -90,3 +91,31 @@ def test_require_w1_matches_corrected_week():
             _bar(days[-1], turnover=Decimal("49"), volume=Decimal("5")),
             week,
         )
+
+
+def test_realign_sets_weekly_turnover_to_provider_daily_sum():
+    days = (date(2024, 10, 21), date(2024, 10, 22), date(2024, 10, 25))
+    stored = tuple(_bar(day, turnover=Decimal("10")) for day in days)
+    provider = (
+        _bar(days[0], turnover=Decimal("10")),
+        _bar(days[1], turnover=Decimal("12")),
+        _bar(days[2], turnover=Decimal("10")),
+    )
+    corrected, changed = overlay_provider_turnover(stored, provider)
+    weekly = _bar(days[-1], turnover=Decimal("29"), volume=Decimal("3"))
+
+    aligned = realign_weekly_turnover(weekly, corrected)
+
+    assert changed == (days[1],)
+    assert aligned.turnover == Decimal("32")
+    assert aligned.open == weekly.open
+    assert aligned.volume == weekly.volume
+
+
+def test_realign_rejects_a_weekly_price_mismatch():
+    day = date(2024, 10, 25)
+    corrected = (_bar(day, turnover=Decimal("10")),)
+    weekly = _bar(day, turnover=Decimal("10"), close=Decimal("106"))
+
+    with pytest.raises(RepairError, match="W1_NON_TURNOVER_MISMATCH"):
+        realign_weekly_turnover(weekly, corrected)

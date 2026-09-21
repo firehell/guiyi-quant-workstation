@@ -1,8 +1,9 @@
 """Exact D1_THEN_W1 repair for judged stale-D1 weekly turnover conflicts.
 
 Only overlays verified exchange-daily turnover onto already-stored D1 month
-partitions when non-turnover fields match. Does not invent scopes, rewrite W1
-from a stale D1 aggregate, or touch INCONCLUSIVE weeks.
+partitions when non-turnover fields match. This CLI does not rewrite W1.
+``realign_weekly_turnover`` assigns that exact weekly turnover for the separate
+provider-turnover batch; it still refuses any non-turnover difference.
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import subprocess
 from typing import Any, Mapping
 
 from app.market_data.domain import BarFrequency, CanonicalBar, DatasetKey, DatasetKind
@@ -101,6 +101,30 @@ def require_w1_matches_corrected_week(
             raise RepairError("W1_NON_TURNOVER_MISMATCH_AFTER_D1")
     if aggregate.turnover != stored_weekly.turnover:
         raise RepairError("W1_TURNOVER_MISMATCH_AFTER_D1")
+
+
+def realign_weekly_turnover(
+    stored_weekly: CanonicalBar,
+    corrected_week_bars: tuple[CanonicalBar, ...],
+) -> CanonicalBar:
+    """Set W1 turnover to the corrected D1 sum. Other weekly fields must already match."""
+    if not corrected_week_bars:
+        raise RepairError("CORRECTED_WEEK_EMPTY")
+    aggregate = _aggregate_daily_rows(
+        tuple(
+            (bar.trading_day, {field: getattr(bar, field) for field in FIELDS})
+            for bar in corrected_week_bars
+        ),
+        bar_end=stored_weekly.bar_end,
+    )
+    for field in _NON_TURNOVER:
+        if getattr(aggregate, field) != getattr(stored_weekly, field):
+            raise RepairError("W1_NON_TURNOVER_MISMATCH")
+    if aggregate.turnover is None:
+        raise RepairError("PROVIDER_TURNOVER_MISSING")
+    if aggregate.trading_day != stored_weekly.trading_day:
+        raise RepairError("W1_TRADING_DAY_MISMATCH")
+    return replace(stored_weekly, turnover=aggregate.turnover)
 
 
 def _sha256_bytes(payload: bytes) -> str:
