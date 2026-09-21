@@ -171,9 +171,12 @@ def test_preview_selects_v2_only_for_remaining19_weekly():
     production = SimpleNamespace(state=SimpleNamespace())
 
     assert _input_quality_policy(preview, "b", "1w") is InputQualityPolicy.WEEKLY_V2
+    assert _input_quality_policy(preview, "cj", "1w") is InputQualityPolicy.WEEKLY_V2
     assert _input_quality_policy(preview, "au", "1w") is InputQualityPolicy.V1
     assert _input_quality_policy(preview, "b", "1d") is InputQualityPolicy.V1
-    assert _input_quality_policy(production, "b", "1w") is InputQualityPolicy.V1
+    assert _input_quality_policy(production, "b", "1w") is InputQualityPolicy.WEEKLY_V2
+    assert _input_quality_policy(production, "au", "1w") is InputQualityPolicy.V1
+    assert _input_quality_policy(production, "cj", "1w") is InputQualityPolicy.V1
 
 
 def test_au_period_preview_opens_only_au_without_database(preview, monkeypatch):

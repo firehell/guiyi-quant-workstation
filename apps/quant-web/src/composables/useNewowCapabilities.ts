@@ -41,7 +41,8 @@ export function useNewowCapabilities(fetchCapabilities: FetchCapabilities = getN
     const normalized = symbol.toLowerCase()
     if (current?.schema_version === 'newow_product_capabilities_v4'
       || current?.schema_version === 'newow_product_capabilities_v9'
-      || current?.schema_version === 'newow_product_capabilities_v8') {
+      || current?.schema_version === 'newow_product_capabilities_v8'
+      || current?.schema_version === 'newow_product_capabilities_v10') {
       return current.open_frequencies.filter(item => item !== '1w' || current.weekly_products?.includes(normalized) === true)
     }
     if (current?.schema_version === 'newow_product_capabilities_v5' && normalized !== 'au') return []

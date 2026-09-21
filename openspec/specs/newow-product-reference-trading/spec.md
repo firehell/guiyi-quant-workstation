@@ -845,27 +845,29 @@ Web SHALL 先验证该 envelope，再逐面板显示中文原因、安全位置�
 
 分阶段发布 MUST 由无数据库依赖的 `GET /api/v1/market/newow/product-capabilities` 返回唯一公开边界，
 并由当前与历史 typed endpoint 在进入 reader/service 前执行同一 server-owned Gate。当前日周版 stage 对
-全部 60 品种开放 `1d`，并仅对版本化首批 41 品种开放 `1w` 的
-chart/auxiliary/reference/comparator；其余 19 品种的 `1w` 返回
+全部 60 品种开放 `1d`，并对版本化 48 品种开放 `1w` 的
+chart/auxiliary/reference/comparator；其余 12 品种的 `1w` 返回
 `NEWOW_PRODUCT_FREQUENCY_NOT_OPEN`，`60m` 返回 `NEWOW_FREQUENCY_NOT_OPEN`，依赖未开放
 跨周期输入的 explanation 返回 `NEWOW_SECTION_NOT_OPEN`。Web 必须严格校验 capability envelope；旧链接和
 存储偏好不得把未开放周期静默改写为已开放周期，而要显示本版未开放并提供明确回到已开放周期的操作。
 该 stage 不删除 kernel/reader 的三周期能力，不改变 HTDY/SuBing/Free，也不改变旧 `/trend-detail` 的固定 D1
 兼容语义。后续 `1w` 或 `60m` 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
-正式日周版使用 `newow_product_capabilities_v8`、`daily_weekly` 声明 `1d/1w`，并携带唯一的
-`weekly_products`。隔离只读候选可继续使用 `newow_product_capabilities_v4`、
+正式日周版使用 `newow_product_capabilities_v10`、`daily_weekly` 声明 `1d/1w`，并携带唯一的
+`weekly_products`。b、bz、eb、eg、j、pg、si 在正式周线请求上使用 `newow_weekly_input_quality_v2`，
+原先 41 个正式品种保持 `newow_input_quality_v1`。隔离只读候选可继续使用 `newow_product_capabilities_v4`、
 `daily_weekly_candidate` 声明 `1d/1w` 的
-chart/auxiliary/reference/comparator；候选响应同时携带唯一的 `weekly_products`，仅首批 41 品种的
-`1w` 请求可进入 reader，其余 19 品种返回 `NEWOW_PRODUCT_FREQUENCY_NOT_OPEN`。
-正式 v8 合同只有在独立 Release 与 Runtime promotion 完成后才成为现场事实。
+chart/auxiliary/reference/comparator；候选响应同时携带唯一的 `weekly_products`。v9 候选覆盖全部 60 品种，
+其中尚未正式开放的 12 个品种仍只在候选请求中进入 reader，正式请求返回
+`NEWOW_PRODUCT_FREQUENCY_NOT_OPEN`。
+正式 v10 合同只有在独立 Release 与 Runtime promotion 完成后才成为现场事实。历史 v8 仍表示先前的 41 品种正式周线。
 候选的 `60m` 和 explanation 仍关闭；Web 必须逐版本严格校验成对的 schema/stage/open/deferred 集合。
-AU 单品种周期预览及 PD/PT/AP 的 60m 预览保持原 envelope 和品种限制，不复用 v4 的 41 品种字段。
+AU 单品种周期预览及 PD/PT/AP 的 60m 预览保持原 envelope 和品种限制，不复用正式周线品种字段。
 
 #### Scenario: Formal weekly scope and deferred hourly requests cannot bypass the release Gate
 
 - **GIVEN** 当前 capability 的 `release_stage=daily_weekly`、`open_frequencies=["1d","1w"]`
   及固定 `weekly_products`
-- **WHEN** 客户端以首批 41 之外的品种请求 `1w`，或任意品种请求 `60m`
+- **WHEN** 客户端以正式 48 品种之外的品种请求 `1w`，或任意品种请求 `60m`
 - **THEN** 服务在构造 reader/service 前分别返回分类 409
   `NEWOW_PRODUCT_FREQUENCY_NOT_OPEN` 或 `NEWOW_FREQUENCY_NOT_OPEN`
 - **AND** 不改写 frequency、不请求其他周期、不影响旧固定 D1 兼容 endpoint

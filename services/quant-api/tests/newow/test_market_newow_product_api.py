@@ -76,14 +76,14 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v8",
+        "schema_version": "newow_product_capabilities_v10",
         "release_stage": "daily_weekly",
         "open_frequencies": ["1d", "1w"],
         "weekly_products": [
-            "a", "ag", "al", "ao", "ap", "au", "bu", "c", "cf", "cu", "ec", "fg",
-            "fu", "hc", "i", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "p", "pb",
-            "pd", "pp", "ps", "pt", "rb", "rm", "ru", "sa", "sc", "sn", "ss", "ta", "ur",
-            "v", "y", "zn",
+            "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cu",
+            "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
+            "lh", "m", "ma", "ni", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
+            "rm", "ru", "sa", "sc", "si", "sn", "ss", "ta", "ur", "v", "y", "zn",
         ],
         "deferred_frequencies": [
             {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"},
@@ -226,7 +226,7 @@ def test_daily_release_rejects_deferred_historical_frequencies_before_resolver(
     assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
 
 
-def test_formal_weekly_release_rejects_product_outside_first_41_before_resolver(monkeypatch):
+def test_formal_weekly_release_rejects_product_outside_open_set_before_resolver(monkeypatch):
     monkeypatch.setattr(
         market_newow,
         "_build_weekly_resolver",
@@ -240,7 +240,7 @@ def test_formal_weekly_release_rejects_product_outside_first_41_before_resolver(
         with TestClient(app) as client:
             response = client.get(
                 "/api/v1/market/newow/weekly-snapshot",
-                params={"product": "b", "strategy": "trend", "frequency": "1w"},
+                params={"product": "cj", "strategy": "trend", "frequency": "1w"},
             )
     finally:
         app.dependency_overrides.clear()
