@@ -352,6 +352,21 @@ export async function mockMarketDetail(page, options = {}) {
       } })
     }
 
+    if (url.pathname.endsWith('/newow/daily-snapshot')) {
+      return route.fulfill({ json: {
+        schema_version: 'newow_daily_snapshot_v1',
+        product: url.searchParams.get('product') || symbol,
+        strategy: url.searchParams.get('strategy') || 'trend',
+        frequency: '1d',
+        series_kind: 'actual_dominant',
+        requested_at: '2026-09-03T08:00:00.000Z',
+        expected_trading_day: '2026-09-03',
+        available_trading_day: '2026-09-03',
+        as_of: '2026-09-03T07:00:00.000001Z',
+        freshness: 'current',
+      } })
+    }
+
     if (url.pathname.endsWith('/newow/trend-detail')) {
       newowRequests.push(url)
       const product = url.searchParams.get('product') || 'jm'
