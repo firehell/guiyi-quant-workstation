@@ -7,9 +7,8 @@ GitHub Release target 与发布树已读回一致。本机 Runtime 仍为
 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.17-r1`，旧 v1.10.16 root 保留为恢复候选。
 牛哇 D1 在发布合并提交上以固定截点 `2026-09-16T07:00:00.000001+00:00` 完成
 60 品种 × 3 策略自然首次加载 180/180；v1.10.17 已发布首批 41 品种 W1 正式能力，
-且本机 Runtime 已完成 promotion 与即时服务读回。当前 develop 的正式周线合同已扩到 48 个品种
-（新增 b、bz、eb、eg、j、pg、si，使用 weekly v2），但尚未做精确版本的 main merge、tag、
-GitHub Release 或 Runtime promotion，因此现场仍是 41。60m 继续关闭。v1.10.12 发布候选的
+且本机 Runtime 已完成 promotion 与即时服务读回。v1.10.18 正式周线合同扩到 48 个品种
+（新增 b、bz、eb、eg、j、pg、si，使用 weekly v2）。现场 Runtime 在本版本 promotion 前仍是 41。60m 继续关闭。v1.10.12 发布候选的
 Market Home 为 57/60；后续首页质量修复候选与受控补数验收为 60/60，BZ/EB/PG 历史源价
 不可用仍保留计算边界。v1.10.17 即时 Live 与总 health 已为 ok；新版本自然 Live、
 自然盘后与 weekly audit 证据仍待取得，因此不能声明 `RUNTIME_READY`。

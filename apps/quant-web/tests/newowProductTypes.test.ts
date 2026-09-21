@@ -237,8 +237,8 @@ test('loads the server-owned daily release capability and rejects widened or leg
     ...candidate,
     schema_version: 'newow_product_capabilities_v9',
     weekly_products: [
-      ...candidate.weekly_products,
-      ...'b bz cj eb eg j oi pf pg pk pl pr px rs sf sh si sm sr'.split(' '),
+      ...'a ag al ao ap au b bu bz c cf cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' '),
+      ...'cj oi pf pk pl pr px rs sf sh sm sr'.split(' '),
     ],
   }
   assert.deepEqual(await getNewowProductCapabilities({
