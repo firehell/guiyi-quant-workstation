@@ -18,7 +18,7 @@ export interface NewowDeferredSection {
 }
 
 export interface NewowProductCapabilities {
-  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8'
+  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10'
   readonly release_stage: 'daily' | 'daily_weekly_candidate' | 'au_daily_weekly_hourly_candidate' | 'pd_pt_hourly_candidate' | 'ap_hourly_candidate' | 'daily_weekly'
   readonly open_frequencies: readonly ['1d'] | readonly ['1d', '1w'] | readonly ['1d', '1w', '60m'] | readonly ['1d', '60m']
   readonly weekly_products?: readonly string[]
@@ -79,6 +79,8 @@ export interface NewowProductIdentity {
   readonly seriesKind: 'actual_dominant'
 }
 
+export type NewowInputQualityPolicy = 'newow_input_quality_v1' | 'newow_weekly_input_quality_v2'
+
 export interface NewowProductWireIdentity {
   readonly product: string
   readonly strategy: NewowProductStrategy
@@ -86,6 +88,7 @@ export interface NewowProductWireIdentity {
   readonly series_kind: 'actual_dominant'
   readonly profile_id: string
   readonly formula_versions: readonly string[]
+  readonly input_quality_policy?: NewowInputQualityPolicy
 }
 
 export type NewowRuntimeStatus = 'ready' | 'warming' | 'unavailable' | 'not_applicable' | 'evidence_required'
@@ -106,7 +109,10 @@ export interface NewowProductMeta {
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v3'
-  readonly futures_adaptation_version: 'newow_futures_quality_segment_v3' | 'newow_futures_weekly_quality_segment_v1'
+  readonly futures_adaptation_version:
+    | 'newow_futures_quality_segment_v3'
+    | 'newow_futures_weekly_quality_segment_v1'
+    | 'newow_futures_weekly_quality_segment_v2'
 }
 
 export interface NewowProductBar {
@@ -144,7 +150,10 @@ export interface NewowTrendChannelPoint {
   readonly physical_contract: string
   readonly segment_id: string
   readonly source_identity: string
+  readonly calculation_segment_id: string
 }
+
+export interface NewowChartPriceReference { readonly surface: 'chart_legend'; readonly frequency: NewowProductFrequency; readonly as_of: string; readonly anchor_bar_end: string; readonly physical_contract: string; readonly segment_id: string; readonly calculation_segment_id: string; readonly input_sha256: string; readonly formula_version: 'newow_chart_legend_hhv_llv10_page_v1'; readonly adapter_version: 'newow_chart_price_projection_v1'; readonly target: { readonly raw: string | null; readonly display: string | null; readonly status: NewowFeatureStatus }; readonly absorb: { readonly raw: string | null; readonly display: string | null; readonly status: NewowFeatureStatus } }
 
 export interface NewowTrendChannelLayer {
   readonly kind: 'trend_channel'
@@ -193,6 +202,7 @@ export interface NewowChartValue {
   readonly bars: readonly NewowProductBar[]
   readonly frames: readonly NewowProductFrame[]
   readonly trend_channel: NewowTrendChannelLayer | null
+  readonly price_reference: NewowChartPriceReference | null
   readonly actions: readonly NewowProductAction[]
   readonly hints: readonly NewowProductHint[]
   readonly diagnostics: readonly string[]
@@ -229,7 +239,11 @@ export interface NewowReferenceTrade {
   readonly calculation_segment_id: string
   readonly formula_versions: readonly string[]
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v3'
-  readonly futures_adaptation_version: 'newow_futures_quality_segment_v3' | 'newow_futures_weekly_quality_segment_v1'
+  readonly futures_adaptation_version:
+    | 'newow_futures_quality_segment_v3'
+    | 'newow_futures_weekly_quality_segment_v1'
+    | 'newow_futures_weekly_quality_segment_v2'
+  readonly input_quality_policy?: NewowInputQualityPolicy
   readonly entry_signal_id: string
   readonly entry_sequence: number
   readonly entry_bar_end: string

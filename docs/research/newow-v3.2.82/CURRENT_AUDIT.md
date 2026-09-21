@@ -43,6 +43,10 @@ Git 保留本审计、采样截图和[哈希登记](evidence/latest-audit-202609
 
 ## 3. 策略和算法逐项对照
 
+### 2026-09-19 实施证据边界
+
+`page-parity-20260919` fixture contract 已把本轮 A–E 的公开函数/哈希/最小见证冻结为可测试输入；它证明 fixture provenance，不单独证明任意期货品种、生产数据、发布或 Runtime 一致。无完整公开输入/输出重放的 adapter 角色保持 **EVIDENCE_REQUIRED**，生产频率/Scope 不因离线见证开放。
+
 “已有”均指代码，不包含任意品种、任意周期、任意数据条件下都可用。下列代码文件位于
 [`packages/quant-core/guiyi_quant/newow`](../../../packages/quant-core/guiyi_quant/newow)。
 历史精确公式及参数详见手册；本表补齐身份、现状和最新差异，不覆盖历史版本。
@@ -252,6 +256,12 @@ D1–D3、magic11、副图、旧综合、窗口比较器、目标/吸筹及参�
 合计 **348 passed、1 skipped**（未重复计入为解释skip单独重跑的26项）。跳过项不算通过，详见哈希登记的测试记录。
 源码4份和截图5张SHA-256回读一致；当前入口／手册／README共67个本地引用存在，secret scan无发现，`git diff --check`通过。
 这些测试验证项目现有合同，不是v3.3.46新功能的实现验收。
+
+## 9. 2026-09-19 隔离 UI 实现记录
+
+六项 Web 展示与交互完善（状态呈现、策略概览、解释可读化、杯柄事实卡片、五窗口比较器、参考统计快捷窗口）仅进入隔离开发实现；不改变公式、数据来源、ReferenceTrade 口径或周期范围。视觉参照与有意差异见 [implementation-ui/20260919](implementation-ui/20260919/README.md)。其中杯柄继续是归一 clean-room 候选，五窗口不构成六组合 AI 或策略采纳建议；快捷窗口以服务端接受的截止日为锚。该记录不是页面真实数据验收、发布或 Runtime 证据。
+
+同日第二批隔离 UI 实现补充 ReferenceTrade 的建仓/清仓/估值/中断事实分层，以及精确图表定位和返回原记录；定位要求 signal ID、Bar、物理合约和 segment 一致，并以图表 focus 回读作为成功条件。它没有改变服务端统计、策略、ReferenceTrade 收益口径、数据链路、开放周期、发布或 Runtime；详情和 fixture 截图边界见同目录 implementation-ui 记录。
 
 明确未完成：最新版全输入逐值golden、全标的/全周期UI覆盖、AI六组合未舍入summary重放、后端文本来源、
 最新异步切换全路径、趋势转折期货增量价值。原站说明中的盈利/概率断言仅作为页面内容，不背书。

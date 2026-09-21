@@ -117,6 +117,18 @@ D1 owner 推断 W1/60m，也不得把各周期 owner 子集的并集冒充全局
 - **WHEN** 一个 rank1 分段短于完整 ISO 周且该段没有 W1 Bar，但 D1/60m 存在 Bar
 - **THEN** 全局权威分段仍包含该段，W1 响应 owner 子集可以省略它，逐 Bar owner 校验通过
 
+### Requirement: Source quality union is an explicit opt-in authority
+
+Catalog source quality SHALL 支持有界、版本化的 `PRICE_UNAVAILABLE` 与 `NONPOSITIVE_CLOSE` union；每个
+expected D1 endpoint 必须精确属于有效 Canonical Bar 或一个已证实质量事实。普通 strict reader 继续拒绝
+任何质量事实，既有 Newow reader 继续只接受其既有类型；只有显式 SuBing D1 seam 可读取完整 union。
+未知分类、重复端点、缺端点、额外端点或 evidence identity 冲突 MUST fail closed。
+
+#### Scenario: A partition mixes valid bars and nonpositive source facts
+
+- **WHEN** 同月 expected endpoints 由有效 Bar 与带完整来源证据的 NONPOSITIVE_CLOSE 共同覆盖
+- **THEN** opt-in reader 返回有序互斥 union，strict reader 拒绝该分区，且系统不制造 OHLC 或 NO_TRADE
+
 ### Requirement: Completed viewport windows use batched authoritative sessions
 
 默认图表窗口 MUST 由MarketDataService经Catalog和Session clock批量解析completed交易日。

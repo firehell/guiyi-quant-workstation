@@ -1,0 +1,494 @@
+{
+  "schema": "subing-d1-17-repair-scope-v1",
+  "fixed_cutoff": "2026-09-18T18:30:00+08:00",
+  "execute": false,
+  "decision": "KEEP_17_BLOCKED_PENDING_SOURCE_VERIFICATION_OR_EXPLICIT_SEMANTIC_DECISION",
+  "evidence_file": "d1-17-source-evidence-refresh.json",
+  "source_verification_candidate_file": "d1-17-source-verification-candidate.json",
+  "formal_warmup_dry_run": {
+    "contracts_checked": 39,
+    "targets_within_consumed_owner_prefix": [],
+    "unrelated_lifecycle_targets_excluded_count": 40,
+    "unrelated_lifecycle_contracts_excluded": 20,
+    "separate_oi_pf_september_targets": [
+      {
+        "symbol": "oi",
+        "contract": "OI2609",
+        "month": "2026-09",
+        "missing_start": "2026-09-01T07:00:00+00:00",
+        "missing_end": "2026-09-11T07:00:00+00:00",
+        "owner_through": "2026-08-18",
+        "plan_sha256": "5bb8d4474e2f51690516f5b480721ad9937ae0c126600e2982fe9857dd4f9aa5"
+      },
+      {
+        "symbol": "pf",
+        "contract": "PF2609",
+        "month": "2026-09",
+        "missing_start": "2026-09-01T07:00:00+00:00",
+        "missing_end": "2026-09-11T07:00:00+00:00",
+        "owner_through": "2026-08-04",
+        "plan_sha256": "9945f01c4456c411ae45db1d90edd629ed2c5fdc8f18e55b7cbf1a6eee74c4b3"
+      }
+    ],
+    "oi_pf_september_missing_partition_plans": [
+      {
+        "schema_version": 2,
+        "command": "data.contract-warmup",
+        "status": "planned",
+        "readonly": true,
+        "symbol": "oi",
+        "contract": "OI2609",
+        "provider": "rqdata",
+        "listed_date": "2025-09-15",
+        "expired_date": "2026-09-14",
+        "requested_window": {
+          "start": "2025-09-15",
+          "through": "2026-09-18"
+        },
+        "effective_window": {
+          "start": "2025-09-15",
+          "through": "2026-09-13"
+        },
+        "frequency": "1d",
+        "dependency_frequencies": [],
+        "frequencies": [
+          "1d"
+        ],
+        "direct_target_count": 1,
+        "derived_target_count": 0,
+        "expected_bar_count": 9,
+        "provider_request_count": 1,
+        "provider_requests": 0,
+        "plan_sha256": "5bb8d4474e2f51690516f5b480721ad9937ae0c126600e2982fe9857dd4f9aa5",
+        "applied": 0,
+        "blocked": 0,
+        "failed": 0,
+        "targets": [
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 9,
+            "expected_start": "2026-09-01T07:00:00+00:00",
+            "expected_end": "2026-09-11T07:00:00+00:00",
+            "expected_bar_count": 9,
+            "missing_start": "2026-09-01T07:00:00+00:00",
+            "missing_end": "2026-09-11T07:00:00+00:00",
+            "missing_bar_count": 9
+          }
+        ],
+        "scope_diagnostics": [
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2025,
+            "month": 9,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2025,
+            "month": 10,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2025,
+            "month": 11,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2025,
+            "month": 12,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 1,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 2,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 3,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 4,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 5,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 6,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 7,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 8,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "oi",
+              "OI2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 9,
+            "reason_codes": [
+              "REPLAY_ENDPOINTS_MISSING"
+            ],
+            "planned": true
+          }
+        ],
+        "failures": []
+      },
+      {
+        "schema_version": 2,
+        "command": "data.contract-warmup",
+        "status": "planned",
+        "readonly": true,
+        "symbol": "pf",
+        "contract": "PF2609",
+        "provider": "rqdata",
+        "listed_date": "2025-09-15",
+        "expired_date": "2026-09-14",
+        "requested_window": {
+          "start": "2025-09-15",
+          "through": "2026-09-18"
+        },
+        "effective_window": {
+          "start": "2025-09-15",
+          "through": "2026-09-13"
+        },
+        "frequency": "1d",
+        "dependency_frequencies": [],
+        "frequencies": [
+          "1d"
+        ],
+        "direct_target_count": 1,
+        "derived_target_count": 0,
+        "expected_bar_count": 9,
+        "provider_request_count": 1,
+        "provider_requests": 0,
+        "plan_sha256": "9945f01c4456c411ae45db1d90edd629ed2c5fdc8f18e55b7cbf1a6eee74c4b3",
+        "applied": 0,
+        "blocked": 0,
+        "failed": 0,
+        "targets": [
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 9,
+            "expected_start": "2026-09-01T07:00:00+00:00",
+            "expected_end": "2026-09-11T07:00:00+00:00",
+            "expected_bar_count": 9,
+            "missing_start": "2026-09-01T07:00:00+00:00",
+            "missing_end": "2026-09-11T07:00:00+00:00",
+            "missing_bar_count": 9
+          }
+        ],
+        "scope_diagnostics": [
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2025,
+            "month": 9,
+            "reason_codes": [
+              "SOURCE_NONPOSITIVE_PRICE"
+            ],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2025,
+            "month": 10,
+            "reason_codes": [
+              "SOURCE_NONPOSITIVE_PRICE"
+            ],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2025,
+            "month": 11,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2025,
+            "month": 12,
+            "reason_codes": [
+              "SOURCE_NONPOSITIVE_PRICE"
+            ],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 1,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 2,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 3,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 4,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 5,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 6,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 7,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 8,
+            "reason_codes": [],
+            "planned": false
+          },
+          {
+            "dataset": [
+              "contract",
+              "pf",
+              "PF2609",
+              "1d"
+            ],
+            "year": 2026,
+            "month": 9,
+            "reason_codes": [
+              "REPLAY_ENDPOINTS_MISSING"
+            ],
+            "planned": true
+          }
+        ],
+        "failures": []
+      }
+    ]
+  },
+  "tool_capability": {
+    "contract_warmup_can_apply_oi_pf_missing_september": true,
+    "contract_warmup_can_replace_present_value_anomalies": false,
+    "d1_source_only_capture_available_as_formal_cli": false,
+    "weekly_source_verify_reusable_for_d1": false,
+    "required_before_execution": "Add or approve a bounded D1 source-only capture path that consumes the frozen request hashes and never publishes."
+  },
+  "future_write_contract_if_and_only_if_valid_source_is_proved": {
+    "scope": "only exact affected contract-month partitions whose fresh saved response differs and passes hard validation",
+    "staging": "write new immutable candidate file outside active Canonical; validate exact endpoints, identity, ordering, duplicate conflicts and source hashes",
+    "atomic_commit": "under maintenance lock, recheck plan/hash and active partition identity; atomically publish file and Catalog pointer per partition",
+    "idempotency": "no-op when active partition file/source-quality hash already equals approved candidate",
+    "recovery": "retain old immutable file and prior Catalog identity; on uncertainty stop and read back before any retry",
+    "failure_policy": "first unknown, validation failure, plan drift or partial result stops affected mutation; no automatic retry"
+  },
+  "fixed_cutoff_acceptance_after_any_approved_write": [
+    "read exact repaired physical partitions through MDS",
+    "re-run all 17 D1 references at fixed cutoff",
+    "re-run 17 real Chromium pages",
+    "re-run full 240 data/page matrix before develop integration"
+  ],
+  "semantic_change_not_in_scope": [
+    "skip non-rank1 warm-up prefix",
+    "shorten warm-up window",
+    "accept nonpositive Close",
+    "synthesize or substitute OHLC",
+    "reclassify zero-volume without authoritative proof"
+  ]
+}

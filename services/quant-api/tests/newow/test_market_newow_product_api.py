@@ -10,6 +10,7 @@ from guiyi_quant.newow.product_contracts import (
     FeatureStatus,
     ProductFrequency,
 )
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 from app.market_data.domain import BarFrequency
 
 from app.api import market_newow
@@ -75,14 +76,14 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v8",
+        "schema_version": "newow_product_capabilities_v10",
         "release_stage": "daily_weekly",
         "open_frequencies": ["1d", "1w"],
         "weekly_products": [
-            "a", "ag", "al", "ao", "ap", "au", "bu", "c", "cf", "cu", "ec", "fg",
-            "fu", "hc", "i", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "p", "pb",
-            "pd", "pp", "ps", "pt", "rb", "rm", "ru", "sa", "sc", "sn", "ss", "ta", "ur",
-            "v", "y", "zn",
+            "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cu",
+            "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
+            "lh", "m", "ma", "ni", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
+            "rm", "ru", "sa", "sc", "si", "sn", "ss", "ta", "ur", "v", "y", "zn",
         ],
         "deferred_frequencies": [
             {"frequency": "60m", "reason_code": "NEWOW_HOURLY_RELEASE_PENDING"},
@@ -225,7 +226,7 @@ def test_daily_release_rejects_deferred_historical_frequencies_before_resolver(
     assert response.json() == {"detail": {"code": "NEWOW_FREQUENCY_NOT_OPEN"}}
 
 
-def test_formal_weekly_release_rejects_product_outside_first_41_before_resolver(monkeypatch):
+def test_formal_weekly_release_rejects_product_outside_open_set_before_resolver(monkeypatch):
     monkeypatch.setattr(
         market_newow,
         "_build_weekly_resolver",
@@ -239,7 +240,7 @@ def test_formal_weekly_release_rejects_product_outside_first_41_before_resolver(
         with TestClient(app) as client:
             response = client.get(
                 "/api/v1/market/newow/weekly-snapshot",
-                params={"product": "b", "strategy": "trend", "frequency": "1w"},
+                params={"product": "cj", "strategy": "trend", "frequency": "1w"},
             )
     finally:
         app.dependency_overrides.clear()
@@ -352,6 +353,7 @@ def test_strategy_detail_returns_only_requested_typed_section(
     )
     assert len(body["chart"]["value"]["page_identity"]) == 64
     assert body["meta"]["schema_version"] == "newow_product_detail_v3"
+    assert "input_quality_policy" not in body["meta"]["identity"]
     assert (
         body["meta"]["reference_model_version"]
         == "newow_marker_reference_zero_cost_v3"
@@ -492,6 +494,39 @@ def test_typed_api_serializes_verified_initial_clear_without_entry(product_cases
             "sequence": 0,
         }
     ]
+
+
+def test_quality_policy_is_omitted_for_v1_and_explicit_for_weekly_v2(product_cases):
+    from newow.test_product_service import _service
+
+    service, _reader, build, clear = _service(product_cases)
+    reference = service.query(
+        ProductServiceQuery(
+            "rb", "trend", "1d", section="reference",
+            performance_since=build.trading_day,
+            performance_through=clear.trading_day,
+            as_of=clear.bar_end,
+        )
+    )
+    trade = reference.reference.value.items[0]
+
+    legacy_payload = market_newow._trade(trade, 0)
+    assert "input_quality_policy" not in legacy_payload
+    assert "input_quality_policy" not in ReferenceTradeOut.model_validate(
+        legacy_payload
+    ).model_dump(mode="json")
+    candidate = replace(
+        trade,
+        input_quality_policy=InputQualityPolicy.WEEKLY_V2,
+        futures_adaptation_version="newow_futures_weekly_quality_segment_v2",
+    )
+    candidate_payload = market_newow._trade(candidate, 0)
+    assert candidate_payload["input_quality_policy"] == (
+        "newow_weekly_input_quality_v2"
+    )
+    assert ReferenceTradeOut.model_validate(candidate_payload).model_dump(mode="json")[
+        "input_quality_policy"
+    ] == "newow_weekly_input_quality_v2"
 
 
 @pytest.mark.parametrize(

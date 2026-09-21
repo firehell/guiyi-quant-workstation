@@ -16,7 +16,7 @@ from guiyi_quant.newow.oscillation_channel import (
     OscillationStepResult,
     step_oscillation,
 )
-from guiyi_quant.newow.product_adapters import replay_strategy
+from guiyi_quant.newow.product_adapters import replay_step, replay_strategy, seed_replay_state
 from guiyi_quant.newow.product_contracts import (
     ActionKind,
     DataInterruption,
@@ -302,8 +302,12 @@ def test_main_rise_requires_a_real_prewarm_build_witness_for_an_isolated_clear(
         replace(bar, bar=replace(bar.bar, observation_eligible=True))
         for bar in case.bars[:50]
     )
-    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
-        replay_strategy(case.identity, all_eligible)
+    replay = replay_strategy(case.identity, all_eligible)
+    assert [action.trade_eligibility for action in replay.actions] == [
+        TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+    ]
+    assert replay.actions[0].kind is ActionKind.CLEAR
+    assert replay.actions[0].related_build_id is None
 
     prewarm_then_clear = tuple(
         replace(bar, bar=replace(bar.bar, observation_eligible=index >= 71))
@@ -350,8 +354,13 @@ def test_initial_clear_requires_exact_untrimmed_lifecycle_evidence(product_cases
     forged_source = copy(evidence)
     object.__setattr__(forged_source, "source_identity", "forged:reader")
 
-    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
-        replay_strategy(case.identity, case.bars)
+    replay = replay_strategy(case.identity, case.bars)
+    assert len(replay.actions) == 1
+    clear = replay.actions[0]
+    assert clear.kind is ActionKind.CLEAR
+    assert clear.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+    assert clear.related_build_id is None
+    assert "INITIAL_CLEAR_NO_ENTRY" in replay.diagnostics
     for bars, supplied in (
         (case.bars[1:], (evidence,)),
         (
@@ -589,3 +598,38 @@ def test_adapter_rejects_formula_or_input_identity_substitution(product_cases):
     ):
         with pytest.raises(ValueError, match="IDENTITY"):
             replay_strategy(identity, bars)
+
+
+def test_newow_step_exact_replay_is_noop_and_conflict_is_atomic(product_cases):
+    case = product_cases.primitive_input("trend", "1d")
+    state = seed_replay_state()
+    state, frame, _ = replay_step(case.identity, state, case.bars[0])
+    assert frame is not None
+    snapshot = repr(state)
+
+    replayed, duplicate_frame, diagnostics = replay_step(
+        case.identity, state, case.bars[0],
+    )
+    assert replayed is state
+    assert duplicate_frame is None
+    assert diagnostics == ()
+
+    conflicting = replace(
+        case.bars[0], bar=replace(case.bars[0].bar, close=case.bars[0].bar.close + 1),
+    )
+    with pytest.raises(ValueError, match="conflicts"):
+        replay_step(case.identity, state, conflicting)
+    assert repr(state) == snapshot
+
+
+def test_newow_step_older_failure_does_not_mutate_state(product_cases):
+    case = product_cases.primitive_input("trend", "1d")
+    state = seed_replay_state()
+    for bar in case.bars[:3]:
+        state, frame, _ = replay_step(case.identity, state, bar)
+        assert frame is not None
+    snapshot = repr(state)
+
+    with pytest.raises(ValueError, match="older"):
+        replay_step(case.identity, state, case.bars[0])
+    assert repr(state) == snapshot

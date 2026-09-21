@@ -1,0 +1,622 @@
+{
+  "schema_version": "newow_weekly_conflict_source_verify_result_v1",
+  "status": "completed",
+  "stop_reason": null,
+  "plan_sha256": "fdaf3c8a629f977810b71a01af82b743c9a74f0380eaf75e210590f13642e54f",
+  "catalog_revision": "fa01809910bfda3d93de9fe6e213cc46ee4c5463e81db7c5bf49fe56d4b1a8a7",
+  "code_sha": "3958b66d65e4aab45adc7c09db9d7e7450d7e387",
+  "attempt_id": "conflict-src-20260920-001",
+  "provider_request_limit": 21,
+  "retries": 0,
+  "canonical_writes": 0,
+  "database_writes": 0,
+  "attempt": {
+    "responses_saved": 21,
+    "outcome_unknown": false
+  },
+  "weeks": [
+    {
+      "symbol": "b",
+      "contract": "B2501",
+      "week_end": "2024-10-25T07:00:00+00:00",
+      "iso_year": 2024,
+      "iso_week": 43,
+      "request_sha256": "b5f5c4cfcee47a133149c4b19646b15b71267d83b46733f320ec7298a2a92ca7",
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 10,
+        "file_name": "part.ede7356e02a3965ca8198b80040d560cc8b9f8879ea49de7271c35f6b3bdaa53.parquet",
+        "row_count": 3,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 10,
+          "file_name": "part.86d6574c64879aae726f5e9de0bcf35b9ccd67f23168fe8098da14913d62d8b4.parquet",
+          "row_count": 18,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "b",
+      "contract": "B2505",
+      "week_end": "2024-12-20T07:00:00+00:00",
+      "iso_year": 2024,
+      "iso_week": 51,
+      "request_sha256": "b579449d650eda679d04bb67ec1dd9c38b76d2416e235898f24817bd7b70e5eb",
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 12,
+        "file_name": "part.d00f54581cf7d0a2dd3d9c72d514e506a95c59e8b8a660c809bd717174f551d2.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 12,
+          "file_name": "part.3373f690ae5bf1b0ad513fd0bc1f204a59409346944c1e578833ebe79156b26e.parquet",
+          "row_count": 22,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "b",
+      "contract": "B2511",
+      "week_end": "2025-08-22T07:00:00+00:00",
+      "iso_year": 2025,
+      "iso_week": 34,
+      "request_sha256": "657a68c762dd868eeefc506fafed6648cd87b8b99a3eeeefd958bb21a5a2ec1a",
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 8,
+        "file_name": "part.50cbb515ccf775b41c08eddb18bb47a2f8affcfbfc222d49a16e0a35e8106287.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file_name": "part.2079f0e5379c6bcfedc2617c73e98291c78ba7b8b2206632623c7de2beccf694.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "b",
+      "contract": "B2601",
+      "week_end": "2025-10-31T07:00:00+00:00",
+      "iso_year": 2025,
+      "iso_week": 44,
+      "request_sha256": "0501ba1ea8d9d569a99f01902de2765af484deb465bff19149e5ecda53aed3a3",
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 10,
+        "file_name": "part.6530afd224852ae4455604c2756cee53b97213b034be481c45f2f3cf7156b447.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 10,
+          "file_name": "part.48932247fb9ed0b152db629b54331206493cfe6ea0251438da0dc8ccbd4b8cec.parquet",
+          "row_count": 17,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "b",
+      "contract": "B2605",
+      "week_end": "2025-12-26T07:00:00+00:00",
+      "iso_year": 2025,
+      "iso_week": 52,
+      "request_sha256": "2a0ef1a9d61f5c81b2b4e2a94212d5cb43775a4b4865aae2048f5309707cbb9d",
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 12,
+        "file_name": "part.f447230568a55810563305f999edfe39d107801bad70d574131d416c404ff549.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 12,
+          "file_name": "part.421bfaf037af54fb7cef2a710ca071aa287396e3b90378bd74bd0d5aa045f26c.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "b",
+      "contract": "B2607",
+      "week_end": "2026-04-17T07:00:00+00:00",
+      "iso_year": 2026,
+      "iso_week": 16,
+      "request_sha256": "c41fe26929e61e8c0682a6f0de996bb793f4330f1c05e9942db005779d78ddfb",
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 4,
+        "file_name": "part.636cf3f17d74ee5db12fccbde67331b25989476122edf95754002aba3d2033ff.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file_name": "part.d514af4751df66114e2c1b378ffc0933dc2dd2ac82eb98ab1e55d2d1b4983e9a.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "PROVIDER_MATCHES_NEITHER_D1_STALE",
+      "repair_target": "D1_THEN_W1",
+      "stop_queue": false,
+      "reason": "STORED_D1_TURNOVER_STALE"
+    },
+    {
+      "symbol": "b",
+      "contract": "B2609",
+      "week_end": "2026-06-26T07:00:00+00:00",
+      "iso_year": 2026,
+      "iso_week": 26,
+      "request_sha256": "b6257959220b8ed3362f56121d942988824240c339e3898fbf0765ee6f7f992f",
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 6,
+        "file_name": "part.32bee24837cc753099df179ef658a9d35a1208bc854417b1c2d2064ea6110b04.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 6,
+          "file_name": "part.22c90a7dcc78d88da083895062eed013af2fde9cd11551156b0192800d568aa4.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "b",
+      "contract": "B2609",
+      "week_end": "2026-08-14T07:00:00+00:00",
+      "iso_year": 2026,
+      "iso_week": 33,
+      "request_sha256": "c25e0e66c5962d4bf5d0ddb7f493d445bf5dbbd863e8c1f57bdf3087290ad384",
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 8,
+        "file_name": "part.parquet",
+        "row_count": 2,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file_name": "part.1967462587e1c3598078adcc3e253b500842958ae55ee12eaeeda75b4184aa2c.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "PROVIDER_MATCHES_NEITHER_D1_STALE",
+      "repair_target": "D1_THEN_W1",
+      "stop_queue": false,
+      "reason": "STORED_D1_TURNOVER_STALE"
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2606",
+      "week_end": "2026-04-24T07:00:00+00:00",
+      "iso_year": 2026,
+      "iso_week": 17,
+      "request_sha256": "c6a6d1dc11a4ed04ad2c14b741f25ca0a4a6d9a9dad0912361aa173b333cfb1d",
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 4,
+        "file_name": "part.0fc2efa0978a29a6b39d1fa9917a9e372dfd42602b8aaabfb72ef6d0e7e00ddd.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file_name": "part.cd10c04649962e9ca840da8dfe26d8bc88e098dbcc2c98ad9770873b977c9856.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2608",
+      "week_end": "2026-06-26T07:00:00+00:00",
+      "iso_year": 2026,
+      "iso_week": 26,
+      "request_sha256": "a582e55b6e39d5bc5713a12455a8c413ca673150c2b40fc0a943b93e52ae08c4",
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 6,
+        "file_name": "part.6a8fc17b3ba5f0375fb36c4b145c2a1b57ba341f394824ff8ab171e3ba5b5e03.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 6,
+          "file_name": "part.25a40bd63ab01634438defd6a4c88290400135b8a741d012202a752a44df0847.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2609",
+      "week_end": "2026-07-24T07:00:00+00:00",
+      "iso_year": 2026,
+      "iso_week": 30,
+      "request_sha256": "32ae17376b0ab8c7573b99377a88a13d089038b47489b4158077a47a900a6916",
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 7,
+        "file_name": "part.559e4f7c14e26647f59b9993981d1ade610544e9299df7e79104efead40e47c4.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 7,
+          "file_name": "part.1e45849d5882992cc19793aba55d2fd5381e2e611d18699d65983f6872e2c3b7.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2309",
+      "week_end": "2023-04-21T07:00:00+00:00",
+      "iso_year": 2023,
+      "iso_week": 16,
+      "request_sha256": "1617cc770176020242c31da962149c6624c6ef3b8a28916d5757bd9c1d812e01",
+      "stored_w1_partition": {
+        "year": 2023,
+        "month": 4,
+        "file_name": "part.441954a11a7185a4d4986bf59eb66f362bec1457f03a07a49b30a349ca87aae0.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2023,
+          "month": 4,
+          "file_name": "part.bf7d8f66179e867d46cc78ce5bd241b443ea054a64917a6ba166da5ed1fb6597.parquet",
+          "row_count": 19,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2401",
+      "week_end": "2023-08-11T07:00:00+00:00",
+      "iso_year": 2023,
+      "iso_week": 32,
+      "request_sha256": "4cc983beafcf57a32a86f530331aa93b60913d12e55705f8590fc77e9600fb6e",
+      "stored_w1_partition": {
+        "year": 2023,
+        "month": 8,
+        "file_name": "part.c4e292ba536ba5fffc2e5a27d26ec956cc7c723951957a57ea7b73d1dcca2d0b.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2023,
+          "month": 8,
+          "file_name": "part.ba973143e564b5747e19e97ff8f4db2a03523f4d6c0b1c472642445465ec80b5.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2409",
+      "week_end": "2024-04-12T07:00:00+00:00",
+      "iso_year": 2024,
+      "iso_week": 15,
+      "request_sha256": "3fffb1f20370ec27fb43bf7c8030daeccc11a9cd291c3a3aa9419d5fded5beb0",
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 4,
+        "file_name": "part.4c09a6472c9589cfa62d32824ba051bbf3a418155ef1b19a4155f7c4c90be914.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 4,
+          "file_name": "part.dca73e3f839a67515b67f80cf4ffb63f995a8976ad4f5fa28c692f997251f15d.parquet",
+          "row_count": 20,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2501",
+      "week_end": "2024-07-26T07:00:00+00:00",
+      "iso_year": 2024,
+      "iso_week": 30,
+      "request_sha256": "2fea60000df064c9c5b0dafc269a3e64b2ce048fe764d90184a28e48b09aa7a0",
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 7,
+        "file_name": "part.85dec291eeb22c710a5e900ab6be137da2ca0400ff3e018ef9ddabfba052f21e.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 7,
+          "file_name": "part.9de2f22ad5171cf6b81defcfb8bca0a1db4d7ca96fd497ed1c29fd4286d30e7c.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2505",
+      "week_end": "2024-12-06T07:00:00+00:00",
+      "iso_year": 2024,
+      "iso_week": 49,
+      "request_sha256": "4ae56c97a657c126208bd6f5ce6ec815a3a46ee5df44f3f7e0714fccba5bcb87",
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 12,
+        "file_name": "part.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 12,
+          "file_name": "part.cb87bbd77cb49cbb04eca2d1f4f23977085d2a828e5e0466e760c09f817b6203.parquet",
+          "row_count": 22,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2509",
+      "week_end": "2025-04-18T07:00:00+00:00",
+      "iso_year": 2025,
+      "iso_week": 16,
+      "request_sha256": "8f55c1ee51da16568ba8dd5f9a124dca5d97704846ef00d432ee2a2efb6da606",
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 4,
+        "file_name": "part.99717a987a0de80e5a77b0f3584359fbf674be1fdadd997c1d3d396b31aadc7c.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 4,
+          "file_name": "part.e43a8fcaac84932bf5677a74a707a6fe66a86bcb7c1be6b3e99f90d80c13b028.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2601",
+      "week_end": "2025-07-04T07:00:00+00:00",
+      "iso_year": 2025,
+      "iso_week": 27,
+      "request_sha256": "3b2773142fc52f90afafd5e8579b224401aaade5a70ed72f56d4e9eee99886b9",
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 7,
+        "file_name": "part.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 6,
+          "file_name": "part.e3a4959a3b19fd77e8280199bc237cdc235c1b2249cbd3a90e9df9aba6ea026c.parquet",
+          "row_count": 20,
+          "source_quality_sha256": null
+        },
+        {
+          "year": 2025,
+          "month": 7,
+          "file_name": "part.c8b9e67666ee854810257a20f7e9f42b91f7d1eeadb9ccb406a5ca9ae809da28.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2605",
+      "week_end": "2025-12-12T07:00:00+00:00",
+      "iso_year": 2025,
+      "iso_week": 50,
+      "request_sha256": "79133b6ec443a3bbb9361ed6819548faac50b813bc1938dcb160580ff72c95a5",
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 12,
+        "file_name": "part.ac63cbd6d1500a5abdee9cdd69503f3cffdf00b2b387102e82a571a95e9de052.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 12,
+          "file_name": "part.a13902ebed92c952723dc4e379d4aacb896afd653d5e430fa679bcdc00ee7259.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "eb",
+      "contract": "EB2405",
+      "week_end": "2024-03-22T07:00:00+00:00",
+      "iso_year": 2024,
+      "iso_week": 12,
+      "request_sha256": "200c733967b2891a6a1dcc1d14a6dcc088452bf665d16ef1b3e9ad4abd022d15",
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 3,
+        "file_name": "part.1e46dbe0455d3045d8f8a7dcec3f00fb71e3316f4561f23d03db0102fdaceb58.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 3,
+          "file_name": "part.99cb214363d8f906a0a0663ede6b692d096d67d55a2916aa4c833e347352298f.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    },
+    {
+      "symbol": "eg",
+      "contract": "EG2601",
+      "week_end": "2025-08-22T07:00:00+00:00",
+      "iso_year": 2025,
+      "iso_week": 34,
+      "request_sha256": "ffd3a54c6f481c34eca970c45e92ac2ecf1ab9c19e3b6edd10c42ccdc253df65",
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 8,
+        "file_name": "part.1fc6135ea679a19531270d16f1b152edadd480b0798b7678743d87bf4edf9a47.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file_name": "part.6fbc1a4213deca35fbd378cc8c5e43038da2469a68b2a89170bed561f1039d33.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "stop_queue": false,
+      "reason": "PROVIDER_MATCHES_NEITHER"
+    }
+  ],
+  "classification_counts": {
+    "INCONCLUSIVE": 19,
+    "PROVIDER_MATCHES_NEITHER_D1_STALE": 2
+  },
+  "repair_target_counts": {
+    "D1_THEN_W1": 2,
+    "NONE": 19
+  }
+}

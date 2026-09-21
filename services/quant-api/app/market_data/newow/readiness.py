@@ -10,7 +10,7 @@ import time
 from typing import Any
 
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
-from guiyi_quant.newow.product_identity import utc_timestamp
+from guiyi_quant.newow.product_identity import InputQualityPolicy, utc_timestamp
 
 from app.market_data.diagnostics import INTEGRITY_REASONS, MISSING_REASONS
 from app.market_data.catalog import CatalogError
@@ -30,6 +30,7 @@ from app.market_data.newow.product_release import (
     CANDIDATE_WEEKLY_PRODUCTS,
     OPEN_WEEKLY_PRODUCTS,
     RELEASE_STAGE,
+    candidate_input_quality_policy,
     deferred_frequency_reason,
     deferred_section_reason,
 )
@@ -45,6 +46,19 @@ _DOWNLOAD = {
     "REPLAY_ENDPOINTS_MISSING",
     "DATASET_OR_PARTITION_MISSING",
 }
+
+
+def _quality_policy_field(
+    request: ReadinessRequest, symbol: str, frequency: ProductFrequency,
+) -> dict[str, str]:
+    policy = candidate_input_quality_policy(
+        symbol,
+        frequency,
+        candidate_weekly=request.candidate_weekly,
+    )
+    if policy is InputQualityPolicy.WEEKLY_V2:
+        return {"input_quality_policy": policy.value}
+    return {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +182,7 @@ class NewowReadinessAudit:
                     "symbol": symbol,
                     "strategy": strategy.value,
                     "frequency": frequency.value,
+                    **_quality_policy_field(request, symbol, frequency),
                     "main": {"status": "UNSTARTED"},
                     "sections": {},
                 }
@@ -556,6 +571,7 @@ class NewowReadinessAudit:
                         "symbol": symbol,
                         "strategy": strategy.value,
                         "frequency": frequency.value,
+                        **_quality_policy_field(request, symbol, frequency),
                         "main": {"status": "UNSTARTED"},
                         "sections": {},
                     }

@@ -1,0 +1,6584 @@
+{
+  "schema": "subing_four_period_candidate_acceptance_v1",
+  "candidate_code_commit": "9048f788a7b1e9d307b6da5911a764425961f864",
+  "as_of": "2026-09-18T18:30:00+08:00",
+  "readback": "local Catalog and Canonical; candidate API/Web isolated loopback; read-only PostgreSQL",
+  "source_cutoff_rule": "completed trading day and Session; browser input hashes matched fixed-cutoff query",
+  "universe": "operational_products.txt (60 products), with reference API enforcing active_products.txt independently",
+  "summary": {
+    "total": 240,
+    "ready": 89,
+    "warming": 0,
+    "blocked": 151,
+    "candidate_page_ready": 89,
+    "reference_api_409": 148,
+    "market_chart_blocked": 3
+  },
+  "rows": [
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 321,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "fb522d649b63f1d324f8d6d2ddb0138112dc8d2d98dd4961385949d7e8618a55",
+      "signals": 23,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "a",
+      "through": "2026-09-18",
+      "trades": 17,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 178,
+      "frequency": "30m",
+      "indicators": 240,
+      "input_snapshot_hash": "d7fe5e04de5a4f91c6e48c5dd97dabfab127c9d7bd381466efa3ad05015c7f9d",
+      "signals": 17,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "a",
+      "through": "2026-09-18",
+      "trades": 13,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 133,
+      "frequency": "60m",
+      "indicators": 140,
+      "input_snapshot_hash": "98e978b970a9af064c8cd23455b4e3ad3f48e93568d22d431577ed2e3e582670",
+      "signals": 6,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "a",
+      "through": "2026-09-18",
+      "trades": 4,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "A2609",
+          "expected_count": 217,
+          "frequency": "1d",
+          "symbol": "a"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 230,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "a",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 422,
+      "frequency": "15m",
+      "indicators": 740,
+      "input_snapshot_hash": "667b6cc87c93de1cd263ab17e2c1e59d6de8c67b6fc8d445cf6c188e1b951804",
+      "signals": 33,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ag",
+      "through": "2026-09-18",
+      "trades": 21,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 247,
+      "frequency": "30m",
+      "indicators": 380,
+      "input_snapshot_hash": "ccb7c2b2852eb74e01ebd14a679f543c96dfca3a7e7e81968224beaa75d9d968",
+      "signals": 16,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ag",
+      "through": "2026-09-18",
+      "trades": 11,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 188,
+      "frequency": "60m",
+      "indicators": 220,
+      "input_snapshot_hash": "3ce62b6129a03ab6840bf52b9059563fedffa43104b84de4e257c2935e5623e9",
+      "signals": 17,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ag",
+      "through": "2026-09-18",
+      "trades": 13,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "AG2608",
+          "expected_count": 221,
+          "frequency": "1d",
+          "symbol": "ag"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 184,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "ag",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 687,
+      "frequency": "15m",
+      "indicators": 620,
+      "input_snapshot_hash": "ba4e6226cf4c262595bb08146d79fe1612838f557aba3482a4debcedc0191faf",
+      "signals": 33,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "al",
+      "through": "2026-09-18",
+      "trades": 23,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "AL2611",
+          "expected_count": 3256,
+          "frequency": "30m",
+          "symbol": "al"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 192,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "al",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "AL2611",
+          "expected_count": 1834,
+          "frequency": "60m",
+          "symbol": "al"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 200,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "al",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "AL2608",
+          "expected_count": 221,
+          "frequency": "1d",
+          "symbol": "al"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 344,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "al",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 692,
+      "frequency": "15m",
+      "indicators": 620,
+      "input_snapshot_hash": "d9247bf71a243ed5e13b9992aa67319e30a2d160400939ecf00c633a101562e1",
+      "signals": 30,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ao",
+      "through": "2026-09-18",
+      "trades": 18,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "AO2701",
+          "expected_count": 2608,
+          "frequency": "30m",
+          "symbol": "ao"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 277,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "ao",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 341,
+      "frequency": "60m",
+      "indicators": 180,
+      "input_snapshot_hash": "c5ccbdbd9bff2b4287a3cba50742bc039cd4c6e6155fe9cb05988cdc1a489e2e",
+      "signals": 5,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ao",
+      "through": "2026-09-18",
+      "trades": 5,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 355,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "48c6c6dddbbd4b4df3b3e7f328323d7b40b37ef86c9cce294515eb190923dd87",
+      "signals": 10,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "ao",
+      "through": "2026-09-18",
+      "trades": 10,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "AP2610",
+          "expected_count": 3180,
+          "frequency": "15m",
+          "symbol": "ap"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 138,
+      "frequency": "15m",
+      "status": "blocked",
+      "symbol": "ap",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "AP2610",
+          "expected_count": 1696,
+          "frequency": "30m",
+          "symbol": "ap"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 91,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "ap",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 229,
+      "frequency": "60m",
+      "indicators": 100,
+      "input_snapshot_hash": "489d393c3abcc05347f22b4dcbe0ad1dbad22ce3804e400a33dae794c4a52cde",
+      "signals": 4,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ap",
+      "through": "2026-09-18",
+      "trades": 5,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 218,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "acc1367fd327d2796f3c23762bba177a3adb9c43921172c21aa62fc81a3a136d",
+      "signals": 5,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "ap",
+      "through": "2026-09-18",
+      "trades": 6,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 460,
+      "frequency": "15m",
+      "indicators": 740,
+      "input_snapshot_hash": "47e0180123c42fb44e2385e0ff073b442921244bc22f4c37bd08287d1280d036",
+      "signals": 32,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "au",
+      "through": "2026-09-18",
+      "trades": 13,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 303,
+      "frequency": "30m",
+      "indicators": 380,
+      "input_snapshot_hash": "ac087f9e92ebe05ec5c6d7e306413887b10a6236d8f19ade105a78e29eb5abe7",
+      "signals": 21,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "au",
+      "through": "2026-09-18",
+      "trades": 17,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 185,
+      "frequency": "60m",
+      "indicators": 220,
+      "input_snapshot_hash": "e83bafda7e57c0f743002c800497373d4796c1778b8814f63072c5965a47a130",
+      "signals": 14,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "au",
+      "through": "2026-09-18",
+      "trades": 11,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 239,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "0b64cd54363cb65cbf5a5347eb43df234bc0b2fc063bf82b07517bb8c4c22d4b",
+      "signals": 5,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "au",
+      "through": "2026-09-18",
+      "trades": 5,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 282,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "dfe12ad4808668b4cd5fed5bf450cee947de6ba28f5b920411e7f9f00149fbba",
+      "signals": 25,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "b",
+      "through": "2026-09-18",
+      "trades": 17,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 166,
+      "frequency": "30m",
+      "indicators": 240,
+      "input_snapshot_hash": "3fe7a828c2bd3cb76f9573a238bb6f14151d92e4beb2816be5c552fe9e3cb087",
+      "signals": 12,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "b",
+      "through": "2026-09-18",
+      "trades": 8,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 131,
+      "frequency": "60m",
+      "indicators": 140,
+      "input_snapshot_hash": "6be58799411d1644f1e315631926198a886d47fc470128d58f0fdc56d22f5912",
+      "signals": 11,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "b",
+      "through": "2026-09-18",
+      "trades": 8,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "B2609",
+          "expected_count": 221,
+          "frequency": "1d",
+          "symbol": "b"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 228,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "b",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 264,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "139549533e1967f93fb335f69db0a81d850ffc61645b434dc8bdcee27ae9720e",
+      "signals": 32,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "bu",
+      "through": "2026-09-18",
+      "trades": 24,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 213,
+      "frequency": "30m",
+      "indicators": 240,
+      "input_snapshot_hash": "6bf6ffb77b7341981d313cbf641defc66386d24cab4a4087de1bafcad24645bc",
+      "signals": 18,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "bu",
+      "through": "2026-09-18",
+      "trades": 8,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 159,
+      "frequency": "60m",
+      "indicators": 140,
+      "input_snapshot_hash": "a8383100d28e7a05aac96cfd29deae8bbfb29ee6450dce6044f5bf629979e001",
+      "signals": 7,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "bu",
+      "through": "2026-09-18",
+      "trades": 1,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 338,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "f746d9755875b168c01df9a5693ce63a398de18308f11d5b6d516844346a72cb",
+      "signals": 6,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "bu",
+      "through": "2026-09-18",
+      "trades": 5,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 269,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "3b4f7645193d99427cdcd4466503a6dd8d0cbfd938461a0d2fb3fb3740d355ed",
+      "signals": 20,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "bz",
+      "through": "2026-09-18",
+      "trades": 10,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 174,
+      "frequency": "30m",
+      "indicators": 240,
+      "input_snapshot_hash": "2ceb65f108bceb33ccc28043741f36a624e7a894d4fd6c9dcf1083493b937c14",
+      "signals": 12,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "bz",
+      "through": "2026-09-18",
+      "trades": 7,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 152,
+      "frequency": "60m",
+      "indicators": 140,
+      "input_snapshot_hash": "f0c28ce9768daf2be0e2dc91206ff4dc7c3d72b5c24b482cf7508616870dd2c5",
+      "signals": 7,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "bz",
+      "through": "2026-09-18",
+      "trades": 5,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "PRICE_UNAVAILABLE",
+      "elapsed_ms": 54,
+      "frequency": "1d",
+      "reason": null,
+      "status": "blocked",
+      "symbol": "bz",
+      "page": {
+        "navigation": "ok",
+        "api": null,
+        "apiCode": null,
+        "hashMatch": null,
+        "workspace": 0,
+        "chart": 0,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 0
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 247,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "9a250f8b6cb9d3ed7024f88b4af79fe587fc72a7432d0ebb68989615244d1649",
+      "signals": 28,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "c",
+      "through": "2026-09-18",
+      "trades": 18,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "C2611",
+          "expected_count": 2464,
+          "frequency": "30m",
+          "symbol": "c"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 79,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "c",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "C2611",
+          "expected_count": 1439,
+          "frequency": "60m",
+          "symbol": "c"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 60,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "c",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "C2609",
+          "expected_count": 221,
+          "frequency": "1d",
+          "symbol": "c"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 216,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "c",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 211,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "00a304c2e7618ad357e8ff570767a580a6b21297aacdfe668c92fcf9f89d71fe",
+      "signals": 23,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "cf",
+      "through": "2026-09-18",
+      "trades": 9,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "CF2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "cf"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 65,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "cf",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "CF2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "cf"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 59,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "cf",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "CF2609",
+          "expected_count": 220,
+          "frequency": "1d",
+          "symbol": "cf"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 153,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "cf",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 203,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "959cb6997a0aa76d80c6afd3f31c2fabe49c488e94c526006546df2f2199a3fd",
+      "signals": 12,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "cj",
+      "through": "2026-09-18",
+      "trades": 10,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "CJ2701",
+          "expected_count": 1312,
+          "frequency": "30m",
+          "symbol": "cj"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 65,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "cj",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "CJ2701",
+          "expected_count": 820,
+          "frequency": "60m",
+          "symbol": "cj"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 67,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "cj",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 228,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "2e6f0834c32f06195ca7e373f587b0365276280c74cdde0a0ac8aab54ae38262",
+      "signals": 7,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "cj",
+      "through": "2026-09-18",
+      "trades": 6,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "CU2609",
+          "expected_count": 6910,
+          "frequency": "15m",
+          "symbol": "cu"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 106,
+      "frequency": "15m",
+      "status": "blocked",
+      "symbol": "cu",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "CU2609",
+          "expected_count": 3568,
+          "frequency": "30m",
+          "symbol": "cu"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 83,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "cu",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "CU2609",
+          "expected_count": 2010,
+          "frequency": "60m",
+          "symbol": "cu"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 103,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "cu",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "CU2608",
+          "expected_count": 221,
+          "frequency": "1d",
+          "symbol": "cu"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 278,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "cu",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 334,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "36350a185355dc912737d96175376a5d301e9583f184e97531a0e0aec3f2781a",
+      "signals": 23,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "eb",
+      "through": "2026-09-18",
+      "trades": 16,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "EB2610",
+          "expected_count": 2620,
+          "frequency": "30m",
+          "symbol": "eb"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 80,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "eb",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "EB2610",
+          "expected_count": 1530,
+          "frequency": "60m",
+          "symbol": "eb"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 64,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "eb",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "PRICE_UNAVAILABLE",
+      "elapsed_ms": 160,
+      "frequency": "1d",
+      "reason": null,
+      "status": "blocked",
+      "symbol": "eb",
+      "page": {
+        "navigation": "ok",
+        "api": null,
+        "apiCode": null,
+        "hashMatch": null,
+        "workspace": 0,
+        "chart": 0,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 0
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 203,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "15388e0a8d10e3b84b79359872e0c88ce8e61dcdbe4ec34534b5fce930e3aec5",
+      "signals": 17,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ec",
+      "through": "2026-09-18",
+      "trades": 12,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "EC2610",
+          "expected_count": 1768,
+          "frequency": "30m",
+          "symbol": "ec"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 66,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "ec",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "EC2610",
+          "expected_count": 1105,
+          "frequency": "60m",
+          "symbol": "ec"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 65,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "ec",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 278,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "0b974a7270cde794dae77eeab12a7b6f43feac43c83445b02128e1aa6676eeb1",
+      "signals": 5,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "ec",
+      "through": "2026-09-18",
+      "trades": 4,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 258,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "6978cfc2a4822be25a10cf5823d8a6c17048388c54f2305558ebea70ba0f89d2",
+      "signals": 34,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "eg",
+      "through": "2026-09-18",
+      "trades": 19,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "EG2610",
+          "expected_count": 2620,
+          "frequency": "30m",
+          "symbol": "eg"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 76,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "eg",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "EG2610",
+          "expected_count": 1530,
+          "frequency": "60m",
+          "symbol": "eg"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 97,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "eg",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 229,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "a78262e3c6384338aa73903569972a0c63001ccf2c7f4334bd4b43e78dd3ba88",
+      "signals": 6,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "eg",
+      "through": "2026-09-18",
+      "trades": 6,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 208,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "78c832d522dc0468c24892beda75184217cf896cd23862b5c77be8c1e3cd5216",
+      "signals": 14,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "fg",
+      "through": "2026-09-18",
+      "trades": 10,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "FG2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "fg"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 63,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "fg",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "FG2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "fg"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 57,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "fg",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "FG2609",
+          "expected_count": 223,
+          "frequency": "1d",
+          "symbol": "fg"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 170,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "fg",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 288,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "5931a8da51578c1a2d5cc42b0513377cc36dc79729f081b3c6a3b2d7ae9793b9",
+      "signals": 24,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "fu",
+      "through": "2026-09-18",
+      "trades": 18,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "FU2611",
+          "expected_count": 2584,
+          "frequency": "30m",
+          "symbol": "fu"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 68,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "fu",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "FU2611",
+          "expected_count": 1509,
+          "frequency": "60m",
+          "symbol": "fu"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 69,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "fu",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "FU2609",
+          "expected_count": 235,
+          "frequency": "1d",
+          "symbol": "fu"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 257,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "fu",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "HC2610",
+          "expected_count": 4928,
+          "frequency": "15m",
+          "symbol": "hc"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 134,
+      "frequency": "15m",
+      "status": "blocked",
+      "symbol": "hc",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "HC2610",
+          "expected_count": 2572,
+          "frequency": "30m",
+          "symbol": "hc"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 94,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "hc",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "HC2610",
+          "expected_count": 1502,
+          "frequency": "60m",
+          "symbol": "hc"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 84,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "hc",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 252,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "a08b5c8951a6862642b4bf51a0447e25ab134a866352e86744287defc93e5fc0",
+      "signals": 4,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "hc",
+      "through": "2026-09-18",
+      "trades": 4,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 210,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "4b20149346dbe90ddb0482f82fe7dbbffda203ff031e53177f55dcaeeb795c40",
+      "signals": 27,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "i",
+      "through": "2026-09-18",
+      "trades": 17,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "I2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "i"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 72,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "i",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "I2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "i"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 61,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "i",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "I2609",
+          "expected_count": 219,
+          "frequency": "1d",
+          "symbol": "i"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 177,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "i",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 413,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "6b6540698e4d12db370c21d54bcf055ba605a84407b746b0f8119c8012984e1e",
+      "signals": 17,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "j",
+      "through": "2026-09-18",
+      "trades": 12,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "J2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "j"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 67,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "j",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "J2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "j"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 68,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "j",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "J2609",
+          "expected_count": 224,
+          "frequency": "1d",
+          "symbol": "j"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 154,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "j",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 365,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "fe27c7e82470619e60491d4192b0a408478c9aa48f6fa88815ce94a5c44d58a7",
+      "signals": 18,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "jd",
+      "through": "2026-09-18",
+      "trades": 17,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "JD2610",
+          "expected_count": 1688,
+          "frequency": "30m",
+          "symbol": "jd"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 72,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "jd",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "JD2610",
+          "expected_count": 1055,
+          "frequency": "60m",
+          "symbol": "jd"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 60,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "jd",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 435,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "02d3a2178c5269adbae5b56bc75a0c7029b8ecd0d3e89b01a4a02b74f34bc627",
+      "signals": 5,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "jd",
+      "through": "2026-09-18",
+      "trades": 4,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 223,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "2951ee0e9898457d71c53ec93f8d67681aff3c6fd319b4eae4b97607c42e03f2",
+      "signals": 20,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "jm",
+      "through": "2026-09-18",
+      "trades": 16,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "JM2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "jm"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 60,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "jm",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "JM2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "jm"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 58,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "jm",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "JM2609",
+          "expected_count": 223,
+          "frequency": "1d",
+          "symbol": "jm"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 144,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "jm",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 239,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "b7585aef71be5a1bb95e88f73603c5c4e8c673d6752e13ff279d09c76b28ddc7",
+      "signals": 24,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "l",
+      "through": "2026-09-18",
+      "trades": 18,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "L2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "l"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 60,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "l",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "L2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "l"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 61,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "l",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "L2609",
+          "expected_count": 224,
+          "frequency": "1d",
+          "symbol": "l"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 206,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "l",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 269,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "be3b5fb59b8be9cff3a65bfb2467037d6162d373beacb98e2eb5e5696c68343c",
+      "signals": 12,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "lc",
+      "through": "2026-09-18",
+      "trades": 6,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "LC2701",
+          "expected_count": 1312,
+          "frequency": "30m",
+          "symbol": "lc"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 64,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "lc",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "LC2701",
+          "expected_count": 820,
+          "frequency": "60m",
+          "symbol": "lc"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 55,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "lc",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 210,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "d5f2e1510c482568025318ab8dcb3b155a7c829061db0c81ac41ad8e61ee06de",
+      "signals": 4,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "lc",
+      "through": "2026-09-18",
+      "trades": 3,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 197,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "cdd023ff0c51d7137b0f43c46f87c7d7cc7f162124e8f2287797b917c009e959",
+      "signals": 10,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "lh",
+      "through": "2026-09-18",
+      "trades": 7,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "LH2611",
+          "expected_count": 1600,
+          "frequency": "30m",
+          "symbol": "lh"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 66,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "lh",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "LH2611",
+          "expected_count": 1000,
+          "frequency": "60m",
+          "symbol": "lh"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 63,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "lh",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 305,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "d992206484d727e48cff9ed44784a32b9114e8db7cc7ce84e3b099cb01269672",
+      "signals": 7,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "lh",
+      "through": "2026-09-18",
+      "trades": 7,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 217,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "189271b29f4836f8575e55102000a20cd7f873084023bdd66744df4bd1166037",
+      "signals": 19,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "m",
+      "through": "2026-09-18",
+      "trades": 14,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "M2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "m"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 78,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "m",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "M2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "m"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 62,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "m",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "M2609",
+          "expected_count": 217,
+          "frequency": "1d",
+          "symbol": "m"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 177,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "m",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 271,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "059da01c368b41a9e1a87d7146e0425f60bea4b75dd15e6f21a51f0471ce1460",
+      "signals": 28,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ma",
+      "through": "2026-09-18",
+      "trades": 18,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "MA2610",
+          "expected_count": 2668,
+          "frequency": "30m",
+          "symbol": "ma"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 64,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "ma",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "MA2610",
+          "expected_count": 1558,
+          "frequency": "60m",
+          "symbol": "ma"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 64,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "ma",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "MA2609",
+          "expected_count": 220,
+          "frequency": "1d",
+          "symbol": "ma"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 165,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "ma",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "NI2609",
+          "expected_count": 6910,
+          "frequency": "15m",
+          "symbol": "ni"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 112,
+      "frequency": "15m",
+      "status": "blocked",
+      "symbol": "ni",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "NI2609",
+          "expected_count": 3568,
+          "frequency": "30m",
+          "symbol": "ni"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 80,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "ni",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "NI2609",
+          "expected_count": 2010,
+          "frequency": "60m",
+          "symbol": "ni"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 79,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "ni",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 497,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "d82b756e248c4cf0bf59ce3e19936ee9c9be7cd293a002e379c61235c0e9ba73",
+      "signals": 6,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "ni",
+      "through": "2026-09-18",
+      "trades": 5,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 447,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "e399b15c809ff30425ae9c8c4910396b58da502f92b0c4f0431153163831b243",
+      "signals": 27,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "oi",
+      "through": "2026-09-18",
+      "trades": 20,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "OI2611",
+          "expected_count": 2368,
+          "frequency": "30m",
+          "symbol": "oi"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 76,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "oi",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "OI2611",
+          "expected_count": 1383,
+          "frequency": "60m",
+          "symbol": "oi"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 63,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "oi",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "OI2609",
+          "expected_count": 223,
+          "frequency": "1d",
+          "symbol": "oi"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 168,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "oi",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 222,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "68a0f3c93f74b6cef731beea2ec8dbe42ba1a4ef65449c8580051b8717195722",
+      "signals": 20,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "p",
+      "through": "2026-09-18",
+      "trades": 12,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "P2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "p"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 64,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "p",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "P2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "p"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 89,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "p",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "P2609",
+          "expected_count": 218,
+          "frequency": "1d",
+          "symbol": "p"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 213,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "p",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 370,
+      "frequency": "15m",
+      "indicators": 620,
+      "input_snapshot_hash": "b0098144a9a361ec14cf45ff274c0b5bfa299474424950f02c69146da3b5d251",
+      "signals": 24,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "pb",
+      "through": "2026-09-18",
+      "trades": 15,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PB2610",
+          "expected_count": 3624,
+          "frequency": "30m",
+          "symbol": "pb"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 96,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "pb",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PB2610",
+          "expected_count": 2041,
+          "frequency": "60m",
+          "symbol": "pb"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 67,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "pb",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PB2608",
+          "expected_count": 220,
+          "frequency": "1d",
+          "symbol": "pb"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 270,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "pb",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 177,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "e37072e6934c99dca6ded6ee9858bb29ddc0d70bc76fa744e31be783657d7116",
+      "signals": 10,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "pd",
+      "through": "2026-09-18",
+      "trades": 5,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PD2610",
+          "expected_count": 1592,
+          "frequency": "30m",
+          "symbol": "pd"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 53,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "pd",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 135,
+      "frequency": "60m",
+      "indicators": 100,
+      "input_snapshot_hash": "0b72509f6a2ff6354ed66370d8e55ef52de68e81361a088a0e6146f479238268",
+      "signals": 5,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "pd",
+      "through": "2026-09-18",
+      "trades": 6,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 175,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "c76b86006a97f6e79bdc1a462685c864bfa008ecaa0111a7ed0c1e2ef569fac7",
+      "signals": 8,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "pd",
+      "through": "2026-09-18",
+      "trades": 7,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PF2610",
+          "expected_count": 4859,
+          "frequency": "15m",
+          "symbol": "pf"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 81,
+      "frequency": "15m",
+      "status": "blocked",
+      "symbol": "pf",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PF2610",
+          "expected_count": 2536,
+          "frequency": "30m",
+          "symbol": "pf"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 75,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "pf",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PF2610",
+          "expected_count": 1481,
+          "frequency": "60m",
+          "symbol": "pf"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 68,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "pf",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PF2609",
+          "expected_count": 213,
+          "frequency": "1d",
+          "symbol": "pf"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 294,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "pf",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 308,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "768ae883ca7b27e2e6bb3ddc76c70c1111e1b9acab8fbe5cb3a60aef44818094",
+      "signals": 27,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "pg",
+      "through": "2026-09-18",
+      "trades": 14,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PG2610",
+          "expected_count": 2620,
+          "frequency": "30m",
+          "symbol": "pg"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 76,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "pg",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PG2610",
+          "expected_count": 1530,
+          "frequency": "60m",
+          "symbol": "pg"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 65,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "pg",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "PRICE_UNAVAILABLE",
+      "elapsed_ms": 95,
+      "frequency": "1d",
+      "reason": null,
+      "status": "blocked",
+      "symbol": "pg",
+      "page": {
+        "navigation": "ok",
+        "api": null,
+        "apiCode": null,
+        "hashMatch": null,
+        "workspace": 0,
+        "chart": 0,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 0
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 216,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "a9eb48458e53b45ccbfe4269682abd4c621ebcc44c84422c22da3e779cbae0bb",
+      "signals": 12,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "pk",
+      "through": "2026-09-18",
+      "trades": 8,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PK2611",
+          "expected_count": 1656,
+          "frequency": "30m",
+          "symbol": "pk"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 62,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "pk",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PK2611",
+          "expected_count": 1035,
+          "frequency": "60m",
+          "symbol": "pk"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 57,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "pk",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "diagnostic": null,
+      "elapsed_ms": 178,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "pk",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      },
+      "blocker_detail": {
+        "reason": "NONPOSITIVE_CLOSE_IN_PHYSICAL_PREFIX",
+        "count": 1,
+        "first_contract": "PK2611",
+        "first_trading_day": "2025-12-19"
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 269,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "8303c67501e1dced25ccd8eecc0815c4418c006cf78e5350ac1f6e114fc3a991",
+      "signals": 22,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "pl",
+      "through": "2026-09-18",
+      "trades": 12,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PL2611",
+          "expected_count": 2464,
+          "frequency": "30m",
+          "symbol": "pl"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 53,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "pl",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PL2611",
+          "expected_count": 1439,
+          "frequency": "60m",
+          "symbol": "pl"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 49,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "pl",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PL2609",
+          "expected_count": 212,
+          "frequency": "1d",
+          "symbol": "pl"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 157,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "pl",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 213,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "edef9502fd11f5d12784412eb97ec0b030fe059585a33381633e07fda0bb9ff3",
+      "signals": 24,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "pp",
+      "through": "2026-09-18",
+      "trades": 14,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PP2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "pp"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 81,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "pp",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PP2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "pp"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 53,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "pp",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PP2609",
+          "expected_count": 224,
+          "frequency": "1d",
+          "symbol": "pp"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 136,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "pp",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 230,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "68ab0395821194c9813cefa279d914396509816e232719b37a95f0cad67fc300",
+      "signals": 31,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "pr",
+      "through": "2026-09-18",
+      "trades": 23,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PR2611",
+          "expected_count": 2464,
+          "frequency": "30m",
+          "symbol": "pr"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 70,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "pr",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PR2611",
+          "expected_count": 1439,
+          "frequency": "60m",
+          "symbol": "pr"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 71,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "pr",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PR2609",
+          "expected_count": 214,
+          "frequency": "1d",
+          "symbol": "pr"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 224,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "pr",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 179,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "c5f8593e9d8e99beb1abcc8a8f006a8103ceb507ff968506926491fe4bc7b9be",
+      "signals": 23,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ps",
+      "through": "2026-09-18",
+      "trades": 20,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PS2611",
+          "expected_count": 1656,
+          "frequency": "30m",
+          "symbol": "ps"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 50,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "ps",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PS2611",
+          "expected_count": 1035,
+          "frequency": "60m",
+          "symbol": "ps"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 47,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "ps",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 283,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "77b744687ef2d4fc44b76454f7db542f20485b85b3a3dc93e9e8dc1b2ef9ab38",
+      "signals": 7,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "ps",
+      "through": "2026-09-18",
+      "trades": 7,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 318,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "e21e8d84a440476436765782b1b227e2b5ba7fc32b3e7aabf6afd0d4752f229d",
+      "signals": 9,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "pt",
+      "through": "2026-09-18",
+      "trades": 6,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PT2610",
+          "expected_count": 1576,
+          "frequency": "30m",
+          "symbol": "pt"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 51,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "pt",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 209,
+      "frequency": "60m",
+      "indicators": 100,
+      "input_snapshot_hash": "65ac085cad514a4b6a3e5c532808281c28a43076d9d1350d8b73a7c0fc4c22b9",
+      "signals": 2,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "pt",
+      "through": "2026-09-18",
+      "trades": 3,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 218,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "8b513eac6fcd185e3ed9a948e9f45da02eb4f1c52c78ddcedafa393bb224ee45",
+      "signals": 4,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "pt",
+      "through": "2026-09-18",
+      "trades": 4,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 253,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "3d42363c5d2bbf4838f13a73dce14aea953f7ab98e28bdfc98c16bb7e80b9879",
+      "signals": 22,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "px",
+      "through": "2026-09-18",
+      "trades": 16,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PX2611",
+          "expected_count": 2464,
+          "frequency": "30m",
+          "symbol": "px"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 66,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "px",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PX2611",
+          "expected_count": 1439,
+          "frequency": "60m",
+          "symbol": "px"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 86,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "px",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "PX2609",
+          "expected_count": 215,
+          "frequency": "1d",
+          "symbol": "px"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 236,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "px",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "RB2610",
+          "expected_count": 4928,
+          "frequency": "15m",
+          "symbol": "rb"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 138,
+      "frequency": "15m",
+      "status": "blocked",
+      "symbol": "rb",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "RB2610",
+          "expected_count": 2572,
+          "frequency": "30m",
+          "symbol": "rb"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 94,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "rb",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 294,
+      "frequency": "60m",
+      "indicators": 140,
+      "input_snapshot_hash": "ce7cdf15cc2ffcd4472ff5767fb0ce45e88ef785b86f5d39037ae77920c0a659",
+      "signals": 8,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "rb",
+      "through": "2026-09-18",
+      "trades": 7,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 249,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "c3151039b48485887dc3c6390c7aedc2e19df933028b68de90d8e56b0309c031",
+      "signals": 7,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "rb",
+      "through": "2026-09-18",
+      "trades": 6,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 296,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "7c6f36b93d774ad2544a06de5fcd8206ebb3e086f27e19793248b1781d9bba00",
+      "signals": 21,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "rm",
+      "through": "2026-09-18",
+      "trades": 15,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "RM2611",
+          "expected_count": 2464,
+          "frequency": "30m",
+          "symbol": "rm"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 77,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "rm",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "RM2611",
+          "expected_count": 1439,
+          "frequency": "60m",
+          "symbol": "rm"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 92,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "rm",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "RM2609",
+          "expected_count": 221,
+          "frequency": "1d",
+          "symbol": "rm"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 159,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "rm",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 488,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "cfa55b2c3689bfa666f99567be979487d735341a09bfddd3bf540fcde8c90b84",
+      "signals": 11,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "rs",
+      "through": "2026-09-18",
+      "trades": 8,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "RS2609",
+          "expected_count": 1928,
+          "frequency": "30m",
+          "symbol": "rs"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 96,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "rs",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "RS2609",
+          "expected_count": 1205,
+          "frequency": "60m",
+          "symbol": "rs"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 85,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "rs",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "diagnostic": null,
+      "elapsed_ms": 201,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "rs",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      },
+      "blocker_detail": {
+        "reason": "NONPOSITIVE_CLOSE_IN_PHYSICAL_PREFIX",
+        "count": 229,
+        "first_contract": "RS2609",
+        "first_trading_day": "2025-09-15"
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 210,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "0847caa87d45c49ecbf2707efb7b6e8ce09c5373577da62479c22169bd08d925",
+      "signals": 27,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ru",
+      "through": "2026-09-18",
+      "trades": 14,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "RU2701",
+          "expected_count": 1964,
+          "frequency": "30m",
+          "symbol": "ru"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 70,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "ru",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "RU2701",
+          "expected_count": 1147,
+          "frequency": "60m",
+          "symbol": "ru"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 61,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "ru",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 243,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "f12e843d2599038823a16743570d309fcf80b0882e5438292587be4c409853d2",
+      "signals": 7,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "ru",
+      "through": "2026-09-18",
+      "trades": 5,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 210,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "3d65f62d71395e948c694f6a0f061783122ebf0a8cd399164e3707c1dfaf5fd2",
+      "signals": 24,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "sa",
+      "through": "2026-09-18",
+      "trades": 18,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SA2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "sa"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 63,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "sa",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SA2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "sa"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 60,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "sa",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SA2609",
+          "expected_count": 223,
+          "frequency": "1d",
+          "symbol": "sa"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 139,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "sa",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 739,
+      "frequency": "15m",
+      "indicators": 740,
+      "input_snapshot_hash": "0f198131a5ad16eab8115120f5459dd7906045474f1e2874e7048ccfd5d2f7fb",
+      "signals": 36,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "sc",
+      "through": "2026-09-18",
+      "trades": 18,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SC2610",
+          "expected_count": 4323,
+          "frequency": "30m",
+          "symbol": "sc"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 93,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "sc",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SC2610",
+          "expected_count": 2505,
+          "frequency": "60m",
+          "symbol": "sc"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 66,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "sc",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SC2611",
+          "expected_count": 217,
+          "frequency": "1d",
+          "symbol": "sc"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 566,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "sc",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 216,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "61969df75d2bd940ae9a02c19efb274be973c38703bcc658ac610bdc8a407521",
+      "signals": 24,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "sf",
+      "through": "2026-09-18",
+      "trades": 20,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SF2611",
+          "expected_count": 1656,
+          "frequency": "30m",
+          "symbol": "sf"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 56,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "sf",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SF2611",
+          "expected_count": 1035,
+          "frequency": "60m",
+          "symbol": "sf"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 52,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "sf",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "diagnostic": null,
+      "elapsed_ms": 234,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "sf",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      },
+      "blocker_detail": {
+        "reason": "NONPOSITIVE_CLOSE_IN_PHYSICAL_PREFIX",
+        "count": 15,
+        "first_contract": "SF2605",
+        "first_trading_day": "2025-05-20"
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 325,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "b1a1cd5399c0478178a75e3af0cdff8fea526675e898e8f2500101a55926601a",
+      "signals": 16,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "sh",
+      "through": "2026-09-18",
+      "trades": 15,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SH2611",
+          "expected_count": 2464,
+          "frequency": "30m",
+          "symbol": "sh"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 60,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "sh",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SH2611",
+          "expected_count": 1439,
+          "frequency": "60m",
+          "symbol": "sh"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 60,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "sh",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SH2609",
+          "expected_count": 220,
+          "frequency": "1d",
+          "symbol": "sh"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 173,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "sh",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 200,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "0dcf39b0bdd9484966dc3c27c99dbdade9b4a667a029c6d10b1986e34657a1f2",
+      "signals": 13,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "si",
+      "through": "2026-09-18",
+      "trades": 10,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SI2611",
+          "expected_count": 1656,
+          "frequency": "30m",
+          "symbol": "si"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 55,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "si",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SI2611",
+          "expected_count": 1035,
+          "frequency": "60m",
+          "symbol": "si"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 53,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "si",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 207,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "f799ddf7bea645f6e083c55430b0f59b90ffd23f69affc71413215c0c97a91e3",
+      "signals": 9,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "si",
+      "through": "2026-09-18",
+      "trades": 8,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 182,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "91a1fd66cc776a92345b85a9565fd49c897efaba68a823c25291fde756014578",
+      "signals": 19,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "sm",
+      "through": "2026-09-18",
+      "trades": 13,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SM2611",
+          "expected_count": 1656,
+          "frequency": "30m",
+          "symbol": "sm"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 59,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "sm",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SM2611",
+          "expected_count": 1035,
+          "frequency": "60m",
+          "symbol": "sm"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 79,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "sm",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_CONFLICT",
+      "diagnostic": null,
+      "elapsed_ms": 235,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "sm",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_CONFLICT",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      },
+      "blocker_detail": {
+        "reason": "NONPOSITIVE_CLOSE_IN_PHYSICAL_PREFIX",
+        "count": 43,
+        "first_contract": "SM2607",
+        "first_trading_day": "2025-07-15"
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SN2609",
+          "expected_count": 6941,
+          "frequency": "15m",
+          "symbol": "sn"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 93,
+      "frequency": "15m",
+      "status": "blocked",
+      "symbol": "sn",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SN2609",
+          "expected_count": 3584,
+          "frequency": "30m",
+          "symbol": "sn"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 71,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "sn",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SN2609",
+          "expected_count": 2019,
+          "frequency": "60m",
+          "symbol": "sn"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 65,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "sn",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SN2608",
+          "expected_count": 227,
+          "frequency": "1d",
+          "symbol": "sn"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 270,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "sn",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 205,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "d91185986a7eb8d5201cb51b2c7340084d0451a73fdb1f6c066a3600bdfc785b",
+      "signals": 25,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "sr",
+      "through": "2026-09-18",
+      "trades": 16,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SR2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "sr"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 61,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "sr",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SR2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "sr"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 56,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "sr",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SR2609",
+          "expected_count": 219,
+          "frequency": "1d",
+          "symbol": "sr"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 157,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "sr",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 619,
+      "frequency": "15m",
+      "indicators": 620,
+      "input_snapshot_hash": "b4ed3ba0d1d35717f72ca1414c05ab54122a1e33ea9ea0e896202e9b74ec37f2",
+      "signals": 30,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ss",
+      "through": "2026-09-18",
+      "trades": 19,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SS2610",
+          "expected_count": 3592,
+          "frequency": "30m",
+          "symbol": "ss"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 68,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "ss",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SS2610",
+          "expected_count": 2023,
+          "frequency": "60m",
+          "symbol": "ss"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 65,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "ss",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "SS2608",
+          "expected_count": 220,
+          "frequency": "1d",
+          "symbol": "ss"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 256,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "ss",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 223,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "0084664025d81c8138666e8759cb51805325b7b8461b73614c036f0cfc3b4a50",
+      "signals": 25,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ta",
+      "through": "2026-09-18",
+      "trades": 17,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "TA2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "ta"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 57,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "ta",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "TA2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "ta"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 53,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "ta",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "TA2609",
+          "expected_count": 224,
+          "frequency": "1d",
+          "symbol": "ta"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 135,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "ta",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 177,
+      "frequency": "15m",
+      "indicators": 300,
+      "input_snapshot_hash": "dd32031274584bf203bd25026798e2cd53cdeaf2d39b683c48b8002b62a3345e",
+      "signals": 18,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "ur",
+      "through": "2026-09-18",
+      "trades": 16,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "UR2701",
+          "expected_count": 1312,
+          "frequency": "30m",
+          "symbol": "ur"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 52,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "ur",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "UR2701",
+          "expected_count": 820,
+          "frequency": "60m",
+          "symbol": "ur"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 49,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "ur",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 191,
+      "frequency": "1d",
+      "indicators": 120,
+      "input_snapshot_hash": "f1563ab97f07e026a8ceafb12caa71651d64d21219daf7f917b23fd2636a8c0a",
+      "signals": 11,
+      "since": "2026-03-30",
+      "status": "ready",
+      "symbol": "ur",
+      "through": "2026-09-18",
+      "trades": 9,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 202,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "5bed4ea8f2d962a06d2e41e98f8b12e0cbf10544cde0f2bb85360059c6c594cb",
+      "signals": 21,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "v",
+      "through": "2026-09-18",
+      "trades": 13,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "V2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "v"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 65,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "v",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "V2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "v"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 83,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "v",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "V2609",
+          "expected_count": 223,
+          "frequency": "1d",
+          "symbol": "v"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 145,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "v",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 212,
+      "frequency": "15m",
+      "indicators": 460,
+      "input_snapshot_hash": "d4f771173b6f99c4e2d2728d8c1a79da6ed510b6cded449962c6df6e37315812",
+      "signals": 24,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "y",
+      "through": "2026-09-18",
+      "trades": 14,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "Y2701",
+          "expected_count": 1952,
+          "frequency": "30m",
+          "symbol": "y"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 61,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "y",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "Y2701",
+          "expected_count": 1140,
+          "frequency": "60m",
+          "symbol": "y"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 82,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "y",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "Y2609",
+          "expected_count": 213,
+          "frequency": "1d",
+          "symbol": "y"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 159,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "y",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "elapsed_ms": 614,
+      "frequency": "15m",
+      "indicators": 620,
+      "input_snapshot_hash": "3f7d05ee1f83b52545e789f0d1842825b59b5809a74dab34b0eb5c5a065dbc11",
+      "signals": 29,
+      "since": "2026-08-24",
+      "status": "ready",
+      "symbol": "zn",
+      "through": "2026-09-18",
+      "trades": 15,
+      "page": {
+        "navigation": "ok",
+        "api": 200,
+        "apiCode": null,
+        "hashMatch": true,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 1,
+        "period": "15分",
+        "noAlert": null
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "ZN2610",
+          "expected_count": 3608,
+          "frequency": "30m",
+          "symbol": "zn"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 85,
+      "frequency": "30m",
+      "status": "blocked",
+      "symbol": "zn",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "30分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "ZN2610",
+          "expected_count": 2032,
+          "frequency": "60m",
+          "symbol": "zn"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 65,
+      "frequency": "60m",
+      "status": "blocked",
+      "symbol": "zn",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "60分",
+        "noAlert": 1
+      }
+    },
+    {
+      "as_of": "2026-09-18T18:30:00+08:00",
+      "code": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+      "diagnostic": {
+        "context": {
+          "contract": "ZN2608",
+          "expected_count": 221,
+          "frequency": "1d",
+          "symbol": "zn"
+        },
+        "reason": "DATASET_OR_PARTITION_MISSING",
+        "stage": "physical_contract_replay"
+      },
+      "elapsed_ms": 250,
+      "frequency": "1d",
+      "status": "blocked",
+      "symbol": "zn",
+      "page": {
+        "navigation": "ok",
+        "api": 409,
+        "apiCode": "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "hashMatch": null,
+        "workspace": 1,
+        "chart": 1,
+        "summary": 0,
+        "period": "日线",
+        "noAlert": 1
+      }
+    }
+  ]
+}

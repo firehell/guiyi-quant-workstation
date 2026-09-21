@@ -571,7 +571,7 @@ def test_contract_warmup_parser_requires_apply_hash_and_rejects_abbreviations() 
             parser.parse_args(missing)
 
 
-@pytest.mark.parametrize("frequency", ("1d", "1w", "15m", "60m"))
+@pytest.mark.parametrize("frequency", ("1d", "1w", "15m", "30m", "60m"))
 def test_contract_warmup_parser_accepts_bounded_scope(frequency) -> None:
     parser = build_parser()
     common = [

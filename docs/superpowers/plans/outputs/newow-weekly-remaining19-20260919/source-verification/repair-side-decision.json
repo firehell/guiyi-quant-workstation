@@ -1,0 +1,1349 @@
+{
+  "schema_version": "newow_weekly_conflict_repair_side_decision_v1",
+  "status": "SOURCE_VERIFIED_NO_APPLY",
+  "apply_authorized": false,
+  "this_packet_is_not_apply_permission": true,
+  "canonical_writes": 0,
+  "catalog_writes": 0,
+  "retries": 0,
+  "stop_reason": null,
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "method": "futures.get_exchange_daily",
+  "attempt_id": "conflict-src-20260920-001",
+  "plan_sha256": "fdaf3c8a629f977810b71a01af82b743c9a74f0380eaf75e210590f13642e54f",
+  "catalog_revision": "fa01809910bfda3d93de9fe6e213cc46ee4c5463e81db7c5bf49fe56d4b1a8a7",
+  "code_sha": "3958b66d65e4aab45adc7c09db9d7e7450d7e387",
+  "artifact_sha256": {
+    "all-conflict-weeks.json": "0ec069562b75d4698bfd356db732a70da348a91e52ce502d358027ef2620e9c3",
+    "source-verification-plan.json": "6af9f0f0e25a00eacf3c3ffee96c55eb31721d1a28bf61c55380ca254499aff6",
+    "source-verification-result.json": "7e75b0a692a2e6c82e4d2ae49ab90d4a7791dc21379f62083bd3ce13f6b32b96",
+    "source-verification-preflight.json": "981d3e921161f4350dec6a44ef8a8ddac858179d704989fd148394694fa00999"
+  },
+  "attempt_evidence": {
+    "directory": "outputs/newow-weekly-remaining19-20260919/conflict-src-20260920-001",
+    "gitignored": true,
+    "journal_sha256": "d38a14e77a27a9485dbafa616466b9d46c6ec3099806501f0ffd141665d897fd",
+    "responses_saved": 21,
+    "licensed_rows_committed_to_repo": false
+  },
+  "summary": {
+    "contracts": 20,
+    "conflict_weeks": 21,
+    "provider_requests": 21,
+    "expected_source_rows": 105,
+    "classification_counts": {
+      "INCONCLUSIVE": 19,
+      "PROVIDER_MATCHES_NEITHER_D1_STALE": 2
+    },
+    "repair_target_counts": {
+      "D1_THEN_W1": 2,
+      "NONE": 19
+    },
+    "w1_partition_repairs": 0,
+    "d1_then_w1_candidates": 2,
+    "inconclusive_weeks": 19,
+    "source_stoppage": false,
+    "all_contracts_have_terminal_state": true
+  },
+  "decision_rules": {
+    "PROVIDER_MATCHES_D1_NOT_W1": "repair W1 from verified D1; none observed",
+    "PROVIDER_MATCHES_NEITHER_D1_STALE": "repair D1 from verified provider daily, then reaggregate affected W1; do not write W1 from current Catalog D1",
+    "PROVIDER_MATCHES_NEITHER": "INCONCLUSIVE; current provider is a third turnover; do not pick a side",
+    "forbidden": [
+      "overwrite stored W1 with current Catalog D1 aggregate",
+      "native weekly / get_price substitution",
+      "interpolation, rounding-to-green, or ignoring turnover",
+      "Canonical or Catalog writes from this packet"
+    ]
+  },
+  "contracts": [
+    {
+      "symbol": "b",
+      "contract": "B2501",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2024-W43"
+      ]
+    },
+    {
+      "symbol": "b",
+      "contract": "B2505",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2024-W51"
+      ]
+    },
+    {
+      "symbol": "b",
+      "contract": "B2511",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2025-W34"
+      ]
+    },
+    {
+      "symbol": "b",
+      "contract": "B2601",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2025-W44"
+      ]
+    },
+    {
+      "symbol": "b",
+      "contract": "B2605",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2025-W52"
+      ]
+    },
+    {
+      "symbol": "b",
+      "contract": "B2607",
+      "terminal_state": "JUDGED",
+      "week_count": 1,
+      "repair_targets": [
+        "D1_THEN_W1"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2026-W16"
+      ]
+    },
+    {
+      "symbol": "b",
+      "contract": "B2609",
+      "terminal_state": "MIXED",
+      "week_count": 2,
+      "repair_targets": [
+        "D1_THEN_W1",
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2026-W26",
+        "2026-W33"
+      ]
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2606",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": "turnover verification is not replay-gap repair; this product remains not READY from this packet",
+      "weeks": [
+        "2026-W17"
+      ]
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2608",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": "turnover verification is not replay-gap repair; this product remains not READY from this packet",
+      "weeks": [
+        "2026-W26"
+      ]
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2609",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": "turnover verification is not replay-gap repair; this product remains not READY from this packet",
+      "weeks": [
+        "2026-W30"
+      ]
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2309",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2023-W16"
+      ]
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2401",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2023-W32"
+      ]
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2409",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2024-W15"
+      ]
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2501",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2024-W30"
+      ]
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2505",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2024-W49"
+      ]
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2509",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2025-W16"
+      ]
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2601",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2025-W27"
+      ]
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2605",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2025-W50"
+      ]
+    },
+    {
+      "symbol": "eb",
+      "contract": "EB2405",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": "turnover verification is not replay-gap repair; this product remains not READY from this packet",
+      "weeks": [
+        "2024-W12"
+      ]
+    },
+    {
+      "symbol": "eg",
+      "contract": "EG2601",
+      "terminal_state": "INCONCLUSIVE",
+      "week_count": 1,
+      "repair_targets": [
+        "NONE"
+      ],
+      "bz_eb_note": null,
+      "weeks": [
+        "2025-W34"
+      ]
+    }
+  ],
+  "weeks": [
+    {
+      "symbol": "b",
+      "contract": "B2501",
+      "iso_year": 2024,
+      "iso_week": 43,
+      "week_end": "2024-10-25T07:00:00+00:00",
+      "daily_trading_days": [
+        "2024-10-21",
+        "2024-10-22",
+        "2024-10-23",
+        "2024-10-24",
+        "2024-10-25"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "b5f5c4cfcee47a133149c4b19646b15b71267d83b46733f320ec7298a2a92ca7",
+      "source_response_sha256": "a6aad39c42677cb48896ae483eeacf6572b587a07a438db34118f41c580247b5",
+      "turnover": {
+        "stored_w1": "14200597950",
+        "d1_aggregate": "14200598010",
+        "provider_aggregate": "14200598000",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 10,
+        "file_name": "part.ede7356e02a3965ca8198b80040d560cc8b9f8879ea49de7271c35f6b3bdaa53.parquet",
+        "row_count": 3,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 10,
+          "file_name": "part.86d6574c64879aae726f5e9de0bcf35b9ccd67f23168fe8098da14913d62d8b4.parquet",
+          "row_count": 18,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "b",
+      "contract": "B2505",
+      "iso_year": 2024,
+      "iso_week": 51,
+      "week_end": "2024-12-20T07:00:00+00:00",
+      "daily_trading_days": [
+        "2024-12-16",
+        "2024-12-17",
+        "2024-12-18",
+        "2024-12-19",
+        "2024-12-20"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "b579449d650eda679d04bb67ec1dd9c38b76d2416e235898f24817bd7b70e5eb",
+      "source_response_sha256": "2228768c8aef0764d7000f02fff940a9f21abe53d2ac72938e6140cacf176287",
+      "turnover": {
+        "stored_w1": "16142790030",
+        "d1_aggregate": "16142789970",
+        "provider_aggregate": "16142790000",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 12,
+        "file_name": "part.d00f54581cf7d0a2dd3d9c72d514e506a95c59e8b8a660c809bd717174f551d2.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 12,
+          "file_name": "part.3373f690ae5bf1b0ad513fd0bc1f204a59409346944c1e578833ebe79156b26e.parquet",
+          "row_count": 22,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "b",
+      "contract": "B2511",
+      "iso_year": 2025,
+      "iso_week": 34,
+      "week_end": "2025-08-22T07:00:00+00:00",
+      "daily_trading_days": [
+        "2025-08-18",
+        "2025-08-19",
+        "2025-08-20",
+        "2025-08-21",
+        "2025-08-22"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "657a68c762dd868eeefc506fafed6648cd87b8b99a3eeeefd958bb21a5a2ec1a",
+      "source_response_sha256": "8bfea3d34fed42428cf863a592172430b7657492416f0edbb1284f5e285896fd",
+      "turnover": {
+        "stored_w1": "15793187840",
+        "d1_aggregate": "15793187910",
+        "provider_aggregate": "15793187900",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 8,
+        "file_name": "part.50cbb515ccf775b41c08eddb18bb47a2f8affcfbfc222d49a16e0a35e8106287.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file_name": "part.2079f0e5379c6bcfedc2617c73e98291c78ba7b8b2206632623c7de2beccf694.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "b",
+      "contract": "B2601",
+      "iso_year": 2025,
+      "iso_week": 44,
+      "week_end": "2025-10-31T07:00:00+00:00",
+      "daily_trading_days": [
+        "2025-10-27",
+        "2025-10-28",
+        "2025-10-29",
+        "2025-10-30",
+        "2025-10-31"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "0501ba1ea8d9d569a99f01902de2765af484deb465bff19149e5ecda53aed3a3",
+      "source_response_sha256": "fb2fce47b38ab8a5f2be5315058d8d05e4b5feff85975296224b615ce8f602e3",
+      "turnover": {
+        "stored_w1": "22422453810",
+        "d1_aggregate": "22422453820",
+        "provider_aggregate": "22422453800",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 10,
+        "file_name": "part.6530afd224852ae4455604c2756cee53b97213b034be481c45f2f3cf7156b447.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 10,
+          "file_name": "part.48932247fb9ed0b152db629b54331206493cfe6ea0251438da0dc8ccbd4b8cec.parquet",
+          "row_count": 17,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "b",
+      "contract": "B2605",
+      "iso_year": 2025,
+      "iso_week": 52,
+      "week_end": "2025-12-26T07:00:00+00:00",
+      "daily_trading_days": [
+        "2025-12-22",
+        "2025-12-23",
+        "2025-12-24",
+        "2025-12-25",
+        "2025-12-26"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "2a0ef1a9d61f5c81b2b4e2a94212d5cb43775a4b4865aae2048f5309707cbb9d",
+      "source_response_sha256": "e281ac519f8d0bc24d9e7c3cd77921986eee9bd0f253a1abd39abc171fa1ea47",
+      "turnover": {
+        "stored_w1": "14695292850",
+        "d1_aggregate": "14695292810",
+        "provider_aggregate": "14695292800",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 12,
+        "file_name": "part.f447230568a55810563305f999edfe39d107801bad70d574131d416c404ff549.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 12,
+          "file_name": "part.421bfaf037af54fb7cef2a710ca071aa287396e3b90378bd74bd0d5aa045f26c.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "b",
+      "contract": "B2607",
+      "iso_year": 2026,
+      "iso_week": 16,
+      "week_end": "2026-04-17T07:00:00+00:00",
+      "daily_trading_days": [
+        "2026-04-13",
+        "2026-04-14",
+        "2026-04-15",
+        "2026-04-16",
+        "2026-04-17"
+      ],
+      "cross_month": false,
+      "terminal_state": "JUDGED",
+      "classification": "PROVIDER_MATCHES_NEITHER_D1_STALE",
+      "repair_target": "D1_THEN_W1",
+      "reason": "STORED_D1_TURNOVER_STALE",
+      "request_sha256": "c41fe26929e61e8c0682a6f0de996bb793f4330f1c05e9942db005779d78ddfb",
+      "source_response_sha256": "da9de3a878fb968fb9e75368a458a9153519878325834bc44703b2bd8b15b8be",
+      "turnover": {
+        "stored_w1": "13705003200",
+        "d1_aggregate": "13705003250",
+        "provider_aggregate": "13705003200",
+        "provider_equals_stored_w1": true,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 4,
+        "file_name": "part.636cf3f17d74ee5db12fccbde67331b25989476122edf95754002aba3d2033ff.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file_name": "part.d514af4751df66114e2c1b378ffc0933dc2dd2ac82eb98ab1e55d2d1b4983e9a.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider matches stored W1, not stored D1; writing D1 aggregate onto W1 would replace the source-matching weekly turnover with a stale daily sum",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "b",
+      "contract": "B2609",
+      "iso_year": 2026,
+      "iso_week": 26,
+      "week_end": "2026-06-26T07:00:00+00:00",
+      "daily_trading_days": [
+        "2026-06-22",
+        "2026-06-23",
+        "2026-06-24",
+        "2026-06-25",
+        "2026-06-26"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "b6257959220b8ed3362f56121d942988824240c339e3898fbf0765ee6f7f992f",
+      "source_response_sha256": "b351cb60ad4de624bbff2e434b9b3b5c0e6f8a9134551f287619ff4f50b83d58",
+      "turnover": {
+        "stored_w1": "23264411820",
+        "d1_aggregate": "23264411840",
+        "provider_aggregate": "23264411900",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 6,
+        "file_name": "part.32bee24837cc753099df179ef658a9d35a1208bc854417b1c2d2064ea6110b04.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 6,
+          "file_name": "part.22c90a7dcc78d88da083895062eed013af2fde9cd11551156b0192800d568aa4.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "b",
+      "contract": "B2609",
+      "iso_year": 2026,
+      "iso_week": 33,
+      "week_end": "2026-08-14T07:00:00+00:00",
+      "daily_trading_days": [
+        "2026-08-10",
+        "2026-08-11",
+        "2026-08-12",
+        "2026-08-13",
+        "2026-08-14"
+      ],
+      "cross_month": false,
+      "terminal_state": "JUDGED",
+      "classification": "PROVIDER_MATCHES_NEITHER_D1_STALE",
+      "repair_target": "D1_THEN_W1",
+      "reason": "STORED_D1_TURNOVER_STALE",
+      "request_sha256": "c25e0e66c5962d4bf5d0ddb7f493d445bf5dbbd863e8c1f57bdf3087290ad384",
+      "source_response_sha256": "5f55fa45235cdb22da560889e446b970a15a6634c8f1ea0ccd39a0d5f4944477",
+      "turnover": {
+        "stored_w1": "21031689100",
+        "d1_aggregate": "21031689130",
+        "provider_aggregate": "21031689100",
+        "provider_equals_stored_w1": true,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 8,
+        "file_name": "part.parquet",
+        "row_count": 2,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 8,
+          "file_name": "part.1967462587e1c3598078adcc3e253b500842958ae55ee12eaeeda75b4184aa2c.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider matches stored W1, not stored D1; writing D1 aggregate onto W1 would replace the source-matching weekly turnover with a stale daily sum",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2606",
+      "iso_year": 2026,
+      "iso_week": 17,
+      "week_end": "2026-04-24T07:00:00+00:00",
+      "daily_trading_days": [
+        "2026-04-20",
+        "2026-04-21",
+        "2026-04-22",
+        "2026-04-23",
+        "2026-04-24"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "c6a6d1dc11a4ed04ad2c14b741f25ca0a4a6d9a9dad0912361aa173b333cfb1d",
+      "source_response_sha256": "f2de743f181021de092cf7a0b0f956b6d2be99a8ba7b1508a679253991b51486",
+      "turnover": {
+        "stored_w1": "19694346120",
+        "d1_aggregate": "19694346070",
+        "provider_aggregate": "19694346100",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 4,
+        "file_name": "part.0fc2efa0978a29a6b39d1fa9917a9e372dfd42602b8aaabfb72ef6d0e7e00ddd.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 4,
+          "file_name": "part.cd10c04649962e9ca840da8dfe26d8bc88e098dbcc2c98ad9770873b977c9856.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": true,
+      "write_authorized": false
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2608",
+      "iso_year": 2026,
+      "iso_week": 26,
+      "week_end": "2026-06-26T07:00:00+00:00",
+      "daily_trading_days": [
+        "2026-06-22",
+        "2026-06-23",
+        "2026-06-24",
+        "2026-06-25",
+        "2026-06-26"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "a582e55b6e39d5bc5713a12455a8c413ca673150c2b40fc0a943b93e52ae08c4",
+      "source_response_sha256": "109d8e615667aaeb0bf8bac0a9b19c10ee704dcac36e4d6c65fd0c74511c804f",
+      "turnover": {
+        "stored_w1": "10568534850",
+        "d1_aggregate": "10568534870",
+        "provider_aggregate": "10568534800",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 6,
+        "file_name": "part.6a8fc17b3ba5f0375fb36c4b145c2a1b57ba341f394824ff8ab171e3ba5b5e03.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 6,
+          "file_name": "part.25a40bd63ab01634438defd6a4c88290400135b8a741d012202a752a44df0847.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": true,
+      "write_authorized": false
+    },
+    {
+      "symbol": "bz",
+      "contract": "BZ2609",
+      "iso_year": 2026,
+      "iso_week": 30,
+      "week_end": "2026-07-24T07:00:00+00:00",
+      "daily_trading_days": [
+        "2026-07-20",
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-23",
+        "2026-07-24"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "32ae17376b0ab8c7573b99377a88a13d089038b47489b4158077a47a900a6916",
+      "source_response_sha256": "ccbafd6d5ede744be6278fc6f8a3c32f25478b0e9048b0394ac738028e6c6ad2",
+      "turnover": {
+        "stored_w1": "33382436970",
+        "d1_aggregate": "33382436930",
+        "provider_aggregate": "33382436900",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2026,
+        "month": 7,
+        "file_name": "part.559e4f7c14e26647f59b9993981d1ade610544e9299df7e79104efead40e47c4.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2026,
+          "month": 7,
+          "file_name": "part.1e45849d5882992cc19793aba55d2fd5381e2e611d18699d65983f6872e2c3b7.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": true,
+      "write_authorized": false
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2309",
+      "iso_year": 2023,
+      "iso_week": 16,
+      "week_end": "2023-04-21T07:00:00+00:00",
+      "daily_trading_days": [
+        "2023-04-17",
+        "2023-04-18",
+        "2023-04-19",
+        "2023-04-20",
+        "2023-04-21"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "1617cc770176020242c31da962149c6624c6ef3b8a28916d5757bd9c1d812e01",
+      "source_response_sha256": "cc9a24f02aa3c45ada9c99119b99eae907fb30668499cd16a11c095cf13b4dbe",
+      "turnover": {
+        "stored_w1": "7381671475",
+        "d1_aggregate": "7381512325",
+        "provider_aggregate": "7380890300",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2023,
+        "month": 4,
+        "file_name": "part.441954a11a7185a4d4986bf59eb66f362bec1457f03a07a49b30a349ca87aae0.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2023,
+          "month": 4,
+          "file_name": "part.bf7d8f66179e867d46cc78ce5bd241b443ea054a64917a6ba166da5ed1fb6597.parquet",
+          "row_count": 19,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2401",
+      "iso_year": 2023,
+      "iso_week": 32,
+      "week_end": "2023-08-11T07:00:00+00:00",
+      "daily_trading_days": [
+        "2023-08-07",
+        "2023-08-08",
+        "2023-08-09",
+        "2023-08-10",
+        "2023-08-11"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "4cc983beafcf57a32a86f530331aa93b60913d12e55705f8590fc77e9600fb6e",
+      "source_response_sha256": "6d744e74bae59eb4e4f03ce41ff3e9d37759b6e11e9cc0a12b3629d44cf76d12",
+      "turnover": {
+        "stored_w1": "12534924100",
+        "d1_aggregate": "12534694000",
+        "provider_aggregate": "12534110600",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2023,
+        "month": 8,
+        "file_name": "part.c4e292ba536ba5fffc2e5a27d26ec956cc7c723951957a57ea7b73d1dcca2d0b.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2023,
+          "month": 8,
+          "file_name": "part.ba973143e564b5747e19e97ff8f4db2a03523f4d6c0b1c472642445465ec80b5.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2409",
+      "iso_year": 2024,
+      "iso_week": 15,
+      "week_end": "2024-04-12T07:00:00+00:00",
+      "daily_trading_days": [
+        "2024-04-08",
+        "2024-04-09",
+        "2024-04-10",
+        "2024-04-11",
+        "2024-04-12"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "3fffb1f20370ec27fb43bf7c8030daeccc11a9cd291c3a3aa9419d5fded5beb0",
+      "source_response_sha256": "88ccda53902c1e1f6193ab4da5bad1947853a8a885cf7b76cddf5a4f1482619b",
+      "turnover": {
+        "stored_w1": "7857102350",
+        "d1_aggregate": "7856991925",
+        "provider_aggregate": "7856251600",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 4,
+        "file_name": "part.4c09a6472c9589cfa62d32824ba051bbf3a418155ef1b19a4155f7c4c90be914.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 4,
+          "file_name": "part.dca73e3f839a67515b67f80cf4ffb63f995a8976ad4f5fa28c692f997251f15d.parquet",
+          "row_count": 20,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2501",
+      "iso_year": 2024,
+      "iso_week": 30,
+      "week_end": "2024-07-26T07:00:00+00:00",
+      "daily_trading_days": [
+        "2024-07-22",
+        "2024-07-23",
+        "2024-07-24",
+        "2024-07-25",
+        "2024-07-26"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "2fea60000df064c9c5b0dafc269a3e64b2ce048fe764d90184a28e48b09aa7a0",
+      "source_response_sha256": "7ce6a2c08017f04d00f7ad684958544fa6d1679e60706ef2296a1dcb88c015f5",
+      "turnover": {
+        "stored_w1": "6894761700",
+        "d1_aggregate": "6894830250",
+        "provider_aggregate": "6895294000",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 7,
+        "file_name": "part.85dec291eeb22c710a5e900ab6be137da2ca0400ff3e018ef9ddabfba052f21e.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 7,
+          "file_name": "part.9de2f22ad5171cf6b81defcfb8bca0a1db4d7ca96fd497ed1c29fd4286d30e7c.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2505",
+      "iso_year": 2024,
+      "iso_week": 49,
+      "week_end": "2024-12-06T07:00:00+00:00",
+      "daily_trading_days": [
+        "2024-12-02",
+        "2024-12-03",
+        "2024-12-04",
+        "2024-12-05",
+        "2024-12-06"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "4ae56c97a657c126208bd6f5ce6ec815a3a46ee5df44f3f7e0714fccba5bcb87",
+      "source_response_sha256": "68aa3abcb8d84b02e2ede138604c3ab9e37e0ba324ac70790b774ba750b41b15",
+      "turnover": {
+        "stored_w1": "12918978925",
+        "d1_aggregate": "12918762225",
+        "provider_aggregate": "12917900900",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 12,
+        "file_name": "part.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 12,
+          "file_name": "part.cb87bbd77cb49cbb04eca2d1f4f23977085d2a828e5e0466e760c09f817b6203.parquet",
+          "row_count": 22,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2509",
+      "iso_year": 2025,
+      "iso_week": 16,
+      "week_end": "2025-04-18T07:00:00+00:00",
+      "daily_trading_days": [
+        "2025-04-14",
+        "2025-04-15",
+        "2025-04-16",
+        "2025-04-17",
+        "2025-04-18"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "8f55c1ee51da16568ba8dd5f9a124dca5d97704846ef00d432ee2a2efb6da606",
+      "source_response_sha256": "84149f589c9900f0d912133d836e98a1525e3ab4a80ed9def9e6553202376ca7",
+      "turnover": {
+        "stored_w1": "11324631100",
+        "d1_aggregate": "11324549625",
+        "provider_aggregate": "11325375800",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 4,
+        "file_name": "part.99717a987a0de80e5a77b0f3584359fbf674be1fdadd997c1d3d396b31aadc7c.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 4,
+          "file_name": "part.e43a8fcaac84932bf5677a74a707a6fe66a86bcb7c1be6b3e99f90d80c13b028.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2601",
+      "iso_year": 2025,
+      "iso_week": 27,
+      "week_end": "2025-07-04T07:00:00+00:00",
+      "daily_trading_days": [
+        "2025-06-30",
+        "2025-07-01",
+        "2025-07-02",
+        "2025-07-03",
+        "2025-07-04"
+      ],
+      "cross_month": true,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "3b2773142fc52f90afafd5e8579b224401aaade5a70ed72f56d4e9eee99886b9",
+      "source_response_sha256": "5eb2140f7e3dc8fb01119c73782d2670f37c203b1f7894e4fb3fd3114efe2f85",
+      "turnover": {
+        "stored_w1": "65062792425",
+        "d1_aggregate": "65064640675",
+        "provider_aggregate": "65062594899.999998",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 7,
+        "file_name": "part.parquet",
+        "row_count": 4,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 6,
+          "file_name": "part.e3a4959a3b19fd77e8280199bc237cdc235c1b2249cbd3a90e9df9aba6ea026c.parquet",
+          "row_count": 20,
+          "source_quality_sha256": null
+        },
+        {
+          "year": 2025,
+          "month": 7,
+          "file_name": "part.c8b9e67666ee854810257a20f7e9f42b91f7d1eeadb9ccb406a5ca9ae809da28.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "cj",
+      "contract": "CJ2605",
+      "iso_year": 2025,
+      "iso_week": 50,
+      "week_end": "2025-12-12T07:00:00+00:00",
+      "daily_trading_days": [
+        "2025-12-08",
+        "2025-12-09",
+        "2025-12-10",
+        "2025-12-11",
+        "2025-12-12"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "79133b6ec443a3bbb9361ed6819548faac50b813bc1938dcb160580ff72c95a5",
+      "source_response_sha256": "2ab2cd2b5e1fc93fbe4b8319aca2fb418e829d48d7d61632f8b7ae539d06e3c1",
+      "turnover": {
+        "stored_w1": "28770722700",
+        "d1_aggregate": "28770457675",
+        "provider_aggregate": "28769900300",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 12,
+        "file_name": "part.ac63cbd6d1500a5abdee9cdd69503f3cffdf00b2b387102e82a571a95e9de052.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 12,
+          "file_name": "part.a13902ebed92c952723dc4e379d4aacb896afd653d5e430fa679bcdc00ee7259.parquet",
+          "row_count": 23,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    },
+    {
+      "symbol": "eb",
+      "contract": "EB2405",
+      "iso_year": 2024,
+      "iso_week": 12,
+      "week_end": "2024-03-22T07:00:00+00:00",
+      "daily_trading_days": [
+        "2024-03-18",
+        "2024-03-19",
+        "2024-03-20",
+        "2024-03-21",
+        "2024-03-22"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "200c733967b2891a6a1dcc1d14a6dcc088452bf665d16ef1b3e9ad4abd022d15",
+      "source_response_sha256": "c1fa5051cf6198a3c950b0badeae27bcb0035cf747c2ef6d5b56c0e035ad4c36",
+      "turnover": {
+        "stored_w1": "83026074305",
+        "d1_aggregate": "83026074325",
+        "provider_aggregate": "83026074300",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2024,
+        "month": 3,
+        "file_name": "part.1e46dbe0455d3045d8f8a7dcec3f00fb71e3316f4561f23d03db0102fdaceb58.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2024,
+          "month": 3,
+          "file_name": "part.99cb214363d8f906a0a0663ede6b692d096d67d55a2916aa4c833e347352298f.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": true,
+      "write_authorized": false
+    },
+    {
+      "symbol": "eg",
+      "contract": "EG2601",
+      "iso_year": 2025,
+      "iso_week": 34,
+      "week_end": "2025-08-22T07:00:00+00:00",
+      "daily_trading_days": [
+        "2025-08-18",
+        "2025-08-19",
+        "2025-08-20",
+        "2025-08-21",
+        "2025-08-22"
+      ],
+      "cross_month": false,
+      "terminal_state": "INCONCLUSIVE",
+      "classification": "INCONCLUSIVE",
+      "repair_target": "NONE",
+      "reason": "PROVIDER_MATCHES_NEITHER",
+      "request_sha256": "ffd3a54c6f481c34eca970c45e92ac2ecf1ab9c19e3b6edd10c42ccdc253df65",
+      "source_response_sha256": "6e3e0a2f2a39ec90b7a1c5b74cd34871f68895cb3b0a03f9fc1caca31ce7312e",
+      "turnover": {
+        "stored_w1": "39028187780",
+        "d1_aggregate": "39028187860",
+        "provider_aggregate": "39028187800",
+        "provider_equals_stored_w1": false,
+        "provider_equals_d1_aggregate": false
+      },
+      "stored_w1_partition": {
+        "year": 2025,
+        "month": 8,
+        "file_name": "part.1fc6135ea679a19531270d16f1b152edadd480b0798b7678743d87bf4edf9a47.parquet",
+        "row_count": 5,
+        "source_quality_sha256": null
+      },
+      "d1_partitions": [
+        {
+          "year": 2025,
+          "month": 8,
+          "file_name": "part.6fbc1a4213deca35fbd378cc8c5e43038da2469a68b2a89170bed561f1039d33.parquet",
+          "row_count": 21,
+          "source_quality_sha256": null
+        }
+      ],
+      "cannot_overwrite_w1_with_d1_aggregate": true,
+      "cannot_overwrite_w1_reason": "current provider daily aggregate matches neither stored W1 nor stored D1 aggregate; using Catalog D1 aggregate would write a third historical fact",
+      "bz_eb_replay_gap_remaining": false,
+      "write_authorized": false
+    }
+  ],
+  "next_write_still_requires_independent_authorization": true,
+  "not_in_scope": [
+    "J/PG/SI download or Catalog apply",
+    "Canonical/Catalog repair apply",
+    "remaining 11-product gap adjudication",
+    "57 or 180 matrix rerun",
+    "release / Runtime promotion",
+    "BZ/EB historical replay-gap fill"
+  ]
+}

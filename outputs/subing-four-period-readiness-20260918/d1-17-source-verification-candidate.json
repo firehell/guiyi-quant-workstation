@@ -1,0 +1,292 @@
+{
+  "schema": "subing-d1-source-verification-candidate-v1",
+  "execute": false,
+  "fixed_cutoff": "2026-09-18T18:30:00+08:00",
+  "provider": "rqdata",
+  "method": "futures.get_exchange_daily",
+  "requests": [
+    {
+      "symbol": "c",
+      "contract": "C2609",
+      "frequency": "1d",
+      "month": "2026-09",
+      "expected_dates": [
+        "2026-09-10"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_catalog_quality_fact"
+      ],
+      "request_sha256": "f027cf3da1ce210990407c33ecf49f6602d3b883f6b44a18b0f4c3119f7ddf91"
+    },
+    {
+      "symbol": "eb",
+      "contract": "EB2606",
+      "frequency": "1d",
+      "month": "2025-08",
+      "expected_dates": [
+        "2025-08-29"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_catalog_quality_fact"
+      ],
+      "request_sha256": "9ca6020cd6f898c8c2ed790923d86cd9ede2e44f3f0129ed977b5e7ab78ea467"
+    },
+    {
+      "symbol": "eb",
+      "contract": "EB2606",
+      "frequency": "1d",
+      "month": "2025-09",
+      "expected_dates": [
+        "2025-09-19"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_catalog_quality_fact"
+      ],
+      "request_sha256": "85064ca46e5e365457aa00904b5fc60bf943452f02aa12c53ab835894fb4d98b"
+    },
+    {
+      "symbol": "i",
+      "contract": "I2609",
+      "frequency": "1d",
+      "month": "2026-09",
+      "expected_dates": [
+        "2026-09-09"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_catalog_quality_fact"
+      ],
+      "request_sha256": "6ea3573a584bef4053af54937eb3865a82ad01c7afaa9622b6c4815683a0f644"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2609",
+      "frequency": "1d",
+      "month": "2026-09",
+      "expected_dates": [
+        "2026-09-01",
+        "2026-09-02",
+        "2026-09-03",
+        "2026-09-04",
+        "2026-09-07",
+        "2026-09-08",
+        "2026-09-09",
+        "2026-09-10",
+        "2026-09-11"
+      ],
+      "reason_codes": [
+        "recent_hard_invalid_partition_no_saved_response"
+      ],
+      "request_sha256": "785d6d474c829aba164f59c02d7503c141bb123f7ee0fd40a50a105b002b14b5"
+    },
+    {
+      "symbol": "p",
+      "contract": "P2609",
+      "frequency": "1d",
+      "month": "2026-09",
+      "expected_dates": [
+        "2026-09-09"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_catalog_quality_fact"
+      ],
+      "request_sha256": "e91c2b637852bc710672c3de0de8a6cbe420fd1298a4d31d6b85740a9651afd3"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2609",
+      "frequency": "1d",
+      "month": "2026-09",
+      "expected_dates": [
+        "2026-09-01",
+        "2026-09-02",
+        "2026-09-03",
+        "2026-09-04",
+        "2026-09-07",
+        "2026-09-08",
+        "2026-09-09",
+        "2026-09-10",
+        "2026-09-11"
+      ],
+      "reason_codes": [
+        "recent_hard_invalid_partition_no_saved_response"
+      ],
+      "request_sha256": "c5bf0721308ecb06e5ffed871db6ae75684d8e7b0e2ed5603542d1d615cb4984"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1d",
+      "month": "2025-11",
+      "expected_dates": [
+        "2025-11-17",
+        "2025-11-18",
+        "2025-11-19",
+        "2025-11-20",
+        "2025-11-21",
+        "2025-11-24",
+        "2025-11-25",
+        "2025-11-26",
+        "2025-11-27",
+        "2025-11-28"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_canonical_nonpositive"
+      ],
+      "request_sha256": "9f8cecaa886fa1a0e5642f580b8888bce7d0d9a8b7bc919248fab6e1b1fc9c59"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1d",
+      "month": "2025-12",
+      "expected_dates": [
+        "2025-12-01",
+        "2025-12-02",
+        "2025-12-03",
+        "2025-12-04",
+        "2025-12-05",
+        "2025-12-08",
+        "2025-12-09",
+        "2025-12-10",
+        "2025-12-11",
+        "2025-12-15",
+        "2025-12-16",
+        "2025-12-30"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_canonical_nonpositive"
+      ],
+      "request_sha256": "203a303b5b6f32c6a04abc2dd67e0fcc03aac7a517c9c6ef921eb5cf86e2d703"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1d",
+      "month": "2026-01",
+      "expected_dates": [
+        "2026-01-19",
+        "2026-01-27",
+        "2026-01-28",
+        "2026-01-30"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_canonical_nonpositive"
+      ],
+      "request_sha256": "a8e99e56b3698a2394f7a7acc0b5146b1e89f467e8e72cfc9f3c04343a8a8e5f"
+    },
+    {
+      "symbol": "pf",
+      "contract": "PF2611",
+      "frequency": "1d",
+      "month": "2026-02",
+      "expected_dates": [
+        "2026-02-03",
+        "2026-02-04",
+        "2026-02-06",
+        "2026-02-12",
+        "2026-02-13",
+        "2026-02-27"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_canonical_nonpositive"
+      ],
+      "request_sha256": "8a197b59dd31d522e2d9cdcde95cdb7b770da079e72f13380e087bcb5899a0a6"
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "frequency": "1d",
+      "month": "2025-11",
+      "expected_dates": [
+        "2025-11-24",
+        "2025-11-26",
+        "2025-11-28"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_canonical_nonpositive"
+      ],
+      "request_sha256": "6574e3d61e494b8f4406e083add5a6256a17368198fb1a71a12d4c6a85aff8d4"
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "frequency": "1d",
+      "month": "2025-12",
+      "expected_dates": [
+        "2025-12-02",
+        "2025-12-04"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_canonical_nonpositive"
+      ],
+      "request_sha256": "483e5779a3e4d16079e83c4a2a06a954f2fe4030025bfb13f1c65e8fa0c4dbc5"
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "frequency": "1d",
+      "month": "2026-08",
+      "expected_dates": [
+        "2026-08-12"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_canonical_nonpositive"
+      ],
+      "request_sha256": "b7edd7a9d91d4ff381e40b1991fdcfd60e8a4fd7db12ca113a8bc31e153dfb29"
+    },
+    {
+      "symbol": "rs",
+      "contract": "RS2609",
+      "frequency": "1d",
+      "month": "2026-09",
+      "expected_dates": [
+        "2026-09-02",
+        "2026-09-04",
+        "2026-09-08",
+        "2026-09-09"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_canonical_nonpositive"
+      ],
+      "request_sha256": "41ca3501337c09d5d02a74b0c579ec2e9c3f928067998c6d5f2f041418021a75"
+    },
+    {
+      "symbol": "y",
+      "contract": "Y2609",
+      "frequency": "1d",
+      "month": "2026-09",
+      "expected_dates": [
+        "2026-09-09"
+      ],
+      "reason_codes": [
+        "raw_response_missing_for_catalog_quality_fact"
+      ],
+      "request_sha256": "86e482468af240748e2f5e0d209ca1ff7f5f21021e49ad959756ad8088a6d730"
+    }
+  ],
+  "budget": {
+    "max_provider_requests": 16,
+    "expected_date_identities": 66,
+    "concurrency": 1,
+    "retries": 0,
+    "canonical_writes": 0,
+    "database_writes": 0
+  },
+  "execution_contract": {
+    "exclusive_attempt_directory": true,
+    "save_raw_response_before_classification": true,
+    "journal_each_request": true,
+    "verify_contract_and_date_identity": true,
+    "fail_stop_codes": [
+      "UNKNOWN",
+      "CONTRACT_MISMATCH",
+      "DATE_MISMATCH",
+      "DUPLICATE",
+      "ARTIFACT_WRITE_UNCERTAIN",
+      "PLAN_DRIFT"
+    ],
+    "automatic_retry": false,
+    "production_publish": false
+  },
+  "plan_sha256": "2c764158c097919fdb7a87ec3935c364905a122ff95d10cc96bf82b1c1c785bb"
+}

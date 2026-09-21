@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
+
+from ..reference_trading.adapters import strategy_input_fingerprint
 
 from .escape_d123 import EscapeState, initial_escape_state, step_escape_d123
 from .main_rise import (
@@ -41,7 +44,7 @@ from .product_contracts import (
     TradeEligibility,
     validate_lifecycle_replay_evidence,
 )
-from .product_identity import build_calculation_segment_id
+from .product_identity import InputQualityPolicy, build_calculation_segment_id
 from .profile import NEWOW_TREND_D1_PAGE_V2
 from .trend_band import (
     TrendBandStateValue,
@@ -85,10 +88,30 @@ class _PairingState:
     initial_yellow_seen: bool = False
 
 
+@dataclass(slots=True)
+class ProductReplayState:
+    """Bounded, per-calculation-segment state for one product replay.
+
+    This is deliberately output-free: callers persist only formula and pairing
+    state, then keep their own projection/event sink.  It makes a restart or a
+    batched replay use the identical per-bar path as ``replay_strategy``.
+    """
+
+    calculation_segment_id: str | None = None
+    pairing: _PairingState = field(default_factory=_PairingState)
+    trend_state: TrendBandStateValue = field(default_factory=initial_trend_band_state)
+    escape_state: EscapeState = field(default_factory=initial_escape_state)
+    oscillation_state: OscillationState = field(default_factory=OscillationState)
+    main_rise_state: MainRiseState = field(default_factory=initial_main_rise_state)
+    input_progress: dict[str, tuple[datetime, str]] = field(default_factory=dict)
+
+
 def build_product_identity(
     product: str,
     strategy: ProductStrategy | str,
     frequency: ProductFrequency | str,
+    *,
+    input_quality_policy: InputQualityPolicy | str = InputQualityPolicy.V1,
 ) -> ProductIdentity:
     """Build the one active adapter identity without duplicating formula sets."""
 
@@ -98,6 +121,7 @@ def build_product_identity(
         normalized,
         ProductFrequency(frequency),
         tuple(_EXPECTED_FORMULAS[normalized]),
+        input_quality_policy=input_quality_policy,
     )
 
 
@@ -186,6 +210,7 @@ def _record_warmup_build(
 ) -> StrategyAction:
     if action.kind is not ActionKind.BUILD:
         raise ValueError("NEWOW_PRODUCT_PAIRING_CONFLICT")
+    _drop_source_build(pairing, pairing.prewarm_build)
     pairing.prewarm_build = action
     if action.source_marker_id is not None:
         existing = pairing.source_builds.get(action.source_marker_id)
@@ -193,6 +218,11 @@ def _record_warmup_build(
             raise ValueError("NEWOW_PRODUCT_PAIRING_CONFLICT")
         pairing.source_builds[action.source_marker_id] = action
     return action
+
+
+def _drop_source_build(pairing: _PairingState, action: StrategyAction | None) -> None:
+    if action is not None and action.source_marker_id is not None:
+        pairing.source_builds.pop(action.source_marker_id, None)
 
 
 def _pair_action(
@@ -204,6 +234,7 @@ def _pair_action(
     if action.kind is ActionKind.BUILD:
         if pairing.eligible_build is not None:
             raise ValueError("NEWOW_PRODUCT_PAIRING_CONFLICT")
+        _drop_source_build(pairing, pairing.prewarm_build)
         pairing.prewarm_build = None
         pairing.eligible_build = action
         if action.source_marker_id is not None:
@@ -242,6 +273,10 @@ def _pair_action(
         pairing.eligible_build = None
     else:
         pairing.prewarm_build = None
+    # A clear may only cite the currently eligible/pre-warm build.  Retaining
+    # every historical marker here made otherwise incremental replay state grow
+    # with the whole history and was not needed for any future pairing.
+    _drop_source_build(pairing, entry)
     return paired
 
 
@@ -370,6 +405,7 @@ def _trend_frame(
                     is not pairing.prewarm_build
                 ):
                     raise ValueError("NEWOW_PRODUCT_PAIRING_CONFLICT")
+                _drop_source_build(pairing, pairing.prewarm_build)
                 pairing.prewarm_build = None
     point = result.point
     main_state = (
@@ -511,16 +547,12 @@ def _main_rise_actions(
     result: MainRiseStepResult,
     pairing: _PairingState,
     previous_state: MainRiseState,
-    *,
-    verified_lifecycle: bool,
 ) -> tuple[StrategyAction, ...]:
     if result.band_signal is None:
         _advance_initial_clear_state(pairing, result)
         return ()
     signal = result.band_signal
-    qualifies = _qualifies_initial_clear(
-        pairing, previous_state, result, verified_lifecycle=verified_lifecycle
-    )
+    qualifies = _qualifies_initial_clear(pairing, previous_state, result)
     _advance_initial_clear_state(pairing, result)
     action = _new_action(
         identity,
@@ -543,13 +575,15 @@ def _qualifies_initial_clear(
     pairing: _PairingState,
     previous_state: MainRiseState,
     result: MainRiseStepResult,
-    *,
-    verified_lifecycle: bool,
 ) -> bool:
+    """A main-rise CLEAR with no BUILD is display-only and does not open a trade.
+
+    Lifecycle evidence is not required. A data gap starts a new calculation
+    segment; that segment may clear from its own initial yellow band.
+    """
     signal = result.band_signal
     return bool(
-        verified_lifecycle
-        and pairing.initial_clear_possible
+        pairing.initial_clear_possible
         and pairing.initial_yellow_seen
         and signal is not None
         and signal.action == ActionKind.CLEAR
@@ -638,8 +672,6 @@ def _main_rise_frame(
     product_bar: ProductBar,
     state: MainRiseState,
     pairing: _PairingState,
-    *,
-    verified_lifecycle: bool,
 ) -> tuple[StrategyFrame, MainRiseState, tuple[str, ...]]:
     result = step_main_rise(state, product_bar.bar, formulas=MAIN_RISE_PAGE_V1)
     actions = (
@@ -649,7 +681,6 @@ def _main_rise_frame(
             result,
             pairing,
             state,
-            verified_lifecycle=verified_lifecycle,
         )
         if product_bar.bar.observation_eligible
         else _main_rise_witnesses(identity, product_bar, state, pairing)
@@ -726,12 +757,116 @@ def label_calculation_segments(
         gap_at = last_gap_by_owner.get(owner)
         labeled.append(replace(
             product_bar,
-            calculation_segment_id=(
-                build_calculation_segment_id(owner[1], gap_at)
-                if gap_at is not None else owner[1]
+            calculation_segment_id=build_calculation_segment_id(
+                owner[1], gap_at, identity.input_quality_policy
             ),
         ))
     return tuple(labeled)
+
+
+def seed_replay_state() -> ProductReplayState:
+    """Return a fresh bounded state for incremental product replay."""
+
+    return ProductReplayState()
+
+
+def _replay_step_mutating(
+    identity: ProductIdentity,
+    state: ProductReplayState,
+    product_bar: ProductBar,
+) -> tuple[ProductReplayState, StrategyFrame, tuple[str, ...]]:
+    """Advance exactly one already-labelled, completed product bar.
+
+    The caller owns input ordering and lifecycle evidence.  Segment changes are
+    handled here so full replay, arbitrary batches and a restored state cannot
+    accidentally choose different warm-up or pairing paths.
+    """
+
+    if not isinstance(state, ProductReplayState):
+        raise TypeError("state must be ProductReplayState")
+    if product_bar.calculation_segment_id != state.calculation_segment_id:
+        state = ProductReplayState(
+            calculation_segment_id=product_bar.calculation_segment_id,
+            input_progress=state.input_progress,
+        )
+    if identity.strategy is ProductStrategy.TREND:
+        frame, trend_state, escape_state, diagnostics = _trend_frame(
+            identity, product_bar, state.trend_state, state.escape_state, state.pairing
+        )
+        state.trend_state = trend_state
+        state.escape_state = escape_state
+    elif identity.strategy is ProductStrategy.OSCILLATION:
+        frame, oscillation_state, diagnostics = _oscillation_frame(
+            identity, product_bar, state.oscillation_state, state.pairing
+        )
+        state.oscillation_state = oscillation_state
+    else:
+        frame, main_rise_state, diagnostics = _main_rise_frame(
+            identity,
+            product_bar,
+            state.main_rise_state,
+            state.pairing,
+        )
+        state.main_rise_state = main_rise_state
+    return state, frame, tuple(diagnostics)
+
+
+def replay_step(
+    identity: ProductIdentity,
+    state: ProductReplayState,
+    product_bar: ProductBar,
+    *,
+    verified_lifecycle: bool = False,
+) -> tuple[ProductReplayState, StrategyFrame | None, tuple[str, ...]]:
+    """Atomically advance one completed input; an exact replay is a no-op."""
+
+    if not isinstance(state, ProductReplayState):
+        raise TypeError("state must be ProductReplayState")
+    bar = product_bar.bar
+    calculation_segment_id = product_bar.calculation_segment_id or bar.segment_id
+    progress_key = strategy_input_fingerprint({
+        "physical_contract": bar.physical_contract,
+        "owner_segment_id": bar.segment_id,
+        "calculation_segment_id": calculation_segment_id,
+    })
+    fingerprint = strategy_input_fingerprint({
+        "product": identity.product,
+        "strategy": identity.strategy,
+        "frequency": identity.frequency,
+        "formula_versions": identity.formula_versions,
+        "series_kind": identity.series_kind,
+        "profile_id": identity.profile_id,
+        "physical_contract": bar.physical_contract,
+        "owner_segment_id": bar.segment_id,
+        "calculation_segment_id": calculation_segment_id,
+        "bar_end": bar.bar_end,
+        "trading_day": bar.trading_day,
+        "open": bar.open,
+        "high": bar.high,
+        "low": bar.low,
+        "close": bar.close,
+        "volume": bar.volume,
+        "open_interest": bar.open_interest,
+        "source_identity": bar.source_identity,
+        "observation_eligible": bar.observation_eligible,
+        "completed": bar.completed,
+        "source_bar_sha256": product_bar.source_bar_sha256,
+        "verified_lifecycle": verified_lifecycle,
+    })
+    previous = state.input_progress.get(progress_key)
+    if previous is not None:
+        if bar.bar_end < previous[0]:
+            raise ValueError("input is older than computed_through")
+        if bar.bar_end == previous[0]:
+            if fingerprint == previous[1]:
+                return state, None, ()
+            raise ValueError("input conflicts with computed_through")
+    working = deepcopy(state)
+    working, frame, diagnostics = _replay_step_mutating(
+        identity, working, product_bar,
+    )
+    working.input_progress[progress_key] = (bar.bar_end, fingerprint)
+    return working, frame, diagnostics
 
 
 def replay_strategy(
@@ -750,46 +885,23 @@ def replay_strategy(
     labeled_inputs = label_calculation_segments(identity, inputs, gaps)
     frames: list[StrategyFrame] = []
     diagnostics: list[str] = []
-    current_segment: str | None = None
-    pairing = _PairingState()
-    trend_state = initial_trend_band_state()
-    escape_state = initial_escape_state()
-    oscillation_state = OscillationState()
-    main_rise_state = initial_main_rise_state()
+    state = seed_replay_state()
     for product_bar in labeled_inputs:
         owner = (product_bar.bar.physical_contract, product_bar.bar.segment_id)
-        if product_bar.calculation_segment_id != current_segment:
-            current_segment = product_bar.calculation_segment_id
-            pairing = _PairingState()
-            trend_state = initial_trend_band_state()
-            escape_state = initial_escape_state()
-            oscillation_state = OscillationState()
-            main_rise_state = initial_main_rise_state()
-        if identity.strategy is ProductStrategy.TREND:
-            frame, trend_state, escape_state, found = _trend_frame(
-                identity, product_bar, trend_state, escape_state, pairing
-            )
-        elif identity.strategy is ProductStrategy.OSCILLATION:
-            frame, oscillation_state, found = _oscillation_frame(
-                identity, product_bar, oscillation_state, pairing
-            )
-        else:
-            frame, main_rise_state, found = _main_rise_frame(
-                identity,
-                product_bar,
-                main_rise_state,
-                pairing,
-                verified_lifecycle=(
-                    product_bar.bar.physical_contract,
-                    product_bar.bar.segment_id,
-                )
-                in verified_owners and not any(
+        state, frame, found = replay_step(
+            identity,
+            state,
+            product_bar,
+            verified_lifecycle=(
+                owner in verified_owners and not any(
                     gap.physical_contract == owner[0]
                     and gap.segment_id == owner[1]
                     and gap.effective_at < product_bar.bar.bar_end
                     for gap in gaps
-                ),
-            )
+                )
+            ),
+        )
+        assert frame is not None
         frames.append(frame)
         diagnostics.extend(found)
 

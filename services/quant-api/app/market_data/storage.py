@@ -22,7 +22,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from app.market_data.domain import BarFrequency, CanonicalBar, ContractError, DatasetKey, DatasetKind
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import (
+    NonpositiveCloseFact,
+    PriceUnavailableFact,
+    SourceQualityFact,
+)
 
 
 CANONICAL_COLUMNS = ("bar_end", "trading_day", "open", "high", "low", "close", "volume", "turnover", "open_interest")
@@ -50,6 +54,11 @@ class PublishRequest:
     bars: tuple[CanonicalBar, ...]
     expected_bar_ends: tuple[datetime, ...]
     price_unavailable: tuple[PriceUnavailableFact, ...] = ()
+    nonpositive_close: tuple[NonpositiveCloseFact, ...] = ()
+
+    @property
+    def source_quality(self) -> tuple[SourceQualityFact, ...]:
+        return (*self.price_unavailable, *self.nonpositive_close)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,11 +74,11 @@ class PublishedPartition:
     row_count: int
     source_coverage_start: datetime | None = None
     source_coverage_end: datetime | None = None
-    source_quality: tuple[PriceUnavailableFact, ...] = ()
+    source_quality: tuple[SourceQualityFact, ...] = ()
     source_quality_sha256: str | None = None
 
 
-PartitionBoundaryValidator = Callable[[DatasetKey, tuple[CanonicalBar | PriceUnavailableFact, ...]], bool]
+PartitionBoundaryValidator = Callable[[DatasetKey, tuple[CanonicalBar | SourceQualityFact, ...]], bool]
 
 
 class CatalogPartitionLike(Protocol):
@@ -97,7 +106,7 @@ class CatalogPartitionLike(Protocol):
     def row_count(self) -> int: ...
 
     @property
-    def source_quality(self) -> tuple[PriceUnavailableFact, ...]: ...
+    def source_quality(self) -> tuple[SourceQualityFact, ...]: ...
 
     @property
     def source_quality_sha256(self) -> str | None: ...
@@ -155,7 +164,7 @@ class CanonicalMonthlyStore:
             if self._read_bytes(directory_fd, name) != payload:
                 raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
             os.fsync(directory_fd)
-            exceptions = tuple(request.price_unavailable)
+            exceptions = tuple(request.source_quality)
             return PublishedPartition(
                 request.dataset, request.year, request.month, directory / name,
                 (request.bars[0].bar_end - _frequency_delta(request.dataset.frequency)) if request.bars else None,
@@ -272,7 +281,7 @@ class CanonicalMonthlyStore:
 
     def read_catalog_partition_quality(
         self, partition: CatalogPartitionLike,
-    ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...]]:
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]:
         """Read a Catalog-pinned month with exact, source-backed date exceptions."""
         directory = self._month_directory(partition.dataset, partition.year, partition.month)
         path = partition.file_path
@@ -297,7 +306,9 @@ class CanonicalMonthlyStore:
             raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
         self._validate(PublishRequest(
             partition.dataset, partition.year, partition.month, values,
-            expected_ends, exceptions,
+            expected_ends,
+            tuple(item for item in exceptions if isinstance(item, PriceUnavailableFact)),
+            tuple(item for item in exceptions if isinstance(item, NonpositiveCloseFact)),
         ))
         if partition.row_count != len(values):
             raise StorageError("PARTITION_ROW_COUNT_MISMATCH")
@@ -321,20 +332,20 @@ class CanonicalMonthlyStore:
 
     def _validate(self, request: PublishRequest) -> None:
         """发布前完整性校验：非空、bar_end 严格递增、与 expected 完全一致、归属正确月份。"""
-        if (not request.bars and not request.price_unavailable) or not request.expected_bar_ends or not 1 <= request.month <= 12:
+        if (not request.bars and not request.source_quality) or not request.expected_bar_ends or not 1 <= request.month <= 12:
             raise StorageError("EMPTY_PARTITION")
         ends = tuple(bar.bar_end for bar in request.bars)
         if any(left >= right for left, right in zip(ends, ends[1:])):
             raise StorageError("BAR_END_NOT_STRICTLY_INCREASING")
         expected_ends = tuple(_utc(item) for item in request.expected_bar_ends)
         # 与维护层计算的期望 bar_end 序列必须逐根相等，禁止缺 bar 或多余 bar
-        exceptions = tuple(request.price_unavailable)
+        exceptions = tuple(request.source_quality)
         if exceptions and (
             request.dataset.frequency is not BarFrequency.D1
             or request.dataset.kind is not DatasetKind.CONTRACT
         ):
             raise StorageError("SOURCE_QUALITY_FREQUENCY_INVALID")
-        if any(not isinstance(item, PriceUnavailableFact) for item in exceptions):
+        if any(not isinstance(item, (PriceUnavailableFact, NonpositiveCloseFact)) for item in exceptions):
             raise StorageError("SOURCE_QUALITY_EVIDENCE_INVALID")
         combined = tuple(sorted((*ends, *(item.bar_end for item in exceptions))))
         if combined != expected_ends or any(left >= right for left, right in zip(expected_ends, expected_ends[1:])):
@@ -349,7 +360,7 @@ class CanonicalMonthlyStore:
                 raise StorageError("PARTITION_MONTH_MISMATCH")
         # The authority must validate both kinds of source endpoint. In particular,
         # an all-exception month cannot bypass Calendar/Session/lifecycle checks.
-        boundary_facts: tuple[CanonicalBar | PriceUnavailableFact, ...] = (*request.bars, *exceptions)
+        boundary_facts: tuple[CanonicalBar | SourceQualityFact, ...] = (*request.bars, *exceptions)
         if self.boundary_validator is not None and not self.boundary_validator(request.dataset, boundary_facts):
             raise StorageError("SESSION_BOUNDARY_INVALID")
 
@@ -359,7 +370,7 @@ def _frequency_delta(frequency: BarFrequency) -> timedelta:
     return {BarFrequency.M1: timedelta(minutes=1), BarFrequency.M5: timedelta(minutes=5), BarFrequency.M15: timedelta(minutes=15), BarFrequency.M30: timedelta(minutes=30), BarFrequency.H1: timedelta(hours=1), BarFrequency.D1: timedelta(days=1), BarFrequency.W1: timedelta(days=7)}[frequency]
 
 
-def _quality_sha256(exceptions: tuple[PriceUnavailableFact, ...]) -> str:
+def _quality_sha256(exceptions: tuple[SourceQualityFact, ...]) -> str:
     payload = [item.to_record() for item in exceptions]
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 

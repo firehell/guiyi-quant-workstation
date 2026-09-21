@@ -13,7 +13,7 @@ from guiyi_quant.newow.product_contracts import (
     ProductFrequency,
     TradeEligibility,
 )
-from guiyi_quant.newow.product_identity import build_segment_id
+from guiyi_quant.newow.product_identity import InputQualityPolicy, build_segment_id
 from app.market_data.domain import BarFrequency
 from guiyi_quant.newow.oscillation_channel import CHANNEL_FORMULA_VERSION
 
@@ -161,6 +161,61 @@ def test_readiness_service_reuses_identical_read_inputs_across_sections(product_
         ))
 
     assert len(reader.loads) == 1
+
+
+def test_weekly_v1_v2_services_do_not_share_cache_token_or_inflight_identity(
+    product_cases,
+):
+    from app.market_data.newow.inflight import InFlightCoordinator
+    from app.market_data.newow.snapshot_cache import SnapshotCache
+
+    case = product_cases.primitive_input("trend", "1w")
+    now = case.bars[-1].bar.bar_end
+    shared_cache = SnapshotCache()
+    shared_inflight = InFlightCoordinator()
+
+    def reader_for(policy):
+        reader = _Reader(case.bars, now, now)
+        original_load = reader.load
+
+        def load(query, as_of):
+            return replace(
+                original_load(query, as_of),
+                input_quality_policy=policy,
+            )
+
+        reader.load = load
+        return reader
+
+    legacy = NewowProductService(
+        lambda _context, _cancelled: reader_for(InputQualityPolicy.V1),
+        quality_policy=InputQualityPolicy.V1,
+        cache=shared_cache,
+        inflight=shared_inflight,
+        now=lambda: now,
+    )
+    candidate = NewowProductService(
+        lambda _context, _cancelled: reader_for(InputQualityPolicy.WEEKLY_V2),
+        quality_policy=InputQualityPolicy.WEEKLY_V2,
+        cache=shared_cache,
+        inflight=shared_inflight,
+        now=lambda: now,
+    )
+    request = ProductServiceQuery("rb", "trend", "1w", as_of=now)
+
+    legacy_result = legacy.query(request)
+    candidate_result = candidate.query(request)
+
+    assert legacy_result.meta.snapshot_token
+    assert candidate_result.meta.snapshot_token
+    assert legacy_result.meta.snapshot_token != candidate_result.meta.snapshot_token
+    assert legacy_result.meta.input_content_sha256 != candidate_result.meta.input_content_sha256
+    assert legacy_result.meta.identity.input_quality_policy is InputQualityPolicy.V1
+    assert candidate_result.meta.identity.input_quality_policy is InputQualityPolicy.WEEKLY_V2
+    with pytest.raises(NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"):
+        candidate.query(replace(request, snapshot_token=legacy_result.meta.snapshot_token))
+    with pytest.raises(NewowProductServiceError, match="NEWOW_SNAPSHOT_GENERATION_CONFLICT"):
+        legacy.query(replace(request, snapshot_token=candidate_result.meta.snapshot_token))
 
 
 def test_snapshot_proof_warmup_bar_does_not_borrow_another_owner(product_cases):

@@ -30,7 +30,7 @@ from app.market_data.session_clock import (
     SessionWindowBatch,
 )
 from app.market_data.storage import PublishedPartition
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import SourceQualityFact, source_quality_fact_from_record
 from app.models import (
     Contract,
     Instrument,
@@ -99,7 +99,7 @@ class CatalogPartition:
     row_count: int
     source_coverage_start: datetime | None = None
     source_coverage_end: datetime | None = None
-    source_quality: tuple[PriceUnavailableFact, ...] = ()
+    source_quality: tuple[SourceQualityFact, ...] = ()
     source_quality_sha256: str | None = None
 
 
@@ -551,7 +551,7 @@ class MarketCatalog:
             row_count=row.row_count,
             source_coverage_start=_aware(row.source_coverage_start) if row.source_coverage_start is not None else None,
             source_coverage_end=_aware(row.source_coverage_end) if row.source_coverage_end is not None else None,
-            source_quality=tuple(PriceUnavailableFact.from_record(item) for item in row.source_quality or ()),
+            source_quality=tuple(source_quality_fact_from_record(item) for item in row.source_quality or ()),
             source_quality_sha256=row.source_quality_sha256,
         )
 

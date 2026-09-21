@@ -1,6 +1,6 @@
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Context, Decimal, Inexact, ROUND_DOWN, localcontext
 
 import pytest
 
@@ -9,6 +9,8 @@ from guiyi_quant.subing_reference import (
     ReferenceSegment,
     ReferenceProjectionError,
     project_reference,
+    replay_subing_step,
+    seed_subing_replay_state,
 )
 from guiyi_quant.indicators.subing_ths import SubingThs15mKernel
 
@@ -69,6 +71,209 @@ def test_real_kernel_reversals_preserve_decimal_prices_and_explicit_links():
     assert result.summary.loss_count == 3
     assert result.summary.win_rate_pct == 0
     assert result.trades[-1].mark_reference_price == Decimal(80)
+
+
+@pytest.mark.parametrize("frequency", ("15m", "30m", "60m", "1d"))
+def test_public_projection_and_bounded_per_bar_state_share_one_step(frequency):
+    seg = segment()
+    expected = project_reference(
+        "RB", (seg,), since=date(2026, 1, 1), through=date(2026, 1, 9),
+        as_of=START + timedelta(days=9), frequency=frequency,
+    )
+    state = seed_subing_replay_state()
+    signals = []
+    closed = []
+    indicators = []
+    for bar in seg.bars:
+        state, signal, trade, indicator = replay_subing_step(
+            "RB", seg, frequency, False, state, bar,
+            since=date(2026, 1, 1), through=date(2026, 1, 9),
+        )
+        if signal is not None:
+            signals.append(signal)
+        if trade is not None:
+            closed.append(trade)
+        if indicator is not None:
+            indicators.append(indicator)
+    assert tuple(signals) == expected.signals
+    assert tuple((*closed, state.current)) == expected.trades
+    assert tuple(indicators) == expected.indicators
+
+
+def test_subing_step_exact_replay_is_noop_and_conflict_is_atomic():
+    seg = segment()
+    kwargs = {"since": date(2026, 1, 1), "through": date(2026, 1, 9)}
+    state = seed_subing_replay_state()
+    state, *_ = replay_subing_step("RB", seg, "1d", False, state, seg.bars[0], **kwargs)
+    snapshot = repr(state)
+
+    replayed, signal, trade, indicator = replay_subing_step(
+        "RB", seg, "1d", False, state, seg.bars[0], **kwargs,
+    )
+    assert replayed is state
+    assert (signal, trade, indicator) == (None, None, None)
+    assert state.processed_count == 1
+
+    conflicting = replace(seg.bars[0], close=Decimal("101"))
+    with pytest.raises(ValueError, match="conflicts"):
+        replay_subing_step("RB", seg, "1d", False, state, conflicting, **kwargs)
+    assert repr(state) == snapshot
+
+
+def test_subing_step_older_failure_does_not_mutate_kernel_state():
+    seg = segment()
+    kwargs = {"since": date(2026, 1, 1), "through": date(2026, 1, 9)}
+    state = seed_subing_replay_state()
+    for bar in seg.bars[:51]:
+        state, *_ = replay_subing_step("RB", seg, "1d", False, state, bar, **kwargs)
+    snapshot = repr(state)
+
+    with pytest.raises(ValueError, match="older"):
+        replay_subing_step("RB", seg, "1d", False, state, seg.bars[0], **kwargs)
+    assert repr(state) == snapshot
+    assert state.processed_count == 51
+
+
+def test_public_projection_routes_trade_transitions_through_shared_reducer(monkeypatch):
+    import guiyi_quant.subing_reference as module
+
+    actual = module.reduce_reference
+    calls = []
+
+    def observed(*args, **kwargs):
+        calls.append((args, kwargs))
+        return actual(*args, **kwargs)
+
+    monkeypatch.setattr(module, "reduce_reference", observed, raising=False)
+
+    result = project(segment())
+
+    assert result.trades
+    assert calls
+
+
+def test_per_bar_replay_freezes_decimal_policy_like_public_projection():
+    seg = segment()
+    state = seed_subing_replay_state()
+    with localcontext(Context(prec=6, rounding=ROUND_DOWN, traps=[Inexact])):
+        for bar in seg.bars:
+            state, _signal, _closed, _indicator = replay_subing_step(
+                "RB", seg, "15m", False, state, bar,
+                since=date(2026, 1, 1), through=date(2026, 1, 9),
+            )
+    assert state.current is not None
+    assert state.current.mark_change_pct == Decimal(0)
+
+
+def test_15m_v1_reference_identity_golden_is_unchanged():
+    result = project(segment())
+    assert [item.signal_id for item in result.signals] == [
+        "cbc12f0caed57ef6ee4ae4053bd467df4163047512aa36d2aaf3499621d11ed4",
+        "71384b116dd8d8139c9bddd6654609dcc58e14633875122f7a9e5a91f8653c5a",
+        "c971031a487becf2f4ada8d6c9f6a706f888bbe4fa38cf772678aff5dd48be85",
+        "d24a9c5ff37575a61d6bb5fa1111e1b68a598bb30e6ab5385161a04de20ea566",
+    ]
+    assert [item.reference_trade_id for item in result.trades] == [
+        "c62c10d0360bc71db062bca2dc7b0f6203327263e17ef519013ba9a5451ad87c",
+        "fedcff95ff82f56bf25fe17d3e7a6778fab86f226d5eb1f245e14258197187f2",
+        "b79d08dc1de3c870d77bb6835a1b4db8dacd2266d655f7b7f3ea36f3df230385",
+        "ae2e00b894292835f6aeff99c818810660aab74c698210b7e07d64186c49250f",
+    ]
+
+
+def test_periods_share_formula_values_but_keep_independent_signal_identity():
+    seg = segment()
+    options = dict(since=date(2026, 1, 1), through=date(2026, 1, 9), as_of=START + timedelta(days=9))
+    results = {frequency: project_reference("RB", (seg,), frequency=frequency, **options)
+               for frequency in ("15m", "30m", "60m", "1d")}
+    assert all([s.direction for s in value.signals] == ["buy", "sell", "buy", "sell"]
+               for value in results.values())
+    assert len({value.signals[0].signal_id for value in results.values()}) == 4
+    assert len({value.trades[0].reference_trade_id for value in results.values()}) == 4
+    for value in results.values():
+        first_signal = value.signals[0]
+        matching = next(point for point in value.indicators if point.bar_end == first_signal.bar_end)
+        assert (matching.dif, matching.dea, matching.macd, matching.ema21) == (
+            first_signal.dif, first_signal.dea, first_signal.macd, first_signal.ema21)
+
+
+def test_complete_short_lifecycle_reports_warming_instead_of_zero_signal_readiness():
+    short = segment([100] * 10)
+    result = project(short)
+    assert result.readiness == "warming"
+    assert result.signals == ()
+    assert result.indicators
+    assert all(point.ema21 is None for point in result.indicators)
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (33, "WARMING"),
+        (34, "INDICATOR_READY_CROSS_UNEVALUABLE"),
+        (35, "CROSS_EVALUATED"),
+    ],
+)
+def test_daily_quality_model_freezes_33_34_35_bar_states(count, expected):
+    seg = replace(
+        segment([100] * count),
+        calculation_segment_id="daily-calculation",
+    )
+    result = project_reference(
+        "RB", (seg,), since=date(2026, 1, 1), through=date(2026, 1, 9),
+        as_of=START + timedelta(days=9), frequency="1d",
+        quality_segmented=True,
+    )
+
+    assert result.readiness == expected
+    assert result.indicators[-1].calculation_segment_id == "daily-calculation"
+
+
+def test_daily_quality_break_interrupts_without_exit_return_or_current_mark():
+    break_at = START + timedelta(days=3)
+    seg = replace(
+        segment(),
+        calculation_segment_id="daily-before-break",
+        quality_interrupted_at=break_at,
+        quality_interruption_trading_day=break_at.date(),
+        quality_classification="NONPOSITIVE_CLOSE",
+    )
+    result = project_reference(
+        "RB", (seg,), since=date(2026, 1, 1), through=date(2026, 1, 9),
+        as_of=break_at, frequency="1d", quality_segmented=True,
+    )
+
+    trade = result.trades[-1]
+    assert trade.status == "DATA_INTERRUPTED"
+    assert trade.exit_signal_id is None
+    assert trade.exit_reference_price is None
+    assert trade.reference_return_pct is None
+    assert trade.mark_bar_end is None
+    assert trade.mark_reference_price is None
+    assert trade.mark_change_pct is None
+    assert trade.interruption_reason == "NONPOSITIVE_CLOSE"
+    assert result.summary.data_interrupted_count == 1
+    assert result.summary.rollover_interrupted_count == 0
+
+
+def test_daily_quality_trade_interrupted_before_window_is_not_initial_history():
+    break_at = START + timedelta(days=3)
+    seg = replace(
+        segment(),
+        calculation_segment_id="daily-before-window-break",
+        quality_interrupted_at=break_at,
+        quality_interruption_trading_day=break_at.date(),
+        quality_classification="NONPOSITIVE_CLOSE",
+    )
+    result = project_reference(
+        "RB", (seg,), since=break_at.date() + timedelta(days=1),
+        through=date(2026, 1, 9), as_of=break_at,
+        frequency="1d", quality_segmented=True,
+    )
+
+    assert result.trades == ()
+    assert result.summary.initial_count == 0
+    assert result.summary.data_interrupted_count == 0
 
 
 def test_first_sell_opens_short_without_fabricated_long():

@@ -5,14 +5,15 @@ from __future__ import annotations
 from typing import Literal
 
 from guiyi_quant.newow.product_contracts import ProductFrequency
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 
 
 ProductSectionName = Literal[
     "chart", "auxiliary", "reference", "explanation", "comparator"
 ]
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v8"] = (
-    "newow_product_capabilities_v8"
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v10"] = (
+    "newow_product_capabilities_v10"
 )
 RELEASE_STAGE: Literal["daily_weekly"] = "daily_weekly"
 OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
@@ -29,18 +30,31 @@ DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = (
     ("explanation", "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"),
 )
 
-CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v4"] = (
-    "newow_product_capabilities_v4"
+CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v9"] = (
+    "newow_product_capabilities_v9"
 )
 CANDIDATE_RELEASE_STAGE: Literal["daily_weekly_candidate"] = "daily_weekly_candidate"
 CANDIDATE_OPEN_FREQUENCIES = (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
 OPEN_WEEKLY_PRODUCTS = (
-    "a", "ag", "al", "ao", "ap", "au", "bu", "c", "cf", "cu", "ec", "fg",
-    "fu", "hc", "i", "jd", "jm", "l", "lc", "lh", "m", "ma", "ni", "p", "pb",
-    "pd", "pp", "ps", "pt", "rb", "rm", "ru", "sa", "sc", "sn", "ss", "ta", "ur",
-    "v", "y", "zn",
+    "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cu",
+    "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
+    "lh", "m", "ma", "ni", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
+    "rm", "ru", "sa", "sc", "si", "sn", "ss", "ta", "ur", "v", "y", "zn",
 )
-CANDIDATE_WEEKLY_PRODUCTS = OPEN_WEEKLY_PRODUCTS
+REMAINING_WEEKLY_V2_PRODUCTS = (
+    "cj", "oi", "pf", "pk", "pl", "pr", "px", "rs", "sf", "sh", "sm", "sr",
+)
+FORMAL_WEEKLY_V2_PRODUCTS = ("b", "bz", "eb", "eg", "j", "pg", "si")
+CANDIDATE_WEEKLY_PRODUCTS = OPEN_WEEKLY_PRODUCTS + REMAINING_WEEKLY_V2_PRODUCTS
+if (
+    len(OPEN_WEEKLY_PRODUCTS) != 48
+    or len(REMAINING_WEEKLY_V2_PRODUCTS) != 12
+    or len(FORMAL_WEEKLY_V2_PRODUCTS) != 7
+    or set(FORMAL_WEEKLY_V2_PRODUCTS) - set(OPEN_WEEKLY_PRODUCTS)
+    or set(OPEN_WEEKLY_PRODUCTS) & set(REMAINING_WEEKLY_V2_PRODUCTS)
+    or len(CANDIDATE_WEEKLY_PRODUCTS) != 60
+):
+    raise RuntimeError("NEWOW_WEEKLY_PRODUCT_SCOPE_INVALID")
 CANDIDATE_DEFERRED_FREQUENCIES = (
     (ProductFrequency.HOURLY, "NEWOW_HOURLY_RELEASE_PENDING"),
 )
@@ -61,6 +75,23 @@ HOURLY_PRODUCT_PREVIEW_DEFERRED = (
 )
 PD_PT_HOURLY_PREVIEW_SYMBOLS = frozenset({"pd", "pt"})
 HOURLY_PRODUCT_PREVIEW_SYMBOLS = PD_PT_HOURLY_PREVIEW_SYMBOLS | {"ap"}
+
+
+def candidate_input_quality_policy(
+    product: str,
+    frequency: ProductFrequency | str,
+    *,
+    candidate_weekly: bool,
+) -> InputQualityPolicy:
+    """Resolve the one immutable input policy for a product-frequency scope."""
+    selected = ProductFrequency(frequency)
+    if selected is not ProductFrequency.WEEKLY:
+        return InputQualityPolicy.V1
+    if product in FORMAL_WEEKLY_V2_PRODUCTS:
+        return InputQualityPolicy.WEEKLY_V2
+    if candidate_weekly and product in REMAINING_WEEKLY_V2_PRODUCTS:
+        return InputQualityPolicy.WEEKLY_V2
+    return InputQualityPolicy.V1
 
 
 def require_open_frequency(

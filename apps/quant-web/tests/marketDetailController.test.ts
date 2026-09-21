@@ -467,6 +467,31 @@ test('Newow chart starts while generic series is still pending', async () => {
   controller.dispose()
 })
 
+test('SuBing daily falls back to its quality-segmented reference when the strict generic series fails', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const series = fakeSeries()
+  let genericRequests = 0
+  series.replaceSeries = async () => { genericRequests += 1; throw new Error('strict daily series unavailable') }
+  const identity: MarketDetailIdentity = {
+    view: 'subing', symbol: 'rs', seriesKind: 'actual_dominant', frequency: '1d',
+  }
+  const controller = useMarketDetailController({
+    routeQuery: () => ({ symbol: 'rs', view: 'subing', series_kind: 'actual_dominant', frequency: '1d' }),
+    createSeries: () => series,
+    fetchDominants: async () => ({ items: [dominant('rs')] }),
+    fetchResearch: async () => { throw new Error('strict daily research is not a SuBing D1 dependency') },
+  })
+
+  await controller.switchIdentity(identity)
+
+  assert.equal(genericRequests, 1)
+  assert.equal(controller.state.value.error, null)
+  assert.equal(controller.state.value.loading, false)
+  assert.ok(controller.state.value.header)
+  assert.deepEqual(controller.bars.value, [])
+  controller.dispose()
+})
+
 test('generic series failure does not suppress an otherwise valid Newow workspace', async () => {
   const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
   const series = fakeSeries()

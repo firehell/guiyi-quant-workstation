@@ -1,0 +1,37 @@
+[
+  {
+    "symbol": "j",
+    "contract": "J2509",
+    "through": "2025-08-11",
+    "frequency": "1w",
+    "expected_plan_sha256": "f2061c9f7c0f27881ed5df2d09be40bfd51b9b87582f3649aaab87c4bf9d5acf"
+  },
+  {
+    "symbol": "j",
+    "contract": "J2601",
+    "through": "2025-12-19",
+    "frequency": "1w",
+    "expected_plan_sha256": "2cbd930ed3926583d8b41eff5cb504c0a3b262361994e5a5cc522f5588fb6556"
+  },
+  {
+    "symbol": "j",
+    "contract": "J2605",
+    "through": "2026-04-22",
+    "frequency": "1w",
+    "expected_plan_sha256": "aee73a807c1619b0acf7444ff94723efed1b27188b00b2eb38aa25bafb8f06ab"
+  },
+  {
+    "symbol": "j",
+    "contract": "J2609",
+    "through": "2026-08-19",
+    "frequency": "1w",
+    "expected_plan_sha256": "6833a36ae7d8e73558de71693aa0757c494b31068f7c62f639e1ed7925474373"
+  },
+  {
+    "symbol": "j",
+    "contract": "J2701",
+    "through": "2026-09-18",
+    "frequency": "1w",
+    "expected_plan_sha256": "01fdc474c374cb705998d9885ef34376132c6c8d0ca6f8a9f46854cfaeee9605"
+  }
+]

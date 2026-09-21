@@ -1,0 +1,142 @@
+[
+  {
+    "symbol": "pg",
+    "contract": "PG2406",
+    "through": "2024-05-23",
+    "frequency": "1w",
+    "expected_plan_sha256": "40f5a48eb8e9a87c6ba51f66af2360073601c5d7220c034f0274c01debe8272c"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2409",
+    "through": "2024-08-15",
+    "frequency": "1w",
+    "expected_plan_sha256": "51f25fe9f70881715249e832c8b1fdf2316952c51faedc1409b6551df7cd0308"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2410",
+    "through": "2024-09-20",
+    "frequency": "1w",
+    "expected_plan_sha256": "8492ada98d0135f74bebdb621a494d3874f4e474b6d5b253367b7e2b93013c17"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2411",
+    "through": "2024-10-18",
+    "frequency": "1w",
+    "expected_plan_sha256": "913c199ccdd8238a33eafa0b42446d83a87a311ba1060752f1367a4962d0dae1"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2412",
+    "through": "2024-11-20",
+    "frequency": "1w",
+    "expected_plan_sha256": "721380fdf30e9bdf0a0bf1e180f369d56492099635a7aaffcd91053b77d07e0d"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2501",
+    "through": "2024-12-13",
+    "frequency": "1w",
+    "expected_plan_sha256": "395ab6ef2115c56d06b0890f520a3c080cd8dba2c60138082c08e48a8c66cfe3"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2502",
+    "through": "2025-01-15",
+    "frequency": "1w",
+    "expected_plan_sha256": "b802dc3578d32f86b6cfaa4fbefb32f6257e124e0dd4f793b33ae978d1e67de7"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2503",
+    "through": "2025-02-21",
+    "frequency": "1w",
+    "expected_plan_sha256": "048db91262df44342f2a96b0f40c409c4b6f4da27df05369d4dc2c80d66e39e8"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2504",
+    "through": "2025-03-21",
+    "frequency": "1w",
+    "expected_plan_sha256": "5a913743b4a3f546e0d75d453eadd8d31d106ce7a5a8c6590a9e36b7b139b00f"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2505",
+    "through": "2025-04-18",
+    "frequency": "1w",
+    "expected_plan_sha256": "267efa8b21bc5c07f38ce4896c9eae25c3fdf9c9fad97480643b2490e27d606a"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2506",
+    "through": "2025-05-22",
+    "frequency": "1w",
+    "expected_plan_sha256": "0c4b19412afe8a0257be8a36ba17fb86dab75d1c9c9652ee58cd815a23079364"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2507",
+    "through": "2025-06-23",
+    "frequency": "1w",
+    "expected_plan_sha256": "72d56c98cbee4e6dce93bc5d63365111f8b2c4bece8d52d85952e0efce7e61c0"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2508",
+    "through": "2025-07-21",
+    "frequency": "1w",
+    "expected_plan_sha256": "6a98cdebef7560c07d6867fa48f9d032f728f038851868cf438fd2ddb743f3fd"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2509",
+    "through": "2025-08-19",
+    "frequency": "1w",
+    "expected_plan_sha256": "9779f3644d69e3178d2fd415be7a470d46046d4d6fc5dae494877c9e54f1c4a3"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2510",
+    "through": "2025-09-18",
+    "frequency": "1w",
+    "expected_plan_sha256": "5caf1df152799f0fbc81c7a269622108073eec5443ea8b238a2fb05162bc8298"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2511",
+    "through": "2025-10-17",
+    "frequency": "1w",
+    "expected_plan_sha256": "069218bb717a32484b8366aeddf8273cd1eab0e1fe3779910852a803df8ff03f"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2512",
+    "through": "2025-11-21",
+    "frequency": "1w",
+    "expected_plan_sha256": "0dc08f5515b510853dec379b6c6df9f2cb584126a2992463023871968f35376b"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2601",
+    "through": "2025-12-17",
+    "frequency": "1w",
+    "expected_plan_sha256": "e4421253fb21d99f2a3003e475c43c2bf0dbb62cedddc9510334d268434eb585"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2602",
+    "through": "2026-01-13",
+    "frequency": "1w",
+    "expected_plan_sha256": "d714f2d194dd6b90ef6c95c3316c469998a282ec43ec9ee9f0d7b38488cf9b36"
+  },
+  {
+    "symbol": "pg",
+    "contract": "PG2603",
+    "through": "2026-02-13",
+    "frequency": "1w",
+    "expected_plan_sha256": "89ee789cf3b7ac548f864a6b7f0e8b2ab941b2418e1ae612eb6f48cf1d2c297e"
+  }
+]

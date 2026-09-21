@@ -83,9 +83,8 @@ for (const [mode, close, color] of [['up', 105, 'rgb(255, 64, 58)'], ['down', 95
     await installNewowProductFixtures(page)
     await page.route('**/api/v1/market/bars/page?**', async route => {
       if (close === null) return route.abort('failed')
-      const requestUrl = new URL(route.request().url())
-      const bars = [100, close].map((value, index) => ({ bar_end: `2026-09-0${index + 2}T07:00:00Z`, trading_day: `2026-09-0${index + 2}`, open: 100, high: 110, low: 90, close: value, volume: 1, turnover: null, open_interest: null }))
-      await route.fulfill({ json: { request: { series_kind: requestUrl.searchParams.get('series_kind'), symbol: requestUrl.searchParams.get('symbol'), contract: null, frequency: requestUrl.searchParams.get('frequency'), before: requestUrl.searchParams.get('before'), limit: Number(requestUrl.searchParams.get('limit')) }, bars, canonical_coverage: { start: bars[0].bar_end, end: bars[1].bar_end }, page: { has_more_before: false, next_before: null }, resolved_contract_segments: [{ contract: 'RB2605', start_trading_day: '2026-01-01', end_trading_day: '2026-12-31' }] } })
+      const bars = [100, close].map((value, index) => ({ bar_end: `2026-09-0${index + 2}T07:00:00Z`, trading_day: `2026-09-0${index + 2}`, open: '100', high: '110', low: '90', close: String(value), volume: '1', turnover: null, open_interest: null, physical_contract: 'RB2605', segment_id: 'rb:RB2605:2026-01-01T00:00:00+00:00', calculation_segment_id: 'rb:RB2605:2026-01-01T00:00:00+00:00', source_identity: 'canonical:rb:RB2605:1d', observation_eligible: true, completed: true }))
+      await route.fulfill({ json: { request: { series_kind: 'actual_dominant', symbol: 'rb', contract: null, frequency: '1d', before: '2026-09-03T08:00:00.000Z', limit: 2 }, bars, canonical_coverage: { start: bars[0].bar_end, end: bars[1].bar_end }, page: { has_more_before: false, next_before: null }, resolved_contract_segments: [{ contract: 'RB2605', start_trading_day: '2026-01-01', end_trading_day: '2026-12-31' }] } })
     })
     await page.goto(newowRoute())
     const headline = page.locator('.quote-header__price strong')

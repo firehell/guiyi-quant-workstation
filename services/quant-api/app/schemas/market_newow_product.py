@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 ProductFrequencyValue = Literal["1w", "1d", "60m"]
@@ -22,7 +22,12 @@ EvidenceStatusValue = Literal[
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
 ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v3"]
 FuturesAdaptationVersionValue = Literal[
-    "newow_futures_quality_segment_v3", "newow_futures_weekly_quality_segment_v1"
+    "newow_futures_quality_segment_v3",
+    "newow_futures_weekly_quality_segment_v1",
+    "newow_futures_weekly_quality_segment_v2",
+]
+InputQualityPolicyValue = Literal[
+    "newow_input_quality_v1", "newow_weekly_input_quality_v2"
 ]
 
 
@@ -43,6 +48,10 @@ class ProductIdentityOut(_Out):
     series_kind: Literal["actual_dominant"]
     profile_id: str
     formula_versions: list[str]
+    input_quality_policy: InputQualityPolicyValue | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class ProductMetaOut(_Out):
@@ -135,6 +144,28 @@ class TrendChannelPointOut(_Out):
     physical_contract: str
     segment_id: str
     source_identity: str
+    calculation_segment_id: str
+
+
+class ChartPriceValueOut(_Out):
+    raw: str | None
+    display: str | None
+    status: ProductFeatureStatusOut
+
+
+class ChartPriceReferenceOut(_Out):
+    surface: Literal["chart_legend"]
+    frequency: ProductFrequencyValue
+    as_of: datetime
+    anchor_bar_end: datetime
+    physical_contract: str
+    segment_id: str
+    calculation_segment_id: str
+    input_sha256: str
+    formula_version: Literal["newow_chart_legend_hhv_llv10_page_v1"]
+    adapter_version: Literal["newow_chart_price_projection_v1"]
+    target: ChartPriceValueOut
+    absorb: ChartPriceValueOut
 
 
 class TrendChannelLayerOut(_Out):
@@ -158,6 +189,7 @@ class ChartValueOut(_Out):
     bars: list[ProductBarOut]
     frames: list[ProductFrameOut]
     trend_channel: TrendChannelLayerOut | None
+    price_reference: ChartPriceReferenceOut | None
     actions: list[ProductActionOut]
     hints: list[ProductHintOut]
     diagnostics: list[str]
@@ -179,6 +211,10 @@ class ReferenceTradeOut(_Out):
     formula_versions: list[str]
     reference_model_version: ReferenceModelVersionValue
     futures_adaptation_version: FuturesAdaptationVersionValue
+    input_quality_policy: InputQualityPolicyValue | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     entry_signal_id: str
     entry_sequence: int
     entry_bar_end: datetime
@@ -791,6 +827,8 @@ class NewowProductCapabilitiesResponse(_Out):
         "newow_product_capabilities_v6",
         "newow_product_capabilities_v7",
         "newow_product_capabilities_v8",
+        "newow_product_capabilities_v9",
+        "newow_product_capabilities_v10",
     ]
     release_stage: Literal[
         "daily",

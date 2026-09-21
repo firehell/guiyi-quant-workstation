@@ -123,7 +123,7 @@ export async function installNewowProductFixtures(page, options = {}) {
     if (request.method() !== 'GET') return unexpected(route, state, `non-GET ${request.method()} ${url.pathname}`)
 
     if (url.pathname === '/api/v1/market/newow/product-capabilities') {
-      return route.fulfill({ json: options.weeklyFormal ? formalWeeklyCapabilities() : options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities() })
+      return route.fulfill({ json: options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities() })
     }
 
     if (url.pathname === '/api/v1/market/newow/daily-snapshot') {
@@ -143,7 +143,8 @@ export async function installNewowProductFixtures(page, options = {}) {
 
     if (url.pathname === '/api/v1/market/newow/weekly-snapshot') {
       const strategy = url.searchParams.get('strategy')
-      if (url.searchParams.get('product') !== 'rb' || !NEWOW_STRATEGIES.includes(strategy) || url.searchParams.get('frequency') !== '1w') {
+      if (options.weeklyCandidate !== true || url.searchParams.get('product') !== 'rb'
+        || !NEWOW_STRATEGIES.includes(strategy) || url.searchParams.get('frequency') !== '1w') {
         return unexpected(route, state, `invalid weekly snapshot ${url.href}`)
       }
       return route.fulfill({ json: {
@@ -153,8 +154,7 @@ export async function installNewowProductFixtures(page, options = {}) {
         expected_period_end: options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
         available_period_end: options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
         as_of: options.apiAsOf ?? options.frozenNow ?? NEWOW_AS_OF,
-        freshness: 'current',
-        current_context: { status: 'known', physical_contract: CONTRACT },
+        freshness: 'current', current_context: { status: 'known', physical_contract: CONTRACT },
       } })
     }
 
@@ -257,19 +257,7 @@ function weeklyCandidateCapabilities() {
     deferred_frequencies: [
       { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
     ],
-  }
-}
-
-function formalWeeklyCapabilities() {
-  return {
-    ...dailyCapabilities(),
-    schema_version: 'newow_product_capabilities_v8',
-    release_stage: 'daily_weekly',
-    open_frequencies: ['1d', '1w'],
     weekly_products: 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' '),
-    deferred_frequencies: [
-      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
-    ],
   }
 }
 
@@ -700,7 +688,12 @@ function auxiliaryValue(component, frequency, options = {}, strategy = 'trend') 
     const points = barEnds.map((bar_end, index) => ({ bar_end, value: index === 0 ? 0 : 0.5, ready: true, valid: true, reason: null }))
     return { ...base, formal_signal_eligible: false, formula_version: 'v1-draft', display_adapter_version: 'guiyi_newow_macd_display_v1', parameters: { fast: 12, slow: 26, signal: 9, ema_seed_policy: 'sma_window', histogram_scale: 2, round_digits: 6 }, parameters_hash: '5dd0ebd25122eea6', allowed_uses: ['research_display'], segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { dif: points, dea: points.map(point => ({ ...point, value: point.value / 2 })), histogram: points } }] }
   }
-  if (component === 'cup_handle') return { ...base, formula_version: 'newow_cup_handle_v1', segments: frequency === '1d' ? [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: ['2026-09-03T07:00:00.000Z'], status: ready(), data: [] }] : [] }
+  if (component === 'cup_handle') {
+    const pivot = (kind, price, day) => ({ kind, price, pivot_at: `2026-09-0${day}T07:00:00.000Z`, confirmed_at: '2026-09-03T07:00:00.000Z', pivot_index: day, confirmed_index: 3, atr_at_pivot: 1 })
+    const witness = { witness_id: 'fixture-cup-1', candidate_id: 'fixture-cup-1', left_rim: pivot('left_rim', '106.0000', 1), bottom: pivot('bottom', '98.0000', 2), right_rim: pivot('right_rim', '105.0000', 3), handle_extreme: pivot('handle_extreme', '102.0000', 3), pivot_price: '105.0000', confirmed_at: '2026-09-03T07:00:00.000Z', score: 72, score_breakdown: [['shape', 40]], volume_facts: [], right_leg_median_exact: '1', handle_median_exact: '1', handle_baseline_median_exact: '1', profile_identity: 'fixture', formula_version: 'newow_cup_handle_v1' }
+    const laterWitness = { ...witness, witness_id: 'fixture-cup-2', candidate_id: 'fixture-cup-2', pivot_price: '108.0000', score: 68 }
+    return { ...base, formula_version: 'newow_cup_handle_v1', segments: frequency === '1d' ? [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: ['2026-09-03T07:00:00.000Z'], status: ready(), data: [witness, laterWitness] }] : [] }
+  }
   const barEnds = ['2026-09-02T07:00:00.000Z', '2026-09-03T07:00:00.000Z']
   if (component === 'main_force_control') return { ...base, formula_version: 'newow_main_force_control_page_v1', segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { kongpan: [10, 12], status: ['HOLD', 'BUILD'], current_status: 'BUILD', formula_version: 'newow_main_force_control_page_v1' } }] }
   if (component === 'up_down_energy') return { ...base, formula_version: 'newow_up_down_energy_page_v1', segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { var4: [1, 2], ma10: [1, 1.5], band_entry: [0, 1], rebound_entry: [0, 0], oversold_entry: [0, 0], var3: [1, 2], ma120: [1, 1], formula_version: 'newow_up_down_energy_page_v1' } }] }

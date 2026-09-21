@@ -92,10 +92,11 @@ test('emits stable signal selection and preserves an established viewport and fo
   }
   const response = ref(chartResponse())
   const selectedSignalId = ref<string | null>('build-stable')
+  const focusRequestId = ref(0)
   const stage = ref<{ revealSignal: (id: string) => boolean } | null>(null)
   const Host = defineComponent({ setup: () => () => h(Stage, {
     ref: stage, response: response.value, strategy: response.value.meta.identity.strategy,
-    selectedSignalId: selectedSignalId.value,
+    selectedSignalId: selectedSignalId.value, focusRequestId: focusRequestId.value,
     hasMoreBefore: true, loading: false,
     onLoadEarlier: () => { loads += 1 },
     'onSelect-signal': (id: string) => selected.push(id),
@@ -112,6 +113,10 @@ test('emits stable signal selection and preserves an established viewport and fo
   assert.equal(stage.value!.revealSignal('build-stable'), true)
   assert.deepEqual(focused, ['build-stable'])
 
+  focusRequestId.value = 1
+  await nextTick()
+  assert.deepEqual(focused, ['build-stable', 'build-stable'], 'a new explicit locate request must re-center and acknowledge the same signal')
+
   range = { from: 20, to: 21 }
   rangeListener!(range)
   range = { from: -1, to: 1 }
@@ -127,7 +132,7 @@ test('emits stable signal selection and preserves an established viewport and fo
   response.value = prependBar(response.value)
   await nextTick()
   assert.deepEqual(range, { from: 1.25, to: 2.25 }, 'prepended data must preserve the physical viewport')
-  assert.deepEqual(focused, ['build-stable'], 'later data must not reset established focus')
+  assert.deepEqual(focused, ['build-stable', 'build-stable'], 'later data must not reset an acknowledged locate request')
 
   const chartRoot = findNode(root, (node) => node.props['data-testid'] === 'newow-product-chart-stage')!
   assert.equal(chartRoot.props['data-strategy'], 'oscillation')

@@ -1,0 +1,4414 @@
+{
+  "schema_version": 1,
+  "command": "data.newow-readiness",
+  "readonly": true,
+  "status": "audited",
+  "complete": true,
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "release_stage": "daily_weekly_candidate",
+  "matrix": false,
+  "frequency_scope": [
+    "1w"
+  ],
+  "product_count": 1,
+  "main_case_count": 0,
+  "main_ready_count": 0,
+  "budget_exhausted": false,
+  "work_used": 32,
+  "enumerations": [
+    {
+      "symbol": "j",
+      "frequency": "1w",
+      "section": "chart",
+      "status": "ENUMERATED",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "since": "2023-01-03",
+      "through": "2026-09-18",
+      "owner_count": 12
+    },
+    {
+      "symbol": "j",
+      "frequency": "1w",
+      "section": "auxiliary",
+      "status": "ENUMERATED",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "since": "2023-01-03",
+      "through": "2026-09-18",
+      "owner_count": 12
+    },
+    {
+      "symbol": "j",
+      "frequency": "1w",
+      "section": "reference",
+      "status": "ENUMERATED",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "since": "2023-01-01",
+      "through": "2026-09-18",
+      "owner_count": 12
+    },
+    {
+      "symbol": "j",
+      "frequency": "1w",
+      "section": "explanation",
+      "status": "UNOPENED",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+    }
+  ],
+  "dependencies": [
+    {
+      "symbol": "j",
+      "contract": "J2305",
+      "frequency": "1w",
+      "through": "2023-04-13",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-01-03",
+          "through": "2023-04-13"
+        }
+      ],
+      "expected_bar_count": 45,
+      "actual_bar_count": 45,
+      "effective_bar_count": 45,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-04-07T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2309",
+      "frequency": "1w",
+      "through": "2023-08-15",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-04-14",
+          "through": "2023-08-15"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-08-11T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2401",
+      "frequency": "1w",
+      "through": "2023-12-14",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-08-16",
+          "through": "2023-12-14"
+        }
+      ],
+      "expected_bar_count": 45,
+      "actual_bar_count": 45,
+      "effective_bar_count": 45,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-12-08T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2405",
+      "frequency": "1w",
+      "through": "2024-04-15",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-12-15",
+          "through": "2024-04-15"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-04-12T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2409",
+      "frequency": "1w",
+      "through": "2024-08-22",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-04-16",
+          "through": "2024-08-22"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-08-16T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2501",
+      "frequency": "1w",
+      "through": "2024-12-24",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-08-23",
+          "through": "2024-12-24"
+        }
+      ],
+      "expected_bar_count": 48,
+      "actual_bar_count": 48,
+      "effective_bar_count": 48,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-12-20T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2505",
+      "frequency": "1w",
+      "through": "2025-04-18",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-12-25",
+          "through": "2025-04-18"
+        }
+      ],
+      "expected_bar_count": 48,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2025-04-18T07:00:00+00:00",
+      "price_unavailable_count": 1,
+      "source_quality": "WEEKLY_INTERRUPTED"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2509",
+      "frequency": "1w",
+      "through": "2025-08-11",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_UNAVAILABLE",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-04-21",
+          "through": "2025-08-11"
+        }
+      ],
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "contract": "J2509",
+            "trading_day": "2024-09-20"
+          },
+          "historical_candidate_recoverable": true
+        }
+      },
+      "reason": "REPLAY_ENDPOINTS_MISSING"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2601",
+      "frequency": "1w",
+      "through": "2025-12-19",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_UNAVAILABLE",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-08-12",
+          "through": "2025-12-19"
+        }
+      ],
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "contract": "J2601",
+            "trading_day": "2025-01-17"
+          },
+          "historical_candidate_recoverable": true
+        }
+      },
+      "reason": "REPLAY_ENDPOINTS_MISSING"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2605",
+      "frequency": "1w",
+      "through": "2026-04-22",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_UNAVAILABLE",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-12-22",
+          "through": "2026-04-22"
+        }
+      ],
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "contract": "J2605",
+            "trading_day": "2025-05-23"
+          },
+          "historical_candidate_recoverable": true
+        }
+      },
+      "reason": "REPLAY_ENDPOINTS_MISSING"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2609",
+      "frequency": "1w",
+      "through": "2026-08-19",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_UNAVAILABLE",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2026-04-23",
+          "through": "2026-08-19"
+        }
+      ],
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "contract": "J2609",
+            "trading_day": "2025-09-19"
+          },
+          "historical_candidate_recoverable": true
+        }
+      },
+      "reason": "REPLAY_ENDPOINTS_MISSING"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2701",
+      "frequency": "1w",
+      "through": "2026-09-18",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_UNAVAILABLE",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2026-08-20",
+          "through": "2026-09-18"
+        }
+      ],
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "contract": "J2701",
+            "trading_day": "2026-01-23"
+          },
+          "historical_candidate_recoverable": true
+        }
+      },
+      "reason": "REPLAY_ENDPOINTS_MISSING"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2305",
+      "frequency": "1w",
+      "through": "2023-04-13",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-01-03",
+          "through": "2023-04-13"
+        }
+      ],
+      "expected_bar_count": 45,
+      "actual_bar_count": 45,
+      "effective_bar_count": 45,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-04-07T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2309",
+      "frequency": "1w",
+      "through": "2023-08-15",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-04-14",
+          "through": "2023-08-15"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-08-11T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2401",
+      "frequency": "1w",
+      "through": "2023-12-14",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-08-16",
+          "through": "2023-12-14"
+        }
+      ],
+      "expected_bar_count": 45,
+      "actual_bar_count": 45,
+      "effective_bar_count": 45,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-12-08T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2405",
+      "frequency": "1w",
+      "through": "2024-04-15",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-12-15",
+          "through": "2024-04-15"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-04-12T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2409",
+      "frequency": "1w",
+      "through": "2024-08-22",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-04-16",
+          "through": "2024-08-22"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-08-16T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2501",
+      "frequency": "1w",
+      "through": "2024-12-24",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-08-23",
+          "through": "2024-12-24"
+        }
+      ],
+      "expected_bar_count": 48,
+      "actual_bar_count": 48,
+      "effective_bar_count": 48,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-12-20T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2505",
+      "frequency": "1w",
+      "through": "2025-04-18",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-12-25",
+          "through": "2025-04-18"
+        }
+      ],
+      "expected_bar_count": 48,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2025-04-18T07:00:00+00:00",
+      "price_unavailable_count": 1,
+      "source_quality": "WEEKLY_INTERRUPTED"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2509",
+      "frequency": "1w",
+      "through": "2025-08-11",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_UNAVAILABLE",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-04-21",
+          "through": "2025-08-11"
+        }
+      ],
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "contract": "J2509",
+            "trading_day": "2024-09-20"
+          },
+          "historical_candidate_recoverable": true
+        }
+      },
+      "reason": "REPLAY_ENDPOINTS_MISSING"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2601",
+      "frequency": "1w",
+      "through": "2025-12-19",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_UNAVAILABLE",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-08-12",
+          "through": "2025-12-19"
+        }
+      ],
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "contract": "J2601",
+            "trading_day": "2025-01-17"
+          },
+          "historical_candidate_recoverable": true
+        }
+      },
+      "reason": "REPLAY_ENDPOINTS_MISSING"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2605",
+      "frequency": "1w",
+      "through": "2026-04-22",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_UNAVAILABLE",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-12-22",
+          "through": "2026-04-22"
+        }
+      ],
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "contract": "J2605",
+            "trading_day": "2025-05-23"
+          },
+          "historical_candidate_recoverable": true
+        }
+      },
+      "reason": "REPLAY_ENDPOINTS_MISSING"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2609",
+      "frequency": "1w",
+      "through": "2026-08-19",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_UNAVAILABLE",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2026-04-23",
+          "through": "2026-08-19"
+        }
+      ],
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "contract": "J2609",
+            "trading_day": "2025-09-19"
+          },
+          "historical_candidate_recoverable": true
+        }
+      },
+      "reason": "REPLAY_ENDPOINTS_MISSING"
+    },
+    {
+      "symbol": "j",
+      "contract": "J2701",
+      "frequency": "1w",
+      "through": "2026-09-18",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_UNAVAILABLE",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2026-08-20",
+          "through": "2026-09-18"
+        }
+      ],
+      "error": {
+        "code": "NEWOW_DATA_UNAVAILABLE",
+        "diagnostic": {
+          "reason": "REPLAY_ENDPOINTS_MISSING",
+          "context": {
+            "contract": "J2701",
+            "trading_day": "2026-01-23"
+          },
+          "historical_candidate_recoverable": true
+        }
+      },
+      "reason": "REPLAY_ENDPOINTS_MISSING"
+    }
+  ],
+  "repair_targets": [
+    {
+      "symbol": "j",
+      "contract": "J2509",
+      "frequency": "1w",
+      "through": "2025-08-11",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "status": "PROPOSED",
+      "expected_bar_count": 181,
+      "provider_request_count": 16,
+      "plan_sha256": "f2061c9f7c0f27881ed5df2d09be40bfd51b9b87582f3649aaab87c4bf9d5acf",
+      "provider": "rqdata",
+      "listed_date": "2024-09-18",
+      "expired_date": "2025-09-12",
+      "requested_through": "2025-08-11",
+      "effective_through": "2025-08-11",
+      "target_windows": [
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2024,
+          "month": 9,
+          "expected_start": "2024-09-18T07:00:00+00:00",
+          "expected_end": "2024-09-30T07:00:00+00:00",
+          "expected_bar_count": 9,
+          "missing_start": "2024-09-18T07:00:00+00:00",
+          "missing_end": "2024-09-30T07:00:00+00:00",
+          "missing_bar_count": 9
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2024,
+          "month": 10,
+          "expected_start": "2024-10-08T07:00:00+00:00",
+          "expected_end": "2024-10-31T07:00:00+00:00",
+          "expected_bar_count": 18,
+          "missing_start": "2024-10-08T07:00:00+00:00",
+          "missing_end": "2024-10-31T07:00:00+00:00",
+          "missing_bar_count": 18
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2024,
+          "month": 11,
+          "expected_start": "2024-11-01T07:00:00+00:00",
+          "expected_end": "2024-11-29T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2024-11-01T07:00:00+00:00",
+          "missing_end": "2024-11-29T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2024,
+          "month": 12,
+          "expected_start": "2024-12-02T07:00:00+00:00",
+          "expected_end": "2024-12-31T07:00:00+00:00",
+          "expected_bar_count": 22,
+          "missing_start": "2024-12-02T07:00:00+00:00",
+          "missing_end": "2024-12-31T07:00:00+00:00",
+          "missing_bar_count": 22
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 1,
+          "expected_start": "2025-01-02T07:00:00+00:00",
+          "expected_end": "2025-01-27T07:00:00+00:00",
+          "expected_bar_count": 18,
+          "missing_start": "2025-01-02T07:00:00+00:00",
+          "missing_end": "2025-01-27T07:00:00+00:00",
+          "missing_bar_count": 18
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 2,
+          "expected_start": "2025-02-05T07:00:00+00:00",
+          "expected_end": "2025-02-28T07:00:00+00:00",
+          "expected_bar_count": 18,
+          "missing_start": "2025-02-05T07:00:00+00:00",
+          "missing_end": "2025-02-28T07:00:00+00:00",
+          "missing_bar_count": 18
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 3,
+          "expected_start": "2025-03-03T07:00:00+00:00",
+          "expected_end": "2025-03-31T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2025-03-03T07:00:00+00:00",
+          "missing_end": "2025-03-31T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 4,
+          "expected_start": "2025-04-01T07:00:00+00:00",
+          "expected_end": "2025-04-30T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2025-04-01T07:00:00+00:00",
+          "missing_end": "2025-04-18T07:00:00+00:00",
+          "missing_bar_count": 13
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2024,
+          "month": 9,
+          "expected_start": "2024-09-20T07:00:00+00:00",
+          "expected_end": "2024-09-30T07:00:00+00:00",
+          "expected_bar_count": 3,
+          "missing_start": "2024-09-20T07:00:00+00:00",
+          "missing_end": "2024-09-30T07:00:00+00:00",
+          "missing_bar_count": 3
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2024,
+          "month": 10,
+          "expected_start": "2024-10-11T07:00:00+00:00",
+          "expected_end": "2024-10-25T07:00:00+00:00",
+          "expected_bar_count": 3,
+          "missing_start": "2024-10-11T07:00:00+00:00",
+          "missing_end": "2024-10-25T07:00:00+00:00",
+          "missing_bar_count": 3
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2024,
+          "month": 11,
+          "expected_start": "2024-11-01T07:00:00+00:00",
+          "expected_end": "2024-11-29T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2024-11-01T07:00:00+00:00",
+          "missing_end": "2024-11-29T07:00:00+00:00",
+          "missing_bar_count": 5
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2024,
+          "month": 12,
+          "expected_start": "2024-12-06T07:00:00+00:00",
+          "expected_end": "2024-12-27T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2024-12-06T07:00:00+00:00",
+          "missing_end": "2024-12-27T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 1,
+          "expected_start": "2025-01-03T07:00:00+00:00",
+          "expected_end": "2025-01-27T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2025-01-03T07:00:00+00:00",
+          "missing_end": "2025-01-27T07:00:00+00:00",
+          "missing_bar_count": 5
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 2,
+          "expected_start": "2025-02-07T07:00:00+00:00",
+          "expected_end": "2025-02-28T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-02-07T07:00:00+00:00",
+          "missing_end": "2025-02-28T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 3,
+          "expected_start": "2025-03-07T07:00:00+00:00",
+          "expected_end": "2025-03-28T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-03-07T07:00:00+00:00",
+          "missing_end": "2025-03-28T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 4,
+          "expected_start": "2025-04-03T07:00:00+00:00",
+          "expected_end": "2025-04-30T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2025-04-03T07:00:00+00:00",
+          "missing_end": "2025-04-18T07:00:00+00:00",
+          "missing_bar_count": 3
+        }
+      ],
+      "direct_target_count": 16,
+      "derived_target_count": 0,
+      "dependency_frequencies": [
+        "1d"
+      ],
+      "frequencies": [
+        "1d",
+        "1w"
+      ],
+      "scope_diagnostics": [
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2024,
+          "month": 9,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2024,
+          "month": 10,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2024,
+          "month": 11,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2024,
+          "month": 12,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 1,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 2,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 3,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 4,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 5,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 6,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 7,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 8,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2024,
+          "month": 9,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2024,
+          "month": 10,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2024,
+          "month": 11,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2024,
+          "month": 12,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 1,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 2,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 3,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 4,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 5,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 6,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 7,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2509",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 8,
+          "reason_codes": [],
+          "planned": false
+        }
+      ]
+    },
+    {
+      "symbol": "j",
+      "contract": "J2601",
+      "frequency": "1w",
+      "through": "2025-12-19",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "status": "PROPOSED",
+      "expected_bar_count": 184,
+      "provider_request_count": 16,
+      "plan_sha256": "2cbd930ed3926583d8b41eff5cb504c0a3b262361994e5a5cc522f5588fb6556",
+      "provider": "rqdata",
+      "listed_date": "2025-01-16",
+      "expired_date": "2026-01-16",
+      "requested_through": "2025-12-19",
+      "effective_through": "2025-12-19",
+      "target_windows": [
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 1,
+          "expected_start": "2025-01-16T07:00:00+00:00",
+          "expected_end": "2025-01-27T07:00:00+00:00",
+          "expected_bar_count": 8,
+          "missing_start": "2025-01-16T07:00:00+00:00",
+          "missing_end": "2025-01-27T07:00:00+00:00",
+          "missing_bar_count": 8
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 2,
+          "expected_start": "2025-02-05T07:00:00+00:00",
+          "expected_end": "2025-02-28T07:00:00+00:00",
+          "expected_bar_count": 18,
+          "missing_start": "2025-02-05T07:00:00+00:00",
+          "missing_end": "2025-02-28T07:00:00+00:00",
+          "missing_bar_count": 18
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 3,
+          "expected_start": "2025-03-03T07:00:00+00:00",
+          "expected_end": "2025-03-31T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2025-03-03T07:00:00+00:00",
+          "missing_end": "2025-03-31T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 4,
+          "expected_start": "2025-04-01T07:00:00+00:00",
+          "expected_end": "2025-04-30T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2025-04-01T07:00:00+00:00",
+          "missing_end": "2025-04-30T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 5,
+          "expected_start": "2025-05-06T07:00:00+00:00",
+          "expected_end": "2025-05-30T07:00:00+00:00",
+          "expected_bar_count": 19,
+          "missing_start": "2025-05-06T07:00:00+00:00",
+          "missing_end": "2025-05-30T07:00:00+00:00",
+          "missing_bar_count": 19
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 6,
+          "expected_start": "2025-06-03T07:00:00+00:00",
+          "expected_end": "2025-06-30T07:00:00+00:00",
+          "expected_bar_count": 20,
+          "missing_start": "2025-06-03T07:00:00+00:00",
+          "missing_end": "2025-06-30T07:00:00+00:00",
+          "missing_bar_count": 20
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 7,
+          "expected_start": "2025-07-01T07:00:00+00:00",
+          "expected_end": "2025-07-31T07:00:00+00:00",
+          "expected_bar_count": 23,
+          "missing_start": "2025-07-01T07:00:00+00:00",
+          "missing_end": "2025-07-31T07:00:00+00:00",
+          "missing_bar_count": 23
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 8,
+          "expected_start": "2025-08-01T07:00:00+00:00",
+          "expected_end": "2025-08-29T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2025-08-01T07:00:00+00:00",
+          "missing_end": "2025-08-15T07:00:00+00:00",
+          "missing_bar_count": 11
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 1,
+          "expected_start": "2025-01-17T07:00:00+00:00",
+          "expected_end": "2025-01-27T07:00:00+00:00",
+          "expected_bar_count": 3,
+          "missing_start": "2025-01-17T07:00:00+00:00",
+          "missing_end": "2025-01-27T07:00:00+00:00",
+          "missing_bar_count": 3
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 2,
+          "expected_start": "2025-02-07T07:00:00+00:00",
+          "expected_end": "2025-02-28T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-02-07T07:00:00+00:00",
+          "missing_end": "2025-02-28T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 3,
+          "expected_start": "2025-03-07T07:00:00+00:00",
+          "expected_end": "2025-03-28T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-03-07T07:00:00+00:00",
+          "missing_end": "2025-03-28T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 4,
+          "expected_start": "2025-04-03T07:00:00+00:00",
+          "expected_end": "2025-04-30T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2025-04-03T07:00:00+00:00",
+          "missing_end": "2025-04-30T07:00:00+00:00",
+          "missing_bar_count": 5
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 5,
+          "expected_start": "2025-05-09T07:00:00+00:00",
+          "expected_end": "2025-05-30T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-05-09T07:00:00+00:00",
+          "missing_end": "2025-05-30T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 6,
+          "expected_start": "2025-06-06T07:00:00+00:00",
+          "expected_end": "2025-06-27T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-06-06T07:00:00+00:00",
+          "missing_end": "2025-06-27T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 7,
+          "expected_start": "2025-07-04T07:00:00+00:00",
+          "expected_end": "2025-07-25T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-07-04T07:00:00+00:00",
+          "missing_end": "2025-07-25T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 8,
+          "expected_start": "2025-08-01T07:00:00+00:00",
+          "expected_end": "2025-08-29T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2025-08-01T07:00:00+00:00",
+          "missing_end": "2025-08-15T07:00:00+00:00",
+          "missing_bar_count": 3
+        }
+      ],
+      "direct_target_count": 16,
+      "derived_target_count": 0,
+      "dependency_frequencies": [
+        "1d"
+      ],
+      "frequencies": [
+        "1d",
+        "1w"
+      ],
+      "scope_diagnostics": [
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 1,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 2,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 3,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 4,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 5,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 6,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 7,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 8,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 9,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 10,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 11,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 12,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 1,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 2,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 3,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 4,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 5,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 6,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 7,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 8,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING",
+            "WEEKLY_DAILY_VALUE_CONFLICT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 9,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 10,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 11,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2601",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 12,
+          "reason_codes": [],
+          "planned": false
+        }
+      ]
+    },
+    {
+      "symbol": "j",
+      "contract": "J2605",
+      "frequency": "1w",
+      "through": "2026-04-22",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "status": "PROPOSED",
+      "expected_bar_count": 188,
+      "provider_request_count": 16,
+      "plan_sha256": "aee73a807c1619b0acf7444ff94723efed1b27188b00b2eb38aa25bafb8f06ab",
+      "provider": "rqdata",
+      "listed_date": "2025-05-20",
+      "expired_date": "2026-05-19",
+      "requested_through": "2026-04-22",
+      "effective_through": "2026-04-22",
+      "target_windows": [
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 5,
+          "expected_start": "2025-05-20T07:00:00+00:00",
+          "expected_end": "2025-05-30T07:00:00+00:00",
+          "expected_bar_count": 9,
+          "missing_start": "2025-05-20T07:00:00+00:00",
+          "missing_end": "2025-05-30T07:00:00+00:00",
+          "missing_bar_count": 9
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 6,
+          "expected_start": "2025-06-03T07:00:00+00:00",
+          "expected_end": "2025-06-30T07:00:00+00:00",
+          "expected_bar_count": 20,
+          "missing_start": "2025-06-03T07:00:00+00:00",
+          "missing_end": "2025-06-30T07:00:00+00:00",
+          "missing_bar_count": 20
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 7,
+          "expected_start": "2025-07-01T07:00:00+00:00",
+          "expected_end": "2025-07-31T07:00:00+00:00",
+          "expected_bar_count": 23,
+          "missing_start": "2025-07-01T07:00:00+00:00",
+          "missing_end": "2025-07-31T07:00:00+00:00",
+          "missing_bar_count": 23
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 8,
+          "expected_start": "2025-08-01T07:00:00+00:00",
+          "expected_end": "2025-08-29T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2025-08-01T07:00:00+00:00",
+          "missing_end": "2025-08-29T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 9,
+          "expected_start": "2025-09-01T07:00:00+00:00",
+          "expected_end": "2025-09-30T07:00:00+00:00",
+          "expected_bar_count": 22,
+          "missing_start": "2025-09-01T07:00:00+00:00",
+          "missing_end": "2025-09-30T07:00:00+00:00",
+          "missing_bar_count": 22
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 10,
+          "expected_start": "2025-10-09T07:00:00+00:00",
+          "expected_end": "2025-10-31T07:00:00+00:00",
+          "expected_bar_count": 17,
+          "missing_start": "2025-10-09T07:00:00+00:00",
+          "missing_end": "2025-10-31T07:00:00+00:00",
+          "missing_bar_count": 17
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-03T07:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 20,
+          "missing_start": "2025-11-03T07:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 20
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-01T07:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 23,
+          "missing_start": "2025-12-01T07:00:00+00:00",
+          "missing_end": "2025-12-19T07:00:00+00:00",
+          "missing_bar_count": 15
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 5,
+          "expected_start": "2025-05-23T07:00:00+00:00",
+          "expected_end": "2025-05-30T07:00:00+00:00",
+          "expected_bar_count": 2,
+          "missing_start": "2025-05-23T07:00:00+00:00",
+          "missing_end": "2025-05-30T07:00:00+00:00",
+          "missing_bar_count": 2
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 6,
+          "expected_start": "2025-06-06T07:00:00+00:00",
+          "expected_end": "2025-06-27T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-06-06T07:00:00+00:00",
+          "missing_end": "2025-06-27T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 7,
+          "expected_start": "2025-07-04T07:00:00+00:00",
+          "expected_end": "2025-07-25T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-07-04T07:00:00+00:00",
+          "missing_end": "2025-07-25T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 8,
+          "expected_start": "2025-08-01T07:00:00+00:00",
+          "expected_end": "2025-08-29T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2025-08-01T07:00:00+00:00",
+          "missing_end": "2025-08-29T07:00:00+00:00",
+          "missing_bar_count": 5
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 9,
+          "expected_start": "2025-09-05T07:00:00+00:00",
+          "expected_end": "2025-09-30T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2025-09-05T07:00:00+00:00",
+          "missing_end": "2025-09-30T07:00:00+00:00",
+          "missing_bar_count": 5
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 10,
+          "expected_start": "2025-10-10T07:00:00+00:00",
+          "expected_end": "2025-10-31T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-10-10T07:00:00+00:00",
+          "missing_end": "2025-10-31T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-07T07:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-11-07T07:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-05T07:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2025-12-05T07:00:00+00:00",
+          "missing_end": "2025-12-19T07:00:00+00:00",
+          "missing_bar_count": 3
+        }
+      ],
+      "direct_target_count": 16,
+      "derived_target_count": 0,
+      "dependency_frequencies": [
+        "1d"
+      ],
+      "frequencies": [
+        "1d",
+        "1w"
+      ],
+      "scope_diagnostics": [
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 5,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 6,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 7,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 8,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 9,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 10,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 11,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 12,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 1,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 2,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 3,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 4,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 5,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 6,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 7,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 8,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 9,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 10,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 11,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 12,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 1,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 2,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 3,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2605",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 4,
+          "reason_codes": [],
+          "planned": false
+        }
+      ]
+    },
+    {
+      "symbol": "j",
+      "contract": "J2609",
+      "frequency": "1w",
+      "through": "2026-08-19",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "status": "PROPOSED",
+      "expected_bar_count": 181,
+      "provider_request_count": 16,
+      "plan_sha256": "6833a36ae7d8e73558de71693aa0757c494b31068f7c62f639e1ed7925474373",
+      "provider": "rqdata",
+      "listed_date": "2025-09-15",
+      "expired_date": "2026-09-14",
+      "requested_through": "2026-08-19",
+      "effective_through": "2026-08-19",
+      "target_windows": [
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 9,
+          "expected_start": "2025-09-15T07:00:00+00:00",
+          "expected_end": "2025-09-30T07:00:00+00:00",
+          "expected_bar_count": 12,
+          "missing_start": "2025-09-15T07:00:00+00:00",
+          "missing_end": "2025-09-30T07:00:00+00:00",
+          "missing_bar_count": 12
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 10,
+          "expected_start": "2025-10-09T07:00:00+00:00",
+          "expected_end": "2025-10-31T07:00:00+00:00",
+          "expected_bar_count": 17,
+          "missing_start": "2025-10-09T07:00:00+00:00",
+          "missing_end": "2025-10-31T07:00:00+00:00",
+          "missing_bar_count": 17
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-03T07:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 20,
+          "missing_start": "2025-11-03T07:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 20
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-01T07:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 23,
+          "missing_start": "2025-12-01T07:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 23
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-05T07:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 20,
+          "missing_start": "2026-01-05T07:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 20
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-02T07:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 14,
+          "missing_start": "2026-02-02T07:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 14
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-02T07:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 22,
+          "missing_start": "2026-03-02T07:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 22
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-01T07:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2026-04-01T07:00:00+00:00",
+          "missing_end": "2026-04-24T07:00:00+00:00",
+          "missing_bar_count": 17
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 9,
+          "expected_start": "2025-09-19T07:00:00+00:00",
+          "expected_end": "2025-09-30T07:00:00+00:00",
+          "expected_bar_count": 3,
+          "missing_start": "2025-09-19T07:00:00+00:00",
+          "missing_end": "2025-09-30T07:00:00+00:00",
+          "missing_bar_count": 3
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 10,
+          "expected_start": "2025-10-10T07:00:00+00:00",
+          "expected_end": "2025-10-31T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-10-10T07:00:00+00:00",
+          "missing_end": "2025-10-31T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 11,
+          "expected_start": "2025-11-07T07:00:00+00:00",
+          "expected_end": "2025-11-28T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2025-11-07T07:00:00+00:00",
+          "missing_end": "2025-11-28T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 12,
+          "expected_start": "2025-12-05T07:00:00+00:00",
+          "expected_end": "2025-12-31T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2025-12-05T07:00:00+00:00",
+          "missing_end": "2025-12-31T07:00:00+00:00",
+          "missing_bar_count": 5
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-09T07:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2026-01-09T07:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-06T07:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 3,
+          "missing_start": "2026-02-06T07:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 3
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-06T07:00:00+00:00",
+          "expected_end": "2026-03-27T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2026-03-06T07:00:00+00:00",
+          "missing_end": "2026-03-27T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-03T07:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2026-04-03T07:00:00+00:00",
+          "missing_end": "2026-04-24T07:00:00+00:00",
+          "missing_bar_count": 4
+        }
+      ],
+      "direct_target_count": 16,
+      "derived_target_count": 0,
+      "dependency_frequencies": [
+        "1d"
+      ],
+      "frequencies": [
+        "1d",
+        "1w"
+      ],
+      "scope_diagnostics": [
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 9,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 10,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 11,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2025,
+          "month": 12,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 1,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 2,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 3,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 4,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 5,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 6,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 7,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 8,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 9,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 10,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 11,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2025,
+          "month": 12,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 1,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 2,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 3,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 4,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING",
+            "WEEKLY_DAILY_VALUE_CONFLICT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 5,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 6,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 7,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2609",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 8,
+          "reason_codes": [],
+          "planned": false
+        }
+      ]
+    },
+    {
+      "symbol": "j",
+      "contract": "J2701",
+      "frequency": "1w",
+      "through": "2026-09-18",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "status": "PROPOSED",
+      "expected_bar_count": 181,
+      "provider_request_count": 16,
+      "plan_sha256": "01fdc474c374cb705998d9885ef34376132c6c8d0ca6f8a9f46854cfaeee9605",
+      "provider": "rqdata",
+      "listed_date": "2026-01-19",
+      "expired_date": "2027-01-15",
+      "requested_through": "2026-09-18",
+      "effective_through": "2026-09-18",
+      "target_windows": [
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-19T07:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 10,
+          "missing_start": "2026-01-19T07:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 10
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-02T07:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 14,
+          "missing_start": "2026-02-02T07:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 14
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-02T07:00:00+00:00",
+          "expected_end": "2026-03-31T07:00:00+00:00",
+          "expected_bar_count": 22,
+          "missing_start": "2026-03-02T07:00:00+00:00",
+          "missing_end": "2026-03-31T07:00:00+00:00",
+          "missing_bar_count": 22
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-01T07:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2026-04-01T07:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-06T07:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 18,
+          "missing_start": "2026-05-06T07:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 18
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-06-01T07:00:00+00:00",
+          "expected_end": "2026-06-30T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2026-06-01T07:00:00+00:00",
+          "missing_end": "2026-06-30T07:00:00+00:00",
+          "missing_bar_count": 21
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-07-01T07:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 23,
+          "missing_start": "2026-07-01T07:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 23
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-08-03T07:00:00+00:00",
+          "expected_end": "2026-08-31T07:00:00+00:00",
+          "expected_bar_count": 21,
+          "missing_start": "2026-08-03T07:00:00+00:00",
+          "missing_end": "2026-08-14T07:00:00+00:00",
+          "missing_bar_count": 10
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 1,
+          "expected_start": "2026-01-23T07:00:00+00:00",
+          "expected_end": "2026-01-30T07:00:00+00:00",
+          "expected_bar_count": 2,
+          "missing_start": "2026-01-23T07:00:00+00:00",
+          "missing_end": "2026-01-30T07:00:00+00:00",
+          "missing_bar_count": 2
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 2,
+          "expected_start": "2026-02-06T07:00:00+00:00",
+          "expected_end": "2026-02-27T07:00:00+00:00",
+          "expected_bar_count": 3,
+          "missing_start": "2026-02-06T07:00:00+00:00",
+          "missing_end": "2026-02-27T07:00:00+00:00",
+          "missing_bar_count": 3
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 3,
+          "expected_start": "2026-03-06T07:00:00+00:00",
+          "expected_end": "2026-03-27T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2026-03-06T07:00:00+00:00",
+          "missing_end": "2026-03-27T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 4,
+          "expected_start": "2026-04-03T07:00:00+00:00",
+          "expected_end": "2026-04-30T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2026-04-03T07:00:00+00:00",
+          "missing_end": "2026-04-30T07:00:00+00:00",
+          "missing_bar_count": 5
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 5,
+          "expected_start": "2026-05-08T07:00:00+00:00",
+          "expected_end": "2026-05-29T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2026-05-08T07:00:00+00:00",
+          "missing_end": "2026-05-29T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 6,
+          "expected_start": "2026-06-05T07:00:00+00:00",
+          "expected_end": "2026-06-26T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2026-06-05T07:00:00+00:00",
+          "missing_end": "2026-06-26T07:00:00+00:00",
+          "missing_bar_count": 4
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 7,
+          "expected_start": "2026-07-03T07:00:00+00:00",
+          "expected_end": "2026-07-31T07:00:00+00:00",
+          "expected_bar_count": 5,
+          "missing_start": "2026-07-03T07:00:00+00:00",
+          "missing_end": "2026-07-31T07:00:00+00:00",
+          "missing_bar_count": 5
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 8,
+          "expected_start": "2026-08-07T07:00:00+00:00",
+          "expected_end": "2026-08-28T07:00:00+00:00",
+          "expected_bar_count": 4,
+          "missing_start": "2026-08-07T07:00:00+00:00",
+          "missing_end": "2026-08-14T07:00:00+00:00",
+          "missing_bar_count": 2
+        }
+      ],
+      "direct_target_count": 16,
+      "derived_target_count": 0,
+      "dependency_frequencies": [
+        "1d"
+      ],
+      "frequencies": [
+        "1d",
+        "1w"
+      ],
+      "scope_diagnostics": [
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 1,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 2,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 3,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 4,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 5,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 6,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 7,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 8,
+          "reason_codes": [
+            "WEEKLY_DAILY_CONTEXT"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1d"
+          ],
+          "year": 2026,
+          "month": 9,
+          "reason_codes": [],
+          "planned": false
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 1,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 2,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 3,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 4,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 5,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 6,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 7,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 8,
+          "reason_codes": [
+            "REPLAY_ENDPOINTS_MISSING"
+          ],
+          "planned": true
+        },
+        {
+          "dataset": [
+            "contract",
+            "j",
+            "J2701",
+            "1w"
+          ],
+          "year": 2026,
+          "month": 9,
+          "reason_codes": [],
+          "planned": false
+        }
+      ]
+    }
+  ],
+  "metadata_proposals": [],
+  "cases": [],
+  "provider_requests": 0,
+  "writes": 0,
+  "audit_identity": {
+    "code_sha": "802e3665c3bcfc44fcf4c7086affe68b4dddc99b",
+    "input_quality_policy": "newow_weekly_input_quality_v2",
+    "catalog_revision_before": "a93b6a88f749ddafc4df6500fce2e9e765eff112fd540f3affc8468b0760ea8d",
+    "catalog_revision_after": "a93b6a88f749ddafc4df6500fce2e9e765eff112fd540f3affc8468b0760ea8d",
+    "catalog_revision_stable": true
+  }
+}

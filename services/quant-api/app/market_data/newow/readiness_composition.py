@@ -13,10 +13,10 @@ from app.market_data.historical_data_manager import (
     ContractWarmupRequest,
 )
 from app.market_data.operational_universe import load_active_products
-
 from .product_reader import NewowProductReader
 from .product_service import NewowProductService
 from .readiness import AuditBudget, NewowReadinessAudit, ReadinessRequest
+from .product_release import candidate_input_quality_policy
 
 
 def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dict:
@@ -30,6 +30,17 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
         PROJECT_ROOT / "data/universe/product_window_starts.csv",
         now=lambda: request.as_of,
     )
+    policies = {
+        candidate_input_quality_policy(
+            product,
+            "1w",
+            candidate_weekly=request.candidate_weekly,
+        )
+        for product in request.products
+    }
+    if len(policies) != 1:
+        raise ValueError("NEWOW_READINESS_QUALITY_POLICY_MIXED")
+    quality_policy = next(iter(policies))
 
     def reader_factory(context, cancelled):
         return NewowProductReader(
@@ -41,6 +52,7 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
             cancelled=lambda: (
                 budget.expired() or (cancelled is not None and cancelled())
             ),
+            input_quality_policy=quality_policy,
         )
 
     planner = ContractWarmupPlanner(
@@ -62,6 +74,7 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
             now=lambda: request.as_of,
             cancelled=budget.expired,
             reuse_read_inputs=True,
+            quality_policy=quality_policy,
         ),
     )
     report = audit.run(request)

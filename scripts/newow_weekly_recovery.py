@@ -1362,29 +1362,46 @@ def _source_scalar(value: Any) -> str | int | None:
     raise RecoveryError("SOURCE_RESPONSE_VALUE_INVALID")
 
 
+def _response_trading_day(row: Mapping[str, Any]) -> date:
+    raw = row["date"]
+    if isinstance(raw, datetime):
+        return raw.date()
+    if isinstance(raw, date):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return date.fromisoformat(raw)
+        except ValueError:
+            return datetime.fromisoformat(raw).date()
+    return raw.to_pydatetime().date()
+
+
 def _validate_response_identity(
     request: ExchangeDailySourceRequest,
     response: tuple[dict[str, Any], ...],
 ) -> None:
-    dates: list[date] = []
+    """Require every expected day once; allow other in-window exchange days.
+
+    Weekly plans may omit a fully proven ISO week (bars plus zero-OHL facts)
+    from expected_dates while still querying the contiguous [start, end]
+    window. The exchange returns those omitted days; the adapter ignores
+    anything outside expected_dates.
+    """
+    expected = request.expected_dates
+    if not expected:
+        raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID")
+    seen: set[date] = set()
     try:
         for row in response:
-            raw = row["date"]
-            if isinstance(raw, datetime):
-                parsed = raw.date()
-            elif isinstance(raw, date):
-                parsed = raw
-            elif isinstance(raw, str):
-                try:
-                    parsed = date.fromisoformat(raw)
-                except ValueError:
-                    parsed = datetime.fromisoformat(raw).date()
-            else:
-                parsed = raw.to_pydatetime().date()
-            dates.append(parsed)
+            trading_day = _response_trading_day(row)
+            if trading_day in seen:
+                raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID")
+            if not request.start <= trading_day <= request.end:
+                raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID")
+            seen.add(trading_day)
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID") from exc
-    if tuple(dates) != request.expected_dates or len(set(dates)) != len(dates):
+    if any(day not in seen for day in expected):
         raise RecoveryError("SOURCE_RESPONSE_IDENTITY_INVALID")
 
 
@@ -1638,7 +1655,6 @@ def _post_commit_readback(
     root = Path(manager.catalog.canonical_root).resolve()
     service = MarketDataService(manager.catalog, manager.store)
     frequency = _recovery_frequency(unit.get("frequency"))
-    quality_aware = frequency == "1d"
     hourly = frequency == "60m"
     partitions: list[dict[str, object]] = []
     for raw in targets:
@@ -1685,6 +1701,9 @@ def _post_commit_readback(
             )
         ):
             raise RecoveryError("POST_COMMIT_READBACK_INVALID")
+        # D1 targets (including weekly companions) may carry PRICE_UNAVAILABLE
+        # facts; never use the bare physical/query path that rejects quality.
+        quality_aware = key.frequency.value == "1d"
         rows = tuple(
             item
             for item in manager.catalog.all_partitions(key)
@@ -1738,10 +1757,21 @@ def _post_commit_readback(
                 (item.bar_end, item.trading_day) for item in (*bars, *exceptions)
             ))
             if (
-                len(expected) != expected_count
+                not expected
                 or expected[0][0] != expected_start
                 or expected[-1][0] != expected_end
                 or actual != expected
+            ):
+                raise RecoveryError("POST_COMMIT_MDS_INVALID")
+            # Daily recovery counts every explained endpoint. Weekly D1 companions
+            # count present∪refresh bar slots and may omit preserved hole-week
+            # quality days that still explain the calendar window.
+            if frequency == "1d":
+                if len(expected) != expected_count:
+                    raise RecoveryError("POST_COMMIT_MDS_INVALID")
+            elif (
+                len(bars) > expected_count
+                or len(bars) + len(exceptions) < expected_count
             ):
                 raise RecoveryError("POST_COMMIT_MDS_INVALID")
             quality_counts = {
@@ -1760,12 +1790,28 @@ def _post_commit_readback(
             if tuple(bar.bar_end for bar in bars) != expected_ends:
                 raise RecoveryError("POST_COMMIT_MDS_INVALID")
         else:
-            bars = service.query(request).bars
+            # Weekly recovery may omit proven hole weeks inside the month window.
+            # Ordinary MDS query re-validates the trading calendar and would raise
+            # DATASET_OR_PARTITION_MISSING for those intentional gaps.
+            expected_ends = tuple(
+                bar.bar_end
+                for bar in physical
+                if request.start < bar.bar_end <= request.end
+            )
             if (
-                len(bars) != expected_count
-                or bars[0].bar_end != expected_start
-                or bars[-1].bar_end != expected_end
+                len(expected_ends) != expected_count
+                or not expected_ends
+                or expected_ends[0] != expected_start
+                or expected_ends[-1] != expected_end
             ):
+                raise RecoveryError("POST_COMMIT_MDS_INVALID")
+            try:
+                bars = service.query_maintenance_expected(
+                    request, expected_ends
+                ).bars
+            except MarketDataError as exc:
+                raise RecoveryError("POST_COMMIT_MDS_INVALID") from exc
+            if tuple(bar.bar_end for bar in bars) != expected_ends:
                 raise RecoveryError("POST_COMMIT_MDS_INVALID")
         partitions.append(
             {

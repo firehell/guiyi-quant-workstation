@@ -15,6 +15,7 @@ from guiyi_quant.newow.product_contracts import (
     TradeEligibility,
 )
 from guiyi_quant.newow.product_identity import (
+    InputQualityPolicy,
     build_reference_trade_id,
     build_segment_id,
     build_signal_id,
@@ -297,6 +298,30 @@ def test_signal_hash_matches_literal_canonical_identity(product_cases):
     assert product_cases.closed().entry.signal_id == (
         "22c014979750b8e28939089ffe4886cb1c95b2f59e34d8fdcc8d2f79bb3117a1"
     )
+
+
+def test_weekly_v2_policy_changes_stream_ids_without_changing_profile(
+    product_cases,
+):
+    legacy = product_cases.closed(frequency="1w")
+    candidate_identity = replace(
+        legacy.identity,
+        input_quality_policy=InputQualityPolicy.WEEKLY_V2,
+    )
+    candidate_entry = replace(legacy.entry, identity=candidate_identity)
+
+    assert legacy.identity.input_quality_policy is InputQualityPolicy.V1
+    assert candidate_entry.signal_id != legacy.entry.signal_id
+    assert candidate_identity.profile_id == legacy.identity.profile_id
+
+
+@pytest.mark.parametrize("frequency", ["1d", "60m"])
+def test_weekly_v2_policy_rejects_nonweekly_identity(product_cases, frequency):
+    with pytest.raises(ValueError, match="NEWOW_PRODUCT_INPUT_QUALITY_SCOPE_INVALID"):
+        replace(
+            product_cases.closed(frequency=frequency).identity,
+            input_quality_policy=InputQualityPolicy.WEEKLY_V2,
+        )
 
 
 def test_oscillation_same_bar_cannot_reverse_clear_build(product_cases):

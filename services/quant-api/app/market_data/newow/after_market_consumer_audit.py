@@ -29,7 +29,10 @@ from app.models import (
 from guiyi_quant.newow.product_contracts import ProductFrequency
 
 from .product_reader import NewowProductReader
-from .product_release import CANDIDATE_WEEKLY_PRODUCTS
+from .product_release import (
+    CANDIDATE_WEEKLY_PRODUCTS,
+    candidate_input_quality_policy,
+)
 from .readiness import ReadinessRequest
 from .readiness_composition import build_newow_readiness
 from .weekly_snapshot import publication_state_from_status
@@ -139,6 +142,11 @@ def audit_newow_consumers(
         ),
         clock=clock,
         total_timeout_seconds=_TOTAL_TIMEOUT_SECONDS,
+        partition_key=lambda scope, product: candidate_input_quality_policy(
+            product,
+            scope.frequency,
+            candidate_weekly=scope.frequency == "1w",
+        ).value,
     )
 
 
@@ -221,6 +229,7 @@ def run_bounded_consumer_audits(
     input_revision: Callable[[ConsumerAuditScope], str],
     clock: Callable[[], float],
     total_timeout_seconds: int,
+    partition_key: Callable[[ConsumerAuditScope, str], object] | None = None,
 ) -> dict[str, dict[str, object]]:
     """Run independent scopes inside one wall-clock budget, without mutation hooks."""
     if (
@@ -245,11 +254,12 @@ def run_bounded_consumer_audits(
             except Exception:  # noqa: BLE001 - consumer receipt contains bounded status only
                 unverified.append(product)
         revision = input_revision(scope)
-        grouped: dict[datetime, list[str]] = {}
+        grouped: dict[tuple[datetime, object], list[str]] = {}
         for product, cutoff in cutoffs.items():
-            grouped.setdefault(cutoff, []).append(product)
+            partition = None if partition_key is None else partition_key(scope, product)
+            grouped.setdefault((cutoff, partition), []).append(product)
         parts: list[dict[str, object]] = []
-        for cutoff, products in grouped.items():
+        for (cutoff, _partition), products in grouped.items():
             remaining = int(scope_deadline - clock())
             if remaining < 1:
                 unverified.extend(products)

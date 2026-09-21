@@ -5,19 +5,83 @@ import { normalizeSubingReference, subingCallouts } from '../src/utils/subingRef
 import { useSubingReference } from '../src/composables/useSubingReference.ts'
 import { formatMarketDecimal } from '../src/utils/marketDisplay.ts'
 
-export const referenceFixture = (symbol = 'jm') => ({ symbol, frequency: '15m', series_kind: 'actual_dominant', formula_version: 'subing_ths_15m_v3', reference_model_version: 'subing_reference_reverse_close_v1', as_of: '2026-09-08T16:00:00+08:00', performance_since: '2026-08-12', performance_through: '2026-09-08', reference_cutoff: '2026-09-08T15:00:00+08:00', input_snapshot_hash: 'a'.repeat(64), executable: false, auto_order: false, source: 'historical_replay', summary: { closed_count: 0, win_count: 0, loss_count: 0, flat_count: 0, open_count: 0, interrupted_count: 0, initial_count: 0, win_rate_pct: null, mean_return_pct: null, sum_return_percentage_points: '0' }, signals: [], items: [], next_before: null })
+export const referenceFixture = (symbol = 'jm') => ({ symbol, frequency: '15m', series_kind: 'actual_dominant', formula_version: 'subing_ths_15m_v3', reference_model_version: 'subing_reference_reverse_close_v1', as_of: '2026-09-08T16:00:00+08:00', performance_since: '2026-08-12', performance_through: '2026-09-08', reference_cutoff: '2026-09-08T15:00:00+08:00', input_snapshot_hash: 'a'.repeat(64), executable: false, auto_order: false, source: 'historical_replay', research_status: 'ready', summary: { closed_count: 0, win_count: 0, loss_count: 0, flat_count: 0, open_count: 0, interrupted_count: 0, rollover_interrupted_count: 0, data_interrupted_count: 0, initial_count: 0, win_rate_pct: null, mean_return_pct: null, sum_return_percentage_points: '0' }, signals: [], indicators: [], items: [], next_before: null })
 
 test('reference normalizer rejects wrong authority and unsafe financial values', () => {
   assert.equal(normalizeSubingReference(referenceFixture(), 'jm').summary.sum_return_percentage_points, '0')
   for (const patch of [{ symbol: 'rb' }, { executable: true }, { auto_order: true }, { formula_version: 'old' }, { source: 'events' }, { summary: { ...referenceFixture().summary, mean_return_pct: 1.2 } }]) assert.throws(() => normalizeSubingReference({ ...referenceFixture(), ...patch }, 'jm'))
 })
 
+test('new research periods require matching formula identity', () => {
+  for (const [frequency, formula_version] of [['30m', 'subing_ths_30m_v1'], ['60m', 'subing_ths_60m_v1']]) {
+    assert.equal(normalizeSubingReference({ ...referenceFixture(), frequency, formula_version }, 'jm').frequency, frequency)
+    assert.throws(() => normalizeSubingReference({ ...referenceFixture(), frequency }, 'jm'))
+  }
+})
+
+test('daily quality response exposes break and exact 34-bar eligibility', () => {
+  const daily = {
+    ...referenceFixture(), frequency: '1d', formula_version: 'subing_ths_1d_v1',
+    reference_model_version: 'subing_reference_reverse_close_quality_segment_v2',
+    research_status: 'INDICATOR_READY_CROSS_UNEVALUABLE',
+    quality_policy_version: 'subing-d1-quality-segment-v1',
+    coverage_intervals: [{ since: '2026-08-12', through: '2026-09-08', status: 'INDICATOR_READY_CROSS_UNEVALUABLE', physical_contract: 'JM2601', segment_id: 'owner', calculation_segment_id: 'calculation' }],
+    quality_interruptions: [{ bar_end: '2026-08-11T15:00:00+08:00', trading_day: '2026-08-11', physical_contract: 'JM2601', segment_id: 'owner', classification: 'NONPOSITIVE_CLOSE', classification_version: 'rqdata-d1-nonpositive-close-v1', request_sha256: 'b'.repeat(64), response_sha256: 'c'.repeat(64) }],
+    quality_chart_bars: [{ bar_end: '2026-09-08T15:00:00+08:00', trading_day: '2026-09-08', open: '100', high: '101', low: '99', close: '100', volume: '1', turnover: '100', open_interest: '20', physical_contract: 'JM2601', segment_id: 'owner', calculation_segment_id: 'calculation' }],
+  }
+  assert.equal(normalizeSubingReference(daily, 'jm').research_status, 'INDICATOR_READY_CROSS_UNEVALUABLE')
+  assert.throws(() => normalizeSubingReference({ ...daily, research_status: 'ready' }, 'jm'))
+})
+
+test('daily data interruption requires exact reason, day, and no synthetic mark', () => {
+  const daily = {
+    ...referenceFixture(), frequency: '1d', formula_version: 'subing_ths_1d_v1',
+    reference_model_version: 'subing_reference_reverse_close_quality_segment_v2', research_status: 'WARMING',
+    quality_policy_version: 'subing-d1-quality-segment-v1', coverage_intervals: [], quality_interruptions: [], quality_chart_bars: [],
+    summary: { ...referenceFixture().summary, interrupted_count: 1, data_interrupted_count: 1, rollover_interrupted_count: 0 },
+    items: [{ reference_trade_id: 'trade', side: 'LONG', physical_contract: 'JM2601', segment_id: 'owner', calculation_segment_id: 'calculation', entry_signal_id: 'signal', entry_bar_end: '2026-08-01T15:00:00+08:00', entry_trading_day: '2026-08-01', entry_reference_price: '100', exit_signal_id: null, exit_bar_end: null, exit_trading_day: null, exit_reference_price: null, status: 'DATA_INTERRUPTED', holding_bars: 2, reference_return_pct: null, mark_bar_end: null, mark_reference_price: null, mark_change_pct: null, interrupted_at: '2026-08-04T15:00:00+08:00', interruption_reason: 'NONPOSITIVE_CLOSE', interruption_trading_day: '2026-08-04', initial: false }],
+  }
+  assert.equal(normalizeSubingReference(daily, 'jm').items[0].status, 'DATA_INTERRUPTED')
+  assert.throws(() => normalizeSubingReference({ ...daily, items: [{ ...daily.items[0], mark_reference_price: '101' }] }, 'jm'))
+})
+
+test('reference indicator rendering preserves warmup nulls as chart whitespace', () => {
+  const chart = readFileSync(new URL('../src/components/kline/KlineChart.vue', import.meta.url), 'utf8')
+  assert.match(chart, /point\[key\] === null \? Number\.NaN/)
+  assert.match(chart, /Number\.isFinite\(point\.value\)/)
+  assert.match(chart, /\{ time: chartTime\(bar\) \}/)
+})
+
+test('daily quality breaks use an independent marker identity and whitespace anchor', () => {
+  const workspace = readFileSync(new URL('../src/components/market/detail/subing/SubingDetailWorkspace.vue', import.meta.url), 'utf8')
+  const chart = readFileSync(new URL('../src/components/kline/KlineChart.vue', import.meta.url), 'utf8')
+  assert.match(workspace, /subing-d1-quality:/)
+  assert.match(workspace, /:quality-breaks="qualityBreaks"/)
+  assert.match(chart, /props\.qualityBreaks/)
+  assert.match(chart, /values\.push\(\{ time \}\)/)
+  assert.match(chart, /occupied\.add\(key\)/)
+  assert.match(chart, /\[\.\.\.ordinary, \.\.\.quality\]\.sort\(\(left, right\) => compareChartTimes\(left\.time, right\.time\)\)/)
+  assert.match(chart, /chartTimeKey\(left\)\.localeCompare\(chartTimeKey\(right\)\)/)
+})
+
+test('late response from an earlier period cannot replace the selected period', async () => {
+  let resolve!: (value: unknown) => void
+  const loader = useSubingReference((_symbol, query) => query.frequency === '30m'
+    ? new Promise(done => { resolve = done })
+    : Promise.resolve({ ...referenceFixture(), frequency: '60m', formula_version: 'subing_ths_60m_v1' }))
+  const pending = loader.refresh('jm', { frequency: '30m' })
+  await loader.refresh('jm', { frequency: '60m' })
+  resolve({ ...referenceFixture(), frequency: '30m', formula_version: 'subing_ths_30m_v1' })
+  await pending
+  assert.equal(loader.data.value?.frequency, '60m')
+})
+
 test('chart callouts use compact price lines and Chinese-market return colors', () => {
   const [build, profitableReverse, losingReverse, sameDirection] = subingCallouts([
-    { signal_id: 'build', bar_end: '2026-09-03T02:30:00Z', trading_day: '2026-09-03', physical_contract: 'JM2601', segment_id: 'segment', direction: 'buy', reference_price: '24.560000', action: 'OPEN_LONG', entry_trade_id: 'open', closed_trade_id: null, closed_return_pct: null },
-    { signal_id: 'gain', bar_end: '2026-09-03T02:45:00Z', trading_day: '2026-09-03', physical_contract: 'JM2601', segment_id: 'segment', direction: 'sell', reference_price: '24.080000', action: 'REVERSE_TO_SHORT', entry_trade_id: 'short', closed_trade_id: 'long', closed_return_pct: '0.730000' },
-    { signal_id: 'loss', bar_end: '2026-09-03T03:00:00Z', trading_day: '2026-09-03', physical_contract: 'JM2601', segment_id: 'segment', direction: 'buy', reference_price: '23.370000', action: 'REVERSE_TO_LONG', entry_trade_id: 'long', closed_trade_id: 'short', closed_return_pct: '-1.270000' },
-    { signal_id: 'same', bar_end: '2026-09-03T03:15:00Z', trading_day: '2026-09-03', physical_contract: 'JM2601', segment_id: 'segment', direction: 'buy', reference_price: '23.510000', action: 'SAME_DIRECTION', entry_trade_id: null, closed_trade_id: null, closed_return_pct: null },
+    { signal_id: 'build', bar_end: '2026-09-03T02:30:00Z', trading_day: '2026-09-03', physical_contract: 'JM2601', segment_id: 'segment', calculation_segment_id: 'calculation', direction: 'buy', reference_price: '24.560000', action: 'OPEN_LONG', entry_trade_id: 'open', closed_trade_id: null, closed_return_pct: null },
+    { signal_id: 'gain', bar_end: '2026-09-03T02:45:00Z', trading_day: '2026-09-03', physical_contract: 'JM2601', segment_id: 'segment', calculation_segment_id: 'calculation', direction: 'sell', reference_price: '24.080000', action: 'REVERSE_TO_SHORT', entry_trade_id: 'short', closed_trade_id: 'long', closed_return_pct: '0.730000' },
+    { signal_id: 'loss', bar_end: '2026-09-03T03:00:00Z', trading_day: '2026-09-03', physical_contract: 'JM2601', segment_id: 'segment', calculation_segment_id: 'calculation', direction: 'buy', reference_price: '23.370000', action: 'REVERSE_TO_LONG', entry_trade_id: 'long', closed_trade_id: 'short', closed_return_pct: '-1.270000' },
+    { signal_id: 'same', bar_end: '2026-09-03T03:15:00Z', trading_day: '2026-09-03', physical_contract: 'JM2601', segment_id: 'segment', calculation_segment_id: 'calculation', direction: 'buy', reference_price: '23.510000', action: 'SAME_DIRECTION', entry_trade_id: null, closed_trade_id: null, closed_return_pct: null },
   ])
 
   assert.deepEqual(build, { id: 'build', time: '2026-09-03T02:30:00Z', physicalContract: 'JM2601', price: '24.560000', title: '建仓', detail: '建仓价: 24.56', tone: 'neutral', above: false })

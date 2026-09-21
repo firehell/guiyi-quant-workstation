@@ -14,6 +14,14 @@ from app.models.market_tables import (
     TradingCalendar,
     TradingSession,
 )
+from app.reference_trading.models import (
+    ReferenceActionRow,
+    ReferenceBatch,
+    ReferenceMarkRow,
+    ReferenceRevision,
+    ReferenceStream,
+    ReferenceTradeRow,
+)
 
 __all__ = [
     "Contract",
@@ -24,4 +32,10 @@ __all__ = [
     "MarketPartition",
     "TradingCalendar",
     "TradingSession",
+    "ReferenceActionRow",
+    "ReferenceBatch",
+    "ReferenceMarkRow",
+    "ReferenceRevision",
+    "ReferenceStream",
+    "ReferenceTradeRow",
 ]
