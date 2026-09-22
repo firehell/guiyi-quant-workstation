@@ -653,13 +653,28 @@ class HistoricalReferenceService:
             )
         if resume is not None:
             try:
-                resume_index, resume_batch_key = self._validate_resume_position(
+                (
+                    resume_index, resume_batch_key, already_published,
+                ) = self._validate_resume_position(
                     plan, stream_plan, snapshot, resume,
                 )
             except (RepositoryConflict, ValueError) as error:
                 return StreamBatchReport(
                     stream.stream_id, "blocked", str(error), 0,
                     resume.revision_id, None, resume.last_batch_key, resume,
+                )
+            if already_published is not None:
+                if resume_index != len(snapshot.bars):
+                    return StreamBatchReport(
+                        stream.stream_id, "blocked",
+                        "REFERENCE_RESUME_POSITION_CONFLICT", resume_index,
+                        resume.revision_id, resume.revision_id,
+                        resume_batch_key, resume,
+                    )
+                return StreamBatchReport(
+                    stream.stream_id, "completed", None, resume_index,
+                    resume.revision_id, resume.revision_id,
+                    resume_batch_key, None, already_published,
                 )
         if resume is None:
             stored = self._repository.ensure_stream(stream)
@@ -826,16 +841,24 @@ class HistoricalReferenceService:
 
     def _validate_resume_position(
         self, plan, stream_plan, snapshot, resume: ResumeToken,
-    ) -> tuple[int, str]:
+    ) -> tuple[int, str, SnapshotIdentity | None]:
         stream = stream_plan.request.identity
         if resume.source_token != stream_plan.source_token:
             raise ValueError("REFERENCE_RESUME_SOURCE_CONFLICT")
         state = self._repository.read_state(stream.stream_id, resume.revision_id)
         if (
-            state.revision_status != "candidate"
-            or state.dependency_digest != stream_plan.dependency_digest
+            state.dependency_digest != stream_plan.dependency_digest
             or state.dependency_manifest != stream_plan.input_manifest
         ):
+            raise ValueError("REFERENCE_RESUME_REVISION_CONFLICT")
+        already_published = None
+        if state.revision_status == "active":
+            if state.stream.active_revision_id != resume.revision_id:
+                raise ValueError("REFERENCE_RESUME_REVISION_CONFLICT")
+            already_published = SnapshotIdentity(
+                stream.stream_id, resume.revision_id, state.checkpoint.seq,
+            )
+        elif state.revision_status != "candidate":
             raise ValueError("REFERENCE_RESUME_REVISION_CONFLICT")
         token, _checkpoint = self._repository.load_checkpoint(
             stream.stream_id, resume.revision_id,
@@ -894,7 +917,7 @@ class HistoricalReferenceService:
             claimed_index = cast(int, claimed_raw)
         if resume.next_input_index != claimed_index:
             raise ValueError("REFERENCE_RESUME_POSITION_CONFLICT")
-        return current_index, state.checkpoint_batch_key
+        return current_index, state.checkpoint_batch_key, already_published
 
     def _advance_stream(
         self, plan: HistoricalReferencePlan, stream_plan: HistoricalStreamPlan,

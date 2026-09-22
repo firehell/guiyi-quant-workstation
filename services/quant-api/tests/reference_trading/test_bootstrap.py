@@ -409,6 +409,17 @@ class _UnknownPublishRepository:
         raise OSError("publish outcome unavailable")
 
 
+class _TransientUnknownPublishRepository(_UnknownPublishRepository):
+    def __init__(self, inner: ReferenceRepository) -> None:
+        super().__init__(inner, after_publish=True)
+        self.readback_available = False
+
+    def read_state(self, *args):
+        if not self.readback_available:
+            raise OSError("publish readback temporarily unavailable")
+        return self.inner.read_state(*args)
+
+
 def test_unknown_publish_after_commit_is_resolved_from_active_revision_readback() -> None:
     reader = Reader()
     repository = _UnknownPublishRepository(_repository(), after_publish=True)
@@ -433,6 +444,28 @@ def test_unknown_publish_without_active_receipt_stops_with_resume_token() -> Non
     assert report.streams[0].reason == "PUBLISH_OUTCOME_UNKNOWN"
     assert report.streams[0].resume_token is not None
     assert report.streams[0].resume_token.next_input_index == len(reader.bars)
+
+
+def test_resume_reconciles_an_already_published_revision_without_republishing() -> None:
+    reader = Reader()
+    repository = _TransientUnknownPublishRepository(_repository())
+    plan = _plan(reader, batch_size=100)
+
+    partial = HistoricalReferenceService(repository, reader).execute(
+        plan, plan.plan_hash,
+    )
+    token = partial.streams[0].resume_token
+    assert partial.streams[0].reason == "PUBLISH_OUTCOME_UNKNOWN"
+    assert token is not None
+    repository.readback_available = True
+
+    resumed = HistoricalReferenceService(repository, reader).resume(
+        plan, token, plan.plan_hash,
+    )
+
+    assert resumed.status == "completed", resumed.streams
+    assert repository.publish_calls == 1
+    assert resumed.streams[0].snapshot is not None
 
 
 def test_source_change_inside_final_publish_guard_keeps_candidate_unpublished() -> None:

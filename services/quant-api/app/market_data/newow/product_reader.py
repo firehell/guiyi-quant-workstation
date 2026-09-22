@@ -917,6 +917,38 @@ class NewowProductReader:
     def historical_storage_start(self, product: str) -> date:
         return self._coverage.product_start(product)
 
+    def historical_input_bound(
+        self, *, product: str, frequency: str, since: date, through: date,
+        as_of: datetime,
+    ) -> tuple[int, int]:
+        """Bound repeated physical-prefix warm-up for every rank-1 owner."""
+        cutoff_as_of = utc_timestamp(as_of)
+        owners = self.dependency_owners(product, since, through)
+        endpoint_count = 0
+        for owner in owners:
+            own_last = min(owner.end_trading_day, through)
+            sessions = self._market_data.session_windows(
+                symbol=product, trading_day=own_last,
+            )
+            if not sessions:
+                raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+            cutoff = max(window.end for window in sessions)
+            if cutoff > cutoff_as_of:
+                raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+            endpoints = self._market_data.expected_contract_replay_endpoints(
+                symbol=product,
+                contract=owner.contract,
+                frequency=BarFrequency(frequency),
+                trading_day=own_last,
+                cutoff=cutoff,
+                after=None,
+            )
+            if not endpoints:
+                raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+            endpoint_count += len(endpoints)
+        max_events = endpoint_count * 2 + len(owners)
+        return max_events, max_events * 4096
+
     def check_dependency(
         self, product: str, frequency: ProductFrequency,
         owner: ResolvedContractSegment, as_of: datetime,

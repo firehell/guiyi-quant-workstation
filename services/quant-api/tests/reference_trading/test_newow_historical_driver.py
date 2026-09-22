@@ -130,3 +130,4 @@ def test_newow_boundary_without_matching_bar_is_an_explicit_replay_event(product
     assert len(matching) == 1
     assert matching[0].strategy_input is True
     assert matching[0].boundaries == (same_bar,)
+    assert matching[0].fingerprint != anchor.fingerprint

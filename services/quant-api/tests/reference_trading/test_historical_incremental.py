@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import timedelta
 
+from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
+
+from app.reference_trading.inputs import _insert_boundaries
 from app.reference_trading.planning import HistoricalReferencePlanner, HistoricalReferenceRequest
 from app.reference_trading.service import HistoricalReferenceService
 from tests.reference_trading.test_bootstrap import Reader, _plan, _repository
@@ -141,3 +144,44 @@ def test_changed_prefix_requires_rebuild_instead_of_append() -> None:
     assert report.status == "blocked"
     assert report.streams[0].reason == "REBUILD_REQUIRED"
 
+
+def test_boundary_added_to_processed_last_bar_requires_rebuild() -> None:
+    reader = Reader()
+    reader.data_interruptions = []
+    original_snapshot = reader._snapshot
+
+    def with_input_identity(req):
+        result = original_snapshot(req)
+        return replace(result, dependency_manifest={
+            **result.dependency_manifest,
+            "input_fingerprints": [item.fingerprint for item in reader.bars],
+            "data_interruptions": list(reader.data_interruptions),
+        })
+
+    reader._snapshot = with_input_identity
+    repository = _repository()
+    initial = _plan(reader, batch_size=10)
+    assert HistoricalReferenceService(
+        repository, reader,
+    ).execute(initial, initial.plan_hash).status == "completed"
+
+    anchor = reader.bars[-1]
+    boundary = ReferenceBoundary(
+        initial.streams[0].request.identity,
+        BoundaryReason.DATA_INTERRUPTED,
+        anchor.physical_contract,
+        anchor.owner_segment_id,
+        anchor.calculation_segment_id,
+        anchor.bar_end,
+        anchor.trading_day,
+    )
+    reader.bars = tuple(_insert_boundaries(list(reader.bars), (boundary,)))
+    reader.data_interruptions.append("interruption-on-processed-last-bar")
+    advance_plan = _append_plan(reader, initial, operation="advance")
+
+    advanced = HistoricalReferenceService(repository, reader).advance(
+        advance_plan, advance_plan.plan_hash,
+    )
+
+    assert advanced.status == "blocked"
+    assert advanced.streams[0].reason == "REBUILD_REQUIRED"

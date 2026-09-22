@@ -69,6 +69,10 @@ class _SubingInputs:
     def historical_storage_start(self, _symbol):
         return self.segments[0].bars[0].trading_day
 
+    def historical_input_bound(self, **_kwargs):
+        event_count = sum(len(segment.bars) + 1 for segment in self.segments)
+        return event_count, event_count * 4096
+
     def load_historical_inputs(self, **_kwargs):
         raw = []
         for segment in self.segments:
@@ -186,6 +190,31 @@ def test_full_source_bar_revision_changes_source_token_when_close_is_unchanged()
 
     assert before.source_token != after.source_token
     assert before.dependency_manifest["input_fingerprints"] != after.dependency_manifest["input_fingerprints"]
+
+
+def test_multi_owner_bound_rejects_before_materializing_physical_prefixes() -> None:
+    class OverBudgetInputs(_SubingInputs):
+        materialized = False
+
+        def historical_input_bound(self, **_kwargs):
+            return 213, 213 * 4096
+
+        def load_historical_inputs(self, **kwargs):
+            self.materialized = True
+            return super().load_historical_inputs(**kwargs)
+
+    source = OverBudgetInputs()
+    reader = MarketDataHistoricalInputReader(newow_reader=None, subing_service=source)
+    request = _request(source)
+
+    with pytest.raises(ValueError, match="REFERENCE_BUDGET_EXCEEDED"):
+        HistoricalReferencePlanner(reader, now=lambda: request.as_of).plan(
+            HistoricalReferenceRequest(
+                "build", (request,), WorkBudget(1, 150, 30, 1_000_000), 17,
+            )
+        )
+
+    assert source.materialized is False
 
 
 def test_quality_gap_boundary_crosses_batches_and_interrupts_open() -> None:

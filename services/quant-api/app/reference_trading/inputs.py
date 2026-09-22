@@ -156,6 +156,24 @@ def _boundary_input(
     )
 
 
+def _boundary_fingerprint(
+    source_fingerprint: str, boundary: ReferenceBoundary,
+) -> str:
+    """Bind same-Bar metadata events to the immutable replay input identity."""
+    return sha256(_canonical({
+        "source_input_fingerprint": source_fingerprint,
+        "boundary": {
+            "stream_id": boundary.stream.stream_id,
+            "reason": boundary.reason.value,
+            "physical_contract": boundary.physical_contract,
+            "owner_segment_id": boundary.owner_segment_id,
+            "calculation_segment_id": boundary.calculation_segment_id,
+            "bar_end": boundary.bar_end,
+            "trading_day": boundary.trading_day,
+        },
+    }).encode()).hexdigest()
+
+
 def _insert_boundaries(
     bars: list[HistoricalInputBar], boundaries: tuple[ReferenceBoundary, ...],
 ) -> list[HistoricalInputBar]:
@@ -182,7 +200,9 @@ def _insert_boundaries(
                 boundary.trading_day,
             )
             bars[index] = replace(
-                anchor, boundaries=(*anchor.boundaries, normalized),
+                anchor,
+                fingerprint=_boundary_fingerprint(anchor.fingerprint, normalized),
+                boundaries=(*anchor.boundaries, normalized),
             )
             continue
         candidates = [
@@ -276,27 +296,37 @@ class MarketDataHistoricalInputReader:
             raise TypeError("request must be HistoricalStreamRequest")
         normalized = request.identity.strategy_code.replace("-", "_")
         if normalized == "subing_reference":
-            start_reader = getattr(self._subing, "historical_storage_start", None)
-            product = request.identity.product.lower()
+            bound_reader = getattr(self._subing, "historical_input_bound", None)
+            arguments = {
+                "symbol": request.identity.product.lower(),
+                "frequency": request.identity.frequency,
+            }
         elif normalized.startswith("newow_"):
-            start_reader = getattr(self._newow, "historical_storage_start", None)
-            product = request.identity.product.lower()
+            bound_reader = getattr(self._newow, "historical_input_bound", None)
+            arguments = {
+                "product": request.identity.product.lower(),
+                "frequency": request.identity.frequency,
+            }
         else:
             raise ValueError("REFERENCE_CAPABILITY_UNSUPPORTED")
-        if not callable(start_reader):
+        if not callable(bound_reader):
             raise ValueError("REFERENCE_INPUT_BOUND_UNAVAILABLE")
-        storage_start = start_reader(product)
-        if type(storage_start) is not date or storage_start > request.through:
-            raise ValueError("REFERENCE_INPUT_BOUND_UNAVAILABLE")
-        days = (request.through - storage_start).days + 1
-        minutes = {"15m": 15, "30m": 30, "60m": 60}.get(
-            request.identity.frequency
+        bound = bound_reader(
+            **arguments,
+            since=request.since,
+            through=request.through,
+            as_of=request.as_of,
         )
-        per_day = 1 if minutes is None else 1440 // minutes
-        # One additional event per day covers authoritative boundaries.  Four
-        # KiB per event bounds the typed payload plus manifest representation.
-        max_events = days * (per_day + 1)
-        return max_events, max_events * 4096
+        if (
+            not isinstance(bound, tuple)
+            or len(bound) != 2
+            or type(bound[0]) is not int
+            or type(bound[1]) is not int
+            or bound[0] <= 0
+            or bound[1] <= 0
+        ):
+            raise ValueError("REFERENCE_INPUT_BOUND_UNAVAILABLE")
+        return bound
 
     def load_stream(
         self, request: object, *, expected_source_token: str,

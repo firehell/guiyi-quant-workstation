@@ -97,3 +97,16 @@ def test_same_partition_tail_is_append_only_when_exact_bar_prefix_is_preserved()
             },
             appended_ranges=("same-partition:2026-09-19",),
         )
+
+    with pytest.raises(ValueError, match="append-only"):
+        prove_dependency_append(
+            {**prior, "data_interruptions": []},
+            {
+                **extended,
+                # A newly discovered boundary on the previously processed
+                # last Bar changes that Bar's composite input identity.
+                "input_fingerprints": ["a" * 64, "d" * 64, "c" * 64],
+                "data_interruptions": ["e" * 64],
+            },
+            appended_ranges=("same-partition:2026-09-19",),
+        )
