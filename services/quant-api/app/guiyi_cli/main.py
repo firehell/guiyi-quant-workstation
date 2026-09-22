@@ -68,6 +68,8 @@ OperationalProductsLoader = Callable[[], tuple[str, ...]]
 SessionAnchorRepairFactory = Callable[[Any], SessionAnchorRepairService]
 
 def _execution_is_readonly(args: argparse.Namespace) -> bool:
+    if args.domain == "reference":
+        return args.reference_command == "plan" or not bool(getattr(args, "apply", False))
     if args.domain == "runtime":
         if args.runtime_command in {"status", "subing-readiness"}:
             return True
@@ -80,6 +82,8 @@ def _execution_is_readonly(args: argparse.Namespace) -> bool:
 
 
 def _parse_error_is_readonly(raw: Sequence[str]) -> bool:
+    if len(raw) >= 2 and raw[0] == "reference":
+        return raw[1] == "plan" or "--apply" not in raw[2:]
     if len(raw) >= 2 and raw[0] == "runtime":
         if raw[1] in {"subing-ths-scope", "recover-live-captured"}:
             return "--apply" not in raw[2:]
@@ -132,6 +136,21 @@ def build_parser() -> argparse.ArgumentParser:
         "acknowledge-alert-notification"
     )
     acknowledge_notification.add_argument("--failure-at", required=True)
+    reference = domains.add_parser("reference")
+    reference_commands = reference.add_subparsers(dest="reference_command", required=True)
+    reference_plan = reference_commands.add_parser("plan", allow_abbrev=False)
+    reference_plan.add_argument("--request", required=True)
+    reference_plan.add_argument("--output", required=True)
+    for command in ("build", "advance", "rebuild"):
+        current = reference_commands.add_parser(command, allow_abbrev=False)
+        current.add_argument("--plan", required=True)
+        current.add_argument("--expected-plan-hash", required=True)
+        current.add_argument("--apply", action="store_true")
+    reference_resume = reference_commands.add_parser("resume", allow_abbrev=False)
+    reference_resume.add_argument("--plan", required=True)
+    reference_resume.add_argument("--resume-token", required=True)
+    reference_resume.add_argument("--expected-plan-hash", required=True)
+    reference_resume.add_argument("--apply", action="store_true")
     return parser
 
 
@@ -159,6 +178,7 @@ def main(
     daily_recovery_runner=None,
     current_day_metadata_recovery_runner=None,
     compatible_recovery_proof_runner=None,
+    reference_command_runner=None,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
@@ -169,9 +189,9 @@ def main(
         args = build_parser().parse_args(raw)
         if args.domain == "data":
             build_request(args)
-        elif args.runtime_command == "recover-live-captured":
+        elif args.domain == "runtime" and args.runtime_command == "recover-live-captured":
             validate_captured_arguments(args)
-        elif args.runtime_command == "subing-readiness":
+        elif args.domain == "runtime" and args.runtime_command == "subing-readiness":
             args.as_of = datetime.fromisoformat(args.as_of.replace("Z", "+00:00"))
             if args.as_of.tzinfo is None or args.as_of.utcoffset() is None or args.as_of > datetime.now(UTC):
                 raise ValueError("CLI_ARGUMENT_INVALID")
@@ -183,7 +203,13 @@ def main(
         return 2
 
     try:
-        if args.domain == "data":
+        if args.domain == "reference":
+            if reference_command_runner is None:
+                from app.guiyi_cli.reference_commands import run_reference_command
+
+                reference_command_runner = run_reference_command
+            payload = reference_command_runner(args)
+        elif args.domain == "data":
             if args.data_command == "daily-recovery":
                 if daily_recovery_runner is None:
                     from app.guiyi_cli.daily_recovery import run_daily_recovery
@@ -317,6 +343,8 @@ def main(
                 "closed_interrupted",
                 "captured",
                 "applied",
+                "completed",
+                "dry_run",
             }
         )
         else 1

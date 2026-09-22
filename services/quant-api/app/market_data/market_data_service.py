@@ -66,7 +66,7 @@ from app.market_data.weekly_quality import (
     classify_weekly_source,
     weekly_daily_revision_sha256,
 )
-from app.models import Instrument, MainContractMap
+from app.models import Instrument, MainContractMap, TradingCalendar, TradingSession
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -380,6 +380,67 @@ class MarketDataService:
         if not windows:
             raise MarketDataError("TRADING_SESSION_MISSING")
         return windows
+
+    def historical_metadata_evidence(
+        self, *, symbol: str, since: date, through: date,
+    ) -> dict[str, object]:
+        """Return exact authoritative Calendar/Session rows for a replay window."""
+        if since > through:
+            raise MarketDataError("QUERY_WINDOW_INVALID")
+        try:
+            exchange = self.catalog.exchange_for_symbol(symbol)
+            calendars = tuple(self.catalog.session.scalars(
+                select(TradingCalendar).where(
+                    TradingCalendar.exchange_code == exchange,
+                    TradingCalendar.trade_date >= since,
+                    TradingCalendar.trade_date <= through,
+                ).order_by(TradingCalendar.trade_date)
+            ))
+            sessions = tuple(self.catalog.session.scalars(
+                select(TradingSession).where(
+                    TradingSession.exchange_code == exchange,
+                    TradingSession.instrument_symbol == symbol.strip().lower(),
+                    TradingSession.is_active.is_(True),
+                    TradingSession.effective_from <= through,
+                    (
+                        TradingSession.effective_to.is_(None)
+                        | (TradingSession.effective_to >= since)
+                    ),
+                ).order_by(
+                    TradingSession.effective_from,
+                    TradingSession.session_name,
+                    TradingSession.start_time,
+                )
+            ))
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        expected_days = (through - since).days + 1
+        if len(calendars) != expected_days or not sessions:
+            raise MarketDataError("HISTORICAL_METADATA_EVIDENCE_MISSING")
+        return {
+            "schema_version": "historical_metadata_evidence_v1",
+            "exchange": exchange,
+            "symbol": symbol.strip().lower(),
+            "since": since.isoformat(),
+            "through": through.isoformat(),
+            "calendar": [
+                [
+                    row.trade_date.isoformat(), row.is_trading_day,
+                    row.has_night_session, row.provider, row.remark,
+                ]
+                for row in calendars
+            ],
+            "sessions": [
+                [
+                    row.session_name, row.start_time.isoformat(),
+                    row.end_time.isoformat(), row.effective_from.isoformat(),
+                    None if row.effective_to is None else row.effective_to.isoformat(),
+                    row.crosses_midnight, row.provider,
+                    row.created_at.isoformat(),
+                ]
+                for row in sessions
+            ],
+        }
 
     def trading_days_overlapping_window(
         self,

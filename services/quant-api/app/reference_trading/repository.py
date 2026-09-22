@@ -35,11 +35,14 @@ from guiyi_quant.reference_trading.strategy_checkpoint import (
 from app.reference_trading.contracts import (
     CheckpointToken,
     CommitResult,
+    manifest_sha256,
     PreparedBatch,
     SeedChunk,
     SnapshotIdentity,
     StoredPage,
+    StoredRevisionState,
     StoredStream,
+    validate_dependency_advance,
 )
 from app.reference_trading.models import (
     ReferenceActionRow,
@@ -347,6 +350,39 @@ class ReferenceRepository:
             )
             return token, checkpoint
 
+    def read_state(
+        self, stream_id: str, revision_id: str | None = None,
+    ) -> StoredRevisionState:
+        """Read the exact revision/checkpoint/manifest without creating a stream."""
+        with self._session_factory() as session:
+            stream = session.get(ReferenceStream, stream_id)
+            if stream is None:
+                raise RepositoryConflict("STREAM_NOT_FOUND")
+            chosen = revision_id or stream.active_revision_id
+            if chosen is None:
+                raise RepositoryConflict("NO_ACTIVE_REVISION")
+            revision = session.get(ReferenceRevision, (stream_id, chosen))
+            if revision is None:
+                raise RepositoryConflict("REVISION_NOT_FOUND")
+            if revision.checkpoint_batch_id is None:
+                raise RepositoryConflict("SEED_NOT_SEALED")
+            batch = session.get(ReferenceBatch, revision.checkpoint_batch_id)
+            if (
+                batch is None
+                or batch.checkpoint_text is None
+                or batch.strategy_schema is None
+            ):
+                raise RepositoryConflict("CHECKPOINT_CORRUPT")
+            token = CheckpointToken(
+                stream_id, chosen, revision.last_seq, stream.row_version,
+                _checkpoint_hash(batch.checkpoint_text),
+            )
+            return StoredRevisionState(
+                _stored(stream), chosen, revision.status, batch.dependency_manifest,
+                revision.dependency_digest, token, batch.batch_key,
+                dict(batch.source_evidence),
+            )
+
     def publish_revision(
         self,
         stream_id: str,
@@ -463,8 +499,22 @@ class ReferenceRepository:
             self._validate_open_projection(
                 session, prepared.stream_id, prepared.revision_id, prior_state.open_trade,
             )
-            if revision.dependency_digest != _digest(prepared.dependency_manifest):
-                raise RepositoryConflict("DEPENDENCY_CONFLICT")
+            if prepared.dependency_advance is None:
+                if revision.dependency_digest != _digest(prepared.dependency_manifest):
+                    raise RepositoryConflict("DEPENDENCY_CONFLICT")
+            else:
+                advance = prepared.dependency_advance
+                try:
+                    validate_dependency_advance(
+                        checkpoint_batch.dependency_manifest, advance,
+                    )
+                except ValueError as error:
+                    raise RepositoryConflict("DEPENDENCY_CONFLICT") from error
+                if (
+                    revision.dependency_digest != advance.expected_prior_digest
+                    or manifest_sha256(prepared.dependency_manifest) != advance.new_digest
+                ):
+                    raise RepositoryConflict("DEPENDENCY_CONFLICT")
             if prepared.transitions[-1].state != prepared.checkpoint.reference_state:
                 raise RepositoryConflict("CHECKPOINT_TRANSITION_CONFLICT")
             seq = revision.last_seq + 1
@@ -528,6 +578,8 @@ class ReferenceRepository:
             self._fault_injector("before_checkpoint")
             revision.last_seq = seq
             revision.checkpoint_batch_id = batch_id
+            if prepared.dependency_advance is not None:
+                revision.dependency_digest = prepared.dependency_advance.new_digest
             stream.row_version += 1
             if stream.active_revision_id == revision.revision_id:
                 stream.latest_seq = seq
@@ -548,6 +600,20 @@ class ReferenceRepository:
             if row.seq is None or row.post_state_hash is None:
                 raise RepositoryConflict("BATCH_NOT_COMMITTED")
             return CommitResult("committed", revision_id, row.seq, row.post_state_hash)
+
+    def read_batch_evidence(
+        self, stream_id: str, revision_id: str, batch_key: str,
+    ) -> dict[str, object] | None:
+        """Read immutable source progress for explicit resume validation."""
+        with self._session_factory() as session:
+            row = session.execute(select(ReferenceBatch).where(
+                ReferenceBatch.stream_id == stream_id,
+                ReferenceBatch.revision_id == revision_id,
+                ReferenceBatch.batch_key == batch_key,
+            )).scalar_one_or_none()
+            if row is None or row.seq is None:
+                return None
+            return dict(row.source_evidence)
 
     def read_actions(
         self,
@@ -928,6 +994,7 @@ class ReferenceRepository:
             "strategy_schema": prepared.strategy_schema,
             "source_evidence": _wire(prepared.source_evidence),
             "input_observed_at": _wire(prepared.input_observed_at),
+            "dependency_advance": _wire(prepared.dependency_advance),
         })
 
     @staticmethod
@@ -1292,7 +1359,18 @@ class ReferenceRepository:
                     ReferenceTradeRow,
                     (prepared.stream_id, prepared.revision_id, mark.reference_trade_id, birth),
                 )
-                if trade is None or trade.status != "OPEN":
+                if trade is None or (
+                    trade.status != "OPEN"
+                    and not (
+                        trade.status in {
+                            "CLOSED", "ROLLOVER_INTERRUPTED",
+                            "DATA_INTERRUPTED", "OBSERVATION_INTERRUPTED",
+                        }
+                        and mark.bar_end < _required_aware(
+                            trade.effective_bar_end, "TRADE_EFFECTIVE_BAR_END",
+                        )
+                    )
+                ):
                     raise RepositoryConflict("ORPHAN_MARK")
                 session.add(ReferenceMarkRow(
                     stream_id=prepared.stream_id,

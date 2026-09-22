@@ -4,8 +4,9 @@
 
 定义所有策略共用的 ReferenceTrading 领域合同。它只投影研究用途的参考交易，`executable=false`、
 `auto_order=false`，绝不创建 Order、Fill、Position、Ledger、Account PnL、AlertEvent 或通知。本规格冻结
-P0/P1 的公共身份和纯状态语义，以及 P3 的持久化、原子批次与内部快照合同。历史构建、HTTP 查询、Web 与
-Runtime 仍是后续计划能力，不声明 active；新表和仓储代码不授权生产 migration、bootstrap 或 enable。
+P0/P1 的公共身份和纯状态语义、P3 的持久化/原子批次/内部快照合同，以及 P4 的离线历史计划、构建、恢复、
+增量与重建应用合同。HTTP 查询、Web 与 Runtime 仍是后续计划能力，不声明 active；代码与测试不授权生产
+migration、历史 bootstrap、Canonical 写入或 Runtime enable。
 
 ## Requirements
 
@@ -78,8 +79,8 @@ No row may infer enabled Runtime from tests, a page, a script or a historical re
 
 | Strategy family | Frequencies | Historical code support | Independently verified evidence | Forward code support | Runtime enablement |
 |---|---|---|---|---|---|
-| Newow trend / oscillation / main-rise | 1w, 1d, 60m | P2 pure per-Bar replay/checkpoint and shared reference reducer implemented | Fixture parity is verified in isolation; real per-product/per-frequency data evidence remains separate | Not implemented | Disabled / no worker |
-| SuBing reference | 15m, 30m, 60m, 1d | P2 pure per-Bar replay/checkpoint and shared reference reducer implemented | Formula fixtures are verified; D1 quality/readiness remains separately gated | Not implemented | Disabled / no worker |
+| Newow trend / oscillation / main-rise | 1w, 1d, 60m | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and fixtures are verified; real per-product/per-frequency data evidence remains separate | Not implemented | Disabled / no worker |
+| SuBing reference | 15m, 30m, 60m, 1d | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and formula fixtures are verified; D1 quality/readiness remains separately gated | Not implemented | Disabled / no worker |
 | HTDY first-seen | observation policy frequencies | Not approved; repainting boundary | `MODEL_NOT_APPROVED`; P7 owner decision required | Proposed only | Disabled / no worker |
 
 All rows are disabled by default. This matrix neither opens a Scope nor authorizes Canonical, database, notification,
@@ -144,3 +145,61 @@ event Bar, so neither a later mark nor an unsealed future boundary can leak into
 - **WHEN** sequence 3 closes the trade
 - **THEN** the captured sequence 2 still returns OPEN with its sequence-2 mark
 - **AND** sequence 3 returns CLOSED only for cutoffs that include the close and, in forward mode, its observation time
+
+### Requirement: Historical plans bind exact read-only inputs and budgets
+
+P4 historical operations SHALL consume only the existing Canonical/Catalog/MainContractMap/MarketDataService path.
+A plan MUST bind operation, complete stream identity, requested window/as-of, storage start, final completed event,
+ordered full-source Bar fingerprints, effective Calendar/Session endpoints, rank-1 ownership, quality boundaries,
+formula/model versions, byte/count limits, one task-wide monotonic elapsed budget and a canonical plan hash. Warm-up MAY
+precede owner eligibility and MAY overlap another physical owner's prefix; replay order is calculation-segment order,
+while only owner-eligible completed Bars advance the formal reference watermark. Provider, Redis, notification and
+Runtime access are forbidden.
+
+#### Scenario: A later owner needs an overlapping physical warm-up prefix
+
+- **WHEN** the next calculation segment begins with Bars earlier than the prior owner's formal watermark
+- **THEN** those Bars advance only that segment's strategy kernel in their supplied order
+- **AND** they create no Action, mark or trade until owner eligibility begins
+
+#### Scenario: Source content changes without changing Close
+
+- **WHEN** an old physical OHLCV record, effective Session/Calendar endpoint, rank-1 interval or quality boundary changes
+- **THEN** source revalidation changes and normal append is rejected
+- **AND** the operation requires a new reviewed plan and rebuild rather than silently accepting the revision
+
+### Requirement: Historical build, resume and revision transitions fail closed
+
+Build and rebuild SHALL write only a disabled candidate, commit bounded batches through P3 and publish only after the
+exact source token and dependency digest are revalidated. Resume MUST derive its next position from the durable
+checkpoint batch receipt and stored source evidence; caller-supplied indices are assertions, never authority. A commit
+or publish with unknown outcome MUST use authoritative readback and MUST NOT retry automatically. Advance SHALL process
+only an append-proven suffix; changed prefixes, earlier storage starts, revised metadata or missing durable progress
+return `REBUILD_REQUIRED`. Rebuild invalidates only the selected active revision and its interrupted candidate remains
+resumable. Per-stream failures are isolated and a mixed result is partial.
+
+#### Scenario: A boundary has no physical Bar at its effective instant
+
+- **WHEN** a rollover or proven data interruption falls between completed Bars or at a Session start
+- **THEN** P4 inserts a separately fingerprinted boundary replay event in calculation-segment order
+- **AND** a matching OPEN becomes interrupted without inventing a price, exit action or return
+
+#### Scenario: A resume token index is edited
+
+- **WHEN** its claimed next index or last batch differs from the durable checkpoint batch evidence
+- **THEN** resume is blocked before calculation or publication
+- **AND** the candidate remains unpublished
+
+### Requirement: Historical CLI is explicit and non-promoting
+
+The `reference` CLI SHALL expose strict `plan`, `build`, `advance`, `rebuild` and `resume` commands. Planning and commands
+without `--apply` are read-only. Mutation requires `--apply` plus the exact plan hash; JSON rejects duplicate/unknown
+fields, non-finite values and invalid identities. Execution errors cross the shared redacted JSON boundary. P4 SHALL
+NOT enable streams, migrate a production database, write Canonical data, expose HTTP/Web, start a worker or promote
+Runtime.
+
+#### Scenario: Apply is omitted
+
+- **WHEN** a valid build, advance, rebuild or resume plan is supplied without `--apply`
+- **THEN** the CLI validates and reports the exact plan as read-only
+- **AND** it performs no repository mutation, provider access, notification or Runtime action

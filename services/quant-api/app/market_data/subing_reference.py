@@ -75,6 +75,73 @@ class SubingReferenceService:
         self.now = now or (lambda: datetime.now(UTC))
         self.check_cancelled = check_cancelled or (lambda: None)
 
+    def load_historical_inputs(
+        self,
+        *,
+        symbol: str,
+        frequency: BarFrequency,
+        since: date,
+        through: date,
+        as_of: datetime,
+    ):
+        """Return the typed MDS-backed replay inputs without projecting trades."""
+        if as_of.tzinfo is None or as_of.utcoffset() is None or since > through:
+            raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
+        sessions = self._session_windows(symbol, through)
+        cutoff = max(window.end for window in sessions)
+        if cutoff > as_of:
+            raise SubingReferenceError("SUBING_REFERENCE_DATA_CONFLICT")
+        segments, inputs, quality = self._inputs(
+            symbol, since, through, cutoff, frequency,
+        )
+        return segments, inputs, quality, cutoff
+
+    def historical_metadata_evidence(
+        self, *, symbol: str, since: date, through: date,
+    ) -> dict[str, object]:
+        """Expose the exact MDS metadata proof required by offline P4 replay."""
+        return self.market_data.historical_metadata_evidence(
+            symbol=symbol, since=since, through=through,
+        )
+
+    def historical_storage_start(self, symbol: str) -> date:
+        return self.coverage.product_start(symbol)
+
+    def historical_input_bound(
+        self, *, symbol: str, frequency: str, since: date, through: date,
+        as_of: datetime,
+    ) -> tuple[int, int]:
+        """Bound physical-prefix warm-up across every authoritative owner."""
+        if as_of.tzinfo is None or as_of.utcoffset() is None or since > through:
+            raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
+        bar_frequency = BarFrequency(frequency)
+        owners = ActualDominantResearchSegmentLoader(
+            self.market_data
+        ).owner_segments(symbol=symbol, since=since, through=through)
+        endpoint_count = 0
+        for owner in owners:
+            own_last = min(owner.end_trading_day, through)
+            cutoff = max(
+                window.end for window in self._session_windows(symbol, own_last)
+            )
+            if cutoff > as_of:
+                raise SubingReferenceError("SUBING_REFERENCE_DATA_CONFLICT")
+            endpoints = self.market_data.expected_contract_replay_endpoints(
+                symbol=symbol,
+                contract=owner.contract,
+                frequency=bar_frequency,
+                trading_day=own_last,
+                cutoff=cutoff,
+                after=None,
+            )
+            if not endpoints:
+                raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
+            endpoint_count += len(endpoints)
+        # One interruption per physical endpoint plus one owner boundary is a
+        # conservative ceiling for the typed replay event stream.
+        max_events = endpoint_count * 2 + len(owners)
+        return max_events, max_events * 4096
+
     def query(self, query: SubingReferenceQuery) -> dict[str, Any]:
         self.check_cancelled()
         now = self.now()
