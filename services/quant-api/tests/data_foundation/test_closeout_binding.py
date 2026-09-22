@@ -122,10 +122,152 @@ def _terminal_status(*, schema_version=5):
     }
 
 
+def _failed_terminal_status():
+    return {
+        "schema_version": 3,
+        "current_run": None,
+        "last_run": {
+            "trading_day": "2028-01-01",
+            "status": "failed",
+            "attempts": 1,
+            "started_at": "2028-01-01T18:05:00+08:00",
+            "finished_at": "2028-01-01T18:06:00+08:00",
+            "products": ["au"],
+            "error_code": "UPDATE_FAILED",
+            "failure_notification": None,
+        },
+        "last_successful_trading_day": "2027-12-31",
+        "last_failure": {
+            "trading_day": "2028-01-01",
+            "error_code": "UPDATE_FAILED",
+        },
+    }
+
+
 def _write_status(path, payload):
     content = (json.dumps(payload, ensure_ascii=False) + "\n").encode()
     path.write_bytes(content)
     return hashlib.sha256(content).hexdigest()
+
+
+def test_recovery_binding_accepts_exact_schema_v3_failed_terminal(target):
+    failed = _failed_terminal_status()
+    failed_sha256 = _write_status(target.status, failed)
+
+    binding = target.module.RuntimeDataBinding(
+        target.root,
+        "a" * 40,
+        failed_sha256,
+        home=target.home,
+        allow_failed_terminal=True,
+    )
+
+    assert binding.after_market_state == "loaded"
+    assert binding.recovery_terminal == "failed"
+    assert binding.products == ("au",)
+    assert binding.last_interruption is None
+
+
+@pytest.mark.parametrize("invalid", ["chronology", "products"])
+def test_recovery_binding_rejects_invalid_schema_v3_failed_terminal(target, invalid):
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    failed = _failed_terminal_status()
+    if invalid == "chronology":
+        failed["last_run"]["finished_at"] = "2028-01-01T18:04:59+08:00"
+    else:
+        failed["last_run"]["products"] = ["ag"]
+    failed_sha256 = _write_status(target.status, failed)
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        target.module.RuntimeDataBinding(
+            target.root,
+            "a" * 40,
+            failed_sha256,
+            home=target.home,
+            allow_failed_terminal=True,
+        )
+
+    assert captured.value.code in {
+        "RUNTIME_RECOVERY_STATUS_UNSUPPORTED",
+        "RUNTIME_RECOVERY_IDENTITY_DRIFT",
+    }
+
+
+def test_default_binding_still_rejects_schema_v3_failed_terminal(target):
+    failed_sha256 = _write_status(target.status, _failed_terminal_status())
+
+    with pytest.raises(ValueError):
+        target.module.RuntimeDataBinding(
+            target.root,
+            "a" * 40,
+            failed_sha256,
+            home=target.home,
+        )
+
+
+def test_recovery_binding_error_exposes_only_bounded_public_code():
+    from app.guiyi_cli.output import exception_error_payload
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    error = RuntimeRecoveryBindingError("RUNTIME_RECOVERY_HEARTBEAT_INVALID")
+
+    assert exception_error_payload(
+        command="data.daily-recovery", exc=error
+    )["error"] == {
+        "code": "RUNTIME_RECOVERY_HEARTBEAT_INVALID",
+        "type": "RuntimeRecoveryBindingError",
+    }
+
+
+def test_recovery_binding_classifies_loaded_service_mismatch(target):
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    failed_sha256 = _write_status(target.status, _failed_terminal_status())
+    target.outputs["com.guiyi.quant-web"] = None
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        target.module.RuntimeDataBinding(
+            target.root,
+            "a" * 40,
+            failed_sha256,
+            home=target.home,
+            allow_failed_terminal=True,
+        )
+
+    assert captured.value.code == "RUNTIME_RECOVERY_SERVICE_MISMATCH"
+
+
+def test_recovery_binding_classifies_invalid_heartbeat(target, monkeypatch):
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    failed_sha256 = _write_status(target.status, _failed_terminal_status())
+    binding = target.module.RuntimeDataBinding(
+        target.root,
+        "a" * 40,
+        failed_sha256,
+        home=target.home,
+        allow_failed_terminal=True,
+    )
+    monkeypatch.setattr(
+        target.module, "assert_catalog_dependencies", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        binding,
+        "_check_heartbeats",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("stale")),
+    )
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        binding.check_catalog(
+            SimpleNamespace(),
+            SimpleNamespace(),
+            SimpleNamespace(),
+            SimpleNamespace(),
+            lambda: datetime(2029, 1, 1, tzinfo=UTC),
+        )
+
+    assert captured.value.code == "RUNTIME_RECOVERY_HEARTBEAT_INVALID"
 
 
 def _stop_writer(target) -> None:
