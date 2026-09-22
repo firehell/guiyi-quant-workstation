@@ -148,11 +148,18 @@ def verify_closeout_identity(
     root: Path, commit: str, *, home: Path | None = None
 ) -> None:
     """Require the exact guarded release still loaded by all five services, EOD idle."""
+    verify_runtime_release_identity(root, commit)
+    verify_closeout_service_identity(root, commit, home=home)
+
+
+def verify_closeout_service_identity(
+    root: Path, commit: str, *, home: Path | None = None
+) -> None:
+    """Require all five services to remain bound to the release, with EOD idle."""
     from app.market_data.captured_recovery_runtime import (
         _read_command, _verify_after_market_plist, _verify_loaded_service,
     )
 
-    verify_runtime_release_identity(root, commit)
     for service in ("api", "web", "live", "alert", "after-market"):
         _verify_after_market_plist(
             root=root,
