@@ -87,7 +87,9 @@ def open_runtime_bound_historical_maintenance(
     from app.market_data.live_market import RedisLiveStore
     from app.market_data.session_clock import SHANGHAI
 
-    binding = RuntimeDataBinding(root, commit, status_sha256)
+    binding = RuntimeDataBinding(
+        root, commit, status_sha256, allow_failed_terminal=True
+    )
     engine = create_engine(normalize_database_url(binding.settings["DATABASE_URL"]))
     redis = None
     try:
