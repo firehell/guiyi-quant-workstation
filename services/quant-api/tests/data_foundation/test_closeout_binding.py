@@ -168,13 +168,33 @@ def test_recovery_binding_accepts_exact_schema_v3_failed_terminal(target):
     assert binding.last_interruption is None
 
 
-@pytest.mark.parametrize("invalid", ["chronology", "products"])
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "chronology",
+        "future_success",
+        "early_notification",
+        "wrong_error",
+        "products",
+    ],
+)
 def test_recovery_binding_rejects_invalid_schema_v3_failed_terminal(target, invalid):
     from app.market_data.closeout_binding import RuntimeRecoveryBindingError
 
     failed = _failed_terminal_status()
     if invalid == "chronology":
         failed["last_run"]["finished_at"] = "2028-01-01T18:04:59+08:00"
+    elif invalid == "future_success":
+        failed["last_successful_trading_day"] = "2028-01-02"
+    elif invalid == "early_notification":
+        failed["last_run"]["failure_notification"] = {
+            "attempted_at": "2028-01-01T18:05:30+08:00",
+            "state": "failed",
+            "error_type": "AFTER_MARKET_FAILURE_NOTIFICATION_FAILED",
+        }
+    elif invalid == "wrong_error":
+        failed["last_run"]["error_code"] = "LIVE_DOMINANT_MISMATCH"
+        failed["last_failure"]["error_code"] = "LIVE_DOMINANT_MISMATCH"
     else:
         failed["last_run"]["products"] = ["ag"]
     failed_sha256 = _write_status(target.status, failed)
@@ -268,6 +288,93 @@ def test_recovery_binding_classifies_invalid_heartbeat(target, monkeypatch):
         )
 
     assert captured.value.code == "RUNTIME_RECOVERY_HEARTBEAT_INVALID"
+
+
+def test_recovery_binding_classifies_redis_heartbeat_failure(target, monkeypatch):
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    failed_sha256 = _write_status(target.status, _failed_terminal_status())
+    binding = target.module.RuntimeDataBinding(
+        target.root,
+        "a" * 40,
+        failed_sha256,
+        home=target.home,
+        allow_failed_terminal=True,
+    )
+    monkeypatch.setattr(
+        target.module, "assert_catalog_dependencies", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        binding,
+        "_check_heartbeats",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RedisConnectionError("unavailable")
+        ),
+    )
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        binding.check_catalog(
+            SimpleNamespace(),
+            SimpleNamespace(),
+            SimpleNamespace(),
+            SimpleNamespace(),
+            lambda: datetime(2029, 1, 1, tzinfo=UTC),
+        )
+
+    assert captured.value.code == "RUNTIME_RECOVERY_HEARTBEAT_INVALID"
+
+
+def test_recovery_binding_rechecks_service_identity_after_heartbeat(
+    target, monkeypatch
+):
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    failed_sha256 = _write_status(target.status, _failed_terminal_status())
+    binding = target.module.RuntimeDataBinding(
+        target.root,
+        "a" * 40,
+        failed_sha256,
+        home=target.home,
+        allow_failed_terminal=True,
+    )
+    monkeypatch.setattr(
+        target.module, "assert_catalog_dependencies", lambda *args, **kwargs: None
+    )
+
+    def drift_after_heartbeat(*_args, **_kwargs):
+        target.outputs["com.guiyi.quant-web"] = None
+
+    monkeypatch.setattr(binding, "_check_heartbeats", drift_after_heartbeat)
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        binding.check_catalog(
+            SimpleNamespace(),
+            SimpleNamespace(),
+            SimpleNamespace(),
+            SimpleNamespace(),
+            lambda: datetime(2029, 1, 1, tzinfo=UTC),
+        )
+
+    assert captured.value.code == "RUNTIME_RECOVERY_SERVICE_MISMATCH"
+
+
+def test_recovery_binding_classifies_missing_status_as_identity_drift(target):
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    target.status.unlink()
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        target.module.RuntimeDataBinding(
+            target.root,
+            "a" * 40,
+            "0" * 64,
+            home=target.home,
+            allow_failed_terminal=True,
+        )
+
+    assert captured.value.code == "RUNTIME_RECOVERY_IDENTITY_DRIFT"
 
 
 def _stop_writer(target) -> None:

@@ -14,6 +14,7 @@ from app.market_data.current_day_metadata_recovery import (
     encode_current_day_snapshot,
     plan_current_day_metadata,
 )
+from app.market_data.closeout_binding import RuntimeRecoveryBindingError
 
 
 _MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
@@ -124,6 +125,8 @@ def run_current_day_metadata_recovery(
     ) as runtime:
         try:
             runtime.verify_identity()
+        except RuntimeRecoveryBindingError:
+            raise
         except Exception:
             raise CurrentDayMetadataRecoveryError("RUNTIME_IDENTITY_DRIFT") from None
         if args.phase == "capture":

@@ -78,6 +78,24 @@ heartbeat facts before use; permission/error/unreadable results are not absence,
 any drift MUST fail closed. Normal after-market closeout MUST continue to require all five services loaded,
 with after-market idle. A stopped terminal MUST NOT by itself satisfy any promotion predicate.
 
+Runtime-bound daily/current-day maintenance MAY additionally bind an exact schema-v3 terminal failed run only when
+the ordered products equal the operational universe, attempts are one or two, both failure records carry
+`UPDATE_FAILED`, timestamps and the previous successful trading day are chronologically valid, and any failure
+notification was attempted no earlier than terminal completion. This recovery-only branch MUST keep all five
+services loaded with after-market idle, pin the exact status bytes, root, commit, configuration and service identities,
+verify fresh Live/Alert heartbeats, and repeat the full identity/service/status check after heartbeat reads. Missing or
+unreadable state, identity drift, service mismatch and heartbeat failure MUST use separate bounded public errors.
+Normal closeout and deployment promotion MUST NOT accept this failed-terminal branch, and the four independent
+promotion predicates remain unchanged.
+
+#### Scenario: Exact failed terminal is used only for bounded maintenance
+- **WHEN** a schema-v3 `UPDATE_FAILED` terminal and all loaded Runtime, scope, status and heartbeat facts remain pinned
+- **THEN** daily/current-day recovery may continue to its own plan or approved apply without relabeling the failed run
+
+#### Scenario: Failed-terminal recovery authority drifts
+- **WHEN** status, Runtime/config identity, any required service, or either heartbeat is invalid or changes during binding
+- **THEN** recovery fails with the corresponding bounded status, identity, service or heartbeat code before provider access or writes
+
 The deployment installer MUST also obtain every launchd loaded/absent classification from that Python
 authority. Shell MUST NOT parse `launchctl` output or reproduce absence policy; only the authority may accept
 exit 113 with the exact requested label/user absence shape. Any other exit or output is unknown and MUST fail
