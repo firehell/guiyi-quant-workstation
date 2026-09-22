@@ -24,7 +24,7 @@ import { resolveChartTheme } from '@/styles/chartTheme'
 import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { initialChartLogicalRange } from '@/utils/chartViewport'
-import { layoutReferenceCallouts, REFERENCE_CALLOUT_BOX, type PositionedCallout } from '@/utils/referenceCalloutLayout'
+import { layoutReferenceCallouts, type PositionedCallout } from '@/utils/referenceCalloutLayout'
 import {
   buildNewowProductChartModel,
   buildNewowActionCallouts,
@@ -70,7 +70,7 @@ const actionOverlayHeight = ref(0)
 const actionOverlayLeft = ref(0)
 const actionOverlayWidth = ref(0)
 const positionedActions = ref<PositionedCallout[]>([])
-const activeActionLabel = ref<string | null>(null)
+const ACTION_LABEL_BOX = { width: 96, height: 38 }
 const container = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
 const model = computed(() => props.response === null ? null : buildNewowProductChartModel(props.response))
@@ -172,8 +172,6 @@ watch([() => props.selectedSignalId, () => props.focusRequestId], () => {
   resolveSelectedSignal()
   scheduleActionProjection()
 }, { flush: 'post' })
-watch(activeActionLabel, scheduleActionProjection)
-
 function identityKey(value: NewowProductChartModel): string {
   return `${value.identity.product}:${value.identity.strategy}:${value.identity.frequency}`
 }
@@ -195,7 +193,6 @@ function renderModel(value: NewowProductChartModel | null): void {
     mainLines.clear()
     actionMarkers?.setMarkers([])
     positionedActions.value = []
-    activeActionLabel.value = null
     resolvedSignalKey = null
     resolvedFocusRequestKey = null
     return
@@ -266,7 +263,13 @@ function syncMainLines(value: NewowProductChartModel): void {
   for (const line of value.mainLines) {
     let series = mainLines.get(line.id)
     if (series === undefined) {
-      series = chart.addSeries(LineSeries, { color: mainLineColors[line.key] ?? '#64748B', lineWidth: value.identity.strategy === 'trend' ? 1 : 2, lastValueVisible: false, priceLineVisible: false })
+      series = chart.addSeries(LineSeries, {
+        color: mainLineColors[line.key] ?? '#64748B',
+        lineWidth: value.identity.strategy === 'trend' ? 1 : 2,
+        lineStyle: line.key === 'a' || line.key === 'b' || line.key === 'ma35' || line.key === 'ma45' ? 2 : 0,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      })
       mainLines.set(line.id, series)
     }
     series.setData(line.points.map((point): LineData<Time> => ({
@@ -315,10 +318,9 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     const y = priceToCoordinate.call(candles, action.value)
     return x === null || y === null ? [] : [{
       callout, x, y,
-      // Passive labels stay compact; interaction must reveal both lines without clipping.
-      boxWidth: activeActionLabel.value === callout.id ? 168 : REFERENCE_CALLOUT_BOX.width,
-      boxHeight: activeActionLabel.value === callout.id ? 52 : REFERENCE_CALLOUT_BOX.height,
-      expanded: activeActionLabel.value === callout.id || props.selectedSignalId === callout.id,
+      boxWidth: ACTION_LABEL_BOX.width,
+      boxHeight: ACTION_LABEL_BOX.height,
+      expanded: props.selectedSignalId === callout.id,
     }]
   }), width, height)
 }
@@ -509,12 +511,11 @@ defineExpose({ revealSignal, scrollToLatest })
       aria-label="策略参考动作"
     >
       <svg aria-hidden="true"><line v-for="item in positionedActions.filter(point => !point.compact)" :key="item.callout.id" :x1="item.x" :y1="item.y" :x2="item.lineX" :y2="item.lineY" /></svg>
-      <button
+      <div
         v-for="item in positionedActions"
         :key="item.callout.id"
-        type="button"
         class="newow-product-chart-stage__action-label"
-        :class="[{ 'is-density-node': item.compact, 'is-compact': item.compact && activeActionLabel !== item.callout.id && selectedSignalId !== item.callout.id, 'is-active': activeActionLabel === item.callout.id, 'is-selected': selectedSignalId === item.callout.id }, `is-${item.callout.tone}`]"
+        :class="[{ 'is-density-node': item.compact, 'is-compact': item.compact && selectedSignalId !== item.callout.id, 'is-selected': selectedSignalId === item.callout.id }, `is-${item.callout.tone}`]"
         :style="{ left: `${item.left}px`, top: `${item.top}px`, width: `${item.width}px`, height: `${item.height}px` }"
         :data-action-id="item.callout.id"
         :data-reference-price="item.callout.price"
@@ -523,12 +524,7 @@ defineExpose({ revealSignal, scrollToLatest })
         :data-anchor-y="item.y"
         :aria-label="`${item.callout.title}，${item.callout.detail}，策略参考动作`"
         :title="`${item.callout.title} · ${item.callout.detail}`"
-        @mouseenter="activeActionLabel = item.callout.id"
-        @mouseleave="activeActionLabel = null"
-        @focus="activeActionLabel = item.callout.id"
-        @blur="activeActionLabel = null"
-        @click="emit('select-signal', item.callout.id)"
-      ><template v-if="!item.compact || activeActionLabel === item.callout.id || selectedSignalId === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></button>
+      ><template v-if="!item.compact || selectedSignalId === item.callout.id"><strong>{{ item.callout.title }}</strong><span>{{ item.callout.detail }}</span></template><template v-else>{{ item.callout.above ? '▽' : '△' }}</template></div>
     </div>
     <span class="newow-product-chart-stage__volume-label" :style="{ top: `${volumeTop}px` }">成交量</span>
     <div class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
@@ -545,15 +541,14 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage__chart { width:100%; flex:1; min-height:500px; }
 .newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
-.newow-product-chart-stage__action-label { position:absolute; pointer-events:auto; display:grid; align-content:center; gap:3px; box-sizing:border-box; padding:4px; overflow:hidden; border:1px solid #AA927B; border-radius:2px; background:#FFFEFA; color:#665343; font-size:11px; cursor:pointer; box-shadow:0 1px 3px #8C73551A; }
-.newow-product-chart-stage__action-label strong { font-size:12px; font-weight:500; }
-.newow-product-chart-stage__action-label strong,.newow-product-chart-stage__action-label span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.newow-product-chart-stage__action-label { position:absolute; pointer-events:none; display:grid; place-content:center; gap:1px; box-sizing:border-box; padding:3px 8px; overflow:hidden; border:1px solid #AA927B; border-radius:8px; background:#FFFEFA; color:#665343; font-size:10px; line-height:15px; text-align:center; box-shadow:0 1px 3px #8C73551A; }
+.newow-product-chart-stage__action-label strong { font-size:10px; font-weight:500; }
+.newow-product-chart-stage__action-label strong,.newow-product-chart-stage__action-label span { display:block; line-height:15px; overflow:hidden; white-space:nowrap; }
 .newow-product-chart-stage__action-label.is-gain span { color:#CB3737; }
 .newow-product-chart-stage__action-label.is-loss span { color:#188052; }
 .newow-product-chart-stage__action-label.is-density-node { min-width:0; min-height:0; }
 .newow-product-chart-stage__action-label.is-compact { padding:0; place-items:center; }
-.newow-product-chart-stage__action-label.is-active { z-index:5; outline:2px solid #AA927B; }
-.newow-product-chart-stage__action-label.is-selected { outline:2px solid #8B653D; background:#FFF3D9; }
+.newow-product-chart-stage__action-label.is-selected { z-index:5; outline:2px solid #8B653D; background:#FFF3D9; }
 .newow-product-chart-stage__toolbar { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; min-height:48px; border-bottom:1px solid #ebedf0; padding:0 8px; }
 .newow-product-chart-stage__controls,.newow-product-chart-stage__legend { display:flex; align-items:center; gap:8px; }
 button,summary { min-height:44px; padding:0 10px; border:0; color:#667085; background:#fff; cursor:pointer; font-size:12px; }

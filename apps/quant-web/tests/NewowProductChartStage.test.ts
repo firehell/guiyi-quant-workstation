@@ -66,6 +66,7 @@ test('trend A/B boundaries render as lightweight one-pixel lines above the colum
   app.mount(element('root')); await nextTick()
 
   assert.deepEqual(lineOptions.map(options => options.lineWidth), [1, 1])
+  assert.deepEqual(lineOptions.map(options => options.lineStyle), [2, 2])
   app.unmount()
 })
 
