@@ -2,18 +2,18 @@
 
 文档整理：2026-09-22。正式 Release 为
 `v1.10.19@879f76e4c115cc87bd9de78331002f084465fe33`；annotated tag、origin/main、
-GitHub Release target 与发布树已读回一致。本机 Runtime 仍为
-`v1.10.17@305cf36b94121dff37d6ce280f98869d979a2b8b`，root 为
-`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.17-r1`，旧 v1.10.16 root 保留为恢复候选。
-v1.10.19 在 v1.10.18 之上修复周一 ISO 周 Calendar 夜盘证据。v1.10.18 正式周线为 48 个品种
-（新增 b、bz、eb、eg、j、pg、si，使用 weekly v2；原 41 仍用 v1）。
-2026-09-22 08:32 北京时间对 exact v1.10.19 的只读 Market preflight 为
-`blocked / MARKET_RUNTIME_PROMOTION_LIVE_SNAPSHOT_REQUIRED / trading_day=2026-09-22 /
-operational_count=60 / snapshot_count=0`，未执行 launchd 安装或服务切换，因此现场仍是 41。
-60m 继续关闭。v1.10.12 发布候选的
-Market Home 为 57/60；后续首页质量修复候选与受控补数验收为 60/60，BZ/EB/PG 历史源价
-不可用仍保留计算边界。v1.10.17 即时服务仍在运行，但 Runtime health 因 2026-09-21
-盘后 `UPDATE_FAILED` 读回 failed；v1.10.19 自然 Live、自然盘后与 weekly audit 证据
+GitHub Release target 与发布树已读回一致。本机 Runtime 已切换为
+`v1.10.18@ec1dd21f7bed7b04018350058edd3f2bc94cbabf`，root 为
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.18-r1`；旧 v1.10.17 root 保留为恢复候选。
+v1.10.19 在 v1.10.18 之上修复周一 ISO 周 Calendar 夜盘证据，但尚未做 Runtime promotion，
+因此现场代码是 v1.10.18。正式周线为 48 个品种（新增 b、bz、eb、eg、j、pg、si，使用 weekly v2；
+原 41 仍用 v1）。2026-09-22 10:15 北京时间对 exact v1.10.18 的 Market preflight 为
+`passed / snapshot_ready / trading_day=2026-09-22 / operational_count=60 / snapshot_count=60`，
+随后一次完成 Market、API/Web/日志轮转、Alert、weekly audit 安装。60m 继续关闭。
+v1.10.12 发布候选的 Market Home 为 57/60；后续首页质量修复候选与受控补数验收为 60/60，
+BZ/EB/PG 历史源价不可用仍保留计算边界。切换后 API version=1.10.18，正式能力
+`newow_product_capabilities_v10` weekly=48；总 health 为 degraded（新 root 盘后 pending、
+Alert 保留切换前诊断）。v1.10.18 自然 completed Live Bar、自然盘后与 weekly audit 证据
 尚未取得，因此不能声明 `RUNTIME_READY`。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
@@ -35,8 +35,28 @@ ISO 周日，TradingSession 仍只写当天与下一交易日，rank1 仍只写�
 
 独立、干净的 detached root `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.19-r1` 已完成离线
 locked 依赖安装、Web production build、104 项 health/canonical/after-market/metadata
-测试与 launchd render-only；API 版本身份为 1.10.19。fresh Market preflight 阻断，
-未安装、未 kickstart、未改 activation marker。现役六项服务仍绑定 v1.10.17。
+测试与 launchd render-only；API 版本身份为 1.10.19。2026-09-22 08:32 fresh Market preflight
+曾阻断；此后 owner 授权并完成的是 exact v1.10.18 Runtime promotion，不是 v1.10.19。
+v1.10.19 root 仍保留为未切换候选。
+
+## v1.10.18 Runtime promotion 读回
+
+2026-09-22 上午先补齐 Catalog 当日元数据：在 maintenance lease 下从锚定
+`2026-09-21` 的 RQData current-day 快照写入 `2026-09-22` 的 5 行 TradingCalendar 与
+225 条 TradingSession；跳过同 ISO 周内尚无夜盘权威的未来交易日 Calendar（与周一
+`CALENDAR_NIGHT_AUTHORITY_MISSING` / `UPDATE_FAILED` 同类）。补齐后 phase 为
+CLOSED 60/60。10:15 BREAK 窗口对 candidate root
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.18-r1` 的 preflight 为
+`passed / snapshot_ready / trading_day=2026-09-22 / operational_count=60 / snapshot_count=60`。
+
+随后按 Market → API/Web/日志轮转 → Alert → weekly audit 各安装一次，无重试、无回退。
+只读回读六项服务 installed/loaded root 与 commit 均为
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.18-r1` @ `ec1dd21f7bed7b04018350058edd3f2bc94cbabf`；
+API/Web 200，API version=1.10.18，正式能力 `newow_product_capabilities_v10` weekly_products=48
+（含 b/si，不含 cj）。detached checkout 干净。旧 v1.10.17 root 保留。未执行生产 Alembic、
+通知补发、Scope 变更或下单。总 health 为 degraded：新 root after-market pending，
+Alert 保留切换前诊断；自然 completed Live Bar、自然盘后与 weekly audit 仍待证据，
+不声明 `RUNTIME_READY`。
 
 ## v1.10.18 Release 读回
 
@@ -203,8 +223,8 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.19@879f76e4c`，annotated tag、GitHub Release 与 origin/main 已读回；Runtime 仍是 v1.10.17，另见下行 |
-| 现役 Runtime | v1.10.17 `RUNTIME_PROMOTED / SERVICE_READBACK`，health 因 9 月 21 日盘后失败读回 failed；未声明 `RUNTIME_READY` | 六项服务仍绑定 v1.10.17 exact root/commit；v1.10.19 promotion 被 Live snapshot Gate 阻断，未切换 |
+| 正式 Release | `RELEASED` | `v1.10.19@879f76e4c`，annotated tag、GitHub Release 与 origin/main 已读回；Runtime 见下行 |
+| 现役 Runtime | v1.10.18 `RUNTIME_PROMOTED / SERVICE_READBACK`，总 health degraded；未声明 `RUNTIME_READY` | 六项服务绑定 v1.10.18 exact root/commit；正式周线 48；v1.10.19 尚未 promotion |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | Unified Reference Trading P3 仓储候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | 六表、0047 migration、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；合入最新 develop 后 83 项 P3（含 9 项隔离 PG）及 368 项 P0–P3/Newow/SuBing 回归通过，Review 的 5 项 Important 已修复。仍默认 disabled，未执行生产 migration、P4 构建、P5 HTTP/Web、P6 worker 或 Runtime enable |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
