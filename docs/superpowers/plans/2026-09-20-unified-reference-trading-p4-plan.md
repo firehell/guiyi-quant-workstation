@@ -232,4 +232,3 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
 
 运行前用 rg --files 核对；PG按 TESTING.md 专用可销毁库的guard执行。skip不算PG通过。
 本计划创建时未执行上述测试，不引用 P3 旧结果冒充 P4 新证据。
-
