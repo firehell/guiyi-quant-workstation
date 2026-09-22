@@ -80,6 +80,9 @@ Runtime root/commit/status、依赖、Live/Alert heartbeat 和完整 diff。任�
 阻断。通过后 SHALL 调用与自然 `synchronize_current_day` 共用的 validated writer，一次事务只插入计划缺失
 事实；apply 路径不得构造 provider，并固定报告 `provider_requests=0`。commit 结果不明 MUST 报
 `CURRENT_DAY_METADATA_COMMIT_OUTCOME_UNKNOWN`、停止且不得 retry；必须独立 readback 后再决定新动作。
+Runtime 绑定 MAY 使用 `historical-data-maintenance` 定义的精确 schema-v3 `UPDATE_FAILED` 恢复专用分支；
+status 不支持、身份漂移、服务不匹配和 heartbeat 无效 MUST 保留各自有界公开错误码，capture 与 apply 的
+重复身份检查不得将这些错误统一改写为 metadata identity drift。
 
 #### Scenario: Frozen source is planned without provider capability
 - **WHEN** operator supplies a matching current-day snapshot and hash to `--phase plan`

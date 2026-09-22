@@ -14,6 +14,7 @@ from app.market_data.current_day_metadata_recovery import (
     encode_current_day_snapshot,
     plan_current_day_metadata,
 )
+from app.market_data.closeout_binding import RuntimeRecoveryBindingError
 
 
 _MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
@@ -67,7 +68,9 @@ def open_runtime_bound_current_day_metadata(
     from app.market_data.rqdata_adapter import RQDataMarketAdapter
     from app.market_data.session_clock import SHANGHAI
 
-    binding = RuntimeDataBinding(root, commit, status_sha256)
+    binding = RuntimeDataBinding(
+        root, commit, status_sha256, allow_failed_terminal=True
+    )
     engine = create_engine(normalize_database_url(binding.settings["DATABASE_URL"]))
     redis = None
     try:
@@ -122,6 +125,8 @@ def run_current_day_metadata_recovery(
     ) as runtime:
         try:
             runtime.verify_identity()
+        except RuntimeRecoveryBindingError:
+            raise
         except Exception:
             raise CurrentDayMetadataRecoveryError("RUNTIME_IDENTITY_DRIFT") from None
         if args.phase == "capture":
