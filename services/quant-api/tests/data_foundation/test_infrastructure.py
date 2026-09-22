@@ -1959,6 +1959,73 @@ def test_current_day_metadata_snapshot_fetches_bounded_next_day_calendar_context
     ]
 
 
+def test_current_day_metadata_snapshot_fetches_iso_week_period_evidence() -> None:
+    period_calls = []
+    current_day = date(2026, 9, 21)
+    next_trading_day = date(2026, 9, 22)
+    week_end = date(2026, 9, 27)
+    later_trading_day = date(2026, 9, 23)
+    trading_days = tuple(current_day + timedelta(days=offset) for offset in range(5))
+
+    class FuturesApi:
+        def get_dominant(self, underlying_symbol, start_date, end_date, rule=0, rank=1):
+            days = [current_day]
+            if end_date >= next_trading_day:
+                days.append(next_trading_day)
+            return pd.Series(
+                ["JM2509"] * len(days),
+                index=pd.to_datetime(days),
+                name="dominant",
+            )
+
+    class Api:
+        futures = FuturesApi()
+
+        def all_instruments(self, type):
+            return pd.DataFrame(
+                [
+                    {
+                        "underlying_symbol": "JM",
+                        "exchange": "DCE",
+                        "order_book_id": "JM2509",
+                        "symbol": "JM2509",
+                        "listed_date": date(2020, 1, 1),
+                        "de_listed_date": date(2030, 1, 1),
+                    }
+                ]
+            )
+
+        def get_trading_dates(self, start_date, end_date):
+            return tuple(day for day in trading_days if start_date <= day <= end_date)
+
+        def get_trading_periods(self, order_book_ids, start_date, end_date, frequency):
+            period_calls.append((tuple(order_book_ids), start_date, end_date, frequency))
+            days = [day for day in trading_days if start_date <= day <= end_date]
+            return pd.DataFrame(
+                {"trading_hours": ["21:01-23:00,09:01-15:00"] * len(days)},
+                index=pd.MultiIndex.from_tuples(
+                    [("JM2509", day) for day in days],
+                    names=("order_book_id", "date"),
+                ),
+            )
+
+    client = object.__new__(rqdata_adapter.RQDataClient)
+    client.api = Api()
+
+    snapshot = client.current_day_metadata_snapshot(("jm",), current_day)
+
+    assert period_calls == [(("JM2509",), current_day, week_end, "1m")]
+    assert {day for _, day, _ in snapshot.main_contracts} == {
+        current_day,
+        next_trading_day,
+    }
+    assert later_trading_day in {row["effective_from"] for row in snapshot.sessions}
+    assert any(
+        row["trade_date"] == later_trading_day and row["has_night_session"] is True
+        for row in snapshot.calendars
+    )
+
+
 def test_current_day_metadata_snapshot_includes_next_trading_day_sessions() -> None:
     calls = []
     current_day = date(2025, 1, 10)

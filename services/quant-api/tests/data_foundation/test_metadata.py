@@ -288,6 +288,50 @@ def test_current_day_sync_replaces_day_facts_and_bounded_week_calendar_context()
     session.close()
 
 
+def test_current_day_sync_uses_later_iso_week_session_evidence_without_writing_those_sessions() -> None:
+    """Monday ISO-week Calendar 需要后续交易日夜盘证据，但 Session 仍只写当天与下一交易日。"""
+    later_day = date(2026, 8, 12)
+    session = _session()
+    snapshot = _snapshot()
+    snapshot = MetadataSnapshot(
+        exchanges=snapshot.exchanges,
+        instruments=snapshot.instruments,
+        contracts=snapshot.contracts,
+        calendars=tuple(
+            {
+                **row,
+                "is_trading_day": row["trade_date"] in {_DAY, _AFTER, later_day},
+                "has_night_session": row["trade_date"] in {_DAY, _AFTER, later_day},
+            }
+            for row in snapshot.calendars
+        ),
+        sessions=snapshot.sessions
+        + (
+            {
+                **_session_values("jm", "later-week"),
+                "effective_from": later_day,
+                "effective_to": later_day,
+                "start_time": time(21),
+                "end_time": time(23),
+            },
+        ),
+        main_contracts=snapshot.main_contracts,
+        main_contract_starts=snapshot.main_contract_starts,
+    )
+    synchronizer = MetadataSynchronizer(
+        _Adapter(snapshot), MarketCatalog(session, Path("."))
+    )
+
+    assert synchronizer.synchronize_current_day(("j", "jm"), _DAY) == _DAY
+
+    state = _metadata_state(session)
+    assert ("DCE", later_day, True, True) in state["calendar"]
+    assert ("jm", "later-week", later_day, later_day) not in state["sessions"]
+    assert ("j", "day", _DAY, _DAY) in state["sessions"]
+    assert ("j", "future", _AFTER, _AFTER) in state["sessions"]
+    session.close()
+
+
 def test_current_day_sync_replaces_next_trading_day_sessions_only() -> None:
     """盘后同步必须准备下一交易日 Session，但不得提前发布下一日 rank1。"""
     session = _session()
