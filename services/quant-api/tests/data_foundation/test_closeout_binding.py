@@ -46,6 +46,9 @@ def target(tmp_path, monkeypatch):
     root.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.setattr(
+        module, "_now_utc", lambda: datetime(2029, 1, 2, tzinfo=UTC)
+    )
+    monkeypatch.setattr(
         module, "verify_closeout_identity", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
@@ -176,6 +179,7 @@ def test_recovery_binding_accepts_exact_schema_v3_failed_terminal(target):
     [
         "chronology",
         "future_finish",
+        "same_day_future_terminal",
         "future_success",
         "same_day_success",
         "early_notification",
@@ -191,6 +195,12 @@ def test_recovery_binding_rejects_invalid_schema_v3_failed_terminal(target, inva
         failed["last_run"]["finished_at"] = "2028-01-01T18:04:59+08:00"
     elif invalid == "future_finish":
         failed["last_run"]["finished_at"] = "2099-01-01T18:06:00+08:00"
+    elif invalid == "same_day_future_terminal":
+        failed["last_run"]["trading_day"] = "2099-01-01"
+        failed["last_run"]["started_at"] = "2099-01-01T18:05:00+08:00"
+        failed["last_run"]["finished_at"] = "2099-01-01T18:06:00+08:00"
+        failed["last_successful_trading_day"] = "2098-12-31"
+        failed["last_failure"]["trading_day"] = "2099-01-01"
     elif invalid == "future_success":
         failed["last_successful_trading_day"] = "2028-01-02"
     elif invalid == "same_day_success":
