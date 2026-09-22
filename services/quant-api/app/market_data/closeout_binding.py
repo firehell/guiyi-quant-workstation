@@ -49,6 +49,10 @@ _DEPENDENCY_SOURCE_SETTINGS = _DEPENDENCY_SETTINGS | {
 }
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 
+
+def _now_utc() -> datetime:
+    return datetime.now(UTC)
+
 _CLOSEOUT_IGNORED_SETTINGS = {
     "CORS_ORIGINS", "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",
     "VITE_API_BASE_URL",
@@ -432,6 +436,7 @@ class RuntimeDataBinding:
                     started.utcoffset() is None
                     or finished.utcoffset() is None
                     or finished < started
+                    or finished.astimezone(UTC) > _now_utc()
                     or started.astimezone(_SHANGHAI).date().isoformat()
                     != last_run["trading_day"]
                     or finished.astimezone(_SHANGHAI).date().isoformat()
