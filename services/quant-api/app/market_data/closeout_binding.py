@@ -21,6 +21,7 @@ from app.market_data.after_market import public_after_market_status
 from app.market_data.after_market_closeout import (
     _directory,
     _read,
+    verify_closeout_service_identity,
     verify_closeout_identity,
     verify_runtime_release_identity,
 )
@@ -338,16 +339,17 @@ class RuntimeDataBinding:
             and parsed["last_run"].get("status") == "failed"
             else "running"
         )
-        try:
-            self._verify_runtime_identity()
-        except (OSError, ValueError):
-            self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
+        self._verify_runtime_identity_bounded()
         self.started_ns = int(started.timestamp() * 1_000_000_000)
         self.runtime_dir = self.home / "Library/Application Support/GuiyiQuant"
         self.agent_dir = self.home / "Library/LaunchAgents"
         self.config_path = self.runtime_dir / "project.env"
         try:
             self._sources = self._read_sources()
+        except OSError:
+            if not self._recovery_errors:
+                raise
+            self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         except ValueError:
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         try:
@@ -370,7 +372,14 @@ class RuntimeDataBinding:
             runtime_provider_settings(self.settings, required=True)
         except ValueError:
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
-        self.products = _products(root)
+        try:
+            self.products = _products(root)
+        except OSError:
+            if not self._recovery_errors:
+                raise
+            self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
+        except ValueError:
+            self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         if (
             (interruption is not None or self.recovery_terminal == "failed")
             and tuple(parsed["last_run"]["products"]) != self.products
@@ -425,12 +434,14 @@ class RuntimeDataBinding:
                     or finished < started
                     or started.astimezone(_SHANGHAI).date().isoformat()
                     != last_run["trading_day"]
+                    or finished.astimezone(_SHANGHAI).date().isoformat()
+                    != last_run["trading_day"]
                     or (
                         last_success is not None
                         and datetime.fromisoformat(
                             f"{last_success}T00:00:00+08:00"
                         ).date()
-                        > trading_day
+                        >= trading_day
                     )
                     or (
                         notification is not None
@@ -478,10 +489,23 @@ class RuntimeDataBinding:
         else:
             verify_closeout_identity(self.root, self.commit, home=self.home)
 
+    def _verify_runtime_identity_bounded(self) -> None:
+        try:
+            verify_runtime_release_identity(self.root, self.commit)
+        except (OSError, ValueError):
+            self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
+        if self.after_market_state == "loaded":
+            try:
+                verify_closeout_service_identity(
+                    self.root, self.commit, home=self.home
+                )
+            except (OSError, ValueError):
+                self._fail("RUNTIME_RECOVERY_SERVICE_MISMATCH")
+
     def recheck_identity(self) -> None:
         """Recheck every pinned filesystem, process and status fact."""
         try:
-            self._verify_runtime_identity()
+            self._verify_runtime_identity_bounded()
             self._verify_pinned_status()
             if self._read_sources() != self._sources:
                 self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
