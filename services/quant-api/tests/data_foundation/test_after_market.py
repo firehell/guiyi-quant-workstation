@@ -1113,6 +1113,35 @@ def test_update_exception_logs_only_sanitized_stage_diagnostics(
     assert "credential-secret-provider-message" not in caplog.text
 
 
+def test_calendar_night_authority_missing_is_stable_public_code_without_retry(
+    tmp_path, caplog
+) -> None:
+    updater, manager, _rqdata, sleeps, notices, _live_store = _updater(
+        tmp_path,
+        trading_day=date(2026, 8, 10),
+        readiness=[True, True],
+        results=[],
+    )
+
+    def fail_update(_request, *, before_apply=None, observer=None):
+        raise ValueError("CALENDAR_NIGHT_AUTHORITY_MISSING")
+
+    manager.update = fail_update
+    caplog.set_level(logging.WARNING, logger="app.market_data.after_market")
+
+    result = updater.run()
+
+    assert result.status == "failed"
+    assert result.attempts == 1
+    assert result.error_code == "CALENDAR_NIGHT_AUTHORITY_MISSING"
+    assert sleeps == []
+    assert _notice_error_codes(notices) == ["CALENDAR_NIGHT_AUTHORITY_MISSING"]
+    assert [record.message for record in caplog.records] == [
+        "after_market_attempt_failed stage=canonical_update attempt=1 "
+        "detail_code=CALENDAR_NIGHT_AUTHORITY_MISSING exception_type=ValueError",
+    ]
+
+
 def test_next_trading_session_not_ready_is_retried_with_stable_public_code(
     tmp_path, caplog
 ) -> None:

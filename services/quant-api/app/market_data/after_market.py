@@ -58,6 +58,7 @@ _PUBLIC_ERROR_CODES = frozenset(
         "UPDATE_FAILED",
         "COMMIT_OUTCOME_UNKNOWN",
         "HISTORICAL_MAINTENANCE_REQUIRED",
+        "CALENDAR_NIGHT_AUTHORITY_MISSING",
         "AFTER_MARKET_INTERRUPTED",
     }
 )
@@ -446,8 +447,20 @@ class AfterMarketUpdater:
                 raise _ProgressPersistenceError() from None
             if isinstance(exc, StorageError) and exc.code == "COMMIT_OUTCOME_UNKNOWN":
                 return exc.code
-            if type(exc) is ValueError and exc.args == ("HISTORICAL_MAINTENANCE_REQUIRED",):
-                return "HISTORICAL_MAINTENANCE_REQUIRED"
+            if (
+                type(exc) is ValueError
+                and len(exc.args) == 1
+                and exc.args[0] in _PUBLIC_ERROR_CODES
+            ):
+                if exc.args[0] != "HISTORICAL_MAINTENANCE_REQUIRED":
+                    _diagnostic_warning(
+                        "after_market_attempt_failed stage=canonical_update attempt=%s "
+                        "detail_code=%s exception_type=%s",
+                        attempt,
+                        exc.args[0],
+                        type(exc).__name__,
+                    )
+                return exc.args[0]
             _diagnostic_warning(
                 "after_market_attempt_failed stage=canonical_update attempt=%s "
                 "detail_code=UNEXPECTED_UPDATE_EXCEPTION exception_type=%s",

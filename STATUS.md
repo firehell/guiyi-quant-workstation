@@ -1,8 +1,9 @@
 # 当前状态
 
-文档整理：2026-09-19。正式 Release 为
-`v1.10.17@305cf36b94121dff37d6ce280f98869d979a2b8b`；annotated tag、origin/main、
-GitHub Release target 与发布树已读回一致。本机 Runtime 仍为
+文档整理：2026-09-22。正式 Release 候选为 v1.10.19：在已发布的 v1.10.18 之上修复周一
+ISO 周 current-day Calendar 夜盘证据，避免盘后把 `CALENDAR_NIGHT_AUTHORITY_MISSING`
+收成不透明 `UPDATE_FAILED`。annotated tag / GitHub Release 读回前，仓库身份仍以
+`v1.10.18@ec1dd21f7bed7b04018350058edd3f2bc94cbabf` 为上一正式版。本机 Runtime 仍为
 `v1.10.17@305cf36b94121dff37d6ce280f98869d979a2b8b`，root 为
 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.17-r1`，旧 v1.10.16 root 保留为恢复候选。
 牛哇 D1 在发布合并提交上以固定截点 `2026-09-16T07:00:00.000001+00:00` 完成
