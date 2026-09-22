@@ -1,7 +1,8 @@
 # 全系统审计：Sol 实施任务包
 日期：2026-09-22。配套：[主报告](decision.md)。
 
-**本文件是待批准的实施设计，不是实施或生产操作授权。** 本轮只写两份规划文件，未改业务、未提交。
+**设计方向已按用户委托收敛，见主报告第9节；本次仍只更新规划，不启动业务或生产操作。**
+文档已由后续提交a6102bbf6收录；本次修订未commit/push。开发开始时按实际任务授权执行，不重复选择D1–D4。
 审计基线为 develop@5b46cf0d6972478f0a06e9d70b56b3870c44dd1f。
 完整路径相对仓库根；最小读集中的 `app/` 简写指 `services/quant-api/app/`，
 相邻未带前缀的文件沿用上一模块目录，源码 `src/` 指 `apps/quant-web/src/`。独立会话先读取实际 AGENTS 和授权，再使用任务 prompt。
@@ -168,7 +169,7 @@ check_py() {
 | Live DB生命周期 | 每poll的短只读session/UoW结束后无悬空事务；provider、Redis、guard和recovery worker仍属长期service。值对象可以离开session，ORM对象/session不能跨线程；本轮相同身份不能重复用不同authority结果 | SA-04 |
 | reference仓储 | mark证明sealed bar当时有效OPEN，不要求该trade在整个batch最后仍OPEN；保持每批每trade一个最终结构版本，依已存entry/exit Action、effective_bar_end、mark和observed_at恢复cutoff前OPEN；不在同一valid_from_seq插多个版本，不改schema。原子提交所有action/trade/mark/checkpoint。batch分割不改变业务结果；CAS/no-op/冲突语义保持 | SA-06 原P4 owner |
 | reference reducer | active公共入口统一typed CompletedReferenceBar；任何保留legacy兼容必须先规范化并参与相同hash，或者确认无真实消费者后删除。same identity different content必须冲突；Decimal、physical owner、segment、entry_action_id不可弱化 | SA-06 |
-| Newow Action资格 | D2未决，SA-05不能实施语义选择；adapter/projector和checkpoint使用同一明确身份。Action-only不创建ReferenceTrade/收益，历史不等于forward观察；只在owner选定后更新对应canonical | SA-05，codec交接SA-06 |
+| Newow Action资格 | D2已选恢复accepted完整owner lifecycle资格，不接受仅post-gap计算段无入场作为资格；adapter/projector/checkpoint身份一致。Action-only不创建ReferenceTrade/收益，不新增展示资格；保持既有canonical语义 | SA-05，codec交接SA-06 |
 | 工程和根文档 | SA-00负责release修正回流清单；SA-07负责稳定验证文档/规则；SA-08负责最终集成事实。其他任务提交必要文档建议给owner，禁止并行改STATUS/DECISIONS/TESTING造成真假状态混杂 | 00→07→08顺序交接 |
 
 所有任务不变量：RQData唯一外源、Historical/Live分离、completed-only、strict-before、
@@ -311,29 +312,29 @@ SA-07不重做01–06测试，不移动它们的模块。worktree不是接口冲
 
 > 实施已批准的 SA-04。读AGENTS、两份system-audit文档及已合入SA-02/03；先证明最新Live装配仍存在跨poll长Session。按任务第2节让DB读取每轮有界并释放，只把验证后的值留给Live；provider/Redis/锁/worker保留长期生命周期，退出有finally释放，worker不能拿Session。测试连续poll、异常rollback、连接归还、尾盘grace、换日换owner及并发锁；隔离PG补证据，不能把SQLite通过当PG完成。缓存增长先量测，不猜淘汰政策或添加框架。禁止生产断网/重启/provider调用/Runtime切换；新版本自然运行待独立Gate。接口歧义回Astra，不重设计SA-03事实规则。
 
-### SA-05 / 主升浪Action资格、合同及身份对齐 / P1，D2待决
+### SA-05 / 恢复主升浪严格Action资格与身份一致 / P1
 
 - **问题与结果**：F-04；adapter/projector/canonical对INITIAL_CLEAR_NO_ENTRY只有一种明确解释，不再同身份代表两种资格。
-- **证据/设计**：0fd94f402与spec309–344冲突；无evidence fixture仍有CLEAR但trades=0。**D2未批准，当前只可准备差异/测试，不能选语义实施。**
-- **开始条件**：owner在主报告D2明确选择。推荐恢复accepted完整lifecycle资格，暂不新增post-gap展示资格；另一选项是接受当前按计算段放宽，但必须明确版本/兼容。
+- **证据/设计**：0fd94f402与spec309–344冲突；无evidence fixture仍有CLEAR但trades=0。**第9节D2已明确选择恢复accepted严格资格，实施者不再决定是否接受放宽。**
+- **开始条件**：核对实际工程任务授权和最新接口；按主报告D2恢复accepted完整lifecycle资格，不新增post-gap展示资格，明确受影响checkpoint兼容。
 - **最小读集**：newow-product-reference-trading spec，DECISIONS/PROJECT_SOURCE相关段；
   `packages/quant-core/guiyi_quant/newow/product_adapters.py`、`reference_trades.py`、`product_identity.py`、
   `reference_trading/strategy_checkpoint.py`；test_product_adapters/test_reference_trades/test_strategy_checkpoint。
 - **修改范围**：D2选定的两个语义入口、明确相关identity/codec接口以及对应accepted文字/负例；根文档变更交SA-07或单点串行。不改MA/J/D1-D6等公式数值、收益统计、UI开放范围。
-- **公共接口**：owner-lifecycle资格与calculation-segment“未观察到”不能同名混用；Action的provenance与eligibility可机器校验，projector独立验证。若D2只恢复严格原合同，不发明额外资格；若接受新行为，先把精确字段/identity补入本任务获owner确认后实施。
+- **公共接口**：owner-lifecycle资格与calculation-segment“未观察到”不能同名混用；Action的provenance与eligibility可机器校验，projector独立验证。按D2只恢复严格原合同，不发明额外资格。发现与新的owner产品意图冲突时提供具体证据回主设计者，不能默默恢复宽松分支。
 - **不变量**：无入场CLEAR不生成交易/虚构收益；截断/缺证/换owner/未来evidence fail-closed；Hint不转换成仓位；P3仍disabled。checkpoint旧tuple2→tuple3处理交接06，不能静默decode。
 - **步骤**：列出三条真实fixture的旧/现/选定结果→锁定版本和checkpoint决策→修adapter/projector→修反向测试名与断言→canonical/产品文字一致→发给P4接口交接。不自造牛哇私有原规则证据。
 - **验证**：完整owner初始CLEAR、warm-up已有BUILD、左裁/缺evidence/stale evidence、PRICE_UNAVAILABLE后重warm-up、换owner、未来cutoff、同Bar顺序、batch/incremental/restart与旧候选checkpoint。
 - **命令**：`check_py services/quant-api/tests/newow/test_product_adapters.py services/quant-api/tests/newow/test_reference_trades.py services/quant-api/tests/newow/test_reference_interruptions.py services/quant-api/tests/newow/test_reference_statistics.py services/quant-api/tests/reference_trading/test_strategy_checkpoint.py`；
   影响identity后加`check_py services/quant-api/tests/newow/test_product_reader.py`与对应API身份测试（以实际call graph选择）。
-- **现场/授权**：D2是产品语义授权；生产candidate重建、Scope/正式版本切换不包含。只读固定数据页面可验证展示，不据此证明盈利/OOS。
+- **现场/授权**：D2已固定规划方向，工程任务授权仍按实际请求；生产candidate重建、Scope/正式版本切换不包含。只读固定数据页面可验证展示，不据此证明盈利/OOS。
 - **迁移/回滚**：明确候选checkpoint新schema或显式失效重建，不对假想生产数据做migration；回滚须连同identity并拒读不兼容新状态，不覆盖旧结果。
 - **并行/Review**：Newow语义owner独占adapter/projector；06等接口后动codec，仓储纯修正可先做。独立策略/canonical review；无公开证据的业务取舍回owner/Astra。
-- **模型**：Astra收敛D2，批准后Sol medium实施。
+- **模型**：Sol medium按已定D2实施；新的公共语义冲突回Astra。
 
-启动 prompt（当前为调查/决策准备，非立即实现）：
+启动 prompt（在明确下发工程任务时使用）：
 
-> 处理 SA-05 的D2决策准备。读AGENTS、2026-09-22-system-audit主报告F-04/D2和任务包SA-05。对照0fd94f402、accepted spec与当前adapter/projector，给出完整owner、缺evidence、post-gap三个固定输入的行为差异及版本/checkpoint影响。当前没有D2语义批准时只做调查，不修改canonical或恢复/放宽资格。若本消息已附明确D2选择，则仅实现该选择，保持Action-only不产生trade/收益、公式不变，并完成指定因果/重启/身份负例和独立Review。P4 codec由SA-06 owner接手，不并改，不执行生产重建或Runtime promotion。
+> 按工程任务授权执行 SA-05。读取AGENTS、docs/tasks/system-audit-20260922/decision.md 的F-04/第9节D2及同目录implementation-plan.md的SA-05。D2已选恢复accepted完整owner lifecycle资格，不接受仅post-gap计算段没有入场作为INITIAL_CLEAR_NO_ENTRY资格，不新增另一种CLEAR展示身份。对照0fd94f402和最新实现先复现差异，再修adapter/projector，保持公式、收益和产品开放范围不变；无入场CLEAR不创建trade/收益。完成完整/缺证/左裁/post-gap/换owner/重启/身份负例及独立Review。明确旧候选checkpoint兼容并交SA-06原P4负责人，不并改codec。若任务仅要求规划则不实施；不执行生产重建、Scope切换或Runtime promotion。
 
 ### SA-06 / 原P4负责人补仓储批次与输入身份 / P1候选阻断
 
@@ -360,13 +361,13 @@ SA-07不重做01–06测试，不移动它们的模块。worktree不是接口冲
 
 启动 prompt（交原P4会话）：
 
-> 请在你已有P4工作树接手 SA-06，不创建第二套P4。读取两份2026-09-22-system-audit文档及reference-trading spec，先核对当前未提交代码是否已经修复同PreparedBatch OPEN→CLOSE导致ORPHAN_MARK的问题；没有审查或覆盖你的其他改动的授权。合法历史mark须按bar当时OPEN校验；保持每批每trade一最终结构行，依已有Action/mark/effective time/observed_at恢复cutoff前OPEN，不能插同seq多版本、改schema、删除mark或降低原子性。补batch1/2/256、反手/中断、restart/no-op/冲突和旧snapshot回归；legacy reducer统一typed/hash。Newow资格和codec依SA-05明确决策，未决不自行选择。运行指定离线测试及隔离PG/CAS验证，保持0047生产migration/build/worker/Runtime未授权，独立Review后按原P4工程授权交付。
+> 请在你已有P4工作树接手 SA-06，不创建第二套P4。读取两份2026-09-22-system-audit文档及reference-trading spec，先核对当前未提交代码是否已经修复同PreparedBatch OPEN→CLOSE导致ORPHAN_MARK的问题；没有审查或覆盖你的其他改动的授权。合法历史mark须按bar当时OPEN校验；保持每批每trade一最终结构行，依已有Action/mark/effective time/observed_at恢复cutoff前OPEN，不能插同seq多版本、改schema、删除mark或降低原子性。补batch1/2/256、反手/中断、restart/no-op/冲突和旧snapshot回归；legacy reducer统一typed/hash。Newow资格固定为D2严格lifecycle，codec接入等SA-05完成，不能自行选择宽松资格。运行指定离线测试及隔离PG/CAS验证，保持0047生产migration/build/worker/Runtime未授权，独立Review后按原P4工程授权交付。
 
 ### SA-07 / 工程验证与文档职责减负 / P2
 
 - **问题与结果**：F-06/O-01；版本/文档测试保护真实约束，不因正常版本或计划新增机械失败；一处维护当前事实。
-- **证据/设计**：源码版本四处1.10.13而断言1.10.11；tracked plans68而要求0；main allowlist5同样过时。需D3同意去掉文件名逐项清单，安全Gate不删。
-- **前置**：SA-00完成回流/版本基线；D3与工程授权明确；01–06文档建议收集，不等全部业务修正才能改稳定规则。
+- **证据/设计**：源码版本四处1.10.13而断言1.10.11；tracked plans68而要求0；main allowlist5同样过时。D3已选去掉文件名逐项清单，安全Gate不删；以当前事实复核原失败是否仍存在。
+- **前置**：与SA-00共同确认版本/文档基线，工程授权明确。先修仍然阻塞第一批验证的规则；同一owner在01–06接口稳定后完成其余文档整理，不等末尾才修验收阻断。
 - **最小读集**：AGENTS、docs/DEVELOPMENT、TESTING、STATUS头部/当前状态、release-agent技能与deploy/README；
   `tests/engineering/test_canonical_consistency.py`、`test_repository_hygiene.py`、
   `services/quant-api/app/version.py`、两个package元数据与uv.lock根包、`scripts/engineering/secret_scan.py`。
@@ -393,7 +394,7 @@ SA-07不重做01–06测试，不移动它们的模块。worktree不是接口冲
 - **问题与结果**：防止各任务各自通过但公共接缝/身份不一致；得到明确范围、当前SHA的可审阅候选及待验表。
 - **证据/设计**：主报告7/8，引用01–07实际交付而非本轮旧测试。不是把“规划完成”改成“Runtime完成”。
 - **前置**：明确集成owner；00→02→01→03→04→05→06→07顺序按已批准范围整合。
-  D2未决可只集成稳定性子集，不把策略决策拖成事故修复前置；P4待验独立保留。
+  每批结束即执行本任务，不等待全部任务；05/06未完成可只集成稳定性子集，P4待验独立保留。
 - **最小读集**：AGENTS、当前STATUS、两份审计文档、各任务diff与真实测试摘要、TESTING、release-agent技能/deploy README；无需重复全仓审计。
 - **修改范围**：必要冲突修正、极窄接缝测试、当前事实记录；不借集成发明新功能。若冲突改变业务合同回原owner修，不能集成者随意选一边。
 - **接口/不变量**：第2节合同逐项检查；只承诺实际选入候选的任务。git tree、version、test input和readback每项绑定SHA，不用一次“全绿”吞掉不同Gate。
@@ -417,14 +418,20 @@ SA-07不重做01–06测试，不移动它们的模块。worktree不是接口冲
 
 启动 prompt：
 
-> 担任 SA-08 唯一集成负责人。读AGENTS、当前STATUS、2026-09-22-system-audit两份文档和已批准任务的真实交付，不用旧审计测试冒充新SHA证据。核对develop/main/P4及未提交修改，按任务所有权整合已批准子集，验证phase→health→Web、facts→consumer、Live事务、盘后生命周期和reference批次/identity接缝。D2或P4未完成不阻塞已独立通过的稳定性候选，但必须明确未纳入范围。执行相关命令、build/隔离smoke/secret检查并独立Review，交付精确candidate diff、版本、测试与待验表。默认只做开发集成和发布准备；没有精确授权不得main/tag/Release、数据写入或Runtime切换。自然运行验收独立，缺证标INCONCLUSIVE，不手动启动来制造成功。
+> 担任 SA-08 唯一集成负责人。读AGENTS、当前STATUS、2026-09-22-system-audit两份文档和已批准任务的真实交付，不用旧审计测试冒充新SHA证据。核对develop/main/P4及未提交修改，按任务所有权整合已批准子集，验证phase→health→Web、facts→consumer、Live事务、盘后生命周期和reference批次/identity接缝。SA-05或P4未完成不阻塞已独立通过的稳定性候选，但必须明确未纳入范围。执行相关命令、build/隔离smoke/secret检查并独立Review，交付精确candidate diff、版本、测试与待验表。默认只做开发集成和发布准备；没有精确授权不得main/tag/Release、数据写入或Runtime切换。自然运行验收独立，缺证标INCONCLUSIVE，不手动启动来制造成功。
 
 ## 4. 推荐执行编排与停止条件
 
-第一批：相关文件基线核对；00完整回流、01只读取证/诊断修正、02健康修正可并行，集成前解决相关差异。
-第二批：01诊断/lazy修正、02健康修正并行；03事实层可独立推进但共享装配单owner。
-第三批：04资源；05仅在D2明确后；06交原P4 owner，仓储复现可先做；07工程规则/文档。
-最后：08单集成owner。第一批小修通过即可形成独立候选，无需等待所有重构。
+默认顺序与主报告第7节一致：
+
+1. SA-00核对相关基线与回流；SA-07先修仍存在的版本/文档验收阻断，01只读取证同时开始。
+2. SA-02先修Live健康，SA-01补盘后诊断/lazy生命周期；两实施会话时可并行。SA-08收第一批候选。
+3. SA-03统一事实证明，再SA-04缩短Live事务；共享文件串行，SA-08收第二批候选。
+4. SA-05按已定D2恢复严格lifecycle，再由原P4 owner收SA-06批次/输入/codec；独立仓储复现可提前。
+5. SA-07完成剩余文档整理，SA-08完成产品与工程收尾。
+
+SA-08贯穿每批，只形成候选不等于发布/Runtime授权；不必等待自然运行时点才继续安全开发。
+第一批不因05/06未完成而延迟；SA-07两次交付由同一owner完成，不另增任务和重复文档。
 
 普通且合同清楚的实现优先Sol medium；模型名/档位按环境可用配置，不改用户级默认。
 跨任务公共接口、重要产品或业务歧义回Astra；实际provider/数据/Runtime权限回owner。
