@@ -13,6 +13,7 @@ import stat
 from zoneinfo import ZoneInfo
 
 from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy.engine import make_url
 
 from app.db.url import normalize_database_url
@@ -313,7 +314,7 @@ class RuntimeDataBinding:
         try:
             with _directory(root / ".run") as directory:
                 status = _read(directory, "after-market-status.json")
-        except ValueError:
+        except (OSError, ValueError):
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         if hashlib.sha256(status).hexdigest() != status_sha256:
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
@@ -339,7 +340,7 @@ class RuntimeDataBinding:
         )
         try:
             self._verify_runtime_identity()
-        except ValueError:
+        except (OSError, ValueError):
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         self.started_ns = int(started.timestamp() * 1_000_000_000)
         self.runtime_dir = self.home / "Library/Application Support/GuiyiQuant"
@@ -351,7 +352,7 @@ class RuntimeDataBinding:
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         try:
             self._processes = self._read_processes()
-        except ValueError:
+        except (OSError, ValueError):
             self._fail("RUNTIME_RECOVERY_SERVICE_MISMATCH")
         try:
             self._validate_age()
@@ -404,19 +405,38 @@ class RuntimeDataBinding:
                     or public.get("current_run") is not None
                     or not isinstance(last_run, dict)
                     or last_run.get("status") != "failed"
+                    or last_run.get("attempts") not in {1, 2}
+                    or last_run.get("error_code") != "UPDATE_FAILED"
                     or not isinstance(last_failure, dict)
                     or last_failure.get("trading_day") != last_run.get("trading_day")
-                    or last_failure.get("error_code") != last_run.get("error_code")
+                    or last_failure.get("error_code") != "UPDATE_FAILED"
                 ):
                     raise ValueError
                 started = datetime.fromisoformat(last_run["started_at"])
                 finished = datetime.fromisoformat(last_run["finished_at"])
+                trading_day = datetime.fromisoformat(
+                    f'{last_run["trading_day"]}T00:00:00+08:00'
+                ).date()
+                last_success = public.get("last_successful_trading_day")
+                notification = last_run.get("failure_notification")
                 if (
                     started.utcoffset() is None
                     or finished.utcoffset() is None
                     or finished < started
                     or started.astimezone(_SHANGHAI).date().isoformat()
                     != last_run["trading_day"]
+                    or (
+                        last_success is not None
+                        and datetime.fromisoformat(
+                            f"{last_success}T00:00:00+08:00"
+                        ).date()
+                        > trading_day
+                    )
+                    or (
+                        notification is not None
+                        and datetime.fromisoformat(notification["attempted_at"])
+                        < finished
+                    )
                 ):
                     raise ValueError
                 return public, started, None
@@ -460,10 +480,22 @@ class RuntimeDataBinding:
 
     def recheck_identity(self) -> None:
         """Recheck every pinned filesystem, process and status fact."""
-        self._verify_runtime_identity()
-        self._verify_pinned_status()
-        if self._read_sources() != self._sources or self._read_processes() != self._processes:
-            raise ValueError
+        try:
+            self._verify_runtime_identity()
+            self._verify_pinned_status()
+            if self._read_sources() != self._sources:
+                self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
+        except RuntimeRecoveryBindingError:
+            raise
+        except (OSError, ValueError):
+            self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
+        try:
+            if self._read_processes() != self._processes:
+                self._fail("RUNTIME_RECOVERY_SERVICE_MISMATCH")
+        except RuntimeRecoveryBindingError:
+            raise
+        except (OSError, ValueError):
+            self._fail("RUNTIME_RECOVERY_SERVICE_MISMATCH")
 
     def rebind_terminal_status(self, status_sha256: str) -> None:
         """Explicitly replace a pinned running status with its exact schema-v5 terminal."""
@@ -621,13 +653,16 @@ class RuntimeDataBinding:
         from typing import cast
 
         self.recheck_identity()
-        redis = Redis.from_url(_redis_url(self.settings))
         try:
-            store = RedisLiveStore(cast(RedisClient, redis))
-            self._check_heartbeats(redis, store, lambda: datetime.now(SHANGHAI))
-            self.recheck_identity()
-        finally:
-            redis.close()
+            redis = Redis.from_url(_redis_url(self.settings))
+            try:
+                store = RedisLiveStore(cast(RedisClient, redis))
+                self._check_heartbeats(redis, store, lambda: datetime.now(SHANGHAI))
+            finally:
+                redis.close()
+        except (RedisError, TypeError, ValueError, OSError):
+            self._fail("RUNTIME_RECOVERY_HEARTBEAT_INVALID")
+        self.recheck_identity()
 
     def _read_sources(self):
         # Target Python imports load dotenv without override. Even explicit main
@@ -732,13 +767,8 @@ class RuntimeDataBinding:
             raise ValueError
 
     def check(self, manager, session, redis, store, now) -> None:
+        self.recheck_identity()
         try:
-            self._verify_runtime_identity()
-            self._verify_pinned_status()
-            if self._read_sources() != self._sources:
-                self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
-            if self._read_processes() != self._processes:
-                self._fail("RUNTIME_RECOVERY_SERVICE_MISMATCH")
             assert_dependencies(
                 self.settings,
                 root=self.root,
@@ -747,28 +777,18 @@ class RuntimeDataBinding:
                 redis=redis,
                 products=self.products,
             )
-        except RuntimeRecoveryBindingError:
-            raise
-        except ValueError:
+        except (OSError, ValueError):
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         try:
             self._check_heartbeats(redis, store, now)
-        except (TypeError, ValueError, OSError):
+        except (RedisError, TypeError, ValueError, OSError):
             self._fail("RUNTIME_RECOVERY_HEARTBEAT_INVALID")
-        try:
-            self._verify_pinned_status()
-        except ValueError:
-            self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
+        self.recheck_identity()
 
     def check_catalog(self, catalog, session, redis, store, now) -> None:
         """Recheck Runtime, heartbeats, and provider-free Catalog dependencies."""
+        self.recheck_identity()
         try:
-            self._verify_runtime_identity()
-            self._verify_pinned_status()
-            if self._read_sources() != self._sources:
-                self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
-            if self._read_processes() != self._processes:
-                self._fail("RUNTIME_RECOVERY_SERVICE_MISMATCH")
             assert_catalog_dependencies(
                 self.settings,
                 root=self.root,
@@ -777,15 +797,10 @@ class RuntimeDataBinding:
                 redis=redis,
                 products=self.products,
             )
-        except RuntimeRecoveryBindingError:
-            raise
-        except ValueError:
+        except (OSError, ValueError):
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         try:
             self._check_heartbeats(redis, store, now)
-        except (TypeError, ValueError, OSError):
+        except (RedisError, TypeError, ValueError, OSError):
             self._fail("RUNTIME_RECOVERY_HEARTBEAT_INVALID")
-        try:
-            self._verify_pinned_status()
-        except ValueError:
-            self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
+        self.recheck_identity()

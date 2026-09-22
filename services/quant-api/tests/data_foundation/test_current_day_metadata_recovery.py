@@ -470,6 +470,79 @@ def test_apply_rechecks_runtime_after_replan_before_writer() -> None:
     session.close()
 
 
+def test_apply_preserves_runtime_recovery_binding_error() -> None:
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+    from app.market_data.current_day_metadata_recovery import (
+        apply_current_day_metadata,
+        encode_current_day_snapshot,
+        plan_current_day_metadata,
+    )
+
+    session = _session()
+    catalog = MarketCatalog(session, Path("."))
+    synchronizer = MetadataSynchronizer(SimpleNamespace(), catalog)
+    encoded = encode_current_day_snapshot(
+        _snapshot(), products=("j", "jm"), trading_day=DAY
+    )
+    plan = plan_current_day_metadata(
+        catalog,
+        encoded,
+        expected_snapshot_sha256=encoded["snapshot_sha256"],
+        products=("j", "jm"),
+        trading_day=DAY,
+    )
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        apply_current_day_metadata(
+            synchronizer,
+            encoded,
+            expected_snapshot_sha256=encoded["snapshot_sha256"],
+            expected_plan_sha256=plan["plan_sha256"],
+            products=("j", "jm"),
+            trading_day=DAY,
+            acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None),
+            verify_identity=lambda: (_ for _ in ()).throw(
+                RuntimeRecoveryBindingError(
+                    "RUNTIME_RECOVERY_HEARTBEAT_INVALID"
+                )
+            ),
+        )
+
+    assert captured.value.code == "RUNTIME_RECOVERY_HEARTBEAT_INVALID"
+    session.close()
+
+
+def test_capture_preserves_runtime_recovery_binding_error() -> None:
+    from app.guiyi_cli.current_day_metadata_recovery import (
+        run_current_day_metadata_recovery,
+    )
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    @contextmanager
+    def context(*_args, **_kwargs):
+        yield SimpleNamespace(
+            products=("j", "jm"),
+            verify_identity=lambda: (_ for _ in ()).throw(
+                RuntimeRecoveryBindingError(
+                    "RUNTIME_RECOVERY_SERVICE_MISMATCH"
+                )
+            ),
+        )
+
+    args = SimpleNamespace(
+        runtime_root="/runtime",
+        runtime_commit="a" * 40,
+        expected_status_sha256="b" * 64,
+        phase="capture",
+        trading_day=DAY,
+    )
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        run_current_day_metadata_recovery(args, runtime_context_factory=context)
+
+    assert captured.value.code == "RUNTIME_RECOVERY_SERVICE_MISMATCH"
+
+
 def test_apply_reports_unknown_commit_and_does_not_retry() -> None:
     from app.market_data.current_day_metadata_recovery import (
         CurrentDayMetadataRecoveryError,
