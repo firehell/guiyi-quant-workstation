@@ -380,7 +380,24 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST:P
 ```
 
 这两组测试不加载生产 `.env`，不执行生产 migration，不创建 enabled stream，也不连接 RQData、Canonical、
-Redis、通知或 Runtime。P3 不包含 P4 历史构建、P5 HTTP/Web 或 P6 worker。
+Redis、通知或 Runtime。
+
+## Unified Reference Trading P4 历史构建
+
+P4 的严格 plan、MDS typed input、candidate build/resume、append/rebuild、边界事件、CLI 和临时
+Canonical/Catalog/MDS 接线使用：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/reference_trading -m 'not isolated_postgresql'
+```
+
+该入口覆盖重叠 owner warm-up、无物理 Bar 的 rollover/PRICE_UNAVAILABLE boundary、跨包 OPEN、伪造 resume
+位置、同分区追加、旧 OHLCV 修订、未知 commit/publish readback、任务级单调 elapsed budget，以及 9 个 Newow
+和 4 个 SuBing 策略周期的临时真实 MDS 读取。真正 PostgreSQL 的并发、事务与 migration 仍必须使用上一节
+`GUIYI_ISOLATED_MIGRATION_DATABASE_URL` 入口；环境变量缺失导致的 skip 不算通过。所有 P4 测试均不授权或执行
+生产 migration/bootstrap、Canonical/provider 写入、HTTP/Web、worker、通知或 Runtime。
 
 ## Market WebSocket 与统一详情页
 

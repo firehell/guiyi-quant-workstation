@@ -906,6 +906,17 @@ class NewowProductReader:
         return tuple(replace(owner, end_trading_day=min(owner.end_trading_day, through))
                      for owner in owners)
 
+    def historical_metadata_evidence(
+        self, *, product: str, since: date, through: date,
+    ) -> dict[str, object]:
+        """Expose exact MDS Calendar/Session proof for P4 source binding."""
+        return self._market_data.historical_metadata_evidence(
+            symbol=product, since=since, through=through,
+        )
+
+    def historical_storage_start(self, product: str) -> date:
+        return self._coverage.product_start(product)
+
     def check_dependency(
         self, product: str, frequency: ProductFrequency,
         owner: ResolvedContractSegment, as_of: datetime,

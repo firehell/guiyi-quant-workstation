@@ -75,6 +75,38 @@ class SubingReferenceService:
         self.now = now or (lambda: datetime.now(UTC))
         self.check_cancelled = check_cancelled or (lambda: None)
 
+    def load_historical_inputs(
+        self,
+        *,
+        symbol: str,
+        frequency: BarFrequency,
+        since: date,
+        through: date,
+        as_of: datetime,
+    ):
+        """Return the typed MDS-backed replay inputs without projecting trades."""
+        if as_of.tzinfo is None or as_of.utcoffset() is None or since > through:
+            raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
+        sessions = self._session_windows(symbol, through)
+        cutoff = max(window.end for window in sessions)
+        if cutoff > as_of:
+            raise SubingReferenceError("SUBING_REFERENCE_DATA_CONFLICT")
+        segments, inputs, quality = self._inputs(
+            symbol, since, through, cutoff, frequency,
+        )
+        return segments, inputs, quality, cutoff
+
+    def historical_metadata_evidence(
+        self, *, symbol: str, since: date, through: date,
+    ) -> dict[str, object]:
+        """Expose the exact MDS metadata proof required by offline P4 replay."""
+        return self.market_data.historical_metadata_evidence(
+            symbol=symbol, since=since, through=through,
+        )
+
+    def historical_storage_start(self, symbol: str) -> date:
+        return self.coverage.product_start(symbol)
+
     def query(self, query: SubingReferenceQuery) -> dict[str, Any]:
         self.check_cancelled()
         now = self.now()
