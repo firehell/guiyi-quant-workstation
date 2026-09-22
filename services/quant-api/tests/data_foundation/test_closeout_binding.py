@@ -49,6 +49,9 @@ def target(tmp_path, monkeypatch):
         module, "verify_closeout_identity", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
+        module, "verify_closeout_service_identity", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
         module, "verify_runtime_release_identity", lambda *args: None, raising=False
     )
     run = root / ".run"
@@ -172,7 +175,9 @@ def test_recovery_binding_accepts_exact_schema_v3_failed_terminal(target):
     "invalid",
     [
         "chronology",
+        "future_finish",
         "future_success",
+        "same_day_success",
         "early_notification",
         "wrong_error",
         "products",
@@ -184,8 +189,12 @@ def test_recovery_binding_rejects_invalid_schema_v3_failed_terminal(target, inva
     failed = _failed_terminal_status()
     if invalid == "chronology":
         failed["last_run"]["finished_at"] = "2028-01-01T18:04:59+08:00"
+    elif invalid == "future_finish":
+        failed["last_run"]["finished_at"] = "2099-01-01T18:06:00+08:00"
     elif invalid == "future_success":
         failed["last_successful_trading_day"] = "2028-01-02"
+    elif invalid == "same_day_success":
+        failed["last_successful_trading_day"] = "2028-01-01"
     elif invalid == "early_notification":
         failed["last_run"]["failure_notification"] = {
             "attempted_at": "2028-01-01T18:05:30+08:00",
@@ -256,6 +265,73 @@ def test_recovery_binding_classifies_loaded_service_mismatch(target):
         )
 
     assert captured.value.code == "RUNTIME_RECOVERY_SERVICE_MISMATCH"
+
+
+def test_recovery_binding_classifies_service_verifier_failure(target, monkeypatch):
+    from app.market_data.captured_recovery_runtime import CapturedRecoveryRuntimeError
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    failed_sha256 = _write_status(target.status, _failed_terminal_status())
+    monkeypatch.setattr(
+        target.module,
+        "verify_closeout_service_identity",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            CapturedRecoveryRuntimeError(
+                "CAPTURED_RECOVERY_RUNTIME_SERVICE_IDENTITY_INVALID"
+            )
+        ),
+    )
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        target.module.RuntimeDataBinding(
+            target.root,
+            "a" * 40,
+            failed_sha256,
+            home=target.home,
+            allow_failed_terminal=True,
+        )
+
+    assert captured.value.code == "RUNTIME_RECOVERY_SERVICE_MISMATCH"
+
+
+def test_recovery_binding_classifies_missing_source_as_identity_drift(target):
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    failed_sha256 = _write_status(target.status, _failed_terminal_status())
+    target.config.unlink()
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        target.module.RuntimeDataBinding(
+            target.root,
+            "a" * 40,
+            failed_sha256,
+            home=target.home,
+            allow_failed_terminal=True,
+        )
+
+    assert captured.value.code == "RUNTIME_RECOVERY_IDENTITY_DRIFT"
+
+
+def test_recovery_binding_classifies_invalid_operational_scope_as_identity_drift(
+    target,
+):
+    from app.market_data.closeout_binding import RuntimeRecoveryBindingError
+
+    failed_sha256 = _write_status(target.status, _failed_terminal_status())
+    (target.root / "data/universe/operational_products.txt").write_text(
+        "unknown-product\n"
+    )
+
+    with pytest.raises(RuntimeRecoveryBindingError) as captured:
+        target.module.RuntimeDataBinding(
+            target.root,
+            "a" * 40,
+            failed_sha256,
+            home=target.home,
+            allow_failed_terminal=True,
+        )
+
+    assert captured.value.code == "RUNTIME_RECOVERY_IDENTITY_DRIFT"
 
 
 def test_recovery_binding_classifies_invalid_heartbeat(target, monkeypatch):
