@@ -1,11 +1,11 @@
 # 当前状态
 
-文档整理：2026-09-22。正式 Release 候选为 v1.10.19：在已发布的 v1.10.18 之上修复周一
-ISO 周 current-day Calendar 夜盘证据，避免盘后把 `CALENDAR_NIGHT_AUTHORITY_MISSING`
-收成不透明 `UPDATE_FAILED`。annotated tag / GitHub Release 读回前，仓库身份仍以
-`v1.10.18@ec1dd21f7bed7b04018350058edd3f2bc94cbabf` 为上一正式版。本机 Runtime 仍为
-`v1.10.17@305cf36b94121dff37d6ce280f98869d979a2b8b`，root 为
-`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.17-r1`，旧 v1.10.16 root 保留为恢复候选。
+文档整理：2026-09-22。正式 Release 候选为 v1.10.20：在已发布的 v1.10.19 之上增加
+schema-v3 `failed` 盘后终态的专用恢复绑定，并为状态、身份、服务和 heartbeat 拒绝提供有界错误码；
+既有 interrupted 关闭语义与 promotion 四项条件不变。annotated tag / GitHub Release 读回前，
+仓库正式身份仍为 `v1.10.19@879f76e4c115cc87bd9de78331002f084465fe33`。本机 Runtime 仍为
+`v1.10.18@ec1dd21f7bed7b04018350058edd3f2bc94cbabf`，root 为
+`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.18-r1`；v1.10.19 尚未 promotion。
 牛哇 D1 在发布合并提交上以固定截点 `2026-09-16T07:00:00.000001+00:00` 完成
 60 品种 × 3 策略自然首次加载 180/180；v1.10.17 已发布首批 41 品种 W1 正式能力，
 且本机 Runtime 已完成 promotion 与即时服务读回。v1.10.18 正式周线合同扩到 48 个品种
