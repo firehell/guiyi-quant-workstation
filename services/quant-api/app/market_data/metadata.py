@@ -52,12 +52,18 @@ class MetadataSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class PreparedCurrentDayMetadata:
-    """Validated current/next-day facts shared by natural sync and recovery."""
+    """Validated current/next-day facts shared by natural sync and recovery.
+
+    ``sessions`` are the only TradingSession writes (today and next trading day).
+    ``calendar_sessions`` keep snapshot evidence for Calendar night authority
+    through ISO-week context end, including later weekdays that are not written.
+    """
 
     products: tuple[str, ...]
     trading_day: date
     calendars: tuple[dict[str, Any], ...]
     sessions: tuple[dict[str, Any], ...]
+    calendar_sessions: tuple[Mapping[str, Any], ...]
     main_contracts: tuple[tuple[str, date, str], ...]
     next_trading_days: Mapping[str, date]
 
@@ -274,6 +280,7 @@ class MetadataSynchronizer:
             trading_day=trading_day,
             calendars=calendars,
             sessions=sessions,
+            calendar_sessions=tuple(snapshot.sessions),
             main_contracts=main_contracts,
             next_trading_days=next_trading_days,
         )
@@ -307,7 +314,7 @@ class MetadataSynchronizer:
     ) -> None:
         """Write validated facts into the open transaction without committing."""
         session = self.catalog.session
-        session_days = calendar_session_index(prepared.sessions)
+        session_days = calendar_session_index(prepared.calendar_sessions)
         for values in prepared.calendars:
             _upsert_calendar(
                 session,

@@ -231,7 +231,7 @@ class NewowReferenceReplayState:
     active_trades: tuple[ReferenceTrade, ...] = ()
     active_actions: tuple[StrategyAction, ...] = ()
     warmup_witnesses: tuple[StrategyAction, ...] = ()
-    owners_with_prior_actions: tuple[tuple[str, str], ...] = ()
+    owners_with_prior_actions: tuple[tuple[str, str, str], ...] = ()
     interrupted_entries: tuple[tuple[str, str, str], ...] = ()
     pending_hints: tuple[StrategyHint, ...] = ()
     processed_event_ids: tuple[str, ...] = ()
@@ -379,6 +379,29 @@ def _validate_action(
     return positions.get(key, 0)
 
 
+def _calculation_segment_key(action: StrategyAction) -> tuple[str, str, str]:
+    return (
+        action.physical_contract,
+        action.segment_id,
+        action.calculation_segment_id,
+    )
+
+
+def _initial_clear_frames(
+    frames: tuple[StrategyFrame, ...] | list[StrategyFrame],
+    action: StrategyAction,
+    *,
+    verified_owner: bool,
+) -> tuple[StrategyFrame, ...]:
+    """Proven lifecycles keep the owner prefix; a gapped segment proves only itself."""
+    if verified_owner:
+        return tuple(frames)
+    return tuple(
+        frame for frame in frames
+        if frame.bar.calculation_segment_id == action.calculation_segment_id
+    )
+
+
 def _validate_initial_clear_no_entry(
     replay: StrategyReplay,
     action: StrategyAction,
@@ -389,7 +412,11 @@ def _validate_initial_clear_no_entry(
 ) -> int:
     owner = (action.physical_contract, action.segment_id)
     key = (*owner, action.bar_end)
-    frames = frames_by_owner.get(owner, ())
+    frames = _initial_clear_frames(
+        frames_by_owner.get(owner, ()),
+        action,
+        verified_owner=owner in verified_owners,
+    )
     matching = tuple(frame for frame in frames if frame.bar.bar.bar_end == action.bar_end)
     if (
         action.identity != replay.identity
@@ -399,7 +426,6 @@ def _validate_initial_clear_no_entry(
         or action.sequence != 0
         or action.source_marker_id is not None
         or action.source_related_marker_ids
-        or owner not in verified_owners
         or key not in positions
         or has_prior_actions
         or len(matching) != 1
@@ -451,8 +477,13 @@ def _validate_checkpointed_initial_clear(
 
     owner = (action.physical_contract, action.segment_id)
     key = (*owner, action.bar_end)
+    frames = _initial_clear_frames(
+        frames_by_owner.get(owner, ()),
+        action,
+        verified_owner=owner in verified_owners,
+    )
     matching = tuple(
-        frame for frame in frames_by_owner.get(owner, ())
+        frame for frame in frames
         if frame.bar.bar.bar_end == action.bar_end
     )
     if (
@@ -463,7 +494,6 @@ def _validate_checkpointed_initial_clear(
         or action.sequence != 0
         or action.source_marker_id is not None
         or action.source_related_marker_ids
-        or owner not in verified_owners
         or key not in positions
         or has_prior_actions
         or len(matching) != 1
@@ -704,7 +734,7 @@ class ReferenceTradeProjector:
                 owner = (action.physical_contract, action.segment_id)
                 has_prior = any(
                     candidate is not action
-                    and (candidate.physical_contract, candidate.segment_id) == owner
+                    and _calculation_segment_key(candidate) == _calculation_segment_key(action)
                     and (candidate.bar_end, candidate.sequence)
                     < (action.bar_end, action.sequence)
                     for candidate in actions
@@ -805,7 +835,8 @@ class ReferenceTradeProjector:
                     if bar.bar.bar_end <= as_of
                 )
                 if (
-                    any(
+                    replay.lifecycle_evidence
+                    and any(
                         (action.physical_contract, action.segment_id)
                         not in checkpoint_verified_owners
                         for action in initial_actions
@@ -928,7 +959,7 @@ class ReferenceTradeProjector:
             action.signal_id: action
             for action in (() if state is None else state.warmup_witnesses)
         }
-        owners_with_prior_actions: set[tuple[str, str]] = set(
+        owners_with_prior_actions: set[tuple[str, str, str]] = set(
             () if state is None else state.owners_with_prior_actions
         )
         interrupted_entries: dict[tuple[str, str], str] = {
@@ -1104,18 +1135,20 @@ class ReferenceTradeProjector:
                         action_boundary is not None and action.bar_end >= action_boundary.effective_at
                     ):
                         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
+                    segment_key = _calculation_segment_key(action)
+                    has_prior = segment_key in owners_with_prior_actions
                     if owner in checkpoint_verified_owners:
                         _validate_checkpointed_initial_clear(
                             replay, action, positions, frames_by_owner, verified_owners,
-                            owner in owners_with_prior_actions,
+                            has_prior,
                         )
                     else:
                         _validate_initial_clear_no_entry(
                             replay, action, positions, frames_by_owner,
                             frozenset(verified_owners),
-                            owner in owners_with_prior_actions,
+                            has_prior,
                         )
-                    owners_with_prior_actions.add(owner)
+                    owners_with_prior_actions.add(segment_key)
                     if "INITIAL_CLEAR_NO_ENTRY" not in diagnostics:
                         diagnostics.append("INITIAL_CLEAR_NO_ENTRY")
                     continue
@@ -1124,7 +1157,7 @@ class ReferenceTradeProjector:
                     if action.kind is not ActionKind.BUILD or action.related_build_id is not None:
                         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
                     warmup_witnesses[action.signal_id] = action
-                    owners_with_prior_actions.add(owner)
+                    owners_with_prior_actions.add(_calculation_segment_key(action))
                     continue
                 if action.trade_eligibility is TradeEligibility.NO_ELIGIBLE_ENTRY:
                     witness = warmup_witnesses.get(action.related_build_id or "")
@@ -1139,7 +1172,7 @@ class ReferenceTradeProjector:
                         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
                     if "NO_ELIGIBLE_ENTRY" not in diagnostics:
                         diagnostics.append("NO_ELIGIBLE_ENTRY")
-                    owners_with_prior_actions.add(owner)
+                    owners_with_prior_actions.add(_calculation_segment_key(action))
                     continue
                 if action.trade_eligibility is not TradeEligibility.ELIGIBLE:
                     raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
@@ -1171,7 +1204,7 @@ class ReferenceTradeProjector:
                     ),
                     reference_price_type="newow_strategy_reference",
                 ))
-                owners_with_prior_actions.add(owner)
+                owners_with_prior_actions.add(_calculation_segment_key(action))
 
             boundaries_for_bar = tuple(
                 replace(

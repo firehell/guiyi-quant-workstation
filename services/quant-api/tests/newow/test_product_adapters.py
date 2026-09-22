@@ -302,8 +302,12 @@ def test_main_rise_requires_a_real_prewarm_build_witness_for_an_isolated_clear(
         replace(bar, bar=replace(bar.bar, observation_eligible=True))
         for bar in case.bars[:50]
     )
-    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
-        replay_strategy(case.identity, all_eligible)
+    replay = replay_strategy(case.identity, all_eligible)
+    assert [action.trade_eligibility for action in replay.actions] == [
+        TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+    ]
+    assert replay.actions[0].kind is ActionKind.CLEAR
+    assert replay.actions[0].related_build_id is None
 
     prewarm_then_clear = tuple(
         replace(bar, bar=replace(bar.bar, observation_eligible=index >= 71))
@@ -350,8 +354,13 @@ def test_initial_clear_requires_exact_untrimmed_lifecycle_evidence(product_cases
     forged_source = copy(evidence)
     object.__setattr__(forged_source, "source_identity", "forged:reader")
 
-    with pytest.raises(ValueError, match="PAIRING_CONFLICT"):
-        replay_strategy(case.identity, case.bars)
+    replay = replay_strategy(case.identity, case.bars)
+    assert len(replay.actions) == 1
+    clear = replay.actions[0]
+    assert clear.kind is ActionKind.CLEAR
+    assert clear.trade_eligibility is TradeEligibility.INITIAL_CLEAR_NO_ENTRY
+    assert clear.related_build_id is None
+    assert "INITIAL_CLEAR_NO_ENTRY" in replay.diagnostics
     for bars, supplied in (
         (case.bars[1:], (evidence,)),
         (

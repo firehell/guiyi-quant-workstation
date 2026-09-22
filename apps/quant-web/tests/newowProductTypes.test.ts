@@ -264,6 +264,25 @@ test('loads the server-owned daily release capability and rejects widened or leg
     request: async () => formalWeekly,
   }), formalWeekly)
 
+  const formalWeeklyV10 = {
+    ...formalWeekly,
+    schema_version: 'newow_product_capabilities_v10',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV10,
+  }), formalWeeklyV10)
+  await assert.rejects(
+    getNewowProductCapabilities({
+      request: async () => ({
+        ...formalWeeklyV10,
+        weekly_products: formalWeeklyV10.weekly_products.slice(0, -1),
+      }),
+    }),
+    (error: unknown) => error instanceof NewowProductRequestError
+      && error.code === 'NEWOW_RESPONSE_INVALID',
+  )
+
   const hourly = {
     ...payload,
     schema_version: 'newow_product_capabilities_v7',

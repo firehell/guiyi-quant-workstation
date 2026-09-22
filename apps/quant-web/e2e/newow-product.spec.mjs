@@ -855,7 +855,7 @@ test('replacement disclosure controls support keyboard focus', async ({ page }) 
   assertNoUnexpectedRequests(fixture)
 })
 
-test('dense action nodes keep their real micro size and expand to a readable card on focus', async ({ page }) => {
+test('dense action nodes keep their real micro size and do not expand or open a dialog', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const fixture = await installNewowProductFixtures(page, { denseActions: 100 })
   await page.goto(newowRoute('trend', '1d'))
@@ -863,7 +863,6 @@ test('dense action nodes keep their real micro size and expand to a readable car
   await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state', 'ready')
   const labels = stage.locator('.newow-product-chart-stage__action-label')
   await expect(labels).toHaveCount(100)
-  // Capture identity and geometry together: async pane layout can reorder the nodes.
   const micro = await labels.evaluateAll(nodes => {
     const node = nodes.find(node => node.getBoundingClientRect().width <= 8.5)
     if (!node) return null
@@ -872,25 +871,13 @@ test('dense action nodes keep their real micro size and expand to a readable car
   })
   expect(micro).not.toBeNull()
   const target = stage.locator(`.newow-product-chart-stage__action-label[data-action-id="${micro.id}"]`)
-  const before = micro
-  expect(before?.width).toBeLessThanOrEqual(8.5)
-  expect(before?.height).toBeLessThanOrEqual(8.5)
-  await target.focus()
-  await expect(target).toContainText(/建仓|清仓/)
-  // Interaction expands the compact passive label into a readable two-line card.
-  await expect.poll(async () => (await target.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(168)
-  await expect.poll(async () => (await target.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(52)
-  await expect(target).toBeFocused()
-  const actionId = await target.getAttribute('data-action-id')
-  const accessibleName = await target.getAttribute('aria-label')
-  expect(await target.locator('strong, span').evaluateAll(nodes => nodes.every(node =>
-    node.scrollWidth <= node.clientWidth && node.scrollHeight <= node.clientHeight))).toBe(true)
-  await target.press('Enter')
-  await expect(stage).toHaveAttribute('data-selected-signal-id', actionId)
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(target).toBeFocused()
-  await expect(target).toHaveAttribute('aria-label', accessibleName)
+  expect(micro?.width).toBeLessThanOrEqual(8.5)
+  expect(micro?.height).toBeLessThanOrEqual(8.5)
+  await target.click({ force: true })
+  await expect.poll(async () => (await target.boundingBox())?.width ?? 0).toBeLessThanOrEqual(8.5)
+  await expect.poll(async () => (await target.boundingBox())?.height ?? 0).toBeLessThanOrEqual(8.5)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(stage).toHaveAttribute('data-selected-signal-id', '')
   expect(await labels.count()).toBe(100)
   assertNoUnexpectedRequests(fixture)
 })

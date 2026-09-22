@@ -12,6 +12,7 @@ import {
   buildNewowActionCallouts,
   resolveNewowAuxiliaryRenderState,
 } from '../src/components/market/detail/newow/newowProductChartPrimitives.ts'
+import { formatDecimalText } from '../src/utils/marketDisplay.ts'
 import type {
   NewowAuxiliaryValue,
   NewowProductFrequency,
@@ -107,6 +108,9 @@ test('preserves same-Bar CLEAR then BUILD identities and keeps hint anchor separ
   ])
   assert.deepEqual(model.actions.map(({ referencePrice, value }) => [referencePrice, value]), [
     ['109.25', 109.25], ['91.75', 91.75],
+  ])
+  assert.deepEqual(buildNewowActionCallouts(model).map(callout => callout.detail), [
+    '参考价 109', '参考价 92',
   ])
   assert.deepEqual(model.hints.map(({ anchorPrice, value, confirmedAt, sourceIdentity, formulaVersions, physicalContract, segmentId }) => ({
     anchorPrice, value, confirmedAt, sourceIdentity, formulaVersions, physicalContract, segmentId,
@@ -437,7 +441,7 @@ test('projects action labels from exact server reference prices without deriving
     physicalContract: action.physicalContract,
     price: action.referencePrice,
     title: action.kind === 'BUILD' ? '建仓' : '清仓',
-    detail: `参考价 ${action.referencePrice}`,
+    detail: `参考价 ${formatDecimalText(action.referencePrice, { maximumFractionDigits: 0 })}`,
     tone: action.kind === 'BUILD' ? 'gain' : 'loss',
     above: action.kind === 'CLEAR',
   })))

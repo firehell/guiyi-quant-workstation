@@ -101,6 +101,84 @@ def _load_input(path: Path, expected_sha256: str) -> tuple[dict[str, object], ..
     return tuple(validated)
 
 
+def collect_conflict_weeks(
+    *,
+    weekly_expected: tuple[tuple[datetime, date], ...],
+    daily_expected: tuple[tuple[datetime, date], ...],
+    daily_bars: tuple[CanonicalBar, ...],
+    daily_gaps: tuple[Any, ...],
+    stored_by_end: dict[datetime, CanonicalBar],
+    weekly_rows: tuple[Any, ...],
+    daily_rows: tuple[Any, ...],
+) -> tuple[dict[str, object], ...]:
+    """Return every complete week whose stored W1 differs from current D1 aggregate."""
+    weeks: list[dict[str, object]] = []
+    for week_end, week_day in weekly_expected:
+        week = week_day.isocalendar()[:2]
+        expected = tuple(point for point in daily_expected if point[1].isocalendar()[:2] == week)
+        bars = tuple(bar for bar in daily_bars if bar.trading_day.isocalendar()[:2] == week)
+        gaps = tuple(gap for gap in daily_gaps if gap.trading_day.isocalendar()[:2] == week)
+        persisted = stored_by_end.get(week_end)
+        if persisted is None or gaps or tuple((bar.bar_end, bar.trading_day) for bar in bars) != expected:
+            continue
+        aggregate = _aggregate_daily_rows(tuple(
+            (bar.trading_day, {field: getattr(bar, field) for field in FIELDS})
+            for bar in bars
+        ), bar_end=week_end)
+        if persisted == aggregate:
+            continue
+        months = sorted({(day.year, day.month) for _, day in expected})
+        selected_daily = tuple(
+            partition for partition in daily_rows
+            if (partition.year, partition.month) in months
+        )
+        daily_revision = weekly_daily_revision_sha256(
+            tuple(
+                (partition.file_path.name, partition.source_quality_sha256)
+                for partition in selected_daily
+            ),
+            bars,
+        )
+        differences = field_differences(persisted, aggregate)
+        numeric_fields = [field for field, value in differences.items() if not value["numeric_equal"]]
+        precision_only = [
+            field for field, value in differences.items()
+            if value["numeric_equal"] and not value["precision_equal"]
+        ]
+        weekly_partition = next(
+            partition for partition in weekly_rows
+            if (partition.year, partition.month) == (week_day.year, week_day.month)
+        )
+        weeks.append({
+            "iso_year": week[0],
+            "iso_week": week[1],
+            "week_end": week_end.isoformat(),
+            "trading_day": week_day.isoformat(),
+            "first_daily_endpoint": expected[0][0].isoformat(),
+            "last_daily_endpoint": expected[-1][0].isoformat(),
+            "daily_trading_days": [day.isoformat() for _, day in expected],
+            "cross_month": len(months) > 1,
+            "identity": {
+                "stored_weekly_bar_end": persisted.bar_end.isoformat(),
+                "stored_weekly_trading_day": persisted.trading_day.isoformat(),
+                "d1_aggregate_bar_end": aggregate.bar_end.isoformat(),
+                "d1_aggregate_trading_day": aggregate.trading_day.isoformat(),
+                "contract_owner_equal": True,
+                "session_endpoint_equal": (
+                    persisted.bar_end == aggregate.bar_end
+                    and persisted.trading_day == aggregate.trading_day
+                ),
+            },
+            "fields": differences,
+            "numeric_conflict_fields": numeric_fields,
+            "precision_only_fields": precision_only,
+            "stored_w1_partition": _partition_identity(weekly_partition),
+            "d1_partitions": [_partition_identity(item) for item in selected_daily],
+            "d1_revision_sha256": daily_revision,
+        })
+    return tuple(weeks)
+
+
 def _diagnose(market, row: dict[str, object], cutoff: datetime) -> dict[str, object]:
     symbol = str(row["symbol"])
     contract = str(row["contract"])
@@ -133,79 +211,43 @@ def _diagnose(market, row: dict[str, object], cutoff: datetime) -> dict[str, obj
     by_end = {bar.bar_end: bar for bar in stored}
     if len(by_end) != len(stored):
         raise ValueError("WEEKLY_CONFLICT_DUPLICATE_BAR")
-
-    for week_end, week_day in weekly_expected:
-        week = week_day.isocalendar()[:2]
-        expected = tuple(point for point in daily_expected if point[1].isocalendar()[:2] == week)
-        bars = tuple(bar for bar in daily_bars if bar.trading_day.isocalendar()[:2] == week)
-        gaps = tuple(gap for gap in daily_gaps if gap.trading_day.isocalendar()[:2] == week)
-        persisted = by_end.get(week_end)
-        if persisted is None or gaps or tuple((bar.bar_end, bar.trading_day) for bar in bars) != expected:
-            continue
-        aggregate = _aggregate_daily_rows(tuple(
-            (bar.trading_day, {field: getattr(bar, field) for field in FIELDS})
-            for bar in bars
-        ), bar_end=week_end)
-        if persisted == aggregate:
-            continue
-        months = sorted({(day.year, day.month) for _, day in expected})
-        selected_daily = tuple(
-            partition for partition in daily_rows
-            if (partition.year, partition.month) in months
-        )
-        daily_revision = weekly_daily_revision_sha256(
-            tuple(
-                (partition.file_path.name, partition.source_quality_sha256)
-                for partition in selected_daily
-            ),
-            bars,
-        )
-        differences = field_differences(persisted, aggregate)
-        numeric_fields = [field for field, value in differences.items() if not value["numeric_equal"]]
-        precision_only = [
-            field for field, value in differences.items()
-            if value["numeric_equal"] and not value["precision_equal"]
-        ]
-        weekly_partition = next(
-            partition for partition in weekly_rows
-            if (partition.year, partition.month) == (week_day.year, week_day.month)
-        )
-        return {
-            "symbol": symbol,
-            "contract": contract,
-            "requested_through": through.isoformat(),
-            "first_conflict_week": {
-                "iso_year": week[0],
-                "iso_week": week[1],
-                "week_end": week_end.isoformat(),
-                "trading_day": week_day.isoformat(),
-                "first_daily_endpoint": expected[0][0].isoformat(),
-                "last_daily_endpoint": expected[-1][0].isoformat(),
-                "daily_trading_days": [day.isoformat() for _, day in expected],
-                "cross_month": len(months) > 1,
-            },
-            "identity": {
-                "stored_weekly_bar_end": persisted.bar_end.isoformat(),
-                "stored_weekly_trading_day": persisted.trading_day.isoformat(),
-                "d1_aggregate_bar_end": aggregate.bar_end.isoformat(),
-                "d1_aggregate_trading_day": aggregate.trading_day.isoformat(),
-                "contract_owner_equal": True,
-                "session_endpoint_equal": (
-                    persisted.bar_end == aggregate.bar_end
-                    and persisted.trading_day == aggregate.trading_day
-                ),
-            },
-            "fields": differences,
-            "numeric_conflict_fields": numeric_fields,
-            "precision_only_fields": precision_only,
-            "stored_w1_partition": _partition_identity(weekly_partition),
-            "d1_partitions": [_partition_identity(item) for item in selected_daily],
-            "d1_revision_sha256": daily_revision,
-            "classification": "SOURCE_VERIFICATION_REQUIRED",
-            "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
-            "provider_query_required": True,
-        }
-    raise ValueError("WEEKLY_CONFLICT_NOT_REPRODUCED")
+    weeks = collect_conflict_weeks(
+        weekly_expected=weekly_expected,
+        daily_expected=daily_expected,
+        daily_bars=daily_bars,
+        daily_gaps=daily_gaps,
+        stored_by_end=by_end,
+        weekly_rows=tuple(weekly_rows),
+        daily_rows=tuple(daily_rows),
+    )
+    if not weeks:
+        raise ValueError("WEEKLY_CONFLICT_NOT_REPRODUCED")
+    first = weeks[0]
+    return {
+        "symbol": symbol,
+        "contract": contract,
+        "requested_through": through.isoformat(),
+        "first_conflict_week": {
+            key: first[key]
+            for key in (
+                "iso_year", "iso_week", "week_end", "trading_day",
+                "first_daily_endpoint", "last_daily_endpoint",
+                "daily_trading_days", "cross_month",
+            )
+        },
+        "conflict_week_count": len(weeks),
+        "conflict_weeks": list(weeks),
+        "identity": first["identity"],
+        "fields": first["fields"],
+        "numeric_conflict_fields": first["numeric_conflict_fields"],
+        "precision_only_fields": first["precision_only_fields"],
+        "stored_w1_partition": first["stored_w1_partition"],
+        "d1_partitions": first["d1_partitions"],
+        "d1_revision_sha256": first["d1_revision_sha256"],
+        "classification": "SOURCE_VERIFICATION_REQUIRED",
+        "finding": "STORED_W1_DIFFERS_FROM_CURRENT_AUTHORITATIVE_D1_AGGREGATE",
+        "provider_query_required": True,
+    }
 
 
 def parser() -> argparse.ArgumentParser:
@@ -273,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
         after = catalog_revision(session, products, cutoff.date(), ("1d", "1w"))
     status = diagnosis_status(results, catalog_revision_stable=before == after)
     payload: dict[str, Any] = {
-        "schema_version": "newow_weekly_conflict_diagnosis_v1",
+        "schema_version": "newow_weekly_conflict_diagnosis_v2",
         "status": status,
         "readonly": True,
         "provider_requests": 0,
@@ -288,6 +330,9 @@ def main(argv: list[str] | None = None) -> int:
         "catalog_revision_after": after,
         "catalog_revision_stable": before == after,
         "contract_count": len(results),
+        "conflict_week_count": sum(
+            int(item.get("conflict_week_count") or 0) for item in results
+        ),
         "classification_counts": {
             classification: sum(
                 item["classification"] == classification for item in results
@@ -301,7 +346,9 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps({
         "status": status,
         "contract_count": len(results),
+        "conflict_week_count": payload["conflict_week_count"],
         "catalog_revision_stable": before == after,
+        "catalog_revision": after,
         "provider_requests": 0,
         "writes": 0,
     }))

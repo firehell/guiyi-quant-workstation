@@ -64,8 +64,14 @@ from app.market_data.storage import (
     PublishRequest,
     StorageError,
 )
-from app.market_data.source_quality import PriceUnavailableFact
+from app.market_data.source_quality import (
+    NonpositiveCloseFact,
+    PriceUnavailableFact,
+    SourceQualityFact,
+)
 from app.market_data.weekly_quality import (
+    WEEKLY_SOURCE_CLASSIFICATION_VERSION,
+    WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2,
     classify_weekly_source,
     weekly_daily_revision_sha256,
 )
@@ -842,7 +848,7 @@ class ContractWarmupPlanner:
             raise ValueError("WEEKLY_SOURCE_WEEK_INVALID")
         expected = tuple(zip(ends, days, strict=True))
         bars: list[CanonicalBar] = []
-        gaps: list[PriceUnavailableFact] = []
+        gaps: list[SourceQualityFact] = []
         revisions: list[tuple[str, str | None]] = []
         for month in sorted(months):
             partitions = by_month.get(month, ())
@@ -852,21 +858,28 @@ class ContractWarmupPlanner:
             normal, unavailable = self.store.read_catalog_partition_quality(partition)
             bars.extend(bar for bar in normal if bar.trading_day in days)
             relevant = tuple(item for item in unavailable if item.trading_day in days)
-            if any(not isinstance(item, PriceUnavailableFact) for item in relevant):
+            if any(
+                not isinstance(item, (PriceUnavailableFact, NonpositiveCloseFact))
+                for item in relevant
+            ):
                 raise ValueError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
-            gaps.extend(
-                item for item in relevant if isinstance(item, PriceUnavailableFact)
-            )
+            gaps.extend(relevant)
             revisions.append((partition.file_path.name, partition.source_quality_sha256))
         sorted_bars = tuple(sorted(bars, key=lambda bar: bar.bar_end))
         revision_sha256 = weekly_daily_revision_sha256(tuple(revisions), sorted_bars)
+        sorted_gaps = tuple(sorted(gaps, key=lambda item: item.bar_end))
         coverage = classify_weekly_source(
             product=key.symbol,
             physical_contract=key.series_or_contract,
             expected_daily_endpoints=expected,
             daily_bars=sorted_bars,
-            price_unavailable=tuple(sorted(gaps, key=lambda item: item.bar_end)),
+            price_unavailable=sorted_gaps,
             daily_revision_sha256=revision_sha256,
+            classification_version=(
+                WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2
+                if any(isinstance(item, NonpositiveCloseFact) for item in sorted_gaps)
+                else WEEKLY_SOURCE_CLASSIFICATION_VERSION
+            ),
         )
         if coverage.interruption is None:
             raise ValueError("WEEKLY_SOURCE_QUALITY_PROOF_INVALID")
@@ -2242,6 +2255,47 @@ class HistoricalDataManager(ContractWarmupPlanner):
             weekly_daily_companions=True,
         )
 
+    def _stored_daily_price_facts(
+        self, key: DatasetKey,
+    ) -> tuple[dict[date, CanonicalBar], set[date]]:
+        """Read D1 price bars without treating a price-unavailable day as a bar."""
+        bars: dict[date, CanonicalBar] = {}
+        unavailable: set[date] = set()
+        for partition in self.catalog.all_partitions(key):
+            values, exceptions = self.store.read_catalog_partition_quality(partition)
+            for item in exceptions:
+                if not isinstance(item, (PriceUnavailableFact, NonpositiveCloseFact)):
+                    raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+                if item.trading_day in unavailable:
+                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+                unavailable.add(item.trading_day)
+            for bar in values:
+                if bar.trading_day in bars:
+                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+                bars[bar.trading_day] = bar
+        return bars, unavailable
+
+    def _overlay_daily_price_facts(
+        self,
+        bars: dict[date, CanonicalBar],
+        unavailable: set[date],
+        batch: BarBatch,
+    ) -> None:
+        for bar in batch.bars:
+            bars[bar.trading_day] = bar
+            unavailable.discard(bar.trading_day)
+        for item in batch.price_unavailable:
+            if not isinstance(item, (PriceUnavailableFact, NonpositiveCloseFact)):
+                raise StorageError("SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED")
+            unavailable.add(item.trading_day)
+            bars.pop(item.trading_day, None)
+
+    def _require_priced_week(
+        self, days: tuple[date, ...], unavailable: set[date],
+    ) -> None:
+        if any(day in unavailable for day in days):
+            raise StorageError("WEEKLY_SOURCE_PRICE_UNAVAILABLE")
+
     def _require_contract_weekly_daily_parity(
         self,
         paired: tuple[tuple[_Target, BarBatch], ...],
@@ -2260,16 +2314,10 @@ class HistoricalDataManager(ContractWarmupPlanner):
         daily_key = DatasetKey(
             DatasetKind.CONTRACT, key.symbol, key.series_or_contract, BarFrequency.D1,
         )
-        by_day: dict[date, CanonicalBar] = {}
-        for partition in self.catalog.all_partitions(daily_key):
-            for bar in self.store.read_catalog_partition(partition):
-                if bar.trading_day in by_day:
-                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
-                by_day[bar.trading_day] = bar
+        by_day, unavailable = self._stored_daily_price_facts(daily_key)
         for target, batch in paired:
             if target.key == daily_key:
-                for bar in batch.bars:
-                    by_day[bar.trading_day] = bar
+                self._overlay_daily_price_facts(by_day, unavailable, batch)
         fact = self.catalog.contract_fact(key.symbol, key.series_or_contract)
         for target, batch in weekly:
             for bar in self._merged_fetched_bars(target, (batch,)):
@@ -2278,6 +2326,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 days = self.coverage.contract_trading_days(
                     fact, monday, monday + timedelta(days=6),
                 )
+                self._require_priced_week(days, unavailable)
                 if not days or days[-1] != last_day or any(day not in by_day for day in days):
                     raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
                 rows = tuple(
@@ -2311,26 +2360,27 @@ class HistoricalDataManager(ContractWarmupPlanner):
                                sample.series_or_contract, BarFrequency.D1)
         weekly_key = DatasetKey(DatasetKind.CONTRACT, sample.symbol,
                                 sample.series_or_contract, BarFrequency.W1)
-        daily: dict[date, CanonicalBar] = {}
+        daily, unavailable = self._stored_daily_price_facts(daily_key)
         weekly: dict[datetime, CanonicalBar] = {}
-        for key, dest in ((daily_key, daily), (weekly_key, weekly)):
-            for partition in self.catalog.all_partitions(key):
-                for bar in self.store.read_catalog_partition(partition):
-                    identity = bar.trading_day if key.frequency is BarFrequency.D1 else bar.bar_end
-                    if identity in dest:
-                        raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
-                    dest[identity] = bar
+        for partition in self.catalog.all_partitions(weekly_key):
+            values, exceptions = self.store.read_catalog_partition_quality(partition)
+            if exceptions:
+                raise StorageError("SOURCE_QUALITY_FREQUENCY_INVALID")
+            for bar in values:
+                if bar.bar_end in weekly:
+                    raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
+                weekly[bar.bar_end] = bar
         touched_days: set[date] = set()
         touched_ends: set[datetime] = set()
         for target, batch in paired:
             if target.key.frequency is BarFrequency.D1:
                 touched_days.update(bar.trading_day for bar in batch.bars)
+                touched_days.update(item.trading_day for item in batch.price_unavailable)
+                self._overlay_daily_price_facts(daily, unavailable, batch)
             elif target.key.frequency is BarFrequency.W1:
                 touched_ends.update(bar.bar_end for bar in batch.bars)
             for bar in self._merged_fetched_bars(target, (batch,)):
-                if target.key.frequency is BarFrequency.D1:
-                    daily[bar.trading_day] = bar
-                elif target.key.frequency is BarFrequency.W1:
+                if target.key.frequency is BarFrequency.W1:
                     weekly[bar.bar_end] = bar
         fact = self.catalog.contract_fact(sample.symbol, sample.series_or_contract)
         for bar in weekly.values():
@@ -2341,6 +2391,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
             ):
                 continue
             days = self.coverage.contract_trading_days(fact, monday, monday + timedelta(days=6))
+            self._require_priced_week(days, unavailable)
             if not days or days[-1] != last_day or any(day not in daily for day in days):
                 raise StorageError("WEEKLY_SOURCE_BAR_CONFLICT")
             rows = tuple((day, {field: getattr(daily[day], field)
@@ -2628,11 +2679,12 @@ class HistoricalDataManager(ContractWarmupPlanner):
             candidates = []
             for item, batch in fetched:
                 failure_target = item
-                bars = self._merged_fetched_bars(item, (batch,))
-                exceptions = self._merged_price_unavailable(item, (batch,))
+                bars, exceptions, publish_expected = self._merged_publish_payload(
+                    item, (batch,),
+                )
                 with self._progress("publishing", item.key, item.year, item.month):
                     candidates.append((item, self.store.publish(PublishRequest(
-                        item.key, item.year, item.month, bars, item.expected, exceptions,
+                        item.key, item.year, item.month, bars, publish_expected, exceptions,
                     ))))
             for item, partition in candidates:
                 failure_target = item
@@ -2746,8 +2798,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
             self._publish_fetched_partition(target, batches)
 
     def _publish_fetched_partition(self, target, batches):
-        bars = self._merged_fetched_bars(target, batches)
-        exceptions = self._merged_price_unavailable(target, batches)
+        bars, exceptions, publish_expected = self._merged_publish_payload(target, batches)
         # publish 内部：schema/顺序/月界/会话边界校验 → 临时文件回读 → 不可变候选安装。
         partition = self.store.publish(
             PublishRequest(
@@ -2755,7 +2806,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 target.year,
                 target.month,
                 bars,
-                target.expected,
+                publish_expected,
                 exceptions,
             )
         )
@@ -2767,26 +2818,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         batches: tuple[BarBatch, ...],
     ) -> tuple[CanonicalBar, ...]:
         """在任何分区写入前验证 provider 批次可构成完整目标窗口。"""
-        merged = {bar.bar_end: bar for bar in target.existing}
-        seen_fetched: set[datetime] = set()
-        allowed = set(target.missing)
-        for batch in batches:
-            if (batch.source_key is not None or batch.requested_ends is not None) and (
-                batch.source_key != target.key or batch.requested_ends != target.missing
-            ):
-                raise StorageError("PROVIDER_BATCH_IDENTITY_MISMATCH")
-            for bar in batch.bars:
-                if bar.bar_end in seen_fetched:
-                    raise StorageError("PROVIDER_BAR_DUPLICATE")
-                if bar.bar_end not in allowed:
-                    raise StorageError("PROVIDER_BAR_OUTSIDE_REQUEST")
-                seen_fetched.add(bar.bar_end)
-                merged[bar.bar_end] = bar
-        bars = tuple(merged[item] for item in target.expected if item in merged)
-        exceptions = self._merged_price_unavailable(target, batches)
-        if tuple(sorted((*tuple(bar.bar_end for bar in bars),
-                         *(item.bar_end for item in exceptions)))) != target.expected:
-            raise StorageError("TARGET_WINDOW_INCOMPLETE")
+        bars, _exceptions, _publish_expected = self._merged_publish_payload(target, batches)
         return bars
 
     def _merged_price_unavailable(
@@ -2820,7 +2852,40 @@ class HistoricalDataManager(ContractWarmupPlanner):
                 if item.bar_end in bars:
                     raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
                 previous[item.bar_end] = item
-        return tuple(previous[end] for end in target.expected if end in previous)
+        # Keep month-local facts even when weekly companion expected omits them.
+        return tuple(previous[end] for end in sorted(previous))
+
+    def _merged_publish_payload(
+        self,
+        target: _Target,
+        batches: tuple[BarBatch, ...],
+    ) -> tuple[tuple[CanonicalBar, ...], tuple[PriceUnavailableFact, ...], tuple[datetime, ...]]:
+        """Merge bars for target.expected and preserve unrelated month quality facts."""
+        merged = {bar.bar_end: bar for bar in target.existing}
+        seen_fetched: set[datetime] = set()
+        allowed = set(target.missing)
+        for batch in batches:
+            if (batch.source_key is not None or batch.requested_ends is not None) and (
+                batch.source_key != target.key or batch.requested_ends != target.missing
+            ):
+                raise StorageError("PROVIDER_BATCH_IDENTITY_MISMATCH")
+            for bar in batch.bars:
+                if bar.bar_end in seen_fetched:
+                    raise StorageError("PROVIDER_BAR_DUPLICATE")
+                if bar.bar_end not in allowed:
+                    raise StorageError("PROVIDER_BAR_OUTSIDE_REQUEST")
+                seen_fetched.add(bar.bar_end)
+                merged[bar.bar_end] = bar
+        bars = tuple(merged[item] for item in target.expected if item in merged)
+        bar_ends = {bar.bar_end for bar in bars}
+        exceptions = tuple(
+            item for item in self._merged_price_unavailable(target, batches)
+            if item.bar_end not in bar_ends
+        )
+        publish_expected = tuple(sorted((*bar_ends, *(item.bar_end for item in exceptions))))
+        if any(end not in set(publish_expected) for end in target.expected):
+            raise StorageError("TARGET_WINDOW_INCOMPLETE")
+        return bars, exceptions, publish_expected
 
     def _publish_derived(self, target: _Target) -> None:
         """从当月 1m 源分区聚合 derived 频度；会话窗口须覆盖 target.expected。"""
@@ -2916,17 +2981,29 @@ class HistoricalDataManager(ContractWarmupPlanner):
             if target.key.frequency is BarFrequency.D1:
                 partition = next((row for row in self.catalog.all_partitions(target.key)
                                   if (row.year, row.month) == (target.year, target.month)), None)
-                if partition is not None and partition.source_quality:
+                # Always use the D1 quality seam. Adjacent months share coverage
+                # boundaries, so query_maintenance_expected/_read_physical can see
+                # the next month's PRICE_UNAVAILABLE and fail a clean month.
+                if partition is not None:
+                    quality_ends = tuple(item.bar_end for item in partition.source_quality)
+                    window_start = min((target.expected[0], *quality_ends)) - timedelta(
+                        microseconds=1
+                    )
+                    window_end = max((target.expected[-1], *quality_ends))
                     values, exceptions = MarketDataService(self.catalog, self.store).read_physical_daily_quality(
                         SeriesQuery(
                             series_kind=series_kind, symbol=target.key.symbol,
                             contract=contract, frequency=target.key.frequency,
-                            start=target.expected[0] - timedelta(microseconds=1),
-                            end=target.expected[-1],
+                            start=window_start,
+                            end=window_end,
                         )
                     )
-                    if tuple(sorted((*tuple(bar.bar_end for bar in values),
-                                     *(item.bar_end for item in exceptions)))) != target.expected:
+                    explained = tuple(sorted((*(bar.bar_end for bar in values),
+                                             *(item.bar_end for item in exceptions))))
+                    if any(end not in set(explained) for end in target.expected):
+                        raise StorageError("STRICT_READ_VERIFICATION_FAILED")
+                    extra = set(explained) - set(target.expected)
+                    if extra - {item.bar_end for item in exceptions}:
                         raise StorageError("STRICT_READ_VERIFICATION_FAILED")
                     return
             result = MarketDataService(self.catalog, self.store).query_maintenance_expected(

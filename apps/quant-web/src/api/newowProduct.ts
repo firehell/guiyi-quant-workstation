@@ -74,9 +74,13 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
     && value.release_stage === 'daily_weekly_candidate'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
   const candidate = legacyCandidate || remaining19Candidate
-  const formalWeekly = value.schema_version === 'newow_product_capabilities_v8'
+  const formalWeeklyV8 = value.schema_version === 'newow_product_capabilities_v8'
     && value.release_stage === 'daily_weekly'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeeklyV10 = value.schema_version === 'newow_product_capabilities_v10'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeekly = formalWeeklyV8 || formalWeeklyV10
   const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
     'release_stage', 'schema_version', ...(candidate || formalWeekly ? ['weekly_products'] : []),
@@ -93,7 +97,7 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   if ((!daily && !candidate && !formalWeekly && !auPreview && !hourlyPreview)
     || !sameLiteralArray(value.open_sections, ['chart', 'auxiliary', 'reference', 'comparator'])
   ) return false
-  const expectedWeeklyProductCount = remaining19Candidate ? 60 : 41
+  const expectedWeeklyProductCount = remaining19Candidate ? 60 : formalWeeklyV10 ? 48 : 41
   if ((candidate || formalWeekly) && (!Array.isArray(value.weekly_products)
     || value.weekly_products.some(item => typeof item !== 'string' || !/^[a-z]{1,8}$/.test(item))
     || new Set(value.weekly_products).size !== value.weekly_products.length

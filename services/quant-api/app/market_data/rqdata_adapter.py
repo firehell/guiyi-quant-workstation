@@ -795,17 +795,33 @@ class RQDataClient:
             for symbol, values in instruments.items()
         }
         # 按主力合约集合拉取按日 trading_periods，用于构建历史会话事实（非当前 trading_hours）。
+        # current-day Calendar 写到 ISO 周日；当天 rank1 只证明夜盘，不构成后续交易日主力映射。
+        period_end = calendar_end if current_day_only else through
+        period_source_days = list(main_contracts)
+        if current_day_only:
+            current_rank1 = {
+                symbol: contract
+                for symbol, day, contract in main_contracts
+                if day == calendar_start
+            }
+            covered = {(symbol, day) for symbol, day, _ in main_contracts}
+            for day in trading_dates:
+                if day < calendar_start or day > calendar_end:
+                    continue
+                for symbol, contract in current_rank1.items():
+                    if (symbol, day) not in covered:
+                        period_source_days.append((symbol, day, contract))
         periods = _records(
             self.api.get_trading_periods(
-                tuple(sorted({contract for _, _, contract in main_contracts})),
+                tuple(sorted({contract for _, _, contract in period_source_days})),
                 start_date=calendar_start,
-                end_date=through,
+                end_date=period_end,
                 frequency="1m",
             )
         )
         sessions = _historical_session_rows(
             periods,
-            main_contracts,
+            period_source_days,
             symbol_exchanges,
             allow_missing_after=(min(starts.values()) if current_day_only else None),
         )
@@ -846,7 +862,7 @@ class RQDataClient:
         products: tuple[str, ...],
         trading_day: date,
     ) -> MetadataSnapshot:
-        """构造当天 rank1、当天/下一交易日 Session 与有界 Calendar 上下文。"""
+        """构造当天 rank1、当天/下一交易日 Session、有界 Calendar 及后续交易日夜盘证据。"""
         probe_end = trading_day + timedelta(days=14)
         probe_dates = tuple(
             pd.Timestamp(item).date()
