@@ -43,8 +43,11 @@ def _digest(value: object) -> str:
     return sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def _seed_repository(*, fault=None):
-    engine = create_engine("sqlite+pysqlite:///:memory:")
+def _seed_repository(*, fault=None, sqlite_path=None):
+    engine = create_engine(
+        f"sqlite+pysqlite:///{sqlite_path}" if sqlite_path is not None
+        else "sqlite+pysqlite:///:memory:"
+    )
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     repository = ReferenceRepository(factory, fault_injector=fault)

@@ -696,6 +696,25 @@ test('reference pages merge only under one fingerprint and reject duplicate IDs 
   state.dispose()
 })
 
+test('reader mode switch accepts a saved first page with its own reference identity', async () => {
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  pending[0]!.resolve(normalizedChart(pending[0]!.request, { token: 'shared-token' }))
+  await flush()
+  const legacy = state.loadReference()
+  pending[1]!.resolve(normalizedReference(pending[1]!.request, { token: 'shared-token' }))
+  await legacy
+  const saved = state.loadReference()
+  const wire = referenceWire({ token: 'shared-token', items: [referenceItem('trade-1', '9.999')] })
+  ;(wire.reference.value as Record<string, unknown>).storage_mode = 'persisted'
+  pending[2]!.resolve(normalizeNewowProductResponse(wire, pending[2]!.request))
+  await saved
+  assert.equal(state.sections.reference.state.value, 'ready')
+  assert.equal(state.sections.reference.data.value?.section === 'reference' && state.sections.reference.data.value.value?.storage_mode, 'persisted')
+  state.dispose()
+})
+
 test('a changed reference fingerprint clears old pages and fixes the first actual window for later pagination', async () => {
   const pending: Pending[] = []
   const state = useNewowProduct({ identity: ref(newowIdentity('trend', '1d')), now: () => new Date(AS_OF), fetchSection: controlled(pending) })

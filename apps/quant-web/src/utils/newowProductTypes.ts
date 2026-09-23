@@ -465,11 +465,14 @@ function normalizeHint(payload: unknown, index: number, barEnds: Set<string>, as
 }
 
 function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: NormalizedExpected): NewowReferenceValue {
+  const hasStorageMode = Object.prototype.hasOwnProperty.call(record(payload, 'reference.value'), 'storage_mode')
   const value = exactRecord(payload, 'reference.value', [
     'performance_since', 'performance_through', 'actual_available_through', 'reference_cutoff', 'reference_input_sha256',
     'history_coverage', 'unavailable_days', 'coverage_intervals',
     'summary', 'items', 'next_before', 'executable', 'auto_order', 'allowed_uses',
+    ...(hasStorageMode ? ['storage_mode'] : []),
   ])
+  if (hasStorageMode) requireExact(value.storage_mode, 'persisted', 'reference.storage_mode')
   const performanceSince = day(value.performance_since, 'reference.performance_since')
   const performanceThrough = day(value.performance_through, 'reference.performance_through')
   if (performanceSince > performanceThrough) throw new Error('reference performance window is invalid')
@@ -510,6 +513,7 @@ function normalizeReference(payload: unknown, meta: NewowProductMeta, expected: 
     reference_input_sha256: sha256(value.reference_input_sha256, 'reference.reference_input_sha256'),
     history_coverage: historyCoverage, unavailable_days: unavailableDays, coverage_intervals: coverageIntervals,
     summary, items, next_before: nullableText(value.next_before, 'reference.next_before'), executable: false, auto_order: false,
+    ...(hasStorageMode ? { storage_mode: 'persisted' as const } : {}),
     allowed_uses: exactStringArray(value.allowed_uses, ['page_parity_reference', 'research_display'] as const, 'reference.allowed_uses'),
   }
 }

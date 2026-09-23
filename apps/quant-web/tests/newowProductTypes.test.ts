@@ -82,6 +82,15 @@ test('accepts explicit partial history intervals without treating warming as a p
   assert.equal(parsed.value!.coverage_intervals[1]!.status, 'WARMING')
 })
 
+test('accepts only the persisted source label on saved reference responses', () => {
+  const saved = referenceWire()
+  ;(saved.reference.value! as Record<string, unknown>).storage_mode = 'persisted'
+  const parsed = normalizeNewowProductResponse(saved, { ...expected, section: 'reference' })
+  assert.equal(parsed.value!.storage_mode, 'persisted')
+  ;(saved.reference.value! as Record<string, unknown>).storage_mode = 'other'
+  assert.throws(() => normalizeNewowProductResponse(saved, { ...expected, section: 'reference' }), /storage_mode/)
+})
+
 test('normalizes an aligned independent trend channel and requires it for trend', () => {
   const missing = chartWire()
   delete (missing.chart.value as Record<string, unknown>).trend_channel

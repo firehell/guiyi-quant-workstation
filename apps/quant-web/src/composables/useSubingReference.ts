@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import type { SubingReferenceQuery, SubingReferenceResponse } from '../types/subingReference.ts'
 import { normalizeSubingReference } from '../utils/subingReference.ts'
+import { createReferencePageState } from './referencePageState.ts'
 
 export function useSubingReference(fetch: (symbol: string, query: SubingReferenceQuery) => Promise<unknown>) {
   const data = ref<SubingReferenceResponse | null>(null)
@@ -8,14 +9,18 @@ export function useSubingReference(fetch: (symbol: string, query: SubingReferenc
   const error = ref<string | null>(null)
   let generation = 0
   let symbol = ''
+  const pages = createReferencePageState<SubingReferenceResponse['items'][number]>(item => item.reference_trade_id)
   async function refresh(nextSymbol: string, query: SubingReferenceQuery = {}) {
     const current = ++generation
     symbol = nextSymbol.toLowerCase(); const expected = symbol
-    data.value = null; error.value = null; loading.value = true
+    pages.reset(); data.value = null; error.value = null; loading.value = true
     try {
       const result = normalizeSubingReference(await fetch(expected, query), expected)
       if (query.frequency && result.frequency !== query.frequency || query.since && result.performance_since !== query.since || query.through && result.performance_through !== query.through || query.as_of && Date.parse(result.as_of) !== Date.parse(query.as_of)) throw new Error('identity')
-      if (current === generation) data.value = result
+      if (current === generation) {
+        pages.first(referenceIdentity(result), result.items, result.next_before)
+        data.value = result
+      }
     } catch (reason) { if (current === generation) error.value = referenceReadError(reason) }
     finally { if (current === generation) loading.value = false }
   }
@@ -27,15 +32,22 @@ export function useSubingReference(fetch: (symbol: string, query: SubingReferenc
     try {
       const result = normalizeSubingReference(await fetch(expected, { ...(previous.frequency === '15m' ? {} : { frequency: previous.frequency }), since: previous.performance_since, through: previous.performance_through, as_of: previous.as_of, before: previous.next_before }), expected)
       if (current !== generation) return
-      if (result.frequency !== previous.frequency || result.input_snapshot_hash !== previous.input_snapshot_hash || result.as_of !== previous.as_of || result.performance_since !== previous.performance_since || result.performance_through !== previous.performance_through || JSON.stringify(result.summary) !== JSON.stringify(previous.summary) || JSON.stringify(result.signals) !== JSON.stringify(previous.signals) || JSON.stringify(result.indicators) !== JSON.stringify(previous.indicators)) throw new Error('snapshot')
-      const ids = new Set(previous.items.map((item) => item.reference_trade_id))
-      if (result.items.some((item) => ids.has(item.reference_trade_id))) throw new Error('duplicate')
-      data.value = { ...result, items: [...previous.items, ...result.items] }
-    } catch { if (current === generation) { data.value = null; error.value = '历史参考快照已变化或分页不可用，请重新读取。' } }
+      if (referenceIdentity(result) !== referenceIdentity(previous) || JSON.stringify(result.summary) !== JSON.stringify(previous.summary) || JSON.stringify(result.signals) !== JSON.stringify(previous.signals) || JSON.stringify(result.indicators) !== JSON.stringify(previous.indicators)) throw new Error('snapshot')
+      const items = pages.append(referenceIdentity(result), previous.next_before, result.items, result.next_before)
+      data.value = { ...result, items, next_before: pages.cursor }
+    } catch { if (current === generation) { pages.reset(); data.value = null; error.value = '历史参考快照已变化或分页不可用，请重新读取。' } }
     finally { if (current === generation) loading.value = false }
   }
-  function dispose() { generation += 1 }
+  function dispose() { generation += 1; pages.reset(); data.value = null }
   return { data, loading, error, refresh, loadMore, dispose }
+}
+
+function referenceIdentity(value: SubingReferenceResponse): string {
+  return JSON.stringify([
+    value.symbol, value.frequency, value.series_kind, value.formula_version, value.reference_model_version,
+    value.as_of, value.performance_since, value.performance_through, value.reference_cutoff, value.input_snapshot_hash,
+    value.storage_mode ?? null,
+  ])
 }
 
 function referenceReadError(reason: unknown): string {

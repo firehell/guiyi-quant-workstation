@@ -1,17 +1,15 @@
 # 当前状态
 
 文档整理：2026-09-23。正式 Release 为
-`v1.10.20@19d39bcfefc7fe84ae178328b6553c10a2e6cdb5`：annotated tag 的 peeled commit
-为该提交；远端 `main` 为包含它的合并提交 `f97446c72d7d00108035044ff0893d51a0c27c39`；
-GitHub Release 已发布且非预发布。2026-09-23 本机只读状态脚本回读
+`v1.10.21@310e3e8e62f454d3e94104c2dec9e940844bf3f2`：annotated tag 的 peeled commit
+为该提交；远端 `main` 为包含它的合并提交 `ba2ce6e2112372b6dc6781f46cf63a85a9f2e9a9`；
+GitHub Release 已发布、非草稿、非预发布。2026-09-23 本机只读状态脚本回读
 API、Web、Live、Alert 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.20-r1` 的同一提交，
 API/Web 返回 200，Runtime health 为 `ok`；盘后任务当时未运行，weekly audit 本次尚未运行。
 这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
-v1.10.21 release candidate 以 `ef2627824` 为基点合入当前 `main`，并纳入 CJ 严格无交易日
-W1 修复代码及只读预检。隔离本地 Python、Web、浏览器 fixture、构建与静态验证已通过相应
-定向门禁；扩展后端测试中的周线 campaign 用例在原始 `ef2627824` 工作树也失败，
-不作为本次 CJ 回归结论。CJ 两处 Canonical/Catalog 指针仍为旧版，CJ W1 正式能力仍关闭。候选代码、
-数据 apply、发布和 Runtime promotion 分属不同 Gate。正式周线合同为 48 个品种，
+v1.10.21 已包含 CJ 严格无交易日 W1 修复代码；CJ 两处 Canonical/Catalog 指针仍为旧版，
+CJ W1 正式能力仍关闭。下一版 P5 候选与生产数据、reader 切换、Runtime promotion 分属不同 Gate。
+正式周线合同为 48 个品种，
 60m 继续关闭。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
@@ -221,11 +219,12 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.20@19d39bcfe`，annotated tag peeled commit 与已发布 GitHub Release 已读回；origin/main 为包含该提交的 `f97446c72` |
+| 正式 Release | `RELEASED` | `v1.10.21@310e3e8e6`，annotated tag peeled commit 与已发布 GitHub Release 已读回；origin/main 为包含该提交的 `ba2ce6e21` |
 | 现役 Runtime | v1.10.20 `RUNTIME_PROMOTED / SERVICE_READBACK`；未声明 `RUNTIME_READY` | 只读回读 API/Web/Live/Alert 加载 v1.10.20 exact root/commit、API/Web 200、Runtime health ok；盘后任务当时未运行，weekly audit 本次未运行 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
-| Unified Reference Trading P3 仓储候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | 六表、0047 migration、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；合入最新 develop 后 83 项 P3（含 9 项隔离 PG）及 368 项 P0–P3/Newow/SuBing 回归通过，Review 的 5 项 Important 已修复。仍默认 disabled，未执行生产 migration、P4 构建、P5 HTTP/Web、P6 worker 或 Runtime enable |
-| Unified Reference Trading P4 历史编排候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / DEVELOP_INTEGRATED` | 已合入并推送 develop；有界 plan/build/advance/rebuild/resume、SuBing 四周期与 Newow 已有三周期矩阵、真实临时 Canonical/Catalog/MDS 接线、逐 owner 物理预热上界及 unknown commit/publish 恢复已完成。develop 合并结果非 PG 135 passed，计划指定关联回归 197 passed；专用空白可销毁 PostgreSQL 事务/CAS/dependency advance 9 passed，临时容器已删除；独立 Review 无 Confirmed Issue。未执行生产 migration/bootstrap、P5 HTTP/Web、P6 worker、Runtime 或数据写入 |
+| Unified Reference Trading P3 仓储候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING` | 六表、0047 migration、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；合入最新 develop 后 83 项 P3（含 9 项隔离 PG）及 368 项 P0–P3/Newow/SuBing 回归通过，Review 的 5 项 Important 已修复。仍默认 disabled，未执行生产 migration、P6 worker 或 Runtime enable；P4/P5 代码已集成 develop |
+| Unified Reference Trading P4 历史编排候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / DEVELOP_INTEGRATED` | 已合入并推送 develop；有界 plan/build/advance/rebuild/resume、SuBing 四周期与 Newow 已有三周期矩阵、真实临时 Canonical/Catalog/MDS 接线、逐 owner 物理预热上界及 unknown commit/publish 恢复已完成。develop 合并结果非 PG 135 passed，计划指定关联回归 197 passed；专用空白可销毁 PostgreSQL 事务/CAS/dependency advance 9 passed，临时容器已删除；独立 Review 无 Confirmed Issue。未执行生产 migration/bootstrap、P6 worker、Runtime 或数据写入 |
+| Unified Reference Trading P5 读取与页面候选 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / DEVELOP_INTEGRATED / EXTERNAL_GATE_PENDING` | 有界只读 GET、已保存旧接口薄适配、苏冰与牛哇共用快照分页状态已合入 develop；隔离临时 Canonical/MDS/P4 构建后，浏览器实读苏冰 15m/D1、牛哇 D1 已保存结果，含真零交易和日线质量状态。合并最新 develop 后 Web 669 passed、1 skipped，typecheck/build/拓扑通过；API/历史集成定向 13 passed，独立 Review 无 Confirmed Issue。后续使用扩展的隔离 Canonical/MDS/P4 结果（牛哇 D1 真实 2 笔交易），浏览器将请求页长临时设为 1，实点下一页后出现 2 个不同交易 ID，统计仍为已完成 2；苏冰 15m 160 交易日的 2560 个已保存指标点曾触发旧适配器 2000 点预算，现提升至 10000 并接入 30 秒整请求截止回调，隔离 API 读回 200、2560 点，相关 21 项测试通过，独立复审无 Confirmed Issue。生产 0047 migration/bootstrap、reader switch、P6 worker、Runtime 均未执行 |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
@@ -237,6 +236,8 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 | 其他品种历史 | 元数据已完成；物理历史未盘点 | 不阻塞盘后稳定版，除非发现共享完整性问题 |
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
+
+P5 后续正式批次排在 v1.10.21 完成之后。owner 选择先做 RB 全历史试点并读回，再按正式开放页面范围分批构建，全部就绪后才考虑全局 `REFERENCE_TRADING_READER_MODE` 切换。2026-09-23 生产只读预检：数据库仍在 0046、六张参考表均不存在、reader 默认为 `legacy`。RB 牛哇震荡 D1 的 2023-01-01 至 2026-09-22 只读计划成功，实际输入 2554 根，计划哈希 `b79391cb025029beb4ca68342873719508bdd3f7d882affcdfb6da0ec43a74c5`；执行前必须重算并校验源身份。RB 苏冰 15m 同窗口计划未生成：物理合约 RB2305 的 2022-05-17 至 2023-04-04 生命周期预热需要 4974 个端点，当前 Catalog 仅有 2023-01 至 04 四个月分区、1387 行。先发现的 `TRADING_SESSION_MISSING` 是物理合约查询把首日夜盘前一自然日误纳入待验证范围；修正后只读重放揭示真实 `DATASET_OR_PARTITION_MISSING`。不得缩短预热、伪造缺口、直接切换 reader 或将上述预检称为生产构建完成。正式 migration、补数、构建、配置切换、main/tag/Release 和 Runtime 仍各按精确授权与读回 Gate 执行。
 
 ## v1.10.12 Runtime 切换即时读回（2026-09-17）
 
