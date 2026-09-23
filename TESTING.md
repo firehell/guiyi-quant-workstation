@@ -399,6 +399,52 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL` 入口；环境变量缺失导致的 skip 不算通过。所有 P4 测试均不授权或执行
 生产 migration/bootstrap、Canonical/provider 写入、HTTP/Web、worker、通知或 Runtime。
 
+## Unified Reference Trading P8 隔离验收
+
+先核对测试工作树、`develop` 基线及专用一次性依赖。P8 PostgreSQL 必须是新建空白可销毁实例、
+loopback 非 5432 端口和独立 `guiyi_reference_isolated_test` 数据库；Redis 必须是无持久卷的
+loopback 非 6379 实例。不得读取生产 `.env`、复用现役 5432/6379 或把 skip 计为通过。
+真实 PostgreSQL 测试各自在随机 schema 建表并仅删除自己的 schema。
+
+```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/reference_trading/test_historical_integration.py \
+  services/quant-api/tests/reference_trading/test_newow_worker_recovery.py \
+  services/quant-api/tests/reference_trading/test_forward_query.py \
+  services/quant-api/tests/reference_trading/test_query_capacity_postgresql.py \
+  services/quant-api/tests/reference_trading/test_repository_postgresql.py \
+  services/quant-api/tests/reference_trading/test_query_postgresql.py \
+  services/quant-api/tests/alembic/test_reference_trading_migration.py \
+  services/quant-api/tests/alembic/test_reference_forward_migration.py \
+  -m isolated_postgresql
+GUIYI_ISOLATED_REDIS_URL='redis://127.0.0.1:PORT/0' \
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/pytest -q -p no:cacheprovider --tb=short \
+  services/quant-api/tests/reference_trading/test_live_wake.py
+```
+
+首阶段真实存储 pipeline/recovery 和 synthetic 100/1000/10000 行查询工具只接受独立测试库、
+loopback 非 5432 端口、无 libpq 环境路由覆盖和临时目录输出。每次启动五个独立进程；
+`historical_13_streams` 与 `forward_recovery` 耗时不代表 60/300 流容量，
+`query_*` 行是直接构建的查询负载，不代表策略计算结果。原始 JSON、缺口和固定目标见
+`docs/tasks/unified-reference-trading-p8/acceptance.md`。
+
+```bash
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case historical_13_streams --repeats 5 --timeout-seconds 120
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case forward_recovery --repeats 5 --timeout-seconds 120
+GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:PORT/guiyi_reference_isolated_test' \
+  services/quant-api/.venv/bin/python scripts/reference_trading_benchmark.py \
+  --case query_10000 --repeats 5 --timeout-seconds 180
+```
+
+同一入口还接受 `--case query_100` 和 `--case query_1000`，分别保存对应 JSON。
+
 ## Market WebSocket 与统一详情页
 
 ```bash

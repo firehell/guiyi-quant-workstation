@@ -11,8 +11,8 @@ from app.reference_trading.repository import ReferenceRepository, RepositoryConf
 from test_activation import NOW, _setup
 
 
-def _active():
-    factory, identity, revision = _setup()
+def _active(engine=None):
+    factory, identity, revision = _setup(engine)
     service = ForwardActivation(factory)
     plan = service.plan(
         identity.stream_id, revision, host="test-host", environment="isolated",

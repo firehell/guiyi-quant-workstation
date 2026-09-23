@@ -4,8 +4,15 @@ from collections import defaultdict
 from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+import json
+import os
+from time import perf_counter
+from uuid import uuid4
 
+import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from guiyi_quant.newow.product_adapters import build_product_identity
@@ -46,7 +53,13 @@ from app.reference_trading.service import HistoricalReferenceService
 from app.reference_trading.persisted_subing import PersistedSubingReference
 from app.reference_trading.persisted_newow import PersistedNewowReference
 from app.api.market_newow import _product_response
-from app.reference_trading.models import ReferenceBatch
+from app.reference_trading.models import (
+    ReferenceActionRow, ReferenceBatch, ReferenceMarkRow, ReferenceTradeRow,
+)
+from app.reference_trading.query import HistoricalReferenceQuery
+from app.api import reference_trading as reference_api
+from app.main import app
+from tests.alembic.conftest import isolated_postgres_engine  # noqa: F401
 
 
 class _Coverage:
@@ -121,6 +134,26 @@ def _subing_stream(frequency: str) -> StreamIdentity:
 def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp_path, monkeypatch) -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    _verify_historical_pipeline(engine, tmp_path, monkeypatch)
+
+
+@pytest.mark.isolated_postgresql
+def test_historical_pipeline_persists_thirteen_streams_in_postgresql(
+    isolated_postgres_engine: Engine, tmp_path, monkeypatch,  # noqa: F811
+) -> None:
+    schema = "reference_p8_" + uuid4().hex
+    with isolated_postgres_engine.begin() as connection:
+        connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+    scoped = isolated_postgres_engine.execution_options(schema_translate_map={None: schema})
+    try:
+        Base.metadata.create_all(scoped)
+        _verify_historical_pipeline(scoped, tmp_path, monkeypatch)
+    finally:
+        with isolated_postgres_engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+
+
+def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
     factory = sessionmaker(engine, expire_on_commit=False)
     first = date(2026, 1, 5)
     days = tuple(first + timedelta(days=offset) for offset in range(84))
@@ -281,6 +314,55 @@ def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp
         assert persisted_intraday["indicators"] == legacy_intraday["indicators"]
         assert persisted_intraday["items"] == legacy_intraday["items"]
         assert persisted_intraday["summary"] == legacy_intraday["summary"]
+        if engine.dialect.name == "postgresql":
+            with factory() as api_evidence_session:
+                batches_before_get = api_evidence_session.query(ReferenceBatch).count()
+            monkeypatch.setattr(reference_api, "_query", HistoricalReferenceQuery(factory))
+            client = TestClient(app)
+            path = f"/api/v1/reference-trading/streams/{streams[-4].identity.stream_id}"
+            params = {"since": first.isoformat(), "through": last.isoformat(), "limit": 50}
+            indicators_response = client.get(f"{path}/indicators", params=params)
+            assert indicators_response.status_code == 200, indicators_response.text
+            indicators = indicators_response.json()
+            assert indicators["items"]
+            summary_response = client.get(f"{path}/summary", params={
+                "since": first.isoformat(), "through": last.isoformat(),
+                "snapshot": indicators["snapshot"],
+            })
+            assert summary_response.status_code == 200, summary_response.text
+            assert summary_response.json()["snapshot"] == indicators["snapshot"]
+            with factory() as api_evidence_session:
+                assert api_evidence_session.query(ReferenceBatch).count() == batches_before_get
+            if os.getenv("GUIYI_P8_BENCH_QUERY") == "1":
+                query = HistoricalReferenceQuery(factory)
+                durations: dict[str, list[float]] = {"trades": [], "summary": []}
+                for _ in range(100):
+                    started = perf_counter()
+                    query.trades(
+                        streams[-4].identity.stream_id, since=first, through=last,
+                        limit=50,
+                    )
+                    durations["trades"].append((perf_counter() - started) * 1000)
+                    started = perf_counter()
+                    query.summary(
+                        streams[-4].identity.stream_id, since=first, through=last,
+                    )
+                    durations["summary"].append((perf_counter() - started) * 1000)
+                metrics = {
+                    name: {
+                        "n": len(samples),
+                        "p50_ms": round(sorted(samples)[49], 3),
+                        "p95_ms": round(sorted(samples)[94], 3),
+                    }
+                    for name, samples in durations.items()
+                }
+                with factory() as measured_session:
+                    metrics["row_counts"] = {
+                        "action": measured_session.query(ReferenceActionRow).count(),
+                        "trade_version": measured_session.query(ReferenceTradeRow).count(),
+                        "mark": measured_session.query(ReferenceMarkRow).count(),
+                    }
+                print("P8_QUERY_METRIC=" + json.dumps(metrics, sort_keys=True))
         bounded_daily = PersistedSubingReference(factory, subing_service).query(
             SubingReferenceQuery("rb", first, prior_day, prior_as_of, frequency="1d"),
         )

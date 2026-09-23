@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 from hashlib import sha256
 from types import SimpleNamespace
+from uuid import uuid4
+from threading import Event
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.engine import Engine
 import pytest
+from fastapi.testclient import TestClient
 
 from app.db.base import Base
 from app.reference_trading.activation import ForwardActivation
@@ -18,7 +23,7 @@ from app.reference_trading.contracts import SeedChunk
 from app.reference_trading.forward_inputs import (
     ForwardInputUnavailable, capture_newow_canonical, capture_newow_live,
 )
-from app.reference_trading.models import ReferenceBatch
+from app.reference_trading.models import ReferenceBatch, ReferenceStream
 from app.reference_trading.recovery import capture_observation_gap, evaluate_observation_gap
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict, _digest
 from app.market_data.domain import CanonicalBar
@@ -27,15 +32,36 @@ from guiyi_quant.newow.product_adapters import seed_replay_state
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency
 from guiyi_quant.newow.product_identity import InputQualityPolicy
+from guiyi_quant.newow.product_identity import (
+    REFERENCE_MODEL_VERSION as NEWOW_REFERENCE_MODEL_VERSION,
+    futures_adaptation_version,
+)
 from guiyi_quant.reference_trading import (
     ActionKind, RecordingMode, ReferenceAction, ReferenceState, StreamIdentity,
     reduce_reference,
 )
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 from app.reference_trading.contracts import CheckpointToken
+from app.reference_trading.query import HistoricalReferenceQuery
+from app.api import reference_trading as reference_api
+from app.main import app
+from tests.alembic.conftest import isolated_postgres_engine  # noqa: F401
 
 
-def _setup(*, recovery_policy="block"):
+@pytest.fixture
+def forward_postgresql(isolated_postgres_engine: Engine):  # noqa: F811
+    schema = "reference_p8_forward_" + uuid4().hex
+    with isolated_postgres_engine.begin() as connection:
+        connection.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+    scoped = isolated_postgres_engine.execution_options(schema_translate_map={None: schema})
+    try:
+        yield scoped
+    finally:
+        with isolated_postgres_engine.begin() as connection:
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+
+
+def _setup(*, recovery_policy="block", engine=None):
     from newow.product_fixtures import ProductCases
 
     case = ProductCases().primitive_input("trend", "1d")
@@ -44,11 +70,11 @@ def _setup(*, recovery_policy="block"):
     observed = bar.bar.bar_end + timedelta(seconds=5)
     identity = StreamIdentity(
         "newow_trend", case.identity.formula_versions, case.identity.profile_id,
-        "newow_reference_v3", "newow_futures_v1", case.identity.product,
+        NEWOW_REFERENCE_MODEL_VERSION, futures_adaptation_version("1d"), case.identity.product,
         "1d", "actual_dominant", RecordingMode.FORWARD_OBSERVATION,
         "completed_canonical_v1",
     )
-    engine = create_engine("sqlite+pysqlite:///:memory:")
+    engine = engine or create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     repo = ReferenceRepository(factory)
@@ -98,6 +124,110 @@ def _worker(repo, reader, observed):
 
 def test_newow_worker_restart_projects_pending_capture_once():
     factory, repo, identity, revision, start, observed, reader = _setup()
+    _assert_restart_projects_pending_capture_once(factory, repo, identity, revision, start, observed, reader)
+
+
+@pytest.mark.isolated_postgresql
+def test_postgresql_restart_projects_typed_capture_once(
+    forward_postgresql: Engine, monkeypatch,
+) -> None:
+    factory, repo, identity, revision, start, observed, reader = _setup(engine=forward_postgresql)
+    _assert_restart_projects_pending_capture_once(
+        factory, repo, identity, revision, start, observed, reader,
+    )
+    # Exercise the actual HTTP adapter over the independently committed rows.
+    with factory() as session:
+        assert HistoricalReferenceQuery._registered(session.get(ReferenceStream, identity.stream_id))
+    monkeypatch.setattr(reference_api, "_query", HistoricalReferenceQuery(factory))
+    with factory() as session:
+        batches_before_get = session.query(ReferenceBatch).count()
+    day = observed.date().isoformat()
+    response = TestClient(app).get(
+        f"/api/v1/reference-trading/streams/{identity.stream_id}/signals",
+        params={"since": day, "through": day, "cutoff": observed.isoformat()},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["snapshot"]
+    with factory() as session:
+        assert session.query(ReferenceBatch).count() == batches_before_get
+
+
+@pytest.mark.isolated_postgresql
+def test_postgresql_disable_wins_before_inflight_worker_commit(
+    forward_postgresql: Engine,
+) -> None:
+    factory, repo, identity, revision, start, observed, reader = _setup(engine=forward_postgresql)
+    captured = capture_newow_canonical(
+        reader, identity, revision_id=revision, generation=1, after=None,
+        recording_start=start, now=observed, capability_ready=lambda _: True,
+    )
+    assert captured is not None
+    capture_id = repo.capture_forward(captured)
+    worker = _worker(repo, reader, observed)
+    worker.scan()
+    prepared = Event()
+    disabled = Event()
+    original_commit = repo.commit_batch
+
+    def delayed_commit(*args, **kwargs):
+        prepared.set()
+        assert disabled.wait(10), "disable never completed"
+        return original_commit(*args, **kwargs)
+
+    repo.commit_batch = delayed_commit
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        result = pool.submit(worker.run_round)
+        assert prepared.wait(10), "worker never prepared a commit"
+        ForwardActivation(factory).disable(
+            identity.stream_id, expected_generation=1, now=observed,
+        )
+        disabled.set()
+        assert result.result(timeout=10) == 0
+    fresh = ReferenceRepository(factory)
+    token, _ = fresh.load_checkpoint(identity.stream_id, revision)
+    assert token.seq == 1
+    with factory() as session:
+        capture_row = session.get(ReferenceBatch, capture_id)
+        assert capture_row.outcome == "pending"
+        assert capture_row.consumed_by_batch_id is None
+
+
+@pytest.mark.isolated_postgresql
+def test_postgresql_unknown_commit_reads_durable_receipt_without_replay(
+    forward_postgresql: Engine,
+) -> None:
+    factory, repo, identity, revision, start, observed, reader = _setup(engine=forward_postgresql)
+    captured = capture_newow_canonical(
+        reader, identity, revision_id=revision, generation=1, after=None,
+        recording_start=start, now=observed, capability_ready=lambda _: True,
+    )
+    assert captured is not None
+    capture_id = repo.capture_forward(captured)
+    original_commit = repo.commit_batch
+    calls = 0
+
+    def lost_ack(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        original_commit(*args, **kwargs)
+        raise OSError("simulated acknowledgment loss after commit")
+
+    repo.commit_batch = lost_ack
+    worker = _worker(repo, reader, observed)
+    worker.scan()
+    assert worker.run_round() == 1
+    assert calls == 1
+    fresh = ReferenceRepository(factory)
+    token, _ = fresh.load_checkpoint(identity.stream_id, revision)
+    assert token.seq == 2
+    assert fresh.read_pending_capture(identity.stream_id) is None
+    with factory() as session:
+        assert session.get(ReferenceBatch, capture_id).consumed_by_batch_id is not None
+
+
+def _assert_restart_projects_pending_capture_once(
+    factory, repo, identity, revision, start, observed, reader,
+):
     captured = capture_newow_canonical(
         reader, identity, revision_id=revision, generation=1, after=None,
         recording_start=start, now=observed, capability_ready=lambda _: True,

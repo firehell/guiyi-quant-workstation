@@ -705,7 +705,14 @@ class HistoricalReferenceQuery:
                         raise QueryConflict("QUERY_BUDGET_EXCEEDED")
                     initial = item.entry_trading_day < since
                     if initial:
-                        if row.strategy_code.replace("-", "_") == "subing_reference":
+                        if row.recording_mode == "forward_observation":
+                            # Match the forward trade-page window: a prior close or
+                            # interruption is no longer an initial holding.
+                            if item.status == "CLOSED" and item.exit_trading_day < since:
+                                continue
+                            if item.status not in ("OPEN", "CLOSED"):
+                                continue
+                        elif row.strategy_code.replace("-", "_") == "subing_reference":
                             if item.status == "CLOSED" and item.exit_trading_day < since:
                                 continue
                             if item.status not in ("OPEN", "CLOSED"):

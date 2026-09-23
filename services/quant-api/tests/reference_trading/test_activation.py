@@ -22,10 +22,10 @@ from app.reference_trading.repository import ReferenceRepository, RepositoryConf
 NOW = datetime(2026, 9, 23, 8, tzinfo=UTC)
 
 
-def _setup():
+def _setup(engine=None):
     from test_repository import _stream, _digest
 
-    engine = create_engine("sqlite+pysqlite:///:memory:")
+    engine = engine or create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     repository = ReferenceRepository(factory)
