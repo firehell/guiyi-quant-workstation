@@ -128,6 +128,36 @@ def _canonical(value: object) -> str:
     )
 
 
+def _newow_input_fingerprint(
+    *, source_bar_sha256: str, bar_end: datetime, physical_contract: str,
+    owner_segment_id: str, calculation_segment_id: str, quality_policy: str,
+) -> str:
+    """Identify one calculation input even when warm-up reuses a physical Bar."""
+    return sha256(_canonical({
+        "source": source_bar_sha256,
+        "bar_end": bar_end,
+        "physical_contract": physical_contract,
+        "owner_segment_id": owner_segment_id,
+        "calculation_segment_id": calculation_segment_id,
+        "quality_policy": quality_policy,
+    }).encode()).hexdigest()
+
+
+def _newow_replay_fingerprints(
+    replay_bars: tuple[object, ...], quality_policy: str,
+) -> tuple[str, ...]:
+    return tuple(
+        _newow_input_fingerprint(
+            source_bar_sha256=item.source_bar_sha256,
+            bar_end=item.bar.bar_end,
+            physical_contract=item.bar.physical_contract,
+            owner_segment_id=item.bar.segment_id,
+            calculation_segment_id=item.calculation_segment_id,
+            quality_policy=quality_policy,
+        ) for item in replay_bars
+    )
+
+
 def _boundary_input(
     anchor: HistoricalInputBar, boundary: ReferenceBoundary,
 ) -> HistoricalInputBar:
@@ -556,6 +586,9 @@ class MarketDataHistoricalInputReader:
             (item.physical_contract, item.segment_id)
             for item in read.lifecycle_evidence
         }
+        fingerprints = _newow_replay_fingerprints(
+            read.replay_bars, read.input_quality_policy.value,
+        )
         bars = [HistoricalInputBar(
             item.bar.bar_end,
             item.bar.trading_day,
@@ -563,17 +596,13 @@ class MarketDataHistoricalInputReader:
             item.bar.segment_id,
             item.calculation_segment_id,
             item.bar.close,
-            sha256(_canonical({
-                "source": item.source_bar_sha256,
-                "bar_end": item.bar.bar_end,
-                "quality_policy": read.input_quality_policy.value,
-            }).encode()).hexdigest(),
+            fingerprints[index],
             NewowHistoricalPayload(
                 identity,
                 item,
                 (item.bar.physical_contract, item.bar.segment_id) in evidence_owners,
             ),
-        ) for item in read.replay_bars]
+        ) for index, item in enumerate(read.replay_bars)]
         bars = _insert_boundaries(bars, tuple(boundaries))
         metadata_reader = getattr(self._newow, "historical_metadata_evidence", None)
         if not callable(metadata_reader):
@@ -590,7 +619,7 @@ class MarketDataHistoricalInputReader:
             if key != "through"
         }
         manifest = {
-            "reader": "newow_product_reader_v1",
+            "reader": "newow_product_reader_v2",
             "query_since": request.since.isoformat(),
             "input_fingerprints": [bar.fingerprint for bar in bars],
             "calendar_session_effective_fingerprints": [
