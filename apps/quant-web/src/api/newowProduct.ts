@@ -29,7 +29,10 @@ const UNAVAILABLE_CODES = new Set([
 ])
 const WEEKLY_PRODUCTS_V8 = 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' ')
 const WEEKLY_PRODUCTS_V10 = 'a ag al ao ap au b bu bz c cf cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
-const WEEKLY_PRODUCTS_V9 = [...WEEKLY_PRODUCTS_V10, ...'cj oi pf pk pl pr px rs sf sh sm sr'.split(' ')]
+const WEEKLY_PRODUCTS_V9 = [
+  ...WEEKLY_PRODUCTS_V10,
+  ...'cj oi pf pk pl pr px rs sf sh sm sr'.split(' '),
+]
 
 export class NewowProductRequestError extends Error {
   readonly code: string
@@ -102,7 +105,9 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   ) return false
   const expectedWeeklyProducts = remaining19Candidate
     ? WEEKLY_PRODUCTS_V9
-    : formalWeeklyV10 ? WEEKLY_PRODUCTS_V10 : WEEKLY_PRODUCTS_V8
+    : formalWeeklyV10
+      ? WEEKLY_PRODUCTS_V10
+      : WEEKLY_PRODUCTS_V8
   if ((candidate || formalWeekly) && !sameLiteralArray(value.weekly_products, expectedWeeklyProducts)) return false
   if (!Array.isArray(value.deferred_frequencies)
     || value.deferred_frequencies.length !== (daily ? 2 : (candidate || formalWeekly || hourlyPreview) ? 1 : 0)) return false

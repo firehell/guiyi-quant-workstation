@@ -1,20 +1,16 @@
 # 当前状态
 
-文档整理：2026-09-22。正式 Release 为
-`v1.10.19@879f76e4c115cc87bd9de78331002f084465fe33`；annotated tag、origin/main、
-GitHub Release target 与发布树已读回一致。本机 Runtime 已切换为
-`v1.10.18@ec1dd21f7bed7b04018350058edd3f2bc94cbabf`，root 为
-`/Volumes/扩展盘/guiyi-quant-runtime-v1.10.18-r1`；旧 v1.10.17 root 保留为恢复候选。
-v1.10.19 在 v1.10.18 之上修复周一 ISO 周 Calendar 夜盘证据，但尚未做 Runtime promotion，
-因此现场代码是 v1.10.18。正式周线为 48 个品种（新增 b、bz、eb、eg、j、pg、si，使用 weekly v2；
-原 41 仍用 v1）。2026-09-22 10:15 北京时间对 exact v1.10.18 的 Market preflight 为
-`passed / snapshot_ready / trading_day=2026-09-22 / operational_count=60 / snapshot_count=60`，
-随后一次完成 Market、API/Web/日志轮转、Alert、weekly audit 安装。60m 继续关闭。
-v1.10.12 发布候选的 Market Home 为 57/60；后续首页质量修复候选与受控补数验收为 60/60，
-BZ/EB/PG 历史源价不可用仍保留计算边界。切换后 API version=1.10.18，正式能力
-`newow_product_capabilities_v10` weekly=48；总 health 为 degraded（新 root 盘后 pending、
-Alert 保留切换前诊断）。v1.10.18 自然 completed Live Bar、自然盘后与 weekly audit 证据
-尚未取得，因此不能声明 `RUNTIME_READY`。
+文档整理：2026-09-23。正式 Release 为
+`v1.10.20@19d39bcfefc7fe84ae178328b6553c10a2e6cdb5`：annotated tag 的 peeled commit
+为该提交；远端 `main` 为包含它的合并提交 `f97446c72d7d00108035044ff0893d51a0c27c39`；
+GitHub Release 已发布且非预发布。2026-09-23 本机只读状态脚本回读
+API、Web、Live、Alert 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.20-r1` 的同一提交，
+API/Web 返回 200，Runtime health 为 `ok`；盘后任务当时未运行，weekly audit 本次尚未运行。
+这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
+v1.10.21 release candidate 以 `ef2627824` 为基点合入当前 `main`，已通过隔离本地
+Python、Web、浏览器 fixture、构建与静态验证，尚未发布。候选代码、发布和 Runtime promotion
+分属不同 Gate。正式周线合同为 48 个品种，
+60m 继续关闭。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
 逐次操作和旧候选过程从 Git history、tag、PR 与原 evidence 追溯，历史授权不授权重跑。
