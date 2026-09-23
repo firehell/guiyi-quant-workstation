@@ -3552,13 +3552,14 @@ def test_execute_21_units_crosses_two_real_native_batches_with_isolated_readback
     session.add(Instrument(symbol="ag", name="AG", exchange_code="DCE", is_active=True))
     for day in trading_days:
         session.add(TradingCalendar(exchange_code="DCE", trade_date=day, is_trading_day=True))
-    session.add(TradingSession(
-        exchange_code="DCE", instrument_symbol="ag", session_name="day",
-        start_time=datetime.min.time().replace(hour=9),
-        end_time=datetime.min.time().replace(hour=15),
-        effective_from=trading_days[0], effective_to=trading_days[-1],
-        is_active=True,
-    ))
+    for day in trading_days:
+        session.add(TradingSession(
+            exchange_code="DCE", instrument_symbol="ag", session_name="day",
+            start_time=datetime.min.time().replace(hour=9),
+            end_time=datetime.min.time().replace(hour=15),
+            effective_from=day, effective_to=day,
+            is_active=True,
+        ))
     contracts = [f"AG{1000 + index}" for index in range(21)]
     for contract in contracts:
         session.add(
