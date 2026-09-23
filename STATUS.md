@@ -1,15 +1,23 @@
 # 当前状态
 
-文档整理：2026-09-23。正式 Release 为
+文档整理：2026-09-24。正式 Release 为
 `v1.10.29@52e360037720f7a4d642599dcece33bf3dc5eb63`：PR #392 精确候选
 `a6fcd3fe6cfa0ec033a04ae0dc60f2d76e2e567a` 已以 merge commit 合入 main，annotated tag peeled commit、
 远端 `main` 与非草稿、非预发布 GitHub Release target 一致。2026-09-23 本机只读回读
 API、Web、Live、盘后、Alert 与 weekly audit 六项均绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.29-r1`
-的同一 exact commit，detached checkout 干净，API/Web 返回 200，API version=1.10.29。Runtime health
-为 `degraded`：Live 59/60 coverage `ok`、1 个 `unverified`；Alert 处理链在运行，coverage 为
-86 `ok` / 30 `evaluation_lagging` / 5 `evaluation_failed`；盘后保留
-`after_market_run_missed`，weekly audit 为 `not_run`。未手工重跑盘后、重跑周审计或补发通知。
-这些即时状态只证明版本切换与服务读回，不证明自然业务完成，不能声明 `RUNTIME_READY`。
+的同一 exact commit，detached checkout 干净，API/Web 返回 200，API version=1.10.29。
+2026-09-23 对 BU2611、EB2611、NI2611、PB2611、PG2611 的 1m→15m 历史输入执行一次受控补齐：
+55 次 provider 请求、110 个目标写入全部成功，零 blocked、零 failed、无重试；独立 dry-run 回读均为
+零剩余请求和零剩余写入目标。随后按 owner 批准仅手工运行一次盘后任务，未通知、未重试；
+`2026-09-23` 以 `passed / attempts=1 / error_code=null` 结束，`after_market_run_missed` 已消除。
+
+该次盘后 Newow consumer audit 因 D1 readiness 误用 W1 quality-policy 混合检查而记录
+`not_verified`；根因修复已以 `476263116` 提交并推送 `origin/develop`，相关 125 项测试通过、
+Ruff/mypy 通过、独立 Review 无 finding，但尚未发布或切换 Runtime。
+2026-09-24 00:01 现役 v1.10.29 即时 health 仍为 `degraded`：跨日窗口 Live 为 11 个夜盘品种
+`ok`、49 个尚未进入日盘的品种 `UNKNOWN/unverified`；Alert 为 22 `ok` / 3 `evaluation_failed` /
+96 `unverified`；盘后为 `ok`，weekly audit 仍为 `not_run`且预定 2026-09-26 09:00 自然运行。
+未重跑周审计、未 replay Alert、未补发通知。这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
 v1.10.21 已包含 CJ 严格无交易日 W1 修复代码。2026-09-23 对 CJ2305/2022-05 与
 CJ2309/2022-09 两个冻结 W1 月分区执行一次受控 Canonical/Catalog apply，独立回读均为 candidate 指针；
 隔离候选对 CJ 趋势、震荡、主升浪及各自 ReferenceTrade 的 API 与真实浏览器首载均通过，浏览器控制台
@@ -37,7 +45,7 @@ production build、107 项定向测试和 launchd render-only。Market promotion
 Market、API/Web/日志轮转、Alert、weekly audit 四阶段各安装一次，无重试、无回退。
 六项 plist/launchctl 身份独立回读均指向该 root 与 exact commit；API/Web 200，API version=1.10.29。
 正式能力 `newow_product_capabilities_v12` 开放 50 个 W1 品种，包含 CJ/OI。即时 Runtime
-health 为 degraded，原因和未完成自然 Gate 见页首；不声明 `RUNTIME_READY`。
+health 的后续修复、受控盘后恢复与未完成自然 Gate 见页首；不声明 `RUNTIME_READY`。
 
 ## v1.10.19 Release 读回
 
