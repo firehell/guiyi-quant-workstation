@@ -1,11 +1,12 @@
 # 当前状态
 
 文档整理：2026-09-23。正式 Release 为
-`v1.10.25@34775b14aefb5e5a5d9766bcc7fb8ae834ae18b7`：annotated tag peeled commit、
+`v1.10.28@962142a5e8ed3845c9ba6a0d1d9fc927e7e9a990`：annotated tag peeled commit、
 远端 `main` 与非草稿、非预发布 GitHub Release target 一致。2026-09-23 本机只读状态脚本回读
-API、Web、Live、盘后、Alert 与 weekly audit 六项均绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.25-r1` 的同一提交，
-API/Web 返回 200，Runtime health 为 `ok`，整体状态 `passed`；盘后任务当时未运行，weekly audit 本次尚未运行。全局 reader 保持 `legacy`。
-这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
+API、Web、Live、盘后、Alert 与 weekly audit 六项均绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.28-r1` 的同一提交，
+API/Web 返回 200；Runtime health 为 `degraded`，当前交易日盘后状态为 `missed`，整体状态 `failed`。
+新 Runtime 尚无本日自然盘后成功记录，weekly audit 本次尚未运行；未手工重跑盘后或补发通知。
+这些即时状态只证明版本切换与服务读回，不证明自然业务完成，不能声明 `RUNTIME_READY`。
 v1.10.21 已包含 CJ 严格无交易日 W1 修复代码；CJ 两处 Canonical/Catalog 指针仍为旧版，
 CJ W1 正式能力仍关闭。v1.10.22 已发布 P5 代码，v1.10.23 修复 Newow 分批 checkpoint 配对，v1.10.24 修复合约首夜盘 Session 归属，v1.10.25 扩大 CLI 计划文件上限；生产 RB 十条开放参考流试点已完成并读回，均 disabled；其他品种覆盖与全局 reader 切换仍为后续 Gate；v1.10.25 六服务 Runtime promotion 已独立完成。
 正式周线合同为 48 个品种，
@@ -218,16 +219,16 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.25@34775b14a`，annotated tag peeled commit、origin/main 与已发布 GitHub Release target 一致 |
-| 现役 Runtime | v1.10.25 `RUNTIME_PROMOTED / SERVICE_READBACK`；未声明 `RUNTIME_READY` | 六服务安装项均指向 exact `v1.10.25@34775b14a`，API/Web 200、Runtime health ok、整体 passed；Market preflight `snapshot_ready` 60/60；盘后任务当时未运行，weekly audit 本次未运行，reader=legacy |
+| 正式 Release | `RELEASED` | `v1.10.28@962142a5`，annotated tag peeled commit、origin/main 与已发布 GitHub Release target 一致 |
+| 现役 Runtime | v1.10.28 `RUNTIME_PROMOTED / SERVICE_READBACK`；未声明 `RUNTIME_READY` | 六服务安装项均指向 exact `v1.10.28@962142a5`，API/Web 200；Market preflight `snapshot_ready` 60/60；本日盘后 `missed` 使 Runtime health degraded、整体 failed，weekly audit 本次未运行。未重跑盘后或补发通知 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | Unified Reference Trading P3 仓储 | `RELEASED / PRODUCTION_SCHEMA_0047` | 六表、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；生产 0047 已执行并读回六表。stream 仍默认 disabled，未启用 P6 worker 或全局 persisted reader；P4/P5 代码已随 v1.10.22 发布 |
 | Unified Reference Trading P4 历史编排 | `RELEASED / RB_PILOT_COMPLETE` | RB 十条开放参考流 exact-hash 构建并读回 READY/active revision，全部 enabled=false；12 个物理合约的 1m/15m/30m/60m 预热已完成。苏冰 15m/30m/60m 依严格 checkpoint 完成，分别 228/120/71 批；P6 worker 未启用，全局 reader 仍为 legacy |
-| Unified Reference Trading P5 读取与页面 | `RELEASED / RUNTIME_PROMOTED / READER_LEGACY` | 有界只读 GET、已保存旧接口薄适配、苏冰与牛哇共用快照分页状态已随 v1.10.22 发布；隔离 Canonical/MDS/P4 浏览器实读与两笔交易分页通过，独立 Review 无 Confirmed Issue。生产 0047 已执行；现役 v1.10.25 仍保持全局 reader=legacy，RB 苏冰 15m 旧接口两页生产只读 HTTP 200；persisted reader 尚未切换 |
+| Unified Reference Trading P5 读取与页面 | `RELEASED / RUNTIME_PROMOTED / READER_LEGACY` | 有界只读 GET、已保存旧接口薄适配、苏冰与牛哇共用快照分页状态已随 v1.10.22 发布；隔离 Canonical/MDS/P4 浏览器实读与两笔交易分页通过，独立 Review 无 Confirmed Issue。生产 0047 已执行；v1.10.25 时全局 reader=legacy，RB 苏冰 15m 旧接口两页生产只读 HTTP 200；persisted reader 尚未切换 |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
 | v1.10.8 Runtime 准备 | `COMPLETED / PROMOTION_GATE_CLOSED` | 独立 immutable Runtime/recovery roots、身份/失败恢复校验、fresh 正式只读 preflight、一次切换与即时读回均通过；未恢复或重试 |
-| Weekly audit | `ENABLED / NATURAL_RUN_PENDING` | 已安装且 loaded 的 plist 指向 v1.10.25 exact root/commit；本轮只读状态为 `not_run`，launchd 当时未运行；旧版本 840/840 endpoint 与 120/120 周线归属只作历史证据，首次自然及全历史周检待验 |
+| Weekly audit | `ENABLED / NATURAL_RUN_PENDING` | 已安装且 loaded 的 plist 指向 v1.10.28 exact root/commit；本轮只读状态为 `not_run`，launchd 当时未运行；旧版本 840/840 endpoint 与 120/120 周线归属只作历史证据，首次自然及全历史周检待验 |
 | 中断盘后收尾 | 9 月 9 日与 9 月 11 日均 `COMPLETED` | 两次运行分别按独立意图收尾并读回；9 月 11 日为 schema-v5 terminal，旧 writer 已停止 |
 | 盘后生命周期修复 | `COMPLETED / RELEASED / RUNTIME_PROMOTED` | `8f2b051fd` 自 v1.10.8 起已发布并进入 Runtime；仅自然盘后及后续交易日增量验收未完成 |
 | 牛哇加载一致性 | `COMPLETED / RELEASED` | `fef307732` 随 v1.10.6 发布；相关 unit、九组合及完整浏览器矩阵重验通过 |
