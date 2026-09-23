@@ -472,7 +472,9 @@ class SubingReferenceService:
                 )
                 if not end <= interruption <= cutoff:
                     raise SubingReferenceError("SUBING_REFERENCE_DATA_CONFLICT")
-            segment_id = _hash([symbol, owner.contract, owner.start_trading_day])
+            segment_id = subing_intraday_owner_segment_id(
+                symbol, owner.contract, owner.start_trading_day,
+            )
             result.append(
                 ReferenceSegment(
                     physical_contract=owner.contract,
@@ -793,6 +795,13 @@ def _hash(value: Any) -> str:
             _wire(value), sort_keys=True, ensure_ascii=True, separators=(",", ":")
         ).encode()
     ).hexdigest()
+
+
+def subing_intraday_owner_segment_id(
+    symbol: str, contract: str, owner_start_trading_day: date,
+) -> str:
+    """Shared stable rank-1 owner identity for historical and forward 15m–60m."""
+    return _hash([symbol, contract, owner_start_trading_day])
 
 
 _DIAGNOSTIC_STAGES = frozenset(

@@ -102,7 +102,8 @@ def build_forward_reference_worker(
                         raise ForwardInputUnavailable("CANONICAL_READ_GUARD_MISSING")
                     with canonical_read_guard():
                         return capture_newow_canonical(
-                            newow_reader, identity, revision_id=revision_id,
+                            newow_reader(identity) if callable(newow_reader) else newow_reader,
+                            identity, revision_id=revision_id,
                             generation=generation, after=computed_through,
                             recording_start=recording_start, now=observed,
                             capability_ready=newow_capability_ready,

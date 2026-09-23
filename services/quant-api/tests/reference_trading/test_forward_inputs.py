@@ -51,7 +51,7 @@ def test_htdy_reader_captures_exact_live_window_and_scan_cannot_invent_first_see
     capture = capture_htdy_live(
         read, identity, revision_id="revision", generation=1, after=None,
         now=now, wake_kind="live_event", event_bar_end=read.bars[-1].bar_end,
-        owner_segments=lambda _contract, _instant: ("owner", "calc"),
+        owner_segments=lambda *_: ("owner", "calc"),
     )
     assert capture.observed_at == now
     assert len(capture.input_payload["bars"]) == 32

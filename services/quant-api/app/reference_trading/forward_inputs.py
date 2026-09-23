@@ -40,10 +40,11 @@ def capture_htdy_live(
     market_read: MarketReadService, identity: StreamIdentity, *,
     revision_id: str, generation: int, after: datetime | None,
     now: datetime, wake_kind: str, event_bar_end: datetime | None = None,
-    owner_segments: Callable[[str, datetime], tuple[str, str]],
+    owner_segments: Callable[[StreamIdentity, str, date, datetime], tuple[str, str]],
 ) -> ForwardCapture | None:
     """Capture one genuine live wake; scanning a missed Bar never invents first_seen."""
-    if identity.strategy_code != "htdy" or wake_kind not in {"live_event", "scan"}:
+    if (identity.strategy_code != "htdy" or identity.frequency != "15m"
+            or wake_kind not in {"live_event", "scan"}):
         raise ValueError("FORWARD_INPUT_IDENTITY_INVALID")
     query = SeriesPageQuery(
         SeriesKind.ACTUAL_DOMINANT, identity.product.upper(),
@@ -79,7 +80,9 @@ def capture_htdy_live(
     ):
         raise ForwardInputUnavailable("HTDY_WINDOW_UNAVAILABLE")
     market_read.validate_alert_window(window, context_bars=CONTEXT_BARS)
-    owner_id, calculation_id = owner_segments(window.contract, latest.bar_end)
+    owner_id, calculation_id = owner_segments(
+        identity, window.contract, latest.trading_day, latest.bar_end,
+    )
     if not owner_id or not calculation_id:
         raise ForwardInputUnavailable("OWNER_UNAVAILABLE")
     bars = [_bar_wire(bar) for bar in window.bars]
@@ -103,8 +106,8 @@ def capture_subing_live(
     market_read: MarketReadService, identity: StreamIdentity, *,
     revision_id: str, generation: int, after: datetime | None,
     now: datetime, wake_kind: str, event_bar_end: datetime | None = None,
-    owner_segments: Callable[[str, datetime], tuple[str, str]],
-    expected_endpoints: Callable[[str, datetime | None, datetime], tuple[datetime, ...]],
+    owner_segments: Callable[[StreamIdentity, str, date, datetime], tuple[str, str]],
+    expected_endpoints: Callable[[StreamIdentity, str, date, datetime | None, datetime], tuple[datetime, ...]],
 ) -> ForwardCapture | None:
     """Capture one completed SuBing Bar only when Session continuity is proven."""
     if identity.strategy_code.replace("-", "_") != "subing_reference" or identity.frequency not in {"15m", "30m", "60m"}:
@@ -130,13 +133,13 @@ def capture_subing_live(
     bar = snapshot.bars[0]
     if wake_kind == "live_event" and bar.bar_end != event_bar_end:
         raise ForwardInputUnavailable("LIVE_EVENT_IDENTITY_CONFLICT")
-    endpoints = expected_endpoints(snapshot.contract, after, bar.bar_end)
+    endpoints = expected_endpoints(identity, snapshot.contract, bar.trading_day, after, bar.bar_end)
     if endpoints != (bar.bar_end,):
         raise ForwardInputUnavailable(
             "OBSERVATION_GAP", trading_day=bar.trading_day,
             endpoints=endpoints,
         )
-    owner_id, calculation_id = owner_segments(snapshot.contract, bar.bar_end)
+    owner_id, calculation_id = owner_segments(identity, snapshot.contract, bar.trading_day, bar.bar_end)
     if not owner_id or not calculation_id:
         raise ForwardInputUnavailable("OWNER_UNAVAILABLE")
     wire = _bar_wire(bar)
@@ -204,8 +207,8 @@ def capture_newow_live(
     market_read: MarketReadService, identity: StreamIdentity, *,
     revision_id: str, generation: int, after: datetime | None,
     now: datetime, wake_kind: str, event_bar_end: datetime | None = None,
-    owner_segments: Callable[[str, datetime], tuple[str, str]],
-    expected_endpoints: Callable[[str, datetime | None, datetime], tuple[datetime, ...]],
+    owner_segments: Callable[[StreamIdentity, str, date, datetime], tuple[str, str]],
+    expected_endpoints: Callable[[StreamIdentity, str, date, datetime | None, datetime], tuple[datetime, ...]],
     capability_ready: Callable[[StreamIdentity], bool],
 ) -> ForwardCapture | None:
     """Capture one 60m completed Live Bar without opening the product capability."""
@@ -233,13 +236,13 @@ def capture_newow_live(
     bar = snapshot.bars[0]
     if wake_kind == "live_event" and bar.bar_end != event_bar_end:
         raise ForwardInputUnavailable("LIVE_EVENT_IDENTITY_CONFLICT")
-    endpoints = expected_endpoints(snapshot.contract, after, bar.bar_end)
+    endpoints = expected_endpoints(identity, snapshot.contract, bar.trading_day, after, bar.bar_end)
     if endpoints != (bar.bar_end,):
         raise ForwardInputUnavailable(
             "OBSERVATION_GAP", trading_day=bar.trading_day,
             endpoints=endpoints or (bar.bar_end,),
         )
-    owner_id, calculation_id = owner_segments(snapshot.contract, bar.bar_end)
+    owner_id, calculation_id = owner_segments(identity, snapshot.contract, bar.trading_day, bar.bar_end)
     wire = _bar_wire(bar)
     source_bar_sha = sha256(json.dumps(wire, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return _newow_capture(
