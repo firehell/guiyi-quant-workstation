@@ -17,6 +17,7 @@ from app.reference_trading.service import ResumeToken
 
 
 _MAX_JSON_BYTES = 1_048_576
+_MAX_PLAN_JSON_BYTES = 16_777_216
 
 
 def _pairs(values):
@@ -28,8 +29,8 @@ def _pairs(values):
     return result
 
 
-def strict_json_loads(value: str):
-    if not isinstance(value, str) or len(value.encode()) > _MAX_JSON_BYTES:
+def strict_json_loads(value: str, *, max_bytes: int = _MAX_JSON_BYTES):
+    if not isinstance(value, str) or len(value.encode()) > max_bytes:
         raise ValueError("REFERENCE_JSON_INVALID")
     try:
         return json.loads(
@@ -43,11 +44,11 @@ def strict_json_loads(value: str):
         raise ValueError("REFERENCE_JSON_INVALID") from error
 
 
-def _read_json(path_value: str):
+def _read_json(path_value: str, *, max_bytes: int = _MAX_JSON_BYTES):
     path = Path(path_value)
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > _MAX_JSON_BYTES:
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > max_bytes:
         raise ValueError("REFERENCE_PATH_INVALID")
-    return strict_json_loads(path.read_text(encoding="utf-8"))
+    return strict_json_loads(path.read_text(encoding="utf-8"), max_bytes=max_bytes)
 
 
 def _jsonable(value):
@@ -102,7 +103,7 @@ def run_reference_command(args, *, planner=None, service=None) -> dict[str, obje
             "output": str(output),
         }
 
-    plan = plan_from_dict(_read_json(args.plan))
+    plan = plan_from_dict(_read_json(args.plan, max_bytes=_MAX_PLAN_JSON_BYTES))
     if plan.operation != args.reference_command and not (
         args.reference_command == "resume" and plan.operation in {"build", "rebuild"}
     ):

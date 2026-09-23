@@ -1,13 +1,13 @@
 # 当前状态
 
 文档整理：2026-09-23。正式 Release 为
-`v1.10.23@31eeef8ca85590f0160bd7f560cd5f08f6bb02fd`：annotated tag peeled commit、
+`v1.10.24@6ea4867d44bfd295f0c4229cf8d5639ec78e4f96`：annotated tag peeled commit、
 远端 `main` 与非草稿、非预发布 GitHub Release target 一致。2026-09-23 本机只读状态脚本回读
 API、Web、Live、Alert 均加载 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.20-r1` 的同一提交，
 API/Web 返回 200，Runtime health 为 `ok`；盘后任务当时未运行，weekly audit 本次尚未运行。
 这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
 v1.10.21 已包含 CJ 严格无交易日 W1 修复代码；CJ 两处 Canonical/Catalog 指针仍为旧版，
-CJ W1 正式能力仍关闭。v1.10.22 已发布 P5 代码，v1.10.23 修复 Newow 分批 checkpoint 配对；生产 RB 试点尚未完成，reader 切换、Runtime promotion 分属不同 Gate。
+CJ W1 正式能力仍关闭。v1.10.22 已发布 P5 代码，v1.10.23 修复 Newow 分批 checkpoint 配对，v1.10.24 修复合约首夜盘 Session 归属；生产 RB 试点尚未完成，reader 切换、Runtime promotion 分属不同 Gate。
 正式周线合同为 48 个品种，
 60m 继续关闭。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
@@ -218,11 +218,11 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 | 项目 | 阶段 | 说明 |
 |---|---|---|
-| 正式 Release | `RELEASED` | `v1.10.23@31eeef8ca`，annotated tag peeled commit、origin/main 与已发布 GitHub Release target 一致 |
+| 正式 Release | `RELEASED` | `v1.10.24@6ea4867d4`，annotated tag peeled commit、origin/main 与已发布 GitHub Release target 一致 |
 | 现役 Runtime | v1.10.20 `RUNTIME_PROMOTED / SERVICE_READBACK`；未声明 `RUNTIME_READY` | 只读回读 API/Web/Live/Alert 加载 v1.10.20 exact root/commit、API/Web 200、Runtime health ok；盘后任务当时未运行，weekly audit 本次未运行 |
 | Market Web 发布前十一项 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED` | `0963cef34` 已包含于 v1.10.12；候选期完整 Web E2E、真实只读验收 4/4 与独立 Review 0 findings；JM2601 15m 历史缺口仍是独立数据 Gate |
 | Unified Reference Trading P3 仓储 | `RELEASED / PRODUCTION_SCHEMA_0047` | 六表、严格 checkpoint、原子幂等批次与 revision/snapshot 读取已完成；生产 0047 已执行并读回六表。stream 仍默认 disabled，未启用 P6 worker、全局 reader 或 Runtime；P4/P5 代码已随 v1.10.22 发布 |
-| Unified Reference Trading P4 历史编排 | `RELEASED / RB_PILOT_PARTIAL` | 已随 v1.10.22 发布；v1.10.23 修复分批配对后，RB 牛哇三策略 D1/W1 六条及苏冰 D1 共七条流 exact-hash 构建并读回 READY，全部 enabled=false。苏冰 15m/30m/60m 因物理分钟缺口仍未构建；P6 worker、全局 reader 与 Runtime 未启用 |
+| Unified Reference Trading P4 历史编排 | `RELEASED / RB_PILOT_PARTIAL` | 已随 v1.10.22 发布；v1.10.23 修复分批配对后，RB 牛哇三策略 D1/W1 六条及苏冰 D1 共七条流 exact-hash 构建并读回 READY，全部 enabled=false。RB 物理 1m/15m/30m/60m 预热已完成并读回；苏冰 15m/30m/60m 仍因 CLI 计划文件上限未构建；P6 worker、全局 reader 与 Runtime 未启用 |
 | Unified Reference Trading P5 读取与页面 | `RELEASED / RUNTIME_PENDING` | 有界只读 GET、已保存旧接口薄适配、苏冰与牛哇共用快照分页状态已随 v1.10.22 发布；隔离 Canonical/MDS/P4 浏览器实读与两笔交易分页通过，独立 Review 无 Confirmed Issue。生产 0047 已执行；全局 reader 仍为 `legacy`，现役 Runtime 仍为 v1.10.20，生产页面尚未切换到 P5 persisted reader |
 | v1.10.10 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | Alert diagnostics、频率过滤与 listing boundary 已进入正式版本；本轮 Market Web 候选不在该 tag 内 |
 | v1.10.9 | `CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / RELEASED / RUNTIME_PROMOTED` | 10:15 BREAK 60/60、snapshot 60/60、fresh preflight passed；六服务切换完成，无重试、回退或手工数据修复 |
@@ -236,11 +236,11 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 | 牛哇新版综合解释 | `RESEARCH_EVIDENCE_COMPLETE` / `IMPLEMENTATION_PENDING` | 规则差异已确认，未批准新合同 |
 | 后续交付路线 | 规划已接受，未据此关闭任何 Gate | 先盘后稳定，再牛哇日周六组合；随后 Web 体验与 60m 数据准备并行，最后独立开放 60m |
 
-owner 已批准 v1.10.22 发布及 PR #385 所列 RB 全历史生产试点，试点窗口为 2023-01-01 至 2026-09-22；其他品种、全局 `REFERENCE_TRADING_READER_MODE` 与 Runtime promotion 仍无授权。生产 0047 已从 0046 一次升级，读回六张参考表。RB 十条正式开放流中，牛哇三策略 D1/W1 六条与苏冰 D1 可只读规划；苏冰 15m/30m/60m 仍因物理分钟分区缺口停止。12 个物理合约的 15m dry-run 是 71 个 1m 来源月/最多 71 次 provider 请求、79 个派生目标月；30m 为 79 个派生目标月，60m 为 71 个；来源不可跨频重复相加，后续阶段须重算 exact hash。
+owner 已批准 v1.10.22 发布及 RB 全历史试点，窗口为 2023-01-01 至 2026-09-22；随后分别批准 v1.10.23/v1.10.24 发布及故障后受控恢复。v1.10.24 已发布并读回 `6ea4867d44bfd295f0c4229cf8d5639ec78e4f96`。生产 0047 六表已升级并读回。RB 12 个物理合约的 15m、30m、60m warm-up 均已逐项执行和只读回查为零剩余目标：71 个 1m 来源月/实际 71 次 provider 请求，79 个 15m、79 个 30m、71 个 60m 派生月；后两种派生各 0 次 provider 请求。未缩窗或补造 Session。
 
-RB2305 首次 15m warm-up 调用返回非零；当时临时脚本丢失失败 payload，但只读重算证明没有提交分区。owner 随后独立批准 v1.10.23 发布及一次受控恢复。v1.10.23 已发布并读回 main/tag/Release 精确提交 `31eeef8ca85590f0160bd7f560cd5f08f6bb02fd`。受控 RB2305 恢复返回 `TRADING_SESSION_MISSING`，`applied=0`、`failed=1`；CLI `provider_requests=1` 是进入请求阶段的计数，代码与只读复现证明在实际 provider.fetch_many 前失败。2022-05-16 是 RB2305 2022-05-17 上市交易日夜盘的自然日期，Catalog 有 SHFE Calendar、无上市前 RB Session；合约 endpoint 归属查询错误地要求该上市前 Session。修复按已证明的合约 `[listed_date, expired_date)` 限定候选交易日，不补造 Session；已合入 develop，v1.10.24 补丁候选待发布批准，未再次执行生产补数。
+RB 十条开放参考流中，牛哇三策略 D1/W1 六条及苏冰 D1 共七条 exact-hash 构建并读回 `READY / enabled=false`。苏冰 15m/30m/60m 已能只读规划，分别为 58020/30287/17692 根输入，计划文件 8.4/4.7/3.0 MB。v1.10.24 上第一次苏冰 15m build 在读取文件时返回 `CLI_INTERNAL_ERROR / ValueError`；只读复现为 `REFERENCE_PATH_INVALID`：CLI 共享 JSON 上限 1 MiB，执行前未创建 revision。已停止其余两条生产构建。修复只把 plan 文件上限提升至 16 MiB，request 与 resume token 仍为 1 MiB；三份真实计划只读 dry-run 均通过，定向红绿、157 项 P4 关联测试与独立 Review 无 Confirmed Issue。修复已合入 develop；v1.10.25 为待批准发布候选，生产 build 尚未重试。develop 中另有 1 项 P4 集成测试既有失败，未改动的 develop 基线同样复现；v1.10.24 发布 tag 上该测试通过。
 
-RB 牛哇趋势 D1 已从原 candidate revision 精确 token 续算成功并成为 active；其余五条牛哇 D1/W1 与苏冰 D1 完成 exact-hash build。七条 active 流均读回 `READY / enabled=false`；三条苏冰日内流尚未构建。隔离页面读取与分页验收属于 v1.10.22 代码证据，生产页面仍使用 `legacy` reader；正式 reader 切换和 Runtime promotion 未授权。新修复定向测试 103 + 119 + 113 通过，生产 RB2305 首月 3795 个端点只读归属通过，独立 Review 无 Confirmed Issue；完整历史维护测试中 1 项既有 continuous D1 测试失败，在未修改的 v1.10.23 tag 上同样失败。
+P5 页面读取与分页已在隔离 Canonical/MDS/P4 浏览器验收；生产全局 reader 仍为 `legacy`，七条流仍 disabled，现役 Runtime 最近读回仍为 v1.10.20。其他品种分批覆盖、全局 reader 切换与 Runtime promotion 均未执行；后两项须单独授权。
 
 ## v1.10.12 Runtime 切换即时读回（2026-09-17）
 

@@ -8,7 +8,7 @@ import json
 import pytest
 
 from app.guiyi_cli.main import _execution_is_readonly, _parse_error_is_readonly, build_parser, main
-from app.guiyi_cli.reference_commands import run_reference_command, strict_json_loads
+from app.guiyi_cli.reference_commands import _read_json, run_reference_command, strict_json_loads
 from app.reference_trading.planning import plan_to_dict
 from tests.reference_trading.test_bootstrap import Reader, _plan
 
@@ -106,6 +106,39 @@ def test_build_without_apply_only_validates_plan_file_and_never_touches_service(
         "plan_hash": plan.plan_hash,
         "stream_count": 1,
     }
+
+
+def test_build_dry_run_accepts_bounded_full_history_plan_file(tmp_path) -> None:
+    plan = _plan(Reader())
+    path = tmp_path / "plan.json"
+    payload = json.dumps(plan_to_dict(plan))
+    path.write_text(payload + " " * (8_400_000 - len(payload)), encoding="utf-8")
+
+    result = run_reference_command(Namespace(
+        reference_command="build",
+        plan=str(path),
+        expected_plan_hash=plan.plan_hash,
+        apply=False,
+    ))
+
+    assert result["status"] == "planned"
+    assert result["plan_hash"] == plan.plan_hash
+
+
+def test_reference_plan_limit_does_not_expand_other_json_inputs(tmp_path) -> None:
+    path = tmp_path / "request.json"
+    path.write_text("{}" + " " * 1_048_576, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="REFERENCE_PATH_INVALID"):
+        _read_json(str(path))
+
+
+def test_reference_plan_file_remains_bounded(tmp_path) -> None:
+    path = tmp_path / "plan.json"
+    path.write_text("{}" + " " * 16_777_215, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="REFERENCE_PATH_INVALID"):
+        _read_json(str(path), max_bytes=16_777_216)
 
 
 def test_plan_output_refuses_existing_file_without_overwrite(tmp_path) -> None:
