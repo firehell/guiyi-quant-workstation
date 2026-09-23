@@ -30,6 +30,7 @@ const UNAVAILABLE_CODES = new Set([
 const WEEKLY_PRODUCTS_V8 = 'a ag al ao ap au bu c cf cu ec fg fu hc i jd jm l lc lh m ma ni p pb pd pp ps pt rb rm ru sa sc sn ss ta ur v y zn'.split(' ')
 const WEEKLY_PRODUCTS_V10 = 'a ag al ao ap au b bu bz c cf cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
 const WEEKLY_PRODUCTS_V11 = 'a ag al ao ap au b bu bz c cf cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
+const WEEKLY_PRODUCTS_V12 = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
 const WEEKLY_PRODUCTS_V9 = [...WEEKLY_PRODUCTS_V10, ...'cj oi pf pk pl pr px rs sf sh sm sr'.split(' ')]
 
 export class NewowProductRequestError extends Error {
@@ -87,7 +88,10 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   const formalWeeklyV11 = value.schema_version === 'newow_product_capabilities_v11'
     && value.release_stage === 'daily_weekly'
     && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
-  const formalWeekly = formalWeeklyV8 || formalWeeklyV10 || formalWeeklyV11
+  const formalWeeklyV12 = value.schema_version === 'newow_product_capabilities_v12'
+    && value.release_stage === 'daily_weekly'
+    && sameLiteralArray(value.open_frequencies, ['1d', '1w'])
+  const formalWeekly = formalWeeklyV8 || formalWeeklyV10 || formalWeeklyV11 || formalWeeklyV12
   const expectedKeys = [
     'deferred_frequencies', 'deferred_sections', 'open_frequencies', 'open_sections',
     'release_stage', 'schema_version', ...(candidate || formalWeekly ? ['weekly_products'] : []),
@@ -106,6 +110,7 @@ function isProductCapabilities(value: unknown): value is NewowProductCapabilitie
   ) return false
   const expectedWeeklyProducts = remaining19Candidate
     ? WEEKLY_PRODUCTS_V9
+    : formalWeeklyV12 ? WEEKLY_PRODUCTS_V12
     : formalWeeklyV11 ? WEEKLY_PRODUCTS_V11
     : formalWeeklyV10 ? WEEKLY_PRODUCTS_V10 : WEEKLY_PRODUCTS_V8
   if ((candidate || formalWeekly) && !sameLiteralArray(value.weekly_products, expectedWeeklyProducts)) return false

@@ -1,18 +1,21 @@
 # 当前状态
 
-文档整理：2026-09-23。当前 exact tag `v1.10.27` peeled commit 为
-`53216518c1c91919ecaaa7159be7d76824a29716`，与 `origin/main` 和非草稿、非预发布
-GitHub Release target 一致。本机 Runtime root `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.27-r1`
-绑定该提交；19:37 只读检查 API/Web 为 200，但 Runtime health 与整体状态为 `failed`。
-盘后 label 当时未运行；这些即时状态不证明自然业务完成，不能声明 `RUNTIME_READY`。
-`v1.10.28` 候选从 `v1.10.27` 正式树仅提取盘后质量中断规划、同月 D1 质量事实保留、
-首失败目标诊断和对应测试/文档；main/tag/Release 与 Runtime 切换均尚未执行。
+文档整理：2026-09-23。正式 Release 为
+`v1.10.28@962142a5e8ed3845c9ba6a0d1d9fc927e7e9a990`：annotated tag peeled commit、
+远端 `main` 与非草稿、非预发布 GitHub Release target 一致。2026-09-23 本机只读状态脚本回读
+API、Web、Live、盘后、Alert 与 weekly audit 六项均绑定 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.28-r1` 的同一提交，
+API/Web 返回 200；Runtime health 为 `degraded`，当前交易日盘后状态为 `missed`，整体状态 `failed`。
+新 Runtime 尚无本日自然盘后成功记录，weekly audit 本次尚未运行；未手工重跑盘后或补发通知。
+这些即时状态只证明版本切换与服务读回，不证明自然业务完成，不能声明 `RUNTIME_READY`。
 2026-09-23 BZ2604–BZ2609 已按受控批次发布 60 个 1m 来源月及各 60 个 15m/30m/60m
 派生月，18 项 apply 均 passed、provider 请求累计 60；逐项只读重扫为零缺口。
 该数据结果不等于参考流已构建或页面已启用。
-v1.10.21 已包含 CJ 严格无交易日 W1 修复代码；CJ 两处 Canonical/Catalog 指针仍为旧版，
-CJ W1 正式能力仍关闭。v1.10.22 已发布 P5 代码，v1.10.23 修复 Newow 分批 checkpoint 配对，v1.10.24 修复合约首夜盘 Session 归属，v1.10.25 扩大 CLI 计划文件上限；生产 RB 十条开放参考流试点已完成并读回，均 disabled；其他品种覆盖与全局 reader 切换仍为后续 Gate；v1.10.25 六服务 Runtime promotion 已独立完成。
-正式周线合同为 49 个品种（v1.10.26 新增 OI），
+v1.10.21 已包含 CJ 严格无交易日 W1 修复代码。2026-09-23 对 CJ2305/2022-05 与
+CJ2309/2022-09 两个冻结 W1 月分区执行一次受控 Canonical/Catalog apply，独立回读均为 candidate 指针；
+隔离候选对 CJ 趋势、震荡、主升浪及各自 ReferenceTrade 的 API 与真实浏览器首载均通过，浏览器控制台
+0 error / 0 warning。CJ W1 正式能力仍关闭；`v1.10.29` release candidate 以
+`newow_product_capabilities_v12` 形成 50 品种边界，尚未发布或切换 Runtime。v1.10.22 已发布 P5 代码，v1.10.23 修复 Newow 分批 checkpoint 配对，v1.10.24 修复合约首夜盘 Session 归属，v1.10.25 扩大 CLI 计划文件上限；生产 RB 十条开放参考流试点已完成并读回，均 disabled；其他品种覆盖与全局 reader 切换仍为后续 Gate；v1.10.25 六服务 Runtime promotion 已独立完成。
+当前现场正式周线合同为 v11 的 49 个品种，
 60m 继续关闭。
 JM 物理合约历史缺口保持外部数据 Gate，不以页面降级或 fixture 造绿。
 本文件保留当前身份、已证明事实、尚缺证据和已接受规划；
