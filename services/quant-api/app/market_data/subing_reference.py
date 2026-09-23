@@ -509,7 +509,9 @@ class SubingReferenceService:
             owners = self.market_data.actual_dominant_segments(symbol, since, through)
         except MarketDataError as exc:
             self._raise_data_unavailable(exc, "actual_dominant_replay", symbol, BarFrequency.D1)
-        if not owners or owners[0].start_trading_day > since or owners[-1].end_trading_day < through:
+        # The requested calendar range may begin on a non-trading day. MDS
+        # verifies rank-1 ownership for every trading day in that range.
+        if not owners or owners[-1].end_trading_day < through:
             raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
         result: list[ReferenceSegment] = []
         inputs: list[dict[str, Any]] = []
