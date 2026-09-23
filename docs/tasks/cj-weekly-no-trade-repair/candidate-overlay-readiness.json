@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "command": "data.newow-readiness",
+  "readonly": true,
+  "status": "audited",
+  "complete": true,
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "release_stage": "daily_weekly_candidate",
+  "matrix": true,
+  "frequency_scope": [
+    "1w"
+  ],
+  "product_count": 1,
+  "main_case_count": 3,
+  "main_ready_count": 3,
+  "budget_exhausted": false,
+  "work_used": 21,
+  "enumerations": [],
+  "dependencies": [],
+  "repair_targets": [],
+  "metadata_proposals": [],
+  "cases": [
+    {
+      "symbol": "cj",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "cj",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    },
+    {
+      "symbol": "cj",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        }
+      }
+    }
+  ],
+  "provider_requests": 0,
+  "writes": 0,
+  "audit_identity": {
+    "mode": "in_memory_candidate_overlay",
+    "catalog_revision": "4c5deb8668b87c07789ce14f03a321b9570e3ac409d4d9a2d5e1de7a6c17d3e8",
+    "packet_sha256": "87f43b1dfc3f898973aa577d884780feb20f8c8c260a539943ae83e07f85f62f",
+    "overlay_targets": [
+      "kind=contract/symbol=cj/series=CJ2305/frequency=1w/year=2022/month=05/part.21dad46354adcb207b80ec4642f8c2aafa27c73dfb5474bfc512a6befbcf0329.parquet",
+      "kind=contract/symbol=cj/series=CJ2309/frequency=1w/year=2022/month=09/part.dc4c6fdc90a0de96836bb0bf2215f9a7c94f305da87de1536421d821a17f079c.parquet"
+    ],
+    "canonical_root_sha256": "1094b8d30a5f54593c407af265e2f3fc9bdb1655f9a9db84aeba15b74289e5ab",
+    "provider_requests": 0,
+    "writes": 0
+  }
+}
