@@ -45,6 +45,7 @@ from app.reference_trading.planning import (
     HistoricalStreamPlan,
     canonical_sha256,
 )
+from app.reference_trading.presentation import envelope, presentation_point
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict
 
 
@@ -157,6 +158,7 @@ def _subing_step(
     stream: StreamIdentity,
     checkpoint: AdapterCheckpoint[object],
     item: HistoricalInputBar,
+    presentation: list[dict[str, object]] | None = None,
 ) -> tuple[
     AdapterCheckpoint[object], tuple[SourceAction, ...], ReferenceTransition,
 ]:
@@ -199,7 +201,7 @@ def _subing_step(
     ):
         strategy_state = seed_subing_replay_state()
         strategy_state.reference_state = prior_reference
-    next_state, signal, _closed, _indicator = replay_subing_step(
+    next_state, signal, _closed, indicator = replay_subing_step(
         stream.product.lower(),
         payload.segment,
         stream.frequency,
@@ -212,6 +214,17 @@ def _subing_step(
         since=payload.segment.owner_since,
         through=payload.through,
     )
+    if presentation is not None:
+        if signal is not None:
+            presentation.append(presentation_point(
+                kind="signal", value=signal, trading_day=item.trading_day,
+                formula_versions=stream.formula_versions,
+            ))
+        if indicator is not None:
+            presentation.append(presentation_point(
+                kind="indicator", value=indicator, trading_day=item.trading_day,
+                formula_versions=stream.formula_versions,
+            ))
     actions: list[ReferenceAction] = []
     if signal is not None and signal.action != "SAME_DIRECTION":
         if signal.action.startswith("REVERSE"):
@@ -301,6 +314,7 @@ def _newow_step(
     stream: StreamIdentity,
     checkpoint: AdapterCheckpoint[object],
     item: HistoricalInputBar,
+    presentation: list[dict[str, object]] | None = None,
 ) -> tuple[
     AdapterCheckpoint[object], tuple[SourceAction, ...], ReferenceTransition,
 ]:
@@ -311,6 +325,7 @@ def _newow_step(
         ProductIdentity,
         TradeEligibility,
     )
+    from guiyi_quant.newow.product_identity import build_reference_trade_id
 
     if not isinstance(checkpoint.strategy_state, ProductReplayState):
         raise ValueError("REFERENCE_INPUT_PAYLOAD_INVALID")
@@ -350,7 +365,7 @@ def _newow_step(
         or stream.formula_versions != identity.formula_versions
     ):
         raise ValueError("REFERENCE_INPUT_IDENTITY_CONFLICT")
-    next_state, frame, _diagnostics = replay_step(
+    next_state, frame, diagnostics = replay_step(
         identity,
         checkpoint.strategy_state,
         payload.bar,
@@ -358,6 +373,50 @@ def _newow_step(
     )
     if frame is None:
         raise ValueError("REFERENCE_DUPLICATE_INPUT")
+    if presentation is not None:
+        presentation.append(presentation_point(
+            kind="availability",
+            value={
+                "bar_end": item.bar_end,
+                "physical_contract": item.physical_contract,
+                "segment_id": item.owner_segment_id,
+                "calculation_segment_id": item.calculation_segment_id,
+                "status": frame.availability.status,
+            },
+            trading_day=item.trading_day,
+            formula_versions=stream.formula_versions,
+        ))
+        for action in frame.actions:
+            presentation.append(presentation_point(
+                kind="action", value=action, trading_day=item.trading_day,
+                formula_versions=stream.formula_versions,
+            ))
+            if (
+                action.kind is NewowActionKind.BUILD
+                and action.trade_eligibility is TradeEligibility.ELIGIBLE
+            ):
+                presentation.append(presentation_point(
+                    kind="trade_identity",
+                    value={
+                        "source_action_id": action.signal_id,
+                        "public_trade_id": build_reference_trade_id(action),
+                        "bar_end": action.bar_end,
+                        "physical_contract": action.physical_contract,
+                        "segment_id": action.segment_id,
+                    },
+                    trading_day=item.trading_day,
+                    formula_versions=stream.formula_versions,
+                ))
+        for hint in frame.hints:
+            presentation.append(presentation_point(
+                kind="hint", value=hint, trading_day=item.trading_day,
+                formula_versions=stream.formula_versions,
+            ))
+        for diagnostic in diagnostics:
+            presentation.append(presentation_point(
+                kind="diagnostic", value=diagnostic, trading_day=item.trading_day,
+                formula_versions=stream.formula_versions,
+            ))
     actions: list[ReferenceAction] = []
     for action in frame.actions:
         if action.trade_eligibility is not TradeEligibility.ELIGIBLE:
@@ -437,6 +496,7 @@ def _advance_batch(
     stream: StreamIdentity,
     checkpoint: AdapterCheckpoint[object],
     bars: tuple[HistoricalInputBar, ...],
+    presentation: list[dict[str, object]] | None = None,
 ) -> tuple[
     AdapterCheckpoint[object],
     tuple[SourceAction, ...],
@@ -447,11 +507,25 @@ def _advance_batch(
     sources: list[SourceAction] = []
     transitions: list[ReferenceTransition] = []
     for item in bars:
+        if presentation is not None:
+            for boundary in item.boundaries:
+                presentation.append(presentation_point(
+                    kind="boundary",
+                    value={
+                        "reason": boundary.reason,
+                        "physical_contract": boundary.physical_contract,
+                        "owner_segment_id": boundary.owner_segment_id,
+                        "calculation_segment_id": boundary.calculation_segment_id,
+                        "bar_end": boundary.bar_end,
+                    },
+                    trading_day=boundary.trading_day,
+                    formula_versions=stream.formula_versions,
+                ))
         if stream.strategy_code.replace("-", "_") == "subing_reference":
-            current, found_sources, transition = _subing_step(stream, current, item)
+            current, found_sources, transition = _subing_step(stream, current, item, presentation)
             schema = "subing_replay_v1"
         elif stream.strategy_code.replace("-", "_").startswith("newow_"):
-            current, found_sources, transition = _newow_step(stream, current, item)
+            current, found_sources, transition = _newow_step(stream, current, item, presentation)
             schema = "newow_product_replay_v1"
         else:
             raise ValueError("REFERENCE_STRATEGY_DRIVER_UNSUPPORTED")
@@ -712,8 +786,9 @@ class HistoricalReferenceService:
                 token, checkpoint = self._repository.load_checkpoint(
                     stream.stream_id, revision_id,
                 )
+                presentation: list[dict[str, object]] = []
                 next_checkpoint, sources, transitions, schema = _advance_batch(
-                    stream, checkpoint, chunk,
+                    stream, checkpoint, chunk, presentation,
                 )
                 self._step_counter(len(chunk))
                 batch_key = "calculation:" + sha256(json.dumps(
@@ -738,6 +813,7 @@ class HistoricalReferenceService:
                         "last_fingerprint": chunk[-1].fingerprint,
                         "start_input_index": index,
                         "end_input_index": index + len(chunk),
+                        "presentation_v1": envelope(presentation),
                     },
                 )
                 with _source_guard(
@@ -999,8 +1075,9 @@ class HistoricalReferenceService:
                 stream.stream_id, state.revision_id,
             )
             chunk = tail[index:index + plan.batch_size]
+            presentation = []
             next_checkpoint, sources, transitions, schema = _advance_batch(
-                stream, checkpoint, chunk,
+                stream, checkpoint, chunk, presentation,
             )
             self._step_counter(len(chunk))
             batch_key = "advance:" + sha256(json.dumps(
@@ -1025,6 +1102,7 @@ class HistoricalReferenceService:
                     "last_fingerprint": chunk[-1].fingerprint,
                     "start_input_index": processed + index,
                     "end_input_index": processed + index + len(chunk),
+                    "presentation_v1": envelope(presentation),
                 },
                 dependency_advance=dependency_advance if index == 0 else None,
             )

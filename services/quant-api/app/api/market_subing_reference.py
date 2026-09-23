@@ -4,11 +4,12 @@ from collections.abc import Callable
 from datetime import date, datetime
 from threading import BoundedSemaphore
 from time import monotonic
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.market_data.composition import (
     build_market_data_service,
     build_database_coverage_source,
@@ -24,6 +25,9 @@ from app.market_data.subing_reference import (
     SubingReferenceError,
 )
 from app.schemas.subing_reference import SubingReferenceResponse
+from app.reference_trading.persisted_subing import PersistedSubingReference
+from app.reference_trading.query import QueryConflict
+from app.reference_trading.presentation import PresentationUnavailable
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 _GATE = BoundedSemaphore(1)
@@ -52,7 +56,7 @@ def subing_reference(
     since: date | None = None,
     through: date | None = None,
     as_of: datetime | None = None,
-    before: str | None = Query(default=None, max_length=129),
+    before: str | None = Query(default=None, max_length=2048),
     limit: int = Query(default=50, ge=1, le=200),
     frequency: str = "15m",
     session: Session = Depends(get_db),
@@ -69,10 +73,28 @@ def subing_reference(
             raise SubingReferenceError("SUBING_REFERENCE_BUDGET_EXCEEDED")
 
     try:
-        result = _build_service(session, check_cancelled).query(
-            SubingReferenceQuery(symbol, since, through, as_of, before, limit, frequency)
+        mode = os.getenv("REFERENCE_TRADING_READER_MODE", "legacy")
+        if mode not in {"legacy", "persisted"}:
+            raise HTTPException(503, detail={"code": "REFERENCE_READER_MODE_INVALID"})
+        query = SubingReferenceQuery(symbol, since, through, as_of, before, limit, frequency)
+        service = _build_service(session, check_cancelled)
+        result = (
+            service.query(query)
+            if mode == "legacy"
+            else PersistedSubingReference(SessionLocal, service).query(query)
         )
         return SubingReferenceResponse.model_validate(result)
+    except QueryConflict as exc:
+        status = 503 if exc.code in {
+            "NOT_BUILT", "PRESENTATION_CORRUPT", "SOURCE_IDENTITY_UNVERIFIED",
+            "PRESENTATION_NOT_MATERIALIZED", "REFERENCE_SCHEMA_UNAVAILABLE",
+            "PRESENTATION_BUDGET_EXCEEDED", "QUERY_BUDGET_EXCEEDED",
+        } else 409
+        raise HTTPException(status, detail={"code": exc.code}) from None
+    except PresentationUnavailable as exc:
+        raise HTTPException(503, detail={"code": str(exc)}) from None
+    except HTTPException:
+        raise
     except SubingReferenceError as exc:
         status = (
             422

@@ -26,9 +26,13 @@ from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import CanonicalBar, DatasetKey
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.newow.product_reader import NewowProductReader
+from app.market_data.newow.product_service import (
+    NewowProductService, ProductSection, ProductServiceQuery,
+)
 from app.market_data.rqdata_adapter import _aggregate_daily_rows
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 from app.market_data.subing_reference import SubingReferenceService
+from app.market_data.subing_reference import SubingReferenceQuery
 from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
 from app.reference_trading.inputs import MarketDataHistoricalInputReader
 from app.reference_trading.planning import (
@@ -39,6 +43,10 @@ from app.reference_trading.planning import (
 )
 from app.reference_trading.repository import ReferenceRepository
 from app.reference_trading.service import HistoricalReferenceService
+from app.reference_trading.persisted_subing import PersistedSubingReference
+from app.reference_trading.persisted_newow import PersistedNewowReference
+from app.api.market_newow import _product_response
+from app.reference_trading.models import ReferenceBatch
 
 
 class _Coverage:
@@ -110,7 +118,7 @@ def _subing_stream(frequency: str) -> StreamIdentity:
     )
 
 
-def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp_path) -> None:
+def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp_path, monkeypatch) -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
@@ -192,13 +200,14 @@ def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp
 
         market_data = MarketDataService(catalog, store)
         coverage = _Coverage(first, last)
+        subing_service = SubingReferenceService(
+            market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
+        )
         reader = MarketDataHistoricalInputReader(
             newow_reader=NewowProductReader(
                 market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
             ),
-            subing_service=SubingReferenceService(
-                market_data, coverage=coverage, active_products=("rb",), now=lambda: as_of,
-            ),
+            subing_service=subing_service,
         )
         streams = tuple(
             HistoricalStreamRequest(stream, first, last, as_of)
@@ -249,6 +258,73 @@ def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp
             repository, reader, step_counter=count,
         ).advance(advance_plan, advance_plan.plan_hash)
 
+        daily_query = SubingReferenceQuery(
+            "rb", first, last, as_of, frequency="1d",
+        )
+        intraday_query = SubingReferenceQuery(
+            "rb", first, last, as_of, frequency="15m",
+        )
+        legacy_daily = subing_service.query(daily_query)
+        legacy_intraday = subing_service.query(intraday_query)
+        monkeypatch.setattr(
+            "app.market_data.subing_reference.project_reference",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("replay forbidden")),
+        )
+        persisted_daily = PersistedSubingReference(factory, subing_service).query(daily_query)
+        persisted_intraday = PersistedSubingReference(factory, subing_service).query(intraday_query)
+        assert persisted_daily["signals"] == legacy_daily["signals"]
+        assert persisted_daily["indicators"] == legacy_daily["indicators"]
+        assert persisted_daily["items"] == legacy_daily["items"]
+        assert persisted_daily["summary"] == legacy_daily["summary"]
+        assert persisted_daily["quality_chart_bars"] == legacy_daily["quality_chart_bars"]
+        assert persisted_intraday["signals"] == legacy_intraday["signals"]
+        assert persisted_intraday["indicators"] == legacy_intraday["indicators"]
+        assert persisted_intraday["items"] == legacy_intraday["items"]
+        assert persisted_intraday["summary"] == legacy_intraday["summary"]
+        bounded_daily = PersistedSubingReference(factory, subing_service).query(
+            SubingReferenceQuery("rb", first, prior_day, prior_as_of, frequency="1d"),
+        )
+        assert bounded_daily["performance_through"] == prior_day.isoformat()
+
+        def newow_reader_factory(context, cancelled):
+            return NewowProductReader(
+                market_data, coverage=coverage, active_products=("rb",),
+                context_frequencies=context, cancelled=cancelled, now=lambda: as_of,
+            )
+
+        newow_query = ProductServiceQuery(
+            product="rb", strategy=ProductStrategy.TREND,
+            frequency=ProductFrequency.DAILY, section=ProductSection.REFERENCE,
+            performance_since=first, performance_through=last, as_of=as_of,
+        )
+        legacy_newow = _product_response(NewowProductService(
+            newow_reader_factory, now=lambda: as_of,
+        ).query(newow_query))
+        persisted_newow = _product_response(NewowProductService(
+            newow_reader_factory, now=lambda: as_of,
+            persisted_reference=PersistedNewowReference(factory).section,
+        ).query(newow_query))
+        bounded_newow = _product_response(NewowProductService(
+            newow_reader_factory, now=lambda: as_of,
+            persisted_reference=PersistedNewowReference(factory).section,
+        ).query(replace(
+            newow_query, performance_through=prior_day, as_of=prior_as_of,
+        )))
+        assert bounded_newow.reference.value.performance_through == prior_day
+        assert persisted_newow.reference.value.storage_mode == "persisted"
+        if persisted_newow.reference.value != legacy_newow.reference.value:
+            actual = persisted_newow.reference.value.model_dump()
+            expected = legacy_newow.reference.value.model_dump()
+            actual.pop("storage_mode")
+            expected.pop("storage_mode")
+            assert actual["coverage_intervals"][0] == expected["coverage_intervals"][0]
+            differences = {
+                key: (actual[key][:3] if isinstance(actual[key], list) else actual[key],
+                      expected[key][:3] if isinstance(expected[key], list) else expected[key])
+                for key in actual if actual[key] != expected[key]
+            }
+            assert not differences, differences
+
         metadata_probe = streams[-1]
         token_before_session_change = reader.plan_stream(metadata_probe).source_token
         first_session = session.scalar(
@@ -279,5 +355,20 @@ def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp
     ]
     assert {item.status for item in report.streams} == {"completed"}
     assert all(item.snapshot is not None for item in report.streams)
+    with factory() as evidence_session:
+        committed = evidence_session.execute(select(ReferenceBatch).where(
+            ReferenceBatch.kind == "calculation",
+        )).scalars().all()
+        assert committed
+        assert all(
+            batch.source_evidence["presentation_v1"]["version"] == "presentation_v1"
+            for batch in committed
+        )
+        assert any(
+            point["kind"] == "indicator"
+            for batch in committed
+            if batch.stream_id in {item.identity.stream_id for item in streams[-4:]}
+            for point in batch.source_evidence["presentation_v1"]["points"]
+        )
     assert stepped == 47
     assert token_after_session_change != token_before_session_change

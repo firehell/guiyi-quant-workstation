@@ -14,7 +14,7 @@ const readinessLabel = (status: SubingReferenceResponse['research_status']) => (
 </script>
 <template>
   <section class="subing-reference" aria-label="历史参考交易">
-    <header><div><h2>乐观参考交易</h2><p>历史重算·乐观参考｜零费用/零滑点</p></div><span>{{ data?.frequency ?? '当前周期' }} · 双向反手 · 非可执行</span></header>
+    <header><div><h2>乐观参考交易</h2><p>{{ data?.storage_mode === 'persisted' ? '历史参考·已保存' : '历史重算·乐观参考' }}｜零费用/零滑点</p></div><span>{{ data?.frequency ?? '当前周期' }} · 双向反手 · 非可执行</span></header>
     <form @submit.prevent="refresh"><label>开始交易日<input v-model="since" type="date" aria-label="参考开始交易日" /></label><label>结束交易日<input v-model="through" type="date" aria-label="参考结束交易日" /></label><button type="submit" :disabled="loading || invalidRange">{{ loading ? '读取中…' : '读取参考' }}</button></form>
     <p v-if="invalidRange" class="subing-reference__validation" role="alert">开始交易日不能晚于结束交易日。</p>
     <p v-if="error" role="status">{{ error }}</p>

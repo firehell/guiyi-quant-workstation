@@ -203,3 +203,49 @@ Runtime.
 - **WHEN** a valid build, advance, rebuild or resume plan is supplied without `--apply`
 - **THEN** the CLI validates and reports the exact plan as read-only
 - **AND** it performs no repository mutation, provider access, notification or Runtime action
+
+### Requirement: Historical reference presentation is persisted with the calculation
+
+P5 historical calculation batches SHALL persist a versioned, bounded `presentation_v1` envelope in their existing
+source evidence. It contains the strategy display facts needed by readers, including SuBing same-direction signals
+and indicators and Newow actions, hints, availability and trade identity. Reading MUST NOT run the strategy kernel,
+project trades, infer a missing presentation from actions, or write a replacement envelope. A published revision
+without this envelope SHALL report `PRESENTATION_NOT_MATERIALIZED` until a separately authorized rebuild.
+Canonical prices and daily quality bars remain read-only MarketDataService facts, bound to the same source identity.
+
+#### Scenario: A published older revision has no display envelope
+
+- **WHEN** a reader requests historical signals from an older calculation batch
+- **THEN** the response reports `PRESENTATION_NOT_MATERIALIZED`
+- **AND** it does not replay the strategy or return an empty signal list as if calculation were complete
+
+### Requirement: P5 historical queries use one bounded published snapshot
+
+The read-only `/api/v1/reference-trading` capability, stream, trade, signal, indicator and summary endpoints SHALL
+accept only registered historical streams and validated trading-day windows. A snapshot binds stream, revision,
+sequence, cutoff, window, dependency digest and statistics policy. A cursor additionally binds its resource and
+last stable sort key. Candidate and invalid revisions are unreadable; an old valid sequence remains stable after
+advance. Trade pages use database keyset and `limit + 1` selection, batch actions and marks, and never scan every
+trade into memory. Summary is independent of page size and preserves Decimal arithmetic. A past cutoff MUST NOT
+expose a future exit, mark or realized return. Complete-window readiness remains unknown without authoritative proof.
+
+#### Scenario: A trade closes after the selected cutoff
+
+- **WHEN** a historical reader requests a snapshot whose trade has a later close
+- **THEN** that reader sees the eligible OPEN version and eligible mark only
+- **AND** all subsequent pages and summary retain the same snapshot and cutoff
+
+### Requirement: Persisted page adapters fail closed during migration
+
+The existing SuBing history and Newow reference section MAY use an explicit `persisted` reader mode after isolated
+verification. The default `legacy` mode preserves current production behavior. Persisted mode SHALL verify the
+stored source identity against the bounded chart/quality read, use saved presentation and trade facts, and preserve
+the existing page fields and statistics. It SHALL NOT silently fall back to a replay on missing schema, build,
+presentation, snapshot or source identity. The page SHALL label saved history as optimistic reference with its
+cutoff and statistics window; it SHALL NOT imply a fill, account return, live observation or Runtime promotion.
+
+#### Scenario: The source identity differs from the saved build
+
+- **WHEN** a persisted adapter reads chart facts whose dependency digest does not match the selected snapshot
+- **THEN** the reference section is unavailable with an explicit identity error
+- **AND** old and new facts are not drawn together

@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from dataclasses import fields, is_dataclass, replace
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from guiyi_quant.reference_trading import (
@@ -764,6 +764,144 @@ class ReferenceRepository:
                 snapshot,
             )
 
+    def query_historical_trades(
+        self, session: Session, snapshot: SnapshotIdentity, *,
+        since: date, through: date, cutoff: datetime | None,
+        limit: int, after_key: tuple[datetime, str] | None = None,
+        initial_interruptions: frozenset[tuple[str, str, str]] = frozenset(),
+    ) -> StoredPage[ReferenceTrade]:
+        """Select one eligible version per trade in SQL, then hydrate one page.
+
+        The caller owns a single read-only repeatable-read transaction.  No
+        batch, trade-version, action, or mark history is loaded into Python.
+        """
+        self._validate_page(limit, cutoff)
+        if type(since) is not date or type(through) is not date or since > through:
+            raise ValueError("TRADING_DAY_WINDOW_INVALID")
+        stream, _revision = self._validate_snapshot(session, snapshot)
+        if stream.recording_mode != RecordingMode.HISTORICAL_REPLAY.value:
+            raise RepositoryConflict("MODE_NOT_AVAILABLE")
+        row = ReferenceTradeRow
+        eligible = [
+            row.stream_id == snapshot.stream_id,
+            row.revision_id == snapshot.revision_id,
+            row.valid_from_seq <= snapshot.seq,
+            row.entry_trading_day <= through,
+        ]
+        if stream.strategy_code.replace("-", "_") == "subing_reference":
+            eligible.append(or_(
+                row.entry_trading_day >= since,
+                row.exit_trading_day >= since,
+                row.status == "OPEN",
+                and_(
+                    row.status.in_(("DATA_INTERRUPTED", "ROLLOVER_INTERRUPTED")),
+                    tuple_(row.physical_contract, row.owner_segment_id,
+                           row.calculation_segment_id).in_(initial_interruptions),
+                ),
+            ))
+        if cutoff is not None:
+            eligible.extend((
+                row.entry_bar_end <= cutoff,
+                row.effective_bar_end <= cutoff,
+                or_(row.exit_bar_end.is_(None), row.exit_bar_end <= cutoff),
+            ))
+        ranked = select(
+            row.trade_id.label("trade_id"),
+            row.valid_from_seq.label("valid_from_seq"),
+            func.row_number().over(
+                partition_by=row.trade_id,
+                order_by=row.valid_from_seq.desc(),
+            ).label("rank"),
+        ).where(*eligible).subquery()
+        statement = select(row).join(
+            ranked,
+            and_(
+                ranked.c.trade_id == row.trade_id,
+                ranked.c.valid_from_seq == row.valid_from_seq,
+                ranked.c.rank == 1,
+            ),
+        ).where(
+            row.stream_id == snapshot.stream_id,
+            row.revision_id == snapshot.revision_id,
+        )
+        if after_key is not None:
+            if (
+                len(after_key) != 2 or not isinstance(after_key[0], datetime)
+                or not isinstance(after_key[1], str)
+            ):
+                raise ValueError("CURSOR_INVALID")
+            statement = statement.where(tuple_(row.entry_bar_end, row.trade_id) < after_key)
+        rows = session.execute(statement.order_by(
+            row.entry_bar_end.desc(), row.trade_id.desc(),
+        ).limit(limit + 1)).scalars().all()
+        more = len(rows) > limit
+        rows = rows[:limit]
+        if not rows:
+            return StoredPage((), None, snapshot)
+        action_pks = {
+            pk for item in rows
+            for pk in (item.entry_action_pk, item.exit_action_pk) if pk is not None
+        }
+        actions = {
+            action.action_pk: action
+            for action in session.execute(select(ReferenceActionRow).where(
+                ReferenceActionRow.stream_id == snapshot.stream_id,
+                ReferenceActionRow.action_pk.in_(action_pks),
+            )).scalars()
+        }
+        identity = _identity_from_row(stream)
+        trades = [self._trade_domain(session, identity, item, actions) for item in rows]
+        open_ids = [item.reference_trade_id for item in trades if item.status is TradeStatus.OPEN]
+        if open_ids:
+            mark = ReferenceMarkRow
+            mark_eligible = [
+                mark.stream_id == snapshot.stream_id,
+                mark.revision_id == snapshot.revision_id,
+                mark.trade_id.in_(open_ids),
+                mark.batch_seq <= snapshot.seq,
+            ]
+            if cutoff is not None:
+                mark_eligible.append(mark.bar_end <= cutoff)
+            latest = select(
+                mark.trade_id.label("trade_id"), mark.batch_seq.label("batch_seq"),
+                mark.bar_end.label("bar_end"),
+                func.row_number().over(
+                    partition_by=mark.trade_id,
+                    order_by=(mark.bar_end.desc(), mark.batch_seq.desc()),
+                ).label("rank"),
+            ).where(*mark_eligible).subquery()
+            marks = {
+                item.trade_id: item for item in session.execute(select(mark).join(
+                    latest,
+                    and_(
+                        latest.c.trade_id == mark.trade_id,
+                        latest.c.batch_seq == mark.batch_seq,
+                        latest.c.bar_end == mark.bar_end,
+                        latest.c.rank == 1,
+                    ),
+                ).where(
+                    mark.stream_id == snapshot.stream_id,
+                    mark.revision_id == snapshot.revision_id,
+                )).scalars()
+            }
+            trades = [
+                replace(
+                    item, holding_bars=marks[item.reference_trade_id].holding_bars,
+                    mark_bar_end=_aware(marks[item.reference_trade_id].bar_end),
+                    mark_trading_day=marks[item.reference_trade_id].trading_day,
+                    mark_reference_price=marks[item.reference_trade_id].reference_price,
+                    mark_return=marks[item.reference_trade_id].reference_return,
+                ) if item.reference_trade_id in marks else item
+                for item in trades
+            ]
+        last = rows[-1]
+        return StoredPage(
+            tuple(trades),
+            (_required_aware(last.entry_bar_end, "TRADE_ENTRY_BAR_END"), last.trade_id)
+            if more else None,
+            snapshot,
+        )
+
     def read_marks(
         self,
         snapshot: SnapshotIdentity,
@@ -915,11 +1053,18 @@ class ReferenceRepository:
     @staticmethod
     def _trade_domain(
         session: Session, identity: StreamIdentity, row: ReferenceTradeRow,
+        actions: dict[str, ReferenceActionRow] | None = None,
     ) -> ReferenceTrade:
-        entry_action = session.get(ReferenceActionRow, row.entry_action_pk)
+        entry_action = (
+            session.get(ReferenceActionRow, row.entry_action_pk)
+            if actions is None else actions.get(row.entry_action_pk)
+        )
         exit_action = (
             None if row.exit_action_pk is None
-            else session.get(ReferenceActionRow, row.exit_action_pk)
+            else (
+                session.get(ReferenceActionRow, row.exit_action_pk)
+                if actions is None else actions.get(row.exit_action_pk)
+            )
         )
         if entry_action is None or (row.exit_action_pk is not None and exit_action is None):
             raise RepositoryConflict("TRADE_ACTION_CORRUPT")
