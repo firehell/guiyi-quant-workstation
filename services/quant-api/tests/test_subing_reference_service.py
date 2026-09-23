@@ -229,6 +229,25 @@ def test_daily_quality_segments_rewarm_and_keep_prefix_stable_identity():
     assert full["research_status"] == "CROSS_EVALUATED"
 
 
+def test_daily_quality_accepts_nontrading_start_before_first_owner():
+    market = DailyQualityMarket()
+    coverage = Coverage()
+    coverage.product_start = lambda _symbol: market.days[0] - timedelta(days=1)
+    service = SubingReferenceService(
+        market, coverage=coverage, active_products={"rb"},
+        now=lambda: datetime(2026, 6, 20, 7, tzinfo=UTC),
+    )
+
+    result = service.query(SubingReferenceQuery(
+        "rb", frequency="1d", since=market.days[0] - timedelta(days=1),
+        through=market.days[-1],
+    ))
+
+    assert result["performance_since"] == "2026-04-30"
+    assert result["performance_through"] == "2026-06-19"
+    assert result["indicators"]
+
+
 def test_daily_quality_break_at_cutoff_is_warming_not_no_trade():
     market = DailyQualityMarket()
     market.break_day = market.days[-1]
