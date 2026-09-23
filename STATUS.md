@@ -239,6 +239,8 @@ owner 授权的 PT2612/SS2611 D1 历史补齐已完成：新增 185/204 日，21
 
 P5 后续正式批次排在 v1.10.21 完成之后。owner 选择先做 RB 全历史试点并读回，再按正式开放页面范围分批构建，全部就绪后才考虑全局 `REFERENCE_TRADING_READER_MODE` 切换。2026-09-23 生产只读预检：数据库仍在 0046、六张参考表均不存在、reader 默认为 `legacy`。RB 牛哇震荡 D1 的 2023-01-01 至 2026-09-22 只读计划成功，实际输入 2554 根，计划哈希 `b79391cb025029beb4ca68342873719508bdd3f7d882affcdfb6da0ec43a74c5`；执行前必须重算并校验源身份。RB 苏冰 15m 同窗口计划未生成：物理合约 RB2305 的 2022-05-17 至 2023-04-04 生命周期预热需要 4974 个端点，当前 Catalog 仅有 2023-01 至 04 四个月分区、1387 行。先发现的 `TRADING_SESSION_MISSING` 是物理合约查询把首日夜盘前一自然日误纳入待验证范围；修正后只读重放揭示真实 `DATASET_OR_PARTITION_MISSING`。不得缩短预热、伪造缺口、直接切换 reader 或将上述预检称为生产构建完成。正式 migration、补数、构建、配置切换、main/tag/Release 和 Runtime 仍各按精确授权与读回 Gate 执行。
 
+v1.10.22 隔离候选从已发布 main `ba2ce6e21` 合入 develop `3624d2907`；随后合入 develop 的 OI 周线候选不在此冻结范围。CJ 四处冲突保留 v1.10.21 已发布修复和精确 prepare 证据。候选验证：后端参考/物理读取/CJ 297 passed，现有页面 API 230 passed，隔离 PostgreSQL 0047 与分页仓储 11 passed；Web 670 passed、1 skipped，TypeScript、生产 build、Ruff 和 secret scan 通过。独立候选 Review 无 Confirmed Issue。用候选 API 对生产 0046 做只读 smoke：capabilities 200，已保存 streams 查询明确返回 `REFERENCE_SCHEMA_UNAVAILABLE` 503；未执行生产 migration 或构建。候选尚未 main/tag/Release，也未切 Runtime。
+
 ## v1.10.12 Runtime 切换即时读回（2026-09-17）
 
 本机独立、干净的 detached `v1.10.12` root 为 `/Volumes/扩展盘/guiyi-quant-runtime-v1.10.12-r1`。
