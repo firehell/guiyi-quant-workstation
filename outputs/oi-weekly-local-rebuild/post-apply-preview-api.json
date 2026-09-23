@@ -1,0 +1,115 @@
+{
+  "basis": "isolated in-process candidate preview, active production Catalog, fixed cutoff; no Scope or Runtime switch",
+  "code_sha": "e61b8daa3117296c704037ed692b809d14aa7ee8",
+  "cutoff": "2026-09-18T07:00:00.000001+00:00",
+  "results": [
+    {
+      "strategy": "trend",
+      "section": "chart",
+      "http_status": 200,
+      "section_status": {
+        "status": "ready",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason_code": null
+      },
+      "reason_code": null,
+      "meta_as_of": "2026-09-18T07:00:00.000001Z",
+      "error_code": null
+    },
+    {
+      "strategy": "trend",
+      "section": "reference",
+      "http_status": 200,
+      "section_status": {
+        "status": "ready",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason_code": null
+      },
+      "reason_code": null,
+      "meta_as_of": "2026-09-18T07:00:00.000001Z",
+      "error_code": null
+    },
+    {
+      "strategy": "oscillation",
+      "section": "chart",
+      "http_status": 200,
+      "section_status": {
+        "status": "ready",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason_code": null
+      },
+      "reason_code": null,
+      "meta_as_of": "2026-09-18T07:00:00.000001Z",
+      "error_code": null
+    },
+    {
+      "strategy": "oscillation",
+      "section": "reference",
+      "http_status": 200,
+      "section_status": {
+        "status": "ready",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason_code": null
+      },
+      "reason_code": null,
+      "meta_as_of": "2026-09-18T07:00:00.000001Z",
+      "error_code": null
+    },
+    {
+      "strategy": "main_rise",
+      "section": "chart",
+      "http_status": 200,
+      "section_status": {
+        "status": "ready",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason_code": null
+      },
+      "reason_code": null,
+      "meta_as_of": "2026-09-18T07:00:00.000001Z",
+      "error_code": null
+    },
+    {
+      "strategy": "main_rise",
+      "section": "reference",
+      "http_status": 200,
+      "section_status": {
+        "status": "ready",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason_code": null
+      },
+      "reason_code": null,
+      "meta_as_of": "2026-09-18T07:00:00.000001Z",
+      "error_code": null
+    },
+    {
+      "strategy": "trend",
+      "section": "historical-snapshot",
+      "http_status": 200,
+      "validated_sections": [
+        "chart",
+        "zhaoyao_mirror"
+      ],
+      "error_code": null
+    },
+    {
+      "strategy": "oscillation",
+      "section": "historical-snapshot",
+      "http_status": 200,
+      "validated_sections": [
+        "chart",
+        "zhaoyao_mirror"
+      ],
+      "error_code": null
+    },
+    {
+      "strategy": "main_rise",
+      "section": "historical-snapshot",
+      "http_status": 200,
+      "validated_sections": [
+        "chart",
+        "zhaoyao_mirror"
+      ],
+      "error_code": null
+    }
+  ]
+}

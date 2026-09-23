@@ -1,0 +1,1708 @@
+{
+  "schema_version": 1,
+  "command": "data.newow-readiness",
+  "readonly": true,
+  "status": "audited",
+  "complete": true,
+  "as_of": "2026-09-18T07:00:00.000001+00:00",
+  "release_stage": "daily_weekly_candidate",
+  "matrix": true,
+  "frequency_scope": [
+    "1w"
+  ],
+  "product_count": 1,
+  "main_case_count": 9,
+  "main_ready_count": 3,
+  "budget_exhausted": false,
+  "work_used": 53,
+  "enumerations": [
+    {
+      "symbol": "oi",
+      "frequency": "1w",
+      "section": "chart",
+      "status": "ENUMERATED",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "since": "2023-01-03",
+      "through": "2026-09-18",
+      "owner_count": 13
+    },
+    {
+      "symbol": "oi",
+      "frequency": "1w",
+      "section": "auxiliary",
+      "status": "ENUMERATED",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "since": "2023-01-03",
+      "through": "2026-09-18",
+      "owner_count": 13
+    },
+    {
+      "symbol": "oi",
+      "frequency": "1w",
+      "section": "reference",
+      "status": "ENUMERATED",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "since": "2023-01-01",
+      "through": "2026-09-18",
+      "owner_count": 13
+    },
+    {
+      "symbol": "oi",
+      "frequency": "1w",
+      "section": "explanation",
+      "status": "UNOPENED",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+    }
+  ],
+  "dependencies": [
+    {
+      "symbol": "oi",
+      "contract": "OI2305",
+      "frequency": "1w",
+      "through": "2023-04-17",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-01-03",
+          "through": "2023-04-17"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-04-14T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2309",
+      "frequency": "1w",
+      "through": "2023-08-18",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-04-18",
+          "through": "2023-08-18"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-08-18T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2401",
+      "frequency": "1w",
+      "through": "2023-12-15",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-08-21",
+          "through": "2023-12-15"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-12-15T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2405",
+      "frequency": "1w",
+      "through": "2024-04-10",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-12-18",
+          "through": "2024-04-10"
+        }
+      ],
+      "expected_bar_count": 45,
+      "actual_bar_count": 45,
+      "effective_bar_count": 45,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-04-03T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2409",
+      "frequency": "1w",
+      "through": "2024-08-14",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-04-11",
+          "through": "2024-08-14"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-08-09T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2501",
+      "frequency": "1w",
+      "through": "2024-12-02",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-08-15",
+          "through": "2024-12-02"
+        }
+      ],
+      "expected_bar_count": 45,
+      "actual_bar_count": 45,
+      "effective_bar_count": 45,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-11-29T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2505",
+      "frequency": "1w",
+      "through": "2025-04-15",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-12-03",
+          "through": "2025-04-15"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2025-04-11T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2509",
+      "frequency": "1w",
+      "through": "2025-08-12",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-04-16",
+          "through": "2025-08-12"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2025-08-08T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2601",
+      "frequency": "1w",
+      "through": "2025-12-11",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-08-13",
+          "through": "2025-12-11"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2025-12-05T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2605",
+      "frequency": "1w",
+      "through": "2026-04-14",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-12-12",
+          "through": "2026-04-14"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2026-04-10T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2609",
+      "frequency": "1w",
+      "through": "2026-08-18",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2026-04-15",
+          "through": "2026-08-18"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2026-08-14T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2611",
+      "frequency": "1w",
+      "through": "2026-09-08",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2026-08-19",
+          "through": "2026-09-08"
+        }
+      ],
+      "expected_bar_count": 41,
+      "actual_bar_count": 40,
+      "effective_bar_count": 40,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2026-09-04T07:00:00+00:00",
+      "price_unavailable_count": 1,
+      "source_quality": "WEEKLY_INTERRUPTED"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2701",
+      "frequency": "1w",
+      "through": "2026-09-18",
+      "as_of": "2026-09-18T07:00:00.000001+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "chart"
+        },
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "auxiliary"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "auxiliary"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2026-09-09",
+          "through": "2026-09-18"
+        }
+      ],
+      "expected_bar_count": 34,
+      "actual_bar_count": 34,
+      "effective_bar_count": 34,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2305",
+      "frequency": "1w",
+      "through": "2023-04-17",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-01-03",
+          "through": "2023-04-17"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-04-14T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2309",
+      "frequency": "1w",
+      "through": "2023-08-18",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-04-18",
+          "through": "2023-08-18"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-08-18T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2401",
+      "frequency": "1w",
+      "through": "2023-12-15",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-08-21",
+          "through": "2023-12-15"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2023-12-15T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2405",
+      "frequency": "1w",
+      "through": "2024-04-10",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2023-12-18",
+          "through": "2024-04-10"
+        }
+      ],
+      "expected_bar_count": 45,
+      "actual_bar_count": 45,
+      "effective_bar_count": 45,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-04-03T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2409",
+      "frequency": "1w",
+      "through": "2024-08-14",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-04-11",
+          "through": "2024-08-14"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-08-09T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2501",
+      "frequency": "1w",
+      "through": "2024-12-02",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-08-15",
+          "through": "2024-12-02"
+        }
+      ],
+      "expected_bar_count": 45,
+      "actual_bar_count": 45,
+      "effective_bar_count": 45,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2024-11-29T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2505",
+      "frequency": "1w",
+      "through": "2025-04-15",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2024-12-03",
+          "through": "2025-04-15"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2025-04-11T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2509",
+      "frequency": "1w",
+      "through": "2025-08-12",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-04-16",
+          "through": "2025-08-12"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2025-08-08T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2601",
+      "frequency": "1w",
+      "through": "2025-12-11",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-08-13",
+          "through": "2025-12-11"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2025-12-05T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2605",
+      "frequency": "1w",
+      "through": "2026-04-14",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2025-12-12",
+          "through": "2026-04-14"
+        }
+      ],
+      "expected_bar_count": 46,
+      "actual_bar_count": 46,
+      "effective_bar_count": 46,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2026-04-10T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2609",
+      "frequency": "1w",
+      "through": "2026-08-18",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2026-04-15",
+          "through": "2026-08-18"
+        }
+      ],
+      "expected_bar_count": 47,
+      "actual_bar_count": 47,
+      "effective_bar_count": 47,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2026-08-14T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2611",
+      "frequency": "1w",
+      "through": "2026-09-08",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2026-08-19",
+          "through": "2026-09-08"
+        }
+      ],
+      "expected_bar_count": 41,
+      "actual_bar_count": 40,
+      "effective_bar_count": 40,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2026-09-04T07:00:00+00:00",
+      "price_unavailable_count": 1,
+      "source_quality": "WEEKLY_INTERRUPTED"
+    },
+    {
+      "symbol": "oi",
+      "contract": "OI2701",
+      "frequency": "1w",
+      "through": "2026-09-18",
+      "as_of": "2026-09-18T07:00:00+00:00",
+      "status": "DATA_READY",
+      "consumers": [
+        {
+          "strategy": "trend",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "oscillation",
+          "frequency": "1w",
+          "section": "reference"
+        },
+        {
+          "strategy": "main_rise",
+          "frequency": "1w",
+          "section": "reference"
+        }
+      ],
+      "owners": [
+        {
+          "since": "2026-09-09",
+          "through": "2026-09-18"
+        }
+      ],
+      "expected_bar_count": 34,
+      "actual_bar_count": 34,
+      "effective_bar_count": 34,
+      "no_trade_bar_count": 0,
+      "input_policy_version": "newow_futures_quality_observation_v2",
+      "cutoff": "2026-09-18T07:00:00+00:00",
+      "price_unavailable_count": 0,
+      "source_quality": "NORMAL"
+    }
+  ],
+  "repair_targets": [],
+  "metadata_proposals": [],
+  "cases": [
+    {
+      "symbol": "oi",
+      "strategy": "trend",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+          "reason": "NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "trend",
+      "frequency": "1d",
+      "main": {
+        "status": "UNSTARTED"
+      },
+      "sections": {
+        "chart": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:macd": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:main_force_control": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:cup_handle": {
+          "status": "UNSTARTED"
+        },
+        "reference": {
+          "status": "UNSTARTED"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "UNSTARTED"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "trend",
+      "frequency": "60m",
+      "main": {
+        "status": "UNOPENED",
+        "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+      },
+      "sections": {
+        "chart": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:macd": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "reference": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "comparator": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "oscillation",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "UNAVAILABLE",
+          "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+          "reason": "NEWOW_PAGE_COMPARATOR_INSUFFICIENT_BARS"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "oscillation",
+      "frequency": "1d",
+      "main": {
+        "status": "UNSTARTED"
+      },
+      "sections": {
+        "chart": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:macd": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:main_force_control": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:cup_handle": {
+          "status": "UNSTARTED"
+        },
+        "reference": {
+          "status": "UNSTARTED"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "UNSTARTED"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "oscillation",
+      "frequency": "60m",
+      "main": {
+        "status": "UNOPENED",
+        "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+      },
+      "sections": {
+        "chart": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:macd": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "reference": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "comparator": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "main_rise",
+      "frequency": "1w",
+      "input_quality_policy": "newow_weekly_input_quality_v2",
+      "main": {
+        "status": "READY",
+        "evidence_status": "ACTIVE_CODE_VERIFIED",
+        "reason": null
+      },
+      "sections": {
+        "chart": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:macd": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:main_force_control": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:up_down_energy": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "auxiliary:cup_handle": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": "NEWOW_CUP_HANDLE_NOT_APPLICABLE"
+        },
+        "reference": {
+          "status": "READY",
+          "evidence_status": "ACTIVE_CODE_VERIFIED",
+          "reason": null
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "NOT_APPLICABLE",
+          "evidence_status": "RESEARCH_EVIDENCE_ONLY",
+          "reason": "NEWOW_PAGE_COMPARATOR_NOT_APPLICABLE"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "main_rise",
+      "frequency": "1d",
+      "main": {
+        "status": "UNSTARTED"
+      },
+      "sections": {
+        "chart": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:macd": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:main_force_control": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "UNSTARTED"
+        },
+        "auxiliary:cup_handle": {
+          "status": "UNSTARTED"
+        },
+        "reference": {
+          "status": "UNSTARTED"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_CROSS_FREQUENCY_INPUTS_NOT_OPEN"
+        },
+        "comparator": {
+          "status": "UNSTARTED"
+        }
+      }
+    },
+    {
+      "symbol": "oi",
+      "strategy": "main_rise",
+      "frequency": "60m",
+      "main": {
+        "status": "UNOPENED",
+        "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+      },
+      "sections": {
+        "chart": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:macd": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:main_force_control": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:up_down_energy": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:zhaoyao_mirror": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "auxiliary:cup_handle": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "reference": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "explanation": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        },
+        "comparator": {
+          "status": "UNOPENED",
+          "reason": "NEWOW_HOURLY_RELEASE_PENDING"
+        }
+      }
+    }
+  ],
+  "provider_requests": 0,
+  "writes": 0,
+  "readback_identity": {
+    "basis": "active production Catalog with candidate weekly input policy; Scope remains closed",
+    "code_sha": "e61b8daa3117296c704037ed692b809d14aa7ee8",
+    "approved_prepare_sha256": "6411f51f11601783aae36c798561f35b1dd08acd3587b27291ddd1bcd79e2437",
+    "catalog_revision": "a26a9fda9e65f7e3480f8cce3aaa7954eace694611f62f611c67d4885dc0bc28",
+    "catalog_revision_stable": true
+  }
+}
