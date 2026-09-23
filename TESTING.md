@@ -412,6 +412,7 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.
   services/quant-api/.venv/bin/pytest -q -p no:cacheprovider --tb=short \
   services/quant-api/tests/reference_trading/test_historical_integration.py \
   services/quant-api/tests/reference_trading/test_newow_worker_recovery.py \
+  services/quant-api/tests/reference_trading/test_forward_capacity_postgresql.py \
   services/quant-api/tests/reference_trading/test_forward_query.py \
   services/quant-api/tests/reference_trading/test_query_capacity_postgresql.py \
   services/quant-api/tests/reference_trading/test_repository_postgresql.py \
@@ -425,7 +426,7 @@ GUIYI_ISOLATED_REDIS_URL='redis://127.0.0.1:PORT/0' \
   services/quant-api/tests/reference_trading/test_live_wake.py
 ```
 
-首阶段真实存储 pipeline/recovery 和 synthetic 100/1000/10000 行查询工具只接受独立测试库、
+真实存储 pipeline/recovery、60/300 条 fixture 流和 synthetic 100/1000/10000 行查询工具只接受独立测试库、
 loopback 非 5432 端口、无 libpq 环境路由覆盖和临时目录输出。每次启动五个独立进程；
 `historical_13_streams` 与 `forward_recovery` 耗时不代表 60/300 流容量，
 `query_*` 行是直接构建的查询负载，不代表策略计算结果。原始 JSON、缺口和固定目标见
@@ -444,6 +445,19 @@ GUIYI_ISOLATED_MIGRATION_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.
 ```
 
 同一入口还接受 `--case query_100` 和 `--case query_1000`，分别保存对应 JSON。
+`--case stream_60` 和 `--case stream_300` 分别测量 typed capture 持久化及真实 kernel worker
+投影；它们不测 60/300 条真实 MDS 行情采集。D1/W1 有界增量的逐值与最多四个物理
+分区断言在 `test_historical_integration.py`，含 45 天过期窗口拒绝和未完成日不读取。
+
+真实浏览器验收只连接上述一次性 PostgreSQL 测试库。先在单独终端运行
+`PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core`
+加上同一 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，执行
+`services/quant-api/.venv/bin/python scripts/reference_trading_browser_fixture.py`；
+再运行 `pnpm -C apps/quant-web exec vite --config vite.p8.config.ts`，用真实浏览器打开
+`http://127.0.0.1:5178/p8-reference-acceptance.html`。此页面挂载实际
+`ReferenceTradePanel` 并经 Vite proxy 请求实际 FastAPI 和隔离 PostgreSQL，未拦截 API；
+仅用于组件/API/持久化闭环，不等于完整 Market 路由或正式产品能力开放。退出两台服务后
+脚本仅删除它创建的随机 schema 和临时 Canonical 文件。
 
 ## Market WebSocket 与统一详情页
 
