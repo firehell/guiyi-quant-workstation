@@ -12,7 +12,7 @@ from tests.reference_trading.test_repository import _digest, _open_batch, _seed_
 
 def test_read_only_http_snapshot_cutoff_and_disabled_stream(monkeypatch, tmp_path) -> None:
     repository, factory, stream, revision, manifest, seed = _seed_repository(
-        database_url=f"sqlite+pysqlite:///{tmp_path / 'reference.sqlite'}",
+        sqlite_path=tmp_path / "reference.sqlite",
     )
     evidence = {"bar": "fixture-1", "presentation_v1": envelope([
         presentation_point(
@@ -50,7 +50,7 @@ def test_read_only_http_snapshot_cutoff_and_disabled_stream(monkeypatch, tmp_pat
 
 def test_api_has_no_implicit_build(monkeypatch, tmp_path) -> None:
     repository, factory, stream, _revision, _manifest, _seed = _seed_repository(
-        database_url=f"sqlite+pysqlite:///{tmp_path / 'reference.sqlite'}",
+        sqlite_path=tmp_path / "reference.sqlite",
     )
     monkeypatch.setattr(HistoricalReferenceQuery, "_registered", staticmethod(lambda _row: True))
     monkeypatch.setattr(api, "_query", HistoricalReferenceQuery(factory))
