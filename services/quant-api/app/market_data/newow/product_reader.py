@@ -970,9 +970,20 @@ class NewowProductReader:
                 return {"status": "NOT_APPLICABLE", "reason": "OWNER_HAS_NO_COMPLETED_BAR"}
             raise NewowProductReadError("NEWOW_COMPLETE_PERIOD_MISSING")
         if frequency is ProductFrequency.WEEKLY:
-            prefix, weekly_gaps = self._market_data.query_contract_weekly_replay_quality(
-                symbol=product, contract=owner.contract,
-                through=owned[-1][1], cutoff=owned[-1][0],
+            quality_args = {
+                "symbol": product, "contract": owner.contract,
+                "through": owned[-1][1], "cutoff": owned[-1][0],
+            }
+            policy = input_quality_policy(frequency.value, self._input_quality_policy)
+            prefix, weekly_gaps = (
+                self._market_data.query_contract_weekly_replay_quality(**quality_args)
+                if policy is InputQualityPolicy.V1
+                else self._market_data.query_contract_weekly_replay_quality(
+                    **quality_args,
+                    classification_version=source_classification_version(
+                        frequency.value, policy,
+                    ),
+                )
             )
         else:
             prefix = self._read_prefix(product, owner.contract, frequency, owned[-1][0])
