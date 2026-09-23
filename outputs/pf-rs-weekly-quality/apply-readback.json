@@ -1,0 +1,37 @@
+{
+  "catalog_revision": "b9d0d454d9db8e77a5f50ad9c24222f22d3027da6e1b9df71d3dc5b7e498a2c6",
+  "d1_writes": 0,
+  "observed_at": "2026-09-23T04:51:48.290023+00:00",
+  "old_files_retained": 7,
+  "packet_sha256": "91eb72014ecefd5e3f99c61139845fd14164138359b235bb7af2f943ac97d63e",
+  "pointer_readback": {
+    "months": [
+      "candidate",
+      "candidate",
+      "candidate",
+      "candidate",
+      "candidate",
+      "candidate",
+      "candidate"
+    ],
+    "status": "candidate"
+  },
+  "provider_requests": 0,
+  "quality_replay": {
+    "PF2611": {
+      "normal_bars": 3,
+      "quality_interruptions": 11,
+      "status": "readable"
+    },
+    "RS2609": {
+      "code": "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+      "reason": "REPLAY_ENDPOINTS_MISSING",
+      "status": "blocked"
+    }
+  },
+  "removed_conflict_rows": 15,
+  "retained_rows_identical": 6,
+  "schema_version": "pf_rs_weekly_quality_apply_readback_v1",
+  "scope_quality_weeks": 15,
+  "scope_w1_months": 7
+}
