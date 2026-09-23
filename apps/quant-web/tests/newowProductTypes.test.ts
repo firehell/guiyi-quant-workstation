@@ -289,7 +289,15 @@ test('loads the server-owned daily release capability and rejects widened or leg
   assert.deepEqual(await getNewowProductCapabilities({
     request: async () => formalWeeklyV11,
   }), formalWeeklyV11)
-  for (const capability of [candidate, candidateV9, formalWeeklyV10, formalWeeklyV11]) {
+  const formalWeeklyV12 = {
+    ...formalWeeklyV11,
+    schema_version: 'newow_product_capabilities_v12',
+    weekly_products: 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' '),
+  }
+  assert.deepEqual(await getNewowProductCapabilities({
+    request: async () => formalWeeklyV12,
+  }), formalWeeklyV12)
+  for (const capability of [candidate, candidateV9, formalWeeklyV10, formalWeeklyV11, formalWeeklyV12]) {
     const wrong = [...capability.weekly_products]
     wrong[0] = 'zz'
     await assert.rejects(

@@ -76,11 +76,11 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v11",
+        "schema_version": "newow_product_capabilities_v12",
         "release_stage": "daily_weekly",
         "open_frequencies": ["1d", "1w"],
         "weekly_products": [
-            "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cu",
+            "a", "ag", "al", "ao", "ap", "au", "b", "bu", "bz", "c", "cf", "cj", "cu",
             "eb", "ec", "eg", "fg", "fu", "hc", "i", "j", "jd", "jm", "l", "lc",
             "lh", "m", "ma", "ni", "oi", "p", "pb", "pd", "pg", "pp", "ps", "pt", "rb",
             "rm", "ru", "sa", "sc", "si", "sn", "ss", "ta", "ur", "v", "y", "zn",
@@ -240,7 +240,7 @@ def test_formal_weekly_release_rejects_product_outside_open_set_before_resolver(
         with TestClient(app) as client:
             response = client.get(
                 "/api/v1/market/newow/weekly-snapshot",
-                params={"product": "cj", "strategy": "trend", "frequency": "1w"},
+                params={"product": "pf", "strategy": "trend", "frequency": "1w"},
             )
     finally:
         app.dependency_overrides.clear()

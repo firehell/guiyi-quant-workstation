@@ -141,6 +141,24 @@ test('formal daily weekly v11 opens W1 for OI and keeps the other eleven candida
   assert.deepEqual(state.openFrequenciesFor('oi'), ['1d', '1w'])
 })
 
+test('formal daily weekly v12 opens W1 for CJ and keeps the other ten candidates closed', async () => {
+  const released = 'a ag al ao ap au b bu bz c cf cj cu eb ec eg fg fu hc i j jd jm l lc lh m ma ni oi p pb pd pg pp ps pt rb rm ru sa sc si sn ss ta ur v y zn'.split(' ')
+  const state = useNewowCapabilities(async () => ({
+    ...daily(),
+    schema_version: 'newow_product_capabilities_v12',
+    release_stage: 'daily_weekly',
+    open_frequencies: ['1d', '1w'],
+    weekly_products: released,
+    deferred_frequencies: [
+      { frequency: '60m', reason_code: 'NEWOW_HOURLY_RELEASE_PENDING' },
+    ],
+  }))
+  await state.load()
+  assert.equal(state.isFrequencyOpen('1w', 'cj'), true)
+  assert.equal(state.isFrequencyOpen('1w', 'pf'), false)
+  assert.deepEqual(state.openFrequenciesFor('cj'), ['1d', '1w'])
+})
+
 test('AU period preview accepts its exact all-period capability', async () => {
   const payload = {
     ...daily(),
