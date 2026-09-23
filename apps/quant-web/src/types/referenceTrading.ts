@@ -1,11 +1,11 @@
-export type HistoricalReferenceMode = 'historical_replay'
+export type ReferenceMode = 'historical_replay' | 'forward_observation'
 
 export interface ReferenceStreamInfo {
   stream_id: string
   strategy_code: string
   product: string
   frequency: string
-  recording_mode: HistoricalReferenceMode
+  recording_mode: ReferenceMode
   formula_versions: string[]
   profile_id: string
   reference_model_version: string
@@ -14,6 +14,9 @@ export interface ReferenceStreamInfo {
   latest_seq: number
   health: string
   readable: boolean
+  enabled?: boolean
+  activation_generation?: number
+  recording_start?: string | null
 }
 
 export interface ReferenceWindow {
@@ -43,6 +46,7 @@ export interface ReferencePage<Item> {
   window: { since: string; through: string }
   cutoff: string | null
   status: string
+  coverage?: { first_computed_through: string | null; computed_through: string | null; observation_boundary_at?: string | null; complete_window_proven: boolean }
 }
 
 export interface ReferenceSummary {
@@ -70,4 +74,5 @@ export interface ReferenceIdentity {
   strategy: string
   product: string
   frequency: string
+  mode?: ReferenceMode
 }

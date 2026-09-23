@@ -10,10 +10,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.db.session import SessionLocal
 from app.reference_trading.presentation import PresentationUnavailable
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict
+from app.reference_trading.health import ForwardReferenceHealth
 
 
 router = APIRouter(prefix="/api/v1/reference-trading", tags=["reference-trading"])
 _query = HistoricalReferenceQuery(SessionLocal)
+_health = ForwardReferenceHealth(SessionLocal)
 
 
 def _keys(request: Request, allowed: frozenset[str]) -> None:
@@ -45,6 +47,12 @@ def _run(call):
 def capabilities(request: Request):
     _keys(request, frozenset())
     return _query.capabilities()
+
+
+@router.get("/health")
+def health(request: Request):
+    _keys(request, frozenset())
+    return _health.read()
 
 
 @router.get("/streams")

@@ -16,6 +16,7 @@ from typing import Literal, cast
 from guiyi_quant.reference_trading import (
     ActionKind,
     CompletedReferenceBar,
+    RecordingMode,
     ReferenceAction,
     ReferenceState,
     ReferenceTransition,
@@ -418,17 +419,48 @@ def _newow_step(
                 formula_versions=stream.formula_versions,
             ))
     actions: list[ReferenceAction] = []
+    forward_entry_id = (
+        prior_reference.open_trade.entry_action_id
+        if stream.recording_mode is RecordingMode.FORWARD_OBSERVATION
+        and prior_reference.open_trade is not None else None
+    )
     for action in frame.actions:
         if action.trade_eligibility is not TradeEligibility.ELIGIBLE:
+            if (
+                stream.recording_mode is RecordingMode.FORWARD_OBSERVATION
+                and action.kind is NewowActionKind.CLEAR
+                and presentation is not None
+            ):
+                presentation.append(presentation_point(
+                    kind="diagnostic",
+                    value={"bar_end": action.bar_end, "code": "NO_OBSERVED_ENTRY"},
+                    trading_day=item.trading_day,
+                    formula_versions=stream.formula_versions,
+                ))
             continue
         if action.kind is NewowActionKind.BUILD:
             kind = ActionKind.OPEN_LONG
             entry_id = None
+            if stream.recording_mode is RecordingMode.FORWARD_OBSERVATION:
+                forward_entry_id = action.signal_id
         else:
             kind = ActionKind.CLOSE
             entry_id = action.related_build_id
             if entry_id is None:
                 raise ValueError("REFERENCE_ACTION_PAIRING_CONFLICT")
+            if stream.recording_mode is RecordingMode.FORWARD_OBSERVATION:
+                if forward_entry_id is None:
+                    if presentation is not None:
+                        presentation.append(presentation_point(
+                            kind="diagnostic",
+                            value={"bar_end": action.bar_end, "code": "NO_OBSERVED_ENTRY"},
+                            trading_day=item.trading_day,
+                            formula_versions=stream.formula_versions,
+                        ))
+                    continue
+                if entry_id != forward_entry_id:
+                    raise ValueError("REFERENCE_ACTION_PAIRING_CONFLICT")
+                forward_entry_id = None
         actions.append(ReferenceAction(
             stream=stream,
             source_action_id=action.signal_id,

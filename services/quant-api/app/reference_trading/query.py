@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from binascii import Error as Base64Error
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Context, Decimal, ROUND_HALF_EVEN, localcontext
 import json
@@ -26,6 +27,8 @@ from app.reference_trading.presentation import require_envelope, _wire
 from app.reference_trading.repository import (
     ReferenceRepository, RepositoryConflict, _identity_from_row,
 )
+from guiyi_quant.reference_trading import RecordingMode
+from guiyi_quant.reference_trading.htdy import MODEL_VERSION as HTDY_MODEL_VERSION
 
 
 POLICY_VERSION = "entry_in_window_v1"
@@ -97,27 +100,45 @@ class HistoricalReferenceQuery:
                 key: sorted(value) for key, value in _CAPABILITIES.items()
                 if "-" in key
             },
-            "readable_modes": ["historical_replay"],
-            "forward_observation": "MODE_NOT_AVAILABLE",
+            "readable_modes": ["historical_replay", "forward_observation"],
+            "forward_observation": "requires_exact_activation",
             "page_opening": "separate_product_capability",
         }
 
     @staticmethod
     def _registered(row: ReferenceStream) -> bool:
-        if row.recording_mode != "historical_replay":
+        identity = _identity_from_row(row)
+        if row.recording_mode == "historical_replay":
+            return (
+                row.frequency in _CAPABILITIES.get(row.strategy_code, ())
+                and _canonical_identity(identity)
+            )
+        if row.recording_mode != "forward_observation" or not identity.observation_policy_version:
             return False
-        if row.frequency not in _CAPABILITIES.get(row.strategy_code, ()):
-            return False
-        return _canonical_identity(_identity_from_row(row))
+        if row.strategy_code == "htdy":
+            return (
+                identity.reference_model_version == HTDY_MODEL_VERSION
+                and row.series_kind == "actual_dominant"
+                and row.frequency in {"15m", "30m", "60m"}
+            )
+        return (
+            row.frequency in _CAPABILITIES.get(row.strategy_code, ())
+            and _canonical_identity(replace(
+                identity, recording_mode=RecordingMode.HISTORICAL_REPLAY,
+                observation_policy_version=None,
+            ))
+        )
 
     def streams(
         self, *, strategy: str, product: str, frequency: str,
         mode: str = "historical_replay",
     ) -> list[dict[str, object]]:
-        if mode != "historical_replay":
+        if mode not in {"historical_replay", "forward_observation"}:
             raise QueryConflict("MODE_NOT_AVAILABLE")
         if (
-            strategy not in _CAPABILITIES or frequency not in _CAPABILITIES[strategy]
+            (strategy not in _CAPABILITIES and not (mode == "forward_observation" and strategy == "htdy"))
+            or (strategy == "htdy" and frequency not in {"15m", "30m", "60m"})
+            or (strategy in _CAPABILITIES and frequency not in _CAPABILITIES[strategy])
             or not product.isascii() or not product.isalpha()
             or not 1 <= len(product) <= 8
             or (strategy.replace("-", "_") == "subing_reference" and product != product.upper())
@@ -144,7 +165,12 @@ class HistoricalReferenceQuery:
             "futures_adaptation_version": row.futures_adaptation_version,
             "active_revision_id": row.active_revision_id,
             "latest_seq": row.latest_seq, "health": row.health,
-            "readable": row.active_revision_id is not None,
+            "enabled": row.enabled,
+            "activation_generation": row.activation_generation,
+            "recording_start": row.recording_start.isoformat() if row.recording_start else None,
+            "readable": row.active_revision_id is not None and (
+                row.recording_mode == "historical_replay" or row.enabled
+            ),
         }
 
     def _resolve(self, session: Session, stream_id: str) -> ReferenceStream:
@@ -166,22 +192,33 @@ class HistoricalReferenceQuery:
         if encoded is None:
             if row.active_revision_id is None or row.latest_seq < 1:
                 raise QueryConflict("NOT_BUILT")
+            if row.recording_mode == "forward_observation" and not row.enabled:
+                raise QueryConflict("NOT_ENABLED")
             revision_id, seq = row.active_revision_id, row.latest_seq
             revision = session.get(ReferenceRevision, (row.stream_id, revision_id))
             if revision is None or revision.status != "active":
                 raise QueryConflict("STALE_INVALID")
             digest = self._manifest_digest(session, row.stream_id, revision_id, seq)
-            encoded = _encode({
+            payload = {
                 "kind": "snapshot", "stream": row.stream_id,
                 "revision": revision_id, "seq": seq,
                 "since": since.isoformat(), "through": through.isoformat(),
                 "cutoff": cutoff.isoformat() if cutoff else None,
                 "policy": POLICY_VERSION, "dependency": digest,
-            })
+            }
+            if row.recording_mode == "forward_observation":
+                payload.update({
+                    "mode": row.recording_mode, "generation": row.activation_generation,
+                    "recording_start": row.recording_start.isoformat() if row.recording_start else None,
+                })
+            encoded = _encode(payload)
         else:
             token = _decode(encoded, kind="snapshot")
+            expected_keys = {"kind", "stream", "revision", "seq", "since", "through", "cutoff", "policy", "dependency"}
+            if row.recording_mode == "forward_observation":
+                expected_keys |= {"mode", "generation", "recording_start"}
             if (
-                set(token) != {"kind", "stream", "revision", "seq", "since", "through", "cutoff", "policy", "dependency"}
+                set(token) != expected_keys
                 or token["stream"] != row.stream_id
                 or _day(token["since"]) != since or _day(token["through"]) != through
                 or _instant(token["cutoff"]) != cutoff
@@ -189,6 +226,13 @@ class HistoricalReferenceQuery:
                 or type(token["seq"]) is not int or token["seq"] < 1
                 or not isinstance(token["revision"], str)
                 or not isinstance(token["dependency"], str)
+                or row.recording_mode == "forward_observation" and (
+                    token.get("mode") != row.recording_mode
+                    or token.get("generation") != row.activation_generation
+                    or token.get("recording_start") != (
+                        row.recording_start.isoformat() if row.recording_start else None
+                    )
+                )
             ):
                 raise QueryConflict("SNAPSHOT_CONFLICT")
             revision_id, seq, digest = token["revision"], token["seq"], token["dependency"]
@@ -232,11 +276,20 @@ class HistoricalReferenceQuery:
             ReferenceBatch.stream_id == snapshot.stream_id,
             ReferenceBatch.revision_id == snapshot.revision_id,
             ReferenceBatch.kind == "calculation",
+            ~ReferenceBatch.batch_key.like("forward:observation-gap:%"),
             ReferenceBatch.seq <= snapshot.seq,
         )).one()
+        gap_at = session.scalar(select(func.max(ReferenceBatch.observed_at)).where(
+            ReferenceBatch.stream_id == snapshot.stream_id,
+            ReferenceBatch.revision_id == snapshot.revision_id,
+            ReferenceBatch.kind == "calculation",
+            ReferenceBatch.batch_key.like("forward:observation-gap:%"),
+            ReferenceBatch.seq <= snapshot.seq,
+        ))
         return {
             "first_computed_through": first.isoformat() if first else None,
             "computed_through": last.isoformat() if last else None,
+            "observation_boundary_at": gap_at.isoformat() if gap_at else None,
             "complete_window_proven": False,
         }
 
@@ -276,6 +329,30 @@ class HistoricalReferenceQuery:
                 if instant is None or not isinstance(value["trade_id"], str):
                     raise QueryConflict("CURSOR_CONFLICT")
                 after = (instant, value["trade_id"])
+            if row.recording_mode == "forward_observation":
+                page = self._repository.query_historical_trades(
+                    session, snapshot, since=since, through=through,
+                    cutoff=cutoff, limit=limit, after_key=after, forward=True,
+                )
+                next_cursor = None if page.next_key is None else _encode({
+                    "kind": "trades", "snapshot": token,
+                    "bar_end": page.next_key[0].isoformat(),
+                    "trade_id": page.next_key[1],
+                })
+                return {
+                    "items": [{
+                        **_wire(item), "public_reference_trade_id": item.reference_trade_id,
+                        "stream_id": snapshot.stream_id,
+                    } for item in page.items],
+                    "snapshot": token, "next_cursor": next_cursor,
+                    "stream": self._stream_info(row), "revision_id": snapshot.revision_id,
+                    "seq": snapshot.seq, "dependency_digest": digest,
+                    "cutoff": cutoff.isoformat() if cutoff else None,
+                    "window": {"since": since.isoformat(), "through": through.isoformat()},
+                    "statistics_policy": POLICY_VERSION,
+                    "coverage": self._coverage(session, snapshot), "status": row.health,
+                    "expected_through": None, "freshness": "unknown",
+                }
             interruption_keys = (
                 self._boundary_keys(session, snapshot, since, through, cutoff)
                 if row.strategy_code.replace("-", "_") == "subing_reference"
@@ -513,6 +590,9 @@ class HistoricalReferenceQuery:
                 ReferenceBatch.seq >= max(1, after_seq),
                 ReferenceBatch.source_evidence["presentation_v1"]["last_day"].as_string() >= since.isoformat(),
                 ReferenceBatch.source_evidence["presentation_v1"]["first_day"].as_string() <= through.isoformat(),
+                *(() if cutoff is None or row.recording_mode != "forward_observation" else (
+                    ReferenceBatch.observed_at <= cutoff,
+                )),
             ).order_by(ReferenceBatch.seq).execution_options(yield_per=32)).scalars()
             selected: list[tuple[int, int, dict[str, object]]] = []
             for batch in batches:
@@ -596,6 +676,8 @@ class HistoricalReferenceQuery:
                     trade.effective_bar_end <= cutoff,
                     or_(trade.exit_bar_end.is_(None), trade.exit_bar_end <= cutoff),
                 ))
+                if row.recording_mode == "forward_observation":
+                    eligible.append(trade.observed_at <= cutoff)
             latest = select(
                 trade.trade_id.label("trade_id"),
                 trade.valid_from_seq.label("valid_from_seq"),

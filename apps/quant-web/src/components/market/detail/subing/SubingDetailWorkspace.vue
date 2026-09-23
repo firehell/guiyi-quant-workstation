@@ -9,6 +9,7 @@ import { useSubingReference } from '@/composables/useSubingReference'
 import { subingCallouts } from '@/utils/subingReference'
 import { formatBeijingInstant, formatMarketDecimal } from '@/utils/marketDisplay'
 import SubingReferencePanel from './SubingReferencePanel.vue'
+import ReferenceTradePanel from '@/components/market/detail/ReferenceTradePanel.vue'
 import MarketDetailDrawer from '@/components/market/detail/MarketDetailDrawer.vue'
 import MarketDetailInsightDeck from '@/components/market/detail/MarketDetailInsightDeck.vue'
 import MarketDetailSectionTabs from '@/components/market/detail/MarketDetailSectionTabs.vue'
@@ -113,6 +114,7 @@ onBeforeUnmount(() => { loader.dispose(); alertFacts.dispose(); reference.dispos
     <p class="subing-workspace__reference-source">{{ reference.data.value?.storage_mode === 'persisted' ? '历史参考·已保存' : '历史重算·乐观参考' }}｜零费用/零滑点 <span>白底标注 · 实际预警为 S↑ / S↓</span></p>
     <p v-if="identity.frequency !== '15m'" class="subing-workspace__hint" role="status">历史研究，本周期未启用预警；正式 S↑ / S↓ 仅在 15分周期。</p>
     <SubingReferencePanel :data="reference.data.value" :loading="reference.loading.value" :error="reference.error.value" @refresh="reference.refresh(identity.symbol, { ...$event, frequency: identity.frequency as '15m' | '30m' | '60m' | '1d' })" @load-more="reference.loadMore" @focus="focusTrade" @details="selectedTrade = $event" />
+    <ReferenceTradePanel strategy="subing-reference" :product="identity.symbol" :frequency="identity.frequency" :through="bars.at(-1)?.trading_day" />
     <p v-if="referenceFocusNotice" role="status">{{ referenceFocusNotice }}</p>
     <MarketDetailDrawer :open="selectedTrade !== null" title="历史参考记录详情" @close="selectedTrade = null"><template v-if="selectedTrade"><p>{{ selectedTrade.side === 'LONG' ? '多头参考' : '空头参考' }} · {{ selectedTrade.status === 'CLOSED' ? '已平参考' : selectedTrade.status === 'OPEN' ? '未平参考' : selectedTrade.status === 'DATA_INTERRUPTED' ? '数据中断' : '换月中断' }} · {{ selectedTrade.physical_contract }}</p><p>开仓参考 {{ formatMarketDecimal(selectedTrade.entry_reference_price) }} · {{ formatBeijingInstant(selectedTrade.entry_bar_end) }}</p><p>平仓参考 {{ formatMarketDecimal(selectedTrade.exit_reference_price) }} · {{ selectedTrade.exit_bar_end ? formatBeijingInstant(selectedTrade.exit_bar_end) : selectedTrade.status === 'DATA_INTERRUPTED' ? `数据中断（${selectedTrade.interruption_reason}），未配对平仓` : selectedTrade.status === 'ROLLOVER_INTERRUPTED' ? '换月中断，未配对平仓' : '尚无配对平仓' }}</p><p>持有 {{ selectedTrade.holding_bars }} 根 Bar · {{ selectedTrade.initial ? '窗口初始记录' : '窗口内新开参考' }}</p><p>{{ reference.data.value?.storage_mode === 'persisted' ? '历史参考·已保存' : '历史重算·乐观参考' }}｜零费用/零滑点</p><p>{{ selectedTrade.reference_trade_id }}</p></template></MarketDetailDrawer>
     <p v-if="identity.frequency === '15m'" class="subing-workspace__hint">实际预警记录 · 以下仅为已持久化 AlertEvent，与历史重算信号独立；同一 Bar 可以同时存在。</p>
