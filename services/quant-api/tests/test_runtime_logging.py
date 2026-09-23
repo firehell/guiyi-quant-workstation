@@ -64,6 +64,45 @@ def test_after_market_exception_types_are_bounded_and_distinct(tmp_path):
         handler.close()
 
 
+def test_after_market_target_failure_log_keeps_only_bounded_identity(tmp_path):
+    from app.market_data.after_market import _log_first_maintenance_failure
+    from app.runtime_logging import runtime_diagnostic_handler
+
+    path = tmp_path / "after-market.log"
+    handler = runtime_diagnostic_handler(path)
+    logger = logging.getLogger("app.market_data.after_market")
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    try:
+        _log_first_maintenance_failure({
+            "dataset": ("contract", "rs", "RS2609", "1d"),
+            "year": 2025, "month": 11,
+            "reason_code": "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+        }, 1, 2)
+        _log_first_maintenance_failure({
+            "dataset": ("contract", "password=hidden", "RS2609", "1d"),
+            "reason_code": "password=hidden",
+        }, 1, 1)
+        _log_first_maintenance_failure({
+            "dataset": ("continuous", "rs", "MAIN", "1d"),
+            "year": 2026, "month": 9,
+            "reason_code": "StorageError",
+        }, 1, 1)
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        assert rows[0]["code"] == "AFTER_MARKET_TARGET_FAILURE"
+        assert rows[0]["reason_code"] == "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED"
+        assert (rows[0]["symbol"], rows[0]["contract"], rows[0]["year"], rows[0]["month"]) == (
+            "rs", "RS2609", 2025, 11,
+        )
+        assert rows[1]["reason_code"] == "OTHER_TARGET_FAILURE"
+        assert rows[2]["symbol"] == "rs"
+        assert "contract" not in rows[2]
+        assert "hidden" not in path.read_text()
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+
+
 def test_runtime_log_reopens_removed_file_and_redacts_untrusted_exception(tmp_path):
     from app.runtime_logging import runtime_diagnostic_handler
 
