@@ -13,6 +13,7 @@ from app.market_data.historical_data_manager import (
     ContractWarmupRequest,
 )
 from app.market_data.operational_universe import load_active_products
+from guiyi_quant.newow.product_contracts import ProductFrequency
 from .product_reader import NewowProductReader
 from .product_service import NewowProductService
 from .readiness import AuditBudget, NewowReadinessAudit, ReadinessRequest
@@ -30,10 +31,15 @@ def build_newow_readiness(session: Session, *, request: ReadinessRequest) -> dic
         PROJECT_ROOT / "data/universe/product_window_starts.csv",
         now=lambda: request.as_of,
     )
+    policy_frequency = (
+        ProductFrequency.WEEKLY
+        if ProductFrequency.WEEKLY in request.frequencies
+        else request.frequencies[0]
+    )
     policies = {
         candidate_input_quality_policy(
             product,
-            "1w",
+            policy_frequency,
             candidate_weekly=request.candidate_weekly,
         )
         for product in request.products
