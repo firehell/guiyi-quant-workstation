@@ -316,7 +316,7 @@ def test_real_canonical_catalog_mds_builds_all_p4_strategy_frequency_streams(tmp
             actual = persisted_newow.reference.value.model_dump()
             expected = legacy_newow.reference.value.model_dump()
             actual.pop("storage_mode")
-            expected.pop("storage_mode")
+            expected.pop("storage_mode", None)
             assert actual["coverage_intervals"][0] == expected["coverage_intervals"][0]
             differences = {
                 key: (actual[key][:3] if isinstance(actual[key], list) else actual[key],
